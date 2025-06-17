@@ -25,7 +25,11 @@ SECRET_KEY = 'django-insecure-wh%&py10w)!ug#vdky(q+f8+5q0!!@nz+5+-_e$g_^n8=wrf&i
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    os.getenv('RENDER_EXTERNAL_HOSTNAME', 'wj-reporting-backend.onrender.com')
+]
 
 
 # Application definition
