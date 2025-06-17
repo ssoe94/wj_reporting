@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
 from pathlib import Path
+from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,15 +21,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-wh%&py10w)!ug#vdky(q+f8+5q0!!@nz+5+-_e$g_^n8=wrf&i'
+SECRET_KEY = config('SECRET_KEY', default='django-insecure-wh%&py10w)!ug#vdky(q+f8+5q0!!@nz+5+-_e$g_^n8=wrf&i')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    os.getenv('RENDER_EXTERNAL_HOSTNAME', 'wj-reporting-backend.onrender.com')
+    config('RENDER_EXTERNAL_HOSTNAME', default='wj-reporting-backend.onrender.com')
 ]
 
 
