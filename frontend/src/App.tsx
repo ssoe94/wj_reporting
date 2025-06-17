@@ -1,35 +1,55 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
+import RecordsPage from './pages/records';
+import NewRecordPage from './pages/records/new';
+import SummaryPage from './pages/summary';
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <Router>
+      <div className="min-h-screen bg-gray-100">
+        {/* 네비게이션 바 */}
+        <nav className="bg-white shadow-lg">
+          <div className="container mx-auto px-4">
+            <div className="flex justify-between h-16">
+              <div className="flex">
+                <Link to="/" className="flex items-center px-4 text-gray-700 hover:text-gray-900">
+                  생산관리 시스템
+                </Link>
+              </div>
+              <div className="flex space-x-4">
+                <Link to="/records" className="flex items-center px-4 text-gray-700 hover:text-gray-900">
+                  생산 기록
+                </Link>
+                <Link to="/records/new" className="flex items-center px-4 text-gray-700 hover:text-gray-900">
+                  기록 추가
+                </Link>
+                <Link to="/summary" className="flex items-center px-4 text-gray-700 hover:text-gray-900">
+                  일일 현황
+                </Link>
+              </div>
+            </div>
+          </div>
+        </nav>
+
+        {/* 메인 컨텐츠 */}
+        <main className="py-4">
+          <Routes>
+            <Route path="/" element={<RecordsPage />} />
+            <Route path="/records" element={<RecordsPage />} />
+            <Route path="/records/new" element={<NewRecordPage />} />
+            <Route path="/summary" element={<SummaryPage />} />
+          </Routes>
+        </main>
+
+        {/* 토스트 알림 */}
+        <ToastContainer position="bottom-right" />
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    </Router>
+  );
 }
 
-export default App
+export default App;
