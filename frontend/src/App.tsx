@@ -1,12 +1,7 @@
-// import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useState } from 'react';
-
-import RecordsPage from './pages/records';
-import NewRecordPage from './pages/records/new';
-import SummaryPage from './pages/summary';
 
 function App() {
   // 예시: 사이드바 메뉴 상태
