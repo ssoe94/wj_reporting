@@ -10,10 +10,10 @@ function App() {
     <div className="min-h-screen bg-gray-50 font-sans">
       {/* 헤더 */}
       <header className="bg-white shadow sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto flex justify-between items-center py-3 px-4 md:px-8">
+        <div className="max-w-7xl mx-auto flex justify-between items-center py-2 px-4 md:px-8">
           <div className="flex items-center gap-3">
-            <img src="/logo.jpg" alt="로고" className="h-10 w-10 rounded-full object-cover shadow" />
-            <span className="text-xl md:text-2xl font-bold text-blue-700 tracking-tight">사출 생산관리 시스템</span>
+            <img src="/logo.jpg" alt="로고" className="h-10 w-10 min-w-[40px] min-h-[40px] max-w-[48px] max-h-[48px] rounded-full object-cover shadow" />
+            <span className="text-lg md:text-2xl font-bold text-blue-700 tracking-tight whitespace-nowrap">사출 생산관리 시스템</span>
           </div>
           <button className="md:hidden btn btn-ghost" onClick={() => setSidebarOpen(!sidebarOpen)}>
             <span className="material-icons">menu</span>
@@ -22,18 +22,16 @@ function App() {
       </header>
 
       {/* 사이드바 (PC) */}
-      <aside className="hidden md:block fixed top-16 left-0 h-full w-56 bg-white shadow-lg z-10">
-        <nav className="flex flex-col gap-2 p-6">
-          <a href="#summary" className="text-gray-700 hover:text-blue-600 font-medium transition">현황 요약</a>
-          <a href="#records" className="text-gray-700 hover:text-blue-600 font-medium transition">생산 기록</a>
-          <a href="#new" className="text-gray-700 hover:text-blue-600 font-medium transition">신규 등록</a>
-        </nav>
+      <aside className="hidden md:flex flex-col gap-2 fixed top-16 left-0 h-full w-52 bg-white shadow-lg z-10 py-8 px-4">
+        <a href="#summary" className="text-gray-700 hover:text-blue-600 font-medium transition">현황 요약</a>
+        <a href="#records" className="text-gray-700 hover:text-blue-600 font-medium transition">생산 기록</a>
+        <a href="#new" className="text-gray-700 hover:text-blue-600 font-medium transition">신규 등록</a>
       </aside>
 
       {/* 사이드바 (모바일) */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-30 z-30" onClick={() => setSidebarOpen(false)}>
-          <aside className="fixed top-0 left-0 h-full w-56 bg-white shadow-lg z-40 p-6 flex flex-col gap-2">
+          <aside className="fixed top-0 left-0 h-full w-52 bg-white shadow-lg z-40 p-8 flex flex-col gap-4">
             <a href="#summary" className="text-gray-700 hover:text-blue-600 font-medium transition" onClick={() => setSidebarOpen(false)}>현황 요약</a>
             <a href="#records" className="text-gray-700 hover:text-blue-600 font-medium transition" onClick={() => setSidebarOpen(false)}>생산 기록</a>
             <a href="#new" className="text-gray-700 hover:text-blue-600 font-medium transition" onClick={() => setSidebarOpen(false)}>신규 등록</a>
@@ -42,19 +40,19 @@ function App() {
       )}
 
       {/* 메인 컨텐츠 */}
-      <main className="md:ml-56 max-w-7xl mx-auto py-8 px-4">
+      <main className="flex flex-col items-center md:ml-52 py-10 px-2 min-h-[calc(100vh-64px)]">
         {/* 현황 요약 카드 */}
-        <section id="summary" className="mb-10">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+        <section id="summary" className="w-full max-w-5xl mb-10">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div className="bg-white rounded-2xl shadow p-6 flex flex-col items-center">
               <span className="text-gray-500">총 생산 건수</span>
               <span className="text-3xl font-bold text-blue-700 mt-2">12건</span>
             </div>
-            <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+            <div className="bg-white rounded-2xl shadow p-6 flex flex-col items-center">
               <span className="text-gray-500">평균 달성률</span>
               <span className="text-3xl font-bold text-green-600 mt-2">97.2%</span>
             </div>
-            <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+            <div className="bg-white rounded-2xl shadow p-6 flex flex-col items-center">
               <span className="text-gray-500">평균 불량률</span>
               <span className="text-3xl font-bold text-red-500 mt-2">2.1%</span>
             </div>
@@ -62,9 +60,9 @@ function App() {
         </section>
 
         {/* 생산 기록 테이블 */}
-        <section id="records" className="mb-10">
-          <div className="bg-white rounded-xl shadow p-6">
-            <div className="flex justify-between items-center mb-4">
+        <section id="records" className="w-full max-w-5xl mb-10">
+          <div className="bg-white rounded-2xl shadow p-8">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-4 gap-2">
               <h2 className="text-xl font-bold text-blue-700">생산 기록</h2>
               <button className="btn btn-primary btn-sm">엑셀 다운로드</button>
             </div>
@@ -108,11 +106,11 @@ function App() {
         </section>
 
         {/* 신규 등록 패널 */}
-        <section id="new" className="mb-10">
-          <div className="bg-white rounded-xl shadow p-6 max-w-lg mx-auto">
+        <section id="new" className="w-full max-w-lg mb-10">
+          <div className="bg-white rounded-2xl shadow p-8">
             <h2 className="text-xl font-bold text-blue-700 mb-4">신규 생산 기록 등록</h2>
             <form className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-gray-700 font-medium mb-1">생산일자</label>
                   <input type="date" className="input input-bordered w-full" />
