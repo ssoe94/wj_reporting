@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom font family */
+@layer base {
+  html {
+    font-family: "Inter", "Noto Sans KR", sans-serif;
+  }
+}
+
+/* Smooth card shadow for shadcn/ui */
+@layer utilities {
+  .soft-shadow {
+    @apply shadow-lg shadow-blue-950/5;
+  }
+}
+
 /* 기존 커스텀 스타일이 있다면 아래에 추가 */
 
 :root {

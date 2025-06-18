@@ -1,72 +1,149 @@
-import { useState } from 'react';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import {
+  Menu as MenuIcon,
+  X as XIcon,
+  DownloadCloud,
+  PlusCircle,
+} from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
-function App() {
-  // 예시: 사이드바 메뉴 상태
+const navItems = [
+  { id: "summary", label: "현황 요약" },
+  { id: "records", label: "생산 기록" },
+  { id: "new", label: "신규 등록" },
+];
+
+export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
-      {/* 헤더 */}
-      <header className="bg-white shadow sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto flex justify-between items-center py-2 px-4 md:px-8">
+    <div className="min-h-screen font-sans text-gray-900">
+      {/* Header */}
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 shadow-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-8">
           <div className="flex items-center gap-3">
-            <img src="/logo.jpg" alt="로고" className="h-10 w-10 min-w-[40px] min-h-[40px] max-w-[48px] max-h-[48px] rounded-full object-cover shadow" />
-            <span className="text-lg md:text-2xl font-bold text-blue-700 tracking-tight whitespace-nowrap">사출 생산관리 시스템</span>
+            <img
+              src="/logo.jpg"
+              alt="로고"
+              className="h-10 w-10 rounded-full object-cover shadow"
+            />
+            <span className="whitespace-nowrap text-lg font-bold tracking-tight text-blue-700 md:text-2xl">
+              사출 생산관리 시스템
+            </span>
           </div>
-          <button className="md:hidden btn btn-ghost" onClick={() => setSidebarOpen(!sidebarOpen)}>
-            <span className="material-icons">menu</span>
-          </button>
+          <Button
+            variant="ghost"
+            className="md:hidden"
+            onClick={() => setSidebarOpen(true)}
+            size="icon"
+            aria-label="메뉴 열기"
+          >
+            <MenuIcon className="h-6 w-6" />
+          </Button>
         </div>
       </header>
 
-      {/* 사이드바 (PC) */}
-      <aside className="hidden md:flex flex-col gap-2 fixed top-16 left-0 h-full w-52 bg-white shadow-lg z-10 py-8 px-4">
-        <a href="#summary" className="text-gray-700 hover:text-blue-600 font-medium transition">현황 요약</a>
-        <a href="#records" className="text-gray-700 hover:text-blue-600 font-medium transition">생산 기록</a>
-        <a href="#new" className="text-gray-700 hover:text-blue-600 font-medium transition">신규 등록</a>
+      {/* Sidebar (Desktop) */}
+      <aside className="fixed left-0 top-[72px] hidden h-[calc(100vh-72px)] w-56 flex-col gap-2 overflow-y-auto border-r bg-white py-8 px-4 shadow-md md:flex">
+        {navItems.map((item) => (
+          <a
+            key={item.id}
+            href={`#${item.id}`}
+            className="rounded-lg px-3 py-2 font-medium text-gray-700 transition hover:bg-blue-50 hover:text-blue-600"
+          >
+            {item.label}
+          </a>
+        ))}
       </aside>
 
-      {/* 사이드바 (모바일) */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 z-30" onClick={() => setSidebarOpen(false)}>
-          <aside className="fixed top-0 left-0 h-full w-52 bg-white shadow-lg z-40 p-8 flex flex-col gap-4">
-            <a href="#summary" className="text-gray-700 hover:text-blue-600 font-medium transition" onClick={() => setSidebarOpen(false)}>현황 요약</a>
-            <a href="#records" className="text-gray-700 hover:text-blue-600 font-medium transition" onClick={() => setSidebarOpen(false)}>생산 기록</a>
-            <a href="#new" className="text-gray-700 hover:text-blue-600 font-medium transition" onClick={() => setSidebarOpen(false)}>신규 등록</a>
-          </aside>
-        </div>
-      )}
+      {/* Sidebar (Mobile) */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 bg-black/40"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        {sidebarOpen && (
+          <motion.aside
+            initial={{ x: -260 }}
+            animate={{ x: 0 }}
+            exit={{ x: -260 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="fixed left-0 top-0 z-50 h-full w-64 bg-white p-8 shadow-lg"
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-4 top-4"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="메뉴 닫기"
+            >
+              <XIcon className="h-6 w-6" />
+            </Button>
+            <nav className="mt-8 flex flex-col gap-4">
+              {navItems.map((item) => (
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  onClick={() => setSidebarOpen(false)}
+                  className="rounded-lg px-3 py-2 font-medium text-gray-700 transition hover:bg-blue-50 hover:text-blue-600"
+                >
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
-      {/* 메인 컨텐츠 */}
-      <main className="flex flex-col items-center md:ml-52 py-10 px-2 min-h-[calc(100vh-64px)]">
-        {/* 현황 요약 카드 */}
-        <section id="summary" className="w-full max-w-5xl mb-10">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div className="bg-white rounded-2xl shadow p-6 flex flex-col items-center">
-              <span className="text-gray-500">총 생산 건수</span>
-              <span className="text-3xl font-bold text-blue-700 mt-2">12건</span>
-            </div>
-            <div className="bg-white rounded-2xl shadow p-6 flex flex-col items-center">
-              <span className="text-gray-500">평균 달성률</span>
-              <span className="text-3xl font-bold text-green-600 mt-2">97.2%</span>
-            </div>
-            <div className="bg-white rounded-2xl shadow p-6 flex flex-col items-center">
-              <span className="text-gray-500">평균 불량률</span>
-              <span className="text-3xl font-bold text-red-500 mt-2">2.1%</span>
-            </div>
+      {/* Main Content */}
+      <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 py-10 md:ml-56 md:px-8">
+        {/* Summary Section */}
+        <section id="summary">
+          <h2 className="sr-only">현황 요약</h2>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+            <Card className="flex flex-col items-center">
+              <CardHeader className="text-gray-500">총 생산 건수</CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-blue-700">12건</p>
+              </CardContent>
+            </Card>
+            <Card className="flex flex-col items-center">
+              <CardHeader className="text-gray-500">평균 달성률</CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-green-600">97.2%</p>
+              </CardContent>
+            </Card>
+            <Card className="flex flex-col items-center">
+              <CardHeader className="text-gray-500">평균 불량률</CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-red-500">2.1%</p>
+              </CardContent>
+            </Card>
           </div>
         </section>
 
-        {/* 생산 기록 테이블 */}
-        <section id="records" className="w-full max-w-5xl mb-10">
-          <div className="bg-white rounded-2xl shadow p-8">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-4 gap-2">
+        {/* Records Section */}
+        <section id="records" className="w-full">
+          <Card>
+            <CardHeader className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
               <h2 className="text-xl font-bold text-blue-700">생산 기록</h2>
-              <button className="btn btn-primary btn-sm">엑셀 다운로드</button>
-            </div>
-            <div className="overflow-x-auto">
+              <Button size="sm" className="gap-2">
+                <DownloadCloud className="h-4 w-4" /> 엑셀 다운로드
+              </Button>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
               <table className="min-w-full table-auto text-sm md:text-base">
                 <thead>
                   <tr className="bg-blue-50 text-blue-900">
@@ -84,7 +161,6 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* 예시 데이터 */}
                   <tr className="hover:bg-blue-50 transition">
                     <td className="px-3 py-2">2024-06-18</td>
                     <td className="px-3 py-2">850T</td>
@@ -98,82 +174,94 @@ function App() {
                     <td className="px-3 py-2 text-right">92.4%</td>
                     <td className="px-3 py-2 max-w-xs truncate">조정 60분, 금형교체 40분</td>
                   </tr>
-                  {/* ... */}
                 </tbody>
               </table>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </section>
 
-        {/* 신규 등록 패널 */}
-        <section id="new" className="w-full max-w-lg mb-10">
-          <div className="bg-white rounded-2xl shadow p-8">
-            <h2 className="text-xl font-bold text-blue-700 mb-4">신규 생산 기록 등록</h2>
-            <form className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-gray-700 font-medium mb-1">생산일자</label>
-                  <input type="date" className="input input-bordered w-full" />
+        {/* New Record Section */}
+        <section id="new" className="w-full max-w-lg">
+          <Card>
+            <CardHeader>
+              <h2 className="text-xl font-bold text-blue-700">신규 생산 기록 등록</h2>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="date">생산일자</Label>
+                    <Input id="date" type="date" />
+                  </div>
+                  <div>
+                    <Label htmlFor="ton">톤수</Label>
+                    <Input id="ton" placeholder="예: 850T" />
+                  </div>
+                  <div>
+                    <Label htmlFor="model">모델명</Label>
+                    <Input id="model" placeholder="예: 24TL510" />
+                  </div>
+                  <div>
+                    <Label htmlFor="type">구분</Label>
+                    <select
+                      id="type"
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+                    >
+                      <option value="">선택</option>
+                      <option value="C/A">C/A</option>
+                      <option value="B/C">B/C</option>
+                      <option value="COVER">COVER</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="plan">계획수량</Label>
+                    <Input id="plan" type="number" />
+                  </div>
+                  <div>
+                    <Label htmlFor="actual">실제수량</Label>
+                    <Input id="actual" type="number" />
+                  </div>
+                  <div>
+                    <Label htmlFor="reported-defect">보고불량수</Label>
+                    <Input id="reported-defect" type="number" />
+                  </div>
+                  <div>
+                    <Label htmlFor="real-defect">실제불량수</Label>
+                    <Input id="real-defect" type="number" />
+                  </div>
+                  <div>
+                    <Label htmlFor="run-time">가동시간(분)</Label>
+                    <Input id="run-time" type="number" />
+                  </div>
+                  <div>
+                    <Label htmlFor="total-time">총시간(분)</Label>
+                    <Input id="total-time" type="number" defaultValue={1440} />
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-gray-700 font-medium mb-1">톤수</label>
-                  <input type="text" placeholder="예: 850T" className="input input-bordered w-full" />
+                  <Label htmlFor="note">비고</Label>
+                  <Textarea
+                    id="note"
+                    placeholder="조정시간, 금형교체 시간 등"
+                    className="min-h-[80px]"
+                  />
                 </div>
-                <div>
-                  <label className="block text-gray-700 font-medium mb-1">모델명</label>
-                  <input type="text" placeholder="예: 24TL510" className="input input-bordered w-full" />
+                <div className="flex justify-end gap-4">
+                  <Button size="sm" className="gap-2">
+                    <PlusCircle className="h-4 w-4" /> 저장하기
+                  </Button>
+                  <Button type="reset" variant="ghost" size="sm">
+                    초기화
+                  </Button>
                 </div>
-                <div>
-                  <label className="block text-gray-700 font-medium mb-1">구분</label>
-                  <select className="select select-bordered w-full">
-                    <option value="">선택</option>
-                    <option value="C/A">C/A</option>
-                    <option value="B/C">B/C</option>
-                    <option value="COVER">COVER</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-medium mb-1">계획수량</label>
-                  <input type="number" className="input input-bordered w-full" />
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-medium mb-1">실제수량</label>
-                  <input type="number" className="input input-bordered w-full" />
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-medium mb-1">보고불량수</label>
-                  <input type="number" className="input input-bordered w-full" />
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-medium mb-1">실제불량수</label>
-                  <input type="number" className="input input-bordered w-full" />
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-medium mb-1">가동시간(분)</label>
-                  <input type="number" className="input input-bordered w-full" />
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-medium mb-1">총시간(분)</label>
-                  <input type="number" className="input input-bordered w-full" defaultValue={1440} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-gray-700 font-medium mb-1">비고</label>
-                <textarea className="textarea textarea-bordered w-full min-h-[60px]" placeholder="조정시간, 금형교체 시간 등"></textarea>
-              </div>
-              <div className="flex gap-4 justify-end pt-2">
-                <button type="submit" className="btn btn-primary px-6 py-2 rounded-lg shadow font-semibold">저장하기</button>
-                <button type="reset" className="btn btn-ghost px-6 py-2 rounded-lg font-semibold">초기화</button>
-              </div>
-            </form>
-          </div>
+              </form>
+            </CardContent>
+          </Card>
         </section>
       </main>
 
-      {/* 토스트 알림 */}
+      {/* Toast Notification */}
       <ToastContainer position="bottom-right" />
     </div>
   );
 }
-
-export default App;
