@@ -44,9 +44,9 @@ const RecordsPage: React.FC = () => {
   }, [selectedDate]);
 
   return (
-    <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-md p-8 mt-8">
+    <div className="bg-white rounded-2xl shadow-xl p-8 mt-8">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-blue-700">사출 생산 기록</h1>
+        <h1 className="text-2xl font-bold text-blue-700">사출 생산 기록</h1>
         <Link to="/records/new" className="btn btn-primary px-5 py-2 rounded-lg shadow font-semibold">새 기록 추가</Link>
       </div>
       <div className="mb-6 flex items-center gap-2">
@@ -59,7 +59,7 @@ const RecordsPage: React.FC = () => {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full table-auto border-collapse">
+          <table className="min-w-full table-auto border-collapse text-sm md:text-base">
             <thead>
               <tr className="bg-blue-50 text-blue-900">
                 <th className="px-3 py-2 font-semibold">생산일자</th>
