@@ -2,7 +2,6 @@
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import logo from '../logo.jpg';
 
 import RecordsPage from './pages/records';
 import NewRecordPage from './pages/records/new';
@@ -16,7 +15,7 @@ function App() {
         <header className="bg-white shadow-md sticky top-0 z-10">
           <div className="container mx-auto flex justify-between items-center py-4 px-6">
             <Link to="/" className="flex items-center gap-3">
-              <img src={logo} alt="로고" className="h-10 w-10 rounded-full object-cover shadow" />
+              <img src="/logo.jpg" alt="로고" className="h-10 w-10 rounded-full object-cover shadow" />
               <span className="text-2xl font-bold text-blue-700 tracking-tight">사출 생산관리 시스템</span>
             </Link>
             <nav className="flex gap-6">
