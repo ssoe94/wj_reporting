@@ -15,7 +15,7 @@ python manage.py makemigrations
 python manage.py migrate
 
 # 제품/품목 마스터 데이터 적재
-python manage.py import_partspecs backend/data/c_table.xlsx || true
+python manage.py import_partspecs data/c_table.xlsx || true
 python manage.py import_products || true
 
 # Superuser 생성
