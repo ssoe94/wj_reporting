@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ToastContainer } from "react-toastify";
@@ -190,7 +189,6 @@ export default function App() {
 
   // compute derived values
   const totalPieces = Number(form.actual || 0) + Number((form.realDefect || form.reportedDefect) || 0);
-  const actualCt = totalPieces ? Math.round((runMinutes * 60) / totalPieces) : 0;
 
   // 런타임(분) → 초 로 변환
   const runSeconds = runMinutes * 60
