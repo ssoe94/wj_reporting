@@ -1,7 +1,6 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Avg
 from .models import InjectionReport, Product, PartSpec
 from .serializers import InjectionReportSerializer, ProductSerializer, PartSpecSerializer
 import csv
@@ -18,15 +17,34 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """전체 통계 정보를 제공하는 엔드포인트"""
-        today_reports = self.get_queryset().filter(date=request.query_params.get('date'))
+        qs = self.get_queryset()
+        date_str = request.query_params.get('date')
+        if date_str:
+            qs = qs.filter(date=date_str)
+
+        today_reports = qs
         
+        total_count = today_reports.count()
+        total_plan_qty = sum(r.plan_qty for r in today_reports)
+        total_actual_qty = sum(r.actual_qty for r in today_reports)
+        total_defect_qty = sum(r.actual_defect for r in today_reports)
+
+        achievement_rate = (
+            round((total_actual_qty / total_plan_qty) * 100, 1)
+            if total_plan_qty else 0
+        )
+        defect_rate = (
+            round((total_defect_qty / total_actual_qty) * 100, 1)
+            if total_actual_qty else 0
+        )
+
         summary_data = {
-            'total_count': today_reports.count(),
-            'total_plan_qty': sum(report.plan_qty for report in today_reports),
-            'total_actual_qty': sum(report.actual_qty for report in today_reports),
-            'total_defect_qty': sum(report.actual_defect for report in today_reports),
-            'average_achievement_rate': today_reports.aggregate(Avg('actual_qty'))['actual_qty__avg'],
-            'average_defect_rate': today_reports.aggregate(Avg('actual_defect'))['actual_defect__avg'],
+            'total_count': total_count,
+            'total_plan_qty': total_plan_qty,
+            'total_actual_qty': total_actual_qty,
+            'total_defect_qty': total_defect_qty,
+            'achievement_rate': achievement_rate,  # %
+            'defect_rate': defect_rate,  # %
         }
         
         return Response(summary_data)

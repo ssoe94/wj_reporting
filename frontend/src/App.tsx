@@ -20,6 +20,7 @@ import { Autocomplete, TextField } from "@mui/material";
 import { usePartSpecSearch, usePartListByModel } from "@/hooks/usePartSpecs";
 import type { PartSpec } from "@/hooks/usePartSpecs";
 import React from "react";
+import { useReportSummary } from "@/hooks/useReports";
 
 const navItems = [
   { id: "summary", label: "현황 요약" },
@@ -203,6 +204,9 @@ export default function App() {
     ? runSeconds / Number(form.actual)
     : 0
 
+  // 전체 요약 데이터
+  const { data: summary } = useReportSummary();
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -292,19 +296,25 @@ export default function App() {
             <Card className="flex flex-col items-center">
               <CardHeader className="text-gray-500">총 생산 건수</CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold text-blue-700">12건</p>
+                <p className="text-3xl font-bold text-blue-700">
+                  {summary ? `${summary.total_count}건` : '...'}
+                </p>
               </CardContent>
             </Card>
             <Card className="flex flex-col items-center">
               <CardHeader className="text-gray-500">평균 달성률</CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold text-green-600">97.2%</p>
+                <p className="text-3xl font-bold text-green-600">
+                  {summary ? `${summary.achievement_rate}%` : '...'}
+                </p>
               </CardContent>
             </Card>
             <Card className="flex flex-col items-center">
               <CardHeader className="text-gray-500">평균 불량률</CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold text-red-500">2.1%</p>
+                <p className="text-3xl font-bold text-red-500">
+                  {summary ? `${summary.defect_rate}%` : '...'}
+                </p>
               </CardContent>
             </Card>
           </div>

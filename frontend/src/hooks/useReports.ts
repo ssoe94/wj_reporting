@@ -37,4 +37,26 @@ export function useReports(): UseQueryResult<Report[]> {
     },
     staleTime: 1000 * 60 * 5, // 5분
   });
+}
+
+export interface Summary {
+  total_count: number;
+  total_plan_qty: number;
+  total_actual_qty: number;
+  total_defect_qty: number;
+  achievement_rate: number; // percentage
+  defect_rate: number; // percentage
+}
+
+export function useReportSummary(date?: string): UseQueryResult<Summary> {
+  return useQuery({
+    queryKey: ['reports-summary', date],
+    queryFn: async () => {
+      const { data } = await api.get<Summary>(`/reports/summary/`, {
+        params: date ? { date } : {},
+      });
+      return data;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
 } 
