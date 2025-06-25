@@ -1,88 +1,29 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-/* Custom font family */
+/* ------- Global base -------- */
 @layer base {
+  :root {
+    font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
+  }
   html {
-    font-family: "Inter", "Noto Sans KR", sans-serif;
+    font-feature-settings: "cv05";
+    scroll-behavior: smooth;
+  }
+  ::selection {
+    background: #bae6fd;
+  }
+  body {
+    background-color: #f8fafc;
+    color: #222;
   }
 }
 
-/* Smooth card shadow for shadcn/ui */
+/* ------- Utilities -------- */
 @layer utilities {
+  /* 부드러운 카드 그림자 – shadcn/ui, DaisyUI 공통 */
   .soft-shadow {
     @apply shadow-lg shadow-blue-950/5;
   }
 }
 
-/* 기존 커스텀 스타일이 있다면 아래에 추가 */
-
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
+/* 필요한 추가 커스텀 스타일은 여기 아래에 작성 */

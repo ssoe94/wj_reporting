@@ -2,8 +2,11 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Avg
-from .models import InjectionReport
-from .serializers import InjectionReportSerializer
+from .models import InjectionReport, Product, PartSpec
+from .serializers import InjectionReportSerializer, ProductSerializer, PartSpecSerializer
+import csv
+import io
+from django.http import HttpResponse
 
 class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
@@ -26,4 +29,56 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
             'average_defect_rate': today_reports.aggregate(Avg('actual_defect'))['actual_defect__avg'],
         }
         
-        return Response(summary_data) 
+        return Response(summary_data)
+
+    @action(detail=False, methods=['get'])
+    def export(self, request):
+        """생산 기록 전체를 CSV 파일로 다운로드하도록 반환"""
+        queryset = self.filter_queryset(self.get_queryset())
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+
+        # 헤더 작성
+        writer.writerow([
+            'ID', 'Date', 'Machine No', 'Tonnage', 'Model', 'Type', 'Plan Qty', 'Actual Qty',
+            'Reported Defect', 'Real Defect', 'Start', 'End', 'Total Time', 'Operation Time', 'Note'
+        ])
+
+        for r in queryset:
+            writer.writerow([
+                r.id,
+                r.date,
+                r.machine_no,
+                r.tonnage,
+                r.model,
+                r.section,
+                r.plan_qty,
+                r.actual_qty,
+                r.reported_defect,
+                r.actual_defect,
+                r.start_datetime,
+                r.end_datetime,
+                r.total_time,
+                r.operation_time,
+                r.note,
+            ])
+
+        response = HttpResponse(buffer.getvalue(), content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="reports.csv"'
+        return response
+
+class ProductViewSet(viewsets.ReadOnlyModelViewSet):
+    """제품 마스터 검색용 뷰셋 (읽기 전용)"""
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    filterset_fields = ['type']
+    search_fields = ['model', 'fg_part_no', 'wip_part_no']
+    ordering = ['model']
+
+class PartSpecViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = PartSpec.objects.all()
+    serializer_class = PartSpecSerializer
+    filterset_fields = ['model_code', 'part_no']
+    search_fields = ['part_no', 'description', 'model_code']
+    ordering = ['part_no'] 

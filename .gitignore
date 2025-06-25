@@ -13,9 +13,14 @@ Thumbs.db
 # Logs
 *.log
 
-# Virtual Environment
+# Python virtual environments
 venv/
+backend/venv/
 
 # Django
 db.sqlite3
 .env
+
+# Node.js
+node_modules/
+frontend/node_modules/
