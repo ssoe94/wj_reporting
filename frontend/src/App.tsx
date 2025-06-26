@@ -160,6 +160,7 @@ export default function App() {
       };
       await api.post("/reports/", payload);
       queryClient.invalidateQueries({ queryKey: ["reports"] });
+      queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
       toast.success("저장되었습니다");
       setForm({ ...form, model: "", type: "", plan: "", actual: "", reportedDefect: "", realDefect: "", start: "", end: "", idle: "", note: "" });
     } catch (err: any) {
