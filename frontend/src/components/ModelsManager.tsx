@@ -19,7 +19,7 @@ export default function ModelsManager() {
     queryKey: ['parts-admin'],
     queryFn: async () => {
       const { data } = await api.get('/parts/?ordering=part_no');
-      return data;
+      return Array.isArray(data) ? data : data.results;
     },
   });
 
