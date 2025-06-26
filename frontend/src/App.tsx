@@ -21,6 +21,7 @@ import { usePartSpecSearch, usePartListByModel } from "@/hooks/usePartSpecs";
 import type { PartSpec } from "@/hooks/usePartSpecs";
 import React from "react";
 import { useReportSummary } from "@/hooks/useReports";
+import ModelsManager from "@/components/ModelsManager";
 
 const navItems = [
   { id: "summary", label: "현황 요약" },
@@ -681,7 +682,7 @@ export default function App() {
               <h2 className="text-xl font-bold text-blue-700">모델 관리 (준비중)</h2>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-600">향후 이곳에서 Part Spec을 추가·수정할 수 있습니다.</p>
+              <ModelsManager />
             </CardContent>
           </Card>
         </section>
