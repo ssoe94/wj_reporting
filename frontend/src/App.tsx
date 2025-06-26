@@ -93,13 +93,13 @@ export default function App() {
     d.setMinutes(Math.floor(d.getMinutes() / 5) * 5);
     return d;
   };
-  // Convert current time to Beijing (UTC+8)
-  const toBeijing = () => {
-    const now = new Date();
-    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-    return new Date(utc + 8 * 60 * 60000);
+  // datetime-local 문자열로 변환 (로컬 시각 그대로)
+  const toLocalInput = (d: Date) => {
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000); // 오프셋 보정
+    return local.toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm
   };
-  const beijingNowStr = roundTo5(toBeijing()).toISOString().slice(0, 16);
+  // 브라우저 로컬 시간을 5분 단위로 절삭하여 기본값 생성
+  const nowStr = toLocalInput(roundTo5(new Date()));
 
   const [form, setForm] = useState({
     date: today,
@@ -115,8 +115,8 @@ export default function App() {
     netG: "",
     srG: "",
     ct: "",
-    start: beijingNowStr,
-    end: beijingNowStr,
+    start: nowStr,
+    end: nowStr,
     idle: "",
     note: "",
   });
@@ -188,17 +188,17 @@ export default function App() {
     }
   };
 
-  const downloadExcel = async () => {
+  const downloadCsv = async () => {
     try {
       const { data } = await api.get("/reports/export/", { responseType: "blob" });
       const url = URL.createObjectURL(data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "reports.xlsx";
+      a.download = "reports.csv";
       a.click();
     } catch (err) {
       console.error(err);
-      toast.error("엑셀 다운로드 실패");
+      toast.error("CSV 다운로드 실패");
     }
   };
 
@@ -337,8 +337,8 @@ export default function App() {
         {/* Records Section */}
         <section id="records" className="w-full space-y-4">
           <div className="flex justify-end">
-            <Button size="sm" className="gap-2" onClick={downloadExcel}>
-              <DownloadCloud className="h-4 w-4" /> 엑셀 다운로드
+            <Button size="sm" className="gap-2" onClick={downloadCsv}>
+              <DownloadCloud className="h-4 w-4" /> CSV 저장
             </Button>
           </div>
           <RecordsTable />
