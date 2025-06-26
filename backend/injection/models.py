@@ -34,7 +34,6 @@ class InjectionReport(models.Model):
     
     # 신규 필드
     part_no = models.CharField('Part No.', max_length=100, blank=True)
-    idle_note = models.CharField('부동시간 비고', max_length=200, blank=True)
     
     # 생성/수정 시간
     created_at = models.DateTimeField('생성시간', auto_now_add=True)

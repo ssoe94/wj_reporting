@@ -13,7 +13,7 @@ class InjectionReportSerializer(serializers.ModelSerializer):
             'id', 'date', 'machine_no', 'tonnage', 'model', 'section',
             'plan_qty', 'actual_qty', 'reported_defect', 'actual_defect',
             'start_datetime', 'end_datetime', 'operation_time', 'total_time',
-            'part_no', 'idle_note', 'note',
+            'part_no', 'note',
             'achievement_rate', 'defect_rate', 'total_qty', 'uptime_rate',
             'created_at', 'updated_at'
         ]

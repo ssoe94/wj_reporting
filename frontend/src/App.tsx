@@ -118,7 +118,6 @@ export default function App() {
     start: nowStr,
     end: nowStr,
     idle: "",
-    idleNote: "",
     note: "",
   });
 
@@ -171,14 +170,13 @@ export default function App() {
         total_time: totalMinutes,
         operation_time: runMinutes,
         part_no: form.partNo,
-        idle_note: form.idleNote,
         note: form.note,
       };
       await api.post("/reports/", payload);
       queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
       toast.success("저장되었습니다");
-      setForm({ ...form, model: "", type: "", plan: "", actual: "", reportedDefect: "", realDefect: "", start: "", end: "", idle: "", idleNote: "", note: "" });
+      setForm({ ...form, model: "", type: "", plan: "", actual: "", reportedDefect: "", realDefect: "", start: "", end: "", idle: "", note: "" });
     } catch (err: any) {
       console.error(err);
       if (err.response?.status === 400 && err.response.data) {
@@ -565,11 +563,11 @@ export default function App() {
 
                       {/* 3행: 부동시간 비고 */}
                       <div className="flex flex-col">
-                        <Label htmlFor="idleNote">부동시간 비고</Label>
+                        <Label htmlFor="note">부동시간 비고</Label>
                         <Input
-                          id="idleNote"
+                          id="note"
                           type="text"
-                          value={form.idleNote}
+                          value={form.note}
                           onChange={handleChange}
                         />
                       </div>

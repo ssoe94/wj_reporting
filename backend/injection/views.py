@@ -61,7 +61,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
         # 헤더 작성
         writer.writerow([
             'ID', 'Date', 'Machine No', 'Tonnage', 'Model', 'Type', 'Part No', 'Plan Qty', 'Actual Qty',
-            'Reported Defect', 'Real Defect', 'Start', 'End', 'Total Time', 'Operation Time', 'Idle Note', 'Note'
+            'Reported Defect', 'Real Defect', 'Start', 'End', 'Total Time', 'Operation Time', 'Note'
         ])
 
         for r in queryset:
@@ -81,11 +81,11 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                 r.end_datetime,
                 r.total_time,
                 r.operation_time,
-                r.idle_note,
                 r.note,
             ])
 
-        response = HttpResponse(buffer.getvalue(), content_type='text/csv')
+        csv_data = '\ufeff' + buffer.getvalue()  # prepend UTF-8 BOM for Excel
+        response = HttpResponse(csv_data, content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="reports.csv"'
         return response
 
@@ -159,7 +159,6 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                     end_datetime=parse_dt(row.get("End")),
                     total_time=parse_int(row.get("Total Time")),
                     operation_time=parse_int(row.get("Operation Time")),
-                    idle_note=row.get("Idle Note", ""),
                     note=row.get("Note", ""),
                 )
                 report.save()
