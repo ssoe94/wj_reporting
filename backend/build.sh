@@ -10,15 +10,6 @@ pip install -r requirements.txt
 # 정적 파일 수집 (필요한 경우)
 # python manage.py collectstatic --no-input
 
-# 데이터베이스 마이그레이션
-python manage.py makemigrations
-python manage.py migrate
-
-# 제품/품목 마스터 데이터 적재
-python manage.py import_partspecs data/c_table.xlsx || true
-python manage.py import_products || true
-
-# Superuser 생성
-python create_superuser.py
+# 빌드 단계에서는 DB 접근을 건너뛰고, 런타임 start-command 에서 migrate 및 데이터 적재를 수행합니다.
 
 echo "Build completed successfully!" 
