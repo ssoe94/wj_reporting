@@ -88,6 +88,13 @@ export default function App() {
     { id: 17, ton: 1200 },
   ];
 
+  const roundTo5 = (d: Date) => {
+    d.setSeconds(0, 0);
+    d.setMinutes(Math.floor(d.getMinutes() / 5) * 5);
+    return d;
+  };
+  const nowStr = roundTo5(new Date()).toISOString().slice(0, 16);
+
   const [form, setForm] = useState({
     date: today,
     machineId: "",
@@ -102,7 +109,7 @@ export default function App() {
     netG: "",
     srG: "",
     ct: "",
-    start: "",
+    start: nowStr,
     end: "",
     idle: "",
     note: "",
@@ -474,6 +481,7 @@ export default function App() {
                           <Input
                             id="start"
                             type="datetime-local"
+                            step={300}
                             value={form.start}
                             onChange={handleChange}
                             className="text-center"
@@ -484,6 +492,7 @@ export default function App() {
                           <Input
                             id="end"
                             type="datetime-local"
+                            step={300}
                             value={form.end}
                             onChange={handleChange}
                             className="text-center"

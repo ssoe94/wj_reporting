@@ -31,6 +31,10 @@ class Command(BaseCommand):
         parser.add_argument('excel_path', type=str, nargs='?', default='backend/data/c_table.xlsx', help='엑셀 파일 경로')
 
     def handle(self, *args, **options):
+        if PartSpec.objects.exists():
+            self.stdout.write(self.style.WARNING('PartSpec already exists, skip import'))
+            return
+
         excel_path = Path(options['excel_path'])
         if not excel_path.exists():
             raise CommandError(f"파일이 존재하지 않습니다: {excel_path}")
