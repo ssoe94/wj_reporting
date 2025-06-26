@@ -143,7 +143,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                         return None
 
                 report = InjectionReport(
-                    date=row.get("Date") or None,
+                    date=parse_dt(row.get("Date")).date() if parse_dt(row.get("Date")) else None,
                     machine_no=parse_int(row.get("Machine No")),
                     tonnage=row.get("Tonnage"),
                     model=row.get("Model"),
