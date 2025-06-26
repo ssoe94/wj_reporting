@@ -93,7 +93,13 @@ export default function App() {
     d.setMinutes(Math.floor(d.getMinutes() / 5) * 5);
     return d;
   };
-  const nowStr = roundTo5(new Date()).toISOString().slice(0, 16);
+  // Convert current time to Beijing (UTC+8)
+  const toBeijing = () => {
+    const now = new Date();
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    return new Date(utc + 8 * 60 * 60000);
+  };
+  const beijingNowStr = roundTo5(toBeijing()).toISOString().slice(0, 16);
 
   const [form, setForm] = useState({
     date: today,
@@ -109,8 +115,8 @@ export default function App() {
     netG: "",
     srG: "",
     ct: "",
-    start: nowStr,
-    end: "",
+    start: beijingNowStr,
+    end: beijingNowStr,
     idle: "",
     note: "",
   });
