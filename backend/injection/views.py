@@ -86,6 +86,66 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = 'attachment; filename="reports.csv"'
         return response
 
+    @action(detail=False, methods=["post"])
+    def bulk_import(self, request):
+        """CSV 파일을 업로드하여 대량의 생산 기록을 생성한다.
+
+        입력 형식: multipart/form-data, field name "file"
+        응답 예시: {"created": 10, "skipped": 2, "errors": 1}
+        중복 판단 기준: (date, machine_no, start_datetime, model) 조합이 이미 존재하면 skip
+        """
+        upload = request.FILES.get("file")
+        if not upload:
+            return Response({"detail": "file field is required"}, status=400)
+
+        import csv, datetime as dt, io
+
+        created = skipped = errors = 0
+        reader = csv.DictReader(io.TextIOWrapper(upload, encoding="utf-8"))
+
+        unique_fields = ("Date", "Machine No", "Start", "Model")
+
+        for row in reader:
+            try:
+                key = (
+                    row.get("Date"),
+                    int(row.get("Machine No") or 0),
+                    row.get("Start"),
+                    row.get("Model"),
+                )
+
+                if InjectionReport.objects.filter(
+                    date=key[0],
+                    machine_no=key[1],
+                    start_datetime=key[2],
+                    model=key[3],
+                ).exists():
+                    skipped += 1
+                    continue
+
+                report = InjectionReport(
+                    date=row.get("Date"),
+                    machine_no=int(row.get("Machine No") or 0),
+                    tonnage=row.get("Tonnage"),
+                    model=row.get("Model"),
+                    section=row.get("Type"),
+                    plan_qty=int(row.get("Plan Qty") or 0),
+                    actual_qty=int(row.get("Actual Qty") or 0),
+                    reported_defect=int(row.get("Reported Defect") or 0),
+                    actual_defect=int(row.get("Real Defect") or 0),
+                    start_datetime=row.get("Start"),
+                    end_datetime=row.get("End"),
+                    total_time=int(row.get("Total Time") or 0),
+                    operation_time=int(row.get("Operation Time") or 0),
+                    note=row.get("Note", ""),
+                )
+                report.save()
+                created += 1
+            except Exception:
+                errors += 1
+
+        return Response({"created": created, "skipped": skipped, "errors": errors})
+
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     """제품 마스터 검색용 뷰셋 (읽기 전용)"""
     queryset = Product.objects.all()

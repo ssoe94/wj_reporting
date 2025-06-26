@@ -336,7 +336,37 @@ export default function App() {
 
         {/* Records Section */}
         <section id="records" className="w-full space-y-4">
-          <div className="flex justify-end">
+          <div className="flex justify-end items-center gap-3">
+            {/* CSV 업로드 */}
+            <input
+              id="csvFile"
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const fd = new FormData();
+                fd.append("file", file);
+                try {
+                  const { data } = await api.post("/reports/bulk-import/", fd, {
+                    headers: { "Content-Type": "multipart/form-data" },
+                  });
+                  toast.success(`생성 ${data.created}건 / 중복 ${data.skipped}건 / 오류 ${data.errors}건`);
+                  queryClient.invalidateQueries({ queryKey: ["reports"] });
+                  queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
+                } catch (err) {
+                  console.error(err);
+                  toast.error("CSV 업로드 실패");
+                } finally {
+                  e.target.value = ""; // reset
+                }
+              }}
+            />
+            <Button size="sm" variant="ghost" onClick={() => document.getElementById("csvFile")?.click()}>
+              CSV 업로드
+            </Button>
+            {/* CSV 다운로드 */}
             <Button size="sm" className="gap-2" onClick={downloadCsv}>
               <DownloadCloud className="h-4 w-4" /> CSV 저장
             </Button>
