@@ -86,7 +86,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = 'attachment; filename="reports.csv"'
         return response
 
-    @action(detail=False, methods=["post"])
+    @action(detail=False, methods=["post"], url_path="bulk-import")
     def bulk_import(self, request):
         """CSV 파일을 업로드하여 대량의 생산 기록을 생성한다.
 
