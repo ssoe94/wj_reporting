@@ -6,6 +6,7 @@ from .serializers import InjectionReportSerializer, ProductSerializer, PartSpecS
 import csv
 import io
 from django.http import HttpResponse
+import datetime as dt
 
 class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
@@ -98,7 +99,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
         if not upload:
             return Response({"detail": "file field is required"}, status=400)
 
-        import csv, datetime as dt, io
+        import csv, io
 
         created = skipped = errors = 0
         reader = csv.DictReader(io.TextIOWrapper(upload, encoding="utf-8"))
@@ -123,20 +124,38 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                     skipped += 1
                     continue
 
+                # 파싱 유틸
+                def parse_int(val):
+                    try:
+                        return int(val)
+                    except (TypeError, ValueError):
+                        return 0
+
+                def parse_dt(val):
+                    if not val:
+                        return None
+                    txt = str(val).strip().replace("/", "-")
+                    # 공백 → 'T' 로 치환해 ISO 형태로 맞춤
+                    txt = txt.replace(" ", "T")
+                    try:
+                        return dt.datetime.fromisoformat(txt)
+                    except ValueError:
+                        return None
+
                 report = InjectionReport(
-                    date=row.get("Date"),
-                    machine_no=int(row.get("Machine No") or 0),
+                    date=row.get("Date") or None,
+                    machine_no=parse_int(row.get("Machine No")),
                     tonnage=row.get("Tonnage"),
                     model=row.get("Model"),
                     section=row.get("Type"),
-                    plan_qty=int(row.get("Plan Qty") or 0),
-                    actual_qty=int(row.get("Actual Qty") or 0),
-                    reported_defect=int(row.get("Reported Defect") or 0),
-                    actual_defect=int(row.get("Real Defect") or 0),
-                    start_datetime=row.get("Start"),
-                    end_datetime=row.get("End"),
-                    total_time=int(row.get("Total Time") or 0),
-                    operation_time=int(row.get("Operation Time") or 0),
+                    plan_qty=parse_int(row.get("Plan Qty")),
+                    actual_qty=parse_int(row.get("Actual Qty")),
+                    reported_defect=parse_int(row.get("Reported Defect")),
+                    actual_defect=parse_int(row.get("Real Defect")),
+                    start_datetime=parse_dt(row.get("Start")),
+                    end_datetime=parse_dt(row.get("End")),
+                    total_time=parse_int(row.get("Total Time")),
+                    operation_time=parse_int(row.get("Operation Time")),
                     note=row.get("Note", ""),
                 )
                 report.save()
