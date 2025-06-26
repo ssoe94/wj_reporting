@@ -118,6 +118,7 @@ export default function App() {
     start: nowStr,
     end: nowStr,
     idle: "",
+    idleNote: "",
     note: "",
   });
 
@@ -169,13 +170,15 @@ export default function App() {
         end_datetime: form.end,
         total_time: totalMinutes,
         operation_time: runMinutes,
+        part_no: form.partNo,
+        idle_note: form.idleNote,
         note: form.note,
       };
       await api.post("/reports/", payload);
       queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
       toast.success("저장되었습니다");
-      setForm({ ...form, model: "", type: "", plan: "", actual: "", reportedDefect: "", realDefect: "", start: "", end: "", idle: "", note: "" });
+      setForm({ ...form, model: "", type: "", plan: "", actual: "", reportedDefect: "", realDefect: "", start: "", end: "", idle: "", idleNote: "", note: "" });
     } catch (err: any) {
       console.error(err);
       if (err.response?.status === 400 && err.response.data) {
@@ -558,6 +561,17 @@ export default function App() {
                             className="text-center"
                           />
                         </div>
+                      </div>
+
+                      {/* 3행: 부동시간 비고 */}
+                      <div className="flex flex-col">
+                        <Label htmlFor="idleNote">부동시간 비고</Label>
+                        <Input
+                          id="idleNote"
+                          type="text"
+                          value={form.idleNote}
+                          onChange={handleChange}
+                        />
                       </div>
 
                       {/* (기존 두 개의 grid row 아래에 추가) */}

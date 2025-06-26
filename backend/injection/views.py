@@ -60,8 +60,8 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
 
         # 헤더 작성
         writer.writerow([
-            'ID', 'Date', 'Machine No', 'Tonnage', 'Model', 'Type', 'Plan Qty', 'Actual Qty',
-            'Reported Defect', 'Real Defect', 'Start', 'End', 'Total Time', 'Operation Time', 'Note'
+            'ID', 'Date', 'Machine No', 'Tonnage', 'Model', 'Type', 'Part No', 'Plan Qty', 'Actual Qty',
+            'Reported Defect', 'Real Defect', 'Start', 'End', 'Total Time', 'Operation Time', 'Idle Note', 'Note'
         ])
 
         for r in queryset:
@@ -72,6 +72,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                 r.tonnage,
                 r.model,
                 r.section,
+                r.part_no,
                 r.plan_qty,
                 r.actual_qty,
                 r.reported_defect,
@@ -80,6 +81,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                 r.end_datetime,
                 r.total_time,
                 r.operation_time,
+                r.idle_note,
                 r.note,
             ])
 
@@ -148,6 +150,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                     tonnage=row.get("Tonnage"),
                     model=row.get("Model"),
                     section=row.get("Type"),
+                    part_no=row.get("Part No"),
                     plan_qty=parse_int(row.get("Plan Qty")),
                     actual_qty=parse_int(row.get("Actual Qty")),
                     reported_defect=parse_int(row.get("Reported Defect")),
@@ -156,6 +159,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                     end_datetime=parse_dt(row.get("End")),
                     total_time=parse_int(row.get("Total Time")),
                     operation_time=parse_int(row.get("Operation Time")),
+                    idle_note=row.get("Idle Note", ""),
                     note=row.get("Note", ""),
                 )
                 report.save()
