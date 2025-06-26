@@ -168,15 +168,16 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
 
         return Response({"created": created, "skipped": skipped, "errors": errors})
 
-class ProductViewSet(viewsets.ReadOnlyModelViewSet):
-    """제품 마스터 검색용 뷰셋 (읽기 전용)"""
+# ==== 제품 마스터 관리 (CRUD) ====
+class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     filterset_fields = ['type']
     search_fields = ['model', 'fg_part_no', 'wip_part_no']
     ordering = ['model']
 
-class PartSpecViewSet(viewsets.ReadOnlyModelViewSet):
+# ==== 품목 스펙 관리 (CRUD) ====
+class PartSpecViewSet(viewsets.ModelViewSet):
     queryset = PartSpec.objects.all()
     serializer_class = PartSpecSerializer
     filterset_fields = ['model_code', 'part_no']

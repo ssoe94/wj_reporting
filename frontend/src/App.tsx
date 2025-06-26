@@ -26,6 +26,7 @@ const navItems = [
   { id: "summary", label: "현황 요약" },
   { id: "records", label: "생산 기록" },
   { id: "new", label: "신규 등록" },
+  { id: "models", label: "모델 관리" },
 ];
 
 // 컴포넌트 최상단에 추가
@@ -669,6 +670,18 @@ export default function App() {
                   </Button>
                 </div>
               </form>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Models Management Section */}
+        <section id="models" className="w-full">
+          <Card>
+            <CardHeader>
+              <h2 className="text-xl font-bold text-blue-700">모델 관리 (준비중)</h2>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600">향후 이곳에서 Part Spec을 추가·수정할 수 있습니다.</p>
             </CardContent>
           </Card>
         </section>
