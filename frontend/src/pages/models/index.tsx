@@ -1,35 +1,26 @@
 import ModelsManager from '@/components/ModelsManager';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Menu as MenuIcon, X as XIcon, Factory } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Home as HomeIcon, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { useLang } from '@/i18n';
+import { useNavItems } from '@/App';
 
 export default function ModelsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t, lang, setLang } = useLang();
-
-  const navItems = [
-    { to: '/', label: t('dashboard') },
-    { to: '/models', label: t('nav_models') },
-  ];
+  const navItems = useNavItems();
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-gradient-to-r from-white via-blue-50 to-white backdrop-blur shadow-md">
-        <div className="relative mx-auto max-w-7xl flex items-center px-4 py-3 md:px-8">
-          {/* Center Title */}
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
-            <img src="/logo.jpg" alt="로고" className="h-10 w-10 rounded-full object-cover shadow-md" />
-            <Factory className="w-6 h-6 text-blue-600" />
-            <span className="whitespace-nowrap text-xl md:text-3xl font-extrabold tracking-wide text-blue-700">
-              {t('modelsTitle')}
-            </span>
-          </div>
-          {/* Right Controls */}
-          <div className="ml-auto flex items-center gap-3">
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur shadow-xs md:hidden">
+        <div className="flex items-center justify-between px-4 py-2">
+          <Link to="/" className="flex items-center">
+            <img src="/logo.jpg" alt="logo" className="h-8 w-8 rounded-full" />
+          </Link>
+          <div className="flex items-center gap-2">
             <select
               value={lang}
               onChange={(e) => setLang(e.target.value as any)}
@@ -38,30 +29,53 @@ export default function ModelsPage() {
               <option value="ko">KOR</option>
               <option value="zh">中文</option>
             </select>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="메뉴 열기"
-            >
+            <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)}>
               <MenuIcon className="h-6 w-6" />
             </Button>
           </div>
         </div>
       </header>
 
+      {/* Breadcrumb */}
+      <div className="sticky top-14 md:top-0 z-10 bg-white/80 backdrop-blur border-b border-gray-200 h-14 px-4 flex items-center gap-2 md:ml-56">
+        <Link to="/">
+          <HomeIcon className="w-4 h-4 text-gray-500" />
+        </Link>
+        <ChevronRight className="w-4 h-4 text-gray-400" />
+        <span className="text-sm font-medium text-gray-700">{t('modelsTitle')}</span>
+      </div>
+
       {/* Sidebar (Desktop) */}
-      <aside className="fixed left-0 top-[72px] hidden h-[calc(100vh-72px)] w-56 overflow-y-auto border-r bg-white py-8 px-4 shadow-md md:flex flex-col gap-2">
-        {navItems.map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
-          >
-            {item.label}
+      <aside className="fixed left-0 top-0 hidden h-screen w-56 overflow-y-auto border-r border-gray-200 bg-white shadow-md md:flex flex-col">
+        {/* Top logo/title */}
+        <div className="h-14 flex items-center justify-center gap-2 px-4 border-b border-gray-200">
+          <Link to="/" className="flex items-center gap-2">
+            <img src="/logo.jpg" alt="logo" className="h-8 w-8 rounded-full" />
+            <span className="font-semibold text-blue-700">{t('brand')}</span>
           </Link>
-        ))}
+        </div>
+        {/* Menu */}
+        <nav className="flex-1 py-4 px-2 flex flex-col gap-1">
+          {navItems.map((item) => {
+            const Icon = item.icon as any;
+            return item.to.startsWith('#') ? (
+              <Link key={item.to} to={`/${item.to}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
+                {Icon && <Icon className="w-4 h-4" />} {item.label}
+              </Link>
+            ) : (
+              <Link key={item.to} to={item.to} className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
+                {Icon && <Icon className="w-4 h-4" />} {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+        {/* language selector bottom */}
+        <div className="mt-auto border-t border-gray-200 px-4 py-3">
+          <select value={lang} onChange={(e)=>setLang(e.target.value as any)} className="w-full border rounded text-sm px-2 py-1">
+            <option value="ko">KOR</option>
+            <option value="zh">中文</option>
+          </select>
+        </div>
       </aside>
 
       {/* Sidebar (Mobile) */}
@@ -94,16 +108,33 @@ export default function ModelsPage() {
             </Button>
             <nav className="mt-8 flex flex-col gap-4">
               {navItems.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setSidebarOpen(false)}
-                  className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
-                >
-                  {item.label}
-                </Link>
+                item.to.startsWith('#') ? (
+                  <Link
+                    key={item.to}
+                    to={`/${item.to}`}
+                    onClick={() => setSidebarOpen(false)}
+                    className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
+                  >
+                    {item.label}
+                  </Link>
+                ) : (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setSidebarOpen(false)}
+                    className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
+                  >
+                    {item.label}
+                  </Link>
+                )
               ))}
             </nav>
+            <div className="mt-auto border-t border-gray-200 pt-4">
+              <select value={lang} onChange={(e)=>setLang(e.target.value as any)} className="w-full border rounded text-sm px-2 py-1">
+                <option value="ko">KOR</option>
+                <option value="zh">中文</option>
+              </select>
+            </div>
           </motion.aside>
         )}
       </AnimatePresence>

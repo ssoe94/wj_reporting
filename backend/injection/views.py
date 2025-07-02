@@ -38,7 +38,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
             round((total_defect_qty / total_actual_qty) * 100, 1)
             if total_actual_qty else 0
         )
-
+        
         summary_data = {
             'total_count': total_count,
             'total_plan_qty': total_plan_qty,

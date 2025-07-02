@@ -4,7 +4,12 @@ import {
   X as XIcon,
   DownloadCloud,
   PlusCircle,
-  Factory,
+  LayoutDashboard,
+  ClipboardList,
+  PlusSquare,
+  PackageSearch,
+  Home as HomeIcon,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,20 +33,23 @@ import { useLang } from "./i18n";
 export const AppNavKeys = ["nav_summary","nav_records","nav_new","nav_models"] as const;
 
 // navItems를 함수로 생성 (언어별)
-function useNavItems() {
+export function useNavItems() {
   const { t } = useLang();
   return [
-    { to: "#summary", label: t("nav_summary") },
-    { to: "#records", label: t("nav_records") },
-    { to: "#new", label: t("nav_new") },
-    { to: "/models", label: t("nav_models") },
+    { to: "#summary", label: t("nav_summary"), icon: LayoutDashboard },
+    { to: "#records", label: t("nav_records"), icon: ClipboardList },
+    { to: "#new", label: t("nav_new"), icon: PlusSquare },
+    { to: "/models", label: t("nav_models"), icon: PackageSearch },
   ];
 }
 
 // 컴포넌트 최상단에 추가
-const formatTime = (mins: number) => {
+const formatTime = (mins: number, t:(k:string)=>string, lang:string) => {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
+  if(lang==='zh') {
+    return `${h}小时 ${m}分 (${mins}分)`;
+  }
   return `${h}시간 ${m}분 (${mins}분)`;
 };
 
@@ -237,34 +245,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-gradient-to-r from-white via-blue-50 to-white backdrop-blur shadow-md">
-        <div className="relative mx-auto max-w-7xl flex items-center px-4 py-3 md:px-8">
-          {/* ── 센터: 로고 + 타이틀 ── */}
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
-            <img src="/logo.jpg" alt="로고" className="h-10 w-10 rounded-full object-cover shadow-md" />
-            <Factory className="w-6 h-6 text-blue-600" />
-            <span className="whitespace-nowrap text-xl md:text-3xl font-extrabold tracking-wide text-blue-700">
-              {t("title")}
-            </span>
-          </div>
-          {/* ── 우측: 언어 선택 + 메뉴 버튼 ── */}
-          <div className="ml-auto flex items-center gap-3">
-            <select
-              value={lang}
-              onChange={(e) => setLang(e.target.value as any)}
-              className="border rounded text-sm px-1 py-0.5"
-            >
-              <option value="ko">KOR</option>
-              <option value="zh">中文</option>
-            </select>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="메뉴 열기"
-            >
+      {/* Mobile Header (sidebar toggle) */}
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur shadow-xs md:hidden">
+        <div className="flex items-center justify-between px-4 py-2">
+          <Link to="/" className="flex items-center">
+            <img src="/logo.jpg" alt="logo" className="h-8 w-8 rounded-full" />
+          </Link>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)}>
               <MenuIcon className="h-6 w-6" />
             </Button>
           </div>
@@ -272,26 +260,36 @@ export default function App() {
       </header>
 
       {/* Sidebar (Desktop) */}
-      <aside className="fixed left-0 top-[72px] hidden h-[calc(100vh-72px)] w-56 overflow-y-auto border-r bg-white py-8 px-4 shadow-md md:flex flex-col gap-2">
-        {navItems.map((item) => (
-          item.to.startsWith("#") ? (
-            <a
-              key={item.to}
-              href={item.to}
-              className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
-            >
-              {item.label}
-            </a>
-          ) : (
-            <Link
-              key={item.to}
-              to={item.to}
-              className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
-            >
-              {item.label}
-            </Link>
-          )
-        ))}
+      <aside className="fixed left-0 top-0 hidden h-screen w-56 overflow-y-auto border-r border-gray-200 bg-white shadow-md md:flex flex-col">
+        {/* Top logo/title */}
+        <div className="h-14 flex items-center justify-center gap-2 px-4 border-b border-gray-200">
+          <Link to="/" className="flex items-center gap-2">
+            <img src="/logo.jpg" alt="logo" className="h-8 w-8 rounded-full" />
+            <span className="font-semibold text-blue-700">{t('brand')}</span>
+          </Link>
+        </div>
+        {/* Menu */}
+        <nav className="flex-1 py-4 px-2 flex flex-col gap-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return item.to.startsWith("#") ? (
+              <a key={item.to} href={item.to} className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
+                <Icon className="w-4 h-4" /> {item.label}
+              </a>
+            ) : (
+              <Link key={item.to} to={item.to} className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
+                <Icon className="w-4 h-4" /> {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+        {/* language selector bottom */}
+        <div className="mt-auto border-t border-gray-200 px-4 py-3">
+          <select value={lang} onChange={(e)=>setLang(e.target.value as any)} className="w-full border rounded text-sm px-2 py-1">
+            <option value="ko">KOR</option>
+            <option value="zh">中文</option>
+          </select>
+        </div>
       </aside>
 
       {/* Sidebar (Mobile) */}
@@ -345,9 +343,30 @@ export default function App() {
                 )
               ))}
             </nav>
+            <div className="mt-auto border-t border-gray-200 pt-4">
+              <select value={lang} onChange={(e)=>setLang(e.target.value as any)} className="w-full border rounded text-sm px-2 py-1">
+                <option value="ko">KOR</option>
+                <option value="zh">中文</option>
+              </select>
+            </div>
           </motion.aside>
         )}
       </AnimatePresence>
+
+      {/* Breadcrumb bar */}
+      <div className="sticky top-14 md:top-0 z-10 bg-white/80 backdrop-blur border-b border-gray-200 h-14 px-4 flex items-center gap-2 md:ml-56">
+        <Link to="/">
+          <HomeIcon className="w-4 h-4 text-gray-500" />
+        </Link>
+        <ChevronRight className="w-4 h-4 text-gray-400" />
+        <span className="text-sm font-medium text-gray-700">
+          {(() => {
+            const hash = typeof window !== 'undefined' ? window.location.hash || '#summary' : '#summary';
+            const item = navItems.find(n=>n.to===hash || n.to===window.location.pathname);
+            return item ? item.label : '';
+          })()}
+        </span>
+      </div>
 
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-10 md:ml-56 md:px-8 flex flex-col gap-10">
@@ -356,7 +375,7 @@ export default function App() {
           <h2 className="sr-only">현황 요약</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <Card className="flex flex-col items-center">
-              <CardHeader className="text-gray-500">총 생산 건수</CardHeader>
+              <CardHeader className="text-gray-500">{t('total_prod')}</CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-blue-700">
                   {summary ? `${summary.total_count}건` : '...'}
@@ -364,7 +383,7 @@ export default function App() {
               </CardContent>
             </Card>
             <Card className="flex flex-col items-center">
-              <CardHeader className="text-gray-500">평균 달성률</CardHeader>
+              <CardHeader className="text-gray-500">{t('avg_ach')}</CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-green-600">
                   {summary ? `${summary.achievement_rate}%` : '...'}
@@ -372,7 +391,7 @@ export default function App() {
               </CardContent>
             </Card>
             <Card className="flex flex-col items-center">
-              <CardHeader className="text-gray-500">평균 불량률</CardHeader>
+              <CardHeader className="text-gray-500">{t('avg_def')}</CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-red-500">
                   {summary ? `${summary.defect_rate}%` : '...'}
@@ -412,11 +431,11 @@ export default function App() {
               }}
             />
             <Button size="sm" variant="ghost" onClick={() => document.getElementById("csvFile")?.click()}>
-              CSV 업로드
+              {t('csv_upload')}
             </Button>
             {/* CSV 다운로드 */}
             <Button size="sm" className="gap-2" onClick={downloadCsv}>
-              <DownloadCloud className="h-4 w-4" /> CSV 저장
+              <DownloadCloud className="h-4 w-4" /> {t('csv_save')}
             </Button>
           </div>
           <RecordsTable />
@@ -426,7 +445,7 @@ export default function App() {
         <section id="new" className="w-full">
           <Card>
             <CardHeader>
-              <h2 className="text-xl font-bold text-blue-700">신규 생산 기록 등록</h2>
+              <h2 className="text-xl font-bold text-blue-700">{t('new_rec_title')}</h2>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="flex flex-col gap-y-6">
@@ -435,7 +454,7 @@ export default function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   {/* 보고일자 */}
                   <div>
-                    <Label htmlFor="date">보고일자</Label>
+                    <Label htmlFor="date">{t('report_date')}</Label>
                     <Input
                       id="date"
                       type="date"
@@ -446,14 +465,14 @@ export default function App() {
                   </div>
                   {/* 사출기 */}
                   <div>
-                    <Label htmlFor="machineId">사출기</Label>
+                    <Label htmlFor="machineId">{t('machine')}</Label>
                     <select
                       id="machineId"
                       value={form.machineId}
                       onChange={handleChange}
                       className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
                     >
-                      <option value="">선택</option>
+                      <option value="">{t('select')}</option>
                       {machines.map((m) => (
                         <option key={m.id} value={m.id}>
                           {`${m.id}호기 - ${m.ton}T`}
@@ -463,7 +482,7 @@ export default function App() {
                   </div>
                   {/* 모델 검색 */}
                   <div>
-                    <Label>모델 검색</Label>
+                    <Label>{t('model_search')}</Label>
                     <Autocomplete<PartSpec>
                       options={uniqueModelDesc}
                       getOptionLabel={(opt) => `${opt.model_code} – ${opt.description}`}
@@ -485,7 +504,7 @@ export default function App() {
                         }
                       }}
                       renderInput={(params) => (
-                        <TextField {...params} size="small" placeholder="모델명 또는 PART 검색" />
+                        <TextField {...params} size="small" placeholder={t('model_search')} />
                       )}
                     />
                   </div>
@@ -494,7 +513,8 @@ export default function App() {
                     <Label>Part No.</Label>
                     <Autocomplete<PartSpec>
                       options={partNoOptions}
-                      getOptionLabel={(opt) => opt.part_no}
+                      getOptionLabel={(opt) => `${opt.part_no}`}
+                      value={selectedPartSpec}
                       onChange={(_, v) => {
                         setSelectedPartSpec(v);
                         if (v) {
@@ -503,15 +523,15 @@ export default function App() {
                             partNo: v.part_no,
                             model: v.model_code,
                             type: v.description,
-                            resin: v.resin_type || "",
-                            netG: v.net_weight_g?.toString() || "",
-                            srG: v.sr_weight_g?.toString() || "",
-                            ct: v.cycle_time_sec?.toString() || "",
+                            resin: v?.resin_type || '',
+                            netG: String(v?.net_weight_g||''),
+                            srG: String(v?.sr_weight_g||''),
+                            ct: String(v?.cycle_time_sec||''),
                           }));
                         }
                       }}
                       renderInput={(params) => (
-                        <TextField {...params} size="small" placeholder="Part No. 선택" />
+                        <TextField {...params} size="small" placeholder={`Part No. ${t('select')}`} />
                       )}
                     />
                   </div>
@@ -556,12 +576,12 @@ export default function App() {
                   {/* 생산 시간 */}
                   {/* ── 생산 시간 카드 ── */}
                   <Card className="h-full flex flex-col">
-                    <CardHeader className="font-semibold text-blue-700">생산 시간</CardHeader>
+                    <CardHeader className="font-semibold text-blue-700">{t('prod_time')}</CardHeader>
                     <CardContent className="flex-1 space-y-4">
                       {/* 1행: 시작/종료 */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="flex flex-col">
-                          <Label htmlFor="start">시작일시</Label>
+                          <Label htmlFor="start">{t('start_dt')}</Label>
                           <Input
                             id="start"
                             type="datetime-local"
@@ -572,7 +592,7 @@ export default function App() {
                           />
                         </div>
                         <div className="flex flex-col">
-                          <Label htmlFor="end">종료일시</Label>
+                          <Label htmlFor="end">{t('end_dt')}</Label>
                           <Input
                             id="end"
                             type="datetime-local"
@@ -588,16 +608,16 @@ export default function App() {
                       <div className="grid grid-cols-2 gap-4">
                         {/* 총시간 */}
                         <div className="flex flex-col">
-                          <Label>총시간</Label>
+                          <Label>{t('total_time')}</Label>
                           <Input
-                            value={formatTime(totalMinutes)}
+                            value={formatTime(totalMinutes,t,lang)}
                             disabled
                             className="text-center"
                           />
                         </div>
                         {/* 부동시간 */}
                         <div className="flex flex-col">
-                          <Label htmlFor="idle">부동시간(분)</Label>
+                          <Label htmlFor="idle">{t('idle_time')}</Label>
                           <Input
                             id="idle"
                             type="number"
@@ -610,7 +630,7 @@ export default function App() {
 
                       {/* 3행: 부동시간 비고 */}
                       <div className="flex flex-col">
-                        <Label htmlFor="note">부동시간 비고</Label>
+                        <Label htmlFor="note">{t('idle_note')}</Label>
                         <Input
                           id="note"
                           type="text"
@@ -623,9 +643,9 @@ export default function App() {
                       {/* ── 마지막 행: 가동시간 (full-width) ── */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="col-span-2 flex flex-col">
-                          <Label>가동시간</Label>
+                          <Label>{t('run_time')}</Label>
                           <Input
-                            value={formatTime(runMinutes)}
+                            value={formatTime(runMinutes,t,lang)}
                             disabled
                             className="text-center"
                           />
@@ -637,10 +657,10 @@ export default function App() {
 
                   {/* 생산 보고 */}
                   <Card className="h-full flex flex-col">
-                    <CardHeader className="font-semibold text-blue-700">생산 보고</CardHeader>
+                    <CardHeader className="font-semibold text-blue-700">{t('prod_report')}</CardHeader>
                     <CardContent className="flex-1 grid grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="plan">계획수량*</Label>
+                        <Label htmlFor="plan">{t('plan_qty')}</Label>
                         <Input
                           id="plan"
                           type="number"
@@ -651,7 +671,7 @@ export default function App() {
                         />
                       </div>
                       <div>
-                        <Label htmlFor="actual">양품수량*</Label>
+                        <Label htmlFor="actual">{t('actual_qty')}</Label>
                         <Input
                           id="actual"
                           type="number"
@@ -662,7 +682,7 @@ export default function App() {
                         />
                       </div>
                       <div>
-                        <Label htmlFor="reportedDefect">불량수량(보고)*</Label>
+                        <Label htmlFor="reportedDefect">{t('reported_defect')}</Label>
                         <Input
                           id="reportedDefect"
                           type="number"
@@ -673,7 +693,7 @@ export default function App() {
                         />
                       </div>
                       <div>
-                        <Label htmlFor="realDefect">불량수량(실제)</Label>
+                        <Label htmlFor="realDefect">{t('actual_defect')}</Label>
                         <Input
                           id="realDefect"
                           type="number"
@@ -686,19 +706,19 @@ export default function App() {
                       {/* summary */}
                       <div className="col-span-2 border-t pt-2 text-sm text-gray-500">
                         <div className="flex justify-between">
-                          <span>총 사출수량</span>
+                          <span>{t('total_pieces')}</span>
                           <span className="font-medium">{totalPieces}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>사출기 C/T(초)</span>
+                          <span>{t('shot_ct')}</span>
                           <span className="font-medium">
-                            {shotCt.toFixed(1)}초
+                            {shotCt.toFixed(1)}{lang==='zh'?'秒':'초'}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span>양품기준 C/T(초)</span>
+                          <span>{t('good_ct')}</span>
                           <span className="font-medium">
-                            {goodCt.toFixed(1)}초
+                            {goodCt.toFixed(1)}{lang==='zh'?'秒':'초'}
                           </span>
                         </div>
                       </div>
@@ -708,11 +728,11 @@ export default function App() {
 
                 {/* ── (4) 저장/초기화 버튼 ── */}
                 <div className="flex justify-end gap-4 mt-4">
-                  <Button type="submit" size="sm" className="gap-2">
-                    <PlusCircle className="h-4 w-4" /> 저장하기
+                  <Button type="submit" className="col-span-2 sm:col-auto gap-2">
+                    <PlusCircle className="h-4 w-4" /> {t('save_record')}
                   </Button>
                   <Button type="reset" variant="ghost" size="sm">
-                    초기화
+                    {t('reset')}
                   </Button>
                 </div>
               </form>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { useReports } from '@/hooks/useReports';
+import { useLang } from '@/i18n';
 import type { Report } from '@/hooks/useReports';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -23,6 +24,7 @@ export default function RecordsTable() {
   const { data: reports = [], isLoading } = useReports();
   const [expanded, setExpanded] = useState<{ [key: string]: boolean }>({});
   const [editing, setEditing] = useState<Report | null>(null);
+  const { t } = useLang();
 
   const grouped = reports.reduce<{ [key: string]: Report[] }>((acc, r) => {
     acc[r.date] = acc[r.date] ? [...acc[r.date], r] : [r];
@@ -34,7 +36,7 @@ export default function RecordsTable() {
   const closeDialog = () => setEditing(null);
 
   const handleDelete = async (id: number) => {
-    if (!confirm('정말 삭제하시겠습니까?')) return;
+    if (!confirm(t('confirm_delete') || '정말 삭제하시겠습니까?')) return;
     try {
       await api.delete(`/reports/${id}/`);
       toast.success('삭제되었습니다');
@@ -55,16 +57,16 @@ export default function RecordsTable() {
     }
   };
 
-  if (isLoading) return <p className="text-gray-500">로딩 중…</p>;
+  if (isLoading) return <p className="text-gray-500">{t('loading')}</p>;
 
   return (
     <Card>
       <CardHeader className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-blue-700">생산 기록</h2>
+        <h2 className="text-xl font-bold text-blue-700">{t('records_title')}</h2>
       </CardHeader>
       <CardContent>
         {Object.keys(grouped).length === 0 ? (
-          <p className="text-gray-500">데이터가 없습니다.</p>
+          <p className="text-gray-500">{t('no_data')}</p>
         ) : (
           <div className="space-y-4">
             {Object.entries(grouped).map(([date, list]) => {
@@ -79,7 +81,7 @@ export default function RecordsTable() {
                   >
                     <span className="font-medium">{date}</span>
                     <span className="text-sm text-gray-600">
-                      계획 {totalPlan} / 실제 {totalActual}
+                      {t('plan_qty').replace('*','')} {totalPlan} / {t('actual_qty').replace('*','')} {totalActual}
                     </span>
                     {open ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
                   </button>

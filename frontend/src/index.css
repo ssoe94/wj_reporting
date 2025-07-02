@@ -3,7 +3,7 @@
 /* ------- Global base -------- */
 @layer base {
   :root {
-    font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
+    font-family: 'Inter', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans KR', system-ui, sans-serif;
   }
   html {
     font-feature-settings: "cv05";

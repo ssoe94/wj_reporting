@@ -6,9 +6,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { PartSpec } from '@/hooks/usePartSpecs';
+import { useLang } from '@/i18n';
 
 export default function ModelsManager() {
   const queryClient = useQueryClient();
+  const { t } = useLang();
   const [keyword, setKeyword] = useState('');
   const { data: parts = [] } = useQuery<PartSpec[]>({
     queryKey: ['parts-admin', keyword],
@@ -55,13 +57,13 @@ export default function ModelsManager() {
       <div className="flex justify-between mb-2 gap-2 items-center">
         <input
           type="text"
-          placeholder="모델 또는 Part 검색..."
+          placeholder={t('search_placeholder')}
           className="border rounded px-2 py-1 text-sm flex-1"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
         />
         <Button size="sm" onClick={() => { setForm({ part_no: '', model_code: '', description: '', valid_from: today }); setDialogOpen(true); }}>
-          + 새 모델
+          {t('new_model')}
         </Button>
       </div>
       <div className="overflow-x-auto rounded border">
@@ -97,7 +99,7 @@ export default function ModelsManager() {
                 <td className="px-3 py-1 text-right">{p.cavity}</td>
                 <td className="px-3 py-1">{p.valid_from}</td>
                 <td className="px-3 py-1 text-right">
-                  <Button size="sm" variant="ghost" onClick={() => { setForm(p); setDialogOpen(true); }}>수정</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setForm(p); setDialogOpen(true); }}>{t('edit')}</Button>
                 </td>
               </tr>
             ))}
@@ -109,7 +111,7 @@ export default function ModelsManager() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <Card className="w-96">
             <CardContent className="space-y-4 pt-6">
-              <h3 className="text-lg font-semibold mb-2">{form.id ? '모델 수정' : '새 모델 추가'}</h3>
+              <h3 className="text-lg font-semibold mb-2">{form.id ? t('edit_model') : t('add_model')}</h3>
               <form onSubmit={handleSubmit} className="space-y-3">
                 <div>
                   <Label htmlFor="part_no">Part No</Label>
@@ -168,8 +170,8 @@ export default function ModelsManager() {
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>취소</Button>
-                  <Button type="submit" size="sm" disabled={upsert.isPending}>{upsert.isPending ? '저장중...' : '저장'}</Button>
+                  <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>{t('cancel')}</Button>
+                  <Button type="submit" size="sm" disabled={upsert.isPending}>{upsert.isPending ? t('saving') : t('save')}</Button>
                 </div>
               </form>
             </CardContent>

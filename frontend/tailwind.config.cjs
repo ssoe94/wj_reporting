@@ -17,7 +17,7 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'Noto Sans KR', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans KR', 'system-ui', 'sans-serif'],
       },
     },
   },

@@ -12,14 +12,14 @@ const queryClient = new QueryClient();
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
     <LangProvider>
-      <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<App />} />
             <Route path="/models" element={<ModelsPage />} />
           </Routes>
         </BrowserRouter>
-      </QueryClientProvider>
+    </QueryClientProvider>
     </LangProvider>
   </StrictMode>
 );
