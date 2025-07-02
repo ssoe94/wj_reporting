@@ -475,7 +475,7 @@ export default function App() {
                       <option value="">{t('select')}</option>
                       {machines.map((m) => (
                         <option key={m.id} value={m.id}>
-                          {`${m.id}호기 - ${m.ton}T`}
+                          {`${m.id}${lang==='zh' ? '号机' : '호기'} - ${m.ton}T`}
                         </option>
                       ))}
                     </select>
