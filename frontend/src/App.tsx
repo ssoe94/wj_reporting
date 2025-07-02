@@ -21,13 +21,13 @@ import { usePartSpecSearch, usePartListByModel } from "@/hooks/usePartSpecs";
 import type { PartSpec } from "@/hooks/usePartSpecs";
 import React from "react";
 import { useReportSummary } from "@/hooks/useReports";
-import ModelsManager from "@/components/ModelsManager";
+import { Link } from "react-router-dom";
 
 const navItems = [
-  { id: "summary", label: "현황 요약" },
-  { id: "records", label: "생산 기록" },
-  { id: "new", label: "신규 등록" },
-  { id: "models", label: "모델 관리" },
+  { to: "#summary", label: "현황 요약" },
+  { to: "#records", label: "생산 기록" },
+  { to: "#new", label: "신규 등록" },
+  { to: "/models", label: "모델 관리" },
 ];
 
 // 컴포넌트 최상단에 추가
@@ -250,13 +250,23 @@ export default function App() {
       {/* Sidebar (Desktop) */}
       <aside className="fixed left-0 top-[72px] hidden h-[calc(100vh-72px)] w-56 overflow-y-auto border-r bg-white py-8 px-4 shadow-md md:flex flex-col gap-2">
         {navItems.map((item) => (
-          <a
-            key={item.id}
-            href={`#${item.id}`}
-            className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
-          >
-            {item.label}
-          </a>
+          item.to.startsWith("#") ? (
+            <a
+              key={item.to}
+              href={item.to}
+              className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
+            >
+              {item.label}
+            </a>
+          ) : (
+            <Link
+              key={item.to}
+              to={item.to}
+              className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
+            >
+              {item.label}
+            </Link>
+          )
         ))}
       </aside>
 
@@ -290,14 +300,25 @@ export default function App() {
             </Button>
             <nav className="mt-8 flex flex-col gap-4">
               {navItems.map((item) => (
-                <a
-                  key={item.id}
-                  href={`#${item.id}`}
-                  onClick={() => setSidebarOpen(false)}
-                  className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
-                >
-                  {item.label}
-                </a>
+                item.to.startsWith("#") ? (
+                  <a
+                    key={item.to}
+                    href={item.to}
+                    onClick={() => setSidebarOpen(false)}
+                    className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
+                  >
+                    {item.label}
+                  </a>
+                ) : (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setSidebarOpen(false)}
+                    className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
+                  >
+                    {item.label}
+                  </Link>
+                )
               ))}
             </nav>
           </motion.aside>
@@ -675,17 +696,7 @@ export default function App() {
           </Card>
         </section>
 
-        {/* Models Management Section */}
-        <section id="models" className="w-full">
-          <Card>
-            <CardHeader>
-              <h2 className="text-xl font-bold text-blue-700">모델 관리 (준비중)</h2>
-            </CardHeader>
-            <CardContent>
-              <ModelsManager />
-            </CardContent>
-          </Card>
-        </section>
+        {/* (모델 관리 섹션은 별도 페이지로 이동) */}
       </main>
 
       <ToastContainer position="bottom-right" />

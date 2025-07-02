@@ -9,7 +9,6 @@ import { toast } from 'react-toastify';
 import { Input } from '@/components/ui/input';
 import { Dialog } from '@headlessui/react';
 import { Textarea } from '@/components/ui/textarea';
-import { useQueryClient } from '@tanstack/react-query';
 
 function calcTotal(start: string, end: string) {
   if (!start || !end) return 0;
@@ -22,7 +21,6 @@ function calcTotal(start: string, end: string) {
 
 export default function RecordsTable() {
   const { data: reports = [], isLoading } = useReports();
-  const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<{ [key: string]: boolean }>({});
   const [editing, setEditing] = useState<Report | null>(null);
 
@@ -40,8 +38,6 @@ export default function RecordsTable() {
     try {
       await api.delete(`/reports/${id}/`);
       toast.success('삭제되었습니다');
-      queryClient.invalidateQueries({ queryKey: ['reports'] });
-      queryClient.invalidateQueries({ queryKey: ['reports-summary'] });
     } catch {
       toast.error('삭제 실패');
     }
@@ -53,8 +49,6 @@ export default function RecordsTable() {
     try {
       await api.patch(`/reports/${editing.id}/`, editing);
       toast.success('수정되었습니다');
-      queryClient.invalidateQueries({ queryKey: ['reports'] });
-      queryClient.invalidateQueries({ queryKey: ['reports-summary'] });
       closeDialog();
     } catch {
       toast.error('수정 실패');

@@ -7,12 +7,19 @@ export interface PartSpec {
   part_no: string;
   model_code: string;
   description: string;
-  resin_type?: string;
-  net_weight_g?: number;
-  sr_weight_g?: number;
-  cycle_time_sec?: number;
+  mold_type?: string;
   color?: string;
-  defect_rate_pct?: number;
+  resin_type?: string;
+  resin_code?: string;
+  net_weight_g?: number | null;
+  sr_weight_g?: number | null;
+  tonnage?: number | null;
+  cycle_time_sec?: number | null;
+  efficiency_rate?: number | null;
+  cavity?: number | null;
+  resin_loss_pct?: number | null;
+  defect_rate_pct?: number | null;
+  valid_from?: string;
 }
 
 interface Paginated<T> {

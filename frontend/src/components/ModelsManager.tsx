@@ -5,13 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-
-interface PartSpec {
-  id?: number;
-  part_no: string;
-  model_code: string;
-  description: string;
-}
+import type { PartSpec } from '@/hooks/usePartSpecs';
 
 export default function ModelsManager() {
   const queryClient = useQueryClient();
@@ -24,10 +18,16 @@ export default function ModelsManager() {
   });
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState<PartSpec>({ part_no: '', model_code: '', description: '' });
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState<Partial<PartSpec>>({
+    part_no: '',
+    model_code: '',
+    description: '',
+    valid_from: today,
+  });
 
   const upsert = useMutation({
-    mutationFn: async (payload: PartSpec) => {
+    mutationFn: async (payload: Partial<PartSpec>) => {
       if (payload.id) {
         return api.patch(`/parts/${payload.id}/`, payload);
       }
@@ -41,13 +41,13 @@ export default function ModelsManager() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    upsert.mutate(form);
+    upsert.mutate(form as PartSpec);
   };
 
   return (
     <>
       <div className="flex justify-end mb-2">
-        <Button size="sm" onClick={() => { setForm({ part_no: '', model_code: '', description: '' }); setDialogOpen(true); }}>
+        <Button size="sm" onClick={() => { setForm({ part_no: '', model_code: '', description: '', valid_from: today }); setDialogOpen(true); }}>
           + 새 모델
         </Button>
       </div>
@@ -58,6 +58,14 @@ export default function ModelsManager() {
               <th className="px-3 py-2 text-left">Part No</th>
               <th className="px-3 py-2 text-left">Model</th>
               <th className="px-3 py-2 text-left">Description</th>
+              <th className="px-3 py-2 text-left">Mold</th>
+              <th className="px-3 py-2 text-left">Color</th>
+              <th className="px-3 py-2 text-left">Resin</th>
+              <th className="px-3 py-2 text-left">Net(g)</th>
+              <th className="px-3 py-2 text-left">S/R(g)</th>
+              <th className="px-3 py-2 text-left">CT(s)</th>
+              <th className="px-3 py-2 text-left">Cavity</th>
+              <th className="px-3 py-2 text-left">Valid From</th>
               <th></th>
             </tr>
           </thead>
@@ -67,6 +75,14 @@ export default function ModelsManager() {
                 <td className="px-3 py-1 font-mono">{p.part_no}</td>
                 <td className="px-3 py-1">{p.model_code}</td>
                 <td className="px-3 py-1">{p.description}</td>
+                <td className="px-3 py-1">{p.mold_type}</td>
+                <td className="px-3 py-1">{p.color}</td>
+                <td className="px-3 py-1">{p.resin_type}</td>
+                <td className="px-3 py-1 text-right">{p.net_weight_g}</td>
+                <td className="px-3 py-1 text-right">{p.sr_weight_g}</td>
+                <td className="px-3 py-1 text-right">{p.cycle_time_sec}</td>
+                <td className="px-3 py-1 text-right">{p.cavity}</td>
+                <td className="px-3 py-1">{p.valid_from}</td>
                 <td className="px-3 py-1 text-right">
                   <Button size="sm" variant="ghost" onClick={() => { setForm(p); setDialogOpen(true); }}>수정</Button>
                 </td>
@@ -84,15 +100,59 @@ export default function ModelsManager() {
               <form onSubmit={handleSubmit} className="space-y-3">
                 <div>
                   <Label htmlFor="part_no">Part No</Label>
-                  <Input id="part_no" value={form.part_no} onChange={(e) => setForm({ ...form, part_no: e.target.value })} required />
+                  <Input id="part_no" value={form.part_no || ''} onChange={(e) => setForm({ ...form, part_no: e.target.value })} required />
                 </div>
                 <div>
                   <Label htmlFor="model_code">Model</Label>
-                  <Input id="model_code" value={form.model_code} onChange={(e) => setForm({ ...form, model_code: e.target.value })} required />
+                  <Input id="model_code" value={form.model_code || ''} onChange={(e) => setForm({ ...form, model_code: e.target.value })} required />
                 </div>
                 <div>
                   <Label htmlFor="desc">Description</Label>
-                  <Input id="desc" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                  <Input id="desc" value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label htmlFor="mold">Mold Type</Label>
+                    <Input id="mold" value={form.mold_type || ''} onChange={(e) => setForm({ ...form, mold_type: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="color">Color</Label>
+                    <Input id="color" value={form.color || ''} onChange={(e) => setForm({ ...form, color: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label htmlFor="resin">Resin Type</Label>
+                    <Input id="resin" value={form.resin_type || ''} onChange={(e) => setForm({ ...form, resin_type: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="resinCode">Resin Code</Label>
+                    <Input id="resinCode" value={form.resin_code || ''} onChange={(e) => setForm({ ...form, resin_code: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <Label htmlFor="net">Net(g)</Label>
+                    <Input id="net" type="number" value={form.net_weight_g ?? ''} onChange={(e) => setForm({ ...form, net_weight_g: e.target.value ? Number(e.target.value) : null })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="sr">S/R(g)</Label>
+                    <Input id="sr" type="number" value={form.sr_weight_g ?? ''} onChange={(e) => setForm({ ...form, sr_weight_g: e.target.value ? Number(e.target.value) : null })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="ct">C/T(초)</Label>
+                    <Input id="ct" type="number" value={form.cycle_time_sec ?? ''} onChange={(e) => setForm({ ...form, cycle_time_sec: e.target.value ? Number(e.target.value) : null })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label htmlFor="cavity">Cavity</Label>
+                    <Input id="cavity" type="number" value={form.cavity ?? ''} onChange={(e) => setForm({ ...form, cavity: e.target.value ? Number(e.target.value) : null })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="valid">Valid From</Label>
+                    <Input id="valid" type="date" value={form.valid_from || ''} onChange={(e) => setForm({ ...form, valid_from: e.target.value })} />
+                  </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
                   <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>취소</Button>
