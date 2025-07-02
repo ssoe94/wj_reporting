@@ -4,13 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Menu as MenuIcon, X as XIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
+import { useLang } from '@/i18n';
 
 export default function ModelsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { t, lang, setLang } = useLang();
 
   const navItems = [
-    { to: '/', label: '대시보드' },
-    { to: '/models', label: '모델 관리' },
+    { to: '/', label: t('dashboard') },
+    { to: '/models', label: t('nav_models') },
   ];
 
   return (
@@ -21,8 +23,16 @@ export default function ModelsPage() {
           <div className="flex items-center gap-3">
             <img src="/logo.jpg" alt="로고" className="h-10 w-10 rounded-full shadow-sm" />
             <span className="whitespace-nowrap text-lg font-bold text-blue-700 md:text-2xl">
-              모델 관리
+              {t('modelsTitle')}
             </span>
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value as any)}
+              className="ml-3 border rounded text-sm px-1 py-0.5"
+            >
+              <option value="ko">KOR</option>
+              <option value="zh">中文</option>
+            </select>
           </div>
           <Button
             variant="ghost"

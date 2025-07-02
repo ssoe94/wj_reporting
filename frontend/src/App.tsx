@@ -22,13 +22,20 @@ import type { PartSpec } from "@/hooks/usePartSpecs";
 import React from "react";
 import { useReportSummary } from "@/hooks/useReports";
 import { Link } from "react-router-dom";
+import { useLang } from "./i18n";
 
-const navItems = [
-  { to: "#summary", label: "현황 요약" },
-  { to: "#records", label: "생산 기록" },
-  { to: "#new", label: "신규 등록" },
-  { to: "/models", label: "모델 관리" },
-];
+export const AppNavKeys = ["nav_summary","nav_records","nav_new","nav_models"] as const;
+
+// navItems를 함수로 생성 (언어별)
+function useNavItems() {
+  const { t } = useLang();
+  return [
+    { to: "#summary", label: t("nav_summary") },
+    { to: "#records", label: t("nav_records") },
+    { to: "#new", label: t("nav_new") },
+    { to: "/models", label: t("nav_models") },
+  ];
+}
 
 // 컴포넌트 최상단에 추가
 const formatTime = (mins: number) => {
@@ -224,6 +231,9 @@ export default function App() {
   // 전체 요약 데이터
   const { data: summary } = useReportSummary();
 
+  const { lang, setLang, t } = useLang();
+  const navItems = useNavItems();
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -232,8 +242,16 @@ export default function App() {
           <div className="flex items-center gap-3">
             <img src="/logo.jpg" alt="로고" className="h-10 w-10 rounded-full shadow-sm" />
             <span className="whitespace-nowrap text-lg font-bold text-blue-700 md:text-2xl">
-              사출 생산관리 시스템
+              {t("title")}
             </span>
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value as any)}
+              className="ml-3 border rounded text-sm px-1 py-0.5"
+            >
+              <option value="ko">KOR</option>
+              <option value="zh">中文</option>
+            </select>
           </div>
           <Button
             variant="ghost"
