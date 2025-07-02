@@ -1,7 +1,7 @@
 import ModelsManager from '@/components/ModelsManager';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Menu as MenuIcon, X as XIcon } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Factory } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { useLang } from '@/i18n';
@@ -18,31 +18,36 @@ export default function ModelsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 shadow-xs">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-8">
-          <div className="flex items-center gap-3">
-            <img src="/logo.jpg" alt="로고" className="h-10 w-10 rounded-full shadow-sm" />
-            <span className="whitespace-nowrap text-lg font-bold text-blue-700 md:text-2xl">
+      <header className="sticky top-0 z-30 bg-gradient-to-r from-white via-blue-50 to-white backdrop-blur shadow-md">
+        <div className="relative mx-auto max-w-7xl flex items-center px-4 py-3 md:px-8">
+          {/* Center Title */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+            <img src="/logo.jpg" alt="로고" className="h-10 w-10 rounded-full object-cover shadow-md" />
+            <Factory className="w-6 h-6 text-blue-600" />
+            <span className="whitespace-nowrap text-xl md:text-3xl font-extrabold tracking-wide text-blue-700">
               {t('modelsTitle')}
             </span>
+          </div>
+          {/* Right Controls */}
+          <div className="ml-auto flex items-center gap-3">
             <select
               value={lang}
               onChange={(e) => setLang(e.target.value as any)}
-              className="ml-3 border rounded text-sm px-1 py-0.5"
+              className="border rounded text-sm px-1 py-0.5"
             >
               <option value="ko">KOR</option>
               <option value="zh">中文</option>
             </select>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="메뉴 열기"
+            >
+              <MenuIcon className="h-6 w-6" />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="메뉴 열기"
-          >
-            <MenuIcon className="h-6 w-6" />
-          </Button>
         </div>
       </header>
 
