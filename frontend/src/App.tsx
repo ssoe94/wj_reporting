@@ -44,7 +44,7 @@ export function useNavItems() {
 }
 
 // 컴포넌트 최상단에 추가
-const formatTime = (mins: number, t:(k:string)=>string, lang:string) => {
+const formatTime = (mins: number, _t:(k:string)=>string, lang:string) => {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   if(lang==='zh') {
