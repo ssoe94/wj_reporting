@@ -10,6 +10,7 @@ import { toast } from 'react-toastify';
 import { Input } from '@/components/ui/input';
 import { Dialog } from '@headlessui/react';
 import { Textarea } from '@/components/ui/textarea';
+import { useQueryClient } from '@tanstack/react-query';
 
 function calcTotal(start: string, end: string) {
   if (!start || !end) return 0;
@@ -25,6 +26,7 @@ export default function RecordsTable() {
   const [expanded, setExpanded] = useState<{ [key: string]: boolean }>({});
   const [editing, setEditing] = useState<Report | null>(null);
   const { t } = useLang();
+  const queryClient = useQueryClient();
 
   const grouped = reports.reduce<{ [key: string]: Report[] }>((acc, r) => {
     acc[r.date] = acc[r.date] ? [...acc[r.date], r] : [r];
@@ -39,9 +41,10 @@ export default function RecordsTable() {
     if (!confirm(t('confirm_delete') || '정말 삭제하시겠습니까?')) return;
     try {
       await api.delete(`/reports/${id}/`);
-      toast.success('삭제되었습니다');
+      toast.success(t('delete_success'));
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     } catch {
-      toast.error('삭제 실패');
+      toast.error(t('delete_fail'));
     }
   };
 
@@ -50,10 +53,11 @@ export default function RecordsTable() {
     if (!editing) return;
     try {
       await api.patch(`/reports/${editing.id}/`, editing);
-      toast.success('수정되었습니다');
+      toast.success(t('update_success'));
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
       closeDialog();
     } catch {
-      toast.error('수정 실패');
+      toast.error(t('update_fail'));
     }
   };
 

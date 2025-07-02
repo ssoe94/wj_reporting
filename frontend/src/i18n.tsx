@@ -57,6 +57,10 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     shot_ct: '사출기 C/T(초)',
     good_ct: '양품기준 C/T(초)',
     reset: '초기화',
+    delete_success: '삭제되었습니다',
+    delete_fail: '삭제 실패',
+    update_success: '수정되었습니다',
+    update_fail: '수정 실패',
   },
   zh: {
     title: '注塑生产管理系统',
@@ -107,6 +111,10 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     shot_ct: '注塑机 C/T(秒)',
     good_ct: '良品基准 C/T(秒)',
     reset: '重置',
+    delete_success: '已删除',
+    delete_fail: '删除失败',
+    update_success: '已更新',
+    update_fail: '更新失败',
   },
 };
 

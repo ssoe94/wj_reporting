@@ -53,6 +53,39 @@ const formatTime = (mins: number, _t:(k:string)=>string, lang:string) => {
   return `${h}시간 ${m}분 (${mins}분)`;
 };
 
+// 사출기 목록
+const machines = [
+  { id: 1, ton: 850 },
+  { id: 2, ton: 850 },
+  { id: 3, ton: 1300 },
+  { id: 4, ton: 1400 },
+  { id: 5, ton: 1400 },
+  { id: 6, ton: 2500 },
+  { id: 7, ton: 1300 },
+  { id: 8, ton: 850 },
+  { id: 9, ton: 850 },
+  { id: 10, ton: 650 },
+  { id: 11, ton: 550 },
+  { id: 12, ton: 550 },
+  { id: 13, ton: 450 },
+  { id: 14, ton: 850 },
+  { id: 15, ton: 650 },
+  { id: 16, ton: 1050 },
+  { id: 17, ton: 1200 },
+];
+
+// 현재 시각을 5분 단위로 절삭해 초기값으로 사용
+const roundTo5 = (d: Date) => {
+  d.setSeconds(0, 0);
+  d.setMinutes(Math.floor(d.getMinutes() / 5) * 5);
+  return d;
+};
+const toLocalInput = (d: Date) => {
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+};
+const nowStr = toLocalInput(roundTo5(new Date()));
+
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -85,42 +118,8 @@ export default function App() {
   const [selectedPartSpec, setSelectedPartSpec] = useState<PartSpec | null>(null);
 
   /* ---------------- 신규 등록 폼 상태 ---------------- */
-  const today = new Date().toISOString().slice(0, 10);
-  const machines = [
-    { id: 1, ton: 850 },
-    { id: 2, ton: 850 },
-    { id: 3, ton: 1300 },
-    { id: 4, ton: 1400 },
-    { id: 5, ton: 1400 },
-    { id: 6, ton: 2500 },
-    { id: 7, ton: 1300 },
-    { id: 8, ton: 850 },
-    { id: 9, ton: 850 },
-    { id: 10, ton: 650 },
-    { id: 11, ton: 550 },
-    { id: 12, ton: 550 },
-    { id: 13, ton: 450 },
-    { id: 14, ton: 850 },
-    { id: 15, ton: 650 },
-    { id: 16, ton: 1050 },
-    { id: 17, ton: 1200 },
-  ];
-
-  const roundTo5 = (d: Date) => {
-    d.setSeconds(0, 0);
-    d.setMinutes(Math.floor(d.getMinutes() / 5) * 5);
-    return d;
-  };
-  // datetime-local 문자열로 변환 (로컬 시각 그대로)
-  const toLocalInput = (d: Date) => {
-    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000); // 오프셋 보정
-    return local.toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm
-  };
-  // 브라우저 로컬 시간을 5분 단위로 절삭하여 기본값 생성
-  const nowStr = toLocalInput(roundTo5(new Date()));
-
-  const [form, setForm] = useState({
-    date: today,
+  const [form, setForm] = useState(()=>({
+    date: new Date().toISOString().slice(0,10),
     machineId: "",
     model: "",
     type: "",
@@ -137,7 +136,7 @@ export default function App() {
     end: nowStr,
     idle: "",
     note: "",
-  });
+  }));
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -194,7 +193,7 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
       toast.success("저장되었습니다");
-      setForm({ ...form, model: "", type: "", plan: "", actual: "", reportedDefect: "", realDefect: "", start: "", end: "", idle: "", note: "" });
+      setForm({ ...form, model: "", type: "", plan: "", actual: "", reportedDefect: "", realDefect: "", start: nowStr, end: nowStr, idle: "", note: "" });
     } catch (err: any) {
       console.error(err);
       if (err.response?.status === 400 && err.response.data) {
