@@ -9,10 +9,16 @@ import type { PartSpec } from '@/hooks/usePartSpecs';
 
 export default function ModelsManager() {
   const queryClient = useQueryClient();
+  const [keyword, setKeyword] = useState('');
   const { data: parts = [] } = useQuery<PartSpec[]>({
-    queryKey: ['parts-admin'],
+    queryKey: ['parts-admin', keyword],
     queryFn: async () => {
-      const { data } = await api.get('/parts/?ordering=part_no');
+      const params: Record<string, any> = {
+        ordering: 'model_code',
+        page_size: 1000,
+      };
+      if (keyword.trim()) params.search = keyword.trim();
+      const { data } = await api.get('/parts/', { params });
       return Array.isArray(data) ? data : data.results;
     },
   });
@@ -46,7 +52,14 @@ export default function ModelsManager() {
 
   return (
     <>
-      <div className="flex justify-end mb-2">
+      <div className="flex justify-between mb-2 gap-2 items-center">
+        <input
+          type="text"
+          placeholder="모델 또는 Part 검색..."
+          className="border rounded px-2 py-1 text-sm flex-1"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+        />
         <Button size="sm" onClick={() => { setForm({ part_no: '', model_code: '', description: '', valid_from: today }); setDialogOpen(true); }}>
           + 새 모델
         </Button>
