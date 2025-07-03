@@ -93,6 +93,7 @@ export default function RecordsTable() {
                     <table className="mt-2 w-full text-sm table-fixed">
                       <thead className="bg-gray-50 text-xs text-gray-500">
                         <tr>
+                          <th className="px-2 py-1 text-center w-20">{t('header_action')}</th>
                           <th className="px-2 py-1 text-center">{t('header_model')}</th>
                           <th className="px-2 py-1 text-center">{t('header_machine')}</th>
                           <th className="px-2 py-1 text-center">{t('header_tonnage')}</th>
@@ -103,7 +104,6 @@ export default function RecordsTable() {
                           <th className="px-2 py-1 text-center">{t('header_end')}</th>
                           <th className="px-2 py-1 text-center">{t('header_run')}</th>
                           <th className="px-2 py-1 text-center w-64">{t('header_note')}</th>
-                          <th className="px-2 py-1 w-20 text-center">{t('header_action')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -118,7 +118,6 @@ export default function RecordsTable() {
                             <td className="px-2 py-1 text-center">{r.start_datetime?.replace('T',' ').slice(0,16)}</td>
                             <td className="px-2 py-1 text-center">{r.end_datetime?.replace('T',' ').slice(0,16)}</td>
                             <td className="px-2 py-1 text-center">{r.operation_time}</td>
-                            <td className="px-2 py-1 text-left w-64 max-w-[250px] whitespace-pre-line truncate line-clamp-2 align-top" title={r.note}>{r.note}</td>
                             <td className="px-2 py-1 w-20 flex justify-center gap-2 align-top">
                               <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-blue-600" onClick={() => setEditing(r)}>
                                 <Pencil className="h-4 w-4" />
@@ -126,6 +125,14 @@ export default function RecordsTable() {
                               <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-red-600" onClick={() => handleDelete(r.id)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
+                            </td>
+                            <td className="px-2 py-1 text-left w-64 max-w-[250px] align-top relative group">
+                              <span className="line-clamp-2 whitespace-pre-line">{r.note}</span>
+                              {r.note && (
+                                <div className="pointer-events-none absolute left-0 top-full mt-1 hidden w-72 whitespace-pre-line rounded border bg-white p-2 text-xs shadow-lg group-hover:block z-50">
+                                  {r.note}
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
