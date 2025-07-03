@@ -90,18 +90,18 @@ export default function RecordsTable() {
                     {open ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
                   </button>
                   {open && (
-                    <table className="mt-2 w-full text-sm table-fixed">
+                    <table className="mt-2 w-full text-sm">
                       <thead className="bg-gray-50 text-xs text-gray-500">
                         <tr>
-                          <th className="px-2 py-1 text-center w-28">{t('header_model')}</th>
-                          <th className="px-2 py-1 text-center w-20">{t('header_machine')}</th>
-                          <th className="px-2 py-1 text-center w-20">{t('header_tonnage')}</th>
-                          <th className="px-2 py-1 text-center w-24">{t('header_plan')}</th>
-                          <th className="px-2 py-1 text-center w-24">{t('header_actual')}</th>
-                          <th className="px-2 py-1 text-center w-24">{t('header_defect')}</th>
-                          <th className="px-2 py-1 text-center w-32">{t('header_start')}</th>
-                          <th className="px-2 py-1 text-center w-32">{t('header_end')}</th>
-                          <th className="px-2 py-1 text-center w-24">{t('header_run')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_model')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_machine')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_tonnage')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_plan')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_actual')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_defect')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_start')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_end')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_run')}</th>
                           <th className="px-2 py-1 text-center w-52">{t('header_note')}</th>
                           <th className="px-2 py-1 text-center w-20">{t('header_action')}</th>
                         </tr>
@@ -109,13 +109,13 @@ export default function RecordsTable() {
                       <tbody>
                         {list.map((r) => (
                           <tr key={r.id} className="border-b last:border-0">
-                            <td className="px-2 py-1 text-center w-28">{r.model}</td>
-                            <td className="px-2 py-1 text-center w-20">{r.machine_no}</td>
-                            <td className="px-2 py-1 text-center w-20">{r.tonnage}</td>
-                            <td className="px-2 py-1 text-center w-24">{r.plan_qty}</td>
-                            <td className="px-2 py-1 text-center w-24">{r.actual_qty}</td>
-                            <td className="px-2 py-1 text-center w-24">{r.actual_defect}</td>
-                            <td className="px-2 py-1 text-center w-32 whitespace-nowrap">
+                            <td className="px-2 py-1 text-center">{r.model}</td>
+                            <td className="px-2 py-1 text-center">{r.machine_no}</td>
+                            <td className="px-2 py-1 text-center">{r.tonnage}</td>
+                            <td className="px-2 py-1 text-center">{r.plan_qty}</td>
+                            <td className="px-2 py-1 text-center">{r.actual_qty}</td>
+                            <td className="px-2 py-1 text-center">{r.actual_defect}</td>
+                            <td className="px-2 py-1 text-center whitespace-nowrap">
                               {r.start_datetime && (
                                 <>
                                   <span className="block">{r.start_datetime.replace('T',' ').slice(0,10)}</span>
@@ -123,7 +123,7 @@ export default function RecordsTable() {
                                 </>
                               )}
                             </td>
-                            <td className="px-2 py-1 text-center w-32 whitespace-nowrap">
+                            <td className="px-2 py-1 text-center whitespace-nowrap">
                               {r.end_datetime && (
                                 <>
                                   <span className="block">{r.end_datetime.replace('T',' ').slice(0,10)}</span>
@@ -131,7 +131,7 @@ export default function RecordsTable() {
                                 </>
                               )}
                             </td>
-                            <td className="px-2 py-1 text-center w-24">{r.operation_time}</td>
+                            <td className="px-2 py-1 text-center">{r.operation_time}</td>
                             <td className="px-2 py-1 text-left w-52 max-w-[210px] align-top relative group">
                               <span className="line-clamp-2 whitespace-pre-line">{r.note}</span>
                               {r.note && (
