@@ -70,7 +70,7 @@ export default function ModelsPage() {
           })}
         </nav>
         {/* language selector bottom */}
-        <div className="mt-auto border-t border-gray-200 px-4 py-3 space-y-2">
+        <div className="mt-auto border-t border-gray-200 px-4 py-3 flex flex-col gap-2">
           <select value={lang} onChange={(e)=>setLang(e.target.value as any)} className="w-full border rounded text-sm px-2 py-1">
             <option value="ko">KOR</option>
             <option value="zh">中文</option>
@@ -132,7 +132,7 @@ export default function ModelsPage() {
                 )
               ))}
             </nav>
-            <div className="mt-auto border-t border-gray-200 pt-4 space-y-2">
+            <div className="mt-auto border-t border-gray-200 pt-4 flex flex-col gap-2">
               <select value={lang} onChange={(e)=>setLang(e.target.value as any)} className="w-full border rounded text-sm px-2 py-1">
                 <option value="ko">KOR</option>
                 <option value="zh">中文</option>
