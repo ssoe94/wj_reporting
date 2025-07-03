@@ -86,6 +86,13 @@ const toLocalInput = (d: Date) => {
 };
 const nowStr = toLocalInput(roundTo5(new Date()));
 
+// 로컬 날짜 문자열 (YYYY-MM-DD)
+const getLocalDate = () => {
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0,10);
+};
+
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -119,7 +126,7 @@ export default function App() {
 
   /* ---------------- 신규 등록 폼 상태 ---------------- */
   const [form, setForm] = useState(()=>({
-    date: new Date().toISOString().slice(0,10),
+    date: getLocalDate(),
     machineId: "",
     model: "",
     type: "",
@@ -193,7 +200,7 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
       toast.success("저장되었습니다");
-      setForm({ ...form, model: "", type: "", plan: "", actual: "", reportedDefect: "", realDefect: "", start: nowStr, end: nowStr, idle: "", note: "" });
+      setForm({ ...form, date: getLocalDate(), model: "", type: "", plan: "", actual: "", reportedDefect: "", realDefect: "", start: nowStr, end: nowStr, idle: "", note: "" });
     } catch (err: any) {
       console.error(err);
       if (err.response?.status === 400 && err.response.data) {
