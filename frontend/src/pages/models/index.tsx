@@ -70,11 +70,14 @@ export default function ModelsPage() {
           })}
         </nav>
         {/* language selector bottom */}
-        <div className="mt-auto border-t border-gray-200 px-4 py-3">
+        <div className="mt-auto border-t border-gray-200 px-4 py-3 space-y-2">
           <select value={lang} onChange={(e)=>setLang(e.target.value as any)} className="w-full border rounded text-sm px-2 py-1">
             <option value="ko">KOR</option>
             <option value="zh">中文</option>
           </select>
+          <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+            <input type="checkbox" checked={typeof window!=='undefined' && localStorage.getItem('lite')==='1'} onChange={(e)=>{if(e.target.checked){localStorage.setItem('lite','1');}else{localStorage.removeItem('lite');}location.reload();}} /> {t('lite_mode')}
+          </label>
         </div>
       </aside>
 
@@ -129,11 +132,14 @@ export default function ModelsPage() {
                 )
               ))}
             </nav>
-            <div className="mt-auto border-t border-gray-200 pt-4">
+            <div className="mt-auto border-t border-gray-200 pt-4 space-y-2">
               <select value={lang} onChange={(e)=>setLang(e.target.value as any)} className="w-full border rounded text-sm px-2 py-1">
                 <option value="ko">KOR</option>
                 <option value="zh">中文</option>
               </select>
+              <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                <input type="checkbox" checked={typeof window!=='undefined' && localStorage.getItem('lite')==='1'} onChange={(e)=>{if(e.target.checked){localStorage.setItem('lite','1');}else{localStorage.removeItem('lite');}location.reload();}} /> {t('lite_mode')}
+              </label>
             </div>
           </motion.aside>
         )}

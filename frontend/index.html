@@ -9,6 +9,23 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet" />
+    <script>
+      (function(){
+        var lite = localStorage.getItem('lite') === '1';
+        if(lite){
+          var link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = '/legacy.css';
+          document.head.appendChild(link);
+          // 기존 Vite가 삽입한 hashed css 비활성화 (load 후)
+          window.addEventListener('load', function(){
+            document.querySelectorAll('link[rel="stylesheet"]').forEach(function(el){
+              if(el.href.includes('/assets/') && !el.href.includes('legacy')) el.disabled = true;
+            });
+          });
+        }
+      })();
+    </script>
     <title>사출 생산관리 시스템</title>
   </head>
   <body class="min-h-screen bg-gray-50 antialiased selection:bg-blue-200">
