@@ -155,7 +155,7 @@ export default function ModelsManager() {
                     <Input id="sr" type="number" value={form.sr_weight_g ?? ''} onChange={(e) => setForm({ ...form, sr_weight_g: e.target.value ? Number(e.target.value) : null })} />
                   </div>
                   <div>
-                    <Label htmlFor="ct">C/T(초)</Label>
+                    <Label htmlFor="ct">{t('ct_sec')}</Label>
                     <Input id="ct" type="number" value={form.cycle_time_sec ?? ''} onChange={(e) => setForm({ ...form, cycle_time_sec: e.target.value ? Number(e.target.value) : null })} />
                   </div>
                 </div>

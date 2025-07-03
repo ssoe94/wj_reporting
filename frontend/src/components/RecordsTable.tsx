@@ -93,17 +93,17 @@ export default function RecordsTable() {
                     <table className="mt-2 w-full text-sm">
                       <thead className="bg-gray-50 text-xs text-gray-500">
                         <tr>
-                          <th className="px-2 py-1 text-center">모델</th>
-                          <th className="px-2 py-1 text-center">사출기번호</th>
-                          <th className="px-2 py-1 text-center">형체력(T)</th>
-                          <th className="px-2 py-1 text-center">계획생산량</th>
-                          <th className="px-2 py-1 text-center">양품생산량</th>
-                          <th className="px-2 py-1 text-center">불량생산량</th>
-                          <th className="px-2 py-1 text-center">시작일시</th>
-                          <th className="px-2 py-1 text-center">종료일시</th>
-                          <th className="px-2 py-1 text-center">가동시간(분)</th>
-                          <th className="px-2 py-1 text-center flex-1">비고</th>
-                          <th className="px-2 py-1 w-16 text-center">액션</th>
+                          <th className="px-2 py-1 text-center">{t('header_model')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_machine')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_tonnage')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_plan')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_actual')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_defect')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_start')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_end')}</th>
+                          <th className="px-2 py-1 text-center">{t('header_run')}</th>
+                          <th className="px-2 py-1 text-center w-64">{t('header_note')}</th>
+                          <th className="px-2 py-1 w-16 text-center">{t('header_action')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -118,7 +118,7 @@ export default function RecordsTable() {
                             <td className="px-2 py-1 text-center">{r.start_datetime?.replace('T',' ').slice(0,16)}</td>
                             <td className="px-2 py-1 text-center">{r.end_datetime?.replace('T',' ').slice(0,16)}</td>
                             <td className="px-2 py-1 text-center">{r.operation_time}</td>
-                            <td className="px-2 py-1 text-center max-w-xs truncate" title={r.note}>{r.note}</td>
+                            <td className="px-2 py-1 text-center max-w-[250px] whitespace-pre-line truncate" title={r.note}>{r.note}</td>
                             <td className="px-2 py-1 w-32 flex justify-center gap-2">
                               <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-blue-600" onClick={() => setEditing(r)}>
                                 <Pencil className="h-4 w-4" />
@@ -144,35 +144,35 @@ export default function RecordsTable() {
         <div className="absolute inset-0 bg-black/50" aria-hidden="true" />
         {editing && (
           <Dialog.Panel className="relative w-full max-w-lg rounded-lg bg-white p-6 space-y-4">
-            <Dialog.Title className="text-lg font-semibold">기록 수정</Dialog.Title>
+            <Dialog.Title className="text-lg font-semibold">{t('modal_edit_title')}</Dialog.Title>
             <form className="space-y-4" onSubmit={handleUpdate}>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm mb-1">모델</label>
+                  <label className="block text-sm mb-1">{t('model')}</label>
                   <Input value={editing.model} onChange={(e)=>setEditing({...editing, model:e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">사출기번호</label>
+                  <label className="block text-sm mb-1">{t('machine_no')}</label>
                   <Input type="number" value={editing.machine_no} onChange={(e)=>setEditing({...editing, machine_no:Number(e.target.value)})} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">형체력(T)</label>
+                  <label className="block text-sm mb-1">{t('tonnage')}</label>
                   <Input value={editing.tonnage} onChange={(e)=>setEditing({...editing, tonnage:e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">계획생산량</label>
+                  <label className="block text-sm mb-1">{t('header_plan')}</label>
                   <Input type="number" value={editing.plan_qty} onChange={(e)=>setEditing({...editing, plan_qty:Number(e.target.value)})} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">양품생산량</label>
+                  <label className="block text-sm mb-1">{t('header_actual')}</label>
                   <Input type="number" value={editing.actual_qty} onChange={(e)=>setEditing({...editing, actual_qty:Number(e.target.value)})} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">불량생산량</label>
+                  <label className="block text-sm mb-1">{t('header_defect')}</label>
                   <Input type="number" value={editing.actual_defect} onChange={(e)=>setEditing({...editing, actual_defect:Number(e.target.value)})} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">부동시간(분)</label>
+                  <label className="block text-sm mb-1">{t('header_run')}</label>
                   <Input type="number" value={editing.operation_time ? editing.total_time - editing.operation_time : 0} onChange={(e)=>{
                     const idle = Number(e.target.value);
                     const total = calcTotal(editing.start_datetime, editing.end_datetime);
@@ -180,15 +180,15 @@ export default function RecordsTable() {
                   }} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">시작일시</label>
+                  <label className="block text-sm mb-1">{t('header_start')}</label>
                   <Input type="datetime-local" value={editing.start_datetime.slice(0,16)} onChange={(e)=>setEditing({...editing, start_datetime:e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">종료일시</label>
+                  <label className="block text-sm mb-1">{t('header_end')}</label>
                   <Input type="datetime-local" value={editing.end_datetime.slice(0,16)} onChange={(e)=>setEditing({...editing, end_datetime:e.target.value})} />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm mb-1">비고</label>
+                  <label className="block text-sm mb-1">{t('header_note')}</label>
                   <Textarea value={editing.note} onChange={(e)=>setEditing({...editing, note:e.target.value})} />
                 </div>
               </div>
