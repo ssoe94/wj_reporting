@@ -118,7 +118,7 @@ export default function RecordsTable() {
                             <td className="px-2 py-1 text-center">{r.start_datetime?.replace('T',' ').slice(0,16)}</td>
                             <td className="px-2 py-1 text-center">{r.end_datetime?.replace('T',' ').slice(0,16)}</td>
                             <td className="px-2 py-1 text-center">{r.operation_time}</td>
-                            <td className="px-2 py-1 text-center max-w-[250px] whitespace-pre-line truncate" title={r.note}>{r.note}</td>
+                            <td className="px-2 py-1 text-left max-w-[250px] whitespace-pre-line truncate line-clamp-2" title={r.note}>{r.note}</td>
                             <td className="px-2 py-1 w-32 flex justify-center gap-2">
                               <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-blue-600" onClick={() => setEditing(r)}>
                                 <Pencil className="h-4 w-4" />
