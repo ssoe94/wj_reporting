@@ -13,7 +13,7 @@ class InjectionReport(models.Model):
     machine_no = models.PositiveSmallIntegerField('사출기 번호', null=True, blank=True)
     tonnage = models.CharField('형체력(T)', max_length=10)
     model = models.CharField('모델명', max_length=50)
-    section = models.CharField('구분', max_length=10, choices=SECTION_CHOICES)
+    section = models.CharField('구분', max_length=50)
     
     # 수량 정보
     plan_qty = models.IntegerField('계획수량', validators=[MinValueValidator(0)])
