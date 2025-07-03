@@ -90,7 +90,7 @@ export default function RecordsTable() {
                     {open ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
                   </button>
                   {open && (
-                    <table className="mt-2 w-full text-sm">
+                    <table className="mt-2 w-full text-sm table-fixed">
                       <thead className="bg-gray-50 text-xs text-gray-500">
                         <tr>
                           <th className="px-2 py-1 text-center">{t('header_model')}</th>
@@ -103,7 +103,7 @@ export default function RecordsTable() {
                           <th className="px-2 py-1 text-center">{t('header_end')}</th>
                           <th className="px-2 py-1 text-center">{t('header_run')}</th>
                           <th className="px-2 py-1 text-center w-64">{t('header_note')}</th>
-                          <th className="px-2 py-1 w-16 text-center">{t('header_action')}</th>
+                          <th className="px-2 py-1 w-20 text-center">{t('header_action')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -118,8 +118,8 @@ export default function RecordsTable() {
                             <td className="px-2 py-1 text-center">{r.start_datetime?.replace('T',' ').slice(0,16)}</td>
                             <td className="px-2 py-1 text-center">{r.end_datetime?.replace('T',' ').slice(0,16)}</td>
                             <td className="px-2 py-1 text-center">{r.operation_time}</td>
-                            <td className="px-2 py-1 text-left max-w-[250px] whitespace-pre-line truncate line-clamp-2" title={r.note}>{r.note}</td>
-                            <td className="px-2 py-1 w-32 flex justify-center gap-2">
+                            <td className="px-2 py-1 text-left w-64 max-w-[250px] whitespace-pre-line truncate line-clamp-2 align-top" title={r.note}>{r.note}</td>
+                            <td className="px-2 py-1 w-20 flex justify-center gap-2 align-top">
                               <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-blue-600" onClick={() => setEditing(r)}>
                                 <Pencil className="h-4 w-4" />
                               </Button>
