@@ -12,6 +12,18 @@ export interface Eco {
   close_date: string | null;
   status: string; // OPEN / CLOSED / WIP
   note: string;
+  prepared_date: string;
+  issued_date: string;
+  eco_model: string;
+  change_reason: string;
+  change_details: string;
+  applicable_models: string;
+  applicable_work_order: string;
+  storage_action: string;
+  inventory_finished: number | null;
+  inventory_material: number | null;
+  applicable_date: string;
+  form_type: 'REGULAR' | 'TEMP';
 }
 
 export function useEcos(keyword = ''): UseQueryResult<Eco[]> {
