@@ -10,6 +10,7 @@ import {
   PackageSearch,
   Home as HomeIcon,
   ChevronRight,
+  ClipboardCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ export function useNavItems() {
     { to: "#records", label: t("nav_records"), icon: ClipboardList },
     { to: "#new", label: t("nav_new"), icon: PlusSquare },
     { to: "/models", label: t("nav_models"), icon: PackageSearch },
+    { to: "/eco", label: t("nav_eco"), icon: ClipboardCheck },
 ];
 }
 
