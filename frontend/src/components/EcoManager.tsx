@@ -46,6 +46,7 @@ export default function EcoManager() {
     },
     onSuccess: ()=>{
       queryClient.invalidateQueries({queryKey:['ecos']});
+      setKeyword('');
       setDialogOpen(false);
     }
   });
