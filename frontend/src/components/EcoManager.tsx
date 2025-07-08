@@ -40,9 +40,9 @@ export default function EcoManager() {
   const upsert = useMutation({
     mutationFn: async (payload: Partial<Eco>) => {
       if(payload.id) {
-        return api.patch(`/ecos/${payload.id}/`, payload);
+        return api.patch(`ecos/${payload.id}/`, payload);
       }
-      return api.post('/ecos/', payload);
+      return api.post('ecos/', payload);
     },
     onSuccess: ()=>{
       queryClient.invalidateQueries({queryKey:['ecos']});
