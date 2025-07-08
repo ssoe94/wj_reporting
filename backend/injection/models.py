@@ -116,4 +116,52 @@ class PartSpec(models.Model):
         ordering = ['part_no', '-valid_from']
 
     def __str__(self):
-        return f"{self.part_no} ({self.valid_from})" 
+        return f"{self.part_no} ({self.valid_from})"
+
+# ================================
+# ECO 관리
+# ================================
+
+class EngineeringChangeOrder(models.Model):
+    STATUS_CHOICES = [
+        ("OPEN", "OPEN"),
+        ("WIP", "WIP"),
+        ("CLOSED", "CLOSED"),
+    ]
+
+    form_type = models.CharField("양식 구분", max_length=10, choices=[("REGULAR", "REGULAR"), ("TEMP", "TEMP")], default="REGULAR")
+
+    eco_no = models.CharField("ECO 번호", max_length=50, unique=True)
+    eco_model = models.CharField("모델", max_length=100, blank=True)
+    customer = models.CharField("고객사", max_length=100, blank=True)
+
+    prepared_date = models.DateField("제정일", null=True, blank=True)
+    issued_date = models.DateField("발표일", null=True, blank=True)
+    received_date = models.DateField("접수일", null=True, blank=True)
+    due_date = models.DateField("완료 예정일", null=True, blank=True)
+    close_date = models.DateField("완료일", null=True, blank=True)
+
+    change_reason = models.TextField("변경 사유", blank=True)
+    change_details = models.TextField("변경 내용", blank=True)
+    applicable_work_order = models.CharField("적용 작업지시/시점", max_length=200, blank=True)
+
+    storage_action = models.CharField("재고 처리", max_length=200, blank=True)
+    inventory_finished = models.IntegerField("완제품 재고", null=True, blank=True)
+    inventory_material = models.IntegerField("자재 재고", null=True, blank=True)
+
+    applicable_date = models.DateField("적용일", null=True, blank=True)
+
+    status = models.CharField("상태", max_length=10, choices=STATUS_CHOICES, default="OPEN")
+
+    note = models.TextField("비고", blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "ECO"
+        verbose_name_plural = "ECO 목록"
+        ordering = ["-prepared_date", "eco_no"]
+
+    def __str__(self):
+        return self.eco_no 

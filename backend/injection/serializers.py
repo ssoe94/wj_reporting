@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import InjectionReport, Product, PartSpec
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder
 
 class InjectionReportSerializer(serializers.ModelSerializer):
     achievement_rate = serializers.FloatField(read_only=True)
@@ -27,4 +27,9 @@ class ProductSerializer(serializers.ModelSerializer):
 class PartSpecSerializer(serializers.ModelSerializer):
     class Meta:
         model = PartSpec
+        fields = '__all__'
+
+class EngineeringChangeOrderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EngineeringChangeOrder
         fields = '__all__' 

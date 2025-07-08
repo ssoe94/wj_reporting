@@ -1,8 +1,13 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import InjectionReport, Product, PartSpec
-from .serializers import InjectionReportSerializer, ProductSerializer, PartSpecSerializer
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder
+from .serializers import (
+    InjectionReportSerializer,
+    ProductSerializer,
+    PartSpecSerializer,
+    EngineeringChangeOrderSerializer,
+)
 import csv
 import io
 from django.http import HttpResponse
@@ -182,4 +187,12 @@ class PartSpecViewSet(viewsets.ModelViewSet):
     serializer_class = PartSpecSerializer
     filterset_fields = ['model_code', 'part_no']
     search_fields = ['part_no', 'description', 'model_code']
-    ordering = ['part_no'] 
+    ordering = ['part_no']
+
+# ==== ECO 관리 (CRUD) ====
+class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
+    queryset = EngineeringChangeOrder.objects.all()
+    serializer_class = EngineeringChangeOrderSerializer
+    filterset_fields = ['status', 'eco_model', 'customer']
+    search_fields = ['eco_no', 'change_reason', 'change_details', 'customer', 'eco_model']
+    ordering = ['-prepared_date'] 
