@@ -57,10 +57,10 @@ export default function EcoManager() {
   return (
     <>
       <div className="flex justify-between mb-2 gap-2 items-center">
-        <input
+        <Input
           type="text"
           placeholder={t('eco_search_placeholder')}
-          className="border rounded px-2 py-1 text-sm flex-1"
+          className="flex-1"
           value={keyword}
           onChange={(e)=>setKeyword(e.target.value)}
         />
