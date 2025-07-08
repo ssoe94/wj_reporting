@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { PartSpec } from '@/hooks/usePartSpecs';
 import { useLang } from '@/i18n';
+import { toast } from 'react-toastify';
 
 export default function ModelsManager() {
   const queryClient = useQueryClient();
@@ -26,6 +27,7 @@ export default function ModelsManager() {
   });
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [errors, setErrors] = useState<Record<string,string>>({});
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState<Partial<PartSpec>>({
     part_no: '',
@@ -37,18 +39,40 @@ export default function ModelsManager() {
   const upsert = useMutation({
     mutationFn: async (payload: Partial<PartSpec>) => {
       if (payload.id) {
-        return api.patch(`/parts/${payload.id}/`, payload);
+        return api.patch(`parts/${payload.id}/`, payload);
       }
-      return api.post('/parts/', payload);
+      return api.post('parts/', payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['parts-admin'] });
       setDialogOpen(false);
+      setErrors({});
+      toast.success(t('save_success'));
     },
+    onError: (err:any)=>{
+      try {
+        const data = err.response?.data || err.data || {};
+        setErrors(data);
+        const firstKey = Object.keys(data)[0];
+        const firstMsg = Array.isArray(data[firstKey]) ? data[firstKey][0] : data[firstKey];
+        toast.error(firstMsg || t('save_fail'));
+      } catch {
+        toast.error(t('save_fail'));
+      }
+    }
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const required = ['part_no', 'model_code'];
+    const missing: Record<string,string> = {};
+    required.forEach((k)=>{ const val=(form as any)[k]; if(!val||String(val).trim()==='') missing[k]='required'; });
+    if(Object.keys(missing).length){
+      setErrors(missing);
+      toast.error(t('required_error'));
+      return;
+    }
+    setErrors({});
     upsert.mutate(form as PartSpec);
   };
 
@@ -115,11 +139,11 @@ export default function ModelsManager() {
               <form onSubmit={handleSubmit} className="space-y-3">
                 <div>
                   <Label htmlFor="part_no">Part No</Label>
-                  <Input id="part_no" value={form.part_no || ''} onChange={(e) => setForm({ ...form, part_no: e.target.value })} required />
+                  <Input id="part_no" value={form.part_no || ''} onChange={(e) => setForm({ ...form, part_no: e.target.value })} className={errors.part_no ? 'border-red-500' : ''} />
                 </div>
                 <div>
                   <Label htmlFor="model_code">Model</Label>
-                  <Input id="model_code" value={form.model_code || ''} onChange={(e) => setForm({ ...form, model_code: e.target.value })} required />
+                  <Input id="model_code" value={form.model_code || ''} onChange={(e) => setForm({ ...form, model_code: e.target.value })} className={errors.model_code ? 'border-red-500' : ''} />
                 </div>
                 <div>
                   <Label htmlFor="desc">Description</Label>

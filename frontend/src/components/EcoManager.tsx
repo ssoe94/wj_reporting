@@ -16,6 +16,7 @@ export default function EcoManager() {
   const queryClient = useQueryClient();
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [errors, setErrors] = useState<Record<string,string>>({});
   const today = new Date().toISOString().slice(0,10);
   const emptyForm: Partial<Eco> = {
     eco_no: '',
@@ -49,11 +50,13 @@ export default function EcoManager() {
       queryClient.invalidateQueries({queryKey:['ecos']});
       setKeyword('');
       setDialogOpen(false);
+      setErrors({});
       toast.success(t('save_success'));
     },
     onError: (err:any)=>{
       try {
         const data = err.response?.data || err.data || {};
+        setErrors(data);
         const firstKey = Object.keys(data)[0];
         const firstMsg = Array.isArray(data[firstKey]) ? data[firstKey][0] : data[firstKey];
         toast.error(firstMsg || t('save_fail'));
@@ -64,6 +67,7 @@ export default function EcoManager() {
   });
 
   const handleUpsert = (payload: Partial<Eco>) => {
+    setErrors({});
     upsert.mutate(payload);
   };
 
@@ -118,6 +122,7 @@ export default function EcoManager() {
         onClose={()=>setDialogOpen(false)}
         onSubmit={handleUpsert}
         isSaving={upsert.isPending}
+        errors={errors}
       />
     </>
   );

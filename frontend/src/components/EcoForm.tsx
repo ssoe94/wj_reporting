@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useLang } from '@/i18n';
 import type { Eco } from '@/hooks/useEcos';
+import { toast } from 'react-toastify';
 
 interface Props {
   initial: Partial<Eco>;
@@ -12,14 +13,27 @@ interface Props {
   onClose: () => void;
   onSubmit: (payload: Partial<Eco>) => void;
   isSaving?: boolean;
+  errors?: Record<string, string>;
 }
 
-export default function EcoForm({ initial, open, onClose, onSubmit, isSaving }: Props) {
+export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, errors = {} }: Props) {
   const { t } = useLang();
   const [form, setForm] = useState<Partial<Eco>>(initial);
 
+  const errClass = (field:string) => errors[field] ? 'border-red-500' : '';
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const required: (keyof Eco)[] = ['eco_no', 'eco_model'];
+    const missing: Record<string, string> = {};
+    required.forEach((k) => {
+      const val = (form as any)[k];
+      if (!val || String(val).trim() === '') missing[String(k)] = 'required';
+    });
+    if (Object.keys(missing).length) {
+      toast.error(t('required_error'));
+      return;
+    }
     onSubmit(form);
   };
 
@@ -35,11 +49,11 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving }: 
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="eco_no">{t('eco_no')}</Label>
-                <Input id="eco_no" value={form.eco_no || ''} onChange={(e)=>setForm({...form, eco_no:e.target.value})} required />
+                <Input id="eco_no" value={form.eco_no || ''} onChange={(e)=>setForm({...form, eco_no:e.target.value})} className={errClass('eco_no')} />
               </div>
               <div>
                 <Label htmlFor="eco_model">{t('eco_model')}</Label>
-                <Input id="eco_model" value={form.eco_model || ''} onChange={(e)=>setForm({...form, eco_model:e.target.value})} />
+                <Input id="eco_model" value={form.eco_model || ''} onChange={(e)=>setForm({...form, eco_model:e.target.value})} className={errClass('eco_model')} />
               </div>
               <div>
                 <Label htmlFor="customer">{t('customer')}</Label>
