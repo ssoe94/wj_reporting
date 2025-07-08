@@ -7,6 +7,7 @@ import { useLang } from '@/i18n';
 import api from '@/lib/api';
 import { useEcos } from '@/hooks/useEcos';
 import type { Eco } from '@/hooks/useEcos';
+import { toast } from 'react-toastify';
 
 export default function EcoManager() {
   const { t } = useLang();
@@ -48,6 +49,17 @@ export default function EcoManager() {
       queryClient.invalidateQueries({queryKey:['ecos']});
       setKeyword('');
       setDialogOpen(false);
+      toast.success(t('save_success'));
+    },
+    onError: (err:any)=>{
+      try {
+        const data = err.response?.data || err.data || {};
+        const firstKey = Object.keys(data)[0];
+        const firstMsg = Array.isArray(data[firstKey]) ? data[firstKey][0] : data[firstKey];
+        toast.error(firstMsg || t('save_fail'));
+      } catch {
+        toast.error(t('save_fail'));
+      }
     }
   });
 
