@@ -107,9 +107,17 @@ export default function RecordsTable() {
                         </tr>
                       </thead>
                       <tbody>
-                        {list.map((r) => (
+                        {[...list].sort((a, b) => (a.machine_no ?? 0) - (b.machine_no ?? 0)).map((r) => (
                           <tr key={r.id} className="border-b last:border-0">
-                            <td className="px-2 py-1 text-center">{r.model}</td>
+                            <td className="px-2 py-1 text-center whitespace-pre-line">
+                              <span className="block">
+                                {r.model}
+                                {r.section ? ` - ${r.section}` : ''}
+                              </span>
+                              {r.part_no && (
+                                <span className="block text-gray-500">{r.part_no}</span>
+                              )}
+                            </td>
                             <td className="px-2 py-1 text-center">{r.machine_no}</td>
                             <td className="px-2 py-1 text-center">{r.tonnage}</td>
                             <td className="px-2 py-1 text-center">{r.plan_qty}</td>

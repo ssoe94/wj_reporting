@@ -40,7 +40,7 @@ export function useNavItems() {
     { to: "#records", label: t("nav_records"), icon: ClipboardList },
     { to: "#new", label: t("nav_new"), icon: PlusSquare },
     { to: "/models", label: t("nav_models"), icon: PackageSearch },
-  ];
+];
 }
 
 // 컴포넌트 최상단에 추가
@@ -339,14 +339,14 @@ export default function App() {
             <nav className="mt-8 flex flex-col gap-4">
               {navItems.map((item) => (
                 item.to.startsWith("#") ? (
-                  <a
+                <a
                     key={item.to}
                     href={item.to}
-                    onClick={() => setSidebarOpen(false)}
-                    className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
-                  >
-                    {item.label}
-                  </a>
+                  onClick={() => setSidebarOpen(false)}
+                  className="px-3 py-2 rounded-lg font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition"
+                >
+                  {item.label}
+                </a>
                 ) : (
                   <Link
                     key={item.to}

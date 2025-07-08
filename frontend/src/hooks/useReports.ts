@@ -14,6 +14,7 @@ export interface Report {
   actual_defect: number;
   operation_time: number;
   total_time: number;
+  part_no: string;
   note: string;
   machine_no: number;
   start_datetime: string;
