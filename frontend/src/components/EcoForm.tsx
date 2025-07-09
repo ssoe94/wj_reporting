@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useLang } from '@/i18n';
 import type { Eco } from '@/hooks/useEcos';
 import { toast } from 'react-toastify';
+import { useEffect } from 'react';
 
 interface Props {
   initial: Partial<Eco>;
@@ -19,8 +20,16 @@ interface Props {
 export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, errors = {} }: Props) {
   const { t } = useLang();
   const [form, setForm] = useState<Partial<Eco>>(initial);
+  const [localErrors, setLocalErrors] = useState<Record<string,string>>({});
 
-  const errClass = (field:string) => errors[field] ? 'border-red-500' : '';
+  // sync server-side validation errors from parent
+  useEffect(()=>{
+    setLocalErrors({});
+  },[initial]);
+
+  const mergedErrors = {...errors, ...localErrors};
+
+  const errClass = (field:string) => mergedErrors[field] ? 'border-red-500' : '';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,9 +40,11 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
       if (!val || String(val).trim() === '') missing[String(k)] = 'required';
     });
     if (Object.keys(missing).length) {
+      setLocalErrors(missing);
       toast.error(t('required_error'));
       return;
     }
+    setLocalErrors({});
     onSubmit(form);
   };
 
