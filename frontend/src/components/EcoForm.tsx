@@ -5,7 +5,10 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useLang } from '@/i18n';
 import type { Eco } from '@/hooks/useEcos';
+import type { PartSpec } from '@/hooks/usePartSpecs';
 import { toast } from 'react-toastify';
+import PartMultiSelect from '@/components/PartMultiSelect';
+import { useInventory } from '@/hooks/useInventory';
 
 interface Props {
   initial: Partial<Eco>;
@@ -20,6 +23,8 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
   const { t } = useLang();
   const [form, setForm] = useState<Partial<Eco>>(initial);
   const [localErrors, setLocalErrors] = useState<Record<string,string>>({});
+  const [parts, setParts] = useState<PartSpec[]>([]);
+  const invQuery = useInventory(parts.map(p=>p.id));
 
   // reset form & clear local errors whenever dialog opens with new data
   useEffect(()=>{
@@ -44,6 +49,8 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
       toast.error(t('required_error'));
       return;
     }
+    if(!parts.length){ toast.error(t('required_error')); return; }
+    (form as any).part_ids = parts.map(p=>p.id);
     setLocalErrors({});
     onSubmit(form);
   };
@@ -131,6 +138,21 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
                   <option value="TEMP">{t('form_type_temp')}</option>
                 </select>
               </div>
+            </div>
+            {/* Part 선택 */}
+            <div className="space-y-2">
+              <Label>{t('header_model')}</Label>
+              <PartMultiSelect onAdd={(sel)=> setParts(prev=> [...prev, ...sel.filter(s=> !prev.some(p=>p.id===s.id))])} />
+              {parts.length>0 && (
+                <table className="min-w-full text-sm border mt-2">
+                  <thead className="bg-slate-100"><tr><th className="px-2 py-1">Part No</th><th className="px-2 py-1">Desc</th><th className="px-2 py-1">재고</th><th></th></tr></thead>
+                  <tbody>
+                    {parts.map(p=>(
+                      <tr key={p.id} className="border-t"><td className="px-2 py-1 font-mono">{p.part_no}</td><td className="px-2 py-1 text-xs">{p.description}</td><td className="px-2 py-1 text-right">{invQuery.data?.[p.id] ?? '-'}</td><td className="px-2 py-1 text-right"><Button type="button" size="icon" variant="ghost" onClick={()=>setParts(parts.filter(x=>x.id!==p.id))}>×</Button></td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
             <div>
               <Label htmlFor="note">{t('header_note')}</Label>

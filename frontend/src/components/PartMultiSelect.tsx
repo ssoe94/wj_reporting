@@ -1,0 +1,47 @@
+import { useState } from 'react';
+import { usePartSearch } from '@/hooks/usePartSearch';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import type { PartSpec } from '@/hooks/usePartSpecs';
+import { useLang } from '@/i18n';
+
+interface Props {
+  onAdd: (parts: PartSpec[]) => void;
+}
+
+export default function PartMultiSelect({ onAdd }: Props) {
+  const { t } = useLang();
+  const [keyword, setKeyword] = useState('');
+  const [selected, setSelected] = useState<PartSpec[]>([]);
+  const { data: results = [] } = usePartSearch(keyword);
+
+  const toggle = (p: PartSpec) => {
+    setSelected(prev=> prev.some(it=>it.id===p.id) ? prev.filter(it=>it.id!==p.id) : [...prev, p]);
+  };
+
+  return (
+    <div className="border rounded p-3 space-y-2">
+      <div className="flex gap-2 items-center">
+        <Input value={keyword} onChange={(e)=>setKeyword(e.target.value)} placeholder={t('search_placeholder')} className="flex-1" />
+        <Button size="sm" onClick={()=>{onAdd(selected); setSelected([]);}} disabled={!selected.length}>{t('select')}</Button>
+      </div>
+      {keyword.trim() && (
+        <ul className="max-h-60 overflow-auto border rounded p-2 text-sm space-y-1 bg-white">
+          {results.map(r=> (
+            <li key={r.id} className="flex items-center gap-2">
+              <input type="checkbox" checked={selected.some(it=>it.id===r.id)} onChange={()=>toggle(r)} />
+              <span className="font-mono">{r.part_no}</span>
+              <span className="text-gray-500 text-xs">{r.description}</span>
+            </li>
+          ))}
+          {!results.length && <li className="text-center text-xs text-gray-400 py-4">{t('no_data')}</li>}
+        </ul>
+      )}
+      {selected.length > 0 && (
+        <div className="text-xs text-gray-600">
+          {selected.length} {t('select')}...
+        </div>
+      )}
+    </div>
+  );
+} 
