@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, InventorySnapshot
 
 class InjectionReportSerializer(serializers.ModelSerializer):
     achievement_rate = serializers.FloatField(read_only=True)
@@ -32,4 +32,23 @@ class PartSpecSerializer(serializers.ModelSerializer):
 class EngineeringChangeOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = EngineeringChangeOrder
-        fields = '__all__' 
+        fields = '__all__'
+
+
+class EcoDetailSerializer(serializers.ModelSerializer):
+    part_no = serializers.CharField(source='part_spec.part_no', read_only=True)
+    description = serializers.CharField(source='part_spec.description', read_only=True)
+
+    class Meta:
+        model = EcoDetail
+        fields = ['id', 'eco_header', 'part_spec', 'part_no', 'description', 'change_reason', 'change_details', 'created_at']
+        read_only_fields = ['created_at']
+
+
+class InventorySnapshotSerializer(serializers.ModelSerializer):
+    part_no = serializers.CharField(source='part_spec.part_no', read_only=True)
+
+    class Meta:
+        model = InventorySnapshot
+        fields = ['id', 'part_spec', 'part_no', 'qty', 'collected_at']
+        read_only_fields = ['collected_at'] 

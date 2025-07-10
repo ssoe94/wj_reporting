@@ -1,17 +1,23 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, InventorySnapshot
 from .serializers import (
     InjectionReportSerializer,
     ProductSerializer,
     PartSpecSerializer,
     EngineeringChangeOrderSerializer,
+    EcoDetailSerializer,
+    InventorySnapshotSerializer,
 )
 import csv
 import io
 from django.http import HttpResponse
 import datetime as dt
+from django.conf import settings
+import requests
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
 
 class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
@@ -196,3 +202,79 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     filterset_fields = ['status', 'eco_model', 'customer']
     search_fields = ['eco_no', 'change_reason', 'change_details', 'customer', 'eco_model']
     ordering = ['-prepared_date'] 
+
+    @action(detail=True, methods=['post'], url_path='details/bulk')
+    def bulk_details(self, request, pk=None):
+        """part_spec_ids=[..] + optional reason/msg 로 다중 EcoDetail 생성"""
+        eco = self.get_object()
+        part_ids = request.data.get('part_ids') or []
+        if not isinstance(part_ids, list):
+            return Response({'detail':'part_ids must be list'}, status=400)
+        reason = request.data.get('change_reason','')
+        details = request.data.get('change_details','')
+        created = 0
+        for pid in part_ids:
+            try:
+                part = PartSpec.objects.get(id=pid)
+                EcoDetail.objects.get_or_create(
+                    eco_header=eco,
+                    part_spec=part,
+                    defaults={'change_reason':reason, 'change_details':details}
+                )
+                created +=1
+            except PartSpec.DoesNotExist:
+                continue
+        return Response({'created':created})
+
+
+# ==== Inventory API ====
+
+class InventoryView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        part_ids = request.query_params.getlist('part_ids')
+        if not part_ids:
+            return Response({'detail':'part_ids query param required'}, status=400)
+        parts = PartSpec.objects.filter(id__in=part_ids)
+
+        # If snapshot within 30min exists, use it; else fetch
+        result = {}
+        now = dt.datetime.utcnow()
+        need_fetch = []
+        for p in parts:
+            snap = InventorySnapshot.objects.filter(part_spec=p).order_by('-collected_at').first()
+            if snap and (now - snap.collected_at).total_seconds() < 1800:
+                result[p.id] = snap.qty
+            else:
+                need_fetch.append(p)
+
+        if need_fetch:
+            token = getattr(settings, 'MES_ACCESS_TOKEN', '')
+            base = getattr(settings, 'MES_API_BASE', '')
+            if not (token and base):
+                return Response({'detail':'MES api not configured'}, status=500)
+            url = base.rstrip('/') + '/inventory/open/v1/material_inventory/_list'
+            codes = [p.part_no for p in need_fetch]
+            payload = {"materialCodes": codes, "selectFlag":0, "page":1, "size":100}
+            try:
+                resp = requests.post(url, params={'access_token':token}, json=payload, timeout=10)
+                resp.raise_for_status()
+                data = resp.json()
+                items = data.get('data', {}).get('list', [])
+                # aggregate qty by material code
+                qty_map = {}
+                for it in items:
+                    code = it.get('material',{}).get('code')
+                    amount = it.get('amount',{}).get('amount',0)
+                    qty_map[code] = qty_map.get(code,0)+amount
+            except Exception as e:
+                return Response({'detail':f'MES fetch error: {e}'}, status=502)
+
+            # save snapshots & fill result
+            for p in need_fetch:
+                qty = qty_map.get(p.part_no, 0)
+                InventorySnapshot.objects.create(part_spec=p, qty=qty)
+                result[p.id] = qty
+
+        return Response(result) 

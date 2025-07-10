@@ -166,3 +166,6 @@ STATICFILES_DIRS = [
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+MES_API_BASE = os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn/api/openapi/domain/web/v1/route')
+MES_ACCESS_TOKEN = os.getenv('MES_ACCESS_TOKEN', '')
