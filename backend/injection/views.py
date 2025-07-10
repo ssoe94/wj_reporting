@@ -207,19 +207,24 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     def bulk_details(self, request, pk=None):
         """part_spec_ids=[..] + optional reason/msg 로 다중 EcoDetail 생성"""
         eco = self.get_object()
-        part_ids = request.data.get('part_ids') or []
-        if not isinstance(part_ids, list):
-            return Response({'detail':'part_ids must be list'}, status=400)
-        reason = request.data.get('change_reason','')
-        details = request.data.get('change_details','')
+        items = request.data.get('details')
+        if not isinstance(items, list):
+            return Response({'detail':'details must be list'}, status=400)
         created = 0
-        for pid in part_ids:
+        for it in items:
+            pid = it.get('part_spec')
+            if not pid:
+                continue
             try:
                 part = PartSpec.objects.get(id=pid)
                 EcoDetail.objects.get_or_create(
                     eco_header=eco,
                     part_spec=part,
-                    defaults={'change_reason':reason, 'change_details':details}
+                    defaults={
+                        'change_reason': it.get('change_reason',''),
+                        'change_details': it.get('change_details',''),
+                        'status': it.get('status','OPEN') or 'OPEN'
+                    }
                 )
                 created +=1
             except PartSpec.DoesNotExist:

@@ -41,7 +41,7 @@ class EcoDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EcoDetail
-        fields = ['id', 'eco_header', 'part_spec', 'part_no', 'description', 'change_reason', 'change_details', 'created_at']
+        fields = ['id', 'eco_header', 'part_spec', 'part_no', 'description', 'change_reason', 'change_details', 'status', 'created_at']
         read_only_fields = ['created_at']
 
 
