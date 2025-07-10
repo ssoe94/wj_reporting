@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { useLang } from '@/i18n';
 import type { Eco } from '@/hooks/useEcos';
 import { toast } from 'react-toastify';
-import { useEffect } from 'react';
 
 interface Props {
   initial: Partial<Eco>;
@@ -22,10 +21,11 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
   const [form, setForm] = useState<Partial<Eco>>(initial);
   const [localErrors, setLocalErrors] = useState<Record<string,string>>({});
 
-  // sync server-side validation errors from parent
+  // reset form & clear local errors whenever dialog opens with new data
   useEffect(()=>{
+    setForm(initial);
     setLocalErrors({});
-  },[initial]);
+  },[initial, open]);
 
   const mergedErrors = {...errors, ...localErrors};
 
@@ -68,47 +68,47 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
               </div>
               <div>
                 <Label htmlFor="customer">{t('customer')}</Label>
-                <Input id="customer" value={form.customer || ''} onChange={(e)=>setForm({...form, customer:e.target.value})} />
+                <Input id="customer" value={form.customer || ''} onChange={(e)=>setForm({...form, customer:e.target.value})} className={errClass('customer')} />
               </div>
               <div>
                 <Label htmlFor="prepared_date">{t('prepared_date')}</Label>
-                <Input id="prepared_date" type="date" value={form.prepared_date || ''} onChange={(e)=>setForm({...form, prepared_date:e.target.value})} />
+                <Input id="prepared_date" type="date" value={form.prepared_date || ''} onChange={(e)=>setForm({...form, prepared_date:e.target.value})} className={errClass('prepared_date')} />
               </div>
               <div>
                 <Label htmlFor="issued_date">{t('issued_date')}</Label>
-                <Input id="issued_date" type="date" value={form.issued_date || ''} onChange={(e)=>setForm({...form, issued_date:e.target.value})} />
+                <Input id="issued_date" type="date" value={form.issued_date || ''} onChange={(e)=>setForm({...form, issued_date:e.target.value})} className={errClass('issued_date')} />
               </div>
               <div>
                 <Label htmlFor="due_date">{t('due_date')}</Label>
-                <Input id="due_date" type="date" value={form.due_date || ''} onChange={(e)=>setForm({...form, due_date:e.target.value})} />
+                <Input id="due_date" type="date" value={form.due_date || ''} onChange={(e)=>setForm({...form, due_date:e.target.value})} className={errClass('due_date')} />
               </div>
             </div>
             {/* 변경 내용 */}
             <div>
               <Label htmlFor="change_reason">{t('change_reason')}</Label>
-              <Input id="change_reason" value={form.change_reason || ''} onChange={(e)=>setForm({...form, change_reason:e.target.value})} />
+              <Input id="change_reason" value={form.change_reason || ''} onChange={(e)=>setForm({...form, change_reason:e.target.value})} className={errClass('change_reason')} />
             </div>
             <div>
               <Label htmlFor="change_details">{t('change_details')}</Label>
-              <Input id="change_details" value={form.change_details || ''} onChange={(e)=>setForm({...form, change_details:e.target.value})} />
+              <Input id="change_details" value={form.change_details || ''} onChange={(e)=>setForm({...form, change_details:e.target.value})} className={errClass('change_details')} />
             </div>
             <div>
               <Label htmlFor="applicable_work_order">{t('applicable_work_order')}</Label>
-              <Input id="applicable_work_order" value={form.applicable_work_order || ''} onChange={(e)=>setForm({...form, applicable_work_order:e.target.value})} />
+              <Input id="applicable_work_order" value={form.applicable_work_order || ''} onChange={(e)=>setForm({...form, applicable_work_order:e.target.value})} className={errClass('applicable_work_order')} />
             </div>
             {/* 재고 및 상태 */}
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="inventory_finished">{t('inventory_finished')}</Label>
-                <Input id="inventory_finished" type="number" value={form.inventory_finished ?? ''} onChange={(e)=>setForm({...form, inventory_finished: e.target.value ? Number(e.target.value) : null})} />
+                <Input id="inventory_finished" type="number" value={form.inventory_finished ?? ''} onChange={(e)=>setForm({...form, inventory_finished: e.target.value ? Number(e.target.value) : null})} className={errClass('inventory_finished')} />
               </div>
               <div>
                 <Label htmlFor="inventory_material">{t('inventory_material')}</Label>
-                <Input id="inventory_material" type="number" value={form.inventory_material ?? ''} onChange={(e)=>setForm({...form, inventory_material: e.target.value ? Number(e.target.value) : null})} />
+                <Input id="inventory_material" type="number" value={form.inventory_material ?? ''} onChange={(e)=>setForm({...form, inventory_material: e.target.value ? Number(e.target.value) : null})} className={errClass('inventory_material')} />
               </div>
               <div>
                 <Label htmlFor="status">{t('status')}</Label>
-                <select id="status" value={form.status || 'OPEN'} onChange={(e)=>setForm({...form, status: e.target.value})} className="border rounded px-2 py-1 w-full">
+                <select id="status" value={form.status || 'OPEN'} onChange={(e)=>setForm({...form, status: e.target.value})} className={`border rounded px-2 py-1 w-full ${errClass('status')}`}>
                   <option value="OPEN">OPEN</option>
                   <option value="WIP">WIP</option>
                   <option value="CLOSED">CLOSED</option>
@@ -118,15 +118,15 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="storage_action">{t('storage_action')}</Label>
-                <Input id="storage_action" value={form.storage_action || ''} onChange={(e)=>setForm({...form, storage_action:e.target.value})} />
+                <Input id="storage_action" value={form.storage_action || ''} onChange={(e)=>setForm({...form, storage_action:e.target.value})} className={errClass('storage_action')} />
               </div>
               <div>
                 <Label htmlFor="applicable_date">{t('applicable_date')}</Label>
-                <Input id="applicable_date" type="date" value={form.applicable_date || ''} onChange={(e)=>setForm({...form, applicable_date:e.target.value})} />
+                <Input id="applicable_date" type="date" value={form.applicable_date || ''} onChange={(e)=>setForm({...form, applicable_date:e.target.value})} className={errClass('applicable_date')} />
               </div>
               <div>
                 <Label htmlFor="form_type">{t('status')}</Label>
-                <select id="form_type" value={form.form_type || 'REGULAR'} onChange={(e)=>setForm({...form, form_type: e.target.value as any})} className="border rounded px-2 py-1 w-full">
+                <select id="form_type" value={form.form_type || 'REGULAR'} onChange={(e)=>setForm({...form, form_type: e.target.value as any})} className={`border rounded px-2 py-1 w-full ${errClass('form_type')}`}>
                   <option value="REGULAR">{t('form_type_regular')}</option>
                   <option value="TEMP">{t('form_type_temp')}</option>
                 </select>
@@ -134,7 +134,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
             </div>
             <div>
               <Label htmlFor="note">{t('header_note')}</Label>
-              <Input id="note" value={form.note || ''} onChange={(e)=>setForm({...form, note:e.target.value})} />
+              <Input id="note" value={form.note || ''} onChange={(e)=>setForm({...form, note:e.target.value})} className={errClass('note')} />
             </div>
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="ghost" onClick={onClose}>{t('cancel')}</Button>

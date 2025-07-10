@@ -40,6 +40,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     save: '저장',
     saving: '저장중...',
     edit: '수정',
+    delete: '삭제',
     new_model: '+ 새 모델',
     search_placeholder: '모델 또는 Part 검색...',
     add_model: '새 모델 추가',
@@ -106,6 +107,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     applicable_date: '적용일',
     form_type_regular: '정규',
     form_type_temp: '임시',
+    delete_confirm: '정말 삭제하시겠습니까?',
   },
   zh: {
     title: '注塑生产管理系统',
@@ -139,6 +141,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     save: '保存',
     saving: '保存中...',
     edit: '编辑',
+    delete: '删除',
     new_model: '+ 新型号',
     search_placeholder: '搜索型号或部件...',
     add_model: '新增型号',
@@ -205,6 +208,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     applicable_date: '适用日期',
     form_type_regular: '正式',
     form_type_temp: '临时',
+    delete_confirm: '确定要删除吗?',
   },
 };
 

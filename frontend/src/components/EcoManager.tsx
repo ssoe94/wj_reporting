@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { useEcos } from '@/hooks/useEcos';
 import type { Eco } from '@/hooks/useEcos';
 import { toast } from 'react-toastify';
+import { Pencil, Trash2 } from 'lucide-react';
 
 export default function EcoManager() {
   const { t } = useLang();
@@ -66,6 +67,23 @@ export default function EcoManager() {
     }
   });
 
+  const del = useMutation({
+    mutationFn: async (id:number)=> api.delete(`ecos/${id}/`),
+    onSuccess: ()=>{
+      queryClient.invalidateQueries({queryKey:['ecos']});
+      toast.success(t('delete_success'));
+    },
+    onError: ()=>{
+      toast.error(t('delete_fail'));
+    }
+  });
+
+  const handleDelete = (eco:Eco)=>{
+    if(!eco.id) return;
+    if(!window.confirm(t('delete_confirm'))) return;
+    del.mutate(eco.id);
+  };
+
   const handleUpsert = (payload: Partial<Eco>) => {
     setErrors({});
     upsert.mutate(payload);
@@ -107,8 +125,13 @@ export default function EcoManager() {
                 <td className="px-3 py-1">{e.prepared_date}</td>
                 <td className="px-3 py-1">{e.issued_date}</td>
                 <td className="px-3 py-1">{e.status}</td>
-                <td className="px-3 py-1 text-right">
-                  <Button size="sm" variant="ghost" onClick={()=>{setForm(e); setDialogOpen(true);}}>{t('edit')}</Button>
+                <td className="px-3 py-1 text-right flex justify-end gap-1">
+                  <Button size="icon" variant="ghost" onClick={()=>{setErrors({}); setForm(e); setDialogOpen(true);}} aria-label={t('edit')}>
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={()=>handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </td>
               </tr>
             ))}
