@@ -83,7 +83,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
                 <Input id="eco_no" value={form.eco_no || ''} onChange={(e)=>setForm({...form, eco_no:e.target.value})} className={errClass('eco_no')} />
               </div>
               <div>
-                <Label htmlFor="eco_model">적용모델</Label>
+                <Label htmlFor="eco_model">{t('eco_model')}</Label>
                 <Input id="eco_model" value={form.eco_model || ''} onChange={(e)=>setForm({...form, eco_model:e.target.value})} />
               </div>
               <div>
@@ -96,7 +96,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
               </div>
             </div>
             <div>
-              <Label htmlFor="change_reason">변경 사유</Label>
+              <Label htmlFor="change_reason">{t('change_reason')}</Label>
               <Input id="change_reason" value={form.change_reason || ''} onChange={(e)=>setForm({...form, change_reason:e.target.value})} />
             </div>
             {/* 모델/Part 선택 */}
