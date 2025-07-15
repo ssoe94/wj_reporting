@@ -49,8 +49,12 @@ export default function PartMultiSelect({ onAdd }: Props) {
         </ul>
       )}
       {selected.length > 0 && (
-        <div className="text-xs text-gray-600">
-          {selected.length} {t('select')}...
+        <div className="flex flex-wrap gap-1 mt-1 text-xs">
+          {selected.map(p=> (
+            <span key={p.id} className="border rounded px-1 py-0.5 bg-orange-50 text-gray-700 font-mono">
+              {p.part_no}
+            </span>
+          ))}
         </div>
       )}
     </div>
