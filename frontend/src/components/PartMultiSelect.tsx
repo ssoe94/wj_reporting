@@ -14,6 +14,13 @@ export default function PartMultiSelect({ onAdd }: Props) {
   const [keyword, setKeyword] = useState('');
   const [selected, setSelected] = useState<PartSpec[]>([]);
   const { data: results = [] } = usePartSearch(keyword);
+  const addManual = () => {
+    const kw = keyword.trim();
+    if(!kw) return;
+    const manual: PartSpec = { id: Date.now()*-1, part_no: kw, model_code:'', description:'' } as PartSpec;
+    onAdd([manual]);
+    setKeyword('');
+  };
 
   const toggle = (p: PartSpec) => {
     setSelected(prev=> prev.some(it=>it.id===p.id) ? prev.filter(it=>it.id!==p.id) : [...prev, p]);
@@ -23,7 +30,7 @@ export default function PartMultiSelect({ onAdd }: Props) {
     <div className="border rounded p-3 space-y-2">
       <div className="flex gap-2 items-center">
         <Input value={keyword} onChange={(e)=>setKeyword(e.target.value)} placeholder={t('search_placeholder')} className="flex-1" />
-        <Button size="sm" onClick={()=>{onAdd(selected); setSelected([]);}} disabled={!selected.length}>{t('select')}</Button>
+        <Button size="sm" onClick={()=>{onAdd(selected); setSelected([]); setKeyword('');}} disabled={!selected.length}>{t('select')}</Button>
       </div>
       {keyword.trim() && (
         <ul className="max-h-60 overflow-auto border rounded p-2 text-sm space-y-1 bg-white">
@@ -34,7 +41,11 @@ export default function PartMultiSelect({ onAdd }: Props) {
               <span className="text-gray-500 text-xs">{r.description}</span>
             </li>
           ))}
-          {!results.length && <li className="text-center text-xs text-gray-400 py-4">{t('no_data')}</li>}
+          {!results.length && (
+            <li className="text-center text-xs py-4">
+              <button type="button" className="text-blue-600 underline" onClick={addManual}>“{keyword.trim()}” 직접 추가</button>
+            </li>
+          )}
         </ul>
       )}
       {selected.length > 0 && (

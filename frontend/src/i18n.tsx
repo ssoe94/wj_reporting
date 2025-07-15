@@ -108,6 +108,12 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     form_type_regular: '정규',
     form_type_temp: '임시',
     delete_confirm: '정말 삭제하시겠습니까?',
+    part: 'Part',
+    eco: 'ECO',
+    part_status: 'Part Status',
+    eco_status: 'ECO Status',
+    selected_part_eco_details: '선택 Part ECO 상세',
+    all: '전체',
   },
   zh: {
     title: '注塑生产管理系统',
@@ -209,6 +215,12 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     form_type_regular: '正式',
     form_type_temp: '临时',
     delete_confirm: '确定要删除吗?',
+    part: '部件',
+    eco: 'ECO',
+    part_status: '部件状态',
+    eco_status: 'ECO状态',
+    selected_part_eco_details: '所选部件ECO明细',
+    all: '全部',
   },
 };
 

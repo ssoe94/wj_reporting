@@ -23,12 +23,25 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
   const { t } = useLang();
   const [form, setForm] = useState<Partial<Eco>>(initial);
   const [localErrors, setLocalErrors] = useState<Record<string,string>>({});
-  const [parts, setParts] = useState<PartSpec[]>([]);
-  const invQuery = useInventory(parts.map(p=>p.id));
+  interface Row { spec: PartSpec; change_details: string; status: 'OPEN' | 'CLOSED'; }
+  const [rows, setRows] = useState<Row[]>([]);
+  const invQuery = useInventory(rows.map(r=>r.spec.id));
 
   // reset form & clear local errors whenever dialog opens with new data
   useEffect(()=>{
     setForm(initial);
+    // 초기 rows 세팅: initial.details 가 있으면 변환, 없으면 빈 배열
+    const dets:any = (initial as any).details || [];
+    if(Array.isArray(dets) && dets.length){
+      const mapped = dets.map((d:any)=>({
+        spec:{ id:d.part_spec, part_no:d.part_no||'', description:d.description||'', model_code:'' } as PartSpec,
+        change_details:d.change_details||'',
+        status:d.status||'OPEN'
+      })) as Row[];
+      setRows(mapped);
+    }else{
+      setRows([]);
+    }
     setLocalErrors({});
   },[initial, open]);
 
@@ -38,7 +51,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const required: (keyof Eco)[] = ['eco_no', 'eco_model'];
+    const required: (keyof Eco)[] = ['eco_no'];
     const missing: Record<string, string> = {};
     required.forEach((k) => {
       const val = (form as any)[k];
@@ -49,8 +62,8 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
       toast.error(t('required_error'));
       return;
     }
-    if(!parts.length){ toast.error(t('required_error')); return; }
-    (form as any).part_ids = parts.map(p=>p.id);
+    if(!rows.length){ toast.error(t('required_error')); return; }
+    (form as any).details = rows.map(r=>({part_spec: r.spec.id, change_details: r.change_details, status: r.status}));
     setLocalErrors({});
     onSubmit(form);
   };
@@ -59,105 +72,61 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+      <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
         <CardContent className="space-y-4 pt-6">
           <h3 className="text-lg font-semibold mb-2">{form.id ? t('edit_eco') : t('add_eco')}</h3>
           <form className="space-y-4" onSubmit={handleSubmit}>
-            {/* 기본 정보 */}
-            <div className="grid grid-cols-3 gap-4">
+            {/* 기본 정보 (ECO 번호, 발표일, 적용일) */}
+            <div className="grid grid-cols-4 gap-4">
               <div>
                 <Label htmlFor="eco_no">{t('eco_no')}</Label>
                 <Input id="eco_no" value={form.eco_no || ''} onChange={(e)=>setForm({...form, eco_no:e.target.value})} className={errClass('eco_no')} />
               </div>
               <div>
-                <Label htmlFor="eco_model">{t('eco_model')}</Label>
-                <Input id="eco_model" value={form.eco_model || ''} onChange={(e)=>setForm({...form, eco_model:e.target.value})} className={errClass('eco_model')} />
-              </div>
-              <div>
-                <Label htmlFor="customer">{t('customer')}</Label>
-                <Input id="customer" value={form.customer || ''} onChange={(e)=>setForm({...form, customer:e.target.value})} className={errClass('customer')} />
-              </div>
-              <div>
-                <Label htmlFor="prepared_date">{t('prepared_date')}</Label>
-                <Input id="prepared_date" type="date" value={form.prepared_date || ''} onChange={(e)=>setForm({...form, prepared_date:e.target.value})} className={errClass('prepared_date')} />
+                <Label htmlFor="eco_model">적용모델</Label>
+                <Input id="eco_model" value={form.eco_model || ''} onChange={(e)=>setForm({...form, eco_model:e.target.value})} />
               </div>
               <div>
                 <Label htmlFor="issued_date">{t('issued_date')}</Label>
                 <Input id="issued_date" type="date" value={form.issued_date || ''} onChange={(e)=>setForm({...form, issued_date:e.target.value})} className={errClass('issued_date')} />
               </div>
               <div>
-                <Label htmlFor="due_date">{t('due_date')}</Label>
-                <Input id="due_date" type="date" value={form.due_date || ''} onChange={(e)=>setForm({...form, due_date:e.target.value})} className={errClass('due_date')} />
-              </div>
-            </div>
-            {/* 변경 내용 */}
-            <div>
-              <Label htmlFor="change_reason">{t('change_reason')}</Label>
-              <Input id="change_reason" value={form.change_reason || ''} onChange={(e)=>setForm({...form, change_reason:e.target.value})} className={errClass('change_reason')} />
-            </div>
-            <div>
-              <Label htmlFor="change_details">{t('change_details')}</Label>
-              <Input id="change_details" value={form.change_details || ''} onChange={(e)=>setForm({...form, change_details:e.target.value})} className={errClass('change_details')} />
-            </div>
-            <div>
-              <Label htmlFor="applicable_work_order">{t('applicable_work_order')}</Label>
-              <Input id="applicable_work_order" value={form.applicable_work_order || ''} onChange={(e)=>setForm({...form, applicable_work_order:e.target.value})} className={errClass('applicable_work_order')} />
-            </div>
-            {/* 재고 및 상태 */}
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="inventory_finished">{t('inventory_finished')}</Label>
-                <Input id="inventory_finished" type="number" value={form.inventory_finished ?? ''} onChange={(e)=>setForm({...form, inventory_finished: e.target.value ? Number(e.target.value) : null})} className={errClass('inventory_finished')} />
-              </div>
-              <div>
-                <Label htmlFor="inventory_material">{t('inventory_material')}</Label>
-                <Input id="inventory_material" type="number" value={form.inventory_material ?? ''} onChange={(e)=>setForm({...form, inventory_material: e.target.value ? Number(e.target.value) : null})} className={errClass('inventory_material')} />
-              </div>
-              <div>
-                <Label htmlFor="status">{t('status')}</Label>
-                <select id="status" value={form.status || 'OPEN'} onChange={(e)=>setForm({...form, status: e.target.value})} className={`border rounded px-2 py-1 w-full ${errClass('status')}`}>
-                  <option value="OPEN">OPEN</option>
-                  <option value="WIP">WIP</option>
-                  <option value="CLOSED">CLOSED</option>
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="storage_action">{t('storage_action')}</Label>
-                <Input id="storage_action" value={form.storage_action || ''} onChange={(e)=>setForm({...form, storage_action:e.target.value})} className={errClass('storage_action')} />
-              </div>
-              <div>
                 <Label htmlFor="applicable_date">{t('applicable_date')}</Label>
                 <Input id="applicable_date" type="date" value={form.applicable_date || ''} onChange={(e)=>setForm({...form, applicable_date:e.target.value})} className={errClass('applicable_date')} />
               </div>
-              <div>
-                <Label htmlFor="form_type">{t('status')}</Label>
-                <select id="form_type" value={form.form_type || 'REGULAR'} onChange={(e)=>setForm({...form, form_type: e.target.value as any})} className={`border rounded px-2 py-1 w-full ${errClass('form_type')}`}>
-                  <option value="REGULAR">{t('form_type_regular')}</option>
-                  <option value="TEMP">{t('form_type_temp')}</option>
-                </select>
-              </div>
             </div>
-            {/* Part 선택 */}
+            <div>
+              <Label htmlFor="change_reason">변경 사유</Label>
+              <Input id="change_reason" value={form.change_reason || ''} onChange={(e)=>setForm({...form, change_reason:e.target.value})} />
+            </div>
+            {/* 모델/Part 선택 */}
             <div className="space-y-2">
               <Label>{t('header_model')}</Label>
-              <PartMultiSelect onAdd={(sel)=> setParts(prev=> [...prev, ...sel.filter(s=> !prev.some(p=>p.id===s.id))])} />
-              {parts.length>0 && (
+              <PartMultiSelect onAdd={(sel)=> setRows(prev=> {
+                const existingIds = prev.map(r=>r.spec.id);
+                const newRows = sel.filter(s=> !existingIds.includes(s.id)).map(s=>({spec:s, change_details:'', status:'OPEN'} as Row));
+                return [...prev, ...newRows];
+              })} />
+              {rows.length>0 && (
                 <table className="min-w-full text-sm border mt-2">
-                  <thead className="bg-slate-100"><tr><th className="px-2 py-1">Part No</th><th className="px-2 py-1">Desc</th><th className="px-2 py-1">재고</th><th></th></tr></thead>
+                  <thead className="bg-slate-100"><tr><th className="px-2 py-1 text-center">Part No</th><th className="px-2 py-1 text-center">Desc</th><th className="px-2 py-1">변경내용</th><th className="px-2 py-1">재고</th><th className="px-2 py-1">Status</th><th></th></tr></thead>
                   <tbody>
-                    {parts.map(p=>(
-                      <tr key={p.id} className="border-t"><td className="px-2 py-1 font-mono">{p.part_no}</td><td className="px-2 py-1 text-xs">{p.description}</td><td className="px-2 py-1 text-right">{invQuery.data?.[p.id] ?? '-'}</td><td className="px-2 py-1 text-right"><Button type="button" size="icon" variant="ghost" onClick={()=>setParts(parts.filter(x=>x.id!==p.id))}>×</Button></td></tr>
-                    ))}
+                    {rows.map((row,i)=>(
+                       <tr key={row.spec.id} className="border-t">
+                         <td className="px-2 py-1 font-mono text-center">{row.spec.part_no}</td>
+                         <td className="px-2 py-1 text-xs text-center">{row.spec.description}</td>
+                         <td className="px-2 py-1"><Input value={row.change_details} onChange={e=>{
+                           const val=e.target.value; setRows(r=>{const cp=[...r]; cp[i]={...cp[i], change_details:val}; return cp;});}} /></td>
+                         <td className="px-2 py-1 text-right">{invQuery.data?.[row.spec.id] ?? '-'}</td>
+                         <td className="px-2 py-1 text-center"><select value={row.status} onChange={e=>{const val=e.target.value as any; setRows(r=>{const cp=[...r]; cp[i]={...cp[i], status:val}; return cp;});}} className="border rounded px-1 py-0.5 text-xs"><option value="OPEN">OPEN</option><option value="CLOSED">CLOSED</option></select></td>
+                         <td className="px-2 py-1 text-right"><Button type="button" size="icon" variant="ghost" onClick={()=>setRows(rows.filter((_,idx)=>idx!==i))}>×</Button></td>
+                       </tr>
+                     ))}
                   </tbody>
                 </table>
               )}
             </div>
-            <div>
-              <Label htmlFor="note">{t('header_note')}</Label>
-              <Input id="note" value={form.note || ''} onChange={(e)=>setForm({...form, note:e.target.value})} className={errClass('note')} />
-            </div>
+            {/* 비고/노트 제거 */}
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="ghost" onClick={onClose}>{t('cancel')}</Button>
               <Button type="submit" size="sm" disabled={isSaving}>{isSaving ? t('saving') : t('save')}</Button>

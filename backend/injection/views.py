@@ -14,10 +14,12 @@ import csv
 import io
 from django.http import HttpResponse
 import datetime as dt
+from django.utils import timezone
 from django.conf import settings
 import requests
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
+from django.db import models
 
 class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
@@ -179,6 +181,18 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
 
         return Response({"created": created, "skipped": skipped, "errors": errors})
 
+    @action(detail=False, methods=["get"], url_path="by-part")
+    def by_part(self, request):
+        """part_no 로 ECO 목록 조회"""
+        keyword = request.query_params.get("part_no", "").strip()
+        if not keyword:
+            return Response({"detail": "part_no query param required"}, status=400)
+
+        qs = self.get_queryset().filter(details__part_spec__part_no__icontains=keyword).distinct()
+        page = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
+
 # ==== 제품 마스터 관리 (CRUD) ====
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
@@ -195,6 +209,20 @@ class PartSpecViewSet(viewsets.ModelViewSet):
     search_fields = ['part_no', 'description', 'model_code']
     ordering = ['part_no']
 
+    @action(detail=False, methods=['get'], url_path='with-eco-count')
+    def with_eco_count(self, request):
+        """검색어에 맞는 Part 중 ECO에 포함된 건수 반환"""
+        kw = request.query_params.get('search', '').strip()
+        qs = self.get_queryset()
+        if kw:
+            qs = qs.filter(part_no__icontains=kw)
+        qs = qs.annotate(eco_cnt=models.Count('ecodetail'))
+        data = [
+            {'part_no': p.part_no, 'description': p.description, 'count': p.eco_cnt}
+            for p in qs if p.eco_cnt
+        ][:50]
+        return Response(data)
+
 # ==== ECO 관리 (CRUD) ====
 class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     queryset = EngineeringChangeOrder.objects.all()
@@ -202,6 +230,25 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     filterset_fields = ['status', 'eco_model', 'customer']
     search_fields = ['eco_no', 'change_reason', 'change_details', 'customer', 'eco_model']
     ordering = ['-prepared_date'] 
+
+    @action(detail=False, methods=["get"], url_path="by-part")
+    def by_part(self, request):
+        """part_no 로 ECO 목록 조회
+
+        ?part_no=AAN... → 해당 Part 가 포함된 ECO 헤더 + details preload
+        """
+        keyword = request.query_params.get("part_no", "").strip()
+        if not keyword:
+            return Response({"detail": "part_no query param required"}, status=400)
+
+        qs = (
+            self.get_queryset()
+            .filter(details__part_spec__part_no__icontains=keyword)
+            .distinct()
+        )
+        page = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=['post'], url_path='details/bulk')
     def bulk_details(self, request, pk=None):
@@ -211,13 +258,14 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
         if not isinstance(items, list):
             return Response({'detail':'details must be list'}, status=400)
         created = 0
+        updated = 0
         for it in items:
             pid = it.get('part_spec')
             if not pid:
                 continue
             try:
                 part = PartSpec.objects.get(id=pid)
-                EcoDetail.objects.get_or_create(
+                detail, created_flag = EcoDetail.objects.get_or_create(
                     eco_header=eco,
                     part_spec=part,
                     defaults={
@@ -226,10 +274,30 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
                         'status': it.get('status','OPEN') or 'OPEN'
                     }
                 )
-                created +=1
+                if created_flag:
+                    created +=1
+                else:
+                    # update existing fields if changed
+                    changed = False
+                    if 'change_reason' in it and detail.change_reason != it['change_reason']:
+                        detail.change_reason = it['change_reason']; changed=True
+                    if 'change_details' in it and detail.change_details != it['change_details']:
+                        detail.change_details = it['change_details']; changed=True
+                    if 'status' in it and detail.status != (it['status'] or 'OPEN'):
+                        detail.status = it['status'] or 'OPEN'; changed=True
+                    if changed:
+                        detail.save(); updated+=1
             except PartSpec.DoesNotExist:
                 continue
-        return Response({'created':created})
+        # 헤더 상태 자동 집계
+        if eco.details.filter(status='OPEN').exists():
+            if eco.status != 'OPEN':
+                eco.status='OPEN'; eco.save(update_fields=['status'])
+        else:
+            if eco.status != 'CLOSED':
+                eco.status='CLOSED'; eco.save(update_fields=['status'])
+
+        return Response({'created':created,'updated':updated})
 
 
 # ==== Inventory API ====
@@ -245,7 +313,7 @@ class InventoryView(APIView):
 
         # If snapshot within 30min exists, use it; else fetch
         result = {}
-        now = dt.datetime.utcnow()
+        now = timezone.now()
         need_fetch = []
         for p in parts:
             snap = InventorySnapshot.objects.filter(part_spec=p).order_by('-collected_at').first()
@@ -258,28 +326,32 @@ class InventoryView(APIView):
             token = getattr(settings, 'MES_ACCESS_TOKEN', '')
             base = getattr(settings, 'MES_API_BASE', '')
             if not (token and base):
-                return Response({'detail':'MES api not configured'}, status=500)
-            url = base.rstrip('/') + '/inventory/open/v1/material_inventory/_list'
-            codes = [p.part_no for p in need_fetch]
-            payload = {"materialCodes": codes, "selectFlag":0, "page":1, "size":100}
-            try:
-                resp = requests.post(url, params={'access_token':token}, json=payload, timeout=10)
-                resp.raise_for_status()
-                data = resp.json()
-                items = data.get('data', {}).get('list', [])
-                # aggregate qty by material code
-                qty_map = {}
-                for it in items:
-                    code = it.get('material',{}).get('code')
-                    amount = it.get('amount',{}).get('amount',0)
-                    qty_map[code] = qty_map.get(code,0)+amount
-            except Exception as e:
-                return Response({'detail':f'MES fetch error: {e}'}, status=502)
+                # MES 설정이 없으면 재고 0 으로 처리하고 오류 반환하지 않음
+                for p in need_fetch:
+                    InventorySnapshot.objects.create(part_spec=p, qty=0)
+                    result[p.id] = 0
+            else:
+                url = base.rstrip('/') + '/inventory/open/v1/material_inventory/_list'
+                codes = [p.part_no for p in need_fetch]
+                payload = {"materialCodes": codes, "selectFlag":0, "page":1, "size":100}
+                try:
+                    resp = requests.post(url, params={'access_token':token}, json=payload, timeout=10)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    items = data.get('data', {}).get('list', [])
+                    # aggregate qty by material code
+                    qty_map = {}
+                    for it in items:
+                        code = it.get('material',{}).get('code')
+                        amount = it.get('amount',{}).get('amount',0)
+                        qty_map[code] = qty_map.get(code,0)+amount
+                except Exception as e:
+                    return Response({'detail':f'MES fetch error: {e}'}, status=502)
 
-            # save snapshots & fill result
-            for p in need_fetch:
-                qty = qty_map.get(p.part_no, 0)
-                InventorySnapshot.objects.create(part_spec=p, qty=qty)
-                result[p.id] = qty
+                # save snapshots & fill result
+                for p in need_fetch:
+                    qty = qty_map.get(p.part_no, 0)
+                    InventorySnapshot.objects.create(part_spec=p, qty=qty)
+                    result[p.id] = qty
 
         return Response(result) 

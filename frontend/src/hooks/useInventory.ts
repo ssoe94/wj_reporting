@@ -1,16 +1,28 @@
 import { useQuery } from '@tanstack/react-query';
+import type { UseQueryResult } from '@tanstack/react-query';
 import api from '@/lib/api';
 
-export function useInventory(partIds: number[]) {
-  return useQuery<Record<number, number>>({
-    queryKey: ['inventory', partIds.sort().join(',')],
-    enabled: partIds.length > 0,
+/**
+ * Inventory qty 조회 훅
+ * @param partIds PartSpec id 배열
+ * @returns { data: Record<number, number>, isLoading, ... }
+ */
+export function useInventory(partIds: number[]): UseQueryResult<Record<number, number>> {
+  const idsStr = (partIds ?? []).sort((a,b)=>a-b).join(',');
+  return useQuery({
+    queryKey: ['inventory', idsStr],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      partIds.forEach(id => params.append('part_ids', String(id)));
-      const { data } = await api.get('inventory/', { params });
-      return data as Record<number, number>;
+      if(!partIds?.length) return {};
+      const params = partIds.map((id)=>['part_ids', id]);
+      // convert to URLSearchParams manually to keep duplicates
+      const search = new URLSearchParams(params as any);
+      const { data } = await api.get<Record<number, number>>('/inventory/', {
+        params: search,
+        paramsSerializer: () => search.toString(),
+      });
+      return data || {};
     },
-    staleTime: 300_000,
+    enabled: partIds.length > 0,
+    staleTime: 1000*60*5,
   });
 } 

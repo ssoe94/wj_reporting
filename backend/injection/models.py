@@ -166,33 +166,46 @@ class EngineeringChangeOrder(models.Model):
     def __str__(self):
         return self.eco_no 
 
-class InventorySnapshot(models.Model):
-    part_spec = models.ForeignKey(PartSpec, on_delete=models.CASCADE)
-    qty = models.IntegerField('재고 수량')
-    collected_at = models.DateTimeField('수집 시각', auto_now_add=True)
-
-    class Meta:
-        verbose_name = '재고 스냅샷'
-        verbose_name_plural = '재고 스냅샷'
-        indexes = [models.Index(fields=['part_spec', '-collected_at'])]
-
-    def __str__(self):
-        return f"{self.part_spec.part_no}: {self.qty} (@{self.collected_at:%Y-%m-%d %H:%M})"
+# ================================
+# ECO 상세 & 재고 스냅샷
+# ================================
 
 class EcoDetail(models.Model):
-    eco_header = models.ForeignKey(EngineeringChangeOrder, related_name='details', on_delete=models.CASCADE)
+    STATUS_CHOICES = [
+        ("OPEN", "OPEN"),
+        ("CLOSED", "CLOSED"),
+    ]
+
+    eco_header = models.ForeignKey(EngineeringChangeOrder, on_delete=models.CASCADE, related_name="details")
     part_spec = models.ForeignKey(PartSpec, on_delete=models.CASCADE)
 
-    change_reason = models.TextField('변경 사유', blank=True)
-    change_details = models.TextField('변경 내용', blank=True)
-    status = models.CharField('상태', max_length=10, choices=[('OPEN','OPEN'),('CLOSED','CLOSED')], default='OPEN')
+    change_reason = models.TextField("변경 사유", blank=True)
+    change_details = models.TextField("변경 내용", blank=True)
+
+    status = models.CharField("상태", max_length=10, choices=STATUS_CHOICES, default="OPEN")
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = 'ECO 상세'
-        verbose_name_plural = 'ECO 상세 목록'
-        unique_together = ('eco_header', 'part_spec')
+        verbose_name = "ECO 상세"
+        verbose_name_plural = "ECO 상세 목록"
+        unique_together = ("eco_header", "part_spec")
 
     def __str__(self):
-        return f"{self.eco_header.eco_no} - {self.part_spec.part_no}" 
+        return f"{self.eco_header.eco_no} - {self.part_spec.part_no}"
+
+
+class InventorySnapshot(models.Model):
+    part_spec = models.ForeignKey(PartSpec, on_delete=models.CASCADE)
+    qty = models.IntegerField("재고 수량")
+    collected_at = models.DateTimeField("수집 시각", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "재고 스냅샷"
+        verbose_name_plural = "재고 스냅샷"
+        indexes = [
+            models.Index(fields=["part_spec", "-collected_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.part_spec.part_no}: {self.qty} ({self.collected_at})" 

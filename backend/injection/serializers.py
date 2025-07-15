@@ -29,12 +29,7 @@ class PartSpecSerializer(serializers.ModelSerializer):
         model = PartSpec
         fields = '__all__'
 
-class EngineeringChangeOrderSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = EngineeringChangeOrder
-        fields = '__all__'
-
-
+# EcoDetailSerializer 먼저 정의
 class EcoDetailSerializer(serializers.ModelSerializer):
     part_no = serializers.CharField(source='part_spec.part_no', read_only=True)
     description = serializers.CharField(source='part_spec.description', read_only=True)
@@ -43,6 +38,14 @@ class EcoDetailSerializer(serializers.ModelSerializer):
         model = EcoDetail
         fields = ['id', 'eco_header', 'part_spec', 'part_no', 'description', 'change_reason', 'change_details', 'status', 'created_at']
         read_only_fields = ['created_at']
+
+
+class EngineeringChangeOrderSerializer(serializers.ModelSerializer):
+    details = EcoDetailSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = EngineeringChangeOrder
+        fields = '__all__'
 
 
 class InventorySnapshotSerializer(serializers.ModelSerializer):
