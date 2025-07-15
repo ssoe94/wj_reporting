@@ -1,6 +1,10 @@
 {
   "redirects": [
     {
+      "source": "/api/(.*)",
+      "destination": "https://wj-reporting-backend.onrender.com/api/$1"
+    },
+    {
       "source": "/**",
       "destination": "/index.html",
       "status": 200
