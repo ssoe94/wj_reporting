@@ -143,9 +143,16 @@ export default function App() {
         ct: String(directPartSpec?.cycle_time_sec||''),
       }));
       setSelectedPartSpec(directPartSpec);
-      setSelectedModelDesc(directPartSpec);
+      
+      // 모델 검색창에도 자동으로 해당 모델 표시
+      const modelSpec = uniqueModelDesc.find(m => 
+        m.model_code === directPartSpec.model_code && m.description === directPartSpec.description
+      );
+      if (modelSpec) {
+        setSelectedModelDesc(modelSpec);
+      }
     }
-  }, [directPartSpec]);
+  }, [directPartSpec, uniqueModelDesc]);
 
   /* ---------------- 신규 등록 폼 상태 ---------------- */
   const [form, setForm] = useState(()=>({
@@ -529,7 +536,7 @@ export default function App() {
                       ))}
                     </select>
                   </div>
-                  {/* 모델 검색 */}
+                  {/* 모델 검색 (Part No. 입력 시 자동 표시) */}
                   <div>
                     <Label>{t('model_search')}</Label>
                     <Autocomplete<PartSpec>
@@ -550,50 +557,52 @@ export default function App() {
                             ct: "",
                           }));
                           setSelectedPartSpec(null);
+                          setDirectPartNoInput("");
                         }
                       }}
+                      value={selectedModelDesc}
                       renderInput={(params) => (
                         <TextField {...params} size="small" placeholder={t('model_search')} />
                       )}
                     />
                   </div>
-                  {/* Part No. (양방향 선택) */}
+                  {/* Part No. (통합 입력창) */}
                   <div>
                     <Label>Part No.</Label>
-                    <div className="space-y-2">
-                      {/* Part No. 직접 입력 */}
-                      <Input
-                        placeholder={`Part No. ${t('direct_input')}`}
-                        value={directPartNoInput}
-                        onChange={(e) => setDirectPartNoInput(e.target.value)}
-                        className="text-sm"
-                      />
-                      {/* Part No. 드롭다운 (모델 선택 후) */}
-                      <Autocomplete<PartSpec>
-                        options={partNoOptions}
-                        getOptionLabel={(opt) => `${opt.part_no}`}
-                        value={selectedPartSpec}
-                        onChange={(_, v) => {
-                          setSelectedPartSpec(v);
-                          setDirectPartNoInput(v ? v.part_no : "");
-                          if (v) {
-                            setForm(f => ({
-                              ...f,
-                              partNo: v.part_no,
-                              model: v.model_code,
-                              type: v.description,
-                              resin: v?.resin_type || '',
-                              netG: String(v?.net_weight_g||''),
-                              srG: String(v?.sr_weight_g||''),
-                              ct: String(v?.cycle_time_sec||''),
-                            }));
+                    <Autocomplete<PartSpec>
+                      options={[...partNoOptions, ...(directPartSpec ? [directPartSpec] : [])]}
+                      getOptionLabel={(opt) => `${opt.part_no}`}
+                      value={selectedPartSpec}
+                      onChange={(_, v) => {
+                        setSelectedPartSpec(v);
+                        setDirectPartNoInput(v ? v.part_no : "");
+                        if (v) {
+                          setForm(f => ({
+                            ...f,
+                            partNo: v.part_no,
+                            model: v.model_code,
+                            type: v.description,
+                            resin: v?.resin_type || '',
+                            netG: String(v?.net_weight_g||''),
+                            srG: String(v?.sr_weight_g||''),
+                            ct: String(v?.cycle_time_sec||''),
+                          }));
+                          // 모델 검색창에도 자동으로 해당 모델 표시
+                          const modelSpec = uniqueModelDesc.find(m => 
+                            m.model_code === v.model_code && m.description === v.description
+                          );
+                          if (modelSpec) {
+                            setSelectedModelDesc(modelSpec);
                           }
-                        }}
-                        renderInput={(params) => (
-                          <TextField {...params} size="small" placeholder={`Part No. ${t('select')}`} />
-                        )}
-                      />
-                    </div>
+                        }
+                      }}
+                      onInputChange={(_, v) => {
+                        setDirectPartNoInput(v);
+                      }}
+                      renderInput={(params) => (
+                        <TextField {...params} size="small" placeholder={`Part No. ${t('input_or_select')}`} />
+                      )}
+                    />
                   </div>
                 </div>
 
