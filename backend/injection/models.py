@@ -164,48 +164,60 @@ class EngineeringChangeOrder(models.Model):
         ordering = ["-prepared_date", "eco_no"]
 
     def __str__(self):
-        return self.eco_no 
+        return self.eco_no
 
-# ================================
-# ECO 상세 & 재고 스냅샷
-# ================================
+class EcoPartSpec(models.Model):
+    """ECO 전용 Part 스펙 (생산관리와 분리)"""
+    part_no = models.CharField('Part No', max_length=100, unique=True)
+    description = models.CharField('설명', max_length=200, blank=True)
+    model_code = models.CharField('모델 코드', max_length=100, blank=True)
+    
+    # ECO 관련 추가 정보
+    eco_category = models.CharField('ECO 카테고리', max_length=50, blank=True)
+    change_history = models.TextField('변경 이력', blank=True)
+    
+    created_at = models.DateTimeField('생성일', auto_now_add=True)
+    updated_at = models.DateTimeField('수정일', auto_now=True)
+
+    class Meta:
+        verbose_name = 'ECO Part 스펙'
+        verbose_name_plural = 'ECO Part 스펙 목록'
+        ordering = ['part_no']
+
+    def __str__(self):
+        return f"{self.part_no} - {self.description}"
 
 class EcoDetail(models.Model):
-    STATUS_CHOICES = [
-        ("OPEN", "OPEN"),
-        ("CLOSED", "CLOSED"),
-    ]
-
-    eco_header = models.ForeignKey(EngineeringChangeOrder, on_delete=models.CASCADE, related_name="details")
-    part_spec = models.ForeignKey(PartSpec, on_delete=models.CASCADE)
-
-    change_reason = models.TextField("변경 사유", blank=True)
-    change_details = models.TextField("변경 내용", blank=True)
-
-    status = models.CharField("상태", max_length=10, choices=STATUS_CHOICES, default="OPEN")
-
-    created_at = models.DateTimeField(auto_now_add=True)
+    """ECO 상세 정보"""
+    eco_header = models.ForeignKey(EngineeringChangeOrder, on_delete=models.CASCADE, related_name='details')
+    eco_part_spec = models.ForeignKey(EcoPartSpec, on_delete=models.CASCADE, related_name='eco_details')
+    
+    change_reason = models.CharField('변경 사유', max_length=200, blank=True)
+    change_details = models.TextField('변경 내용', blank=True)
+    status = models.CharField('상태', max_length=10, choices=[('OPEN', 'OPEN'), ('CLOSED', 'CLOSED')], default='OPEN')
+    
+    created_at = models.DateTimeField('생성일', auto_now_add=True)
+    updated_at = models.DateTimeField('수정일', auto_now=True)
 
     class Meta:
-        verbose_name = "ECO 상세"
-        verbose_name_plural = "ECO 상세 목록"
-        unique_together = ("eco_header", "part_spec")
+        verbose_name = 'ECO 상세'
+        verbose_name_plural = 'ECO 상세 목록'
+        unique_together = ('eco_header', 'eco_part_spec')
+        ordering = ['eco_header', 'eco_part_spec']
 
     def __str__(self):
-        return f"{self.eco_header.eco_no} - {self.part_spec.part_no}"
-
+        return f"{self.eco_header.eco_no} - {self.eco_part_spec.part_no}"
 
 class InventorySnapshot(models.Model):
-    part_spec = models.ForeignKey(PartSpec, on_delete=models.CASCADE)
-    qty = models.IntegerField("재고 수량")
-    collected_at = models.DateTimeField("수집 시각", auto_now_add=True)
+    """재고 스냅샷"""
+    part_spec = models.ForeignKey(PartSpec, on_delete=models.CASCADE, related_name='inventory_snapshots')
+    qty = models.IntegerField('수량', default=0)
+    collected_at = models.DateTimeField('수집일시', auto_now_add=True)
 
     class Meta:
-        verbose_name = "재고 스냅샷"
-        verbose_name_plural = "재고 스냅샷"
-        indexes = [
-            models.Index(fields=["part_spec", "-collected_at"]),
-        ]
+        verbose_name = '재고 스냅샷'
+        verbose_name_plural = '재고 스냅샷 목록'
+        ordering = ['-collected_at']
 
     def __str__(self):
-        return f"{self.part_spec.part_no}: {self.qty} ({self.collected_at})" 
+        return f"{self.part_spec.part_no} - {self.qty} ({self.collected_at})" 

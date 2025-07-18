@@ -115,6 +115,11 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     selected_part_eco_details: '선택 Part ECO 상세',
     all: '전체',
     add_directly: '직접 추가',
+    part_search_placeholder: 'Part No 검색...',
+    eco_count: 'ECO 건수',
+    description_edit_prompt: '의 Description을 수정하세요',
+    add_new_part: '새 Part 추가',
+    description_placeholder: 'Part 설명을 입력하세요',
   },
   zh: {
     title: '注塑生产管理系统',
@@ -223,6 +228,11 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     selected_part_eco_details: '所选部件ECO明细',
     all: '全部',
     add_directly: '直接添加',
+    part_search_placeholder: '搜索Part No...',
+    eco_count: 'ECO数量',
+    description_edit_prompt: '的Description修改',
+    add_new_part: '添加新Part',
+    description_placeholder: '请输入Part描述',
   },
 };
 

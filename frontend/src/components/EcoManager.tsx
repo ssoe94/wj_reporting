@@ -132,7 +132,7 @@ export default function EcoManager() {
       <div className="flex justify-between mb-2 gap-2 items-center">
         <div className="flex flex-1 gap-2">
           <select value={mode} onChange={e=>{setKeyword(''); setMode(e.target.value as any);}} className="border rounded px-2">
-            <option value="eco">ECO 번호</option>
+            <option value="eco">{t('eco_no')}</option>
             <option value="part">PART NO.</option>
           </select>
           <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value as any)} className="border rounded px-2">
@@ -142,7 +142,7 @@ export default function EcoManager() {
           </select>
         <Input
           type="text"
-            placeholder={mode==='eco'? t('eco_search_placeholder') : 'Part No 검색...'}
+            placeholder={mode==='eco'? t('eco_search_placeholder') : t('part_search_placeholder')}
           className="flex-1"
           value={keyword}
             onChange={(e)=>{setKeyword(e.target.value); if(mode==='part'){setSelectedPart('')}}}
@@ -158,7 +158,7 @@ export default function EcoManager() {
           <thead className="bg-slate-100">
             <tr>
               <th className="px-3 py-2 text-left">{t('eco_no')}</th>
-                <th className="px-3 py-2 text-left">적용모델</th>
+                <th className="px-3 py-2 text-left">{t('eco_model')}</th>
               <th className="px-3 py-2 text-left">{t('change_reason')}</th>
               <th className="px-3 py-2 text-left">{t('issued_date')}</th>
               <th className="px-3 py-2 text-left">{t('status')}</th>
@@ -208,7 +208,7 @@ export default function EcoManager() {
           {!selectedPart ? (
             <>
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-100"><tr className="border-y"><th className="px-3 py-2 text-left">Part No</th><th className="px-3 py-2 text-left">{t('description') || 'Description'}</th><th className="px-3 py-2 text-center">ECO 건수</th></tr></thead>
+              <thead className="bg-slate-100"><tr className="border-y"><th className="px-3 py-2 text-left">Part No</th><th className="px-3 py-2 text-left">{t('description') || 'Description'}</th><th className="px-3 py-2 text-center">{t('eco_count')}</th></tr></thead>
               <tbody>
                 {partCounts.map(pc=> {
                   const checked = selectedParts.includes(pc.part_no);
@@ -222,7 +222,7 @@ export default function EcoManager() {
                         <span className="cursor-pointer" onClick={()=>setSelectedPart(pc.part_no)}>{pc.part_no}</span>
                       </td>
                       <td className="px-3 py-1 text-xs cursor-pointer hover:bg-yellow-50" onClick={() => {
-                        const newDesc = prompt(`${pc.part_no}의 Description을 수정하세요:`, pc.description || '');
+                        const newDesc = prompt(`${pc.part_no} ${t('description_edit_prompt')}:`, pc.description || '');
                         if (newDesc !== null && newDesc !== pc.description) {
                           // API 호출하여 description 업데이트
                           api.patch(`parts/${pc.part_no}/update-description/`, { description: newDesc })
@@ -243,7 +243,7 @@ export default function EcoManager() {
             </table>
             {selectedParts.length>0 && (
               <div className="mt-4">
-                <h4 className="font-semibold mb-2 pl-2">{t('selected_part_eco_details') || '선택 Part ECO 상세'}</h4>
+                <h4 className="font-semibold mb-2 pl-2">{t('selected_part_eco_details')}</h4>
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-100">
                     <tr>
@@ -293,7 +293,7 @@ export default function EcoManager() {
           </>
           ) : (
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-100"><tr><th className="px-3 py-2 text-left">ECO</th><th className="px-3 py-2 text-left">변경내용</th><th className="px-3 py-2 text-left">Part Status</th><th className="px-3 py-2 text-left">ECO Status</th></tr></thead>
+              <thead className="bg-slate-100"><tr><th className="px-3 py-2 text-left">{t('eco')}</th><th className="px-3 py-2 text-left">{t('change_details')}</th><th className="px-3 py-2 text-left">{t('part_status')}</th><th className="px-3 py-2 text-left">{t('eco_status')}</th></tr></thead>
               <tbody>
                 {filteredEcos.flatMap((eco:any)=> (eco.details||[]).filter((d:any)=>d.part_no===selectedPart).map((d:any)=>(
                   <tr key={eco.id+'-'+d.id} className="border-t">
