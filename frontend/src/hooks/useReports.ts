@@ -33,10 +33,23 @@ export function useReports(): UseQueryResult<Report[]> {
   return useQuery({
     queryKey: ['reports'],
     queryFn: async () => {
-      const { data } = await api.get<Paginated<Report>>('/reports/');
-      return data.results;
+      const all: Report[] = [];
+      let url = '/reports/?page_size=500';
+      // DRF next/previous pagination 루프
+      while (url) {
+        const { data } = await api.get<Paginated<Report>>(url);
+        all.push(...data.results);
+        // next 가 전체 URL 형태이면 baseURL 제외 부분만 사용
+        if (data.next) {
+          const nextUrl = data.next.startsWith('http') ? new URL(data.next).pathname + new URL(data.next).search : data.next;
+          url = nextUrl;
+        } else {
+          url = '';
+        }
+      }
+      return all;
     },
-    staleTime: 1000 * 60 * 5, // 5분
+    staleTime: 1000 * 60 * 5,
   });
 }
 
