@@ -111,48 +111,7 @@ export default function App() {
   }, [searchResults]);
 
   const [selectedModelDesc, setSelectedModelDesc] = useState<PartSpec | null>(null);
-  const { data: modelParts = [] } = usePartListByModel(selectedModelDesc?.model_code);
-
-  const partNoOptions = React.useMemo(() => {
-    if (!selectedModelDesc) return [] as PartSpec[];
-    const keyDesc = selectedModelDesc.description.trim().toLowerCase();
-    const seen = new Set<string>();
-    return modelParts.filter((it: PartSpec) => {
-      if (it.description.trim().toLowerCase() !== keyDesc) return false;
-      if (seen.has(it.part_no)) return false;
-      seen.add(it.part_no);
-      return true;
-    });
-  }, [selectedModelDesc, modelParts]);
-
   const [selectedPartSpec, setSelectedPartSpec] = useState<PartSpec | null>(null);
-  const [directPartNoInput, setDirectPartNoInput] = useState("");
-  const { data: directPartSpec } = usePartByPartNo(directPartNoInput);
-
-  // Part No. 직접 입력 시 모델 정보 자동 업데이트
-  useEffect(() => {
-    if (directPartSpec) {
-      setForm(f => ({
-        ...f,
-        partNo: directPartSpec.part_no,
-        model: directPartSpec.model_code,
-        type: directPartSpec.description,
-        resin: directPartSpec?.resin_type || '',
-        netG: String(directPartSpec?.net_weight_g||''),
-        srG: String(directPartSpec?.sr_weight_g||''),
-        ct: String(directPartSpec?.cycle_time_sec||''),
-      }));
-      setSelectedPartSpec(directPartSpec);
-      
-      // 모델 검색창에도 자동으로 해당 모델 표시
-      const modelSpec = uniqueModelDesc.find(m => 
-        m.model_code === directPartSpec.model_code && m.description === directPartSpec.description
-      );
-      if (modelSpec) {
-        setSelectedModelDesc(modelSpec);
-      }
-    }
-  }, [directPartSpec, uniqueModelDesc]);
 
   /* ---------------- 신규 등록 폼 상태 ---------------- */
   const [form, setForm] = useState(()=>({
@@ -557,7 +516,6 @@ export default function App() {
                             ct: "",
                           }));
                           setSelectedPartSpec(null);
-                          setDirectPartNoInput("");
                         }
                       }}
                       value={selectedModelDesc}
@@ -575,7 +533,6 @@ export default function App() {
                       onInputChange={(_, v) => setProductQuery(v)}
                       onChange={(_, v) => {
                         setSelectedPartSpec(v);
-                        setDirectPartNoInput(v ? v.part_no : "");
                         if (v) {
                           setForm(f => ({
                             ...f,
