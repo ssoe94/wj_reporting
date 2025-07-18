@@ -34,18 +34,27 @@ export function useReports(): UseQueryResult<Report[]> {
     queryKey: ['reports'],
     queryFn: async () => {
       const all: Report[] = [];
-      let url = '/reports/?page_size=500';
-      // DRF next/previous pagination 루프
-      while (url) {
-        const { data } = await api.get<Paginated<Report>>(url);
-        all.push(...data.results);
-        // next 가 전체 URL 형태이면 baseURL 제외 부분만 사용
-        if (data.next) {
-          const nextUrl = data.next.startsWith('http') ? new URL(data.next).pathname + new URL(data.next).search : data.next;
-          url = nextUrl;
-        } else {
-          url = '';
+      let url: string | null = '/reports/';
+
+      const rel = (u: string) => {
+        // 절대 URL → 상대 /reports/ 경로로 변환 (baseURL=/api 대비)
+        if (u.startsWith('http')) {
+          const obj = new URL(u);
+          let p = obj.pathname + obj.search; // '/api/reports/?page=2'
+          if (p.startsWith('/api/')) {
+            p = p.replace('/api', ''); // '/reports/?page=2'
+          }
+          if (!p.startsWith('/')) p = '/' + p;
+          return p;
         }
+        return u.startsWith('/') ? u : `/${u}`;
+      };
+
+      while (url) {
+        const response = await api.get<Paginated<Report>>(url);
+        const page: Paginated<Report> = response.data;
+        all.push(...page.results);
+        url = page.next ? rel(page.next) : null;
       }
       return all;
     },
