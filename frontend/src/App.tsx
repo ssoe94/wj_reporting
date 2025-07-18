@@ -22,6 +22,7 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { toast } from "react-toastify";
 import RecordsTable from "@/components/RecordsTable";
+import ProdTrendChart from "@/components/ProdTrendChart";
 import { useQueryClient } from "@tanstack/react-query";
 import { Autocomplete, TextField } from "@mui/material";
 import { usePartSpecSearch } from "@/hooks/usePartSpecs";
@@ -385,7 +386,7 @@ export default function App() {
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-10 md:ml-56 md:px-8 flex flex-col gap-10">
         {/* Summary Section */}
-        <section id="summary">
+        <section id="summary" className="space-y-6">
           <h2 className="sr-only">현황 요약</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <Card className="flex flex-col items-center">
@@ -413,6 +414,8 @@ export default function App() {
               </CardContent>
             </Card>
           </div>
+          {/* Plan vs Actual Trend */}
+          <ProdTrendChart />
         </section>
 
         {/* Records Section */}
