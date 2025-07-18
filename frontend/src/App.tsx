@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -25,6 +25,7 @@ import RecordsTable from "@/components/RecordsTable";
 import { useQueryClient } from "@tanstack/react-query";
 import { Autocomplete, TextField } from "@mui/material";
 import { usePartSpecSearch, usePartListByModel } from "@/hooks/usePartSpecs";
+import { usePartByPartNo } from "@/hooks/usePartByPartNo";
 import type { PartSpec } from "@/hooks/usePartSpecs";
 import React from "react";
 import { useReportSummary } from "@/hooks/useReports";
@@ -125,6 +126,26 @@ export default function App() {
   }, [selectedModelDesc, modelParts]);
 
   const [selectedPartSpec, setSelectedPartSpec] = useState<PartSpec | null>(null);
+  const [directPartNoInput, setDirectPartNoInput] = useState("");
+  const { data: directPartSpec } = usePartByPartNo(directPartNoInput);
+
+  // Part No. 직접 입력 시 모델 정보 자동 업데이트
+  useEffect(() => {
+    if (directPartSpec) {
+      setForm(f => ({
+        ...f,
+        partNo: directPartSpec.part_no,
+        model: directPartSpec.model_code,
+        type: directPartSpec.description,
+        resin: directPartSpec?.resin_type || '',
+        netG: String(directPartSpec?.net_weight_g||''),
+        srG: String(directPartSpec?.sr_weight_g||''),
+        ct: String(directPartSpec?.cycle_time_sec||''),
+      }));
+      setSelectedPartSpec(directPartSpec);
+      setSelectedModelDesc(directPartSpec);
+    }
+  }, [directPartSpec]);
 
   /* ---------------- 신규 등록 폼 상태 ---------------- */
   const [form, setForm] = useState(()=>({
@@ -536,32 +557,43 @@ export default function App() {
                       )}
                     />
                   </div>
-                  {/* Part No. (항상 표시) */}
+                  {/* Part No. (양방향 선택) */}
                   <div>
                     <Label>Part No.</Label>
-                    <Autocomplete<PartSpec>
-                      options={partNoOptions}
-                      getOptionLabel={(opt) => `${opt.part_no}`}
-                      value={selectedPartSpec}
-                      onChange={(_, v) => {
-                        setSelectedPartSpec(v);
-                        if (v) {
-                          setForm(f => ({
-                            ...f,
-                            partNo: v.part_no,
-                            model: v.model_code,
-                            type: v.description,
-                            resin: v?.resin_type || '',
-                            netG: String(v?.net_weight_g||''),
-                            srG: String(v?.sr_weight_g||''),
-                            ct: String(v?.cycle_time_sec||''),
-                          }));
-                        }
-                      }}
-                      renderInput={(params) => (
-                        <TextField {...params} size="small" placeholder={`Part No. ${t('select')}`} />
-                      )}
-                    />
+                    <div className="space-y-2">
+                      {/* Part No. 직접 입력 */}
+                      <Input
+                        placeholder={`Part No. ${t('direct_input')}`}
+                        value={directPartNoInput}
+                        onChange={(e) => setDirectPartNoInput(e.target.value)}
+                        className="text-sm"
+                      />
+                      {/* Part No. 드롭다운 (모델 선택 후) */}
+                      <Autocomplete<PartSpec>
+                        options={partNoOptions}
+                        getOptionLabel={(opt) => `${opt.part_no}`}
+                        value={selectedPartSpec}
+                        onChange={(_, v) => {
+                          setSelectedPartSpec(v);
+                          setDirectPartNoInput(v ? v.part_no : "");
+                          if (v) {
+                            setForm(f => ({
+                              ...f,
+                              partNo: v.part_no,
+                              model: v.model_code,
+                              type: v.description,
+                              resin: v?.resin_type || '',
+                              netG: String(v?.net_weight_g||''),
+                              srG: String(v?.sr_weight_g||''),
+                              ct: String(v?.cycle_time_sec||''),
+                            }));
+                          }
+                        }}
+                        renderInput={(params) => (
+                          <TextField {...params} size="small" placeholder={`Part No. ${t('select')}`} />
+                        )}
+                      />
+                    </div>
                   </div>
                 </div>
 

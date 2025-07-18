@@ -120,6 +120,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     description_edit_prompt: '의 Description을 수정하세요',
     add_new_part: '새 Part 추가',
     description_placeholder: 'Part 설명을 입력하세요',
+    direct_input: '직접 입력',
   },
   zh: {
     title: '注塑生产管理系统',
@@ -233,6 +234,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     description_edit_prompt: '的Description修改',
     add_new_part: '添加新Part',
     description_placeholder: '请输入Part描述',
+    direct_input: '直接输入',
   },
 };
 
