@@ -97,7 +97,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     status: '상태',
     prepared_date: '제정일',
     issued_date: '발표일',
-    eco_model: '모델',
+    eco_model: '적용모델',
     change_reason: '변경 사유',
     change_details: '변경 내용',
     applicable_work_order: '적용 작업지시/시점',
@@ -114,6 +114,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     eco_status: 'ECO Status',
     selected_part_eco_details: '선택 Part ECO 상세',
     all: '전체',
+    add_directly: '직접 추가',
   },
   zh: {
     title: '注塑生产管理系统',
@@ -204,7 +205,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     status: '状态',
     prepared_date: '制定日',
     issued_date: '发布日',
-    eco_model: '型号',
+    eco_model: '适用型号',
     change_reason: '变更理由',
     change_details: '变更内容',
     applicable_work_order: '适用工单/时间',
@@ -221,6 +222,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     eco_status: 'ECO状态',
     selected_part_eco_details: '所选部件ECO明细',
     all: '全部',
+    add_directly: '直接添加',
   },
 };
 

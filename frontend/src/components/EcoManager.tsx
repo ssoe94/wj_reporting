@@ -140,13 +140,13 @@ export default function EcoManager() {
             <option value="OPEN">OPEN</option>
             <option value="CLOSED">CLOSED</option>
           </select>
-          <Input
-            type="text"
+        <Input
+          type="text"
             placeholder={mode==='eco'? t('eco_search_placeholder') : 'Part No 검색...'}
-            className="flex-1"
-            value={keyword}
+          className="flex-1"
+          value={keyword}
             onChange={(e)=>{setKeyword(e.target.value); if(mode==='part'){setSelectedPart('')}}}
-          />
+        />
         </div>
         <Button size="sm" onClick={()=>{setForm(emptyForm); setDialogOpen(true);}}>
           {t('new_eco')}
@@ -154,20 +154,20 @@ export default function EcoManager() {
       </div>
       <div className="overflow-x-auto rounded border">
         {mode==='eco' ? (
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="px-3 py-2 text-left">{t('eco_no')}</th>
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="px-3 py-2 text-left">{t('eco_no')}</th>
                 <th className="px-3 py-2 text-left">적용모델</th>
-                <th className="px-3 py-2 text-left">{t('change_reason')}</th>
-                <th className="px-3 py-2 text-left">{t('issued_date')}</th>
-                <th className="px-3 py-2 text-left">{t('status')}</th>
-                <th className="px-3 py-2 text-left"></th>
-              </tr>
-            </thead>
-            <tbody>
+              <th className="px-3 py-2 text-left">{t('change_reason')}</th>
+              <th className="px-3 py-2 text-left">{t('issued_date')}</th>
+              <th className="px-3 py-2 text-left">{t('status')}</th>
+              <th className="px-3 py-2 text-left"></th>
+            </tr>
+          </thead>
+          <tbody>
               {filteredEcos.map((e: any)=>(
-                <tr key={e.id} className="border-t">
+              <tr key={e.id} className="border-t">
                   <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={async ()=>{
                     setErrors({});
                     try {
@@ -178,10 +178,10 @@ export default function EcoManager() {
                     }
                     setDialogOpen(true);
                   }}>{e.eco_no}</td>
-                  <td className="px-3 py-1">{e.eco_model}</td>
-                  <td className="px-3 py-1">{e.change_reason}</td>
-                  <td className="px-3 py-1">{e.issued_date}</td>
-                  <td className="px-3 py-1">{e.status}</td>
+                <td className="px-3 py-1">{e.eco_model}</td>
+                <td className="px-3 py-1">{e.change_reason}</td>
+                <td className="px-3 py-1">{e.issued_date}</td>
+                <td className="px-3 py-1">{e.status}</td>
                   <td className="px-3 py-1 text-right flex justify-end gap-1">
                     <Button size="icon" variant="ghost" onClick={async ()=>{
                       setErrors({});
@@ -198,11 +198,11 @@ export default function EcoManager() {
                     <Button size="icon" variant="ghost" onClick={()=>handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         ) : (
           <>
           {!selectedPart ? (
@@ -221,7 +221,20 @@ export default function EcoManager() {
                         }} />
                         <span className="cursor-pointer" onClick={()=>setSelectedPart(pc.part_no)}>{pc.part_no}</span>
                       </td>
-                      <td className="px-3 py-1 text-xs">{pc.description}</td>
+                      <td className="px-3 py-1 text-xs cursor-pointer hover:bg-yellow-50" onClick={() => {
+                        const newDesc = prompt(`${pc.part_no}의 Description을 수정하세요:`, pc.description || '');
+                        if (newDesc !== null && newDesc !== pc.description) {
+                          // API 호출하여 description 업데이트
+                          api.patch(`parts/${pc.part_no}/update-description/`, { description: newDesc })
+                            .then(() => {
+                              queryClient.invalidateQueries({queryKey:['part-eco-count']});
+                              toast.success(t('update_success'));
+                            })
+                            .catch(() => {
+                              toast.error(t('update_fail'));
+                            });
+                        }
+                      }}>{pc.description || '-'}</td>
                       <td className="px-3 py-1 text-center">{pc.count}</td>
                     </tr>
                   );

@@ -45,7 +45,7 @@ class EngineeringChangeOrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EngineeringChangeOrder
-        fields = '__all__'
+        fields = '__all__' 
 
 
 class InventorySnapshotSerializer(serializers.ModelSerializer):

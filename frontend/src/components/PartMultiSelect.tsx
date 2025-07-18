@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import type { PartSpec } from '@/hooks/usePartSpecs';
 import { useLang } from '@/i18n';
+import api from '@/lib/api';
 
 interface Props {
   onAdd: (parts: PartSpec[]) => void;
@@ -17,9 +18,35 @@ export default function PartMultiSelect({ onAdd }: Props) {
   const addManual = () => {
     const kw = keyword.trim();
     if(!kw) return;
-    const manual: PartSpec = { id: Date.now()*-1, part_no: kw, model_code:'', description:'' } as PartSpec;
-    onAdd([manual]);
-    setKeyword('');
+    
+    // description 입력받기
+    const description = prompt(`${kw}의 Description을 입력하세요:`, '');
+    if (description === null) return; // 취소된 경우
+    
+    // API를 통해 Part 생성 또는 업데이트
+    api.post('parts/create-or-update/', {
+      part_no: kw,
+      description: description || ''
+    }).then(({ data }) => {
+      const manual: PartSpec = { 
+        id: data.id, 
+        part_no: data.part_no, 
+        model_code: data.model_code || '', 
+        description: data.description || '' 
+      } as PartSpec;
+      onAdd([manual]);
+      setKeyword('');
+    }).catch(() => {
+      // API 실패 시 임시 ID로 추가 (나중에 저장 시 처리)
+      const manual: PartSpec = { 
+        id: Date.now()*-1, 
+        part_no: kw, 
+        model_code: '', 
+        description: description || '' 
+      } as PartSpec;
+      onAdd([manual]);
+      setKeyword('');
+    });
   };
 
   const toggle = (p: PartSpec) => {
@@ -43,7 +70,7 @@ export default function PartMultiSelect({ onAdd }: Props) {
           ))}
           {!results.length && (
             <li className="text-center text-xs py-4">
-              <button type="button" className="text-blue-600 underline" onClick={addManual}>“{keyword.trim()}” 직접 추가</button>
+              <button type="button" className="text-blue-600 underline" onClick={addManual}>“{keyword.trim()}” {t('add_directly')}</button>
             </li>
           )}
         </ul>

@@ -14,6 +14,7 @@ import csv
 import io
 from django.http import HttpResponse
 import datetime as dt
+from datetime import date
 from django.utils import timezone
 from django.conf import settings
 import requests
@@ -222,6 +223,55 @@ class PartSpecViewSet(viewsets.ModelViewSet):
             for p in qs if p.eco_cnt
         ][:50]
         return Response(data)
+
+    @action(detail=True, methods=['patch'], url_path='update-description')
+    def update_description(self, request, pk=None):
+        """Part description 수정"""
+        part = self.get_object()
+        description = request.data.get('description', '').strip()
+        if not description:
+            return Response({'detail': 'description is required'}, status=400)
+        
+        part.description = description
+        part.save(update_fields=['description'])
+        return Response({'part_no': part.part_no, 'description': part.description})
+
+    @action(detail=False, methods=['post'], url_path='create-or-update')
+    def create_or_update(self, request):
+        """Part 번호로 생성 또는 업데이트 (직접추가용)"""
+        part_no = request.data.get('part_no', '').strip()
+        description = request.data.get('description', '').strip()
+        
+        if not part_no:
+            return Response({'detail': 'part_no is required'}, status=400)
+        
+        # 기존 Part가 있는지 확인
+        try:
+            part = PartSpec.objects.get(part_no=part_no)
+            # description이 제공된 경우에만 업데이트
+            if description:
+                part.description = description
+                part.save(update_fields=['description'])
+            return Response({
+                'id': part.id,
+                'part_no': part.part_no,
+                'description': part.description,
+                'created': False
+            })
+        except PartSpec.DoesNotExist:
+            # 새로 생성
+            part = PartSpec.objects.create(
+                part_no=part_no,
+                description=description,
+                model_code='',  # 기본값
+                valid_from=date.today()
+            )
+            return Response({
+                'id': part.id,
+                'part_no': part.part_no,
+                'description': part.description,
+                'created': True
+            })
 
 # ==== ECO 관리 (CRUD) ====
 class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
