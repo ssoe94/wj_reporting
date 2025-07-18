@@ -603,6 +603,15 @@ export default function App() {
                           setSelectedPartSpec(null);
                         }
                       }}
+                      autoSelect={false}
+                      autoHighlight={false}
+                      filterOptions={(options, { inputValue }) => {
+                        // 최소 2글자 이상 입력해야 검색 결과 표시
+                        if (inputValue.length < 2) return [];
+                        return options.filter(option => 
+                          option.part_no.toLowerCase().includes(inputValue.toLowerCase())
+                        );
+                      }}
                       renderInput={(params) => (
                         <TextField {...params} size="small" placeholder={`Part No. ${t('input_or_select')}`} />
                       )}
