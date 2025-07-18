@@ -598,6 +598,10 @@ export default function App() {
                       }}
                       onInputChange={(_, v) => {
                         setDirectPartNoInput(v);
+                        // 입력값이 변경되면 선택된 항목을 초기화하여 자유롭게 검색할 수 있도록 함
+                        if (v !== selectedPartSpec?.part_no) {
+                          setSelectedPartSpec(null);
+                        }
                       }}
                       renderInput={(params) => (
                         <TextField {...params} size="small" placeholder={`Part No. ${t('input_or_select')}`} />
