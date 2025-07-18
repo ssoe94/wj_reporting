@@ -224,8 +224,8 @@ export default function EcoManager() {
                       <td className="px-3 py-1 text-xs cursor-pointer hover:bg-yellow-50" onClick={() => {
                         const newDesc = prompt(`${pc.part_no} ${t('description_edit_prompt')}:`, pc.description || '');
                         if (newDesc !== null && newDesc !== pc.description) {
-                          // API 호출하여 description 업데이트
-                          api.patch(`parts/${pc.part_no}/update-description/`, { description: newDesc })
+                          // API 호출하여 ECO Part description 업데이트
+                          api.patch(`eco-parts/${pc.part_no}/update-description/`, { description: newDesc })
                             .then(() => {
                               queryClient.invalidateQueries({queryKey:['part-eco-count']});
                               toast.success(t('update_success'));

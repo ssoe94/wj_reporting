@@ -1,11 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import InjectionReportViewSet, ProductViewSet, PartSpecViewSet, EngineeringChangeOrderViewSet, InventoryView
+from .views import InjectionReportViewSet, ProductViewSet, PartSpecViewSet, EcoPartSpecViewSet, EngineeringChangeOrderViewSet, InventoryView
 
 router = DefaultRouter()
 router.register(r'reports', InjectionReportViewSet)
 router.register(r'products', ProductViewSet)
 router.register(r'parts', PartSpecViewSet)
+router.register(r'eco-parts', EcoPartSpecViewSet)
 router.register(r'ecos', EngineeringChangeOrderViewSet)
 
 urlpatterns = [

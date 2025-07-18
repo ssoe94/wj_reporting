@@ -12,7 +12,7 @@ export function usePartEcoCount(keyword: string) {
     queryKey: ['part-eco-count', keyword],
     queryFn: async () => {
       if (!keyword.trim()) return [];
-      const { data } = await api.get('parts/with-eco-count/', {
+      const { data } = await api.get('eco-parts/with-eco-count/', {
         params: { search: keyword.trim() },
       });
       return data;

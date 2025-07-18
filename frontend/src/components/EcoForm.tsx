@@ -34,7 +34,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
     const dets:any = (initial as any).details || [];
     if(Array.isArray(dets) && dets.length){
       const mapped = dets.map((d:any)=>({
-        spec:{ id:d.part_spec, part_no:d.part_no||'', description:d.description||'', model_code:'' } as PartSpec,
+        spec:{ id:d.eco_part_spec, part_no:d.part_no||'', description:d.description||'', model_code:'' } as PartSpec,
         change_details:d.change_details||'',
         status:d.status||'OPEN'
       })) as Row[];
@@ -63,7 +63,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
       return;
     }
     if(!rows.length){ toast.error(t('required_error')); return; }
-    (form as any).details = rows.map(r=>({part_spec: r.spec.id, change_details: r.change_details, status: r.status}));
+    (form as any).details = rows.map(r=>({eco_part_spec: r.spec.id, change_details: r.change_details, status: r.status}));
     setLocalErrors({});
     onSubmit(form);
   };

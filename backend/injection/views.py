@@ -1,13 +1,14 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, InventorySnapshot
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot
 from .serializers import (
     InjectionReportSerializer,
     ProductSerializer,
     PartSpecSerializer,
     EngineeringChangeOrderSerializer,
     EcoDetailSerializer,
+    EcoPartSpecSerializer,
     InventorySnapshotSerializer,
 )
 import csv
@@ -273,6 +274,75 @@ class PartSpecViewSet(viewsets.ModelViewSet):
                 'created': True
             })
 
+# ==== ECO Part 스펙 관리 (ECO 전용) ====
+class EcoPartSpecViewSet(viewsets.ModelViewSet):
+    queryset = EcoPartSpec.objects.all()
+    serializer_class = EcoPartSpecSerializer
+    search_fields = ['part_no', 'description', 'model_code']
+    ordering = ['part_no']
+
+    @action(detail=False, methods=['get'], url_path='with-eco-count')
+    def with_eco_count(self, request):
+        """검색어에 맞는 ECO Part 중 ECO에 포함된 건수 반환"""
+        kw = request.query_params.get('search', '').strip()
+        qs = self.get_queryset()
+        if kw:
+            qs = qs.filter(part_no__icontains=kw)
+        qs = qs.annotate(eco_cnt=models.Count('eco_details'))
+        data = [
+            {'part_no': p.part_no, 'description': p.description, 'count': p.eco_cnt}
+            for p in qs if p.eco_cnt
+        ][:50]
+        return Response(data)
+
+    @action(detail=True, methods=['patch'], url_path='update-description')
+    def update_description(self, request, pk=None):
+        """ECO Part description 수정"""
+        part = self.get_object()
+        description = request.data.get('description', '').strip()
+        if not description:
+            return Response({'detail': 'description is required'}, status=400)
+        
+        part.description = description
+        part.save(update_fields=['description'])
+        return Response({'part_no': part.part_no, 'description': part.description})
+
+    @action(detail=False, methods=['post'], url_path='create-or-update')
+    def create_or_update(self, request):
+        """ECO Part 번호로 생성 또는 업데이트 (직접추가용)"""
+        part_no = request.data.get('part_no', '').strip()
+        description = request.data.get('description', '').strip()
+        
+        if not part_no:
+            return Response({'detail': 'part_no is required'}, status=400)
+        
+        # 기존 ECO Part가 있는지 확인
+        try:
+            part = EcoPartSpec.objects.get(part_no=part_no)
+            # description이 제공된 경우에만 업데이트
+            if description:
+                part.description = description
+                part.save(update_fields=['description'])
+            return Response({
+                'id': part.id,
+                'part_no': part.part_no,
+                'description': part.description,
+                'created': False
+            })
+        except EcoPartSpec.DoesNotExist:
+            # 새로 생성
+            part = EcoPartSpec.objects.create(
+                part_no=part_no,
+                description=description,
+                model_code=''  # 기본값
+            )
+            return Response({
+                'id': part.id,
+                'part_no': part.part_no,
+                'description': part.description,
+                'created': True
+            })
+
 # ==== ECO 관리 (CRUD) ====
 class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     queryset = EngineeringChangeOrder.objects.all()
@@ -293,7 +363,7 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
 
         qs = (
             self.get_queryset()
-            .filter(details__part_spec__part_no__icontains=keyword)
+            .filter(details__eco_part_spec__part_no__icontains=keyword)
             .distinct()
         )
         page = self.paginate_queryset(qs)
@@ -310,14 +380,14 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
         created = 0
         updated = 0
         for it in items:
-            pid = it.get('part_spec')
+            pid = it.get('eco_part_spec')
             if not pid:
                 continue
             try:
-                part = PartSpec.objects.get(id=pid)
+                part = EcoPartSpec.objects.get(id=pid)
                 detail, created_flag = EcoDetail.objects.get_or_create(
                     eco_header=eco,
-                    part_spec=part,
+                    eco_part_spec=part,
                     defaults={
                         'change_reason': it.get('change_reason',''),
                         'change_details': it.get('change_details',''),
@@ -337,7 +407,7 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
                         detail.status = it['status'] or 'OPEN'; changed=True
                     if changed:
                         detail.save(); updated+=1
-            except PartSpec.DoesNotExist:
+            except EcoPartSpec.DoesNotExist:
                 continue
         # 헤더 상태 자동 집계
         if eco.details.filter(status='OPEN').exists():

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, InventorySnapshot
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot
 
 class InjectionReportSerializer(serializers.ModelSerializer):
     achievement_rate = serializers.FloatField(read_only=True)
@@ -30,13 +30,19 @@ class PartSpecSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 # EcoDetailSerializer 먼저 정의
+class EcoPartSpecSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EcoPartSpec
+        fields = ['id', 'part_no', 'description', 'model_code', 'eco_category', 'change_history', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
 class EcoDetailSerializer(serializers.ModelSerializer):
-    part_no = serializers.CharField(source='part_spec.part_no', read_only=True)
-    description = serializers.CharField(source='part_spec.description', read_only=True)
+    part_no = serializers.CharField(source='eco_part_spec.part_no', read_only=True)
+    description = serializers.CharField(source='eco_part_spec.description', read_only=True)
 
     class Meta:
         model = EcoDetail
-        fields = ['id', 'eco_header', 'part_spec', 'part_no', 'description', 'change_reason', 'change_details', 'status', 'created_at']
+        fields = ['id', 'eco_header', 'eco_part_spec', 'part_no', 'description', 'change_reason', 'change_details', 'status', 'created_at']
         read_only_fields = ['created_at']
 
 

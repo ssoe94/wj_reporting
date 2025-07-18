@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { usePartSearch } from '@/hooks/usePartSearch';
+import { useEcoPartSearch } from '@/hooks/useEcoPartSearch';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -19,7 +19,7 @@ export default function PartMultiSelect({ onAdd }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalPartNo, setModalPartNo] = useState('');
   const [modalDescription, setModalDescription] = useState('');
-  const { data: results = [] } = usePartSearch(keyword);
+  const { data: results = [] } = useEcoPartSearch(keyword);
   
   const addManual = () => {
     const kw = keyword.trim();
@@ -33,8 +33,8 @@ export default function PartMultiSelect({ onAdd }: Props) {
     const partNo = modalPartNo.trim();
     if(!partNo) return;
     
-    // API를 통해 Part 생성 또는 업데이트
-    api.post('parts/create-or-update/', {
+    // API를 통해 ECO Part 생성 또는 업데이트
+    api.post('eco-parts/create-or-update/', {
       part_no: partNo,
       description: modalDescription || ''
     }).then(({ data }) => {
