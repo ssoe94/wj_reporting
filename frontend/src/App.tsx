@@ -570,9 +570,9 @@ export default function App() {
                   <div>
                     <Label>Part No.</Label>
                     <Autocomplete<PartSpec>
-                      options={[...partNoOptions, ...(directPartSpec ? [directPartSpec] : [])]}
+                      options={searchResults}
                       getOptionLabel={(opt) => `${opt.part_no}`}
-                      value={selectedPartSpec}
+                      onInputChange={(_, v) => setProductQuery(v)}
                       onChange={(_, v) => {
                         setSelectedPartSpec(v);
                         setDirectPartNoInput(v ? v.part_no : "");
@@ -596,22 +596,7 @@ export default function App() {
                           }
                         }
                       }}
-                      onInputChange={(_, v) => {
-                        setDirectPartNoInput(v);
-                        // 입력값이 변경되면 선택된 항목을 초기화하여 자유롭게 검색할 수 있도록 함
-                        if (v !== selectedPartSpec?.part_no) {
-                          setSelectedPartSpec(null);
-                        }
-                      }}
-                      autoSelect={false}
-                      autoHighlight={false}
-                      filterOptions={(options, { inputValue }) => {
-                        // 최소 2글자 이상 입력해야 검색 결과 표시
-                        if (inputValue.length < 2) return [];
-                        return options.filter(option => 
-                          option.part_no.toLowerCase().includes(inputValue.toLowerCase())
-                        );
-                      }}
+                      value={selectedPartSpec}
                       renderInput={(params) => (
                         <TextField {...params} size="small" placeholder={`Part No. ${t('input_or_select')}`} />
                       )}
