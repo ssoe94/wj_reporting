@@ -124,10 +124,12 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
         try:
             # CSV 파일 읽기 - 다양한 인코딩 시도
             content = upload.read()
+            print(f"File size: {len(content)} bytes")
             
             # UTF-8 BOM 제거
             if content.startswith(b'\xef\xbb\xbf'):
                 content = content[3:]
+                print("Removed UTF-8 BOM")
             
             # 여러 인코딩 시도
             encodings = ['utf-8', 'cp949', 'euc-kr', 'latin-1']
@@ -136,8 +138,10 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
             for encoding in encodings:
                 try:
                     csv_content = content.decode(encoding)
+                    print(f"Successfully decoded with {encoding}")
                     break
-                except UnicodeDecodeError:
+                except UnicodeDecodeError as e:
+                    print(f"Failed to decode with {encoding}: {e}")
                     continue
             
             if csv_content is None:
@@ -145,6 +149,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
 
             # CSV 파싱
             reader = csv.DictReader(io.StringIO(csv_content))
+            print(f"CSV headers: {reader.fieldnames}")
             
             # 파싱 유틸
             def parse_int(val):
@@ -171,8 +176,10 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                     except:
                         return None
 
-            for row in reader:
+            for i, row in enumerate(reader):
                 try:
+                    print(f"Processing row {i+1}: {row}")
+                    
                     # 중복 체크
                     date_val = parse_dt(row.get("Date"))
                     machine_no = parse_int(row.get("Machine No"))
@@ -185,6 +192,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                         start_datetime=start_dt,
                         model=model,
                     ).exists():
+                        print(f"Row {i+1}: Skipped (duplicate)")
                         skipped += 1
                         continue
 
@@ -206,9 +214,11 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                         note=str(row.get("Note", "")),
                     )
                     report.save()
+                    print(f"Row {i+1}: Created successfully")
                     created += 1
                 except Exception as e:
-                    print(f"Error processing row: {e}")
+                    print(f"Error processing row {i+1}: {e}")
+                    print(f"Row data: {row}")
                     errors += 1
 
         except Exception as e:
