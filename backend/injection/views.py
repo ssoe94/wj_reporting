@@ -22,6 +22,9 @@ import requests
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from django.db import models
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
@@ -67,46 +70,55 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def export(self, request):
-        """생산 기록 전체를 CSV 파일로 다운로드하도록 반환"""
+        """생산 기록 전체를 Excel 파일로 다운로드하도록 반환"""
         queryset = self.filter_queryset(self.get_queryset())
 
-        buffer = io.StringIO()
-        writer = csv.writer(buffer)
-
-        # 헤더 작성
-        writer.writerow([
-            'ID', 'Date', 'Machine No', 'Tonnage', 'Model', 'Type', 'Part No', 'Plan Qty', 'Actual Qty',
-            'Reported Defect', 'Real Defect', 'Start', 'End', 'Total Time', 'Operation Time', 'Note'
-        ])
-
+        # 데이터 준비
+        data = []
         for r in queryset:
-            writer.writerow([
-                r.id,
-                r.date,
-                r.machine_no,
-                r.tonnage,
-                r.model,
-                r.section,
-                r.part_no,
-                r.plan_qty,
-                r.actual_qty,
-                r.reported_defect,
-                r.actual_defect,
-                r.start_datetime,
-                r.end_datetime,
-                r.total_time,
-                r.operation_time,
-                r.note,
-            ])
+            data.append({
+                'ID': r.id,
+                'Date': r.date,
+                'Machine No': r.machine_no,
+                'Tonnage': r.tonnage,
+                'Model': r.model,
+                'Type': r.section,
+                'Part No': r.part_no,
+                'Plan Qty': r.plan_qty,
+                'Actual Qty': r.actual_qty,
+                'Reported Defect': r.reported_defect,
+                'Real Defect': r.actual_defect,
+                'Start': r.start_datetime,
+                'End': r.end_datetime,
+                'Total Time': r.total_time,
+                'Operation Time': r.operation_time,
+                'Note': r.note,
+            })
 
-        csv_data = '\ufeff' + buffer.getvalue()  # prepend UTF-8 BOM for Excel
-        response = HttpResponse(csv_data, content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="reports.csv"'
+        # DataFrame 생성
+        df = pd.DataFrame(data)
+        
+        # Excel 파일 생성
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Production Reports"
+        
+        # DataFrame을 Excel에 쓰기
+        for r in dataframe_to_rows(df, index=False, header=True):
+            ws.append(r)
+        
+        # 파일 저장
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        
+        response = HttpResponse(buffer.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename="reports.xlsx"'
         return response
 
     @action(detail=False, methods=["post"], url_path="bulk-import")
     def bulk_import(self, request):
-        """CSV 파일을 업로드하여 대량의 생산 기록을 생성한다.
+        """Excel 파일을 업로드하여 대량의 생산 기록을 생성한다.
 
         입력 형식: multipart/form-data, field name "file"
         응답 예시: {"created": 10, "skipped": 2, "errors": 1}
@@ -116,70 +128,77 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
         if not upload:
             return Response({"detail": "file field is required"}, status=400)
 
-        import csv, io
-
         created = skipped = errors = 0
-        reader = csv.DictReader(io.TextIOWrapper(upload, encoding="utf-8"))
 
-        unique_fields = ("Date", "Machine No", "Start", "Model")
+        try:
+            # Excel 파일 읽기
+            df = pd.read_excel(upload, engine='openpyxl')
+            
+            # 파싱 유틸
+            def parse_int(val):
+                try:
+                    return int(val) if pd.notna(val) else 0
+                except (TypeError, ValueError):
+                    return 0
 
-        for row in reader:
-            try:
-                key = (
-                    row.get("Date"),
-                    int(row.get("Machine No") or 0),
-                    row.get("Start"),
-                    row.get("Model"),
-                )
-
-                if InjectionReport.objects.filter(
-                    date=key[0],
-                    machine_no=key[1],
-                    start_datetime=key[2],
-                    model=key[3],
-                ).exists():
-                    skipped += 1
-                    continue
-
-                # 파싱 유틸
-                def parse_int(val):
-                    try:
-                        return int(val)
-                    except (TypeError, ValueError):
-                        return 0
-
-                def parse_dt(val):
-                    if not val:
-                        return None
-                    txt = str(val).strip().replace("/", "-")
-                    # 공백 → 'T' 로 치환해 ISO 형태로 맞춤
-                    txt = txt.replace(" ", "T")
-                    try:
+            def parse_dt(val):
+                if pd.isna(val):
+                    return None
+                try:
+                    if isinstance(val, str):
+                        txt = val.strip().replace("/", "-")
+                        txt = txt.replace(" ", "T")
                         return dt.datetime.fromisoformat(txt)
-                    except ValueError:
-                        return None
+                    elif isinstance(val, dt.datetime):
+                        return val
+                    else:
+                        return pd.to_datetime(val).to_pydatetime()
+                except (ValueError, TypeError):
+                    return None
 
-                report = InjectionReport(
-                    date=parse_dt(row.get("Date")).date() if parse_dt(row.get("Date")) else None,
-                    machine_no=parse_int(row.get("Machine No")),
-                    tonnage=row.get("Tonnage"),
-                    model=row.get("Model"),
-                    section=row.get("Type"),
-                    part_no=row.get("Part No"),
-                    plan_qty=parse_int(row.get("Plan Qty")),
-                    actual_qty=parse_int(row.get("Actual Qty")),
-                    reported_defect=parse_int(row.get("Reported Defect")),
-                    actual_defect=parse_int(row.get("Real Defect")),
-                    start_datetime=parse_dt(row.get("Start")),
-                    end_datetime=parse_dt(row.get("End")),
-                    total_time=parse_int(row.get("Total Time")),
-                    operation_time=parse_int(row.get("Operation Time")),
-                    note=row.get("Note", ""),
-                )
-                report.save()
-                created += 1
-            except Exception:
-                errors += 1
+            for _, row in df.iterrows():
+                try:
+                    key = (
+                        str(row.get("Date", "")),
+                        parse_int(row.get("Machine No")),
+                        str(row.get("Start", "")),
+                        str(row.get("Model", "")),
+                    )
+
+                    if InjectionReport.objects.filter(
+                        date=parse_dt(row.get("Date")).date() if parse_dt(row.get("Date")) else None,
+                        machine_no=key[1],
+                        start_datetime=parse_dt(row.get("Start")),
+                        model=key[3],
+                    ).exists():
+                        skipped += 1
+                        continue
+
+                    report = InjectionReport(
+                        date=parse_dt(row.get("Date")).date() if parse_dt(row.get("Date")) else None,
+                        machine_no=parse_int(row.get("Machine No")),
+                        tonnage=str(row.get("Tonnage", "")),
+                        model=str(row.get("Model", "")),
+                        section=str(row.get("Type", "")),
+                        part_no=str(row.get("Part No", "")),
+                        plan_qty=parse_int(row.get("Plan Qty")),
+                        actual_qty=parse_int(row.get("Actual Qty")),
+                        reported_defect=parse_int(row.get("Reported Defect")),
+                        actual_defect=parse_int(row.get("Real Defect")),
+                        start_datetime=parse_dt(row.get("Start")),
+                        end_datetime=parse_dt(row.get("End")),
+                        total_time=parse_int(row.get("Total Time")),
+                        operation_time=parse_int(row.get("Operation Time")),
+                        note=str(row.get("Note", "")),
+                    )
+                    report.save()
+                    created += 1
+                except Exception as e:
+                    print(f"Error processing row: {e}")
+                    errors += 1
+
+        except Exception as e:
+            return Response({"detail": f"Excel file processing error: {str(e)}"}, status=400)
 
         return Response({"created": created, "skipped": skipped, "errors": errors})
 
