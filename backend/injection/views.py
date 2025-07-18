@@ -213,7 +213,7 @@ class PartSpecViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='with-eco-count')
     def with_eco_count(self, request):
-        """검색어에 맞는 Part 중 ECO에 포함된 건수 반환"""
+        """검색어에 맞는 Part 중 ECO에 포함된 건수 반환 (기존 PartSpec용)"""
         kw = request.query_params.get('search', '').strip()
         qs = self.get_queryset()
         if kw:

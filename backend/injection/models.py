@@ -190,7 +190,10 @@ class EcoPartSpec(models.Model):
 class EcoDetail(models.Model):
     """ECO 상세 정보"""
     eco_header = models.ForeignKey(EngineeringChangeOrder, on_delete=models.CASCADE, related_name='details')
-    eco_part_spec = models.ForeignKey(EcoPartSpec, on_delete=models.CASCADE, related_name='eco_details')
+    # 임시로 기존 PartSpec 참조 유지 (마이그레이션 후 제거 예정)
+    part_spec = models.ForeignKey(PartSpec, on_delete=models.CASCADE, related_name='ecodetail', null=True, blank=True)
+    # 새로운 EcoPartSpec 참조 (마이그레이션 후 필수로 변경 예정)
+    eco_part_spec = models.ForeignKey(EcoPartSpec, on_delete=models.CASCADE, related_name='eco_details', null=True, blank=True)
     
     change_reason = models.CharField('변경 사유', max_length=200, blank=True)
     change_details = models.TextField('변경 내용', blank=True)
@@ -202,11 +205,12 @@ class EcoDetail(models.Model):
     class Meta:
         verbose_name = 'ECO 상세'
         verbose_name_plural = 'ECO 상세 목록'
-        unique_together = ('eco_header', 'eco_part_spec')
-        ordering = ['eco_header', 'eco_part_spec']
+        unique_together = ('eco_header', 'part_spec')  # 임시로 기존 unique_together 유지
+        ordering = ['eco_header', 'part_spec']
 
     def __str__(self):
-        return f"{self.eco_header.eco_no} - {self.eco_part_spec.part_no}"
+        part_info = self.eco_part_spec.part_no if self.eco_part_spec else (self.part_spec.part_no if self.part_spec else 'Unknown')
+        return f"{self.eco_header.eco_no} - {part_info}"
 
 class InventorySnapshot(models.Model):
     """재고 스냅샷"""
