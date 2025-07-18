@@ -202,17 +202,17 @@ export default function App() {
     }
   };
 
-  const downloadExcel = async () => {
+  const downloadCsv = async () => {
     try {
       const { data } = await api.get("/reports/export/", { responseType: "blob" });
       const url = URL.createObjectURL(data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "reports.xlsx";
+      a.download = "reports.csv";
       a.click();
     } catch (err) {
       console.error(err);
-      toast.error("Excel 다운로드 실패");
+      toast.error("CSV 다운로드 실패");
     }
   };
 
@@ -421,11 +421,11 @@ export default function App() {
         {/* Records Section */}
         <section id="records" className="w-full space-y-4">
           <div className="flex justify-end items-center gap-3">
-            {/* Excel 업로드 */}
+            {/* CSV 업로드 */}
             <input
-              id="excelFile"
+              id="csvFile"
               type="file"
-              accept=".xlsx,.xls"
+              accept=".csv,text/csv"
               className="hidden"
               onChange={async (e) => {
                 const file = e.target.files?.[0];
@@ -441,18 +441,18 @@ export default function App() {
                   queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
                 } catch (err) {
                   console.error(err);
-                  toast.error("Excel 업로드 실패");
+                  toast.error("CSV 업로드 실패");
                 } finally {
                   e.target.value = ""; // reset
                 }
               }}
             />
-            <Button size="sm" variant="ghost" onClick={() => document.getElementById("excelFile")?.click()}>
-              Excel 업로드
+            <Button size="sm" variant="ghost" onClick={() => document.getElementById("csvFile")?.click()}>
+              {t('csv_upload')}
             </Button>
-            {/* Excel 다운로드 */}
-            <Button size="sm" className="gap-2" onClick={downloadExcel}>
-              <DownloadCloud className="h-4 w-4" /> Excel 저장
+            {/* CSV 다운로드 */}
+            <Button size="sm" className="gap-2" onClick={downloadCsv}>
+              <DownloadCloud className="h-4 w-4" /> {t('csv_save')}
             </Button>
           </div>
           <RecordsTable />
