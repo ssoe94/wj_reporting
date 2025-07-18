@@ -439,9 +439,15 @@ export default function App() {
                   toast.success(`생성 ${data.created}건 / 중복 ${data.skipped}건 / 오류 ${data.errors}건`);
                   queryClient.invalidateQueries({ queryKey: ["reports"] });
                   queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
-                } catch (err) {
-                  console.error(err);
-                  toast.error("CSV 업로드 실패");
+                } catch (err: any) {
+                  console.error("CSV upload error:", err);
+                  if (err.response?.data?.detail) {
+                    toast.error(`CSV 업로드 실패: ${err.response.data.detail}`);
+                  } else if (err.response?.status) {
+                    toast.error(`CSV 업로드 실패: HTTP ${err.response.status}`);
+                  } else {
+                    toast.error("CSV 업로드 실패: 네트워크 오류");
+                  }
                 } finally {
                   e.target.value = ""; // reset
                 }

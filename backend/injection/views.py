@@ -115,9 +115,18 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
         응답 예시: {"created": 10, "skipped": 2, "errors": 1}
         중복 판단 기준: (date, machine_no, start_datetime, model) 조합이 이미 존재하면 skip
         """
+        print("=== CSV Upload Started ===")
+        print(f"Request files: {request.FILES}")
+        print(f"Request content type: {request.content_type}")
+        
         upload = request.FILES.get("file")
         if not upload:
+            print("No file found in request")
             return Response({"detail": "file field is required"}, status=400)
+        
+        print(f"File name: {upload.name}")
+        print(f"File size: {upload.size}")
+        print(f"File content type: {upload.content_type}")
 
         created = skipped = errors = 0
 
