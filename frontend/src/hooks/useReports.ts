@@ -44,10 +44,10 @@ export function useReports(): UseQueryResult<Report[]> {
           if (p.startsWith('/api/')) {
             p = p.replace('/api', ''); // '/reports/?page=2'
           }
-          if (!p.startsWith('/')) p = '/' + p;
+          if (p.startsWith('/')) p = p.slice(1);
           return p;
         }
-        return u.startsWith('/') ? u : `/${u}`;
+        return u.startsWith('/') ? u.slice(1) : u;
       };
 
       while (url) {

@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
-import type { PartSpec } from './usePartSpecs';
 
 export function useStdCT(partNos: string[]) {
   return useQuery<{ [partNo: string]: number }>({

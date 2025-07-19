@@ -21,8 +21,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { toast } from "react-toastify";
-import RecordsTable from "@/components/RecordsTable";
+
 import ProdTrendChart from "@/components/ProdTrendChart";
+import ProdCalendar from "@/components/ProdCalendar";
+import DateRecordsTable from "@/components/DateRecordsTable";
 import { useQueryClient } from "@tanstack/react-query";
 import { Autocomplete, TextField } from "@mui/material";
 import { usePartSpecSearch } from "@/hooks/usePartSpecs";
@@ -238,6 +240,8 @@ export default function App() {
   const { lang, setLang, t } = useLang();
   const navItems = useNavItems();
 
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Mobile Header (sidebar toggle) */}
@@ -393,7 +397,7 @@ export default function App() {
               <CardHeader className="text-gray-500">{t('total_prod')}</CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-blue-700">
-                  {summary ? `${summary.total_count}건` : '...'}
+                  {summary ? `${summary.total_count}${t('total_prod_unit')}` : '...'}
                 </p>
               </CardContent>
             </Card>
@@ -420,48 +424,68 @@ export default function App() {
 
         {/* Records Section */}
         <section id="records" className="w-full space-y-4">
-          <div className="flex justify-end items-center gap-3">
-            {/* CSV 업로드 */}
-            <input
-              id="csvFile"
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const fd = new FormData();
-                fd.append("file", file);
-                try {
-                  const { data } = await api.post("/reports/bulk-import/", fd, {
-                    headers: { "Content-Type": "multipart/form-data" },
-                  });
-                  toast.success(`생성 ${data.created}건 / 중복 ${data.skipped}건 / 오류 ${data.errors}건`);
-                  queryClient.invalidateQueries({ queryKey: ["reports"] });
-                  queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
-                } catch (err: any) {
-                  console.error("CSV upload error:", err);
-                  if (err.response?.data?.detail) {
-                    toast.error(`CSV 업로드 실패: ${err.response.data.detail}`);
-                  } else if (err.response?.status) {
-                    toast.error(`CSV 업로드 실패: HTTP ${err.response.status}`);
-                  } else {
-                    toast.error("CSV 업로드 실패: 네트워크 오류");
-                  }
-                } finally {
-                  e.target.value = ""; // reset
-                }
-              }}
-            />
-            <Button size="sm" variant="ghost" onClick={() => document.getElementById("csvFile")?.click()}>
-              {t('csv_upload')}
-            </Button>
-            {/* CSV 다운로드 */}
-            <Button size="sm" className="gap-2" onClick={downloadCsv}>
-              <DownloadCloud className="h-4 w-4" /> {t('csv_save')}
-            </Button>
+          <div className="md:flex gap-6">
+            {/* 왼쪽: 테이블 영역 */}
+            <div className="flex-1 space-y-4 overflow-auto max-h-[65vh]">
+               {/* placeholder or table */}
+                {selectedDate ? (
+                  <>
+                    <h3 className="text-lg font-bold">{selectedDate} {t('detailed_record')}</h3>
+                    <DateRecordsTable date={selectedDate} />
+                  </>
+                ) : (
+                 <div className="flex items-center justify-center h-48">
+                   <p className="text-gray-400 text-lg">날짜를 눌러 상세 데이터를 확인하세요.</p>
+                 </div>
+                )}
+            </div>
+
+            {/* Calendar 오른쪽 */}
+            <div className="flex-shrink-0 space-y-4 mt-9 md:mt-11">
+              <ProdCalendar selected={selectedDate} onSelect={setSelectedDate} />
+
+               {/* CSV 버튼들 (캘린더 하단) */}
+               <div className="flex justify-center gap-2">
+                 <input
+                   id="csvFile"
+                   type="file"
+                   accept=".csv,text/csv"
+                   className="hidden"
+                   onChange={async (e) => {
+                     const file = e.target.files?.[0];
+                     if (!file) return;
+                     const fd = new FormData();
+                     fd.append("file", file);
+                     try {
+                       const { data } = await api.post("/reports/bulk-import/", fd, {
+                         headers: { "Content-Type": "multipart/form-data" },
+                       });
+                       toast.success(`생성 ${data.created}건 / 중복 ${data.skipped}건 / 오류 ${data.errors}건`);
+                       queryClient.invalidateQueries({ queryKey: ["reports"] });
+                       queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
+                     } catch (err: any) {
+                       console.error("CSV upload error:", err);
+                       if (err.response?.data?.detail) {
+                         toast.error(`CSV 업로드 실패: ${err.response.data.detail}`);
+                       } else if (err.response?.status) {
+                         toast.error(`CSV 업로드 실패: HTTP ${err.response.status}`);
+                       } else {
+                         toast.error("CSV 업로드 실패: 네트워크 오류");
+                       }
+                     } finally {
+                       e.target.value = "";
+                     }
+                   }}
+                 />
+                 <Button size="sm" variant="ghost" onClick={() => document.getElementById("csvFile")?.click()}>
+                   {t('csv_upload')}
+                 </Button>
+                 <Button size="sm" className="gap-2" onClick={downloadCsv}>
+                   <DownloadCloud className="h-4 w-4" /> {t('csv_save')}
+                 </Button>
+               </div>
+            </div>
           </div>
-          <RecordsTable />
         </section>
 
         {/* New Record Section */}

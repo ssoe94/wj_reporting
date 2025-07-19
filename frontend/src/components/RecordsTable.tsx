@@ -12,14 +12,7 @@ import { Dialog } from '@headlessui/react';
 import { Textarea } from '@/components/ui/textarea';
 import { useQueryClient } from '@tanstack/react-query';
 
-function calcTotal(start: string, end: string) {
-  if (!start || !end) return 0;
-  const s = new Date(start);
-  const e = new Date(end);
-  let diff = (e.getTime() - s.getTime()) / 60000;
-  if (diff < 0) diff += 24 * 60;
-  return Math.max(diff, 0);
-}
+
 
 export default function RecordsTable() {
   const { data: reports = [], isLoading } = useReports();
@@ -201,20 +194,24 @@ export default function RecordsTable() {
                   <Input type="number" value={editing.actual_defect} onChange={(e)=>setEditing({...editing, actual_defect:Number(e.target.value)})} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">{t('header_run')}</label>
-                  <Input type="number" value={editing.operation_time ? editing.total_time - editing.operation_time : 0} onChange={(e)=>{
+                  <label className="block text-sm mb-1">{t('start_dt')}</label>
+                  <Input type="datetime-local" value={editing.start_datetime?.slice(0,16) ?? ''} onChange={(e)=>setEditing({...editing, start_datetime:e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">{t('end_dt')}</label>
+                  <Input type="datetime-local" value={editing.end_datetime?.slice(0,16) ?? ''} onChange={(e)=>setEditing({...editing, end_datetime:e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">{t('total_time')}</label>
+                  <Input type="number" value={editing.total_time ?? ''} onChange={(e)=>setEditing({...editing, total_time:+e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">{t('idle_time')}</label>
+                  <Input type="number" value={editing.total_time && editing.operation_time ? editing.total_time - editing.operation_time : ''} onChange={(e)=>{
                     const idle = Number(e.target.value);
-                    const total = calcTotal(editing.start_datetime, editing.end_datetime);
-                    setEditing({...editing, total_time: total, operation_time: Math.max(total - idle,0)});
+                    const total = editing.total_time || 0;
+                    setEditing({...editing, operation_time: Math.max(total - idle,0)});
                   }} />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">{t('header_start')}</label>
-                  <Input type="datetime-local" value={editing.start_datetime.slice(0,16)} onChange={(e)=>setEditing({...editing, start_datetime:e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">{t('header_end')}</label>
-                  <Input type="datetime-local" value={editing.end_datetime.slice(0,16)} onChange={(e)=>setEditing({...editing, end_datetime:e.target.value})} />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm mb-1">{t('header_note')}</label>
@@ -222,8 +219,8 @@ export default function RecordsTable() {
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="ghost" onClick={closeDialog}>취소</Button>
-                <Button type="submit">저장</Button>
+                <Button type="button" variant="ghost" onClick={closeDialog}>{t('cancel')}</Button>
+                <Button type="submit">{t('save')}</Button>
               </div>
             </form>
           </Dialog.Panel>
