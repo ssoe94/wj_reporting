@@ -259,7 +259,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 class PartSpecViewSet(viewsets.ModelViewSet):
     queryset = PartSpec.objects.all()
     serializer_class = PartSpecSerializer
-    filterset_fields = ['model_code', 'part_no']
+    filterset_fields = ['model_code', 'part_no', 'part_no__in']
     search_fields = ['part_no', 'description', 'model_code']
     ordering = ['part_no']
 
