@@ -22,9 +22,18 @@ import requests
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from django.db import models
-import pandas as pd
-from openpyxl import Workbook
-from openpyxl.utils.dataframe import dataframe_to_rows
+from django_filters import rest_framework as filters
+
+# === Custom Filter ==
+class CharInFilter(filters.BaseInFilter, filters.CharFilter):
+    pass
+
+class PartSpecFilter(filters.FilterSet):
+    part_no__in = CharInFilter(field_name='part_no', lookup_expr='in')
+
+    class Meta:
+        model = PartSpec
+        fields = ['model_code', 'part_no', 'part_no__in']
 
 class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
@@ -259,7 +268,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 class PartSpecViewSet(viewsets.ModelViewSet):
     queryset = PartSpec.objects.all()
     serializer_class = PartSpecSerializer
-    filterset_fields = ['model_code', 'part_no', 'part_no__in']
+    filterset_class = PartSpecFilter
     search_fields = ['part_no', 'description', 'model_code']
     ordering = ['part_no']
 
