@@ -11,12 +11,13 @@ import {
   Home as HomeIcon,
   ChevronRight,
   ClipboardCheck,
+  TrendingUp,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -45,6 +46,7 @@ export function useNavItems() {
     { to: "#new", label: t("nav_new"), icon: PlusSquare },
     { to: "/models", label: t("nav_models"), icon: PackageSearch },
     { to: "/eco", label: t("nav_eco"), icon: ClipboardCheck },
+    { to: "/analysis", label: t("nav_analysis"), icon: TrendingUp },
 ];
 }
 
@@ -238,6 +240,9 @@ export default function App() {
   const { data: summary } = useReportSummary();
 
   const { lang, setLang, t } = useLang();
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
   const navItems = useNavItems();
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -435,7 +440,7 @@ export default function App() {
                   </>
                 ) : (
                  <div className="flex items-center justify-center h-48">
-                   <p className="text-gray-400 text-lg">날짜를 눌러 상세 데이터를 확인하세요.</p>
+                   <p className="text-gray-400 text-lg">{t('click_date_guide')}</p>
                  </div>
                 )}
             </div>

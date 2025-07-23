@@ -80,8 +80,7 @@ export default function DateRecordsTable({ date }: Props) {
             <td className="px-2 py-1 text-right">{r.actual_defect}</td>
             <td className="px-2 py-1 text-right">{Math.round(r.operation_time)}</td>
             <td className="px-2 py-1 text-center">{(() => {
-                const std = stdMap[r.part_no] || 0;
-                if (!std || !r.actual_qty) return '-';
+                if (!r.actual_qty) return '-';
                 const actualCt = (r.operation_time * 60) / r.actual_qty;
                 return actualCt.toFixed(1);
               })()}</td>
