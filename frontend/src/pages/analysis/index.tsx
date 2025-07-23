@@ -16,7 +16,6 @@ export default function AnalysisPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t, lang, setLang } = useLang();
   const navItems = useNavItems();
-  const { data: reports = [] } = useReports();
 
   return (
     <PeriodProvider>
