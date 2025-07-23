@@ -53,15 +53,6 @@ interface DrillProps {
   reason: string;
   onClose: () => void;
 }
-const DrillDownDetail: React.FC<DrillProps> = ({ reason, onClose }) => (
-  <div className="mt-4 w-full rounded-xl border p-4 bg-gray-50">
-    <div className="mb-2 flex items-center justify-between">
-      <span className="font-semibold">상세 분석: {reason}</span>
-      <button className="text-xs font-medium text-blue-600 hover:underline" onClick={onClose}>닫기</button>
-    </div>
-    <p className="text-sm text-gray-600">(여기에 {reason} 의 시간대별 트렌드, 설비별 분포 등 추가 그래프를 넣을 수 있습니다.)</p>
-  </div>
-);
 
 // Y축 라벨 60도 기울임 함수
 const renderAngleTick = (props: any) => {
@@ -179,10 +170,6 @@ export default function DowntimeAnalysis() {
 
   const pieData = useMemo(() => getTopNPlusOther(downtimeSummary, 6), [downtimeSummary]);
   const totalDowntime = useMemo(() => downtimeSummary.reduce((s, i) => s + i.totalDuration, 0), [downtimeSummary]);
-  const otherDetails = useMemo(() => {
-    const other = pieData.find(d => d.reason === '기타');
-    return other && (other as any).details ? (other as any).details : [];
-  }, [pieData]);
 
   // 일별 다운타임 trend 데이터
   const dailyTrend = useMemo(() => {
@@ -213,8 +200,6 @@ export default function DowntimeAnalysis() {
 
   const [chartMode, setChartMode] = useState<'pie' | 'bar'>('pie');
   const toggleChart = useCallback(() => setChartMode((m) => (m === 'pie' ? 'bar' : 'pie')), []);
-  const [drillReason, setDrillReason] = useState<string | null>(null);
-  const [showOtherBar, setShowOtherBar] = useState(false);
 
   return (
     <Card>
@@ -240,12 +225,14 @@ export default function DowntimeAnalysis() {
                   label={renderPieLabel}
                   labelLine={false}
                   onClick={({ reason }) => {
-                    if (reason === t('other')) setShowOtherBar(true);
-                    else setShowOtherBar(false);
-                    if (reason !== t('other')) setDrillReason(reason);
+                    if (reason === t('other')) {
+                      // setShowOtherBar(true); // Removed
+                    }
+                    // else setShowOtherBar(false); // Removed
+                    // if (reason !== t('other')) setDrillReason(reason); // Removed
                   }}
                 >
-                  {pieData.map((entry: any, idx: number) => (
+                  {pieData.map((_entry: any, idx: number) => (
                     <Cell key={idx} fill={COLORS[idx % COLORS.length]} style={{ cursor: 'pointer' }} />
                   ))}
                 </Pie>
@@ -262,7 +249,7 @@ export default function DowntimeAnalysis() {
                 <YAxis tick={{ fontSize: 12 }} label={{ value: t('time_min'), angle: -90, position: 'insideLeft', dy: 20 }} />
                 <Tooltip formatter={(v: number, _n: any, p: any) => [`${v} ${t('min_unit')}`, p.payload.reason === '기타' ? t('other') : p.payload.reason]} />
                 <Bar dataKey="totalDuration" isAnimationActive={false}>
-                  {downtimeSummary.map((entry: any, idx: number) => (
+                  {downtimeSummary.map((_entry: any, idx: number) => (
                     <Cell key={idx} fill={COLORS[idx % COLORS.length]} cursor="pointer" />
                   ))}
                 </Bar>

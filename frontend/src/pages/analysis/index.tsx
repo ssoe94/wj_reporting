@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import OEEDashboard from '@/components/OEEDashboard';
 import DowntimeAnalysis from '@/components/DowntimeAnalysis';
 import { PeriodProvider } from '@/contexts/PeriodContext';
@@ -59,25 +59,6 @@ export default function AnalysisPage() {
     });
     return list;
   }, [reports]);
-
-  // downtimeSummary 집계
-  const downtimeSummary = useMemo(() => {
-    const summaryMap = new Map<string, { totalDuration: number; count: number }>();
-    let total = 0;
-    downtimeRecords.forEach((rec) => {
-      const prev = summaryMap.get(rec.reason) || { totalDuration: 0, count: 0 };
-      prev.totalDuration += rec.duration;
-      prev.count += 1;
-      summaryMap.set(rec.reason, prev);
-      total += rec.duration;
-    });
-    return Array.from(summaryMap.entries()).map(([reason, { totalDuration, count }]) => ({
-      reason,
-      totalDuration,
-      count,
-      percentage: total > 0 ? Math.round((totalDuration / total) * 100) : 0,
-    })).sort((a, b) => b.totalDuration - a.totalDuration);
-  }, [downtimeRecords]);
 
   return (
     <PeriodProvider>

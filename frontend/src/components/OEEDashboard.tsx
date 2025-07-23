@@ -1,22 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useReports } from '@/hooks/useReports';
-import { useLang } from '@/i18n';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  LineChart,
-  Line,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceArea,
-} from 'recharts';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import { Card, CardContent, CardHeader } from './ui/card';
+import { useReports } from '../hooks/useReports';
+import { usePeriod } from '../contexts/PeriodContext';
+import { useLang } from '../i18n';
 import dayjs from 'dayjs';
-import { usePeriod } from '@/contexts/PeriodContext';
 
 interface OEEData {
   date: string;
@@ -27,16 +15,6 @@ interface OEEData {
   isWeekend: boolean;
   dayOfWeek: number;
 }
-
-// X축 라벨 60도 기울임 함수
-const renderAngleTick = (props: any) => {
-  const { x, y, payload } = props;
-  return (
-    <g transform={`translate(${x},${y})`}>
-      <text x={0} y={0} dy={16} textAnchor="end" fill="#666" transform="rotate(-60)">{payload.value}</text>
-    </g>
-  );
-};
 
 
 export default function OEEDashboard() {

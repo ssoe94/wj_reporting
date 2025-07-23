@@ -1,4 +1,3 @@
-import React from 'react';
 import { usePeriod } from '../contexts/PeriodContext';
 import { useLang } from '../i18n';
 

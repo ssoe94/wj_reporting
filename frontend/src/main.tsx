@@ -8,7 +8,6 @@ import ModelsPage from "./pages/models";
 import EcoPage from "./pages/eco";
 import AnalysisPage from "./pages/analysis";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { useEffect } from "react";
 
 const queryClient = new QueryClient();
 
