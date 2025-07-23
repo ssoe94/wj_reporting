@@ -10,7 +10,6 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Menu as MenuIcon, X as XIcon, Home as HomeIcon, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useReports } from '@/hooks/useReports';
 
 export default function AnalysisPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
