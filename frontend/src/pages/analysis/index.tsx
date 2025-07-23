@@ -12,54 +12,12 @@ import { Menu as MenuIcon, X as XIcon, Home as HomeIcon, ChevronRight } from 'lu
 import { motion, AnimatePresence } from 'framer-motion';
 import { useReports } from '@/hooks/useReports';
 import { useMemo } from 'react';
-import { usePeriod } from '@/contexts/PeriodContext';
 
 export default function AnalysisPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t, lang, setLang } = useLang();
   const navItems = useNavItems();
   const { data: reports = [] } = useReports();
-  const { startDate, endDate, excludeWeekends } = usePeriod();
-
-  // 파싱 함수
-  const parseDowntimeFromNote = (note: string): Array<{ reason: string; duration: number }> => {
-    if (!note) return [];
-    const results: Array<{ reason: string; duration: number }> = [];
-    const patterns = [
-      /([가-힣A-Za-z0-9]+)[\s:]*([0-9]+) ?분/g, // 한글/영문
-      /([a-zA-Z\s]+)\s*([0-9]+)min/g, // 영어
-      /([^，\d]+)([0-9]+)分钟/g, // 중국어
-    ];
-    patterns.forEach((pattern) => {
-      let match;
-      while ((match = pattern.exec(note)) !== null) {
-        const reason = match[1].trim();
-        const duration = parseInt(match[2], 10);
-        if (reason && duration > 0) {
-          results.push({ reason, duration });
-        }
-      }
-    });
-    return results;
-  };
-
-  // 기간에 맞는 reports만 사용
-  const filteredReports = useMemo(() => {
-    if (startDate && endDate) {
-      let filtered = reports.filter(r => r.date >= startDate && r.date <= endDate);
-      
-      // 주말 제외 필터링
-      if (excludeWeekends) {
-        filtered = filtered.filter(r => {
-          const dayOfWeek = new Date(r.date).getDay();
-          return dayOfWeek !== 0 && dayOfWeek !== 6; // 일요일(0)과 토요일(6) 제외
-        });
-      }
-      
-      return filtered;
-    }
-    return reports;
-  }, [reports, startDate, endDate, excludeWeekends]);
 
   return (
     <PeriodProvider>
