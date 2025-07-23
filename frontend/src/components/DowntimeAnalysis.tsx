@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useReports } from '@/hooks/useReports';
 import { usePeriod } from '@/contexts/PeriodContext';
 import {
@@ -47,11 +47,6 @@ function getTopNPlusOther(data: DowntimeRow[], n = 6): DowntimeRow[] {
       percentage: parseFloat(otherPerc.toFixed(1)),
     },
   ];
-}
-
-interface DrillProps {
-  reason: string;
-  onClose: () => void;
 }
 
 // Y축 라벨 60도 기울임 함수

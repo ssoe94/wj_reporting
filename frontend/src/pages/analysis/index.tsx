@@ -12,12 +12,14 @@ import { Menu as MenuIcon, X as XIcon, Home as HomeIcon, ChevronRight } from 'lu
 import { motion, AnimatePresence } from 'framer-motion';
 import { useReports } from '@/hooks/useReports';
 import { useMemo } from 'react';
+import { usePeriod } from '@/contexts/PeriodContext';
 
 export default function AnalysisPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t, lang, setLang } = useLang();
   const navItems = useNavItems();
   const { data: reports = [] } = useReports();
+  const { startDate, endDate, excludeWeekends } = usePeriod();
 
   // 파싱 함수
   const parseDowntimeFromNote = (note: string): Array<{ reason: string; duration: number }> => {
@@ -41,24 +43,23 @@ export default function AnalysisPage() {
     return results;
   };
 
-  // downtimeRecords 생성
-  const downtimeRecords = useMemo(() => {
-    const list: any[] = [];
-    reports.forEach((r: any) => {
-      const parsed = parseDowntimeFromNote(r.note || '');
-      parsed.forEach(({ reason, duration }) => {
-        list.push({
-          date: r.date,
-          machine_no: r.machine_no,
-          model: r.model || r.product || '-',
-          reason,
-          duration,
-          note: r.note || '',
+  // 기간에 맞는 reports만 사용
+  const filteredReports = useMemo(() => {
+    if (startDate && endDate) {
+      let filtered = reports.filter(r => r.date >= startDate && r.date <= endDate);
+      
+      // 주말 제외 필터링
+      if (excludeWeekends) {
+        filtered = filtered.filter(r => {
+          const dayOfWeek = new Date(r.date).getDay();
+          return dayOfWeek !== 0 && dayOfWeek !== 6; // 일요일(0)과 토요일(6) 제외
         });
-      });
-    });
-    return list;
-  }, [reports]);
+      }
+      
+      return filtered;
+    }
+    return reports;
+  }, [reports, startDate, endDate, excludeWeekends]);
 
   return (
     <PeriodProvider>
