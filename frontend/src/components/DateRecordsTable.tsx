@@ -176,7 +176,11 @@ export default function DateRecordsTable({ date }: Props) {
                   <Button onClick={() => setEditing(true)}>
                     {t('edit')}
                   </Button>
-                  <Button variant="destructive" onClick={handleDelete}>
+                  <Button
+                    variant="ghost"
+                    className="text-red-600"
+                    onClick={handleDelete}
+                  >
                     {t('delete')}
                   </Button>
                   <Button variant="ghost" onClick={() => setDetail(null)}>
