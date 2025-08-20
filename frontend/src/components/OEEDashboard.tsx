@@ -23,6 +23,7 @@ export default function OEEDashboard() {
   const { startDate, endDate, excludeWeekends, setStartDate, setEndDate } = usePeriod();
   const [compareMode, setCompareMode] = useState(false);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const isLiteMode = document.documentElement.classList.contains('lite-mode');
 
   // 실제 데이터의 날짜 범위 계산
   const dataDateRange = useMemo(() => {
@@ -300,24 +301,29 @@ export default function OEEDashboard() {
                   }
                 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" vertical={true} />
+                <CartesianGrid strokeDasharray="3 3" stroke={isLiteMode ? '#000000' : '#e0e0e0'} vertical={true} />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 11 }}
+                  tick={{ fontSize: 11, fill: isLiteMode ? '#000000' : '#666666' }}
                   interval={0}
                   height={32}
                   tickFormatter={d => d.slice(5)}
-                  tickLine={{ stroke: '#666' }}
-                  axisLine={{ stroke: '#666' }}
+                  tickLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
+                  axisLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
                 />
                 <YAxis 
-                  tick={{ fontSize: 12 }}
-                  tickLine={{ stroke: '#666' }}
-                  axisLine={{ stroke: '#666' }}
+                  tick={{ fontSize: 12, fill: isLiteMode ? '#000000' : '#666666' }}
+                  tickLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
+                  axisLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
                   domain={[0, 100]}
                 />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
+                  contentStyle={{ 
+                    backgroundColor: '#fff', 
+                    border: isLiteMode ? '2px solid #000000' : '1px solid #ccc', 
+                    borderRadius: '4px',
+                    color: '#000000'
+                  }}
                   formatter={(value: any, name: string) => [`${value}%`, name]}
                   labelFormatter={(label) => {
                     const data = oeeData.find(item => item.date === label);
@@ -325,10 +331,10 @@ export default function OEEDashboard() {
                     return `${label}${dayName}`;
                   }}
                 />
-                <Line type="monotone" dataKey="oee" stroke="#8884d8" name="OEE" strokeWidth={2} />
-                <Line type="monotone" dataKey="availability" stroke="#82ca9d" name={t('availability')} />
-                <Line type="monotone" dataKey="performance" stroke="#ffc658" name={t('performance')} />
-                <Line type="monotone" dataKey="quality" stroke="#ff7300" name={t('quality')} />
+                <Line type="monotone" dataKey="oee" stroke={isLiteMode ? '#000000' : '#8884d8'} name="OEE" strokeWidth={isLiteMode ? 3 : 2} />
+                <Line type="monotone" dataKey="availability" stroke={isLiteMode ? '#333333' : '#82ca9d'} name={t('availability')} strokeWidth={isLiteMode ? 2 : 1} />
+                <Line type="monotone" dataKey="performance" stroke={isLiteMode ? '#666666' : '#ffc658'} name={t('performance')} strokeWidth={isLiteMode ? 2 : 1} />
+                <Line type="monotone" dataKey="quality" stroke={isLiteMode ? '#999999' : '#ff7300'} name={t('quality')} strokeWidth={isLiteMode ? 2 : 1} />
               </LineChart>
             </ResponsiveContainer>
           </div>

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest
 
 class InjectionReportSerializer(serializers.ModelSerializer):
     achievement_rate = serializers.FloatField(read_only=True)
@@ -60,4 +60,16 @@ class InventorySnapshotSerializer(serializers.ModelSerializer):
     class Meta:
         model = InventorySnapshot
         fields = ['id', 'part_spec', 'part_no', 'qty', 'collected_at']
-        read_only_fields = ['collected_at'] 
+        read_only_fields = ['collected_at']
+
+
+class UserRegistrationRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserRegistrationRequest
+        fields = ['id', 'full_name', 'department', 'email', 'status', 'created_at']
+        read_only_fields = ['status', 'created_at']
+    
+    def validate_email(self, value):
+        if not value.endswith('@njwanjia.com'):
+            raise serializers.ValidationError('@njwanjia.com 도메인 이메일만 사용 가능합니다.')
+        return value 

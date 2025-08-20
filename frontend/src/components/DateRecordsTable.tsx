@@ -34,6 +34,9 @@ export default function DateRecordsTable({ date }: Props) {
   const [detail, setDetail] = useState<Report|null>(null);
   const [editing, setEditing] = useState(false);
 
+  // react-query client
+  const queryClient = useQueryClient();
+
   const handleSave = async (data: Partial<Report>) => {
     if(!detail) return;
     try {
@@ -46,7 +49,20 @@ export default function DateRecordsTable({ date }: Props) {
       toast.error('수정 실패');
     }
   };
-  const queryClient = useQueryClient();
+
+  // 삭제 핸들러
+  const handleDelete = async () => {
+    if (!detail) return;
+    if (!confirm(t('confirm_delete') || '정말 삭제하시겠습니까?')) return;
+    try {
+      await api.delete(`/reports/${detail.id}/`);
+      toast.success(t('delete_success') || '삭제되었습니다');
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+      setDetail(null);
+    } catch {
+      toast.error(t('delete_fail') || '삭제 실패');
+    }
+  };
 
   if (!date) return null;
   if (!list.length) return <p className="text-gray-500 text-sm">선택한 날짜에 생산 기록이 없습니다.</p>;
@@ -128,8 +144,9 @@ export default function DateRecordsTable({ date }: Props) {
                <span className="text-gray-500">{t('header_note')}</span><span className="col-span-1">{detail!.note}</span>
              </div>
              <div className="flex justify-end gap-2">
-               <Button variant="ghost" onClick={()=>setDetail(null)}>{t('close')}</Button>
-               <Button onClick={()=>{setEditing(true);}}>{t('edit')}</Button>
+               <Button variant="info" onClick={()=>{setEditing(true);}}>{t('edit')}</Button>
+               <Button variant="danger" onClick={handleDelete}>{t('delete')}</Button>
+               <Button variant="secondary" onClick={()=>setDetail(null)}>{t('close')}</Button>
              </div>
            </>
           ) : (

@@ -11,7 +11,10 @@ import { usePartEcoCount } from '@/hooks/usePartEcoCount';
 import { useEcosByParts } from '@/hooks/useEcosByParts';
 import type { Eco } from '@/hooks/useEcos';
 import { toast } from 'react-toastify';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Search } from 'lucide-react';
+
+const ctrlCls = "h-10 bg-white border border-gray-300 rounded-md px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-colors";
 
 export default function EcoManager() {
   const { t } = useLang();
@@ -99,7 +102,7 @@ export default function EcoManager() {
     setErrors({});
     // header fields only
     const { details, ...headerRaw } = payload as any;
-    // 빈 값 제거 ('' 또는 null) → DRF validation 오류 방지
+    // 빈 값 제거
     const header: Record<string, any> = {};
     Object.entries(headerRaw).forEach(([k,v])=>{
       if(v!=='' && v!==null && v!==undefined) header[k]=v;
@@ -108,10 +111,8 @@ export default function EcoManager() {
       try{
         let ecoId = payload.id;
         if(payload.id){
-          // 수정: PATCH 후 id 유지
           await api.patch(`ecos/${payload.id}/`, header);
         }else{
-          // 신규: POST 후 id 획득
           const { data } = await api.post('ecos/', header);
           ecoId = data.id;
         }
@@ -129,185 +130,206 @@ export default function EcoManager() {
 
   return (
     <>
-      <div className="flex justify-between mb-2 gap-2 items-center">
-        <div className="flex flex-1 gap-2">
-          <select value={mode} onChange={e=>{setKeyword(''); setMode(e.target.value as any);}} className="border rounded px-2">
-            <option value="eco">{t('eco_no')}</option>
-            <option value="part">PART NO.</option>
-          </select>
-          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value as any)} className="border rounded px-2">
-            <option value="ALL">{t('all')}</option>
-            <option value="OPEN">OPEN</option>
-            <option value="CLOSED">CLOSED</option>
-          </select>
-        <Input
-          type="text"
+      {/* Control Bar */}
+      <div className="flex flex-wrap md:flex-nowrap items-center gap-2 mb-4">
+        <select value={mode} onChange={e=>{setKeyword(''); setMode(e.target.value as any);}} className={ctrlCls}>
+          <option value="eco">{t('eco_no')}</option>
+          <option value="part">PART NO.</option>
+        </select>
+        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value as any)} className={ctrlCls}>
+          <option value="ALL">{t('all')}</option>
+          <option value="OPEN">OPEN</option>
+          <option value="CLOSED">CLOSED</option>
+        </select>
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+          <Input
+            type="text"
             placeholder={mode==='eco'? t('eco_search_placeholder') : t('part_search_placeholder')}
-          className="flex-1"
-          value={keyword}
+            className={"pl-10 w-full "+ctrlCls}
+            value={keyword}
             onChange={(e)=>{setKeyword(e.target.value); if(mode==='part'){setSelectedPart('')}}}
-        />
+          />
         </div>
-        <Button size="sm" onClick={()=>{setForm(emptyForm); setDialogOpen(true);}}>
-          {t('new_eco')}
-        </Button>
+        <Button size="sm" onClick={()=>{setForm(emptyForm); setDialogOpen(true);}}>{t('new_eco')}</Button>
       </div>
-      <div className="overflow-x-auto rounded border">
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         {mode==='eco' ? (
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-100">
-            <tr>
-              <th className="px-3 py-2 text-left">{t('eco_no')}</th>
-                <th className="px-3 py-2 text-left">{t('eco_model')}</th>
-              <th className="px-3 py-2 text-left">{t('change_reason')}</th>
-              <th className="px-3 py-2 text-left">{t('issued_date')}</th>
-              <th className="px-3 py-2 text-left">{t('status')}</th>
-              <th className="px-3 py-2 text-left"></th>
-            </tr>
-          </thead>
-          <tbody>
-              {filteredEcos.map((e: any)=>(
-              <tr key={e.id} className="border-t">
-                  <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={async ()=>{
-                    setErrors({});
-                    try {
-                      const { data } = await api.get(`ecos/${e.id}/`);
-                      setForm(data);
-                    } catch {
-                      setForm(e);
-                    }
-                    setDialogOpen(true);
-                  }}>{e.eco_no}</td>
-                <td className="px-3 py-1">{e.eco_model}</td>
-                <td className="px-3 py-1">{e.change_reason}</td>
-                <td className="px-3 py-1">{e.issued_date}</td>
-                <td className="px-3 py-1">{e.status}</td>
-                  <td className="px-3 py-1 text-right flex justify-end gap-1">
-                    <Button size="icon" variant="ghost" onClick={async ()=>{
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="px-3 py-2 text-left">{t('eco_no')}</th>
+                  <th className="px-3 py-2 text-left">{t('eco_model')}</th>
+                  <th className="px-3 py-2 text-left">{t('change_reason')}</th>
+                  <th className="px-3 py-2 text-left">{t('issued_date')}</th>
+                  <th className="px-3 py-2 text-left">{t('status')}</th>
+                  <th className="px-3 py-2 text-left"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEcos.map((e: any)=>(
+                  <tr key={e.id} className={rowCls}>
+                    <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={async ()=>{
                       setErrors({});
-                      try{
+                      try {
                         const { data } = await api.get(`ecos/${e.id}/`);
                         setForm(data);
-                      }catch{
+                      } catch {
                         setForm(e);
                       }
                       setDialogOpen(true);
-                    }} aria-label={t('edit')}>
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    <Button size="icon" variant="ghost" onClick={()=>handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        ) : (
-          <>
-          {!selectedPart ? (
-            <>
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-100"><tr className="border-y"><th className="px-3 py-2 text-left">Part No</th><th className="px-3 py-2 text-left">{t('description') || 'Description'}</th><th className="px-3 py-2 text-center">{t('eco_count')}</th></tr></thead>
-              <tbody>
-                {partCounts.map(pc=> {
-                  const checked = selectedParts.includes(pc.part_no);
-                  return (
-                    <tr key={pc.part_no} className="border-t hover:bg-slate-50">
-                      <td className="px-3 py-1 font-mono flex items-center gap-2">
-                        <input type="checkbox" checked={checked} onChange={()=>{
-                          setSelectedPart('');
-                          setSelectedParts(prev=>checked? prev.filter(p=>p!==pc.part_no): [...prev, pc.part_no]);
-                        }} />
-                        <span className="cursor-pointer" onClick={()=>setSelectedPart(pc.part_no)}>{pc.part_no}</span>
-                      </td>
-                      <td className="px-3 py-1 text-xs cursor-pointer hover:bg-yellow-50" onClick={() => {
-                        const newDesc = prompt(`${pc.part_no} ${t('description_edit_prompt')}:`, pc.description || '');
-                        if (newDesc !== null && newDesc !== pc.description) {
-                          // API 호출하여 ECO Part description 업데이트
-                          api.patch(`eco-parts/${pc.part_no}/update-description/`, { description: newDesc })
-                            .then(() => {
-                              queryClient.invalidateQueries({queryKey:['part-eco-count']});
-                              toast.success(t('update_success'));
-                            })
-                            .catch(() => {
-                              toast.error(t('update_fail'));
-                            });
+                    }}>{e.eco_no}</td>
+                    <td className="px-3 py-1">{e.eco_model}</td>
+                    <td className="px-3 py-1">{e.change_reason}</td>
+                    <td className="px-3 py-1">{e.issued_date}</td>
+                    <td className="px-3 py-1">{e.status}</td>
+                    <td className="px-3 py-1 text-right flex justify-end gap-1">
+                      <Button size="icon" variant="ghost" onClick={async ()=>{
+                        setErrors({});
+                        try{
+                          const { data } = await api.get(`ecos/${e.id}/`);
+                          setForm(data);
+                        }catch{
+                          setForm(e);
                         }
-                      }}>{pc.description || '-'}</td>
-                      <td className="px-3 py-1 text-center">{pc.count}</td>
-                    </tr>
-                  );
-                })}
+                        setDialogOpen(true);
+                      }} aria-label={t('edit')}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={()=>handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-            {selectedParts.length>0 && (
-              <div className="mt-4">
-                <h4 className="font-semibold mb-2 pl-2">{t('selected_part_eco_details')}</h4>
+          </div>
+        ) : (
+          <>
+            {!selectedPart ? (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-100">
+                      <tr className="border-y">
+                        <th className="px-3 py-2 text-left">Part No</th>
+                        <th className="px-3 py-2 text-left">{t('description') || 'Description'}</th>
+                        <th className="px-3 py-2 text-center">{t('eco_count')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {partCounts.map(pc=> {
+                        const checked = selectedParts.includes(pc.part_no);
+                        return (
+                          <tr key={pc.part_no} className={rowCls}>
+                            <td className="px-3 py-1 font-mono flex items-center gap-2">
+                              <input type="checkbox" checked={checked} onChange={()=>{
+                                setSelectedPart('');
+                                setSelectedParts(prev=>checked? prev.filter(p=>p!==pc.part_no): [...prev, pc.part_no]);
+                              }} />
+                              <span className="cursor-pointer" onClick={()=>setSelectedPart(pc.part_no)}>{pc.part_no}</span>
+                            </td>
+                            <td className="px-3 py-1 text-xs cursor-pointer hover:bg-yellow-50" onClick={() => {
+                              const newDesc = prompt(`${pc.part_no} ${t('description_edit_prompt')}:`, pc.description || '');
+                              if (newDesc !== null && newDesc !== pc.description) {
+                                // API 호출하여 ECO Part description 업데이트
+                                api.patch(`eco-parts/${pc.part_no}/update-description/`, { description: newDesc })
+                                  .then(() => {
+                                    queryClient.invalidateQueries({queryKey:['part-eco-count']});
+                                    toast.success(t('update_success'));
+                                  })
+                                  .catch(() => {
+                                    toast.error(t('update_fail'));
+                                  });
+                              }
+                            }}>{pc.description || '-'}</td>
+                            <td className="px-3 py-1 text-center">{pc.count}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {selectedParts.length>0 && (
+                  <div className="mt-4">
+                    <h4 className="font-semibold mb-2 pl-2">{t('selected_part_eco_details')}</h4>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            <th className="px-3 py-2 text-center">{t('part') || 'Part'}</th>
+                            <th className="px-3 py-2 text-center">{t('eco') || 'ECO'}</th>
+                            <th className="px-3 py-2 text-center">{t('change_details')}</th>
+                            <th className="px-3 py-2 text-center">{t('part_status') || 'Part Status'}</th>
+                            <th className="px-3 py-2 text-center">{t('eco_status') || 'ECO Status'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedParts.map(partNo => {
+                            // 관련된 rows 추출
+                            const rows = ecosBySelectedParts.data?.filter((eco:any)=> statusFilter==='ALL'||eco.status===statusFilter).flatMap((eco:any)=>
+                              (eco.details||[]).filter((d:any)=>d.part_no.toUpperCase()===partNo.toUpperCase()).map((d:any)=>(
+                                {
+                                  part_no: d.part_no,
+                                  eco_id: eco.id,
+                                  eco_no: eco.eco_no,
+                                  change_details: d.change_details,
+                                  part_status: d.status,
+                                  eco_status: eco.status,
+                                }
+                              ))
+                            ) || [];
+                            return rows.map((row,idx)=>(
+                              <tr key={`${row.part_no}-${row.eco_no}`} className={rowCls}>
+                                {idx===0 && (
+                                  <td className="px-3 py-1 font-mono text-center" rowSpan={rows.length}>{row.part_no}</td>
+                                )}
+                                <td className="px-3 py-1 font-mono text-center cursor-pointer text-blue-600 underline" onClick={async ()=>{
+                                  setErrors({});
+                                  const { data } = await api.get(`ecos/${row.eco_id}/`);
+                                  setForm(data);
+                                  setDialogOpen(true);
+                                }}>{row.eco_no}</td>
+                                <td className="px-3 py-1 text-xs text-left whitespace-pre-wrap">{row.change_details}</td>
+                                <td className="px-3 py-1 text-center">{row.part_status}</td>
+                                <td className="px-3 py-1 text-center">{row.eco_status}</td>
+                              </tr>
+                            ));
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-100">
                     <tr>
-                      <th className="px-3 py-2 text-center">{t('part') || 'Part'}</th>
-                      <th className="px-3 py-2 text-center">{t('eco') || 'ECO'}</th>
-                      <th className="px-3 py-2 text-center">{t('change_details')}</th>
-                      <th className="px-3 py-2 text-center">{t('part_status') || 'Part Status'}</th>
-                      <th className="px-3 py-2 text-center">{t('eco_status') || 'ECO Status'}</th>
+                      <th className="px-3 py-2 text-left">{t('eco')}</th>
+                      <th className="px-3 py-2 text-left">{t('change_details')}</th>
+                      <th className="px-3 py-2 text-left">{t('part_status')}</th>
+                      <th className="px-3 py-2 text-left">{t('eco_status')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedParts.map(partNo => {
-                      // 관련된 rows 추출
-                      const rows = ecosBySelectedParts.data?.filter((eco:any)=> statusFilter==='ALL'||eco.status===statusFilter).flatMap((eco:any)=>
-                        (eco.details||[]).filter((d:any)=>d.part_no.toUpperCase()===partNo.toUpperCase()).map((d:any)=>(
-                          {
-                            part_no: d.part_no,
-                            eco_id: eco.id,
-                            eco_no: eco.eco_no,
-                            change_details: d.change_details,
-                            part_status: d.status,
-                            eco_status: eco.status,
-                          }
-                        ))
-                      ) || [];
-                      return rows.map((row,idx)=>(
-                        <tr key={`${row.part_no}-${row.eco_no}`} className={`border-t ${idx===0?'border-gray-300':'border-gray-200'}`}>
-                          {idx===0 && (
-                            <td className="px-3 py-1 font-mono text-center" rowSpan={rows.length}>{row.part_no}</td>
-                          )}
-                          <td className="px-3 py-1 font-mono text-center cursor-pointer text-blue-600 underline" onClick={async ()=>{
-                            setErrors({});
-                            const { data } = await api.get(`ecos/${row.eco_id}/`);
-                            setForm(data);
-                            setDialogOpen(true);
-                          }}>{row.eco_no}</td>
-                          <td className="px-3 py-1 text-xs text-left whitespace-pre-wrap">{row.change_details}</td>
-                          <td className="px-3 py-1 text-center">{row.part_status}</td>
-                          <td className="px-3 py-1 text-center">{row.eco_status}</td>
-                        </tr>
-                      ));
-                    })}
+                    {filteredEcos.flatMap((eco:any)=> (eco.details||[]).filter((d:any)=>d.part_no===selectedPart).map((d:any)=>(
+                      <tr key={eco.id+'-'+d.id} className="border-t">
+                        <td className="px-3 py-1 font-mono">{eco.eco_no}</td>
+                        <td className="px-3 py-1 text-xs">{d.change_details}</td>
+                        <td className="px-3 py-1">{d.status}</td>
+                        <td className="px-3 py-1">{eco.status}</td>
+                      </tr>
+                    )))}
                   </tbody>
                 </table>
               </div>
             )}
           </>
-          ) : (
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-100"><tr><th className="px-3 py-2 text-left">{t('eco')}</th><th className="px-3 py-2 text-left">{t('change_details')}</th><th className="px-3 py-2 text-left">{t('part_status')}</th><th className="px-3 py-2 text-left">{t('eco_status')}</th></tr></thead>
-              <tbody>
-                {filteredEcos.flatMap((eco:any)=> (eco.details||[]).filter((d:any)=>d.part_no===selectedPart).map((d:any)=>(
-                  <tr key={eco.id+'-'+d.id} className="border-t">
-                    <td className="px-3 py-1 font-mono">{eco.eco_no}</td>
-                    <td className="px-3 py-1 text-xs">{d.change_details}</td>
-                    <td className="px-3 py-1">{d.status}</td>
-                    <td className="px-3 py-1">{eco.status}</td>
-                  </tr>
-                )))}
-              </tbody>
-            </table>
-          )}
-          </>
-          )}
+        )}
       </div>
 
       <EcoForm

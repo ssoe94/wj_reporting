@@ -224,4 +224,45 @@ class InventorySnapshot(models.Model):
         ordering = ['-collected_at']
 
     def __str__(self):
-        return f"{self.part_spec.part_no} - {self.qty} ({self.collected_at})" 
+        return f"{self.part_spec.part_no} - {self.qty} ({self.collected_at})"
+
+
+class UserRegistrationRequest(models.Model):
+    """사용자 가입 요청"""
+    STATUS_CHOICES = [
+        ('pending', '대기'),
+        ('approved', '승인'),
+        ('rejected', '거부'),
+    ]
+    
+    full_name = models.CharField('성명', max_length=100)
+    department = models.CharField('부서', max_length=100)
+    email = models.EmailField('이메일', unique=True)
+    reason = models.TextField('가입 사유', blank=True)
+    status = models.CharField('상태', max_length=20, choices=STATUS_CHOICES, default='pending')
+    
+    # 승인 정보
+    approved_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='승인자')
+    approved_at = models.DateTimeField('승인일시', null=True, blank=True)
+    temporary_password = models.CharField('임시 비밀번호', max_length=100, blank=True)
+    
+    # 권한 설정
+    can_view_injection = models.BooleanField('사출 조회 권한', default=False)
+    can_edit_injection = models.BooleanField('사출 편집 권한', default=False)
+    can_view_machining = models.BooleanField('가공 조회 권한', default=False)
+    can_edit_machining = models.BooleanField('가공 편집 권한', default=False)
+    can_view_eco = models.BooleanField('ECO 조회 권한', default=False)
+    can_edit_eco = models.BooleanField('ECO 편집 권한', default=False)
+    can_view_inventory = models.BooleanField('재고 조회 권한', default=False)
+    can_edit_inventory = models.BooleanField('재고 편집 권한', default=False)
+    
+    created_at = models.DateTimeField('요청일시', auto_now_add=True)
+    updated_at = models.DateTimeField('수정일시', auto_now=True)
+
+    class Meta:
+        verbose_name = '가입 요청'
+        verbose_name_plural = '가입 요청 목록'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.full_name} ({self.email}) - {self.get_status_display()}" 

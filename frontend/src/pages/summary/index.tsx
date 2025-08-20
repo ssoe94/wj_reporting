@@ -1,119 +1,172 @@
-import { useEffect, useState } from 'react';
-import axios from 'axios';
-import { format } from 'date-fns';
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import { Card, CardContent, CardHeader } from '../../components/ui/card';
+import { Button } from '../../components/ui/button';
+import { useLang } from '../../i18n';
+import { useReportSummary } from '../../hooks/useReports';
+import ProdTrendChart from '../../components/ProdTrendChart';
+import ProdCalendar from '../../components/ProdCalendar';
+import DateRecordsTable from '../../components/DateRecordsTable';
+import { DownloadCloud } from 'lucide-react';
+// useQueryClient no longer needed
+import { toast } from 'react-toastify';
+import api from '../../lib/api';
+import RecordForm from '../../components/RecordForm';
 
-interface SummaryData {
-  total_count: number;
-  total_plan_qty: number;
-  total_actual_qty: number;
-  total_defect_qty: number;
-  average_achievement_rate: number;
-  average_defect_rate: number;
-}
+// 로컬 날짜 문자열 (YYYY-MM-DD)
+export default function SummaryPage() {
+  const { t } = useLang();
+  const { data: summary } = useReportSummary();
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // RecordForm 내부 상태로 대체했으므로 관련 코드 삭제
 
-const SummaryPage: React.FC = () => {
-  const [summary, setSummary] = useState<SummaryData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  // 사출기 목록, 포맷 함수 등은 RecordForm 내부로 이동했으므로 삭제합니다.
 
-  const fetchSummary = async () => {
+  const downloadCsv = async () => {
     try {
-      setLoading(true);
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/reports/summary/?date=${selectedDate}`);
-      setSummary(response.data);
-    } catch (error) {
-      console.error('Error fetching summary:', error);
-    } finally {
-      setLoading(false);
+      const { data } = await api.get("/reports/export/", { responseType: "blob" });
+      const url = URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "reports.csv";
+      a.click();
+    } catch (err) {
+      console.error(err);
+      toast.error("CSV 다운로드 실패");
     }
   };
 
+  // compute derived values
+  // RecordForm 내부 상태로 대체했으므로 관련 코드 삭제
+
+  // Scroll to section on hash change (e.g., #records, #new)
+  const location = useLocation();
   useEffect(() => {
-    fetchSummary();
-  }, [selectedDate]);
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <span className="loading loading-spinner loading-lg"></span>
-      </div>
-    );
-  }
-
-  if (!summary) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="alert alert-error">
-          데이터를 불러오는데 실패했습니다.
-        </div>
-      </div>
-    );
-  }
+    if (location.hash) {
+      const id = location.hash.replace('#', '');
+      const el = document.getElementById(id);
+      if (el) {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }, 50);
+      } else if (id === 'top') {
+        setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
+      }
+    }
+  }, [location.hash]);
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-6">일일 생산 현황</h1>
+    <div className="mx-auto max-w-7xl px-4 py-10 md:px-8 flex flex-col gap-10">
+      {/* Summary Section */}
+      <section id="summary" className="space-y-6">
+        <h2 className="sr-only">현황 요약</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <Card className="flex flex-col items-center">
+            <CardHeader className="text-gray-500">{t('total_prod')}</CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-blue-700">
+                {summary ? `${summary.total_count}${t('total_prod_unit')}` : '...'}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="flex flex-col items-center">
+            <CardHeader className="text-gray-500">{t('avg_ach')}</CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-green-600">
+                {summary ? `${summary.achievement_rate}%` : '...'}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="flex flex-col items-center">
+            <CardHeader className="text-gray-500">{t('avg_def')}</CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-red-500">
+                {summary ? `${summary.defect_rate}%` : '...'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+        {/* Plan vs Actual Trend */}
+        <ProdTrendChart />
+      </section>
 
-      <div className="mb-6">
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          className="input input-bordered"
-        />
-      </div>
+      {/* Records Section */}
+      <section id="records" className="w-full space-y-4">
+        <div className="md:flex gap-6">
+          {/* 왼쪽: 테이블 영역 */}
+          <div className="flex-1 space-y-4 overflow-auto max-h-[65vh]">
+            {/* placeholder or table */}
+            {selectedDate ? (
+              <>
+                <h3 className="text-lg font-bold">{selectedDate} {t('detailed_record')}</h3>
+                <DateRecordsTable date={selectedDate} />
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-48">
+                <p className="text-gray-400 text-lg">{t('click_date_guide')}</p>
+              </div>
+            )}
+          </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* 총 생산 건수 */}
-        <div className="card bg-base-100 shadow-xl">
-          <div className="card-body">
-            <h2 className="card-title">총 생산 건수</h2>
-            <p className="text-4xl font-bold">{summary.total_count}건</p>
+          {/* Calendar 오른쪽 */}
+          <div className="flex-shrink-0 space-y-4 mt-9 md:mt-11">
+            <ProdCalendar selected={selectedDate} onSelect={setSelectedDate} />
+
+            {/* CSV 버튼들 (캘린더 하단) */}
+            <div className="flex justify-center gap-2">
+              <input
+                id="csvFile"
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const fd = new FormData();
+                  fd.append("file", file);
+                  try {
+                    const { data } = await api.post("/reports/bulk-import/", fd, {
+                      headers: { "Content-Type": "multipart/form-data" },
+                    });
+                    toast.success(`생성 ${data.created}건 / 중복 ${data.skipped}건 / 오류 ${data.errors}건`);
+                    // queryClient.invalidateQueries({ queryKey: ["reports"] }); // This line was removed
+                    // queryClient.invalidateQueries({ queryKey: ["reports-summary"] }); // This line was removed
+                  } catch (err: any) {
+                    console.error("CSV upload error:", err);
+                    if (err.response?.data?.detail) {
+                      toast.error(`CSV 업로드 실패: ${err.response.data.detail}`);
+                    } else if (err.response?.status) {
+                      toast.error(`CSV 업로드 실패: HTTP ${err.response.status}`);
+                    } else {
+                      toast.error("CSV 업로드 실패: 네트워크 오류");
+                    }
+                  } finally {
+                    e.target.value = "";
+                  }
+                }}
+              />
+              <Button size="sm" variant="ghost" onClick={() => document.getElementById("csvFile")?.click()}>
+                {t('csv_upload')}
+              </Button>
+              <Button size="sm" className="gap-2" onClick={downloadCsv}>
+                <DownloadCloud className="h-4 w-4" /> {t('csv_save')}
+              </Button>
+            </div>
           </div>
         </div>
+      </section>
 
-        {/* 계획 수량 */}
-        <div className="card bg-base-100 shadow-xl">
-          <div className="card-body">
-            <h2 className="card-title">계획 수량</h2>
-            <p className="text-4xl font-bold">{summary.total_plan_qty.toLocaleString()}개</p>
-          </div>
-        </div>
-
-        {/* 실제 생산량 */}
-        <div className="card bg-base-100 shadow-xl">
-          <div className="card-body">
-            <h2 className="card-title">실제 생산량</h2>
-            <p className="text-4xl font-bold">{summary.total_actual_qty.toLocaleString()}개</p>
-          </div>
-        </div>
-
-        {/* 불량 수량 */}
-        <div className="card bg-base-100 shadow-xl">
-          <div className="card-body">
-            <h2 className="card-title">불량 수량</h2>
-            <p className="text-4xl font-bold">{summary.total_defect_qty.toLocaleString()}개</p>
-          </div>
-        </div>
-
-        {/* 평균 달성률 */}
-        <div className="card bg-base-100 shadow-xl">
-          <div className="card-body">
-            <h2 className="card-title">평균 달성률</h2>
-            <p className="text-4xl font-bold">{summary.average_achievement_rate.toFixed(1)}%</p>
-          </div>
-        </div>
-
-        {/* 평균 불량률 */}
-        <div className="card bg-base-100 shadow-xl">
-          <div className="card-body">
-            <h2 className="card-title">평균 불량률</h2>
-            <p className="text-4xl font-bold">{summary.average_defect_rate.toFixed(1)}%</p>
-          </div>
-        </div>
-      </div>
+      {/* New Record Section */}
+      <section id="new" className="w-full">
+        <Card>
+          <CardHeader>
+            <h2 className="text-xl font-bold text-blue-700">{t('new_rec_title')}</h2>
+          </CardHeader>
+          <CardContent>
+            <RecordForm />
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
-};
-
-export default SummaryPage; 
+} 

@@ -17,10 +17,17 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include, re_path
 from django.views.generic import TemplateView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('injection.urls')),
+    path('api/assembly/', include('assembly.urls')),
+    path('api/sales/', include('sales.urls')),
+    path('api/overview/', include('overview.urls')),
+    path('api/mes/', include('inventory.urls')),
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     # ── SPA routes: 모든 비-API 경로는 React index.html 반환 ──
     re_path(r'^(?!api/).*$', TemplateView.as_view(template_name='index.html'), name='spa'),
 ]

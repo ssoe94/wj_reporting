@@ -1,13 +1,24 @@
 services:
+  # Frontend Static Site
   - type: static
     name: wj_reporting
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
 
+  # Backend Web Service
   - type: web
     name: wj_reporting_backend
     env: python
     rootDir: backend
     buildCommand: bash build.sh
-    startCommand: python manage.py migrate && gunicorn config.wsgi:application --preload --bind 0.0.0.0:8000 
+    startCommand: python manage.py migrate && gunicorn config.wsgi:application --preload --bind 0.0.0.0:8000
+
+  # Daily Inventory Snapshot Cron Job - 매일 오전 8시 CST (00:00 UTC)
+  - type: cron
+    name: daily-inventory-snapshot
+    env: python
+    rootDir: backend
+    schedule: "0 0 * * *"  # 00:00 UTC = 08:00 CST (China Standard Time)
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py daily_snapshot_auto 

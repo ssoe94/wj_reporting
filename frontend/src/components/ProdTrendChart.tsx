@@ -22,6 +22,7 @@ interface DataPoint {
 export default function ProdTrendChart() {
   const { data: reports = [] } = useReports();
   const { t } = useLang();
+  const isLiteMode = document.documentElement.classList.contains('lite-mode');
 
   const dailyData: DataPoint[] = React.useMemo(() => {
     const map = new Map<string, DataPoint>();
@@ -52,28 +53,39 @@ export default function ProdTrendChart() {
     return <p className="text-gray-500 text-sm">No data</p>;
   }
 
+  // 라이트 모드에 맞는 색상 설정
+  const chartColors = {
+    grid: isLiteMode ? '#000000' : '#e0e0e0',
+    axis: isLiteMode ? '#000000' : '#666666',
+    planLine: isLiteMode ? '#000000' : '#8884d8',
+    actualLine: isLiteMode ? '#666666' : '#82ca9d',
+  };
+
+  const tooltipStyle = {
+    backgroundColor: '#ffffff',
+    border: isLiteMode ? '2px solid #000000' : '1px solid #ccc',
+    borderRadius: '4px',
+    color: '#000000'
+  };
+
   return (
     <div className="w-full h-72">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={dailyData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+          <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
           <XAxis 
             dataKey="date" 
-            tick={{ fontSize: 12 }}
-            tickLine={{ stroke: '#666' }}
-            axisLine={{ stroke: '#666' }}
+            tick={{ fontSize: 12, fill: chartColors.axis }}
+            tickLine={{ stroke: chartColors.axis }}
+            axisLine={{ stroke: chartColors.axis }}
           />
           <YAxis 
-            tick={{ fontSize: 12 }}
-            tickLine={{ stroke: '#666' }}
-            axisLine={{ stroke: '#666' }}
+            tick={{ fontSize: 12, fill: chartColors.axis }}
+            tickLine={{ stroke: chartColors.axis }}
+            axisLine={{ stroke: chartColors.axis }}
           />
           <Tooltip 
-            contentStyle={{ 
-              backgroundColor: '#fff', 
-              border: '1px solid #ccc',
-              borderRadius: '4px'
-            }}
+            contentStyle={tooltipStyle}
             formatter={(value: any, name: string) => {
               if (name === 'Plan' || name === 'Actual') {
                 return [value, name];
@@ -88,9 +100,21 @@ export default function ProdTrendChart() {
               return label;
             }}
           />
-          <Legend />
-          <Line type="monotone" dataKey="plan" stroke="#8884d8" name="Plan" />
-          <Line type="monotone" dataKey="actual" stroke="#82ca9d" name="Actual" />
+          <Legend wrapperStyle={{ color: chartColors.axis }} />
+          <Line 
+            type="monotone" 
+            dataKey="plan" 
+            stroke={chartColors.planLine} 
+            strokeWidth={isLiteMode ? 3 : 2}
+            name="Plan" 
+          />
+          <Line 
+            type="monotone" 
+            dataKey="actual" 
+            stroke={chartColors.actualLine} 
+            strokeWidth={isLiteMode ? 3 : 2}
+            name="Actual" 
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>

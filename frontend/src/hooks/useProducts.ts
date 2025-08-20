@@ -29,4 +29,15 @@ export function useProductSearch(query: string): UseQueryResult<Product[]> {
     enabled: query.trim().length > 0,
     staleTime: 1000 * 60 * 10,
   });
+}
+
+export function useProducts(): UseQueryResult<Product[]> {
+  return useQuery({
+    queryKey: ['products-all'],
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<Product>>('/products/', { params: { page_size: 1000 } });
+      return data.results;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
 } 

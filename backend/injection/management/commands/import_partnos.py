@@ -3,6 +3,7 @@ from injection.models import PartSpec
 import pandas as pd
 from pathlib import Path
 from datetime import date
+import re
 
 class Command(BaseCommand):
     help = "backend/data/partnos.xlsx 파일에서 Part 번호와 설명을 가져와 PartSpec에 저장합니다.\n\n필터 조건\n  * 物料状态 == '启用'\n  * 物料规格(Description) 공란 제외"
@@ -26,14 +27,12 @@ class Command(BaseCommand):
         except Exception as e:
             raise CommandError(f"엑셀 로드 실패: {e}")
 
-        # 열 이름 normalize
-        df = df.rename(columns=lambda c: str(c).strip())
-        if "物料编号" not in df.columns:
-            raise CommandError("엑셀에 '物料编号' 열이 없습니다.")
-        if "物料状态" not in df.columns:
-            raise CommandError("엑셀에 '物料状态' 열이 없습니다.")
-        if "物料规格" not in df.columns:
-            raise CommandError("엑셀에 '物料规格' 열이 없습니다.")
+        # 열 이름 normalize: 공백, 별표(*) 제거
+        df = df.rename(columns=lambda c: re.sub(r"[\s*]", "", str(c)))
+        required = ["物料编号", "物料状态", "物料规格"]
+        missing = [col for col in required if col not in df.columns]
+        if missing:
+            raise CommandError(f"엑셀에 다음 열이 없습니다: {', '.join(missing)}")
 
         filtered = (
             df[df["物料状态"].astype(str).str.strip() == "启用"]

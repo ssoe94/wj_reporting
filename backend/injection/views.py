@@ -1,7 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest
 from .serializers import (
     InjectionReportSerializer,
     ProductSerializer,
@@ -10,7 +10,9 @@ from .serializers import (
     EcoDetailSerializer,
     EcoPartSpecSerializer,
     InventorySnapshotSerializer,
+    UserRegistrationRequestSerializer,
 )
+from .permissions import IsAdminUser, IsEditorUser, IsViewerUser
 import csv
 import io
 from django.http import HttpResponse
@@ -38,6 +40,7 @@ class PartSpecFilter(filters.FilterSet):
 class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
     serializer_class = InjectionReportSerializer
+    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
     filterset_fields = ['date', 'tonnage', 'model', 'section']
     ordering_fields = ['date', 'tonnage', 'model', 'achievement_rate', 'defect_rate']
     search_fields = ['tonnage', 'model', 'note']
@@ -260,6 +263,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
+    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
     filterset_fields = ['type']
     search_fields = ['model', 'fg_part_no', 'wip_part_no']
     ordering = ['model']
@@ -268,6 +272,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 class PartSpecViewSet(viewsets.ModelViewSet):
     queryset = PartSpec.objects.all()
     serializer_class = PartSpecSerializer
+    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
     filterset_class = PartSpecFilter
     search_fields = ['part_no', 'description', 'model_code']
     ordering = ['part_no']
@@ -339,6 +344,7 @@ class PartSpecViewSet(viewsets.ModelViewSet):
 class EcoPartSpecViewSet(viewsets.ModelViewSet):
     queryset = EcoPartSpec.objects.all()
     serializer_class = EcoPartSpecSerializer
+    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
     search_fields = ['part_no', 'description', 'model_code']
     ordering = ['part_no']
 
@@ -408,6 +414,7 @@ class EcoPartSpecViewSet(viewsets.ModelViewSet):
 class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     queryset = EngineeringChangeOrder.objects.all()
     serializer_class = EngineeringChangeOrderSerializer
+    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
     filterset_fields = ['status', 'eco_model', 'customer']
     search_fields = ['eco_no', 'change_reason', 'change_details', 'customer', 'eco_model']
     ordering = ['-prepared_date'] 
@@ -535,4 +542,85 @@ class InventoryView(APIView):
                     InventorySnapshot.objects.create(part_spec=p, qty=qty)
                     result[p.id] = qty
 
-        return Response(result) 
+        return Response(result)
+
+
+class SignupRequestView(APIView):
+    """가입 요청 API"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Signup request received")
+        
+        serializer = UserRegistrationRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'message': '가입 요청이 제출되었습니다.'}, status=201)
+        logger.error(f"Serializer validation failed")
+        return Response(serializer.errors, status=400)
+
+
+class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
+    """가입 요청 관리 ViewSet (관리자용)"""
+    queryset = UserRegistrationRequest.objects.all()
+    serializer_class = UserRegistrationRequestSerializer
+    permission_classes = [IsAdminUser]
+    
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """가입 요청 승인"""
+        from django.contrib.auth.models import User
+        from django.contrib.auth.models import Group
+        import string
+        import secrets
+        
+        signup_request = self.get_object()
+        if signup_request.status != 'pending':
+            return Response({'error': '이미 처리된 요청입니다.'}, status=400)
+        
+        # 임시 비밀번호 생성 (8자리)
+        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
+        
+        # 사용자 생성
+        username = signup_request.email.split('@')[0]  # 이메일에서 사용자명 추출
+        user = User.objects.create_user(
+            username=username,
+            email=signup_request.email,
+            password=temp_password,
+            first_name=signup_request.full_name
+        )
+        
+        # 권한 설정 - 요청에서 받은 권한 정보로 업데이트
+        permissions = request.data.get('permissions', {})
+        for field_name, value in permissions.items():
+            if hasattr(signup_request, field_name):
+                setattr(signup_request, field_name, value)
+        
+        # 가입 요청 상태 업데이트
+        signup_request.status = 'approved'
+        signup_request.approved_by = request.user
+        signup_request.approved_at = timezone.now()
+        signup_request.temporary_password = temp_password
+        signup_request.save()
+        
+        return Response({
+            'message': '가입이 승인되었습니다.',
+            'username': username,
+            'temporary_password': temp_password
+        })
+    
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """가입 요청 거부"""
+        signup_request = self.get_object()
+        if signup_request.status != 'pending':
+            return Response({'error': '이미 처리된 요청입니다.'}, status=400)
+        
+        signup_request.status = 'rejected'
+        signup_request.approved_by = request.user
+        signup_request.approved_at = timezone.now()
+        signup_request.save()
+        
+        return Response({'message': '가입 요청이 거부되었습니다.'}) 

@@ -24,3 +24,6 @@ db.sqlite3
 # Node.js
 node_modules/
 frontend/node_modules/
+
+# References
+references/

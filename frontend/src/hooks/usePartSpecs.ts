@@ -33,13 +33,36 @@ export function usePartSpecSearch(query: string): UseQueryResult<PartSpec[]> {
   return useQuery({
     queryKey: ['parts-search', query],
     queryFn: async () => {
-      const { data } = await api.get<Paginated<PartSpec>>('/parts/', {
-        params: { search: query },
-      });
-      return data.results;
+      const pageSize = 100;
+      let page = 1;
+      let all: PartSpec[] = [];
+      if (!query.trim()) return all;
+      while (true) {
+        const { data } = await api.get<Paginated<PartSpec>>('/parts/', {
+          params: { search: query, page, page_size: pageSize },
+        });
+        all = all.concat(data.results);
+        if (!data.next) break;
+        page += 1;
+      }
+      return all;
     },
     enabled: query.trim().length > 0,
     staleTime: 1000 * 60 * 10,
+  });
+}
+
+// 모든 PartSpec 전체 리스트를 가져오는 훅 (최대 1000개, 필요 시 페이지네이션 확장)
+export function usePartSpecs(): UseQueryResult<PartSpec[]> {
+  return useQuery({
+    queryKey: ['parts-all'],
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<PartSpec>>('/parts/', {
+        params: { page_size: 100 },
+      });
+      return data.results;
+    },
+    staleTime: 1000 * 60 * 5,
   });
 }
 
