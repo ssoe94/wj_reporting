@@ -24,7 +24,9 @@
       "Bash(venv/Scripts/python.exe manage.py:*)",
       "Bash(venv/Scripts/activate:*)",
       "Bash(git pull:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
