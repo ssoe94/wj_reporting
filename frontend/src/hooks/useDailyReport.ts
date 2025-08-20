@@ -66,6 +66,7 @@ export function useDailyReport(params: DailyReportParams = {}) {
     report_date: string;
     prev_date: string;
     total: number;
+    snapshot_created_at?: string;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

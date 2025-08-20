@@ -1,9 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { useLang } from '../../i18n';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
 
 interface SignupRequest {
   id: number;
@@ -21,7 +18,6 @@ interface ApprovalResult {
 }
 
 export default function UserApproval() {
-  const { t } = useLang();
   const [requests, setRequests] = useState<SignupRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [approvalResult, setApprovalResult] = useState<ApprovalResult | null>(null);

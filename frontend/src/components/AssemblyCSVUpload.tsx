@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Card, CardHeader, CardContent } from './ui/card';
 import { Button } from './ui/button';
-import { useLang } from '../i18n';
 import axios from 'axios';
 
 interface ValidationResult {
@@ -42,7 +41,6 @@ interface AssemblyCSVUploadProps {
 }
 
 export default function AssemblyCSVUpload({ onSuccess }: AssemblyCSVUploadProps) {
-  const { t } = useLang();
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
@@ -148,15 +146,7 @@ export default function AssemblyCSVUpload({ onSuccess }: AssemblyCSVUploadProps)
     setNewPartsInfo(updated);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'valid': return 'text-green-600';
-      case 'auto_corrected': return 'text-yellow-600';
-      case 'new_part': return 'text-blue-600';
-      case 'error': return 'text-red-600';
-      default: return 'text-gray-600';
-    }
-  };
+  
 
   return (
     <div className="space-y-6">
@@ -348,7 +338,7 @@ export default function AssemblyCSVUpload({ onSuccess }: AssemblyCSVUploadProps)
             <div className="flex gap-2 mt-6">
               <Button
                 onClick={() => setShowNewPartModal(false)}
-                variant="outline"
+                variant="secondary"
                 className="flex-1"
               >
                 취소

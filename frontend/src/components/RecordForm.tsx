@@ -258,12 +258,13 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                   </li>
                 );
               }
+              const spec = option as PartSpec;
               return (
                 <li {...props}>
                   <div className="flex flex-col">
-                    <span className="font-mono font-medium">{option.part_no}</span>
-                    {option.model_code && (
-                      <span className="text-sm text-gray-600">{option.model_code} - {option.description}</span>
+                    <span className="font-mono font-medium">{spec.part_no}</span>
+                    {spec.model_code && (
+                      <span className="text-sm text-gray-600">{spec.model_code} - {spec.description}</span>
                     )}
                   </div>
                 </li>

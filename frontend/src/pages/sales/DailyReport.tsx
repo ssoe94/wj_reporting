@@ -12,7 +12,7 @@ const rowCls = 'bg-white border-t border-gray-200 hover:bg-gray-100 transition-c
 const badgeCls = 'inline-block px-2 py-0.5 rounded-full text-xs font-medium';
 
 export default function DailyReportPage() {
-  const { lang, t } = useLang();
+  const { lang } = useLang();
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [searchValue, setSearchValue] = useState('');
   const [activeTab, setActiveTab] = useState<'finished' | 'semi'>('finished');
@@ -347,9 +347,9 @@ export default function DailyReportPage() {
           </div>
           
           {/* 스냅샷 업데이트 시간 */}
-          {currentData?.snapshot_created_at && (
+          {'snapshot_created_at' in (currentData || {}) && (currentData as any)?.snapshot_created_at && (
             <div className="px-6 py-3 text-sm text-gray-600">
-              스냅샷 업데이트: {format(new Date(currentData.snapshot_created_at), 'yyyy-MM-dd HH:mm')}
+              스냅샷 업데이트: {format(new Date((currentData as any).snapshot_created_at), 'yyyy-MM-dd HH:mm')}
             </div>
           )}
         </div>
