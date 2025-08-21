@@ -123,7 +123,19 @@ export default function EcoManager() {
         toast.success(t('save_success'));
         setDialogOpen(false);
       }catch(err:any){
-        toast.error(t('save_fail'));
+        console.error('ECO save error:', err);
+        const errorData = err.response?.data || err.data || {};
+        console.error('Error response:', errorData);
+        
+        // 에러 메시지 표시
+        if (errorData && typeof errorData === 'object') {
+          const firstKey = Object.keys(errorData)[0];
+          const firstMsg = Array.isArray(errorData[firstKey]) ? errorData[firstKey][0] : errorData[firstKey];
+          toast.error(firstMsg || t('save_fail'));
+          setErrors(errorData);
+        } else {
+          toast.error(t('save_fail'));
+        }
       }
     })();
   };

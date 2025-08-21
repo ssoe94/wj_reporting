@@ -51,7 +51,14 @@ class EngineeringChangeOrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EngineeringChangeOrder
-        fields = '__all__' 
+        fields = [
+            'id', 'form_type', 'eco_no', 'eco_model', 'customer',
+            'prepared_date', 'issued_date', 'received_date', 'due_date', 'close_date',
+            'change_reason', 'change_details', 'applicable_work_order', 'storage_action',
+            'inventory_finished', 'inventory_material', 'applicable_date', 'status', 'note',
+            'created_at', 'updated_at', 'details'
+        ]
+        read_only_fields = ['created_at', 'updated_at'] 
 
 
 class InventorySnapshotSerializer(serializers.ModelSerializer):
