@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
+import { api } from '../../lib/api';
 
 interface SignupRequest {
   id: number;
@@ -38,15 +39,8 @@ export default function UserApproval() {
   // 가입 요청 목록 가져오기
   const fetchRequests = async () => {
     try {
-      const response = await fetch('/api/signup-requests/', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setRequests(data.results || data);
-      }
+      const response = await api.get('/signup-requests/');
+      setRequests(response.data.results || response.data);
     } catch (error) {
       console.error('Failed to fetch signup requests:', error);
     } finally {
@@ -61,26 +55,13 @@ export default function UserApproval() {
   // 가입 승인
   const handleApprove = async (requestId: number) => {
     try {
-      const response = await fetch(`/api/signup-requests/${requestId}/approve/`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ permissions }),
+      const response = await api.post(`/signup-requests/${requestId}/approve/`, { permissions });
+      setApprovalResult({
+        username: response.data.username,
+        temporary_password: response.data.temporary_password,
       });
-
-      if (response.ok) {
-        const result = await response.json();
-        setApprovalResult({
-          username: result.username,
-          temporary_password: result.temporary_password,
-        });
-        fetchRequests(); // 목록 새로고침
-        setSelectedRequest(null);
-      } else {
-        alert('승인 처리 중 오류가 발생했습니다.');
-      }
+      fetchRequests(); // 목록 새로고침
+      setSelectedRequest(null);
     } catch (error) {
       console.error('Approval failed:', error);
       alert('승인 처리 중 오류가 발생했습니다.');
@@ -92,20 +73,10 @@ export default function UserApproval() {
     if (!confirm('정말 이 가입 요청을 거부하시겠습니까?')) return;
 
     try {
-      const response = await fetch(`/api/signup-requests/${requestId}/reject/`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      });
-
-      if (response.ok) {
-        alert('가입 요청이 거부되었습니다.');
-        fetchRequests(); // 목록 새로고침
-        setSelectedRequest(null);
-      } else {
-        alert('거부 처리 중 오류가 발생했습니다.');
-      }
+      await api.post(`/signup-requests/${requestId}/reject/`);
+      alert('가입 요청이 거부되었습니다.');
+      fetchRequests(); // 목록 새로고침
+      setSelectedRequest(null);
     } catch (error) {
       console.error('Rejection failed:', error);
       alert('거부 처리 중 오류가 발생했습니다.');
