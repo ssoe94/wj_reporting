@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import UserRegistrationRequest, InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec
+from .models import UserRegistrationRequest
 
 
 @admin.register(UserRegistrationRequest)
@@ -28,42 +28,3 @@ class UserRegistrationRequestAdmin(admin.ModelAdmin):
             'fields': ('created_at', 'updated_at')
         }),
     )
-
-
-@admin.register(InjectionReport)
-class InjectionReportAdmin(admin.ModelAdmin):
-    list_display = ['machine', 'part', 'shift', 'start_datetime', 'input_qty', 'output_qty']
-    list_filter = ['machine', 'shift', 'start_datetime']
-    search_fields = ['part', 'machine']
-
-
-@admin.register(Product)
-class ProductAdmin(admin.ModelAdmin):
-    list_display = ['name', 'created_at']
-    search_fields = ['name']
-
-
-@admin.register(PartSpec)
-class PartSpecAdmin(admin.ModelAdmin):
-    list_display = ['part_name', 'part_no', 'std_ct', 'created_at']
-    search_fields = ['part_name', 'part_no']
-
-
-@admin.register(EngineeringChangeOrder)
-class EngineeringChangeOrderAdmin(admin.ModelAdmin):
-    list_display = ['eco_number', 'title', 'status', 'created_by', 'created_at']
-    list_filter = ['status', 'created_at']
-    search_fields = ['eco_number', 'title']
-
-
-@admin.register(EcoDetail)
-class EcoDetailAdmin(admin.ModelAdmin):
-    list_display = ['eco', 'part_name', 'change_type', 'status']
-    list_filter = ['change_type', 'status']
-    search_fields = ['part_name']
-
-
-@admin.register(EcoPartSpec)
-class EcoPartSpecAdmin(admin.ModelAdmin):
-    list_display = ['eco', 'part_name', 'part_no', 'std_ct']
-    search_fields = ['part_name', 'part_no']
