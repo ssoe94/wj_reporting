@@ -6,6 +6,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { api } from '../lib/api';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -63,21 +64,14 @@ export default function LoginPage() {
       };
       console.log('Sending request data:', requestData); // 디버그 로그
       
-      const response = await fetch('/api/signup-request/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
+      const response = await api.post('/signup-request/', requestData);
 
-      if (response.ok) {
+      if (response.status === 200 || response.status === 201) {
         alert(t('signup_request_success'));
         setShowSignupModal(false);
         setSignupForm({ fullName: '', department: '', email: '' });
       } else {
-        const errorData = await response.json();
-        console.log('Error response:', errorData); // 오류 상세 정보 출력
+        console.log('Error response:', response.data); // 오류 상세 정보 출력
         setSignupError(t('signup_request_error'));
       }
     } catch (error) {
