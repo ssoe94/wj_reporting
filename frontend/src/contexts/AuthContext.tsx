@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import api from '../lib/api';
 import type { ReactNode } from 'react';
 
 interface User {
@@ -70,38 +71,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      const response = await fetch('/api/token/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const { access, refresh } = data;
-        
-        localStorage.setItem('access_token', access);
-        localStorage.setItem('refresh_token', refresh);
-        setToken(access);
-
-        // 사용자 정보 가져오기 (임시로 하드코딩)
-        const userInfo: User = {
-          id: 1,
-          username,
-          email: `${username}@example.com`,
-          is_staff: username === 'lizairong', // 임시 로직
-          groups: username === 'lizairong' ? ['admin'] : ['editor'],
-        };
-        setUser(userInfo);
-        
-        return true;
-      } else {
+      const response = await api.post('/token/', { username, password });
+      console.log('Login response:', response);
+      
+      // 응답이 있는지 확인
+      if (!response || !response.data) {
+        console.error('No response data received');
         return false;
       }
+      
+      const { access, refresh } = response.data;
+      if (!access || !refresh) {
+        console.error('Missing tokens in response:', response.data);
+        return false;
+      }
+
+      localStorage.setItem('access_token', access);
+      localStorage.setItem('refresh_token', refresh);
+      setToken(access);
+
+      const userInfo: User = {
+        id: 1,
+        username,
+        email: `${username}@example.com`,
+        is_staff: username === 'admin',
+        groups: username === 'admin' ? ['admin'] : ['editor'],
+      };
+      setUser(userInfo);
+      return true;
     } catch (error) {
       console.error('Login error:', error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+      }
       return false;
     }
   };

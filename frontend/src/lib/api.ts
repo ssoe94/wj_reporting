@@ -6,12 +6,18 @@ let API_URL = import.meta.env.VITE_APP_API_URL as string | undefined;
 if (!API_URL) {
   // Render 환경 감지: 프론트 서비스 도메인 → xxx.onrender.com
   const { hostname } = window.location;
+  console.log('Current hostname:', hostname);
+  
   if (hostname.endsWith('.onrender.com') && !hostname.includes('backend')) {
     // 백엔드 서비스는 "-backend" 접미사를 붙인 도메인이라고 가정
     API_URL = `https://${hostname.split('.')[0]}-backend.onrender.com/api`;
+    console.log('Render backend URL configured:', API_URL);
   } else {
     API_URL = '/api'; // 로컬 또는 프록시 환경
+    console.log('Local/proxy API URL configured:', API_URL);
   }
+} else {
+  console.log('Environment API URL configured:', API_URL);
 }
 
 // axios 인스턴스 생성
@@ -50,13 +56,9 @@ api.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem('refresh_token');
         if (refreshToken) {
-          const response = await axios.post('/api/token/refresh/', {
-            refresh: refreshToken
-          });
-          
+          const response = await api.post('/token/refresh/', { refresh: refreshToken });
           const { access } = response.data;
           localStorage.setItem('access_token', access);
-          
           originalRequest.headers.Authorization = `Bearer ${access}`;
           return api(originalRequest);
         }
