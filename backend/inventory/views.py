@@ -116,6 +116,34 @@ class MESTokenTestView(APIView):
             }, status=500)
 
 
+class ManualSnapshotView(APIView):
+    """수동 일일 스냅샷 생성 테스트용 엔드포인트"""
+    permission_classes = []  # 인증 없이 접근 가능
+    
+    def post(self, request):
+        try:
+            from django.core.management import call_command
+            from io import StringIO
+            
+            # 오늘 날짜로 스냅샷 생성
+            out = StringIO()
+            call_command('daily_snapshot_auto', stdout=out)
+            output = out.getvalue()
+            out.close()
+            
+            return Response({
+                'success': True,
+                'message': '수동 스냅샷 생성 완료',
+                'output': output
+            })
+            
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+
 class LastUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
 
 // getToken 함수 추가
@@ -61,68 +62,48 @@ interface DailyReportParams {
 }
 
 export function useDailyReport(params: DailyReportParams = {}) {
-  const [data, setData] = useState<{
-    results: DailyReportItem[];
-    report_date: string;
-    prev_date: string;
-    total: number;
-    snapshot_created_at?: string;
-  } | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['dailyReport', params],
+    queryFn: async () => {
+      const response = await api.get('/mes/inventory/daily-report/', { params });
+      return response.data;
+    },
+    retry: 1,
+    staleTime: 30000, // 30초간 fresh로 간주
+  });
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        const response = await api.get('/mes/inventory/daily-report/', { params });
-        setData(response.data);
-      } catch (err: any) {
-        setError(err.response?.data?.error || '일일 보고서 데이터를 가져오는데 실패했습니다.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [params.date, params.warehouse_code, params.material_code]);
-
-  return { data, isLoading, error };
+  return { 
+    data, 
+    isLoading, 
+    error: error?.response?.data?.error || error?.message || null 
+  };
 }
 
 export function useDailyReportSummary(date?: string) {
-  const [data, setData] = useState<DailyReportSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['dailyReportSummary', date],
+    queryFn: async () => {
+      const response = await api.get('/mes/inventory/daily-report/summary/', { 
+        params: { date } 
+      });
+      return response.data;
+    },
+    retry: 1,
+    staleTime: 30000, // 30초간 fresh로 간주
+    enabled: !!date, // date가 있을 때만 쿼리 실행
+  });
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        const response = await api.get('/mes/inventory/daily-report/summary/', { 
-          params: { date } 
-        });
-        setData(response.data);
-      } catch (err: any) {
-        setError(err.response?.data?.error || '일일 보고서 요약 데이터를 가져오는데 실패했습니다.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [date]);
-
-  return { data, isLoading, error };
+  return { 
+    data, 
+    isLoading, 
+    error: error?.response?.data?.error || error?.message || null 
+  };
 }
 
 export function useCreateSnapshot() {
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const createSnapshot = async (date?: string, force: boolean = false) => {
     setIsCreating(true);
@@ -133,6 +114,13 @@ export function useCreateSnapshot() {
         date,
         force
       });
+      
+      // 스냅샷 생성 성공 후 관련 쿼리들을 무효화하여 데이터 다시 가져오기
+      await queryClient.invalidateQueries({ queryKey: ['dailyReport'] });
+      await queryClient.invalidateQueries({ queryKey: ['dailyReportSummary'] });
+      await queryClient.invalidateQueries({ queryKey: ['dailyReportCalendar'] });
+      await queryClient.invalidateQueries({ queryKey: ['dailyReportAvailableDates'] });
+      
       return response.data;
     } catch (err: any) {
       const errorMessage = err.response?.data?.error || '스냅샷 생성에 실패했습니다.';

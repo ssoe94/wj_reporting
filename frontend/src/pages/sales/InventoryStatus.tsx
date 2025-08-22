@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useInventoryStatus } from '../../hooks/useInventoryStatus';
 import { useWarehouses } from '../../hooks/useWarehouses';
 import { useLastUpdate } from '../../hooks/useLastUpdate';
@@ -15,6 +16,7 @@ const rowCls =
 const badgeCls = 'inline-block px-2 py-0.5 rounded-full text-xs font-medium';
 
 export default function InventoryStatusPage() {
+  const queryClient = useQueryClient();
   const [params, setParams] = useState<Record<string, any>>({ 
     page: 1, 
     size: 100,
@@ -56,6 +58,10 @@ export default function InventoryStatusPage() {
             setUpdating(false);
             toast.success(`재고 업데이트 완료: ${response.data.total}개 항목`);
             setProgress({ current: 0, total: 0, status: 'idle' });
+            
+            // 재고 업데이트 완료 후 관련 쿼리들을 무효화하여 데이터 다시 가져오기
+            queryClient.invalidateQueries({ queryKey: ['inventories'] });
+            queryClient.invalidateQueries({ queryKey: ['lastUpdate'] });
           } else if (response.data.status === 'error') {
             clearInterval(pollInterval);
             setUpdating(false);

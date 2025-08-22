@@ -120,6 +120,14 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         try:
+            # 환경 변수 로깅
+            import os
+            from decouple import config
+            self.stdout.write('=== Cron Job Environment Check ===')
+            self.stdout.write(f'DJANGO_SETTINGS_MODULE: {os.getenv("DJANGO_SETTINGS_MODULE")}')
+            self.stdout.write(f'MES_APP_KEY exists: {bool(os.getenv("MES_APP_KEY") or config("MES_APP_KEY", default=""))}')
+            self.stdout.write(f'MES_APP_SECRET exists: {bool(os.getenv("MES_APP_SECRET") or config("MES_APP_SECRET", default=""))}')
+            
             # Determine the date
             if options['date']:
                 try:
