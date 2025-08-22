@@ -577,67 +577,92 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         import string
         import secrets
         
-        signup_request = self.get_object()
-        if signup_request.status != 'pending':
-            return Response({'error': '이미 처리된 요청입니다.'}, status=400)
-        
-        # 임시 비밀번호 생성 (8자리)
-        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
-        
-        # 사용자 생성
-        username = signup_request.email.split('@')[0]  # 이메일에서 사용자명 추출
-        user = User.objects.create_user(
-            username=username,
-            email=signup_request.email,
-            password=temp_password,
-            first_name=signup_request.full_name
-        )
-        
-        # 권한 설정 - 요청에서 받은 권한 정보로 업데이트
-        permissions = request.data.get('permissions', {})
-        for field_name, value in permissions.items():
-            if hasattr(signup_request, field_name):
-                setattr(signup_request, field_name, value)
-        
-        # 가입 요청 상태 업데이트
-        signup_request.status = 'approved'
-        signup_request.approved_by = request.user
-        signup_request.approved_at = timezone.now()
-        signup_request.temporary_password = temp_password
-        signup_request.save()
-        
-        # UserProfile 생성 및 권한 복사
-        user_profile = UserProfile.objects.create(
-            user=user,
-            can_view_injection=signup_request.can_view_injection,
-            can_edit_injection=signup_request.can_edit_injection,
-            can_view_machining=signup_request.can_view_machining,
-            can_edit_machining=signup_request.can_edit_machining,
-            can_view_inventory=signup_request.can_view_inventory,
-            can_edit_inventory=signup_request.can_edit_inventory,
-            can_view_eco=signup_request.can_view_eco,
-            can_edit_eco=signup_request.can_edit_eco,
-        )
-        
-        return Response({
-            'message': '가입이 승인되었습니다.',
-            'username': username,
-            'temporary_password': temp_password
-        })
+        try:
+            signup_request = self.get_object()
+            if signup_request.status != 'pending':
+                return Response({'error': '이미 처리된 요청입니다.'}, status=400)
+            
+            # 임시 비밀번호 생성 (8자리)
+            temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
+            
+            # 사용자명 생성 (중복 방지)
+            base_username = signup_request.email.split('@')[0]
+            username = base_username
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f"{base_username}{counter}"
+                counter += 1
+            
+            # 사용자 생성
+            user = User.objects.create_user(
+                username=username,
+                email=signup_request.email,
+                password=temp_password,
+                first_name=signup_request.full_name
+            )
+            
+            # 권한 설정 - 요청에서 받은 권한 정보로 업데이트
+            permissions = request.data.get('permissions', {})
+            for field_name, value in permissions.items():
+                if hasattr(signup_request, field_name):
+                    setattr(signup_request, field_name, value)
+            
+            # 가입 요청 상태 업데이트
+            signup_request.status = 'approved'
+            signup_request.approved_by = request.user
+            signup_request.approved_at = timezone.now()
+            signup_request.temporary_password = temp_password
+            signup_request.save()
+            
+            # UserProfile 생성 및 권한 복사
+            user_profile = UserProfile.objects.create(
+                user=user,
+                can_view_injection=signup_request.can_view_injection,
+                can_edit_injection=signup_request.can_edit_injection,
+                can_view_machining=signup_request.can_view_machining,
+                can_edit_machining=signup_request.can_edit_machining,
+                can_view_inventory=signup_request.can_view_inventory,
+                can_edit_inventory=signup_request.can_edit_inventory,
+                can_view_eco=signup_request.can_view_eco,
+                can_edit_eco=signup_request.can_edit_eco,
+            )
+            
+            return Response({
+                'message': '가입이 승인되었습니다.',
+                'username': username,
+                'temporary_password': temp_password
+            })
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Approval error: {str(e)}")
+            return Response({
+                'error': f'승인 처리 중 오류가 발생했습니다: {str(e)}'
+            }, status=500)
     
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
         """가입 요청 거부"""
-        signup_request = self.get_object()
-        if signup_request.status != 'pending':
-            return Response({'error': '이미 처리된 요청입니다.'}, status=400)
-        
-        signup_request.status = 'rejected'
-        signup_request.approved_by = request.user
-        signup_request.approved_at = timezone.now()
-        signup_request.save()
-        
-        return Response({'message': '가입 요청이 거부되었습니다.'})
+        try:
+            signup_request = self.get_object()
+            if signup_request.status != 'pending':
+                return Response({'error': '이미 처리된 요청입니다.'}, status=400)
+            
+            signup_request.status = 'rejected'
+            signup_request.approved_by = request.user
+            signup_request.approved_at = timezone.now()
+            signup_request.save()
+            
+            return Response({'message': '가입 요청이 거부되었습니다.'})
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Rejection error: {str(e)}")
+            return Response({
+                'error': f'거부 처리 중 오류가 발생했습니다: {str(e)}'
+            }, status=500)
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):

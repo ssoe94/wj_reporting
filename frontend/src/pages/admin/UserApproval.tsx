@@ -60,8 +60,10 @@ export default function UserApproval() {
     try {
       const response = await api.get('/signup-requests/');
       setRequests(response.data.results || response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch signup requests:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || '가입 요청 목록을 불러오는데 실패했습니다.';
+      alert(errorMessage);
     }
   };
 
@@ -70,8 +72,10 @@ export default function UserApproval() {
     try {
       const response = await api.get('/user-profiles/');
       setUserProfiles(response.data.results || response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch user profiles:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || '사용자 프로필 목록을 불러오는데 실패했습니다.';
+      alert(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -92,9 +96,10 @@ export default function UserApproval() {
       });
       fetchRequests(); // 목록 새로고침
       setSelectedRequest(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Approval failed:', error);
-      alert('승인 처리 중 오류가 발생했습니다.');
+      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '승인 처리 중 오류가 발생했습니다.';
+      alert(errorMessage);
     }
   };
 
@@ -107,9 +112,10 @@ export default function UserApproval() {
       alert('가입 요청이 거부되었습니다.');
       fetchRequests(); // 목록 새로고침
       setSelectedRequest(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Rejection failed:', error);
-      alert('거부 처리 중 오류가 발생했습니다.');
+      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '거부 처리 중 오류가 발생했습니다.';
+      alert(errorMessage);
     }
   };
 
@@ -145,9 +151,10 @@ export default function UserApproval() {
       alert('권한이 성공적으로 수정되었습니다.');
       setSelectedProfile(null);
       fetchUserProfiles(); // 목록 새로고침
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to update permissions:', error);
-      alert('권한 수정 중 오류가 발생했습니다.');
+      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '권한 수정 중 오류가 발생했습니다.';
+      alert(errorMessage);
     }
   };
 
