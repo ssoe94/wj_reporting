@@ -31,7 +31,7 @@ const api = axios.create({
 // 요청 인터셉터: 인증 토큰 자동 추가
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -54,18 +54,18 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       
       try {
-        const refreshToken = localStorage.getItem('refresh_token');
+        const refreshToken = sessionStorage.getItem('refresh_token');
         if (refreshToken) {
           const response = await api.post('/token/refresh/', { refresh: refreshToken });
           const { access } = response.data;
-          localStorage.setItem('access_token', access);
+          sessionStorage.setItem('access_token', access);
           originalRequest.headers.Authorization = `Bearer ${access}`;
           return api(originalRequest);
         }
       } catch (refreshError) {
         // 리프레시 토큰도 만료된 경우 로그아웃
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        sessionStorage.removeItem('access_token');
+        sessionStorage.removeItem('refresh_token');
         window.location.href = '/login';
       }
     }

@@ -18,11 +18,30 @@ interface ApprovalResult {
   temporary_password: string;
 }
 
+interface UserProfile {
+  id: number;
+  user: number;
+  username: string;
+  email: string;
+  first_name: string;
+  can_view_injection: boolean;
+  can_edit_injection: boolean;
+  can_view_machining: boolean;
+  can_edit_machining: boolean;
+  can_view_eco: boolean;
+  can_edit_eco: boolean;
+  can_view_inventory: boolean;
+  can_edit_inventory: boolean;
+}
+
 export default function UserApproval() {
   const [requests, setRequests] = useState<SignupRequest[]>([]);
+  const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [approvalResult, setApprovalResult] = useState<ApprovalResult | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<SignupRequest | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
+  const [editingPermissions, setEditingPermissions] = useState<{[key: string]: boolean}>({});
   
   // 권한 설정 상태
   const [permissions, setPermissions] = useState({
@@ -43,6 +62,16 @@ export default function UserApproval() {
       setRequests(response.data.results || response.data);
     } catch (error) {
       console.error('Failed to fetch signup requests:', error);
+    }
+  };
+
+  // 사용자 프로필 목록 가져오기
+  const fetchUserProfiles = async () => {
+    try {
+      const response = await api.get('/user-profiles/');
+      setUserProfiles(response.data.results || response.data);
+    } catch (error) {
+      console.error('Failed to fetch user profiles:', error);
     } finally {
       setLoading(false);
     }
@@ -50,6 +79,7 @@ export default function UserApproval() {
 
   useEffect(() => {
     fetchRequests();
+    fetchUserProfiles();
   }, []);
 
   // 가입 승인
@@ -86,6 +116,44 @@ export default function UserApproval() {
   // 권한 체크박스 변경
   const handlePermissionChange = (key: string, value: boolean) => {
     setPermissions(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  // 사용자 권한 편집 시작
+  const handleEditUserPermissions = (profile: UserProfile) => {
+    setSelectedProfile(profile);
+    setEditingPermissions({
+      can_view_injection: profile.can_view_injection,
+      can_edit_injection: profile.can_edit_injection,
+      can_view_machining: profile.can_view_machining,
+      can_edit_machining: profile.can_edit_machining,
+      can_view_eco: profile.can_view_eco,
+      can_edit_eco: profile.can_edit_eco,
+      can_view_inventory: profile.can_view_inventory,
+      can_edit_inventory: profile.can_edit_inventory,
+    });
+  };
+
+  // 사용자 권한 수정 저장
+  const handleUpdateUserPermissions = async () => {
+    if (!selectedProfile) return;
+
+    try {
+      await api.patch(`/user-profiles/${selectedProfile.id}/`, editingPermissions);
+      alert('권한이 성공적으로 수정되었습니다.');
+      setSelectedProfile(null);
+      fetchUserProfiles(); // 목록 새로고침
+    } catch (error) {
+      console.error('Failed to update permissions:', error);
+      alert('권한 수정 중 오류가 발생했습니다.');
+    }
+  };
+
+  // 편집 권한 체크박스 변경
+  const handleEditingPermissionChange = (key: string, value: boolean) => {
+    setEditingPermissions(prev => ({
       ...prev,
       [key]: value
     }));
@@ -302,6 +370,170 @@ export default function UserApproval() {
             </Card>
           ))
         )}
+      </div>
+
+      {/* 기존 사용자 권한 관리 */}
+      <div className="mt-8">
+        <h2 className="text-xl font-semibold mb-4">기존 사용자 권한 관리</h2>
+        <div className="space-y-4">
+          {userProfiles.map(profile => (
+            <Card key={profile.id}>
+              <CardContent className="p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-medium">{profile.first_name || profile.username}</h3>
+                    <p className="text-gray-500">사용자명: {profile.username}</p>
+                    <p className="text-gray-500">이메일: {profile.email}</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <span className={`px-2 py-1 rounded ${profile.can_view_injection ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                        사출조회
+                      </span>
+                      <span className={`px-2 py-1 rounded ${profile.can_edit_injection ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
+                        사출편집
+                      </span>
+                      <span className={`px-2 py-1 rounded ${profile.can_view_eco ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                        ECO조회
+                      </span>
+                      <span className={`px-2 py-1 rounded ${profile.can_edit_eco ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
+                        ECO편집
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {selectedProfile?.id === profile.id && (
+                  <div className="mt-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                    <h4 className="font-semibold mb-3">권한 수정</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <h5 className="font-medium mb-2">사출 관련</h5>
+                        <div className="space-y-2">
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={editingPermissions.can_view_injection}
+                              onChange={(e) => handleEditingPermissionChange('can_view_injection', e.target.checked)}
+                              className="mr-2"
+                            />
+                            사출 조회 권한
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={editingPermissions.can_edit_injection}
+                              onChange={(e) => handleEditingPermissionChange('can_edit_injection', e.target.checked)}
+                              className="mr-2"
+                            />
+                            사출 편집 권한
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <h5 className="font-medium mb-2">가공 관련</h5>
+                        <div className="space-y-2">
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={editingPermissions.can_view_machining}
+                              onChange={(e) => handleEditingPermissionChange('can_view_machining', e.target.checked)}
+                              className="mr-2"
+                            />
+                            가공 조회 권한
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={editingPermissions.can_edit_machining}
+                              onChange={(e) => handleEditingPermissionChange('can_edit_machining', e.target.checked)}
+                              className="mr-2"
+                            />
+                            가공 편집 권한
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <h5 className="font-medium mb-2">ECO 관련</h5>
+                        <div className="space-y-2">
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={editingPermissions.can_view_eco}
+                              onChange={(e) => handleEditingPermissionChange('can_view_eco', e.target.checked)}
+                              className="mr-2"
+                            />
+                            ECO 조회 권한
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={editingPermissions.can_edit_eco}
+                              onChange={(e) => handleEditingPermissionChange('can_edit_eco', e.target.checked)}
+                              className="mr-2"
+                            />
+                            ECO 편집 권한
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <h5 className="font-medium mb-2">재고 관련</h5>
+                        <div className="space-y-2">
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={editingPermissions.can_view_inventory}
+                              onChange={(e) => handleEditingPermissionChange('can_view_inventory', e.target.checked)}
+                              className="mr-2"
+                            />
+                            재고 조회 권한
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={editingPermissions.can_edit_inventory}
+                              onChange={(e) => handleEditingPermissionChange('can_edit_inventory', e.target.checked)}
+                              className="mr-2"
+                            />
+                            재고 편집 권한
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 mt-4">
+                      <Button onClick={handleUpdateUserPermissions} className="flex-1">
+                        권한 수정 저장
+                      </Button>
+                      <Button 
+                        onClick={() => setSelectedProfile(null)} 
+                        variant="secondary" 
+                        className="flex-1"
+                      >
+                        취소
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2 mt-4">
+                  {selectedProfile?.id === profile.id ? null : (
+                    <Button
+                      onClick={() => handleEditUserPermissions(profile)}
+                      variant="secondary"
+                      className="flex-1"
+                    >
+                      권한 수정
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
 
       {/* 처리된 요청 목록 */}

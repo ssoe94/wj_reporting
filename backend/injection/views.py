@@ -23,7 +23,7 @@ from django.utils import timezone
 from django.conf import settings
 import requests
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.db import models
 from django_filters import rest_framework as filters
 
@@ -648,4 +648,21 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # 관리자가 아닌 사용자들의 프로필만 반환
-        return UserProfile.objects.filter(user__is_staff=False) 
+        return UserProfile.objects.filter(user__is_staff=False)
+
+
+class UserMeView(APIView):
+    """현재 로그인된 사용자 정보 반환"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        groups = [group.name for group in user.groups.all()]
+        
+        return Response({
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'is_staff': user.is_staff,
+            'groups': groups,
+        }) 

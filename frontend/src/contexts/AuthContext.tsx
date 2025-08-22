@@ -35,7 +35,7 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('access_token'));
+  const [token, setToken] = useState<string | null>(sessionStorage.getItem('access_token'));
   const [isLoading, setIsLoading] = useState(true);
 
   // 토큰을 decode하여 exp 확인 (간단한 base64url decode)
@@ -53,13 +53,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // 사용자 정보 가져오기
+  const fetchUserInfo = async (): Promise<User | null> => {
+    try {
+      const response = await api.get('/user/me/');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch user info:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     const initializeAuth = async () => {
-      const storedToken = localStorage.getItem('access_token');
+      const storedToken = sessionStorage.getItem('access_token');
       if (storedToken && !isTokenExpired(storedToken)) {
         setToken(storedToken);
-        // 필요한 경우, 사용자 정보 API 호출로 user 세팅
-        // setUser(await fetchUserInfo());
+        // 사용자 정보 가져오기
+        const userInfo = await fetchUserInfo();
+        if (userInfo) {
+          setUser(userInfo);
+        } else {
+          logout();
+        }
       } else {
         logout();
       }
@@ -86,19 +102,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return false;
       }
 
-      localStorage.setItem('access_token', access);
-      localStorage.setItem('refresh_token', refresh);
+      sessionStorage.setItem('access_token', access);
+      sessionStorage.setItem('refresh_token', refresh);
       setToken(access);
 
-      const userInfo: User = {
-        id: 1,
-        username,
-        email: `${username}@example.com`,
-        is_staff: username === 'admin',
-        groups: username === 'admin' ? ['admin'] : ['editor'],
-      };
-      setUser(userInfo);
-      return true;
+      // 실제 사용자 정보 가져오기
+      const userInfo = await fetchUserInfo();
+      if (userInfo) {
+        setUser(userInfo);
+        return true;
+      } else {
+        logout();
+        return false;
+      }
     } catch (error) {
       console.error('Login error:', error);
       if (error instanceof Error) {
@@ -109,8 +125,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
     setToken(null);
     setUser(null);
   };
