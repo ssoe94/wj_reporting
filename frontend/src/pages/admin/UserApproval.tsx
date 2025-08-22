@@ -592,7 +592,7 @@ export default function UserApproval() {
                       </Button>
                       <Button
                         onClick={() => handleResetPassword(profile.user)}
-                        variant="outline"
+                        variant="secondary"
                         className="flex-1"
                       >
                         비밀번호 리셋
