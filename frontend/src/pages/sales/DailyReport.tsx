@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { format } from 'date-fns';
-import { useDailyReport, useDailyReportSummary, useCreateSnapshot, DailyReportSummary } from '../../hooks/useDailyReport';
+import { useDailyReport, useDailyReportSummary, useCreateSnapshot } from '../../hooks/useDailyReport';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-toastify';
