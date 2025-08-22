@@ -28,7 +28,8 @@
       "Bash(git push:*)",
       "Bash(git commit:*)",
       "WebFetch(domain:wj-reporting-backend.onrender.com)",
-      "WebFetch(domain:wj-reporting.onrender.com)"
+      "WebFetch(domain:wj-reporting.onrender.com)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

@@ -60,7 +60,7 @@ class InventoryRefreshView(APIView):
 
 class MESTokenTestView(APIView):
     """MES API 토큰 테스트용 디버깅 엔드포인트"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = []  # 인증 없이 접근 가능하도록 변경
     
     def get(self, request):
         from inventory.mes import get_access_token, call_inventory_list
