@@ -1,6 +1,8 @@
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.contrib.auth.models import User
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 class InjectionReport(models.Model):
     SECTION_CHOICES = [
@@ -300,4 +302,16 @@ class UserProfile(models.Model):
             return user.profile
         except UserProfile.DoesNotExist:
             # 프로필이 없으면 생성
-            return cls.objects.create(user=user) 
+            return cls.objects.create(user=user)
+
+
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    """User 생성 시 자동으로 UserProfile 생성"""
+    if created:
+        UserProfile.objects.create(
+            user=instance,
+            # 관리자가 아닌 경우 기본 조회 권한 부여
+            can_view_injection=not instance.is_staff,
+            can_view_eco=not instance.is_staff,
+        ) 
