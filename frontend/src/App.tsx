@@ -37,6 +37,7 @@ import PrivateRoute from './components/PrivateRoute';
 import InventoryStatusPage from './pages/sales/InventoryStatus';
 import DailyReportPage from './pages/sales/DailyReport';
 import UserApproval from './pages/admin/UserApproval';
+import PasswordChangeModal from './components/PasswordChangeModal';
 
 const queryClient = new QueryClient();
 
@@ -91,7 +92,7 @@ export function useNavItems() {
       label: '관리자',
       icon: Monitor,
       children: [
-        { to: "/admin/user-approval", label: '가입 승인', icon: ClipboardCheck },
+        { to: "/admin/user-management", label: '사용자 관리', icon: ClipboardCheck },
       ],
     },
   ];
@@ -100,6 +101,7 @@ export function useNavItems() {
 function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [isLiteMode, setIsLiteMode] = useState(() => 
     typeof window !== 'undefined' && localStorage.getItem('lite') === '1'
   );
@@ -110,6 +112,13 @@ function AppContent() {
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
+
+  // 임시 비밀번호 사용자 체크
+  useEffect(() => {
+    if (user && user.is_using_temp_password) {
+      setPasswordModalOpen(true);
+    }
+  }, [user]);
   
   // 라이트 모드 적용
   useEffect(() => {
@@ -228,11 +237,20 @@ function AppContent() {
               }}
               className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
             >
-              {user.username} ({user.groups.join(', ')})
+              {user.username}{user.department ? ` (${user.department})` : ''}
               <span className={`text-xs transition-transform ${userDropdownOpen ? 'rotate-180' : ''}`}>▼</span>
             </button>
             {userDropdownOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[120px]">
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[140px]">
+                <button
+                  onClick={() => {
+                    setPasswordModalOpen(true);
+                    setUserDropdownOpen(false);
+                  }}
+                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  비밀번호 변경
+                </button>
                 <button
                   onClick={() => {
                     logout();
@@ -407,13 +425,26 @@ function AppContent() {
             <Route path="/sales/inventory-status" element={<PrivateRoute><InventoryStatusPage /></PrivateRoute>} />
 
           {/* Admin routes */}
-          <Route path="/admin/user-approval" element={<PrivateRoute><UserApproval /></PrivateRoute>} />
+          <Route path="/admin/user-management" element={<PrivateRoute><UserApproval /></PrivateRoute>} />
+          <Route path="/admin/user-approval" element={<PrivateRoute><UserApproval /></PrivateRoute>} /> {/* 기존 URL 호환성 */}
           
           {/* Existing placeholders */}
           <Route path="/overview" element={<PrivateRoute><OverviewPage /></PrivateRoute>} />
           <Route path="/sales" element={<PrivateRoute><SalesInventoryPage /></PrivateRoute>} />
         </Routes>
       </main>
+      
+      {/* 비밀번호 변경 모달 */}
+      <PasswordChangeModal
+        isOpen={passwordModalOpen}
+        onClose={() => setPasswordModalOpen(false)}
+        isRequired={user?.is_using_temp_password || false}
+        onSuccess={() => {
+          // 비밀번호 변경 성공 시 사용자 정보 다시 불러오기
+          window.location.reload();
+        }}
+      />
+      
       <ToastContainer position="bottom-right" />
     </div>
   );

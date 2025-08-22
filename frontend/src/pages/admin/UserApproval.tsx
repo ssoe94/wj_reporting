@@ -42,6 +42,7 @@ export default function UserApproval() {
   const [selectedRequest, setSelectedRequest] = useState<SignupRequest | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
   const [editingPermissions, setEditingPermissions] = useState<{[key: string]: boolean}>({});
+  const [resetPasswordResult, setResetPasswordResult] = useState<ApprovalResult | null>(null);
   
   // 권한 설정 상태
   const [permissions, setPermissions] = useState({
@@ -166,6 +167,24 @@ export default function UserApproval() {
     }));
   };
 
+  // 비밀번호 리셋
+  const handleResetPassword = async (userId: number) => {
+    if (!confirm('이 사용자의 비밀번호를 리셋하시겠습니까? 새로운 임시 비밀번호가 생성됩니다.')) return;
+
+    try {
+      const response = await api.post('/user/reset-password/', { user_id: userId });
+      setResetPasswordResult({
+        username: response.data.username,
+        temporary_password: response.data.temporary_password,
+      });
+      fetchUserProfiles(); // 목록 새로고침
+    } catch (error: any) {
+      console.error('Password reset failed:', error);
+      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '비밀번호 리셋 중 오류가 발생했습니다.';
+      alert(errorMessage);
+    }
+  };
+
   if (loading) {
     return <div className="p-6">Loading...</div>;
   }
@@ -174,7 +193,7 @@ export default function UserApproval() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">가입 요청 관리</h1>
+      <h1 className="text-2xl font-bold mb-6">사용자 관리</h1>
 
       {/* 승인 결과 모달 */}
       {approvalResult && (
@@ -202,6 +221,41 @@ export default function UserApproval() {
               </Button>
               <Button
                 onClick={() => setApprovalResult(null)}
+                className="flex-1"
+              >
+                확인
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 비밀번호 리셋 결과 모달 */}
+      {resetPasswordResult && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">비밀번호 리셋 완료</h3>
+            <div className="space-y-2">
+              <p><strong>사용자명:</strong> {resetPasswordResult.username}</p>
+              <p><strong>새 임시 비밀번호:</strong> 
+                <code className="bg-gray-100 px-2 py-1 rounded ml-2">
+                  {resetPasswordResult.temporary_password}
+                </code>
+              </p>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <Button
+                onClick={() => {
+                  navigator.clipboard.writeText(resetPasswordResult.temporary_password);
+                  alert('임시 비밀번호가 클립보드에 복사되었습니다.');
+                }}
+                variant="secondary"
+                className="flex-1"
+              >
+                비밀번호 복사
+              </Button>
+              <Button
+                onClick={() => setResetPasswordResult(null)}
                 className="flex-1"
               >
                 확인
@@ -528,13 +582,22 @@ export default function UserApproval() {
 
                 <div className="flex gap-2 mt-4">
                   {selectedProfile?.id === profile.id ? null : (
-                    <Button
-                      onClick={() => handleEditUserPermissions(profile)}
-                      variant="secondary"
-                      className="flex-1"
-                    >
-                      권한 수정
-                    </Button>
+                    <>
+                      <Button
+                        onClick={() => handleEditUserPermissions(profile)}
+                        variant="secondary"
+                        className="flex-1"
+                      >
+                        권한 수정
+                      </Button>
+                      <Button
+                        onClick={() => handleResetPassword(profile.user)}
+                        variant="outline"
+                        className="flex-1"
+                      >
+                        비밀번호 리셋
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardContent>

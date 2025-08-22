@@ -285,6 +285,11 @@ class UserProfile(models.Model):
     can_view_inventory = models.BooleanField('재고 조회 권한', default=False)
     can_edit_inventory = models.BooleanField('재고 편집 권한', default=False)
     
+    # 비밀번호 관리
+    is_using_temp_password = models.BooleanField('임시 비밀번호 사용 중', default=False)
+    password_reset_required = models.BooleanField('비밀번호 재설정 필요', default=False)
+    last_password_change = models.DateTimeField('마지막 비밀번호 변경일', null=True, blank=True)
+    
     created_at = models.DateTimeField('생성일시', auto_now_add=True)
     updated_at = models.DateTimeField('수정일시', auto_now=True)
 

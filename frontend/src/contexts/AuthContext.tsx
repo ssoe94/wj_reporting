@@ -8,6 +8,9 @@ interface User {
   email: string;
   is_staff: boolean;
   groups: string[];
+  department?: string;
+  is_using_temp_password?: boolean;
+  password_reset_required?: boolean;
 }
 
 interface AuthContextType {

@@ -625,6 +625,8 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
                 can_edit_inventory=signup_request.can_edit_inventory,
                 can_view_eco=signup_request.can_view_eco,
                 can_edit_eco=signup_request.can_edit_eco,
+                is_using_temp_password=True,  # 임시 비밀번호 사용 중
+                password_reset_required=True,  # 비밀번호 재설정 필요
             )
             
             return Response({
@@ -684,10 +686,127 @@ class UserMeView(APIView):
         user = request.user
         groups = [group.name for group in user.groups.all()]
         
+        # 사용자 프로필에서 비밀번호 상태 가져오기
+        profile = UserProfile.get_user_permissions(user)
+        
+        # 부서 정보 가져오기 (가입 요청에서)
+        department = ""
+        try:
+            signup_request = UserRegistrationRequest.objects.filter(email=user.email).first()
+            if signup_request:
+                department = signup_request.department
+        except:
+            pass
+        
         return Response({
             'id': user.id,
             'username': user.username,
             'email': user.email,
             'is_staff': user.is_staff,
             'groups': groups,
-        }) 
+            'department': department,
+            'is_using_temp_password': profile.is_using_temp_password,
+            'password_reset_required': profile.password_reset_required,
+        })
+
+
+class ChangePasswordView(APIView):
+    """비밀번호 변경 API"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        user = request.user
+        current_password = request.data.get('current_password')
+        new_password = request.data.get('new_password')
+        
+        if not current_password or not new_password:
+            return Response({
+                'error': '현재 비밀번호와 새 비밀번호를 모두 입력해주세요.'
+            }, status=400)
+        
+        # 현재 비밀번호 확인
+        if not user.check_password(current_password):
+            return Response({
+                'error': '현재 비밀번호가 올바르지 않습니다.'
+            }, status=400)
+        
+        # 새 비밀번호 길이 체크
+        if len(new_password) < 8:
+            return Response({
+                'error': '새 비밀번호는 최소 8자 이상이어야 합니다.'
+            }, status=400)
+        
+        try:
+            # 비밀번호 변경
+            user.set_password(new_password)
+            user.save()
+            
+            # 프로필 상태 업데이트
+            profile = UserProfile.get_user_permissions(user)
+            profile.is_using_temp_password = False
+            profile.password_reset_required = False
+            profile.last_password_change = timezone.now()
+            profile.save()
+            
+            return Response({
+                'message': '비밀번호가 성공적으로 변경되었습니다.'
+            })
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Password change error: {str(e)}")
+            return Response({
+                'error': f'비밀번호 변경 중 오류가 발생했습니다: {str(e)}'
+            }, status=500)
+
+
+class ResetPasswordView(APIView):
+    """관리자용 비밀번호 리셋 API"""
+    permission_classes = [IsAdminUser]
+    
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        
+        if not user_id:
+            return Response({
+                'error': '사용자 ID를 입력해주세요.'
+            }, status=400)
+        
+        try:
+            from django.contrib.auth.models import User
+            import string
+            import secrets
+            
+            user = User.objects.get(id=user_id)
+            
+            # 새 임시 비밀번호 생성 (8자리)
+            temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
+            
+            # 비밀번호 설정
+            user.set_password(temp_password)
+            user.save()
+            
+            # 프로필 상태 업데이트
+            profile = UserProfile.get_user_permissions(user)
+            profile.is_using_temp_password = True
+            profile.password_reset_required = True
+            profile.save()
+            
+            return Response({
+                'message': '비밀번호가 리셋되었습니다.',
+                'username': user.username,
+                'temporary_password': temp_password,
+            })
+            
+        except User.DoesNotExist:
+            return Response({
+                'error': '사용자를 찾을 수 없습니다.'
+            }, status=404)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Password reset error: {str(e)}")
+            return Response({
+                'error': f'비밀번호 리셋 중 오류가 발생했습니다: {str(e)}'
+            }, status=500) 
