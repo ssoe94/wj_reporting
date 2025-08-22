@@ -692,9 +692,13 @@ class UserMeView(APIView):
         # 부서 정보 가져오기 (가입 요청에서)
         department = ""
         try:
-            signup_request = UserRegistrationRequest.objects.filter(email=user.email).first()
-            if signup_request:
-                department = signup_request.department
+            # 관리자 사용자인 경우 특별 처리
+            if user.is_staff and user.username == 'admin':
+                department = "관리자"
+            else:
+                signup_request = UserRegistrationRequest.objects.filter(email=user.email).first()
+                if signup_request:
+                    department = signup_request.department
         except:
             pass
         

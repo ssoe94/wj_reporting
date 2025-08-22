@@ -56,6 +56,11 @@ export default function InventoryStatusPage() {
             setUpdating(false);
             toast.success(`재고 업데이트 완료: ${response.data.total}개 항목`);
             setProgress({ current: 0, total: 0, status: 'idle' });
+          } else if (response.data.status === 'error') {
+            clearInterval(pollInterval);
+            setUpdating(false);
+            toast.error(`재고 업데이트 실패: ${response.data.error || '알 수 없는 오류'}`);
+            setProgress({ current: 0, total: 0, status: 'idle' });
           }
         } catch (err) {
           console.error('Progress poll error:', err);

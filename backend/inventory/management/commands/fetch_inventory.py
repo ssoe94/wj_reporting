@@ -1,5 +1,6 @@
 import math
 import datetime
+import time
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from inventory.mes import call_inventory_list
@@ -105,6 +106,13 @@ class Command(BaseCommand):
                     except Exception as e:
                         if retry == 2:  # 마지막 시도
                             self.stdout.write(self.style.ERROR(f'Error fetching page {page} after 3 retries: {str(e)}'))
+                            # 에러 상태로 캐시 업데이트
+                            cache.set('inventory_fetch_progress', {
+                                'current': total_imported,
+                                'total': total_imported,
+                                'status': 'error',
+                                'error': str(e)
+                            }, 600)
                             return  # 전체 프로세스 중단
                         else:
                             self.stdout.write(self.style.WARNING(f'Retry {retry + 1}/3 for page {page}: {str(e)}'))
@@ -112,6 +120,13 @@ class Command(BaseCommand):
                     
         except Exception as e:
             self.stdout.write(self.style.ERROR(f'Critical error in inventory fetch: {str(e)}'))
+            # 에러 상태로 캐시 업데이트
+            cache.set('inventory_fetch_progress', {
+                'current': total_imported,
+                'total': total_imported,
+                'status': 'error',
+                'error': str(e)
+            }, 600)
             return
             
         self.stdout.write(self.style.SUCCESS(f'Imported {total_imported} rows to staging_inventory')) 

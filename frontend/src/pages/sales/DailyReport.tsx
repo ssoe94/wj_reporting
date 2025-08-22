@@ -50,8 +50,8 @@ export default function DailyReportPage() {
     try {
       await createSnapshot(selectedDate, false);
       toast.success('스냅샷이 성공적으로 생성되었습니다.');
-      // 데이터 새로고침
-      window.location.reload();
+      // 새로고침 대신 상태만 업데이트하여 데이터 다시 가져오기
+      // React Query가 자동으로 데이터를 다시 가져올 것임
     } catch (err: any) {
       toast.error(err.message);
     }

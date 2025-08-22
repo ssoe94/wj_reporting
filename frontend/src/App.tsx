@@ -44,6 +44,7 @@ const queryClient = new QueryClient();
 // navItems를 함수로 생성 (언어별)
 export function useNavItems() {
   const { t } = useLang();
+  const { user } = useAuth();
   
   return [
     {
@@ -88,13 +89,14 @@ export function useNavItems() {
         { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
       ],
     },
-    {
+    // 관리자 메뉴는 is_staff가 true인 경우만 표시
+    ...(user?.is_staff ? [{
       label: '관리자',
       icon: Monitor,
       children: [
         { to: "/admin/user-management", label: '사용자 관리', icon: ClipboardCheck },
       ],
-    },
+    }] : []),
   ];
 }
 
