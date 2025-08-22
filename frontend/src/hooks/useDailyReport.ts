@@ -7,7 +7,7 @@ const getToken = () => {
   return localStorage.getItem('access_token');
 };
 
-interface DailyReportItem {
+export interface DailyReportItem {
   snapshot_date: string;
   material_code: string;
   material_name: string;
@@ -33,7 +33,7 @@ interface DailyReportItem {
   cart_count_change: number | null;
 }
 
-interface DailyReportSummary {
+export interface DailyReportSummary {
   report_date: string;
   prev_date: string;
   today: {
@@ -75,7 +75,7 @@ export function useDailyReport(params: DailyReportParams = {}) {
   return { 
     data, 
     isLoading, 
-    error: error?.response?.data?.error || error?.message || null 
+    error: error ? (error as any)?.response?.data?.error || error?.message || null : null
   };
 }
 
@@ -96,7 +96,7 @@ export function useDailyReportSummary(date?: string) {
   return { 
     data, 
     isLoading, 
-    error: error?.response?.data?.error || error?.message || null 
+    error: error ? (error as any)?.response?.data?.error || error?.message || null : null
   };
 }
 

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { format } from 'date-fns';
-import { useDailyReport, useDailyReportSummary, useCreateSnapshot } from '../../hooks/useDailyReport';
+import { useDailyReport, useDailyReportSummary, useCreateSnapshot, DailyReportSummary } from '../../hooks/useDailyReport';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-toastify';
@@ -250,7 +250,7 @@ export default function DailyReportPage() {
               <h3 className="text-sm font-medium text-gray-600 mb-2">제품창고 수량</h3>
               {summaryData && (
                 <div className="text-2xl font-bold text-green-500">
-                  {formatQuantity(summaryData.warehouse_summary?.find(w => w.warehouse_name === '成品仓库')?.total_quantity || 0)}
+                  {formatQuantity(summaryData.warehouse_summary?.find((w: any) => w.warehouse_name === '成品仓库')?.total_quantity || 0)}
                 </div>
               )}
             </div>
@@ -260,7 +260,7 @@ export default function DailyReportPage() {
               <h3 className="text-sm font-medium text-gray-600 mb-2">반제품창고 수량</h3>
               {summaryData && (
                 <div className="text-2xl font-bold text-green-400">
-                  {formatQuantity(summaryData.warehouse_summary?.find(w => w.warehouse_name === '半成品仓库')?.total_quantity || 0)}
+                  {formatQuantity(summaryData.warehouse_summary?.find((w: any) => w.warehouse_name === '半成品仓库')?.total_quantity || 0)}
                 </div>
               )}
             </div>
@@ -270,7 +270,7 @@ export default function DailyReportPage() {
               <h3 className="text-sm font-medium text-gray-600 mb-2">제품창고 带车수</h3>
               {summaryData && (
                 <div className="text-2xl font-bold text-purple-500">
-                  {summaryData.warehouse_summary?.find(w => w.warehouse_name === '成品仓库')?.cart_count || 0}
+                  {summaryData.warehouse_summary?.find((w: any) => w.warehouse_name === '成品仓库')?.cart_count || 0}
                 </div>
               )}
             </div>
@@ -472,7 +472,7 @@ export default function DailyReportPage() {
                   </td>
                 </tr>
                              ) : (
-                 sortedData.map((item, index) => (
+                 sortedData.map((item: any, index: number) => (
                   <tr key={`${item.material_code}_${item.warehouse_code}_${item.qc_status}_${index}`} className={rowCls}>
                     <td className="px-3 py-2 text-center font-medium">{item.material_code}</td>
                     <td className="px-3 py-2 text-center">{item.specification || '-'}</td>
