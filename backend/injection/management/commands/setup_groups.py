@@ -4,39 +4,39 @@ from django.contrib.contenttypes.models import ContentType
 from injection.models import InjectionReport, Product, PartSpec, EngineeringChangeOrder
 
 class Command(BaseCommand):
-    help = '역할 기반 권한 그룹을 생성합니다'
+    help = 'Create role-based permission groups'
 
     def handle(self, *args, **options):
-        # 그룹 생성
-        editor_group, created = Group.objects.get_or_create(name='editor')
-        viewer_group, created = Group.objects.get_or_create(name='viewer')
+        # Create groups
+        editor_group, editor_created = Group.objects.get_or_create(name='editor')
+        viewer_group, viewer_created = Group.objects.get_or_create(name='viewer')
         
-        if created:
+        if editor_created or viewer_created:
             self.stdout.write(
-                self.style.SUCCESS('그룹이 성공적으로 생성되었습니다.')
+                self.style.SUCCESS('Groups created successfully.')
             )
         
-        # 모델별 권한 설정
+        # Set model permissions
         models = [InjectionReport, Product, PartSpec, EngineeringChangeOrder]
         
         for model in models:
             content_type = ContentType.objects.get_for_model(model)
             permissions = Permission.objects.filter(content_type=content_type)
             
-            # 편집자 권한: 조회, 추가, 변경, 삭제
+            # Editor permissions: view, add, change, delete
             for perm in permissions:
                 editor_group.permissions.add(perm)
             
-            # 조회자 권한: 조회만
+            # Viewer permissions: view only
             view_permissions = permissions.filter(codename__startswith='view_')
             for perm in view_permissions:
                 viewer_group.permissions.add(perm)
         
         self.stdout.write(
-            self.style.SUCCESS('권한이 그룹에 성공적으로 할당되었습니다.')
+            self.style.SUCCESS('Permissions assigned to groups successfully.')
         )
         
-        # 현재 그룹과 권한 정보 출력
-        self.stdout.write('\n=== 생성된 그룹 ===')
+        # Display current groups and permissions
+        self.stdout.write('\n=== Created Groups ===')
         for group in Group.objects.all():
-            self.stdout.write(f'- {group.name}: {group.permissions.count()}개 권한') 
+            self.stdout.write(f'- {group.name}: {group.permissions.count()} permissions') 

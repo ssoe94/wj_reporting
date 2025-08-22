@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator
+from django.contrib.auth.models import User
 
 class InjectionReport(models.Model):
     SECTION_CHOICES = [
@@ -265,4 +266,38 @@ class UserRegistrationRequest(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.full_name} ({self.email}) - {self.get_status_display()}" 
+        return f"{self.full_name} ({self.email}) - {self.get_status_display()}"
+
+
+class UserProfile(models.Model):
+    """사용자 권한 프로필"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    
+    # 권한 설정 (UserRegistrationRequest와 동일)
+    can_view_injection = models.BooleanField('사출 조회 권한', default=False)
+    can_edit_injection = models.BooleanField('사출 편집 권한', default=False)
+    can_view_machining = models.BooleanField('가공 조회 권한', default=False)
+    can_edit_machining = models.BooleanField('가공 편집 권한', default=False)
+    can_view_eco = models.BooleanField('ECO 조회 권한', default=False)
+    can_edit_eco = models.BooleanField('ECO 편집 권한', default=False)
+    can_view_inventory = models.BooleanField('재고 조회 권한', default=False)
+    can_edit_inventory = models.BooleanField('재고 편집 권한', default=False)
+    
+    created_at = models.DateTimeField('생성일시', auto_now_add=True)
+    updated_at = models.DateTimeField('수정일시', auto_now=True)
+
+    class Meta:
+        verbose_name = '사용자 권한 프로필'
+        verbose_name_plural = '사용자 권한 프로필 목록'
+
+    def __str__(self):
+        return f"{self.user.username} 권한"
+    
+    @classmethod
+    def get_user_permissions(cls, user):
+        """사용자의 권한 정보를 반환"""
+        try:
+            return user.profile
+        except UserProfile.DoesNotExist:
+            # 프로필이 없으면 생성
+            return cls.objects.create(user=user) 

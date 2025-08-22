@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest, UserProfile
 
 class InjectionReportSerializer(serializers.ModelSerializer):
     achievement_rate = serializers.FloatField(read_only=True)
@@ -73,10 +73,34 @@ class InventorySnapshotSerializer(serializers.ModelSerializer):
 class UserRegistrationRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserRegistrationRequest
-        fields = ['id', 'full_name', 'department', 'email', 'status', 'created_at']
+        fields = [
+            'id', 'full_name', 'department', 'email', 'status', 'created_at',
+            'can_view_injection', 'can_edit_injection',
+            'can_view_machining', 'can_edit_machining', 
+            'can_view_inventory', 'can_edit_inventory',
+            'can_view_eco', 'can_edit_eco'
+        ]
         read_only_fields = ['status', 'created_at']
     
     def validate_email(self, value):
         if not value.endswith('@njwanjia.com'):
             raise serializers.ValidationError('@njwanjia.com 도메인 이메일만 사용 가능합니다.')
-        return value 
+        return value
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    
+    class Meta:
+        model = UserProfile
+        fields = [
+            'id', 'user', 'username', 'email', 'first_name',
+            'can_view_injection', 'can_edit_injection',
+            'can_view_machining', 'can_edit_machining',
+            'can_view_inventory', 'can_edit_inventory', 
+            'can_view_eco', 'can_edit_eco',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['user', 'username', 'email', 'first_name', 'created_at', 'updated_at'] 

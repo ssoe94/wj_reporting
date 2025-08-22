@@ -1,7 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest, UserProfile
 from .serializers import (
     InjectionReportSerializer,
     ProductSerializer,
@@ -11,8 +11,9 @@ from .serializers import (
     EcoPartSpecSerializer,
     InventorySnapshotSerializer,
     UserRegistrationRequestSerializer,
+    UserProfileSerializer,
 )
-from .permissions import IsAdminUser, IsEditorUser, IsViewerUser
+from .permissions import IsAdminUser, IsEditorUser, IsViewerUser, InjectionPermission, EcoPermission, MachiningPermission, InventoryPermission
 import csv
 import io
 from django.http import HttpResponse
@@ -40,7 +41,7 @@ class PartSpecFilter(filters.FilterSet):
 class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
     serializer_class = InjectionReportSerializer
-    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
+    permission_classes = [InjectionPermission]  # 사출 권한 필요
     filterset_fields = ['date', 'tonnage', 'model', 'section']
     ordering_fields = ['date', 'tonnage', 'model', 'achievement_rate', 'defect_rate']
     search_fields = ['tonnage', 'model', 'note']
@@ -263,7 +264,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
-    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
+    permission_classes = [InjectionPermission]  # 사출 권한 필요 (제품 관리는 사출과 연관)
     filterset_fields = ['type']
     search_fields = ['model', 'fg_part_no', 'wip_part_no']
     ordering = ['model']
@@ -272,7 +273,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 class PartSpecViewSet(viewsets.ModelViewSet):
     queryset = PartSpec.objects.all()
     serializer_class = PartSpecSerializer
-    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
+    permission_classes = [InjectionPermission]  # 사출 권한 필요 (부품 스펙은 사출과 연관)
     filterset_class = PartSpecFilter
     search_fields = ['part_no', 'description', 'model_code']
     ordering = ['part_no']
@@ -344,7 +345,7 @@ class PartSpecViewSet(viewsets.ModelViewSet):
 class EcoPartSpecViewSet(viewsets.ModelViewSet):
     queryset = EcoPartSpec.objects.all()
     serializer_class = EcoPartSpecSerializer
-    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
+    permission_classes = [EcoPermission]  # ECO 권한 필요
     search_fields = ['part_no', 'description', 'model_code']
     ordering = ['part_no']
 
@@ -414,7 +415,7 @@ class EcoPartSpecViewSet(viewsets.ModelViewSet):
 class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     queryset = EngineeringChangeOrder.objects.all()
     serializer_class = EngineeringChangeOrderSerializer
-    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
+    permission_classes = [EcoPermission]  # ECO 권한 필요
     filterset_fields = ['status', 'eco_model', 'customer']
     search_fields = ['eco_no', 'change_reason', 'change_details', 'customer', 'eco_model']
     ordering = ['-prepared_date'] 
@@ -491,7 +492,7 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
 # ==== Inventory API ====
 
 class InventoryView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [InventoryPermission]
 
     def get(self, request):
         part_ids = request.query_params.getlist('part_ids')
@@ -605,6 +606,19 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         signup_request.temporary_password = temp_password
         signup_request.save()
         
+        # UserProfile 생성 및 권한 복사
+        user_profile = UserProfile.objects.create(
+            user=user,
+            can_view_injection=signup_request.can_view_injection,
+            can_edit_injection=signup_request.can_edit_injection,
+            can_view_machining=signup_request.can_view_machining,
+            can_edit_machining=signup_request.can_edit_machining,
+            can_view_inventory=signup_request.can_view_inventory,
+            can_edit_inventory=signup_request.can_edit_inventory,
+            can_view_eco=signup_request.can_view_eco,
+            can_edit_eco=signup_request.can_edit_eco,
+        )
+        
         return Response({
             'message': '가입이 승인되었습니다.',
             'username': username,
@@ -623,4 +637,15 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         signup_request.approved_at = timezone.now()
         signup_request.save()
         
-        return Response({'message': '가입 요청이 거부되었습니다.'}) 
+        return Response({'message': '가입 요청이 거부되었습니다.'})
+
+
+class UserProfileViewSet(viewsets.ModelViewSet):
+    """사용자 권한 관리 ViewSet (관리자용)"""
+    queryset = UserProfile.objects.all()
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAdminUser]
+    
+    def get_queryset(self):
+        # 관리자가 아닌 사용자들의 프로필만 반환
+        return UserProfile.objects.filter(user__is_staff=False) 
