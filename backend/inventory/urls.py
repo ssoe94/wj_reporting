@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     path('inventory/', views.InventoryListView.as_view(), name='inventory_list'),
     path('inventory/refresh/', views.InventoryRefreshView.as_view(), name='inventory_refresh'),
+    path('inventory/mes-test/', views.MESTokenTestView.as_view(), name='mes_token_test'),
     path('inventory/last-update/', views.LastUpdateView.as_view(), name='last_update'),
     path('inventory/status/', views.inventory_status, name='inventory_status'),
     path('inventory/daily-report/', views.daily_report, name='daily_report'),

@@ -63,7 +63,20 @@ def call_inventory_list(page:int=1, size:int=200, **filters):
                 resp = requests.post(url, json=body, timeout=120)
             
             resp.raise_for_status()
-            return resp.json()
+            response_data = resp.json()
+            
+            # 응답 데이터 검증
+            if not response_data:
+                print(f'MES inventory list: Empty response for page {page}')
+                return None
+                
+            # MES API에서 에러 응답 확인
+            if response_data.get('code') != 200:
+                error_msg = response_data.get('message', 'Unknown MES API error')
+                print(f'MES inventory list: API error for page {page}: {error_msg}')
+                raise Exception(f'MES API error: {error_msg}')
+                
+            return response_data
         except Exception as e:
             if attempt == 2:  # 마지막 시도
                 print(f'MES inventory list error (page {page}):', resp.status_code if 'resp' in locals() else 'No response', str(e))

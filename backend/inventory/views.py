@@ -58,6 +58,63 @@ class InventoryRefreshView(APIView):
         return Response(progress)
 
 
+class MESTokenTestView(APIView):
+    """MES API 토큰 테스트용 디버깅 엔드포인트"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        from inventory.mes import get_access_token, call_inventory_list
+        import os
+        from decouple import config
+        
+        try:
+            # 환경 변수 확인
+            env_info = {
+                'MES_API_BASE': os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn'),
+                'MES_APP_KEY_exists': bool(os.getenv('MES_APP_KEY') or config('MES_APP_KEY', default='')),
+                'MES_APP_SECRET_exists': bool(os.getenv('MES_APP_SECRET') or config('MES_APP_SECRET', default='')),
+                'MES_ACCESS_TOKEN_exists': bool(os.getenv('MES_ACCESS_TOKEN') or config('MES_ACCESS_TOKEN', default=''))
+            }
+            
+            # 토큰 가져오기 시도
+            try:
+                token = get_access_token()
+                token_info = {
+                    'token_exists': bool(token),
+                    'token_length': len(token) if token else 0
+                }
+            except Exception as token_error:
+                token_info = {
+                    'token_error': str(token_error)
+                }
+            
+            # 실제 API 호출 테스트
+            try:
+                data = call_inventory_list(page=1, size=1)
+                api_test = {
+                    'api_call_success': True,
+                    'response_type': type(data).__name__,
+                    'has_data': bool(data),
+                    'response_keys': list(data.keys()) if isinstance(data, dict) else None
+                }
+            except Exception as api_error:
+                api_test = {
+                    'api_call_success': False,
+                    'api_error': str(api_error)
+                }
+            
+            return Response({
+                'environment': env_info,
+                'token': token_info,
+                'api_test': api_test
+            })
+            
+        except Exception as e:
+            return Response({
+                'error': str(e)
+            }, status=500)
+
+
 class LastUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 

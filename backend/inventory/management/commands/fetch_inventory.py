@@ -17,9 +17,19 @@ class Command(BaseCommand):
         parser.add_argument('--hours', type=int, default=2, help='Lookback hours for upsert window')
 
     def handle(self, *args, **options):
+        import os
+        from decouple import config
+        
         page = 1
         size = 100  # 페이지 크기를 100으로 줄임 (더 안정적)
         total_imported = 0
+        
+        # 환경 변수 로깅
+        self.stdout.write('=== Environment Check ===')
+        self.stdout.write(f'MES_API_BASE: {os.getenv("MES_API_BASE", "https://v3-ali.blacklake.cn")}')
+        self.stdout.write(f'MES_APP_KEY exists: {bool(os.getenv("MES_APP_KEY") or config("MES_APP_KEY", default=""))}')
+        self.stdout.write(f'MES_APP_SECRET exists: {bool(os.getenv("MES_APP_SECRET") or config("MES_APP_SECRET", default=""))}')
+        self.stdout.write(f'MES_ACCESS_TOKEN exists: {bool(os.getenv("MES_ACCESS_TOKEN") or config("MES_ACCESS_TOKEN", default=""))}')
         
         # MES와 완전 동기화 (시간 필터 없이)
         self.stdout.write('Full synchronization with MES (no time filter)...')
@@ -42,19 +52,52 @@ class Command(BaseCommand):
                     try:
                         # MES에서 모든 데이터 가져오기 (시간 필터 없이)
                         data = call_inventory_list(page=page, size=size)
+                        
+                        # MES 응답이 None이거나 빈 응답인 경우 처리
+                        if not data:
+                            self.stdout.write(self.style.WARNING(f'Page {page}: Empty response from MES'))
+                            # 캐시에 완료 상태 설정
+                            cache.set('inventory_fetch_progress', {
+                                'current': total_imported,
+                                'total': total_imported,
+                                'status': 'completed'
+                            }, 600)
+                            return
+                            
                         items = data.get('data', {}).get('list', []) or data.get('items', [])
                         if not items:
+                            self.stdout.write(f'Page {page}: No more items to fetch')
                             break
                         
                         staging_objs = []
                         for it in items:
-                            material_code = it.get('materialCode') or it.get('material', {}).get('code')
-                            warehouse_code = it.get('warehouseCode') or it.get('storageLocationDetail', {}).get('warehouse', {}).get('code', '')
-                            trolley_code = it.get('trolleyCode') or it.get('labelCode') or ''
-                            updated_at = it.get('updatedAt', 0)
-                            
-                            # 대차번호 + Part No로 composite_key 생성 (시간 제외)
-                            composite_key = f"{trolley_code}::{material_code}"
+                            try:
+                                # 안전한 데이터 접근
+                                material_code = it.get('materialCode') if it else None
+                                if not material_code and it:
+                                    material_info = it.get('material')
+                                    material_code = material_info.get('code') if material_info else None
+                                
+                                warehouse_code = it.get('warehouseCode') if it else None
+                                if not warehouse_code and it:
+                                    storage_detail = it.get('storageLocationDetail')
+                                    if storage_detail:
+                                        warehouse_info = storage_detail.get('warehouse')
+                                        warehouse_code = warehouse_info.get('code', '') if warehouse_info else ''
+                                
+                                trolley_code = it.get('trolleyCode') or it.get('labelCode') or '' if it else ''
+                                updated_at = it.get('updatedAt', 0) if it else 0
+                                
+                                # 필수 데이터가 없으면 스킵
+                                if not material_code:
+                                    self.stdout.write(self.style.WARNING(f'Skipping item without material_code: {it}'))
+                                    continue
+                                
+                                # 대차번호 + Part No로 composite_key 생성 (시간 제외)
+                                composite_key = f"{trolley_code}::{material_code}"
+                            except Exception as item_error:
+                                self.stdout.write(self.style.WARNING(f'Error processing item: {item_error}'))
+                                continue
                             
 
                             staging_objs.append(StagingInventory(
