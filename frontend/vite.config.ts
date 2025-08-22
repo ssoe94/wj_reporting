@@ -24,4 +24,9 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    port: 4173,
+    // SPA 히스토리 모드를 위한 폴백
+    open: true,
+  },
 })

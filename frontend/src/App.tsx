@@ -457,7 +457,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <LangProvider>
         <AuthProvider>
-          <BrowserRouter>
+          <BrowserRouter basename="/">
             <AppContent />
           </BrowserRouter>
         </AuthProvider>
