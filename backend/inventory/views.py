@@ -73,7 +73,8 @@ class MESTokenTestView(APIView):
                 'MES_API_BASE': os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn'),
                 'MES_APP_KEY_exists': bool(os.getenv('MES_APP_KEY') or config('MES_APP_KEY', default='')),
                 'MES_APP_SECRET_exists': bool(os.getenv('MES_APP_SECRET') or config('MES_APP_SECRET', default='')),
-                'MES_ACCESS_TOKEN_exists': bool(os.getenv('MES_ACCESS_TOKEN') or config('MES_ACCESS_TOKEN', default=''))
+                'MES_ACCESS_TOKEN_exists': bool(os.getenv('MES_ACCESS_TOKEN') or config('MES_ACCESS_TOKEN', default='')),
+                'MES_USER_CODE_exists': bool(os.getenv('MES_USER_CODE') or config('MES_USER_CODE', default=''))
             }
             
             # 토큰 가져오기 시도

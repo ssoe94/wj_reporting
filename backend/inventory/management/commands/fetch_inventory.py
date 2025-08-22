@@ -30,6 +30,7 @@ class Command(BaseCommand):
         self.stdout.write(f'MES_APP_KEY exists: {bool(os.getenv("MES_APP_KEY") or config("MES_APP_KEY", default=""))}')
         self.stdout.write(f'MES_APP_SECRET exists: {bool(os.getenv("MES_APP_SECRET") or config("MES_APP_SECRET", default=""))}')
         self.stdout.write(f'MES_ACCESS_TOKEN exists: {bool(os.getenv("MES_ACCESS_TOKEN") or config("MES_ACCESS_TOKEN", default=""))}')
+        self.stdout.write(f'MES_USER_CODE exists: {bool(os.getenv("MES_USER_CODE") or config("MES_USER_CODE", default=""))}')
         
         # MES와 완전 동기화 (시간 필터 없이)
         self.stdout.write('Full synchronization with MES (no time filter)...')
