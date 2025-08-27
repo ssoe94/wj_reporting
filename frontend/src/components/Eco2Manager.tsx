@@ -186,21 +186,19 @@ export default function EcoManager() {
   };
 
   const handleDownloadCSV = () => {
-    const headers = ['eco_no', 'eco_model', 'customer', 'status', 'change_reason', 'change_details', 'applicable_date', 'storage_action', 'part_numbers'];
+    const headers = ['eco_no', 'eco_model', 'customer', 'status', 'change_reason', 'change_details', 'applicable_date', 'storage_action'];
     const csvContent = [
       headers.join(','),
       ...filteredEcos.map((e: Eco) => {
-        const partNumbers = (e.details || []).map((d: {part_no: string}) => d.part_no).join(';');
         return [
           e.eco_no,
           e.eco_model,
           e.customer,
           e.status,
-          `"${e.change_reason || ''}"`,
-          `"${e.change_details || ''}"`,
+          `"${e.change_reason || ''}"`, 
+          `"${e.change_details || ''}"`, 
           e.applicable_date || '',
-          `"${e.storage_action || ''}"`,
-          `"${partNumbers}"`
+          `"${e.storage_action || ''}"`, 
         ].join(',');
       })
     ].join('\n');
@@ -279,8 +277,8 @@ export default function EcoManager() {
                   <th className="px-3 py-2 text-left">{t('eco_no')}</th>
                   <th className="px-3 py-2 text-left">{t('eco_model')}</th>
                   <th className="px-3 py-2 text-left">Part No.</th>
-                  <th className="px-3 py-2 text-left">{t('applicable_date')}</th>
-                  <th className="px-3 py-2 text-left">{t('storage_action')}</th>
+                  <th className="px-3 py-2 text-left">{t('change_reason')}</th>
+                  <th className="px-3 py-2 text-left">{t('change_details')}</th>
                   <th className="px-3 py-2 text-left">{t('status')}</th>
                   <th className="px-3 py-2 text-left"></th>
                 </tr>
@@ -290,11 +288,11 @@ export default function EcoManager() {
                   <tr><td colSpan={7} className="text-center py-4">Loading...</td></tr>
                 ) : filteredEcos.map((e: Eco) => (
                   <tr key={e.id} className={rowCls}>
-                    <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={() => handleViewEco(e)}>{e.eco_no}</td>
+                    <td className="px-3 py-1 cursor-pointer text-blue-600 underline" onClick={() => handleViewEco(e)}>{e.eco_no}</td>
                     <td className="px-3 py-1">{e.eco_model}</td>
-                    <td className="px-3 py-1 font-mono text-xs">{(e.details || []).map((d: { part_no: string }) => d.part_no).join(', ')}</td>
-                    <td className="px-3 py-1">{e.applicable_date}</td>
-                    <td className="px-3 py-1">{e.storage_action}</td>
+                    <td className="px-3 py-1">{(e.details || []).map((d: { part_no: string }) => d.part_no).join(', ')}</td>
+                    <td className="px-3 py-1 truncate max-w-xs">{e.change_reason}</td>
+                    <td className="px-3 py-1 truncate max-w-xs">{e.change_details}</td>
                     <td className="px-3 py-1">{e.status}</td>
                     <td className="px-3 py-1 text-right flex justify-end gap-1">
                       <Button size="icon" variant="ghost" onClick={() => handleViewEco(e)} aria-label={t('view')}><Eye className="w-4 h-4" /></Button>
