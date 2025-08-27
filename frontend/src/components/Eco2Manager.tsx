@@ -17,9 +17,213 @@ import { Pencil, Trash2, Search, Eye, Upload, Download } from 'lucide-react';
 const ctrlCls = "h-10 bg-white border border-gray-300 rounded-md px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-colors";
 
-// Basic CSV parser
-// More robust CSV parser that handles quoted strings
-const parseCSV = (content: string): Partial<Eco>[] => { const lines = content.trim().split(/\r\n|\n/); if (lines.length < 2) return []; const header = lines[0].split(',').map(h => h.trim()); console.log("CSV Header:", header); // Debug log const requiredHeaders = ['eco_no', 'eco_model', 'customer', 'status', 'prepared_date', 'issued_date']; if (!requiredHeaders.every(h => header.includes(h))) { throw new Error(`CSV must include ${requiredHeaders.join(', ')} columns.`); } return lines.slice(1).map((line, index) => { // This regex handles commas inside quotes const values = (line.match(/("[^"]*"|[^,]+)/g) || []).map(v => { v = v.trim(); if (v.startsWith('"') && v.endsWith('"')) { return v.slice(1, -1); // Remove quotes } return v; }); console.log(`Row ${index + 1} values:`, values); // Debug log const eco: any = {}; header.forEach((key, index) => { if (values[index]) { eco[key] = values[index]; } }); return eco; }); };
+// Change Details에서 Part 정보를 추출하는 함수
+const extractPartDetailsFromChangeDetails = (changeDetails: string): any[] => {
+  const parts: any[] = [];
+  
+  if (!changeDetails) return parts;
+  
+  // Part No 패턴 찾기 (예: ACQ30154848, MCK714219 등)
+  const partNoPattern = /([A-Z]{2,4}\d{6,12}[A-Z*]*)/g;
+  const foundPartNos = [...changeDetails.matchAll(partNoPattern)];
+  
+  if (foundPartNos.length > 0) {
+    // 각 Part No에 대해 상세 정보 추출
+    foundPartNos.forEach((match, index) => {
+      const partNo = match[1];
+      
+      // 괄호 안의 설명 찾기 (예: (MCK714219**))
+      const descriptionPattern = new RegExp(`\\(([^)]*${partNo.substring(0, 6)}[^)]*)\\)`, 'i');
+      const descriptionMatch = changeDetails.match(descriptionPattern);
+      
+      // Part별 변경내용 - 전체 change_details를 사용하되 Part No 별로 구분이 어려우므로 전체 내용 사용
+      let partChangeDetails = changeDetails;
+      
+      // 만약 여러 Part가 있다면 Part No 이후의 내용만 추출 시도
+      if (foundPartNos.length > 1) {
+        const nextPartIndex = index < foundPartNos.length - 1 ? foundPartNos[index + 1].index : changeDetails.length;
+        const currentPartIndex = match.index || 0;
+        partChangeDetails = changeDetails.substring(currentPartIndex, nextPartIndex).trim();
+      }
+      
+      parts.push({
+        part_no: partNo,
+        description: descriptionMatch ? descriptionMatch[1] : '',
+        change_details: partChangeDetails,
+        status: 'OPEN' // 기본값
+      });
+    });
+  } else {
+    // Part No 패턴을 찾을 수 없는 경우, 전체 내용을 하나의 Part로 처리
+    // 변경내용에서 대표적인 부품 정보 추출 시도
+    const generalPartMatch = changeDetails.match(/([A-Z]\w*\s*\w*)/);
+    parts.push({
+      part_no: generalPartMatch ? generalPartMatch[1] : 'Unknown',
+      description: '',
+      change_details: changeDetails,
+      status: 'OPEN'
+    });
+  }
+  
+  return parts;
+};
+
+// More robust CSV parser that handles quoted strings and multiline content
+const parseCSV = (content: string): Partial<Eco>[] => {
+  // Remove BOM if present
+  const cleanContent = content.replace(/^\uFEFF/, '');
+  const text = cleanContent.trim();
+  
+  if (!text) return [];
+  
+  // Parse CSV with proper quote handling for multiline fields
+  const rows: string[] = [];
+  let currentRow = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+    
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        // Escaped quote
+        currentRow += '"';
+        i++; // Skip next quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+      currentRow += char;
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (currentRow.trim()) {
+        rows.push(currentRow);
+        currentRow = '';
+      }
+      if (char === '\r' && nextChar === '\n') {
+        i++; // Skip \n after \r
+      }
+    } else {
+      currentRow += char;
+    }
+  }
+  
+  if (currentRow.trim()) {
+    rows.push(currentRow);
+  }
+  
+  if (rows.length < 2) return [];
+  
+  const header = parseCSVRow(rows[0]);
+  console.log("CSV Header:", header);
+  
+  const requiredHeaders = ['eco_no', 'eco_model', 'customer', 'status', 'prepared_date', 'issued_date'];
+  if (!requiredHeaders.every(h => header.includes(h))) {
+    throw new Error(`CSV must include ${requiredHeaders.join(', ')} columns.`);
+  }
+  
+  return rows.slice(1).map((line, index) => {
+    const values = parseCSVRow(line);
+    console.log(`Row ${index + 1} values:`, values);
+    
+    const eco: any = {};
+    header.forEach((key, i) => {
+      if (values[i] !== undefined && values[i] !== '') {
+        eco[key] = values[i];
+      }
+    });
+    
+    // 필수 필드에 기본값 설정
+    if (!eco.customer || eco.customer.trim() === '') {
+      eco.customer = 'N/A';
+    }
+    
+    // form_type 필드 처리 - 잘못된 값이 들어간 경우 수정
+    if (!eco.form_type || eco.form_type.trim() === '') {
+      eco.form_type = 'REGULAR';
+    } else if (eco.form_type === 'CLOSED' || eco.form_type === 'OPEN') {
+      // CSV에서 form_type에 status 값이 들어간 경우 수정
+      if (!eco.status || eco.status.trim() === '') {
+        eco.status = eco.form_type; // form_type을 status로 이동
+      }
+      eco.form_type = 'REGULAR';
+    } else if (!['REGULAR', 'TEMP'].includes(eco.form_type)) {
+      eco.form_type = 'REGULAR';
+    }
+    
+    // status 필드 검증
+    if (!eco.status || !['OPEN', 'WIP', 'CLOSED'].includes(eco.status)) {
+      eco.status = 'OPEN';
+    }
+    
+    // 날짜 필드 포맷 정리 (YYYY-MM-DD)
+    const dateFields = ['prepared_date', 'issued_date', 'received_date', 'applicable_date', 'due_date', 'close_date'];
+    dateFields.forEach(field => {
+      if (eco[field] && eco[field].trim() !== '') {
+        const dateValue = eco[field].trim();
+        // 이미 YYYY-MM-DD 형식인지 확인
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+          try {
+            // 다양한 형식을 YYYY-MM-DD로 변환
+            const date = new Date(dateValue);
+            if (!isNaN(date.getTime())) {
+              eco[field] = date.toISOString().split('T')[0];
+            } else {
+              eco[field] = null; // 잘못된 날짜는 null로 설정
+            }
+          } catch (error) {
+            eco[field] = null; // 파싱 실패시 null
+          }
+        }
+      } else if (eco[field] === '') {
+        eco[field] = null; // 빈 문자열은 null로 변환
+      }
+    });
+    
+    // Change Details에서 Part 정보 추출
+    if (eco.change_details && eco.change_details.trim() !== '') {
+      eco.part_details = extractPartDetailsFromChangeDetails(eco.change_details);
+    }
+    
+    return eco;
+  });
+};
+
+// Helper function to parse a single CSV row
+const parseCSVRow = (row: string): string[] => {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < row.length; i++) {
+    const char = row[i];
+    const nextChar = row[i + 1];
+    
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        // Escaped quote
+        current += '"';
+        i++; // Skip next quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  
+  result.push(current.trim());
+  
+  // Remove quotes from the start and end of each field
+  return result.map(field => {
+    if (field.startsWith('"') && field.endsWith('"')) {
+      return field.slice(1, -1);
+    }
+    return field;
+  });
+};
 
 export default function EcoManager() {
   const { t } = useLang();
@@ -106,6 +310,8 @@ export default function EcoManager() {
       toast.success(t('bulk_upload_success'));
     },
     onError: (error: any) => {
+      console.error('Bulk upload error:', error);
+      console.error('Error response:', error.response?.data);
       const errorMsg = error.response?.data?.error || t('bulk_upload_fail');
       toast.error(errorMsg);
     }
@@ -214,7 +420,9 @@ export default function EcoManager() {
       const content = e.target?.result as string;
       try {
         const parsedData = parseCSV(content);
+        console.log('Parsed CSV data:', parsedData);
         if(parsedData.length > 0) {
+          console.log('Sending bulk data:', parsedData.length, 'records');
           bulkUpload.mutate(parsedData);
         }
       } catch (error: any) {
