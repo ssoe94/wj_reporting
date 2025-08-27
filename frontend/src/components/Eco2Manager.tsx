@@ -297,7 +297,7 @@ export default function EcoManager() {
                     <td className="px-3 py-1">{e.storage_action}</td>
                     <td className="px-3 py-1">{e.status}</td>
                     <td className="px-3 py-1 text-right flex justify-end gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => handleViewEco(e)} aria-label={t('view')}> <Eye className="w-4 h-4" /> </Button>
+                      <Button size="icon" variant="ghost" onClick={() => handleViewEco(e)} aria-label={t('view')}><Eye className="w-4 h-4" /></Button>
                       <Button size="icon" variant="ghost" onClick={async () => {
                         setErrors({});
                         try {
@@ -307,8 +307,8 @@ export default function EcoManager() {
                           setForm(e);
                         }
                         setDialogOpen(true);
-                      }} aria-label={t('edit')}> <Pencil className="w-4 h-4" /> </Button>
-                      <Button size="icon" variant="ghost" onClick={() => handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}> <Trash2 className="w-4 h-4" /> </Button>
+                      }} aria-label={t('edit')}><Pencil className="w-4 h-4" /></Button>
+                      <Button size="icon" variant="ghost" onClick={() => handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}><Trash2 className="w-4 h-4" /></Button>
                     </td>
                   </tr>
                 ))}
@@ -425,7 +425,7 @@ export default function EcoManager() {
                         <td className="px-3 py-1">{d.status}</td>
                         <td className="px-3 py-1">{eco.status}</td>
                       </tr>
-                    ))}
+                    )))}
                   </tbody>
                 </table>
               </div>
@@ -458,4 +458,3 @@ export default function EcoManager() {
     </>
   );
 }
-
