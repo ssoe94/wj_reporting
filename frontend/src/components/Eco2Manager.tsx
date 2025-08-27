@@ -18,18 +18,27 @@ const ctrlCls = "h-10 bg-white border border-gray-300 rounded-md px-3 text-sm fo
 const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-colors";
 
 // Basic CSV parser
+// More robust CSV parser that handles quoted strings
 const parseCSV = (content: string): Partial<Eco>[] => {
   const lines = content.trim().split(/\r\n|\n/);
   if (lines.length < 2) return [];
 
   const header = lines[0].split(',').map(h => h.trim());
-  const requiredHeaders = ['eco_no', 'eco_model', 'customer', 'status'];
+  const requiredHeaders = ['eco_no', 'eco_model', 'customer', 'status', 'prepared_date', 'issued_date'];
   if (!requiredHeaders.every(h => header.includes(h))) {
-    throw new Error('CSV must include eco_no, eco_model, customer, and status columns.');
+    throw new Error(`CSV must include ${requiredHeaders.join(', ')} columns.`);
   }
 
   return lines.slice(1).map(line => {
-    const values = line.split(',').map(v => v.trim());
+    // This regex handles commas inside quotes
+    const values = (line.match(/("[^"]*"|[^,]+)/g) || []).map(v => {
+      v = v.trim();
+      if (v.startsWith('"') && v.endsWith('"')) {
+        return v.slice(1, -1); // Remove quotes
+      }
+      return v;
+    });
+    
     const eco: any = {};
     header.forEach((key, index) => {
       if (values[index]) {
@@ -186,7 +195,13 @@ export default function EcoManager() {
   };
 
   const handleDownloadCSV = () => {
-    const headers = ['eco_no', 'eco_model', 'customer', 'status', 'change_reason', 'change_details', 'applicable_date', 'storage_action'];
+    const headers = [
+      'eco_no', 'eco_model', 'customer', 'status', 'form_type', 
+      'prepared_date', 'issued_date', 'received_date', 'applicable_date', 'due_date', 'close_date',
+      'change_reason', 'change_details', 'storage_action'
+    ];
+    const formatDate = (dateStr: string | null) => dateStr ? new Date(dateStr).toISOString().split('T')[0] : '';
+
     const csvContent = [
       headers.join(','),
       ...filteredEcos.map((e: Eco) => {
@@ -195,13 +210,20 @@ export default function EcoManager() {
           e.eco_model,
           e.customer,
           e.status,
+          e.form_type,
+          formatDate(e.prepared_date),
+          formatDate(e.issued_date),
+          formatDate(e.received_date),
+          formatDate(e.applicable_date),
+          formatDate(e.due_date),
+          formatDate(e.close_date),
           `"${e.change_reason || ''}"`, 
           `"${e.change_details || ''}"`, 
-          e.applicable_date ? new Date(e.applicable_date).toISOString().split('T')[0] : '',
           `"${e.storage_action || ''}"`, 
         ].join(',');
       })
-    ].join('\n');
+    ].join('
+');
 
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
