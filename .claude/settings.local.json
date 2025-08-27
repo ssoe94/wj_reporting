@@ -73,7 +73,8 @@
       "Read(/C:\\Users\\ssoe9/**)",
       "Read(/C:\\Users\\ssoe9/**)",
       "Read(/D:\\d\\develop\\production-site/**)",
-      "Read(/D:\\d\\develop\\production-site/**)"
+      "Read(/D:\\d\\develop\\production-site/**)",
+      "Bash(git log:*)"
     ],
     "deny": [],
     "ask": [],

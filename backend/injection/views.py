@@ -436,47 +436,91 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
             if 'part_details' in item and item['part_details']:
                 part_details_map[i] = item['part_details']
         
-        serializer = self.get_serializer(data=eco_data_list, many=True)
-        if serializer.is_valid():
-            eco_instances = serializer.save()
-            
-            # Part Details 생성
-            created_parts = 0
-            for i, eco_instance in enumerate(eco_instances):
-                if i in part_details_map:
-                    for part_data in part_details_map[i]:
-                        try:
-                            # EcoPartSpec 생성 또는 가져오기
-                            part_spec, created = EcoPartSpec.objects.get_or_create(
-                                part_no=part_data.get('part_no', ''),
-                                defaults={
-                                    'description': part_data.get('description', ''),
-                                    'model_code': eco_instance.eco_model or '',
-                                }
-                            )
+        # ECO 인스턴스들을 get_or_create 방식으로 처리
+        eco_instances = []
+        created_count = 0
+        updated_count = 0
+        
+        for i, eco_data in enumerate(eco_data_list):
+            eco_no = eco_data.get('eco_no')
+            if not eco_no:
+                continue
+                
+            try:
+                # ECO 번호로 기존 인스턴스 확인 후 get_or_create
+                eco_instance, created = EngineeringChangeOrder.objects.get_or_create(
+                    eco_no=eco_no,
+                    defaults=eco_data
+                )
+                
+                # 기존 ECO가 있으면 데이터 업데이트
+                if not created:
+                    for key, value in eco_data.items():
+                        if key != 'eco_no' and value:  # eco_no는 제외하고, 값이 있는 필드만 업데이트
+                            setattr(eco_instance, key, value)
+                    eco_instance.save()
+                    updated_count += 1
+                else:
+                    created_count += 1
+                    
+                eco_instances.append(eco_instance)
+                
+            except Exception as e:
+                print(f"Error processing ECO {eco_no}: {e}")
+                continue
+        
+        # Part Details 생성
+        created_parts = 0
+        for i, eco_instance in enumerate(eco_instances):
+            if i in part_details_map:
+                for part_data in part_details_map[i]:
+                    try:
+                        # EcoPartSpec 생성 또는 가져오기
+                        part_spec, created = EcoPartSpec.objects.get_or_create(
+                            part_no=part_data.get('part_no', ''),
+                            defaults={
+                                'description': part_data.get('description', ''),
+                                'model_code': eco_instance.eco_model or '',
+                            }
+                        )
+                        
+                        # EcoDetail 생성 또는 업데이트
+                        detail, created = EcoDetail.objects.get_or_create(
+                            eco_header=eco_instance,
+                            eco_part_spec=part_spec,
+                            defaults={
+                                'change_reason': eco_instance.change_reason or '',
+                                'change_details': part_data.get('change_details', ''),
+                                'status': part_data.get('status', 'OPEN')
+                            }
+                        )
+                        
+                        # 기존 EcoDetail이 있으면 업데이트
+                        if not created:
+                            detail.change_reason = eco_instance.change_reason or ''
+                            detail.change_details = part_data.get('change_details', '')
+                            detail.status = part_data.get('status', 'OPEN')
+                            detail.save()
                             
-                            # EcoDetail 생성
-                            EcoDetail.objects.get_or_create(
-                                eco_header=eco_instance,
-                                eco_part_spec=part_spec,
-                                defaults={
-                                    'change_reason': eco_instance.change_reason or '',
-                                    'change_details': part_data.get('change_details', ''),
-                                    'status': part_data.get('status', 'OPEN')
-                                }
-                            )
-                            created_parts += 1
-                            
-                        except Exception as e:
-                            print(f"Error creating part detail for ECO {eco_instance.eco_no}: {e}")
-                            continue
-            
-            print(f"Created {len(eco_instances)} ECOs and {created_parts} part details")
-            return Response(serializer.data, status=201)
-        else:
-            print("Bulk upload validation error:", serializer.errors)
-            print("Request data sample:", request.data[:2] if request.data else "No data")
-            return Response({"error": "Validation failed", "details": serializer.errors}, status=400)
+                        created_parts += 1
+                        
+                    except Exception as e:
+                        print(f"Error creating part detail for ECO {eco_instance.eco_no}: {e}")
+                        continue
+        
+        print(f"Created {created_count} ECOs, updated {updated_count} ECOs, processed {created_parts} part details")
+        
+        # 응답 데이터 직렬화
+        serializer = self.get_serializer(eco_instances, many=True)
+        return Response({
+            'data': serializer.data,
+            'summary': {
+                'created_ecos': created_count,
+                'updated_ecos': updated_count,
+                'total_ecos': len(eco_instances),
+                'processed_parts': created_parts
+            }
+        }, status=201)
 
     @action(detail=False, methods=["get"], url_path="by-part")
     def by_part(self, request):
