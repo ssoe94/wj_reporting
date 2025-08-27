@@ -184,6 +184,38 @@ const parseCSV = (content: string): Partial<Eco>[] => {
       eco.part_details = extractPartDetailsFromChangeDetails(eco.change_details);
     }
     
+    // part_details 컬럼이 있으면 직접 사용 (CSV에서 다운로드한 경우)
+    if (eco.part_details && typeof eco.part_details === 'string') {
+      try {
+        // part_details가 문자열인 경우 파싱
+        if (eco.part_details.includes('Part No:')) {
+          const partDetailsArray: any[] = [];
+          const partSegments = eco.part_details.split(' | ');
+          
+          partSegments.forEach(segment => {
+            const partNoMatch = segment.match(/Part No:\s*([^,]+)/);
+            const descMatch = segment.match(/Description:\s*([^,]+)/);
+            const changeMatch = segment.match(/Change:\s*([^,]+)/);
+            const statusMatch = segment.match(/Status:\s*(.+)/);
+            
+            if (partNoMatch) {
+              partDetailsArray.push({
+                part_no: partNoMatch[1].trim(),
+                description: descMatch ? descMatch[1].trim() : '',
+                change_details: changeMatch ? changeMatch[1].trim() : '',
+                status: statusMatch ? statusMatch[1].trim() : 'OPEN'
+              });
+            }
+          });
+          
+          eco.part_details = partDetailsArray;
+        }
+      } catch (error) {
+        console.warn('Failed to parse part_details:', error);
+        // 파싱 실패 시 change_details에서 추출한 정보 사용
+      }
+    }
+    
     return eco;
   });
 };
@@ -328,7 +360,13 @@ export default function EcoManager() {
     const { details, ...headerRaw } = payload as any;
     const header: Record<string, any> = {};
     Object.entries(headerRaw).forEach(([k, v]) => {
-      if (v !== '' && v !== null && v !== undefined) header[k] = v;
+      if (v !== '' && v !== null && v !== undefined) {
+        // CSV에서 \\n을 실제 개행문자로 복원
+        if (typeof v === 'string' && v.includes('\\n')) {
+          v = v.replace(/\\n/g, '\n');
+        }
+        header[k] = v;
+      }
     });
     (async () => {
       try {
@@ -376,32 +414,50 @@ export default function EcoManager() {
     const headers = [
       'eco_no', 'eco_model', 'customer', 'status', 'form_type', 
       'prepared_date', 'issued_date', 'received_date', 'applicable_date', 'due_date', 'close_date',
-      'change_reason', 'change_details', 'storage_action'
+      'change_reason', 'change_details', 'storage_action', 'part_details'
     ];
     const formatDate = (dateStr: string | null) => dateStr ? new Date(dateStr).toISOString().split('T')[0] : '';
+    
+    // CSV에서 텍스트를 안전하게 처리하는 함수 (따옴표 이스케이프 및 개행문자 처리)
+    const escapeCSVField = (text: string | null | undefined) => {
+      if (!text) return '""';
+      // 개행문자를 \\n으로 변환하고, 따옴표를 이중따옴표로 이스케이프
+      const escaped = String(text).replace(/\r\n|\r|\n/g, '\\n').replace(/"/g, '""');
+      return `"${escaped}"`;
+    };
 
-    const csvContent = [
-      headers.join(','),
-      ...filteredEcos.map((e: Eco) => {
-        return [
-          e.eco_no,
-          e.eco_model,
-          e.customer,
-          e.status,
-          e.form_type,
-          formatDate(e.prepared_date),
-          formatDate(e.issued_date),
-          formatDate(e.received_date),
-          formatDate(e.applicable_date),
-          formatDate(e.due_date),
-          formatDate(e.close_date),
-          `"${e.change_reason || ''}"`,
-          `"${e.change_details || ''}"`,
-          `"${e.storage_action || ''}"`,
-        ].join(',');
-      })
-    ].join('\n');
+    const csvRows: string[] = [];
+    csvRows.push(headers.join(','));
 
+    filteredEcos.forEach((e: Eco) => {
+      // Part Details 정보 추출
+      const allDetails = [...((e as any).details || []), ...((e as any).part_details || [])];
+      const partDetailsText = allDetails.map(detail => 
+        `Part No: ${detail.part_no || ''}, Description: ${detail.description || ''}, Change: ${detail.change_details || ''}, Status: ${detail.status || ''}`
+      ).join(' | ');
+
+      const row = [
+        escapeCSVField(e.eco_no),
+        escapeCSVField(e.eco_model),
+        escapeCSVField(e.customer),
+        escapeCSVField(e.status),
+        escapeCSVField(e.form_type),
+        escapeCSVField(formatDate(e.prepared_date)),
+        escapeCSVField(formatDate(e.issued_date)),
+        escapeCSVField(formatDate(e.received_date)),
+        escapeCSVField(formatDate(e.applicable_date)),
+        escapeCSVField(formatDate(e.due_date)),
+        escapeCSVField(formatDate(e.close_date)),
+        escapeCSVField(e.change_reason),
+        escapeCSVField(e.change_details),
+        escapeCSVField(e.storage_action),
+        escapeCSVField(partDetailsText)
+      ].join(',');
+      
+      csvRows.push(row);
+    });
+
+    const csvContent = csvRows.join('\n');
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
