@@ -28,6 +28,7 @@ import SummaryPage from "./pages/summary";
 // 실제 페이지 컴포넌트 임포트
 import ModelsPage from './pages/models';
 import EcoPage from './pages/eco';
+import Eco2Page from './pages/eco2';
 import AnalysisPage from './pages/analysis';
 import AssemblyPage from './pages/assembly';
 import SalesInventoryPage from './pages/sales/Inventory';
@@ -86,6 +87,7 @@ export function useNavItems() {
       icon: DraftingIcon,
       children: [
         { to: "/eco", label: t('nav_eco_management'), icon: ClipboardCheck },
+        { to: "/eco2", label: "ECO 통합검색", icon: ClipboardCheck },
         { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
       ],
     },
@@ -160,6 +162,7 @@ function AppContent() {
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
   else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_dashboard');
   else if (pathname.startsWith('/sales')) breadcrumbLabel = t('nav_sales');
+  else if (pathname.startsWith('/eco2')) breadcrumbLabel = 'ECO 통합검색';
   else if (pathname.startsWith('/eco')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/models')) breadcrumbLabel = t('nav_model_management');
 
@@ -412,6 +415,7 @@ function AppContent() {
           <Route path="/" element={<PrivateRoute><AnalysisPage /></PrivateRoute>} />
           <Route path="/models" element={<PrivateRoute><ModelsPage /></PrivateRoute>} />
           <Route path="/eco" element={<PrivateRoute><EcoPage /></PrivateRoute>} />
+          <Route path="/eco2" element={<PrivateRoute><Eco2Page /></PrivateRoute>} />
           <Route path="/analysis" element={<PrivateRoute><AnalysisPage /></PrivateRoute>} />
 
           {/* Injection page (single) */}

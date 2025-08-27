@@ -208,6 +208,8 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     models_desc: '모델 및 제품 정보를 관리합니다.',
     models_search_placeholder: '모델 또는 Part 검색...',
     eco_desc: 'Engineering Change Order를 관리합니다.',
+    eco2Title: 'ECO 통합검색',
+    eco2_desc: 'ECO编号, 适用型号, Part no. 통합 검색이 가능합니다.',
     new_part_spec_btn: '새 Part Spec',
     // 사이드바 네비게이션 번역
     nav_overview: '종합',
@@ -463,6 +465,8 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     models_desc: '管理型号及产品信息。',
     models_search_placeholder: '搜索型号或部件...',
     eco_desc: '管理Engineering Change Order。',
+    eco2Title: 'ECO 统合搜索',
+    eco2_desc: 'ECO编号, 适用型号, Part no. 统合搜索功能。',
     new_part_spec_btn: '新增Part Spec',
     // 사이드바 네비게이션 번역
     nav_overview: '综合',
