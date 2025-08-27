@@ -197,7 +197,7 @@ export default function EcoManager() {
           e.status,
           `"${e.change_reason || ''}"`, 
           `"${e.change_details || ''}"`, 
-          e.applicable_date || '',
+          e.applicable_date ? new Date(e.applicable_date).toISOString().split('T')[0] : '',
           `"${e.storage_action || ''}"`, 
         ].join(',');
       })
