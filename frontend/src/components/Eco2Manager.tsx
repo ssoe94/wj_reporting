@@ -19,35 +19,7 @@ const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-c
 
 // Basic CSV parser
 // More robust CSV parser that handles quoted strings
-const parseCSV = (content: string): Partial<Eco>[] => {
-  const lines = content.trim().split(/\r\n|\n/);
-  if (lines.length < 2) return [];
-
-  const header = lines[0].split(',').map(h => h.trim());
-  const requiredHeaders = ['eco_no', 'eco_model', 'customer', 'status', 'prepared_date', 'issued_date'];
-  if (!requiredHeaders.every(h => header.includes(h))) {
-    throw new Error(`CSV must include ${requiredHeaders.join(', ')} columns.`);
-  }
-
-  return lines.slice(1).map(line => {
-    // This regex handles commas inside quotes
-    const values = (line.match(/("[^"]*"|[^,]+)/g) || []).map(v => {
-      v = v.trim();
-      if (v.startsWith('"') && v.endsWith('"')) {
-        return v.slice(1, -1); // Remove quotes
-      }
-      return v;
-    });
-    
-    const eco: any = {};
-    header.forEach((key, index) => {
-      if (values[index]) {
-        eco[key] = values[index];
-      }
-    });
-    return eco;
-  });
-};
+const parseCSV = (content: string): Partial<Eco>[] => { const lines = content.trim().split(/\r\n|\n/); if (lines.length < 2) return []; const header = lines[0].split(',').map(h => h.trim()); console.log("CSV Header:", header); // Debug log const requiredHeaders = ['eco_no', 'eco_model', 'customer', 'status', 'prepared_date', 'issued_date']; if (!requiredHeaders.every(h => header.includes(h))) { throw new Error(`CSV must include ${requiredHeaders.join(', ')} columns.`); } return lines.slice(1).map((line, index) => { // This regex handles commas inside quotes const values = (line.match(/("[^"]*"|[^,]+)/g) || []).map(v => { v = v.trim(); if (v.startsWith('"') && v.endsWith('"')) { return v.slice(1, -1); // Remove quotes } return v; }); console.log(`Row ${index + 1} values:`, values); // Debug log const eco: any = {}; header.forEach((key, index) => { if (values[index]) { eco[key] = values[index]; } }); return eco; }); };
 
 export default function EcoManager() {
   const { t } = useLang();
