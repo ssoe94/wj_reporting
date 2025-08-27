@@ -93,7 +93,7 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
             </div>
             
             {/* 날짜 정보 */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="prepared_date">{t('prepared_date')}</Label>
                 <Input id="prepared_date" type="date" value={form.prepared_date || ''} onChange={(e)=>setForm({...form, prepared_date:e.target.value})} />
@@ -101,10 +101,6 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
               <div>
                 <Label htmlFor="issued_date">{t('issued_date')}</Label>
                 <Input id="issued_date" type="date" value={form.issued_date || ''} onChange={(e)=>setForm({...form, issued_date:e.target.value})} className={errClass('issued_date')} />
-              </div>
-              <div>
-                <Label htmlFor="due_date">{t('due_date')}</Label>
-                <Input id="due_date" type="date" value={form.due_date || ''} onChange={(e)=>setForm({...form, due_date:e.target.value})} />
               </div>
               <div>
                 <Label htmlFor="applicable_date">{t('applicable_date')}</Label>
