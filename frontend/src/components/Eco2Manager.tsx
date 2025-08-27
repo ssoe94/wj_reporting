@@ -41,14 +41,14 @@ const parseCSV = (content: string): Partial<Eco>[] => {
 };
 
 export default function EcoManager() {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const [keyword, setKeyword] = useState('');
   const [mode, setMode] = useState<'eco'|'part'>('eco');
   const [statusFilter, setStatusFilter] = useState<'ALL'|'OPEN'|'CLOSED'>('ALL');
   const [selectedParts, setSelectedParts] = useState<string[]>([]);
   const [selectedPart, setSelectedPart] = useState<string>('');
   const { data: ecos = [], isLoading: ecosLoading } = mode === 'eco' ? useEcos(keyword) : useEcosByPart(selectedPart || '');
-  const filteredEcos = statusFilter === 'ALL' ? ecos : ecos.filter((e: any) => e.status === statusFilter);
+  const filteredEcos = statusFilter === 'ALL' ? ecos : ecos.filter((e: Eco) => e.status === statusFilter);
   const { data: partCounts = [] } = usePartEcoCount(mode === 'part' ? keyword : '');
   const ecosBySelectedParts = useEcosByParts(selectedParts);
   const queryClient = useQueryClient();
@@ -189,8 +189,8 @@ export default function EcoManager() {
     const headers = ['eco_no', 'eco_model', 'customer', 'status', 'change_reason', 'change_details', 'applicable_date', 'storage_action', 'part_numbers'];
     const csvContent = [
       headers.join(','),
-      ...filteredEcos.map(e => {
-        const partNumbers = (e.details || []).map(d => d.part_no).join(';');
+      ...filteredEcos.map((e: Eco) => {
+        const partNumbers = (e.details || []).map((d: {part_no: string}) => d.part_no).join(';');
         return [
           e.eco_no,
           e.eco_model,
@@ -258,12 +258,12 @@ export default function EcoManager() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => fileInputRef.current?.click()} variant="outline" disabled={bulkUpload.isPending}>
+          <Button size="sm" onClick={() => fileInputRef.current?.click()} variant="ghost" disabled={bulkUpload.isPending}>
             <Upload className="w-4 h-4 mr-2" />
             {bulkUpload.isPending ? t('uploading') : t('bulk_upload')}
           </Button>
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".csv" />
-          <Button size="sm" onClick={handleDownloadCSV} variant="outline">
+          <Button size="sm" onClick={handleDownloadCSV} variant="ghost">
             <Download className="w-4 h-4 mr-2" />
             {t('download_csv')}
           </Button>
@@ -288,11 +288,11 @@ export default function EcoManager() {
               <tbody>
                 {ecosLoading ? (
                   <tr><td colSpan={7} className="text-center py-4">Loading...</td></tr>
-                ) : filteredEcos.map((e: any) => (
+                ) : filteredEcos.map((e: Eco) => (
                   <tr key={e.id} className={rowCls}>
                     <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={() => handleViewEco(e)}>{e.eco_no}</td>
                     <td className="px-3 py-1">{e.eco_model}</td>
-                    <td className="px-3 py-1 font-mono text-xs">{(e.details || []).map((d: any) => d.part_no).join(', ')}</td>
+                    <td className="px-3 py-1 font-mono text-xs">{(e.details || []).map((d: { part_no: string }) => d.part_no).join(', ')}</td>
                     <td className="px-3 py-1">{e.applicable_date}</td>
                     <td className="px-3 py-1">{e.storage_action}</td>
                     <td className="px-3 py-1">{e.status}</td>
@@ -376,8 +376,8 @@ export default function EcoManager() {
                         </thead>
                         <tbody>
                           {selectedParts.map(partNo => {
-                            const rows = ecosBySelectedParts.data?.filter((eco: any) => statusFilter === 'ALL' || eco.status === statusFilter).flatMap((eco: any) =>
-                              (eco.details || []).filter((d: any) => d.part_no.toUpperCase() === partNo.toUpperCase()).map((d: any) => (
+                            const rows = ecosBySelectedParts.data?.filter((eco: Eco) => statusFilter === 'ALL' || eco.status === statusFilter).flatMap((eco: Eco) =>
+                              (eco.details || []).filter((d: {part_no: string}) => d.part_no.toUpperCase() === partNo.toUpperCase()).map((d: any) => (
                                 {
                                   part_no: d.part_no,
                                   eco_id: eco.id,
@@ -388,7 +388,7 @@ export default function EcoManager() {
                                 }
                               ))
                             ) || [];
-                            return rows.map((row, idx) => (
+                            return rows.map((row: any, idx: number) => (
                               <tr key={`${row.part_no}-${row.eco_no}`} className={rowCls}>
                                 {idx === 0 && (
                                   <td className="px-3 py-1 font-mono text-center" rowSpan={rows.length}>{row.part_no}</td>
@@ -418,14 +418,14 @@ export default function EcoManager() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredEcos.flatMap((eco: any) => (eco.details || []).filter((d: any) => d.part_no === selectedPart).map((d: any) => (
+                    {filteredEcos.flatMap((eco: Eco) => (eco.details || []).filter((d: {part_no: string}) => d.part_no === selectedPart).map((d: any) => (
                       <tr key={eco.id + '-' + d.id} className="border-t">
                         <td className="px-3 py-1 font-mono">{eco.eco_no}</td>
                         <td className="px-3 py-1 text-xs">{d.change_details}</td>
                         <td className="px-3 py-1">{d.status}</td>
                         <td className="px-3 py-1">{eco.status}</td>
                       </tr>
-                    )))}
+                    ))}
                   </tbody>
                 </table>
               </div>
