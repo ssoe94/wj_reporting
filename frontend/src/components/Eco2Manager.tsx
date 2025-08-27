@@ -277,13 +277,31 @@ export default function Eco2Manager() {
           {selectedSuggestions.map((item) => (
             <div
               key={`${item.type}-${item.value}`}
-              className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm"
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-medium ${
+                item.type === 'part_no'
+                  ? 'bg-purple-100 text-purple-800'
+                  : item.type === 'eco_no'
+                  ? 'bg-blue-100 text-blue-800'
+                  : item.type === 'eco_model'
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-gray-100 text-gray-800'
+              }`}
             >
               <Tag className="w-3 h-3" />
-              <span className="font-medium">{item.label}</span>
+              <span className={`${item.type === 'part_no' ? 'font-mono text-xs' : ''}`}>
+                {item.label}
+              </span>
               <button
                 onClick={() => handleRemoveSelected(item)}
-                className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
+                className={`ml-1 rounded-full p-0.5 ${
+                  item.type === 'part_no'
+                    ? 'hover:bg-purple-200'
+                    : item.type === 'eco_no'
+                    ? 'hover:bg-blue-200'
+                    : item.type === 'eco_model'
+                    ? 'hover:bg-green-200'
+                    : 'hover:bg-gray-200'
+                }`}
                 title={lang === 'ko' ? '제거' : '移除'}
               >
                 <X className="w-3 h-3" />
@@ -326,93 +344,185 @@ export default function Eco2Manager() {
         )}
       </div>
 
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="px-3 py-2 text-left">{t('eco_no')}</th>
-                <th className="px-3 py-2 text-left">{t('eco_model')}</th>
-                <th className="px-3 py-2 text-left">{t('customer')}</th>
-                <th className="px-3 py-2 text-left">{t('change_reason')}</th>
-                <th className="px-3 py-2 text-left">{t('issued_date')}</th>
-                <th className="px-3 py-2 text-left">{t('status')}</th>
-                <th className="px-3 py-2 text-left">Part 개수</th>
-                <th className="px-3 py-2 text-left"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEcos.map((e: any)=>(
-                <tr key={e.id} className={rowCls}>
-                  <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline hover:text-blue-800" 
-                      onClick={() => handleViewEco(e)}
-                      title={lang === 'ko' ? '클릭하여 조회' : '点击查看'}>
-                    {e.eco_no}
-                  </td>
-                  <td className="px-3 py-1">{e.eco_model || '-'}</td>
-                  <td className="px-3 py-1">{e.customer || '-'}</td>
-                  <td className="px-3 py-1 max-w-[200px] truncate">{e.change_reason}</td>
-                  <td className="px-3 py-1">{e.issued_date}</td>
-                  <td className="px-3 py-1">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      e.status === 'OPEN' ? 'bg-green-100 text-green-800' :
-                      e.status === 'CLOSED' ? 'bg-gray-100 text-gray-800' :
-                      'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {e.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-1 text-center">
-                    {e.details ? e.details.length : 0}
-                  </td>
-                  <td className="px-3 py-1 text-right flex justify-end gap-1">
-                    <Button 
-                      size="icon" 
-                      variant="ghost" 
-                      onClick={() => handleViewEco(e)} 
-                      aria-label={lang === 'ko' ? '조회' : '查看'}
-                      title={lang === 'ko' ? '조회' : '查看'}
-                    >
-                      <Eye className="w-4 h-4 text-blue-600" />
-                    </Button>
-                    <Button size="icon" variant="ghost" onClick={async ()=>{
-                      setErrors({});
-                      try{
-                        const { data } = await api.get(`ecos/${e.id}/`);
-                        setForm(data);
-                      }catch{
-                        setForm(e);
+      {/* 카드 스타일 ECO 리스트 */}
+      <div className="space-y-4">
+        {filteredEcos.map((e: any) => (
+          <div key={e.id} className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-200 overflow-hidden">
+            <div className="p-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* 왼쪽: 기본 정보 */}
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 
+                        className="text-lg font-bold text-blue-600 cursor-pointer hover:text-blue-800 transition-colors"
+                        onClick={() => handleViewEco(e)}
+                        title={lang === 'ko' ? '클릭하여 조회' : '点击查看'}
+                      >
+                        {e.eco_no}
+                      </h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {t('eco_no')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                        e.status === 'OPEN' ? 'bg-green-100 text-green-800' :
+                        e.status === 'CLOSED' ? 'bg-gray-100 text-gray-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {e.status}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">{t('eco_model')}</p>
+                      <p className="text-sm text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded mt-1">
+                        {e.eco_model || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">{t('customer')}</p>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {e.customer || '-'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 중앙: Part 정보 */}
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-gray-700">{t('related_part_no')}</p>
+                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                        {e.details?.length || 0}개
+                      </span>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 max-h-20 overflow-y-auto">
+                      {e.details?.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {e.details.slice(0, 4).map((detail: any, idx: number) => (
+                            <span 
+                              key={idx}
+                              className="inline-block bg-white text-gray-700 px-2 py-1 rounded text-xs font-mono border"
+                            >
+                              {detail.part_no}
+                            </span>
+                          ))}
+                          {e.details.length > 4 && (
+                            <span className="inline-block bg-gray-200 text-gray-600 px-2 py-1 rounded text-xs">
+                              +{e.details.length - 4}{t('more_count')}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500 text-center py-2">{t('no_parts_info')}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">{t('change_reason')}</p>
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 max-h-16 overflow-y-auto">
+                      <p className="text-xs text-gray-700">
+                        {e.change_reason || t('change_reason_missing')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 오른쪽: 날짜 및 액션 */}
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">{t('issued_date')}</p>
+                    <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-lg">
+                      {e.issued_date 
+                        ? new Date(e.issued_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
+                        : t('not_issued')
                       }
-                      setDialogOpen(true);
-                    }} aria-label={t('edit')} title={t('edit')}>
-                      <Pencil className="w-4 h-4 text-gray-600" />
-                    </Button>
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">{t('applicable_date')}</p>
+                    <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-lg">
+                      {e.applicable_date 
+                        ? new Date(e.applicable_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
+                        : t('not_set')
+                      }
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 pt-4">
                     <Button 
-                      size="icon" 
-                      variant="ghost" 
-                      onClick={()=>handleDelete(e)} 
-                      aria-label={t('delete')} 
-                      title={t('delete')}
-                      disabled={del.isPending}
+                      className="w-full" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleViewEco(e)}
                     >
-                      <Trash2 className="w-4 h-4 text-red-600" />
+                      <Eye className="w-4 h-4 mr-2" />
+                      {t('detail_view')}
                     </Button>
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && filteredEcos.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-gray-500">
-                    {keyword 
-                      ? (lang === 'ko' ? '검색 결과가 없습니다.' : '没有搜索结果。')
-                      : (lang === 'ko' ? 'ECO 데이터가 없습니다.' : 'ECO 数据为空。')
-                    }
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                    
+                    <div className="flex gap-2">
+                      <Button 
+                        className="flex-1" 
+                        variant="outline" 
+                        size="sm"
+                        onClick={async () => {
+                          setErrors({});
+                          try{
+                            const { data } = await api.get(`ecos/${e.id}/`);
+                            setForm(data);
+                          }catch{
+                            setForm(e);
+                          }
+                          setDialogOpen(true);
+                        }}
+                      >
+                        <Pencil className="w-4 h-4 mr-1" />
+                        {t('edit')}
+                      </Button>
+                      <Button 
+                        className="flex-1" 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleDelete(e)}
+                        disabled={del.isPending}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        {t('delete')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {!isLoading && filteredEcos.length === 0 && (
+          <div className="bg-white rounded-xl shadow-lg p-12 text-center">
+            <div className="text-gray-400 mb-4">
+              <Search className="w-16 h-16 mx-auto" />
+            </div>
+            <p className="text-lg text-gray-600 mb-2">
+              {keyword || selectedSuggestions.length > 0
+                ? (lang === 'ko' ? '검색 결과가 없습니다.' : '没有搜索结果。')
+                : (lang === 'ko' ? 'ECO 데이터가 없습니다.' : 'ECO 数据为空。')
+              }
+            </p>
+            <p className="text-sm text-gray-500">
+              {lang === 'ko' 
+                ? '다른 검색어를 시도해보세요.' 
+                : '请尝试其他搜索词。'
+              }
+            </p>
+          </div>
+        )}
       </div>
 
       <EcoForm

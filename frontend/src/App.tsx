@@ -87,7 +87,7 @@ export function useNavItems() {
       icon: DraftingIcon,
       children: [
         { to: "/eco", label: t('nav_eco_management'), icon: ClipboardCheck },
-        { to: "/eco2", label: "ECO 통합검색", icon: ClipboardCheck },
+        { to: "/eco2", label: t('nav_eco2'), icon: ClipboardCheck },
         { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
       ],
     },
@@ -162,7 +162,7 @@ function AppContent() {
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
   else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_dashboard');
   else if (pathname.startsWith('/sales')) breadcrumbLabel = t('nav_sales');
-  else if (pathname.startsWith('/eco2')) breadcrumbLabel = 'ECO 통합검색';
+  else if (pathname.startsWith('/eco2')) breadcrumbLabel = t('nav_eco2');
   else if (pathname.startsWith('/eco')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/models')) breadcrumbLabel = t('nav_model_management');
 

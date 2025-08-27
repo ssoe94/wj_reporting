@@ -210,6 +210,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     eco_desc: 'Engineering Change Order를 관리합니다.',
     eco2Title: 'ECO 통합검색',
     eco2_desc: 'ECO编号, 适用型号, Part no. 통합 검색이 가능합니다.',
+    nav_eco2: 'ECO 관리2',
     new_part_spec_btn: '새 Part Spec',
     // 사이드바 네비게이션 번역
     nav_overview: '종합',
@@ -280,6 +281,14 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     add_new_part_spec: '새 Part Spec 추가',
     new_part_added_success: '새 Part가 추가되었습니다',
     defect_rate: '불량률',
+    
+    // ECO2 카드 UI 번역
+    related_part_no: '연관 Part No.',
+    no_parts_info: 'Part 정보 없음',
+    change_reason_missing: '변경 사유 미입력',
+    not_issued: '미발표',
+    not_set: '미설정',
+    more_count: '개 더',
   },
   zh: {
     title: '注塑生产管理系统',
@@ -496,6 +505,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     eco_desc: '管理Engineering Change Order。',
     eco2Title: 'ECO 统合搜索',
     eco2_desc: 'ECO编号, 适用型号, Part no. 统合搜索功能。',
+    nav_eco2: 'ECO管理2',
     new_part_spec_btn: '新增Part Spec',
     // 사이드바 네비게이션 번역
     nav_overview: '综合',
@@ -566,6 +576,14 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     add_new_part_spec: '添加新零件规格',
     new_part_added_success: '新零件已添加',
     defect_rate: '不良率',
+    
+    // ECO2 카드 UI 번역
+    related_part_no: '相关零件号',
+    no_parts_info: '无零件信息',
+    change_reason_missing: '未输入变更理由',
+    not_issued: '未发布',
+    not_set: '未设置',
+    more_count: '个更多',
   },
 };
 

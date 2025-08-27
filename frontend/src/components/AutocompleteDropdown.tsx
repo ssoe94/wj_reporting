@@ -134,15 +134,27 @@ export default function AutocompleteDropdown({
               {/* 콘텐츠 */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-gray-900 truncate">
+                  <span className={`font-medium truncate ${
+                    isSelected ? 'text-blue-700' : 'text-gray-900'
+                  } ${suggestion.type === 'part_no' ? 'font-mono text-sm' : ''}`}>
                     {suggestion.label}
                   </span>
-                  <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    suggestion.type === 'part_no' 
+                      ? 'bg-purple-100 text-purple-700'
+                      : suggestion.type === 'eco_no'
+                      ? 'bg-blue-100 text-blue-700'
+                      : suggestion.type === 'eco_model'
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-200 text-gray-600'
+                  }`}>
                     {getTypeLabel(suggestion.type, lang)}
                   </span>
                 </div>
                 {suggestion.description && (
-                  <div className="text-sm text-gray-500 truncate mt-1">
+                  <div className={`text-sm truncate mt-1 ${
+                    isSelected ? 'text-blue-600' : 'text-gray-500'
+                  }`}>
                     {suggestion.description}
                   </div>
                 )}
