@@ -130,7 +130,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
             onChange={(e) => handleChange('line_no', e.target.value)}
             className="block w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 transition"
           >
-            <option value="">라인 선택</option>
+            <option value="">{t('line_select')}</option>
             <option value="Line A">Line A</option>
             <option value="Line B">Line B</option>
             <option value="Line C">Line C</option>
@@ -171,7 +171,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
             })()}
             getOptionLabel={(opt) => {
               if ('isAddNew' in opt && opt.isAddNew) {
-                return `➕ "${opt.part_no}" 새 Part 추가`;
+                return `➕ "${opt.part_no}" ${t('add_new_part_prompt')}`;
               }
               return `${opt.part_no}`;
             }}
@@ -200,7 +200,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
                   <li {...props} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
                     <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
                       <Plus className="h-3 w-3" />
-                      <span>"{option.part_no}" 새 Part 추가</span>
+                      <span>"{option.part_no}" {t('add_new_part_prompt')}</span>
                     </div>
                   </li>
                 );
@@ -224,10 +224,10 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
 
       {/* 생산 수량 정보 */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-green-700">생산 수량</h3>
+        <h3 className="text-lg font-medium text-green-700">{t('production_qty_section')}</h3>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <div>
-            <Label htmlFor="plan_qty">계획수량 *</Label>
+            <Label htmlFor="plan_qty">{t('plan_qty_required')}</Label>
             <Input
               type="number"
               min="0"
@@ -239,7 +239,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
           </div>
 
           <div>
-            <Label htmlFor="input_qty">투입수량</Label>
+            <Label htmlFor="input_qty">{t('input_qty')}</Label>
             <Input
               type="number"
               min="0"
@@ -250,7 +250,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
           </div>
 
           <div>
-            <Label htmlFor="actual_qty">생산수량 *</Label>
+            <Label htmlFor="actual_qty">{t('production_qty_required')}</Label>
             <Input
               type="number"
               min="0"
@@ -262,7 +262,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
           </div>
 
           <div>
-            <Label htmlFor="injection_defect">입고불량-사출</Label>
+            <Label htmlFor="injection_defect">{t('incoming_defect_injection')}</Label>
             <Input
               type="number"
               min="0"
@@ -273,7 +273,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
           </div>
 
           <div>
-            <Label htmlFor="outsourcing_defect">입고불량-외주</Label>
+            <Label htmlFor="outsourcing_defect">{t('incoming_defect_outsourcing')}</Label>
             <Input
               type="number"
               min="0"
@@ -284,7 +284,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
           </div>
 
           <div>
-            <Label htmlFor="processing_defect">가공불량</Label>
+            <Label htmlFor="processing_defect">{t('processing_defect')}</Label>
             <Input
               type="number"
               min="0"
@@ -298,10 +298,10 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
 
       {/* 시간 및 인원 정보 */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-green-700">시간 및 인원</h3>
+        <h3 className="text-lg font-medium text-green-700">{t('time_and_personnel')}</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
-            <Label htmlFor="total_time">총시간 (분) *</Label>
+            <Label htmlFor="total_time">{t('total_time_min_required')}</Label>
             <Input
               type="number"
               min="0"
@@ -313,7 +313,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
           </div>
 
           <div>
-            <Label htmlFor="idle_time">부동시간 (분)</Label>
+            <Label htmlFor="idle_time">{t('idle_time_min')}</Label>
             <Input
               type="number"
               min="0"
@@ -324,7 +324,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
           </div>
 
           <div>
-            <Label>작업시간 (분)</Label>
+            <Label>{t('operation_time_min')}</Label>
             <Input
               type="number"
               value={calculatedValues.actualOperationTime}
@@ -334,7 +334,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
           </div>
 
           <div>
-            <Label htmlFor="workers">작업인원 (명)</Label>
+            <Label htmlFor="workers">{t('worker_count')}</Label>
             <Input
               type="number"
               min="1"
@@ -348,7 +348,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
 
       {/* 자동 계산 지표 */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-green-700">성과 지표</h3>
+        <h3 className="text-lg font-medium text-green-700">{t('performance_indicators')}</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <Label>UPH</Label>
@@ -357,7 +357,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
               disabled
               className="text-center bg-green-50 font-semibold"
             />
-            <p className="text-xs text-gray-500 mt-1">시간당 생산량</p>
+            <p className="text-xs text-gray-500 mt-1">{t('production_per_hour')}</p>
           </div>
 
           <div>
@@ -367,27 +367,27 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
               disabled
               className="text-center bg-green-50 font-semibold"
             />
-            <p className="text-xs text-gray-500 mt-1">인당 시간당 생산량</p>
+            <p className="text-xs text-gray-500 mt-1">{t('production_per_person_hour')}</p>
           </div>
 
           <div>
-            <Label>가동률 (%)</Label>
+            <Label>{t('operation_rate_percent')}</Label>
             <Input
               value={calculatedValues.operationRate}
               disabled
               className="text-center bg-green-50 font-semibold"
             />
-            <p className="text-xs text-gray-500 mt-1">작업시간/총시간</p>
+            <p className="text-xs text-gray-500 mt-1">{t('operation_time_ratio')}</p>
           </div>
 
           <div>
-            <Label>생산달성률 (%)</Label>
+            <Label>{t('production_achievement_rate')}</Label>
             <Input
               value={calculatedValues.achievementRate}
               disabled
               className="text-center bg-green-50 font-semibold"
             />
-            <p className="text-xs text-gray-500 mt-1">생산/계획수량</p>
+            <p className="text-xs text-gray-500 mt-1">{t('production_vs_plan')}</p>
           </div>
         </div>
 
@@ -395,15 +395,15 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
         <div className="bg-green-50 p-4 rounded-lg">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
             <div>
-              <span className="font-medium text-green-700">총 불량:</span>
+              <span className="font-medium text-green-700">{t('total_defect_colon')}</span>
               <span className="ml-2 font-semibold">{calculatedValues.totalDefects}개</span>
             </div>
             <div>
-              <span className="font-medium text-green-700">입고 불량:</span>
+              <span className="font-medium text-green-700">{t('incoming_defect_colon')}</span>
               <span className="ml-2 font-semibold">{calculatedValues.incomingDefects}개</span>
             </div>
             <div>
-              <span className="font-medium text-green-700">가공 불량률:</span>
+              <span className="font-medium text-green-700">{t('processing_defect_rate')}</span>
               <span className="ml-2 font-semibold">
                 {formData.actual_qty > 0 ? 
                   Math.round((formData.processing_defect / formData.actual_qty) * 100 * 100) / 100 : 0}%
@@ -436,7 +436,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
       {showAddPartModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
-            <h3 className="text-lg font-semibold mb-2">새 Part Spec 추가</h3>
+            <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
             <div className="grid grid-cols-2 gap-3">
               <input 
                 placeholder="Part No" 
@@ -457,7 +457,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
               <input type="date" className="border rounded px-2 py-1" defaultValue={new Date().toISOString().slice(0,10)} id="assemblyNewValidFrom"/>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="ghost" size="sm" onClick={()=>setShowAddPartModal(false)}>취소</Button>
+              <Button variant="ghost" size="sm" onClick={()=>setShowAddPartModal(false)}>{t('cancel')}</Button>
               <Button size="sm" onClick={async()=>{
                 try{
                   const partNo = (document.getElementById('assemblyNewPartNo') as HTMLInputElement).value;
@@ -488,7 +488,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
                     valid_from: validFrom
                   });
                   
-                  toast.success('새 Part가 추가되었습니다');
+                  toast.success(t('new_part_added_success'));
                   queryClient.invalidateQueries({queryKey:['parts-all']});
                   queryClient.invalidateQueries({queryKey:['parts-search']});
                   setShowAddPartModal(false);
@@ -504,9 +504,9 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
                   const modelSpec = uniqueModelDesc.find((m) => m.model_code === createdPart.model_code && m.description === createdPart.description);
                   if (modelSpec) setSelectedModelDesc(modelSpec);
                 }catch(err:any){
-                  toast.error('저장 실패');
+                  toast.error(t('save_fail'));
                 }
-              }}>저장</Button>
+              }}>{t('save')}</Button>
             </div>
           </div>
         </div>

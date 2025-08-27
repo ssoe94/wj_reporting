@@ -43,7 +43,7 @@ export default function AssemblySummaryPage() {
              (summary?.achievement_rate || 0) >= 80 ? 'text-yellow-600' : 'text-red-600',
     },
     {
-      title: '불량률',
+      title: t('defect_rate'),
       value: summary?.defect_rate || 0,
       unit: '%',
       color: (summary?.defect_rate || 0) <= 2 ? 'text-green-600' : 
