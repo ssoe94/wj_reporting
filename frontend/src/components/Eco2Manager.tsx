@@ -192,7 +192,7 @@ const parseCSV = (content: string): Partial<Eco>[] => {
           const partDetailsArray: any[] = [];
           const partSegments = eco.part_details.split(' | ');
           
-          partSegments.forEach(segment => {
+          partSegments.forEach((segment: string) => {
             const partNoMatch = segment.match(/Part No:\s*([^,]+)/);
             const descMatch = segment.match(/Description:\s*([^,]+)/);
             const changeMatch = segment.match(/Change:\s*([^,]+)/);
