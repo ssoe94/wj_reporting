@@ -1,6 +1,6 @@
 import { useLang } from '@/i18n';
 import type { Eco } from '@/hooks/useEcos';
-import { X, FileText, Calendar, User, Package, MapPin, Clock, CheckCircle, AlertCircle, Building, Wrench } from 'lucide-react';
+import { X, FileText, Calendar, Package, MapPin, Clock, CheckCircle, AlertCircle, Building, Wrench } from 'lucide-react';
 
 interface Props {
   eco: Eco | null;

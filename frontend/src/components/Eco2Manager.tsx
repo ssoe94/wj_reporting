@@ -6,7 +6,7 @@ import EcoForm from '@/components/EcoForm';
 import { useLang } from '@/i18n';
 import api from '@/lib/api';
 import { useUnifiedEcoSearch } from '@/hooks/useUnifiedEcoSearch';
-import { useAutocompleteSuggestions, AutocompleteSuggestion } from '@/hooks/useAutocompleteSuggestions';
+import { useAutocompleteSuggestions, type AutocompleteSuggestion } from '@/hooks/useAutocompleteSuggestions';
 import AutocompleteDropdown from '@/components/AutocompleteDropdown';
 import EcoViewModal from '@/components/EcoViewModal';
 import type { Eco } from '@/hooks/useEcos';
@@ -185,11 +185,6 @@ export default function Eco2Manager() {
     }
   };
 
-  const handleEditFromView = () => {
-    setViewModalOpen(false);
-    setForm(selectedEcoForView || emptyForm);
-    setDialogOpen(true);
-  };
 
   const handleUpsert = (payload: Partial<Eco>) => {
     setErrors({});

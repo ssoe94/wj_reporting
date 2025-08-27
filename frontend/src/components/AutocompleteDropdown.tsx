@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
-import { AutocompleteSuggestion } from '@/hooks/useAutocompleteSuggestions';
+import { useRef, useEffect } from 'react';
+import type { AutocompleteSuggestion } from '@/hooks/useAutocompleteSuggestions';
 import { useLang } from '@/i18n';
-import { Check, Search, Hash, Package, Building, User } from 'lucide-react';
+import { Check, Search, Hash, Package, Building } from 'lucide-react';
 
 interface AutocompleteDropdownProps {
   suggestions: AutocompleteSuggestion[];
@@ -51,7 +51,7 @@ export default function AutocompleteDropdown({
   onClose
 }: AutocompleteDropdownProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { lang, t } = useLang();
+  const { lang } = useLang();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
