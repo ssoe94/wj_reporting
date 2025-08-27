@@ -24,6 +24,7 @@ export interface Eco {
   inventory_material: number | null;
   applicable_date: string;
   form_type: 'REGULAR' | 'TEMP';
+  details?: any[];
 }
 
 export function useEcos(keyword = ''): UseQueryResult<Eco[]> {
