@@ -1,3 +1,9 @@
+# Environment variable group to share secrets between services
+envVarGroups:
+  - name: shared-secrets
+    # 중요: 이 그룹을 Render 대시보드의 "Environment" 탭에서 생성하고,
+    # DATABASE_URL, SECRET_KEY 등 백엔드 서비스에 필요한 모든 비밀/환경 변수를 추가해야 합니다.
+
 services:
   # Frontend Static Site
   - type: static
@@ -5,8 +11,13 @@ services:
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
-    # SPA용 히스토리 라우팅 설정
+    # All routing rules are now defined here. static.json is no longer needed.
     routes:
+      # API proxy rule (from static.json)
+      - type: rewrite
+        source: /api/:path*
+        destination: https://wj-reporting-backend.onrender.com/api/:path*
+      # SPA rewrite rule for client-side routing
       - type: rewrite
         source: /*
         destination: /index.html
@@ -17,16 +28,20 @@ services:
     env: python
     rootDir: backend
     buildCommand: bash build.sh
-    startCommand: python manage.py migrate && gunicorn config.wsgi:application --preload --bind 0.0.0.0:8000
+    # Render가 PORT를 자동으로 설정하므로 --bind 인수는 제거하는 것이 좋습니다.
+    startCommand: python manage.py migrate && gunicorn config.wsgi:application --preload
+    # Connect to the shared environment variables
+    envVarGroup: shared-secrets
 
-  # Daily Inventory Snapshot Cron Job - 매일 오전 8시 CST (00:00 UTC)
+  # Daily Inventory Snapshot Cron Job
   - type: cron
     name: daily-inventory-snapshot
     env: python
     rootDir: backend
-    schedule: "0 0 * * *"  # 00:00 UTC = 08:00 CST (China Standard Time)
-    buildCommand: pip install -r requirements.txt
-    startCommand: |
-      echo "Starting daily snapshot at $(date)"
-      python manage.py daily_snapshot_auto --date=$(date +%Y-%m-%d)
-      echo "Daily snapshot completed at $(date)" 
+    schedule: "0 0 * * *"  # 00:00 UTC = 08:00 CST
+    # Use the same build command as the backend for consistency
+    buildCommand: bash build.sh
+    # The management command should ideally get the date itself
+    startCommand: python manage.py daily_snapshot_auto
+    # Connect to the same shared environment variables to access the database etc.
+    envVarGroup: shared-secrets
