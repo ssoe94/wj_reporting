@@ -14,7 +14,6 @@ import { toast } from 'react-toastify';
 import { Pencil, Trash2, Search, X, Tag, Eye } from 'lucide-react';
 
 const ctrlCls = "h-10 bg-white border border-gray-300 rounded-md px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
-const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-colors";
 
 export default function Eco2Manager() {
   const { t, lang } = useLang();
@@ -459,7 +458,7 @@ export default function Eco2Manager() {
                   <div className="flex flex-col gap-2 pt-4">
                     <Button 
                       className="w-full" 
-                      variant="outline" 
+                      variant="secondary" 
                       size="sm"
                       onClick={() => handleViewEco(e)}
                     >
@@ -470,7 +469,7 @@ export default function Eco2Manager() {
                     <div className="flex gap-2">
                       <Button 
                         className="flex-1" 
-                        variant="outline" 
+                        variant="secondary" 
                         size="sm"
                         onClick={async () => {
                           setErrors({});
@@ -488,7 +487,7 @@ export default function Eco2Manager() {
                       </Button>
                       <Button 
                         className="flex-1" 
-                        variant="outline" 
+                        variant="secondary" 
                         size="sm"
                         onClick={() => handleDelete(e)}
                         disabled={del.isPending}
