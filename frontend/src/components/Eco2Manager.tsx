@@ -217,13 +217,12 @@ export default function EcoManager() {
           formatDate(e.applicable_date),
           formatDate(e.due_date),
           formatDate(e.close_date),
-          `"${e.change_reason || ''}"`, 
-          `"${e.change_details || ''}"`, 
-          `"${e.storage_action || ''}"`, 
+          `"${e.change_reason || ''}"`,
+          `"${e.change_details || ''}"`,
+          `"${e.storage_action || ''}"`,
         ].join(',');
       })
-    ].join('
-');
+    ].join('\n');
 
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
