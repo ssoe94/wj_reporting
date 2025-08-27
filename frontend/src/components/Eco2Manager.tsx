@@ -3,53 +3,62 @@ import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import EcoForm from '@/components/EcoForm';
+import EcoViewModal from '@/components/EcoViewModal';
 import { useLang } from '@/i18n';
 import api from '@/lib/api';
-import { useUnifiedEcoSearch } from '@/hooks/useUnifiedEcoSearch';
-import { useAutocompleteSuggestions, type AutocompleteSuggestion } from '@/hooks/useAutocompleteSuggestions';
-import AutocompleteDropdown from '@/components/AutocompleteDropdown';
-import EcoViewModal from '@/components/EcoViewModal';
+import { useEcos } from '@/hooks/useEcos';
+import { useEcosByPart } from '@/hooks/useEcosByPart';
+import { usePartEcoCount } from '@/hooks/usePartEcoCount';
+import { useEcosByParts } from '@/hooks/useEcosByParts';
 import type { Eco } from '@/hooks/useEcos';
 import { toast } from 'react-toastify';
-import { Pencil, Trash2, Search, X, Tag, Eye } from 'lucide-react';
+import { Pencil, Trash2, Search, Eye, Upload, Download } from 'lucide-react';
 
 const ctrlCls = "h-10 bg-white border border-gray-300 rounded-md px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-colors";
 
-export default function Eco2Manager() {
+// Basic CSV parser
+const parseCSV = (content: string): Partial<Eco>[] => {
+  const lines = content.trim().split(/\r\n|\n/);
+  if (lines.length < 2) return [];
+
+  const header = lines[0].split(',').map(h => h.trim());
+  const requiredHeaders = ['eco_no', 'eco_model', 'customer', 'status'];
+  if (!requiredHeaders.every(h => header.includes(h))) {
+    throw new Error('CSV must include eco_no, eco_model, customer, and status columns.');
+  }
+
+  return lines.slice(1).map(line => {
+    const values = line.split(',').map(v => v.trim());
+    const eco: any = {};
+    header.forEach((key, index) => {
+      if (values[index]) {
+        eco[key] = values[index];
+      }
+    });
+    return eco;
+  });
+};
+
+export default function EcoManager() {
   const { t, lang } = useLang();
   const [keyword, setKeyword] = useState('');
+  const [mode, setMode] = useState<'eco'|'part'>('eco');
   const [statusFilter, setStatusFilter] = useState<'ALL'|'OPEN'|'CLOSED'>('ALL');
-  
-  // 자동완성 관련 상태
-  const [selectedSuggestions, setSelectedSuggestions] = useState<AutocompleteSuggestion[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  
-  // 자동완성 데이터
-  const { data: suggestions = [], isLoading: suggestionsLoading } = useAutocompleteSuggestions(
-    searchQuery, 
-    showDropdown && searchQuery.length >= 2
-  );
-  
-  // 실제 검색에 사용할 키워드 (선택된 항목들의 값들을 조합)
-  const effectiveKeyword = selectedSuggestions.length > 0 
-    ? selectedSuggestions.map(s => s.value).join(' ') 
-    : keyword;
-  
-  // 통합 검색 사용
-  const { data: ecos = [], isLoading, error } = useUnifiedEcoSearch(effectiveKeyword);
-  
-  // status filtering
+  const [selectedParts, setSelectedParts] = useState<string[]>([]);
+  const [selectedPart, setSelectedPart] = useState<string>('');
+  const { data: ecos = [], isLoading: ecosLoading } = mode === 'eco' ? useEcos(keyword) : useEcosByPart(selectedPart || '');
   const filteredEcos = statusFilter === 'ALL' ? ecos : ecos.filter((e: any) => e.status === statusFilter);
-  
+  const { data: partCounts = [] } = usePartEcoCount(mode === 'part' ? keyword : '');
+  const ecosBySelectedParts = useEcosByParts(selectedParts);
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedEcoForView, setSelectedEcoForView] = useState<Eco | null>(null);
-  const [errors, setErrors] = useState<Record<string,string>>({});
-  const today = new Date().toISOString().slice(0,10);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const today = new Date().toISOString().slice(0, 10);
   const emptyForm: Partial<Eco> = {
     eco_no: '',
     eco_model: '',
@@ -73,20 +82,19 @@ export default function Eco2Manager() {
 
   const upsert = useMutation({
     mutationFn: async (payload: Partial<Eco>) => {
-      if(payload.id) {
+      if (payload.id) {
         return api.patch(`ecos/${payload.id}/`, payload);
       }
       return api.post('ecos/', payload);
     },
-    onSuccess: ()=>{
-      queryClient.invalidateQueries({queryKey:['unified-eco-search']});
-      queryClient.invalidateQueries({queryKey:['ecos']});
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ecos'] });
       setKeyword('');
       setDialogOpen(false);
       setErrors({});
       toast.success(t('save_success'));
     },
-    onError: (err:any)=>{
+    onError: (err: any) => {
       try {
         const data = err.response?.data || err.data || {};
         setErrors(data);
@@ -100,122 +108,60 @@ export default function Eco2Manager() {
   });
 
   const del = useMutation({
-    mutationFn: async (id:number)=> api.delete(`ecos/${id}/`),
-    onSuccess: ()=>{
-      queryClient.invalidateQueries({queryKey:['unified-eco-search']});
-      queryClient.invalidateQueries({queryKey:['ecos']});
+    mutationFn: async (id: number) => api.delete(`ecos/${id}/`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ecos'] });
       toast.success(t('delete_success'));
     },
-    onError: ()=>{
+    onError: () => {
       toast.error(t('delete_fail'));
     }
   });
 
-  const handleDelete = (eco:Eco)=>{
-    if(!eco.id) return;
-    if(!window.confirm(t('delete_confirm'))) return;
+  const bulkUpload = useMutation({
+    mutationFn: (data: Partial<Eco>[]) => api.post('ecos/bulk-upload/', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ecos'] });
+      toast.success(t('bulk_upload_success'));
+    },
+    onError: (error: any) => {
+      const errorMsg = error.response?.data?.error || t('bulk_upload_fail');
+      toast.error(errorMsg);
+    }
+  });
+
+  const handleDelete = (eco: Eco) => {
+    if (!eco.id) return;
+    if (!window.confirm(t('delete_confirm'))) return;
     del.mutate(eco.id);
   };
 
-  // 자동완성 핸들러들
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setKeyword(value);
-    setSearchQuery(value);
-    
-    if (value.length >= 2) {
-      setShowDropdown(true);
-    } else {
-      setShowDropdown(false);
-    }
-  };
-
-  const handleToggleSuggestion = (suggestion: AutocompleteSuggestion) => {
-    setSelectedSuggestions(prev => {
-      const exists = prev.some(item => 
-        item.value === suggestion.value && item.type === suggestion.type
-      );
-      
-      if (exists) {
-        return prev.filter(item => 
-          !(item.value === suggestion.value && item.type === suggestion.type)
-        );
-      } else {
-        return [...prev, suggestion];
-      }
-    });
-  };
-
-  const handleSelectAllSuggestions = (items: AutocompleteSuggestion[]) => {
-    setSelectedSuggestions(prev => {
-      const newItems = items.filter(item => 
-        !prev.some(existing => 
-          existing.value === item.value && existing.type === item.type
-        )
-      );
-      return [...prev, ...newItems];
-    });
-  };
-
-  const handleRemoveSelected = (suggestion: AutocompleteSuggestion) => {
-    setSelectedSuggestions(prev => 
-      prev.filter(item => 
-        !(item.value === suggestion.value && item.type === suggestion.type)
-      )
-    );
-  };
-
-  const handleClearAll = () => {
-    setSelectedSuggestions([]);
-    setKeyword('');
-    setSearchQuery('');
-  };
-
-  // ECO 조회 핸들러
-  const handleViewEco = async (eco: Eco) => {
-    try {
-      const { data } = await api.get(`ecos/${eco.id}/`);
-      setSelectedEcoForView(data);
-      setViewModalOpen(true);
-    } catch (error) {
-      console.error('Failed to fetch ECO details:', error);
-      setSelectedEcoForView(eco);
-      setViewModalOpen(true);
-    }
-  };
-
-
   const handleUpsert = (payload: Partial<Eco>) => {
     setErrors({});
-    // header fields only
     const { details, ...headerRaw } = payload as any;
-    // 빈 값 제거
     const header: Record<string, any> = {};
-    Object.entries(headerRaw).forEach(([k,v])=>{
-      if(v!=='' && v!==null && v!==undefined) header[k]=v;
+    Object.entries(headerRaw).forEach(([k, v]) => {
+      if (v !== '' && v !== null && v !== undefined) header[k] = v;
     });
-    (async ()=>{
-      try{
+    (async () => {
+      try {
         let ecoId = payload.id;
-        if(payload.id){
+        if (payload.id) {
           await api.patch(`ecos/${payload.id}/`, header);
-        }else{
+        } else {
           const { data } = await api.post('ecos/', header);
           ecoId = data.id;
         }
-        if(details && details.length){
-          await api.post(`ecos/${ecoId}/details/bulk/`, {details});
+        if (details && details.length) {
+          await api.post(`ecos/${ecoId}/details/bulk/`, { details });
         }
-        queryClient.invalidateQueries({queryKey:['unified-eco-search']});
-        queryClient.invalidateQueries({queryKey:['ecos']});
+        queryClient.invalidateQueries({ queryKey: ['ecos'] });
         toast.success(t('save_success'));
         setDialogOpen(false);
-      }catch(err:any){
+      } catch (err: any) {
         console.error('ECO save error:', err);
         const errorData = err.response?.data || err.data || {};
         console.error('Error response:', errorData);
-        
-        // 에러 메시지 표시
         if (errorData && typeof errorData === 'object') {
           const firstKey = Object.keys(errorData)[0];
           const firstMsg = Array.isArray(errorData[firstKey]) ? errorData[firstKey][0] : errorData[firstKey];
@@ -228,369 +174,288 @@ export default function Eco2Manager() {
     })();
   };
 
+  const handleViewEco = async (eco: Eco) => {
+    try {
+      const { data } = await api.get(`ecos/${eco.id}/`);
+      setSelectedEcoForView(data);
+      setViewModalOpen(true);
+    } catch (error) {
+      console.error('Failed to fetch ECO details:', error);
+      toast.error(t('fetch_details_fail'));
+    }
+  };
+
+  const handleDownloadCSV = () => {
+    const headers = ['eco_no', 'eco_model', 'customer', 'status', 'change_reason', 'change_details', 'applicable_date', 'storage_action', 'part_numbers'];
+    const csvContent = [
+      headers.join(','),
+      ...filteredEcos.map(e => {
+        const partNumbers = (e.details || []).map(d => d.part_no).join(';');
+        return [
+          e.eco_no,
+          e.eco_model,
+          e.customer,
+          e.status,
+          `"${e.change_reason || ''}"`,
+          `"${e.change_details || ''}"`,
+          e.applicable_date || '',
+          `"${e.storage_action || ''}"`,
+          `"${partNumbers}"`
+        ].join(',');
+      })
+    ].join('\n');
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', 'eco_list.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      try {
+        const parsedData = parseCSV(content);
+        if(parsedData.length > 0) {
+          bulkUpload.mutate(parsedData);
+        }
+      } catch (error: any) {
+        toast.error(error.message || t('csv_parse_fail'));
+        console.error("CSV parsing error:", error);
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    event.target.value = ''; // Reset file input
+  };
+
   return (
     <>
-      {/* Control Bar */}
       <div className="flex flex-wrap md:flex-nowrap items-center gap-2 mb-4">
-        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value as any)} className={ctrlCls}>
+        <select value={mode} onChange={e => { setKeyword(''); setMode(e.target.value as any); }} className={ctrlCls}>
+          <option value="eco">{t('eco_no')}</option>
+          <option value="part">PART NO.</option>
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className={ctrlCls}>
           <option value="ALL">{t('all')}</option>
           <option value="OPEN">OPEN</option>
           <option value="CLOSED">CLOSED</option>
         </select>
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4 z-10" />
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
           <Input
-            ref={inputRef}
             type="text"
-            placeholder="🔍 통합검색: ECO编号, 适用型号, Part no. 모두 검색 가능"
-            className={"pl-10 w-full "+ctrlCls}
+            placeholder={mode === 'eco' ? t('eco_search_placeholder') : t('part_search_placeholder')}
+            className={"pl-10 w-full " + ctrlCls}
             value={keyword}
-            onChange={handleInputChange}
-            onFocus={() => {
-              if (keyword.length >= 2) {
-                setShowDropdown(true);
-              }
-            }}
-          />
-          
-          {/* 자동완성 드롭다운 */}
-          <AutocompleteDropdown
-            suggestions={suggestions}
-            isLoading={suggestionsLoading}
-            selectedItems={selectedSuggestions}
-            onToggleItem={handleToggleSuggestion}
-            onSelectAll={handleSelectAllSuggestions}
-            visible={showDropdown}
-            onClose={() => setShowDropdown(false)}
+            onChange={(e) => { setKeyword(e.target.value); if (mode === 'part') { setSelectedPart('') } }}
           />
         </div>
-        <Button size="sm" onClick={()=>{setForm(emptyForm); setDialogOpen(true);}}>{t('new_eco')}</Button>
-      </div>
-
-      {/* 선택된 필터 태그들 */}
-      {selectedSuggestions.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-gray-700">
-            {lang === 'ko' ? '선택된 필터:' : '选择的过滤器:'}
-          </span>
-          {selectedSuggestions.map((item) => (
-            <div
-              key={`${item.type}-${item.value}`}
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-medium ${
-                item.type === 'part_no'
-                  ? 'bg-purple-100 text-purple-800'
-                  : item.type === 'eco_no'
-                  ? 'bg-blue-100 text-blue-800'
-                  : item.type === 'eco_model'
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-gray-100 text-gray-800'
-              }`}
-            >
-              <Tag className="w-3 h-3" />
-              <span className={`${item.type === 'part_no' ? 'font-mono text-xs' : ''}`}>
-                {item.label}
-              </span>
-              <button
-                onClick={() => handleRemoveSelected(item)}
-                className={`ml-1 rounded-full p-0.5 ${
-                  item.type === 'part_no'
-                    ? 'hover:bg-purple-200'
-                    : item.type === 'eco_no'
-                    ? 'hover:bg-blue-200'
-                    : item.type === 'eco_model'
-                    ? 'hover:bg-green-200'
-                    : 'hover:bg-gray-200'
-                }`}
-                title={lang === 'ko' ? '제거' : '移除'}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
-          <button
-            onClick={handleClearAll}
-            className="text-xs text-red-600 hover:text-red-800 font-medium ml-2"
-          >
-            {lang === 'ko' ? '전체 지우기' : '全部清除'}
-          </button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => fileInputRef.current?.click()} variant="outline" disabled={bulkUpload.isPending}>
+            <Upload className="w-4 h-4 mr-2" />
+            {bulkUpload.isPending ? t('uploading') : t('bulk_upload')}
+          </Button>
+          <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".csv" />
+          <Button size="sm" onClick={handleDownloadCSV} variant="outline">
+            <Download className="w-4 h-4 mr-2" />
+            {t('download_csv')}
+          </Button>
+          <Button size="sm" onClick={() => { setForm(emptyForm); setDialogOpen(true); }}>{t('new_eco')}</Button>
         </div>
-      )}
-
-      {/* 검색 결과 상태 표시 */}
-      <div className="mb-2 text-sm text-gray-600">
-        {isLoading && (lang === 'ko' ? "검색 중..." : "搜索中...")}
-        {error && (
-          <span className="text-red-600">
-            {lang === 'ko' ? "검색 중 오류가 발생했습니다." : "搜索时发生错误。"}
-          </span>
-        )}
-        {!isLoading && !error && (
-          <span>
-            {selectedSuggestions.length > 0 
-              ? lang === 'ko'
-                ? `선택된 필터(${selectedSuggestions.length}개)로 검색: `
-                : `通过选择的过滤器(${selectedSuggestions.length}个)搜索: `
-              : keyword 
-                ? lang === 'ko'
-                  ? `"${keyword}" 검색 결과: ` 
-                  : `"${keyword}" 搜索结果: `
-                : lang === 'ko'
-                  ? '최근 ECO 목록: '
-                  : '最新 ECO 列表: '
-            }
-            {lang === 'ko' ? '총' : '共'} {filteredEcos.length}{lang === 'ko' ? '건' : '条'}
-          </span>
-        )}
       </div>
-
-      {/* 카드 스타일 ECO 리스트 */}
-      <div className="space-y-4">
-        {filteredEcos.map((e: any) => (
-          <div key={e.id} className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-200 overflow-hidden">
-            <div className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* 1열: ECO 기본 정보 및 Part No. */}
-                <div className="space-y-4">
-                  {/* ECO 번호 및 상태 */}
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">ECO No.</p>
-                      <h3 
-                        className="text-lg font-bold text-blue-600 cursor-pointer hover:text-blue-800 transition-colors"
-                        onClick={() => handleViewEco(e)}
-                        title={lang === 'ko' ? '클릭하여 조회' : '点击查看'}
-                      >
-                        {e.eco_no}
-                      </h3>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                        e.status === 'OPEN' ? 'bg-green-100 text-green-800' :
-                        e.status === 'CLOSED' ? 'bg-gray-100 text-gray-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {e.status}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {/* 适用型号 및 客户 */}
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">
-                        {lang === 'ko' ? '적용형호' : '适用型号'}
-                      </p>
-                      <p className="text-sm text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded">
-                        {e.eco_model || '-'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">
-                        {lang === 'ko' ? '고객사' : '客户'}
-                      </p>
-                      <p className="text-sm text-gray-900">
-                        {e.customer || '-'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 相关 Part No. */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium text-gray-500">{t('related_part_no_colon')}</p>
-                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
-                        {e.details?.length || 0}{lang === 'ko' ? '개' : '个'}
-                      </span>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3 max-h-20 overflow-y-auto">
-                      {e.details?.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {e.details.slice(0, 6).map((detail: any, idx: number) => (
-                            <span 
-                              key={idx}
-                              className="inline-block bg-white text-gray-700 px-2 py-1 rounded text-xs font-mono border"
-                            >
-                              {detail.part_no}
-                            </span>
-                          ))}
-                          {e.details.length > 6 && (
-                            <span className="inline-block bg-gray-200 text-gray-600 px-2 py-1 rounded text-xs">
-                              +{e.details.length - 6}{t('more_count')}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-500 text-center py-2">{t('no_parts_info')}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2열: 变更理由 및 变更内容 */}
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 mb-2">
-                      {lang === 'ko' ? '변경 이유' : '变更理由'}
-                    </p>
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 min-h-[80px] max-h-24 overflow-y-auto">
-                      <p className="text-xs text-gray-700 leading-relaxed">
-                        {e.change_reason || t('change_reason_missing')}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 mb-2">
-                      {lang === 'ko' ? '변경 내용' : '变更内容'}
-                    </p>
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 min-h-[80px] max-h-24 overflow-y-auto">
-                      <p className="text-xs text-gray-700 leading-relaxed">
-                        {e.change_details || (lang === 'ko' ? '변경 내용 미입력' : '未输入变更内容')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3열: 날짜 및 기타 정보 */}
-                <div className="space-y-4">
-                  {/* 날짜 정보 */}
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">
-                        {lang === 'ko' ? '발표일' : '发布日'}
-                      </p>
-                      <p className="text-xs text-gray-900 bg-gray-50 px-2 py-1 rounded">
-                        {e.issued_date 
-                          ? new Date(e.issued_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
-                          : t('not_issued')
-                        }
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">
-                        {lang === 'ko' ? '적용일' : '适用日'}
-                      </p>
-                      <p className="text-xs text-gray-900 bg-gray-50 px-2 py-1 rounded">
-                        {e.applicable_date 
-                          ? new Date(e.applicable_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
-                          : t('not_set')
-                        }
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">
-                        {lang === 'ko' ? '접수일' : '接收日'}
-                      </p>
-                      <p className="text-xs text-gray-900 bg-gray-50 px-2 py-1 rounded">
-                        {e.received_date 
-                          ? new Date(e.received_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
-                          : t('not_set')
-                        }
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 기타 정보 */}
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 mb-1">
-                        {lang === 'ko' ? '재고처리' : '库存处理'}
-                      </p>
-                      <p className="text-sm font-bold text-purple-900 bg-purple-200 px-3 py-2 rounded-lg border border-purple-300 shadow-inner">
-                        {e.storage_action || (lang === 'ko' ? '미입력' : '未输入')}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 액션 버튼 - 3열 하단에 한 줄로 배치 */}
-                  <div className="flex gap-1 pt-4 border-t border-gray-200">
-                    <button
-                      onClick={() => handleViewEco(e)}
-                      className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title={lang === 'ko' ? '조회' : '查看'}
-                    >
-                      <Eye className="w-3 h-3" />
-                      {lang === 'ko' ? '조회' : '查看'}
-                    </button>
-                    <button
-                      onClick={async () => {
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+        {mode === 'eco' ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="px-3 py-2 text-left">{t('eco_no')}</th>
+                  <th className="px-3 py-2 text-left">{t('eco_model')}</th>
+                  <th className="px-3 py-2 text-left">Part No.</th>
+                  <th className="px-3 py-2 text-left">{t('applicable_date')}</th>
+                  <th className="px-3 py-2 text-left">{t('storage_action')}</th>
+                  <th className="px-3 py-2 text-left">{t('status')}</th>
+                  <th className="px-3 py-2 text-left"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {ecosLoading ? (
+                  <tr><td colSpan={7} className="text-center py-4">Loading...</td></tr>
+                ) : filteredEcos.map((e: any) => (
+                  <tr key={e.id} className={rowCls}>
+                    <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={() => handleViewEco(e)}>{e.eco_no}</td>
+                    <td className="px-3 py-1">{e.eco_model}</td>
+                    <td className="px-3 py-1 font-mono text-xs">{(e.details || []).map((d: any) => d.part_no).join(', ')}</td>
+                    <td className="px-3 py-1">{e.applicable_date}</td>
+                    <td className="px-3 py-1">{e.storage_action}</td>
+                    <td className="px-3 py-1">{e.status}</td>
+                    <td className="px-3 py-1 text-right flex justify-end gap-1">
+                      <Button size="icon" variant="ghost" onClick={() => handleViewEco(e)} aria-label={t('view')}> <Eye className="w-4 h-4" /> </Button>
+                      <Button size="icon" variant="ghost" onClick={async () => {
                         setErrors({});
-                        try{
+                        try {
                           const { data } = await api.get(`ecos/${e.id}/`);
                           setForm(data);
-                        }catch{
+                        } catch {
                           setForm(e);
                         }
                         setDialogOpen(true);
-                      }}
-                      className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
-                      title={lang === 'ko' ? '편집' : '编辑'}
-                    >
-                      <Pencil className="w-3 h-3" />
-                      {lang === 'ko' ? '편집' : '编辑'}
-                    </button>
-                    <button
-                      onClick={() => handleDelete(e)}
-                      disabled={del.isPending}
-                      className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                      title={lang === 'ko' ? '삭제' : '删除'}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      {lang === 'ko' ? '삭제' : '删除'}
-                    </button>
-                  </div>
+                      }} aria-label={t('edit')}> <Pencil className="w-4 h-4" /> </Button>
+                      <Button size="icon" variant="ghost" onClick={() => handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}> <Trash2 className="w-4 h-4" /> </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <>
+            {!selectedPart ? (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-100">
+                      <tr className="border-y">
+                        <th className="px-3 py-2 text-left">Part No</th>
+                        <th className="px-3 py-2 text-left">{t('description') || 'Description'}</th>
+                        <th className="px-3 py-2 text-center">{t('eco_count')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {partCounts.map(pc => {
+                        const checked = selectedParts.includes(pc.part_no);
+                        return (
+                          <tr key={pc.part_no} className={rowCls}>
+                            <td className="px-3 py-1 font-mono flex items-center gap-2">
+                              <input type="checkbox" checked={checked} onChange={() => {
+                                setSelectedPart('');
+                                setSelectedParts(prev => checked ? prev.filter(p => p !== pc.part_no) : [...prev, pc.part_no]);
+                              }} />
+                              <span className="cursor-pointer" onClick={() => setSelectedPart(pc.part_no)}>{pc.part_no}</span>
+                            </td>
+                            <td className="px-3 py-1 text-xs cursor-pointer hover:bg-yellow-50" onClick={() => {
+                              const newDesc = prompt(`${pc.part_no} ${t('description_edit_prompt')}:`, pc.description || '');
+                              if (newDesc !== null && newDesc !== pc.description) {
+                                api.patch(`eco-parts/${pc.part_no}/update-description/`, { description: newDesc })
+                                  .then(() => {
+                                    queryClient.invalidateQueries({ queryKey: ['part-eco-count'] });
+                                    toast.success(t('update_success'));
+                                  })
+                                  .catch(() => {
+                                    toast.error(t('update_fail'));
+                                  });
+                              }
+                            }}>{pc.description || '-'}</td>
+                            <td className="px-3 py-1 text-center">{pc.count}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
+                {selectedParts.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="font-semibold mb-2 pl-2">{t('selected_part_eco_details')}</h4>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            <th className="px-3 py-2 text-center">{t('part') || 'Part'}</th>
+                            <th className="px-3 py-2 text-center">{t('eco') || 'ECO'}</th>
+                            <th className="px-3 py-2 text-center">{t('change_details')}</th>
+                            <th className="px-3 py-2 text-center">{t('part_status') || 'Part Status'}</th>
+                            <th className="px-3 py-2 text-center">{t('eco_status') || 'ECO Status'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedParts.map(partNo => {
+                            const rows = ecosBySelectedParts.data?.filter((eco: any) => statusFilter === 'ALL' || eco.status === statusFilter).flatMap((eco: any) =>
+                              (eco.details || []).filter((d: any) => d.part_no.toUpperCase() === partNo.toUpperCase()).map((d: any) => (
+                                {
+                                  part_no: d.part_no,
+                                  eco_id: eco.id,
+                                  eco_no: eco.eco_no,
+                                  change_details: d.change_details,
+                                  part_status: d.status,
+                                  eco_status: eco.status,
+                                }
+                              ))
+                            ) || [];
+                            return rows.map((row, idx) => (
+                              <tr key={`${row.part_no}-${row.eco_no}`} className={rowCls}>
+                                {idx === 0 && (
+                                  <td className="px-3 py-1 font-mono text-center" rowSpan={rows.length}>{row.part_no}</td>
+                                )}
+                                <td className="px-3 py-1 font-mono text-center cursor-pointer text-blue-600 underline" onClick={() => handleViewEco(row)}>{row.eco_no}</td>
+                                <td className="px-3 py-1 text-xs text-left whitespace-pre-wrap">{row.change_details}</td>
+                                <td className="px-3 py-1 text-center">{row.part_status}</td>
+                                <td className="px-3 py-1 text-center">{row.eco_status}</td>
+                              </tr>
+                            ));
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="px-3 py-2 text-left">{t('eco')}</th>
+                      <th className="px-3 py-2 text-left">{t('change_details')}</th>
+                      <th className="px-3 py-2 text-left">{t('part_status')}</th>
+                      <th className="px-3 py-2 text-left">{t('eco_status')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredEcos.flatMap((eco: any) => (eco.details || []).filter((d: any) => d.part_no === selectedPart).map((d: any) => (
+                      <tr key={eco.id + '-' + d.id} className="border-t">
+                        <td className="px-3 py-1 font-mono">{eco.eco_no}</td>
+                        <td className="px-3 py-1 text-xs">{d.change_details}</td>
+                        <td className="px-3 py-1">{d.status}</td>
+                        <td className="px-3 py-1">{eco.status}</td>
+                      </tr>
+                    )))}
+                  </tbody>
+                </table>
               </div>
-            </div>
-          </div>
-        ))}
-
-        {!isLoading && filteredEcos.length === 0 && (
-          <div className="bg-white rounded-xl shadow-lg p-12 text-center">
-            <div className="text-gray-400 mb-4">
-              <Search className="w-16 h-16 mx-auto" />
-            </div>
-            <p className="text-lg text-gray-600 mb-2">
-              {keyword || selectedSuggestions.length > 0
-                ? (lang === 'ko' ? '검색 결과가 없습니다.' : '没有搜索结果。')
-                : (lang === 'ko' ? 'ECO 데이터가 없습니다.' : 'ECO 数据为空。')
-              }
-            </p>
-            <p className="text-sm text-gray-500">
-              {lang === 'ko' 
-                ? '다른 검색어를 시도해보세요.' 
-                : '请尝试其他搜索词。'
-              }
-            </p>
-          </div>
+            )}
+          </>
         )}
       </div>
 
       <EcoForm
         initial={form}
         open={dialogOpen}
-        onClose={()=>setDialogOpen(false)}
+        onClose={() => setDialogOpen(false)}
         onSubmit={handleUpsert}
         isSaving={upsert.isPending}
         errors={errors}
       />
 
-      {/* ECO 조회 전용 모달 */}
       <EcoViewModal
         eco={selectedEcoForView}
         open={viewModalOpen}
-        onClose={() => {
-          setViewModalOpen(false);
-          setSelectedEcoForView(null);
-        }}
+        onClose={() => setViewModalOpen(false)}
         onEdit={() => {
-          // 조회 모달에서 편집 모달로 전환
-          setForm(selectedEcoForView || {});
-          setViewModalOpen(false);
-          setSelectedEcoForView(null);
-          setDialogOpen(true);
+          if (selectedEcoForView) {
+            setViewModalOpen(false);
+            setForm(selectedEcoForView);
+            setDialogOpen(true);
+          }
         }}
       />
     </>
   );
 }
+
