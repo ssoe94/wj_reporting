@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "tsc -b && vite build && npm run build:legacy",
     "build:legacy": "postcss src/index.css -c ./postcss.legacy.config.cjs -o dist/legacy.css",
-    "postbuild": "cp static.json dist/static.json && cp public/_redirects dist/_redirects || (copy static.json dist\\static.json & copy public\\_redirects dist\\_redirects)",
     "lint": "eslint .",
     "preview": "vite preview"
   },
