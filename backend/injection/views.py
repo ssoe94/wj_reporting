@@ -420,6 +420,15 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     search_fields = ['eco_no', 'change_reason', 'change_details', 'customer', 'eco_model']
     ordering = ['-prepared_date'] 
 
+    @action(detail=False, methods=['post'], url_path='bulk-upload')
+    def bulk_upload(self, request):
+        """CSV에서 파싱된 ECO 데이터 리스트를 받아 대량 생성합니다."""
+        serializer = self.get_serializer(data=request.data, many=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
     @action(detail=False, methods=["get"], url_path="by-part")
     def by_part(self, request):
         """part_no 로 ECO 목록 조회
