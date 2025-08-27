@@ -289,6 +289,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     not_issued: '미발표',
     not_set: '미설정',
     more_count: '개 더',
+    related_part_no_colon: '相关 Part No.',
   },
   zh: {
     title: '注塑生产管理系统',
@@ -584,6 +585,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     not_issued: '未发布',
     not_set: '未设置',
     more_count: '个更多',
+    related_part_no_colon: '相关 Part No.',
   },
 };
 

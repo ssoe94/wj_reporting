@@ -349,10 +349,12 @@ export default function Eco2Manager() {
           <div key={e.id} className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-200 overflow-hidden">
             <div className="p-6">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* 왼쪽: 기본 정보 */}
+                {/* 1열: ECO 기본 정보 및 Part No. */}
                 <div className="space-y-4">
+                  {/* ECO 번호 및 상태 */}
                   <div className="flex items-start justify-between">
                     <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">ECO No.</p>
                       <h3 
                         className="text-lg font-bold text-blue-600 cursor-pointer hover:text-blue-800 transition-colors"
                         onClick={() => handleViewEco(e)}
@@ -360,9 +362,6 @@ export default function Eco2Manager() {
                       >
                         {e.eco_no}
                       </h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {t('eco_no')}
-                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
@@ -375,35 +374,38 @@ export default function Eco2Manager() {
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* 适用型号 및 客户 */}
+                  <div className="space-y-3">
                     <div>
-                      <p className="text-sm font-medium text-gray-700">{t('eco_model')}</p>
-                      <p className="text-sm text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded mt-1">
+                      <p className="text-sm font-medium text-gray-500 mb-1">
+                        {lang === 'ko' ? '적용형호' : '适用型号'}
+                      </p>
+                      <p className="text-sm text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded">
                         {e.eco_model || '-'}
                       </p>
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-700">{t('customer')}</p>
-                      <p className="text-sm text-gray-900 mt-1">
+                      <p className="text-sm font-medium text-gray-500 mb-1">
+                        {lang === 'ko' ? '고객사' : '客户'}
+                      </p>
+                      <p className="text-sm text-gray-900">
                         {e.customer || '-'}
                       </p>
                     </div>
                   </div>
-                </div>
 
-                {/* 중앙: Part 정보 */}
-                <div className="space-y-4">
+                  {/* 相关 Part No. */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium text-gray-700">{t('related_part_no')}</p>
+                      <p className="text-sm font-medium text-gray-500">{t('related_part_no_colon')}</p>
                       <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
-                        {e.details?.length || 0}개
+                        {e.details?.length || 0}{lang === 'ko' ? '개' : '个'}
                       </span>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 max-h-20 overflow-y-auto">
                       {e.details?.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
-                          {e.details.slice(0, 4).map((detail: any, idx: number) => (
+                          {e.details.slice(0, 6).map((detail: any, idx: number) => (
                             <span 
                               key={idx}
                               className="inline-block bg-white text-gray-700 px-2 py-1 rounded text-xs font-mono border"
@@ -411,9 +413,9 @@ export default function Eco2Manager() {
                               {detail.part_no}
                             </span>
                           ))}
-                          {e.details.length > 4 && (
+                          {e.details.length > 6 && (
                             <span className="inline-block bg-gray-200 text-gray-600 px-2 py-1 rounded text-xs">
-                              +{e.details.length - 4}{t('more_count')}
+                              +{e.details.length - 6}{t('more_count')}
                             </span>
                           )}
                         </div>
@@ -422,80 +424,137 @@ export default function Eco2Manager() {
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* 2열: 变更理由 및 变更内容 */}
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-2">
+                      {lang === 'ko' ? '변경 이유' : '变更理由'}
+                    </p>
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 min-h-[80px] max-h-24 overflow-y-auto">
+                      <p className="text-xs text-gray-700 leading-relaxed">
+                        {e.change_reason || t('change_reason_missing')}
+                      </p>
+                    </div>
+                  </div>
 
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">{t('change_reason')}</p>
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 max-h-16 overflow-y-auto">
-                      <p className="text-xs text-gray-700">
-                        {e.change_reason || t('change_reason_missing')}
+                    <p className="text-sm font-medium text-gray-500 mb-2">
+                      {lang === 'ko' ? '변경 내용' : '变更内容'}
+                    </p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 min-h-[80px] max-h-24 overflow-y-auto">
+                      <p className="text-xs text-gray-700 leading-relaxed">
+                        {e.change_details || (lang === 'ko' ? '변경 내용 미입력' : '未输入变更内容')}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* 오른쪽: 날짜 및 액션 */}
+                {/* 3열: 날짜 및 기타 정보 */}
                 <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">{t('issued_date')}</p>
-                    <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-lg">
-                      {e.issued_date 
-                        ? new Date(e.issued_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
-                        : t('not_issued')
-                      }
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">{t('applicable_date')}</p>
-                    <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-lg">
-                      {e.applicable_date 
-                        ? new Date(e.applicable_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
-                        : t('not_set')
-                      }
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-2 pt-4">
-                    <Button 
-                      className="w-full" 
-                      variant="secondary" 
-                      size="sm"
-                      onClick={() => handleViewEco(e)}
-                    >
-                      <Eye className="w-4 h-4 mr-2" />
-                      {t('detail_view')}
-                    </Button>
-                    
-                    <div className="flex gap-2">
-                      <Button 
-                        className="flex-1" 
-                        variant="secondary" 
-                        size="sm"
-                        onClick={async () => {
-                          setErrors({});
-                          try{
-                            const { data } = await api.get(`ecos/${e.id}/`);
-                            setForm(data);
-                          }catch{
-                            setForm(e);
-                          }
-                          setDialogOpen(true);
-                        }}
-                      >
-                        <Pencil className="w-4 h-4 mr-1" />
-                        {t('edit')}
-                      </Button>
-                      <Button 
-                        className="flex-1" 
-                        variant="secondary" 
-                        size="sm"
-                        onClick={() => handleDelete(e)}
-                        disabled={del.isPending}
-                      >
-                        <Trash2 className="w-4 h-4 mr-1" />
-                        {t('delete')}
-                      </Button>
+                  {/* 날짜 정보 */}
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">
+                        {lang === 'ko' ? '발표일' : '发布日'}
+                      </p>
+                      <p className="text-xs text-gray-900 bg-gray-50 px-2 py-1 rounded">
+                        {e.issued_date 
+                          ? new Date(e.issued_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
+                          : t('not_issued')
+                        }
+                      </p>
                     </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">
+                        {lang === 'ko' ? '적용일' : '适用日'}
+                      </p>
+                      <p className="text-xs text-gray-900 bg-gray-50 px-2 py-1 rounded">
+                        {e.applicable_date 
+                          ? new Date(e.applicable_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
+                          : t('not_set')
+                        }
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">
+                        {lang === 'ko' ? '접수일' : '接收日'}
+                      </p>
+                      <p className="text-xs text-gray-900 bg-gray-50 px-2 py-1 rounded">
+                        {e.received_date 
+                          ? new Date(e.received_date).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'zh-CN')
+                          : t('not_set')
+                        }
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 기타 정보 */}
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">
+                        {lang === 'ko' ? '재고처리' : '库存处理'}
+                      </p>
+                      <p className="text-xs text-gray-700 bg-purple-50 px-2 py-1 rounded border border-purple-200">
+                        {e.storage_action || (lang === 'ko' ? '미입력' : '未输入')}
+                      </p>
+                    </div>
+                    {e.form_type && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-500 mb-1">
+                          {lang === 'ko' ? '양식구분' : '表格区分'}
+                        </p>
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                          e.form_type === 'REGULAR' 
+                            ? 'bg-green-100 text-green-700 border border-green-200'
+                            : 'bg-orange-100 text-orange-700 border border-orange-200'
+                        }`}>
+                          {e.form_type === 'REGULAR' 
+                            ? (lang === 'ko' ? '정규' : '正式')
+                            : (lang === 'ko' ? '임시' : '临时')
+                          }
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 액션 버튼 - 3열 하단에 한 줄로 배치 */}
+                  <div className="flex gap-1 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => handleViewEco(e)}
+                      className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title={lang === 'ko' ? '조회' : '查看'}
+                    >
+                      <Eye className="w-3 h-3" />
+                      {lang === 'ko' ? '조회' : '查看'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setErrors({});
+                        try{
+                          const { data } = await api.get(`ecos/${e.id}/`);
+                          setForm(data);
+                        }catch{
+                          setForm(e);
+                        }
+                        setDialogOpen(true);
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                      title={lang === 'ko' ? '편집' : '编辑'}
+                    >
+                      <Pencil className="w-3 h-3" />
+                      {lang === 'ko' ? '편집' : '编辑'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(e)}
+                      disabled={del.isPending}
+                      className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                      title={lang === 'ko' ? '삭제' : '删除'}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      {lang === 'ko' ? '삭제' : '删除'}
+                    </button>
                   </div>
                 </div>
               </div>
