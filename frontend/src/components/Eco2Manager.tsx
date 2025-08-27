@@ -12,10 +12,57 @@ import { usePartEcoCount } from '@/hooks/usePartEcoCount';
 import { useEcosByParts } from '@/hooks/useEcosByParts';
 import type { Eco } from '@/hooks/useEcos';
 import { toast } from 'react-toastify';
-import { Pencil, Trash2, Search, Eye, Upload, Download } from 'lucide-react';
+import { Pencil, Trash2, Search, Eye, Upload, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const ctrlCls = "h-10 bg-white border border-gray-300 rounded-md px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-colors";
+
+// Part No Navigator 컴포넌트 - 좌우 화살표로 내비게이션
+const PartNoNavigator = ({ parts }: { parts: any[] }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  
+  if (!parts || parts.length === 0) {
+    return <span className="text-gray-400 text-sm">-</span>;
+  }
+  
+  const handlePrevious = () => {
+    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : parts.length - 1));
+  };
+  
+  const handleNext = () => {
+    setCurrentIndex((prev) => (prev < parts.length - 1 ? prev + 1 : 0));
+  };
+  
+  return (
+    <div className="flex items-center gap-1 max-w-48">
+      <button 
+        onClick={handlePrevious}
+        className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
+        disabled={parts.length <= 1}
+      >
+        <ChevronLeft className={`h-3 w-3 ${parts.length <= 1 ? 'text-gray-300' : 'text-gray-500'}`} />
+      </button>
+      
+      <div className="flex-1 text-center">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+          {parts[currentIndex]?.part_no || '-'}
+        </span>
+      </div>
+      
+      <button 
+        onClick={handleNext}
+        className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
+        disabled={parts.length <= 1}
+      >
+        <ChevronRight className={`h-3 w-3 ${parts.length <= 1 ? 'text-gray-300' : 'text-gray-500'}`} />
+      </button>
+      
+      <span className="flex-shrink-0 text-xs text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
+        {currentIndex + 1}/{parts.length}
+      </span>
+    </div>
+  );
+};
 
 // Change Details에서 Part 정보를 추출하는 함수
 const extractPartDetailsFromChangeDetails = (changeDetails: string): any[] => {
@@ -529,41 +576,106 @@ export default function EcoManager() {
         {mode === 'eco' ? (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-slate-100">
+              <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
                 <tr>
-                  <th className="px-3 py-2 text-left">{t('eco_no')}</th>
-                  <th className="px-3 py-2 text-left">{t('eco_model')}</th>
-                  <th className="px-3 py-2 text-left">Part No.</th>
-                  <th className="px-3 py-2 text-left">{t('change_reason')}</th>
-                  <th className="px-3 py-2 text-left">{t('change_details')}</th>
-                  <th className="px-3 py-2 text-left">{t('status')}</th>
-                  <th className="px-3 py-2 text-left"></th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('eco_no')}</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('eco_model')}</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Part No.</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_reason')}</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_details')}</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('status')}</th>
+                  <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">작업</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-white divide-y divide-gray-200">
                 {ecosLoading ? (
-                  <tr><td colSpan={7} className="text-center py-4">Loading...</td></tr>
+                  <tr>
+                    <td colSpan={7} className="text-center py-8">
+                      <div className="flex items-center justify-center space-x-2">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                        <span className="text-gray-500 text-sm">Loading...</span>
+                      </div>
+                    </td>
+                  </tr>
                 ) : filteredEcos.map((e: Eco) => (
-                  <tr key={e.id} className={rowCls}>
-                    <td className="px-3 py-1 cursor-pointer text-blue-600 underline" onClick={() => handleViewEco(e)}>{e.eco_no}</td>
-                    <td className="px-3 py-1">{e.eco_model}</td>
-                    <td className="px-3 py-1">{(e.details || []).map((d: { part_no: string }) => d.part_no).join(', ')}</td>
-                    <td className="px-3 py-1 truncate max-w-xs">{e.change_reason}</td>
-                    <td className="px-3 py-1 truncate max-w-xs">{e.change_details}</td>
-                    <td className="px-3 py-1">{e.status}</td>
-                    <td className="px-3 py-1 text-right flex justify-end gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => handleViewEco(e)} aria-label={t('view')}><Eye className="w-4 h-4" /></Button>
-                      <Button size="icon" variant="ghost" onClick={async () => {
-                        setErrors({});
-                        try {
-                          const { data } = await api.get(`ecos/${e.id}/`);
-                          setForm(data);
-                        } catch {
-                          setForm(e);
-                        }
-                        setDialogOpen(true);
-                      }} aria-label={t('edit')}><Pencil className="w-4 h-4" /></Button>
-                      <Button size="icon" variant="ghost" onClick={() => handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}><Trash2 className="w-4 h-4" /></Button>
+                  <tr key={e.id} className="bg-white hover:bg-blue-50/30 transition-colors duration-150">
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <button 
+                        onClick={() => handleViewEco(e)}
+                        className="font-mono text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                      >
+                        {e.eco_no}
+                      </button>
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <span className="text-sm font-medium text-gray-900">{e.eco_model}</span>
+                    </td>
+                    <td className="px-2 py-3">
+                      <PartNoNavigator parts={e.details || []} />
+                    </td>
+                    <td className="px-3 py-3 max-w-xs">
+                      <div className="text-sm text-gray-900">
+                        <p className="line-clamp-2 leading-relaxed" title={e.change_reason || ''}>
+                          {e.change_reason}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 max-w-md">
+                      <div className="text-sm text-gray-700">
+                        <p className="line-clamp-2 leading-relaxed" title={e.change_details || ''}>
+                          {e.change_details}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                        e.status === 'OPEN' ? 'bg-blue-100 text-blue-800' :
+                        e.status === 'WIP' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-green-100 text-green-800'
+                      }`}>
+                        {e.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-center">
+                      <div className="flex items-center justify-center space-x-1">
+                        <Button 
+                          size="icon" 
+                          variant="ghost" 
+                          onClick={() => handleViewEco(e)} 
+                          className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600 rounded-full"
+                          aria-label={t('view')}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          size="icon" 
+                          variant="ghost" 
+                          onClick={async () => {
+                            setErrors({});
+                            try {
+                              const { data } = await api.get(`ecos/${e.id}/`);
+                              setForm(data);
+                            } catch {
+                              setForm(e);
+                            }
+                            setDialogOpen(true);
+                          }} 
+                          className="h-8 w-8 hover:bg-amber-100 hover:text-amber-600 rounded-full"
+                          aria-label={t('edit')}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          size="icon" 
+                          variant="ghost" 
+                          onClick={() => handleDelete(e)} 
+                          className="h-8 w-8 hover:bg-red-100 hover:text-red-600 rounded-full"
+                          aria-label={t('delete')} 
+                          disabled={del.isPending}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
