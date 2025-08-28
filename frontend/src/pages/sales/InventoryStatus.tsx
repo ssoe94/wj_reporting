@@ -5,7 +5,6 @@ import { useWarehouses } from '../../hooks/useWarehouses';
 import { useLastUpdate } from '../../hooks/useLastUpdate';
 import { Button } from '../../components/ui/button';
 import PermissionButton from '../../components/common/PermissionButton';
-import { useAuth } from '../../contexts/AuthContext';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-toastify';
 import api from '../../lib/api';
@@ -18,7 +17,6 @@ const rowCls =
 const badgeCls = 'inline-block px-2 py-0.5 rounded-full text-xs font-medium';
 
 export default function InventoryStatusPage() {
-  const { hasPermission, user } = useAuth();
   const queryClient = useQueryClient();
   const [params, setParams] = useState<Record<string, any>>({ 
     page: 1, 

@@ -46,7 +46,7 @@ interface RecordFormProps {
 
 const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   const { t, lang } = useLang();
-  const { user, hasPermission } = useAuth();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const [productQuery, setProductQuery] = useState('');

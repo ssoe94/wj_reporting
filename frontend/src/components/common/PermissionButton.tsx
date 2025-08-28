@@ -1,4 +1,5 @@
-import React, { ReactNode } from 'react';
+import React from 'react';
+import type { ReactNode } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import type { UserPermissions } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';

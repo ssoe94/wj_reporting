@@ -15,7 +15,6 @@ import PartMultiSelect from '@/components/PartMultiSelect';
 import type { PartSpec } from '@/hooks/usePartSpecs';
 
 const ctrlCls = "h-10 bg-white border border-gray-300 rounded-md px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
-const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-colors";
 
 // Part No Navigator 컴포넌트 - 좌우 화살표로 내비게이션
 const PartNoNavigator = ({ parts }: { parts: any[] }) => {

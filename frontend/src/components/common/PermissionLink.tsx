@@ -1,5 +1,6 @@
-import React, { ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React from 'react';
+import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import type { UserPermissions } from '../../contexts/AuthContext';
 
@@ -27,7 +28,6 @@ const PermissionLink: React.FC<PermissionLinkProps> = ({
   onClick,
 }) => {
   const { hasPermission, user, canAccessRoute } = useAuth();
-  const navigate = useNavigate();
 
   // 권한 확인
   const checkPermissions = (): boolean => {
