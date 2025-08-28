@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import { useDailyReport, useDailyReportSummary, useCreateSnapshot } from '../../hooks/useDailyReport';
 import { Button } from '../../components/ui/button';
+import PermissionButton from '../../components/common/PermissionButton';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-toastify';
 import { useLang } from '../../i18n';
@@ -303,13 +304,14 @@ export default function DailyReportPage() {
 
         {/* 액션 버튼들 */}
         <div className="flex gap-2">
-          <Button 
-            onClick={handleCreateSnapshot} 
+          <PermissionButton 
+            onlyStaff
+            onClick={handleCreateSnapshot}
             disabled={isCreating}
-            className="bg-blue-600 hover:bg-blue-700"
+            className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md"
           >
             {isCreating ? '생성 중...' : '스냅샷 생성'}
-          </Button>
+          </PermissionButton>
           <Button 
             variant="ghost"
             className="border border-gray-300 hover:bg-gray-50"

@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'django_celery_beat',
+    'rest_framework_simplejwt',
     
     # Local apps
     'injection',

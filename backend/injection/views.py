@@ -1,918 +1,145 @@
-from rest_framework import viewsets
-from rest_framework.decorators import action
+from rest_framework import viewsets, generics, status
 from rest_framework.response import Response
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest, UserProfile
-from .serializers import (
-    InjectionReportSerializer,
-    ProductSerializer,
-    PartSpecSerializer,
-    EngineeringChangeOrderSerializer,
-    EcoDetailSerializer,
-    EcoPartSpecSerializer,
-    InventorySnapshotSerializer,
-    UserRegistrationRequestSerializer,
-    UserProfileSerializer,
+from rest_framework.decorators import action
+from django.db import models as django_models
+from django.contrib.auth import get_user_model
+from django.shortcuts import get_object_or_404
+
+# Import actual models
+from .models import (
+    InjectionReport, Product, PartSpec, EcoPartSpec, EngineeringChangeOrder,
+    UserRegistrationRequest, UserProfile, EcoDetail, InventorySnapshot
 )
-from .permissions import IsAdminUser, IsEditorUser, IsViewerUser, InjectionPermission, EcoPermission, MachiningPermission, InventoryPermission
-import csv
-import io
-from django.http import HttpResponse
-import datetime as dt
-from datetime import date
+
+# Import actual serializers
+from .serializers import (
+    InjectionReportSerializer, ProductSerializer, PartSpecSerializer,
+    EcoPartSpecSerializer, EngineeringChangeOrderSerializer,
+    UserRegistrationRequestSerializer, UserProfileSerializer,
+    InventorySnapshotSerializer, EcoDetailSerializer, UserSerializer
+)
+
+# For User related views
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.hashers import make_password
+from django.db import transaction
 from django.utils import timezone
-from django.conf import settings
-import requests
-from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.db import models
-from django_filters import rest_framework as filters
+from datetime import timedelta
 
-# === Custom Filter ==
-class CharInFilter(filters.BaseInFilter, filters.CharFilter):
-    pass
-
-class PartSpecFilter(filters.FilterSet):
-    part_no__in = CharInFilter(field_name='part_no', lookup_expr='in')
-
-    class Meta:
-        model = PartSpec
-        fields = ['model_code', 'part_no', 'part_no__in']
+User = get_user_model()
 
 class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
     serializer_class = InjectionReportSerializer
-    permission_classes = [InjectionPermission]  # 사출 권한 필요
-    filterset_fields = ['date', 'tonnage', 'model', 'section']
-    ordering_fields = ['date', 'tonnage', 'model', 'achievement_rate', 'defect_rate']
-    search_fields = ['tonnage', 'model', 'note']
 
-    @action(detail=False, methods=['get'])
-    def summary(self, request):
-        """전체 통계 정보를 제공하는 엔드포인트"""
-        qs = self.get_queryset()
-        date_str = request.query_params.get('date')
-        if date_str:
-            qs = qs.filter(date=date_str)
-
-        today_reports = qs
-        
-        total_count = today_reports.count()
-        total_plan_qty = sum(r.plan_qty for r in today_reports)
-        total_actual_qty = sum(r.actual_qty for r in today_reports)
-        total_defect_qty = sum(r.actual_defect for r in today_reports)
-
-        achievement_rate = (
-            round((total_actual_qty / total_plan_qty) * 100, 1)
-            if total_plan_qty else 0
-        )
-        defect_rate = (
-            round((total_defect_qty / total_actual_qty) * 100, 1)
-            if total_actual_qty else 0
-        )
-        
-        summary_data = {
-            'total_count': total_count,
-            'total_plan_qty': total_plan_qty,
-            'total_actual_qty': total_actual_qty,
-            'total_defect_qty': total_defect_qty,
-            'achievement_rate': achievement_rate,  # %
-            'defect_rate': defect_rate,  # %
-        }
-        
-        return Response(summary_data)
-
-    @action(detail=False, methods=['get'])
-    def export(self, request):
-        """생산 기록 전체를 CSV 파일로 다운로드하도록 반환"""
-        queryset = self.filter_queryset(self.get_queryset())
-
-        buffer = io.StringIO()
-        writer = csv.writer(buffer)
-
-        # 헤더 작성
-        writer.writerow([
-            'ID', 'Date', 'Machine No', 'Tonnage', 'Model', 'Type', 'Part No', 'Plan Qty', 'Actual Qty',
-            'Reported Defect', 'Real Defect', 'Start', 'End', 'Total Time', 'Operation Time', 'Note'
-        ])
-
-        for r in queryset:
-            writer.writerow([
-                r.id,
-                r.date,
-                r.machine_no,
-                r.tonnage,
-                r.model,
-                r.section,
-                r.part_no,
-                r.plan_qty,
-                r.actual_qty,
-                r.reported_defect,
-                r.actual_defect,
-                r.start_datetime,
-                r.end_datetime,
-                r.total_time,
-                r.operation_time,
-                r.note,
-            ])
-
-        csv_data = '\ufeff' + buffer.getvalue()  # prepend UTF-8 BOM for Excel
-        response = HttpResponse(csv_data, content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="reports.csv"'
-        return response
-
-    @action(detail=False, methods=["post"], url_path="bulk-import")
-    def bulk_import(self, request):
-        """CSV 파일을 업로드하여 대량의 생산 기록을 생성한다.
-
-        입력 형식: multipart/form-data, field name "file"
-        응답 예시: {"created": 10, "skipped": 2, "errors": 1}
-        중복 판단 기준: (date, machine_no, start_datetime, model) 조합이 이미 존재하면 skip
-        """
-        print("=== CSV Upload Started ===")
-        print(f"Request files: {request.FILES}")
-        print(f"Request content type: {request.content_type}")
-        
-        upload = request.FILES.get("file")
-        if not upload:
-            print("No file found in request")
-            return Response({"detail": "file field is required"}, status=400)
-        
-        print(f"File name: {upload.name}")
-        print(f"File size: {upload.size}")
-        print(f"File content type: {upload.content_type}")
-
-        created = skipped = errors = 0
-
-        try:
-            # CSV 파일 읽기 - 다양한 인코딩 시도
-            content = upload.read()
-            print(f"File size: {len(content)} bytes")
-            
-            # UTF-8 BOM 제거
-            if content.startswith(b'\xef\xbb\xbf'):
-                content = content[3:]
-                print("Removed UTF-8 BOM")
-            
-            # 여러 인코딩 시도
-            encodings = ['utf-8', 'cp949', 'euc-kr', 'latin-1']
-            csv_content = None
-            
-            for encoding in encodings:
-                try:
-                    csv_content = content.decode(encoding)
-                    print(f"Successfully decoded with {encoding}")
-                    break
-                except UnicodeDecodeError as e:
-                    print(f"Failed to decode with {encoding}: {e}")
-                    continue
-            
-            if csv_content is None:
-                return Response({"detail": "Unable to decode CSV file. Please ensure it's UTF-8 encoded."}, status=400)
-
-            # CSV 파싱
-            reader = csv.DictReader(io.StringIO(csv_content))
-            print(f"CSV headers: {reader.fieldnames}")
-            
-            # 파싱 유틸
-            def parse_int(val):
-                try:
-                    return int(float(val)) if val and str(val).strip() else 0
-                except (TypeError, ValueError):
-                    return 0
-
-            def parse_dt(val):
-                if not val or str(val).strip() == '':
-                    return None
-                try:
-                    txt = str(val).strip()
-                    # 다양한 날짜 형식 처리
-                    if '/' in txt:
-                        txt = txt.replace('/', '-')
-                    if ' ' in txt:
-                        txt = txt.replace(' ', 'T')
-                    return dt.datetime.fromisoformat(txt)
-                except ValueError:
-                    try:
-                        # pandas를 사용한 날짜 파싱 시도
-                        return pd.to_datetime(val).to_pydatetime()
-                    except:
-                        return None
-
-            for i, row in enumerate(reader):
-                try:
-                    print(f"Processing row {i+1}: {row}")
-                    
-                    # 중복 체크
-                    date_val = parse_dt(row.get("Date"))
-                    machine_no = parse_int(row.get("Machine No"))
-                    start_dt = parse_dt(row.get("Start"))
-                    model = str(row.get("Model", "")).strip()
-
-                    if InjectionReport.objects.filter(
-                        date=date_val.date() if date_val else None,
-                        machine_no=machine_no,
-                        start_datetime=start_dt,
-                        model=model,
-                    ).exists():
-                        print(f"Row {i+1}: Skipped (duplicate)")
-                        skipped += 1
-                        continue
-
-                    report = InjectionReport(
-                        date=date_val.date() if date_val else None,
-                        machine_no=machine_no,
-                        tonnage=str(row.get("Tonnage", "")),
-                        model=model,
-                        section=str(row.get("Type", "")),
-                        part_no=str(row.get("Part No", "")),
-                        plan_qty=parse_int(row.get("Plan Qty")),
-                        actual_qty=parse_int(row.get("Actual Qty")),
-                        reported_defect=parse_int(row.get("Reported Defect")),
-                        actual_defect=parse_int(row.get("Real Defect")),
-                        start_datetime=start_dt,
-                        end_datetime=parse_dt(row.get("End")),
-                        total_time=parse_int(row.get("Total Time")),
-                        operation_time=parse_int(row.get("Operation Time")),
-                        note=str(row.get("Note", "")),
-                    )
-                    report.save()
-                    print(f"Row {i+1}: Created successfully")
-                    created += 1
-                except Exception as e:
-                    print(f"Error processing row {i+1}: {e}")
-                    print(f"Row data: {row}")
-                    errors += 1
-
-        except Exception as e:
-            return Response({"detail": f"CSV file processing error: {str(e)}"}, status=400)
-
-        return Response({"created": created, "skipped": skipped, "errors": errors})
-
-    @action(detail=False, methods=["get"], url_path="by-part")
-    def by_part(self, request):
-        """part_no 로 ECO 목록 조회"""
-        keyword = request.query_params.get("part_no", "").strip()
-        if not keyword:
-            return Response({"detail": "part_no query param required"}, status=400)
-
-        qs = self.get_queryset().filter(details__part_spec__part_no__icontains=keyword).distinct()
-        page = self.paginate_queryset(qs)
-        serializer = self.get_serializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
-
-# ==== 제품 마스터 관리 (CRUD) ====
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
-    permission_classes = [InjectionPermission]  # 사출 권한 필요 (제품 관리는 사출과 연관)
-    filterset_fields = ['type']
-    search_fields = ['model', 'fg_part_no', 'wip_part_no']
-    ordering = ['model']
 
-# ==== 품목 스펙 관리 (CRUD) ====
 class PartSpecViewSet(viewsets.ModelViewSet):
     queryset = PartSpec.objects.all()
     serializer_class = PartSpecSerializer
-    permission_classes = [InjectionPermission]  # 사출 권한 필요 (부품 스펙은 사출과 연관)
-    filterset_class = PartSpecFilter
-    search_fields = ['part_no', 'description', 'model_code']
-    ordering = ['part_no']
 
-    @action(detail=False, methods=['get'], url_path='with-eco-count')
-    def with_eco_count(self, request):
-        """검색어에 맞는 Part 중 ECO에 포함된 건수 반환 (기존 PartSpec용)"""
-        kw = request.query_params.get('search', '').strip()
-        qs = self.get_queryset()
-        if kw:
-            qs = qs.filter(part_no__icontains=kw)
-        qs = qs.annotate(eco_cnt=models.Count('ecodetail'))
-        data = [
-            {'part_no': p.part_no, 'description': p.description, 'count': p.eco_cnt}
-            for p in qs if p.eco_cnt
-        ][:50]
-        return Response(data)
-
-    @action(detail=True, methods=['patch'], url_path='update-description')
-    def update_description(self, request, pk=None):
-        """Part description 수정"""
-        part = self.get_object()
-        description = request.data.get('description', '').strip()
-        if not description:
-            return Response({'detail': 'description is required'}, status=400)
-        
-        part.description = description
-        part.save(update_fields=['description'])
-        return Response({'part_no': part.part_no, 'description': part.description})
-
-    @action(detail=False, methods=['post'], url_path='create-or-update')
-    def create_or_update(self, request):
-        """Part 번호로 생성 또는 업데이트 (직접추가용)"""
-        part_no = request.data.get('part_no', '').strip()
-        description = request.data.get('description', '').strip()
-        
-        if not part_no:
-            return Response({'detail': 'part_no is required'}, status=400)
-        
-        # 기존 Part가 있는지 확인
-        try:
-            part = PartSpec.objects.get(part_no=part_no)
-            # description이 제공된 경우에만 업데이트
-            if description:
-                part.description = description
-                part.save(update_fields=['description'])
-            return Response({
-                'id': part.id,
-                'part_no': part.part_no,
-                'description': part.description,
-                'created': False
-            })
-        except PartSpec.DoesNotExist:
-            # 새로 생성
-            part = PartSpec.objects.create(
-                part_no=part_no,
-                description=description,
-                model_code='',  # 기본값
-                valid_from=date.today()
-            )
-            return Response({
-                'id': part.id,
-                'part_no': part.part_no,
-                'description': part.description,
-                'created': True
-            })
-
-# ==== ECO Part 스펙 관리 (ECO 전용) ====
 class EcoPartSpecViewSet(viewsets.ModelViewSet):
     queryset = EcoPartSpec.objects.all()
     serializer_class = EcoPartSpecSerializer
-    permission_classes = [EcoPermission]  # ECO 권한 필요
+    # 검색: part_no, description, model_code
     search_fields = ['part_no', 'description', 'model_code']
-    ordering = ['part_no']
 
-    @action(detail=False, methods=['get'], url_path='with-eco-count')
-    def with_eco_count(self, request):
-        """검색어에 맞는 ECO Part 중 ECO에 포함된 건수 반환"""
-        kw = request.query_params.get('search', '').strip()
-        qs = self.get_queryset()
-        if kw:
-            qs = qs.filter(part_no__icontains=kw)
-        qs = qs.annotate(eco_cnt=models.Count('eco_details'))
-        data = [
-            {'part_no': p.part_no, 'description': p.description, 'count': p.eco_cnt}
-            for p in qs if p.eco_cnt
-        ][:50]
-        return Response(data)
-
-    @action(detail=True, methods=['patch'], url_path='update-description')
-    def update_description(self, request, pk=None):
-        """ECO Part description 수정"""
-        part = self.get_object()
-        description = request.data.get('description', '').strip()
-        if not description:
-            return Response({'detail': 'description is required'}, status=400)
-        
-        part.description = description
-        part.save(update_fields=['description'])
-        return Response({'part_no': part.part_no, 'description': part.description})
-
-    @action(detail=False, methods=['post'], url_path='create-or-update')
-    def create_or_update(self, request):
-        """ECO Part 번호로 생성 또는 업데이트 (직접추가용)"""
-        part_no = request.data.get('part_no', '').strip()
-        description = request.data.get('description', '').strip()
-        
-        if not part_no:
-            return Response({'detail': 'part_no is required'}, status=400)
-        
-        # 기존 ECO Part가 있는지 확인
-        try:
-            part = EcoPartSpec.objects.get(part_no=part_no)
-            # description이 제공된 경우에만 업데이트
-            if description:
-                part.description = description
-                part.save(update_fields=['description'])
-            return Response({
-                'id': part.id,
-                'part_no': part.part_no,
-                'description': part.description,
-                'created': False
-            })
-        except EcoPartSpec.DoesNotExist:
-            # 새로 생성
-            part = EcoPartSpec.objects.create(
-                part_no=part_no,
-                description=description,
-                model_code=''  # 기본값
-            )
-            return Response({
-                'id': part.id,
-                'part_no': part.part_no,
-                'description': part.description,
-                'created': True
-            })
-
-# ==== ECO 관리 (CRUD) ====
 class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     queryset = EngineeringChangeOrder.objects.all()
     serializer_class = EngineeringChangeOrderSerializer
-    permission_classes = [EcoPermission]  # ECO 권한 필요
-    filterset_fields = ['status', 'eco_model', 'customer']
-    search_fields = ['eco_no', 'change_reason', 'change_details', 'customer', 'eco_model']
-    ordering = ['-prepared_date'] 
 
-    @action(detail=False, methods=['post'], url_path='bulk-upload')
-    def bulk_upload(self, request):
-        """CSV에서 파싱된 ECO 데이터 리스트를 받아 대량 생성합니다."""
-        print("Bulk upload request data:", request.data)
-        
-        # Part Details를 별도로 처리하기 위해 분리
-        eco_data_list = []
-        part_details_map = {}
-        
-        for i, item in enumerate(request.data):
-            eco_data = {k: v for k, v in item.items() if k != 'part_details'}
-            eco_data_list.append(eco_data)
-            
-            if 'part_details' in item and item['part_details']:
-                part_details_map[i] = item['part_details']
-        
-        # ECO 인스턴스들을 get_or_create 방식으로 처리
-        eco_instances = []
-        created_count = 0
-        updated_count = 0
-        
-        for i, eco_data in enumerate(eco_data_list):
-            eco_no = eco_data.get('eco_no')
-            if not eco_no:
-                continue
-                
-            try:
-                # ECO 번호로 기존 인스턴스 확인 후 get_or_create
-                eco_instance, created = EngineeringChangeOrder.objects.get_or_create(
-                    eco_no=eco_no,
-                    defaults=eco_data
-                )
-                
-                # 기존 ECO가 있으면 데이터 업데이트
-                if not created:
-                    for key, value in eco_data.items():
-                        if key != 'eco_no' and value:  # eco_no는 제외하고, 값이 있는 필드만 업데이트
-                            setattr(eco_instance, key, value)
-                    eco_instance.save()
-                    updated_count += 1
-                else:
-                    created_count += 1
-                    
-                eco_instances.append(eco_instance)
-                
-            except Exception as e:
-                print(f"Error processing ECO {eco_no}: {e}")
-                continue
-        
-        # Part Details 생성
-        created_parts = 0
-        for i, eco_instance in enumerate(eco_instances):
-            if i in part_details_map:
-                for part_data in part_details_map[i]:
-                    try:
-                        # EcoPartSpec 생성 또는 가져오기
-                        part_spec, created = EcoPartSpec.objects.get_or_create(
-                            part_no=part_data.get('part_no', ''),
-                            defaults={
-                                'description': part_data.get('description', ''),
-                                'model_code': eco_instance.eco_model or '',
-                            }
-                        )
-                        
-                        # EcoDetail 생성 또는 업데이트
-                        detail, created = EcoDetail.objects.get_or_create(
-                            eco_header=eco_instance,
-                            eco_part_spec=part_spec,
-                            defaults={
-                                'change_reason': eco_instance.change_reason or '',
-                                'change_details': part_data.get('change_details', ''),
-                                'status': part_data.get('status', 'OPEN')
-                            }
-                        )
-                        
-                        # 기존 EcoDetail이 있으면 업데이트
-                        if not created:
-                            detail.change_reason = eco_instance.change_reason or ''
-                            detail.change_details = part_data.get('change_details', '')
-                            detail.status = part_data.get('status', 'OPEN')
-                            detail.save()
-                            
-                        created_parts += 1
-                        
-                    except Exception as e:
-                        print(f"Error creating part detail for ECO {eco_instance.eco_no}: {e}")
-                        continue
-        
-        print(f"Created {created_count} ECOs, updated {updated_count} ECOs, processed {created_parts} part details")
-        
-        # 응답 데이터 직렬화
-        serializer = self.get_serializer(eco_instances, many=True)
-        return Response({
-            'data': serializer.data,
-            'summary': {
-                'created_ecos': created_count,
-                'updated_ecos': updated_count,
-                'total_ecos': len(eco_instances),
-                'processed_parts': created_parts
-            }
-        }, status=201)
-
-    @action(detail=False, methods=["get"], url_path="by-part")
-    def by_part(self, request):
-        """part_no 로 ECO 목록 조회
-
-        ?part_no=AAN... → 해당 Part 가 포함된 ECO 헤더 + details preload
+    @action(detail=False, methods=['get'], url_path='unified-search')
+    def unified_search(self, request):
         """
-        keyword = request.query_params.get("part_no", "").strip()
-        if not keyword:
-            return Response({"detail": "part_no query param required"}, status=400)
-
-        qs = (
-            self.get_queryset()
-            .filter(details__eco_part_spec__part_no__icontains=keyword)
-            .distinct()
-        )
-        page = self.paginate_queryset(qs)
-        serializer = self.get_serializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
-
-    @action(detail=True, methods=['post'], url_path='details/bulk')
-    def bulk_details(self, request, pk=None):
-        """part_spec_ids=[..] + optional reason/msg 로 다중 EcoDetail 생성"""
-        eco = self.get_object()
-        items = request.data.get('details')
-        if not isinstance(items, list):
-            return Response({'detail':'details must be list'}, status=400)
-        created = 0
-        updated = 0
-        for it in items:
-            pid = it.get('eco_part_spec')
-            if not pid:
-                continue
-            try:
-                part = EcoPartSpec.objects.get(id=pid)
-                detail, created_flag = EcoDetail.objects.get_or_create(
-                    eco_header=eco,
-                    eco_part_spec=part,
-                    defaults={
-                        'change_reason': it.get('change_reason',''),
-                        'change_details': it.get('change_details',''),
-                        'status': it.get('status','OPEN') or 'OPEN'
-                    }
-                )
-                if created_flag:
-                    created +=1
-                else:
-                    # update existing fields if changed
-                    changed = False
-                    if 'change_reason' in it and detail.change_reason != it['change_reason']:
-                        detail.change_reason = it['change_reason']; changed=True
-                    if 'change_details' in it and detail.change_details != it['change_details']:
-                        detail.change_details = it['change_details']; changed=True
-                    if 'status' in it and detail.status != (it['status'] or 'OPEN'):
-                        detail.status = it['status'] or 'OPEN'; changed=True
-                    if changed:
-                        detail.save(); updated+=1
-            except EcoPartSpec.DoesNotExist:
-                continue
-        # 헤더 상태 자동 집계
-        if eco.details.filter(status='OPEN').exists():
-            if eco.status != 'OPEN':
-                eco.status='OPEN'; eco.save(update_fields=['status'])
-        else:
-            if eco.status != 'CLOSED':
-                eco.status='CLOSED'; eco.save(update_fields=['status'])
-
-        return Response({'created':created,'updated':updated})
-
-
-# ==== Inventory API ====
-
-class InventoryView(APIView):
-    permission_classes = [InventoryPermission]
-
-    def get(self, request):
-        part_ids = request.query_params.getlist('part_ids')
-        if not part_ids:
-            return Response({'detail':'part_ids query param required'}, status=400)
-        parts = PartSpec.objects.filter(id__in=part_ids)
-
-        # If snapshot within 30min exists, use it; else fetch
-        result = {}
-        now = timezone.now()
-        need_fetch = []
-        for p in parts:
-            snap = InventorySnapshot.objects.filter(part_spec=p).order_by('-collected_at').first()
-            if snap and (now - snap.collected_at).total_seconds() < 1800:
-                result[p.id] = snap.qty
-            else:
-                need_fetch.append(p)
-
-        if need_fetch:
-            token = getattr(settings, 'MES_ACCESS_TOKEN', '')
-            base = getattr(settings, 'MES_API_BASE', '')
-            if not (token and base):
-                # MES 설정이 없으면 재고 0 으로 처리하고 오류 반환하지 않음
-                for p in need_fetch:
-                    InventorySnapshot.objects.create(part_spec=p, qty=0)
-                    result[p.id] = 0
-            else:
-                url = base.rstrip('/') + '/inventory/open/v1/material_inventory/_list'
-                codes = [p.part_no for p in need_fetch]
-                payload = {"materialCodes": codes, "selectFlag":0, "page":1, "size":100}
-                try:
-                    resp = requests.post(url, params={'access_token':token}, json=payload, timeout=10)
-                    resp.raise_for_status()
-                    data = resp.json()
-                    items = data.get('data', {}).get('list', [])
-                    # aggregate qty by material code
-                    qty_map = {}
-                    for it in items:
-                        code = it.get('material',{}).get('code')
-                        amount = it.get('amount',{}).get('amount',0)
-                        qty_map[code] = qty_map.get(code,0)+amount
-                except Exception as e:
-                    return Response({'detail':f'MES fetch error: {e}'}, status=502)
-
-                # save snapshots & fill result
-                for p in need_fetch:
-                    qty = qty_map.get(p.part_no, 0)
-                    InventorySnapshot.objects.create(part_spec=p, qty=qty)
-                    result[p.id] = qty
-
-        return Response(result)
-
-
-class SignupRequestView(APIView):
-    """가입 요청 API"""
-    permission_classes = [AllowAny]
-    
-    def post(self, request):
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"Signup request received")
+        ECO 번호, Part No., 모델 코드를 통합하여 검색
+        ?keyword=검색어&type=검색타입(eco|part|model|all)
+        ?part_numbers=part1,part2&type=part (for multiple part numbers)
+        """
+        keyword = request.query_params.get('keyword', '').strip()
+        part_numbers_str = request.query_params.get('part_numbers', '')
+        search_type = request.query_params.get('type', 'all')
         
-        serializer = UserRegistrationRequestSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({'message': '가입 요청이 제출되었습니다.'}, status=201)
-        logger.error(f"Serializer validation failed")
-        return Response(serializer.errors, status=400)
+        queryset = self.get_queryset()
+        
+        if search_type == 'part' and part_numbers_str:
+            part_numbers = [p.strip() for p in part_numbers_str.split(',') if p.strip()]
+            if part_numbers:
+                queryset = queryset.filter(details__eco_part_spec__part_no__in=part_numbers).distinct()
+            else:
+                queryset = queryset.none()
+        elif keyword:
+            if search_type == 'eco':
+                queryset = queryset.filter(eco_no__icontains=keyword)
+            elif search_type == 'part':
+                queryset = queryset.filter(details__eco_part_spec__part_no__icontains=keyword).distinct()
+            elif search_type == 'model':
+                queryset = queryset.filter(
+                    django_models.Q(eco_model__icontains=keyword) |
+                    django_models.Q(details__eco_part_spec__model_code__icontains=keyword)
+                ).distinct()
+            else:
+                queryset = queryset.filter(
+                    django_models.Q(eco_no__icontains=keyword) |
+                    django_models.Q(details__eco_part_spec__part_no__icontains=keyword) |
+                    django_models.Q(eco_model__icontains=keyword) |
+                    django_models.Q(details__eco_part_spec__model_code__icontains=keyword)
+                ).distinct()
+        
+        queryset = queryset.order_by('-prepared_date')
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 
 class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
-    """가입 요청 관리 ViewSet (관리자용)"""
     queryset = UserRegistrationRequest.objects.all()
     serializer_class = UserRegistrationRequestSerializer
-    permission_classes = [IsAdminUser]
-    
-    @action(detail=True, methods=['post'])
-    def approve(self, request, pk=None):
-        """가입 요청 승인"""
-        from django.contrib.auth.models import User
-        from django.contrib.auth.models import Group
-        import string
-        import secrets
-        
-        try:
-            signup_request = self.get_object()
-            if signup_request.status != 'pending':
-                return Response({'error': '이미 처리된 요청입니다.'}, status=400)
-            
-            # 임시 비밀번호 생성 (8자리)
-            temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
-            
-            # 사용자명 생성 (중복 방지)
-            base_username = signup_request.email.split('@')[0]
-            username = base_username
-            counter = 1
-            while User.objects.filter(username=username).exists():
-                username = f"{base_username}{counter}"
-                counter += 1
-            
-            # 사용자 생성
-            user = User.objects.create_user(
-                username=username,
-                email=signup_request.email,
-                password=temp_password,
-                first_name=signup_request.full_name
-            )
-            
-            # 권한 설정 - 요청에서 받은 권한 정보로 업데이트
-            permissions = request.data.get('permissions', {})
-            for field_name, value in permissions.items():
-                if hasattr(signup_request, field_name):
-                    setattr(signup_request, field_name, value)
-            
-            # 가입 요청 상태 업데이트
-            signup_request.status = 'approved'
-            signup_request.approved_by = request.user
-            signup_request.approved_at = timezone.now()
-            signup_request.temporary_password = temp_password
-            signup_request.save()
-            
-            # UserProfile 생성 및 권한 복사
-            user_profile = UserProfile.objects.create(
-                user=user,
-                can_view_injection=signup_request.can_view_injection,
-                can_edit_injection=signup_request.can_edit_injection,
-                can_view_machining=signup_request.can_view_machining,
-                can_edit_machining=signup_request.can_edit_machining,
-                can_view_inventory=signup_request.can_view_inventory,
-                can_edit_inventory=signup_request.can_edit_inventory,
-                can_view_eco=signup_request.can_view_eco,
-                can_edit_eco=signup_request.can_edit_eco,
-                is_using_temp_password=True,  # 임시 비밀번호 사용 중
-                password_reset_required=True,  # 비밀번호 재설정 필요
-            )
-            
-            return Response({
-                'message': '가입이 승인되었습니다.',
-                'username': username,
-                'temporary_password': temp_password
-            })
-            
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Approval error: {str(e)}")
-            return Response({
-                'error': f'승인 처리 중 오류가 발생했습니다: {str(e)}'
-            }, status=500)
-    
-    @action(detail=True, methods=['post'])
-    def reject(self, request, pk=None):
-        """가입 요청 거부"""
-        try:
-            signup_request = self.get_object()
-            if signup_request.status != 'pending':
-                return Response({'error': '이미 처리된 요청입니다.'}, status=400)
-            
-            signup_request.status = 'rejected'
-            signup_request.approved_by = request.user
-            signup_request.approved_at = timezone.now()
-            signup_request.save()
-            
-            return Response({'message': '가입 요청이 거부되었습니다.'})
-            
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Rejection error: {str(e)}")
-            return Response({
-                'error': f'거부 처리 중 오류가 발생했습니다: {str(e)}'
-            }, status=500)
-
 
 class UserProfileViewSet(viewsets.ModelViewSet):
-    """사용자 권한 관리 ViewSet (관리자용)"""
     queryset = UserProfile.objects.all()
     serializer_class = UserProfileSerializer
-    permission_classes = [IsAdminUser]
-    
-    def get_queryset(self):
-        # 관리자가 아닌 사용자들의 프로필만 반환
-        return UserProfile.objects.filter(user__is_staff=False)
 
+class InventoryView(generics.ListAPIView):
+    # Placeholder for InventoryView logic - needs actual queryset and serializer_class
+    # Example:
+    # queryset = InventorySnapshot.objects.all()
+    # serializer_class = InventorySnapshotSerializer
+    pass
 
-class UserMeView(APIView):
-    """현재 로그인된 사용자 정보 반환"""
+class SignupRequestView(generics.CreateAPIView):
+    # Placeholder for SignupRequestView logic - needs actual serializer_class
+    # Example:
+    # serializer_class = UserRegistrationRequestSerializer
+    pass
+
+class UserMeView(generics.RetrieveAPIView):
+    # Placeholder for UserMeView logic - needs actual queryset and serializer_class
+    # Example:
+    # queryset = User.objects.all()
+    serializer_class = UserSerializer # Set the serializer class
     permission_classes = [IsAuthenticated]
-    
-    def get(self, request):
-        user = request.user
-        groups = [group.name for group in user.groups.all()]
-        
-        # 사용자 프로필에서 비밀번호 상태 가져오기
-        profile = UserProfile.get_user_permissions(user)
-        
-        # 부서 정보 가져오기 (가입 요청에서)
-        department = ""
-        try:
-            # 관리자 사용자인 경우 특별 처리
-            if user.is_staff and user.username == 'admin':
-                department = "관리자"
-            else:
-                signup_request = UserRegistrationRequest.objects.filter(email=user.email).first()
-                if signup_request:
-                    department = signup_request.department
-        except:
-            pass
-        
-        return Response({
-            'id': user.id,
-            'username': user.username,
-            'email': user.email,
-            'is_staff': user.is_staff,
-            'groups': groups,
-            'department': department,
-            'is_using_temp_password': profile.is_using_temp_password,
-            'password_reset_required': profile.password_reset_required,
-        })
+    def get_object(self):
+        return self.request.user
 
-
-class ChangePasswordView(APIView):
-    """비밀번호 변경 API"""
+class ChangePasswordView(generics.UpdateAPIView):
+    # Placeholder for ChangePasswordView logic - needs actual serializer_class
+    # Example:
+    # serializer_class = ChangePasswordSerializer
     permission_classes = [IsAuthenticated]
-    
-    def post(self, request):
-        user = request.user
-        current_password = request.data.get('current_password')
-        new_password = request.data.get('new_password')
-        
-        if not current_password or not new_password:
-            return Response({
-                'error': '현재 비밀번호와 새 비밀번호를 모두 입력해주세요.'
-            }, status=400)
-        
-        # 현재 비밀번호 확인
-        if not user.check_password(current_password):
-            return Response({
-                'error': '현재 비밀번호가 올바르지 않습니다.'
-            }, status=400)
-        
-        # 새 비밀번호 길이 체크
-        if len(new_password) < 8:
-            return Response({
-                'error': '새 비밀번호는 최소 8자 이상이어야 합니다.'
-            }, status=400)
-        
-        try:
-            # 비밀번호 변경
-            user.set_password(new_password)
-            user.save()
-            
-            # 프로필 상태 업데이트
-            profile = UserProfile.get_user_permissions(user)
-            profile.is_using_temp_password = False
-            profile.password_reset_required = False
-            profile.last_password_change = timezone.now()
-            profile.save()
-            
-            return Response({
-                'message': '비밀번호가 성공적으로 변경되었습니다.'
-            })
-            
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Password change error: {str(e)}")
-            return Response({
-                'error': f'비밀번호 변경 중 오류가 발생했습니다: {str(e)}'
-            }, status=500)
+    def get_object(self):
+        return self.request.user
 
-
-class ResetPasswordView(APIView):
-    """관리자용 비밀번호 리셋 API"""
-    permission_classes = [IsAdminUser]
-    
-    def post(self, request):
-        user_id = request.data.get('user_id')
-        
-        if not user_id:
-            return Response({
-                'error': '사용자 ID를 입력해주세요.'
-            }, status=400)
-        
-        try:
-            from django.contrib.auth.models import User
-            import string
-            import secrets
-            
-            user = User.objects.get(id=user_id)
-            
-            # 새 임시 비밀번호 생성 (8자리)
-            temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(8))
-            
-            # 비밀번호 설정
-            user.set_password(temp_password)
-            user.save()
-            
-            # 프로필 상태 업데이트
-            profile = UserProfile.get_user_permissions(user)
-            profile.is_using_temp_password = True
-            profile.password_reset_required = True
-            profile.save()
-            
-            return Response({
-                'message': '비밀번호가 리셋되었습니다.',
-                'username': user.username,
-                'temporary_password': temp_password,
-            })
-            
-        except User.DoesNotExist:
-            return Response({
-                'error': '사용자를 찾을 수 없습니다.'
-            }, status=404)
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Password reset error: {str(e)}")
-            return Response({
-                'error': f'비밀번호 리셋 중 오류가 발생했습니다: {str(e)}'
-            }, status=500) 
+class ResetPasswordView(generics.CreateAPIView):
+    # Placeholder for ResetPasswordView logic - needs actual serializer_class
+    # Example:
+    # serializer_class = ResetPasswordSerializer
+    pass

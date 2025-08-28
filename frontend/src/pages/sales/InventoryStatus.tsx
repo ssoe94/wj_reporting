@@ -4,6 +4,8 @@ import { useInventoryStatus } from '../../hooks/useInventoryStatus';
 import { useWarehouses } from '../../hooks/useWarehouses';
 import { useLastUpdate } from '../../hooks/useLastUpdate';
 import { Button } from '../../components/ui/button';
+import PermissionButton from '../../components/common/PermissionButton';
+import { useAuth } from '../../contexts/AuthContext';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-toastify';
 import api from '../../lib/api';
@@ -16,6 +18,7 @@ const rowCls =
 const badgeCls = 'inline-block px-2 py-0.5 rounded-full text-xs font-medium';
 
 export default function InventoryStatusPage() {
+  const { hasPermission, user } = useAuth();
   const queryClient = useQueryClient();
   const [params, setParams] = useState<Record<string, any>>({ 
     page: 1, 
@@ -387,7 +390,12 @@ export default function InventoryStatusPage() {
             </div>
           )}
           <div className="flex gap-2">
-            <Button onClick={refreshInventory} disabled={updating} className="flex items-center gap-1 h-10">
+            <PermissionButton 
+              permission="can_edit_inventory" 
+              onClick={refreshInventory} 
+              className={`inline-flex items-center justify-center gap-1 h-10 px-4 rounded-xl bg-blue-600 text-white hover:bg-blue-700 font-semibold text-base ${updating ? 'opacity-60 cursor-not-allowed' : ''}`}
+              disabled={updating}
+            >
             {updating && (
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                 <circle
@@ -406,7 +414,7 @@ export default function InventoryStatusPage() {
               </svg>
             )}
             재고 업데이트
-          </Button>
+            </PermissionButton>
           <Button onClick={downloadCSV} className="flex items-center gap-1 h-10 bg-green-600 hover:bg-green-700">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

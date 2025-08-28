@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { Button } from './ui/button';
+import PermissionButton from './common/PermissionButton';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
@@ -9,7 +10,7 @@ import type { AssemblyReport } from '../types/assembly';
 import { useLang } from '../i18n';
 import { usePartSpecSearch, usePartListByModel } from '../hooks/usePartSpecs';
 import type { PartSpec } from '../hooks/usePartSpecs';
-import { Plus } from 'lucide-react';
+import { Plus, PlusCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
@@ -427,9 +428,15 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
 
       {/* 제출 버튼 */}
       <div className="flex justify-end space-x-4">
-        <Button type="submit" disabled={isLoading}>
+        <PermissionButton
+          permission="can_edit_machining"
+          type="submit"
+          className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
+          disabled={isLoading}
+        >
+          {!isLoading && <PlusCircle className="h-4 w-4 shrink-0" />}
           {isLoading ? t('saving') : t('save')}
-        </Button>
+        </PermissionButton>
       </div>
 
       {/* Add Part Modal */}

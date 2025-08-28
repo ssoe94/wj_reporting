@@ -17,6 +17,6 @@ export function usePartEcoCount(keyword: string) {
       });
       return data;
     },
-    enabled: keyword.trim().length > 1,
+    enabled: keyword.trim().length > 0,
   });
 } 

@@ -4,6 +4,8 @@ import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { useLang } from '../i18n';
+import { useAuth } from '../contexts/AuthContext';
+import PermissionButton from './common/PermissionButton';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import { Autocomplete, TextField } from '@mui/material';
@@ -44,6 +46,7 @@ interface RecordFormProps {
 
 const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   const { t, lang } = useLang();
+  const { user, hasPermission } = useAuth();
   const queryClient = useQueryClient();
 
   const [productQuery, setProductQuery] = useState('');
@@ -149,7 +152,12 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
       });
     } catch (err: any) {
       console.error(err);
-      if (err.response?.status === 400 && err.response.data) {
+      if (err.response?.status === 403) {
+        const message = user?.username?.includes('chinese') || user?.department?.includes('中') 
+          ? '您没有保存数据的权限' 
+          : '데이터를 저장할 권한이 없습니다';
+        toast.error(message);
+      } else if (err.response?.status === 400 && err.response.data) {
         const firstMsg = Object.values(err.response.data)[0] as any;
         toast.error(Array.isArray(firstMsg) ? firstMsg[0] : String(firstMsg));
       } else {
@@ -384,9 +392,14 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
               </div>
             </div>
             <div className="flex justify-end">
-              <Button type="submit" className="gap-2">
-                <PlusCircle className="h-4 w-4" /> {t('save')}
-              </Button>
+              <PermissionButton
+                permission="can_edit_injection"
+                type="submit"
+                className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
+              >
+                <PlusCircle className="h-4 w-4 shrink-0" />
+                <span>{t('save')}</span>
+              </PermissionButton>
             </div>
           </CardContent>
         </Card>
@@ -418,7 +431,10 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" size="sm" onClick={()=>setShowAddPartModal(false)}>취소</Button>
-              <Button size="sm" onClick={async()=>{
+              <PermissionButton 
+                permission="can_edit_injection"
+                className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200"
+                onClick={async()=>{
                 try{
                   const partNo = (document.getElementById('newPartNo') as HTMLInputElement).value;
                   const modelCode = (document.getElementById('newModelCode') as HTMLInputElement).value;
@@ -467,9 +483,16 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                     ct: String(createdPart.cycle_time_sec || ''),
                   }));
                 }catch(err:any){
-                  toast.error('저장 실패');
+                  if (err.response?.status === 403) {
+                    const message = user?.username?.includes('chinese') || user?.department?.includes('中') 
+                      ? '您没有创建新零件的权限' 
+                      : '새 부품을 생성할 권한이 없습니다';
+                    toast.error(message);
+                  } else {
+                    toast.error('저장 실패');
+                  }
                 }
-              }}>저장</Button>
+              }}>저장</PermissionButton>
             </div>
           </div>
         </div>

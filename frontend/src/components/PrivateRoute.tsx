@@ -7,7 +7,7 @@ interface PrivateRouteProps {
 }
 
 export default function PrivateRoute({ children }: PrivateRouteProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, canAccessRoute } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -20,6 +20,11 @@ export default function PrivateRoute({ children }: PrivateRouteProps) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // 경로별 권한 검사: 접근 불가 시 대시보드로 이동
+  if (!canAccessRoute(location.pathname)) {
+    return <Navigate to="/analysis" replace />;
   }
 
   return <>{children}</>;

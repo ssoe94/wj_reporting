@@ -31,7 +31,7 @@ export function useEcos(keyword = ''): UseQueryResult<Eco[]> {
   return useQuery({
     queryKey: ['ecos', keyword],
     queryFn: async () => {
-      const params: Record<string, any> = {};
+      const params: Record<string, any> = { include_details: 'true' };
       if (keyword.trim()) params.search = keyword.trim();
       const { data } = await api.get('/ecos/', { params });
       return Array.isArray(data) ? data : data.results;

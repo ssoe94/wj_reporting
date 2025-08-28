@@ -2,6 +2,17 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../lib/api';
 import type { ReactNode } from 'react';
 
+export interface UserPermissions {
+  can_view_injection: boolean;
+  can_edit_injection: boolean;
+  can_view_machining: boolean;
+  can_edit_machining: boolean;
+  can_view_eco: boolean;
+  can_edit_eco: boolean;
+  can_view_inventory: boolean;
+  can_edit_inventory: boolean;
+}
+
 interface User {
   id: number;
   username: string;
@@ -11,6 +22,7 @@ interface User {
   department?: string;
   is_using_temp_password?: boolean;
   password_reset_required?: boolean;
+  permissions?: UserPermissions;
 }
 
 interface AuthContextType {
@@ -20,6 +32,8 @@ interface AuthContextType {
   logout: () => void;
   isLoading: boolean;
   isAuthenticated: boolean;
+  hasPermission: (permission: keyof UserPermissions) => boolean;
+  canAccessRoute: (route: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -134,6 +148,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(null);
   };
 
+  // 권한 확인 함수
+  const hasPermission = (permission: keyof UserPermissions): boolean => {
+    if (!user || !user.permissions) return false;
+    return user.permissions[permission] || false;
+  };
+
+  // 라우트 접근 권한 확인
+  const canAccessRoute = (route: string): boolean => {
+    if (!user || !user.permissions) return false;
+
+    // 스태프는 모든 권한
+    if (user.is_staff) return true;
+
+    // 해시/쿼리 제거하여 기본 경로만 검사
+    const base = route.split('#')[0].split('?')[0];
+
+    // 분석/루트는 모든 인증 사용자 허용
+    if (base === '/' || base === '' || base === '/analysis') return true;
+
+    // 관리자 전용 경로
+    if (base.startsWith('/admin')) return false;
+
+    // 섹션별 권한 매핑 (prefix 매칭)
+    if (base.startsWith('/injection')) return hasPermission('can_view_injection');
+    if (base.startsWith('/assembly')) return hasPermission('can_view_machining');
+    if (base.startsWith('/eco2') || base.startsWith('/eco') || base.startsWith('/models')) return hasPermission('can_view_eco');
+    if (base.startsWith('/sales')) return hasPermission('can_view_inventory');
+
+    return true;
+  };
+
   const value: AuthContextType = {
     user,
     token,
@@ -141,6 +186,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     isLoading,
     isAuthenticated: !!token,
+    hasPermission,
+    canAccessRoute,
   };
 
   return (

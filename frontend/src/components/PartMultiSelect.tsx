@@ -67,27 +67,35 @@ export default function PartMultiSelect({ onAdd }: Props) {
 
   return (
     <>
-      <div className="border rounded p-3 space-y-2">
+      <div className="rounded p-3 space-y-2">
         <div className="flex gap-2 items-center">
-          <Input value={keyword} onChange={(e)=>setKeyword(e.target.value)} placeholder={t('search_placeholder')} className="flex-1" />
+          <div className="relative flex-1">
+            <Input 
+              value={keyword} 
+              onChange={(e)=>setKeyword(e.target.value)} 
+              placeholder={t('search_placeholder')}
+              className="pl-8 !outline-none !ring-0 !focus:outline-none !focus:ring-0 !focus-visible:outline-none !focus-visible:ring-0"
+            />
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">PN</span>
+            {keyword.trim() && (
+              <ul className="absolute z-50 mt-1 left-0 right-0 max-h-60 overflow-auto border rounded bg-white p-2 text-sm space-y-1 shadow-lg">
+                {results.map(r=> (
+                  <li key={r.id} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-gray-50" title={`${r.part_no}${r.description ? ` - ${r.description}` : ''}`}>
+                    <input type="checkbox" checked={selected.some(it=>it.id===r.id)} onChange={()=>toggle(r)} />
+                    <span className="font-mono text-xs bg-gray-100 px-1 rounded" title={r.part_no}>{r.part_no}</span>
+                    <span className="text-gray-500 text-xs truncate" title={r.description || ''}>{r.description}</span>
+                  </li>
+                ))}
+                {!results.length && (
+                  <li className="text-center text-xs py-4">
+                    <button type="button" className="text-blue-600 underline" onClick={addManual}>"{keyword.trim()}" {t('add_directly')}</button>
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
           <Button size="sm" onClick={()=>{onAdd(selected); setSelected([]); setKeyword('');}} disabled={!selected.length}>{t('select')}</Button>
         </div>
-        {keyword.trim() && (
-          <ul className="max-h-60 overflow-auto border rounded p-2 text-sm space-y-1 bg-white">
-            {results.map(r=> (
-              <li key={r.id} className="flex items-center gap-2">
-                <input type="checkbox" checked={selected.some(it=>it.id===r.id)} onChange={()=>toggle(r)} />
-                <span className="font-mono">{r.part_no}</span>
-                <span className="text-gray-500 text-xs">{r.description}</span>
-              </li>
-            ))}
-            {!results.length && (
-              <li className="text-center text-xs py-4">
-                <button type="button" className="text-blue-600 underline" onClick={addManual}>"{keyword.trim()}" {t('add_directly')}</button>
-              </li>
-            )}
-          </ul>
-        )}
         {selected.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1 text-xs">
             {selected.map(p=> (

@@ -27,7 +27,6 @@ import {
 import SummaryPage from "./pages/summary";
 // 실제 페이지 컴포넌트 임포트
 import ModelsPage from './pages/models';
-import EcoPage from './pages/eco';
 import Eco2Page from './pages/eco2';
 import AnalysisPage from './pages/analysis';
 import AssemblyPage from './pages/assembly';
@@ -39,41 +38,122 @@ import InventoryStatusPage from './pages/sales/InventoryStatus';
 import DailyReportPage from './pages/sales/DailyReport';
 import UserApproval from './pages/admin/UserApproval';
 import PasswordChangeModal from './components/PasswordChangeModal';
+import PermissionLink from './components/common/PermissionLink';
 
 const queryClient = new QueryClient();
 
-// navItems를 함수로 생성 (언어별)
+// navItems를 함수로 생성 (언어별 및 권한별)
 export function useNavItems() {
   const { t } = useLang();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   
-  return [
-    {
-      label: t('nav_overview'),
-      icon: FileChartPie,
-      children: [
-        { to: "/analysis", label: t('nav_dashboard'), icon: ChartPie },
-      ],
-    },
-    {
+  // 스태프는 모든 메뉴 접근 가능
+  if (user?.is_staff) {
+    return [
+      {
+        label: t('nav_overview'),
+        icon: FileChartPie,
+        children: [
+          { to: "/analysis", label: t('nav_dashboard'), icon: ChartPie },
+        ],
+      },
+      {
+        label: t('nav_injection'),
+        icon: Monitor,
+        children: [
+          { to: "/injection#top", label: t('nav_injection_summary'), icon: ChartNoAxesCombined },
+          { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
+          { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
+        ],
+      },
+      {
+        label: t('nav_machining'),
+        icon: Wrench,
+        children: [
+          { to: "/assembly#top", label: t('nav_machining_summary'), icon: ChartNoAxesCombined },
+          { to: "/assembly#records", label: t('nav_machining_records'), icon: ClipboardList },
+          { to: "/assembly#new", label: t('nav_machining_new'), icon: PlusSquare },
+        ],
+      },
+      {
+        label: t('nav_sales'),
+        icon: Truck,
+        children: [
+          { to: "/sales/inventory", label: t('nav_inventory_analysis'), icon: PackageSearch },
+          { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
+          { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
+        ],
+      },
+      {
+        label: t('nav_development'),
+        icon: DraftingIcon,
+        children: [
+          { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
+          { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
+        ],
+      },
+      {
+        label: '관리자',
+        icon: Monitor,
+        children: [
+          { to: "/admin/user-management", label: '사용자 관리', icon: ClipboardCheck },
+        ],
+      },
+    ];
+  }
+
+  // 일반 사용자는 권한에 따라 메뉴 필터링
+  const navItems = [];
+  
+  // 대시보드는 모든 사용자에게 표시
+  navItems.push({
+    label: t('nav_overview'),
+    icon: FileChartPie,
+    children: [
+      { to: "/analysis", label: t('nav_dashboard'), icon: ChartPie },
+    ],
+  });
+
+  // 사출 권한 확인
+  if (hasPermission('can_view_injection')) {
+    const injectionChildren = [
+      { to: "/injection#top", label: t('nav_injection_summary'), icon: ChartNoAxesCombined },
+      { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
+    ];
+    
+    // 편집 권한이 있으면 신규 추가 메뉴도 표시
+    if (hasPermission('can_edit_injection')) {
+      injectionChildren.push({ to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare });
+    }
+    
+    navItems.push({
       label: t('nav_injection'),
       icon: Monitor,
-      children: [
-        { to: "/injection#top", label: t('nav_injection_summary'), icon: ChartNoAxesCombined },
-        { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
-        { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
-      ],
-    },
-    {
+      children: injectionChildren,
+    });
+  }
+
+  // 가공 권한 확인
+  if (hasPermission('can_view_machining')) {
+    const machiningChildren = [
+      { to: "/assembly#top", label: t('nav_machining_summary'), icon: ChartNoAxesCombined },
+      { to: "/assembly#records", label: t('nav_machining_records'), icon: ClipboardList },
+    ];
+    
+    if (hasPermission('can_edit_machining')) {
+      machiningChildren.push({ to: "/assembly#new", label: t('nav_machining_new'), icon: PlusSquare });
+    }
+    
+    navItems.push({
       label: t('nav_machining'),
       icon: Wrench,
-      children: [
-        { to: "/assembly#top", label: t('nav_machining_summary'), icon: ChartNoAxesCombined },
-        { to: "/assembly#records", label: t('nav_machining_records'), icon: ClipboardList },
-        { to: "/assembly#new", label: t('nav_machining_new'), icon: PlusSquare },
-      ],
-    },
-    {
+      children: machiningChildren,
+    });
+  }
+
+  // 재고 권한 확인
+  if (hasPermission('can_view_inventory')) {
+    navItems.push({
       label: t('nav_sales'),
       icon: Truck,
       children: [
@@ -81,25 +161,22 @@ export function useNavItems() {
         { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
         { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
       ],
-    },
-    {
+    });
+  }
+
+  // ECO 권한 확인
+  if (hasPermission('can_view_eco')) {
+    navItems.push({
       label: t('nav_development'),
       icon: DraftingIcon,
       children: [
-        { to: "/eco", label: t('nav_eco_management'), icon: ClipboardCheck },
-        { to: "/eco2", label: t('nav_eco2'), icon: ClipboardCheck },
+        { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
         { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
       ],
-    },
-    // 관리자 메뉴는 is_staff가 true인 경우만 표시
-    ...(user?.is_staff ? [{
-      label: '관리자',
-      icon: Monitor,
-      children: [
-        { to: "/admin/user-management", label: '사용자 관리', icon: ClipboardCheck },
-      ],
-    }] : []),
-  ];
+    });
+  }
+  
+  return navItems;
 }
 
 function AppContent() {
@@ -162,7 +239,7 @@ function AppContent() {
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
   else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_dashboard');
   else if (pathname.startsWith('/sales')) breadcrumbLabel = t('nav_sales');
-  else if (pathname.startsWith('/eco2')) breadcrumbLabel = t('nav_eco2');
+  else if (pathname.startsWith('/eco2')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/eco')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/models')) breadcrumbLabel = t('nav_model_management');
 
@@ -294,9 +371,9 @@ function AppContent() {
                 {group.children.map((child) => {
                   const ChildIcon = child.icon as any;
                   return (
-                    <Link key={child.to} to={child.to} className="ml-4 flex items-center gap-2 px-3 py-2 rounded-lg text-base text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
+                    <PermissionLink key={child.to} to={child.to} className="ml-4 flex items-center gap-2 px-3 py-2 rounded-lg text-base text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
                       {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
-                    </Link>
+                    </PermissionLink>
                   );
                 })}
               </div>
@@ -387,14 +464,14 @@ function AppContent() {
                     {group.children.map((child) => {
                       const ChildIcon = child.icon as any;
                       return (
-                        <Link
+                        <PermissionLink
                           key={child.to}
                           to={child.to}
                           className="ml-4 flex items-center gap-2 px-3 py-2 rounded-lg text-base text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
                           onClick={() => setSidebarOpen(false)}
                         >
                           {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
-                        </Link>
+                        </PermissionLink>
                       );
                     })}
                   </div>
@@ -414,7 +491,7 @@ function AppContent() {
           {/* 보호된 라우트 */}
           <Route path="/" element={<PrivateRoute><AnalysisPage /></PrivateRoute>} />
           <Route path="/models" element={<PrivateRoute><ModelsPage /></PrivateRoute>} />
-          <Route path="/eco" element={<PrivateRoute><EcoPage /></PrivateRoute>} />
+          <Route path="/eco" element={<Navigate to="/eco2" replace />} />
           <Route path="/eco2" element={<PrivateRoute><Eco2Page /></PrivateRoute>} />
           <Route path="/analysis" element={<PrivateRoute><AnalysisPage /></PrivateRoute>} />
 

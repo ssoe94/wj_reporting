@@ -4,7 +4,7 @@ import type { Eco } from './useEcos';
 
 export function useEcosByParts(parts: string[]) {
   return useQuery<Eco[]>({
-    queryKey: ['ecos-by-parts', parts.sort().join(',')],
+    queryKey: ['ecos-by-parts', [...parts].sort().join(',')],
     queryFn: async () => {
       if (!parts.length) return [];
       const tasks = parts.map((p) => api.get('ecos/by-part/', { params: { part_no: p } }));

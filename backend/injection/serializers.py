@@ -103,4 +103,70 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'can_view_eco', 'can_edit_eco',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['user', 'username', 'email', 'first_name', 'created_at', 'updated_at'] 
+        read_only_fields = ['user', 'username', 'email', 'first_name', 'created_at', 'updated_at']
+
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class UserSerializer(serializers.ModelSerializer):
+    profile = UserProfileSerializer(read_only=True) # 기존 중첩 프로필 유지
+    is_staff = serializers.BooleanField(read_only=True)
+    groups = serializers.SerializerMethodField()
+    permissions = serializers.SerializerMethodField()
+    is_using_temp_password = serializers.SerializerMethodField()
+    password_reset_required = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'is_staff', 'groups',
+            'permissions',
+            'is_using_temp_password', 'password_reset_required',
+            'profile',
+        ]
+
+    def get_groups(self, obj):
+        try:
+            return list(obj.groups.values_list('name', flat=True))
+        except Exception:
+            return []
+
+    def _get_profile(self, obj):
+        try:
+            return obj.profile
+        except Exception:
+            return None
+
+    def get_permissions(self, obj):
+        profile = self._get_profile(obj)
+        if not profile:
+            return {
+                'can_view_injection': False,
+                'can_edit_injection': False,
+                'can_view_machining': False,
+                'can_edit_machining': False,
+                'can_view_eco': False,
+                'can_edit_eco': False,
+                'can_view_inventory': False,
+                'can_edit_inventory': False,
+            }
+        return {
+            'can_view_injection': bool(profile.can_view_injection or obj.is_staff),
+            'can_edit_injection': bool(profile.can_edit_injection or obj.is_staff),
+            'can_view_machining': bool(profile.can_view_machining or obj.is_staff),
+            'can_edit_machining': bool(profile.can_edit_machining or obj.is_staff),
+            'can_view_eco': bool(profile.can_view_eco or obj.is_staff),
+            'can_edit_eco': bool(profile.can_edit_eco or obj.is_staff),
+            'can_view_inventory': bool(profile.can_view_inventory or obj.is_staff),
+            'can_edit_inventory': bool(profile.can_edit_inventory or obj.is_staff),
+        }
+
+    def get_is_using_temp_password(self, obj):
+        profile = self._get_profile(obj)
+        return bool(getattr(profile, 'is_using_temp_password', False))
+
+    def get_password_reset_required(self, obj):
+        profile = self._get_profile(obj)
+        return bool(getattr(profile, 'password_reset_required', False))

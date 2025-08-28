@@ -5,21 +5,21 @@ import { Input } from '@/components/ui/input';
 import EcoForm from '@/components/EcoForm';
 import EcoViewModal from '@/components/EcoViewModal';
 import { useLang } from '@/i18n';
+import PermissionButton from '@/components/common/PermissionButton';
 import api from '@/lib/api';
-import { useEcos } from '@/hooks/useEcos';
-import { useEcosByPart } from '@/hooks/useEcosByPart';
-import { usePartEcoCount } from '@/hooks/usePartEcoCount';
-import { useEcosByParts } from '@/hooks/useEcosByParts';
+import { useUnifiedEcoSearch } from '@/hooks/useUnifiedEcoSearch';
 import type { Eco } from '@/hooks/useEcos';
 import { toast } from 'react-toastify';
-import { Pencil, Trash2, Search, Eye, Upload, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Pencil, Trash2, Search, Eye, Upload, Download, ChevronLeft, ChevronRight, PlusCircle } from 'lucide-react';
+import PartMultiSelect from '@/components/PartMultiSelect';
+import type { PartSpec } from '@/hooks/usePartSpecs';
 
 const ctrlCls = "h-10 bg-white border border-gray-300 rounded-md px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-colors";
 
 // Part No Navigator 컴포넌트 - 좌우 화살표로 내비게이션
 const PartNoNavigator = ({ parts }: { parts: any[] }) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
+    const [currentIndex, setCurrentIndex] = useState(0);
   
   if (!parts || parts.length === 0) {
     return <span className="text-gray-400 text-sm">-</span>;
@@ -64,222 +64,18 @@ const PartNoNavigator = ({ parts }: { parts: any[] }) => {
   );
 };
 
-// Change Details에서 Part 정보를 추출하는 함수
-const extractPartDetailsFromChangeDetails = (changeDetails: string): any[] => {
-  const parts: any[] = [];
-  
-  if (!changeDetails) return parts;
-  
-  // Part No 패턴 찾기 (예: ACQ30154848, MCK714219 등)
-  const partNoPattern = /([A-Z]{2,4}\d{6,12}[A-Z*]*)/g;
-  const foundPartNos = [...changeDetails.matchAll(partNoPattern)];
-  
-  if (foundPartNos.length > 0) {
-    // 각 Part No에 대해 상세 정보 추출
-    foundPartNos.forEach((match, index) => {
-      const partNo = match[1];
-      
-      // 괄호 안의 설명 찾기 (예: (MCK714219**))
-      const descriptionPattern = new RegExp(`\\(([^)]*${partNo.substring(0, 6)}[^)]*)\\)`, 'i');
-      const descriptionMatch = changeDetails.match(descriptionPattern);
-      
-      // Part별 변경내용 - 전체 change_details를 사용하되 Part No 별로 구분이 어려우므로 전체 내용 사용
-      let partChangeDetails = changeDetails;
-      
-      // 만약 여러 Part가 있다면 Part No 이후의 내용만 추출 시도
-      if (foundPartNos.length > 1) {
-        const nextPartIndex = index < foundPartNos.length - 1 ? foundPartNos[index + 1].index : changeDetails.length;
-        const currentPartIndex = match.index || 0;
-        partChangeDetails = changeDetails.substring(currentPartIndex, nextPartIndex).trim();
-      }
-      
-      parts.push({
-        part_no: partNo,
-        description: descriptionMatch ? descriptionMatch[1] : '',
-        change_details: partChangeDetails,
-        status: 'OPEN' // 기본값
-      });
-    });
-  } else {
-    // Part No 패턴을 찾을 수 없는 경우, 전체 내용을 하나의 Part로 처리
-    // 변경내용에서 대표적인 부품 정보 추출 시도
-    const generalPartMatch = changeDetails.match(/([A-Z]\w*\s*\w*)/);
-    parts.push({
-      part_no: generalPartMatch ? generalPartMatch[1] : 'Unknown',
-      description: '',
-      change_details: changeDetails,
-      status: 'OPEN'
-    });
-  }
-  
-  return parts;
-};
-
-// More robust CSV parser that handles quoted strings and multiline content
-const parseCSV = (content: string): Partial<Eco>[] => {
-  // Remove BOM if present
-  const cleanContent = content.replace(/^\uFEFF/, '');
-  const text = cleanContent.trim();
-  
-  if (!text) return [];
-  
-  // Parse CSV with proper quote handling for multiline fields
-  const rows: string[] = [];
-  let currentRow = '';
-  let inQuotes = false;
-  
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const nextChar = text[i + 1];
-    
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        // Escaped quote
-        currentRow += '"';
-        i++; // Skip next quote
-      } else {
-        inQuotes = !inQuotes;
-      }
-      currentRow += char;
-    } else if ((char === '\r' || char === '\n') && !inQuotes) {
-      if (currentRow.trim()) {
-        rows.push(currentRow);
-        currentRow = '';
-      }
-      if (char === '\r' && nextChar === '\n') {
-        i++; // Skip \n after \r
-      }
-    } else {
-      currentRow += char;
-    }
-  }
-  
-  if (currentRow.trim()) {
-    rows.push(currentRow);
-  }
-  
-  if (rows.length < 2) return [];
-  
-  const header = parseCSVRow(rows[0]);
-  console.log("CSV Header:", header);
-  
-  const requiredHeaders = ['eco_no', 'eco_model', 'customer', 'status', 'prepared_date', 'issued_date'];
-  if (!requiredHeaders.every(h => header.includes(h))) {
-    throw new Error(`CSV must include ${requiredHeaders.join(', ')} columns.`);
-  }
-  
-  return rows.slice(1).map((line, index) => {
-    const values = parseCSVRow(line);
-    console.log(`Row ${index + 1} values:`, values);
-    
-    const eco: any = {};
-    header.forEach((key, i) => {
-      if (values[i] !== undefined && values[i] !== '') {
-        eco[key] = values[i];
-      }
-    });
-    
-    // 필수 필드에 기본값 설정
-    if (!eco.customer || eco.customer.trim() === '') {
-      eco.customer = 'N/A';
-    }
-    
-    // form_type 필드 처리 - 잘못된 값이 들어간 경우 수정
-    if (!eco.form_type || eco.form_type.trim() === '') {
-      eco.form_type = 'REGULAR';
-    } else if (eco.form_type === 'CLOSED' || eco.form_type === 'OPEN') {
-      // CSV에서 form_type에 status 값이 들어간 경우 수정
-      if (!eco.status || eco.status.trim() === '') {
-        eco.status = eco.form_type; // form_type을 status로 이동
-      }
-      eco.form_type = 'REGULAR';
-    } else if (!['REGULAR', 'TEMP'].includes(eco.form_type)) {
-      eco.form_type = 'REGULAR';
-    }
-    
-    // status 필드 검증
-    if (!eco.status || !['OPEN', 'WIP', 'CLOSED'].includes(eco.status)) {
-      eco.status = 'OPEN';
-    }
-    
-    // 날짜 필드 포맷 정리 (YYYY-MM-DD)
-    const dateFields = ['prepared_date', 'issued_date', 'received_date', 'applicable_date', 'due_date', 'close_date'];
-    dateFields.forEach(field => {
-      if (eco[field] && eco[field].trim() !== '') {
-        const dateValue = eco[field].trim();
-        // 이미 YYYY-MM-DD 형식인지 확인
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
-          try {
-            // 다양한 형식을 YYYY-MM-DD로 변환
-            const date = new Date(dateValue);
-            if (!isNaN(date.getTime())) {
-              eco[field] = date.toISOString().split('T')[0];
-            } else {
-              eco[field] = null; // 잘못된 날짜는 null로 설정
-            }
-          } catch (error) {
-            eco[field] = null; // 파싱 실패시 null
-          }
-        }
-      } else if (eco[field] === '') {
-        eco[field] = null; // 빈 문자열은 null로 변환
-      }
-    });
-    
-    // Change Details에서 Part 정보 추출
-    if (eco.change_details && eco.change_details.trim() !== '') {
-      eco.part_details = extractPartDetailsFromChangeDetails(eco.change_details);
-    }
-    
-    // part_details 컬럼이 있으면 직접 사용 (CSV에서 다운로드한 경우)
-    if (eco.part_details && typeof eco.part_details === 'string') {
-      try {
-        // part_details가 문자열인 경우 파싱
-        if (eco.part_details.includes('Part No:')) {
-          const partDetailsArray: any[] = [];
-          const partSegments = eco.part_details.split(' | ');
-          
-          partSegments.forEach((segment: string) => {
-            const partNoMatch = segment.match(/Part No:\s*([^,]+)/);
-            const descMatch = segment.match(/Description:\s*([^,]+)/);
-            const changeMatch = segment.match(/Change:\s*([^,]+)/);
-            const statusMatch = segment.match(/Status:\s*(.+)/);
-            
-            if (partNoMatch) {
-              partDetailsArray.push({
-                part_no: partNoMatch[1].trim(),
-                description: descMatch ? descMatch[1].trim() : '',
-                change_details: changeMatch ? changeMatch[1].trim() : '',
-                status: statusMatch ? statusMatch[1].trim() : 'OPEN'
-              });
-            }
-          });
-          
-          eco.part_details = partDetailsArray;
-        }
-      } catch (error) {
-        console.warn('Failed to parse part_details:', error);
-        // 파싱 실패 시 change_details에서 추출한 정보 사용
-      }
-    }
-    
-    return eco;
-  });
-};
-
-// Helper function to parse a single CSV row
-const parseCSVRow = (row: string): string[] => {
+// CSV 파싱 함수들 (간소화)
+const parseCSVRow = (line: string): string[] => {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
   
-  for (let i = 0; i < row.length; i++) {
-    const char = row[i];
-    const nextChar = row[i + 1];
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
     
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
-        // Escaped quote
         current += '"';
         i++; // Skip next quote
       } else {
@@ -295,7 +91,6 @@ const parseCSVRow = (row: string): string[] => {
   
   result.push(current.trim());
   
-  // Remove quotes from the start and end of each field
   return result.map(field => {
     if (field.startsWith('"') && field.endsWith('"')) {
       return field.slice(1, -1);
@@ -304,17 +99,59 @@ const parseCSVRow = (row: string): string[] => {
   });
 };
 
-export default function EcoManager() {
+const parseCSV = (content: string): Partial<Eco>[] => {
+  const cleanContent = content.replace(/^\uFEFF/, '');
+  const lines = cleanContent.trim().split(/\r?\n/);
+  
+  if (lines.length < 2) return [];
+  
+  const header = parseCSVRow(lines[0]);
+  const requiredHeaders = ['eco_no', 'eco_model', 'customer', 'status', 'prepared_date'];
+  
+  if (!requiredHeaders.every(h => header.includes(h))) {
+    throw new Error(`CSV must include ${requiredHeaders.join(', ')} columns.`);
+  }
+  
+  return lines.slice(1).map(line => {
+    const values = parseCSVRow(line);
+    const eco: any = {};
+    
+    header.forEach((key, i) => {
+      if (values[i] !== undefined && values[i] !== '') {
+        eco[key] = values[i];
+      }
+    });
+    
+    // 기본값 설정
+    if (!eco.customer || eco.customer.trim() === '') {
+      eco.customer = 'N/A';
+    }
+    if (!eco.form_type || !['REGULAR', 'TEMP'].includes(eco.form_type)) {
+      eco.form_type = 'REGULAR';
+    }
+    if (!eco.status || !['OPEN', 'WIP', 'CLOSED'].includes(eco.status)) {
+      eco.status = 'OPEN';
+    }
+    
+    return eco;
+  });
+};
+
+export default function Eco2Manager() {
   const { t } = useLang();
   const [keyword, setKeyword] = useState('');
-  const [mode, setMode] = useState<'eco'|'part'>('eco');
+  const [searchType, setSearchType] = useState<'eco'|'part'|'model'|'all'>('eco');
   const [statusFilter, setStatusFilter] = useState<'ALL'|'OPEN'|'CLOSED'>('ALL');
-  const [selectedParts, setSelectedParts] = useState<string[]>([]);
-  const [selectedPart, setSelectedPart] = useState<string>('');
-  const { data: ecos = [], isLoading: ecosLoading } = mode === 'eco' ? useEcos(keyword) : useEcosByPart(selectedPart || '');
+  const [selectedPartSpecs, setSelectedPartSpecs] = useState<PartSpec[]>([]);
+  const [triggerSearch, setTriggerSearch] = useState(false);
+
+  const { data: ecos = [], isLoading: ecosLoading } = useUnifiedEcoSearch(
+    searchType === 'part' ? selectedPartSpecs.map(p => p.part_no) : keyword,
+    searchType,
+    searchType === 'part' ? triggerSearch : true
+  );
+
   const filteredEcos = statusFilter === 'ALL' ? ecos : ecos.filter((e: Eco) => e.status === statusFilter);
-  const { data: partCounts = [] } = usePartEcoCount(mode === 'part' ? keyword : '');
-  const ecosBySelectedParts = useEcosByParts(selectedParts);
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -344,37 +181,10 @@ export default function EcoManager() {
   };
   const [form, setForm] = useState<Partial<Eco>>(emptyForm);
 
-  const upsert = useMutation({
-    mutationFn: async (payload: Partial<Eco>) => {
-      if (payload.id) {
-        return api.patch(`ecos/${payload.id}/`, payload);
-      }
-      return api.post('ecos/', payload);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ecos'] });
-      setKeyword('');
-      setDialogOpen(false);
-      setErrors({});
-      toast.success(t('save_success'));
-    },
-    onError: (err: any) => {
-      try {
-        const data = err.response?.data || err.data || {};
-        setErrors(data);
-        const firstKey = Object.keys(data)[0];
-        const firstMsg = Array.isArray(data[firstKey]) ? data[firstKey][0] : data[firstKey];
-        toast.error(firstMsg || t('save_fail'));
-      } catch {
-        toast.error(t('save_fail'));
-      }
-    }
-  });
-
   const del = useMutation({
     mutationFn: async (id: number) => api.delete(`ecos/${id}/`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ecos'] });
+      queryClient.invalidateQueries({ queryKey: ['unified-eco-search'] });
       toast.success(t('delete_success'));
     },
     onError: () => {
@@ -385,12 +195,10 @@ export default function EcoManager() {
   const bulkUpload = useMutation({
     mutationFn: (data: Partial<Eco>[]) => api.post('ecos/bulk-upload/', data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ecos'] });
+      queryClient.invalidateQueries({ queryKey: ['unified-eco-search'] });
       toast.success(t('bulk_upload_success'));
     },
     onError: (error: any) => {
-      console.error('Bulk upload error:', error);
-      console.error('Error response:', error.response?.data);
       const errorMsg = error.response?.data?.error || t('bulk_upload_fail');
       toast.error(errorMsg);
     }
@@ -402,113 +210,65 @@ export default function EcoManager() {
     del.mutate(eco.id);
   };
 
-  const handleUpsert = (payload: Partial<Eco>) => {
+  const handleUpsert = async (payload: Partial<Eco>) => {
     setErrors({});
     const { details, ...headerRaw } = payload as any;
     const header: Record<string, any> = {};
+    
     Object.entries(headerRaw).forEach(([k, v]) => {
       if (v !== '' && v !== null && v !== undefined) {
-        // CSV에서 \\n을 실제 개행문자로 복원
-        if (typeof v === 'string' && v.includes('\\n')) {
-          v = v.replace(/\\n/g, '\n');
+        if (typeof v === 'string' && v.includes('\n')) {
+          v = v.replace(/\n/g, '\n');
         }
         header[k] = v;
       }
     });
-    (async () => {
-      try {
-        let ecoId = payload.id;
-        if (payload.id) {
-          await api.patch(`ecos/${payload.id}/`, header);
-        } else {
-          const { data } = await api.post('ecos/', header);
-          ecoId = data.id;
-        }
-        if (details && details.length) {
-          await api.post(`ecos/${ecoId}/details/bulk/`, { details });
-        }
-        queryClient.invalidateQueries({ queryKey: ['ecos'] });
-        toast.success(t('save_success'));
-        setDialogOpen(false);
-      } catch (err: any) {
-        console.error('ECO save error:', err);
-        const errorData = err.response?.data || err.data || {};
-        console.error('Error response:', errorData);
-        if (errorData && typeof errorData === 'object') {
-          const firstKey = Object.keys(errorData)[0];
-          const firstMsg = Array.isArray(errorData[firstKey]) ? errorData[firstKey][0] : errorData[firstKey];
-          toast.error(firstMsg || t('save_fail'));
-          setErrors(errorData);
-        } else {
-          toast.error(t('save_fail'));
-        }
-      }
-    })();
-  };
 
-  const handleViewEco = async (eco: Eco) => {
     try {
-      const { data } = await api.get(`ecos/${eco.id}/`);
-      setSelectedEcoForView(data);
-      setViewModalOpen(true);
-    } catch (error) {
-      console.error('Failed to fetch ECO details:', error);
-      toast.error(t('fetch_details_fail'));
+      let ecoId = payload.id;
+      if (payload.id) {
+        await api.patch(`ecos/${payload.id}/`, header);
+      } else {
+        const { data } = await api.post('ecos/', header);
+        ecoId = data.id;
+      }
+      if (details && details.length) {
+        await api.post(`ecos/${ecoId}/details/bulk/`, { details });
+      }
+      queryClient.invalidateQueries({ queryKey: ['unified-eco-search'] });
+      toast.success(t('save_success'));
+      setDialogOpen(false);
+    } catch (err: any) {
+      const errorData = err.response?.data || err.data || {};
+      if (errorData && typeof errorData === 'object') {
+        const firstKey = Object.keys(errorData)[0];
+        const firstMsg = Array.isArray(errorData[firstKey]) ? errorData[firstKey][0] : errorData[firstKey];
+        toast.error(firstMsg || t('save_fail'));
+        setErrors(errorData);
+      } else {
+        toast.error(t('save_fail'));
+      }
     }
   };
 
+  const handleViewEco = (eco: Eco) => {
+    setSelectedEcoForView(eco);
+    setViewModalOpen(true);
+  };
+
   const handleDownloadCSV = () => {
-    const headers = [
-      'eco_no', 'eco_model', 'customer', 'status', 'form_type', 
-      'prepared_date', 'issued_date', 'received_date', 'applicable_date', 'due_date', 'close_date',
-      'change_reason', 'change_details', 'storage_action', 'part_details'
-    ];
-    const formatDate = (dateStr: string | null) => dateStr ? new Date(dateStr).toISOString().split('T')[0] : '';
+    const headers = ['eco_no', 'eco_model', 'customer', 'status', 'prepared_date', 'issued_date', 'change_reason', 'change_details'];
+    const csvContent = [
+      headers.join(','),
+      ...filteredEcos.map(eco => headers.map(h => `"${(eco as any)[h] || ''}"`).join(','))
+    ].join('\n');
     
-    // CSV에서 텍스트를 안전하게 처리하는 함수 (따옴표 이스케이프 및 개행문자 처리)
-    const escapeCSVField = (text: string | null | undefined) => {
-      if (!text) return '""';
-      // 개행문자를 \\n으로 변환하고, 따옴표를 이중따옴표로 이스케이프
-      const escaped = String(text).replace(/\r\n|\r|\n/g, '\\n').replace(/"/g, '""');
-      return `"${escaped}"`;
-    };
-
-    const csvRows: string[] = [];
-    csvRows.push(headers.join(','));
-
-    filteredEcos.forEach((e: Eco) => {
-      // Part Details 정보 추출
-      const allDetails = [...((e as any).details || []), ...((e as any).part_details || [])];
-      const partDetailsText = allDetails.map(detail => 
-        `Part No: ${detail.part_no || ''}, Description: ${detail.description || ''}, Change: ${detail.change_details || ''}, Status: ${detail.status || ''}`
-      ).join(' | ');
-
-      const row = [
-        escapeCSVField(e.eco_no),
-        escapeCSVField(e.eco_model),
-        escapeCSVField(e.customer),
-        escapeCSVField(e.status),
-        escapeCSVField(e.form_type),
-        escapeCSVField(formatDate(e.prepared_date)),
-        escapeCSVField(formatDate(e.issued_date)),
-        escapeCSVField(formatDate(e.received_date)),
-        escapeCSVField(formatDate(e.applicable_date)),
-        escapeCSVField(formatDate(e.due_date)),
-        escapeCSVField(formatDate(e.close_date)),
-        escapeCSVField(e.change_reason),
-        escapeCSVField(e.change_details),
-        escapeCSVField(e.storage_action),
-        escapeCSVField(partDetailsText)
-      ].join(',');
-      
-      csvRows.push(row);
-    });
-
-    const csvContent = csvRows.join('\n');
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.setAttribute('download', 'eco_list.csv');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `eco_list_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -520,29 +280,34 @@ export default function EcoManager() {
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const content = e.target?.result as string;
       try {
+        const content = e.target?.result as string;
         const parsedData = parseCSV(content);
-        console.log('Parsed CSV data:', parsedData);
-        if(parsedData.length > 0) {
-          console.log('Sending bulk data:', parsedData.length, 'records');
+        if (parsedData.length > 0) {
           bulkUpload.mutate(parsedData);
         }
       } catch (error: any) {
         toast.error(error.message || t('csv_parse_fail'));
-        console.error("CSV parsing error:", error);
       }
     };
     reader.readAsText(file, 'UTF-8');
-    event.target.value = ''; // Reset file input
+    event.target.value = '';
   };
 
   return (
     <>
       <div className="flex flex-wrap md:flex-nowrap items-center gap-2 mb-4">
-        <select value={mode} onChange={e => { setKeyword(''); setMode(e.target.value as any); }} className={ctrlCls}>
+        <select value={searchType} onChange={e => {
+            const newSearchType = e.target.value as 'eco' | 'part' | 'model' | 'all';
+            setSearchType(newSearchType);
+            setKeyword(''); // Clear keyword when search type changes
+            setSelectedPartSpecs([]); // Clear selected part specs when search type changes
+            setTriggerSearch(false); // Reset triggerSearch
+        }} className={ctrlCls}>
+          
           <option value="eco">{t('eco_no')}</option>
           <option value="part">PART NO.</option>
+          <option value="model">适用型号</option>
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className={ctrlCls}>
           <option value="ALL">{t('all')}</option>
@@ -550,15 +315,47 @@ export default function EcoManager() {
           <option value="CLOSED">CLOSED</option>
         </select>
         <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <Input
-            type="text"
-            placeholder={mode === 'eco' ? t('eco_search_placeholder') : t('part_search_placeholder')}
-            className={"pl-10 w-full " + ctrlCls}
-            value={keyword}
-            onChange={(e) => { setKeyword(e.target.value); if (mode === 'part') { setSelectedPart('') } }}
-          />
+          {searchType === 'part' ? (
+              <PartMultiSelect onAdd={(parts) => { setSelectedPartSpecs(parts); setTriggerSearch(true); }} />
+          ) : (
+              <>
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                      type="text"
+                      placeholder={
+                          searchType === 'eco' ? t('eco_search_placeholder') : 
+                          searchType === 'model' ? '适用型号 검색...' :
+                          '통합 검색...'
+                      }
+                      className={"pl-10 w-full " + ctrlCls}
+                      value={keyword}
+                      onChange={(e) => setKeyword(e.target.value)}
+                  />
+              </>
+          )}
         </div>
+        {searchType === 'part' && (
+          <div className="flex items-center gap-2">
+            {selectedPartSpecs.length > 0 && (
+              <div className="hidden md:flex items-center gap-1 text-xs text-gray-600">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    const list = selectedPartSpecs.map(p => `${p.part_no}${p.description ? ` - ${p.description}` : ''}`).join('\n');
+                    alert(list || '');
+                  }}
+                  className="px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+                  title={selectedPartSpecs.map(p=>p.part_no).join(', ')}
+                >
+                  {selectedPartSpecs.length} selected
+                </button>
+              </div>
+            )}
+            <Button size="sm" onClick={() => setTriggerSearch(true)} className="ml-2">
+              {t('search')}
+            </Button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={() => fileInputRef.current?.click()} variant="ghost" disabled={bulkUpload.isPending}>
             <Upload className="w-4 h-4 mr-2" />
@@ -569,236 +366,132 @@ export default function EcoManager() {
             <Download className="w-4 h-4 mr-2" />
             {t('download_csv')}
           </Button>
-          <Button size="sm" onClick={() => { setForm(emptyForm); setDialogOpen(true); }}>{t('new_eco')}</Button>
+          <PermissionButton
+            permission="can_edit_eco"
+            onClick={() => { setForm(emptyForm); setDialogOpen(true); }}
+            className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
+          >
+            <PlusCircle className="w-4 h-4 shrink-0" />
+            {t('new_eco')}
+          </PermissionButton>
         </div>
       </div>
+      
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-        {mode === 'eco' ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
+              <tr>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('eco_no')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('eco_model')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Part No.</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_reason')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_details')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('status')}</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">작업</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {ecosLoading ? (
                 <tr>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('eco_no')}</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('eco_model')}</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Part No.</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_reason')}</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_details')}</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('status')}</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">작업</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {ecosLoading ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-8">
-                      <div className="flex items-center justify-center space-x-2">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
-                        <span className="text-gray-500 text-sm">Loading...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : filteredEcos.map((e: Eco) => (
-                  <tr key={e.id} className="bg-white hover:bg-blue-50/30 transition-colors duration-150">
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <button 
-                        onClick={() => handleViewEco(e)}
-                        className="font-mono text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                      >
-                        {e.eco_no}
-                      </button>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <span className="text-sm font-medium text-gray-900">{e.eco_model}</span>
-                    </td>
-                    <td className="px-2 py-3">
-                      <PartNoNavigator parts={e.details || []} />
-                    </td>
-                    <td className="px-3 py-3 max-w-xs">
-                      <div className="text-sm text-gray-900">
-                        <p className="line-clamp-2 leading-relaxed" title={e.change_reason || ''}>
-                          {e.change_reason}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 max-w-md">
-                      <div className="text-sm text-gray-700">
-                        <p className="line-clamp-2 leading-relaxed" title={e.change_details || ''}>
-                          {e.change_details}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        e.status === 'OPEN' ? 'bg-blue-100 text-blue-800' :
-                        e.status === 'WIP' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-green-100 text-green-800'
-                      }`}>
-                        {e.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-center">
-                      <div className="flex items-center justify-center space-x-1">
-                        <Button 
-                          size="icon" 
-                          variant="ghost" 
-                          onClick={() => handleViewEco(e)} 
-                          className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600 rounded-full"
-                          aria-label={t('view')}
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        <Button 
-                          size="icon" 
-                          variant="ghost" 
-                          onClick={async () => {
-                            setErrors({});
-                            try {
-                              const { data } = await api.get(`ecos/${e.id}/`);
-                              setForm(data);
-                            } catch {
-                              setForm(e);
-                            }
-                            setDialogOpen(true);
-                          }} 
-                          className="h-8 w-8 hover:bg-amber-100 hover:text-amber-600 rounded-full"
-                          aria-label={t('edit')}
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button 
-                          size="icon" 
-                          variant="ghost" 
-                          onClick={() => handleDelete(e)} 
-                          className="h-8 w-8 hover:bg-red-100 hover:text-red-600 rounded-full"
-                          aria-label={t('delete')} 
-                          disabled={del.isPending}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <>
-            {!selectedPart ? (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-100">
-                      <tr className="border-y">
-                        <th className="px-3 py-2 text-left">Part No</th>
-                        <th className="px-3 py-2 text-left">{t('description') || 'Description'}</th>
-                        <th className="px-3 py-2 text-center">{t('eco_count')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {partCounts.map(pc => {
-                        const checked = selectedParts.includes(pc.part_no);
-                        return (
-                          <tr key={pc.part_no} className={rowCls}>
-                            <td className="px-3 py-1 font-mono flex items-center gap-2">
-                              <input type="checkbox" checked={checked} onChange={() => {
-                                setSelectedPart('');
-                                setSelectedParts(prev => checked ? prev.filter(p => p !== pc.part_no) : [...prev, pc.part_no]);
-                              }} />
-                              <span className="cursor-pointer" onClick={() => setSelectedPart(pc.part_no)}>{pc.part_no}</span>
-                            </td>
-                            <td className="px-3 py-1 text-xs cursor-pointer hover:bg-yellow-50" onClick={() => {
-                              const newDesc = prompt(`${pc.part_no} ${t('description_edit_prompt')}:`, pc.description || '');
-                              if (newDesc !== null && newDesc !== pc.description) {
-                                api.patch(`eco-parts/${pc.part_no}/update-description/`, { description: newDesc })
-                                  .then(() => {
-                                    queryClient.invalidateQueries({ queryKey: ['part-eco-count'] });
-                                    toast.success(t('update_success'));
-                                  })
-                                  .catch(() => {
-                                    toast.error(t('update_fail'));
-                                  });
-                              }
-                            }}>{pc.description || '-'}</td>
-                            <td className="px-3 py-1 text-center">{pc.count}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                {selectedParts.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="font-semibold mb-2 pl-2">{t('selected_part_eco_details')}</h4>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full text-sm">
-                        <thead className="bg-slate-100">
-                          <tr>
-                            <th className="px-3 py-2 text-center">{t('part') || 'Part'}</th>
-                            <th className="px-3 py-2 text-center">{t('eco') || 'ECO'}</th>
-                            <th className="px-3 py-2 text-center">{t('change_details')}</th>
-                            <th className="px-3 py-2 text-center">{t('part_status') || 'Part Status'}</th>
-                            <th className="px-3 py-2 text-center">{t('eco_status') || 'ECO Status'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedParts.map(partNo => {
-                            const rows = ecosBySelectedParts.data?.filter((eco: Eco) => statusFilter === 'ALL' || eco.status === statusFilter).flatMap((eco: Eco) =>
-                              (eco.details || []).filter((d: {part_no: string}) => d.part_no.toUpperCase() === partNo.toUpperCase()).map((d: any) => (
-                                {
-                                  part_no: d.part_no,
-                                  eco_id: eco.id,
-                                  eco_no: eco.eco_no,
-                                  change_details: d.change_details,
-                                  part_status: d.status,
-                                  eco_status: eco.status,
-                                }
-                              ))
-                            ) || [];
-                            return rows.map((row: any, idx: number) => (
-                              <tr key={`${row.part_no}-${row.eco_no}`} className={rowCls}>
-                                {idx === 0 && (
-                                  <td className="px-3 py-1 font-mono text-center" rowSpan={rows.length}>{row.part_no}</td>
-                                )}
-                                <td className="px-3 py-1 font-mono text-center cursor-pointer text-blue-600 underline" onClick={() => handleViewEco(row)}>{row.eco_no}</td>
-                                <td className="px-3 py-1 text-xs text-left whitespace-pre-wrap">{row.change_details}</td>
-                                <td className="px-3 py-1 text-center">{row.part_status}</td>
-                                <td className="px-3 py-1 text-center">{row.eco_status}</td>
-                              </tr>
-                            ));
-                          })}
-                        </tbody>
-                      </table>
+                  <td colSpan={7} className="text-center py-8">
+                    <div className="flex items-center justify-center space-x-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                      <span className="text-gray-500 text-sm">Loading...</span>
                     </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-slate-100">
-                    <tr>
-                      <th className="px-3 py-2 text-left">{t('eco')}</th>
-                      <th className="px-3 py-2 text-left">{t('change_details')}</th>
-                      <th className="px-3 py-2 text-left">{t('part_status')}</th>
-                      <th className="px-3 py-2 text-left">{t('eco_status')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredEcos.flatMap((eco: Eco) => (eco.details || []).filter((d: {part_no: string}) => d.part_no === selectedPart).map((d: any) => (
-                      <tr key={eco.id + '-' + d.id} className="border-t">
-                        <td className="px-3 py-1 font-mono">{eco.eco_no}</td>
-                        <td className="px-3 py-1 text-xs">{d.change_details}</td>
-                        <td className="px-3 py-1">{d.status}</td>
-                        <td className="px-3 py-1">{eco.status}</td>
-                      </tr>
-                    )))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
-        )}
+                  </td>
+                </tr>
+              ) : filteredEcos.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-8">
+                    <span className="text-gray-500 text-sm">
+                      {searchType === 'part' && selectedPartSpecs.length > 0
+                        ? '선택한 Part No.에 해당하는 ECO가 없습니다.'
+                        : (keyword ? '검색 결과가 없습니다.' : 'ECO를 검색해주세요.')}
+                    </span>
+                  </td>
+                </tr>
+              ) : filteredEcos.map((e: Eco) => (
+                <tr key={e.id} className="bg-white hover:bg-blue-50/30 transition-colors duration-150">
+                  <td className="px-3 py-3 whitespace-nowrap">
+                    <button 
+                      onClick={() => handleViewEco(e)}
+                      className="font-mono text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                    >
+                      {e.eco_no}
+                    </button>
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap">
+                    <span className="text-sm font-medium text-gray-900">{e.eco_model}</span>
+                  </td>
+                  <td className="px-2 py-3">
+                    <PartNoNavigator parts={e.details || []} />
+                  </td>
+                  <td className="px-3 py-3 max-w-xs">
+                    <div className="text-sm text-gray-900">
+                      <p className="line-clamp-2 leading-relaxed" title={e.change_reason || ''}>
+                        {e.change_reason}
+                      </p>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 max-w-md">
+                    <div className="text-sm text-gray-700">
+                      <p className="line-clamp-2 leading-relaxed" title={e.change_details || ''}>
+                        {e.change_details}
+                      </p>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                      e.status === 'OPEN' ? 'bg-blue-100 text-blue-800' :
+                      e.status === 'WIP' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      {e.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap text-center">
+                    <div className="flex items-center justify-center space-x-1">
+                      <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        onClick={() => handleViewEco(e)}
+                        className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600 rounded-full"
+                        aria-label={t('view')}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                      <PermissionButton
+                        permission="can_edit_eco"
+                        onClick={async () => {
+                          setErrors({});
+                          try {
+                            const { data } = await api.get(`ecos/${e.id}/`);
+                            setForm(data);
+                          } catch {
+                            setForm(e);
+                          }
+                          setDialogOpen(true);
+                        }} 
+                        className="h-8 w-8 hover:bg-amber-100 hover:text-amber-600 rounded-full p-0"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </PermissionButton>
+                      <PermissionButton
+                        permission="can_edit_eco"
+                        onClick={() => handleDelete(e)} 
+                        className="h-8 w-8 hover:bg-red-100 hover:text-red-600 rounded-full p-0"
+                        disabled={del.isPending}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </PermissionButton>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <EcoForm
@@ -806,7 +499,7 @@ export default function EcoManager() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         onSubmit={handleUpsert}
-        isSaving={upsert.isPending}
+        isSaving={false}
         errors={errors}
       />
 

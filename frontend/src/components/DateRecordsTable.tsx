@@ -67,6 +67,23 @@ export default function DateRecordsTable({ date }: Props) {
   if (!date) return null;
   if (!list.length) return <p className="text-gray-500 text-sm">선택한 날짜에 생산 기록이 없습니다.</p>;
 
+  const totals = React.useMemo(() => {
+    return list.reduce(
+      (acc, r) => {
+        acc.plan += Number(r.plan_qty || 0);
+        acc.actual += Number(r.actual_qty || 0);
+        acc.defect += Number(r.actual_defect || 0);
+        return acc;
+      },
+      { plan: 0, actual: 0, defect: 0 }
+    );
+  }, [list]);
+
+  const achievementRate = React.useMemo(() => {
+    if (!totals.plan) return null;
+    return (totals.actual / totals.plan) * 100;
+  }, [totals]);
+
   return (
     <>
     <table
@@ -117,6 +134,16 @@ export default function DateRecordsTable({ date }: Props) {
             </td>
           </tr>
         ))}
+        {/* Summary row */}
+        <tr className="border-t-2 border-gray-300 bg-slate-50">
+          <td className="px-2 py-2 text-right font-semibold" colSpan={3}>합계</td>
+          <td className="px-2 py-2 text-right font-bold text-blue-700">{totals.plan.toLocaleString()}</td>
+          <td className="px-2 py-2 text-right font-bold text-green-700">{totals.actual.toLocaleString()}</td>
+          <td className="px-2 py-2 text-right font-bold text-red-600">{totals.defect.toLocaleString()}</td>
+          <td className="px-2 py-2 text-right text-gray-700 font-semibold" colSpan={3}>
+            달성율: {achievementRate === null ? '-' : `${achievementRate.toFixed(1)}%`}
+          </td>
+        </tr>
       </tbody>
     </table>
     {detail && (
