@@ -359,7 +359,44 @@ class ChangePasswordView(generics.GenericAPIView):
         return Response({'detail': '비밀번호가 변경되었습니다.'})
 
 class ResetPasswordView(generics.CreateAPIView):
-    # Placeholder for ResetPasswordView logic - needs actual serializer_class
-    # Example:
-    # serializer_class = ResetPasswordSerializer
-    pass
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        if not request.user.is_staff:
+            return Response({'detail': '관리자 권한이 필요합니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response({'user_id': 'required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            return Response({'user_id': 'must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            target = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # 안전한 랜덤 임시 비밀번호 생성
+        def generate_temp_password(length: int = 12) -> str:
+            alphabet = string.ascii_letters + string.digits
+            while True:
+                pwd = ''.join(secrets.choice(alphabet) for _ in range(length))
+                if any(c.islower() for c in pwd) and any(c.isupper() for c in pwd) and any(c.isdigit() for c in pwd):
+                    return pwd
+
+        temp_password = generate_temp_password(12)
+        target.set_password(temp_password)
+        target.save()
+
+        # 사용자 프로필 플래그 설정
+        try:
+            profile = UserProfile.get_user_permissions(target)
+            profile.is_using_temp_password = True
+            profile.password_reset_required = True
+            profile.save(update_fields=['is_using_temp_password', 'password_reset_required'])
+        except Exception:
+            pass
+
+        return Response({'username': target.username, 'temporary_password': temp_password})
