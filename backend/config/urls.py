@@ -28,6 +28,7 @@ urlpatterns = [
     path('api/mes/', include('inventory.urls')),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    # ── SPA routes: 모든 비-API 경로는 React index.html 반환 ──
+    # ── SPA routes fallback ──
+    # 운영 환경에서 frontend/dist가 없을 때를 대비해 backend/static/index.html을 기본 템플릿으로 사용
     re_path(r'^(?!api/).*$', TemplateView.as_view(template_name='index.html'), name='spa'),
 ]
