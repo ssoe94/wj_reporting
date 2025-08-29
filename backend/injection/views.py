@@ -26,6 +26,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import make_password
 from django.db import transaction
 from django.utils import timezone
+import secrets, string
 from datetime import timedelta
 
 User = get_user_model()
@@ -210,7 +211,15 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
             username = f"{username_base}{i}"
             i += 1
 
-        temp_password = User.objects.make_random_password() if hasattr(User.objects, 'make_random_password') else 'TempPass123!'
+        # 안전한 랜덤 임시 비밀번호 생성 (영문 대/소문자+숫자, 최소 각 1자 포함)
+        def generate_temp_password(length: int = 12) -> str:
+            alphabet = string.ascii_letters + string.digits
+            while True:
+                pwd = ''.join(secrets.choice(alphabet) for _ in range(length))
+                if any(c.islower() for c in pwd) and any(c.isupper() for c in pwd) and any(c.isdigit() for c in pwd):
+                    return pwd
+
+        temp_password = generate_temp_password(12)
 
         user, created = User.objects.get_or_create(
             email=signup_req.email,
