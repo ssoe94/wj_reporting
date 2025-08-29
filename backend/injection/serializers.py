@@ -106,6 +106,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ['user', 'username', 'email', 'first_name', 'created_at', 'updated_at']
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth import password_validation
 
 User = get_user_model()
 
@@ -170,3 +171,27 @@ class UserSerializer(serializers.ModelSerializer):
     def get_password_reset_required(self, obj):
         profile = self._get_profile(obj)
         return bool(getattr(profile, 'password_reset_required', False))
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if user is None or not user.is_authenticated:
+            raise serializers.ValidationError({'detail': '인증이 필요합니다.'})
+
+        current = attrs.get('current_password')
+        new = attrs.get('new_password')
+
+        if not user.check_password(current):
+            raise serializers.ValidationError({'current_password': '현재 비밀번호가 올바르지 않습니다.'})
+        if current == new:
+            raise serializers.ValidationError({'new_password': '이전 비밀번호와 동일할 수 없습니다.'})
+
+        # Django 비밀번호 정책 검증
+        password_validation.validate_password(new, user=user)
+
+        return attrs

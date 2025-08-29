@@ -16,7 +16,7 @@ from .serializers import (
     InjectionReportSerializer, ProductSerializer, PartSpecSerializer,
     EcoPartSpecSerializer, EngineeringChangeOrderSerializer,
     UserRegistrationRequestSerializer, UserProfileSerializer,
-    InventorySnapshotSerializer, EcoDetailSerializer, UserSerializer
+    InventorySnapshotSerializer, EcoDetailSerializer, UserSerializer, ChangePasswordSerializer
 )
 
 # For User related views
@@ -334,13 +334,29 @@ class UserMeView(generics.RetrieveAPIView):
     def get_object(self):
         return self.request.user
 
-class ChangePasswordView(generics.UpdateAPIView):
-    # Placeholder for ChangePasswordView logic - needs actual serializer_class
-    # Example:
-    # serializer_class = ChangePasswordSerializer
+class ChangePasswordView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
-    def get_object(self):
-        return self.request.user
+    serializer_class = ChangePasswordSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        new_password = serializer.validated_data['new_password']
+        user.set_password(new_password)
+        user.save()
+
+        # 프로필 플래그 해제
+        try:
+            profile = user.profile
+            profile.is_using_temp_password = False
+            profile.password_reset_required = False
+            profile.last_password_change = timezone.now()
+            profile.save(update_fields=['is_using_temp_password', 'password_reset_required', 'last_password_change'])
+        except Exception:
+            pass
+
+        return Response({'detail': '비밀번호가 변경되었습니다.'})
 
 class ResetPasswordView(generics.CreateAPIView):
     # Placeholder for ResetPasswordView logic - needs actual serializer_class
