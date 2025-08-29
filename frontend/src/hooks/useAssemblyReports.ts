@@ -13,7 +13,7 @@ export const useAssemblyReports = (filters: AssemblyReportFilters = {}) => {
         }
       });
       
-      const response = await api.get(`/assembly/api/reports/?${params}`);
+      const response = await api.get(`/assembly/reports/?${params}`);
       return response.data;
     },
   });
@@ -24,7 +24,7 @@ export const useAssemblyReportsSummary = (date?: string) => {
     queryKey: ['assembly-reports-summary', date],
     queryFn: async () => {
       const params = date ? `?date=${date}` : '';
-      const response = await api.get(`/assembly/api/reports/summary/${params}`);
+      const response = await api.get(`/assembly/reports/summary/${params}`);
       return response.data as AssemblyReportSummary;
     },
   });
@@ -35,7 +35,7 @@ export const useCreateAssemblyReport = () => {
   
   return useMutation({
     mutationFn: async (data: Omit<AssemblyReport, 'id'>) => {
-      const response = await api.post('/assembly/api/reports/', data);
+      const response = await api.post('/assembly/reports/', data);
       return response.data;
     },
     onSuccess: () => {
@@ -50,7 +50,7 @@ export const useUpdateAssemblyReport = () => {
   
   return useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<AssemblyReport> }) => {
-      const response = await api.patch(`/assembly/api/reports/${id}/`, data);
+      const response = await api.patch(`/assembly/reports/${id}/`, data);
       return response.data;
     },
     onSuccess: () => {
@@ -65,7 +65,7 @@ export const useDeleteAssemblyReport = () => {
   
   return useMutation({
     mutationFn: async (id: number) => {
-      await api.delete(`/assembly/api/reports/${id}/`);
+      await api.delete(`/assembly/reports/${id}/`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assembly-reports'] });
@@ -84,7 +84,7 @@ export const useExportAssemblyReports = () => {
         }
       });
       
-      const response = await api.get(`/assembly/api/reports/export/?${params}`, {
+      const response = await api.get(`/assembly/reports/export/?${params}`, {
         responseType: 'blob',
       });
       
@@ -96,6 +96,15 @@ export const useExportAssemblyReports = () => {
       link.download = `assembly_reports_${new Date().toISOString().split('T')[0]}.csv`;
       link.click();
       window.URL.revokeObjectURL(url);
+    },
+  });
+};
+
+export const useBulkCreateAssemblyReports = () => {
+  return useMutation({
+    mutationFn: async (rows: any[]) => {
+      const response = await api.post('/api/assembly/reports/bulk-create/', { rows });
+      return response.data as { created_reports: number; errors: string[]; success: boolean };
     },
   });
 };

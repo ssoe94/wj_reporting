@@ -18,13 +18,13 @@ class AssemblyReportAdmin(admin.ModelAdmin):
             'fields': ('date', 'line_no', 'part_no', 'model')
         }),
         ('수량 정보', {
-            'fields': ('plan_qty', 'actual_qty')
+            'fields': ('plan_qty', 'input_qty', 'actual_qty')
         }),
         ('불량 분류', {
-            'fields': ('incoming_defect', 'injection_outsourcing_defect', 'processing_defect')
+            'fields': ('injection_defect', 'outsourcing_defect', 'processing_defect')
         }),
         ('시간 정보', {
-            'fields': ('operation_time', 'total_time', 'start_datetime', 'end_datetime')
+            'fields': ('total_time', 'idle_time', 'operation_time', 'workers')
         }),
         ('계산 결과', {
             'fields': ('total_defect_qty', 'achievement_rate', 'defect_rate', 'total_production_qty', 'uptime_rate'),

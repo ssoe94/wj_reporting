@@ -201,8 +201,8 @@ export default function EcoViewModal({ eco, open, onClose, onEdit }: Props) {
                     <label className="text-sm font-medium text-gray-600 block mb-1">{t('storage_action')}</label>
                     <p className="text-sm text-gray-800 p-2 bg-gray-50 rounded-md">{eco.storage_action || '-'}</p>
                   </div>
-                  <div className="flex justify-between text-sm"><span>{t('inventory_finished')}:</span><span className="font-medium">{eco.inventory_finished?.toLocaleString() || '0'}</span></div>
-                  <div className="flex justify-between text-sm"><span>{t('inventory_material')}:</span><span className="font-medium">{eco.inventory_material?.toLocaleString() || '0'}</span></div>
+                  <div className="flex justify-between text-sm"><span>{t('inventory_finished')}:</span><span className="font-medium">{Number.isFinite(Number(eco.inventory_finished)) ? Number(eco.inventory_finished).toLocaleString() : '0'}</span></div>
+                  <div className="flex justify-between text-sm"><span>{t('inventory_material')}:</span><span className="font-medium">{Number.isFinite(Number(eco.inventory_material)) ? Number(eco.inventory_material).toLocaleString() : '0'}</span></div>
                 </div>
               </div>
             </div>

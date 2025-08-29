@@ -10,7 +10,7 @@ from .serializers import (
     CSVValidationResultSerializer,
     NewPartInfoSerializer
 )
-from injection.permissions import IsAdminUser, IsEditorUser, IsViewerUser
+from injection.permissions import MachiningPermission
 import csv
 import io
 from django.http import HttpResponse, JsonResponse
@@ -37,9 +37,10 @@ class AssemblyPartSpecFilter(filters.FilterSet):
 class AssemblyReportViewSet(viewsets.ModelViewSet):
     queryset = AssemblyReport.objects.all()
     serializer_class = AssemblyReportSerializer
-    permission_classes = [IsEditorUser]  # 편집자 이상 권한 필요
+    permission_classes = [MachiningPermission]
     filterset_fields = ['date', 'line_no', 'model', 'part_no']
-    ordering_fields = ['date', 'line_no', 'model', 'achievement_rate', 'defect_rate']
+    # 주의: 계산 필드는 정렬 대상에서 제외 (DB 필드만 허용)
+    ordering_fields = ['date', 'line_no', 'model', 'part_no', 'plan_qty', 'actual_qty', 'total_time', 'idle_time']
     search_fields = ['line_no', 'model', 'part_no', 'note']
 
     @action(detail=False, methods=['get'])
@@ -97,9 +98,9 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
 
         # 헤더 작성
         writer.writerow([
-            'ID', 'Date', 'Line No', 'Part No', 'Model', 'Plan Qty', 'Actual Qty',
+            'ID', 'Date', 'Line No', 'Part No', 'Model', 'Plan Qty', 'Input Qty', 'Actual Qty',
             'Injection Defect', 'Outsourcing Defect', 'Processing Defect', 'Total Defect',
-            'Start', 'End', 'Total Time', 'Operation Time', 'Note'
+            'Total Time', 'Idle Time', 'Operation Time', 'Workers', 'Note'
         ])
 
         for r in queryset:
@@ -110,15 +111,16 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
                 r.part_no,
                 r.model,
                 r.plan_qty,
+                r.input_qty,
                 r.actual_qty,
                 r.injection_defect,
                 r.outsourcing_defect,
                 r.processing_defect,
                 r.total_defect_qty,
-                r.start_datetime,
-                r.end_datetime,
                 r.total_time,
+                r.idle_time,
                 r.operation_time,
+                r.workers,
                 r.note,
             ])
 
@@ -168,50 +170,54 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
                 except (TypeError, ValueError):
                     return 0
 
-            def parse_dt(val):
+            def parse_date_only(val):
                 if not val or str(val).strip() == '':
                     return None
                 try:
                     txt = str(val).strip()
                     if '/' in txt:
                         txt = txt.replace('/', '-')
-                    if ' ' in txt:
-                        txt = txt.replace(' ', 'T')
-                    return dt.datetime.fromisoformat(txt)
+                    # YYYY-MM-DD 형태만 사용
+                    return dt.datetime.fromisoformat(txt).date()
                 except ValueError:
                     return None
 
             for i, row in enumerate(reader):
                 try:
-                    # 중복 체크
-                    date_val = parse_dt(row.get("Date"))
+                    # 중복 체크 (같은 날짜, 라인, Part No.)
+                    date_val = parse_date_only(row.get("Date"))
                     line_no = str(row.get("Line No", "")).strip()
-                    start_dt = parse_dt(row.get("Start"))
                     part_no = str(row.get("Part No", "")).strip()
 
                     if AssemblyReport.objects.filter(
-                        date=date_val.date() if date_val else None,
+                        date=date_val,
                         line_no=line_no,
-                        start_datetime=start_dt,
                         part_no=part_no,
                     ).exists():
                         skipped += 1
                         continue
 
+                    total_time = parse_int(row.get("Total Time"))
+                    idle_time = parse_int(row.get("Idle Time"))
+                    operation_time = parse_int(row.get("Operation Time"))
+                    if operation_time == 0 and total_time:
+                        operation_time = max(0, total_time - idle_time)
+
                     report = AssemblyReport(
-                        date=date_val.date() if date_val else None,
+                        date=date_val,
                         line_no=line_no,
                         part_no=part_no,
                         model=str(row.get("Model", "")),
                         plan_qty=parse_int(row.get("Plan Qty")),
+                        input_qty=parse_int(row.get("Input Qty")),
                         actual_qty=parse_int(row.get("Actual Qty")),
                         injection_defect=parse_int(row.get("Injection Defect")),
                         outsourcing_defect=parse_int(row.get("Outsourcing Defect")),
                         processing_defect=parse_int(row.get("Processing Defect")),
-                        start_datetime=start_dt,
-                        end_datetime=parse_dt(row.get("End")),
-                        total_time=parse_int(row.get("Total Time")),
-                        operation_time=parse_int(row.get("Operation Time")),
+                        total_time=total_time,
+                        idle_time=idle_time,
+                        operation_time=operation_time,
+                        workers=parse_int(row.get("Workers")) or 1,
                         note=str(row.get("Note", "")),
                     )
                     report.save()
@@ -316,11 +322,66 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
             'success': len(errors) == 0
         })
 
+    @action(detail=False, methods=['post'], url_path='bulk-create')
+    def bulk_create(self, request):
+        """테이블 형태(JSON 배열)로 전달된 행들을 일괄 생성"""
+        rows = request.data.get('rows', [])
+        if not isinstance(rows, list) or len(rows) == 0:
+            return Response({'detail': 'rows must be a non-empty list'}, status=400)
+
+        created_reports = 0
+        errors = []
+
+        # CSV 업로더의 행 검증 로직 재사용
+        csv_ser = CSVUploadSerializer()
+
+        for idx, row in enumerate(rows):
+            row_number = idx + 1
+            try:
+                validated = csv_ser._validate_row(row, row_number)
+
+                # 중복 체크 (같은 날짜, 라인, Part No.)
+                existing = AssemblyReport.objects.filter(
+                    date=validated['date'],
+                    line_no=validated.get('line_no', ''),
+                    part_no=validated['part_no']
+                ).first()
+                if existing:
+                    errors.append(f"중복 데이터 (행 {row_number}): {validated['date']} - {validated['part_no']}")
+                    continue
+
+                AssemblyReport.objects.create(
+                    date=validated['date'],
+                    line_no=validated.get('line_no', ''),
+                    part_no=validated['part_no'],
+                    model=validated['model'],
+                    plan_qty=validated['plan_qty'],
+                    input_qty=validated.get('input_qty', 0),
+                    actual_qty=validated['actual_qty'],
+                    injection_defect=validated.get('injection_defect', 0),
+                    outsourcing_defect=validated.get('outsourcing_defect', 0),
+                    processing_defect=validated.get('processing_defect', 0),
+                    operation_time=validated.get('operation_time', 0),
+                    total_time=validated.get('total_time', 1440),
+                    idle_time=validated.get('idle_time', 0),
+                    workers=validated.get('workers', 1),
+                    note=validated.get('note', '')
+                )
+                created_reports += 1
+            except Exception as e:
+                errors.append(f"행 {row_number} 오류: {str(e)}")
+
+        return Response({
+            'created_reports': created_reports,
+            'errors': errors,
+            'success': len(errors) == 0
+        })
+
 
 class AssemblyPartSpecViewSet(viewsets.ModelViewSet):
     queryset = AssemblyPartSpec.objects.all()
     serializer_class = AssemblyPartSpecSerializer
-    permission_classes = [IsEditorUser]
+    permission_classes = [MachiningPermission]
     filterset_class = AssemblyPartSpecFilter
     search_fields = ['part_no', 'description', 'model_code']
     ordering = ['part_no']
@@ -371,7 +432,7 @@ class AssemblyPartSpecViewSet(viewsets.ModelViewSet):
 class AssemblyProductViewSet(viewsets.ModelViewSet):
     queryset = AssemblyProduct.objects.all()
     serializer_class = AssemblyProductSerializer
-    permission_classes = [IsEditorUser]
+    permission_classes = [MachiningPermission]
     search_fields = ['model', 'part_no', 'process_line']
     ordering = ['model']
 
@@ -405,6 +466,7 @@ class AssemblyProductViewSet(viewsets.ModelViewSet):
     def search_parts(self, request):
         """Part No. 검색을 위한 API"""
         search = request.query_params.get('search', '').strip()
+        prefix_only = request.query_params.get('prefix_only', '').lower() in ['1', 'true', 'yes']
         if not search or len(search) < 2:
             return Response([], safe=False)
         
@@ -439,7 +501,17 @@ class AssemblyProductViewSet(viewsets.ModelViewSet):
                     'description': ''
                 }
         
-        return Response(list(results.values()))
+        merged = list(results.values())
+        # prefix_only 옵션: 앞부분이 정확히 일치하는 항목만 반환
+        if prefix_only:
+            s = search.upper()
+            merged = [r for r in merged if r['part_no'].upper().startswith(s)]
+        # startswith 우선 정렬
+        s = search.upper()
+        merged.sort(key=lambda r: (0 if r['part_no'].upper().startswith(s) else 1, r['part_no']))
+        # 제한
+        merged = merged[:50]
+        return Response(merged)
 
 
 def index(request):

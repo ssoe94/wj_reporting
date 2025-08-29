@@ -9,6 +9,7 @@ import { Autocomplete, TextField } from '@mui/material';
 import type { AssemblyReport } from '../types/assembly';
 import { useLang } from '../i18n';
 import { usePartSpecSearch, usePartListByModel } from '../hooks/usePartSpecs';
+import { useAssemblyPartsByModel, useAssemblyPartspecsByModel } from '../hooks/useAssemblyParts';
 import type { PartSpec } from '../hooks/usePartSpecs';
 import { Plus, PlusCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -29,8 +30,11 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
   const [selectedModelDesc, setSelectedModelDesc] = useState<PartSpec | null>(null);
   const [selectedPartSpec, setSelectedPartSpec] = useState<PartSpec | null>(null);
   const [showAddPartModal, setShowAddPartModal] = useState(false);
+  const [prefillSimilar, setPrefillSimilar] = useState<Partial<PartSpec> | null>(null);
   const { data: searchResults = [] } = usePartSpecSearch(productQuery.toUpperCase());
   const { data: modelParts = [] } = usePartListByModel(selectedModelDesc?.model_code);
+  const { data: asmPartsByModel = [] } = useAssemblyPartsByModel(selectedModelDesc?.model_code);
+  const { data: asmPartspecsByModel = [] } = useAssemblyPartspecsByModel(selectedModelDesc?.model_code);
   
   const uniqueModelDesc = React.useMemo(() => {
     const map = new Map<string, PartSpec>();
@@ -161,24 +165,89 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
         {/* Part No. */}
         <div>
           <Label>Part No.</Label>
-          <Autocomplete<PartSpec | { isAddNew: boolean; part_no: string }>
+          <Autocomplete<PartSpec | { isAddNew: boolean; part_no: string } | { isAddNewForModel: boolean }>
             options={(() => {
-              const baseOptions = selectedModelDesc ? modelParts : searchResults;
+              const baseOptions = selectedModelDesc
+                ? (modelParts.length
+                    ? modelParts
+                    : ((asmPartspecsByModel as any).length ? (asmPartspecsByModel as any) : (asmPartsByModel as any)))
+                : searchResults;
               // 검색어가 2글자 이상이고 결과가 없으면 "새로 추가" 옵션 추가
               if (productQuery.trim().length >= 2 && baseOptions.length === 0) {
                 return [{ isAddNew: true, part_no: productQuery.trim() } as any];
               }
+              // 모델은 선택했지만 해당 모델의 Part가 전혀 없을 때
+              if (selectedModelDesc && baseOptions.length === 0) {
+                return [{ isAddNewForModel: true } as any];
+              }
               return baseOptions;
             })()}
-            getOptionLabel={(opt) => {
-              if ('isAddNew' in opt && opt.isAddNew) {
-                return `➕ "${opt.part_no}" ${t('add_new_part_prompt')}`;
+            openOnFocus
+            loading={!selectedModelDesc ? false : (Array.isArray(modelParts) ? false : true)}
+            filterOptions={(opts, state) => {
+              let filtered: any[] = opts.slice();
+              // 1) 모델 코드로 1차 필터
+              if (selectedModelDesc) {
+                filtered = filtered.filter((o: any) => ('isAddNew' in o) || ('isAddNewForModel' in o) ? true : o.model_code === selectedModelDesc.model_code);
               }
-              return `${opt.part_no}`;
+              // 2) 입력 텍스트로 2차 필터 (부분일치)
+              const input = (state.inputValue || '').trim().toUpperCase();
+              if (input) {
+                filtered = filtered.filter((o: any) => ('isAddNew' in o) || ('isAddNewForModel' in o) ? true : String(o.part_no || '').toUpperCase().includes(input));
+              }
+              // 3) 완전 무결과면 "추가" 옵션 제공
+              if (filtered.length === 0 && input) {
+                return [{ isAddNew: true, part_no: input } as any];
+              }
+              return filtered;
+            }}
+            getOptionLabel={(opt) => {
+              if ('isAddNew' in opt && (opt as any).isAddNew) {
+                return (opt as any).part_no || '';
+              }
+              if ('isAddNewForModel' in opt && (opt as any).isAddNewForModel) {
+                return productQuery.trim();
+              }
+              return String((opt as any).part_no || '');
             }}
             onInputChange={(_, v) => setProductQuery(v)}
-            onChange={(_, v) => {
-              if (v && 'isAddNew' in v && v.isAddNew) {
+            onChange={async (_, v) => {
+              if (v && ('isAddNew' in v || 'isAddNewForModel' in v)) {
+                try {
+                  const desired = (productQuery || '').trim();
+                  // 유사 Part 탐색: "맨앞 9자리"가 일치하는 항목만
+                  const norm = desired.replace(/\s+/g, '').toUpperCase();
+                  const prefix9 = norm.slice(0, 9);
+                  let list: any[] = [];
+                  if (prefix9.length === 9) {
+                    // 1차: assembly 파트 검색
+                    const { data } = await api.get('/assembly/products/search-parts/', { params: { search: prefix9, prefix_only: 1 } });
+                    let all = Array.isArray(data) ? data : [];
+                    list = all.filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9));
+                    if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc.model_code);
+                    // 2차: 없으면 injection 파트 스펙에서 검색
+                    if (list.length === 0) {
+                      const res = await api.get('/parts/', { params: { search: prefix9, page_size: 10 } });
+                      const inj = Array.isArray(res?.data?.results) ? res.data.results : [];
+                      list = inj
+                        .filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9))
+                        .map((it: any) => ({ part_no: it.part_no, model: it.model_code, description: it.description }));
+                      if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc.model_code);
+                    }
+                  }
+                  setPrefillSimilar(null);
+                  if (list.length > 0) {
+                    // 첫 후보 사용 (맨앞 9자리 동일 집합)
+                    const top = list[0];
+                    const promptText = t('similar_parts_prompt')
+                      .replace('{first}', top.part_no)
+                      .replace('{count}', String(list.length));
+                    const ok = window.confirm(promptText);
+                    if (ok) setPrefillSimilar({ model_code: top.model, description: top.description } as any);
+                  }
+                } catch (_) {
+                  setPrefillSimilar(null);
+                }
                 setShowAddPartModal(true);
                 return;
               }
@@ -196,9 +265,10 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
             }}
             value={selectedPartSpec}
             renderOption={(props, option) => {
+              const { key, ...rest } = props as any;
               if ('isAddNew' in option && option.isAddNew) {
                 return (
-                  <li {...props} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
+                  <li key={key} {...rest} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
                     <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
                       <Plus className="h-3 w-3" />
                       <span>"{option.part_no}" {t('add_new_part_prompt')}</span>
@@ -208,7 +278,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
               }
               const spec = option as PartSpec;
               return (
-                <li {...props}>
+                <li key={key} {...rest}>
                   <div className="flex flex-col">
                     <span className="font-mono font-medium">{spec.part_no}</span>
                     {spec.model_code && (
@@ -300,7 +370,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
       {/* 시간 및 인원 정보 */}
       <div className="space-y-4">
         <h3 className="text-lg font-medium text-green-700">{t('time_and_personnel')}</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div>
             <Label htmlFor="total_time">{t('total_time_min_required')}</Label>
             <Input
@@ -329,6 +399,16 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
             <Input
               type="number"
               value={calculatedValues.actualOperationTime}
+              disabled
+              className="text-center bg-gray-100"
+            />
+          </div>
+
+          <div>
+            <Label>{t('uptime_rate')}</Label>
+            <Input
+              type="number"
+              value={calculatedValues.operationRate}
               disabled
               className="text-center bg-gray-100"
             />
@@ -419,7 +499,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
       <div>
         <Label htmlFor="note">{t('header_note')}</Label>
         <Textarea
-          placeholder="추가 정보나 특이사항을 입력하세요"
+          placeholder={t('note_placeholder')}
           rows={3}
           value={formData.note}
           onChange={(e) => handleChange('note', e.target.value)}
@@ -451,17 +531,17 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
                 defaultValue={productQuery}
                 id="assemblyNewPartNo"
               />
-              <input placeholder="Model Code" className="border rounded px-2 py-1 col-span-2" id="assemblyNewModelCode"/>
-              <input placeholder="Description" className="border rounded px-2 py-1 col-span-2" id="assemblyNewDescription"/>
-              <input placeholder="Mold Type" className="border rounded px-2 py-1" id="assemblyNewMoldType"/>
-              <input placeholder="Color" className="border rounded px-2 py-1" id="assemblyNewColor"/>
-              <input placeholder="Resin Type" className="border rounded px-2 py-1" id="assemblyNewResinType"/>
-              <input placeholder="Resin Code" className="border rounded px-2 py-1" id="assemblyNewResinCode"/>
-              <input placeholder="Net(g)" className="border rounded px-2 py-1" id="assemblyNewNetWeight"/>
-              <input placeholder="S/R(g)" className="border rounded px-2 py-1" id="assemblyNewSrWeight"/>
-              <input placeholder="C/T(초)" className="border rounded px-2 py-1" id="assemblyNewCycleTime"/>
-              <input placeholder="Cavity" className="border rounded px-2 py-1" id="assemblyNewCavity"/>
-              <input type="date" className="border rounded px-2 py-1" defaultValue={new Date().toISOString().slice(0,10)} id="assemblyNewValidFrom"/>
+              <input placeholder="Model Code" className="border rounded px-2 py-1 col-span-2" id="assemblyNewModelCode" defaultValue={selectedModelDesc?.model_code || prefillSimilar?.model_code || ''}/>
+              <input placeholder="Description" className="border rounded px-2 py-1 col-span-2" id="assemblyNewDescription" defaultValue={prefillSimilar?.description || selectedModelDesc?.description || ''}/>
+              <input placeholder="Mold Type" className="border rounded px-2 py-1" id="assemblyNewMoldType" defaultValue={(prefillSimilar as any)?.mold_type || ''}/>
+              <input placeholder="Color" className="border rounded px-2 py-1" id="assemblyNewColor" defaultValue={(prefillSimilar as any)?.color || ''}/>
+              <input placeholder="Resin Type" className="border rounded px-2 py-1" id="assemblyNewResinType" defaultValue={(prefillSimilar as any)?.resin_type || ''}/>
+              <input placeholder="Resin Code" className="border rounded px-2 py-1" id="assemblyNewResinCode" defaultValue={(prefillSimilar as any)?.resin_code || ''}/>
+              <input placeholder="Net(g)" className="border rounded px-2 py-1" id="assemblyNewNetWeight" defaultValue={((prefillSimilar as any)?.net_weight_g ?? '') as any}/>
+              <input placeholder="S/R(g)" className="border rounded px-2 py-1" id="assemblyNewSrWeight" defaultValue={((prefillSimilar as any)?.sr_weight_g ?? '') as any}/>
+              <input placeholder="C/T(초)" className="border rounded px-2 py-1" id="assemblyNewCycleTime" defaultValue={((prefillSimilar as any)?.cycle_time_sec ?? '') as any}/>
+              <input placeholder="Cavity" className="border rounded px-2 py-1" id="assemblyNewCavity" defaultValue={((prefillSimilar as any)?.cavity ?? '') as any}/>
+              <input type="date" className="border rounded px-2 py-1" defaultValue={((prefillSimilar as any)?.valid_from || new Date().toISOString().slice(0,10)) as any} id="assemblyNewValidFrom"/>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" size="sm" onClick={()=>setShowAddPartModal(false)}>{t('cancel')}</Button>
@@ -470,34 +550,17 @@ export default function AssemblyReportForm({ onSubmit, isLoading }: AssemblyRepo
                   const partNo = (document.getElementById('assemblyNewPartNo') as HTMLInputElement).value;
                   const modelCode = (document.getElementById('assemblyNewModelCode') as HTMLInputElement).value;
                   const description = (document.getElementById('assemblyNewDescription') as HTMLInputElement).value;
-                  const moldType = (document.getElementById('assemblyNewMoldType') as HTMLInputElement).value;
-                  const color = (document.getElementById('assemblyNewColor') as HTMLInputElement).value;
-                  const resinType = (document.getElementById('assemblyNewResinType') as HTMLInputElement).value;
-                  const resinCode = (document.getElementById('assemblyNewResinCode') as HTMLInputElement).value;
-                  const netWeight = (document.getElementById('assemblyNewNetWeight') as HTMLInputElement).value;
-                  const srWeight = (document.getElementById('assemblyNewSrWeight') as HTMLInputElement).value;
-                  const cycleTime = (document.getElementById('assemblyNewCycleTime') as HTMLInputElement).value;
-                  const cavity = (document.getElementById('assemblyNewCavity') as HTMLInputElement).value;
-                  const validFrom = (document.getElementById('assemblyNewValidFrom') as HTMLInputElement).value;
+                  // Optional spec fields are currently not sent; keep inputs for UX but omit unused variables
 
-                  const newPart = await api.post('/parts/',{
+                  const newPart = await api.post('/api/assembly/partspecs/create-or-update/',{
                     part_no: partNo,
                     model_code: modelCode,
-                    description: description,
-                    mold_type: moldType,
-                    color: color,
-                    resin_type: resinType,
-                    resin_code: resinCode,
-                    net_weight_g: Number(netWeight) || null,
-                    sr_weight_g: Number(srWeight) || null,
-                    cycle_time_sec: Number(cycleTime) || null,
-                    cavity: Number(cavity) || null,
-                    valid_from: validFrom
+                    description: description
                   });
                   
                   toast.success(t('new_part_added_success'));
-                  queryClient.invalidateQueries({queryKey:['parts-all']});
-                  queryClient.invalidateQueries({queryKey:['parts-search']});
+                  queryClient.invalidateQueries({queryKey:['assembly-partspecs']});
+                  queryClient.invalidateQueries({queryKey:['assembly-partno-search']});
                   setShowAddPartModal(false);
                   
                   // 새로 생성된 Part를 자동으로 선택

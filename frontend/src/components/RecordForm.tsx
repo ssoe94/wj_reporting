@@ -53,6 +53,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   const [selectedModelDesc, setSelectedModelDesc] = useState<PartSpec | null>(null);
   const [selectedPartSpec, setSelectedPartSpec] = useState<PartSpec | null>(null);
   const [showAddPartModal, setShowAddPartModal] = useState(false);
+  const [prefillSimilar, setPrefillSimilar] = useState<Partial<PartSpec> | null>(null);
   const { data: searchResults = [] } = usePartSpecSearch(productQuery.toUpperCase());
   const { data: modelParts = [] } = usePartListByModel(selectedModelDesc?.model_code);
   const uniqueModelDesc = React.useMemo(() => {
@@ -216,24 +217,76 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         {/* Part No. */}
         <div>
           <Label>Part No.</Label>
-          <Autocomplete<PartSpec | { isAddNew: boolean; part_no: string }>
+          <Autocomplete<PartSpec | { isAddNew: boolean; part_no: string } | { isAddNewForModel: boolean }>
             options={(() => {
               const baseOptions = selectedModelDesc ? modelParts : searchResults;
               // 검색어가 2글자 이상이고 결과가 없으면 "새로 추가" 옵션 추가
               if (productQuery.trim().length >= 2 && baseOptions.length === 0) {
                 return [{ isAddNew: true, part_no: productQuery.trim() } as any];
               }
+              if (selectedModelDesc && baseOptions.length === 0) {
+                return [{ isAddNewForModel: true } as any];
+              }
               return baseOptions;
             })()}
-            getOptionLabel={(opt) => {
-              if ('isAddNew' in opt && opt.isAddNew) {
-                return `➕ "${opt.part_no}" 새 Part 추가`;
+            filterOptions={(opts, state) => {
+              let filtered: any[] = opts.slice();
+              if (selectedModelDesc) {
+                filtered = filtered.filter((o: any) => ('isAddNew' in o) || ('isAddNewForModel' in o) ? true : o.model_code === selectedModelDesc.model_code);
               }
-              return `${opt.part_no}`;
+              const input = (state.inputValue || '').trim().toUpperCase();
+              if (input) {
+                filtered = filtered.filter((o: any) => ('isAddNew' in o) || ('isAddNewForModel' in o) ? true : String(o.part_no || '').toUpperCase().includes(input));
+              }
+              if (filtered.length === 0 && input) {
+                return [{ isAddNew: true, part_no: input } as any];
+              }
+              return filtered;
+            }}
+            getOptionLabel={(opt) => {
+              if ('isAddNew' in opt && (opt as any).isAddNew) {
+                return (opt as any).part_no || '';
+              }
+              if ('isAddNewForModel' in opt && (opt as any).isAddNewForModel) {
+                return productQuery.trim();
+              }
+              return String((opt as any).part_no || '');
             }}
             onInputChange={(_, v) => setProductQuery(v)}
-            onChange={(_, v) => {
-              if (v && 'isAddNew' in v && v.isAddNew) {
+            onChange={async (_, v) => {
+              if (v && ('isAddNew' in v || 'isAddNewForModel' in v)) {
+                try {
+                  const desired = (productQuery || '').trim();
+                  const norm = desired.replace(/\s+/g, '').toUpperCase();
+                  const prefix9 = norm.slice(0, 9);
+                  let similarCount = 0;
+                  let first: any = null;
+                  if (prefix9.length === 9) {
+                    const { data } = await api.get('/assembly/products/search-parts/', { params: { search: prefix9, prefix_only: 1 } });
+                    let list = Array.isArray(data) ? data : [];
+                    list = list.filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9));
+                    if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc?.model_code);
+                    // 없으면 injection 파트로 보완
+                    if (list.length === 0) {
+                      const res = await api.get('/parts/', { params: { search: prefix9, page_size: 10 } });
+                      const inj = Array.isArray(res?.data?.results) ? res.data.results : [];
+                      list = inj
+                        .filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9))
+                        .map((it: any) => ({ part_no: it.part_no, model: it.model_code, description: it.description }));
+                      if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc?.model_code);
+                    }
+                    similarCount = list.length;
+                    first = list[0] || null;
+                  }
+                  setPrefillSimilar(null);
+                  if (similarCount > 0) {
+                    const msg = `${first.part_no} 외 유사항목 ${similarCount}개가 있습니다. 참고하여 새 Part를 추가할까요?`;
+                    const ok = window.confirm(msg);
+                    if (ok) setPrefillSimilar(first);
+                  }
+                } catch (_) {
+                  setPrefillSimilar(null);
+                }
                 setShowAddPartModal(true);
                 return;
               }
@@ -256,9 +309,10 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
             }}
             value={selectedPartSpec}
             renderOption={(props, option) => {
+              const { key, ...rest } = props as any;
               if ('isAddNew' in option && option.isAddNew) {
                 return (
-                  <li {...props} className="bg-blue-50 hover:bg-blue-100 border-t border-blue-200">
+                  <li key={key} {...rest} className="bg-blue-50 hover:bg-blue-100 border-t border-blue-200">
                     <div className="flex items-center justify-center gap-2 text-blue-700 font-medium py-2 text-sm">
                       <Plus className="h-3 w-3" />
                       <span>"{option.part_no}" 새 Part 추가</span>
@@ -268,7 +322,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
               }
               const spec = option as PartSpec;
               return (
-                <li {...props}>
+                <li key={key} {...rest}>
                   <div className="flex flex-col">
                     <span className="font-mono font-medium">{spec.part_no}</span>
                     {spec.model_code && (
@@ -417,17 +471,17 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                 defaultValue={productQuery}
                 id="newPartNo"
               />
-              <input placeholder="Model Code" className="border rounded px-2 py-1 col-span-2" id="newModelCode"/>
-              <input placeholder="Description" className="border rounded px-2 py-1 col-span-2" id="newDescription"/>
-              <input placeholder="Mold Type" className="border rounded px-2 py-1" id="newMoldType"/>
-              <input placeholder="Color" className="border rounded px-2 py-1" id="newColor"/>
-              <input placeholder="Resin Type" className="border rounded px-2 py-1" id="newResinType"/>
-              <input placeholder="Resin Code" className="border rounded px-2 py-1" id="newResinCode"/>
-              <input placeholder="Net(g)" className="border rounded px-2 py-1" id="newNetWeight"/>
-              <input placeholder="S/R(g)" className="border rounded px-2 py-1" id="newSrWeight"/>
-              <input placeholder="C/T(초)" className="border rounded px-2 py-1" id="newCycleTime"/>
-              <input placeholder="Cavity" className="border rounded px-2 py-1" id="newCavity"/>
-              <input type="date" className="border rounded px-2 py-1" defaultValue={new Date().toISOString().slice(0,10)} id="newValidFrom"/>
+              <input placeholder="Model Code" className="border rounded px-2 py-1 col-span-2" id="newModelCode" defaultValue={selectedModelDesc?.model_code || prefillSimilar?.model_code || ''}/>
+              <input placeholder="Description" className="border rounded px-2 py-1 col-span-2" id="newDescription" defaultValue={prefillSimilar?.description || selectedModelDesc?.description || ''}/>
+              <input placeholder="Mold Type" className="border rounded px-2 py-1" id="newMoldType" defaultValue={(prefillSimilar as any)?.mold_type || ''}/>
+              <input placeholder="Color" className="border rounded px-2 py-1" id="newColor" defaultValue={(prefillSimilar as any)?.color || ''}/>
+              <input placeholder="Resin Type" className="border rounded px-2 py-1" id="newResinType" defaultValue={(prefillSimilar as any)?.resin_type || ''}/>
+              <input placeholder="Resin Code" className="border rounded px-2 py-1" id="newResinCode" defaultValue={(prefillSimilar as any)?.resin_code || ''}/>
+              <input placeholder="Net(g)" className="border rounded px-2 py-1" id="newNetWeight" defaultValue={((prefillSimilar as any)?.net_weight_g ?? '') as any}/>
+              <input placeholder="S/R(g)" className="border rounded px-2 py-1" id="newSrWeight" defaultValue={((prefillSimilar as any)?.sr_weight_g ?? '') as any}/>
+              <input placeholder="C/T(초)" className="border rounded px-2 py-1" id="newCycleTime" defaultValue={((prefillSimilar as any)?.cycle_time_sec ?? '') as any}/>
+              <input placeholder="Cavity" className="border rounded px-2 py-1" id="newCavity" defaultValue={((prefillSimilar as any)?.cavity ?? '') as any}/>
+              <input type="date" className="border rounded px-2 py-1" defaultValue={((prefillSimilar as any)?.valid_from || new Date().toISOString().slice(0,10)) as any} id="newValidFrom"/>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" size="sm" onClick={()=>setShowAddPartModal(false)}>취소</Button>

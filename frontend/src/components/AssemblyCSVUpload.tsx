@@ -64,7 +64,7 @@ export default function AssemblyCSVUpload({ onSuccess }: AssemblyCSVUploadProps)
       const formData = new FormData();
       formData.append('csv_file', file);
 
-      const response = await axios.post('/api/assembly/assembly_reports/csv-preview/', formData, {
+      const response = await axios.post('/assembly/reports/csv-preview/', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -106,7 +106,7 @@ export default function AssemblyCSVUpload({ onSuccess }: AssemblyCSVUploadProps)
         ...validationResult.new_parts,
       ];
 
-      const response = await axios.post('/api/assembly/assembly_reports/csv-import/', {
+      const response = await axios.post('/assembly/reports/csv-import/', {
         validated_data: allValidData,
         new_parts_info: newPartsInfo,
       });

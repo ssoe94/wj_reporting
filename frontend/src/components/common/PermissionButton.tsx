@@ -96,7 +96,7 @@ const PermissionButton: React.FC<PermissionButtonProps> = ({
   return (
     <button
       type={type}
-      className={getButtonClassName()}
+      className={getButtonClassName() + ' inline-flex items-center justify-center'}
       onClick={handleClick}
       // HTML disabled를 쓰면 클릭 이벤트가 발생하지 않아 토스트가 안 뜬다
       aria-disabled={isDisabled}

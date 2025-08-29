@@ -136,11 +136,37 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="inventory_finished">{t('inventory_finished')}</Label>
-                <Input id="inventory_finished" type="number" value={form.inventory_finished || ''} onChange={(e)=>setForm({...form, inventory_finished:Number(e.target.value)})} />
+                <Input 
+                  id="inventory_finished" 
+                  type="number" 
+                  inputMode="numeric"
+                  pattern="\\d*"
+                  min={0}
+                  step={1}
+                  value={(form.inventory_finished ?? 0)}
+                  onChange={(e)=>{
+                    const raw = e.target.value;
+                    const num = Math.max(0, Math.floor(Number(raw || 0)));
+                    setForm({...form, inventory_finished: num});
+                  }} 
+                />
               </div>
               <div>
                 <Label htmlFor="inventory_material">{t('inventory_material')}</Label>
-                <Input id="inventory_material" type="number" value={form.inventory_material || ''} onChange={(e)=>setForm({...form, inventory_material:Number(e.target.value)})} />
+                <Input 
+                  id="inventory_material" 
+                  type="number" 
+                  inputMode="numeric"
+                  pattern="\\d*"
+                  min={0}
+                  step={1}
+                  value={(form.inventory_material ?? 0)}
+                  onChange={(e)=>{
+                    const raw = e.target.value;
+                    const num = Math.max(0, Math.floor(Number(raw || 0)));
+                    setForm({...form, inventory_material: num});
+                  }} 
+                />
               </div>
               <div>
                 <Label htmlFor="storage_action">{t('storage_action')}</Label>

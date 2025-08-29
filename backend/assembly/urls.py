@@ -12,5 +12,5 @@ router.register(r'products', views.AssemblyProductViewSet)
 
 urlpatterns = [
     path('', views.index, name='index'),
-    path('api/', include(router.urls)),
-] 
+    path('', include(router.urls)),
+]

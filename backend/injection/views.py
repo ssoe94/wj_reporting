@@ -48,9 +48,93 @@ class EcoPartSpecViewSet(viewsets.ModelViewSet):
     # 검색: part_no, description, model_code
     search_fields = ['part_no', 'description', 'model_code']
 
+    @action(detail=False, methods=['post'], url_path='create-or-update')
+    def create_or_update(self, request):
+        """part_no 기준으로 EcoPartSpec 생성 또는 업데이트"""
+        part_no = (request.data.get('part_no') or '').strip()
+        if not part_no:
+            return Response({'part_no': 'required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        description = request.data.get('description', '')
+        model_code = request.data.get('model_code', '')
+        eco_category = request.data.get('eco_category', '')
+        change_history = request.data.get('change_history', '')
+
+        obj, created = EcoPartSpec.objects.get_or_create(
+            part_no=part_no,
+            defaults={
+                'description': description,
+                'model_code': model_code,
+                'eco_category': eco_category,
+                'change_history': change_history,
+            }
+        )
+
+        if not created:
+            # 전달된 값이 있으면 갱신
+            updated = False
+            if description != '':
+                obj.description = description; updated = True
+            if model_code != '':
+                obj.model_code = model_code; updated = True
+            if eco_category != '':
+                obj.eco_category = eco_category; updated = True
+            if change_history != '':
+                obj.change_history = change_history; updated = True
+            if updated:
+                obj.save()
+
+        serializer = self.get_serializer(obj)
+        return Response(serializer.data)
+
 class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
     queryset = EngineeringChangeOrder.objects.all()
     serializer_class = EngineeringChangeOrderSerializer
+
+    @action(detail=True, methods=['post'], url_path='details/bulk')
+    def bulk_details(self, request, pk=None):
+        """
+        주어진 ECO 헤더의 상세 목록을 일괄 저장(업서트)하고,
+        요청에 포함되지 않은 기존 상세는 삭제합니다.
+
+        payload: { details: [{ eco_part_spec, change_details, status }, ...] }
+        """
+        header = self.get_object()
+        details = request.data.get('details', [])
+        if not isinstance(details, list):
+            return Response({'details': 'must be a list'}, status=status.HTTP_400_BAD_REQUEST)
+
+        desired_ids = []
+        # 유효성 검사 선행
+        for idx, item in enumerate(details):
+            eco_part_spec_id = item.get('eco_part_spec')
+            if not eco_part_spec_id:
+                return Response({f'details[{idx}].eco_part_spec': 'required'}, status=status.HTTP_400_BAD_REQUEST)
+            desired_ids.append(eco_part_spec_id)
+
+        with transaction.atomic():
+            # 제거: 요청에 없는 상세 삭제
+            EcoDetail.objects.filter(eco_header=header).exclude(eco_part_spec_id__in=desired_ids).delete()
+
+            # 업서트 처리
+            for item in details:
+                eco_part_spec_id = item.get('eco_part_spec')
+                change_details = item.get('change_details', '')
+                status_val = item.get('status', 'OPEN')
+
+                EcoDetail.objects.update_or_create(
+                    eco_header=header,
+                    eco_part_spec_id=eco_part_spec_id,
+                    defaults={
+                        'change_details': change_details,
+                        'status': status_val,
+                    }
+                )
+
+        # 최신 데이터 반환
+        qs = EcoDetail.objects.filter(eco_header=header).select_related('eco_part_spec')
+        serializer = EcoDetailSerializer(qs, many=True)
+        return Response({'details': serializer.data})
 
     @action(detail=False, methods=['get'], url_path='unified-search')
     def unified_search(self, request):
@@ -108,12 +192,30 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     queryset = UserProfile.objects.all()
     serializer_class = UserProfileSerializer
 
-class InventoryView(generics.ListAPIView):
-    # Placeholder for InventoryView logic - needs actual queryset and serializer_class
-    # Example:
-    # queryset = InventorySnapshot.objects.all()
-    # serializer_class = InventorySnapshotSerializer
-    pass
+class InventoryView(generics.GenericAPIView):
+    """
+    간단 재고 조회 API
+    입력: ?part_ids=1&part_ids=2 ... (PartSpec ID 목록)
+    출력: { "1": 수량, "2": 수량 }
+    가장 최근 스냅샷(Injection.InventorySnapshot 기준)을 사용합니다.
+    """
+    def get(self, request):
+        part_ids = request.query_params.getlist('part_ids')
+        try:
+            part_ids_int = [int(x) for x in part_ids if str(x).strip()]
+        except ValueError:
+            return Response({'part_ids': 'must be integers'}, status=status.HTTP_400_BAD_REQUEST)
+
+        result: dict[int, float] = {}
+        if not part_ids_int:
+            return Response(result)
+
+        # 각 PartSpec에 대해 최신 스냅샷의 qty 반환
+        for pid in part_ids_int:
+            snap = InventorySnapshot.objects.filter(part_spec_id=pid).order_by('-collected_at').first()
+            result[pid] = float(getattr(snap, 'qty', 0) or 0)
+
+        return Response(result)
 
 class SignupRequestView(generics.CreateAPIView):
     # Placeholder for SignupRequestView logic - needs actual serializer_class

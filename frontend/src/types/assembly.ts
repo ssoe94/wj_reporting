@@ -11,9 +11,10 @@ export interface AssemblyReport {
   processing_defect: number;
   operation_time: number;
   total_time: number;
+  idle_time: number;
+  note: string;
   start_datetime?: string;
   end_datetime?: string;
-  note: string;
   // 계산된 필드들
   incoming_defect_qty?: number;
   total_defect_qty?: number;
@@ -21,6 +22,9 @@ export interface AssemblyReport {
   defect_rate?: number;
   total_production_qty?: number;
   uptime_rate?: number;
+  uph?: number;
+  upph?: number;
+  actual_operation_time?: number;
   created_at?: string;
   updated_at?: string;
 }

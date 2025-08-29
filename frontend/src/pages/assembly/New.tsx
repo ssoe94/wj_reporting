@@ -4,8 +4,10 @@ import { toast } from 'react-toastify';
 import AssemblyReportForm from '../../components/AssemblyReportForm';
 import AssemblyCSVUpload from '../../components/AssemblyCSVUpload';
 import { useCreateAssemblyReport } from '../../hooks/useAssemblyReports';
+import { useLang } from '../../i18n';
 
 export default function AssemblyNewPage() {
+  const { t } = useLang();
   const [activeTab, setActiveTab] = useState<'form' | 'csv'>('form');
   const createMutation = useCreateAssemblyReport();
 
@@ -26,8 +28,8 @@ export default function AssemblyNewPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">가공 생산 등록</h1>
-        <p className="text-gray-600 mt-2">새로운 가공 생산 보고서를 등록합니다.</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t('assembly_production_register')}</h1>
+        <p className="text-gray-600 mt-2">{t('assembly_production_register_subtitle')}</p>
       </div>
 
       {/* 탭 네비게이션 */}
@@ -42,7 +44,7 @@ export default function AssemblyNewPage() {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              개별 등록
+              {t('individual_register')}
             </button>
             <button
               onClick={() => setActiveTab('csv')}
@@ -52,7 +54,7 @@ export default function AssemblyNewPage() {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              CSV 대량 업로드
+              {t('csv_bulk_upload')}
             </button>
           </nav>
         </div>
