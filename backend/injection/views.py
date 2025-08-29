@@ -35,6 +35,33 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
     serializer_class = InjectionReportSerializer
 
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """사출 보고서 요약 통계"""
+        qs = self.get_queryset()
+        date_str = request.query_params.get('date')
+        if date_str:
+            qs = qs.filter(date=date_str)
+
+        total_count = qs.count()
+        total_plan_qty = sum(r.plan_qty for r in qs)
+        total_actual_qty = sum(r.actual_qty for r in qs)
+        total_defect_qty = sum(r.actual_defect for r in qs)
+
+        achievement_rate = round((total_actual_qty / total_plan_qty) * 100, 1) if total_plan_qty else 0
+
+        total_production = total_actual_qty + total_defect_qty
+        defect_rate = round((total_defect_qty / total_production) * 100, 1) if total_production else 0
+
+        return Response({
+            'total_count': total_count,
+            'total_plan_qty': total_plan_qty,
+            'total_actual_qty': total_actual_qty,
+            'total_defect_qty': total_defect_qty,
+            'achievement_rate': achievement_rate,
+            'defect_rate': defect_rate,
+        })
+
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
@@ -42,6 +69,9 @@ class ProductViewSet(viewsets.ModelViewSet):
 class PartSpecViewSet(viewsets.ModelViewSet):
     queryset = PartSpec.objects.all()
     serializer_class = PartSpecSerializer
+    # 검색/필터 활성화: 모델코드 기반 추천 및 키워드 검색 지원
+    search_fields = ['part_no', 'description', 'model_code']
+    filterset_fields = ['model_code', 'part_no', 'description']
 
 class EcoPartSpecViewSet(viewsets.ModelViewSet):
     queryset = EcoPartSpec.objects.all()

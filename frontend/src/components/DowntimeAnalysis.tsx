@@ -207,8 +207,8 @@ export default function DowntimeAnalysis() {
         {/* 상단: 도넛/막대그래프 토글 */}
         <div className="flex flex-row gap-8 items-center justify-center">
           {chartMode === 'pie' ? (
-            <ResponsiveContainer width={320} height={260}>
-              <PieChart>
+            <div style={{ width: 320, height: 260 }}>
+              <PieChart width={320} height={260}>
                 <Pie
                   data={pieData}
                   dataKey="totalDuration"
@@ -235,7 +235,7 @@ export default function DowntimeAnalysis() {
                 <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fontSize={18} fontWeight="bold" fill="#111827">{totalDowntime.toLocaleString()}{t('min_unit')}</text>
                 <text x="50%" y="50%" dy={20} textAnchor="middle" dominantBaseline="middle" fontSize={12} fill="#6b7280">{t('total_downtime')}</text>
               </PieChart>
-            </ResponsiveContainer>
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={downtimeSummary} layout="horizontal" margin={{ top: 20, right: 20, bottom: 20, left: 40 }}>

@@ -1,16 +1,23 @@
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Button } from '../../components/ui/button';
 import { useExportAssemblyReports } from '../../hooks/useAssemblyReports';
 import AssemblyProdCalendar from '../../components/AssemblyProdCalendar';
 import AssemblyDateRecordsTable from '../../components/AssemblyDateRecordsTable';
 import { DownloadCloud } from 'lucide-react';
-import { api } from '../../lib/api';
 
 export default function AssemblyRecordsPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const exportMutation = useExportAssemblyReports();
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const d = params.get('date');
+    if (d) setSelectedDate(d);
+  }, [location.search]);
 
   const handleExport = async () => {
     try {
@@ -21,23 +28,7 @@ export default function AssemblyRecordsPage() {
     }
   };
 
-  const handleCsvUpload = async (file: File) => {
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      const { data } = await api.post('/assembly/reports/bulk-import/', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      toast.success(`생성 ${data.created}건 / 중복 ${data.skipped}건 / 오류 ${data.errors}건`);
-    } catch (err: any) {
-      console.error('CSV upload error:', err);
-      if (err.response?.data?.detail) {
-        toast.error(`CSV 업로드 실패: ${err.response.data.detail}`);
-      } else {
-        toast.error('CSV 업로드 실패');
-      }
-    }
-  };
+  // CSV 업로드 비활성화
 
 
   return (
@@ -66,24 +57,7 @@ export default function AssemblyRecordsPage() {
         <div className="flex-shrink-0 space-y-4 mt-9 md:mt-11">
           <AssemblyProdCalendar selected={selectedDate} onSelect={setSelectedDate} />
 
-          {/* CSV 버튼들 (캘린더 하단) */}
           <div className="flex justify-center gap-2">
-            <input
-              id="csvFile"
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  handleCsvUpload(file);
-                  e.target.value = '';
-                }
-              }}
-            />
-            <Button size="sm" variant="ghost" onClick={() => document.getElementById('csvFile')?.click()}>
-              CSV 업로드
-            </Button>
             <Button size="sm" className="gap-2" onClick={handleExport} disabled={exportMutation.isPending}>
               <DownloadCloud className="h-4 w-4" /> 
               {exportMutation.isPending ? '내보내는 중...' : 'CSV 저장'}

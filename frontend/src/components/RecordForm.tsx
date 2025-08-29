@@ -203,11 +203,56 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
             options={uniqueModelDesc}
             getOptionLabel={(opt) => `${opt.model_code} – ${opt.description}`}
             onInputChange={(_, v) => setProductQuery(v)}
+            filterOptions={(opts, state) => {
+              const input = (state.inputValue || '').trim();
+              let filtered = opts.slice();
+              if (input) {
+                const exists = filtered.some(o => `${o.model_code} – ${o.description}`.toUpperCase().includes(input.toUpperCase()));
+                if (!exists) {
+                  filtered = [ { id: -1, model_code: '', description: '' } as any, ...filtered ];
+                }
+              }
+              return filtered;
+            }}
+            renderOption={(props, option) => {
+              const { key, ...rest } = props as any;
+              if ((option as any).id === -1) {
+                return (
+                  <li key={key} {...rest} className="bg-blue-50 hover:bg-blue-100 border-t border-blue-200">
+                    <div className="flex items-center justify-center gap-2 text-blue-700 font-medium py-2 text-sm">
+                      <Plus className="h-3 w-3" />
+                      <span>{t('add_new_part_spec')}</span>
+                    </div>
+                  </li>
+                );
+              }
+              return (
+                <li key={key} {...rest}>
+                  <div className="flex flex-col">
+                    <span className="font-mono font-medium">{option.model_code}</span>
+                    <span className="text-sm text-gray-600">{option.description}</span>
+                  </div>
+                </li>
+              );
+            }}
             onChange={(_, v) => {
               setSelectedModelDesc(v);
-              if (v) {
+              if (v && (v as any).id !== -1) {
                 setForm((f) => ({ ...f, model: v.model_code, type: v.description, partNo: '', resin: '', netG: '', srG: '', ct: '' }));
                 setSelectedPartSpec(null);
+              }
+              if (v && (v as any).id === -1) {
+                const raw = (productQuery || '').trim();
+                const parts = raw.split(/\s+[–-]\s+/);
+                const modelCode = (parts[0] || '').trim().toUpperCase();
+                const desc = (parts[1] || '').trim();
+                setShowAddPartModal(true);
+                setTimeout(()=>{
+                  try{
+                    (document.getElementById('newModelCode') as HTMLInputElement).value = modelCode;
+                    (document.getElementById('newDescription') as HTMLInputElement).value = desc;
+                  }catch(_){/* no-op */}
+                },50);
               }
             }}
             value={selectedModelDesc}
@@ -266,21 +311,34 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                     let list = Array.isArray(data) ? data : [];
                     list = list.filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9));
                     if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc?.model_code);
-                    // 없으면 injection 파트로 보완
+                    // 없으면 injection 파트로 보완 (추가 스펙 포함)
                     if (list.length === 0) {
                       const res = await api.get('/parts/', { params: { search: prefix9, page_size: 10 } });
                       const inj = Array.isArray(res?.data?.results) ? res.data.results : [];
                       list = inj
                         .filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9))
-                        .map((it: any) => ({ part_no: it.part_no, model: it.model_code, description: it.description }));
+                        .map((it: any) => ({
+                          part_no: it.part_no,
+                          model: it.model_code,
+                          description: it.description,
+                          mold_type: it.mold_type,
+                          color: it.color,
+                          resin_type: it.resin_type,
+                          resin_code: it.resin_code,
+                          net_weight_g: it.net_weight_g,
+                          sr_weight_g: it.sr_weight_g,
+                          cycle_time_sec: it.cycle_time_sec,
+                          cavity: it.cavity,
+                          valid_from: it.valid_from,
+                        }));
                       if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc?.model_code);
                     }
                     similarCount = list.length;
                     first = list[0] || null;
                   }
                   setPrefillSimilar(null);
-                  if (similarCount > 0) {
-                    const msg = `${first.part_no} 외 유사항목 ${similarCount}개가 있습니다. 참고하여 새 Part를 추가할까요?`;
+                  if (similarCount > 0 && first) {
+                    const msg = t('similar_parts_prompt').replace('{first}', first.part_no).replace('{count}', String(similarCount));
                     const ok = window.confirm(msg);
                     if (ok) setPrefillSimilar(first);
                   }

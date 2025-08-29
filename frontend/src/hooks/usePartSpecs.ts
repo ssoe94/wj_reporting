@@ -70,10 +70,20 @@ export function usePartListByModel(modelCode: string | undefined): UseQueryResul
   return useQuery({
     queryKey: ['parts-model', modelCode],
     queryFn: async () => {
-      const { data } = await api.get<Paginated<PartSpec>>('/parts/', {
-        params: { model_code: modelCode },
-      });
-      return data.results;
+      // 페이지네이션 처리: 해당 모델의 모든 PartSpec 로드
+      const pageSize = 100;
+      let page = 1;
+      let all: PartSpec[] = [];
+      if (!modelCode) return all;
+      while (true) {
+        const { data } = await api.get<Paginated<PartSpec>>('/parts/', {
+          params: { model_code: modelCode, page, page_size: pageSize },
+        });
+        all = all.concat(data.results);
+        if (!data.next) break;
+        page += 1;
+      }
+      return all;
     },
     enabled: !!modelCode,
     staleTime: 1000 * 60 * 10,

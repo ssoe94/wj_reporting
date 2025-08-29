@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAssemblyReports } from '../hooks/useAssemblyReports';
 import type { AssemblyReport } from '../types/assembly';
 import { Dialog } from '@headlessui/react';
@@ -20,6 +20,8 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   const reports = reportsData?.results || [];
   const [detail, setDetail] = useState<AssemblyReport | null>(null);
   const [editing, setEditing] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [editingData, setEditingData] = useState<AssemblyReport | null>(null);
   const queryClient = useQueryClient();
 
   const list = reports
@@ -32,7 +34,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   const handleSave = async (data: Partial<AssemblyReport>) => {
     if (!detail) return;
     try {
-      await api.patch(`/assembly/api/reports/${detail.id}/`, data);
+      await api.patch(`/assembly/reports/${detail.id}/`, data);
       toast.success(t('update_success'));
       queryClient.invalidateQueries({ queryKey: ['assembly-reports'] });
       queryClient.invalidateQueries({ queryKey: ['assembly-reports-summary'] });
@@ -47,7 +49,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
     if (!detail) return;
     if (!confirm(t('confirm_delete'))) return;
     try {
-      await api.delete(`/assembly/api/reports/${detail.id}/`);
+      await api.delete(`/assembly/reports/${detail.id}/`);
       toast.success(t('delete_success'));
       queryClient.invalidateQueries({ queryKey: ['assembly-reports'] });
       queryClient.invalidateQueries({ queryKey: ['assembly-reports-summary'] });
@@ -144,7 +146,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
       {detail && (
         <Dialog open={!!detail} onClose={() => setDetail(null)} className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-          <Dialog.Panel className="relative bg-white rounded-lg w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <Dialog.Panel className="relative bg-white rounded-lg w-full max-w-5xl p-4 space-y-3 max-h-[80vh] overflow-y-auto text-sm">
             {!editing ? (
               <>
                 <Dialog.Title className="text-lg font-bold">
@@ -172,7 +174,38 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                   <span className="text-gray-500">{t('header_note')}</span><span className="col-span-1">{detail.note}</span>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button variant="info" onClick={() => { setEditing(true); }}>{t('edit')}</Button>
+                  <Button variant="info" onClick={async () => {
+                    if (!detail) return;
+                    try {
+                      setLoadingEdit(true);
+                      setEditing(true);
+                      const { data } = await api.get(`/assembly/reports/${detail.id}/`);
+                      // 정규화: null/undefined/NaN → 0/''
+                      const norm = (v: any, d: any) => (v === null || v === undefined || Number.isNaN(v) ? d : v);
+                      setEditingData({
+                        ...detail,
+                        ...data,
+                        plan_qty: norm(data.plan_qty, 0),
+                        actual_qty: norm(data.actual_qty, 0),
+                        input_qty: norm(data.input_qty, 0),
+                        total_time: norm(data.total_time, 0),
+                        idle_time: norm(data.idle_time, 0),
+                        operation_time: norm(data.operation_time, 0),
+                        injection_defect: norm(data.injection_defect, 0),
+                        outsourcing_defect: norm(data.outsourcing_defect, 0),
+                        processing_defect: norm(data.processing_defect, 0),
+                        workers: norm(data.workers, 1),
+                        note: data.note || '',
+                        line_no: data.line_no || '',
+                        model: data.model || '',
+                        part_no: data.part_no || '',
+                      });
+                    } catch (_) {
+                      setEditingData(detail);
+                    } finally {
+                      setLoadingEdit(false);
+                    }
+                  }}>{t('edit')}</Button>
                   <Button variant="danger" onClick={handleDelete}>{t('delete')}</Button>
                   <Button variant="secondary" onClick={() => setDetail(null)}>{t('close')}</Button>
                 </div>
@@ -182,10 +215,17 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                 <Dialog.Title className="text-lg font-bold">
                   {dayjs(detail.date).format('YYYY.MM.DD')} – {detail.line_no} 라인 {t('edit')}
                 </Dialog.Title>
-                <AssemblyReportForm 
-                  onSubmit={handleSave} 
-                  isLoading={false}
-                />
+                {loadingEdit && (
+                  <div className="py-10 text-center text-gray-500 text-sm">Loading…</div>
+                )}
+                {!loadingEdit && (
+                  <AssemblyReportForm 
+                    onSubmit={handleSave} 
+                    isLoading={false}
+                    initialData={editingData || detail}
+                    compact
+                  />
+                )}
                 <div className="flex justify-end gap-2">
                   <Button variant="secondary" onClick={() => setEditing(false)}>{t('cancel')}</Button>
                 </div>
