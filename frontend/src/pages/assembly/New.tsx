@@ -3,10 +3,10 @@ import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import AssemblyReportForm from '../../components/AssemblyReportForm';
 import { useCreateAssemblyReport } from '../../hooks/useAssemblyReports';
-import { useLang } from '../../i18n';
+// import { useLang } from '../../i18n';
 
 export default function AssemblyNewPage() {
-  const { t } = useLang();
+  // const { t } = useLang();
   const createMutation = useCreateAssemblyReport();
   const navigate = useNavigate();
 

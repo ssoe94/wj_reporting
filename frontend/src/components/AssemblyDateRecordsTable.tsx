@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAssemblyReports } from '../hooks/useAssemblyReports';
 import type { AssemblyReport } from '../types/assembly';
 import { Dialog } from '@headlessui/react';
