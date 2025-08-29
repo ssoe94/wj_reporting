@@ -51,8 +51,23 @@ export default function PasswordChangeModal({
       onClose();
       if (onSuccess) onSuccess();
     } catch (error: any) {
-      const errorMessage = error?.response?.data?.error || error?.message || t('save_fail');
-      setError(errorMessage);
+      const data = error?.response?.data;
+      let msg = t('save_fail');
+      if (data && typeof data === 'object') {
+        if (typeof (data as any).detail === 'string' && (data as any).detail) {
+          msg = (data as any).detail;
+        } else {
+          const keys = Object.keys(data as any);
+          if (keys.length > 0) {
+            const firstKey = keys[0];
+            const val = (data as any)[firstKey];
+            msg = Array.isArray(val) ? (val[0] || msg) : (val || msg);
+          }
+        }
+      } else if (error?.message) {
+        msg = error.message;
+      }
+      setError(String(msg));
     } finally {
       setLoading(false);
     }
