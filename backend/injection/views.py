@@ -188,6 +188,87 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
     queryset = UserRegistrationRequest.objects.all()
     serializer_class = UserRegistrationRequestSerializer
 
+    @action(detail=True, methods=['post'], url_path='approve', permission_classes=[IsAuthenticated])
+    def approve(self, request, pk=None):
+        if not request.user.is_staff:
+            return Response({'detail': '관리자 권한이 필요합니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        signup_req = self.get_object()
+        if signup_req.status != 'pending':
+            return Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 권한 페이로드 파싱
+        perms = (request.data or {}).get('permissions', {})
+        default_bool = lambda k: bool(perms.get(k, False))
+
+        # 사용자 생성 또는 업데이트
+        username_base = signup_req.email.split('@')[0]
+        username = username_base
+        # 동일 사용자명 충돌 회피
+        i = 1
+        while User.objects.filter(username=username).exclude(email=signup_req.email).exists():
+            username = f"{username_base}{i}"
+            i += 1
+
+        temp_password = User.objects.make_random_password() if hasattr(User.objects, 'make_random_password') else 'TempPass123!'
+
+        user, created = User.objects.get_or_create(
+            email=signup_req.email,
+            defaults={
+                'username': username,
+                'first_name': signup_req.full_name,
+                'password': make_password(temp_password),
+            }
+        )
+
+        if not created:
+            # 기존 사용자 비밀번호를 임시로 재설정
+            user.username = user.username or username
+            user.first_name = user.first_name or signup_req.full_name
+            user.password = make_password(temp_password)
+            user.save(update_fields=['username', 'first_name', 'password'])
+
+        # 프로필 권한 적용
+        profile = UserProfile.get_user_permissions(user)
+        profile.can_view_injection = default_bool('can_view_injection')
+        profile.can_edit_injection = default_bool('can_edit_injection')
+        profile.can_view_machining = default_bool('can_view_machining')
+        profile.can_edit_machining = default_bool('can_edit_machining')
+        profile.can_view_eco = default_bool('can_view_eco')
+        profile.can_edit_eco = default_bool('can_edit_eco')
+        profile.can_view_inventory = default_bool('can_view_inventory')
+        profile.can_edit_inventory = default_bool('can_edit_inventory')
+        profile.is_using_temp_password = True
+        profile.password_reset_required = True
+        profile.save()
+
+        signup_req.status = 'approved'
+        signup_req.approved_by = request.user
+        signup_req.approved_at = timezone.now()
+        signup_req.temporary_password = temp_password
+        signup_req.save(update_fields=['status', 'approved_by', 'approved_at', 'temporary_password'])
+
+        return Response({
+            'username': user.username,
+            'temporary_password': temp_password,
+        })
+
+    @action(detail=True, methods=['post'], url_path='reject', permission_classes=[IsAuthenticated])
+    def reject(self, request, pk=None):
+        if not request.user.is_staff:
+            return Response({'detail': '관리자 권한이 필요합니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        signup_req = self.get_object()
+        if signup_req.status != 'pending':
+            return Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        signup_req.status = 'rejected'
+        signup_req.approved_by = request.user
+        signup_req.approved_at = timezone.now()
+        signup_req.save(update_fields=['status', 'approved_by', 'approved_at'])
+
+        return Response({'detail': '요청이 거부되었습니다.'})
+
 class UserProfileViewSet(viewsets.ModelViewSet):
     queryset = UserProfile.objects.all()
     serializer_class = UserProfileSerializer
