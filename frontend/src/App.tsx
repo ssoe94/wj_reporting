@@ -28,7 +28,6 @@ import SummaryPage from "./pages/summary";
 // 실제 페이지 컴포넌트 임포트
 import ModelsPage from './pages/models';
 import Eco2Page from './pages/eco2';
-import EcoPage from './pages/eco';
 import AnalysisPage from './pages/analysis';
 import AssemblyPage from './pages/assembly';
 import SalesInventoryPage from './pages/sales/Inventory';
@@ -89,8 +88,7 @@ export function useNavItems() {
         label: t('nav_development'),
         icon: DraftingIcon,
         children: [
-          { to: "/eco", label: t('nav_eco_management'), icon: ClipboardCheck },
-          { to: "/eco2", label: t('nav_eco2_dev'), icon: ClipboardCheck },
+          { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
           { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
         ],
       },
@@ -172,8 +170,7 @@ export function useNavItems() {
       label: t('nav_development'),
       icon: DraftingIcon,
       children: [
-        { to: "/eco", label: t('nav_eco_management'), icon: ClipboardCheck },
-        { to: "/eco2", label: t('nav_eco2_dev'), icon: ClipboardCheck },
+        { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
         { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
       ],
     });
@@ -242,7 +239,7 @@ function AppContent() {
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
   else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_dashboard');
   else if (pathname.startsWith('/sales')) breadcrumbLabel = t('nav_sales');
-  else if (pathname.startsWith('/eco2')) breadcrumbLabel = t('nav_eco2_dev');
+  else if (pathname.startsWith('/eco2')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/eco')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/models')) breadcrumbLabel = t('nav_model_management');
 
@@ -494,7 +491,7 @@ function AppContent() {
           {/* 보호된 라우트 */}
           <Route path="/" element={<PrivateRoute><AnalysisPage /></PrivateRoute>} />
           <Route path="/models" element={<PrivateRoute><ModelsPage /></PrivateRoute>} />
-          <Route path="/eco" element={<PrivateRoute><EcoPage /></PrivateRoute>} />
+          <Route path="/eco" element={<Navigate to="/eco2" replace />} />
           <Route path="/eco2" element={<PrivateRoute><Eco2Page /></PrivateRoute>} />
           <Route path="/analysis" element={<PrivateRoute><AnalysisPage /></PrivateRoute>} />
 
