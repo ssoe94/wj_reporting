@@ -20,7 +20,7 @@ from .serializers import (
 )
 
 # For User related views
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import make_password
@@ -218,10 +218,22 @@ class InventoryView(generics.GenericAPIView):
         return Response(result)
 
 class SignupRequestView(generics.CreateAPIView):
-    # Placeholder for SignupRequestView logic - needs actual serializer_class
-    # Example:
-    # serializer_class = UserRegistrationRequestSerializer
-    pass
+    serializer_class = UserRegistrationRequestSerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        # only accept required fields; ignore unknowns
+        data = {
+            'full_name': request.data.get('full_name', '').strip(),
+            'department': request.data.get('department', '').strip(),
+            'email': request.data.get('email', '').strip(),
+            'reason': request.data.get('reason', ''),
+        }
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 class UserMeView(generics.RetrieveAPIView):
     # Placeholder for UserMeView logic - needs actual queryset and serializer_class
