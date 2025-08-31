@@ -91,15 +91,15 @@ export default function DateRecordsTable({ date }: Props) {
     >
       <thead className="bg-blue-600 text-white">
         <tr>
-          <th className="px-2 py-1">Machine</th>
-          <th className="px-2 py-1">Model</th>
-          <th className="px-2 py-1">Part No</th>
-          <th className="px-2 py-1">Plan</th>
-          <th className="px-2 py-1">Actual</th>
-          <th className="px-2 py-1">Defect</th>
-          <th className="px-2 py-1">Run&nbsp;Time<br/>(min)</th>
-          <th className="px-2 py-1">CT(s)</th>
-          <th className="px-2 py-1">Δ CT(s)</th>
+          <th className="px-2 py-1">{t('table_machine')}</th>
+          <th className="px-2 py-1">{t('table_model')}</th>
+          <th className="px-2 py-1">{t('table_part_no')}</th>
+          <th className="px-2 py-1">{t('table_plan')}</th>
+          <th className="px-2 py-1">{t('table_actual')}</th>
+          <th className="px-2 py-1">{t('table_defect')}</th>
+          <th className="px-2 py-1">{t('table_run_time')}</th>
+          <th className="px-2 py-1">{t('table_ct')}</th>
+          <th className="px-2 py-1">{t('table_ct_delta')}</th>
         </tr>
       </thead>
       <tbody>

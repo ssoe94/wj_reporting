@@ -663,68 +663,66 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         </Card>
       </div>
 
-      {/* 성과 지표 */}
+      {/* 성과지표 + 비고를 한 카드로 가로 2컬럼 구성 */}
       <Card>
         <CardHeader className="font-semibold text-green-700">{t('performance_indicators')}</CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <Label>UPH</Label>
-              <Input value={calculatedValues.uph} disabled className="text-center bg-green-50 font-semibold" />
-              <p className="text-xs text-gray-500 mt-1">{t('production_per_hour')}</p>
-            </div>
-            <div>
-              <Label>UPPH</Label>
-              <Input value={calculatedValues.upph} disabled className="text-center bg-green-50 font-semibold" />
-              <p className="text-xs text-gray-500 mt-1">{t('production_per_person_hour')}</p>
-            </div>
-            <div>
-              <Label>{t('operation_rate_percent')}</Label>
-              <Input value={calculatedValues.operationRate} disabled className="text-center bg-green-50 font-semibold" />
-              <p className="text-xs text-gray-500 mt-1">{t('operation_time_ratio')}</p>
-            </div>
-            <div>
-              <Label>{t('production_achievement_rate')}</Label>
-              <Input value={calculatedValues.achievementRate} disabled className="text-center bg-green-50 font-semibold" />
-              <p className="text-xs text-gray-500 mt-1">{t('production_vs_plan')}</p>
-            </div>
-          </div>
-          <div className="bg-green-50 p-4 rounded-lg mt-4">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-              <div>
-                <span className="font-medium text-green-700">{t('total_defect_colon')}</span>
-                <span className="ml-2 font-semibold">{calculatedValues.totalDefects}개</span>
+          <div className="flex flex-col md:flex-row gap-4">
+            {/* 좌: 성과지표 50% */}
+            <div className="basis-full md:basis-[50%]">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>UPH</Label>
+                  <Input value={calculatedValues.uph} disabled className="text-center bg-green-50 font-semibold" />
+                  <p className="text-xs text-gray-500 mt-1">{t('production_per_hour')}</p>
+                </div>
+                <div>
+                  <Label>UPPH</Label>
+                  <Input value={calculatedValues.upph} disabled className="text-center bg-green-50 font-semibold" />
+                  <p className="text-xs text-gray-500 mt-1">{t('production_per_person_hour')}</p>
+                </div>
+                <div>
+                  <Label>{t('operation_rate_percent')}</Label>
+                  <Input value={calculatedValues.operationRate} disabled className="text-center bg-green-50 font-semibold" />
+                  <p className="text-xs text-gray-500 mt-1">{t('operation_time_ratio')}</p>
+                </div>
+                <div>
+                  <Label>{t('production_achievement_rate')}</Label>
+                  <Input value={calculatedValues.achievementRate} disabled className="text-center bg-green-50 font-semibold" />
+                  <p className="text-xs text-gray-500 mt-1">{t('production_vs_plan')}</p>
+                </div>
               </div>
-              <div>
-                <span className="font-medium text-green-700">{t('incoming_defect_colon')}</span>
-                <span className="ml-2 font-semibold">{calculatedValues.incomingDefects}개</span>
-              </div>
-              <div>
-                <span className="font-medium text-green-700">{t('processing_defect_rate')}</span>
-                <span className="ml-2 font-semibold">{formData.actual_qty > 0 ? Math.round((formData.processing_defect / formData.actual_qty) * 100 * 100) / 100 : 0}%</span>
+            </div>
+
+            {/* 우: 비고(备注) 50% */}
+            <div className="basis-full md:basis-[50%] flex flex-col">
+              <Label>{t('header_note')}</Label>
+              <Textarea
+                id="note"
+                rows={5}
+                value={formData.note}
+                onChange={(e) => handleChange('note', e.target.value)}
+                className="resize-none w-full"
+              />
+              {/* 저장 버튼 */}
+              <div className="flex justify-end mt-3">
+                <PermissionButton
+                  permission="can_edit_machining"
+                  type="submit"
+                  className="px-6 py-3 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
+                  disabled={isLoading}
+                >
+                  {!isLoading && <PlusCircle className="h-5 w-5 shrink-0" />}
+                  {isLoading ? t('saving') : t('save')}
+                </PermissionButton>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* 비고 */}
-      <div>
-        <Label htmlFor="note">{t('header_note')}</Label>
-        <Textarea rows={3} value={formData.note} onChange={(e) => handleChange('note', e.target.value)} />
-      </div>
 
-      <div className="flex justify-end space-x-4">
-        <PermissionButton
-          permission="can_edit_machining"
-          type="submit"
-          className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
-          disabled={isLoading}
-        >
-          {!isLoading && <PlusCircle className="h-4 w-4 shrink-0" />}
-          {isLoading ? t('saving') : t('save')}
-        </PermissionButton>
-      </div>
+
 
       {/* Add Part Modal */}
       {showAddPartModal && (

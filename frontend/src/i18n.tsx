@@ -9,7 +9,7 @@ interface LangContextValue {
 
 const translations: Record<'ko' | 'zh', Record<string, string>> = {
   ko: {
-    title: '사출 생산관리 시스템',
+    title: '万佳生产数据管理平台',
     modelsTitle: '모델 관리',
     nav_summary: '현황 요약',
     nav_records: '생산 기록',
@@ -51,7 +51,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     search_placeholder: '모델 또는 Part 검색...',
     add_model: '새 모델 추가',
     edit_model: '모델 수정',
-    brand: '사출생산관리',
+    brand: '万佳生产数据管理平台',
     brand_machining: '가공생산관리',
     records_title: '생산 기록',
     no_data: '데이터가 없습니다.',
@@ -321,9 +321,25 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     not_set: '미설정',
     more_count: '개 더',
     related_part_no_colon: '相关 Part No.',
+    
+    // 사출 기록 테이블 헤더
+    table_machine: '호기',
+    table_model: '모델', 
+    table_part_no: 'Part no.',
+    table_plan: '계획수량',
+    table_actual: '실제수량', 
+    table_defect: '불량수량',
+    table_run_time: '가동시간 (분)',
+    table_ct: '사이클타임 (초)',
+    table_ct_delta: 'CT 편차 (초)',
+    
+    // 가공 기록 관련
+    detailed_record: '상세 기록',
+    defect_rate: '불량률',
+    uph: 'UPH',
   },
   zh: {
-    title: '注塑生产管理系统',
+    title: '万佳生产数据管理平台',
     modelsTitle: '型号管理',
     nav_summary: '现况概要',
     nav_records: '生产记录',
@@ -365,7 +381,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     search_placeholder: '搜索型号或部件...',
     add_model: '新增型号',
     edit_model: '编辑型号',
-    brand: '注塑计划生产实际',
+    brand: '万佳生产数据管理平台',
     brand_machining: '加工生产管理',
     records_title: '生产记录',
     no_data: '暂无数据',
@@ -648,6 +664,22 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     not_set: '未设置',
     more_count: '个更多',
     related_part_no_colon: '相关 Part No.',
+    
+    // 사출 기록 테이블 헤더
+    table_machine: '机台',
+    table_model: '型号',
+    table_part_no: 'Part no.', 
+    table_plan: '计划数量',
+    table_actual: '实际数量',
+    table_defect: '不良数量',
+    table_run_time: '运转时间 (分)',
+    table_ct: '周期时间 (秒)',
+    table_ct_delta: '周期差异 (秒)',
+    
+    // 가공 기록 관련
+    detailed_record: '详细记录',
+    defect_rate: '不良率',
+    uph: 'UPH',
   },
 };
 

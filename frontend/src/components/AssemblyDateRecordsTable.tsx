@@ -86,8 +86,8 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
             <th className="px-2 py-1">{t('assembly_actual_qty')}</th>
             <th className="px-2 py-1">{t('assembly_defect_qty')}</th>
             <th className="px-2 py-1">{t('achievement_rate')}</th>
-            <th className="px-2 py-1">불량률</th>
-            <th className="px-2 py-1">{t('assembly_uptime_rate')}</th>
+            <th className="px-2 py-1">{t('defect_rate')}</th>
+            <th className="px-2 py-1">{t('uph')}</th>
           </tr>
         </thead>
         <tbody>
@@ -128,15 +128,16 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                 </span>
               </td>
               <td className="px-2 py-1 text-right">
-                <span className={`${
-                  (r.uptime_rate || 0) >= 80 
-                    ? 'text-green-600' 
-                    : (r.uptime_rate || 0) >= 60 
-                      ? 'text-yellow-600' 
-                      : 'text-red-600'
-                }`}>
-                  {r.uptime_rate}%
-                </span>
+                {(() => {
+                  // UPH 계산: 실제수량 / (가동시간/60)
+                  const uph = r.uph || (r.operation_time > 0 ? Math.round((r.actual_qty || 0) / (r.operation_time / 60)) : 0);
+                  const color = uph >= 100 ? 'text-green-600' : uph >= 50 ? 'text-yellow-600' : 'text-red-600';
+                  return (
+                    <span className={color}>
+                      {uph || '-'}
+                    </span>
+                  );
+                })()}
               </td>
             </tr>
           ))}
@@ -169,8 +170,11 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                   <span className="text-gray-500">{t('total_time')}</span><span>{detail.total_time ? `${detail.total_time}${t('min_unit')}` : '-'}</span>
                   <span className="text-gray-500">{t('assembly_operation_time')}</span><span>{detail.operation_time ? `${detail.operation_time}${t('min_unit')}` : '-'}</span>
                   <span className="text-gray-500">{t('achievement_rate')}</span><span>{detail.achievement_rate}%</span>
-                  <span className="text-gray-500">불량률</span><span>{detail.defect_rate}%</span>
-                  <span className="text-gray-500">{t('assembly_uptime_rate')}</span><span>{detail.uptime_rate}%</span>
+                  <span className="text-gray-500">{t('defect_rate')}</span><span>{detail.defect_rate}%</span>
+                  <span className="text-gray-500">{t('uph')}</span><span>{(() => {
+                    const uph = detail.uph || (detail.operation_time > 0 ? Math.round((detail.actual_qty || 0) / (detail.operation_time / 60)) : 0);
+                    return uph || '-';
+                  })()}</span>
                   <span className="text-gray-500">{t('header_note')}</span><span className="col-span-1">{detail.note}</span>
                 </div>
                 <div className="flex justify-end gap-2">

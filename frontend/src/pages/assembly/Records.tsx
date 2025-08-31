@@ -3,14 +3,17 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Button } from '../../components/ui/button';
-import { useExportAssemblyReports } from '../../hooks/useAssemblyReports';
+import { useExportAssemblyReports, useAssemblyReports } from '../../hooks/useAssemblyReports';
 import AssemblyProdCalendar from '../../components/AssemblyProdCalendar';
 import AssemblyDateRecordsTable from '../../components/AssemblyDateRecordsTable';
 import { DownloadCloud } from 'lucide-react';
+import { useLang } from '../../i18n';
 
 export default function AssemblyRecordsPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const exportMutation = useExportAssemblyReports();
+  const { data: reportsData } = useAssemblyReports();
+  const { t } = useLang();
   const location = useLocation();
 
   useEffect(() => {
@@ -18,6 +21,20 @@ export default function AssemblyRecordsPage() {
     const d = params.get('date');
     if (d) setSelectedDate(d);
   }, [location.search]);
+
+  // 컴포넌트 마운트 시 최근 날짜로 자동 선택
+  useEffect(() => {
+    const reports = reportsData?.results || [];
+    if (reports.length > 0 && !selectedDate) {
+      // 날짜순으로 정렬해서 가장 최근 날짜 선택
+      const sortedDates = reports
+        .map((r: any) => r.date)
+        .sort((a: string, b: string) => b.localeCompare(a)); // 내림차순 정렬
+      if (sortedDates.length > 0) {
+        setSelectedDate(sortedDates[0]);
+      }
+    }
+  }, [reportsData, selectedDate]);
 
   const handleExport = async () => {
     try {
@@ -33,17 +50,13 @@ export default function AssemblyRecordsPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">가공 생산 기록</h1>
-        <p className="text-gray-600 mt-2">가공 생산 보고서 조회 및 관리</p>
-      </div>
 
       <div className="md:flex gap-6">
         {/* 왼쪽: 테이블 영역 */}
         <div className="flex-1 space-y-4 overflow-auto max-h-[65vh]">
           {selectedDate ? (
             <>
-              <h3 className="text-lg font-bold">{selectedDate} 상세 기록</h3>
+              <h3 className="text-lg font-bold">{selectedDate} {t('detailed_record')}</h3>
               <AssemblyDateRecordsTable date={selectedDate} />
             </>
           ) : (

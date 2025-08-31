@@ -304,7 +304,7 @@ function AppContent() {
 
       {/* Breadcrumb */}
       {isAuthenticated && (
-      <div className="sticky top-14 md:top-0 z-10 bg-white/80 backdrop-blur border-b border-gray-200 h-14 px-4 flex items-center gap-2 md:ml-56">
+      <div className="sticky top-14 md:top-0 z-10 bg-white/80 backdrop-blur border-b border-gray-200 h-20 px-4 flex items-center gap-2 md:ml-56">
         <Link to="/">
           <HomeIcon className="w-4 h-4 text-gray-500" />
         </Link>
@@ -353,25 +353,25 @@ function AppContent() {
       {isAuthenticated && (
       <aside className="fixed left-0 top-0 hidden h-screen w-56 overflow-y-auto border-r border-gray-200 bg-white shadow-md md:flex flex-col">
         {/* Top logo/title */}
-        <div className="h-14 flex items-center justify-center gap-2 px-4 border-b border-gray-200">
-          <Link to="/" className="flex items-center gap-2">
-            <img src="/logo.jpg" alt="logo" className="h-8 w-8 rounded-full" />
-            <span className="font-semibold text-blue-700">{t('brand')}</span>
+        <div className="h-20 flex items-center justify-center px-4 border-b border-gray-200">
+          <Link to="/" className="flex flex-col items-center gap-1">
+            <img src="/logo.jpg" alt="logo" className="h-10 w-10 rounded-full shadow-md" />
+            <span className="text-lg font-extrabold text-gray-700">万佳数据平台</span>
           </Link>
         </div>
         {/* Menu */}
-        <nav className="flex-1 py-4 px-2 flex flex-col gap-1">
+        <nav className="flex-1 py-3 px-2 flex flex-col gap-0.5">
           {navItems.map((group) => {
             const GroupIcon = group.icon as any;
             return (
-              <div key={group.label} className="mb-2">
-                <div className="px-3 py-2 flex items-center gap-2 text-lg font-semibold text-gray-500 uppercase">
+              <div key={group.label} className="mb-1.5">
+                <div className="px-3 py-1.5 flex items-center gap-2 text-base font-semibold text-gray-500 uppercase">
                   {GroupIcon && <GroupIcon className="w-4 h-4" />} {group.label}
                 </div>
                 {group.children.map((child) => {
                   const ChildIcon = child.icon as any;
                   return (
-                    <PermissionLink key={child.to} to={child.to} className="ml-4 flex items-center gap-2 px-3 py-2 rounded-lg text-base text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
+                    <PermissionLink key={child.to} to={child.to} className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
                       {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
                     </PermissionLink>
                   );
@@ -445,20 +445,20 @@ function AppContent() {
             className="fixed left-0 top-0 z-50 h-screen w-64 bg-white shadow-xl"
           >
             <div className="flex items-center justify-between p-4 border-b">
-              <Link to="/" className="flex items-center gap-2" onClick={() => setSidebarOpen(false)}>
-                <img src="/logo.jpg" alt="logo" className="h-8 w-8 rounded-full" />
-                <span className="font-semibold text-blue-700">{t('brand')}</span>
+              <Link to="/" className="flex flex-col items-center gap-1" onClick={() => setSidebarOpen(false)}>
+                <img src="/logo.jpg" alt="logo" className="h-10 w-10 rounded-full shadow-md" />
+                <span className="text-lg font-extrabold text-gray-700">万佳数据平台</span>
               </Link>
               <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
                 <XIcon className="h-6 w-6" />
               </Button>
             </div>
-            <nav className="py-4 px-2 flex flex-col gap-1">
+            <nav className="py-3 px-2 flex flex-col gap-0.5">
               {navItems.map((group) => {
                 const GroupIcon = group.icon as any;
                 return (
-                  <div key={group.label} className="mb-2">
-                    <div className="px-3 py-2 flex items-center gap-2 text-lg font-semibold text-gray-500 uppercase">
+                  <div key={group.label} className="mb-1.5">
+                    <div className="px-3 py-1.5 flex items-center gap-2 text-base font-semibold text-gray-500 uppercase">
                       {GroupIcon && <GroupIcon className="w-4 h-4" />} {group.label}
                     </div>
                     {group.children.map((child) => {
@@ -467,7 +467,7 @@ function AppContent() {
                         <PermissionLink
                           key={child.to}
                           to={child.to}
-                          className="ml-4 flex items-center gap-2 px-3 py-2 rounded-lg text-base text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                          className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
                           onClick={() => setSidebarOpen(false)}
                         >
                           {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}

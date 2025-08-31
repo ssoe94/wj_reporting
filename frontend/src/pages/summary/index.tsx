@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { useLang } from '../../i18n';
-import { useReportSummary } from '../../hooks/useReports';
+import { useReportSummary, useReports } from '../../hooks/useReports';
 import ProdTrendChart from '../../components/ProdTrendChart';
 import ProdCalendar from '../../components/ProdCalendar';
 import DateRecordsTable from '../../components/DateRecordsTable';
@@ -17,7 +17,21 @@ import RecordForm from '../../components/RecordForm';
 export default function SummaryPage() {
   const { t } = useLang();
   const { data: summary } = useReportSummary();
+  const { data: reports = [] } = useReports();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  // 컴포넌트 마운트 시 최근 날짜로 자동 선택
+  useEffect(() => {
+    if (reports.length > 0 && !selectedDate) {
+      // 날짜순으로 정렬해서 가장 최근 날짜 선택
+      const sortedDates = reports
+        .map(r => r.date)
+        .sort((a, b) => b.localeCompare(a)); // 내림차순 정렬
+      if (sortedDates.length > 0) {
+        setSelectedDate(sortedDates[0]);
+      }
+    }
+  }, [reports, selectedDate]);
   // RecordForm 내부 상태로 대체했으므로 관련 코드 삭제
 
   // 사출기 목록, 포맷 함수 등은 RecordForm 내부로 이동했으므로 삭제합니다.
