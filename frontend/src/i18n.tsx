@@ -333,9 +333,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     table_ct: '사이클타임 (초)',
     table_ct_delta: 'CT 편차 (초)',
     
-    // 가공 기록 관련
-    detailed_record: '상세 기록',
-    defect_rate: '불량률',
+    // 가공 기록 관련  
     uph: 'UPH',
   },
   zh: {
@@ -677,8 +675,6 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     table_ct_delta: '周期差异 (秒)',
     
     // 가공 기록 관련
-    detailed_record: '详细记录',
-    defect_rate: '不良率',
     uph: 'UPH',
   },
 };
