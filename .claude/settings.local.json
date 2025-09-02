@@ -77,7 +77,8 @@
       "Bash(git log:*)",
       "mcp__playwright__browser_navigate",
       "mcp__playwright__browser_type",
-      "mcp__playwright__browser_click"
+      "mcp__playwright__browser_click",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": [],

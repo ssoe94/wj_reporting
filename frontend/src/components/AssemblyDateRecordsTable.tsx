@@ -9,6 +9,7 @@ import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useLang } from '../i18n';
+import { Tag, Percent, Gauge } from 'lucide-react';
 
 interface Props {
   date: string; // YYYY-MM-DD
@@ -62,12 +63,10 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   const formatDefectInfo = (report: AssemblyReport) => {
     const total = report.total_defect_qty || 0;
     if (total === 0) return '0';
-    
-    const parts = [];
+    const parts = [] as string[];
     if (report.injection_defect > 0) parts.push(`${t('assembly_injection_defect')}: ${report.injection_defect}`);
     if (report.outsourcing_defect > 0) parts.push(`${t('assembly_outsourcing_defect')}: ${report.outsourcing_defect}`);
     if (report.processing_defect > 0) parts.push(`${t('assembly_processing_defect')}: ${report.processing_defect}`);
-    
     return `${total} (${parts.join(', ')})`;
   };
 
@@ -76,7 +75,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
 
   return (
     <>
-      <table className="min-w-full text-sm border border-gray-400 rounded-md border-separate border-spacing-0 mt-4">
+      <table className="min-w-full text-sm rounded-md border-separate border-spacing-0 mt-4">
         <thead className="bg-green-600 text-white">
           <tr>
             <th className="px-2 py-1">{t('assembly_line_no')}</th>
@@ -92,9 +91,9 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
         </thead>
         <tbody>
           {list.map((r: any) => (
-            <tr 
-              key={r.id} 
-              className="border-t border-gray-200 last:border-b-0 hover:bg-green-50 cursor-pointer" 
+            <tr
+              key={r.id}
+              className="border-t border-gray-200 last:border-b-0 hover:bg-green-50 cursor-pointer"
               onClick={() => { setDetail(r); setEditing(false); }}
             >
               <td className="px-2 py-1 text-center">{r.line_no}</td>
@@ -106,30 +105,17 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                 {r.total_defect_qty?.toLocaleString()}
               </td>
               <td className="px-2 py-1 text-right">
-                <span className={`${
-                  (r.achievement_rate || 0) >= 100 
-                    ? 'text-green-600' 
-                    : (r.achievement_rate || 0) >= 80 
-                      ? 'text-yellow-600' 
-                      : 'text-red-600'
-                }`}>
+                <span className={`${(r.achievement_rate || 0) >= 100 ? 'text-green-600' : (r.achievement_rate || 0) >= 80 ? 'text-yellow-600' : 'text-red-600'}`}>
                   {r.achievement_rate}%
                 </span>
               </td>
               <td className="px-2 py-1 text-right">
-                <span className={`${
-                  (r.defect_rate || 0) <= 2 
-                    ? 'text-green-600' 
-                    : (r.defect_rate || 0) <= 5 
-                      ? 'text-yellow-600' 
-                      : 'text-red-600'
-                }`}>
+                <span className={`${(r.defect_rate || 0) <= 2 ? 'text-green-600' : (r.defect_rate || 0) <= 5 ? 'text-yellow-600' : 'text-red-600'}`}>
                   {r.defect_rate}%
                 </span>
               </td>
               <td className="px-2 py-1 text-right">
                 {(() => {
-                  // UPH 계산: 실제수량 / (가동시간/60)
                   const uph = r.uph || (r.operation_time > 0 ? Math.round((r.actual_qty || 0) / (r.operation_time / 60)) : 0);
                   const color = uph >= 100 ? 'text-green-600' : uph >= 50 ? 'text-yellow-600' : 'text-red-600';
                   return (
@@ -143,7 +129,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
           ))}
         </tbody>
       </table>
-      
+
       {detail && (
         <Dialog open={!!detail} onClose={() => setDetail(null)} className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
@@ -153,38 +139,132 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                 <Dialog.Title className="text-lg font-bold">
                   {dayjs(detail.date).format('YYYY.MM.DD')} – {detail.line_no} 라인
                 </Dialog.Title>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-gray-500">{t('report_date')}</span><span>{detail.date}</span>
-                  <span className="text-gray-500">{t('assembly_line_no')}</span><span>{detail.line_no}</span>
-                  <span className="text-gray-500">{t('model')}</span><span>{detail.model}</span>
-                  <span className="text-gray-500">{t('part_no')}</span><span>{detail.part_no}</span>
-                  <span className="text-gray-500">{t('assembly_plan_qty')}</span><span>{detail.plan_qty?.toLocaleString()}</span>
-                  <span className="text-gray-500">{t('assembly_actual_qty')}</span><span>{detail.actual_qty?.toLocaleString()}</span>
-                  <span className="text-gray-500">{t('assembly_injection_defect')}</span><span>{detail.injection_defect?.toLocaleString()}</span>
-                  <span className="text-gray-500">{t('assembly_outsourcing_defect')}</span><span>{detail.outsourcing_defect?.toLocaleString()}</span>
-                  <span className="text-gray-500">{t('assembly_processing_defect')}</span><span>{detail.processing_defect?.toLocaleString()}</span>
-                  <span className="text-gray-500">{t('assembly_incoming_defect')}</span><span>{detail.incoming_defect_qty?.toLocaleString()}</span>
-                  <span className="text-gray-500">{t('assembly_defect_qty')}</span><span>{detail.total_defect_qty?.toLocaleString()}</span>
-                  <span className="text-gray-500">{t('start_dt')}</span><span>{detail.start_datetime ? dayjs(detail.start_datetime).format('YYYY-MM-DD HH:mm') : '-'}</span>
-                  <span className="text-gray-500">{t('end_dt')}</span><span>{detail.end_datetime ? dayjs(detail.end_datetime).format('YYYY-MM-DD HH:mm') : '-'}</span>
-                  <span className="text-gray-500">{t('total_time')}</span><span>{detail.total_time ? `${detail.total_time}${t('min_unit')}` : '-'}</span>
-                  <span className="text-gray-500">{t('assembly_operation_time')}</span><span>{detail.operation_time ? `${detail.operation_time}${t('min_unit')}` : '-'}</span>
-                  <span className="text-gray-500">{t('achievement_rate')}</span><span>{detail.achievement_rate}%</span>
-                  <span className="text-gray-500">{t('defect_rate')}</span><span>{detail.defect_rate}%</span>
-                  <span className="text-gray-500">{t('uph')}</span><span>{(() => {
-                    const uph = detail.uph || (detail.operation_time > 0 ? Math.round((detail.actual_qty || 0) / (detail.operation_time / 60)) : 0);
-                    return uph || '-';
-                  })()}</span>
-                  <span className="text-gray-500">{t('header_note')}</span><span className="col-span-1">{detail.note}</span>
+                {/* Header chips */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="inline-flex items-center gap-2">
+                    {(() => {
+                      const s = (detail as any)?.supply_type || '';
+                      const label = s === 'JIT' ? 'JIT' : (s === 'CSK' ? 'CSKD' : (s || 'N/A'));
+                      return (
+                        <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs inline-flex items-center gap-1">
+                          <Tag className="w-3 h-3" /> {t('supply_type')}: {label}
+                        </span>
+                      );
+                    })()}
+                    <span className="px-2 py-1 rounded-full bg-gray-50 text-gray-700 text-xs inline-flex items-center gap-1">
+                      {t('report_date')}: {detail.date}
+                    </span>
+                  </div>
+                  <div className="inline-flex items-center gap-2">
+                    <span className="px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs inline-flex items-center gap-1">
+                      <Percent className="w-3 h-3" /> {t('achievement_rate')}: {detail.achievement_rate}%
+                    </span>
+                    <span className="px-2 py-1 rounded-md bg-amber-50 text-amber-700 text-xs inline-flex items-center gap-1">
+                      <Percent className="w-3 h-3" /> {t('defect_rate')}: {detail.defect_rate}%
+                    </span>
+                    <span className="px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs inline-flex items-center gap-1">
+                      <Gauge className="w-3 h-3" /> {t('uph')}: {(() => {
+                        const uph = detail.uph || (detail.operation_time > 0 ? Math.round((detail.actual_qty || 0) / (detail.operation_time / 60)) : 0);
+                        return uph || '-';
+                      })()}
+                    </span>
+                  </div>
                 </div>
+
+                {/* Info cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1">
+                  <div className="rounded-lg shadow-sm">
+                    <div className="px-3 py-2 font-semibold text-blue-700 bg-blue-50">基本信息 / 기본 정보</div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                      <span className="text-gray-500">{t('assembly_line_no')}</span><span>{detail.line_no}</span>
+                      <span className="text-gray-500">{t('model')}</span><span>{detail.model}</span>
+                      <span className="text-gray-500">{t('part_no')}</span><span>{detail.part_no}</span>
+                      <span className="text-gray-500">{t('supply_type')}</span><span>{(detail as any)?.supply_type || '-'}</span>
+                      <span className="text-gray-500">{t('header_note')}</span><span className="col-span-1">{detail.note || '-'}</span>
+                    </div>
+                  </div>
+                  <div className="rounded-lg shadow-sm">
+                    <div className="px-3 py-2 font-semibold text-emerald-700 bg-emerald-50">生产概要 / 생산 요약</div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                      <span className="text-gray-500">{t('assembly_plan_qty')}</span><span className="font-mono text-right">{detail.plan_qty?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('assembly_actual_qty')}</span><span className="font-mono text-right">{detail.actual_qty?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('assembly_injection_defect')}</span><span className="font-mono text-right">{detail.injection_defect?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('assembly_processing_defect')}</span><span className="font-mono text-right">{detail.processing_defect?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('assembly_incoming_defect')}</span><span className="font-mono text-right">{detail.incoming_defect_qty?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('assembly_defect_qty')}</span><span className="font-mono text-right">{detail.total_defect_qty?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('total_time')}</span><span className="font-mono text-right">{detail.total_time ? `${detail.total_time}${t('min_unit')}` : '-'}</span>
+                      <span className="text-gray-500">{t('assembly_operation_time')}</span><span className="font-mono text-right">{detail.operation_time ? `${detail.operation_time}${t('min_unit')}` : '-'}</span>
+                      <span className="text-gray-500">{t('achievement_rate')}</span><span className="font-mono text-right">{detail.achievement_rate}%</span>
+                      <span className="text-gray-500">{t('defect_rate')}</span><span className="font-mono text-right">{detail.defect_rate}%</span>
+                      <span className="text-gray-500">{t('uph')}</span><span className="font-mono text-right">{(() => {
+                        const uph = detail.uph || (detail.operation_time > 0 ? Math.round((detail.actual_qty || 0) / (detail.operation_time / 60)) : 0);
+                        return uph || '-';
+                      })()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Defects detail tables */}
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-lg shadow-sm">
+                    <div className="px-3 py-2 font-semibold text-amber-700 bg-amber-50">{t('assembly_injection_defect')}</div>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {(() => {
+                          const inc = (detail as any)?.incoming_defects_detail || {};
+                          const items = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening'];
+                          return items.map(k => (
+                            <tr key={k} className="odd:bg-gray-50">
+                              <td className="px-3 py-1 text-gray-700">{t(`def_${k}`)}</td>
+                              <td className="px-3 py-1 text-right font-mono">{Number(inc[k]||0)}</td>
+                            </tr>
+                          ));
+                        })()}
+                        <tr className="bg-gray-50">
+                          <td className="px-3 py-1 font-semibold">{t('sum')}</td>
+                          <td className="px-3 py-1 text-right font-mono font-semibold">{(() => {
+                            const inc = (detail as any)?.incoming_defects_detail || {};
+                            const items = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening'];
+                            return items.reduce((a,k)=> a + (Number(inc[k]||0)), 0);
+                          })()}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="rounded-lg shadow-sm">
+                    <div className="px-3 py-2 font-semibold text-cyan-700 bg-cyan-50">{t('processing_defect')}</div>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {(() => {
+                          const pr = (detail as any)?.processing_defects_detail || {};
+                          const items = ['scratch','printing','rework','other'];
+                          return items.map(k => (
+                            <tr key={k} className="odd:bg-gray-50">
+                              <td className="px-3 py-1 text-gray-700">{t(`def_${k}`)}</td>
+                              <td className="px-3 py-1 text-right font-mono">{Number(pr[k]||0)}</td>
+                            </tr>
+                          ));
+                        })()}
+                        <tr className="bg-gray-50">
+                          <td className="px-3 py-1 font-semibold">{t('sum')}</td>
+                          <td className="px-3 py-1 text-right font-mono font-semibold">{(() => {
+                            const pr = (detail as any)?.processing_defects_detail || {};
+                            const items = ['scratch','printing','rework','other'];
+                            return items.reduce((a,k)=> a + (Number(pr[k]||0)), 0);
+                          })()}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-2">
-                  <Button variant="info" onClick={async () => {
+                  <Button variant="warning" className="font-semibold" onClick={async () => {
                     if (!detail) return;
                     try {
                       setLoadingEdit(true);
                       setEditing(true);
                       const { data } = await api.get(`/assembly/reports/${detail.id}/`);
-                      // 정규화: null/undefined/NaN → 0/''
                       const norm = (v: any, d: any) => (v === null || v === undefined || Number.isNaN(v) ? d : v);
                       setEditingData({
                         ...detail,
@@ -210,8 +290,8 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                       setLoadingEdit(false);
                     }
                   }}>{t('edit')}</Button>
-                  <Button variant="danger" onClick={handleDelete}>{t('delete')}</Button>
-                  <Button variant="secondary" onClick={() => setDetail(null)}>{t('close')}</Button>
+                  <Button variant="danger" className="font-semibold" onClick={handleDelete}>{t('delete')}</Button>
+                  <Button variant="secondary" className="font-semibold" onClick={() => setDetail(null)}>{t('close')}</Button>
                 </div>
               </>
             ) : (
@@ -223,8 +303,8 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                   <div className="py-10 text-center text-gray-500 text-sm">Loading…</div>
                 )}
                 {!loadingEdit && (
-                  <AssemblyReportForm 
-                    onSubmit={handleSave} 
+                  <AssemblyReportForm
+                    onSubmit={handleSave}
                     isLoading={false}
                     initialData={editingData || detail}
                     compact

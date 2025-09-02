@@ -10,16 +10,26 @@ class AssemblyReport(models.Model):
     line_no = models.CharField('라인번호', max_length=20, blank=True)
     part_no = models.CharField('Part No.', max_length=100)
     model = models.CharField('모델명', max_length=50)
+    SUPPLY_TYPE_CHOICES = (
+        ('JIT', 'JIT'),
+        ('CSK', 'CSK'),
+        ('SVC', 'SVC'),
+    )
+    supply_type = models.CharField('공급유형', max_length=10, choices=SUPPLY_TYPE_CHOICES, blank=True, default='')
     
     # 수량 정보
     plan_qty = models.IntegerField('계획수량', validators=[MinValueValidator(0)])
     input_qty = models.IntegerField('투입수량', validators=[MinValueValidator(0)], default=0)
     actual_qty = models.IntegerField('실제수량', validators=[MinValueValidator(0)])
+    rework_qty = models.IntegerField('재작업 수량', validators=[MinValueValidator(0)], default=0)
     
     # 불량 분류 (3가지 타입)
     injection_defect = models.IntegerField('注塑不良', validators=[MinValueValidator(0)], default=0)
     outsourcing_defect = models.IntegerField('外协不良', validators=[MinValueValidator(0)], default=0)
     processing_defect = models.IntegerField('加工不良', validators=[MinValueValidator(0)], default=0)
+    # 불량 상세(JSON): 프론트 상세 항목 보존용
+    incoming_defects_detail = models.JSONField('입고/사출 상세불량', default=dict, blank=True)
+    processing_defects_detail = models.JSONField('가공 상세불량', default=dict, blank=True)
     
     # 가동 정보 (injection과 동일한 형태)
     operation_time = models.IntegerField('가동시간(분)', validators=[MinValueValidator(0)], default=0)

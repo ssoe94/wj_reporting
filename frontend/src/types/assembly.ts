@@ -4,11 +4,15 @@ export interface AssemblyReport {
   line_no: string;
   part_no: string;
   model: string;
+  supply_type?: 'JIT' | 'CSK' | 'SVC' | '';
   plan_qty: number;
   actual_qty: number;
+  rework_qty?: number;
   injection_defect: number;
   outsourcing_defect: number;
   processing_defect: number;
+  incoming_defects_detail?: Record<string, number>;
+  processing_defects_detail?: Record<string, number>;
   operation_time: number;
   total_time: number;
   idle_time: number;

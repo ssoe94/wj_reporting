@@ -20,9 +20,10 @@ class AssemblyReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssemblyReport
         fields = [
-            'id', 'date', 'line_no', 'part_no', 'model',
-            'plan_qty', 'input_qty', 'actual_qty',
+            'id', 'date', 'line_no', 'part_no', 'model', 'supply_type',
+            'plan_qty', 'input_qty', 'actual_qty', 'rework_qty',
             'injection_defect', 'outsourcing_defect', 'processing_defect',
+            'incoming_defects_detail', 'processing_defects_detail',
             'operation_time', 'total_time', 'idle_time', 'workers',
             'note',
             'created_at', 'updated_at',

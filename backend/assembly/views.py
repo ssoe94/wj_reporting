@@ -35,7 +35,7 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
     queryset = AssemblyReport.objects.all()
     serializer_class = AssemblyReportSerializer
     permission_classes = [MachiningPermission]
-    filterset_fields = ['date', 'line_no', 'model', 'part_no']
+    filterset_fields = ['date', 'line_no', 'model', 'part_no', 'supply_type']
     # 주의: 계산 필드는 정렬 대상에서 제외 (DB 필드만 허용)
     ordering_fields = ['date', 'line_no', 'model', 'part_no', 'plan_qty', 'actual_qty', 'total_time', 'idle_time']
     search_fields = ['line_no', 'model', 'part_no', 'note']
@@ -93,14 +93,26 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
         buffer = io.StringIO()
         writer = csv.writer(buffer)
 
-        # 헤더 작성
+        # 헤더 작성 (상세 불량 포함)
+        incoming_detail_keys = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening']
+        processing_detail_keys = ['scratch','printing','rework','other']
+
         writer.writerow([
             'ID', 'Date', 'Line No', 'Part No', 'Model', 'Plan Qty', 'Input Qty', 'Actual Qty',
-            'Injection Defect', 'Outsourcing Defect', 'Processing Defect', 'Total Defect',
+            'Rework Qty', 'Supply Type', 'Injection Defect', 'Outsourcing Defect', 'Processing Defect', 'Total Defect',
+            # 상세 불량: Incoming (사출/입고)
+            *[f"Inc {k}" for k in incoming_detail_keys],
+            # 상세 불량: Processing (가공)
+            *[f"Proc {k}" for k in processing_detail_keys],
             'Total Time', 'Idle Time', 'Operation Time', 'Workers', 'Note'
         ])
 
         for r in queryset:
+            inc = getattr(r, 'incoming_defects_detail', {}) or {}
+            prc = getattr(r, 'processing_defects_detail', {}) or {}
+            inc_values = [int((inc.get(k) or 0)) for k in incoming_detail_keys]
+            prc_values = [int((prc.get(k) or 0)) for k in processing_detail_keys]
+
             writer.writerow([
                 r.id,
                 r.date,
@@ -110,10 +122,14 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
                 r.plan_qty,
                 r.input_qty,
                 r.actual_qty,
+                r.rework_qty,
+                r.supply_type,
                 r.injection_defect,
                 r.outsourcing_defect,
                 r.processing_defect,
                 r.total_defect_qty,
+                *inc_values,
+                *prc_values,
                 r.total_time,
                 r.idle_time,
                 r.operation_time,

@@ -51,16 +51,17 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     { key: 'rework', label: '加工修理' },
     { key: 'other', label: '其他' },
   ] as const;
-  const [incomingDefectsDetail, setIncomingDefectsDetail] = useState<Record<string, number>>(() => {
-    const init: Record<string, number> = {};
-    incomingDefectItems.forEach(it => (init[it.key] = 0));
+  const [incomingDefectsDetail, setIncomingDefectsDetail] = useState<Record<string, number | ''>>(() => {
+    const init: Record<string, number | ''> = {};
+    incomingDefectItems.forEach(it => (init[it.key] = ''));
     return init;
   });
-  const [processingDefectsDetail, setProcessingDefectsDetail] = useState<Record<string, number>>(() => {
-    const init: Record<string, number> = {};
-    processingDefectItems.forEach(it => (init[it.key] = 0));
+  const [processingDefectsDetail, setProcessingDefectsDetail] = useState<Record<string, number | ''>>(() => {
+    const init: Record<string, number | ''> = {};
+    processingDefectItems.forEach(it => (init[it.key] = ''));
     return init;
   });
+  const [detailsDirty, setDetailsDirty] = useState(false);
   const [newPartForm, setNewPartForm] = useState<any>({
     part_no: '',
     model_code: '',
@@ -95,16 +96,18 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     line_no: initialData?.line_no || '',
     part_no: initialData?.part_no || '',
     model: initialData?.model || '',
-    plan_qty: initialData?.plan_qty ?? 0,
-    input_qty: (initialData as any)?.input_qty ?? 0,
-    actual_qty: initialData?.actual_qty ?? 0,
-    injection_defect: initialData?.injection_defect ?? 0,
-    outsourcing_defect: initialData?.outsourcing_defect ?? 0,
-    processing_defect: initialData?.processing_defect ?? 0,
-    total_time: initialData?.total_time ?? 0,
-    idle_time: initialData?.idle_time ?? 0,
+    supply_type: (initialData as any)?.supply_type || '',
+    plan_qty: initialData ? (initialData?.plan_qty ?? 0) : '',
+    input_qty: initialData ? ((initialData as any)?.input_qty ?? 0) : '',
+    actual_qty: initialData ? (initialData?.actual_qty ?? 0) : '',
+    rework_qty: initialData ? ((initialData as any)?.rework_qty ?? 0) : '',
+    injection_defect: initialData ? (initialData?.injection_defect ?? 0) : '',
+    outsourcing_defect: initialData ? (initialData?.outsourcing_defect ?? 0) : '',
+    processing_defect: initialData ? (initialData?.processing_defect ?? 0) : '',
+    total_time: initialData ? (initialData?.total_time ?? 0) : '',
+    idle_time: initialData ? (initialData?.idle_time ?? 0) : '',
     operation_time: initialData?.operation_time ?? 0,
-    workers: (initialData as any)?.workers ?? 1,
+    workers: initialData ? ((initialData as any)?.workers ?? 1) : '',
     note: initialData?.note || '',
   });
 
@@ -115,9 +118,11 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       line_no: initialData?.line_no || '',
       part_no: initialData?.part_no || '',
       model: initialData?.model || '',
+      supply_type: (initialData as any)?.supply_type || '',
       plan_qty: initialData?.plan_qty ?? 0,
       input_qty: (initialData as any)?.input_qty ?? 0,
       actual_qty: initialData?.actual_qty ?? 0,
+      rework_qty: (initialData as any)?.rework_qty ?? 0,
       injection_defect: initialData?.injection_defect ?? 0,
       outsourcing_defect: initialData?.outsourcing_defect ?? 0,
       processing_defect: initialData?.processing_defect ?? 0,
@@ -137,28 +142,59 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     if (pno) {
       setSelectedPartSpec({ id: -9999, part_no: pno, model_code: mdl, description: (initialData as any)?.description || '' } as any);
     }
+    // 편집 진입 시, 상세 불량 표기를 집계값으로 프리필(사용자 입력 없을 때만)
+    // 상세 불량: 서버에 저장된 detail이 있다면 그대로 로드
+    try {
+      const inc = (initialData as any)?.incoming_defects_detail;
+      const prc = (initialData as any)?.processing_defects_detail;
+      if (inc && typeof inc === 'object') {
+        const next: Record<string, number | ''> = {};
+        incomingDefectItems.forEach(it => {
+          const v = inc[it.key];
+          next[it.key] = (v === '' || v === null || v === undefined) ? '' : (Number(v) || 0);
+        });
+        setIncomingDefectsDetail(next);
+      }
+      if (prc && typeof prc === 'object') {
+        const next: Record<string, number | ''> = {};
+        processingDefectItems.forEach(it => {
+          const v = prc[it.key];
+          next[it.key] = (v === '' || v === null || v === undefined) ? '' : (Number(v) || 0);
+        });
+        setProcessingDefectsDetail(next);
+      }
+      setDetailsDirty(false);
+    } catch (_) {}
   }, [initialData]);
 
   // 자동 계산 로직
   const calculatedValues = React.useMemo(() => {
-    const totalDefects = formData.injection_defect + formData.outsourcing_defect + formData.processing_defect;
-    const incomingDefects = formData.injection_defect + formData.outsourcing_defect;
-    const actualOperationTime = formData.total_time - formData.idle_time; // 작업시간 = 총시간 - 부동시간
+    const inj = Number(formData.injection_defect) || 0;
+    const out = Number(formData.outsourcing_defect) || 0;
+    const proc = Number(formData.processing_defect) || 0;
+    const totalDefects = inj + out + proc;
+    const incomingDefects = inj + out;
+    const total = Number(formData.total_time) || 0;
+    const idle = Number(formData.idle_time) || 0;
+    const actualOperationTime = total - idle; // 작업시간 = 총시간 - 부동시간
     
     // UPH = 생산수량 / 작업시간(시간)
-    const uph = actualOperationTime > 0 ? Math.round((formData.actual_qty / (actualOperationTime / 60)) * 100) / 100 : 0;
+    const act = Number(formData.actual_qty) || 0;
+    const uph = actualOperationTime > 0 ? Math.round((act / (actualOperationTime / 60)) * 100) / 100 : 0;
     
     // UPPH = 생산수량 / (작업시간(시간) × 작업인원)
-    const upph = (actualOperationTime > 0 && formData.workers > 0) ? 
-      Math.round((formData.actual_qty / ((actualOperationTime / 60) * formData.workers)) * 100) / 100 : 0;
+    const workers = Number(formData.workers) || 0;
+    const upph = (actualOperationTime > 0 && workers > 0) ? 
+      Math.round((act / ((actualOperationTime / 60) * workers)) * 100) / 100 : 0;
     
     // 가동률 = 작업시간 / 총시간 × 100
-    const operationRate = formData.total_time > 0 ? 
-      Math.round((actualOperationTime / formData.total_time) * 100 * 100) / 100 : 0;
+    const operationRate = total > 0 ? 
+      Math.round((actualOperationTime / total) * 100 * 100) / 100 : 0;
     
     // 생산달성률 = 생산수량 / 계획수량 × 100  
-    const achievementRate = formData.plan_qty > 0 ? 
-      Math.round((formData.actual_qty / formData.plan_qty) * 100 * 100) / 100 : 0;
+    const plan = Number(formData.plan_qty) || 0;
+    const achievementRate = plan > 0 ? 
+      Math.round((act / plan) * 100 * 100) / 100 : 0;
 
     return {
       totalDefects,
@@ -171,17 +207,19 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     };
   }, [formData]);
 
-  // 불량 상세 변경 시 총합을 formData에 반영
+  // 불량 상세 변경 시(사용자 편집 시에만) 총합을 formData에 반영
   React.useEffect(() => {
-    const sumIncoming = Object.values(incomingDefectsDetail).reduce((a, b) => a + (Number(b) || 0), 0);
-    const sumProcessing = Object.values(processingDefectsDetail).reduce((a, b) => a + (Number(b) || 0), 0);
+    // 상세 변경 시 합계 반영 (서버 detail은 저장 시 함께 전송)
+    if (!detailsDirty) return;
+    const sumIncoming = Object.values(incomingDefectsDetail).reduce<number>((a, b) => a + (b === '' ? 0 : (Number(b) || 0)), 0);
+    const sumProcessing = Object.values(processingDefectsDetail).reduce<number>((a, b) => a + (b === '' ? 0 : (Number(b) || 0)), 0);
     setFormData(prev => ({ ...prev, injection_defect: sumIncoming, processing_defect: sumProcessing }));
-  }, [incomingDefectsDetail, processingDefectsDetail]);
+  }, [incomingDefectsDetail, processingDefectsDetail, detailsDirty]);
 
-  const totalIncoming = React.useMemo(() => Object.values(incomingDefectsDetail).reduce((a,b)=> a+(Number(b)||0),0), [incomingDefectsDetail]);
-  const totalProcessing = React.useMemo(() => Object.values(processingDefectsDetail).reduce((a,b)=> a+(Number(b)||0),0), [processingDefectsDetail]);
+  const totalIncoming = React.useMemo(() => Object.values(incomingDefectsDetail).reduce<number>((a,b)=> a+(b===''?0:(Number(b)||0)),0), [incomingDefectsDetail]);
+  const totalProcessing = React.useMemo(() => Object.values(processingDefectsDetail).reduce<number>((a,b)=> a+(b===''?0:(Number(b)||0)),0), [processingDefectsDetail]);
   const totalDefectsNow = totalIncoming + totalProcessing + (Number(formData.outsourcing_defect)||0);
-  const denomForRate = Math.max(1, Number(formData.input_qty) || (Number(formData.actual_qty) + totalDefectsNow));
+  const denomForRate = Math.max(1, (Number(formData.input_qty)||0) || ((Number(formData.actual_qty)||0) + totalDefectsNow));
   const badgeClassFor = (sum: number) => {
     const pct = (sum / denomForRate) * 100;
     if (pct <= 2) return 'bg-green-50 text-green-700';
@@ -195,7 +233,9 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       
       // 작업시간 자동 계산
       if (field === 'total_time' || field === 'idle_time') {
-        newData.operation_time = Math.max(0, newData.total_time - newData.idle_time);
+        const total = Number(newData.total_time) || 0;
+        const idle = Number(newData.idle_time) || 0;
+        newData.operation_time = Math.max(0, total - idle);
       }
       
       return newData;
@@ -222,16 +262,26 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       return;
     }
     const totalDefects = (Number(formData.injection_defect)||0) + (Number(formData.outsourcing_defect)||0) + (Number(formData.processing_defect)||0);
-    const expectedActual = Math.max(0, (Number(formData.input_qty)||0) - totalDefects);
-    if (Number(formData.actual_qty) !== expectedActual) {
+    const expectedActual = Math.max(0, (Number(formData.input_qty)||0) - totalDefects + (Number(formData.rework_qty)||0));
+    if ((formData.actual_qty === '' ? 0 : Number(formData.actual_qty)) !== expectedActual) {
       const msg = lang === 'zh'
-        ? `良品数量需等于 投入数量 - 不良总数。期望值: ${expectedActual}, 当前: ${formData.actual_qty}`
-        : `생산수량은 투입수량 - 불량총수와 일치해야 합니다. 기대값: ${expectedActual}, 현재값: ${formData.actual_qty}`;
+        ? `良品数量需等于 投入数量 - 不良总数 + 返工数量。期望值: ${expectedActual}, 当前: ${formData.actual_qty}`
+        : `생산수량은 투입수량 - 불량총수 + 재작업과 일치해야 합니다. 기대값: ${expectedActual}, 현재값: ${formData.actual_qty}`;
       toast.error(msg);
       return;
     }
     try {
-      const maybePromise = onSubmit(formData);
+      const payload: any = {
+        ...formData,
+      };
+      // 상세 불량 JSON 포함
+      payload.incoming_defects_detail = { ...incomingDefectsDetail };
+      payload.processing_defects_detail = { ...processingDefectsDetail };
+      // 빈 문자열은 0으로 변환하여 서버로 전송
+      ['plan_qty','input_qty','actual_qty','rework_qty','injection_defect','outsourcing_defect','processing_defect','total_time','idle_time','operation_time','workers'].forEach((k)=>{
+        if (payload[k] === '' || payload[k] === undefined || payload[k] === null) payload[k] = 0;
+      });
+      const maybePromise = onSubmit(payload);
       if (maybePromise && typeof (maybePromise as any).then === 'function') {
         await (maybePromise as Promise<any>);
       }
@@ -241,9 +291,11 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         line_no: '',
         part_no: '',
         model: '',
+        supply_type: '',
         plan_qty: 0,
         input_qty: 0,
         actual_qty: 0,
+        rework_qty: 0,
         injection_defect: 0,
         outsourcing_defect: 0,
         processing_defect: 0,
@@ -299,7 +351,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
   return (
     <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="flex flex-col gap-y-6">
       {/* 상단: 보고일자 / 라인 / 모델 / Part No. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
         <div>
           <Label htmlFor="date">{t('report_date')}</Label>
           <Input type="date" value={formData.date} onChange={(e) => handleChange('date', e.target.value)} required className="text-center" />
@@ -556,6 +608,20 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             renderInput={(params) => <TextField {...params} size="small" placeholder={`Part No. ${t('input_or_select')}`} required />}
           />
         </div>
+        <div>
+          <Label htmlFor="supply_type">{t('supply_type')}</Label>
+          <select
+            id="supply_type"
+            value={formData.supply_type}
+            onChange={(e)=>handleChange('supply_type', e.target.value)}
+            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
+          >
+            <option value="">{t('supply_type_placeholder_cskd')}</option>
+            <option value="JIT">{lang === 'zh' ? '上线' : 'JIT'}</option>
+            <option value="CSK">CSKD</option>
+            <option value="SVC">SVC</option>
+          </select>
+        </div>
       </div>
 
       {/* 생산기록 / 불량기록 레이아웃 */}
@@ -591,21 +657,45 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="flex flex-col">
                     <Label htmlFor="plan_qty">{t('plan_qty_required')}</Label>
-                    <Input id="plan_qty" type="number" inputMode="numeric" min={0} value={formData.plan_qty} onChange={(e) => handleChange('plan_qty', Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                    <Input id="plan_qty" type="number" inputMode="numeric" min={0} value={formData.plan_qty as any} onChange={(e) => handleChange('plan_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
                   </div>
                   <div className="flex flex-col">
                     <Label htmlFor="actual_qty">{t('production_qty_required')}</Label>
-                    <Input id="actual_qty" type="number" inputMode="numeric" min={0} value={formData.actual_qty} onChange={(e) => handleChange('actual_qty', Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                    <Input id="actual_qty" type="number" inputMode="numeric" min={0} value={formData.actual_qty as any} onChange={(e) => handleChange('actual_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
                   </div>
                   <div className="flex flex-col">
-                    <Label htmlFor="input_qty">{t('input_qty')}</Label>
-                    <Input id="input_qty" type="number" inputMode="numeric" min={0} value={formData.input_qty} onChange={(e) => handleChange('input_qty', Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} />
+                    <Label htmlFor="workers">{t('worker_count')}</Label>
+                    <Input id="workers" type="number" min={0} value={formData.workers as any} onChange={(e) => handleChange('workers', e.target.value === '' ? '' : Number(e.target.value))} onFocus={selectOnFocus} className="text-center" />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="flex flex-col">
-                    <Label htmlFor="workers">{t('worker_count')}</Label>
-                    <Input id="workers" type="number" min={1} value={formData.workers} onChange={(e) => handleChange('workers', Number(e.target.value))} onFocus={selectOnFocus} className="text-center" />
+                    <Label htmlFor="input_qty">{t('semi_input_qty')}</Label>
+                    <Input id="input_qty" type="number" inputMode="numeric" min={0} value={formData.input_qty as any} onChange={(e) => handleChange('input_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} />
+                  </div>
+                  <div className="flex flex-col">
+                    <Label htmlFor="rework_qty">{t('rework_input_qty')}</Label>
+                    <Input id="rework_qty" type="number" inputMode="numeric" min={0} value={formData.rework_qty as any} onChange={(e) => handleChange('rework_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} />
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    {(() => {
+                      const totalDefects = (Number(formData.injection_defect)||0) + (Number(formData.outsourcing_defect)||0) + (Number(formData.processing_defect)||0);
+                      const semiInput = Number(formData.input_qty)||0;
+                      const reworkInput = Number(formData.rework_qty)||0;
+                      const expected = Math.max(0, semiInput + reworkInput - totalDefects);
+                      const hasAny = (Number(formData.input_qty)||0) || (Number(formData.actual_qty)||0) || (Number(formData.rework_qty)||0) || totalDefects;
+                      const ok = Number(formData.actual_qty) === expected;
+                      const color = hasAny ? (ok ? 'text-green-600' : 'text-red-600') : 'text-gray-500';
+                      const actual = Number(formData.actual_qty)||0;
+                      return (
+                        <div className={`text-[11px] leading-3 ${color}`}>
+                          <div>{t('prod_qty_short')} {actual} =</div>
+                          <div>+ {t('semi_input_qty_short')} {semiInput}</div>
+                          <div>+ {t('rework_input_qty_short')} {reworkInput}</div>
+                          <div>- {t('total_defect_short')} {totalDefects}</div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </CardContent>
@@ -632,8 +722,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 {incomingDefectItems.map(it => (
                   <div key={it.key} className="flex flex-col">
                     <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>
-                    <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={incomingDefectsDetail[it.key]} onFocus={selectOnFocus}
-                      onChange={(e)=> setIncomingDefectsDetail(prev => ({...prev, [it.key]: Number(e.target.value) || 0}))} />
+                    <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={incomingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
+                      onChange={(e)=> { setDetailsDirty(true); setIncomingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
                   </div>
                 ))}
               </CardContent>
@@ -653,8 +743,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 {processingDefectItems.map(it => (
                   <div key={it.key} className="flex flex-col">
                     <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>
-                    <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={processingDefectsDetail[it.key]} onFocus={selectOnFocus}
-                      onChange={(e)=> setProcessingDefectsDetail(prev => ({...prev, [it.key]: Number(e.target.value) || 0}))} />
+                    <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={processingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
+                      onChange={(e)=> { setDetailsDirty(true); setProcessingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
                   </div>
                 ))}
               </CardContent>
@@ -694,7 +784,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               </div>
             </div>
 
-            {/* 우: 비고(备注) 50% */}
+            {/* 우: 비고 50% */}
             <div className="basis-full md:basis-[50%] flex flex-col">
               <Label>{t('header_note')}</Label>
               <Textarea
