@@ -386,6 +386,7 @@ export default function Eco2Manager() {
                 <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Part No.</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_reason')}</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('change_details')}</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('applicable_date')}</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">{t('status')}</th>
                 <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">작업</th>
               </tr>
@@ -393,7 +394,7 @@ export default function Eco2Manager() {
             <tbody className="bg-white divide-y divide-gray-200">
               {ecosLoading ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8">
+                  <td colSpan={8} className="text-center py-8">
                     <div className="flex items-center justify-center space-x-2">
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
                       <span className="text-gray-500 text-sm">Loading...</span>
@@ -402,7 +403,7 @@ export default function Eco2Manager() {
                 </tr>
               ) : filteredEcos.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8">
+                  <td colSpan={8} className="text-center py-8">
                     <span className="text-gray-500 text-sm">
                       {searchType === 'part' && selectedPartSpecs.length > 0
                         ? '선택한 Part No.에 해당하는 ECO가 없습니다.'
@@ -439,6 +440,9 @@ export default function Eco2Manager() {
                         {e.change_details}
                       </p>
                     </div>
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap">
+                    <span className="text-sm font-medium text-gray-900">{(e as any).applicable_date || '-'}</span>
                   </td>
                   <td className="px-3 py-3 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${

@@ -162,6 +162,29 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
                     }
                 )
 
+            # 상세 상태를 기반으로 헤더 상태 자동 갱신
+            total_cnt = EcoDetail.objects.filter(eco_header=header).count()
+            closed_cnt = EcoDetail.objects.filter(eco_header=header, status='CLOSED').count()
+            open_cnt = EcoDetail.objects.filter(eco_header=header, status='OPEN').count()
+
+            if total_cnt > 0 and closed_cnt == total_cnt:
+                new_status = 'CLOSED'
+            elif 0 < closed_cnt < total_cnt:
+                new_status = 'WIP'
+            else:
+                # 모든 상세가 OPEN 이거나 상세가 없는 경우
+                new_status = 'OPEN'
+
+            if header.status != new_status:
+                header.status = new_status
+                # 완료 시점에 close_date 자동 세팅 (이미 값이 있으면 유지)
+                if new_status == 'CLOSED' and not header.close_date:
+                    header.close_date = timezone.now().date()
+                # 다시 열리면 close_date 는 유지 (업무 규칙에 따라 None 처리하려면 아래 주석 해제)
+                # elif new_status != 'CLOSED':
+                #     header.close_date = None
+                header.save(update_fields=['status', 'close_date'])
+
         # 최신 데이터 반환
         qs = EcoDetail.objects.filter(eco_header=header).select_related('eco_part_spec')
         serializer = EcoDetailSerializer(qs, many=True)
