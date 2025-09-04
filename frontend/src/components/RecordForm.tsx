@@ -356,13 +356,18 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                   partNo: v.part_no,
                   model: v.model_code,
                   type: v.description,
-                  resin: v?.resin_type || '',
-                  netG: String(v?.net_weight_g || ''),
-                  srG: String(v?.sr_weight_g || ''),
-                  ct: String(v?.cycle_time_sec || ''),
+                  resin: (v as any)?.resin_type || '',
+                  netG: String((v as any)?.net_weight_g || ''),
+                  srG: String((v as any)?.sr_weight_g || ''),
+                  ct: String((v as any)?.cycle_time_sec || ''),
                 }));
                 const modelSpec = uniqueModelDesc.find((m) => m.model_code === v.model_code && m.description === v.description);
-                if (modelSpec) setSelectedModelDesc(modelSpec);
+                if (modelSpec) {
+                  setSelectedModelDesc(modelSpec);
+                } else {
+                  setSelectedModelDesc({ id: -9997, part_no: '', model_code: v.model_code, description: v.description || '' } as any);
+                  setProductQuery(v.model_code || '');
+                }
               }
             }}
             value={selectedPartSpec}

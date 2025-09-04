@@ -10,7 +10,7 @@ import { Autocomplete, TextField } from '@mui/material';
 import type { AssemblyReport } from '../types/assembly';
 import { useLang } from '../i18n';
 import { usePartSpecSearch, usePartListByModel } from '../hooks/usePartSpecs';
-import { useAssemblyPartsByModel, useAssemblyPartspecsByModel } from '../hooks/useAssemblyParts';
+import { useAssemblyPartsByModel, useAssemblyPartspecsByModel, useAssemblyPartNoSearch } from '../hooks/useAssemblyParts';
 import type { PartSpec } from '../hooks/usePartSpecs';
 import { Plus, PlusCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -81,6 +81,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
   const { data: modelParts = [] } = usePartListByModel(selectedModelDesc?.model_code);
   const { data: asmPartsByModel = [] } = useAssemblyPartsByModel(selectedModelDesc?.model_code);
   const { data: asmPartspecsByModel = [] } = useAssemblyPartspecsByModel(selectedModelDesc?.model_code);
+  const { data: asmPartNoSearch = [] } = useAssemblyPartNoSearch(productQuery || '');
   
   const uniqueModelDesc = React.useMemo(() => {
     const map = new Map<string, PartSpec>();
@@ -453,7 +454,19 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                           ? (asmPartsByModel as any)
                           : modelParts)
                   )
-                : searchResults;
+                : (() => {
+                    const asmOptions = Array.isArray(asmPartNoSearch)
+                      ? (asmPartNoSearch as any[]).map((r:any)=> ({ part_no: r.part_no, model_code: r.model, description: r.description || '' }))
+                      : [];
+                    const merged = [...asmOptions, ...searchResults];
+                    const seen = new Set<string>();
+                    return merged.filter((o:any)=>{
+                      const key = String(o.part_no||'');
+                      if (seen.has(key)) return false;
+                      seen.add(key);
+                      return true;
+                    });
+                  })();
               if (productQuery.trim().length >= 2 && baseOptions.length === 0) return [{ isAddNew: true, part_no: productQuery.trim() } as any];
               if (selectedModelDesc && baseOptions.length === 0) return [{ isAddNewForModel: true } as any];
               return baseOptions;
@@ -579,7 +592,13 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               if (v && !('isAddNew' in v)) {
                 setFormData((f) => ({ ...f, part_no: v.part_no, model: v.model_code }));
                 const modelSpec = uniqueModelDesc.find((m) => m.model_code === v.model_code && m.description === v.description);
-                if (modelSpec) setSelectedModelDesc(modelSpec);
+                if (modelSpec) {
+                  setSelectedModelDesc(modelSpec);
+                } else {
+                  // fallback: 강제로 모델 선택 상태를 설정하여 자동완성 표시
+                  setSelectedModelDesc({ id: -9996, part_no: '', model_code: v.model_code, description: v.description || '' } as any);
+                  setProductQuery(v.model_code || '');
+                }
               }
             }}
             value={selectedPartSpec}
@@ -819,6 +838,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
+            <p className="text-xs text-gray-500">{lang==='zh' ? '必填: Part No / Model Code / Description' : '필수: Part No / Model Code / Description'}</p>
             <div className="grid grid-cols-2 gap-3">
               {(() => {
                 const isEdited = (k: string) => prefillOriginal && String(newPartForm[k] ?? '') !== String(prefillOriginal[k] ?? '');
@@ -827,13 +847,13 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 return (
                   <>
                     <input 
-                      placeholder="Part No" 
+                      placeholder="Part No (MCK12345678…)" 
                       className={`border rounded px-2 py-1 col-span-2 bg-green-50 border-green-300`}
                       value={newPartForm.part_no}
                       onChange={(e)=> setNewPartForm((f: any)=> ({...f, part_no: e.target.value}))}
                     />
-                    <input placeholder="Model Code" className={`border rounded px-2 py-1 col-span-2${prefilledCls('model_code')}${editedCls('model_code')}`} value={newPartForm.model_code} onChange={(e)=> setNewPartForm((f:any)=> ({...f, model_code: e.target.value}))} />
-                    <input placeholder="Description" className={`border rounded px-2 py-1 col-span-2${prefilledCls('description')}${editedCls('description')}`} value={newPartForm.description} onChange={(e)=> setNewPartForm((f:any)=> ({...f, description: e.target.value}))} />
+                    <input placeholder="Model Code (24TL510…)" className={`border rounded px-2 py-1 col-span-2${prefilledCls('model_code')}${editedCls('model_code')}`} value={newPartForm.model_code} onChange={(e)=> setNewPartForm((f:any)=> ({...f, model_code: e.target.value}))} />
+                    <input placeholder="Description (C/A, B/C…)" className={`border rounded px-2 py-1 col-span-2${prefilledCls('description')}${editedCls('description')}`} value={newPartForm.description} onChange={(e)=> setNewPartForm((f:any)=> ({...f, description: e.target.value}))} />
                     <input placeholder="Mold Type" className={`border rounded px-2 py-1${prefilledCls('mold_type')}${editedCls('mold_type')}`} value={newPartForm.mold_type} onChange={(e)=> setNewPartForm((f:any)=> ({...f, mold_type: e.target.value}))} />
                     <input placeholder="Color" className={`border rounded px-2 py-1${prefilledCls('color')}${editedCls('color')}`} value={newPartForm.color} onChange={(e)=> setNewPartForm((f:any)=> ({...f, color: e.target.value}))} />
                     <input placeholder="Resin Type" className={`border rounded px-2 py-1${prefilledCls('resin_type')}${editedCls('resin_type')}`} value={newPartForm.resin_type} onChange={(e)=> setNewPartForm((f:any)=> ({...f, resin_type: e.target.value}))} />
@@ -854,6 +874,10 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   const partNo = String(newPartForm.part_no || '').trim();
                   const modelCode = String(newPartForm.model_code || '').trim();
                   const description = String(newPartForm.description || '').trim();
+                  if (!partNo || !modelCode || !description) {
+                    toast.error(lang==='zh' ? '请输入 Part No / Model Code / Description' : 'Part No / Model Code / Description을 입력하세요');
+                    return;
+                  }
                   // Optional spec fields은 현재 전송하지 않음
 
                   const newPart = await api.post('/assembly/partspecs/create-or-update/',{
@@ -863,20 +887,35 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   });
                   
                   toast.success(t('new_part_added_success'));
-                  queryClient.invalidateQueries({queryKey:['assembly-partspecs']});
-                  queryClient.invalidateQueries({queryKey:['assembly-partno-search']});
+                  // 새 PartSpec 즉시 반영을 위해 관련 쿼리 무효화
+                  queryClient.invalidateQueries({ queryKey: ['assembly-partspecs'] });
+                  queryClient.invalidateQueries({ queryKey: ['assembly-partspecs-by-model'] });
+                  queryClient.invalidateQueries({ queryKey: ['assembly-parts-by-model'] });
+                  queryClient.invalidateQueries({ queryKey: ['assembly-products'] });
+                  queryClient.invalidateQueries({ queryKey: ['assembly-partno-search'] });
+                  queryClient.invalidateQueries({ queryKey: ['assembly-part-search'] });
+                  queryClient.invalidateQueries({ queryKey: ['assembly-model-search'] });
                   setShowAddPartModal(false);
                   
-                  // 새로 생성된 Part를 자동으로 선택
-                  const createdPart = newPart.data;
-                  setSelectedPartSpec(createdPart);
+                  // 새로 생성된 Part를 자동으로 선택 (옵션 목록에 아직 없어도 즉시 폼 상태 갱신)
+                  const createdPart = newPart.data || {};
+                  const createdModelCode = createdPart.model_code || modelCode;
+                  const createdDesc = createdPart.description || description || '';
+                  setProductQuery(createdModelCode);
                   setFormData((f) => ({
                     ...f,
-                    part_no: createdPart.part_no,
-                    model: createdPart.model_code,
+                    part_no: createdPart.part_no || partNo,
+                    model: createdModelCode,
                   }));
-                  const modelSpec = uniqueModelDesc.find((m) => m.model_code === createdPart.model_code && m.description === createdPart.description);
-                  if (modelSpec) setSelectedModelDesc(modelSpec);
+                  // 모델 선택 상태 강제 설정(검색 목록에 아직 없어도 임시 옵션으로 표시)
+                  const foundModelSpec = uniqueModelDesc.find((m) => m.model_code === createdModelCode && m.description === createdDesc);
+                  if (foundModelSpec) {
+                    setSelectedModelDesc(foundModelSpec);
+                  } else {
+                    setSelectedModelDesc({ id: -9998, part_no: '', model_code: createdModelCode, description: createdDesc } as any);
+                  }
+                  // Part 선택값도 즉시 반영(옵션 리스트 갱신 전이더라도 표시)
+                  setSelectedPartSpec({ part_no: createdPart.part_no || partNo, model_code: createdModelCode, description: createdDesc } as any);
                 }catch(err:any){
                   toast.error(t('save_fail'));
                 }

@@ -267,6 +267,11 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     nav_eco_management: 'ECO 관리',
     nav_model_management: '모델관리',
     nav_eco2_dev: 'ECO管理 (开发中）',
+    // 품질 섹션
+    nav_quality: '품질',
+    nav_quality_report: '불량 보고',
+    nav_quality_stats: '불량 통계',
+    brand_quality: '품질관리',
     
     // 가공 관련 불량 유형
     assembly_defect_title: '불량 분류',
@@ -629,6 +634,11 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     nav_eco_management: 'ECO管理',
     nav_model_management: '型号管理',
     nav_eco2_dev: 'ECO管理 (开发中）',
+    // 品质版块
+    nav_quality: '品质',
+    nav_quality_report: '不良报告',
+    nav_quality_stats: '不良统计',
+    brand_quality: '品质管理',
     
     // 가공 관련 불량 유형
     assembly_defect_title: '不良分类',

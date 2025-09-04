@@ -22,6 +22,9 @@ import {
   ChartPie,
   ChartNoAxesCombined,
   Boxes,
+  ShieldCheck,
+  ClipboardX,
+  BarChart3,
 } from "lucide-react";
 // 실제 Summary 페이지 컴포넌트
 import SummaryPage from "./pages/summary";
@@ -39,6 +42,7 @@ import DailyReportPage from './pages/sales/DailyReport';
 import UserApproval from './pages/admin/UserApproval';
 import PasswordChangeModal from './components/PasswordChangeModal';
 import PermissionLink from './components/common/PermissionLink';
+import QualityPage from './pages/quality';
 
 const queryClient = new QueryClient();
 
@@ -73,6 +77,14 @@ export function useNavItems() {
           { to: "/assembly#top", label: t('nav_machining_summary'), icon: ChartNoAxesCombined },
           { to: "/assembly#records", label: t('nav_machining_records'), icon: ClipboardList },
           { to: "/assembly#new", label: t('nav_machining_new'), icon: PlusSquare },
+        ],
+      },
+      {
+        label: t('nav_quality'),
+        icon: ShieldCheck,
+        children: [
+          { to: "/quality#report", label: t('nav_quality_report'), icon: ClipboardX },
+          { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
         ],
       },
       {
@@ -148,6 +160,18 @@ export function useNavItems() {
       label: t('nav_machining'),
       icon: Wrench,
       children: machiningChildren,
+    });
+  }
+
+  // 품질 섹션은 가공 권한과 동일 조건으로 표기 (요청사항: 가공 아래)
+  if (hasPermission('can_view_machining')) {
+    navItems.push({
+      label: t('nav_quality'),
+      icon: ShieldCheck,
+      children: [
+        { to: "/quality#report", label: t('nav_quality_report'), icon: ClipboardX },
+        { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
+      ],
     });
   }
 
@@ -241,6 +265,7 @@ function AppContent() {
   else if (pathname.startsWith('/sales')) breadcrumbLabel = t('nav_sales');
   else if (pathname.startsWith('/eco2')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/eco')) breadcrumbLabel = t('nav_eco_management');
+  else if (pathname.startsWith('/quality')) breadcrumbLabel = t('brand_quality');
   else if (pathname.startsWith('/models')) breadcrumbLabel = t('nav_model_management');
 
   // 인증 로딩 중 스피너 표시
@@ -500,6 +525,9 @@ function AppContent() {
 
           {/* Assembly single page */}
           <Route path="/assembly" element={<PrivateRoute><AssemblyPage /></PrivateRoute>} />
+
+          {/* Quality single page */}
+          <Route path="/quality" element={<PrivateRoute><QualityPage /></PrivateRoute>} />
 
           {/* Sales */}
           <Route path="/sales/inventory" element={<PrivateRoute><SalesInventoryPage /></PrivateRoute>} />

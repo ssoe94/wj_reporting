@@ -173,6 +173,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // 섹션별 권한 매핑 (prefix 매칭)
     if (base.startsWith('/injection')) return hasPermission('can_view_injection');
     if (base.startsWith('/assembly')) return hasPermission('can_view_machining');
+    // 품질 섹션은 가공 권한과 동일하게 접근 허용
+    if (base.startsWith('/quality')) return hasPermission('can_view_machining');
     if (base.startsWith('/eco2') || base.startsWith('/eco') || base.startsWith('/models')) return hasPermission('can_view_eco');
     if (base.startsWith('/sales')) return hasPermission('can_view_inventory');
 
