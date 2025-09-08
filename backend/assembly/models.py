@@ -14,8 +14,9 @@ class AssemblyReport(models.Model):
         ('JIT', 'JIT'),
         ('CSK', 'CSK'),
         ('SVC', 'SVC'),
+        ('REWORK', 'REWORK'),
     )
-    supply_type = models.CharField('공급유형', max_length=10, choices=SUPPLY_TYPE_CHOICES, blank=True, default='')
+    supply_type = models.CharField('공급유형', max_length=10, choices=SUPPLY_TYPE_CHOICES, blank=True, default='JIT')
     
     # 수량 정보
     plan_qty = models.IntegerField('계획수량', validators=[MinValueValidator(0)])

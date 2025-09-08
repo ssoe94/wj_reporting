@@ -44,6 +44,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     { key: 'flow_mark', label: '料花' },
     { key: 'sink_mark', label: '缩瘪' },
     { key: 'whitening', label: '发白' },
+    { key: 'other', label: '其他' },
   ] as const;
   const processingDefectItems = [
     { key: 'scratch', label: '划伤' },
@@ -99,7 +100,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     line_no: initialData?.line_no || '',
     part_no: initialData?.part_no || '',
     model: initialData?.model || '',
-    supply_type: (initialData as any)?.supply_type || '',
+    supply_type: (initialData as any)?.supply_type || 'JIT',
     plan_qty: initialData ? (initialData?.plan_qty ?? 0) : '',
     input_qty: initialData ? ((initialData as any)?.input_qty ?? 0) : '',
     actual_qty: initialData ? (initialData?.actual_qty ?? 0) : '',
@@ -121,7 +122,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       line_no: initialData?.line_no || '',
       part_no: initialData?.part_no || '',
       model: initialData?.model || '',
-      supply_type: (initialData as any)?.supply_type || '',
+      supply_type: (initialData as any)?.supply_type || 'JIT',
       plan_qty: initialData?.plan_qty ?? 0,
       input_qty: (initialData as any)?.input_qty ?? 0,
       actual_qty: initialData?.actual_qty ?? 0,
@@ -285,7 +286,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         line_no: '',
         part_no: '',
         model: '',
-        supply_type: '',
+        supply_type: 'JIT',
         plan_qty: 0,
         input_qty: 0,
         actual_qty: 0,
@@ -629,7 +630,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
           >
             <option value="">{t('supply_type_placeholder_cskd')}</option>
-            <option value="JIT">{lang === 'zh' ? '上线' : 'JIT'}</option>
+            <option value="JIT">{"JIT / 上线"}</option>
             <option value="CSK">CSKD</option>
             <option value="SVC">SVC</option>
             <option value="REWORK">{lang==='zh' ? '返工' : 'REWORK'}</option>
@@ -644,7 +645,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
           <CardContent className="flex-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* 시간 기록 섹션 카드 */}
-              <Card className="border-indigo-200">
+              <Card className="border-indigo-200 md:order-2">
                 <CardHeader className="py-2 font-medium text-indigo-700">{t('time_record')}</CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -665,7 +666,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               </Card>
 
               {/* 수량/인원 기록 섹션 카드 */}
-              <Card className="border-teal-200">
+              <Card className="border-teal-200 md:order-1">
                 <CardHeader className="py-2 font-medium text-teal-700">{t('qty_personnel_record')}</CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -707,7 +708,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 </button>
               </CardHeader>
               {incomingOpen && (
-                <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   {incomingDefectItems.map(it => (
                     <div key={it.key} className="flex flex-col">
                       <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>
@@ -735,7 +736,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 </button>
               </CardHeader>
               {processingOpen && (
-                <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   {processingDefectItems.map(it => (
                     <div key={it.key} className="flex flex-col">
                       <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>

@@ -4,7 +4,7 @@ export interface AssemblyReport {
   line_no: string;
   part_no: string;
   model: string;
-  supply_type?: 'JIT' | 'CSK' | 'SVC' | '';
+  supply_type?: 'JIT' | 'CSK' | 'SVC' | 'REWORK' | '';
   plan_qty: number;
   actual_qty: number;
   rework_qty?: number;

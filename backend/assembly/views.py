@@ -94,7 +94,7 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
         writer = csv.writer(buffer)
 
         # 헤더 작성 (상세 불량 포함)
-        incoming_detail_keys = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening']
+        incoming_detail_keys = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening','other']
         processing_detail_keys = ['scratch','printing','rework','other']
 
         writer.writerow([
