@@ -62,6 +62,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     return init;
   });
   const [detailsDirty, setDetailsDirty] = useState(false);
+  const [incomingOpen, setIncomingOpen] = useState(true);
+  const [processingOpen, setProcessingOpen] = useState(true);
   const [newPartForm, setNewPartForm] = useState<any>({
     part_no: '',
     model_code: '',
@@ -107,7 +109,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     processing_defect: initialData ? (initialData?.processing_defect ?? 0) : '',
     total_time: initialData ? (initialData?.total_time ?? 0) : '',
     idle_time: initialData ? (initialData?.idle_time ?? 0) : '',
-    operation_time: initialData?.operation_time ?? 0,
+    operation_time: initialData ? (initialData?.operation_time ?? 0) : '',
     workers: initialData ? ((initialData as any)?.workers ?? 1) : '',
     note: initialData?.note || '',
   });
@@ -175,9 +177,10 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     const proc = Number(formData.processing_defect) || 0;
     const totalDefects = inj + out + proc;
     const incomingDefects = inj + out;
-    const total = Number(formData.total_time) || 0;
+    const op = Number(formData.operation_time) || 0;
     const idle = Number(formData.idle_time) || 0;
-    const actualOperationTime = total - idle; // 작업시간 = 총시간 - 부동시간
+    const total = op + idle; // 총시간 = 작업시간 + 부동시간
+    const actualOperationTime = op; // 작업시간은 직접 입력
     
     // UPH = 생산수량 / 작업시간(시간)
     const act = Number(formData.actual_qty) || 0;
@@ -229,18 +232,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
   };
 
   const handleChange = (field: string, value: any) => {
-    setFormData(prev => {
-      const newData = { ...prev, [field]: value };
-      
-      // 작업시간 자동 계산
-      if (field === 'total_time' || field === 'idle_time') {
-        const total = Number(newData.total_time) || 0;
-        const idle = Number(newData.idle_time) || 0;
-        newData.operation_time = Math.max(0, total - idle);
-      }
-      
-      return newData;
-    });
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -262,15 +254,16 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       toast.error(lang === 'zh' ? '请选择 Part No.' : 'Part No.를 선택하세요');
       return;
     }
+    // 확인 다이얼로그: 계획 대비 달성률, 불량 안내
+    const plan = Number(formData.plan_qty)||0;
+    const actual = Number(formData.actual_qty)||0;
     const totalDefects = (Number(formData.injection_defect)||0) + (Number(formData.outsourcing_defect)||0) + (Number(formData.processing_defect)||0);
-    const expectedActual = Math.max(0, (Number(formData.input_qty)||0) - totalDefects + (Number(formData.rework_qty)||0));
-    if ((formData.actual_qty === '' ? 0 : Number(formData.actual_qty)) !== expectedActual) {
-      const msg = lang === 'zh'
-        ? `良品数量需等于 投入数量 - 不良总数 + 返工数量。期望值: ${expectedActual}, 当前: ${formData.actual_qty}`
-        : `생산수량은 투입수량 - 불량총수 + 재작업과 일치해야 합니다. 기대값: ${expectedActual}, 현재값: ${formData.actual_qty}`;
-      toast.error(msg);
-      return;
-    }
+    const rate = plan > 0 ? ((actual / plan) * 100).toFixed(1) : '0.0';
+    const confirmMsg = lang==='zh'
+      ? `计划数量对比良品数量为 ${rate}% 。不良数量 ${totalDefects} 件。是否保存？`
+      : `계획수량 대비 생산수량은 ${rate}% 입니다. 불량 수량은 ${totalDefects}개 입니다. 입력하시겠습니까?`;
+    const ok = window.confirm(confirmMsg);
+    if (!ok) return;
     try {
       const payload: any = {
         ...formData,
@@ -639,134 +632,119 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             <option value="JIT">{lang === 'zh' ? '上线' : 'JIT'}</option>
             <option value="CSK">CSKD</option>
             <option value="SVC">SVC</option>
+            <option value="REWORK">{lang==='zh' ? '返工' : 'REWORK'}</option>
           </select>
         </div>
       </div>
 
       {/* 생산기록 / 불량기록 레이아웃 */}
-      <div className={`grid grid-cols-1 ${compact ? 'md:grid-cols-5' : 'md:grid-cols-2'} gap-6 mt-2 items-stretch ${compact ? 'text-sm' : ''}`}>
+      <div className={`grid grid-cols-1 gap-6 mt-2 items-stretch ${compact ? 'text-sm' : ''}`}>
         <Card className={`h-full flex flex-col ${compact ? 'col-span-2' : ''}`}>
           <CardHeader className={`font-semibold text-blue-700 ${compact ? 'text-base' : ''}`}>{t('production_record')}</CardHeader>
-          <CardContent className="flex-1 space-y-4">
-            {/* 시간 기록 섹션 카드 */}
-            <Card className="border-indigo-200">
-              <CardHeader className="py-2 font-medium text-indigo-700">{t('time_record')}</CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="flex flex-col">
-                    <Label htmlFor="total_time">{t('total_time_min_required')}</Label>
-                    <Input id="total_time" type="number" inputMode="numeric" min={0} value={formData.total_time} onChange={(e) => handleChange('total_time', Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+          <CardContent className="flex-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 시간 기록 섹션 카드 */}
+              <Card className="border-indigo-200">
+                <CardHeader className="py-2 font-medium text-indigo-700">{t('time_record')}</CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="flex flex-col">
+                      <Label htmlFor="operation_time">{t('operation_time_min')}</Label>
+                      <Input id="operation_time" type="number" inputMode="numeric" min={0} value={formData.operation_time as any} onChange={(e) => handleChange('operation_time', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                    </div>
+                    <div className="flex flex-col">
+                      <Label htmlFor="idle_time">{t('idle_time_min')}</Label>
+                      <Input id="idle_time" type="number" inputMode="numeric" min={0} value={formData.idle_time as any} onChange={(e) => handleChange('idle_time', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                    </div>
+                    <div className="flex flex-col">
+                      <Label htmlFor="total_time">{t('total_time')}</Label>
+                      <Input id="total_time" value={(formData.operation_time === '' && formData.idle_time === '') ? '' : (Number(formData.operation_time||0) + Number(formData.idle_time||0))} disabled className={`text-center bg-gray-100 ${compact ? 'h-8 text-sm px-2' : ''}`} />
+                    </div>
                   </div>
-                  <div className="flex flex-col">
-                    <Label htmlFor="idle_time">{t('idle_time_min')}</Label>
-                    <Input id="idle_time" type="number" inputMode="numeric" min={0} value={formData.idle_time} onChange={(e) => handleChange('idle_time', Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} />
-                  </div>
-                  <div className="flex flex-col">
-                    <Label>{t('operation_time_min')}</Label>
-                    <Input value={calculatedValues.actualOperationTime} disabled className={`text-center bg-gray-100 ${compact ? 'h-8 text-sm px-2' : ''}`} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            {/* 수량/인원 기록 섹션 카드 */}
-            <Card className="border-teal-200">
-              <CardHeader className="py-2 font-medium text-teal-700">{t('qty_personnel_record')}</CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="flex flex-col">
-                    <Label htmlFor="plan_qty">{t('plan_qty_required')}</Label>
-                    <Input id="plan_qty" type="number" inputMode="numeric" min={0} value={formData.plan_qty as any} onChange={(e) => handleChange('plan_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+              {/* 수량/인원 기록 섹션 카드 */}
+              <Card className="border-teal-200">
+                <CardHeader className="py-2 font-medium text-teal-700">{t('qty_personnel_record')}</CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="flex flex-col">
+                      <Label htmlFor="plan_qty">{t('plan_qty_required')}</Label>
+                      <Input id="plan_qty" type="number" inputMode="numeric" min={0} value={formData.plan_qty as any} onChange={(e) => handleChange('plan_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                    </div>
+                    <div className="flex flex-col">
+                      <Label htmlFor="actual_qty">{t('production_qty_required')}</Label>
+                      <Input id="actual_qty" type="number" inputMode="numeric" min={0} value={formData.actual_qty as any} onChange={(e) => handleChange('actual_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                    </div>
+                    <div className="flex flex-col">
+                      <Label htmlFor="workers">{t('worker_count')}</Label>
+                      <Input id="workers" type="number" min={0} value={formData.workers as any} onChange={(e) => handleChange('workers', e.target.value === '' ? '' : Number(e.target.value))} onFocus={selectOnFocus} className="text-center" />
+                    </div>
                   </div>
-                  <div className="flex flex-col">
-                    <Label htmlFor="actual_qty">{t('production_qty_required')}</Label>
-                    <Input id="actual_qty" type="number" inputMode="numeric" min={0} value={formData.actual_qty as any} onChange={(e) => handleChange('actual_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
-                  </div>
-                  <div className="flex flex-col">
-                    <Label htmlFor="workers">{t('worker_count')}</Label>
-                    <Input id="workers" type="number" min={0} value={formData.workers as any} onChange={(e) => handleChange('workers', e.target.value === '' ? '' : Number(e.target.value))} onFocus={selectOnFocus} className="text-center" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="flex flex-col">
-                    <Label htmlFor="input_qty">{t('semi_input_qty')}</Label>
-                    <Input id="input_qty" type="number" inputMode="numeric" min={0} value={formData.input_qty as any} onChange={(e) => handleChange('input_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} />
-                  </div>
-                  <div className="flex flex-col">
-                    <Label htmlFor="rework_qty">{t('rework_input_qty')}</Label>
-                    <Input id="rework_qty" type="number" inputMode="numeric" min={0} value={formData.rework_qty as any} onChange={(e) => handleChange('rework_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} />
-                  </div>
-                  <div className="flex flex-col justify-end">
-                    {(() => {
-                      const totalDefects = (Number(formData.injection_defect)||0) + (Number(formData.outsourcing_defect)||0) + (Number(formData.processing_defect)||0);
-                      const semiInput = Number(formData.input_qty)||0;
-                      const reworkInput = Number(formData.rework_qty)||0;
-                      const expected = Math.max(0, semiInput + reworkInput - totalDefects);
-                      const hasAny = (Number(formData.input_qty)||0) || (Number(formData.actual_qty)||0) || (Number(formData.rework_qty)||0) || totalDefects;
-                      const ok = Number(formData.actual_qty) === expected;
-                      const color = hasAny ? (ok ? 'text-green-600' : 'text-red-600') : 'text-gray-500';
-                      const actual = Number(formData.actual_qty)||0;
-                      return (
-                        <div className={`text-[11px] leading-3 ${color}`}>
-                          <div>{t('prod_qty_short')} {actual} =</div>
-                          <div>+ {t('semi_input_qty_short')} {semiInput}</div>
-                          <div>+ {t('rework_input_qty_short')} {reworkInput}</div>
-                          <div>- {t('total_defect_short')} {totalDefects}</div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </CardContent>
         </Card>
 
         <Card className={`h-full flex flex-col ${compact ? 'col-span-3' : ''}`}>
           <CardHeader className={`font-semibold text-blue-700 ${compact ? 'text-base' : ''}`}>{t('defect_record')}</CardHeader>
           <CardContent className="flex-1 space-y-4">
-            {/* 투입수량은 생산기록(좌측)으로 이동 */}
-            {/* Incoming defects (来料不良) */}
+            {/* 아코디언: Incoming */}
             <Card className="border-green-200">
-              <CardHeader className="py-2 font-medium text-green-700 flex flex-row items-center justify-between">
-                <span>{t('assembly_incoming_defect')}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">{t('sum')}:</span>
-                  <span className={`px-2 py-0.5 rounded-md font-semibold ${badgeClassFor(totalIncoming)}`}>
-                    {totalIncoming}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                {incomingDefectItems.map(it => (
-                  <div key={it.key} className="flex flex-col">
-                    <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>
-                    <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={incomingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
-                      onChange={(e)=> { setDetailsDirty(true); setIncomingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
+              <CardHeader className="py-2 font-medium text-green-700">
+                <button
+                  type="button"
+                  className="w-full flex flex-row items-center justify-between cursor-pointer select-none"
+                  onClick={() => setIncomingOpen(o => !o)}
+                >
+                  <span>{t('assembly_incoming_defect')}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">{t('sum')}:</span>
+                    <span className={`px-2 py-0.5 rounded-md font-semibold ${badgeClassFor(totalIncoming)}`}>{totalIncoming}</span>
                   </div>
-                ))}
-              </CardContent>
+                </button>
+              </CardHeader>
+              {incomingOpen && (
+                <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  {incomingDefectItems.map(it => (
+                    <div key={it.key} className="flex flex-col">
+                      <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>
+                      <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={incomingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
+                        onChange={(e)=> { setDetailsDirty(true); setIncomingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
+                    </div>
+                  ))}
+                </CardContent>
+              )}
             </Card>
-            {/* Processing defects (加工不良) */}
+
+            {/* 아코디언: Processing */}
             <Card className="border-amber-200">
-              <CardHeader className="py-2 font-medium text-amber-700 flex flex-row items-center justify-between">
-                <span>{t('processing_defect')}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">{t('sum')}:</span>
-                  <span className={`px-2 py-0.5 rounded-md font-semibold ${badgeClassFor(totalProcessing)}`}>
-                    {totalProcessing}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                {processingDefectItems.map(it => (
-                  <div key={it.key} className="flex flex-col">
-                    <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>
-                    <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={processingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
-                      onChange={(e)=> { setDetailsDirty(true); setProcessingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
+              <CardHeader className="py-2 font-medium text-amber-700">
+                <button
+                  type="button"
+                  className="w-full flex flex-row items-center justify-between cursor-pointer select-none"
+                  onClick={() => setProcessingOpen(o => !o)}
+                >
+                  <span>{t('processing_defect')}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">{t('sum')}:</span>
+                    <span className={`px-2 py-0.5 rounded-md font-semibold ${badgeClassFor(totalProcessing)}`}>{totalProcessing}</span>
                   </div>
-                ))}
-              </CardContent>
+                </button>
+              </CardHeader>
+              {processingOpen && (
+                <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  {processingDefectItems.map(it => (
+                    <div key={it.key} className="flex flex-col">
+                      <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>
+                      <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={processingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
+                        onChange={(e)=> { setDetailsDirty(true); setProcessingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
+                    </div>
+                  ))}
+                </CardContent>
+              )}
             </Card>
           </CardContent>
         </Card>
