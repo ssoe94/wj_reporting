@@ -629,7 +629,6 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             onChange={(e)=>handleChange('supply_type', e.target.value)}
             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
           >
-            <option value="">{t('supply_type_placeholder_cskd')}</option>
             <option value="JIT">{"JIT / 上线"}</option>
             <option value="CSK">CSKD</option>
             <option value="SVC">SVC</option>
@@ -711,7 +710,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   {incomingDefectItems.map(it => (
                     <div key={it.key} className="flex flex-col">
-                      <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>
+                      <Label className="text-gray-600">{it.key === 'other' ? t('def_incoming_other') : t(`def_${it.key}`)}</Label>
                       <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={incomingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
                         onChange={(e)=> { setDetailsDirty(true); setIncomingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
                     </div>
@@ -739,7 +738,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   {processingDefectItems.map(it => (
                     <div key={it.key} className="flex flex-col">
-                      <Label className="text-gray-600">{t(`def_${it.key}`)}</Label>
+                      <Label className="text-gray-600">{it.key === 'other' ? t('def_processing_other') : t(`def_${it.key}`)}</Label>
                       <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={processingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
                         onChange={(e)=> { setDetailsDirty(true); setProcessingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
                     </div>

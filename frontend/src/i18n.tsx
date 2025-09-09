@@ -338,6 +338,8 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     def_printing: '인쇄',
     def_rework: '가공/수리',
     def_other: '기타',
+    def_incoming_other: '기타입고불량',
+    def_processing_other: '기타가공불량',
     
     // ECO2 카드 UI 번역
     related_part_no: '연관 Part No.',
@@ -705,6 +707,8 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     def_printing: '印刷',
     def_rework: '加工修理',
     def_other: '其他',
+    def_incoming_other: '其他入库不良',
+    def_processing_other: '其他加工不良',
     
     // ECO2 카드 UI 번역
     related_part_no: '相关零件号',
