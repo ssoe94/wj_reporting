@@ -15,6 +15,7 @@ class AssemblyReport(models.Model):
         ('CSK', 'CSK'),
         ('SVC', 'SVC'),
         ('REWORK', 'REWORK'),
+        ('INSPECTION', 'INSPECTION'),
     )
     supply_type = models.CharField('공급유형', max_length=10, choices=SUPPLY_TYPE_CHOICES, blank=True, default='JIT')
     

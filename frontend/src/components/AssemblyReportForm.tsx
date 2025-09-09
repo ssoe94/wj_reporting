@@ -633,6 +633,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             <option value="CSK">CSKD</option>
             <option value="SVC">SVC</option>
             <option value="REWORK">{lang==='zh' ? '返工' : 'REWORK'}</option>
+            <option value="INSPECTION">{lang==='zh' ? '检验' : '검사'}</option>
           </select>
         </div>
       </div>
