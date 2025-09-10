@@ -18,4 +18,11 @@ urlpatterns = [
     path('inventory/email/schedule/', views.schedule_email_report, name='schedule_email_report'),
     path('inventory/email/status/', views.email_status, name='email_status'),
     path('warehouses/', views.WarehouseListView.as_view(), name='warehouse_list'),
+    
+    # 통합 품목 관리 API
+    path('unified-parts/', views.unified_parts_api, name='unified_parts_api'),
+    path('unified-parts/<str:part_no>/', views.unified_parts_detail_api, name='unified_parts_detail'),
+    path('unified-parts/search/', views.unified_parts_search, name='unified_parts_search'),
+    path('unified-parts/models/', views.unified_parts_models, name='unified_parts_models'),
+    path('unified-parts/migrate/', views.migrate_legacy_data, name='migrate_legacy_data'),
 ] 

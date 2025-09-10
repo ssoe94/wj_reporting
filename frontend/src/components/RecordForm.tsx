@@ -1,4 +1,8 @@
 import React, { useState } from 'react';
+import { DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
+import { ko, zhCN } from 'date-fns/locale';
+import dayjs from 'dayjs';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
@@ -14,6 +18,26 @@ import type { PartSpec } from '../hooks/usePartSpecs';
 import machines from '../constants/machines';
 import api from '../lib/api';
 import { PlusCircle, Plus } from 'lucide-react';
+import TimeRangeField, { type ProductionTime } from './TimeRangeField';
+
+const LABELS = {
+  ko: {
+    date: '날짜',
+    time: '시간',
+    cancel: '취소',
+    apply: '적용',
+    start: '시작시간',
+    end: '종료시간',
+  },
+  zh: {
+    date: '日期',
+    time: '时间',
+    cancel: '取消',
+    apply: '确定',
+    start: '开始时间',
+    end: '结束时间',
+  },
+} as const;
 
 // Utility functions (moved here for now, consider extracting to utils/date)
 const roundTo5 = (d: Date) => {
@@ -85,6 +109,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     note: '',
   }));
 
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
   ) => setForm({ ...form, [e.target.id]: e.target.value });
@@ -98,6 +123,51 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   };
   const totalMinutes = diffMinutes();
   const runMinutes = totalMinutes && form.idle ? totalMinutes - Number(form.idle) : 0;
+
+  // TimeRangeField 바인딩 상태 (요약 표시 용)
+  const prodTime: ProductionTime = {
+    startAt: form.start.slice(0,16),
+    endAt: form.end.slice(0,16),
+  };
+  const handleProdTimeChange = (v: ProductionTime) => {
+    // 초는 00으로 정규화
+    const start = `${v.startAt}:00`;
+    const end = `${v.endAt}:00`;
+    setForm(prev => ({ ...prev, start, end }));
+  };
+
+  // Datetime picker state and helpers (start/end), 24h format
+  const [openPicker, setOpenPicker] = useState<null | 'start' | 'end'>(null);
+  const [tempDate, setTempDate] = useState<Date | undefined>(undefined);
+  const [tempHour, setTempHour] = useState<string>('00');
+  const [tempMinute, setTempMinute] = useState<string>('00');
+
+  const openDt = (which: 'start' | 'end') => {
+    setOpenPicker(which);
+    const raw = which === 'start' ? form.start : form.end;
+    if (raw) {
+      const d = dayjs(raw);
+      setTempDate(d.toDate());
+      setTempHour(d.format('HH'));
+      setTempMinute(d.format('mm'));
+    } else {
+      const d = dayjs();
+      setTempDate(d.toDate());
+      setTempHour(d.format('HH'));
+      setTempMinute(d.format('mm'));
+    }
+  };
+
+  const applyDt = () => {
+    if (!openPicker) return;
+    const d = tempDate ? dayjs(tempDate) : dayjs();
+    const isoDate = d.format('YYYY-MM-DD');
+    const hm = `${tempHour}:${tempMinute}`;
+    const value = `${isoDate}T${hm}`;
+    const fakeEvent = { target: { id: openPicker, value } } as any;
+    handleChange(fakeEvent);
+    setOpenPicker(null);
+  };
 
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -437,17 +507,13 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         <Card className="h-full flex flex-col">
           <CardHeader className="font-semibold text-blue-700">{t('prod_time')}</CardHeader>
           <CardContent className="flex-1 space-y-4">
-            {/* 시작/종료 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col">
-                <Label htmlFor="start">{t('start_dt')}</Label>
-                <Input id="start" type="datetime-local" step={300} value={form.start} onChange={handleChange} className="text-center" />
-              </div>
-              <div className="flex flex-col">
-                <Label htmlFor="end">{t('end_dt')}</Label>
-                <Input id="end" type="datetime-local" step={300} value={form.end} onChange={handleChange} className="text-center" />
-              </div>
-            </div>
+            {/* 시작/종료 SoCar 스타일 컴포넌트 */}
+            <TimeRangeField
+              value={prodTime}
+              onChange={handleProdTimeChange}
+              locale={lang==='zh' ? 'zh' : 'ko'}
+              minuteStep={5}
+            />
             {/* 총시간/부동시간 */}
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col">

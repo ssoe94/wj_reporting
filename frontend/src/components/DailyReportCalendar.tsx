@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
-import { ko } from 'date-fns/locale';
+import { ko, zhCN } from 'date-fns/locale';
 import api from '../lib/api';
+import { useLang } from '../i18n';
 
 interface CalendarData {
   [date: string]: {
@@ -18,6 +19,7 @@ interface DailyReportCalendarProps {
 }
 
 export default function DailyReportCalendar({ onDateSelect, selectedDate }: DailyReportCalendarProps) {
+  const { lang } = useLang();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarData, setCalendarData] = useState<CalendarData>({});
   const [, setIsLoading] = useState(false);
@@ -137,7 +139,11 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
         </button>
         
         <h2 className="text-lg font-semibold">
-          {format(currentDate, 'yyyy년 M월', { locale: ko })}
+          {format(
+            currentDate,
+            lang === 'zh' ? 'yyyy年 M月' : 'yyyy년 M월',
+            { locale: lang === 'zh' ? zhCN : ko }
+          )}
         </h2>
         
         <button
@@ -152,7 +158,7 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
 
       {/* 요일 헤더 */}
       <div className="grid grid-cols-7 gap-1 mb-2">
-        {['일', '월', '화', '수', '목', '금', '토'].map(day => (
+        {(lang === 'zh' ? ['日','一','二','三','四','五','六'] : ['일','월','화','수','목','금','토']).map(day => (
           <div key={day} className="text-center text-sm font-medium text-gray-600 py-2">
             {day}
           </div>
@@ -191,7 +197,7 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
                 `}
               >
                 <span className={isToday ? 'font-bold' : ''}>
-                  {format(day, 'd')}
+                  {format(day, 'd', { locale: lang === 'zh' ? zhCN : ko })}
                 </span>
                 {getStatusIcon(dateData)}
               </button>
@@ -205,17 +211,17 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
         <div className="flex flex-wrap gap-4 text-xs">
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-            <span>스냅샷 생성됨</span>
+            <span>{lang === 'zh' ? '已生成快照' : '스냅샷 생성됨'}</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-            <span>요약 완료</span>
+            <span>{lang === 'zh' ? '已完成汇总' : '요약 완료'}</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 bg-blue-500 rounded-full flex items-center justify-center">
               <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
             </div>
-            <span>이메일 발송됨</span>
+            <span>{lang === 'zh' ? '已发送邮件' : '이메일 발송됨'}</span>
           </div>
         </div>
       </div>

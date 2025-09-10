@@ -5,8 +5,8 @@ from rest_framework.generics import ListAPIView
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from django_filters import rest_framework as df_filters
-from .serializers import FactInventorySerializer
-from .models import FactInventory, StagingInventory
+from .serializers import FactInventorySerializer, UnifiedPartSpecSerializer
+from .models import FactInventory, StagingInventory, UnifiedPartSpec
 from django.core.management import call_command
 from rest_framework.pagination import PageNumberPagination
 from django.http import HttpResponse
@@ -1116,4 +1116,223 @@ def daily_report_export_csv(request):
         
         writer.writerow(row)
     
-    return response 
+    return response
+
+
+# =================================
+# 통합 품목 관리 API
+# =================================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def unified_parts_api(request):
+    """통합 품목 스펙 API - 사출/가공/품질에서 공통 사용"""
+    
+    if request.method == 'GET':
+        # 검색 및 필터링 파라미터
+        search = request.GET.get('search', '')
+        mode = request.GET.get('mode', 'all')  # all, injection, assembly, quality
+        active_only = request.GET.get('active_only', 'true').lower() == 'true'
+        
+        # 쿼리셋 기본 설정
+        queryset = UnifiedPartSpec.objects.all()
+        
+        # 활성 상태 필터
+        if active_only:
+            queryset = queryset.filter(is_active=True)
+        
+        # 시스템별 필터
+        if mode != 'all':
+            queryset = queryset.filter(source_system=mode)
+        
+        # 검색 필터
+        if search:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(part_no__icontains=search) |
+                Q(model_code__icontains=search) |
+                Q(description__icontains=search)
+            )
+        
+        # 정렬
+        queryset = queryset.order_by('part_no', '-valid_from')
+        
+        # 페이지네이션 (선택사항)
+        page_size = int(request.GET.get('page_size', 50))
+        page = int(request.GET.get('page', 1))
+        
+        if page_size > 0:
+            start = (page - 1) * page_size
+            end = start + page_size
+            results = queryset[start:end]
+            total = queryset.count()
+            
+            serializer = UnifiedPartSpecSerializer(results, many=True)
+            return Response({
+                'results': serializer.data,
+                'total': total,
+                'page': page,
+                'page_size': page_size,
+                'pages': (total + page_size - 1) // page_size
+            })
+        else:
+            # 페이지네이션 없음
+            serializer = UnifiedPartSpecSerializer(queryset, many=True)
+            return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # 새로운 품목 스펙 생성
+        serializer = UnifiedPartSpecSerializer(data=request.data)
+        if serializer.is_valid():
+            # 중복 part_no 체크
+            part_no = serializer.validated_data['part_no']
+            if UnifiedPartSpec.objects.filter(part_no=part_no).exists():
+                return Response({
+                    'error': f'Part No "{part_no}"가 이미 존재합니다.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 저장
+            part_spec = serializer.save()
+            return Response(
+                UnifiedPartSpecSerializer(part_spec).data, 
+                status=status.HTTP_201_CREATED
+            )
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def unified_parts_detail_api(request, part_no):
+    """통합 품목 스펙 상세 API"""
+    try:
+        part_spec = UnifiedPartSpec.objects.get(part_no=part_no, is_active=True)
+    except UnifiedPartSpec.DoesNotExist:
+        return Response({
+            'error': f'Part No "{part_no}"를 찾을 수 없습니다.'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = UnifiedPartSpecSerializer(part_spec)
+        return Response(serializer.data)
+    
+    elif request.method == 'PATCH':
+        serializer = UnifiedPartSpecSerializer(part_spec, data=request.data, partial=True)
+        if serializer.is_valid():
+            part_spec = serializer.save()
+            return Response(UnifiedPartSpecSerializer(part_spec).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        # 실제 삭제 대신 is_active = False로 설정 (소프트 삭제)
+        part_spec.is_active = False
+        part_spec.save()
+        return Response({'message': '품목이 비활성화되었습니다.'})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def unified_parts_search(request):
+    """통합 품목 검색 API (자동완성용)"""
+    query = request.GET.get('q', '')
+    limit = int(request.GET.get('limit', 20))
+    mode = request.GET.get('mode', 'all')
+    
+    if not query or len(query) < 2:
+        return Response([])
+    
+    from django.db.models import Q
+    queryset = UnifiedPartSpec.objects.filter(is_active=True)
+    
+    # 시스템별 필터
+    if mode != 'all':
+        queryset = queryset.filter(source_system=mode)
+    
+    # 검색 필터
+    queryset = queryset.filter(
+        Q(part_no__icontains=query) |
+        Q(model_code__icontains=query) |
+        Q(description__icontains=query)
+    ).order_by('part_no')[:limit]
+    
+    # 간단한 응답 형식
+    results = []
+    for part in queryset:
+        results.append({
+            'part_no': part.part_no,
+            'model_code': part.model_code,
+            'description': part.description,
+            'display_name': part.display_name,
+            'source_system': part.source_system
+        })
+    
+    return Response(results)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def unified_parts_models(request):
+    """모델 코드 목록 API (중복 제거)"""
+    search = request.GET.get('search', '')
+    
+    # 모델 코드별로 그룹핑하여 중복 제거
+    queryset = UnifiedPartSpec.objects.filter(is_active=True)
+    
+    if search:
+        queryset = queryset.filter(model_code__icontains=search)
+    
+    # 모델 코드와 설명을 함께 조회 (중복 제거)
+    models = queryset.values('model_code', 'description').distinct().order_by('model_code')
+    
+    # 결과 포맷팅
+    results = []
+    seen = set()
+    for item in models:
+        key = f"{item['model_code']}_{item['description'] or ''}"
+        if key not in seen:
+            desc_part = f" - {item['description']}" if item['description'] else ""
+            results.append({
+                'model_code': item['model_code'],
+                'description': item['description'] or '',
+                'display_name': f"{item['model_code']}{desc_part}"
+            })
+            seen.add(key)
+    
+    return Response(results)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def migrate_legacy_data(request):
+    """기존 데이터 마이그레이션 실행 API"""
+    dry_run = request.data.get('dry_run', True)
+    force = request.data.get('force', False)
+    
+    try:
+        from django.core.management import call_command
+        from io import StringIO
+        
+        # 명령어 실행 및 출력 캡처
+        out = StringIO()
+        
+        args = ['migrate_to_unified_parts']
+        if dry_run:
+            args.append('--dry-run')
+        if force:
+            args.append('--force')
+        
+        call_command(*args, stdout=out)
+        output = out.getvalue()
+        out.close()
+        
+        return Response({
+            'success': True,
+            'output': output,
+            'dry_run': dry_run
+        })
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

@@ -86,6 +86,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
   const { data: asmPartspecsByModel = [] } = useAssemblyPartspecsByModel(selectedModelDesc?.model_code);
   const { data: asmPartNoSearch = [] } = useAssemblyPartNoSearch(productQuery || '');
   
+  
   const uniqueModelDesc = React.useMemo(() => {
     const map = new Map<string, PartSpec>();
     searchResults.forEach((it) => {

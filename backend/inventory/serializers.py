@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import StagingInventory, FactInventory, DailyInventorySnapshot
+from .models import StagingInventory, FactInventory, DailyInventorySnapshot, UnifiedPartSpec
 
 
 class StagingInventorySerializer(serializers.ModelSerializer):
@@ -18,6 +18,29 @@ class DailyInventorySnapshotSerializer(serializers.ModelSerializer):
     class Meta:
         model = DailyInventorySnapshot
         fields = '__all__'
+
+
+class UnifiedPartSpecSerializer(serializers.ModelSerializer):
+    """통합 품목 스펙 시리얼라이저"""
+    class Meta:
+        model = UnifiedPartSpec
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+
+    def create(self, validated_data):
+        """통합 품목 생성"""
+        # valid_from이 없으면 현재 날짜로 설정
+        if 'valid_from' not in validated_data:
+            from django.utils import timezone
+            validated_data['valid_from'] = timezone.now().date()
+        
+        return super().create(validated_data)
+
+    def to_representation(self, instance):
+        """직렬화 출력에 display_name 추가"""
+        data = super().to_representation(instance)
+        data['display_name'] = instance.display_name
+        return data
 
 
 class DailyReportSerializer(serializers.Serializer):

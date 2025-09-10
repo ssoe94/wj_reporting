@@ -29,6 +29,8 @@
   }
 }
 
+/* DayPicker selected day as rounded rectangle with subtle background */
+
 /* 라이트 모드: 구형 PC와 윈도우7 최적화 */
 .lite-mode {
   /* 전체 배경을 완전히 흰색으로 */

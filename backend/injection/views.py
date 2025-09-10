@@ -2,6 +2,7 @@ from rest_framework import viewsets, generics, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.db import models as django_models
+from django.db.models import Q
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 
@@ -72,6 +73,157 @@ class PartSpecViewSet(viewsets.ModelViewSet):
     # 검색/필터 활성화: 모델코드 기반 추천 및 키워드 검색 지원
     search_fields = ['part_no', 'description', 'model_code']
     filterset_fields = ['model_code', 'part_no', 'description']
+    
+    def list(self, request, *args, **kwargs):
+        """Models 데이터 + MES 데이터 통합 검색"""
+        search = request.query_params.get('search', '').strip()
+        model_code = request.query_params.get('model_code', '').strip()
+        page_size = int(request.query_params.get('page_size', 20))
+        page = int(request.query_params.get('page', 1))
+        
+        # 1. Models 데이터 (PartSpec) 검색 - 우선순위 높음
+        models_queryset = self.get_queryset()
+        if search:
+            models_queryset = models_queryset.filter(
+                Q(part_no__icontains=search) |
+                Q(model_code__icontains=search) |
+                Q(description__icontains=search)
+            )
+        if model_code:
+            models_queryset = models_queryset.filter(model_code__icontains=model_code)
+        
+        models_data = []
+        for part in models_queryset:
+            models_data.append({
+                'id': part.id,
+                'part_no': part.part_no,
+                'model_code': part.model_code,
+                'description': part.description or '',
+                'mold_type': part.mold_type or '',
+                'color': part.color or '',
+                'resin_type': part.resin_type or '',
+                'resin_code': part.resin_code or '',
+                'net_weight_g': str(part.net_weight_g) if part.net_weight_g else '',
+                'sr_weight_g': str(part.sr_weight_g) if part.sr_weight_g else '',
+                'tonnage': part.tonnage,
+                'cycle_time_sec': part.cycle_time_sec,
+                'efficiency_rate': str(part.efficiency_rate) if part.efficiency_rate else '',
+                'cavity': part.cavity,
+                'resin_loss_pct': str(part.resin_loss_pct) if part.resin_loss_pct else '',
+                'defect_rate_pct': str(part.defect_rate_pct) if part.defect_rate_pct else '',
+                'valid_from': part.valid_from.strftime('%Y-%m-%d') if part.valid_from else '',
+                'created_at': part.created_at.isoformat() if part.created_at else '',
+                'source': 'models'  # 데이터 출처 표시
+            })
+        
+        # 2. MES 데이터 (AssemblyPartSpec + Production Reports) 검색
+        mes_data = []
+        if search or model_code:
+            try:
+                from assembly.models import AssemblyPartSpec, AssemblyReport
+                
+                # AssemblyPartSpec에서 검색
+                assembly_filter = Q()
+                if search:
+                    assembly_filter |= (
+                        Q(part_no__icontains=search) |
+                        Q(model_code__icontains=search) |
+                        Q(description__icontains=search)
+                    )
+                if model_code:
+                    assembly_filter &= Q(model_code__icontains=model_code)
+                
+                assembly_parts = AssemblyPartSpec.objects.filter(assembly_filter)[:20] if assembly_filter.children else []
+                
+                for part in assembly_parts:
+                    # Models에 이미 없는 것만 추가 (중복 방지)
+                    if not any(m['part_no'] == part.part_no for m in models_data):
+                        mes_data.append({
+                            'id': f"assembly_{part.id}",
+                            'part_no': part.part_no,
+                            'model_code': part.model_code,
+                            'description': part.description or '',
+                            'process_type': part.process_type or '',
+                            'material_type': part.material_type or '',
+                            'standard_cycle_time': part.standard_cycle_time,
+                            'standard_worker_count': part.standard_worker_count,
+                            'valid_from': part.valid_from.strftime('%Y-%m-%d') if part.valid_from else '',
+                            'source': 'mes_assembly'
+                        })
+                
+                # AssemblyReport (생산 기록)에서도 검색
+                report_filter = Q()
+                if search:
+                    report_filter |= (
+                        Q(part_no__icontains=search) |
+                        Q(model__icontains=search)
+                    )
+                if model_code:
+                    report_filter &= Q(model__icontains=model_code)
+                
+                assembly_reports = AssemblyReport.objects.filter(report_filter).values('part_no', 'model').distinct()[:20] if report_filter.children else []
+                
+                for report in assembly_reports:
+                    part_no = report['part_no']
+                    model = report['model']
+                    # 이미 추가되지 않은 것만 추가
+                    if (not any(m['part_no'] == part_no for m in models_data) and
+                        not any(m['part_no'] == part_no for m in mes_data)):
+                        mes_data.append({
+                            'id': f"report_assembly_{part_no}",
+                            'part_no': part_no,
+                            'model_code': model,
+                            'description': '',
+                            'source': 'mes_report_assembly'
+                        })
+                
+                # InjectionReport (사출 생산 기록)에서도 검색
+                injection_filter = Q()
+                if search:
+                    injection_filter |= (
+                        Q(part_no__icontains=search) |
+                        Q(model__icontains=search)
+                    )
+                if model_code:
+                    injection_filter &= Q(model__icontains=model_code)
+                
+                injection_reports = InjectionReport.objects.filter(injection_filter).values('part_no', 'model', 'type').distinct()[:20] if injection_filter.children else []
+                
+                for report in injection_reports:
+                    part_no = report['part_no']
+                    model = report['model']
+                    description = report['type'] or ''
+                    # 이미 추가되지 않은 것만 추가
+                    if (not any(m['part_no'] == part_no for m in models_data) and
+                        not any(m['part_no'] == part_no for m in mes_data)):
+                        mes_data.append({
+                            'id': f"report_injection_{part_no}",
+                            'part_no': part_no,
+                            'model_code': model,
+                            'description': description,
+                            'source': 'mes_report_injection'
+                        })
+                        
+            except Exception as e:
+                # MES 데이터 조회 실패시 Models 데이터만 반환
+                pass
+        
+        # 3. 결과 통합 (Models 우선, MES 보완)
+        all_results = models_data + mes_data
+        
+        # 4. 페이지네이션
+        total_count = len(all_results)
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        page_results = all_results[start_idx:end_idx]
+        
+        # 5. 페이지네이션 응답 형식으로 반환
+        return Response({
+            'count': total_count,
+            'next': f"?page={page + 1}&search={search}&page_size={page_size}" if end_idx < total_count else None,
+            'previous': f"?page={page - 1}&search={search}&page_size={page_size}" if page > 1 else None,
+            'results': page_results
+        })
 
 class EcoPartSpecViewSet(viewsets.ModelViewSet):
     queryset = EcoPartSpec.objects.all()

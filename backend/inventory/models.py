@@ -1,4 +1,65 @@
 from django.db import models
+from django.core.validators import MinValueValidator
+
+
+class UnifiedPartSpec(models.Model):
+    """통합 품목 마스터 - 사출/가공/품질에서 공통 사용"""
+    # 기본 정보 (필수)
+    part_no = models.CharField('Part No', max_length=100, unique=True)
+    model_code = models.CharField('모델 코드', max_length=100)
+    description = models.CharField('설명', max_length=200, blank=True)
+    valid_from = models.DateField('유효 시작일')
+    
+    # 공통 정보
+    color = models.CharField('색상', max_length=30, blank=True)
+    
+    # 사출 관련 필드
+    mold_type = models.CharField('금형 타입', max_length=50, blank=True)
+    resin_type = models.CharField('Resin 종류', max_length=50, blank=True)
+    resin_code = models.CharField('Resin 코드', max_length=50, blank=True)
+    net_weight_g = models.DecimalField('Net 중량(g)', max_digits=8, decimal_places=2, null=True, blank=True)
+    sr_weight_g = models.DecimalField('S/R 중량(g)', max_digits=8, decimal_places=2, null=True, blank=True)
+    cycle_time_sec = models.PositiveIntegerField('사이클 타임(초)', null=True, blank=True)
+    cavity = models.PositiveSmallIntegerField('Cavity', null=True, blank=True)
+    tonnage = models.PositiveIntegerField('형체력(T)', null=True, blank=True)
+    efficiency_rate = models.DecimalField('효율(%)', max_digits=5, decimal_places=2, null=True, blank=True)
+    resin_loss_pct = models.DecimalField('Resin Loss(%)', max_digits=5, decimal_places=2, null=True, blank=True)
+    defect_rate_pct = models.DecimalField('불량률(%)', max_digits=5, decimal_places=2, null=True, blank=True)
+    
+    # 가공 관련 필드
+    process_type = models.CharField('가공 타입', max_length=50, blank=True)
+    material_type = models.CharField('소재 종류', max_length=50, blank=True)
+    standard_cycle_time = models.PositiveIntegerField('표준 사이클 타임(분)', null=True, blank=True)
+    standard_worker_count = models.PositiveSmallIntegerField('표준 작업자수', null=True, blank=True, default=1)
+    
+    # 메타데이터
+    source_system = models.CharField('생성 시스템', max_length=20, default='unified', 
+                                   choices=[('injection', '사출'), ('assembly', '가공'), ('quality', '품질'), ('unified', '통합')])
+    is_active = models.BooleanField('활성 상태', default=True)
+    
+    created_at = models.DateTimeField('생성일', auto_now_add=True)
+    updated_at = models.DateTimeField('수정일', auto_now=True)
+
+    class Meta:
+        verbose_name = '통합 품목 스펙'
+        verbose_name_plural = '통합 품목 스펙 목록'
+        indexes = [
+            models.Index(fields=['part_no']),
+            models.Index(fields=['model_code']),
+            models.Index(fields=['part_no', 'model_code']),
+            models.Index(fields=['valid_from']),
+            models.Index(fields=['is_active']),
+        ]
+        ordering = ['part_no', '-valid_from']
+
+    def __str__(self):
+        return f"{self.part_no} - {self.model_code}"
+
+    @property
+    def display_name(self):
+        """표시용 이름: Part No - Model (Description)"""
+        desc = f" ({self.description})" if self.description else ""
+        return f"{self.part_no} - {self.model_code}{desc}"
 
 
 class StagingInventory(models.Model):
