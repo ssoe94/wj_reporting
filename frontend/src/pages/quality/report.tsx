@@ -407,8 +407,7 @@ export default function QualityReport() {
                         } as any;
                       }
                     }
-                  
-                  setPrefillSimilar(prefillData);
+                  } catch (_) {}
                   setNewPartForm((prev: any) => ({
                     ...prev,
                     part_no: desired,
@@ -552,14 +551,6 @@ export default function QualityReport() {
   );
 }
 
-
-
-  </div>
-    </div>
-      )}
-    </>
-  );
-}
 
 
 
