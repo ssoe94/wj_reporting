@@ -1,7 +1,4 @@
 import React, { useState } from 'react';
-import { DayPicker } from 'react-day-picker';
-import 'react-day-picker/dist/style.css';
-import { ko, zhCN } from 'date-fns/locale';
 import dayjs from 'dayjs';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -19,25 +16,6 @@ import machines from '../constants/machines';
 import api from '../lib/api';
 import { PlusCircle, Plus } from 'lucide-react';
 import TimeRangeField, { type ProductionTime } from './TimeRangeField';
-
-const LABELS = {
-  ko: {
-    date: '날짜',
-    time: '시간',
-    cancel: '취소',
-    apply: '적용',
-    start: '시작시간',
-    end: '종료시간',
-  },
-  zh: {
-    date: '日期',
-    time: '时间',
-    cancel: '取消',
-    apply: '确定',
-    start: '开始时间',
-    end: '结束时间',
-  },
-} as const;
 
 // Utility functions (moved here for now, consider extracting to utils/date)
 const roundTo5 = (d: Date) => {
@@ -141,32 +119,6 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   const [tempDate, setTempDate] = useState<Date | undefined>(undefined);
   const [tempHour, setTempHour] = useState<string>('00');
   const [tempMinute, setTempMinute] = useState<string>('00');
-
-  const openDt = (which: 'start' | 'end') => {
-    setOpenPicker(which);
-    const raw = which === 'start' ? form.start : form.end;
-    if (raw) {
-      const d = dayjs(raw);
-      setTempDate(d.toDate());
-      setTempHour(d.format('HH'));
-      setTempMinute(d.format('mm'));
-    } else {
-      const d = dayjs();
-      setTempDate(d.toDate());
-      setTempHour(d.format('HH'));
-      setTempMinute(d.format('mm'));
-    }
-  };
-
-  const applyDt = () => {
-    if (!openPicker) return;
-    const d = tempDate ? dayjs(tempDate) : dayjs();
-    const isoDate = d.format('YYYY-MM-DD');
-    const hm = `${tempHour}:${tempMinute}`;
-    const value = `${isoDate}T${hm}`;
-    const fakeEvent = { target: { id: openPicker, value } } as any;
-    handleChange(fakeEvent);
-    setOpenPicker(null);
   };
 
   const handleSubmit = async (ev: React.FormEvent) => {

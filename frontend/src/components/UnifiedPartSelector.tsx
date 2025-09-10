@@ -161,7 +161,7 @@ export default function UnifiedPartSelector({
         
         // 옵션 동일성 비교
         isOptionEqualToValue={(option, value) => {
-          if ('isAddNew' in option) return false;
+          if ('isAddNew' in option || 'isAddNew' in value) return false;
           return option.part_no === value?.part_no;
         }}
         

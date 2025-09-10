@@ -81,7 +81,7 @@ export default function UnifiedModelSelector({
       
       // 옵션 동일성 비교
       isOptionEqualToValue={(option, value) => {
-        if ('isAddNew' in option) return false;
+        if ('isAddNew' in option || 'isAddNew' in value) return false;
         return option.model_code === value?.model_code && 
                (option.description || '') === (value?.description || '');
       }}

@@ -1,7 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { Button } from './ui/button';
-import { Label } from './ui/label';
 import dayjs from 'dayjs';
 import { ko as dfKo, zhCN } from 'date-fns/locale';
 import { DayPicker } from 'react-day-picker';
@@ -99,7 +98,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
   const [eHour, setEHour] = React.useState<string>(dayjs(end).format('HH'));
   const [eMin, setEMin] = React.useState<string>(dayjs(end).format('mm'));
 
-  const localeObj = locale === 'zh' ? zhCN : dfKo;
+  // const localeObj = locale === 'zh' ? zhCN : dfKo; // Currently unused
   const sDT = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), Number(sHour), Number(sMin), 0);
   const eDT = new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), Number(eHour), Number(eMin), 0);
   const durMin = Math.max(0, Math.floor((eDT.getTime() - sDT.getTime()) / 60000));

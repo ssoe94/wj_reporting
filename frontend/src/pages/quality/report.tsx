@@ -44,11 +44,8 @@ export default function QualityReport() {
     description: '',
   });
   const [prefillOriginal, setPrefillOriginal] = useState<any | null>(null);
-  const [prefillSimilar, setPrefillSimilar] = useState<Partial<PartSpec> | null>(null);
-  const [showDtPicker, setShowDtPicker] = useState(false);
+  // Removed unused variables
   const parsed = form.report_dt ? dayjs(form.report_dt) : null;
-  const [tempDate, setTempDate] = useState<Date | undefined>(parsed ? parsed.toDate() : undefined);
-  const [tempTime, setTempTime] = useState<string>(parsed ? parsed.format('HH:mm') : '');
 
   const { data: searchResults = [] } = usePartSpecSearch(productQuery.toUpperCase());
   const { data: modelParts = [] } = usePartListByModel(selectedModelDesc?.model_code);
@@ -277,8 +274,8 @@ export default function QualityReport() {
               onInputChange={(_, v) => setProductQuery(v)}
               value={selectedModelDesc}
               onChange={(_, v) => {
-                setSelectedModelDesc(v);
-                if (v) {
+                setSelectedModelDesc(v as PartSpec | null);
+                if (v && 'model_code' in v) {
                   setForm((f)=>({ ...f, model: v.model_code, part_no: '' }));
                   setSelectedPartSpec(null);
                 }
@@ -541,7 +538,7 @@ export default function QualityReport() {
                   setShowAddPartModal(false);
                   const createdPart = newPart.data || {};
                   const createdModelCode = createdPart.model_code || modelCode;
-                  const createdDesc = createdPart.description || description || '';
+                  // const createdDesc = createdPart.description || description || ''; // Currently unused
                   setProductQuery(createdModelCode);
                   setForm((f) => ({ ...f, part_no: createdPart.part_no || partNo, model: createdModelCode }));
                 }catch(err:any){
