@@ -73,9 +73,9 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   if (!date) return null;
   if (!list.length) return <p className="text-gray-500 text-sm">{t('no_data')}</p>;
 
-  const totalPlan = list.reduce((sum, r) => sum + (r.plan_qty || 0), 0);
-  const totalActual = list.reduce((sum, r) => sum + (r.actual_qty || 0), 0);
-  const totalDefect = list.reduce((sum, r) => sum + (r.total_defect_qty || 0), 0);
+  const totalPlan = list.reduce((sum: number, r: AssemblyReport) => sum + (r.plan_qty || 0), 0);
+  const totalActual = list.reduce((sum: number, r: AssemblyReport) => sum + (r.actual_qty || 0), 0);
+  const totalDefect = list.reduce((sum: number, r: AssemblyReport) => sum + (r.total_defect_qty || 0), 0);
   const achievementRate = totalPlan > 0 ? (totalActual / totalPlan) * 100 : 0;
 
   return (
@@ -95,7 +95,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
           </tr>
         </thead>
         <tbody>
-          {list.map((r: any) => (
+          {list.map((r: AssemblyReport) => (
             <tr
               key={r.id}
               className="border-t border-gray-200 last:border-b-0 hover:bg-green-50 cursor-pointer"
@@ -266,7 +266,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                           <td className="px-3 py-1 text-right font-mono font-semibold">{(() => {
                             const pr = (detail as any)?.processing_defects_detail || {};
                             const items = ['scratch','printing','rework','other'];
-                            return items.reduce((a,k)=> a + (Number(pr[k]||0)), 0);
+                            return items.reduce((a: number, k: string)=> a + (Number(pr[k]||0)), 0);
                           })()}</td>
                         </tr>
                       </tbody>

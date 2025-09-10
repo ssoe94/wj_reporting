@@ -8,7 +8,7 @@ import PermissionButton from '../../components/common/PermissionButton';
 import { toast } from 'react-toastify';
 import { Autocomplete, TextField } from '@mui/material';
 import DateTimeField from '../../components/DateTimeField';
-import dayjs from 'dayjs';
+
 import type { PartSpec } from '../../hooks/usePartSpecs';
 import { usePartSpecSearch, usePartListByModel } from '../../hooks/usePartSpecs';
 import { useAssemblyPartsByModel, useAssemblyPartspecsByModel, useAssemblyPartNoSearch, useAssemblyModelSearch } from '../../hooks/useAssemblyParts';
@@ -44,7 +44,7 @@ export default function QualityReport() {
     description: '',
   });
   const [prefillOriginal, setPrefillOriginal] = useState<any | null>(null);
-  const [prefillSimilar, setPrefillSimilar] = useState<Partial<PartSpec> | null>(null);
+  
   // Removed unused variables
   
 
@@ -396,7 +396,7 @@ export default function QualityReport() {
                       list = all.filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9));
                       if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc.model_code);
                     }
-                    setPrefillSimilar(null);
+
                     if (list.length > 0) {
                       const top = list[0];
                       const ok = window.confirm(t('similar_parts_prompt').replace('{first}', top.part_no).replace('{count}', String(list.length)));
@@ -407,9 +407,7 @@ export default function QualityReport() {
                         } as any;
                       }
                     }
-                  } catch (_) {
-                    setPrefillSimilar(null);
-                  }
+                  
                   setPrefillSimilar(prefillData);
                   setNewPartForm((prev: any) => ({
                     ...prev,
@@ -548,6 +546,15 @@ export default function QualityReport() {
               }}>{t('save')}</button>
             </div>
       </div>
+    </div>
+      )}
+    </>
+  );
+}
+
+
+
+  </div>
     </div>
       )}
     </>
