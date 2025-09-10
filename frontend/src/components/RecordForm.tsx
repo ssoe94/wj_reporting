@@ -119,7 +119,6 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   const [tempDate, setTempDate] = useState<Date | undefined>(undefined);
   const [tempHour, setTempHour] = useState<string>('00');
   const [tempMinute, setTempMinute] = useState<string>('00');
-  };
 
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
