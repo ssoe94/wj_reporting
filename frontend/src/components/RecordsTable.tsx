@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { useReports } from '@/hooks/useReports';
 import { useLang } from '@/i18n';
 import type { Report } from '@/hooks/useReports';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import api from '@/lib/api';
 import { toast } from 'react-toastify';
 import { Input } from '@/components/ui/input';
@@ -12,21 +11,11 @@ import { Dialog } from '@headlessui/react';
 import { Textarea } from '@/components/ui/textarea';
 import { useQueryClient } from '@tanstack/react-query';
 
-
-
 export default function RecordsTable() {
   const { data: reports = [], isLoading } = useReports();
-  const [expanded, setExpanded] = useState<{ [key: string]: boolean }>({});
   const [editing, setEditing] = useState<Report | null>(null);
   const { t } = useLang();
   const queryClient = useQueryClient();
-
-  const grouped = reports.reduce<{ [key: string]: Report[] }>((acc, r) => {
-    acc[r.date] = acc[r.date] ? [...acc[r.date], r] : [r];
-    return acc;
-  }, {});
-
-  const toggle = (date: string) => setExpanded((prev) => ({ ...prev, [date]: !prev[date] }));
 
   const closeDialog = () => setEditing(null);
 
@@ -56,110 +45,107 @@ export default function RecordsTable() {
 
   if (isLoading) return <p className="text-gray-500">{t('loading')}</p>;
 
+  const sortedReports = [...reports].sort((a, b) => {
+    if (a.date > b.date) return -1;
+    if (a.date < b.date) return 1;
+    return (a.machine_no ?? 0) - (b.machine_no ?? 0);
+  });
+
+  const totalPlan = sortedReports.reduce((s, r) => s + r.plan_qty, 0);
+  const totalActual = sortedReports.reduce((s, r) => s + r.actual_qty, 0);
+  const totalDefect = sortedReports.reduce((s, r) => s + r.actual_defect, 0);
+  const totalOperationTime = sortedReports.reduce((s, r) => s + (r.operation_time || 0), 0);
+
   return (
-    <Card>
-      <CardHeader className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-blue-700">{t('records_title')}</h2>
-      </CardHeader>
-      <CardContent>
-        {Object.keys(grouped).length === 0 ? (
-          <p className="text-gray-500">{t('no_data')}</p>
-        ) : (
-          <div className="space-y-4">
-            {Object.entries(grouped).map(([date, list]) => {
-              const open = !!expanded[date];
-              const totalPlan = list.reduce((s, r) => s + r.plan_qty, 0);
-              const totalActual = list.reduce((s, r) => s + r.actual_qty, 0);
-              return (
-                <div key={date}>
-                  <button
-                    className="flex w-full items-center justify-between rounded-md bg-gray-100 px-4 py-2 hover:bg-gray-200"
-                    onClick={() => toggle(date)}
-                  >
-                    <span className="font-medium">{date}</span>
-                    <span className="text-sm text-gray-600">
-                      {t('plan_qty').replace('*','')} {totalPlan} / {t('actual_qty').replace('*','')} {totalActual}
-                    </span>
-                    {open ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                  </button>
-                  {open && (
-                    <table className="mt-2 w-full text-sm">
-                      <thead className="bg-gray-50 text-xs text-gray-500">
-                        <tr>
-                          <th className="px-2 py-1 text-center">{t('header_model')}</th>
-                          <th className="px-2 py-1 text-center">{t('header_machine')}</th>
-                          <th className="px-2 py-1 text-center">{t('header_tonnage')}</th>
-                          <th className="px-2 py-1 text-center">{t('header_plan')}</th>
-                          <th className="px-2 py-1 text-center">{t('header_actual')}</th>
-                          <th className="px-2 py-1 text-center">{t('header_defect')}</th>
-                          <th className="px-2 py-1 text-center">{t('header_start')}</th>
-                          <th className="px-2 py-1 text-center">{t('header_end')}</th>
-                          <th className="px-2 py-1 text-center">{t('header_run')}</th>
-                          <th className="px-2 py-1 text-center w-52">{t('header_note')}</th>
-                          <th className="px-2 py-1 text-center w-20">{t('header_action')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...list].sort((a, b) => (a.machine_no ?? 0) - (b.machine_no ?? 0)).map((r) => (
-                          <tr key={r.id} className="border-b last:border-0">
-                            <td className="px-2 py-1 text-center whitespace-pre-line">
-                              <span className="block">
-                                {r.model}
-                                {r.section ? ` - ${r.section}` : ''}
-                              </span>
-                              {r.part_no && (
-                                <span className="block text-gray-500">{r.part_no}</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-1 text-center">{r.machine_no}</td>
-                            <td className="px-2 py-1 text-center">{r.tonnage}</td>
-                            <td className="px-2 py-1 text-center">{r.plan_qty}</td>
-                            <td className="px-2 py-1 text-center">{r.actual_qty}</td>
-                            <td className="px-2 py-1 text-center">{r.actual_defect}</td>
-                            <td className="px-2 py-1 text-center whitespace-nowrap">
-                              {r.start_datetime && (
-                                <>
-                                  <span className="block">{r.start_datetime.replace('T',' ').slice(0,10)}</span>
-                                  <span className="block">{r.start_datetime.replace('T',' ').slice(11,16)}</span>
-                                </>
-                              )}
-                            </td>
-                            <td className="px-2 py-1 text-center whitespace-nowrap">
-                              {r.end_datetime && (
-                                <>
-                                  <span className="block">{r.end_datetime.replace('T',' ').slice(0,10)}</span>
-                                  <span className="block">{r.end_datetime.replace('T',' ').slice(11,16)}</span>
-                                </>
-                              )}
-                            </td>
-                            <td className="px-2 py-1 text-center">{r.operation_time}</td>
-                            <td className="px-2 py-1 text-left w-52 max-w-[210px] align-top relative group">
-                              <span className="line-clamp-2 whitespace-pre-line">{r.note}</span>
-                              {r.note && (
-                                <div className="pointer-events-none absolute left-0 top-full mt-1 hidden w-72 whitespace-pre-line rounded border bg-white p-2 text-xs shadow-lg group-hover:block z-50">
-                                  {r.note}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-2 py-1 w-20 flex justify-center gap-2 align-top">
-                              <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-blue-600" onClick={() => setEditing(r)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-red-600" onClick={() => handleDelete(r.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+    <div>
+      <h2 className="text-xl font-bold text-blue-700 mb-4">{t('records_title')}</h2>
+      {reports.length === 0 ? (
+        <p className="text-gray-500">{t('no_data')}</p>
+      ) : (
+        <table className="w-full border-collapse text-sm mt-4">
+          <thead className="bg-blue-600 text-white">
+            <tr>
+              <th className="px-2 py-1 text-center">{t('date')}</th>
+              <th className="px-2 py-1 text-center">{t('header_model')}</th>
+              <th className="px-2 py-1 text-center">{t('header_machine')}</th>
+              <th className="px-2 py-1 text-center">{t('header_tonnage')}</th>
+              <th className="px-2 py-1 text-center">{t('header_plan')}</th>
+              <th className="px-2 py-1 text-center">{t('header_actual')}</th>
+              <th className="px-2 py-1 text-center">{t('header_defect')}</th>
+              <th className="px-2 py-1 text-center">{t('header_start')}</th>
+              <th className="px-2 py-1 text-center">{t('header_end')}</th>
+              <th className="px-2 py-1 text-center">{t('header_run')}</th>
+              <th className="px-2 py-1 text-center w-52">{t('header_note')}</th>
+              <th className="px-2 py-1 text-center w-20">{t('header_action')}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {sortedReports.map((r) => (
+              <tr key={r.id} className="hover:bg-blue-50">
+                <td className="px-2 py-1 text-center">{r.date}</td>
+                <td className="px-2 py-1 text-center whitespace-pre-line">
+                  <span className="block">
+                    {r.model}
+                    {r.section ? ` - ${r.section}` : ''}
+                  </span>
+                  {r.part_no && (
+                    <span className="block text-gray-500">{r.part_no}</span>
                   )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
+                </td>
+                <td className="px-2 py-1 text-center">{r.machine_no}</td>
+                <td className="px-2 py-1 text-center">{r.tonnage}</td>
+                <td className="px-2 py-1 text-center">{r.plan_qty}</td>
+                <td className="px-2 py-1 text-center">{r.actual_qty}</td>
+                <td className="px-2 py-1 text-center">{r.actual_defect}</td>
+                <td className="px-2 py-1 text-center whitespace-nowrap">
+                  {r.start_datetime && (
+                    <>
+                      <span className="block">{r.start_datetime.replace('T',' ').slice(0,10)}</span>
+                      <span className="block">{r.start_datetime.replace('T',' ').slice(11,16)}</span>
+                    </>
+                  )}
+                </td>
+                <td className="px-2 py-1 text-center whitespace-nowrap">
+                  {r.end_datetime && (
+                    <>
+                      <span className="block">{r.end_datetime.replace('T',' ').slice(0,10)}</span>
+                      <span className="block">{r.end_datetime.replace('T',' ').slice(11,16)}</span>
+                    </>
+                  )}
+                </td>
+                <td className="px-2 py-1 text-center">{r.operation_time}</td>
+                <td className="px-2 py-1 text-left w-52 max-w-[210px] align-top relative group">
+                  <span className="line-clamp-2 whitespace-pre-line">{r.note}</span>
+                  {r.note && (
+                    <div className="pointer-events-none absolute left-0 top-full mt-1 hidden w-72 whitespace-pre-line rounded border bg-white p-2 text-xs shadow-lg group-hover:block z-50">
+                      {r.note}
+                    </div>
+                  )}
+                </td>
+                <td className="px-2 py-1 w-20 flex justify-center items-center gap-2 align-top">
+                  <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-blue-600" onClick={() => setEditing(r)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-gray-600 hover:text-red-600" onClick={() => handleDelete(r.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-blue-100 font-semibold">
+            <tr>
+              <td className="px-2 py-1 text-center" colSpan={4}>{t('sum')}</td>
+              <td className="px-2 py-1 text-center">{totalPlan}</td>
+              <td className="px-2 py-1 text-center">{totalActual}</td>
+              <td className="px-2 py-1 text-center">{totalDefect}</td>
+              <td colSpan={2}></td>
+              <td className="px-2 py-1 text-center">{totalOperationTime}</td>
+              <td colSpan={2}></td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
 
       {/* Edit modal */}
       <Dialog open={!!editing} onClose={closeDialog} className="fixed inset-0 z-50 flex items-center justify-center">
@@ -226,6 +212,6 @@ export default function RecordsTable() {
           </Dialog.Panel>
         )}
       </Dialog>
-    </Card>
+    </div>
   );
-} 
+}

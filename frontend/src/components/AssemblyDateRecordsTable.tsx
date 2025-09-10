@@ -73,6 +73,11 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   if (!date) return null;
   if (!list.length) return <p className="text-gray-500 text-sm">{t('no_data')}</p>;
 
+  const totalPlan = list.reduce((sum, r) => sum + (r.plan_qty || 0), 0);
+  const totalActual = list.reduce((sum, r) => sum + (r.actual_qty || 0), 0);
+  const totalDefect = list.reduce((sum, r) => sum + (r.total_defect_qty || 0), 0);
+  const achievementRate = totalPlan > 0 ? (totalActual / totalPlan) * 100 : 0;
+
   return (
     <>
       <table className="min-w-full text-sm rounded-md border-separate border-spacing-0 mt-4">
@@ -128,6 +133,17 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
             </tr>
           ))}
         </tbody>
+        <tfoot className="bg-green-100 font-semibold">
+          <tr>
+            <td className="px-2 py-1 text-center" colSpan={3}>{t('sum')}</td>
+            <td className="px-2 py-1 text-right">{totalPlan.toLocaleString()}</td>
+            <td className="px-2 py-1 text-right">{totalActual.toLocaleString()}</td>
+            <td className="px-2 py-1 text-right">{totalDefect.toLocaleString()}</td>
+            <td className="px-2 py-1 text-right" colSpan={3}>
+              {t('achievement_rate')}: {achievementRate.toFixed(1)}%
+            </td>
+          </tr>
+        </tfoot>
       </table>
 
       {detail && (

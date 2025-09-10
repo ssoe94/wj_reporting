@@ -87,7 +87,7 @@ export default function DateRecordsTable({ date }: Props) {
   return (
     <>
     <table
-      className="min-w-full text-sm border border-gray-400 rounded-md border-separate border-spacing-0 mt-4"
+      className="w-full border-collapse text-sm mt-4"
     >
       <thead className="bg-blue-600 text-white">
         <tr>
@@ -102,9 +102,9 @@ export default function DateRecordsTable({ date }: Props) {
           <th className="px-2 py-1">{t('table_ct_delta')}</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody className="divide-y divide-gray-200">
         {list.map((r) => (
-          <tr key={r.id} className="border-t border-gray-200 last:border-b-0 hover:bg-blue-50 cursor-pointer" onClick={()=>{setDetail(r); setEditing(false);}}>
+          <tr key={r.id} className="hover:bg-blue-50 cursor-pointer" onClick={()=>{setDetail(r); setEditing(false);}}>
             <td className="px-2 py-1 text-center">{r.machine_no}</td>
             <td className="px-2 py-1">{r.model}</td>
             <td className="px-2 py-1 text-center">{r.part_no}</td>
@@ -135,13 +135,13 @@ export default function DateRecordsTable({ date }: Props) {
           </tr>
         ))}
         {/* Summary row */}
-        <tr className="border-t-2 border-gray-300 bg-slate-50">
-          <td className="px-2 py-2 text-right font-semibold" colSpan={3}>합계</td>
-          <td className="px-2 py-2 text-right font-bold text-blue-700">{totals.plan.toLocaleString()}</td>
-          <td className="px-2 py-2 text-right font-bold text-green-700">{totals.actual.toLocaleString()}</td>
-          <td className="px-2 py-2 text-right font-bold text-red-600">{totals.defect.toLocaleString()}</td>
-          <td className="px-2 py-2 text-right text-gray-700 font-semibold" colSpan={3}>
-            달성율: {achievementRate === null ? '-' : `${achievementRate.toFixed(1)}%`}
+        <tr className="bg-blue-100">
+          <td className="px-2 py-2 text-right font-semibold text-gray-700" colSpan={3}>{t('sum')}</td>
+          <td className="px-2 py-2 text-right font-semibold text-gray-700">{totals.plan.toLocaleString()}</td>
+          <td className="px-2 py-2 text-right font-semibold text-gray-700">{totals.actual.toLocaleString()}</td>
+          <td className="px-2 py-2 text-right font-semibold text-gray-700">{totals.defect.toLocaleString()}</td>
+          <td className="px-2 py-2 text-right font-semibold text-gray-700" colSpan={3}>
+            {t('achievement_rate')}: {achievementRate === null ? '-' : `${achievementRate.toFixed(1)}%`}
           </td>
         </tr>
       </tbody>

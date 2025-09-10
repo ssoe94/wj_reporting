@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import dayjs from 'dayjs';
+
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
@@ -114,11 +114,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     setForm(prev => ({ ...prev, start, end }));
   };
 
-  // Datetime picker state and helpers (start/end), 24h format
-  const [openPicker, setOpenPicker] = useState<null | 'start' | 'end'>(null);
-  const [tempDate, setTempDate] = useState<Date | undefined>(undefined);
-  const [tempHour, setTempHour] = useState<string>('00');
-  const [tempMinute, setTempMinute] = useState<string>('00');
+  
 
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();

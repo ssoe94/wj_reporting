@@ -44,8 +44,9 @@ export default function QualityReport() {
     description: '',
   });
   const [prefillOriginal, setPrefillOriginal] = useState<any | null>(null);
+  const [prefillSimilar, setPrefillSimilar] = useState<Partial<PartSpec> | null>(null);
   // Removed unused variables
-  const parsed = form.report_dt ? dayjs(form.report_dt) : null;
+  
 
   const { data: searchResults = [] } = usePartSpecSearch(productQuery.toUpperCase());
   const { data: modelParts = [] } = usePartListByModel(selectedModelDesc?.model_code);
