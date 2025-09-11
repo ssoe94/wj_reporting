@@ -15,6 +15,7 @@ import { useAssemblyPartsByModel, useAssemblyPartspecsByModel, useAssemblyPartNo
 import { useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import { Button } from '../../components/ui/button';
+import machines from '../../constants/machines';
 
 export default function QualityReport() {
   const { t, lang } = useLang();
@@ -22,6 +23,7 @@ export default function QualityReport() {
   const [form, setForm] = useState({
     report_dt: '',  // 보고일시 (datetime-local)
     section: 'LQC_INJ', // 보고부문 기본값: LQC - 注塑
+    machineId: '',  // 사출기 ID
     model: '',      // 型号
     part_no: '',    // PART NO.
     phenomenon: '', // 不良现象
@@ -30,7 +32,7 @@ export default function QualityReport() {
     defect_rate: '',    // 불량률(자동계산 표시용)
     lot_qty: '',    // LOT SIZE
     judgement: 'NG',// 判定结果
-    disposition: '',// 处理方式
+    disposition: '',// 处리방식
   });
 
   // 모델/Part 선택 (어셈블리/사출과 동일한 UX)
@@ -139,6 +141,7 @@ export default function QualityReport() {
         setForm({
           report_dt: '',
           section: form.section,
+          machineId: '',
           model: '',
           part_no: '',
           phenomenon: '',
@@ -238,7 +241,7 @@ export default function QualityReport() {
       </div>
         {/* 입력 폼 */}
         <form onSubmit={handleSubmit} className="px-4 pb-6 space-y-6">
-        {/* 상단 기본 정보: 5열 1행 (보고일시/보고부문/모델/PART NO./LOT SIZE) */}
+        {/* 상단 정보: 첫 번째 행 5열 (보고일시/보고부문/사출기/모델/PART NO.) */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <Label htmlFor="report_dt">{t('report_datetime')}</Label>
@@ -262,6 +265,22 @@ export default function QualityReport() {
               <option value="IQC">IQC</option>
               <option value="OQC">OQC</option>
               <option value="CS">CS</option>
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="machineId">{lang==='zh'?'注塑机':'사출기'}</Label>
+            <select
+              id="machineId"
+              value={form.machineId}
+              onChange={(e) => handleChange('machineId', e.target.value)}
+              className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500"
+            >
+              <option value="">{lang==='zh'?'选择注塑机':'사출기 선택'}</option>
+              {machines.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {`${m.id}${lang === 'zh' ? '号机' : '호기'} - ${m.ton}T`}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -435,19 +454,19 @@ export default function QualityReport() {
               renderInput={(params) => <TextField {...params} size="small" placeholder={`Part No. ${t('input_or_select')}`} />}
             />
           </div>
-          <div>
-            <Label htmlFor="lot_qty">{t('lot_qty')}</Label>
-            <Input id="lot_qty" value={form.lot_qty} onChange={(e)=>handleChange('lot_qty', e.target.value)} placeholder="400" />
-          </div>
         </div>
 
-        {/* 검사/불량/불량률/판정: 4열 1행 */}
+        {/* 하단 정보: 두 번째 행 5열 (LOT SIZE/검사수/불량수/불량률/판정결과) */}
         {(() => {
           const insp = Number(form.inspection_qty) || 0;
           const defect = Number(form.defect_qty) || 0;
           const rate = insp > 0 ? Math.round((defect / insp) * 10000) / 100 : 0;
           return (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div>
+                <Label htmlFor="lot_qty">{t('lot_qty')}</Label>
+                <Input id="lot_qty" value={form.lot_qty} onChange={(e)=>handleChange('lot_qty', e.target.value)} placeholder="400" />
+              </div>
               <div>
                 <Label htmlFor="inspection_qty">{t('inspection_qty')}</Label>
                 <Input id="inspection_qty" type="number" inputMode="numeric" min={0} value={form.inspection_qty} onChange={(e)=>handleChange('inspection_qty', e.target.value)} placeholder={lang==='zh'?'检验数':'검사수'} />

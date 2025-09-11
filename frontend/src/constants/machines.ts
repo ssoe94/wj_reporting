@@ -8,7 +8,7 @@ const machines: Machine[] = [
   { id: 4, ton: 1400 },
   { id: 5, ton: 1400 },
   { id: 6, ton: 2500 },
-  { id: 7, ton: 1300 },
+  { id: 7, ton: 1800 },
   { id: 8, ton: 850 },
   { id: 9, ton: 850 },
   { id: 10, ton: 650 },

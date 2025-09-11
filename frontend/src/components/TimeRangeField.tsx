@@ -95,14 +95,41 @@ function parseLocal(value?: string): Date | null {
 const hourOptions = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const minuteOptions = (step: number) => Array.from({ length: Math.floor(60 / step) }, (_, i) => String(i * step).toString().padStart(2, '0'));
 
-// 직접 입력을 위한 파싱 함수
+// 직접 입력을 위한 파싱 함수 (엄격한 검증 포함)
 function parseDirectInput(value: string): Date | null {
-  if (!value) return null;
+  if (!value || value.length !== 16) return null; // "YYYY-MM-DD HH:mm" 정확한 길이만
   
-  // YYYY-MM-DD HH:mm 또는 YYYY-MM-DDTHH:mm 형식 지원
-  const cleanValue = value.replace(' ', 'T');
-  const d = dayjs(cleanValue);
-  return d.isValid() ? d.toDate() : null;
+  // 정규식으로 정확한 형식 검증
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+  if (!match) return null;
+  
+  const [, year, month, day, hour, minute] = match;
+  const y = parseInt(year);
+  const m = parseInt(month);
+  const d = parseInt(day);
+  const h = parseInt(hour);
+  const min = parseInt(minute);
+  
+  // 범위 검증
+  if (y < 1900 || y > 2100) return null;
+  if (m < 1 || m > 12) return null;
+  if (d < 1 || d > 31) return null;
+  if (h < 0 || h > 23) return null; // 24시간 형식
+  if (min < 0 || min > 59) return null;
+  
+  // Date 객체 생성 및 검증
+  const date = new Date(y, m - 1, d, h, min, 0, 0);
+  
+  // 생성된 Date가 입력값과 일치하는지 확인 (예: 2월 30일 같은 잘못된 날짜 방지)
+  if (date.getFullYear() !== y || 
+      date.getMonth() !== m - 1 || 
+      date.getDate() !== d ||
+      date.getHours() !== h ||
+      date.getMinutes() !== min) {
+    return null;
+  }
+  
+  return date;
 }
 
 // Date를 직접 입력 형식으로 변환
@@ -110,36 +137,33 @@ function formatDirectInput(date: Date): string {
   return dayjs(date).format('YYYY-MM-DD HH:mm');
 }
 
-// 숫자만 입력해도 자동으로 날짜/시간 형식으로 변환
-function autoFormatInput(value: string): string {
-  // 숫자만 추출
-  const numbers = value.replace(/\D/g, '');
-  
-  if (numbers.length === 0) return '';
-  
-  // 최대 12자리까지만 처리 (YYYYMMDDHHMM)
-  const cleanNumbers = numbers.substring(0, 12);
-  
-  let formatted = '';
-  
-  if (cleanNumbers.length <= 4) {
-    // 4자리 이하: 그대로 표시
-    formatted = cleanNumbers;
-  } else if (cleanNumbers.length <= 6) {
-    // 5-6자리: YYYY-M[M]
-    formatted = cleanNumbers.substring(0, 4) + '-' + cleanNumbers.substring(4);
-  } else if (cleanNumbers.length <= 8) {
-    // 7-8자리: YYYY-MM-D[D]
-    formatted = cleanNumbers.substring(0, 4) + '-' + cleanNumbers.substring(4, 6) + '-' + cleanNumbers.substring(6);
-  } else if (cleanNumbers.length <= 10) {
-    // 9-10자리: YYYY-MM-DD H[H]
-    formatted = cleanNumbers.substring(0, 4) + '-' + cleanNumbers.substring(4, 6) + '-' + cleanNumbers.substring(6, 8) + ' ' + cleanNumbers.substring(8);
-  } else {
-    // 11-12자리: YYYY-MM-DD HH:m[m]
-    formatted = cleanNumbers.substring(0, 4) + '-' + cleanNumbers.substring(4, 6) + '-' + cleanNumbers.substring(6, 8) + ' ' + cleanNumbers.substring(8, 10) + ':' + cleanNumbers.substring(10);
+// YYYY-MM-DD HH:mm 형식으로 자동 변환
+function formatDateTimeInput(value: string): string {
+  // dayjs가 유연하게 파싱하도록 시도
+  let d = dayjs(value);
+
+  // 만약 파싱이 실패하면, 숫자만 추출해서 다시 시도 (YYYYMMDDHHmm 형식)
+  if (!d.isValid()) {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length === 12) {
+      d = dayjs(digits, 'YYYYMMDDHHmm');
+    }
   }
-  
-  return formatted;
+
+  // 12자리 숫자가 아닌 다른 형식의 숫자 입력 처리
+  if (!d.isValid()) {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length > 4) {
+        let dateString = digits.substring(0,4) + '-' + digits.substring(4,6) + '-' + digits.substring(6,8) + ' ' + digits.substring(8,10) + ':' + digits.substring(10,12);
+        d = dayjs(dateString);
+    }
+  }
+
+  if (d.isValid()) {
+    return d.format('YYYY-MM-DD HH:mm');
+  }
+
+  return value; // 파싱 실패 시 원본 값 반환
 }
 
 export default function TimeRangeField({ value, onChange, onValidate, locale, minuteStep = 5 }: TimeRangeFieldProps) {
@@ -187,6 +211,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
   // 직접 입력용 상태
   const [directStartInput, setDirectStartInput] = React.useState('');
   const [directEndInput, setDirectEndInput] = React.useState('');
+  const [directInputError, setDirectInputError] = React.useState<string | null>(null);
 
   // 직접 입력 값 초기화 및 동기화
   React.useEffect(() => {
@@ -240,46 +265,57 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
     setOpen(false);
   };
 
-  // 직접 입력 처리 (자동 포맷 적용)
+  // 커서 위치 추적을 위한 ref
+  const startInputRef = React.useRef<HTMLInputElement>(null);
+  const endInputRef = React.useRef<HTMLInputElement>(null);
+
+  // 직접 입력 처리
   const handleDirectInputChange = (type: 'start' | 'end', value: string) => {
-    const formatted = autoFormatInput(value);
+    if (type === 'start') {
+      setDirectStartInput(value);
+    } else {
+      setDirectEndInput(value);
+    }
+  };
+
+  const applyDirectInput = (type: 'start' | 'end') => {
+    const value = type === 'start' ? directStartInput : directEndInput;
+    const formatted = formatDateTimeInput(value);
     
     if (type === 'start') {
       setDirectStartInput(formatted);
     } else {
       setDirectEndInput(formatted);
     }
-    
-    // 입력이 완성되면 자동으로 적용
-    if (formatted.length === 16) { // "YYYY-MM-DD HH:mm" 길이
-      // 약간의 딜레이 후 자동 적용
-      setTimeout(() => {
-        applyDirectInput();
-      }, 300);
-    }
-  };
 
-  const applyDirectInput = () => {
-    const startDate = parseDirectInput(directStartInput);
-    const endDate = parseDirectInput(directEndInput);
-    
-    if (!startDate || !endDate) {
-      onValidate && onValidate({ ok: false, message: L.pickTime });
-      return;
-    }
+    const finalStartValue = type === 'start' ? formatted : directStartInput;
+    const finalEndValue = type === 'end' ? formatted : directEndInput;
 
-    const v = validate(startDate, endDate);
-    onValidate && onValidate(v);
-    
-    if (v.ok) {
-      emit(startDate, endDate);
-      // 달력 상태도 업데이트
-      setSDate(startDate);
-      setEDate(endDate);
-      setSHour(dayjs(startDate).format('HH'));
-      setSMin(dayjs(startDate).format('mm'));
-      setEHour(dayjs(endDate).format('HH'));
-      setEMin(dayjs(endDate).format('mm'));
+    if (finalStartValue.length >= 16 && finalEndValue.length >= 16) {
+      const startDate = parseDirectInput(finalStartValue);
+      const endDate = parseDirectInput(finalEndValue);
+
+      if (!startDate || !endDate) {
+        onValidate && onValidate({ ok: false, message: L.pickTime });
+        setDirectInputError(L.pickTime);
+        return;
+      }
+
+      const v = validate(startDate, endDate);
+      onValidate && onValidate(v);
+      setDirectInputError(v.ok ? null : v.message || null);
+      
+      if (v.ok) {
+        emit(startDate, endDate);
+        setSDate(startDate);
+        setEDate(endDate);
+        setSHour(dayjs(startDate).format('HH'));
+        setSMin(dayjs(startDate).format('mm'));
+        setEHour(dayjs(endDate).format('HH'));
+        setEMin(dayjs(endDate).format('mm'));
+      }
+    } else {
+      setDirectInputError(null);
     }
   };
 
@@ -518,16 +554,17 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
       <div className="space-y-3">
         <div className="text-xs text-gray-500 mb-2">{L.summary}</div>
         
-        <div className="grid grid-cols-1 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               {L.startDateTime}
             </label>
             <input
+              ref={startInputRef}
               type="text"
               value={directStartInput}
               onChange={(e) => handleDirectInputChange('start', e.target.value)}
-              onBlur={applyDirectInput}
+              onBlur={() => applyDirectInput('start')}
               placeholder={L.inputPlaceholder}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
@@ -538,10 +575,11 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
               {L.endDateTime}
             </label>
             <input
+              ref={endInputRef}
               type="text"
               value={directEndInput}
               onChange={(e) => handleDirectInputChange('end', e.target.value)}
-              onBlur={applyDirectInput}
+              onBlur={() => applyDirectInput('end')}
               placeholder={L.inputPlaceholder}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
@@ -550,7 +588,11 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
         
         <div className="text-xs text-gray-500 space-y-1">
           <div>{summary}</div>
-          <div className="text-blue-600">{L.inputHint}</div>
+          {directInputError ? (
+            <div className="text-red-600 font-semibold">{directInputError}</div>
+          ) : (
+            <div className="text-blue-600">{L.inputHint}</div>
+          )}
         </div>
       </div>
     );
@@ -600,10 +642,11 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
                 {L.startDateTime}
               </label>
               <input
+                ref={startInputRef}
                 type="text"
                 value={directStartInput}
                 onChange={(e) => handleDirectInputChange('start', e.target.value)}
-                onBlur={applyDirectInput}
+                onBlur={() => applyDirectInput('start')}
                 placeholder={L.inputPlaceholder}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
@@ -614,10 +657,11 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
                 {L.endDateTime}
               </label>
               <input
+                ref={endInputRef}
                 type="text"
                 value={directEndInput}
                 onChange={(e) => handleDirectInputChange('end', e.target.value)}
-                onBlur={applyDirectInput}
+                onBlur={() => applyDirectInput('end')}
                 placeholder={L.inputPlaceholder}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
@@ -626,7 +670,11 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
           
           <div className="text-xs text-gray-500 space-y-1">
             <div>{summary}</div>
-            <div className="text-blue-600">{L.inputHint}</div>
+            {directInputError ? (
+              <div className="text-red-600 font-semibold">{directInputError}</div>
+            ) : (
+              <div className="text-blue-600">{L.inputHint}</div>
+            )}
           </div>
         </div>
       )}

@@ -27,3 +27,6 @@ frontend/node_modules/
 
 # References
 references/
+
+# Claude
+.claude/
