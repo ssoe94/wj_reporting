@@ -283,7 +283,8 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
     }
   };
 
-  // 경량모드용 단순화된 UI
+  // 경량모드용 단순화된 UI (현재 사용되지 않음 - 직접 입력으로 대체)
+  /*
   const lightweightDialogPanel = (
     <div className="w-full max-w-[400px] bg-white rounded-lg shadow-xl border max-h-[80vh] overflow-hidden">
       <div className={`bg-white p-4 border-b text-xs ${eDT.getTime() < sDT.getTime() ? 'text-red-600' : 'text-gray-500'}`}>
@@ -415,6 +416,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
       </div>
     </div>
   );
+  */
 
   // 일반모드용 기존 UI (Grid 사용)
   const standardDialogPanel = (
