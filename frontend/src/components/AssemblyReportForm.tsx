@@ -239,7 +239,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // 필수 입력 검증: 날짜, 라인, 모델, Part No.
+    // 필수 입력 검증: 날짜, 라인, 모델, Part No., 계획수량, 생산수량
     if (!formData.date) {
       toast.error(lang === 'zh' ? '请填写报告日期' : '보고일자를 입력하세요');
       return;
@@ -254,6 +254,14 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     }
     if (!formData.part_no) {
       toast.error(lang === 'zh' ? '请选择 Part No.' : 'Part No.를 선택하세요');
+      return;
+    }
+    if (!formData.plan_qty || Number(formData.plan_qty) <= 0) {
+      toast.error(lang === 'zh' ? '请输入计划数量' : '계획수량을 입력하세요');
+      return;
+    }
+    if (!formData.actual_qty || Number(formData.actual_qty) < 0) {
+      toast.error(lang === 'zh' ? '请输入生产数量' : '생산수량을 입력하세요');
       return;
     }
     // 확인 다이얼로그: 계획 대비 달성률, 불량 안내
@@ -645,27 +653,6 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
           <CardHeader className={`font-semibold text-blue-700 ${compact ? 'text-base' : ''}`}>{t('production_record')}</CardHeader>
           <CardContent className="flex-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* 시간 기록 섹션 카드 */}
-              <Card className="border-indigo-200 md:order-2">
-                <CardHeader className="py-2 font-medium text-indigo-700">{t('time_record')}</CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="flex flex-col">
-                      <Label htmlFor="operation_time">{t('operation_time_min')}</Label>
-                      <Input id="operation_time" type="number" inputMode="numeric" min={0} value={formData.operation_time as any} onChange={(e) => handleChange('operation_time', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
-                    </div>
-                    <div className="flex flex-col">
-                      <Label htmlFor="idle_time">{t('idle_time_min')}</Label>
-                      <Input id="idle_time" type="number" inputMode="numeric" min={0} value={formData.idle_time as any} onChange={(e) => handleChange('idle_time', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
-                    </div>
-                    <div className="flex flex-col">
-                      <Label htmlFor="total_time">{t('total_time')}</Label>
-                      <Input id="total_time" value={(formData.operation_time === '' && formData.idle_time === '') ? '' : (Number(formData.operation_time||0) + Number(formData.idle_time||0))} disabled className={`text-center bg-gray-100 ${compact ? 'h-8 text-sm px-2' : ''}`} />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* 수량/인원 기록 섹션 카드 */}
               <Card className="border-teal-200 md:order-1">
                 <CardHeader className="py-2 font-medium text-teal-700">{t('qty_personnel_record')}</CardHeader>
@@ -682,6 +669,27 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                     <div className="flex flex-col">
                       <Label htmlFor="workers">{t('worker_count')}</Label>
                       <Input id="workers" type="number" min={0} value={formData.workers as any} onChange={(e) => handleChange('workers', e.target.value === '' ? '' : Number(e.target.value))} onFocus={selectOnFocus} className="text-center" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 시간 기록 섹션 카드 */}
+              <Card className="border-indigo-200 md:order-2">
+                <CardHeader className="py-2 font-medium text-indigo-700">{t('time_record')}</CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="flex flex-col">
+                      <Label htmlFor="operation_time">{t('operation_time_min')}</Label>
+                      <Input id="operation_time" type="number" inputMode="numeric" min={0} value={formData.operation_time as any} onChange={(e) => handleChange('operation_time', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                    </div>
+                    <div className="flex flex-col">
+                      <Label htmlFor="idle_time">{t('idle_time_min')}</Label>
+                      <Input id="idle_time" type="number" inputMode="numeric" min={0} value={formData.idle_time as any} onChange={(e) => handleChange('idle_time', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                    </div>
+                    <div className="flex flex-col">
+                      <Label htmlFor="total_time">{t('total_time')}</Label>
+                      <Input id="total_time" value={(formData.operation_time === '' && formData.idle_time === '') ? '' : (Number(formData.operation_time||0) + Number(formData.idle_time||0))} disabled className={`text-center bg-gray-100 ${compact ? 'h-8 text-sm px-2' : ''}`} />
                     </div>
                   </div>
                 </CardContent>
