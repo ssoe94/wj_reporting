@@ -181,7 +181,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
     };
   }, []);
 
-  const [currentStep, setCurrentStep] = React.useState<'start' | 'end'>('start');
+  // const [currentStep, setCurrentStep] = React.useState<'start' | 'end'>('start'); // 경량모드 모달에서 사용되었으나 현재 미사용
   const [useDirectInput, setUseDirectInput] = React.useState(false);
   
   // 직접 입력용 상태
