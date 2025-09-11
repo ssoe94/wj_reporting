@@ -41,6 +41,12 @@ const LABELS: Record<LocaleCode, Record<string, string>> = {
     cancel: '취소',
     errEndLtStart: '종료 시간은 시작 시간 이후여야 합니다.',
     pickTime: '시간을 선택하세요.',
+    useModal: '달력 사용',
+    useDirectInput: '직접 입력',
+    startDateTime: '시작 날짜/시간',
+    endDateTime: '종료 날짜/시간',
+    inputPlaceholder: '숫자만 입력 (예: 202501011400)',
+    inputHint: '숫자 12자리 입력하면 자동 변환 (년월일시분)',
   },
   zh: {
     summary: '生产时间',
@@ -58,6 +64,12 @@ const LABELS: Record<LocaleCode, Record<string, string>> = {
     cancel: '取消',
     errEndLtStart: '结束时间必须晚于开始时间。',
     pickTime: '请选择时间。',
+    useModal: '使用日历',
+    useDirectInput: '直接输入',
+    startDateTime: '开始日期/时间',
+    endDateTime: '结束日期/时间',
+    inputPlaceholder: '输入数字 (例: 202501011400)',
+    inputHint: '输入12位数字自动转换 (年月日时分)',
   },
 };
 
@@ -83,6 +95,53 @@ function parseLocal(value?: string): Date | null {
 const hourOptions = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const minuteOptions = (step: number) => Array.from({ length: Math.floor(60 / step) }, (_, i) => String(i * step).toString().padStart(2, '0'));
 
+// 직접 입력을 위한 파싱 함수
+function parseDirectInput(value: string): Date | null {
+  if (!value) return null;
+  
+  // YYYY-MM-DD HH:mm 또는 YYYY-MM-DDTHH:mm 형식 지원
+  const cleanValue = value.replace(' ', 'T');
+  const d = dayjs(cleanValue);
+  return d.isValid() ? d.toDate() : null;
+}
+
+// Date를 직접 입력 형식으로 변환
+function formatDirectInput(date: Date): string {
+  return dayjs(date).format('YYYY-MM-DD HH:mm');
+}
+
+// 숫자만 입력해도 자동으로 날짜/시간 형식으로 변환
+function autoFormatInput(value: string): string {
+  // 숫자만 추출
+  const numbers = value.replace(/\D/g, '');
+  
+  if (numbers.length === 0) return '';
+  
+  // 최대 12자리까지만 처리 (YYYYMMDDHHMM)
+  const cleanNumbers = numbers.substring(0, 12);
+  
+  let formatted = '';
+  
+  if (cleanNumbers.length <= 4) {
+    // 4자리 이하: 그대로 표시
+    formatted = cleanNumbers;
+  } else if (cleanNumbers.length <= 6) {
+    // 5-6자리: YYYY-M[M]
+    formatted = cleanNumbers.substring(0, 4) + '-' + cleanNumbers.substring(4);
+  } else if (cleanNumbers.length <= 8) {
+    // 7-8자리: YYYY-MM-D[D]
+    formatted = cleanNumbers.substring(0, 4) + '-' + cleanNumbers.substring(4, 6) + '-' + cleanNumbers.substring(6);
+  } else if (cleanNumbers.length <= 10) {
+    // 9-10자리: YYYY-MM-DD H[H]
+    formatted = cleanNumbers.substring(0, 4) + '-' + cleanNumbers.substring(4, 6) + '-' + cleanNumbers.substring(6, 8) + ' ' + cleanNumbers.substring(8);
+  } else {
+    // 11-12자리: YYYY-MM-DD HH:m[m]
+    formatted = cleanNumbers.substring(0, 4) + '-' + cleanNumbers.substring(4, 6) + '-' + cleanNumbers.substring(6, 8) + ' ' + cleanNumbers.substring(8, 10) + ':' + cleanNumbers.substring(10);
+  }
+  
+  return formatted;
+}
+
 export default function TimeRangeField({ value, onChange, onValidate, locale, minuteStep = 5 }: TimeRangeFieldProps) {
   const L = LABELS[locale];
   const [open, setOpen] = React.useState(false);
@@ -97,6 +156,43 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
   const [eDate, setEDate] = React.useState<Date>(end);
   const [eHour, setEHour] = React.useState<string>(dayjs(end).format('HH'));
   const [eMin, setEMin] = React.useState<string>(dayjs(end).format('mm'));
+
+  // 경량모드 상태 확인 (사이드바 토글 기반)
+  const [isLightweightMode, setIsLightweightMode] = React.useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('lite') === '1';
+  });
+
+  // localStorage 변경사항 감지
+  React.useEffect(() => {
+    const handleStorageChange = () => {
+      setIsLightweightMode(localStorage.getItem('lite') === '1');
+    };
+
+    // storage 이벤트 리스너 (다른 탭에서 변경 시)
+    window.addEventListener('storage', handleStorageChange);
+    
+    // 동일 탭에서 변경 감지를 위한 주기적 체크
+    const interval = setInterval(handleStorageChange, 100);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const [currentStep, setCurrentStep] = React.useState<'start' | 'end'>('start');
+  const [useDirectInput, setUseDirectInput] = React.useState(false);
+  
+  // 직접 입력용 상태
+  const [directStartInput, setDirectStartInput] = React.useState('');
+  const [directEndInput, setDirectEndInput] = React.useState('');
+
+  // 직접 입력 값 초기화 및 동기화
+  React.useEffect(() => {
+    setDirectStartInput(formatDirectInput(sDT));
+    setDirectEndInput(formatDirectInput(eDT));
+  }, [value?.startAt, value?.endAt]);
 
   // const localeObj = locale === 'zh' ? zhCN : dfKo; // Currently unused
   const sDT = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), Number(sHour), Number(sMin), 0);
@@ -144,7 +240,184 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
     setOpen(false);
   };
 
-  const dialogPanel = (
+  // 직접 입력 처리 (자동 포맷 적용)
+  const handleDirectInputChange = (type: 'start' | 'end', value: string) => {
+    const formatted = autoFormatInput(value);
+    
+    if (type === 'start') {
+      setDirectStartInput(formatted);
+    } else {
+      setDirectEndInput(formatted);
+    }
+    
+    // 입력이 완성되면 자동으로 적용
+    if (formatted.length === 16) { // "YYYY-MM-DD HH:mm" 길이
+      // 약간의 딜레이 후 자동 적용
+      setTimeout(() => {
+        applyDirectInput();
+      }, 300);
+    }
+  };
+
+  const applyDirectInput = () => {
+    const startDate = parseDirectInput(directStartInput);
+    const endDate = parseDirectInput(directEndInput);
+    
+    if (!startDate || !endDate) {
+      onValidate && onValidate({ ok: false, message: L.pickTime });
+      return;
+    }
+
+    const v = validate(startDate, endDate);
+    onValidate && onValidate(v);
+    
+    if (v.ok) {
+      emit(startDate, endDate);
+      // 달력 상태도 업데이트
+      setSDate(startDate);
+      setEDate(endDate);
+      setSHour(dayjs(startDate).format('HH'));
+      setSMin(dayjs(startDate).format('mm'));
+      setEHour(dayjs(endDate).format('HH'));
+      setEMin(dayjs(endDate).format('mm'));
+    }
+  };
+
+  // 경량모드용 단순화된 UI
+  const lightweightDialogPanel = (
+    <div className="w-full max-w-[400px] bg-white rounded-lg shadow-xl border max-h-[80vh] overflow-hidden">
+      <div className={`bg-white p-4 border-b text-xs ${eDT.getTime() < sDT.getTime() ? 'text-red-600' : 'text-gray-500'}`}>
+        {summary}
+        <button type="button" className="float-right text-gray-400 hover:text-gray-600" onClick={()=> setOpen(false)}>✕</button>
+      </div>
+      
+      <div className="p-4">
+        <div className="flex justify-center mb-4">
+          <div className="inline-flex rounded-md border" role="tablist">
+            <button 
+              type="button"
+              className={`px-4 py-2 text-sm ${currentStep === 'start' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-700'} border-r`}
+              onClick={() => setCurrentStep('start')}
+            >
+              {L.start}
+            </button>
+            <button 
+              type="button"
+              className={`px-4 py-2 text-sm ${currentStep === 'end' ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-700'}`}
+              onClick={() => setCurrentStep('end')}
+            >
+              {L.end}
+            </button>
+          </div>
+        </div>
+
+        {currentStep === 'start' && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2 mb-3">
+              <Button type="button" size="sm" variant="secondary" onClick={()=>{ const d=dayjs(); setSDate(d.toDate()); setSHour(d.format('HH')); setSMin(d.format('mm')); }}>{L.now}</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={()=>{ const d=dayjs(); setSDate(d.toDate()); }}>{L.today}</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={()=>{ const d=dayjs().add(1,'day'); setSDate(d.toDate()); }}>{L.tomorrow}</Button>
+            </div>
+            
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-3 mb-3">
+                <button type="button" onClick={()=> setSMonth(dayjs(sMonth).subtract(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4"/></button>
+                <div className="text-sm font-semibold min-w-[120px]">{dayjs(sMonth).format(locale==='zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
+                <button type="button" onClick={()=> setSMonth(dayjs(sMonth).add(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4"/></button>
+              </div>
+              
+              <div className="flex justify-center mb-4">
+                <DayPicker 
+                  mode="single"
+                  month={sMonth}
+                  onMonthChange={(d)=> setSMonth(d)}
+                  selected={sDate}
+                  onSelect={(d)=> d && setSDate(d)}
+                  locale={locale==='zh'? zhCN : dfKo}
+                  className="text-sm"
+                  classNames={{
+                    month: 'w-full',
+                    day: 'h-8 w-8 rounded hover:bg-gray-100 text-sm',
+                    day_selected: 'bg-blue-500 text-white rounded',
+                    nav: 'hidden',
+                    caption: 'hidden',
+                  }}
+                />
+              </div>
+              
+              <div className="flex items-center justify-center gap-2">
+                <select className="h-9 px-2 border rounded text-sm" value={sHour} onChange={(e)=> setSHour(e.target.value)}>
+                  {hourOptions.map(h=> <option key={h} value={h}>{h}</option>)}
+                </select>
+                <span>:</span>
+                <select className="h-9 px-2 border rounded text-sm" value={sMin} onChange={(e)=> setSMin(e.target.value)}>
+                  {minuteOptions(minuteStep).map(m=> <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {currentStep === 'end' && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2 mb-3">
+              <Button type="button" size="sm" variant="secondary" onClick={()=> addToEnd('m15')}>{L.add15}</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={()=> addToEnd('m30')}>{L.add30}</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={()=> addToEnd('h1')}>{L.add1h}</Button>
+            </div>
+            
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-3 mb-3">
+                <button type="button" onClick={()=> setEMonth(dayjs(eMonth).subtract(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4"/></button>
+                <div className="text-sm font-semibold min-w-[120px]">{dayjs(eMonth).format(locale==='zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
+                <button type="button" onClick={()=> setEMonth(dayjs(eMonth).add(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4"/></button>
+              </div>
+              
+              <div className="flex justify-center mb-4">
+                <DayPicker 
+                  mode="single"
+                  month={eMonth}
+                  onMonthChange={(d)=> setEMonth(d)}
+                  selected={eDate} 
+                  onSelect={(d)=> d && setEDate(d)} 
+                  locale={locale==='zh'? zhCN : dfKo} 
+                  className="text-sm"
+                  classNames={{
+                    month: 'w-full',
+                    day: 'h-8 w-8 rounded hover:bg-gray-100 text-sm',
+                    day_selected: 'bg-blue-500 text-white rounded',
+                    nav: 'hidden',
+                    caption: 'hidden',
+                  }}
+                />
+              </div>
+              
+              <div className="flex items-center justify-center gap-2">
+                <select className="h-9 px-2 border rounded text-sm" value={eHour} onChange={(e)=> setEHour(e.target.value)}>
+                  {hourOptions.map(h=> <option key={h} value={h}>{h}</option>)}
+                </select>
+                <span>:</span>
+                <select className="h-9 px-2 border rounded text-sm" value={eMin} onChange={(e)=> setEMin(e.target.value)}>
+                  {minuteOptions(minuteStep).map(m=> <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      
+      <div className="bg-white border-t p-3 flex justify-between items-center gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={()=>{ const n=dayjs(); setSDate(n.toDate()); setSHour(n.format('HH')); setSMin(n.format('mm')); const e=n.add(1,'hour'); setEDate(e.toDate()); setEHour(e.format('HH')); setEMin(e.format('mm')); setCurrentStep('start'); }}>Reset</Button>
+        <div className="flex gap-2">
+          <Button type="button" variant="secondary" size="sm" onClick={()=> setOpen(false)}>{L.cancel}</Button>
+          <Button type="button" size="sm" disabled={eDT.getTime() < sDT.getTime()} onClick={apply}>{L.confirm}</Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 일반모드용 기존 UI (Grid 사용)
+  const standardDialogPanel = (
     <div className="w-full md:w-[740px] bg-white rounded-2xl shadow-xl border max-h-[80vh] overflow-hidden">
       <div className={`sticky top-0 z-10 bg-white p-4 border-b text-xs ${eDT.getTime() < sDT.getTime() ? 'text-red-600' : 'text-gray-500'}`}>{summary}
         <button type="button" className="float-right text-gray-400 hover:text-gray-600" onClick={()=> setOpen(false)}>✕</button>
@@ -159,7 +432,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
             <Button type="button" variant="secondary" onClick={()=>{ const d=dayjs().add(1,'day'); setSDate(d.toDate()); }}>{L.tomorrow}</Button>
             <Button type="button" variant="secondary" onClick={()=>{ const d=dayjs().add(2,'day'); setSDate(d.toDate()); }}>{L.dayAfter}</Button>
           </div>
-          <div className="grid grid-rows-[24px_320px_48px] gap-2 justify-items-center">
+          <div className="flex flex-col gap-2 items-center">
             <div className="flex items-center justify-center gap-3 w-[300px]">
               <button type="button" onClick={()=> setSMonth(dayjs(sMonth).subtract(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4"/></button>
               <div className="text-sm font-semibold">{dayjs(sMonth).format(locale==='zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
@@ -197,7 +470,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
             <Button type="button" variant="secondary" onClick={()=> addToEnd('h1')}>{L.add1h}</Button>
             <Button type="button" variant="secondary" onClick={()=> addToEnd('h3')}>{L.add3h}</Button>
           </div>
-          <div className="grid grid-rows-[24px_320px_48px] gap-2 justify-items-center">
+          <div className="flex flex-col gap-2 items-center">
             <div className="flex items-center justify-center gap-3 w-[300px]">
               <button type="button" onClick={()=> setEMonth(dayjs(eMonth).subtract(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4"/></button>
               <div className="text-sm font-semibold">{dayjs(eMonth).format(locale==='zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
@@ -237,20 +510,129 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
     </div>
   );
 
+  // 경량모드에서는 직접 입력만 제공
+  if (isLightweightMode) {
+    return (
+      <div className="space-y-3">
+        <div className="text-xs text-gray-500 mb-2">{L.summary}</div>
+        
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {L.startDateTime}
+            </label>
+            <input
+              type="text"
+              value={directStartInput}
+              onChange={(e) => handleDirectInputChange('start', e.target.value)}
+              onBlur={applyDirectInput}
+              placeholder={L.inputPlaceholder}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {L.endDateTime}
+            </label>
+            <input
+              type="text"
+              value={directEndInput}
+              onChange={(e) => handleDirectInputChange('end', e.target.value)}
+              onBlur={applyDirectInput}
+              placeholder={L.inputPlaceholder}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+        
+        <div className="text-xs text-gray-500 space-y-1">
+          <div>{summary}</div>
+          <div className="text-blue-600">{L.inputHint}</div>
+        </div>
+      </div>
+    );
+  }
+
+  // 일반모드에서는 모달과 직접입력 둘 다 지원
   return (
     <div className="relative">
-      <button type="button" className="w-full text-left px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50"
-        onClick={() => setOpen(true)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-      >
-        <div className="text-xs text-gray-500">{L.summary}</div>
-        <div className="font-medium">{summary}</div>
-      </button>
-      {open && (
+      {!useDirectInput ? (
+        // 모달 사용 모드
+        <>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-gray-500">{L.summary}</span>
+            <button
+              type="button"
+              onClick={() => setUseDirectInput(true)}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              {L.useDirectInput}
+            </button>
+          </div>
+          <button type="button" className="w-full text-left px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50"
+            onClick={() => setOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+          >
+            <div className="font-medium">{summary}</div>
+          </button>
+        </>
+      ) : (
+        // 직접 입력 모드
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">{L.summary}</span>
+            <button
+              type="button"
+              onClick={() => setUseDirectInput(false)}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              {L.useModal}
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {L.startDateTime}
+              </label>
+              <input
+                type="text"
+                value={directStartInput}
+                onChange={(e) => handleDirectInputChange('start', e.target.value)}
+                onBlur={applyDirectInput}
+                placeholder={L.inputPlaceholder}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {L.endDateTime}
+              </label>
+              <input
+                type="text"
+                value={directEndInput}
+                onChange={(e) => handleDirectInputChange('end', e.target.value)}
+                onBlur={applyDirectInput}
+                placeholder={L.inputPlaceholder}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          
+          <div className="text-xs text-gray-500 space-y-1">
+            <div>{summary}</div>
+            <div className="text-blue-600">{L.inputHint}</div>
+          </div>
+        </div>
+      )}
+      
+      {open && !useDirectInput && (
         ReactDOM.createPortal(
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20">
-            {dialogPanel}
+            {standardDialogPanel}
           </div>,
           document.body
         )
