@@ -19,6 +19,16 @@ export const useAssemblyReports = (filters: AssemblyReportFilters = {}) => {
   });
 };
 
+export const useAssemblyReportDates = () => {
+  return useQuery({
+    queryKey: ['assembly-report-dates'],
+    queryFn: async () => {
+      const response = await api.get('/assembly/reports/dates/');
+      return response.data as string[];
+    },
+  });
+};
+
 export const useAssemblyReportsSummary = (date?: string) => {
   return useQuery({
     queryKey: ['assembly-reports-summary', date],

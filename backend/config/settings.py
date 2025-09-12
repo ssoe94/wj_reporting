@@ -14,6 +14,9 @@ from pathlib import Path
 from decouple import config
 import dj_database_url
 
+# 환경 설정
+ENVIRONMENT = config('ENVIRONMENT', default='development')
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -25,13 +28,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-wh%&py10w)!ug#vdky(q+f8+5q0!!@nz+5+-_e$g_^n8=wrf&i')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    config('RENDER_EXTERNAL_HOSTNAME', default='wj-reporting-backend.onrender.com')
+    config('RENDER_EXTERNAL_HOSTNAME', default='wj-reporting-backend.onrender.com'),
+    config('ADDITIONAL_ALLOWED_HOST', default=''),
 ]
+
+# 빈 문자열 제거
+ALLOWED_HOSTS = [host for host in ALLOWED_HOSTS if host]
 
 
 # Application definition
@@ -71,11 +78,23 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# CORS 설정
-CORS_ALLOW_ALL_ORIGINS = True  # 개발 환경에서만 사용
+# 보안 설정
+if ENVIRONMENT == 'production':
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_HSTS_SECONDS = 31536000  # 1년
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+# CORS 설정 - 환경별 제어
+CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL', default=False, cast=bool)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:5173",  # Vite 개발 서버
+    "http://127.0.0.1:5173",
+    config('FRONTEND_URL', default='https://wj-reporting.onrender.com'),
 ]
 
 # REST Framework 설정

@@ -2,7 +2,7 @@ import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { ko, zhCN } from 'date-fns/locale';
 import dayjs from 'dayjs';
-import { useAssemblyReports } from '../hooks/useAssemblyReports';
+import { useAssemblyReportDates } from '../hooks/useAssemblyReports';
 import { useLang } from '../i18n';
 
 interface Props {
@@ -11,12 +11,11 @@ interface Props {
 }
 
 export default function AssemblyProdCalendar({ onSelect, selected }: Props) {
-  const { data: reportsData } = useAssemblyReports();
+  const { data: dates } = useAssemblyReportDates();
   const { lang } = useLang();
   
-  // API 응답에서 results 배열을 추출하고, 없으면 빈 배열 사용
-  const reports = reportsData?.results || [];
-  const datesWithData = new Set(reports.map((r: any) => r.date));
+  // 날짜 목록을 Set으로 변환
+  const datesWithData = new Set(dates || []);
 
   const modifiers = {
     hasData: (d: Date) => datesWithData.has(dayjs(d).format('YYYY-MM-DD')),

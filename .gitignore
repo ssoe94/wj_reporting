@@ -20,6 +20,23 @@ backend/venv/
 # Django
 db.sqlite3
 .env
+*.sqlite3
+media/
+staticfiles/
+
+# 보안 관련
+*.key
+*.pem
+*.p12
+secrets.json
+
+# 임시 파일
+*.tmp
+*.bak
+*~
+
+# Celery
+celerybeat-schedule*
 
 # Node.js
 node_modules/

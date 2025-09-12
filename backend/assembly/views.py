@@ -86,6 +86,12 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
         return Response(summary_data)
 
     @action(detail=False, methods=['get'])
+    def dates(self, request):
+        """캘린더에 표시할 날짜 목록을 반환 (페이지네이션 없이)"""
+        dates = AssemblyReport.objects.values_list('date', flat=True).distinct().order_by('-date')
+        return Response(list(dates))
+
+    @action(detail=False, methods=['get'])
     def export(self, request):
         """가공 생산 기록을 CSV 파일로 다운로드"""
         queryset = self.filter_queryset(self.get_queryset())
