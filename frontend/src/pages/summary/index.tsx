@@ -38,12 +38,23 @@ export default function SummaryPage() {
 
   const downloadCsv = async () => {
     try {
-      const { data } = await api.get("/reports/export/", { responseType: "blob" });
-      const url = URL.createObjectURL(data);
+      const response = await api.get("/reports/export/", { responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "reports.csv";
+
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'injection_reports.csv'; // fallback
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (filenameMatch && filenameMatch.length > 1) {
+          filename = filenameMatch[1];
+        }
+      }
+      a.download = filename;
+
       a.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
       toast.error("CSV 다운로드 실패");
