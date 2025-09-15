@@ -5,6 +5,8 @@ from django.db import models as django_models
 from django.db.models import Q
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
+import csv
 
 # Import actual models
 from .models import (
@@ -62,6 +64,52 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
             'achievement_rate': achievement_rate,
             'defect_rate': defect_rate,
         })
+
+    @action(detail=False, methods=['get'], url_path='export')
+    def export_csv(self, request):
+        """사출 보고서 전체를 CSV로 내보냅니다."""
+        queryset = self.get_queryset().order_by('-date')
+        
+        today_str = timezone.now().strftime('%Y-%m-%d')
+        filename = f'injection_reports_{today_str}.csv'
+        
+        response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        writer = csv.writer(response)
+        
+        header = [
+            'date', 'machine_no', 'tonnage', 'model', 'section', 'part_no',
+            'plan_qty', 'actual_qty', 'reported_defect', 'actual_defect',
+            'operation_time', 'total_time', 'start_datetime', 'end_datetime', 'note',
+            'achievement_rate', 'defect_rate', 'total_qty', 'uptime_rate'
+        ]
+        writer.writerow(header)
+        
+        for report in queryset:
+            writer.writerow([
+                report.date,
+                report.machine_no,
+                report.tonnage,
+                report.model,
+                report.section,
+                report.part_no,
+                report.plan_qty,
+                report.actual_qty,
+                report.reported_defect,
+                report.actual_defect,
+                report.operation_time,
+                report.total_time,
+                report.start_datetime.strftime('%Y-%m-%d %H:%M:%S') if report.start_datetime else '',
+                report.end_datetime.strftime('%Y-%m-%d %H:%M:%S') if report.end_datetime else '',
+                report.note,
+                report.achievement_rate,
+                report.defect_rate,
+                report.total_qty,
+                report.uptime_rate
+            ])
+            
+        return response
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()

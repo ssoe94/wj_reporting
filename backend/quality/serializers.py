@@ -8,3 +8,4 @@ class QualityReportSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+

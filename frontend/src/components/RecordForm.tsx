@@ -67,25 +67,28 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     return Array.from(map.values());
   }, [searchResults]);
 
-  const [form, setForm] = useState(() => ({
-    date: getLocalDate(),
-    machineId: '',
-    model: '',
-    type: '',
-    partNo: '',
-    plan: '',
-    actual: '',
-    reportedDefect: '',
-    realDefect: '',
-    resin: '',
-    netG: '',
-    srG: '',
-    ct: '',
-    start: nowStr,
-    end: nowStr,
-    idle: '',
-    note: '',
-  }));
+  const [form, setForm] = useState(() => {
+    const lastUsedDate = sessionStorage.getItem('lastUsedReportDate');
+    return {
+      date: lastUsedDate || getLocalDate(),
+      machineId: '',
+      model: '',
+      type: '',
+      partNo: '',
+      plan: '',
+      actual: '',
+      reportedDefect: '',
+      realDefect: '',
+      resin: '',
+      netG: '',
+      srG: '',
+      ct: '',
+      start: nowStr,
+      end: nowStr,
+      idle: '',
+      note: '',
+    };
+  });
 
 
   const handleChange = (
@@ -150,13 +153,14 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         note: form.note,
       };
       await api.post('/reports/', payload);
+      sessionStorage.setItem('lastUsedReportDate', payload.date); // Save the date
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       queryClient.invalidateQueries({ queryKey: ['reports-summary'] });
       toast.success('저장되었습니다');
       if (onSaved) onSaved();
       setForm({
         ...form,
-        date: getLocalDate(),
+        // date: getLocalDate(), // Keep last used date
         model: '',
         type: '',
         plan: '',
@@ -264,7 +268,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                 const modelCode = (parts[0] || '').trim().toUpperCase();
                 const desc = (parts[1] || '').trim();
                 setShowAddPartModal(true);
-                setTimeout(()=>{
+                setTimeout(()=> {
                   try{
                     (document.getElementById('newModelCode') as HTMLInputElement).value = modelCode;
                     (document.getElementById('newDescription') as HTMLInputElement).value = desc;
@@ -564,7 +568,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
               <PermissionButton 
                 permission="can_edit_injection"
                 className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200"
-                onClick={async()=>{
+                onClick={async()=> {
                 try{
                   const partNo = (document.getElementById('newPartNo') as HTMLInputElement).value;
                   const modelCode = (document.getElementById('newModelCode') as HTMLInputElement).value;

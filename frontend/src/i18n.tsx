@@ -363,20 +363,6 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     
     // 가공 기록 관련  
     uph: 'UPH',
-    disposition: '처리 방식',
-    defect_phenomenon: '불량 현상',
-    defect_rate_label: '불량률',
-    lot_qty: 'LOT SIZE',
-    report_datetime: '보고 일시',
-    item_name: '품명',
-    oqc_issue_share: 'OQC 검출 Issue 공유',
-    quality_section: '보고부문',
-    quality_history: '불량보고 이력',
-    date_from: '시작일',
-    date_to: '종료일',
-    inspection_qty: '검사수',
-    defect_qty: '불량수',
-    judgement_result: '판정결과',
   },
   zh: {
     title: '万佳生产数据管理平台',
@@ -746,20 +732,6 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     
     // 가공 기록 관련
     uph: 'UPH',
-    disposition: '处理方式',
-    defect_phenomenon: '不良现象',
-    defect_rate_label: '不良率',
-    lot_qty: 'LOT 数',
-    report_datetime: '报告日期时间',
-    item_name: '品名',
-    oqc_issue_share: 'OQC检出Issue共享',
-    quality_section: '报告部门',
-    quality_history: '不良报告历史',
-    date_from: '开始日',
-    date_to: '结束日',
-    inspection_qty: '检验数',
-    defect_qty: '不良数',
-    judgement_result: '判定结果',
   },
 };
 

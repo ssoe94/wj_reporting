@@ -8,3 +8,4 @@ router.register(r'reports', QualityReportViewSet, basename='quality-report')
 urlpatterns = router.urls
 
 
+
