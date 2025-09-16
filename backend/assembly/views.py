@@ -311,7 +311,7 @@ class AssemblyPartSpecViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='create-or-update')
     def create_or_update(self, request):
         """Part 번호로 생성 또는 업데이트"""
-        part_no = request.data.get('part_no', '').strip()
+        part_no = request.data.get('part_no', '').strip().upper()
         description = request.data.get('description', '').strip()
         model_code = request.data.get('model_code', '').strip()
         
@@ -320,7 +320,7 @@ class AssemblyPartSpecViewSet(viewsets.ModelViewSet):
         
         # 기존 Part가 있는지 확인
         try:
-            part = AssemblyPartSpec.objects.get(part_no=part_no)
+            part = AssemblyPartSpec.objects.get(part_no__iexact=part_no)
             # 제공된 필드들만 업데이트
             if description:
                 part.description = description
@@ -361,7 +361,7 @@ class AssemblyProductViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='search-by-part')
     def search_by_part(self, request):
         """Part No로 관련 모델 검색"""
-        part_no = request.query_params.get('part_no', '').strip()
+        part_no = request.query_params.get('part_no', '').strip().upper()
         if not part_no:
             return Response([], safe=False)
         

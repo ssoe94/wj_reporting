@@ -55,6 +55,12 @@ class AssemblyReport(models.Model):
     def __str__(self):
         return f"{self.date} - {self.line_no} {self.model}"
 
+    def save(self, *args, **kwargs):
+        # Normalize PART NO to uppercase on save
+        if getattr(self, 'part_no', None):
+            self.part_no = self.part_no.upper()
+        super().save(*args, **kwargs)
+
     # 자동 계산 필드들
     @property
     def incoming_defect_qty(self):
@@ -133,6 +139,12 @@ class AssemblyPartSpec(models.Model):
     def __str__(self):
         return f"{self.part_no} - {self.model_code}"
 
+    def save(self, *args, **kwargs):
+        # Normalize PART NO to uppercase on save
+        if getattr(self, 'part_no', None):
+            self.part_no = self.part_no.upper()
+        super().save(*args, **kwargs)
+
 
 class AssemblyProduct(models.Model):
     """가공 제품 마스터 (injection의 Product와 유사)"""
@@ -148,3 +160,9 @@ class AssemblyProduct(models.Model):
 
     def __str__(self):
         return f"{self.model} ({self.part_no})"
+
+    def save(self, *args, **kwargs):
+        # Normalize PART NO to uppercase on save
+        if getattr(self, 'part_no', None):
+            self.part_no = self.part_no.upper()
+        super().save(*args, **kwargs)

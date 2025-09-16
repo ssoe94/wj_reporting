@@ -13,4 +13,18 @@ class QualityReportViewSet(viewsets.ModelViewSet):
     ordering_fields = ['report_dt', 'created_at']
     ordering = ['-report_dt']
 
+    def perform_create(self, serializer):
+        part_no = self.request.data.get('part_no')
+        if isinstance(part_no, str):
+            self.request.data._mutable = True if hasattr(self.request.data, '_mutable') else False
+            self.request.data['part_no'] = part_no.upper()
+        serializer.save()
+
+    def perform_update(self, serializer):
+        part_no = self.request.data.get('part_no')
+        if isinstance(part_no, str):
+            self.request.data._mutable = True if hasattr(self.request.data, '_mutable') else False
+            self.request.data['part_no'] = part_no.upper()
+        serializer.save()
+
 # Create your views here.

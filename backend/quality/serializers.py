@@ -7,6 +7,12 @@ class QualityReportSerializer(serializers.ModelSerializer):
         model = QualityReport
         fields = '__all__'
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('part_no'):
+            data['part_no'] = data['part_no'].upper()
+        return data
+
 
 
 

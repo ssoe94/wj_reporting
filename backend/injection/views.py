@@ -146,7 +146,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                             continue
 
                         machine_no = int(row['machine_no']) if row.get('machine_no') else None
-                        part_no = row.get('part_no', '').strip()
+                        part_no = row.get('part_no', '').strip().upper()
 
                         plan_qty = int(row.get('plan_qty') or 0)
                         actual_qty = int(row.get('actual_qty') or 0)
@@ -406,7 +406,7 @@ class EcoPartSpecViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='create-or-update')
     def create_or_update(self, request):
         """part_no 기준으로 EcoPartSpec 생성 또는 업데이트"""
-        part_no = (request.data.get('part_no') or '').strip()
+        part_no = (request.data.get('part_no') or '').strip().upper()
         if not part_no:
             return Response({'part_no': 'required'}, status=status.HTTP_400_BAD_REQUEST)
 

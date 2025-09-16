@@ -55,6 +55,12 @@ class UnifiedPartSpec(models.Model):
     def __str__(self):
         return f"{self.part_no} - {self.model_code}"
 
+    def save(self, *args, **kwargs):
+        # Normalize PART NO to uppercase on save
+        if getattr(self, 'part_no', None):
+            self.part_no = self.part_no.upper()
+        super().save(*args, **kwargs)
+
     @property
     def display_name(self):
         """표시용 이름: Part No - Model (Description)"""

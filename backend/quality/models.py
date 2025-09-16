@@ -33,4 +33,10 @@ class QualityReport(models.Model):
     def __str__(self) -> str:
         return f"{self.report_dt} {self.section} {self.model} {self.part_no}"
 
+    def save(self, *args, **kwargs):
+        # Normalize PART NO to uppercase on save
+        if getattr(self, 'part_no', None):
+            self.part_no = self.part_no.upper()
+        super().save(*args, **kwargs)
+
 # Create your models here.

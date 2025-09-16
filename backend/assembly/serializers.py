@@ -43,6 +43,12 @@ class AssemblyPartSpecSerializer(serializers.ModelSerializer):
             'valid_from', 'created_at'
         ]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('part_no'):
+            data['part_no'] = data['part_no'].upper()
+        return data
+
 
 class AssemblyProductSerializer(serializers.ModelSerializer):
     class Meta:
@@ -50,6 +56,12 @@ class AssemblyProductSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'model', 'part_no', 'process_line'
         ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('part_no'):
+            data['part_no'] = data['part_no'].upper()
+        return data
 
 
 class CSVValidationResultSerializer(serializers.Serializer):
@@ -102,6 +114,9 @@ class CSVUploadSerializer(serializers.Serializer):
             try:
                 # 데이터 검증 및 변환
                 validated_row = self._validate_row(row_data, row_number)
+                # part_no를 대문자로 정규화
+                if 'part_no' in validated_row and isinstance(validated_row['part_no'], str):
+                    validated_row['part_no'] = validated_row['part_no'].upper()
                 
                 part_no = validated_row['part_no']
                 csv_model = validated_row['model']
@@ -227,7 +242,8 @@ class NewPartInfoSerializer(serializers.Serializer):
     standard_worker_count = serializers.IntegerField(required=False, allow_null=True, default=1)
     
     def validate_part_no(self, value):
-        # 이미 존재하는 Part No. 확인
-        if AssemblyPartSpec.objects.filter(part_no=value).exists():
+        # 대소문자 구분 없이 중복 확인 후 저장은 대문자로
+        norm = (value or '').upper()
+        if AssemblyPartSpec.objects.filter(part_no__iexact=norm).exists():
             raise serializers.ValidationError("이미 존재하는 Part No.입니다.")
-        return value
+        return norm

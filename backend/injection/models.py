@@ -50,6 +50,12 @@ class InjectionReport(models.Model):
     def __str__(self):
         return f"{self.date} - {self.tonnage} {self.model}"
 
+    def save(self, *args, **kwargs):
+        # Normalize PART NO to uppercase on save
+        if getattr(self, 'part_no', None):
+            self.part_no = self.part_no.upper()
+        super().save(*args, **kwargs)
+
     # 자동 계산 필드들
     @property
     def achievement_rate(self):
@@ -92,6 +98,14 @@ class Product(models.Model):
     def __str__(self):
         return f"{self.model} ({self.type})"
 
+    def save(self, *args, **kwargs):
+        # Normalize PART NOs to uppercase on save
+        if getattr(self, 'fg_part_no', None):
+            self.fg_part_no = self.fg_part_no.upper()
+        if getattr(self, 'wip_part_no', None):
+            self.wip_part_no = self.wip_part_no.upper()
+        super().save(*args, **kwargs)
+
 class PartSpec(models.Model):
     """사출 품목 스펙(버전 관리)"""
     part_no = models.CharField('Part No', max_length=100)
@@ -125,6 +139,12 @@ class PartSpec(models.Model):
 
     def __str__(self):
         return f"{self.part_no} ({self.valid_from})"
+
+    def save(self, *args, **kwargs):
+        # Normalize PART NO to uppercase on save
+        if getattr(self, 'part_no', None):
+            self.part_no = self.part_no.upper()
+        super().save(*args, **kwargs)
 
 # ================================
 # ECO 관리
@@ -194,6 +214,12 @@ class EcoPartSpec(models.Model):
 
     def __str__(self):
         return f"{self.part_no} - {self.description}"
+
+    def save(self, *args, **kwargs):
+        # Normalize PART NO to uppercase on save
+        if getattr(self, 'part_no', None):
+            self.part_no = self.part_no.upper()
+        super().save(*args, **kwargs)
 
 class EcoDetail(models.Model):
     """ECO 상세 정보"""

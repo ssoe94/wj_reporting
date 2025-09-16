@@ -50,6 +50,12 @@ class InjectionReportSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_at', 'updated_at']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('part_no'):
+            data['part_no'] = data['part_no'].upper()
+        return data
+
     def get_cycle_time_deviation(self, obj):
         if not obj.actual_qty or obj.actual_qty == 0 or not obj.operation_time:
             return None
@@ -81,12 +87,27 @@ class PartSpecSerializer(serializers.ModelSerializer):
         model = PartSpec
         fields = '__all__'
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('part_no'):
+            data['part_no'] = data['part_no'].upper()
+        return data
+
 # EcoDetailSerializer 먼저 정의
 class EcoPartSpecSerializer(serializers.ModelSerializer):
     class Meta:
         model = EcoPartSpec
         fields = ['id', 'part_no', 'description', 'model_code', 'eco_category', 'change_history', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('part_no'):
+            data['part_no'] = data['part_no'].upper()
+        return data
+
+    def validate_part_no(self, value):
+        return (value or '').upper()
 
 class EcoDetailSerializer(serializers.ModelSerializer):
     part_no = serializers.CharField(source='eco_part_spec.part_no', read_only=True)
