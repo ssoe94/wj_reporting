@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 import csv
+import io
 
 # Import actual models
 from .models import (
@@ -19,7 +20,8 @@ from .serializers import (
     InjectionReportSerializer, ProductSerializer, PartSpecSerializer,
     EcoPartSpecSerializer, EngineeringChangeOrderSerializer,
     UserRegistrationRequestSerializer, UserProfileSerializer,
-    InventorySnapshotSerializer, EcoDetailSerializer, UserSerializer, ChangePasswordSerializer
+    InventorySnapshotSerializer, EcoDetailSerializer, UserSerializer, ChangePasswordSerializer,
+    HistoricalPerformanceSerializer
 )
 
 # For User related views
@@ -81,7 +83,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
         header = [
             'date', 'machine_no', 'tonnage', 'model', 'section', 'part_no',
             'plan_qty', 'actual_qty', 'reported_defect', 'actual_defect',
-            'operation_time', 'total_time', 'start_datetime', 'end_datetime', 'note',
+            'total_time', 'idle_time', 'operation_time', 'start_datetime', 'end_datetime', 'note',
             'achievement_rate', 'defect_rate', 'total_qty', 'uptime_rate'
         ]
         writer.writerow(header)
@@ -98,8 +100,9 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
                 report.actual_qty,
                 report.reported_defect,
                 report.actual_defect,
-                report.operation_time,
                 report.total_time,
+                report.idle_time,
+                report.operation_time,
                 report.start_datetime.strftime('%Y-%m-%d %H:%M:%S') if report.start_datetime else '',
                 report.end_datetime.strftime('%Y-%m-%d %H:%M:%S') if report.end_datetime else '',
                 report.note,
@@ -110,6 +113,127 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
             ])
             
         return response
+
+    @action(detail=False, methods=['post'], url_path='bulk-import')
+    def bulk_import(self, request):
+        """
+        CSV 파일을 이용해 여러 개의 사출 보고서를 한 번에 생성하거나 업데이트합니다.
+        'date', 'machine_no', 'part_no'를 기준으로 중복을 확인합니다.
+        """
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'error': 'CSV file not provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not file.name.endswith('.csv'):
+            return Response({'error': 'File is not a CSV'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created_count = 0
+        updated_count = 0
+        errors = []
+
+        try:
+            decoded_file = file.read().decode('utf-8-sig')
+            io_string = io.StringIO(decoded_file)
+            reader = csv.DictReader(io_string)
+
+            with transaction.atomic():
+                for i, row in enumerate(reader):
+                    try:
+                        # --- 데이터 파싱 및 검증 ---
+                        date_str = row.get('date', '').lstrip('\ufeff').strip()
+                        if not date_str:
+                            errors.append(f"Row {i+1}: Date is required.")
+                            continue
+
+                        machine_no = int(row['machine_no']) if row.get('machine_no') else None
+                        part_no = row.get('part_no', '').strip()
+
+                        plan_qty = int(row.get('plan_qty') or 0)
+                        actual_qty = int(row.get('actual_qty') or 0)
+                        reported_defect = int(row.get('reported_defect') or 0)
+                        actual_defect = int(row.get('actual_defect') or 0)
+                        operation_time = int(row.get('operation_time') or 0)
+                        total_time = int(row.get('total_time') or 1440)
+                        idle_time = max(0, total_time - operation_time)
+
+                        start_datetime = None
+                        start_datetime_str = row.get('start_datetime')
+                        if start_datetime_str:
+                            try:
+                                start_datetime = timezone.datetime.fromisoformat(start_datetime_str)
+                            except ValueError:
+                                start_datetime = None
+
+                        end_datetime = None
+                        end_datetime_str = row.get('end_datetime')
+                        if end_datetime_str:
+                            try:
+                                end_datetime = timezone.datetime.fromisoformat(end_datetime_str)
+                            except ValueError:
+                                end_datetime = None
+
+                        # --- Upsert 로직 ---
+                        lookup_key = {
+                            'date': date_str,
+                            'machine_no': machine_no,
+                            'part_no': part_no,
+                        }
+
+                        report_defaults = {
+                            'tonnage': row.get('tonnage', ''),
+                            'model': row.get('model', ''),
+                            'section': row.get('section', ''),
+                            'plan_qty': plan_qty,
+                            'actual_qty': actual_qty,
+                            'reported_defect': reported_defect,
+                            'actual_defect': actual_defect,
+                            'total_time': total_time,
+                            'idle_time': idle_time,
+                            'start_datetime': start_datetime,
+                            'end_datetime': end_datetime,
+                            'note': row.get('note', '')
+                        }
+
+                        obj, created = InjectionReport.objects.update_or_create(
+                            **lookup_key,
+                            defaults=report_defaults
+                        )
+
+                        if created:
+                            created_count += 1
+                        else:
+                            updated_count += 1
+
+                    except (ValueError, TypeError, KeyError) as e:
+                        errors.append(f"Row {i+1}: Invalid data format - {e} - {row}")
+
+            if errors:
+                return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response({
+                'created': created_count,
+                'skipped': updated_count, # 'skipped'는 프론트엔드 호환성을 위해 유지 (업데이트된 항목 수)
+                'errors': len(errors)
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'], url_path='historical-performance')
+    def historical_performance(self, request):
+        part_prefix = request.query_params.get('part_prefix', '').strip()
+        if not part_prefix:
+            return Response({'error': 'part_prefix is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = InjectionReport.objects.filter(
+            part_no__startswith=part_prefix
+        ).order_by('-date', '-id')[:20]
+
+        # Reverse the queryset so the chart shows oldest to newest
+        queryset = reversed(queryset)
+
+        serializer = HistoricalPerformanceSerializer(queryset, many=True)
+        return Response(serializer.data)
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()

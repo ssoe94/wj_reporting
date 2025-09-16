@@ -14,11 +14,14 @@ export interface Report {
   actual_defect: number;
   operation_time: number;
   total_time: number;
+  idle_time?: number; // optional: may be derived or stored
   part_no: string;
   note: string;
   machine_no: number;
   start_datetime: string;
   end_datetime: string;
+  achievement_rate?: number; // optional calculated field
+  cycle_time_deviation?: number | null; // optional analytics field
   // ...필드 계속
 }
 

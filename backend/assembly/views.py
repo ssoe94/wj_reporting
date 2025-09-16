@@ -148,7 +148,156 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = 'attachment; filename="assembly_reports.csv"'
         return response
 
-    # CSV 관련 대량 업로드/미리보기/일괄 생성 엔드포인트는 현재 비활성화되었습니다.
+    @action(detail=False, methods=['post'], url_path='bulk-import')
+    def bulk_import(self, request):
+        """CSV 파일을 업로드하여 대량 가공 생산 기록 생성"""
+        csv_file = request.FILES.get('file')
+        if not csv_file:
+            return Response({'detail': 'CSV 파일이 필요합니다.'}, status=400)
+
+        if not csv_file.name.endswith('.csv'):
+            return Response({'detail': 'CSV 파일만 업로드 가능합니다.'}, status=400)
+
+        results = {
+            'created': 0,
+            'skipped': 0,
+            'errors': 0,
+            'error_details': []
+        }
+
+        try:
+            # 파일 읽기
+            decoded_file = csv_file.read().decode('utf-8-sig')  # BOM 제거
+            reader = csv.DictReader(io.StringIO(decoded_file))
+
+            for row_num, row in enumerate(reader, 1):
+                try:
+                    # 필수 필드 확인
+                    required_fields = ['Date', 'Line No', 'Part No', 'Model', 'Plan Qty', 'Actual Qty']
+                    missing_fields = [field for field in required_fields if not row.get(field, '').strip()]
+
+                    if missing_fields:
+                        results['errors'] += 1
+                        results['error_details'].append(f"행 {row_num}: 필수 필드 누락 - {missing_fields}")
+                        continue
+
+                    # 날짜 형식 검증
+                    try:
+                        date_obj = dt.datetime.strptime(row['Date'].strip(), '%Y-%m-%d').date()
+                    except ValueError:
+                        results['errors'] += 1
+                        results['error_details'].append(f"행 {row_num}: 잘못된 날짜 형식 - {row['Date']}")
+                        continue
+
+                    # 숫자 필드 검증
+                    try:
+                        plan_qty = int(row['Plan Qty'])
+                        actual_qty = int(row['Actual Qty'])
+                        input_qty = int(row.get('Input Qty', 0) or 0)
+                        rework_qty = int(row.get('Rework Qty', 0) or 0)
+                        injection_defect = int(row.get('Injection Defect', 0) or 0)
+                        outsourcing_defect = int(row.get('Outsourcing Defect', 0) or 0)
+                        processing_defect = int(row.get('Processing Defect', 0) or 0)
+                        total_time = int(row.get('Total Time', 0) or row.get('총시간', 0) or 0)
+                        idle_time = int(row.get('Idle Time', 0) or row.get('부동시간', 0) or 0)
+                        operation_time = int(row.get('Operation Time', 0) or row.get('가동시간', 0) or 0)
+                        workers = int(row.get('Workers', 1) or row.get('작업인원', 1) or 1)
+                    except (ValueError, TypeError):
+                        results['errors'] += 1
+                        results['error_details'].append(f"행 {row_num}: 숫자 필드 형식 오류")
+                        continue
+
+                    # 중복 체크
+                    existing = AssemblyReport.objects.filter(
+                        date=date_obj,
+                        line_no=row['Line No'].strip(),
+                        part_no=row['Part No'].strip(),
+                        model=row['Model'].strip()
+                    ).first()
+
+                    if existing:
+                        results['skipped'] += 1
+                        continue
+
+                    # 상세 불량 데이터 처리
+                    incoming_detail_keys = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening','other']
+                    processing_detail_keys = ['scratch','printing','rework','other']
+
+                    incoming_defects_detail = {}
+                    for key in incoming_detail_keys:
+                        col_name = f"Inc {key}"
+                        if col_name in row:
+                            try:
+                                incoming_defects_detail[key] = int(row[col_name] or 0)
+                            except ValueError:
+                                incoming_defects_detail[key] = 0
+
+                    processing_defects_detail = {}
+                    for key in processing_detail_keys:
+                        col_name = f"Proc {key}"
+                        if col_name in row:
+                            try:
+                                processing_defects_detail[key] = int(row[col_name] or 0)
+                            except ValueError:
+                                processing_defects_detail[key] = 0
+
+                    # AssemblyReport 생성
+                    report = AssemblyReport.objects.create(
+                        date=date_obj,
+                        line_no=row['Line No'].strip(),
+                        part_no=row['Part No'].strip(),
+                        model=row['Model'].strip(),
+                        plan_qty=plan_qty,
+                        input_qty=input_qty,
+                        actual_qty=actual_qty,
+                        rework_qty=rework_qty,
+                        supply_type=row.get('Supply Type', '').strip(),
+                        injection_defect=injection_defect,
+                        outsourcing_defect=outsourcing_defect,
+                        processing_defect=processing_defect,
+                        incoming_defects_detail=incoming_defects_detail,
+                        processing_defects_detail=processing_defects_detail,
+                        total_time=total_time,
+                        idle_time=idle_time,
+                        operation_time=operation_time,
+                        workers=workers,
+                        note=row.get('Note', '').strip()
+                    )
+                    results['created'] += 1
+
+                except Exception as e:
+                    results['errors'] += 1
+                    results['error_details'].append(f"행 {row_num}: {str(e)}")
+
+        except Exception as e:
+            return Response({'detail': f'CSV 파일 처리 중 오류: {str(e)}'}, status=400)
+
+        return Response(results)
+
+    @action(detail=False, methods=['get'], url_path='historical-performance')
+    def historical_performance(self, request):
+        """Part No. 앞자리 9자리 기준 가공 생산 기록 히스토리 조회"""
+        part_prefix = request.query_params.get('part_prefix')
+        if not part_prefix:
+            return Response({'detail': 'part_prefix 파라미터가 필요합니다.'}, status=400)
+
+        # Part No. 앞자리 9자리로 필터링하여 최근 20개 기록 조회
+        queryset = AssemblyReport.objects.filter(
+            part_no__startswith=part_prefix[:9]
+        ).order_by('-date', '-id')[:20]
+
+        # 필요한 데이터만 직렬화 (모델의 property 사용)
+        data = []
+        for report in queryset:
+            data.append({
+                'date': report.date,
+                'part_no': report.part_no,
+                'actual_qty': report.actual_qty,
+                'uph': report.uph,  # 모델의 property 사용
+                'upph': report.upph,  # 모델의 property 사용
+            })
+
+        return Response(data)
 
 
 class AssemblyPartSpecViewSet(viewsets.ModelViewSet):

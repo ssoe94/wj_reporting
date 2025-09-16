@@ -25,8 +25,8 @@ class InjectionReport(models.Model):
     actual_defect = models.IntegerField('실제불량수', validators=[MinValueValidator(0)])
     
     # 가동 정보
-    operation_time = models.IntegerField('가동시간(분)', validators=[MinValueValidator(0)], default=0)
     total_time = models.IntegerField('총시간(분)', validators=[MinValueValidator(0)], default=1440)  # 24시간 = 1440분
+    idle_time = models.IntegerField('부동시간(분)', default=0, validators=[MinValueValidator(0)])
     
     # 시작/종료 시각
     start_datetime = models.DateTimeField('시작 일시', null=True, blank=True)
@@ -65,6 +65,11 @@ class InjectionReport(models.Model):
     def total_qty(self):
         """총생산량 = 실제수량 + 실제불량수"""
         return self.actual_qty + self.actual_defect
+
+    @property
+    def operation_time(self):
+        """가동시간(분) = 총시간 - 부동시간"""
+        return self.total_time - self.idle_time
 
     @property
     def uptime_rate(self):

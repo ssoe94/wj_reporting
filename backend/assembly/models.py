@@ -91,17 +91,15 @@ class AssemblyReport(models.Model):
     @property
     def uph(self):
         """시간당 생산량 (UPH) = 생산수량 / 작업시간(시간)"""
-        actual_operation_time = self.total_time - self.idle_time  # 분
-        if actual_operation_time > 0:
-            return round(self.actual_qty / (actual_operation_time / 60), 2)
+        if self.operation_time > 0:
+            return round(self.actual_qty / (self.operation_time / 60), 2)
         return 0
 
     @property
     def upph(self):
         """인당 시간당 생산량 (UPPH) = 생산수량 / (작업시간(시간) × 작업인원)"""
-        actual_operation_time = self.total_time - self.idle_time  # 분
-        if actual_operation_time > 0 and self.workers > 0:
-            return round(self.actual_qty / ((actual_operation_time / 60) * self.workers), 2)
+        if self.operation_time > 0 and self.workers > 0:
+            return round(self.actual_qty / ((self.operation_time / 60) * self.workers), 2)
         return 0
 
     @property

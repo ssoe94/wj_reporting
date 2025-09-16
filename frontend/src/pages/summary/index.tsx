@@ -19,11 +19,19 @@ export default function SummaryPage() {
   const { data: summary } = useReportSummary();
   const { data: reports = [] } = useReports();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const location = useLocation();
 
-  // 컴포넌트 마운트 시 최근 날짜로 자동 선택
+  // 컴포넌트 마운트 시 최근 날짜로 자동 선택 또는 URL 파라미터 날짜 선택
   useEffect(() => {
-    if (reports.length > 0 && !selectedDate) {
-      // 날짜순으로 정렬해서 가장 최근 날짜 선택
+    // URL에서 date 파라미터 확인
+    const searchParams = new URLSearchParams(location.search);
+    const dateParam = searchParams.get('date');
+
+    if (dateParam && reports.some(r => r.date === dateParam)) {
+      // URL에 날짜 파라미터가 있고 해당 날짜의 데이터가 존재하면 선택
+      setSelectedDate(dateParam);
+    } else if (reports.length > 0 && !selectedDate) {
+      // 그렇지 않으면 최근 날짜로 자동 선택
       const sortedDates = reports
         .map(r => r.date)
         .sort((a, b) => b.localeCompare(a)); // 내림차순 정렬
@@ -31,7 +39,7 @@ export default function SummaryPage() {
         setSelectedDate(sortedDates[0]);
       }
     }
-  }, [reports, selectedDate]);
+  }, [reports, selectedDate, location.search]);
   // RecordForm 내부 상태로 대체했으므로 관련 코드 삭제
 
   // 사출기 목록, 포맷 함수 등은 RecordForm 내부로 이동했으므로 삭제합니다.
@@ -65,7 +73,6 @@ export default function SummaryPage() {
   // RecordForm 내부 상태로 대체했으므로 관련 코드 삭제
 
   // Scroll to section on hash change (e.g., #records, #new)
-  const location = useLocation();
   useEffect(() => {
     if (location.hash) {
       const id = location.hash.replace('#', '');

@@ -1,11 +1,11 @@
 import React from 'react';
 import { useReports } from '@/hooks/useReports';
 import type { Report } from '@/hooks/useReports';
-import { useStdCT } from '@/hooks/useStdCT';
 import { Dialog } from '@headlessui/react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import ReportForm from '@/components/ReportForm';
+import HistoricalPerformanceModal from '@/components/HistoricalPerformanceModal';
 import api from '@/lib/api';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
@@ -29,10 +29,10 @@ export default function DateRecordsTable({ date }: Props) {
       });
   }, [reports, date]);
 
-  const partNos = list.map((r) => r.part_no).filter(Boolean);
-  const { data: stdMap = {} } = useStdCT(partNos);
   const [detail, setDetail] = useState<Report|null>(null);
   const [editing, setEditing] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [selectedPartPrefix, setSelectedPartPrefix] = useState('');
 
   // react-query client
   const queryClient = useQueryClient();
@@ -61,6 +61,16 @@ export default function DateRecordsTable({ date }: Props) {
       setDetail(null);
     } catch {
       toast.error(t('delete_fail') || '삭제 실패');
+    }
+  };
+
+  // Part No. 클릭 핸들러 - 앞자리 9자리를 prefix로 추출
+  const handlePartNoClick = (partNo: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // 모달 클릭 이벤트와 분리
+    if (partNo && partNo.length >= 9) {
+      const prefix = partNo.substring(0, 9);
+      setSelectedPartPrefix(prefix);
+      setHistoryModalOpen(true);
     }
   };
 
@@ -119,15 +129,14 @@ export default function DateRecordsTable({ date }: Props) {
               })()}</td>
             <td className="px-2 py-1 text-center">
               {(() => {
-                const std = stdMap[r.part_no] || 0;
-                if (!std || !r.actual_qty) return '-';
-                const actualCt = (r.operation_time * 60) / r.actual_qty;
-                const delta = actualCt - std;
-                const color = delta > 0 ? 'text-red-600' : 'text-green-600';
+                const deviation = r.cycle_time_deviation;
+                if (deviation === null || deviation === undefined) return <span className="text-blue-500 font-semibold">New</span>;
+                
+                const color = deviation > 0 ? 'text-red-600' : 'text-green-600';
                 return (
                   <span className={color + ' flex items-center justify-center gap-0.5'}>
-                    {delta > 0 ? '▲' : '▼'}
-                    {Math.abs(delta).toFixed(1)}
+                    {deviation > 0 ? '▲' : '▼'}
+                    {Math.abs(deviation).toFixed(1)}
                   </span>
                 );
               })()}
@@ -159,7 +168,16 @@ export default function DateRecordsTable({ date }: Props) {
                <span className="text-gray-500">{t('report_date')}</span><span>{detail!.date}</span>
                <span className="text-gray-500">{t('machine')}</span><span>{detail!.machine_no}</span>
                <span className="text-gray-500">{t('model')}</span><span>{detail!.model}</span>
-               <span className="text-gray-500">Part No</span><span>{detail!.part_no}</span>
+               <span className="text-gray-500">Part No</span>
+               <span>
+                 <button
+                   onClick={(e) => handlePartNoClick(detail!.part_no, e)}
+                   className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                   title={t('part_no_history_tooltip')}
+                 >
+                   {detail!.part_no}
+                 </button>
+               </span>
                <span className="text-gray-500">{t('plan_qty')}</span><span>{detail!.plan_qty}</span>
                <span className="text-gray-500">{t('actual_qty')}</span><span>{detail!.actual_qty}</span>
                <span className="text-gray-500">{t('actual_defect')}</span><span>{detail!.actual_defect}</span>
@@ -185,6 +203,13 @@ export default function DateRecordsTable({ date }: Props) {
         </Dialog.Panel>
       </Dialog>
     )}
+
+    {/* Historical Performance Modal */}
+    <HistoricalPerformanceModal
+      isOpen={historyModalOpen}
+      onClose={() => setHistoryModalOpen(false)}
+      partPrefix={selectedPartPrefix}
+    />
     </>
   );
 } 

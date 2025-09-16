@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useLang } from '../i18n';
 import { Tag, Percent, Gauge } from 'lucide-react';
+import AssemblyHistoricalPerformanceModal from './AssemblyHistoricalPerformanceModal';
 
 interface Props {
   date: string; // YYYY-MM-DD
@@ -23,6 +24,8 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   const [editing, setEditing] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editingData, setEditingData] = useState<AssemblyReport | null>(null);
+  const [showHistoricalModal, setShowHistoricalModal] = useState(false);
+  const [selectedPartPrefix, setSelectedPartPrefix] = useState('');
   const queryClient = useQueryClient();
 
   const list = reports
@@ -68,6 +71,13 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
     if (report.outsourcing_defect > 0) parts.push(`${t('assembly_outsourcing_defect')}: ${report.outsourcing_defect}`);
     if (report.processing_defect > 0) parts.push(`${t('assembly_processing_defect')}: ${report.processing_defect}`);
     return `${total} (${parts.join(', ')})`;
+  };
+
+  // Part No. 클릭 핸들러
+  const handlePartNoClick = (partNo: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // 테이블 행 클릭 이벤트 방지
+    setSelectedPartPrefix(partNo);
+    setShowHistoricalModal(true);
   };
 
   if (!date) return null;
@@ -121,7 +131,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
               </td>
               <td className="px-2 py-1 text-right">
                 {(() => {
-                  const uph = r.uph || (r.operation_time > 0 ? Math.round((r.actual_qty || 0) / (r.operation_time / 60)) : 0);
+                  const uph = r.uph || 0;
                   const color = uph >= 100 ? 'text-green-600' : uph >= 50 ? 'text-yellow-600' : 'text-red-600';
                   return (
                     <span className={color}>
@@ -179,10 +189,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                       <Percent className="w-3 h-3" /> {t('defect_rate')}: {detail.defect_rate}%
                     </span>
                     <span className="px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs inline-flex items-center gap-1">
-                      <Gauge className="w-3 h-3" /> {t('uph')}: {(() => {
-                        const uph = detail.uph || (detail.operation_time > 0 ? Math.round((detail.actual_qty || 0) / (detail.operation_time / 60)) : 0);
-                        return uph || '-';
-                      })()}
+                      <Gauge className="w-3 h-3" /> {t('uph')}: {detail.uph || '-'}
                     </span>
                   </div>
                 </div>
@@ -194,7 +201,19 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm">
                       <span className="text-gray-500">{t('assembly_line_no')}</span><span>{detail.line_no}</span>
                       <span className="text-gray-500">{t('model')}</span><span>{detail.model}</span>
-                      <span className="text-gray-500">{t('part_no')}</span><span>{detail.part_no}</span>
+                      <span className="text-gray-500">{t('part_no')}</span>
+                      <span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePartNoClick(detail.part_no, e);
+                          }}
+                          className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                          title="Part No. 히스토리 보기"
+                        >
+                          {detail.part_no}
+                        </button>
+                      </span>
                       <span className="text-gray-500">{t('supply_type')}</span><span>{(detail as any)?.supply_type || '-'}</span>
                       <span className="text-gray-500">{t('header_note')}</span><span className="col-span-1">{detail.note || '-'}</span>
                     </div>
@@ -202,20 +221,20 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                   <div className="rounded-lg shadow-sm">
                     <div className="px-3 py-2 font-semibold text-emerald-700 bg-emerald-50">生产概要 / 생산 요약</div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm">
-                      <span className="text-gray-500">{t('assembly_plan_qty')}</span><span className="font-mono text-right">{detail.plan_qty?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('assembly_actual_qty')}</span><span className="font-mono text-right">{detail.actual_qty?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('assembly_injection_defect')}</span><span className="font-mono text-right">{detail.injection_defect?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('assembly_processing_defect')}</span><span className="font-mono text-right">{detail.processing_defect?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('assembly_incoming_defect')}</span><span className="font-mono text-right">{detail.incoming_defect_qty?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('assembly_defect_qty')}</span><span className="font-mono text-right">{detail.total_defect_qty?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('total_time')}</span><span className="font-mono text-right">{detail.total_time ? `${detail.total_time}${t('min_unit')}` : '-'}</span>
-                      <span className="text-gray-500">{t('assembly_operation_time')}</span><span className="font-mono text-right">{detail.operation_time ? `${detail.operation_time}${t('min_unit')}` : '-'}</span>
-                      <span className="text-gray-500">{t('achievement_rate')}</span><span className="font-mono text-right">{detail.achievement_rate}%</span>
-                      <span className="text-gray-500">{t('defect_rate')}</span><span className="font-mono text-right">{detail.defect_rate}%</span>
-                      <span className="text-gray-500">{t('uph')}</span><span className="font-mono text-right">{(() => {
-                        const uph = detail.uph || (detail.operation_time > 0 ? Math.round((detail.actual_qty || 0) / (detail.operation_time / 60)) : 0);
-                        return uph || '-';
-                      })()}</span>
+                      <span className="text-gray-500">{t('plan_qty_summary')}</span><span className="font-mono text-right">{detail.plan_qty?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('actual_qty_summary')}</span><span className="font-mono text-right">{detail.actual_qty?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('injection_defect_summary')}</span><span className="font-mono text-right">{detail.injection_defect?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('processing_defect_summary')}</span><span className="font-mono text-right">{detail.processing_defect?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('incoming_defect_summary')}</span><span className="font-mono text-right">{detail.incoming_defect_qty?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('total_defect_summary')}</span><span className="font-mono text-right">{detail.total_defect_qty?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('total_time_summary')}</span><span className="font-mono text-right">{detail.total_time ? `${detail.total_time}${t('minutes_unit')}` : '-'}</span>
+                      <span className="text-gray-500">{t('operation_time_summary')}</span><span className="font-mono text-right">{detail.operation_time ? `${detail.operation_time}${t('minutes_unit')}` : '-'}</span>
+                      <span className="text-gray-500">{t('idle_time_summary')}</span><span className="font-mono text-right">{detail.idle_time ? `${detail.idle_time}${t('minutes_unit')}` : '-'}</span>
+                      <span className="text-gray-500">{t('workers_summary')}</span><span className="font-mono text-right">{detail.workers}{t('people_unit')}</span>
+                      <span className="text-gray-500">{t('achievement_rate_summary')}</span><span className="font-mono text-right">{detail.achievement_rate}%</span>
+                      <span className="text-gray-500">{t('defect_rate_summary')}</span><span className="font-mono text-right">{detail.defect_rate}%</span>
+                      <span className="text-gray-500">UPH</span><span className="font-mono text-right">{detail.uph || '-'}</span>
+                      <span className="text-gray-500">UPPH</span><span className="font-mono text-right">{detail.upph || '-'}</span>
                     </div>
                   </div>
                 </div>
@@ -334,6 +353,13 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
           </Dialog.Panel>
         </Dialog>
       )}
+
+      {/* Historical Performance Modal */}
+      <AssemblyHistoricalPerformanceModal
+        isOpen={showHistoricalModal}
+        onClose={() => setShowHistoricalModal(false)}
+        partPrefix={selectedPartPrefix}
+      />
     </>
   );
 }

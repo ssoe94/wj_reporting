@@ -16,6 +16,7 @@ export interface AssemblyReport {
   operation_time: number;
   total_time: number;
   idle_time: number;
+  workers: number;
   note: string;
   start_datetime?: string;
   end_datetime?: string;

@@ -1,23 +1,75 @@
 from rest_framework import serializers
 from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest, UserProfile
+from functools import lru_cache
+from django.db.models.functions import Substr
+from django.db.models import Avg, ExpressionWrapper, F, FloatField
+
+@lru_cache(maxsize=1)
+def get_average_actual_cycle_times(prefix_length=9):
+    """
+    Calculates the average actual cycle time for each part_no prefix
+    from historical InjectionReport data.
+    """
+    reports = (
+        InjectionReport.objects
+        .filter(actual_qty__gt=0, part_no__isnull=False)
+        .exclude(part_no__exact='')
+        .filter(total_time__gt=F('idle_time')) # Corrected filter
+        .annotate(
+            actual_ct=ExpressionWrapper(
+                ((F('total_time') - F('idle_time')) * 60.0) / F('actual_qty'), # Corrected calculation
+                output_field=FloatField()
+            ),
+            part_prefix=Substr('part_no', 1, prefix_length)
+        )
+        .values('part_prefix')
+        .annotate(avg_actual_ct=Avg('actual_ct'))
+        .filter(avg_actual_ct__isnull=False)
+    )
+    
+    return {item['part_prefix']: item['avg_actual_ct'] for item in reports}
 
 class InjectionReportSerializer(serializers.ModelSerializer):
     achievement_rate = serializers.FloatField(read_only=True)
     defect_rate = serializers.FloatField(read_only=True)
     total_qty = serializers.IntegerField(read_only=True)
     uptime_rate = serializers.FloatField(read_only=True)
+    cycle_time_deviation = serializers.SerializerMethodField()
+    operation_time = serializers.IntegerField(read_only=True) # Add this to expose the property
 
     class Meta:
         model = InjectionReport
         fields = [
             'id', 'date', 'machine_no', 'tonnage', 'model', 'section',
             'plan_qty', 'actual_qty', 'reported_defect', 'actual_defect',
-            'start_datetime', 'end_datetime', 'operation_time', 'total_time',
+            'start_datetime', 'end_datetime', 'total_time', 'idle_time', 'operation_time',
             'part_no', 'note',
             'achievement_rate', 'defect_rate', 'total_qty', 'uptime_rate',
+            'cycle_time_deviation',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_cycle_time_deviation(self, obj):
+        if not obj.actual_qty or obj.actual_qty == 0 or not obj.operation_time:
+            return None
+        
+        actual_cycle_time = (obj.operation_time * 60) / obj.actual_qty
+
+        if not obj.part_no:
+            return None
+        
+        prefix_length = 9
+        part_prefix = obj.part_no[:prefix_length]
+
+        avg_actual_cts = get_average_actual_cycle_times(prefix_length)
+        baseline_ct = avg_actual_cts.get(part_prefix)
+
+        if baseline_ct is None:
+            return None
+
+        deviation = actual_cycle_time - baseline_ct
+        return round(deviation, 2)
 
 class ProductSerializer(serializers.ModelSerializer):
     class Meta:
@@ -195,3 +247,20 @@ class ChangePasswordSerializer(serializers.Serializer):
         password_validation.validate_password(new, user=user)
 
         return attrs
+
+class HistoricalPerformanceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the historical performance chart.
+    """
+    actual_cycle_time = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InjectionReport
+        fields = ['date', 'part_no', 'actual_qty', 'actual_cycle_time']
+
+    def get_actual_cycle_time(self, obj):
+        if not obj.actual_qty or obj.actual_qty == 0 or not obj.operation_time:
+            return None
+        
+        # operation_time is a property now, so this works
+        return round((obj.operation_time * 60) / obj.actual_qty, 2)

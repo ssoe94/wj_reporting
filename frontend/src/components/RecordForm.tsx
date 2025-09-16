@@ -103,7 +103,8 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     return diffMs > 0 ? Math.floor(diffMs / 60000) : 0;
   };
   const totalMinutes = diffMinutes();
-  const runMinutes = totalMinutes && form.idle ? totalMinutes - Number(form.idle) : 0;
+  const idleMinutesForDisplay = Number(form.idle || 0);
+  const runMinutes = totalMinutes - idleMinutesForDisplay;
 
   // TimeRangeField 바인딩 상태 (요약 표시 용)
   const prodTime: ProductionTime = {
@@ -133,6 +134,24 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
       return;
     }
 
+    // --- START of new logic ---
+    let idleTime = Number(form.idle || 0);
+    let proceedToSave = true;
+
+    // Scenario B-2: idle is empty/0, but note is not
+    if (!form.idle && form.note.trim() !== '') {
+        if (window.confirm(t('confirm_idle_zero') || '부동시간이 0이 맞습니까?')) {
+            idleTime = 0;
+        } else {
+            proceedToSave = false;
+        }
+    }
+    
+    if (!proceedToSave) {
+        return; // Stop submission if user cancelled confirmation
+    }
+    // --- END of new logic ---
+
     try {
       const machine = machines.find((m) => String(m.id) === form.machineId);
       const payload = {
@@ -148,7 +167,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         start_datetime: form.start,
         end_datetime: form.end,
         total_time: totalMinutes,
-        operation_time: runMinutes,
+        idle_time: idleTime, // Send idle_time instead
         part_no: form.partNo,
         note: form.note,
       };

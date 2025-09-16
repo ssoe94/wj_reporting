@@ -361,8 +361,30 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     table_ct: '사이클타임 (초)',
     table_ct_delta: 'CT 편차 (초)',
     
-    // 가공 기록 관련  
+    // 가공 기록 관련
     uph: 'UPH',
+
+    // Historical Performance 관련
+    historical_performance_title: '생산 기록 분석',
+    part_no_history_tooltip: 'Part no. 생산 history 분석',
+    error_loading_data: '데이터 로딩 중 오류가 발생했습니다',
+    avg_cycle_time: '평균 C/T',
+    back: '뒤로',
+
+    // 생산 요약 관련
+    plan_qty_summary: '계획수량',
+    actual_qty_summary: '실제수량',
+    injection_defect_summary: '사출불량',
+    processing_defect_summary: '가공불량',
+    incoming_defect_summary: '입고불량',
+    total_defect_summary: '불량수량',
+    total_time_summary: '총시간',
+    operation_time_summary: '가동시간',
+    idle_time_summary: '부동시간',
+    workers_summary: '작업인원',
+    achievement_rate_summary: '달성율',
+    defect_rate_summary: '불량률',
+    people_unit: '명',
   },
   zh: {
     title: '万佳生产数据管理平台',
@@ -732,6 +754,28 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     
     // 가공 기록 관련
     uph: 'UPH',
+
+    // Historical Performance 관련
+    historical_performance_title: '生产记录分析',
+    part_no_history_tooltip: 'Part no. 生产历史分析',
+    error_loading_data: '数据加载时发生错误',
+    avg_cycle_time: '平均周期',
+    back: '返回',
+
+    // 생산 요약 관련
+    plan_qty_summary: '计划数量',
+    actual_qty_summary: '实际数量',
+    injection_defect_summary: '注塑不良',
+    processing_defect_summary: '加工不良',
+    incoming_defect_summary: '来料不良',
+    total_defect_summary: '不良数量',
+    total_time_summary: '总时间',
+    operation_time_summary: '作业时间',
+    idle_time_summary: '停机时间',
+    workers_summary: '作业人员',
+    achievement_rate_summary: '达成率',
+    defect_rate_summary: '不良率',
+    people_unit: '名',
   },
 };
 
