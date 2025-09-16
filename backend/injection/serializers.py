@@ -118,6 +118,12 @@ class EcoDetailSerializer(serializers.ModelSerializer):
         fields = ['id', 'eco_header', 'eco_part_spec', 'part_no', 'description', 'change_reason', 'change_details', 'status', 'created_at']
         read_only_fields = ['created_at']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('part_no'):
+            data['part_no'] = data['part_no'].upper()
+        return data
+
 
 class EngineeringChangeOrderSerializer(serializers.ModelSerializer):
     details = EcoDetailSerializer(many=True, read_only=True)
