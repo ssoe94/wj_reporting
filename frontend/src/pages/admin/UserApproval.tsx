@@ -30,6 +30,11 @@ interface UserProfile {
   can_view_quality: boolean;
   can_view_sales: boolean;
   can_view_development: boolean;
+  can_edit_injection: boolean;
+  can_edit_assembly: boolean;
+  can_edit_quality: boolean;
+  can_edit_sales: boolean;
+  can_edit_development: boolean;
   is_admin: boolean;
 }
 
@@ -43,36 +48,36 @@ export default function UserApproval() {
   const [editingPermissions, setEditingPermissions] = useState<{[key: string]: boolean}>({});
   const [resetPasswordResult, setResetPasswordResult] = useState<ApprovalResult | null>(null);
 
-  // 권한 옵션 목록
+  // 권한 옵션 목록 (편집 권한만 표시 - 조회는 기본 부여)
   const permissionOptions = [
-    { key: 'can_view_injection', label: '사출 조회' },
-    { key: 'can_view_assembly', label: '조립 조회' },
-    { key: 'can_view_quality', label: '품질 조회' },
-    { key: 'can_view_sales', label: '영업 조회' },
-    { key: 'can_view_development', label: '개발 조회' },
+    { key: 'can_edit_injection', label: '사출 편집/삭제' },
+    { key: 'can_edit_assembly', label: '가공 편집/삭제' },
+    { key: 'can_edit_quality', label: '품질 편집/삭제' },
+    { key: 'can_edit_sales', label: '영업/재고 편집/삭제' },
+    { key: 'can_edit_development', label: '개발/ECO 편집/삭제' },
     { key: 'is_admin', label: '관리자 권한' },
   ];
 
-  // 권한 설정 상태
+  // 권한 설정 상태 (편집 권한만 관리)
   const [permissions, setPermissions] = useState({
-    can_view_injection: false,
-    can_view_assembly: false,
-    can_view_quality: false,
-    can_view_sales: false,
-    can_view_development: false,
+    can_edit_injection: false,
+    can_edit_assembly: false,
+    can_edit_quality: false,
+    can_edit_sales: false,
+    can_edit_development: false,
     is_admin: false,
   });
 
   // 권한 요약 함수
   const getPermissionSummary = (profile: UserProfile) => {
     const permissions = [];
-    if (profile.can_view_injection) permissions.push('사출 편집/삭제');
-    if (profile.can_view_assembly) permissions.push('가공 편집/삭제');
-    if (profile.can_view_quality) permissions.push('품질 편집/삭제');
-    if (profile.can_view_sales) permissions.push('영업/재고 편집/삭제');
-    if (profile.can_view_development) permissions.push('개발/ECO 편집/삭제');
+    if (profile.can_edit_injection) permissions.push('사출 편집/삭제');
+    if (profile.can_edit_assembly) permissions.push('가공 편집/삭제');
+    if (profile.can_edit_quality) permissions.push('품질 편집/삭제');
+    if (profile.can_edit_sales) permissions.push('영업/재고 편집/삭제');
+    if (profile.can_edit_development) permissions.push('개발/ECO 편집/삭제');
     if (profile.is_admin) permissions.push('관리자');
-    return permissions.length > 0 ? permissions.join(', ') : '권한 없음';
+    return permissions.length > 0 ? permissions.join(', ') : '조회만 가능';
   };
 
   // 가입 요청 목록 가져오기
@@ -119,11 +124,11 @@ export default function UserApproval() {
 
       // 권한 초기화
       setPermissions({
-        can_view_injection: false,
-        can_view_assembly: false,
-        can_view_quality: false,
-        can_view_sales: false,
-        can_view_development: false,
+        can_edit_injection: false,
+        can_edit_assembly: false,
+        can_edit_quality: false,
+        can_edit_sales: false,
+        can_edit_development: false,
         is_admin: false,
       });
 

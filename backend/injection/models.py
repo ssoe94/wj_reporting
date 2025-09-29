@@ -280,12 +280,21 @@ class UserRegistrationRequest(models.Model):
     approved_at = models.DateTimeField('승인일시', null=True, blank=True)
     temporary_password = models.CharField('임시 비밀번호', max_length=100, blank=True)
     
-    # 권한 설정 (조회 기본, 편집/삭제는 별도 플래그 없이 관리)
-    can_view_injection = models.BooleanField('사출 메뉴 접근', default=False)
-    can_view_assembly = models.BooleanField('가공 메뉴 접근', default=False)
-    can_view_quality = models.BooleanField('품질 메뉴 접근', default=False)
-    can_view_sales = models.BooleanField('영업/재고 메뉴 접근', default=False)
-    can_view_development = models.BooleanField('개발/ECO 메뉴 접근', default=False)
+    # 권한 설정 (조회는 기본 부여, 편집 권한만 선택적)
+    can_view_injection = models.BooleanField('사출 메뉴 접근', default=True)
+    can_view_assembly = models.BooleanField('가공 메뉴 접근', default=True)
+    can_view_quality = models.BooleanField('품질 메뉴 접근', default=True)
+    can_view_sales = models.BooleanField('영업/재고 메뉴 접근', default=True)
+    can_view_development = models.BooleanField('개발/ECO 메뉴 접근', default=True)
+
+    # 편집 권한 (선택적으로 부여)
+    can_edit_injection = models.BooleanField('사출 편집/삭제 권한', default=False)
+    can_edit_assembly = models.BooleanField('가공 편집/삭제 권한', default=False)
+    can_edit_quality = models.BooleanField('품질 편집/삭제 권한', default=False)
+    can_edit_sales = models.BooleanField('영업/재고 편집/삭제 권한', default=False)
+    can_edit_development = models.BooleanField('개발/ECO 편집/삭제 권한', default=False)
+
+    # 관리자 권한
     is_admin = models.BooleanField('관리자 메뉴 접근', default=False)
     
     created_at = models.DateTimeField('요청일시', auto_now_add=True)
@@ -303,12 +312,22 @@ class UserRegistrationRequest(models.Model):
 class UserProfile(models.Model):
     """사용자 권한 프로필"""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
-    
-    can_view_injection = models.BooleanField('사출 메뉴 접근', default=False)
-    can_view_assembly = models.BooleanField('가공 메뉴 접근', default=False)
-    can_view_quality = models.BooleanField('품질 메뉴 접근', default=False)
-    can_view_sales = models.BooleanField('영업/재고 메뉴 접근', default=False)
-    can_view_development = models.BooleanField('개발/ECO 메뉴 접근', default=False)
+
+    # 조회 권한 (기본적으로 모든 사용자에게 부여)
+    can_view_injection = models.BooleanField('사출 메뉴 접근', default=True)
+    can_view_assembly = models.BooleanField('가공 메뉴 접근', default=True)
+    can_view_quality = models.BooleanField('품질 메뉴 접근', default=True)
+    can_view_sales = models.BooleanField('영업/재고 메뉴 접근', default=True)
+    can_view_development = models.BooleanField('개발/ECO 메뉴 접근', default=True)
+
+    # 편집 권한 (선택적으로 부여)
+    can_edit_injection = models.BooleanField('사출 편집/삭제 권한', default=False)
+    can_edit_assembly = models.BooleanField('가공 편집/삭제 권한', default=False)
+    can_edit_quality = models.BooleanField('품질 편집/삭제 권한', default=False)
+    can_edit_sales = models.BooleanField('영업/재고 편집/삭제 권한', default=False)
+    can_edit_development = models.BooleanField('개발/ECO 편집/삭제 권한', default=False)
+
+    # 관리자 권한
     is_admin = models.BooleanField('관리자 메뉴 접근', default=False)
     
     is_using_temp_password = models.BooleanField('임시 비밀번호 사용 중', default=False)

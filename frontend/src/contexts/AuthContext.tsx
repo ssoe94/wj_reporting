@@ -3,17 +3,24 @@ import api from '../lib/api';
 import type { ReactNode } from 'react';
 
 export interface UserPermissions {
+  // 조회 권한 (기본적으로 모든 사용자에게 부여)
   can_view_injection: boolean;
   can_view_assembly: boolean;
   can_view_quality: boolean;
   can_view_sales: boolean;
   can_view_development: boolean;
-  is_admin: boolean;
+
+  // 편집 권한 (선택적으로 부여)
   can_edit_injection: boolean;
   can_edit_assembly: boolean;
   can_edit_quality: boolean;
   can_edit_sales: boolean;
   can_edit_development: boolean;
+
+  // 관리자 권한
+  is_admin: boolean;
+
+  // 호환성을 위한 레거시 필드들
   can_edit_machining: boolean;
   can_edit_eco: boolean;
   can_edit_inventory: boolean;
