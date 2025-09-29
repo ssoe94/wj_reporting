@@ -3,34 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ko, zhCN } from 'date-fns/locale';
 import { useLang } from '@/i18n';
-
-// API 클라이언트
-const apiClient = {
-  get: async (url: string) => {
-    const response = await fetch(url);
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      if (errorData && errorData.message) {
-        const errorMessage = `${errorData.message} (Details: ${errorData.details || 'N/A'})`;
-        throw new Error(errorMessage);
-      }
-      throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
-    }
-    return response.json();
-  },
-  post: async (url: string, data: any) => {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Include CSRF token if needed
-      },
-      body: JSON.stringify(data),
-    });
-    // Return the whole response to let the caller handle different status codes
-    return response;
-  },
-};
+import api from '@/lib/api';
 
 // 타입 정의
 interface MachineInfo {
@@ -61,7 +34,8 @@ interface ProductionMatrixData {
 // 생산 매트릭스 데이터 조회 (24시간)
 const fetchProductionMatrix = async (interval: string = '1hour', lang: string = 'ko'): Promise<ProductionMatrixData> => {
   const params = new URLSearchParams({ interval, columns: '24', lang });
-  return apiClient.get(`/api/production-matrix/?${params}`);
+  const response = await api.get(`/production-matrix/?${params}`);
+  return response.data;
 };
 
 const getCumulativeStyle = (value: number) => {
@@ -115,12 +89,12 @@ export default function InjectionMonitoringPage() {
 
     setIsUpdating(true);
     try {
-      const response = await apiClient.post('/api/update-recent-snapshots/', { hours: 3 });
+      const response = await api.post('/update-recent-snapshots/', { hours: 3 });
 
       if (response.status === 202) {
         alert(t('monitoring.update_started_in_background'));
-      } else if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
+      } else if (response.status !== 200 && response.status !== 202) {
+        const errorData = response.data;
         const errorMessage = errorData?.message ? `${errorData.message} (Details: ${errorData.details || 'N/A'})` : `HTTP error ${response.status}`;
         throw new Error(errorMessage);
       } else {
