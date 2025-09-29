@@ -27,7 +27,7 @@ interface SetupHistoryProps {
   onBackToDashboard?: () => void;
 }
 
-export default function SetupHistory({ getStatusIcon, getStatusText }: SetupHistoryProps) {
+export default function SetupHistory({ getStatusIcon, getStatusText, onBackToDashboard }: SetupHistoryProps) {
   const { t, lang } = useLang();
   const [setups] = useState<Setup[]>([]);
 
@@ -53,6 +53,14 @@ export default function SetupHistory({ getStatusIcon, getStatusText }: SetupHist
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold text-gray-900">{t('history.title')}</h1>
         </div>
+        {onBackToDashboard && (
+          <button
+            onClick={onBackToDashboard}
+            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
+          >
+            {t('common.back')}
+          </button>
+        )}
       </div>
 
       <SetupHistoryTimeline
