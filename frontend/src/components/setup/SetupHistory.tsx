@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { LayoutDashboard } from 'lucide-react';
 import TestRecordModal from './TestRecordModal';
 import SetupHistoryTimeline from './SetupHistoryTimeline';
+import { Button } from '@/components/ui/button';
 import { useLang } from '@/i18n';
 
 interface Setup {
@@ -49,17 +51,18 @@ export default function SetupHistory({ getStatusIcon, getStatusText, onBackToDas
   return (
     <div className="space-y-6">
       {/* 상위 제목과 대시보드 버튼 */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold text-gray-900">{t('history.title')}</h1>
-        </div>
+      <div className="flex items-center gap-3 mb-6">
+        <h1 className="text-2xl font-semibold text-gray-900">{t('history.title')}</h1>
         {onBackToDashboard && (
-          <button
+          <Button
             onClick={onBackToDashboard}
-            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
+            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white"
+            variant="primary"
+            size="sm"
           >
-            {t('common.back')}
-          </button>
+            <LayoutDashboard className="w-4 h-4" />
+            {t('setup.dashboard_button')}
+          </Button>
         )}
       </div>
 

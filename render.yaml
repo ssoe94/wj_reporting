@@ -45,3 +45,13 @@ services:
     startCommand: python manage.py daily_snapshot_auto
     # Connect to the same shared environment variables to access the database etc.
     envVarGroup: shared-secrets
+
+  # Hourly Injection Monitoring Snapshot
+  - type: cron
+    name: hourly-injection-snapshot
+    env: python
+    rootDir: backend
+    schedule: "0 * * * *"  # Runs at the start of every hour (UTC)
+    buildCommand: bash build.sh
+    startCommand: python run_hourly_snapshot.py
+    envVarGroup: shared-secrets
