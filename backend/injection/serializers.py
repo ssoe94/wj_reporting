@@ -169,14 +169,16 @@ class UserProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
     first_name = serializers.CharField(source='user.first_name', read_only=True)
-    
+
     class Meta:
         model = UserProfile
         fields = [
             'id', 'user', 'username', 'email', 'first_name',
             'can_view_injection', 'can_view_assembly', 'can_view_quality',
-            'can_view_sales', 'can_view_development', 'is_admin',
-            'created_at', 'updated_at'
+            'can_view_sales', 'can_view_development',
+            'can_edit_injection', 'can_edit_assembly', 'can_edit_quality',
+            'can_edit_sales', 'can_edit_development',
+            'is_admin', 'created_at', 'updated_at'
         ]
         read_only_fields = ['user', 'username', 'email', 'first_name', 'created_at', 'updated_at']
 

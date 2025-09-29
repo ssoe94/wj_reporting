@@ -71,13 +71,16 @@ export default function UserApproval() {
   // 권한 요약 함수
   const getPermissionSummary = (profile: UserProfile) => {
     const permissions = [];
-    if (profile.can_edit_injection) permissions.push('사출 편집/삭제');
-    if (profile.can_edit_assembly) permissions.push('가공 편집/삭제');
-    if (profile.can_edit_quality) permissions.push('품질 편집/삭제');
-    if (profile.can_edit_sales) permissions.push('영업/재고 편집/삭제');
-    if (profile.can_edit_development) permissions.push('개발/ECO 편집/삭제');
-    if (profile.is_admin) permissions.push('관리자');
-    return permissions.length > 0 ? permissions.join(', ') : '조회만 가능';
+    if (profile.is_admin) {
+      return '관리자 (모든 권한)';
+    }
+    if (profile.can_edit_injection) permissions.push('사출');
+    if (profile.can_edit_assembly) permissions.push('가공');
+    if (profile.can_edit_quality) permissions.push('품질');
+    if (profile.can_edit_sales) permissions.push('영업/재고');
+    if (profile.can_edit_development) permissions.push('개발/ECO');
+
+    return permissions.length > 0 ? `${permissions.join(', ')} 편집권한` : '조회만 가능';
   };
 
   // 가입 요청 목록 가져오기
@@ -190,11 +193,11 @@ export default function UserApproval() {
   const handleEditUserPermissions = (profile: UserProfile) => {
     setSelectedProfile(profile);
     setEditingPermissions({
-      can_view_injection: profile.can_view_injection,
-      can_view_assembly: profile.can_view_assembly,
-      can_view_quality: profile.can_view_quality,
-      can_view_sales: profile.can_view_sales,
-      can_view_development: profile.can_view_development,
+      can_edit_injection: profile.can_edit_injection,
+      can_edit_assembly: profile.can_edit_assembly,
+      can_edit_quality: profile.can_edit_quality,
+      can_edit_sales: profile.can_edit_sales,
+      can_edit_development: profile.can_edit_development,
       is_admin: profile.is_admin,
     });
   };
