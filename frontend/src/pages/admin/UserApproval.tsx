@@ -26,13 +26,11 @@ interface UserProfile {
   email: string;
   first_name: string;
   can_view_injection: boolean;
-  can_edit_injection: boolean;
-  can_view_machining: boolean;
-  can_edit_machining: boolean;
-  can_view_eco: boolean;
-  can_edit_eco: boolean;
-  can_view_inventory: boolean;
-  can_edit_inventory: boolean;
+  can_view_assembly: boolean;
+  can_view_quality: boolean;
+  can_view_sales: boolean;
+  can_view_development: boolean;
+  is_admin: boolean;
 }
 
 export default function UserApproval() {
@@ -44,43 +42,36 @@ export default function UserApproval() {
   const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
   const [editingPermissions, setEditingPermissions] = useState<{[key: string]: boolean}>({});
   const [resetPasswordResult, setResetPasswordResult] = useState<ApprovalResult | null>(null);
-  
+
+  // 권한 옵션 목록
+  const permissionOptions = [
+    { key: 'can_view_injection', label: '사출 조회' },
+    { key: 'can_view_assembly', label: '조립 조회' },
+    { key: 'can_view_quality', label: '품질 조회' },
+    { key: 'can_view_sales', label: '영업 조회' },
+    { key: 'can_view_development', label: '개발 조회' },
+    { key: 'is_admin', label: '관리자 권한' },
+  ];
+
   // 권한 설정 상태
   const [permissions, setPermissions] = useState({
     can_view_injection: false,
-    can_edit_injection: false,
-    can_view_machining: false,
-    can_edit_machining: false,
-    can_view_eco: false,
-    can_edit_eco: false,
-    can_view_inventory: false,
-    can_edit_inventory: false,
+    can_view_assembly: false,
+    can_view_quality: false,
+    can_view_sales: false,
+    can_view_development: false,
+    is_admin: false,
   });
 
   // 권한 요약 함수
   const getPermissionSummary = (profile: UserProfile) => {
     const permissions = [];
-    
-    if (profile.can_view_injection || profile.can_edit_injection) {
-      const injection = profile.can_edit_injection ? '사출(편집)' : '사출(조회)';
-      permissions.push(injection);
-    }
-    
-    if (profile.can_view_machining || profile.can_edit_machining) {
-      const assembly = profile.can_edit_machining ? '조립(편집)' : '조립(조회)';
-      permissions.push(assembly);
-    }
-    
-    if (profile.can_view_eco || profile.can_edit_eco) {
-      const eco = profile.can_edit_eco ? 'ECO(편집)' : 'ECO(조회)';
-      permissions.push(eco);
-    }
-    
-    if (profile.can_view_inventory || profile.can_edit_inventory) {
-      const inventory = profile.can_edit_inventory ? '영업/재고(편집)' : '영업/재고(조회)';
-      permissions.push(inventory);
-    }
-    
+    if (profile.can_view_injection) permissions.push('사출 편집/삭제');
+    if (profile.can_view_assembly) permissions.push('가공 편집/삭제');
+    if (profile.can_view_quality) permissions.push('품질 편집/삭제');
+    if (profile.can_view_sales) permissions.push('영업/재고 편집/삭제');
+    if (profile.can_view_development) permissions.push('개발/ECO 편집/삭제');
+    if (profile.is_admin) permissions.push('관리자');
     return permissions.length > 0 ? permissions.join(', ') : '권한 없음';
   };
 
@@ -120,36 +111,34 @@ export default function UserApproval() {
     try {
       console.log('Sending permissions:', permissions);
       const response = await api.post(`/signup-requests/${requestId}/approve/`, { permissions });
-      
+
       setApprovalResult({
         username: response.data.username,
         temporary_password: response.data.temporary_password,
       });
-      
+
       // 권한 초기화
       setPermissions({
         can_view_injection: false,
-        can_edit_injection: false,
-        can_view_machining: false,
-        can_edit_machining: false,
-        can_view_eco: false,
-        can_edit_eco: false,
-        can_view_inventory: false,
-        can_edit_inventory: false,
+        can_view_assembly: false,
+        can_view_quality: false,
+        can_view_sales: false,
+        can_view_development: false,
+        is_admin: false,
       });
-      
+
       // 목록 새로고침
       await Promise.all([
         fetchRequests(),
         fetchUserProfiles()
       ]);
-      
+
       setSelectedRequest(null);
-      
+
     } catch (error: any) {
       console.error('Approval failed:', error);
       console.error('Error response:', error.response?.data);
-      
+
       let errorMessage = '승인 처리 중 오류가 발생했습니다.';
       if (error.response?.status === 401) {
         errorMessage = '인증이 필요합니다. 다시 로그인해주세요.';
@@ -163,7 +152,7 @@ export default function UserApproval() {
       } else if (error.response?.data?.detail) {
         errorMessage = error.response.data.detail;
       }
-      
+
       alert(errorMessage);
     }
   };
@@ -197,13 +186,11 @@ export default function UserApproval() {
     setSelectedProfile(profile);
     setEditingPermissions({
       can_view_injection: profile.can_view_injection,
-      can_edit_injection: profile.can_edit_injection,
-      can_view_machining: profile.can_view_machining,
-      can_edit_machining: profile.can_edit_machining,
-      can_view_eco: profile.can_view_eco,
-      can_edit_eco: profile.can_edit_eco,
-      can_view_inventory: profile.can_view_inventory,
-      can_edit_inventory: profile.can_edit_inventory,
+      can_view_assembly: profile.can_view_assembly,
+      can_view_quality: profile.can_view_quality,
+      can_view_sales: profile.can_view_sales,
+      can_view_development: profile.can_view_development,
+      is_admin: profile.is_admin,
     });
   };
 
@@ -266,7 +253,7 @@ export default function UserApproval() {
             <h3 className="text-lg font-semibold mb-4">가입 승인 완료</h3>
             <div className="space-y-2">
               <p><strong>사용자명:</strong> {approvalResult.username}</p>
-              <p><strong>임시 비밀번호:</strong> 
+              <p><strong>임시 비밀번호:</strong>
                 <code className="bg-gray-100 px-2 py-1 rounded ml-2">
                   {approvalResult.temporary_password}
                 </code>
@@ -301,7 +288,7 @@ export default function UserApproval() {
             <h3 className="text-lg font-semibold mb-4">비밀번호 리셋 완료</h3>
             <div className="space-y-2">
               <p><strong>사용자명:</strong> {resetPasswordResult.username}</p>
-              <p><strong>새 임시 비밀번호:</strong> 
+              <p><strong>새 임시 비밀번호:</strong>
                 <code className="bg-gray-100 px-2 py-1 rounded ml-2">
                   {resetPasswordResult.temporary_password}
                 </code>
@@ -332,7 +319,7 @@ export default function UserApproval() {
       {/* 대기 중인 요청 목록 */}
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">대기 중인 가입 요청 ({pendingRequests.length}건)</h2>
-        
+
         {pendingRequests.length === 0 ? (
           <Card>
             <CardContent className="p-6 text-center text-gray-500">
@@ -357,103 +344,19 @@ export default function UserApproval() {
                 {selectedRequest?.id === request.id && (
                   <div className="mt-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
                     <h4 className="font-semibold mb-3">권한 설정</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <h5 className="font-medium mb-2">사출 관련</h5>
-                        <div className="space-y-2">
-                          <label className="flex items-center">
+                    <div className="space-y-2">
+                        {permissionOptions.map(({ key, label }) => (
+                          <label key={key} className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                            <span className="text-sm font-medium text-gray-700">{label}</span>
                             <input
                               type="checkbox"
-                              checked={permissions.can_view_injection}
-                              onChange={(e) => handlePermissionChange('can_view_injection', e.target.checked)}
-                              className="mr-2"
+                              checked={(permissions as any)[key]}
+                              onChange={(e) => handlePermissionChange(key, e.target.checked)}
+                              className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
                             />
-                            사출 (/injection) 조회 권한
                           </label>
-                          <label className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={permissions.can_edit_injection}
-                              onChange={(e) => handlePermissionChange('can_edit_injection', e.target.checked)}
-                              className="mr-2"
-                            />
-                            사출 (/injection) 편집 권한
-                          </label>
-                        </div>
+                        ))}
                       </div>
-                      
-                      <div>
-                        <h5 className="font-medium mb-2">조립 관련</h5>
-                        <div className="space-y-2">
-                          <label className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={permissions.can_view_machining}
-                              onChange={(e) => handlePermissionChange('can_view_machining', e.target.checked)}
-                              className="mr-2"
-                            />
-                            조립 (/assembly) 조회 권한
-                          </label>
-                          <label className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={permissions.can_edit_machining}
-                              onChange={(e) => handlePermissionChange('can_edit_machining', e.target.checked)}
-                              className="mr-2"
-                            />
-                            조립 (/assembly) 편집 권한
-                          </label>
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <h5 className="font-medium mb-2">ECO 관련</h5>
-                        <div className="space-y-2">
-                          <label className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={permissions.can_view_eco}
-                              onChange={(e) => handlePermissionChange('can_view_eco', e.target.checked)}
-                              className="mr-2"
-                            />
-                            ECO (/eco) 조회 권한
-                          </label>
-                          <label className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={permissions.can_edit_eco}
-                              onChange={(e) => handlePermissionChange('can_edit_eco', e.target.checked)}
-                              className="mr-2"
-                            />
-                            ECO (/eco) 편집 권한
-                          </label>
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <h5 className="font-medium mb-2">영업/재고 관련</h5>
-                        <div className="space-y-2">
-                          <label className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={permissions.can_view_inventory}
-                              onChange={(e) => handlePermissionChange('can_view_inventory', e.target.checked)}
-                              className="mr-2"
-                            />
-                            영업/재고 (/sales) 조회 권한
-                          </label>
-                          <label className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={permissions.can_edit_inventory}
-                              onChange={(e) => handlePermissionChange('can_edit_inventory', e.target.checked)}
-                              className="mr-2"
-                            />
-                            영업/재고 (/sales) 편집 권한
-                          </label>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 )}
 
@@ -504,7 +407,7 @@ export default function UserApproval() {
           <h2 className="text-xl font-semibold">사용자 권한 관리</h2>
           <span className="text-sm text-gray-500">({userProfiles.length}명)</span>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -589,113 +492,34 @@ export default function UserApproval() {
                   ×
                 </Button>
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h5 className="font-semibold mb-3 text-gray-800">사출 관련</h5>
-                  <div className="space-y-3">
-                    <label className="flex items-center p-2 hover:bg-gray-50 rounded">
-                      <input
-                        type="checkbox"
-                        checked={editingPermissions.can_view_injection}
-                        onChange={(e) => handleEditingPermissionChange('can_view_injection', e.target.checked)}
-                        className="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm">사출 (/injection) 조회 권한</span>
-                    </label>
-                    <label className="flex items-center p-2 hover:bg-gray-50 rounded">
-                      <input
-                        type="checkbox"
-                        checked={editingPermissions.can_edit_injection}
-                        onChange={(e) => handleEditingPermissionChange('can_edit_injection', e.target.checked)}
-                        className="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm">사출 (/injection) 편집 권한</span>
-                    </label>
-                  </div>
-                </div>
-                
-                <div>
-                  <h5 className="font-semibold mb-3 text-gray-800">조립 관련</h5>
-                  <div className="space-y-3">
-                    <label className="flex items-center p-2 hover:bg-gray-50 rounded">
-                      <input
-                        type="checkbox"
-                        checked={editingPermissions.can_view_machining}
-                        onChange={(e) => handleEditingPermissionChange('can_view_machining', e.target.checked)}
-                        className="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm">조립 (/assembly) 조회 권한</span>
-                    </label>
-                    <label className="flex items-center p-2 hover:bg-gray-50 rounded">
-                      <input
-                        type="checkbox"
-                        checked={editingPermissions.can_edit_machining}
-                        onChange={(e) => handleEditingPermissionChange('can_edit_machining', e.target.checked)}
-                        className="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm">조립 (/assembly) 편집 권한</span>
-                    </label>
-                  </div>
-                </div>
-                
-                <div>
-                  <h5 className="font-semibold mb-3 text-gray-800">ECO 관련</h5>
-                  <div className="space-y-3">
-                    <label className="flex items-center p-2 hover:bg-gray-50 rounded">
-                      <input
-                        type="checkbox"
-                        checked={editingPermissions.can_view_eco}
-                        onChange={(e) => handleEditingPermissionChange('can_view_eco', e.target.checked)}
-                        className="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm">ECO (/eco) 조회 권한</span>
-                    </label>
-                    <label className="flex items-center p-2 hover:bg-gray-50 rounded">
-                      <input
-                        type="checkbox"
-                        checked={editingPermissions.can_edit_eco}
-                        onChange={(e) => handleEditingPermissionChange('can_edit_eco', e.target.checked)}
-                        className="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm">ECO (/eco) 편집 권한</span>
-                    </label>
-                  </div>
-                </div>
-                
-                <div>
-                  <h5 className="font-semibold mb-3 text-gray-800">영업/재고 관련</h5>
-                  <div className="space-y-3">
-                    <label className="flex items-center p-2 hover:bg-gray-50 rounded">
-                      <input
-                        type="checkbox"
-                        checked={editingPermissions.can_view_inventory}
-                        onChange={(e) => handleEditingPermissionChange('can_view_inventory', e.target.checked)}
-                        className="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm">영업/재고 (/sales) 조회 권한</span>
-                    </label>
-                    <label className="flex items-center p-2 hover:bg-gray-50 rounded">
-                      <input
-                        type="checkbox"
-                        checked={editingPermissions.can_edit_inventory}
-                        onChange={(e) => handleEditingPermissionChange('can_edit_inventory', e.target.checked)}
-                        className="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm">영업/재고 (/sales) 편집 권한</span>
-                    </label>
+                <div className="md:col-span-2">
+                  <h5 className="font-semibold mb-3 text-gray-800">권한 설정</h5>
+                  <div className="space-y-2">
+                    {permissionOptions.map(({ key, label }) => (
+                      <label key={key} className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                        <span className="text-sm font-medium text-gray-700">{label}</span>
+                        <input
+                          type="checkbox"
+                          checked={(editingPermissions as any)[key]}
+                          onChange={(e) => handleEditingPermissionChange(key, e.target.checked)}
+                          className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                      </label>
+                    ))}
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex gap-3 mt-6 pt-4 border-t">
                 <Button onClick={handleUpdateUserPermissions} className="flex-1">
                   <CheckCircle className="w-4 h-4 mr-2" />
                   저장
                 </Button>
-                <Button 
-                  onClick={() => setSelectedProfile(null)} 
-                  variant="secondary" 
+                <Button
+                  onClick={() => setSelectedProfile(null)}
+                  variant="secondary"
                   className="flex-1"
                 >
                   <XCircle className="w-4 h-4 mr-2" />

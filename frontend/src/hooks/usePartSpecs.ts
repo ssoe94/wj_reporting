@@ -58,7 +58,7 @@ export function usePartSpecs(): UseQueryResult<PartSpec[]> {
     queryKey: ['parts-all'],
     queryFn: async () => {
       const { data } = await api.get<Paginated<PartSpec>>('/parts/', {
-        params: { page_size: 100 },
+        params: { page_size: 1000 }, // Fetch up to 1000 parts
       });
       return data.results;
     },

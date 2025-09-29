@@ -4,12 +4,18 @@ import type { ReactNode } from 'react';
 
 export interface UserPermissions {
   can_view_injection: boolean;
+  can_view_assembly: boolean;
+  can_view_quality: boolean;
+  can_view_sales: boolean;
+  can_view_development: boolean;
+  is_admin: boolean;
   can_edit_injection: boolean;
-  can_view_machining: boolean;
+  can_edit_assembly: boolean;
+  can_edit_quality: boolean;
+  can_edit_sales: boolean;
+  can_edit_development: boolean;
   can_edit_machining: boolean;
-  can_view_eco: boolean;
   can_edit_eco: boolean;
-  can_view_inventory: boolean;
   can_edit_inventory: boolean;
 }
 
@@ -151,32 +157,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // 권한 확인 함수
   const hasPermission = (permission: keyof UserPermissions): boolean => {
     if (!user || !user.permissions) return false;
-    return user.permissions[permission] || false;
+    return Boolean(user.permissions[permission]);
   };
 
   // 라우트 접근 권한 확인
   const canAccessRoute = (route: string): boolean => {
-    if (!user || !user.permissions) return false;
+    if (!user) return false;
+    if (user.is_staff || hasPermission('is_admin')) return true;
 
-    // 스태프는 모든 권한
-    if (user.is_staff) return true;
-
-    // 해시/쿼리 제거하여 기본 경로만 검사
     const base = route.split('#')[0].split('?')[0];
-
-    // 분석/루트는 모든 인증 사용자 허용
     if (base === '/' || base === '' || base === '/analysis') return true;
 
-    // 관리자 전용 경로
     if (base.startsWith('/admin')) return false;
 
-    // 섹션별 권한 매핑 (prefix 매칭)
-    if (base.startsWith('/injection')) return hasPermission('can_view_injection');
-    if (base.startsWith('/assembly')) return hasPermission('can_view_machining');
-    // 품질 섹션은 가공 권한과 동일하게 접근 허용
-    if (base.startsWith('/quality')) return hasPermission('can_view_machining');
-    if (base.startsWith('/eco2') || base.startsWith('/eco') || base.startsWith('/models')) return hasPermission('can_view_eco');
-    if (base.startsWith('/sales')) return hasPermission('can_view_inventory');
+    if (base.startsWith('/injection')) return true;
+    if (base.startsWith('/assembly')) return true;
+    if (base.startsWith('/quality')) return true;
+    if (base.startsWith('/sales')) return true;
+    if (base.startsWith('/eco2') || base.startsWith('/eco') || base.startsWith('/models')) return true;
 
     return true;
   };

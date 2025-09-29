@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Custom grid classes for timeline */
+.grid-cols-18 {
+  grid-template-columns: repeat(18, minmax(0, 1fr));
+}
+
 /* ------- Global base -------- */
 @layer base {
   :root {

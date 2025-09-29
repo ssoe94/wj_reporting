@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest, UserProfile
+from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest, UserProfile, CycleTimeSetup, CycleTimeTestRecord, InjectionMonitoringRecord
 from functools import lru_cache
 from django.db.models.functions import Substr
 from django.db.models import Avg, ExpressionWrapper, F, FloatField
@@ -154,10 +154,8 @@ class UserRegistrationRequestSerializer(serializers.ModelSerializer):
         model = UserRegistrationRequest
         fields = [
             'id', 'full_name', 'department', 'email', 'status', 'created_at',
-            'can_view_injection', 'can_edit_injection',
-            'can_view_machining', 'can_edit_machining', 
-            'can_view_inventory', 'can_edit_inventory',
-            'can_view_eco', 'can_edit_eco'
+            'can_view_injection', 'can_view_assembly', 'can_view_quality',
+            'can_view_sales', 'can_view_development', 'is_admin'
         ]
         read_only_fields = ['status', 'created_at']
     
@@ -176,10 +174,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = UserProfile
         fields = [
             'id', 'user', 'username', 'email', 'first_name',
-            'can_view_injection', 'can_edit_injection',
-            'can_view_machining', 'can_edit_machining',
-            'can_view_inventory', 'can_edit_inventory', 
-            'can_view_eco', 'can_edit_eco',
+            'can_view_injection', 'can_view_assembly', 'can_view_quality',
+            'can_view_sales', 'can_view_development', 'is_admin',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['user', 'username', 'email', 'first_name', 'created_at', 'updated_at']
@@ -224,23 +220,19 @@ class UserSerializer(serializers.ModelSerializer):
         if not profile:
             return {
                 'can_view_injection': False,
-                'can_edit_injection': False,
-                'can_view_machining': False,
-                'can_edit_machining': False,
-                'can_view_eco': False,
-                'can_edit_eco': False,
-                'can_view_inventory': False,
-                'can_edit_inventory': False,
+                'can_view_assembly': False,
+                'can_view_quality': False,
+                'can_view_sales': False,
+                'can_view_development': False,
+                'is_admin': False,
             }
         return {
             'can_view_injection': bool(profile.can_view_injection or obj.is_staff),
-            'can_edit_injection': bool(profile.can_edit_injection or obj.is_staff),
-            'can_view_machining': bool(profile.can_view_machining or obj.is_staff),
-            'can_edit_machining': bool(profile.can_edit_machining or obj.is_staff),
-            'can_view_eco': bool(profile.can_view_eco or obj.is_staff),
-            'can_edit_eco': bool(profile.can_edit_eco or obj.is_staff),
-            'can_view_inventory': bool(profile.can_view_inventory or obj.is_staff),
-            'can_edit_inventory': bool(profile.can_edit_inventory or obj.is_staff),
+            'can_view_assembly': bool(profile.can_view_assembly or obj.is_staff),
+            'can_view_quality': bool(profile.can_view_quality or obj.is_staff),
+            'can_view_sales': bool(profile.can_view_sales or obj.is_staff),
+            'can_view_development': bool(profile.can_view_development or obj.is_staff),
+            'is_admin': bool(profile.is_admin or obj.is_staff),
         }
 
     def get_is_using_temp_password(self, obj):
@@ -291,3 +283,81 @@ class HistoricalPerformanceSerializer(serializers.ModelSerializer):
         
         # operation_time is a property now, so this works
         return round((obj.operation_time * 60) / obj.actual_qty, 2)
+
+
+class CycleTimeTestRecordSerializer(serializers.ModelSerializer):
+    tested_by_name = serializers.CharField(source='tested_by.first_name', read_only=True)
+
+    class Meta:
+        model = CycleTimeTestRecord
+        fields = [
+            'id', 'setup', 'test_datetime', 'actual_cycle_time', 'test_qty',
+            'quality_ok', 'note', 'tested_by', 'tested_by_name'
+        ]
+        read_only_fields = ['test_datetime', 'tested_by', 'tested_by_name']
+
+
+class CycleTimeSetupSerializer(serializers.ModelSerializer):
+    setup_by_name = serializers.CharField(source='setup_by.first_name', read_only=True)
+    approved_by_name = serializers.CharField(source='approved_by.first_name', read_only=True)
+    test_records = CycleTimeTestRecordSerializer(many=True, read_only=True)
+    final_cycle_time = serializers.IntegerField(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    # 평균 테스트 사이클 타임 계산
+    avg_test_cycle_time = serializers.SerializerMethodField()
+    test_count = serializers.SerializerMethodField()
+    quality_pass_rate = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CycleTimeSetup
+        fields = [
+            'id', 'setup_date', 'machine_no', 'part_no', 'model_code', 'target_cycle_time',
+            'standard_cycle_time', 'mean_cycle_time', 'personnel_count', 'status', 'status_display',
+            'setup_by', 'setup_by_name', 'approved_by', 'approved_by_name',
+            'approved_at', 'note', 'rejection_reason', 'created_at', 'updated_at',
+            'test_records', 'final_cycle_time', 'avg_test_cycle_time',
+            'test_count', 'quality_pass_rate'
+        ]
+        read_only_fields = ['setup_date', 'setup_by', 'setup_by_name', 'approved_by_name', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('part_no'):
+            data['part_no'] = data['part_no'].upper()
+        return data
+
+    def validate_part_no(self, value):
+        return (value or '').upper()
+
+    def get_avg_test_cycle_time(self, obj):
+        records = obj.test_records.all()
+        if not records:
+            return None
+        return round(sum(r.actual_cycle_time for r in records) / len(records), 1)
+
+    def get_test_count(self, obj):
+        return obj.test_records.count()
+
+    def get_quality_pass_rate(self, obj):
+        records = obj.test_records.all()
+        if not records:
+            return None
+        pass_count = records.filter(quality_ok=True).count()
+        return round((pass_count / len(records)) * 100, 1)
+
+
+class CycleTimeSetupDashboardSerializer(serializers.Serializer):
+    """대시보드용 간단한 셋업 정보"""
+    total_setups_today = serializers.IntegerField()
+    pending_approvals = serializers.IntegerField()
+    approved_today = serializers.IntegerField()
+    rejected_today = serializers.IntegerField()
+    active_machines = serializers.ListField(child=serializers.IntegerField())
+    recent_setups = CycleTimeSetupSerializer(many=True)
+
+class InjectionMonitoringRecordSerializer(serializers.ModelSerializer):
+    """사출기 모니터링 기록 Serializer"""
+    class Meta:
+        model = InjectionMonitoringRecord
+        fields = '__all__'

@@ -18,10 +18,8 @@ class UserRegistrationRequestAdmin(admin.ModelAdmin):
         }),
         ('권한', {
             'fields': (
-                'can_view_injection', 'can_edit_injection',
-                'can_view_machining', 'can_edit_machining',
-                'can_view_inventory', 'can_edit_inventory',
-                'can_view_eco', 'can_edit_eco'
+                'can_view_injection', 'can_view_assembly', 'can_view_quality',
+                'can_view_sales', 'can_view_development', 'is_admin'
             )
         }),
         ('날짜', {
@@ -32,8 +30,8 @@ class UserRegistrationRequestAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['user', 'can_view_injection', 'can_edit_injection', 'can_view_eco', 'can_edit_eco', 'updated_at']
-    list_filter = ['can_view_injection', 'can_edit_injection', 'can_view_eco', 'can_edit_eco']
+    list_display = ['user', 'can_view_injection', 'can_view_assembly', 'can_view_quality', 'can_view_sales', 'can_view_development', 'is_admin', 'updated_at']
+    list_filter = ['can_view_injection', 'can_view_assembly', 'can_view_quality', 'can_view_sales', 'can_view_development', 'is_admin']
     search_fields = ['user__username', 'user__email', 'user__first_name']
     readonly_fields = ['created_at', 'updated_at']
     
@@ -41,17 +39,8 @@ class UserProfileAdmin(admin.ModelAdmin):
         ('사용자', {
             'fields': ('user',)
         }),
-        ('사출 권한', {
-            'fields': ('can_view_injection', 'can_edit_injection')
-        }),
-        ('가공 권한', {
-            'fields': ('can_view_machining', 'can_edit_machining')
-        }),
-        ('재고 권한', {
-            'fields': ('can_view_inventory', 'can_edit_inventory')
-        }),
-        ('ECO 권한', {
-            'fields': ('can_view_eco', 'can_edit_eco')
+        ('권한', {
+            'fields': ('can_view_injection', 'can_view_assembly', 'can_view_quality', 'can_view_sales', 'can_view_development', 'is_admin')
         }),
         ('날짜', {
             'fields': ('created_at', 'updated_at')

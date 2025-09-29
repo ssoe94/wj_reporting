@@ -1,17 +1,17 @@
 from django.contrib import admin
-from .models import AssemblyReport, AssemblyPartSpec, AssemblyProduct
+from .models import AssemblyReport, DefectHistory
 
 
 @admin.register(AssemblyReport)
 class AssemblyReportAdmin(admin.ModelAdmin):
     list_display = [
         'date', 'line_no', 'part_no', 'model', 'supply_type', 'plan_qty', 'actual_qty',
-        'total_defect_qty', 'achievement_rate', 'defect_rate'
+        'total_defect_qty', 'achievement_rate'
     ]
     list_filter = ['date', 'line_no', 'model', 'supply_type']
     search_fields = ['part_no', 'model', 'note']
     ordering = ['-date', 'line_no']
-    readonly_fields = ['total_defect_qty', 'achievement_rate', 'defect_rate', 'total_production_qty', 'uptime_rate']
+    readonly_fields = ['total_defect_qty', 'achievement_rate', 'operation_rate', 'uph', 'upph']
     
     fieldsets = (
         ('기본 정보', {
@@ -23,11 +23,14 @@ class AssemblyReportAdmin(admin.ModelAdmin):
         ('불량 분류', {
             'fields': ('injection_defect', 'outsourcing_defect', 'processing_defect')
         }),
+        ('동적 불량 상세', {
+            'fields': ('processing_defects_dynamic', 'outsourcing_defects_dynamic')
+        }),
         ('시간 정보', {
             'fields': ('total_time', 'idle_time', 'operation_time', 'workers')
         }),
         ('계산 결과', {
-            'fields': ('total_defect_qty', 'achievement_rate', 'defect_rate', 'total_production_qty', 'uptime_rate'),
+            'fields': ('total_defect_qty', 'achievement_rate', 'operation_rate', 'uph', 'upph'),
             'classes': ('collapse',)
         }),
         ('기타', {
@@ -36,17 +39,9 @@ class AssemblyReportAdmin(admin.ModelAdmin):
     )
 
 
-@admin.register(AssemblyPartSpec)
-class AssemblyPartSpecAdmin(admin.ModelAdmin):
-    list_display = ['part_no', 'model_code', 'description', 'process_type', 'valid_from']
-    list_filter = ['process_type', 'material_type', 'valid_from']
-    search_fields = ['part_no', 'model_code', 'description']
-    ordering = ['part_no']
-
-
-@admin.register(AssemblyProduct)
-class AssemblyProductAdmin(admin.ModelAdmin):
-    list_display = ['model', 'part_no', 'process_line']
-    list_filter = ['process_line']
-    search_fields = ['model', 'part_no']
-    ordering = ['model']
+@admin.register(DefectHistory)
+class DefectHistoryAdmin(admin.ModelAdmin):
+    list_display = ('category', 'defect_type', 'usage_count', 'last_used')
+    list_filter = ('category',)
+    search_fields = ('defect_type',)
+    ordering = ('-last_used',)

@@ -7,7 +7,7 @@ export const useAssemblyPartSpecs = (search?: string) => {
     queryKey: ['assembly-partspecs', search],
     queryFn: async () => {
       const params = search ? `?search=${encodeURIComponent(search)}` : '';
-      const response = await api.get(`/assembly/partspecs/${params}`);
+      const response = await api.get(`/parts/${params}`);
       return response.data;
     },
   });
@@ -18,7 +18,7 @@ export const useAssemblyProducts = (search?: string) => {
     queryKey: ['assembly-products', search],
     queryFn: async () => {
       const params = search ? `?search=${encodeURIComponent(search)}` : '';
-      const response = await api.get(`/assembly/products/${params}`);
+      const response = await api.get(`/products/${params}`);
       return response.data;
     },
   });
@@ -30,7 +30,7 @@ export const useAssemblyPartSearch = (partNo?: string) => {
     queryKey: ['assembly-part-search', partNo],
     queryFn: async () => {
       if (!partNo || partNo.trim().length < 2) return [];
-      const response = await api.get(`/assembly/products/search-by-part/?part_no=${encodeURIComponent(partNo)}`);
+      const response = await api.get(`/parts/?search=${encodeURIComponent(partNo)}`);
       return response.data;
     },
     enabled: !!partNo && partNo.trim().length >= 2,
@@ -41,8 +41,7 @@ export const useAssemblyModelSearch = (model?: string) => {
   return useQuery({
     queryKey: ['assembly-model-search', model],
     queryFn: async () => {
-      if (!model || model.trim().length < 2) return [];
-      const response = await api.get(`/assembly/products/search-by-model/?model=${encodeURIComponent(model)}`);
+      const response = await api.get(`/parts/?model_code=${encodeURIComponent(model || '')}`);
       return response.data;
     },
     enabled: !!model && model.trim().length >= 2,
@@ -55,7 +54,7 @@ export const useAssemblyPartsByModel = (model?: string) => {
     queryKey: ['assembly-parts-by-model', model],
     queryFn: async () => {
       if (!model || model.trim().length < 1) return [] as Array<{ part_no: string; model_code: string; description: string }>;
-      const response = await api.get(`/assembly/products/search-by-model/?model=${encodeURIComponent(model)}`);
+      const response = await api.get(`/parts/?model_code=${encodeURIComponent(model || '')}`);
       const raw = response.data as Array<{ part_no: string; model: string; process_line?: string }>;
       // PartSpec 형태에 가깝게 매핑
       return raw.map((r) => ({ part_no: r.part_no, model_code: r.model, description: '' }));
@@ -70,7 +69,7 @@ export const useAssemblyPartspecsByModel = (model?: string) => {
     queryKey: ['assembly-partspecs-by-model', model],
     queryFn: async () => {
       if (!model || model.trim().length < 1) return [] as Array<{ part_no: string; model_code: string; description: string }>;
-      const { data } = await api.get(`/assembly/partspecs/?model_code=${encodeURIComponent(model)}`);
+      const { data } = await api.get(`/parts/?model_code=${encodeURIComponent(model)}`);
       // API는 pagination일 수 있음 -> results 고려
       const list = (data?.results ?? data ?? []) as any[];
       return list.map((it) => ({ part_no: it.part_no, model_code: it.model_code, description: it.description || '' }));
@@ -84,7 +83,7 @@ export const useCreateAssemblyPartSpec = () => {
   
   return useMutation({
     mutationFn: async (data: { part_no: string; description?: string; model_code?: string }) => {
-      const response = await api.post('/assembly/partspecs/create-or-update/', data);
+      const response = await api.post('/parts/', data);
       return response.data;
     },
     onSuccess: () => {
@@ -98,7 +97,7 @@ export const useCreateAssemblyProduct = () => {
   
   return useMutation({
     mutationFn: async (data: Omit<AssemblyProduct, 'id'>) => {
-      const response = await api.post('/assembly/products/', data);
+      const response = await api.post('/products/', data);
       return response.data;
     },
     onSuccess: () => {
@@ -115,7 +114,7 @@ export const useAssemblyPartNoSearch = (search?: string) => {
     queryKey: ['assembly-partno-search', search],
     queryFn: async () => {
       if (!search || search.trim().length < 2) return [];
-      const response = await api.get(`/assembly/products/search-parts/?search=${encodeURIComponent(search)}`);
+      const response = await api.get(`/parts/?search=${encodeURIComponent(search)}`);
       return response.data;
     },
     enabled: !!search && search.trim().length >= 2,

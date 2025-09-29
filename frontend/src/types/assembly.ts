@@ -13,6 +13,8 @@ export interface AssemblyReport {
   processing_defect: number;
   incoming_defects_detail?: Record<string, number>;
   processing_defects_detail?: Record<string, number>;
+  processing_defects_dynamic?: Array<{defect_type: string; quantity: number}>;
+  outsourcing_defects_dynamic?: Array<{defect_type: string; quantity: number}>;
   operation_time: number;
   total_time: number;
   idle_time: number;

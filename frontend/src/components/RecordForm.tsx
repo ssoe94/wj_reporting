@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
@@ -15,7 +14,6 @@ import type { PartSpec } from '../hooks/usePartSpecs';
 import machines from '../constants/machines';
 import api from '../lib/api';
 import { PlusCircle, Plus } from 'lucide-react';
-import TimeRangeField, { type ProductionTime } from './TimeRangeField';
 
 // Utility functions (moved here for now, consider extracting to utils/date)
 const roundTo5 = (d: Date) => {
@@ -67,29 +65,25 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     return Array.from(map.values());
   }, [searchResults]);
 
-  const [form, setForm] = useState(() => {
-    const lastUsedDate = sessionStorage.getItem('lastUsedReportDate');
-    return {
-      date: lastUsedDate || getLocalDate(),
-      machineId: '',
-      model: '',
-      type: '',
-      partNo: '',
-      plan: '',
-      actual: '',
-      reportedDefect: '',
-      realDefect: '',
-      resin: '',
-      netG: '',
-      srG: '',
-      ct: '',
-      start: nowStr,
-      end: nowStr,
-      idle: '',
-      note: '',
-    };
-  });
-
+  const [form, setForm] = useState(() => ({
+    date: getLocalDate(),
+    machineId: '',
+    model: '',
+    type: '',
+    partNo: '',
+    plan: '',
+    actual: '',
+    reportedDefect: '',
+    realDefect: '',
+    resin: '',
+    netG: '',
+    srG: '',
+    ct: '',
+    start: nowStr,
+    end: nowStr,
+    idle: '',
+    note: '',
+  }));
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
@@ -103,22 +97,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     return diffMs > 0 ? Math.floor(diffMs / 60000) : 0;
   };
   const totalMinutes = diffMinutes();
-  const idleMinutesForDisplay = Number(form.idle || 0);
-  const runMinutes = totalMinutes - idleMinutesForDisplay;
-
-  // TimeRangeField 바인딩 상태 (요약 표시 용)
-  const prodTime: ProductionTime = {
-    startAt: form.start.slice(0,16),
-    endAt: form.end.slice(0,16),
-  };
-  const handleProdTimeChange = (v: ProductionTime) => {
-    // 초는 00으로 정규화
-    const start = `${v.startAt}:00`;
-    const end = `${v.endAt}:00`;
-    setForm(prev => ({ ...prev, start, end }));
-  };
-
-  
+  const runMinutes = totalMinutes && form.idle ? totalMinutes - Number(form.idle) : 0;
 
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -133,24 +112,6 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
       toast.error(requiredErrors[0]);
       return;
     }
-
-    // --- START of new logic ---
-    let idleTime = Number(form.idle || 0);
-    let proceedToSave = true;
-
-    // Scenario B-2: idle is empty/0, but note is not
-    if (!form.idle && form.note.trim() !== '') {
-        if (window.confirm(t('confirm_idle_zero') || '부동시간이 0이 맞습니까?')) {
-            idleTime = 0;
-        } else {
-            proceedToSave = false;
-        }
-    }
-    
-    if (!proceedToSave) {
-        return; // Stop submission if user cancelled confirmation
-    }
-    // --- END of new logic ---
 
     try {
       const machine = machines.find((m) => String(m.id) === form.machineId);
@@ -167,19 +128,18 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         start_datetime: form.start,
         end_datetime: form.end,
         total_time: totalMinutes,
-        idle_time: idleTime, // Send idle_time instead
+        operation_time: runMinutes,
         part_no: form.partNo,
         note: form.note,
       };
       await api.post('/reports/', payload);
-      sessionStorage.setItem('lastUsedReportDate', payload.date); // Save the date
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       queryClient.invalidateQueries({ queryKey: ['reports-summary'] });
       toast.success('저장되었습니다');
       if (onSaved) onSaved();
       setForm({
         ...form,
-        // date: getLocalDate(), // Keep last used date
+        date: getLocalDate(),
         model: '',
         type: '',
         plan: '',
@@ -287,7 +247,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                 const modelCode = (parts[0] || '').trim().toUpperCase();
                 const desc = (parts[1] || '').trim();
                 setShowAddPartModal(true);
-                setTimeout(()=> {
+                setTimeout(()=>{
                   try{
                     (document.getElementById('newModelCode') as HTMLInputElement).value = modelCode;
                     (document.getElementById('newDescription') as HTMLInputElement).value = desc;
@@ -477,13 +437,17 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         <Card className="h-full flex flex-col">
           <CardHeader className="font-semibold text-blue-700">{t('prod_time')}</CardHeader>
           <CardContent className="flex-1 space-y-4">
-            {/* 시작/종료 SoCar 스타일 컴포넌트 */}
-            <TimeRangeField
-              value={prodTime}
-              onChange={handleProdTimeChange}
-              locale={lang==='zh' ? 'zh' : 'ko'}
-              minuteStep={5}
-            />
+            {/* 시작/종료 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col">
+                <Label htmlFor="start">{t('start_dt')}</Label>
+                <Input id="start" type="datetime-local" step={300} value={form.start} onChange={handleChange} className="text-center" />
+              </div>
+              <div className="flex flex-col">
+                <Label htmlFor="end">{t('end_dt')}</Label>
+                <Input id="end" type="datetime-local" step={300} value={form.end} onChange={handleChange} className="text-center" />
+              </div>
+            </div>
             {/* 총시간/부동시간 */}
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col">
@@ -587,7 +551,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
               <PermissionButton 
                 permission="can_edit_injection"
                 className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200"
-                onClick={async()=> {
+                onClick={async()=>{
                 try{
                   const partNo = (document.getElementById('newPartNo') as HTMLInputElement).value;
                   const modelCode = (document.getElementById('newModelCode') as HTMLInputElement).value;

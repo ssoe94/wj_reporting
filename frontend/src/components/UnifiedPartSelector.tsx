@@ -78,7 +78,7 @@ export default function UnifiedPartSelector({
     queryFn: async () => {
       if (!searchQuery || searchQuery.length < 2) return [];
       
-      const { data } = await api.get('/unified-parts/search/', {
+      const { data } = await api.get('/mes/unified-parts/search/', {
         params: {
           q: searchQuery,
           mode,
@@ -205,10 +205,10 @@ export default function UnifiedPartSelector({
         
         renderOption={(props, option) => {
           const { key, ...restProps } = props as any;
-          
+
           if ('isAddNew' in option) {
             return (
-              <li key={key} {...restProps} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
+              <li {...restProps} className="bg-green-50 hover:bg-green-100 border-t border-green-200">
                 <div className="flex items-center justify-center gap-2 text-green-700 font-medium py-2 text-sm">
                   <Plus className="h-3 w-3" />
                   <span>"{option.searchQuery}" {t('add_new_part_prompt')}</span>
@@ -218,7 +218,7 @@ export default function UnifiedPartSelector({
           }
 
           return (
-            <li key={key} {...restProps}>
+            <li {...restProps}>
               <div className="flex flex-col w-full">
                 <div className="flex items-center justify-between">
                   <span className="font-mono font-medium">{option.part_no}</span>

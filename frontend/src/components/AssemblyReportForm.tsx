@@ -8,6 +8,9 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Autocomplete, TextField } from '@mui/material';
 import type { AssemblyReport } from '../types/assembly';
+import { DefectTypeInput } from '@/components/assembly/DefectTypeInput';
+import type { DefectEntry } from '@/components/assembly/DefectTypeInput';
+import { useLocalDefectHistory } from '../hooks/useDefectHistory';
 import { useLang } from '../i18n';
 import { usePartSpecSearch, usePartListByModel } from '../hooks/usePartSpecs';
 import { useAssemblyPartsByModel, useAssemblyPartspecsByModel, useAssemblyPartNoSearch } from '../hooks/useAssemblyParts';
@@ -32,6 +35,13 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
   const [selectedPartSpec, setSelectedPartSpec] = useState<PartSpec | null>(null);
   const [showAddPartModal, setShowAddPartModal] = useState(false);
   const [, setPrefillSimilar] = useState<Partial<PartSpec> | null>(null);
+
+  // 새로운 동적 불량 관리 상태
+  const [processingDefects, setProcessingDefects] = useState<DefectEntry[]>([]);
+  const [outsourcingDefects, setOutsourcingDefects] = useState<DefectEntry[]>([]);
+
+  // 불량 히스토리 관리
+  const { processingDefectHistory, outsourcingDefectHistory, recordDefectTypeUsage } = useLocalDefectHistory();
   // 불량 상세 입력 (집계용)
   const incomingDefectItems = [
     { key: 'scratch', label: '划伤' },
@@ -46,25 +56,12 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     { key: 'whitening', label: '发白' },
     { key: 'other', label: '其他' },
   ] as const;
-  const processingDefectItems = [
-    { key: 'scratch', label: '划伤' },
-    { key: 'printing', label: '印刷' },
-    { key: 'rework', label: '加工修理' },
-    { key: 'other', label: '其他' },
-  ] as const;
   const [incomingDefectsDetail, setIncomingDefectsDetail] = useState<Record<string, number | ''>>(() => {
     const init: Record<string, number | ''> = {};
     incomingDefectItems.forEach(it => (init[it.key] = ''));
     return init;
   });
-  const [processingDefectsDetail, setProcessingDefectsDetail] = useState<Record<string, number | ''>>(() => {
-    const init: Record<string, number | ''> = {};
-    processingDefectItems.forEach(it => (init[it.key] = ''));
-    return init;
-  });
-  const [detailsDirty, setDetailsDirty] = useState(false);
   const [incomingOpen, setIncomingOpen] = useState(true);
-  const [processingOpen, setProcessingOpen] = useState(true);
   const [newPartForm, setNewPartForm] = useState<any>({
     part_no: '',
     model_code: '',
@@ -151,7 +148,6 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     // 상세 불량: 서버에 저장된 detail이 있다면 그대로 로드
     try {
       const inc = (initialData as any)?.incoming_defects_detail;
-      const prc = (initialData as any)?.processing_defects_detail;
       if (inc && typeof inc === 'object') {
         const next: Record<string, number | ''> = {};
         incomingDefectItems.forEach(it => {
@@ -160,25 +156,33 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         });
         setIncomingDefectsDetail(next);
       }
-      if (prc && typeof prc === 'object') {
-        const next: Record<string, number | ''> = {};
-        processingDefectItems.forEach(it => {
-          const v = prc[it.key];
-          next[it.key] = (v === '' || v === null || v === undefined) ? '' : (Number(v) || 0);
-        });
-        setProcessingDefectsDetail(next);
+      // 동적 불량 데이터 로드
+      if ((initialData as any).processing_defects_dynamic && Array.isArray((initialData as any).processing_defects_dynamic)) {
+        setProcessingDefects((initialData as any).processing_defects_dynamic);
       }
-      setDetailsDirty(false);
+      if ((initialData as any).outsourcing_defects_dynamic && Array.isArray((initialData as any).outsourcing_defects_dynamic)) {
+        setOutsourcingDefects((initialData as any).outsourcing_defects_dynamic);
+      }
     } catch (_) {}
   }, [initialData]);
+
+  // 새로운 동적 불량 관리로 인한 총합 계산
+  const totalProcessingDefects = React.useMemo(() =>
+    processingDefects.reduce((sum, defect) => sum + defect.quantity, 0),
+    [processingDefects]
+  );
+  const totalOutsourcingDefects = React.useMemo(() =>
+    outsourcingDefects.reduce((sum, defect) => sum + defect.quantity, 0),
+    [outsourcingDefects]
+  );
 
   // 자동 계산 로직
   const calculatedValues = React.useMemo(() => {
     const inj = Number(formData.injection_defect) || 0;
-    const out = Number(formData.outsourcing_defect) || 0;
-    const proc = Number(formData.processing_defect) || 0;
+    const out = totalOutsourcingDefects;
+    const proc = totalProcessingDefects;
     const totalDefects = inj + out + proc;
-    const incomingDefects = inj + out;
+    const incomingDefects = inj; // 이제 사출불량만 집계
     const op = Number(formData.operation_time) || 0;
     const idle = Number(formData.idle_time) || 0;
     const total = op + idle; // 총시간 = 작업시간 + 부동시간
@@ -211,20 +215,10 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       operationRate,
       achievementRate
     };
-  }, [formData]);
-
-  // 불량 상세 변경 시(사용자 편집 시에만) 총합을 formData에 반영
-  React.useEffect(() => {
-    // 상세 변경 시 합계 반영 (서버 detail은 저장 시 함께 전송)
-    if (!detailsDirty) return;
-    const sumIncoming = Object.values(incomingDefectsDetail).reduce<number>((a, b) => a + (b === '' ? 0 : (Number(b) || 0)), 0);
-    const sumProcessing = Object.values(processingDefectsDetail).reduce<number>((a, b) => a + (b === '' ? 0 : (Number(b) || 0)), 0);
-    setFormData(prev => ({ ...prev, injection_defect: sumIncoming, processing_defect: sumProcessing }));
-  }, [incomingDefectsDetail, processingDefectsDetail, detailsDirty]);
+  }, [formData, totalProcessingDefects, totalOutsourcingDefects]);
 
   const totalIncoming = React.useMemo(() => Object.values(incomingDefectsDetail).reduce<number>((a,b)=> a+(b===''?0:(Number(b)||0)),0), [incomingDefectsDetail]);
-  const totalProcessing = React.useMemo(() => Object.values(processingDefectsDetail).reduce<number>((a,b)=> a+(b===''?0:(Number(b)||0)),0), [processingDefectsDetail]);
-  const totalDefectsNow = totalIncoming + totalProcessing + (Number(formData.outsourcing_defect)||0);
+  const totalDefectsNow = totalIncoming + totalProcessingDefects + totalOutsourcingDefects;
   const denomForRate = Math.max(1, (Number(formData.input_qty)||0) || ((Number(formData.actual_qty)||0) + totalDefectsNow));
   const badgeClassFor = (sum: number) => {
     const pct = (sum / denomForRate) * 100;
@@ -267,7 +261,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     // 확인 다이얼로그: 계획 대비 달성률, 불량 안내
     const plan = Number(formData.plan_qty)||0;
     const actual = Number(formData.actual_qty)||0;
-    const totalDefects = (Number(formData.injection_defect)||0) + (Number(formData.outsourcing_defect)||0) + (Number(formData.processing_defect)||0);
+    const totalDefects = (Number(formData.injection_defect)||0) + totalOutsourcingDefects + totalProcessingDefects;
     const rate = plan > 0 ? ((actual / plan) * 100).toFixed(1) : '0.0';
     const confirmMsg = lang==='zh'
       ? `计划数量对比良品数量为 ${rate}% 。不良数量 ${totalDefects} 件。是否保存？`
@@ -280,8 +274,14 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       };
       // 상세 불량 JSON 포함
       payload.incoming_defects_detail = { ...incomingDefectsDetail };
-      payload.processing_defects_detail = { ...processingDefectsDetail };
+      // 새로운 동적 불량 데이터 추가
+      payload.processing_defects_dynamic = processingDefects;
+      payload.outsourcing_defects_dynamic = outsourcingDefects;
       // 빈 문자열은 0으로 변환하여 서버로 전송
+      // 동적 불량값을 기존 필드에 설정
+      payload.processing_defect = totalProcessingDefects;
+      payload.outsourcing_defect = totalOutsourcingDefects;
+
       ['plan_qty','input_qty','actual_qty','rework_qty','injection_defect','outsourcing_defect','processing_defect','total_time','idle_time','operation_time','workers'].forEach((k)=>{
         if (payload[k] === '' || payload[k] === undefined || payload[k] === null) payload[k] = 0;
       });
@@ -312,14 +312,12 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       setProductQuery('');
       setSelectedModelDesc(null);
       setSelectedPartSpec(null);
+      // 동적 불량 리스트도 초기화
+      setProcessingDefects([]);
+      setOutsourcingDefects([]);
       setIncomingDefectsDetail(() => {
         const init: Record<string, number> = {};
         incomingDefectItems.forEach(it => (init[it.key] = 0));
-        return init;
-      });
-      setProcessingDefectsDetail(() => {
-        const init: Record<string, number> = {};
-        processingDefectItems.forEach(it => (init[it.key] = 0));
         return init;
       });
     } catch (_) {
@@ -701,7 +699,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         <Card className={`h-full flex flex-col ${compact ? 'col-span-3' : ''}`}>
           <CardHeader className={`font-semibold text-blue-700 ${compact ? 'text-base' : ''}`}>{t('defect_record')}</CardHeader>
           <CardContent className="flex-1 space-y-4">
-            {/* 아코디언: Incoming */}
+            {/* 사출불량 (기존 입고불량에서 변경) */}
             <Card className="border-green-200">
               <CardHeader className="py-2 font-medium text-green-700">
                 <button
@@ -709,7 +707,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   className="w-full flex flex-row items-center justify-between cursor-pointer select-none"
                   onClick={() => setIncomingOpen(o => !o)}
                 >
-                  <span>{t('assembly_incoming_defect')}</span>
+                  <span>{t('injection_defect')}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-600">{t('sum')}:</span>
                     <span className={`px-2 py-0.5 rounded-md font-semibold ${badgeClassFor(totalIncoming)}`}>{totalIncoming}</span>
@@ -722,40 +720,35 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                     <div key={it.key} className="flex flex-col">
                       <Label className="text-gray-600">{it.key === 'other' ? t('def_incoming_other') : t(`def_${it.key}`)}</Label>
                       <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={incomingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
-                        onChange={(e)=> { setDetailsDirty(true); setIncomingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
+                        onChange={(e)=> { setIncomingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
                     </div>
                   ))}
                 </CardContent>
               )}
             </Card>
 
-            {/* 아코디언: Processing */}
-            <Card className="border-amber-200">
-              <CardHeader className="py-2 font-medium text-amber-700">
-                <button
-                  type="button"
-                  className="w-full flex flex-row items-center justify-between cursor-pointer select-none"
-                  onClick={() => setProcessingOpen(o => !o)}
-                >
-                  <span>{t('processing_defect')}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">{t('sum')}:</span>
-                    <span className={`px-2 py-0.5 rounded-md font-semibold ${badgeClassFor(totalProcessing)}`}>{totalProcessing}</span>
-                  </div>
-                </button>
-              </CardHeader>
-              {processingOpen && (
-                <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  {processingDefectItems.map(it => (
-                    <div key={it.key} className="flex flex-col">
-                      <Label className="text-gray-600">{it.key === 'other' ? t('def_processing_other') : t(`def_${it.key}`)}</Label>
-                      <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={processingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
-                        onChange={(e)=> { setDetailsDirty(true); setProcessingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
-                    </div>
-                  ))}
-                </CardContent>
-              )}
-            </Card>
+            {/* 새로운 2열 불량 관리 섹션 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* 가공불량 */}
+              <DefectTypeInput
+                defectType="processing"
+                value={processingDefects}
+                onChange={setProcessingDefects}
+                historyOptions={processingDefectHistory}
+                onSelect={(type) => recordDefectTypeUsage('processing', type)}
+                className="border-amber-200"
+              />
+
+              {/* 외주불량 */}
+              <DefectTypeInput
+                defectType="outsourcing"
+                value={outsourcingDefects}
+                onChange={setOutsourcingDefects}
+                historyOptions={outsourcingDefectHistory}
+                onSelect={(type) => recordDefectTypeUsage('outsourcing', type)}
+                className="border-purple-200"
+              />
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -804,7 +797,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               {/* 저장 버튼 */}
               <div className="flex justify-end mt-3">
                 <PermissionButton
-                  permission="can_edit_machining"
+                  permission="can_edit_assembly"
                   type="submit"
                   className="px-6 py-3 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
                   disabled={isLoading}

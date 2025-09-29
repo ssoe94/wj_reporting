@@ -280,15 +280,13 @@ class UserRegistrationRequest(models.Model):
     approved_at = models.DateTimeField('승인일시', null=True, blank=True)
     temporary_password = models.CharField('임시 비밀번호', max_length=100, blank=True)
     
-    # 권한 설정
-    can_view_injection = models.BooleanField('사출 조회 권한', default=False)
-    can_edit_injection = models.BooleanField('사출 편집 권한', default=False)
-    can_view_machining = models.BooleanField('가공 조회 권한', default=False)
-    can_edit_machining = models.BooleanField('가공 편집 권한', default=False)
-    can_view_eco = models.BooleanField('ECO 조회 권한', default=False)
-    can_edit_eco = models.BooleanField('ECO 편집 권한', default=False)
-    can_view_inventory = models.BooleanField('재고 조회 권한', default=False)
-    can_edit_inventory = models.BooleanField('재고 편집 권한', default=False)
+    # 권한 설정 (조회 기본, 편집/삭제는 별도 플래그 없이 관리)
+    can_view_injection = models.BooleanField('사출 메뉴 접근', default=False)
+    can_view_assembly = models.BooleanField('가공 메뉴 접근', default=False)
+    can_view_quality = models.BooleanField('품질 메뉴 접근', default=False)
+    can_view_sales = models.BooleanField('영업/재고 메뉴 접근', default=False)
+    can_view_development = models.BooleanField('개발/ECO 메뉴 접근', default=False)
+    is_admin = models.BooleanField('관리자 메뉴 접근', default=False)
     
     created_at = models.DateTimeField('요청일시', auto_now_add=True)
     updated_at = models.DateTimeField('수정일시', auto_now=True)
@@ -306,17 +304,13 @@ class UserProfile(models.Model):
     """사용자 권한 프로필"""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     
-    # 권한 설정 (UserRegistrationRequest와 동일)
-    can_view_injection = models.BooleanField('사출 조회 권한', default=False)
-    can_edit_injection = models.BooleanField('사출 편집 권한', default=False)
-    can_view_machining = models.BooleanField('가공 조회 권한', default=False)
-    can_edit_machining = models.BooleanField('가공 편집 권한', default=False)
-    can_view_eco = models.BooleanField('ECO 조회 권한', default=False)
-    can_edit_eco = models.BooleanField('ECO 편집 권한', default=False)
-    can_view_inventory = models.BooleanField('재고 조회 권한', default=False)
-    can_edit_inventory = models.BooleanField('재고 편집 권한', default=False)
+    can_view_injection = models.BooleanField('사출 메뉴 접근', default=False)
+    can_view_assembly = models.BooleanField('가공 메뉴 접근', default=False)
+    can_view_quality = models.BooleanField('품질 메뉴 접근', default=False)
+    can_view_sales = models.BooleanField('영업/재고 메뉴 접근', default=False)
+    can_view_development = models.BooleanField('개발/ECO 메뉴 접근', default=False)
+    is_admin = models.BooleanField('관리자 메뉴 접근', default=False)
     
-    # 비밀번호 관리
     is_using_temp_password = models.BooleanField('임시 비밀번호 사용 중', default=False)
     password_reset_required = models.BooleanField('비밀번호 재설정 필요', default=False)
     last_password_change = models.DateTimeField('마지막 비밀번호 변경일', null=True, blank=True)
@@ -333,12 +327,85 @@ class UserProfile(models.Model):
     
     @classmethod
     def get_user_permissions(cls, user):
-        """사용자의 권한 정보를 반환"""
         try:
             return user.profile
         except UserProfile.DoesNotExist:
-            # 프로필이 없으면 생성
             return cls.objects.create(user=user)
+
+
+class CycleTimeSetup(models.Model):
+    """사이클 타임 셋업 기록"""
+    # 기본 정보
+    setup_date = models.DateTimeField('설정일시', auto_now_add=True)
+    machine_no = models.PositiveSmallIntegerField('사출기 번호')
+    part_no = models.CharField('Part No.', max_length=100)
+    model_code = models.CharField('모델 코드', max_length=50, blank=True)
+
+    # 사이클 타임 정보
+    target_cycle_time = models.PositiveIntegerField('목표 사이클 타임(초)')
+    standard_cycle_time = models.PositiveIntegerField('표준 사이클 타임(초)', null=True, blank=True)
+    mean_cycle_time = models.PositiveIntegerField('평균 사이클 타임(초)', null=True, blank=True)
+    personnel_count = models.FloatField('배치인원수', default=1.5)
+
+    # 상태 관리
+    STATUS_CHOICES = [
+        ('SETUP', '설정중'),
+        ('TESTING', '테스트중'),
+        ('APPROVED', '승인완료'),
+        ('REJECTED', '반려'),
+    ]
+    status = models.CharField('상태', max_length=20, choices=STATUS_CHOICES, default='SETUP')
+
+    # 설정자/승인자
+    setup_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cycle_setups')
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_setups')
+    approved_at = models.DateTimeField('승인일시', null=True, blank=True)
+
+    # 비고
+    note = models.TextField('설정 비고', blank=True)
+    rejection_reason = models.TextField('반려 사유', blank=True)
+
+    # 생성/수정 시간
+    created_at = models.DateTimeField('생성시간', auto_now_add=True)
+    updated_at = models.DateTimeField('수정시간', auto_now=True)
+
+    class Meta:
+        verbose_name = '사이클 타임 셋업'
+        verbose_name_plural = '사이클 타임 셋업 목록'
+        ordering = ['-setup_date']
+
+    def __str__(self):
+        return f"{self.machine_no}번기 {self.part_no} - {self.get_status_display()}"
+
+    def save(self, *args, **kwargs):
+        # Normalize PART NO to uppercase on save
+        if getattr(self, 'part_no', None):
+            self.part_no = self.part_no.upper()
+        super().save(*args, **kwargs)
+
+    @property
+    def final_cycle_time(self):
+        """최종 적용된 사이클 타임"""
+        return self.mean_cycle_time or self.standard_cycle_time or self.target_cycle_time
+
+
+class CycleTimeTestRecord(models.Model):
+    """사이클 타임 테스트 기록"""
+    setup = models.ForeignKey(CycleTimeSetup, on_delete=models.CASCADE, related_name='test_records')
+    test_datetime = models.DateTimeField('테스트 시간', auto_now_add=True)
+    actual_cycle_time = models.PositiveIntegerField('실제 사이클 타임(초)')
+    test_qty = models.PositiveSmallIntegerField('테스트 수량', default=1)
+    quality_ok = models.BooleanField('품질 양호', default=True)
+    note = models.TextField('테스트 비고', blank=True)
+    tested_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='test_records')
+
+    class Meta:
+        verbose_name = '사이클 타임 테스트 기록'
+        verbose_name_plural = '사이클 타임 테스트 기록 목록'
+        ordering = ['-test_datetime']
+
+    def __str__(self):
+        return f"{self.setup.part_no} 테스트 - {self.actual_cycle_time}초"
 
 
 @receiver(post_save, sender=User)
@@ -349,5 +416,26 @@ def create_user_profile(sender, instance, created, **kwargs):
             user=instance,
             # 관리자가 아닌 경우 기본 조회 권한 부여
             can_view_injection=not instance.is_staff,
-            can_view_eco=not instance.is_staff,
+            can_view_assembly=not instance.is_staff,
+            can_view_quality=not instance.is_staff,
+            can_view_sales=not instance.is_staff,
+            can_view_development=not instance.is_staff,
+            is_admin=instance.is_staff,
         ) 
+
+class InjectionMonitoringRecord(models.Model):
+    """사출기 파라미터 모니터링 시계열 데이터"""
+    machine_name = models.CharField('설비명', max_length=50)
+    device_code = models.CharField('Device Code', max_length=100, db_index=True)
+    timestamp = models.DateTimeField('측정시간', db_index=True)
+    capacity = models.FloatField('생산량', null=True, blank=True)
+    oil_temperature = models.FloatField('오일온도', null=True, blank=True)
+
+    class Meta:
+        verbose_name = '사출기 모니터링 기록'
+        verbose_name_plural = '사출기 모니터링 기록 목록'
+        unique_together = ('device_code', 'timestamp')
+        ordering = ['-timestamp', 'machine_name']
+
+    def __str__(self):
+        return f"{self.timestamp.strftime('%Y-%m-%d %H:%M')} - {self.machine_name}"

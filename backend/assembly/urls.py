@@ -7,8 +7,6 @@ app_name = 'assembly'
 # DRF router 설정
 router = DefaultRouter()
 router.register(r'reports', views.AssemblyReportViewSet)
-router.register(r'partspecs', views.AssemblyPartSpecViewSet)
-router.register(r'products', views.AssemblyProductViewSet)
 
 urlpatterns = [
     path('', views.index, name='index'),

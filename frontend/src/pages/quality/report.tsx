@@ -510,7 +510,7 @@ export default function QualityReport() {
         {/* 저장 버튼 */}
         <div className="flex justify-end">
           <PermissionButton
-            permission="can_edit_machining"
+            permission="can_edit_quality"
             type="submit"
             className="px-6 py-3 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
           >

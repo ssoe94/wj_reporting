@@ -1,6 +1,10 @@
 @echo off
-cd /d d:\develop\production-site\backend
-start "" venv\Scripts\python.exe manage.py runserver 0.0.0.0:8000
+:: Change to the project root directory
+cd /d "d:\develop\production-site"
 
-cd /d d:\develop\production-site\frontend
-start "" npm run dev
+echo Starting Django server...
+start "Django Server" backend\venv\Scripts\python.exe backend\manage.py runserver 0.0.0.0:8000
+
+echo Starting frontend server...
+cd /d "d:\develop\production-site\frontend"
+start "Frontend Server" npm run dev

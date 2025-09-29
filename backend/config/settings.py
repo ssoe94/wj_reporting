@@ -55,7 +55,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'django_filters',
-    'django_celery_beat',
+    # 'django_celery_beat',
     'rest_framework_simplejwt',
     
     # Local apps
@@ -106,6 +106,9 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 100
@@ -199,21 +202,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 MES_API_BASE = os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn/api/openapi/domain/web/v1/route')
 MES_ACCESS_TOKEN = os.getenv('MES_ACCESS_TOKEN', '')
 
-# Celery 설정
-CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_TIMEZONE = 'Asia/Seoul'
-CELERY_ENABLE_UTC = False  # UTC 비활성화, 서울 시간 사용
-
-# Celery Beat 스케줄 설정 (crontab 객체 사용)
-from celery.schedules import crontab
-
-CELERY_BEAT_SCHEDULE = {
-    'daily-inventory-automation': {
-        'task': 'inventory.tasks.daily_inventory_automation',
-        'schedule': crontab(hour=8, minute=0),  # 매일 오전 8시
-    },
-}
 
 # 로깅 설정
 LOGGING = {
@@ -252,3 +240,19 @@ LOGGING = {
         },
     },
 }
+
+# MES API 설정
+MES_API_BASE = os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn/api/openapi/domain/web/v1/route')
+MES_API_TOKEN = os.getenv('MES_API_TOKEN', '')
+
+# Celery 설정
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Shanghai'
+CELERY_ENABLE_UTC = False
+
+# Celery Beat 스케줄러 설정 (django-celery-beat 사용 시)
+# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'

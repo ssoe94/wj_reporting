@@ -42,7 +42,10 @@ import DailyReportPage from './pages/sales/DailyReport';
 import UserApproval from './pages/admin/UserApproval';
 import PasswordChangeModal from './components/PasswordChangeModal';
 import PermissionLink from './components/common/PermissionLink';
+import PageTransition from './components/common/PageTransition';
 import QualityPage from './pages/quality';
+import InjectionSetupPage from './pages/injection/Setup';
+import InjectionMonitoringPage from './pages/injection/MonitoringPage';
 
 const queryClient = new QueryClient();
 
@@ -68,6 +71,8 @@ export function useNavItems() {
           { to: "/injection#top", label: t('nav_injection_summary'), icon: ChartNoAxesCombined },
           { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
           { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
+          { to: "/injection/setup", label: t('setup.page_title'), icon: Monitor },
+          { to: "/injection/monitoring", label: t('monitoring.title'), icon: BarChart3 },
         ],
       },
       {
@@ -117,7 +122,6 @@ export function useNavItems() {
   // 일반 사용자는 권한에 따라 메뉴 필터링
   const navItems = [];
   
-  // 대시보드는 모든 사용자에게 표시
   navItems.push({
     label: t('nav_overview'),
     icon: FileChartPie,
@@ -126,76 +130,57 @@ export function useNavItems() {
     ],
   });
 
-  // 사출 권한 확인
-  if (hasPermission('can_view_injection')) {
-    const injectionChildren = [
+  navItems.push({
+    label: t('nav_injection'),
+    icon: Monitor,
+    children: [
       { to: "/injection#top", label: t('nav_injection_summary'), icon: ChartNoAxesCombined },
       { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
-    ];
-    
-    // 편집 권한이 있으면 신규 추가 메뉴도 표시
-    if (hasPermission('can_edit_injection')) {
-      injectionChildren.push({ to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare });
-    }
-    
-    navItems.push({
-      label: t('nav_injection'),
-      icon: Monitor,
-      children: injectionChildren,
-    });
-  }
-
-  // 가공 권한 확인
-  if (hasPermission('can_view_machining')) {
-    const machiningChildren = [
+      { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
+      { to: "/injection/setup", label: t('setup.page_title'), icon: Monitor },
+      { to: "/injection/monitoring", label: t('monitoring.title'), icon: BarChart3 },
+    ],
+  });
+  navItems.push({
+    label: t('nav_machining'),
+    icon: Wrench,
+    children: [
       { to: "/assembly#top", label: t('nav_machining_summary'), icon: ChartNoAxesCombined },
       { to: "/assembly#records", label: t('nav_machining_records'), icon: ClipboardList },
-    ];
-    
-    if (hasPermission('can_edit_machining')) {
-      machiningChildren.push({ to: "/assembly#new", label: t('nav_machining_new'), icon: PlusSquare });
-    }
-    
+      { to: "/assembly#new", label: t('nav_machining_new'), icon: PlusSquare },
+    ],
+  });
+  navItems.push({
+    label: t('nav_quality'),
+    icon: ShieldCheck,
+    children: [
+      { to: "/quality#report", label: t('nav_quality_report'), icon: ClipboardX },
+      { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
+    ],
+  });
+  navItems.push({
+    label: t('nav_sales'),
+    icon: Truck,
+    children: [
+      { to: "/sales/inventory", label: t('nav_inventory_analysis'), icon: PackageSearch },
+      { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
+      { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
+    ],
+  });
+  navItems.push({
+    label: t('nav_development'),
+    icon: DraftingIcon,
+    children: [
+      { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
+      { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
+    ],
+  });
+  if (hasPermission('is_admin')) {
     navItems.push({
-      label: t('nav_machining'),
-      icon: Wrench,
-      children: machiningChildren,
-    });
-  }
-
-  // 품질 섹션은 가공 권한과 동일 조건으로 표기 (요청사항: 가공 아래)
-  if (hasPermission('can_view_machining')) {
-    navItems.push({
-      label: t('nav_quality'),
-      icon: ShieldCheck,
+      label: '관리자',
+      icon: Monitor,
       children: [
-        { to: "/quality#report", label: t('nav_quality_report'), icon: ClipboardX },
-        { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
-      ],
-    });
-  }
-
-  // 재고 권한 확인
-  if (hasPermission('can_view_inventory')) {
-    navItems.push({
-      label: t('nav_sales'),
-      icon: Truck,
-      children: [
-        { to: "/sales/inventory", label: t('nav_inventory_analysis'), icon: PackageSearch },
-        { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
-        { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
-      ],
-    });
-  }
-
-  // ECO 권한 확인
-  if (hasPermission('can_view_eco')) {
-    navItems.push({
-      label: t('nav_development'),
-      icon: DraftingIcon,
-      children: [
-        { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
-        { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
+        { to: "/admin/user-management", label: '사용자 관리', icon: ClipboardCheck },
       ],
     });
   }
@@ -213,6 +198,9 @@ function AppContent() {
   const { lang, setLang, t } = useLang();
   const { user, logout, isAuthenticated, isLoading } = useAuth();
   const routerLocation = useLocation();
+
+  // 페이지 전환 애니메이션을 위한 key
+  const locationKey = routerLocation.pathname;
   
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -329,7 +317,7 @@ function AppContent() {
 
       {/* Breadcrumb */}
       {isAuthenticated && (
-      <div className="sticky top-14 md:top-0 z-10 bg-white/80 backdrop-blur border-b border-gray-200 h-20 px-4 flex items-center gap-2 md:ml-56">
+      <div className="sticky top-14 md:top-0 z-20 bg-white/80 backdrop-blur border-b border-gray-200 h-20 px-4 flex items-center gap-2 md:ml-56">
         <Link to="/">
           <HomeIcon className="w-4 h-4 text-gray-500" />
         </Link>
@@ -356,7 +344,7 @@ function AppContent() {
                   }}
                   className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 >
-                  비밀번호 변경
+                  {t('password_change')}
                 </button>
                 <button
                   onClick={() => {
@@ -510,39 +498,43 @@ function AppContent() {
 
       {/* Main content */}
       <main className={isAuthenticated ? "md:ml-56" : ""}>
-        <Routes>
-          {/* 로그인 라우트 */}
-          <Route path="/login" element={<LoginPage />} />
-          {/* 보호된 라우트 */}
-          <Route path="/" element={<PrivateRoute><AnalysisPage /></PrivateRoute>} />
-          <Route path="/models" element={<PrivateRoute><ModelsPage /></PrivateRoute>} />
-          <Route path="/eco" element={<Navigate to="/eco2" replace />} />
-          <Route path="/eco2" element={<PrivateRoute><Eco2Page /></PrivateRoute>} />
-          <Route path="/analysis" element={<PrivateRoute><AnalysisPage /></PrivateRoute>} />
+        <AnimatePresence mode="wait">
+          <Routes location={routerLocation} key={locationKey}>
+            {/* 로그인 라우트 */}
+            <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
+            {/* 보호된 라우트 */}
+            <Route path="/" element={<PrivateRoute><PageTransition><AnalysisPage /></PageTransition></PrivateRoute>} />
+            <Route path="/models" element={<PrivateRoute><PageTransition><ModelsPage /></PageTransition></PrivateRoute>} />
+            <Route path="/eco" element={<Navigate to="/eco2" replace />} />
+            <Route path="/eco2" element={<PrivateRoute><PageTransition><Eco2Page /></PageTransition></PrivateRoute>} />
+            <Route path="/analysis" element={<PrivateRoute><PageTransition><AnalysisPage /></PageTransition></PrivateRoute>} />
 
-          {/* Injection page (single) */}
-          <Route path="/injection" element={<PrivateRoute><SummaryPage /></PrivateRoute>} />
+            {/* Injection page (single) */}
+            <Route path="/injection" element={<PrivateRoute><PageTransition><SummaryPage /></PageTransition></PrivateRoute>} />
+            <Route path="/injection/setup" element={<PrivateRoute><PageTransition><InjectionSetupPage /></PageTransition></PrivateRoute>} />
+            <Route path="/injection/monitoring" element={<PrivateRoute><PageTransition><InjectionMonitoringPage /></PageTransition></PrivateRoute>} />
 
-          {/* Assembly single page */}
-          <Route path="/assembly" element={<PrivateRoute><AssemblyPage /></PrivateRoute>} />
+            {/* Assembly single page */}
+            <Route path="/assembly" element={<PrivateRoute><PageTransition><AssemblyPage /></PageTransition></PrivateRoute>} />
 
-          {/* Quality single page */}
-          <Route path="/quality" element={<PrivateRoute><QualityPage /></PrivateRoute>} />
+            {/* Quality single page */}
+            <Route path="/quality" element={<PrivateRoute><PageTransition><QualityPage /></PageTransition></PrivateRoute>} />
 
-          {/* Sales */}
-          <Route path="/sales/inventory" element={<PrivateRoute><SalesInventoryPage /></PrivateRoute>} />
-          {/* Inventory status */}
-          <Route path="/sales/daily-report" element={<PrivateRoute><DailyReportPage /></PrivateRoute>} />
-            <Route path="/sales/inventory-status" element={<PrivateRoute><InventoryStatusPage /></PrivateRoute>} />
+            {/* Sales */}
+            <Route path="/sales/inventory" element={<PrivateRoute><PageTransition><SalesInventoryPage /></PageTransition></PrivateRoute>} />
+            {/* Inventory status */}
+            <Route path="/sales/daily-report" element={<PrivateRoute><PageTransition><DailyReportPage /></PageTransition></PrivateRoute>} />
+              <Route path="/sales/inventory-status" element={<PrivateRoute><PageTransition><InventoryStatusPage /></PageTransition></PrivateRoute>} />
 
-          {/* Admin routes */}
-          <Route path="/admin/user-management" element={<PrivateRoute><UserApproval /></PrivateRoute>} />
-          <Route path="/admin/user-approval" element={<PrivateRoute><UserApproval /></PrivateRoute>} /> {/* 기존 URL 호환성 */}
-          
-          {/* Existing placeholders */}
-          <Route path="/overview" element={<PrivateRoute><OverviewPage /></PrivateRoute>} />
-          <Route path="/sales" element={<PrivateRoute><SalesInventoryPage /></PrivateRoute>} />
-        </Routes>
+            {/* Admin routes */}
+            <Route path="/admin/user-management" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} />
+            <Route path="/admin/user-approval" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} /> {/* 기존 URL 호환성 */}
+
+            {/* Existing placeholders */}
+            <Route path="/overview" element={<PrivateRoute><PageTransition><OverviewPage /></PageTransition></PrivateRoute>} />
+            <Route path="/sales" element={<PrivateRoute><PageTransition><SalesInventoryPage /></PageTransition></PrivateRoute>} />
+          </Routes>
+        </AnimatePresence>
       </main>
       
       {/* 비밀번호 변경 모달 */}

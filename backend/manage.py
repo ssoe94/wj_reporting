@@ -6,7 +6,13 @@ import sys
 
 def main():
     """Run administrative tasks."""
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.config.settings')
+    # Add the project root to the Python path
+    from pathlib import Path
+    import sys
+    BASE_DIR = Path(__file__).resolve().parent
+    sys.path.append(str(BASE_DIR.parent))
+
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:

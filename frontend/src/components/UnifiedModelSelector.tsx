@@ -41,7 +41,7 @@ export default function UnifiedModelSelector({
     queryFn: async () => {
       if (!searchQuery || searchQuery.length < 2) return [];
       
-      const { data } = await api.get('/unified-parts/models/', {
+      const { data } = await api.get('/mes/unified-parts/models/', {
         params: { search: searchQuery }
       });
       return data as UnifiedModel[];
