@@ -381,12 +381,12 @@ export default function MachineSetupModal({
             {!isEditMode ? (
                 <div className="flex justify-end gap-3">
                     <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>{t('cancel')}</Button>
-                    <Button type="submit" disabled={loading}>{loading ? t('saving') : t('save')}</Button>
+                    <Button type="submit" variant="primary" disabled={loading}>{loading ? t('saving') : t('save')}</Button>
                 </div>
             ) : !editMode ? (
               <div className="flex justify-end gap-3">
                 <Button type="button" variant="danger" onClick={handleDelete} disabled={loading}>{t('delete')}</Button>
-                <Button type="button" onClick={() => setEditMode(true)} disabled={loading}>{t('edit')}</Button>
+                <Button type="button" variant="primary" onClick={() => setEditMode(true)} disabled={loading}>{t('edit')}</Button>
                 <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>{t('cancel')}</Button>
               </div>
             ) : (
@@ -395,14 +395,14 @@ export default function MachineSetupModal({
                     <div className="bg-gray-50 p-4 rounded-lg border flex flex-col">
                         <h4 className="font-semibold mb-2">{t('setup.edit_existing')}</h4>
                         <p className="text-xs text-gray-600 mb-3 flex-grow">{t('setup.edit_existing_desc')}</p>
-                        <Button onClick={handleUpdate} disabled={loading} className="w-full">
+                        <Button variant="primary" onClick={handleUpdate} disabled={loading} className="w-full">
                           {loading ? t('setup.updating') : t('setup.save_changes')}
                         </Button>
                     </div>
                     <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 flex flex-col">
                         <h4 className="font-semibold text-blue-800 mb-2">{t('setup.create_new_version')}</h4>
                         <p className="text-xs text-blue-700 mb-3 flex-grow">{t('setup.create_new_version_desc')}</p>
-                        <Button onClick={handleCreateNewVersion} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
+                        <Button variant="info" onClick={handleCreateNewVersion} disabled={loading} className="w-full">
                           {loading ? t('setup.creating') : t('setup.create_new_version')}
                         </Button>
                     </div>

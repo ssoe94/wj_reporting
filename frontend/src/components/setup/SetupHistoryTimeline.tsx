@@ -1,15 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Filter, RefreshCw, Calendar, Grid, List, Edit, Trash2, Check, X, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'react-toastify';
 import MachineSetupModal from './MachineSetupModal';
 import CycleTimeHistoryGraph from './CycleTimeHistoryGraph';
-import { useLang } from '@/i18n';
 
 interface Setup {
   id: number;
@@ -47,7 +43,7 @@ interface GroupedSetups {
 interface SetupHistoryTimelineProps {
   setups: Setup[];
   loadSetups: () => void;
-  getStatusIcon: (status: string) => JSX.Element;
+  getStatusIcon: (status: string) => React.ReactElement;
   getStatusText: (status: string) => string;
   onBackToDashboard?: () => void;
   t: (key: string, params?: any) => string;
@@ -115,14 +111,11 @@ const TimelineCell = ({ setups, onCellClick, t }: {
   );
 };
 
-export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon, getStatusText, onBackToDashboard, t, lang }: SetupHistoryTimelineProps) {
-  const [viewType, setViewType] = useState<'timeline' | 'list'>('timeline');
+export default function SetupHistoryTimeline({ setups, loadSetups, t, lang }: SetupHistoryTimelineProps) {
   const [selectedSetups, setSelectedSetups] = useState<Setup[]>([]);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedSetup, setSelectedSetup] = useState<Setup | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [checkedSetups, setCheckedSetups] = useState<Set<number>>(new Set());
-  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [currentDateRange, setCurrentDateRange] = useState(() => {
     // 오늘부터 5일 전까지의 범위로 초기화
     const today = new Date();
@@ -132,20 +125,9 @@ export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon
     return { startDate, endDate };
   });
 
-  const [filters, setFilters] = useState({
-    machine_no: '',
-    part_no: '',
-    status: '',
-    date_from: '',
-    date_to: '',
-  });
 
   // 사출기 번호 배열 (1-17호기)
   const machineNumbers = Array.from({ length: 17 }, (_, i) => i + 1);
-
-  const handleFilterChange = (field: string, value: string) => {
-    setFilters(prev => ({ ...prev, [field]: value }));
-  };
 
   const handleCellClick = (cellSetups: Setup[]) => {
     setSelectedSetups(cellSetups);
@@ -182,56 +164,7 @@ export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon
     }
   };
 
-  const handleToggleMultiSelect = () => {
-    setIsMultiSelectMode(!isMultiSelectMode);
-    setCheckedSetups(new Set()); // 모드 전환 시 선택 초기화
-  };
 
-  const handleCheckboxChange = (setupId: number, checked: boolean) => {
-    const newChecked = new Set(checkedSetups);
-    if (checked) {
-      newChecked.add(setupId);
-    } else {
-      newChecked.delete(setupId);
-    }
-    setCheckedSetups(newChecked);
-  };
-
-  const handleSelectAll = () => {
-    const allSetupIds = new Set(selectedSetups.map(setup => setup.id));
-    setCheckedSetups(allSetupIds);
-  };
-
-  const handleSelectNone = () => {
-    setCheckedSetups(new Set());
-  };
-
-  const handleBulkDelete = async () => {
-    if (checkedSetups.size === 0) {
-      toast.warning(t('history.select_items_to_delete'));
-      return;
-    }
-
-    const confirmMessage = t('history.bulk_delete_confirm', { count: checkedSetups.size });
-    if (window.confirm(confirmMessage)) {
-      try {
-        // 병렬로 삭제 실행
-        const deletePromises = Array.from(checkedSetups).map(setupId =>
-          api.delete(`/setup/${setupId}/`)
-        );
-
-        await Promise.all(deletePromises);
-
-        toast.success(t('history.bulk_delete_success', { count: checkedSetups.size }));
-        setCheckedSetups(new Set()); // 선택 초기화
-        setIsMultiSelectMode(false); // 다중 선택 모드 해제
-        loadSetups(); // 데이터 새로고침
-        setShowDetailModal(false); // 상세 모달 닫기
-      } catch (error) {
-        toast.error(t('history.bulk_delete_fail'));
-      }
-    }
-  };
 
   // 날짜 범위 이동 함수들
   const handleDateRangeMove = (direction: 'prev' | 'next') => {
@@ -325,42 +258,6 @@ export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon
     return [...dateRange].reverse().map(date => date.toISOString().split('T')[0]);
   }, [dateRange]);
 
-  if (viewType === 'list') {
-    // 기존 리스트 뷰 (기존 SetupHistory 컴포넌트 로직 사용)
-    return (
-      <div className="space-y-6">
-        {/* 뷰 전환 버튼 */}
-        <div className="flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-gray-900">{t('history.title')}</h3>
-          <div className="flex gap-2">
-            <Button
-              variant={viewType === 'timeline' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewType('timeline')}
-              className="flex items-center gap-2"
-            >
-              <Grid className="w-4 h-4" />
-              {t('history.view_timeline')}
-            </Button>
-            <Button
-              variant={viewType === 'list' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewType('list')}
-              className="flex items-center gap-2"
-            >
-              <List className="w-4 h-4" />
-              {t('history.view_list')}
-            </Button>
-          </div>
-        </div>
-
-        {/* 기존 리스트 뷰 내용... */}
-        <div className="text-center text-gray-500 py-8">
-          {t('history.list_view_placeholder')}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -368,7 +265,7 @@ export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon
       <Card className="p-4">
         <div className="flex justify-center items-center gap-4">
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             onClick={() => handleDateRangeMove('prev')}
             className="flex items-center gap-1"
@@ -383,7 +280,7 @@ export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon
             </span>
           </div>
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             onClick={() => handleDateRangeMove('next')}
             className="flex items-center gap-1"
@@ -482,7 +379,7 @@ export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon
               </div>
               <div className="flex items-center gap-2">
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => setShowDetailModal(false)}
                 >
@@ -492,50 +389,10 @@ export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon
               </div>
             </div>
 
-            {/* 다중 선택 모드일 때 컨트롤 버튼들 */}
-            {isMultiSelectMode && (
-              <div className="flex justify-between items-center mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex items-center gap-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSelectAll}
-                    disabled={selectedSetups.length === 0}
-                  >
-                    {t('history.select_all')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSelectNone}
-                    disabled={checkedSetups.size === 0}
-                  >
-                    {t('history.select_none')}
-                  </Button>
-                  <span className="text-sm text-gray-600">
-                    {t('history.selected_count', { count: checkedSetups.size })}
-                  </span>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleBulkDelete}
-                  disabled={checkedSetups.size === 0}
-                  className="text-red-600 hover:text-red-700 hover:border-red-300"
-                >
-                  <Trash2 className="w-4 h-4 mr-1" />
-                  {t('history.delete_selected', { count: checkedSetups.size })}
-                </Button>
-              </div>
-            )}
 
             <div className="space-y-3">
               {selectedSetups.map((setup) => (
-                <div key={setup.id} className={`p-4 rounded-lg transition-colors ${
-                  isMultiSelectMode && checkedSetups.has(setup.id)
-                    ? 'bg-blue-50 border-2 border-blue-200'
-                    : 'bg-gray-50'
-                }`}>
+                <div key={setup.id} className="p-4 rounded-lg transition-colors bg-gray-50">
 
                   {setup.note && (
                     <div className="mt-3 text-sm text-gray-600 bg-white p-2 rounded border-l-4 border-blue-200">

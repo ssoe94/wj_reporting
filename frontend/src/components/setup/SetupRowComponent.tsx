@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { usePartSpecSearch, usePartListByModel } from '@/hooks/usePartSpecs';
 import type { PartSpec } from '@/hooks/usePartSpecs';
 import { useLang } from '@/i18n';
 import { Trash2 } from 'lucide-react';

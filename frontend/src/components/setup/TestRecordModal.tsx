@@ -1,10 +1,11 @@
-import { useState } from 'react';\nimport { useLang } from '@/i18n';
+import { useState } from 'react';
+import { useLang } from '@/i18n';
 import { Dialog } from '@headlessui/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { X, Plus, TestTube } from 'lucide-react';
+import { X, TestTube } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'react-toastify';
 
@@ -20,7 +21,8 @@ interface TestRecordModalProps {
   onSuccess: () => void;
 }
 
-export default function TestRecordModal({ setup, onClose, onSuccess }: TestRecordModalProps) {\n  const { t } = useLang();
+export default function TestRecordModal({ setup, onClose, onSuccess }: TestRecordModalProps) {
+  const { t } = useLang();
   const [testData, setTestData] = useState({
     actual_cycle_time: '',
     test_qty: '1',
@@ -164,7 +166,7 @@ export default function TestRecordModal({ setup, onClose, onSuccess }: TestRecor
               </div>
 
               <div className="flex justify-end space-x-3 pt-4">
-                <Button type="button" variant="outline" onClick={onClose}>
+                <Button type="button" variant="secondary" onClick={onClose}>
                   {t('test_modal.cancel_button')}
                 </Button>
                 <Button
