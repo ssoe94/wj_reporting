@@ -256,7 +256,7 @@ export default function UserApproval() {
 
       {/* 승인 결과 모달 */}
       {approvalResult && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold mb-4">가입 승인 완료</h3>
             <div className="space-y-2">
@@ -291,7 +291,7 @@ export default function UserApproval() {
 
       {/* 비밀번호 리셋 결과 모달 */}
       {resetPasswordResult && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold mb-4">비밀번호 리셋 완료</h3>
             <div className="space-y-2">
@@ -486,7 +486,7 @@ export default function UserApproval() {
 
         {/* 권한 편집 모달 */}
         {selectedProfile && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">
