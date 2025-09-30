@@ -340,6 +340,36 @@ class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
 
+    @action(detail=False, methods=['get'], url_path='search-parts')
+    def search_parts(self, request):
+        """Part No. 검색 API"""
+        search = request.query_params.get('search', '').strip()
+        prefix_only = request.query_params.get('prefix_only', '0') == '1'
+
+        if not search:
+            return Response([])
+
+        # PartSpec에서 검색
+        from .models import PartSpec
+        queryset = PartSpec.objects.all()
+
+        if prefix_only:
+            queryset = queryset.filter(part_no__istartswith=search)
+        else:
+            queryset = queryset.filter(part_no__icontains=search)
+
+        # 최대 20개 결과 반환
+        results = queryset.order_by('part_no')[:20]
+
+        data = [{
+            'id': spec.id,
+            'part_no': spec.part_no,
+            'description': spec.description,
+            'model_code': spec.model_code,
+        } for spec in results]
+
+        return Response(data)
+
 class PartSpecViewSet(viewsets.ModelViewSet):
     queryset = PartSpec.objects.all()
     serializer_class = PartSpecSerializer
