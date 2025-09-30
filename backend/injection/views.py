@@ -1018,13 +1018,23 @@ class CycleTimeSetupViewSet(viewsets.ModelViewSet):
             if avg:
                 part_prefix_avg_ct[prefix] = round(avg)
 
-        # recent_setups에 평균 C/T 추가
-        recent_setups_list = list(today_setups.order_by('-setup_date')[:50])
-        for setup in recent_setups_list:
-            # Part no.의 앞 9자리로 평균 C/T 조회
-            if setup.part_no and len(setup.part_no) >= 9:
-                prefix = setup.part_no[:9]
-                setup.mean_cycle_time = part_prefix_avg_ct.get(prefix)
+        # 머신별 최신 셋업만 추출 (1~17호기)
+        machine_latest_setups = {}
+        for machine_no in range(1, 18):  # 1~17호기
+            latest = today_setups.filter(machine_no=machine_no).order_by('-setup_date').first()
+            if latest:
+                # Part no.의 앞 9자리로 평균 C/T 조회
+                if latest.part_no and len(latest.part_no) >= 9:
+                    prefix = latest.part_no[:9]
+                    latest.mean_cycle_time = part_prefix_avg_ct.get(prefix)
+                machine_latest_setups[machine_no] = latest
+
+        # 최신순으로 정렬된 리스트로 변환
+        recent_setups_list = sorted(
+            machine_latest_setups.values(),
+            key=lambda x: x.setup_date,
+            reverse=True
+        )
 
         dashboard_data = {
             'total_setups_today': today_setups.count(),
