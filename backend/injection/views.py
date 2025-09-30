@@ -950,6 +950,15 @@ class CycleTimeSetupViewSet(viewsets.ModelViewSet):
     serializer_class = CycleTimeSetupSerializer
     permission_classes = [InjectionPermission]
 
+    def get_permissions(self):
+        """
+        dashboard 액션은 읽기 전용이므로 인증된 사용자면 누구나 접근 가능
+        다른 액션들은 InjectionPermission 적용
+        """
+        if self.action == 'dashboard':
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
     def get_queryset(self):
         queryset = super().get_queryset()
 
