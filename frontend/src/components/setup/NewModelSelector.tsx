@@ -34,6 +34,10 @@ export default function NewModelSelector({ value, onChange, onAddNewModel }: New
         const spec = opt as PartSpec;
         return spec.description ? `${spec.model_code} - ${spec.description}` : spec.model_code;
       }}
+      isOptionEqualToValue={(option, value) => 
+        option.model_code === value.model_code &&
+        option.description === value.description
+      }
       onInputChange={(_, v) => setQuery(v)}
       filterOptions={(opts, state) => {
         const input = (state.inputValue || '').trim();

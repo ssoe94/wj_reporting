@@ -65,9 +65,9 @@ export default function MachineSetupModal({
         });
         // 기존 setup에서 model 정보 설정
         if (setup.model_code) {
-          const parts = setup.model_code.split(' – '); // en-dash
+          const parts = setup.model_code.split(/[\s\u00A0]+[-–—−]+[\s\u00A0]+/);
           const model_code = parts[0];
-          const description = parts[1] || '';
+          const description = parts.slice(1).join(' - ') || '';
           const model = { model_code, description, part_no: setup.part_no || '' } as PartSpec;
           setSelectedModel(model);
           setSelectedPart({ part_no: setup.part_no, model_code: model_code, description: description } as PartSpec);
@@ -232,7 +232,7 @@ export default function MachineSetupModal({
     setSelectedPart(null); // Reset part when model changes
     // 전체 텍스트 저장: model_code + description
     const fullModelText = model ?
-      (model.description ? `${model.model_code} – ${model.description}` : model.model_code)
+      (model.description ? `${model.model_code} - ${model.description}` : model.model_code)
       : '';
     setFormData(prev => ({
       ...prev,
@@ -327,7 +327,7 @@ export default function MachineSetupModal({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('model')} *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">모델 및 파트 *</label>
                 <NewModelSelector
                   value={selectedModel}
                   onChange={handleModelChange}
