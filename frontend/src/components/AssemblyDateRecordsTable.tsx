@@ -239,15 +239,16 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                   </div>
                 </div>
 
-                {/* Defects detail tables */}
+                {/* Defects detail tables - 2열 레이아웃: 왼쪽 사출불량, 오른쪽 가공/외주불량 */}
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="rounded-lg shadow-sm">
+                  {/* 왼쪽 열: 사출불량 (전체 높이) */}
+                  <div className="rounded-lg shadow-sm md:row-span-2">
                     <div className="px-3 py-2 font-semibold text-amber-700 bg-amber-50">{t('assembly_injection_defect')}</div>
                     <table className="w-full text-sm">
                       <tbody>
                         {(() => {
                           const inc = (detail as any)?.incoming_defects_detail || {};
-                          const items = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening'];
+                          const items = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening','other'];
                           return items.map(k => (
                             <tr key={k} className="odd:bg-gray-50">
                               <td className="px-3 py-1 text-gray-700">{t(`def_${k}`)}</td>
@@ -255,39 +256,80 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                             </tr>
                           ));
                         })()}
-                        <tr className="bg-gray-50">
+                        <tr className="bg-gray-100">
                           <td className="px-3 py-1 font-semibold">{t('sum')}</td>
                           <td className="px-3 py-1 text-right font-mono font-semibold">{(() => {
                             const inc = (detail as any)?.incoming_defects_detail || {};
-                            const items = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening'];
+                            const items = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening','other'];
                             return items.reduce((a,k)=> a + (Number(inc[k]||0)), 0);
                           })()}</td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
+
+                  {/* 오른쪽 열 상단: 가공불량 */}
                   <div className="rounded-lg shadow-sm">
                     <div className="px-3 py-2 font-semibold text-cyan-700 bg-cyan-50">{t('processing_defect')}</div>
                     <table className="w-full text-sm">
                       <tbody>
                         {(() => {
-                          const pr = (detail as any)?.processing_defects_detail || {};
-                          const items = ['scratch','printing','rework','other'];
-                          return items.map(k => (
-                            <tr key={k} className="odd:bg-gray-50">
-                              <td className="px-3 py-1 text-gray-700">{t(`def_${k}`)}</td>
-                              <td className="px-3 py-1 text-right font-mono">{Number(pr[k]||0)}</td>
+                          const pr = (detail as any)?.processing_defects_dynamic || [];
+                          if (pr.length === 0) {
+                            return (
+                              <tr>
+                                <td className="px-3 py-2 text-center text-gray-500" colSpan={2}>{t('no_data')}</td>
+                              </tr>
+                            );
+                          }
+                          return pr.map((item: any, idx: number) => (
+                            <tr key={idx} className="odd:bg-gray-50">
+                              <td className="px-3 py-1 text-gray-700">{item.defect_type}</td>
+                              <td className="px-3 py-1 text-right font-mono">{item.quantity}</td>
                             </tr>
                           ));
                         })()}
-                        <tr className="bg-gray-50">
-                          <td className="px-3 py-1 font-semibold">{t('sum')}</td>
-                          <td className="px-3 py-1 text-right font-mono font-semibold">{(() => {
-                            const pr = (detail as any)?.processing_defects_detail || {};
-                            const items = ['scratch','printing','rework','other'];
-                            return items.reduce((a: number, k: string)=> a + (Number(pr[k]||0)), 0);
-                          })()}</td>
-                        </tr>
+                        {(detail as any)?.processing_defects_dynamic?.length > 0 && (
+                          <tr className="bg-gray-100">
+                            <td className="px-3 py-1 font-semibold">{t('sum')}</td>
+                            <td className="px-3 py-1 text-right font-mono font-semibold">
+                              {((detail as any)?.processing_defects_dynamic || []).reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 오른쪽 열 하단: 외주불량 */}
+                  <div className="rounded-lg shadow-sm">
+                    <div className="px-3 py-2 font-semibold text-purple-700 bg-purple-50">{t('assembly_outsourcing_defect')}</div>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {(() => {
+                          const out = (detail as any)?.outsourcing_defects_dynamic || [];
+                          if (out.length === 0) {
+                            return (
+                              <tr>
+                                <td className="px-3 py-2 text-center text-gray-500" colSpan={2}>{t('no_data')}</td>
+                              </tr>
+                            );
+                          }
+                          return out.map((item: any, idx: number) => (
+                            <tr key={idx} className="odd:bg-gray-50">
+                              <td className="px-3 py-1 text-gray-700">{item.defect_type}</td>
+                              <td className="px-3 py-1 text-right font-mono">{item.quantity}</td>
+                            </tr>
+                          ));
+                        })()}
+                        {(detail as any)?.outsourcing_defects_dynamic?.length > 0 && (
+                          <tr className="bg-gray-100">
+                            <td className="px-3 py-1 font-semibold">{t('sum')}</td>
+                            <td className="px-3 py-1 text-right font-mono font-semibold">
+                              {((detail as any)?.outsourcing_defects_dynamic || []).reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)}
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>

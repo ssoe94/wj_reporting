@@ -75,7 +75,7 @@ export function DefectTypeInput({
     }
   }
 
-  const title = defectType === 'processing' ? t('processing_defect') : t('outsourcing_defect');
+  const title = defectType === 'processing' ? t('processing_defect') : t('assembly_outsourcing_defect');
 
   const badgeClassFor = (sum: number) => {
     if (sum === 0) return 'bg-gray-200 text-gray-800';
