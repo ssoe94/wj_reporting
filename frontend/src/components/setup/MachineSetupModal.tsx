@@ -65,10 +65,20 @@ export default function MachineSetupModal({
         });
         // 기존 setup에서 model 정보 설정
         if (setup.model_code) {
-          // model_code에서 실제 코드와 설명을 분리 (– 또는 - 둘 다 지원)
-          const parts = setup.model_code.split(/\s+[–-]\s+/);
-          const actualModelCode = parts[0];
-          const description = parts.slice(1).join(' - ') || ''; // 나머지 부분 모두 합치기
+          // 디버깅: 실제 문자 코드 확인
+          console.log('Original model_code:', setup.model_code);
+          console.log('Character codes:', Array.from(setup.model_code).map((c, i) => `${i}:${c}(U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')})`).join(' '));
+
+          // model_code에서 실제 코드와 설명을 분리
+          // 다양한 대시 문자 지원: - (hyphen), – (en dash), — (em dash), − (minus)
+          // 다양한 공백 문자 지원: 일반 공백, non-breaking space 등
+          const parts = setup.model_code.split(/[\s\u00A0]+[-–—−]+[\s\u00A0]+/);
+          console.log('Split result:', parts);
+
+          const actualModelCode = parts[0]?.trim() || setup.model_code;
+          const description = parts.slice(1).join(' - ').trim() || ''; // 나머지 부분 모두 합치기
+
+          console.log('Final:', { actualModelCode, description });
 
           const model = {
             model_code: actualModelCode,
