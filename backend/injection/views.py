@@ -952,8 +952,10 @@ class CycleTimeSetupViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         """
-        dashboard 액션은 읽기 전용이므로 인증된 사용자면 누구나 접근 가능
-        다른 액션들은 InjectionPermission 적용
+        권한 체크:
+        - dashboard: 인증된 사용자면 누구나 접근 가능 (읽기 전용)
+        - 조회 작업 (list, retrieve): can_view_injection 필요
+        - 편집 작업 (create, update, destroy, bulk_create 등): can_edit_injection 필요
         """
         if self.action == 'dashboard':
             return [IsAuthenticated()]
