@@ -13,9 +13,11 @@ class SectionPermission(permissions.BasePermission):
         try:
             profile = request.user.profile
         except Exception:
-            return False
+            # 프로필이 없는 경우 기본값으로 접근 허용
+            return True
 
-        return getattr(profile, self.section_flag, False)
+        # 프로필이 있는 경우 해당 권한 확인, 없으면 기본값 True
+        return getattr(profile, self.section_flag, True)
 
 class InjectionPermission(SectionPermission):
     section_flag = 'can_view_injection'
