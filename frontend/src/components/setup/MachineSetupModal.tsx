@@ -69,18 +69,13 @@ export default function MachineSetupModal({
           console.log('Original model_code:', setup.model_code);
 
           // model_code에서 실제 코드와 설명을 분리
-          // " - "를 기준으로 첫 번째 분리만 수행
-          const separator = ' - ';
-          const separatorIndex = setup.model_code.indexOf(separator);
-
-          let actualModelCode = setup.model_code;
-          let description = '';
-
-          if (separatorIndex !== -1) {
-            actualModelCode = setup.model_code.substring(0, separatorIndex).trim();
-            description = setup.model_code.substring(separatorIndex + separator.length).trim();
-          }
+          // 다양한 대시 문자 지원: - (hyphen), – (en dash), — (em dash), − (minus)
+          // 다양한 공백 문자 지원: 일반 공백, non-breaking space 등
+          const parts = setup.model_code.split(/[\s\u00A0]+[-–—−]+[\s\u00A0]+/);
           
+          const actualModelCode = parts[0]?.trim() || setup.model_code;
+          const description = parts.slice(1).join(' - ').trim() || ''; // 나머지 부분 모두 합치기
+
           console.log('Final:', { actualModelCode, description });
 
           const model = {
