@@ -1,4 +1,3 @@
-
 import { useState, useMemo } from 'react';
 import { Autocomplete, TextField } from '@mui/material';
 import { Plus } from 'lucide-react';
@@ -12,7 +11,7 @@ interface NewModelSelectorProps {
   onAddNewModel: (modelCode: string) => void;
 }
 
-export default function NewModelSelector({ value, onChange, onAddNewModel }: NewModelSelectorProps) {
+export default function NewModelSelectorForSetup({ value, onChange, onAddNewModel }: NewModelSelectorProps) {
   const { t } = useLang();
   const [query, setQuery] = useState('');
   const { data: searchResults = [] } = usePartSpecSearch(query.toUpperCase());

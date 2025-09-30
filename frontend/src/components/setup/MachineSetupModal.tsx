@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { toast } from 'react-toastify';
 import machines from '@/constants/machines';
 import MachineSelector from './MachineSelector';
-import NewModelSelector from './NewModelSelector';
+import NewModelSelectorForSetup from './NewModelSelectorForSetup';
 import NewPartNoSelector from './NewPartNoSelector';
 import type { PartSpec } from '@/hooks/usePartSpecs';
 import NewPartSpecModal from './NewPartSpecModal';
@@ -65,26 +65,15 @@ export default function MachineSetupModal({
         });
         // 기존 setup에서 model 정보 설정
         if (setup.model_code) {
-          // 디버깅: 실제 문자 코드 확인
-          console.log('Original model_code:', setup.model_code);
-
-          // model_code에서 실제 코드와 설명을 분리
-          // 다양한 대시 문자 지원: - (hyphen), – (en dash), — (em dash), − (minus)
-          // 다양한 공백 문자 지원: 일반 공백, non-breaking space 등
-          const parts = setup.model_code.split(/[\s\u00A0]+[-–—−]+[\s\u00A0]+/);
-          
-          const actualModelCode = parts[0]?.trim() || setup.model_code;
-          const description = parts.slice(1).join(' - ').trim() || ''; // 나머지 부분 모두 합치기
-
-          console.log('Final:', { actualModelCode, description });
-
+          // Per user request, do not parse or split the model_code.
+          // Use the value from the server directly as the model_code.
           const model = {
-            model_code: actualModelCode,
-            description: description,
+            model_code: setup.model_code,
+            description: '', // Set to empty as the full name is in model_code
             part_no: setup.part_no || ''
           } as PartSpec;
           setSelectedModel(model);
-          setSelectedPart({ part_no: setup.part_no, model_code: actualModelCode, description } as PartSpec);
+          setSelectedPart({ part_no: setup.part_no, model_code: setup.model_code, description: '' } as PartSpec);
         }
         setEditMode(false); // Show read-only view first for existing setups
       } else {
@@ -341,8 +330,8 @@ export default function MachineSetupModal({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('model')} *</label>
-                <NewModelSelector
+                <label className="block text-sm font-medium text-gray-700 mb-2">모델 및 파트 *</label>
+                <NewModelSelectorForSetup
                   value={selectedModel}
                   onChange={handleModelChange}
                   onAddNewModel={() => setShowAddPartModal(true)} // Simplified for now
