@@ -1,10 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { X, ChevronLeft, ChevronRight } from 'lucide-react';
-import api from '@/lib/api';
-import { toast } from 'react-toastify';
-import MachineSetupModal from './MachineSetupModal';
+import { X, ChevronLeft, ChevronRight, LayoutDashboard } from 'lucide-react';
 import CycleTimeHistoryGraph from './CycleTimeHistoryGraph';
 
 interface Setup {
@@ -45,15 +42,15 @@ interface SetupHistoryTimelineProps {
   loadSetups: () => void;
   getStatusIcon: (status: string) => React.ReactElement;
   getStatusText: (status: string) => string;
-  onBackToDashboard?: () => void;
+  onSelectSetups: (setups: Setup[], focused?: Setup | null) => void;
   t: (key: string, params?: any) => string;
   lang: 'ko' | 'zh';
 }
 
 const TimelineCell = ({ setups, onCellClick, t }: {
-  setups: SetupItem[],
-  onCellClick: (setups: Setup[]) => void,
-  t: (key: string, params?: any) => string
+  setups: SetupItem[];
+  onCellClick: (setups: Setup[], focused?: Setup | null) => void;
+  t: (key: string, params?: any) => string;
 }) => {
   if (setups.length === 0) {
     return <div className="border border-gray-200 rounded p-2 min-h-20 bg-gray-50"></div>;
@@ -61,7 +58,11 @@ const TimelineCell = ({ setups, onCellClick, t }: {
 
   const handleClick = () => {
     const allSetups = setups.flatMap(item => item.setups);
-    onCellClick(allSetups);
+    const mostRecent = allSetups.reduce<Setup | null>((latest, current) => {
+      if (!latest) return current;
+      return new Date(current.setup_date) > new Date(latest.setup_date) ? current : latest;
+    }, null);
+    onCellClick(allSetups, mostRecent || undefined);
   };
 
   return (
@@ -111,11 +112,9 @@ const TimelineCell = ({ setups, onCellClick, t }: {
   );
 };
 
-export default function SetupHistoryTimeline({ setups, loadSetups, t, lang }: SetupHistoryTimelineProps) {
+export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon, getStatusText, onSelectSetups, t, lang }: SetupHistoryTimelineProps) {
   const [selectedSetups, setSelectedSetups] = useState<Setup[]>([]);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedSetup, setSelectedSetup] = useState<Setup | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
   const [currentDateRange, setCurrentDateRange] = useState(() => {
     // 오늘부터 5일 전까지의 범위로 초기화
     const today = new Date();
@@ -129,42 +128,11 @@ export default function SetupHistoryTimeline({ setups, loadSetups, t, lang }: Se
   // 사출기 번호 배열 (1-17호기)
   const machineNumbers = Array.from({ length: 17 }, (_, i) => i + 1);
 
-  const handleCellClick = (cellSetups: Setup[]) => {
+  const handleCellClick = (cellSetups: Setup[], focused?: Setup | null) => {
     setSelectedSetups(cellSetups);
     setShowDetailModal(true);
+    onSelectSetups(cellSetups, focused ?? null);
   };
-
-  const handleEditSetup = (setup: Setup) => {
-    setSelectedSetup(setup);
-    setShowEditModal(true);
-  };
-
-  const handleEditModalClose = () => {
-    setShowEditModal(false);
-    setSelectedSetup(null);
-  };
-
-  const handleEditModalSuccess = () => {
-    loadSetups(); // 데이터 새로고침
-    setShowEditModal(false);
-    setSelectedSetup(null);
-    setShowDetailModal(false); // 상세 모달도 닫기
-  };
-
-  const handleDeleteSetup = async (setup: Setup) => {
-    if (window.confirm(t('history.delete_confirm', { machine_no: setup.machine_no, part_no: setup.part_no }))) {
-      try {
-        await api.delete(`/setup/${setup.id}/`);
-        toast.success(t('history.delete_success'));
-        loadSetups(); // 데이터 새로고침
-        setShowDetailModal(false); // 상세 모달 닫기
-      } catch (error) {
-        toast.error(t('history.delete_fail'));
-      }
-    }
-  };
-
-
 
   // 날짜 범위 이동 함수들
   const handleDateRangeMove = (direction: 'prev' | 'next') => {
@@ -274,7 +242,6 @@ export default function SetupHistoryTimeline({ setups, loadSetups, t, lang }: Se
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <div className="flex items-center gap-4">
-            <h3 className="text-lg font-semibold text-gray-900">{t('history.timeline_title')}</h3>
             <span className="text-sm text-gray-500">
               {formatDateForAPI(currentDateRange.startDate)} ~ {formatDateForAPI(currentDateRange.endDate)}
             </span>
@@ -290,6 +257,12 @@ export default function SetupHistoryTimeline({ setups, loadSetups, t, lang }: Se
           </Button>
         </div>
       </Card>
+
+      {!setups.length && (
+        <Card className="p-6">
+          <p className="text-center text-gray-500">{t('history.no_data')}</p>
+        </Card>
+      )}
 
       {/* 타임라인 그리드 */}
       <Card className="p-4">
@@ -389,10 +362,39 @@ export default function SetupHistoryTimeline({ setups, loadSetups, t, lang }: Se
               </div>
             </div>
 
-
             <div className="space-y-3">
               {selectedSetups.map((setup) => (
                 <div key={setup.id} className="p-4 rounded-lg transition-colors bg-gray-50">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-700">{t('history.machine_no_label')}:</span>{' '}
+                      <span className="text-gray-900">{setup.machine_no}</span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">{t('history.part_no_label')}:</span>{' '}
+                      <span className="text-gray-900">{setup.part_no}</span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">{t('history.target_ct_label')}:</span>{' '}
+                      <span className="text-blue-600">{setup.target_cycle_time}{t('unit.seconds')}</span>
+                    </div>
+                    {setup.standard_cycle_time && (
+                      <div>
+                        <span className="font-medium text-gray-700">{t('history.standard_ct_label')}:</span>{' '}
+                        <span className="text-green-600">{setup.standard_cycle_time}{t('unit.seconds')}</span>
+                      </div>
+                    )}
+                    {setup.mean_cycle_time && (
+                      <div>
+                        <span className="font-medium text-gray-700">{t('history.mean_ct_label')}:</span>{' '}
+                        <span className="text-purple-600">{setup.mean_cycle_time}{t('unit.seconds')}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span className="font-medium text-gray-700">{t('history.status_label')}:</span>{' '}
+                      <span className="text-gray-900">{getStatusText(setup.status)}</span>
+                    </div>
+                  </div>
 
                   {setup.note && (
                     <div className="mt-3 text-sm text-gray-600 bg-white p-2 rounded border-l-4 border-blue-200">
@@ -405,25 +407,13 @@ export default function SetupHistoryTimeline({ setups, loadSetups, t, lang }: Se
                 <div className="mt-4">
                   <CycleTimeHistoryGraph
                     partNo={selectedSetups[0].part_no}
-                    onEdit={handleEditSetup}
-                    onDelete={handleDeleteSetup}
+                    onSelectSetup={(setup) => onSelectSetups(selectedSetups, setup)}
                   />
                 </div>
               )}
             </div>
           </div>
         </div>
-      )}
-
-      {/* 편집 모달 */}
-      {selectedSetup && (
-        <MachineSetupModal
-          isOpen={showEditModal}
-          onClose={handleEditModalClose}
-          machineId={selectedSetup.machine_no}
-          setup={selectedSetup}
-          onSuccess={handleEditModalSuccess}
-        />
       )}
     </div>
   );

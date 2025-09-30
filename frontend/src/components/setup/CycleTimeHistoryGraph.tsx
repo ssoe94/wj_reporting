@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import api from '@/lib/api';
 import { useLang } from '@/i18n';
-import { Pencil, XCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface Setup {
   id: number;
@@ -25,8 +25,7 @@ interface Setup {
 
 interface CycleTimeHistoryGraphProps {
   partNo: string;
-  onEdit: (setup: Setup) => void;
-  onDelete: (setup: Setup) => void;
+  onSelectSetup?: (setup: Setup) => void;
 }
 
 interface HistoryRecord {
@@ -47,7 +46,7 @@ interface ProcessedData {
   count: number;
 }
 
-export default function CycleTimeHistoryGraph({ partNo, onEdit, onDelete }: CycleTimeHistoryGraphProps) {
+export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTimeHistoryGraphProps) {
   const { t, lang } = useLang();
   const [historyData, setHistoryData] = useState<ProcessedData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -334,8 +333,12 @@ export default function CycleTimeHistoryGraph({ partNo, onEdit, onDelete }: Cycl
                 <td className="px-3 py-2 text-center">{record.mean?.toFixed(1) || '-'}</td>
                 <td className="px-3 py-2 text-center">{record.standard?.toFixed(1) || '-'}</td>
                 <td className="px-3 py-2 text-center">
-                  <button onClick={() => onEdit(record.setup)} className="p-1"><Pencil size={16} /></button>
-                  <button onClick={() => onDelete(record.setup)} className="p-1"><XCircle size={16} /></button>
+                  <Button
+                    onClick={() => onSelectSetup?.(record.setup)}
+                    className="px-2 py-1 border rounded text-sm text-blue-600 hover:bg-blue-50"
+                  >
+                    {t('details')}
+                  </Button>
                 </td>
               </tr>
             ))}

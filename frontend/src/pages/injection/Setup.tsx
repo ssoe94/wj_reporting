@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Clock, CheckCircle, XCircle, AlertCircle, Table } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, AlertCircle, Table, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { toast } from 'react-toastify';
@@ -118,20 +118,26 @@ export default function InjectionSetupPage() {
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold text-gray-900">{t('setup.page_title')}</h1>
-          {!showHistory && (
-            <Button
-              onClick={() => {
-                setShowHistory(true);
-                setIsInitialLoad(false);
-              }}
-              className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white"
-              variant="primary"
-              size="sm"
-            >
+          <Button
+            onClick={() => {
+              if (showHistory) {
+                setShowHistory(false);
+                return;
+              }
+              setShowHistory(true);
+              setIsInitialLoad(false);
+            }}
+            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white"
+            variant="primary"
+            size="sm"
+          >
+            {showHistory ? (
+              <ArrowLeft className="w-4 h-4" />
+            ) : (
               <Table className="w-4 h-4" />
-              {t('setup.history_button')}
-            </Button>
-          )}
+            )}
+            {showHistory ? t('setup.history_return_button') : t('setup.history_button')}
+          </Button>
         </div>
 
       </div>
