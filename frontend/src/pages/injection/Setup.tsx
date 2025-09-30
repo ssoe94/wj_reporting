@@ -179,9 +179,7 @@ export default function InjectionSetupPage() {
             transition={{ duration: 0.3 }}
           >
 
-            <SetupHistory
-              onBackToDashboard={() => setShowHistory(false)}
-            />
+            <SetupHistory />
           </motion.div>
         )}
       </AnimatePresence>

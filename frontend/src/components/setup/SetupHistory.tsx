@@ -3,8 +3,6 @@ import SetupHistoryTimeline from './SetupHistoryTimeline';
 import { useLang } from '@/i18n';
 import api from '@/lib/api';
 import { toast } from 'react-toastify';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
 import TestRecordModal from './TestRecordModal';
 
 interface Setup {
@@ -26,20 +24,16 @@ interface Setup {
 }
 
 interface SetupHistoryProps {
-  getStatusIcon?: (status: string) => React.ReactElement;
   getStatusText?: (status: string) => string;
 }
 
-const SetupHistory = ({ getStatusIcon, getStatusText }: SetupHistoryProps) => {
+const SetupHistory = ({ getStatusText }: SetupHistoryProps) => {
   const { t, lang } = useLang();
   const [setups, setSetups] = useState<Setup[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const [selectedSetup, setSelectedSetup] = useState<Setup | null>(null);
-  const [selectedSetups, setSelectedSetups] = useState<Setup[]>([]);
   const [showDetailModal, setShowDetailModal] = useState(false);
-
-  const navigate = useNavigate();
 
   const loadSetups = async () => {
     try {
@@ -61,8 +55,6 @@ const SetupHistory = ({ getStatusIcon, getStatusText }: SetupHistoryProps) => {
     loadSetups();
   }, []);
 
-  // 기본 아이콘 및 텍스트 함수들 (props가 없을 때 사용)
-  const defaultGetStatusIcon = () => <span>●</span>;
   const defaultGetStatusText = (status: string) => status;
 
   return (
@@ -72,11 +64,8 @@ const SetupHistory = ({ getStatusIcon, getStatusText }: SetupHistoryProps) => {
       ) : (
         <SetupHistoryTimeline
           setups={setups}
-          loadSetups={loadSetups}
-          getStatusIcon={getStatusIcon || defaultGetStatusIcon}
           getStatusText={getStatusText || defaultGetStatusText}
           onSelectSetups={(selected, focused) => {
-            setSelectedSetups(selected);
             setSelectedSetup(focused || selected[0] || null);
             setShowDetailModal(true);
           }}
@@ -92,7 +81,6 @@ const SetupHistory = ({ getStatusIcon, getStatusText }: SetupHistoryProps) => {
           onClose={() => {
             setShowDetailModal(false);
             setSelectedSetup(null);
-            setSelectedSetups([]);
           }}
           onSuccess={refreshSetups}
         />

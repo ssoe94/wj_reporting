@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { X, ChevronLeft, ChevronRight, LayoutDashboard } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import CycleTimeHistoryGraph from './CycleTimeHistoryGraph';
 
 interface Setup {
@@ -39,8 +39,6 @@ interface GroupedSetups {
 
 interface SetupHistoryTimelineProps {
   setups: Setup[];
-  loadSetups: () => void;
-  getStatusIcon: (status: string) => React.ReactElement;
   getStatusText: (status: string) => string;
   onSelectSetups: (setups: Setup[], focused?: Setup | null) => void;
   t: (key: string, params?: any) => string;
@@ -112,7 +110,7 @@ const TimelineCell = ({ setups, onCellClick, t }: {
   );
 };
 
-export default function SetupHistoryTimeline({ setups, loadSetups, getStatusIcon, getStatusText, onSelectSetups, t, lang }: SetupHistoryTimelineProps) {
+export default function SetupHistoryTimeline({ setups, getStatusText, onSelectSetups, t, lang }: SetupHistoryTimelineProps) {
   const [selectedSetups, setSelectedSetups] = useState<Setup[]>([]);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [currentDateRange, setCurrentDateRange] = useState(() => {
