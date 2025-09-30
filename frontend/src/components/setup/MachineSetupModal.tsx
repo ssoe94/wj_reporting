@@ -67,7 +67,7 @@ export default function MachineSetupModal({
         if (setup.model_code) {
           // 디버깅: 실제 문자 코드 확인
           console.log('Original model_code:', setup.model_code);
-          console.log('Character codes:', Array.from(setup.model_code).map((c, i) => `${i}:${c}(U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')})`).join(' '));
+          console.log('Character codes:', Array.from(setup.model_code).map((c: string, i: number) => `${i}:${c}(U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')})`).join(' '));
 
           // model_code에서 실제 코드와 설명을 분리
           // " - "를 기준으로 첫 번째 분리만 수행
@@ -252,7 +252,7 @@ export default function MachineSetupModal({
     setSelectedPart(null); // Reset part when model changes
     // 전체 텍스트 저장: model_code + description
     const fullModelText = model ?
-      (model.description ? `${model.model_code} – ${model.description}` : model.model_code)
+      (model.description ? `${model.model_code} - ${model.description}` : model.model_code)
       : '';
     setFormData(prev => ({
       ...prev,
