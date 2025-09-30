@@ -35,7 +35,7 @@ export default function NewModelSelector({ value, onChange, onAddNewModel }: New
         return spec.description ? `${spec.model_code} - ${spec.description}` : spec.model_code;
       }}
       isOptionEqualToValue={(option, value) => {
-        if ('isAddNew' in option) {
+        if (!('description' in option) || !('description' in value)) {
           return false;
         }
         return option.model_code === value.model_code && option.description === value.description;
