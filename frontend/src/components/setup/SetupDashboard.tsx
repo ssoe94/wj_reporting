@@ -173,7 +173,7 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
                     )}
                     {meanCycleTime !== null && (
                         <div>
-                            <span className="text-gray-500">평균설정C/T</span> : {meanCycleTime}{t('unit.seconds')}
+                            <span className="text-gray-500">平均设定C/T</span> : {meanCycleTime}{t('unit.seconds')}
                         </div>
                     )}
                     {setup && setup.personnel_count !== null && (

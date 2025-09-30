@@ -65,10 +65,10 @@ export default function MachineSetupModal({
         });
         // 기존 setup에서 model 정보 설정
         if (setup.model_code) {
-          // model_code에서 실제 코드와 설명을 분리
-          const parts = setup.model_code.split(' – ');
+          // model_code에서 실제 코드와 설명을 분리 (– 또는 - 둘 다 지원)
+          const parts = setup.model_code.split(/\s+[–-]\s+/);
           const actualModelCode = parts[0];
-          const description = parts[1] || '';
+          const description = parts.slice(1).join(' - ') || ''; // 나머지 부분 모두 합치기
 
           const model = {
             model_code: actualModelCode,
