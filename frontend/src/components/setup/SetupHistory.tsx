@@ -51,7 +51,7 @@ export default function SetupHistory({ getStatusIcon, getStatusText, onBackToDas
   return (
     <div className="space-y-6">
       {/* 상위 제목과 대시보드 버튼 */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">{t('history.title')}</h1>
         {onBackToDashboard && (
           <Button
