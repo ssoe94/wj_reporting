@@ -22,12 +22,12 @@ export default function InjectionSetupPage() {
   const [selectedMachine, setSelectedMachine] = useState<{ id: number; setup: any } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const today = new Date().toISOString().split('T')[0];
   const setupsByMachine = useMemo(() => {
     const map = new Map<number, any>();
+    // 백엔드에서 이미 오늘 날짜로 필터링된 데이터를 보내므로
+    // 프론트엔드에서 날짜 체크 불필요 (시간대 문제 방지)
     (dashboardData?.recent_setups || []).forEach((s: any) => {
-      const dateStr = typeof s.setup_date === 'string' ? s.setup_date.slice(0, 10) : '';
-      if (dateStr === today && typeof s.machine_no === 'number') {
+      if (typeof s.machine_no === 'number') {
         const prev = map.get(s.machine_no);
         if (!prev || new Date(s.setup_date).getTime() > new Date(prev.setup_date).getTime()) {
           map.set(s.machine_no, s);
@@ -35,7 +35,7 @@ export default function InjectionSetupPage() {
       }
     });
     return map;
-  }, [dashboardData?.recent_setups, today]);
+  }, [dashboardData?.recent_setups]);
 
 
   useEffect(() => {
