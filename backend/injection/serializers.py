@@ -220,7 +220,7 @@ class UserSerializer(serializers.ModelSerializer):
     def get_permissions(self, obj):
         profile = self._get_profile(obj)
         if not profile:
-            # 프로필이 없는 경우 기본 권한 부여 (스태프는 모든 권한, 일반 사용자는 조회 권한만)
+            # 프로필이 없는 경우 기본 권한 부여 (스태프는 모든 권한, 일반 사용자는 조회만)
             return {
                 'can_view_injection': True,
                 'can_view_assembly': True,
@@ -243,17 +243,17 @@ class UserSerializer(serializers.ModelSerializer):
             'can_view_quality': bool(profile.can_view_quality or obj.is_staff),
             'can_view_sales': bool(profile.can_view_sales or obj.is_staff),
             'can_view_development': bool(profile.can_view_development or obj.is_staff),
-            # 편집 권한 - 프로필에 명시적으로 False로 설정되지 않은 경우 기본 허용
-            'can_edit_injection': bool(getattr(profile, 'can_edit_injection', True) or obj.is_staff),
-            'can_edit_assembly': bool(getattr(profile, 'can_edit_assembly', True) or obj.is_staff),
-            'can_edit_quality': bool(getattr(profile, 'can_edit_quality', True) or obj.is_staff),
-            'can_edit_sales': bool(getattr(profile, 'can_edit_sales', True) or obj.is_staff),
-            'can_edit_development': bool(getattr(profile, 'can_edit_development', True) or obj.is_staff),
+            # 편집 권한 - 체크박스 설정대로 정확히 반영 (스태프는 항상 허용)
+            'can_edit_injection': bool(profile.can_edit_injection or obj.is_staff),
+            'can_edit_assembly': bool(profile.can_edit_assembly or obj.is_staff),
+            'can_edit_quality': bool(profile.can_edit_quality or obj.is_staff),
+            'can_edit_sales': bool(profile.can_edit_sales or obj.is_staff),
+            'can_edit_development': bool(profile.can_edit_development or obj.is_staff),
             # 호환성을 위한 레거시 필드들
-            'can_edit_eco': bool(getattr(profile, 'can_edit_development', True) or obj.is_staff),
-            'can_edit_machining': bool(getattr(profile, 'can_edit_assembly', True) or obj.is_staff),
-            'can_edit_inventory': bool(getattr(profile, 'can_edit_sales', True) or obj.is_staff),
-            'is_admin': bool(getattr(profile, 'is_admin', False) or obj.is_staff),
+            'can_edit_eco': bool(profile.can_edit_development or obj.is_staff),
+            'can_edit_machining': bool(profile.can_edit_assembly or obj.is_staff),
+            'can_edit_inventory': bool(profile.can_edit_sales or obj.is_staff),
+            'is_admin': bool(profile.is_admin or obj.is_staff),
         }
 
     def get_is_using_temp_password(self, obj):
