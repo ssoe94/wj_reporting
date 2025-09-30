@@ -82,7 +82,7 @@ export default function NewModelSelector({ value, onChange, onAddNewModel }: New
         onChange(v as PartSpec | null);
       }}
       value={value}
-      renderInput={(params) => <TextField {...params} size="small" placeholder={t('model_search')} required />}
+      renderInput={(params) => <TextField {...params} size="small" placeholder={t('ct_table.model_search_placeholder')} required />}
     />
   );
 }

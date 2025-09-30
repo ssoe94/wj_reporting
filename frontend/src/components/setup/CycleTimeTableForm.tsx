@@ -30,6 +30,11 @@ interface CycleTimeTableFormProps {
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+const formatModelWithDescription = (spec: Pick<PartSpec, 'model_code' | 'description'> | null) => {
+  if (!spec || !spec.model_code) return '';
+  return spec.description ? `${spec.model_code} - ${spec.description}` : spec.model_code;
+};
+
 export default function CycleTimeTableForm({ onSuccess }: CycleTimeTableFormProps) {
   const { t } = useLang();
   const queryClient = useQueryClient();
@@ -74,10 +79,11 @@ export default function CycleTimeTableForm({ onSuccess }: CycleTimeTableFormProp
       updateRow(rowId, 'part_no', '');
       updateRow(rowId, 'standard_cycle_time', null);
       updateRow(rowId, 'avg_cycle_time', null);
+      updateRow(rowId, 'model_code', '');
       return;
     }
     updateRow(rowId, 'part_no', partSpec.part_no);
-    updateRow(rowId, 'model_code', partSpec.model_code);
+    updateRow(rowId, 'model_code', formatModelWithDescription(partSpec));
     const standardTime = await fetchStandardCycleTime(partSpec.part_no);
     updateRow(rowId, 'standard_cycle_time', standardTime);
     const avgTime = await fetchAvgCycleTime(partSpec.part_no);
@@ -86,9 +92,7 @@ export default function CycleTimeTableForm({ onSuccess }: CycleTimeTableFormProp
 
   const handleModelChange = (rowId: string, model: PartSpec | null, keepPartNo = false) => {
     // 전체 텍스트 저장: model_code + description
-    const fullModelText = model ?
-      (model.description ? `${model.model_code} – ${model.description}` : model.model_code)
-      : '';
+    const fullModelText = formatModelWithDescription(model);
     updateRow(rowId, 'model_code', fullModelText);
     if (!keepPartNo) {
       updateRow(rowId, 'part_no', '');

@@ -8,6 +8,20 @@ import MachineSelector from './MachineSelector';
 import NewModelSelector from './NewModelSelector';
 import NewPartNoSelector from './NewPartNoSelector';
 
+const parseModelWithDescription = (value: string, partNo?: string): PartSpec | null => {
+  if (!value) return null;
+  const normalized = value.replace(/[\s\u00A0]*[–—−][\s\u00A0]*/g, ' - ');
+  const [model_codeRaw, ...rest] = normalized.split(' - ');
+  const model_code = (model_codeRaw || '').trim();
+  const description = rest.join(' - ').trim();
+  if (!model_code) return null;
+  return {
+    model_code,
+    description,
+    part_no: partNo || ''
+  } as PartSpec;
+};
+
 interface SetupRow {
   id: string;
   machine_no: number | null;
@@ -46,18 +60,20 @@ export default function SetupRowComponent({
 
   // Initialize state from row props
   useEffect(() => {
-    if (row.model_code && !model) {
-      const parts = row.model_code.split(' – ');
-      const model_code = parts[0];
-      const description = parts[1] || '';
-      const newModel = { model_code, description, part_no: '' } as PartSpec;
-      setModel(newModel);
-    }
-    if (row.part_no && !part) {
-        const newPart = { ...model, part_no: row.part_no } as PartSpec;
-        setPart(newPart);
-    }
+    setModel(parseModelWithDescription(row.model_code, row.part_no));
   }, [row.model_code, row.part_no]);
+
+  useEffect(() => {
+    if (row.part_no) {
+      setPart({
+        part_no: row.part_no,
+        model_code: model?.model_code || '',
+        description: model?.description || ''
+      } as PartSpec);
+    } else {
+      setPart(null);
+    }
+  }, [row.part_no, model?.model_code, model?.description]);
 
   const handleMachineChange = (machineId: number) => {
     onMachineChange(row.id, machineId);
@@ -65,18 +81,20 @@ export default function SetupRowComponent({
 
   const handleModelChange = (selectedModel: PartSpec | null) => {
     setModel(selectedModel);
-    setPart(null); // Reset part when model changes
+    setPart(null);
     onModelChange(row.id, selectedModel);
   };
 
   const handlePartChange = (selectedPart: PartSpec | null) => {
     setPart(selectedPart);
     onPartChange(row.id, selectedPart);
-    // Auto-fill model if part selection provides a more complete model
-    if (selectedPart && selectedPart.model_code && (!model || model.model_code !== selectedPart.model_code)) {
-        const newModel = { ...selectedPart };
+    if (selectedPart) {
+      const combinedLabel = `${selectedPart.model_code}${selectedPart.description ? ` - ${selectedPart.description}` : ''}`;
+      const newModel = parseModelWithDescription(combinedLabel, selectedPart.part_no);
+      if (newModel && (!model || model.model_code !== newModel.model_code || model.description !== newModel.description)) {
         setModel(newModel);
         onModelChange(row.id, newModel, true);
+      }
     }
   };
 

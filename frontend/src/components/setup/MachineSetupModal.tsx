@@ -48,6 +48,8 @@ export default function MachineSetupModal({
   const [selectedModel, setSelectedModel] = useState<PartSpec | null>(null);
   const [selectedPart, setSelectedPart] = useState<PartSpec | null>(null);
   const [showAddPartModal, setShowAddPartModal] = useState(false);
+  const [newPartInitialValue, setNewPartInitialValue] = useState('');
+  const [newPartInitialModel, setNewPartInitialModel] = useState('');
 
   const machine = machines.find(m => m.id === machineId);
 
@@ -63,16 +65,14 @@ export default function MachineSetupModal({
           avg_cycle_time: setup.mean_cycle_time?.toString() || '',
           personnel_count: setup.personnel_count?.toString() || ''
         });
-        // 기존 setup에서 model 정보 설정
         if (setup.model_code) {
-          const parts = setup.model_code.split(/[\s\u00A0]+[-–—−]+[\s\u00A0]+/);
-          const model_code = parts[0];
-          const description = parts.slice(1).join(' - ') || '';
+          const [model_code, ...rest] = setup.model_code.split(' - ');
+          const description = rest.join(' - ');
           const model = { model_code, description, part_no: setup.part_no || '' } as PartSpec;
           setSelectedModel(model);
-          setSelectedPart({ part_no: setup.part_no, model_code: model_code, description: description } as PartSpec);
+          setSelectedPart({ part_no: setup.part_no, model_code, description } as PartSpec);
         }
-        setEditMode(false); // Show read-only view first for existing setups
+        setEditMode(false);
       } else {
         setFormData({
           machine_no: machineId,
@@ -85,7 +85,7 @@ export default function MachineSetupModal({
         });
         setSelectedModel(null);
         setSelectedPart(null);
-        setEditMode(true); // For new setups, go directly to edit mode
+        setEditMode(true);
       }
       setError('');
     }
@@ -227,17 +227,19 @@ export default function MachineSetupModal({
     setFormData(prev => ({ ...prev, machine_no: machineId }));
   };
 
+  const formatModelWithDescription = (item: PartSpec | null) => {
+    if (!item || !item.model_code) return '';
+    return item.description ? `${item.model_code} - ${item.description}` : item.model_code;
+  };
+
   const handleModelChange = (model: PartSpec | null) => {
     setSelectedModel(model);
-    setSelectedPart(null); // Reset part when model changes
-    // 전체 텍스트 저장: model_code + description
-    const fullModelText = model ?
-      (model.description ? `${model.model_code} - ${model.description}` : model.model_code)
-      : '';
+    setSelectedPart(null);
+    const fullModelText = formatModelWithDescription(model);
     setFormData(prev => ({
       ...prev,
       model_code: fullModelText,
-      part_no: '' // Reset part when model changes
+      part_no: ''
     }));
   };
 
@@ -254,6 +256,16 @@ export default function MachineSetupModal({
     }
 
     setFormData(prev => ({ ...prev, part_no: part.part_no }));
+
+    const fullModelText = formatModelWithDescription(part);
+    if (fullModelText) {
+      const model = { model_code: part.model_code, description: part.description, part_no: part.part_no } as PartSpec;
+      setSelectedModel(model);
+      setFormData(prev => ({
+        ...prev,
+        model_code: fullModelText
+      }));
+    }
 
     // Fetch standard and avg cycle times
     try {
@@ -277,15 +289,31 @@ export default function MachineSetupModal({
     }
   };
 
-  const handleAddNewPart = () => {
+  const handleAddNewPart = (partNo: string) => {
+    const normalizedPartNo = (partNo || '').toUpperCase();
+    setNewPartInitialValue(normalizedPartNo);
+    setNewPartInitialModel(selectedModel?.model_code || '');
     setShowAddPartModal(true);
+  };
+
+  const handleAddNewModel = (modelCode: string) => {
+    const normalizedModel = (modelCode || '').toUpperCase();
+    setNewPartInitialValue('');
+    setNewPartInitialModel(normalizedModel);
+    setShowAddPartModal(true);
+  };
+
+  const handleCloseAddPartModal = () => {
+    setShowAddPartModal(false);
+    setNewPartInitialValue('');
+    setNewPartInitialModel('');
   };
 
   const handleNewPartCreated = (newPart: PartSpec) => {
     queryClient.invalidateQueries({ queryKey: ['parts-all'] }).then(() => {
       handlePartChange(newPart);
     });
-    setShowAddPartModal(false);
+    handleCloseAddPartModal();
   };
 
   // const handleModelAutoFill = (autoFillModel: PartSpec) => {
@@ -327,11 +355,11 @@ export default function MachineSetupModal({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">모델 및 파트 *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('setup.model_code')} *</label>
                 <NewModelSelector
                   value={selectedModel}
                   onChange={handleModelChange}
-                  onAddNewModel={() => setShowAddPartModal(true)} // Simplified for now
+                  onAddNewModel={handleAddNewModel}
                 />
               </div>
               <div>
@@ -413,9 +441,10 @@ export default function MachineSetupModal({
       {/* New Part Modal */}
       <NewPartSpecModal
         isOpen={showAddPartModal}
-        onClose={() => setShowAddPartModal(false)}
+        onClose={handleCloseAddPartModal}
         onSuccess={handleNewPartCreated}
-        initialPartNo=""
+        initialPartNo={newPartInitialValue}
+        initialModelCode={newPartInitialModel}
       />
     </div>
   );

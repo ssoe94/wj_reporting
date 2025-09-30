@@ -83,7 +83,12 @@ export default function NewPartNoSelector({ model, value, onChange, onAddNewPart
           <li key={key} {...rest}>
             <div className="flex flex-col">
               <span className="font-mono font-medium">{spec.part_no}</span>
-              {spec.model_code && <span className="text-sm text-gray-600">{spec.model_code} - {spec.description}</span>}
+              {spec.model_code && (
+                <span className="text-sm text-gray-600">
+                  {spec.model_code}
+                  {spec.description ? ` - ${spec.description}` : ''}
+                </span>
+              )}
             </div>
           </li>
         );
