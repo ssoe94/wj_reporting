@@ -478,16 +478,21 @@ class MESResourceService:
         logger = logging.getLogger(__name__)
 
         search_end_time = target_timestamp
-        search_start_time = search_end_time - timedelta(minutes=2) # Search window changed from 1 hour to 2 minutes
+        search_start_time = search_end_time - timedelta(minutes=10) # Search window: 10 minutes before target
 
-        logger.info(f"Updating snapshot for timestamp: {target_timestamp.isoformat()}")
+        logger.info(f"=== Starting snapshot update for timestamp: {target_timestamp.isoformat()} ===")
+        logger.info(f"Search range: {search_start_time.isoformat()} ~ {search_end_time.isoformat()}")
 
         machine_numbers = list(range(1, 18))
+        logger.info(f"Processing {len(machine_numbers)} machines...")
+
         for machine_num in machine_numbers:
             device_code = self._map_machine_to_device_code(machine_num)
             machine_name = f'{machine_num}호기'
+            logger.info(f"--- Processing machine {machine_num} (device_code: {device_code}) ---")
 
             try:
+                logger.debug(f"Fetching MES data for machine {machine_num}...")
                 raw_data = self.get_resource_monitoring_data(
                     device_code=device_code,
                     begin_time=search_start_time,
@@ -495,14 +500,17 @@ class MESResourceService:
                     size=100,
                     max_total_records=500
                 )
-                
+
                 data_list = raw_data.get('list', [])
+                logger.info(f"Machine {machine_num}: Received {len(data_list)} raw records from MES API")
+
                 if not data_list:
                     logger.warning(f"No data found for machine {machine_num} in range {search_start_time} - {search_end_time}.")
                     continue
 
                 prod_records, temp_records = self._parse_raw_records(data_list)
-                
+                logger.info(f"Machine {machine_num}: Parsed {len(prod_records)} production records and {len(temp_records)} temperature records")
+
                 all_ts_records = {}
                 for ts, val in prod_records:
                     if ts not in all_ts_records: all_ts_records[ts] = {}
@@ -517,9 +525,13 @@ class MESResourceService:
 
                 latest_ts = max(all_ts_records.keys())
                 latest_record_data = all_ts_records[latest_ts]
-                
+
                 latest_capacity = latest_record_data.get('prod')
                 latest_oil_temp = latest_record_data.get('temp')
+
+                cst = pytz.timezone('Asia/Shanghai')
+                latest_record_time = datetime.fromtimestamp(latest_ts / 1000, tz=cst)
+                logger.info(f"Machine {machine_num}: Latest record from {latest_record_time.isoformat()} - Capacity: {latest_capacity}, Temp: {latest_oil_temp}")
 
                 InjectionMonitoringRecord.objects.update_or_create(
                     device_code=device_code,
@@ -530,8 +542,7 @@ class MESResourceService:
                         'oil_temperature': latest_oil_temp,
                     }
                 )
-                cst = pytz.timezone('Asia/Shanghai')
-                logger.info(f"Saved snapshot for machine {machine_num} at {target_timestamp} with data from {datetime.fromtimestamp(latest_ts / 1000, tz=cst).isoformat()}.")
+                logger.info(f"✓ Saved snapshot for machine {machine_num} at {target_timestamp.isoformat()}")
 
             except Exception as e:
                 logger.error(f"Failed to update snapshot for machine {machine_num}: {e}", exc_info=True)
@@ -540,13 +551,27 @@ class MESResourceService:
         """
         매시간 정각에 실행되어, 직전 시간의 마지막 데이터를 시간 스냅샷으로 저장합니다.
         """
+        logger = logging.getLogger(__name__)
         cst = pytz.timezone('Asia/Shanghai')
         now = datetime.now(cst)
         target_timestamp = now.replace(minute=0, second=0, microsecond=0)
-        
-        self._update_single_hour_snapshot(target_timestamp)
 
-        return {"status": "completed", "timestamp": now.isoformat()}
+        logger.info(f"=== Hourly snapshot update started at {now.isoformat()} ===")
+        logger.info(f"Target timestamp: {target_timestamp.isoformat()}")
+
+        try:
+            self._update_single_hour_snapshot(target_timestamp)
+
+            # Count successful records
+            records_count = InjectionMonitoringRecord.objects.filter(timestamp=target_timestamp).count()
+            logger.info(f"=== Hourly snapshot update completed successfully ===")
+            logger.info(f"Total records saved: {records_count} / 17 machines")
+
+            return {"status": "completed", "timestamp": now.isoformat(), "records_saved": records_count}
+
+        except Exception as e:
+            logger.error(f"=== Hourly snapshot update failed ===", exc_info=True)
+            return {"status": "failed", "timestamp": now.isoformat(), "error": str(e)}
 
     def update_recent_hourly_snapshots(self, hours_to_update: int):
         """
