@@ -123,9 +123,11 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
 
               if (!setup) {
                 return (
-                  <div
+                  <button
                     key={machine.id}
-                    className={`${cardBase} ${cardColor} w-full text-left flex flex-col`}
+                    className={`${cardBase} ${cardColor} w-full text-left hover:shadow-md transition-shadow duration-200 cursor-pointer hover:scale-105 transform transition-transform flex flex-col`}
+                    onClick={() => onMachineClick?.(machine.id)}
+                    title={t('dashboard.click_to_setup')}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-semibold">{machine.id}{t('dashboard.machine_id_unit')} - {machine.ton}T</span>
@@ -133,7 +135,7 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
                     <div className="flex-grow flex items-center justify-center">
                       <span className="text-gray-500 text-[10px]">{t('dashboard.no_setup')}</span>
                     </div>
-                  </div>
+                  </button>
                 );
               }
 

@@ -991,10 +991,40 @@ class CycleTimeSetupViewSet(viewsets.ModelViewSet):
     def dashboard(self, request):
         """셋업 대시보드 데이터"""
         from django.utils import timezone
-        from django.db.models import Q
+        from django.db.models import Q, Avg
         today = timezone.now().date()
 
         today_setups = CycleTimeSetup.objects.filter(setup_date__date=today)
+
+        # Part no.의 앞 9자리별 평균 target_cycle_time 계산
+        part_prefix_avg_ct = {}  # 앞 9자리 -> 평균 C/T
+        part_to_prefix = {}  # 전체 Part no. -> 앞 9자리 매핑
+
+        for part_no in today_setups.values_list('part_no', flat=True).distinct():
+            if part_no and len(part_no) >= 9:
+                prefix = part_no[:9]
+                part_to_prefix[part_no] = prefix
+
+        # 앞 9자리별로 그룹화하여 평균 계산
+        for prefix in set(part_to_prefix.values()):
+            # 앞 9자리가 동일한 모든 Part no. 찾기
+            matching_parts = [pn for pn, px in part_to_prefix.items() if px == prefix]
+
+            # 해당 Part no.들의 평균 target_cycle_time 계산
+            avg = today_setups.filter(part_no__in=matching_parts).aggregate(
+                avg_ct=Avg('target_cycle_time')
+            )['avg_ct']
+
+            if avg:
+                part_prefix_avg_ct[prefix] = round(avg)
+
+        # recent_setups에 평균 C/T 추가
+        recent_setups_list = list(today_setups.order_by('-setup_date')[:50])
+        for setup in recent_setups_list:
+            # Part no.의 앞 9자리로 평균 C/T 조회
+            if setup.part_no and len(setup.part_no) >= 9:
+                prefix = setup.part_no[:9]
+                setup.mean_cycle_time = part_prefix_avg_ct.get(prefix)
 
         dashboard_data = {
             'total_setups_today': today_setups.count(),
@@ -1002,7 +1032,7 @@ class CycleTimeSetupViewSet(viewsets.ModelViewSet):
             'approved_today': today_setups.filter(status='APPROVED').count(),
             'rejected_today': today_setups.filter(status='REJECTED').count(),
             'active_machines': list(today_setups.values_list('machine_no', flat=True).distinct()),
-            'recent_setups': today_setups.order_by('-setup_date')[:10]
+            'recent_setups': recent_setups_list
         }
 
         serializer = CycleTimeSetupDashboardSerializer(dashboard_data)
