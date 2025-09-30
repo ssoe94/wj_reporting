@@ -226,6 +226,14 @@ class UserSerializer(serializers.ModelSerializer):
                 'can_view_quality': False,
                 'can_view_sales': False,
                 'can_view_development': False,
+                'can_edit_injection': False,
+                'can_edit_assembly': False,
+                'can_edit_quality': False,
+                'can_edit_sales': False,
+                'can_edit_development': False,
+                'can_edit_eco': False,
+                'can_edit_machining': False,
+                'can_edit_inventory': False,
                 'is_admin': False,
             }
         return {
@@ -234,6 +242,15 @@ class UserSerializer(serializers.ModelSerializer):
             'can_view_quality': bool(profile.can_view_quality or obj.is_staff),
             'can_view_sales': bool(profile.can_view_sales or obj.is_staff),
             'can_view_development': bool(profile.can_view_development or obj.is_staff),
+            'can_edit_injection': bool(profile.can_edit_injection or obj.is_staff),
+            'can_edit_assembly': bool(profile.can_edit_assembly or obj.is_staff),
+            'can_edit_quality': bool(profile.can_edit_quality or obj.is_staff),
+            'can_edit_sales': bool(profile.can_edit_sales or obj.is_staff),
+            'can_edit_development': bool(profile.can_edit_development or obj.is_staff),
+            # 호환성을 위한 레거시 필드들
+            'can_edit_eco': bool(profile.can_edit_development or obj.is_staff),
+            'can_edit_machining': bool(profile.can_edit_assembly or obj.is_staff),
+            'can_edit_inventory': bool(profile.can_edit_sales or obj.is_staff),
             'is_admin': bool(profile.is_admin or obj.is_staff),
         }
 
