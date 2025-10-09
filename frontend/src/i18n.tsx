@@ -183,6 +183,9 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     '품질률_툴팁': '품질률(Quality): 양품수 / 실제 생산수',
     oee_title: 'OEE (설비 종합 효율성)', // OEE 대시보드 제목
     oee_desc: '설비 종합 효율성을 가동률(A), 성능률(P), 품질률(Q)로 분석합니다.', // OEE 설명
+    analysis_selected_period: '선택 기간',
+    analysis_all_data: '전체 데이터',
+    analysis_no_period_data: '해당 기간에 데이터가 없습니다.',
     downtime_title: '다운타임 분석', // 다운타임 카드 제목
     downtime_desc: '비고 필드의 다운타임 정보를 파싱하여 MTTR/MTBF 분석 및 개선 추적을 제공합니다.', // 다운타임 설명
     spc_title: 'SPC & 조기경보', // SPC 카드 제목
@@ -823,6 +826,9 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     '품질률_툴팁': '品质率(Quality)：良品数 / 实际产量',
     oee_title: 'OEE（设备综合效率）', // OEE 대시보드 제목
     oee_desc: '通过稼动率(A)、性能率(P)、品质率(Q)分析设备综合效率。', // OEE 설명
+    analysis_selected_period: '所选期间',
+    analysis_all_data: '全部数据',
+    analysis_no_period_data: '所选期间没有数据。',
     downtime_title: '停机分析', // 다운타임 카드 제목
     downtime_desc: '解析备注栏的停机信息，提供MTTR/MTBF分析及改善追踪。', // 다운타임 설명
     spc_title: 'SPC & 预警', // SPC 카드 제목

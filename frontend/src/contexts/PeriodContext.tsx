@@ -13,10 +13,10 @@ interface PeriodContextType {
 const PeriodContext = createContext<PeriodContextType | undefined>(undefined);
 
 export const PeriodProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // 기본값: 최근 7일
+  // 기본값: 최근 30일
   const today = new Date();
   const defaultEnd = today.toISOString().slice(0, 10);
-  const defaultStart = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const defaultStart = new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const [startDate, setStartDate] = useState(defaultStart);
   const [endDate, setEndDate] = useState(defaultEnd);

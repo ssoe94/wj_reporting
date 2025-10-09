@@ -16,6 +16,13 @@ interface OEEData {
   dayOfWeek: number;
 }
 
+interface OEEAggregate {
+  availability: number;
+  performance: number;
+  quality: number;
+  oee: number;
+}
+
 
 export default function OEEDashboard() {
   const { data: reports = [] } = useReports();
@@ -38,13 +45,45 @@ export default function OEEDashboard() {
 
   // 날짜 범위가 변경되면 자동으로 업데이트
   useEffect(() => {
-    if (dataDateRange.minDate && dataDateRange.maxDate) {
-      setStartDate(dataDateRange.minDate);
-      setEndDate(dataDateRange.maxDate);
-    }
-  }, [dataDateRange, setStartDate, setEndDate]);
+    if (!dataDateRange.minDate || !dataDateRange.maxDate) return;
 
-  const oeeData: OEEData[] = React.useMemo(() => {
+    let adjustedStart = startDate;
+    let adjustedEnd = endDate;
+
+    if (!adjustedStart || adjustedStart < dataDateRange.minDate) {
+      adjustedStart = dataDateRange.minDate;
+    } else if (adjustedStart > dataDateRange.maxDate) {
+      adjustedStart = dataDateRange.maxDate;
+    }
+
+    if (!adjustedEnd || adjustedEnd > dataDateRange.maxDate) {
+      adjustedEnd = dataDateRange.maxDate;
+    } else if (adjustedEnd < dataDateRange.minDate) {
+      adjustedEnd = dataDateRange.minDate;
+    }
+
+    if (adjustedStart > adjustedEnd) {
+      adjustedStart = dataDateRange.minDate;
+      adjustedEnd = dataDateRange.maxDate;
+    }
+
+    if (adjustedStart !== startDate) setStartDate(adjustedStart);
+    if (adjustedEnd !== endDate) setEndDate(adjustedEnd);
+  }, [dataDateRange, startDate, endDate, setStartDate, setEndDate]);
+
+  const {
+    chartData: oeeData,
+    rangeMetrics,
+    overallMetrics
+  } = React.useMemo(() => {
+    if (!reports.length) {
+      return {
+        chartData: [] as OEEData[],
+        rangeMetrics: null as OEEAggregate | null,
+        overallMetrics: null as OEEAggregate | null,
+      };
+    }
+
     const dailyMap = new Map<string, {
       totalTime: number;
       operationTime: number;
@@ -54,76 +93,91 @@ export default function OEEDashboard() {
     }>();
 
     reports.forEach((r) => {
-      const entry = dailyMap.get(r.date) || {
-        totalTime: 0,
-        operationTime: 0,
-        planQty: 0,
-        actualQty: 0,
-        totalQty: 0,
-      };
-
-      // 가동률 계산을 위한 시간 설정
-      // totalTime: 17대 × 24시간 = 24,480분 (고정값, 분모)
-      // operationTime: 각 설비의 실제 가동시간 합계 (다운타임 제외, 분자)
-      if (!entry.totalTime) {
-        entry.totalTime = 17 * 24 * 60; // 17대 × 24시간 × 60분 = 24,480분
+      if (!dailyMap.has(r.date)) {
+        dailyMap.set(r.date, {
+          totalTime: 17 * 24 * 60,
+          operationTime: 0,
+          planQty: 0,
+          actualQty: 0,
+          totalQty: 0,
+        });
       }
-      entry.operationTime += r.operation_time || 0;
-      entry.planQty += r.plan_qty;
-      entry.actualQty += r.actual_qty;
-      entry.totalQty += (r.actual_qty + r.actual_defect);
 
-      dailyMap.set(r.date, entry);
+      const entry = dailyMap.get(r.date)!;
+      entry.operationTime += r.operation_time || 0;
+      entry.planQty += r.plan_qty || 0;
+      entry.actualQty += r.actual_qty || 0;
+      entry.totalQty += (r.actual_qty || 0) + (r.actual_defect || 0);
     });
 
-    let filteredData = Array.from(dailyMap.entries())
-      .map(([date, data]) => {
-        // Availability = 모든 설비의 실제 가동시간 합계 / (17대 × 24시간)
-        // 실제 가동시간 = operation_time (다운타임 제외)
-        const availability = data.totalTime > 0 ? (data.operationTime / data.totalTime) * 100 : 0;
+    const round1 = (value: number) => Math.round(value * 10) / 10;
 
-        // Performance = 실제 생산수 / 목표 생산량 × 100
-        // 실제 생산수 = 양품 + 불량
-        // 목표 생산량 = plan_qty
-        const performance = data.planQty > 0
-          ? (data.totalQty / data.planQty) * 100
-          : 0;
+    const toOeeData = ([date, data]: [string, { totalTime: number; operationTime: number; planQty: number; actualQty: number; totalQty: number; }]): OEEData => {
+      const availabilityRaw = data.totalTime > 0 ? (data.operationTime / data.totalTime) * 100 : 0;
+      const performanceRaw = data.planQty > 0 ? (data.totalQty / data.planQty) * 100 : 0;
+      const qualityRaw = data.totalQty > 0 ? (data.actualQty / data.totalQty) * 100 : 0;
+      const oeeRaw = (availabilityRaw * performanceRaw * qualityRaw) / 10000;
+      const dayOfWeek = dayjs(date).day();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-        // Quality = 양품수 / 실제생산수
-        const quality = data.totalQty > 0 ? (data.actualQty / data.totalQty) * 100 : 0;
+      return {
+        date,
+        availability: round1(availabilityRaw),
+        performance: round1(performanceRaw),
+        quality: round1(qualityRaw),
+        oee: round1(oeeRaw),
+        isWeekend,
+        dayOfWeek,
+      };
+    };
 
-        // OEE = A × P × Q (전체 설비 기준)
-        const oee = (availability * performance * quality) / 10000;
+    const aggregate = (entries: Array<[string, { totalTime: number; operationTime: number; planQty: number; actualQty: number; totalQty: number; }]>): OEEAggregate | null => {
+      if (!entries.length) return null;
 
-        // 주말 여부 확인 (토요일=6, 일요일=0)
-        const dayOfWeek = dayjs(date).day();
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-
-        return {
-          date,
-          availability: Math.round(availability * 10) / 10,
-          performance: Math.round(performance * 10) / 10,
-          quality: Math.round(quality * 10) / 10,
-          oee: Math.round(oee * 10) / 10,
-          isWeekend,
-          dayOfWeek,
-        };
-      })
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    // 기간 필터링
-    if (startDate && endDate) {
-      filteredData = filteredData.filter(item => 
-        item.date >= startDate && item.date <= endDate
+      const totals = entries.reduce(
+        (acc, [, data]) => {
+          acc.totalTime += data.totalTime || 0;
+          acc.operationTime += data.operationTime || 0;
+          acc.planQty += data.planQty || 0;
+          acc.actualQty += data.actualQty || 0;
+          acc.totalQty += data.totalQty || 0;
+          return acc;
+        },
+        { totalTime: 0, operationTime: 0, planQty: 0, actualQty: 0, totalQty: 0 }
       );
-      
-      // 주말 제외 필터링
+
+      const availabilityRaw = totals.totalTime > 0 ? (totals.operationTime / totals.totalTime) * 100 : 0;
+      const performanceRaw = totals.planQty > 0 ? (totals.totalQty / totals.planQty) * 100 : 0;
+      const qualityRaw = totals.totalQty > 0 ? (totals.actualQty / totals.totalQty) * 100 : 0;
+      const oeeRaw = (availabilityRaw * performanceRaw * qualityRaw) / 10000;
+
+      return {
+        availability: round1(availabilityRaw),
+        performance: round1(performanceRaw),
+        quality: round1(qualityRaw),
+        oee: round1(oeeRaw),
+      };
+    };
+
+    const sortedEntries = Array.from(dailyMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+    let filteredEntries = sortedEntries;
+
+    if (startDate && endDate) {
+      filteredEntries = filteredEntries.filter(([date]) => date >= startDate && date <= endDate);
       if (excludeWeekends) {
-        filteredData = filteredData.filter(item => !item.isWeekend);
+        filteredEntries = filteredEntries.filter(([date]) => {
+          const day = dayjs(date).day();
+          return day !== 0 && day !== 6;
+        });
       }
     }
 
-    return filteredData;
+    const chartData = filteredEntries.map(toOeeData);
+    const rangeMetrics = aggregate(filteredEntries);
+    const overallMetrics = aggregate(sortedEntries);
+
+    return { chartData, rangeMetrics, overallMetrics };
   }, [reports, startDate, endDate, excludeWeekends]);
 
   // 비교 모드에서 날짜 선택 처리
@@ -223,55 +277,81 @@ export default function OEEDashboard() {
   }, [selectedDates, reports]);
 
 
-  const getOeeColor = (oee: number) => {
-    if (oee >= 85) return 'text-green-600';
-    if (oee >= 70) return 'text-yellow-600';
+  const getOeeColor = (value?: number) => {
+    if (value == null) return 'text-gray-400';
+    if (value >= 85) return 'text-green-600';
+    if (value >= 70) return 'text-yellow-600';
     return 'text-red-600';
   };
 
-  if (!oeeData.length) {
-    return <p className="text-gray-500 text-sm">OEE 데이터가 없습니다.</p>;
+  if (!overallMetrics) {
+    return <p className="text-gray-500 text-sm">{t('analysis_no_period_data')}</p>;
   }
 
-  const latestOee = oeeData[oeeData.length - 1];
+  const rangeLabel = startDate && endDate ? `${startDate} ~ ${endDate}` : '';
+  const overallLabel =
+    dataDateRange.minDate && dataDateRange.maxDate
+      ? `${dataDateRange.minDate} ~ ${dataDateRange.maxDate}`
+      : '';
+
+  const summaryRows = [
+    {
+      key: 'range',
+      title: t('analysis_selected_period'),
+      subtitle: rangeLabel,
+      metrics: rangeMetrics,
+    },
+    {
+      key: 'overall',
+      title: t('analysis_all_data'),
+      subtitle: overallLabel,
+      metrics: overallMetrics,
+    },
+  ];
+
+  const metricCards = [
+    { key: 'oee', label: 'OEE', tooltip: t('OEE_툴팁') },
+    { key: 'availability', label: `${t('availability')} (A)`, tooltip: t('가동률_툴팁') },
+    { key: 'performance', label: `${t('performance')} (P)`, tooltip: t('성능률_툴팁') },
+    { key: 'quality', label: `${t('quality')} (Q)`, tooltip: t('품질률_툴팁') },
+  ] as const;
+
+  const formatValue = (value?: number) => (value != null ? `${value}%` : '-');
+  const noRangeData = !rangeMetrics || oeeData.length === 0;
 
   return (
     <div className="space-y-6">
       {/* OEE 개요 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div title={t('OEE_툴팁')}>
-          <Card>
-            <CardHeader className="text-sm text-gray-500">OEE</CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${getOeeColor(latestOee.oee)}`}>{latestOee.oee}%</p>
-            </CardContent>
-          </Card>
-        </div>
-        <div title={t('가동률_툴팁')}>
-          <Card>
-            <CardHeader className="text-sm text-gray-500">{t('availability')} (A)</CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${getOeeColor(latestOee.availability)}`}>{latestOee.availability}%</p>
-            </CardContent>
-          </Card>
-        </div>
-        <div title={t('성능률_툴팁')}>
-          <Card>
-            <CardHeader className="text-sm text-gray-500">{t('performance')} (P)</CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${getOeeColor(latestOee.performance)}`}>{latestOee.performance}%</p>
-            </CardContent>
-          </Card>
-        </div>
-        <div title={t('품질률_툴팁')}>
-          <Card>
-            <CardHeader className="text-sm text-gray-500">{t('quality')} (Q)</CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${getOeeColor(latestOee.quality)}`}>{latestOee.quality}%</p>
-            </CardContent>
-          </Card>
-        </div>
+        {metricCards.map((metric) => (
+          <div key={metric.key} title={metric.tooltip}>
+            <Card>
+              <CardHeader className="text-sm text-gray-500">{metric.label}</CardHeader>
+              <CardContent className="space-y-3">
+                {summaryRows.map((row) => {
+                  const value = row.metrics?.[metric.key];
+                  return (
+                    <div key={row.key} className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-gray-500">{row.title}</span>
+                        {row.subtitle && (
+                          <span className="text-[11px] text-gray-400">{row.subtitle}</span>
+                        )}
+                      </div>
+                      <span className={`text-lg font-semibold ${getOeeColor(value)}`}>
+                        {formatValue(value)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          </div>
+        ))}
       </div>
+      {noRangeData && (
+        <p className="text-xs text-orange-600">{t('analysis_no_period_data')}</p>
+      )}
 
       {/* OEE 트렌드 차트 */}
       <Card>
@@ -291,52 +371,58 @@ export default function OEEDashboard() {
         </CardHeader>
         <CardContent>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart 
-                data={oeeData} 
-                margin={{ top: 20, right: 20, bottom: 5, left: 0 }}
-                onClick={(e: any) => {
-                  if (compareMode && e && e.activeLabel) {
-                    handleDateClick(e.activeLabel);
-                  }
-                }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke={isLiteMode ? '#000000' : '#e0e0e0'} vertical={true} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 11, fill: isLiteMode ? '#000000' : '#666666' }}
-                  interval={0}
-                  height={32}
-                  tickFormatter={d => d.slice(5)}
-                  tickLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
-                  axisLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
-                />
-                <YAxis 
-                  tick={{ fontSize: 12, fill: isLiteMode ? '#000000' : '#666666' }}
-                  tickLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
-                  axisLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
-                  domain={[0, 100]}
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: '#fff', 
-                    border: isLiteMode ? '2px solid #000000' : '1px solid #ccc', 
-                    borderRadius: '4px',
-                    color: '#000000'
+            {oeeData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={oeeData}
+                  margin={{ top: 20, right: 20, bottom: 5, left: 0 }}
+                  onClick={(e: any) => {
+                    if (compareMode && e && e.activeLabel) {
+                      handleDateClick(e.activeLabel);
+                    }
                   }}
-                  formatter={(value: any, name: string) => [`${value}%`, name]}
-                  labelFormatter={(label) => {
-                    const data = oeeData.find(item => item.date === label);
-                    const dayName = data?.isWeekend ? ` ${t('weekend')}` : ` ${t('weekday')}`;
-                    return `${label}${dayName}`;
-                  }}
-                />
-                <Line type="monotone" dataKey="oee" stroke={isLiteMode ? '#000000' : '#8884d8'} name="OEE" strokeWidth={isLiteMode ? 3 : 2} />
-                <Line type="monotone" dataKey="availability" stroke={isLiteMode ? '#333333' : '#82ca9d'} name={t('availability')} strokeWidth={isLiteMode ? 2 : 1} />
-                <Line type="monotone" dataKey="performance" stroke={isLiteMode ? '#666666' : '#ffc658'} name={t('performance')} strokeWidth={isLiteMode ? 2 : 1} />
-                <Line type="monotone" dataKey="quality" stroke={isLiteMode ? '#999999' : '#ff7300'} name={t('quality')} strokeWidth={isLiteMode ? 2 : 1} />
-              </LineChart>
-            </ResponsiveContainer>
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke={isLiteMode ? '#000000' : '#e0e0e0'} vertical />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11, fill: isLiteMode ? '#000000' : '#666666' }}
+                    interval={0}
+                    height={32}
+                    tickFormatter={d => d.slice(5)}
+                    tickLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
+                    axisLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12, fill: isLiteMode ? '#000000' : '#666666' }}
+                    tickLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
+                    axisLine={{ stroke: isLiteMode ? '#000000' : '#666' }}
+                    domain={[0, 100]}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#fff',
+                      border: isLiteMode ? '2px solid #000000' : '1px solid #ccc',
+                      borderRadius: '4px',
+                      color: '#000000',
+                    }}
+                    formatter={(value: any, name: string) => [`${value}%`, name]}
+                    labelFormatter={(label) => {
+                      const data = oeeData.find(item => item.date === label);
+                      const dayName = data?.isWeekend ? ` ${t('weekend')}` : ` ${t('weekday')}`;
+                      return `${label}${dayName}`;
+                    }}
+                  />
+                  <Line type="monotone" dataKey="oee" stroke={isLiteMode ? '#000000' : '#8884d8'} name="OEE" strokeWidth={isLiteMode ? 3 : 2} />
+                  <Line type="monotone" dataKey="availability" stroke={isLiteMode ? '#333333' : '#82ca9d'} name={t('availability')} strokeWidth={isLiteMode ? 2 : 1} />
+                  <Line type="monotone" dataKey="performance" stroke={isLiteMode ? '#666666' : '#ffc658'} name={t('performance')} strokeWidth={isLiteMode ? 2 : 1} />
+                  <Line type="monotone" dataKey="quality" stroke={isLiteMode ? '#999999' : '#ff7300'} name={t('quality')} strokeWidth={isLiteMode ? 2 : 1} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                {t('analysis_no_period_data')}
+              </div>
+            )}
           </div>
           {/* 비교 모드 안내 */}
           {compareMode && (
