@@ -87,19 +87,21 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
     return Math.round((totalDefectQty / denominator) * 1000) / 10; // 소수 첫째자리 반올림
   };
 
-  const enrichedList = useMemo<Array<AssemblyReport & { __totalDefectQty: number; __defectRate: number }>>(() => {
+  type EnrichedReport = AssemblyReport & { __totalDefectQty: number; __defectRate: number };
+
+  const enrichedList = useMemo<Array<EnrichedReport>>(() => {
     return reports
       .filter((r: AssemblyReport) => r.date === date)
-      .map((report) => {
+      .map((report: AssemblyReport): EnrichedReport => {
         const totalDefectQty = getTotalDefectQty(report);
         const defectRate = getDefectRate(report, totalDefectQty);
         return {
           ...report,
           __totalDefectQty: totalDefectQty,
           __defectRate: defectRate,
-        } as AssemblyReport & { __totalDefectQty: number; __defectRate: number };
+        };
       })
-      .sort((a, b) => {
+      .sort((a: EnrichedReport, b: EnrichedReport) => {
         if (a.line_no !== b.line_no) return (a.line_no || '').localeCompare(b.line_no || '');
         return (a.start_datetime || '').localeCompare(b.start_datetime || '');
       });
