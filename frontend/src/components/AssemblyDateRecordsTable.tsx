@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAssemblyReports } from '../hooks/useAssemblyReports';
 import type { AssemblyReport } from '../types/assembly';
 import { Dialog } from '@headlessui/react';
@@ -28,12 +28,82 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   const [selectedPartPrefix, setSelectedPartPrefix] = useState('');
   const queryClient = useQueryClient();
 
-  const list = reports
-    .filter((r: AssemblyReport) => r.date === date)
-    .sort((a: AssemblyReport, b: AssemblyReport) => {
-      if (a.line_no !== b.line_no) return (a.line_no || '').localeCompare(b.line_no || '');
-      return (a.start_datetime || '').localeCompare(b.start_datetime || '');
-    });
+  const safeNumber = (value: unknown): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const cleaned = value.replace(/%/g, '').trim();
+      if (cleaned === '') return 0;
+      const parsed = Number(cleaned);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  };
+
+  const getIncomingDefects = (report: AssemblyReport) => {
+    const direct = safeNumber((report as any)?.incoming_defect_qty);
+    if (direct > 0) return direct;
+    if (report.incoming_defects_detail) {
+      return Object.values(report.incoming_defects_detail).reduce<number>((sum, value) => sum + safeNumber(value), 0);
+    }
+    return 0;
+  };
+
+  const getProcessingDefects = (report: AssemblyReport) => {
+    const direct = safeNumber(report.processing_defect);
+    if (direct > 0) return direct;
+    const dynamic = (report as any)?.processing_defects_dynamic;
+    if (Array.isArray(dynamic)) {
+      return dynamic.reduce<number>((sum, item) => sum + safeNumber(item?.quantity), 0);
+    }
+    return 0;
+  };
+
+  const getOutsourcingDefects = (report: AssemblyReport) => {
+    const direct = safeNumber(report.outsourcing_defect);
+    if (direct > 0) return direct;
+    const dynamic = (report as any)?.outsourcing_defects_dynamic;
+    if (Array.isArray(dynamic)) {
+      return dynamic.reduce<number>((sum, item) => sum + safeNumber(item?.quantity), 0);
+    }
+    return 0;
+  };
+
+  const getTotalDefectQty = (report: AssemblyReport) => {
+    const totalFromServer = safeNumber(report.total_defect_qty);
+    if (totalFromServer > 0) return totalFromServer;
+    const injection = safeNumber(report.injection_defect);
+    const processing = getProcessingDefects(report);
+    const outsourcing = getOutsourcingDefects(report);
+    const incoming = getIncomingDefects(report);
+    return injection + processing + outsourcing + incoming;
+  };
+
+  const getDefectRate = (report: AssemblyReport, totalDefectQty: number) => {
+    const rateFromServer = safeNumber(report.defect_rate);
+    if (rateFromServer > 0) return rateFromServer;
+    const actualQty = safeNumber((report as any)?.actual_qty);
+    const denominator = actualQty + totalDefectQty;
+    if (denominator <= 0) return 0;
+    return Math.round((totalDefectQty / denominator) * 1000) / 10; // 소수 첫째자리 반올림
+  };
+
+  const enrichedList = useMemo<Array<AssemblyReport & { __totalDefectQty: number; __defectRate: number }>>(() => {
+    return reports
+      .filter((r: AssemblyReport) => r.date === date)
+      .map((report) => {
+        const totalDefectQty = getTotalDefectQty(report);
+        const defectRate = getDefectRate(report, totalDefectQty);
+        return {
+          ...report,
+          __totalDefectQty: totalDefectQty,
+          __defectRate: defectRate,
+        } as AssemblyReport & { __totalDefectQty: number; __defectRate: number };
+      })
+      .sort((a, b) => {
+        if (a.line_no !== b.line_no) return (a.line_no || '').localeCompare(b.line_no || '');
+        return (a.start_datetime || '').localeCompare(b.start_datetime || '');
+      });
+  }, [reports, date]);
 
   const handleSave = async (data: Partial<AssemblyReport>) => {
     if (!detail) return;
@@ -63,13 +133,15 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
     }
   };
 
-  const formatDefectInfo = (report: AssemblyReport) => {
-    const total = report.total_defect_qty || 0;
+  const formatDefectInfo = (report: AssemblyReport & { __totalDefectQty?: number }) => {
+    const total = report.__totalDefectQty ?? getTotalDefectQty(report);
     if (total === 0) return '0';
     const parts = [] as string[];
     if (report.injection_defect > 0) parts.push(`${t('assembly_injection_defect')}: ${report.injection_defect}`);
     if (report.outsourcing_defect > 0) parts.push(`${t('assembly_outsourcing_defect')}: ${report.outsourcing_defect}`);
     if (report.processing_defect > 0) parts.push(`${t('assembly_processing_defect')}: ${report.processing_defect}`);
+    const incoming = getIncomingDefects(report as AssemblyReport);
+    if (incoming > 0) parts.push(`${t('assembly_incoming_defect') || 'Incoming'}: ${incoming}`);
     return `${total} (${parts.join(', ')})`;
   };
 
@@ -81,12 +153,15 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   };
 
   if (!date) return null;
-  if (!list.length) return <p className="text-gray-500 text-sm">{t('no_data')}</p>;
+  if (!enrichedList.length) return <p className="text-gray-500 text-sm">{t('no_data')}</p>;
 
-  const totalPlan = list.reduce((sum: number, r: AssemblyReport) => sum + (r.plan_qty || 0), 0);
-  const totalActual = list.reduce((sum: number, r: AssemblyReport) => sum + (r.actual_qty || 0), 0);
-  const totalDefect = list.reduce((sum: number, r: AssemblyReport) => sum + (r.total_defect_qty || 0), 0);
+  const totalPlan = enrichedList.reduce((sum: number, r) => sum + (r.plan_qty || 0), 0);
+  const totalActual = enrichedList.reduce((sum: number, r) => sum + (r.actual_qty || 0), 0);
+  const totalDefect = enrichedList.reduce((sum: number, r) => sum + (r.__totalDefectQty || 0), 0);
   const achievementRate = totalPlan > 0 ? (totalActual / totalPlan) * 100 : 0;
+  const totalDefectRate = totalActual + totalDefect > 0 ? (totalDefect / (totalActual + totalDefect)) * 100 : 0;
+  const detailTotalDefectQty = detail ? getTotalDefectQty(detail) : 0;
+  const detailDefectRate = detail ? getDefectRate(detail, detailTotalDefectQty) : 0;
 
   return (
     <>
@@ -105,7 +180,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
           </tr>
         </thead>
         <tbody>
-          {list.map((r: AssemblyReport) => (
+          {enrichedList.map((r) => (
             <tr
               key={r.id}
               className="border-t border-gray-200 last:border-b-0 hover:bg-green-50 cursor-pointer"
@@ -117,7 +192,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
               <td className="px-2 py-1 text-right">{r.plan_qty?.toLocaleString()}</td>
               <td className="px-2 py-1 text-right">{r.actual_qty?.toLocaleString()}</td>
               <td className="px-2 py-1 text-right" title={formatDefectInfo(r)}>
-                {r.total_defect_qty?.toLocaleString()}
+                {(r.__totalDefectQty || 0).toLocaleString()}
               </td>
               <td className="px-2 py-1 text-right">
                 <span className={`${(r.achievement_rate || 0) >= 100 ? 'text-green-600' : (r.achievement_rate || 0) >= 80 ? 'text-yellow-600' : 'text-red-600'}`}>
@@ -125,8 +200,8 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                 </span>
               </td>
               <td className="px-2 py-1 text-right">
-                <span className={`${(r.defect_rate || 0) <= 2 ? 'text-green-600' : (r.defect_rate || 0) <= 5 ? 'text-yellow-600' : 'text-red-600'}`}>
-                  {r.defect_rate}%
+                <span className={`${(r.__defectRate || 0) <= 2 ? 'text-green-600' : (r.__defectRate || 0) <= 5 ? 'text-yellow-600' : 'text-red-600'}`}>
+                  {`${(r.__defectRate || 0).toFixed(1)}%`}
                 </span>
               </td>
               <td className="px-2 py-1 text-right">
@@ -150,7 +225,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
             <td className="px-2 py-1 text-right">{totalActual.toLocaleString()}</td>
             <td className="px-2 py-1 text-right">{totalDefect.toLocaleString()}</td>
             <td className="px-2 py-1 text-right" colSpan={3}>
-              {t('achievement_rate')}: {achievementRate.toFixed(1)}%
+              {t('achievement_rate')}: {achievementRate.toFixed(1)}% / {t('defect_rate')}: {totalDefectRate.toFixed(1)}%
             </td>
           </tr>
         </tfoot>
@@ -186,7 +261,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                       <Percent className="w-3 h-3" /> {t('achievement_rate')}: {detail.achievement_rate}%
                     </span>
                     <span className="px-2 py-1 rounded-md bg-amber-50 text-amber-700 text-xs inline-flex items-center gap-1">
-                      <Percent className="w-3 h-3" /> {t('defect_rate')}: {detail.defect_rate}%
+                      <Percent className="w-3 h-3" /> {t('defect_rate')}: {detailDefectRate.toFixed(1)}%
                     </span>
                     <span className="px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs inline-flex items-center gap-1">
                       <Gauge className="w-3 h-3" /> {t('uph')}: {detail.uph || '-'}
@@ -226,13 +301,13 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                       <span className="text-gray-500">{t('injection_defect_summary')}</span><span className="font-mono text-right">{detail.injection_defect?.toLocaleString()}</span>
                       <span className="text-gray-500">{t('processing_defect_summary')}</span><span className="font-mono text-right">{detail.processing_defect?.toLocaleString()}</span>
                       <span className="text-gray-500">{t('incoming_defect_summary')}</span><span className="font-mono text-right">{detail.incoming_defect_qty?.toLocaleString()}</span>
-                      <span className="text-gray-500">{t('total_defect_summary')}</span><span className="font-mono text-right">{detail.total_defect_qty?.toLocaleString()}</span>
+                      <span className="text-gray-500">{t('total_defect_summary')}</span><span className="font-mono text-right">{detailTotalDefectQty.toLocaleString()}</span>
                       <span className="text-gray-500">{t('total_time_summary')}</span><span className="font-mono text-right">{detail.total_time ? `${detail.total_time}${t('minutes_unit')}` : '-'}</span>
                       <span className="text-gray-500">{t('operation_time_summary')}</span><span className="font-mono text-right">{detail.operation_time ? `${detail.operation_time}${t('minutes_unit')}` : '-'}</span>
                       <span className="text-gray-500">{t('idle_time_summary')}</span><span className="font-mono text-right">{detail.idle_time ? `${detail.idle_time}${t('minutes_unit')}` : '-'}</span>
                       <span className="text-gray-500">{t('workers_summary')}</span><span className="font-mono text-right">{detail.workers}{t('people_unit')}</span>
                       <span className="text-gray-500">{t('achievement_rate_summary')}</span><span className="font-mono text-right">{detail.achievement_rate}%</span>
-                      <span className="text-gray-500">{t('defect_rate_summary')}</span><span className="font-mono text-right">{detail.defect_rate}%</span>
+                      <span className="text-gray-500">{t('defect_rate_summary')}</span><span className="font-mono text-right">{detailDefectRate.toFixed(1)}%</span>
                       <span className="text-gray-500">UPH</span><span className="font-mono text-right">{detail.uph || '-'}</span>
                       <span className="text-gray-500">UPPH</span><span className="font-mono text-right">{detail.upph || '-'}</span>
                     </div>
