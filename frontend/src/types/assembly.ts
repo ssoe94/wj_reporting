@@ -77,3 +77,10 @@ export interface AssemblyProduct {
   part_no: string;
   process_line?: string;
 }
+
+export interface AssemblyReportListResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: AssemblyReport[];
+}

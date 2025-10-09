@@ -1,9 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import type { AssemblyReport, AssemblyReportFilters, AssemblyReportSummary } from '../types/assembly';
+import type {
+  AssemblyReport,
+  AssemblyReportFilters,
+  AssemblyReportSummary,
+  AssemblyReportListResponse
+} from '../types/assembly';
 
 export const useAssemblyReports = (filters: AssemblyReportFilters = {}) => {
-  return useQuery({
+  return useQuery<AssemblyReportListResponse>({
     queryKey: ['assembly-reports', filters],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -12,12 +17,13 @@ export const useAssemblyReports = (filters: AssemblyReportFilters = {}) => {
           params.append(key, value.toString());
         }
       });
-      
-      const response = await api.get(`/assembly/reports/?${params}`);
+
+      const response = await api.get<AssemblyReportListResponse>(`/assembly/reports/?${params}`);
       return response.data;
     },
     staleTime: 60_000,
-    keepPreviousData: true,
+    gcTime: 5 * 60_000,
+    placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,
   });
 };
