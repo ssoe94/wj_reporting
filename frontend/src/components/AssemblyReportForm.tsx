@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader } from './ui/card';
@@ -176,9 +176,14 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     [outsourcingDefects]
   );
 
+  const totalIncoming = React.useMemo(
+    () => Object.values(incomingDefectsDetail).reduce<number>((a, b) => a + (b === '' ? 0 : (Number(b) || 0)), 0),
+    [incomingDefectsDetail]
+  );
+
   // 자동 계산 로직
   const calculatedValues = React.useMemo(() => {
-    const inj = Number(formData.injection_defect) || 0;
+    const inj = totalIncoming;
     const out = totalOutsourcingDefects;
     const proc = totalProcessingDefects;
     const totalDefects = inj + out + proc;
@@ -215,9 +220,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       operationRate,
       achievementRate
     };
-  }, [formData, totalProcessingDefects, totalOutsourcingDefects]);
-
-  const totalIncoming = React.useMemo(() => Object.values(incomingDefectsDetail).reduce<number>((a,b)=> a+(b===''?0:(Number(b)||0)),0), [incomingDefectsDetail]);
+  }, [formData, totalProcessingDefects, totalOutsourcingDefects, totalIncoming]);
   const totalDefectsNow = totalIncoming + totalProcessingDefects + totalOutsourcingDefects;
   const denomForRate = Math.max(1, (Number(formData.input_qty)||0) || ((Number(formData.actual_qty)||0) + totalDefectsNow));
   const badgeClassFor = (sum: number) => {
@@ -226,6 +229,15 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     if (pct <= 5) return 'bg-amber-50 text-amber-700';
     return 'bg-red-50 text-red-700';
   };
+
+  useEffect(() => {
+    setFormData(prev => {
+      if (prev.injection_defect === totalIncoming) {
+        return prev;
+      }
+      return { ...prev, injection_defect: totalIncoming };
+    });
+  }, [totalIncoming]);
 
   const handleChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -261,7 +273,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     // 확인 다이얼로그: 계획 대비 달성률, 불량 안내
     const plan = Number(formData.plan_qty)||0;
     const actual = Number(formData.actual_qty)||0;
-    const totalDefects = (Number(formData.injection_defect)||0) + totalOutsourcingDefects + totalProcessingDefects;
+    const totalDefects = totalIncoming + totalOutsourcingDefects + totalProcessingDefects;
     const rate = plan > 0 ? ((actual / plan) * 100).toFixed(1) : '0.0';
     const confirmMsg = lang==='zh'
       ? `计划数量对比良品数量为 ${rate}% 。不良数量 ${totalDefects} 件。是否保存？`
@@ -277,6 +289,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       // 새로운 동적 불량 데이터 추가
       payload.processing_defects_dynamic = processingDefects;
       payload.outsourcing_defects_dynamic = outsourcingDefects;
+      payload.injection_defect = totalIncoming;
       // 빈 문자열은 0으로 변환하여 서버로 전송
       // 동적 불량값을 기존 필드에 설정
       payload.processing_defect = totalProcessingDefects;

@@ -359,18 +359,21 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                               </tr>
                             );
                           }
-                          return pr.map((item: any, idx: number) => (
+                          return pr.map((item: any, idx: number) => {
+                            const amount = safeNumber(item.quantity);
+                            return (
                             <tr key={idx} className="odd:bg-gray-50">
-                              <td className="px-3 py-1 text-gray-700">{item.defect_type}</td>
-                              <td className="px-3 py-1 text-right font-mono">{item.quantity}</td>
+                              <td className="px-3 py-1 text-gray-700">{item.type ?? item.defect_type ?? '-'}</td>
+                              <td className="px-3 py-1 text-right font-mono">{amount.toLocaleString()}</td>
                             </tr>
-                          ));
+                            );
+                          });
                         })()}
                         {(detail as any)?.processing_defects_dynamic?.length > 0 && (
                           <tr className="bg-gray-100">
                             <td className="px-3 py-1 font-semibold">{t('sum')}</td>
                             <td className="px-3 py-1 text-right font-mono font-semibold">
-                              {((detail as any)?.processing_defects_dynamic || []).reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)}
+                              {((detail as any)?.processing_defects_dynamic || []).reduce((sum: number, item: any) => sum + safeNumber(item.quantity), 0).toLocaleString()}
                             </td>
                           </tr>
                         )}
@@ -392,18 +395,21 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                               </tr>
                             );
                           }
-                          return out.map((item: any, idx: number) => (
+                          return out.map((item: any, idx: number) => {
+                            const amount = safeNumber(item.quantity);
+                            return (
                             <tr key={idx} className="odd:bg-gray-50">
-                              <td className="px-3 py-1 text-gray-700">{item.defect_type}</td>
-                              <td className="px-3 py-1 text-right font-mono">{item.quantity}</td>
+                              <td className="px-3 py-1 text-gray-700">{item.type ?? item.defect_type ?? '-'}</td>
+                              <td className="px-3 py-1 text-right font-mono">{amount.toLocaleString()}</td>
                             </tr>
-                          ));
+                            );
+                          });
                         })()}
                         {(detail as any)?.outsourcing_defects_dynamic?.length > 0 && (
                           <tr className="bg-gray-100">
                             <td className="px-3 py-1 font-semibold">{t('sum')}</td>
                             <td className="px-3 py-1 text-right font-mono font-semibold">
-                              {((detail as any)?.outsourcing_defects_dynamic || []).reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)}
+                              {((detail as any)?.outsourcing_defects_dynamic || []).reduce((sum: number, item: any) => sum + safeNumber(item.quantity), 0).toLocaleString()}
                             </td>
                           </tr>
                         )}
