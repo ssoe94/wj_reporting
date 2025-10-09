@@ -109,11 +109,11 @@ export default function QualityReport() {
     e.preventDefault();
     // 검증
     if (!form.report_dt) {
-      toast.error(lang === 'zh' ? '请选择 报告日期时间' : '보고일시를 선택하세요');
+      toast.error(t('quality.report_dt_required'));
       return;
     }
     if (!form.model || !form.part_no) {
-      toast.error(lang === 'zh' ? '请填写 型号/Part No.' : '모델/Part No.를 입력하세요');
+      toast.error(t('quality.model_part_no_required'));
       return;
     }
     (async () => {
@@ -136,7 +136,7 @@ export default function QualityReport() {
         } as any;
 
         const { data } = await api.post('/quality/reports/', payload);
-        toast.success(lang === 'zh' ? '已保存' : '저장되었습니다');
+        toast.success(t('save_success'));
         setRecords(prev => [{ ...data, saved_at: new Date().toISOString() }, ...prev]);
         setForm({
           report_dt: '',
@@ -153,7 +153,7 @@ export default function QualityReport() {
           disposition: '',
         });
       } catch (err: any) {
-        toast.error(lang === 'zh' ? '保存失败' : '저장에 실패했습니다');
+        toast.error(t('save_fail'));
       }
     })();
   };
@@ -164,26 +164,26 @@ export default function QualityReport() {
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm mb-6">
         <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-3">
           <History className="w-5 h-5 text-rose-500" />
-          <h2 className="text-base font-semibold text-gray-800">{t('quality_history')}</h2>
+          <h2 className="text-base font-semibold text-gray-800">{t('quality.history_title')}</h2>
         </div>
         <div className="px-4 pt-6 space-y-3">
           {/* 필터 */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
             <div>
-              <Label>{t('date_from')}</Label>
+              <Label>{t('start_date')}</Label>
               <Input type="date" value={filters.dateFrom} onChange={e=>{ setPage(1); setFilters(f=>({ ...f, dateFrom: e.target.value })); }} />
             </div>
             <div>
-              <Label>{t('date_to')}</Label>
+              <Label>{t('end_date')}</Label>
               <Input type="date" value={filters.dateTo} onChange={e=>{ setPage(1); setFilters(f=>({ ...f, dateTo: e.target.value })); }} />
             </div>
             <div>
               <Label>{t('model')}</Label>
-              <Input value={filters.model} onChange={e=>{ setPage(1); setFilters(f=>({ ...f, model: e.target.value })); }} placeholder="24TL510…" />
+              <Input value={filters.model} onChange={e=>{ setPage(1); setFilters(f=>({ ...f, model: e.target.value })); }} placeholder={t('quality.model_placeholder')} />
             </div>
             <div>
-              <Label>PART NO.</Label>
-              <Input value={filters.part_no} onChange={e=>{ setPage(1); setFilters(f=>({ ...f, part_no: e.target.value })); }} placeholder="ABJ76507616" />
+              <Label>{t('part_no')}</Label>
+              <Input value={filters.part_no} onChange={e=>{ setPage(1); setFilters(f=>({ ...f, part_no: e.target.value })); }} placeholder={t('quality.part_no_placeholder')} />
             </div>
             <div />
           </div>
@@ -194,18 +194,18 @@ export default function QualityReport() {
                 <thead className="bg-slate-100 whitespace-nowrap">
                   <tr>
                     <th className="px-3 py-2 text-center">{t('date')}</th>
-                    <th className="px-3 py-2 text-center">{t('quality_section')}</th>
+                    <th className="px-3 py-2 text-center">{t('quality.section')}</th>
                     <th className="px-3 py-2 text-center">{t('model')}</th>
-                    <th className="px-3 py-2 text-center">PART NO.</th>
-                    <th className="px-3 py-2 text-center">{t('lot_qty')}</th>
-                    <th className="px-3 py-2 text-center">{t('defect_rate_label')}</th>
-                    <th className="px-3 py-2 text-center">{t('judgement_result')}</th>
+                    <th className="px-3 py-2 text-center">{t('part_no')}</th>
+                    <th className="px-3 py-2 text-center">{t('quality.lot_size')}</th>
+                    <th className="px-3 py-2 text-center">{t('quality.defect_rate')}</th>
+                    <th className="px-3 py-2 text-center">{t('quality.judgement')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {view.length === 0 ? (
                     <tr>
-                      <td className="px-3 py-6 text-center text-gray-400" colSpan={7}>No data</td>
+                      <td className="px-3 py-6 text-center text-gray-400" colSpan={7}>{t('no_data')}</td>
                     </tr>
                   ) : (
                     view.map((r, idx) => (
@@ -226,9 +226,9 @@ export default function QualityReport() {
           </div>
           {/* 페이지네이션 */}
           <div className="flex items-center justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={()=> setPage(p=> Math.max(1, p-1))} disabled={page<=1}>Prev</Button>
+            <Button type="button" variant="secondary" onClick={()=> setPage(p=> Math.max(1, p-1))} disabled={page<=1}>{t('quality.prev_page')}</Button>
             <span className="text-xs text-gray-500">{page} / {totalPages}</span>
-            <Button type="button" variant="secondary" onClick={()=> setPage(p=> Math.min(totalPages, p+1))} disabled={page>=totalPages}>Next</Button>
+            <Button type="button" variant="secondary" onClick={()=> setPage(p=> Math.min(totalPages, p+1))} disabled={page>=totalPages}>{t('quality.next_page')}</Button>
           </div>
         </div>
       </div>
@@ -244,7 +244,7 @@ export default function QualityReport() {
         {/* 상단 정보: 첫 번째 행 5열 (보고일시/보고부문/사출기/모델/PART NO.) */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
-            <Label htmlFor="report_dt">{t('report_datetime')}</Label>
+            <Label htmlFor="report_dt">{t('quality.report_datetime')}</Label>
             <DateTimeField
               value={form.report_dt || ''}
               onChange={(v)=> handleChange('report_dt', v)}
@@ -253,32 +253,32 @@ export default function QualityReport() {
             />
           </div>
           <div>
-            <Label htmlFor="section">{t('quality_section')}</Label>
+            <Label htmlFor="section">{t('quality.section')}</Label>
             <select
               id="section"
               value={form.section}
               onChange={(e)=>handleChange('section', e.target.value)}
               className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500"
             >
-              <option value="LQC_INJ">LQC - {lang==='zh'?'注塑':'사출'}</option>
-              <option value="LQC_ASM">LQC - {lang==='zh'?'加工':'가공'}</option>
+              <option value="LQC_INJ">LQC - {t('quality.section_injection')}</option>
+              <option value="LQC_ASM">LQC - {t('quality.section_assembly')}</option>
               <option value="IQC">IQC</option>
               <option value="OQC">OQC</option>
               <option value="CS">CS</option>
             </select>
           </div>
           <div>
-            <Label htmlFor="machineId">{lang==='zh'?'注塑机':'사출기'}</Label>
+            <Label htmlFor="machineId">{t('machine')}</Label>
             <select
               id="machineId"
               value={form.machineId}
               onChange={(e) => handleChange('machineId', e.target.value)}
               className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500"
             >
-              <option value="">{lang==='zh'?'选择注塑机':'사출기 선택'}</option>
+              <option value="">{t('quality.select_machine')}</option>
               {machines.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {`${m.id}${lang === 'zh' ? '号机' : '호기'} - ${m.ton}T`}
+                  {t('quality.machine_option', {id: m.id, ton: m.ton})}
                 </option>
               ))}
             </select>
@@ -335,7 +335,7 @@ export default function QualityReport() {
             />
           </div>
           <div>
-            <Label>PART NO.</Label>
+            <Label>{t('part_no')}</Label>
             <Autocomplete<PartSpec | { isAddNew: boolean; part_no: string } | { isAddNewForModel: boolean }>
               options={(() => {
                 const baseOptions = selectedModelDesc
@@ -451,7 +451,7 @@ export default function QualityReport() {
                 }
               }}
               value={selectedPartSpec}
-              renderInput={(params) => <TextField {...params} size="small" placeholder={`Part No. ${t('input_or_select')}`} />}
+              renderInput={(params) => <TextField {...params} size="small" placeholder={t('quality.part_no_input_or_select')} />}
             />
           </div>
         </div>
@@ -464,23 +464,23 @@ export default function QualityReport() {
           return (
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
-                <Label htmlFor="lot_qty">{t('lot_qty')}</Label>
+                <Label htmlFor="lot_qty">{t('quality.lot_size')}</Label>
                 <Input id="lot_qty" value={form.lot_qty} onChange={(e)=>handleChange('lot_qty', e.target.value)} placeholder="400" />
               </div>
               <div>
-                <Label htmlFor="inspection_qty">{t('inspection_qty')}</Label>
-                <Input id="inspection_qty" type="number" inputMode="numeric" min={0} value={form.inspection_qty} onChange={(e)=>handleChange('inspection_qty', e.target.value)} placeholder={lang==='zh'?'检验数':'검사수'} />
+                <Label htmlFor="inspection_qty">{t('quality.inspection_qty')}</Label>
+                <Input id="inspection_qty" type="number" inputMode="numeric" min={0} value={form.inspection_qty} onChange={(e)=>handleChange('inspection_qty', e.target.value)} placeholder={t('quality.inspection_qty_placeholder')} />
               </div>
               <div>
-                <Label htmlFor="defect_qty">{t('defect_qty')}</Label>
-                <Input id="defect_qty" type="number" inputMode="numeric" min={0} value={form.defect_qty} onChange={(e)=>handleChange('defect_qty', e.target.value)} placeholder={lang==='zh'?'不良数':'불량수'} />
+                <Label htmlFor="defect_qty">{t('quality.defect_qty')}</Label>
+                <Input id="defect_qty" type="number" inputMode="numeric" min={0} value={form.defect_qty} onChange={(e)=>handleChange('defect_qty', e.target.value)} placeholder={t('quality.defect_qty_placeholder')} />
               </div>
               <div>
-                <Label htmlFor="defect_rate">{t('defect_rate_label')}</Label>
+                <Label htmlFor="defect_rate">{t('quality.defect_rate')}</Label>
                 <Input id="defect_rate" value={insp===0 && defect===0 ? '' : `${rate}%`} disabled className="bg-gray-100" />
               </div>
               <div>
-                <Label htmlFor="judgement">{t('judgement_result')}</Label>
+                <Label htmlFor="judgement">{t('quality.judgement')}</Label>
                 <select
                   id="judgement"
                   value={form.judgement}
@@ -498,12 +498,12 @@ export default function QualityReport() {
         {/* 불량 현상 / 처리 방식: 2열 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="phenomenon">{t('defect_phenomenon')}</Label>
+            <Label htmlFor="phenomenon">{t('quality.defect_phenomenon')}</Label>
             <Textarea id="phenomenon" rows={3} value={form.phenomenon} onChange={(e)=>handleChange('phenomenon', e.target.value)} />
           </div>
           <div>
-            <Label htmlFor="disposition">{t('disposition')}</Label>
-            <Textarea id="disposition" rows={3} value={form.disposition} onChange={(e)=>handleChange('disposition', e.target.value)} placeholder={lang==='zh' ? '需返工后使用' : '재작업 후 사용 필요'} />
+            <Label htmlFor="disposition">{t('quality.disposition')}</Label>
+            <Textarea id="disposition" rows={3} value={form.disposition} onChange={(e)=>handleChange('disposition', e.target.value)} placeholder={t('quality.disposition_placeholder')} />
           </div>
         </div>
 
@@ -526,11 +526,11 @@ export default function QualityReport() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
-            <p className="text-xs text-gray-500">{lang==='zh' ? '必填: Part No / Model Code / Description' : '필수: Part No / Model Code / Description'}</p>
+            <p className="text-xs text-gray-500">{t('quality.add_part_required_fields')}</p>
             <div className="grid grid-cols-2 gap-3">
-              <input placeholder="Part No" className="border rounded px-2 py-1 col-span-2 bg-green-50 border-green-300" value={newPartForm.part_no} onChange={(e)=> setNewPartForm((f: any)=> ({...f, part_no: e.target.value}))} />
-              <input placeholder="Model Code" className={`border rounded px-2 py-1 col-span-2${prefillOriginal?.model_code ? ' bg-yellow-50 border-yellow-300' : ''}`} value={newPartForm.model_code} onChange={(e)=> setNewPartForm((f:any)=> ({...f, model_code: e.target.value}))} />
-              <input placeholder="Description" className={`border rounded px-2 py-1 col-span-2${prefillOriginal?.description ? ' bg-yellow-50 border-yellow-300' : ''}`} value={newPartForm.description} onChange={(e)=> setNewPartForm((f:any)=> ({...f, description: e.target.value}))} />
+              <input placeholder={t('part_no')} className="border rounded px-2 py-1 col-span-2 bg-green-50 border-green-300" value={newPartForm.part_no} onChange={(e)=> setNewPartForm((f: any)=> ({...f, part_no: e.target.value}))} />
+              <input placeholder={t('quality.model_code')} className={`border rounded px-2 py-1 col-span-2${prefillOriginal?.model_code ? ' bg-yellow-50 border-yellow-300' : ''}`} value={newPartForm.model_code} onChange={(e)=> setNewPartForm((f:any)=> ({...f, model_code: e.target.value}))} />
+              <input placeholder={t('description')} className={`border rounded px-2 py-1 col-span-2${prefillOriginal?.description ? ' bg-yellow-50 border-yellow-300' : ''}`} value={newPartForm.description} onChange={(e)=> setNewPartForm((f:any)=> ({...f, description: e.target.value}))} />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button className="px-3 py-1 text-sm" onClick={()=>setShowAddPartModal(false)}>{t('cancel')}</button>
@@ -540,7 +540,7 @@ export default function QualityReport() {
                   const modelCode = String(newPartForm.model_code || '').trim();
                   const description = String(newPartForm.description || '').trim();
                   if (!partNo || !modelCode || !description) {
-                    toast.error(lang==='zh' ? '请输入 Part No / Model Code / Description' : 'Part No / Model Code / Description을 입력하세요');
+                    toast.error(t('quality.part_model_desc_required'));
                     return;
                   }
                   const newPart = await api.post('/assembly/partspecs/create-or-update/',{ part_no: partNo, model_code: modelCode, description });
@@ -569,7 +569,3 @@ export default function QualityReport() {
     </>
   );
 }
-
-
-
-

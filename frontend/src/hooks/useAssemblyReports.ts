@@ -16,6 +16,9 @@ export const useAssemblyReports = (filters: AssemblyReportFilters = {}) => {
       const response = await api.get(`/assembly/reports/?${params}`);
       return response.data;
     },
+    staleTime: 60_000,
+    keepPreviousData: true,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -26,6 +29,8 @@ export const useAssemblyReportDates = () => {
       const response = await api.get('/assembly/reports/dates/');
       return response.data as string[];
     },
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 };
 

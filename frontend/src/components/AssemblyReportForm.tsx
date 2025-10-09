@@ -520,16 +520,29 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   if (prefix9.length === 9) {
                     const { data } = await api.get('/assembly/products/search-parts/', { params: { search: prefix9, prefix_only: 1 } });
                     let all = Array.isArray(data) ? data : [];
-                    list = all.filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9));
-                    if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc.model_code);
+                    list = all
+                      .map((it: any) => ({
+                        ...it,
+                        source_system: it?.source_system || 'assembly',
+                      }))
+                      .filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9));
+                    if (selectedModelDesc) {
+                      const selectedCode = (selectedModelDesc.model_code || '').toUpperCase();
+                      list = list.filter((it: any) => {
+                        const candidateModel = String(it.model_code ?? it.model ?? '').toUpperCase();
+                        return candidateModel === selectedCode;
+                      });
+                    }
                     if (list.length === 0) {
                       const res = await api.get('/parts/', { params: { search: prefix9, page_size: 10 } });
                       const inj = Array.isArray(res?.data?.results) ? res.data.results : [];
                       list = inj
                         .filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9))
                         .map((it: any) => ({
+                          id: it.id,
                           part_no: it.part_no,
                           model: it.model_code,
+                          model_code: it.model_code,
                           description: it.description,
                           mold_type: it.mold_type,
                           color: it.color,
@@ -540,28 +553,103 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                           cycle_time_sec: it.cycle_time_sec,
                           cavity: it.cavity,
                           valid_from: it.valid_from,
+                          source_system: 'injection',
                         }));
-                      if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc.model_code);
+                      if (selectedModelDesc) {
+                        const selectedCode = (selectedModelDesc.model_code || '').toUpperCase();
+                        list = list.filter((it: any) => {
+                          const candidateModel = String(it.model_code ?? it.model ?? '').toUpperCase();
+                          return candidateModel === selectedCode;
+                        });
+                      }
                     }
                   }
                   setPrefillSimilar(null);
                   if (list.length > 0) {
                     const top = list[0];
-                    const promptText = t('similar_parts_prompt').replace('{first}', top.part_no).replace('{count}', String(list.length));
+                    const promptText = t('similar_parts_prompt')
+                      .replace('{first}', top.part_no)
+                      .replace('{count}', String(list.length));
                     const ok = window.confirm(promptText);
                     if (ok) {
+                      let detail: any = top;
+                      const maybeNumericId = typeof top?.id === 'number' || /^[0-9]+$/.test(String(top?.id || ''));
+                      const sourceSystem = String(top?.source_system || '').toLowerCase();
+                      const needsEnhancement = (obj: any) =>
+                        ['mold_type', 'color', 'resin_type', 'resin_code', 'net_weight_g', 'sr_weight_g', 'cycle_time_sec', 'cavity'].every(
+                          (key) => obj[key] === null || typeof obj[key] === 'undefined' || obj[key] === ''
+                        );
+
+                      if (needsEnhancement(detail) && sourceSystem === 'injection' && maybeNumericId) {
+                        const targetId = Number(top.id);
+                        try {
+                          const { data: detailData } = await api.get(`/injection/parts/${targetId}/`);
+                          if (detailData) detail = detailData;
+                        } catch (error: any) {
+                          if (error?.response?.status !== 404) {
+                            console.warn('Failed to fetch injection part spec detail for prefill', error);
+                          }
+                          try {
+                            const { data: searchData } = await api.get('/parts/', {
+                              params: { search: top.part_no, page_size: 1 },
+                            });
+                            const pick = Array.isArray(searchData?.results)
+                              ? searchData.results.find((it: any) =>
+                                  String(it.part_no || '').toUpperCase() === String(top.part_no || '').toUpperCase()
+                                )
+                              : null;
+                            if (pick) detail = pick;
+                          } catch (fallbackError: any) {
+                            if (fallbackError?.response?.status !== 404) {
+                              console.warn('Failed to fetch part spec detail for prefill', fallbackError);
+                            }
+                          }
+                        }
+                      } else if (needsEnhancement(detail) && sourceSystem === 'assembly' && maybeNumericId) {
+                        try {
+                          const { data: detailData } = await api.get(`/assembly/partspecs/${Number(top.id)}/`);
+                          if (detailData) detail = detailData;
+                        } catch (error: any) {
+                          if (error?.response?.status !== 404) {
+                            console.warn('Failed to fetch assembly part spec detail for prefill', error);
+                          }
+                        }
+                      }
+                      if (needsEnhancement(detail) && top?.part_no) {
+                        try {
+                          const { data: searchData } = await api.get('/parts/', {
+                            params: { search: top.part_no, page_size: 1 },
+                          });
+                          const pick = Array.isArray(searchData?.results)
+                            ? searchData.results.find((it: any) =>
+                                String(it.part_no || '').toUpperCase() === String(top.part_no || '').toUpperCase()
+                              )
+                            : null;
+                          if (pick) detail = pick;
+                        } catch (fallbackError: any) {
+                          if (fallbackError?.response?.status !== 404) {
+                            console.warn('Failed to fetch part spec detail for prefill', fallbackError);
+                          }
+                        }
+                      }
+                      const normalize = (value: any) => {
+                        if (value === null || typeof value === 'undefined') return '';
+                        if (typeof value === 'number') return String(value);
+                        return String(value);
+                      };
+                      const resolveModelCode = normalize(detail.model_code ?? detail.model ?? selectedModelDesc?.model_code ?? '');
                       prefillData = {
-                        model_code: top.model,
-                        description: top.description,
-                        mold_type: (top as any).mold_type,
-                        color: (top as any).color,
-                        resin_type: (top as any).resin_type,
-                        resin_code: (top as any).resin_code,
-                        net_weight_g: (top as any).net_weight_g,
-                        sr_weight_g: (top as any).sr_weight_g,
-                        cycle_time_sec: (top as any).cycle_time_sec,
-                        cavity: (top as any).cavity,
-                        valid_from: (top as any).valid_from,
+                        model_code: resolveModelCode,
+                        description: normalize(detail.description ?? selectedModelDesc?.description ?? ''),
+                        mold_type: normalize(detail.mold_type),
+                        color: normalize(detail.color),
+                        resin_type: normalize(detail.resin_type),
+                        resin_code: normalize(detail.resin_code),
+                        net_weight_g: normalize(detail.net_weight_g),
+                        sr_weight_g: normalize(detail.sr_weight_g),
+                        cycle_time_sec: normalize(detail.cycle_time_sec),
+                        cavity: normalize(detail.cavity),
+                        valid_from: normalize(detail.valid_from) || new Date().toISOString().slice(0, 10),
                       } as any;
                     }
                   }

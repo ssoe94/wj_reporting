@@ -14,8 +14,10 @@ import {
 
 // 데이터 포인트의 타입 정의
 interface AssemblyPerformanceData {
+  id: number;
   date: string;
   part_no: string;
+  line_no: string;
   actual_qty: number;
   uph: number;
   upph: number;
@@ -23,7 +25,7 @@ interface AssemblyPerformanceData {
 
 interface Props {
   data: AssemblyPerformanceData[];
-  onBarClick?: (date: string, partNo: string) => void;
+  onBarClick?: (record: AssemblyPerformanceData) => void;
 }
 
 export default function AssemblyHistoricalPerformanceChart({ data, onBarClick }: Props) {
@@ -56,10 +58,10 @@ export default function AssemblyHistoricalPerformanceChart({ data, onBarClick }:
   }));
 
   // 바차트 클릭 핸들러
-  const handleBarClick = (data: any) => {
-    if (onBarClick && data && data.activePayload && data.activePayload[0]) {
-      const payload = data.activePayload[0].payload;
-      onBarClick(payload.date, payload.part_no);
+  const handleBarClick = (event: any) => {
+    if (onBarClick && event && event.activePayload && event.activePayload[0]) {
+      const payload = event.activePayload[0].payload as AssemblyPerformanceData & { label: string };
+      onBarClick(payload);
     }
   };
 

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Button } from '../../components/ui/button';
-import { useExportAssemblyReports, useAssemblyReports } from '../../hooks/useAssemblyReports';
+import { useExportAssemblyReports, useAssemblyReportDates } from '../../hooks/useAssemblyReports';
 import api from '../../lib/api';
 import AssemblyProdCalendar from '../../components/AssemblyProdCalendar';
 import AssemblyDateRecordsTable from '../../components/AssemblyDateRecordsTable';
@@ -13,29 +13,29 @@ import { useLang } from '../../i18n';
 export default function AssemblyRecordsPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const exportMutation = useExportAssemblyReports();
-  const { data: reportsData } = useAssemblyReports();
+  const { data: reportDates = [], isLoading: isDatesLoading } = useAssemblyReportDates();
   const { t } = useLang();
   const location = useLocation();
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const d = params.get('date');
-    if (d) setSelectedDate(d);
+    if (d) {
+      setSelectedDate(d);
+    }
   }, [location.search]);
 
-  // 컴포넌트 마운트 시 최근 날짜로 자동 선택
   useEffect(() => {
-    const reports = reportsData?.results || [];
-    if (reports.length > 0 && !selectedDate) {
-      // 날짜순으로 정렬해서 가장 최근 날짜 선택
-      const sortedDates = reports
-        .map((r: any) => r.date)
-        .sort((a: string, b: string) => b.localeCompare(a)); // 내림차순 정렬
-      if (sortedDates.length > 0) {
-        setSelectedDate(sortedDates[0]);
-      }
+    if (!selectedDate && reportDates.length > 0) {
+      setSelectedDate(reportDates[0]);
     }
-  }, [reportsData, selectedDate]);
+  }, [reportDates, selectedDate]);
+  
+  useEffect(() => {
+    if (selectedDate && reportDates.length > 0 && !reportDates.includes(selectedDate)) {
+      setSelectedDate(reportDates[0]);
+    }
+  }, [reportDates, selectedDate]);
 
   const handleExport = async () => {
     try {
@@ -91,14 +91,16 @@ export default function AssemblyRecordsPage() {
             </>
           ) : (
             <div className="flex items-center justify-center h-48">
-              <p className="text-gray-400 text-lg">날짜를 선택하면 해당 날짜의 생산 기록을 확인할 수 있습니다</p>
+              <p className="text-gray-400 text-lg">
+                {isDatesLoading ? '날짜 목록을 불러오는 중입니다…' : '날짜를 선택하면 해당 날짜의 생산 기록을 확인할 수 있습니다'}
+              </p>
             </div>
           )}
         </div>
 
         {/* 오른쪽: 캘린더 */}
         <div className="flex-shrink-0 space-y-4 mt-9 md:mt-11">
-          <AssemblyProdCalendar selected={selectedDate} onSelect={setSelectedDate} />
+          <AssemblyProdCalendar selected={selectedDate} onSelect={setSelectedDate} availableDates={reportDates} />
 
           <div className="flex justify-center gap-2">
             <input

@@ -280,8 +280,10 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
         data = []
         for report in queryset:
             data.append({
+                'id': report.id,
                 'date': report.date,
                 'part_no': report.part_no,
+                'line_no': report.line_no,
                 'actual_qty': report.actual_qty,
                 'uph': report.uph,  # 모델의 property 사용
                 'upph': report.upph,  # 모델의 property 사용

@@ -2,20 +2,19 @@ import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { ko, zhCN } from 'date-fns/locale';
 import dayjs from 'dayjs';
-import { useAssemblyReportDates } from '../hooks/useAssemblyReports';
 import { useLang } from '../i18n';
 
 interface Props {
   onSelect: (date: string) => void;
   selected: string | null;
+  availableDates?: string[];
 }
 
-export default function AssemblyProdCalendar({ onSelect, selected }: Props) {
-  const { data: dates } = useAssemblyReportDates();
+export default function AssemblyProdCalendar({ onSelect, selected, availableDates }: Props) {
   const { lang } = useLang();
   
   // 날짜 목록을 Set으로 변환
-  const datesWithData = new Set(dates || []);
+  const datesWithData = new Set(availableDates || []);
 
   const modifiers = {
     hasData: (d: Date) => datesWithData.has(dayjs(d).format('YYYY-MM-DD')),

@@ -53,7 +53,22 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   const [selectedModelDesc, setSelectedModelDesc] = useState<PartSpec | null>(null);
   const [selectedPartSpec, setSelectedPartSpec] = useState<PartSpec | null>(null);
   const [showAddPartModal, setShowAddPartModal] = useState(false);
-  const [prefillSimilar, setPrefillSimilar] = useState<Partial<PartSpec> | null>(null);
+  const [, setPrefillSimilar] = useState<Partial<PartSpec> | null>(null);
+  const [newPartForm, setNewPartForm] = useState({
+    part_no: '',
+    model_code: '',
+    description: '',
+    mold_type: '',
+    color: '',
+    resin_type: '',
+    resin_code: '',
+    net_weight_g: '',
+    sr_weight_g: '',
+    cycle_time_sec: '',
+    cavity: '',
+    valid_from: '',
+  });
+  const [prefillOriginal, setPrefillOriginal] = useState<any | null>(null);
   const { data: searchResults = [] } = usePartSpecSearch(productQuery.toUpperCase());
   const { data: modelParts = [] } = usePartListByModel(selectedModelDesc?.model_code);
   const uniqueModelDesc = React.useMemo(() => {
@@ -300,26 +315,36 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
             onInputChange={(_, v) => setProductQuery(v)}
             onChange={async (_, v) => {
               if (v && ('isAddNew' in v || 'isAddNewForModel' in v)) {
+                const desired = (productQuery || '').trim();
+                let prefillData: any = null;
                 try {
-                  const desired = (productQuery || '').trim();
                   const norm = desired.replace(/\s+/g, '').toUpperCase();
                   const prefix9 = norm.slice(0, 9);
-                  let similarCount = 0;
-                  let first: any = null;
+                  let list: any[] = [];
                   if (prefix9.length === 9) {
                     const { data } = await api.get('/assembly/products/search-parts/', { params: { search: prefix9, prefix_only: 1 } });
-                    let list = Array.isArray(data) ? data : [];
+                    list = (Array.isArray(data) ? data : []).map((it: any) => ({
+                      ...it,
+                      source_system: it?.source_system || 'assembly',
+                    }));
                     list = list.filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9));
-                    if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc?.model_code);
-                    // 없으면 injection 파트로 보완 (추가 스펙 포함)
+                    if (selectedModelDesc) {
+                      const selectedCode = (selectedModelDesc.model_code || '').toUpperCase();
+                      list = list.filter((it: any) => {
+                        const candidateModel = String(it.model_code ?? it.model ?? '').toUpperCase();
+                        return candidateModel === selectedCode;
+                      });
+                    }
                     if (list.length === 0) {
                       const res = await api.get('/parts/', { params: { search: prefix9, page_size: 10 } });
                       const inj = Array.isArray(res?.data?.results) ? res.data.results : [];
                       list = inj
                         .filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9))
                         .map((it: any) => ({
+                          id: it.id,
                           part_no: it.part_no,
                           model: it.model_code,
+                          model_code: it.model_code,
                           description: it.description,
                           mold_type: it.mold_type,
                           color: it.color,
@@ -330,21 +355,122 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                           cycle_time_sec: it.cycle_time_sec,
                           cavity: it.cavity,
                           valid_from: it.valid_from,
+                          source_system: 'injection',
                         }));
-                      if (selectedModelDesc) list = list.filter((it: any) => it.model === selectedModelDesc?.model_code);
+                      if (selectedModelDesc) {
+                        const selectedCode = (selectedModelDesc.model_code || '').toUpperCase();
+                        list = list.filter((it: any) => {
+                          const candidateModel = String(it.model_code ?? it.model ?? '').toUpperCase();
+                          return candidateModel === selectedCode;
+                        });
+                      }
                     }
-                    similarCount = list.length;
-                    first = list[0] || null;
                   }
                   setPrefillSimilar(null);
-                  if (similarCount > 0 && first) {
-                    const msg = t('similar_parts_prompt').replace('{first}', first.part_no).replace('{count}', String(similarCount));
+                  if (list.length > 0) {
+                    const first = list[0];
+                    const sourceSystem = String(first?.source_system || '').toLowerCase();
+                    const msg = t('similar_parts_prompt').replace('{first}', first.part_no).replace('{count}', String(list.length));
                     const ok = window.confirm(msg);
-                    if (ok) setPrefillSimilar(first);
+                    if (ok) {
+                      let detail: any = first;
+                      const maybeNumericId = typeof first?.id === 'number' || /^[0-9]+$/.test(String(first?.id || ''));
+                      const needsEnhancement = (obj: any) =>
+                        ['mold_type', 'color', 'resin_type', 'resin_code', 'net_weight_g', 'sr_weight_g', 'cycle_time_sec', 'cavity'].every(
+                          (key) => obj[key] === null || typeof obj[key] === 'undefined' || obj[key] === ''
+                        );
+                      if (needsEnhancement(detail) && sourceSystem === 'injection' && maybeNumericId) {
+                        const targetId = Number(first.id);
+                        try {
+                          const { data: detailData } = await api.get(`/injection/parts/${targetId}/`);
+                          if (detailData) detail = detailData;
+                        } catch (error: any) {
+                          if (error?.response?.status !== 404) {
+                            console.warn('Failed to fetch injection part spec detail for prefill', error);
+                          }
+                          try {
+                            const { data: searchData } = await api.get('/parts/', {
+                              params: { search: first.part_no, page_size: 1 },
+                            });
+                            const pick = Array.isArray(searchData?.results)
+                              ? searchData.results.find((it: any) =>
+                                  String(it.part_no || '').toUpperCase() === String(first.part_no || '').toUpperCase()
+                                )
+                              : null;
+                            if (pick) detail = pick;
+                          } catch (fallbackError: any) {
+                            if (fallbackError?.response?.status !== 404) {
+                              console.warn('Failed to fetch part spec detail for prefill', fallbackError);
+                            }
+                          }
+                        }
+                      } else if (needsEnhancement(detail) && sourceSystem === 'assembly' && maybeNumericId) {
+                        try {
+                          const { data: detailData } = await api.get(`/assembly/partspecs/${Number(first.id)}/`);
+                          if (detailData) detail = detailData;
+                        } catch (error: any) {
+                          if (error?.response?.status !== 404) {
+                            console.warn('Failed to fetch assembly part spec detail for prefill', error);
+                          }
+                        }
+                      }
+                      if (needsEnhancement(detail) && first?.part_no) {
+                        try {
+                          const { data: searchData } = await api.get('/parts/', {
+                            params: { search: first.part_no, page_size: 1 },
+                          });
+                          const pick = Array.isArray(searchData?.results)
+                            ? searchData.results.find((it: any) =>
+                                String(it.part_no || '').toUpperCase() === String(first.part_no || '').toUpperCase()
+                              )
+                            : null;
+                          if (pick) detail = pick;
+                        } catch (fallbackError: any) {
+                          if (fallbackError?.response?.status !== 404) {
+                            console.warn('Failed to fetch part spec detail for prefill', fallbackError);
+                          }
+                        }
+                      }
+                      const normalize = (value: any) => {
+                        if (value === null || typeof value === 'undefined') return '';
+                        if (typeof value === 'number') return String(value);
+                        return String(value);
+                      };
+                      prefillData = {
+                        model_code: normalize(detail.model_code ?? detail.model ?? selectedModelDesc?.model_code ?? ''),
+                        description: normalize(detail.description ?? selectedModelDesc?.description ?? ''),
+                        mold_type: normalize(detail.mold_type),
+                        color: normalize(detail.color),
+                        resin_type: normalize(detail.resin_type),
+                        resin_code: normalize(detail.resin_code),
+                        net_weight_g: normalize(detail.net_weight_g),
+                        sr_weight_g: normalize(detail.sr_weight_g),
+                        cycle_time_sec: normalize(detail.cycle_time_sec),
+                        cavity: normalize(detail.cavity),
+                        valid_from: normalize(detail.valid_from) || new Date().toISOString().slice(0, 10),
+                      };
+                    }
                   }
                 } catch (_) {
-                  setPrefillSimilar(null);
+                  prefillData = null;
                 }
+                setPrefillSimilar(prefillData);
+                const baseForm = {
+                  part_no: desired,
+                  model_code: (prefillData as any)?.model_code || selectedModelDesc?.model_code || '',
+                  description: (prefillData as any)?.description || selectedModelDesc?.description || '',
+                  mold_type: (prefillData as any)?.mold_type || '',
+                  color: (prefillData as any)?.color || '',
+                  resin_type: (prefillData as any)?.resin_type || '',
+                  resin_code: (prefillData as any)?.resin_code || '',
+                  net_weight_g: (prefillData as any)?.net_weight_g ?? '',
+                  sr_weight_g: (prefillData as any)?.sr_weight_g ?? '',
+                  cycle_time_sec: (prefillData as any)?.cycle_time_sec ?? '',
+                  cavity: (prefillData as any)?.cavity ?? '',
+                  valid_from: (prefillData as any)?.valid_from || new Date().toISOString().slice(0, 10),
+                };
+                setNewPartForm(baseForm);
+                setPrefillOriginal(baseForm);
                 setShowAddPartModal(true);
                 return;
               }
@@ -527,89 +653,150 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">새 Part Spec 추가</h3>
+            <p className="text-xs text-gray-500">필수: Part No / Model Code / Description</p>
             <div className="grid grid-cols-2 gap-3">
-              <input 
-                placeholder="Part No" 
-                className="border rounded px-2 py-1 col-span-2" 
-                defaultValue={productQuery}
-                id="newPartNo"
-              />
-              <input placeholder="Model Code" className="border rounded px-2 py-1 col-span-2" id="newModelCode" defaultValue={selectedModelDesc?.model_code || prefillSimilar?.model_code || ''}/>
-              <input placeholder="Description" className="border rounded px-2 py-1 col-span-2" id="newDescription" defaultValue={prefillSimilar?.description || selectedModelDesc?.description || ''}/>
-              <input placeholder="Mold Type" className="border rounded px-2 py-1" id="newMoldType" defaultValue={(prefillSimilar as any)?.mold_type || ''}/>
-              <input placeholder="Color" className="border rounded px-2 py-1" id="newColor" defaultValue={(prefillSimilar as any)?.color || ''}/>
-              <input placeholder="Resin Type" className="border rounded px-2 py-1" id="newResinType" defaultValue={(prefillSimilar as any)?.resin_type || ''}/>
-              <input placeholder="Resin Code" className="border rounded px-2 py-1" id="newResinCode" defaultValue={(prefillSimilar as any)?.resin_code || ''}/>
-              <input placeholder="Net(g)" className="border rounded px-2 py-1" id="newNetWeight" defaultValue={((prefillSimilar as any)?.net_weight_g ?? '') as any}/>
-              <input placeholder="S/R(g)" className="border rounded px-2 py-1" id="newSrWeight" defaultValue={((prefillSimilar as any)?.sr_weight_g ?? '') as any}/>
-              <input placeholder="C/T(초)" className="border rounded px-2 py-1" id="newCycleTime" defaultValue={((prefillSimilar as any)?.cycle_time_sec ?? '') as any}/>
-              <input placeholder="Cavity" className="border rounded px-2 py-1" id="newCavity" defaultValue={((prefillSimilar as any)?.cavity ?? '') as any}/>
-              <input type="date" className="border rounded px-2 py-1" defaultValue={((prefillSimilar as any)?.valid_from || new Date().toISOString().slice(0,10)) as any} id="newValidFrom"/>
+              {(() => {
+                const isEdited = (k: string) => prefillOriginal && String(newPartForm[k as keyof typeof newPartForm] ?? '') !== String(prefillOriginal[k] ?? '');
+                const editedCls = (k: string) => isEdited(k) ? ' bg-blue-50 border-blue-300' : '';
+                const prefilledCls = (k: string) => (prefillOriginal && prefillOriginal[k] && k !== 'part_no') ? ' bg-yellow-50 border-yellow-300' : '';
+                return (
+                  <>
+                    <input
+                      placeholder="Part No (MCK12345678…)"
+                      className={`border rounded px-2 py-1 col-span-2 bg-green-50 border-green-300${editedCls('part_no')}`}
+                      value={newPartForm.part_no}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, part_no: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Model Code (24TL510…)"
+                      className={`border rounded px-2 py-1 col-span-2${prefilledCls('model_code')}${editedCls('model_code')}`}
+                      value={newPartForm.model_code}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, model_code: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Description (C/A, B/C…)"
+                      className={`border rounded px-2 py-1 col-span-2${prefilledCls('description')}${editedCls('description')}`}
+                      value={newPartForm.description}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, description: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Mold Type"
+                      className={`border rounded px-2 py-1${prefilledCls('mold_type')}${editedCls('mold_type')}`}
+                      value={newPartForm.mold_type}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, mold_type: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Color"
+                      className={`border rounded px-2 py-1${prefilledCls('color')}${editedCls('color')}`}
+                      value={newPartForm.color}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, color: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Resin Type"
+                      className={`border rounded px-2 py-1${prefilledCls('resin_type')}${editedCls('resin_type')}`}
+                      value={newPartForm.resin_type}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, resin_type: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Resin Code"
+                      className={`border rounded px-2 py-1${prefilledCls('resin_code')}${editedCls('resin_code')}`}
+                      value={newPartForm.resin_code}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, resin_code: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Net(g)"
+                      className={`border rounded px-2 py-1${prefilledCls('net_weight_g')}${editedCls('net_weight_g')}`}
+                      value={newPartForm.net_weight_g}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, net_weight_g: e.target.value }))}
+                    />
+                    <input
+                      placeholder="S/R(g)"
+                      className={`border rounded px-2 py-1${prefilledCls('sr_weight_g')}${editedCls('sr_weight_g')}`}
+                      value={newPartForm.sr_weight_g}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, sr_weight_g: e.target.value }))}
+                    />
+                    <input
+                      placeholder="C/T(초)"
+                      className={`border rounded px-2 py-1${prefilledCls('cycle_time_sec')}${editedCls('cycle_time_sec')}`}
+                      value={newPartForm.cycle_time_sec}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, cycle_time_sec: e.target.value }))}
+                    />
+                    <input
+                      placeholder="Cavity"
+                      className={`border rounded px-2 py-1${prefilledCls('cavity')}${editedCls('cavity')}`}
+                      value={newPartForm.cavity}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, cavity: e.target.value }))}
+                    />
+                    <input
+                      type="date"
+                      className={`border rounded px-2 py-1${prefilledCls('valid_from')}${editedCls('valid_from')}`}
+                      value={newPartForm.valid_from}
+                      onChange={(e) => setNewPartForm((f) => ({ ...f, valid_from: e.target.value }))}
+                    />
+                  </>
+                );
+              })()}
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="ghost" size="sm" onClick={()=>setShowAddPartModal(false)}>취소</Button>
-              <PermissionButton 
+              <Button variant="ghost" size="sm" onClick={() => setShowAddPartModal(false)}>취소</Button>
+              <PermissionButton
                 permission="can_edit_injection"
                 className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200"
-                onClick={async()=>{
-                try{
-                  const partNo = (document.getElementById('newPartNo') as HTMLInputElement).value;
-                  const modelCode = (document.getElementById('newModelCode') as HTMLInputElement).value;
-                  const description = (document.getElementById('newDescription') as HTMLInputElement).value;
-                  const moldType = (document.getElementById('newMoldType') as HTMLInputElement).value;
-                  const color = (document.getElementById('newColor') as HTMLInputElement).value;
-                  const resinType = (document.getElementById('newResinType') as HTMLInputElement).value;
-                  const resinCode = (document.getElementById('newResinCode') as HTMLInputElement).value;
-                  const netWeight = (document.getElementById('newNetWeight') as HTMLInputElement).value;
-                  const srWeight = (document.getElementById('newSrWeight') as HTMLInputElement).value;
-                  const cycleTime = (document.getElementById('newCycleTime') as HTMLInputElement).value;
-                  const cavity = (document.getElementById('newCavity') as HTMLInputElement).value;
-                  const validFrom = (document.getElementById('newValidFrom') as HTMLInputElement).value;
+                onClick={async () => {
+                  try {
+                    const partNo = newPartForm.part_no.trim();
+                    const modelCode = newPartForm.model_code.trim();
+                    const description = newPartForm.description.trim();
+                    if (!partNo || !modelCode || !description) {
+                      toast.error('Part No / Model Code / Description을 입력하세요');
+                      return;
+                    }
+                    const newPart = await api.post('/parts/', {
+                      part_no: partNo,
+                      model_code: modelCode,
+                      description,
+                      mold_type: newPartForm.mold_type || undefined,
+                      color: newPartForm.color || undefined,
+                      resin_type: newPartForm.resin_type || undefined,
+                      resin_code: newPartForm.resin_code || undefined,
+                      net_weight_g: newPartForm.net_weight_g ? Number(newPartForm.net_weight_g) : null,
+                      sr_weight_g: newPartForm.sr_weight_g ? Number(newPartForm.sr_weight_g) : null,
+                      cycle_time_sec: newPartForm.cycle_time_sec ? Number(newPartForm.cycle_time_sec) : null,
+                      cavity: newPartForm.cavity ? Number(newPartForm.cavity) : null,
+                      valid_from: newPartForm.valid_from || undefined,
+                    });
 
-                  const newPart = await api.post('/parts/',{
-                    part_no: partNo,
-                    model_code: modelCode,
-                    description: description,
-                    mold_type: moldType,
-                    color: color,
-                    resin_type: resinType,
-                    resin_code: resinCode,
-                    net_weight_g: Number(netWeight) || null,
-                    sr_weight_g: Number(srWeight) || null,
-                    cycle_time_sec: Number(cycleTime) || null,
-                    cavity: Number(cavity) || null,
-                    valid_from: validFrom
-                  });
-                  
-                  toast.success('새 Part가 추가되었습니다');
-                  queryClient.invalidateQueries({queryKey:['parts-all']});
-                  queryClient.invalidateQueries({queryKey:['parts-search']});
-                  setShowAddPartModal(false);
-                  
-                  // 새로 생성된 Part를 자동으로 선택
-                  const createdPart = newPart.data;
-                  setSelectedPartSpec(createdPart);
-                  setForm((f) => ({
-                    ...f,
-                    partNo: createdPart.part_no,
-                    model: createdPart.model_code,
-                    type: createdPart.description || '',
-                    resin: createdPart.resin_type || '',
-                    netG: String(createdPart.net_weight_g || ''),
-                    srG: String(createdPart.sr_weight_g || ''),
-                    ct: String(createdPart.cycle_time_sec || ''),
-                  }));
-                }catch(err:any){
-                  if (err.response?.status === 403) {
-                    const message = user?.username?.includes('chinese') || user?.department?.includes('中') 
-                      ? '您没有创建新零件的权限' 
-                      : '새 부품을 생성할 권한이 없습니다';
-                    toast.error(message);
-                  } else {
-                    toast.error('저장 실패');
+                    toast.success('새 Part가 추가되었습니다');
+                    queryClient.invalidateQueries({ queryKey: ['parts-all'] });
+                    queryClient.invalidateQueries({ queryKey: ['parts-search'] });
+                    setShowAddPartModal(false);
+
+                    const createdPart = newPart.data;
+                    setSelectedPartSpec(createdPart);
+                    setForm((f) => ({
+                      ...f,
+                      partNo: createdPart.part_no,
+                      model: createdPart.model_code,
+                      type: createdPart.description || '',
+                      resin: createdPart.resin_type || '',
+                      netG: String(createdPart.net_weight_g || ''),
+                      srG: String(createdPart.sr_weight_g || ''),
+                      ct: String(createdPart.cycle_time_sec || ''),
+                    }));
+                  } catch (err: any) {
+                    if (err.response?.status === 403) {
+                      const message = user?.username?.includes('chinese') || user?.department?.includes('中')
+                        ? '您没有创建新零件的权限'
+                        : '새 부품을 생성할 권한이 없습니다';
+                      toast.error(message);
+                    } else {
+                      toast.error('저장 실패');
+                    }
                   }
-                }
-              }}>저장</PermissionButton>
+                }}
+              >
+                저장
+              </PermissionButton>
             </div>
           </div>
         </div>
