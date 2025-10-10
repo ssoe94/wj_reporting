@@ -1,7 +1,9 @@
 import React from 'react';
+import dayjs from 'dayjs';
 import { useAssemblyReports } from '@/hooks/useAssemblyReports';
 import {
-  LineChart,
+  AreaChart,
+  Area,
   Line,
   CartesianGrid,
   XAxis,
@@ -21,9 +23,11 @@ interface DataPoint {
 export default function AssemblyTrendChart() {
   const { data } = useAssemblyReports();
   const reports = (data as any)?.results ?? (Array.isArray(data) ? data : []);
+  const isLiteMode = document.documentElement.classList.contains('lite-mode');
 
   const dailyData: DataPoint[] = React.useMemo(() => {
     const map = new Map<string, DataPoint>();
+
     reports.forEach((r: any) => {
       const entry = map.get(r.date) || { date: r.date, plan: 0, actual: 0, achievementRate: 0 };
       entry.plan += Number(r.plan_qty || 0);
@@ -32,42 +36,110 @@ export default function AssemblyTrendChart() {
     });
 
     const allDates = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-    if (allDates.length === 0) return [];
+    if (!allDates.length) return [];
 
     allDates.forEach((item) => {
       item.achievementRate = item.plan > 0 ? Math.round((item.actual / item.plan) * 100) : 0;
     });
 
-    return allDates.slice(-15);
+    const cutoff = dayjs().subtract(29, 'day');
+    return allDates
+      .filter((item) => dayjs(item.date).diff(cutoff, 'day') >= 0)
+      .slice(-30);
   }, [reports]);
 
   if (!dailyData.length) {
     return <p className="text-gray-500 text-sm">No data</p>;
   }
 
+  const chartColors = {
+    grid: isLiteMode ? '#1f2937' : '#e5e7eb',
+    axis: isLiteMode ? '#1f2937' : '#4b5563',
+    planArea: isLiteMode ? '#fb923c' : '#f97316',
+    actualArea: isLiteMode ? '#f87171' : '#ec4899',
+    achievementLine: isLiteMode ? '#0ea5e9' : '#0ea5e9',
+  } as const;
+
   return (
     <div className="w-full h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={dailyData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-          <XAxis dataKey="date" tick={{ fontSize: 12 }} tickLine={{ stroke: '#666' }} axisLine={{ stroke: '#666' }} />
-          <YAxis tick={{ fontSize: 12 }} tickLine={{ stroke: '#666' }} axisLine={{ stroke: '#666' }} />
+        <AreaChart data={dailyData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}>
+          <defs>
+            <linearGradient id="assemblyTrendPlan" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={chartColors.planArea} stopOpacity={0.24} />
+              <stop offset="95%" stopColor={chartColors.planArea} stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id="assemblyTrendActual" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={chartColors.actualArea} stopOpacity={0.24} />
+              <stop offset="95%" stopColor={chartColors.actualArea} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical />
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 12, fill: chartColors.axis }}
+            tickLine={{ stroke: chartColors.axis }}
+            axisLine={{ stroke: chartColors.axis }}
+            interval={0}
+            tickFormatter={(value: string) => (value?.length > 5 ? value.slice(5) : value)}
+          />
+          <YAxis
+            yAxisId="left"
+            tick={{ fontSize: 12, fill: chartColors.axis }}
+            tickLine={{ stroke: chartColors.axis }}
+            axisLine={{ stroke: chartColors.axis }}
+          />
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            tick={{ fontSize: 12, fill: chartColors.axis }}
+            tickLine={{ stroke: chartColors.axis }}
+            axisLine={{ stroke: chartColors.axis }}
+            tickFormatter={(value) => `${value}%`}
+          />
           <Tooltip
             contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
-            formatter={(value: any, name: string) => [value, name]}
+            formatter={(value: any, name: string) => {
+              if (name === 'Plan' || name === 'Actual') {
+                return [Number(value).toLocaleString(), name];
+              }
+              return [`${value}%`, name];
+            }}
             labelFormatter={(label) => {
               const dp = dailyData.find((d) => d.date === label);
               return dp ? `${label} (달성율: ${dp.achievementRate}%)` : label;
             }}
           />
-          <Legend />
-          <Line type="monotone" dataKey="plan" stroke="#8884d8" name="Plan" />
-          <Line type="monotone" dataKey="actual" stroke="#82ca9d" name="Actual" />
-        </LineChart>
+          <Legend wrapperStyle={{ color: chartColors.axis }} />
+          <Area
+            yAxisId="left"
+            type="monotone"
+            dataKey="plan"
+            name="Plan"
+            stroke={chartColors.planArea}
+            strokeWidth={2}
+            fill="url(#assemblyTrendPlan)"
+          />
+          <Area
+            yAxisId="left"
+            type="monotone"
+            dataKey="actual"
+            name="Actual"
+            stroke={chartColors.actualArea}
+            strokeWidth={2}
+            fill="url(#assemblyTrendActual)"
+          />
+          <Line
+            yAxisId="right"
+            type="monotone"
+            dataKey="achievementRate"
+            name="Achievement"
+            stroke={chartColors.achievementLine}
+            strokeWidth={2}
+            dot={false}
+          />
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );
 }
-
-
-

@@ -135,18 +135,16 @@ export default function AssemblyDashboard() {
     return { minDate: sortedDates[0], maxDate: sortedDates[sortedDates.length - 1] };
   }, [records]);
 
-  const maxDay = React.useMemo(() => (uniqueDates.maxDate ? dayjs(uniqueDates.maxDate) : null), [uniqueDates]);
   const minDay = React.useMemo(() => (uniqueDates.minDate ? dayjs(uniqueDates.minDate) : null), [uniqueDates]);
 
   const computedStartDay = React.useMemo(() => {
-    if (!maxDay) return null;
-    const candidate = maxDay.clone().subtract(29, 'day');
+    const candidate = dayjs().subtract(29, 'day');
     if (minDay && candidate.isBefore(minDay)) return minDay;
     return candidate;
-  }, [maxDay, minDay]);
+  }, [minDay]);
 
   const effectiveStartValue = computedStartDay?.format('YYYY-MM-DD') ?? '';
-  const effectiveEndValue = maxDay?.format('YYYY-MM-DD') ?? '';
+  const effectiveEndValue = dayjs().format('YYYY-MM-DD');
 
   React.useEffect(() => {
     if (!effectiveStartValue || !effectiveEndValue) return;
@@ -520,7 +518,6 @@ export default function AssemblyDashboard() {
                     name={t('analysis_chart_plan')}
                     stroke={assemblyChartColors.planArea}
                     fill="url(#assemblyPlanGradient)"
-                    fillOpacity={0.6}
                     strokeWidth={2}
                   />
                   <Area
@@ -530,7 +527,6 @@ export default function AssemblyDashboard() {
                     name={t('analysis_chart_actual')}
                     stroke={assemblyChartColors.actualArea}
                     fill="url(#assemblyActualGradient)"
-                    fillOpacity={0.6}
                     strokeWidth={2}
                   />
                   <Line
