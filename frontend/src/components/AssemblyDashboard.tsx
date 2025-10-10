@@ -135,36 +135,43 @@ export default function AssemblyDashboard() {
     return { minDate: sortedDates[0], maxDate: sortedDates[sortedDates.length - 1] };
   }, [records]);
 
+  const maxDay = React.useMemo(() => (uniqueDates.maxDate ? dayjs(uniqueDates.maxDate) : null), [uniqueDates]);
+  const minDay = React.useMemo(() => (uniqueDates.minDate ? dayjs(uniqueDates.minDate) : null), [uniqueDates]);
+
+  const computedStartDay = React.useMemo(() => {
+    if (!maxDay) return null;
+    const candidate = maxDay.clone().subtract(29, 'day');
+    if (minDay && candidate.isBefore(minDay)) return minDay;
+    return candidate;
+  }, [maxDay, minDay]);
+
+  const effectiveStartValue = computedStartDay?.format('YYYY-MM-DD') ?? '';
+  const effectiveEndValue = maxDay?.format('YYYY-MM-DD') ?? '';
+
   React.useEffect(() => {
-    if (!uniqueDates.minDate || !uniqueDates.maxDate) return;
-
-    const maxDate = dayjs(uniqueDates.maxDate);
-    const minDate = dayjs(uniqueDates.minDate);
-    const desiredStart = maxDate.clone().subtract(29, 'day');
-    const startValue = (desiredStart.isBefore(minDate) ? minDate : desiredStart).format('YYYY-MM-DD');
-    const endValue = uniqueDates.maxDate;
-
-    if (startDate !== startValue) setStartDate(startValue);
-    if (endDate !== endValue) setEndDate(endValue);
-  }, [uniqueDates, startDate, endDate]);
+    if (!effectiveStartValue || !effectiveEndValue) return;
+    if (startDate !== effectiveStartValue) setStartDate(effectiveStartValue);
+    if (endDate !== effectiveEndValue) setEndDate(effectiveEndValue);
+  }, [effectiveStartValue, effectiveEndValue, startDate, endDate, setStartDate, setEndDate]);
 
   const filteredRecords = React.useMemo(() => {
     if (!records.length) return [];
     return records.filter((record) => {
-      if (startDate && record.date < startDate) return false;
-      if (endDate && record.date > endDate) return false;
+      if (effectiveStartValue && record.date < effectiveStartValue) return false;
+      if (effectiveEndValue && record.date > effectiveEndValue) return false;
       if (excludeWeekends) {
         const day = dayjs(record.date).day();
         if (day === 0 || day === 6) return false;
       }
       return true;
     });
-  }, [records, startDate, endDate, excludeWeekends]);
+  }, [records, effectiveStartValue, effectiveEndValue, excludeWeekends]);
 
   const overallMetrics = React.useMemo(() => computeAggregates(records), [records]);
   const rangeMetrics = React.useMemo(() => computeAggregates(filteredRecords), [filteredRecords]);
 
-  const rangeLabel = startDate && endDate ? `${startDate} ~ ${endDate}` : '';
+  const rangeLabel =
+    effectiveStartValue && effectiveEndValue ? `${effectiveStartValue} ~ ${effectiveEndValue}` : '';
   const overallLabel =
     uniqueDates.minDate && uniqueDates.maxDate ? `${uniqueDates.minDate} ~ ${uniqueDates.maxDate}` : '';
 
