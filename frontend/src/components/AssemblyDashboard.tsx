@@ -112,6 +112,7 @@ export default function AssemblyDashboard() {
   const { data: assemblyData } = useAssemblyReports();
   const { startDate, endDate, excludeWeekends } = usePeriod();
   const { t } = useLang();
+  const isLiteMode = document.documentElement.classList.contains('lite-mode');
 
   const formatDetailLabel = React.useCallback(
     (key: string) => {
@@ -222,6 +223,13 @@ export default function AssemblyDashboard() {
       })),
     };
   }, [filteredRecords, t]);
+
+  const assemblyChartColors = {
+    planArea: isLiteMode ? '#fb923c' : '#f97316',
+    actualArea: isLiteMode ? '#f87171' : '#ec4899',
+    achievementLine: isLiteMode ? '#0ea5e9' : '#0ea5e9',
+    qualityLine: isLiteMode ? '#22c55e' : '#22c55e',
+  } as const;
 
   const processingDetailTotals = React.useMemo(() => {
     const acc = new Map<string, number>();
@@ -448,32 +456,32 @@ export default function AssemblyDashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}>
                   <defs>
-                    <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                    <linearGradient id="assemblyPlanGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={assemblyChartColors.planArea} stopOpacity={0.35} />
+                      <stop offset="95%" stopColor={assemblyChartColors.planArea} stopOpacity={0} />
                     </linearGradient>
-                    <linearGradient id="colorPlan" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#16a34a" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
+                    <linearGradient id="assemblyActualGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={assemblyChartColors.actualArea} stopOpacity={0.35} />
+                      <stop offset="95%" stopColor={assemblyChartColors.actualArea} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" vertical />
+                  <CartesianGrid strokeDasharray="3 3" stroke={isLiteMode ? '#1f2937' : '#e5e7eb'} vertical />
                   <XAxis
                     dataKey="date"
-                    tick={{ fontSize: 11, fill: '#666' }}
+                    tick={{ fontSize: 11, fill: isLiteMode ? '#1f2937' : '#4b5563' }}
                     tickFormatter={value => value.slice(5)}
                     interval={Math.max(Math.floor(chartData.length / 14), 0)}
                     height={32}
                   />
                   <YAxis
                     yAxisId="left"
-                    tick={{ fontSize: 11, fill: '#666' }}
-                    tickFormatter={(value) => `${value}`}
+                    tick={{ fontSize: 11, fill: isLiteMode ? '#1f2937' : '#4b5563' }}
+                    tickFormatter={(value) => value.toLocaleString()}
                   />
                   <YAxis
                     yAxisId="right"
                     orientation="right"
-                    tick={{ fontSize: 11, fill: '#666' }}
+                    tick={{ fontSize: 11, fill: isLiteMode ? '#1f2937' : '#4b5563' }}
                     tickFormatter={(value) => `${value}%`}
                   />
                   <Tooltip
@@ -481,17 +489,17 @@ export default function AssemblyDashboard() {
                       if (name === t('analysis_metric_achievement') || name === t('analysis_metric_quality')) {
                         return [`${round1(value)}%`, name];
                       }
-                      return [value, name];
+                      return [value.toLocaleString(), name];
                     }}
                   />
-                  <Legend />
+                  <Legend wrapperStyle={{ color: isLiteMode ? '#1f2937' : '#4b5563' }} />
                   <Area
                     yAxisId="left"
                     type="monotone"
                     dataKey="plan"
                     name={t('analysis_chart_plan')}
-                    stroke="#16a34a"
-                    fill="url(#colorPlan)"
+                    stroke={assemblyChartColors.planArea}
+                    fill="url(#assemblyPlanGradient)"
                     strokeWidth={2}
                   />
                   <Area
@@ -499,8 +507,8 @@ export default function AssemblyDashboard() {
                     type="monotone"
                     dataKey="actual"
                     name={t('analysis_chart_actual')}
-                    stroke="#2563eb"
-                    fill="url(#colorActual)"
+                    stroke={assemblyChartColors.actualArea}
+                    fill="url(#assemblyActualGradient)"
                     strokeWidth={2}
                   />
                   <Line
@@ -508,7 +516,7 @@ export default function AssemblyDashboard() {
                     type="monotone"
                     dataKey="achievement"
                     name={t('analysis_metric_achievement')}
-                    stroke="#7c3aed"
+                    stroke={assemblyChartColors.achievementLine}
                     strokeWidth={2}
                     dot={false}
                   />
@@ -517,7 +525,7 @@ export default function AssemblyDashboard() {
                     type="monotone"
                     dataKey="quality"
                     name={t('analysis_metric_quality')}
-                    stroke="#f97316"
+                    stroke={assemblyChartColors.qualityLine}
                     strokeWidth={2}
                     dot={false}
                   />

@@ -1,8 +1,10 @@
 import { useReports } from '@/hooks/useReports';
 import { useLang } from '@/i18n';
 import React from 'react';
+import dayjs from 'dayjs';
 import {
-  LineChart,
+  AreaChart,
+  Area,
   Line,
   CartesianGrid,
   XAxis,
@@ -32,20 +34,20 @@ export default function ProdTrendChart() {
       entry.actual += r.actual_qty;
       map.set(r.date, entry);
     });
-    
-    // 생산 기록이 있는 날짜들을 정렬하고 달성율 계산
+
     const allDates = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-    
+
     if (allDates.length === 0) return [];
-    
-    // 달성율 계산
+
     allDates.forEach(item => {
       item.achievementRate = item.plan > 0 ? Math.round((item.actual / item.plan) * 100) : 0;
     });
-    
-    // 최신 날짜부터 최대 15개의 생산 기록 날짜만 선택
-    const recentDates = allDates.slice(-15);
-    
+
+    const cutoff = dayjs().subtract(29, 'day');
+    const recentDates = allDates
+      .filter(item => dayjs(item.date).diff(cutoff, 'day') >= 0)
+      .slice(-30);
+
     return recentDates;
   }, [reports]);
 
@@ -53,12 +55,12 @@ export default function ProdTrendChart() {
     return <p className="text-gray-500 text-sm">No data</p>;
   }
 
-  // 라이트 모드에 맞는 색상 설정
   const chartColors = {
-    grid: isLiteMode ? '#000000' : '#e0e0e0',
-    axis: isLiteMode ? '#000000' : '#666666',
-    planLine: isLiteMode ? '#000000' : '#8884d8',
-    actualLine: isLiteMode ? '#666666' : '#82ca9d',
+    grid: isLiteMode ? '#111827' : '#E5E7EB',
+    axis: isLiteMode ? '#111827' : '#4B5563',
+    planArea: isLiteMode ? '#0ea5e9' : '#0ea5e9',
+    actualArea: isLiteMode ? '#14b8a6' : '#14b8a6',
+    achievementLine: isLiteMode ? '#4338ca' : '#6366f1',
   };
 
   const tooltipStyle = {
@@ -71,7 +73,17 @@ export default function ProdTrendChart() {
   return (
     <div className="w-full h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={dailyData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}>
+        <AreaChart data={dailyData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}>
+          <defs>
+            <linearGradient id="injectionPlanGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={chartColors.planArea} stopOpacity={0.35} />
+              <stop offset="95%" stopColor={chartColors.planArea} stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id="injectionActualGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={chartColors.actualArea} stopOpacity={0.35} />
+              <stop offset="95%" stopColor={chartColors.actualArea} stopOpacity={0} />
+            </linearGradient>
+          </defs>
           <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical />
           <XAxis
             dataKey="date"
@@ -79,47 +91,68 @@ export default function ProdTrendChart() {
             tickLine={{ stroke: chartColors.axis }}
             axisLine={{ stroke: chartColors.axis }}
             interval={0}
-            allowDuplicatedCategory={false}
             tickFormatter={(value: string) => (value?.length > 5 ? value.slice(5) : value)}
           />
-          <YAxis 
+          <YAxis
+            yAxisId="left"
             tick={{ fontSize: 12, fill: chartColors.axis }}
             tickLine={{ stroke: chartColors.axis }}
             axisLine={{ stroke: chartColors.axis }}
           />
-          <Tooltip 
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            tick={{ fontSize: 12, fill: chartColors.axis }}
+            tickLine={{ stroke: chartColors.axis }}
+            axisLine={{ stroke: chartColors.axis }}
+            tickFormatter={(value) => `${value}%`}
+          />
+          <Tooltip
             contentStyle={tooltipStyle}
             formatter={(value: any, name: string) => {
-              if (name === 'Plan' || name === 'Actual') {
-                return [value, name];
+              if (name === t('analysis_chart_plan') || name === t('analysis_chart_actual')) {
+                return [value.toLocaleString(), name];
               }
-              return [value, name];
+              return [`${value}%`, name];
             }}
             labelFormatter={(label) => {
               const dataPoint = dailyData.find(item => item.date === label);
               if (dataPoint) {
-                return `${label} (${t('achievement_rate')}: ${dataPoint.achievementRate}%)`;
+                return `${label} (${t('analysis_metric_achievement')}: ${dataPoint.achievementRate}%)`;
               }
               return label;
             }}
           />
           <Legend wrapperStyle={{ color: chartColors.axis }} />
-          <Line 
-            type="monotone" 
-            dataKey="plan" 
-            stroke={chartColors.planLine} 
-            strokeWidth={isLiteMode ? 3 : 2}
-            name="Plan" 
+          <Area
+            yAxisId="left"
+            type="monotone"
+            dataKey="plan"
+            name={t('analysis_chart_plan')}
+            stroke={chartColors.planArea}
+            strokeWidth={2}
+            fill="url(#injectionPlanGradient)"
           />
-          <Line 
-            type="monotone" 
-            dataKey="actual" 
-            stroke={chartColors.actualLine} 
-            strokeWidth={isLiteMode ? 3 : 2}
-            name="Actual" 
+          <Area
+            yAxisId="left"
+            type="monotone"
+            dataKey="actual"
+            name={t('analysis_chart_actual')}
+            stroke={chartColors.actualArea}
+            strokeWidth={2}
+            fill="url(#injectionActualGradient)"
           />
-        </LineChart>
+          <Line
+            yAxisId="right"
+            type="monotone"
+            dataKey="achievementRate"
+            name={t('analysis_metric_achievement')}
+            stroke={chartColors.achievementLine}
+            strokeWidth={2}
+            dot={false}
+          />
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );
-} 
+}
