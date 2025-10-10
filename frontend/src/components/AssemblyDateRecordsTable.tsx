@@ -18,7 +18,7 @@ interface Props {
 
 export default function AssemblyDateRecordsTable({ date }: Props) {
   const { t } = useLang();
-  const { data: reportsData, isLoading } = useAssemblyReports({ date });
+  const { data: reportsData, isLoading, isFetching } = useAssemblyReports({ date });
   const reports = reportsData?.results || [];
   const [detail, setDetail] = useState<AssemblyReport | null>(null);
   const [editing, setEditing] = useState(false);
@@ -194,7 +194,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   };
 
   if (!date) return null;
-  if (isLoading) return <SkeletonTable />;
+  if (isLoading || isFetching) return <SkeletonTable />;
   if (!enrichedList.length) return <p className="text-gray-500 text-sm">{t('no_data')}</p>;
 
   const totalPlan = enrichedList.reduce((sum: number, r) => sum + (r.plan_qty || 0), 0);
