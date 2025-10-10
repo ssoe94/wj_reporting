@@ -23,14 +23,33 @@ interface OEEAggregate {
   oee: number;
 }
 
+function OeeDashboardSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, idx) => (
+          <div key={idx} className="h-24 rounded-xl bg-gray-200" />
+        ))}
+      </div>
+      <div className="h-64 rounded-2xl bg-gray-200" />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="h-56 rounded-2xl bg-gray-200" />
+        <div className="h-56 rounded-2xl bg-gray-200" />
+      </div>
+    </div>
+  );
+}
 
 export default function OEEDashboard() {
-  const { data: reports = [] } = useAllReports();
+  const { data, isLoading, isFetching } = useAllReports();
+  const reports = data ?? [];
   const { t } = useLang();
   const { startDate, endDate, excludeWeekends, setStartDate, setEndDate } = usePeriod();
   const [compareMode, setCompareMode] = useState(false);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const isLiteMode = document.documentElement.classList.contains('lite-mode');
+
+  const showSkeleton = !data && (isLoading || isFetching);
 
   // 실제 데이터의 날짜 범위 계산
   const dataDateRange = useMemo(() => {
@@ -283,6 +302,10 @@ export default function OEEDashboard() {
     if (value >= 70) return 'text-yellow-600';
     return 'text-red-600';
   };
+
+  if (showSkeleton) {
+    return <OeeDashboardSkeleton />;
+  }
 
   if (!overallMetrics) {
     return <p className="text-gray-500 text-sm">{t('analysis_no_period_data')}</p>;

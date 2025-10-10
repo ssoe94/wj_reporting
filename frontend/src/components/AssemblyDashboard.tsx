@@ -108,11 +108,30 @@ const computeAggregates = (entries: AssemblyReport[]) => {
   } satisfies AggregatedMetrics;
 };
 
+function AssemblyDashboardSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, idx) => (
+          <div key={idx} className="h-28 rounded-2xl bg-gray-200" />
+        ))}
+      </div>
+      <div className="h-72 rounded-2xl bg-gray-200" />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="h-64 rounded-2xl bg-gray-200" />
+        <div className="h-64 rounded-2xl bg-gray-200" />
+      </div>
+      <div className="h-96 rounded-2xl bg-gray-200" />
+    </div>
+  );
+}
+
 export default function AssemblyDashboard() {
-  const { data: assemblyData } = useAssemblyReports();
+  const { data: assemblyData, isLoading, isFetching } = useAssemblyReports();
   const { startDate, endDate, excludeWeekends, setStartDate, setEndDate } = usePeriod();
   const { t } = useLang();
   const isLiteMode = document.documentElement.classList.contains('lite-mode');
+  const showSkeleton = !assemblyData && (isLoading || isFetching);
 
   const formatDetailLabel = React.useCallback(
     (key: string) => {
@@ -431,6 +450,10 @@ export default function AssemblyDashboard() {
   };
 
   const defectPeriodLabel = rangeLabel || overallLabel || '';
+
+  if (showSkeleton) {
+    return <AssemblyDashboardSkeleton />;
+  }
 
   return (
     <div className="space-y-6">

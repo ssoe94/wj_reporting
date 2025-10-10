@@ -59,10 +59,26 @@ const renderAngleTick = (props: any) => {
   );
 };
 
+function DowntimeAnalysisSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="h-72 rounded-2xl bg-gray-200" />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="h-56 rounded-2xl bg-gray-200" />
+        <div className="h-56 rounded-2xl bg-gray-200" />
+      </div>
+      <div className="h-72 rounded-2xl bg-gray-200" />
+    </div>
+  );
+}
+
 export default function DowntimeAnalysis() {
-  const { data: reports = [] } = useAllReports();
+  const { data, isLoading, isFetching } = useAllReports();
+  const reports = data ?? [];
   const { startDate, endDate, excludeWeekends } = usePeriod();
   const { t } = useLang();
+
+  const showSkeleton = !data && (isLoading || isFetching);
 
   // renderPieLabel을 컴포넌트 내부에서 정의하여 t 함수 사용 가능
   const renderPieLabel = (props: any) => {
@@ -195,6 +211,10 @@ export default function DowntimeAnalysis() {
 
   const [chartMode, setChartMode] = useState<'pie' | 'bar'>('pie');
   const toggleChart = useCallback(() => setChartMode((m) => (m === 'pie' ? 'bar' : 'pie')), []);
+
+  if (showSkeleton) {
+    return <DowntimeAnalysisSkeleton />;
+  }
 
   return (
     <Card>
