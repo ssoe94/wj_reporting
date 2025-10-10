@@ -110,7 +110,7 @@ const computeAggregates = (entries: AssemblyReport[]) => {
 
 export default function AssemblyDashboard() {
   const { data: assemblyData } = useAssemblyReports();
-  const { startDate, endDate, excludeWeekends } = usePeriod();
+  const { startDate, endDate, excludeWeekends, setStartDate, setEndDate } = usePeriod();
   const { t } = useLang();
   const isLiteMode = document.documentElement.classList.contains('lite-mode');
 
@@ -134,6 +134,19 @@ export default function AssemblyDashboard() {
     const sortedDates = [...new Set(records.map(r => r.date))].sort();
     return { minDate: sortedDates[0], maxDate: sortedDates[sortedDates.length - 1] };
   }, [records]);
+
+  React.useEffect(() => {
+    if (!uniqueDates.minDate || !uniqueDates.maxDate) return;
+
+    const maxDate = dayjs(uniqueDates.maxDate);
+    const minDate = dayjs(uniqueDates.minDate);
+    const desiredStart = maxDate.clone().subtract(29, 'day');
+    const startValue = (desiredStart.isBefore(minDate) ? minDate : desiredStart).format('YYYY-MM-DD');
+    const endValue = uniqueDates.maxDate;
+
+    if (startDate !== startValue) setStartDate(startValue);
+    if (endDate !== endValue) setEndDate(endValue);
+  }, [uniqueDates, startDate, endDate]);
 
   const filteredRecords = React.useMemo(() => {
     if (!records.length) return [];
