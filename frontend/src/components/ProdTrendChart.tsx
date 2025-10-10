@@ -130,8 +130,9 @@ export default function ProdTrendChart() {
             dataKey="plan"
             name={t('analysis_chart_plan')}
             stroke={chartColors.planArea}
-            strokeWidth={2}
+            strokeWidth={1}
             fill="url(#injectionPlanGradient)"
+            dot={{ r: 2 }}
           />
           <Area
             yAxisId="left"
@@ -139,8 +140,9 @@ export default function ProdTrendChart() {
             dataKey="actual"
             name={t('analysis_chart_actual')}
             stroke={chartColors.actualArea}
-            strokeWidth={2}
+            strokeWidth={1}
             fill="url(#injectionActualGradient)"
+            dot={{ r: 2 }}
           />
           <Line
             yAxisId="right"
@@ -148,8 +150,8 @@ export default function ProdTrendChart() {
             dataKey="achievementRate"
             name={t('analysis_metric_achievement')}
             stroke={chartColors.achievementLine}
-            strokeWidth={2}
-            dot={false}
+            strokeWidth={1}
+            dot={{ r: 2 }}
           />
         </AreaChart>
       </ResponsiveContainer>

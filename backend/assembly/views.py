@@ -30,6 +30,17 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
     ordering_fields = ['date', 'line_no', 'model', 'part_no', 'plan_qty', 'actual_qty', 'total_time', 'idle_time']
     search_fields = ['line_no', 'model', 'part_no', 'note']
 
+    @action(detail=False, methods=['get'], url_path='trend-data')
+    def trend_data(self, request):
+        """
+        Returns data for the last 30 days for the trend chart.
+        Not paginated.
+        """
+        thirty_days_ago = timezone.now().date() - dt.timedelta(days=30)
+        queryset = AssemblyReport.objects.filter(date__gte=thirty_days_ago).order_by('date')
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """전체 통계 정보를 제공하는 엔드포인트"""

@@ -1,6 +1,6 @@
 import React from 'react';
 import dayjs from 'dayjs';
-import { useAssemblyReports } from '@/hooks/useAssemblyReports';
+import { useAssemblyReportsTrendData } from '@/hooks/useAssemblyReports';
 import {
   AreaChart,
   Area,
@@ -21,8 +21,8 @@ interface DataPoint {
 }
 
 export default function AssemblyTrendChart() {
-  const { data } = useAssemblyReports();
-  const reports = (data as any)?.results ?? (Array.isArray(data) ? data : []);
+  const { data } = useAssemblyReportsTrendData();
+  const reports = (data as any) ?? [];
   const isLiteMode = document.documentElement.classList.contains('lite-mode');
 
   const dailyData: DataPoint[] = React.useMemo(() => {
@@ -48,6 +48,26 @@ export default function AssemblyTrendChart() {
       .filter((item) => dayjs(item.date).diff(cutoff, 'day') >= 0)
       .slice(-30);
   }, [reports]);
+
+  const { yMin, yMax, ticks } = React.useMemo(() => {
+    if (!dailyData.length) {
+      return { yMin: 0, yMax: 500, ticks: [0, 500] };
+    }
+
+    const allValues = dailyData.flatMap(d => [d.plan, d.actual]);
+    const dataMin = Math.min(...allValues);
+    const dataMax = Math.max(...allValues);
+
+    const yMin = Math.floor((dataMin - 1) / 500) * 500;
+    const yMax = Math.ceil((dataMax + 1) / 500) * 500;
+
+    const tickValues = [];
+    for (let i = yMin; i <= yMax; i += 500) {
+      tickValues.push(i);
+    }
+
+    return { yMin, yMax, ticks: tickValues };
+  }, [dailyData]);
 
   if (!dailyData.length) {
     return <p className="text-gray-500 text-sm">No data</p>;
@@ -89,7 +109,10 @@ export default function AssemblyTrendChart() {
             tick={{ fontSize: 12, fill: chartColors.axis }}
             tickLine={{ stroke: chartColors.axis }}
             axisLine={{ stroke: chartColors.axis }}
-            domain={[0, (dataMax: number) => (dataMax ? Math.ceil(dataMax * 1.1) : 1)]}
+            domain={[yMin, yMax]}
+            ticks={ticks}
+            allowDataOverflow={true}
+            type="number"
           />
           <YAxis
             yAxisId="right"
@@ -120,8 +143,9 @@ export default function AssemblyTrendChart() {
             dataKey="plan"
             name="Plan"
             stroke={chartColors.planArea}
-            strokeWidth={1.5}
+            strokeWidth={1}
             fill="url(#assemblyTrendPlan)"
+            dot={{ r: 2 }}
           />
           <Area
             yAxisId="left"
@@ -129,17 +153,17 @@ export default function AssemblyTrendChart() {
             dataKey="actual"
             name="Actual"
             stroke={chartColors.actualArea}
-            strokeWidth={1.5}
+            strokeWidth={1}
             fill="url(#assemblyTrendActual)"
+            dot={{ r: 2 }}
           />
           <Line
             yAxisId="right"
             type="monotone"
             dataKey="achievementRate"
             name="Achievement"
-            stroke={chartColors.achievementLine}
-            strokeWidth={1.5}
-            dot={false}
+            strokeWidth={1}
+            dot={{ r: 2 }}
           />
         </AreaChart>
       </ResponsiveContainer>

@@ -28,6 +28,20 @@ export const useAssemblyReports = (filters: AssemblyReportFilters = {}) => {
   });
 };
 
+export const useAssemblyReportsTrendData = () => {
+  return useQuery<AssemblyReport[]> ({
+    queryKey: ['assembly-reports-trend-data'],
+    queryFn: async () => {
+      const response = await api.get<AssemblyReport[]>('/assembly/reports/trend-data/');
+      return response.data;
+    },
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
+  });
+};
+
 export const useAssemblyReportDates = () => {
   return useQuery({
     queryKey: ['assembly-report-dates'],
