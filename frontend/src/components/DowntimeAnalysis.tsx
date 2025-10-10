@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useReports } from '@/hooks/useReports';
+import { useAllReports } from '@/hooks/useReports';
 import { usePeriod } from '@/contexts/PeriodContext';
 import {
   PieChart,
@@ -60,7 +60,7 @@ const renderAngleTick = (props: any) => {
 };
 
 export default function DowntimeAnalysis() {
-  const { data: reports = [] } = useReports();
+  const { data: reports = [] } = useAllReports();
   const { startDate, endDate, excludeWeekends } = usePeriod();
   const { t } = useLang();
 

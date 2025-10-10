@@ -18,24 +18,84 @@ interface Props {
 }
 
 export default function DateRecordsTable({ date }: Props) {
-  const { data: reports = [] } = useReports();
+  const { data: reportsData, isLoading } = useReports({ date });
   const { t } = useLang();
   const list = React.useMemo(() => {
-    return reports
-      .filter((r: Report) => r.date === date)
+    const reportsArray: Report[] = Array.isArray(reportsData)
+      ? (reportsData as Report[])
+      : reportsData?.results || [];
+
+    return reportsArray
+      .slice()
       .sort((a: Report, b: Report) => {
         if (a.machine_no !== b.machine_no) return (a.machine_no ?? 0) - (b.machine_no ?? 0);
         return a.start_datetime.localeCompare(b.start_datetime);
       });
-  }, [reports, date]);
+  }, [reportsData]);
 
   const [detail, setDetail] = useState<Report|null>(null);
   const [editing, setEditing] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [selectedPartPrefix, setSelectedPartPrefix] = useState('');
 
+  const SkeletonRow = () => (
+    <tr className="animate-pulse">
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+    </tr>
+  );
+
+  const SkeletonTable = () => (
+    <table className="w-full border-collapse text-sm mt-4">
+      <thead className="bg-blue-600 text-white">
+        <tr>
+          <th className="px-2 py-1">{t('table_machine')}</th>
+          <th className="px-2 py-1">{t('table_model')}</th>
+          <th className="px-2 py-1">{t('table_part_no')}</th>
+          <th className="px-2 py-1">{t('table_plan')}</th>
+          <th className="px-2 py-1">{t('table_actual')}</th>
+          <th className="px-2 py-1">{t('table_defect')}</th>
+          <th className="px-2 py-1">{t('table_run_time')}</th>
+          <th className="px-2 py-1">{t('table_ct')}</th>
+          <th className="px-2 py-1">{t('table_ct_delta')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <SkeletonRow />
+        <SkeletonRow />
+        <SkeletonRow />
+        <SkeletonRow />
+        <SkeletonRow />
+      </tbody>
+    </table>
+  );
+
   // react-query client
   const queryClient = useQueryClient();
+
+  const totals = React.useMemo(() => {
+    return list.reduce(
+      (acc, r) => {
+        acc.plan += Number(r.plan_qty || 0);
+        acc.actual += Number(r.actual_qty || 0);
+        acc.defect += Number(r.actual_defect || 0);
+        return acc;
+      },
+      { plan: 0, actual: 0, defect: 0 }
+    );
+  }, [list]);
+
+  const achievementRate = React.useMemo(() => {
+    if (!totals.plan) return null;
+    return (totals.actual / totals.plan) * 100;
+  }, [totals]);
 
   const handleSave = async (data: Partial<Report>) => {
     if(!detail) return;
@@ -75,24 +135,8 @@ export default function DateRecordsTable({ date }: Props) {
   };
 
   if (!date) return null;
+  if (isLoading) return <SkeletonTable />;
   if (!list.length) return <p className="text-gray-500 text-sm">선택한 날짜에 생산 기록이 없습니다.</p>;
-
-  const totals = React.useMemo(() => {
-    return list.reduce(
-      (acc, r) => {
-        acc.plan += Number(r.plan_qty || 0);
-        acc.actual += Number(r.actual_qty || 0);
-        acc.defect += Number(r.actual_defect || 0);
-        return acc;
-      },
-      { plan: 0, actual: 0, defect: 0 }
-    );
-  }, [list]);
-
-  const achievementRate = React.useMemo(() => {
-    if (!totals.plan) return null;
-    return (totals.actual / totals.plan) * 100;
-  }, [totals]);
 
   return (
     <>

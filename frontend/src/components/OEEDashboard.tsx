@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader } from './ui/card';
-import { useReports } from '../hooks/useReports';
+import { useAllReports } from '../hooks/useReports';
 import { usePeriod } from '../contexts/PeriodContext';
 import { useLang } from '../i18n';
 import dayjs from 'dayjs';
@@ -25,7 +25,7 @@ interface OEEAggregate {
 
 
 export default function OEEDashboard() {
-  const { data: reports = [] } = useReports();
+  const { data: reports = [] } = useAllReports();
   const { t } = useLang();
   const { startDate, endDate, excludeWeekends, setStartDate, setEndDate } = usePeriod();
   const [compareMode, setCompareMode] = useState(false);

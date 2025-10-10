@@ -18,7 +18,7 @@ interface Props {
 
 export default function AssemblyDateRecordsTable({ date }: Props) {
   const { t } = useLang();
-  const { data: reportsData } = useAssemblyReports({ date });
+  const { data: reportsData, isLoading } = useAssemblyReports({ date });
   const reports = reportsData?.results || [];
   const [detail, setDetail] = useState<AssemblyReport | null>(null);
   const [editing, setEditing] = useState(false);
@@ -27,6 +27,45 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   const [showHistoricalModal, setShowHistoricalModal] = useState(false);
   const [selectedPartPrefix, setSelectedPartPrefix] = useState('');
   const queryClient = useQueryClient();
+
+  const SkeletonRow = () => (
+    <tr className="animate-pulse">
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+      <td className="px-2 py-1"><div className="h-4 bg-gray-200 rounded"></div></td>
+    </tr>
+  );
+
+  const SkeletonTable = () => (
+    <table className="min-w-full text-sm rounded-md border-separate border-spacing-0 mt-4">
+      <thead className="bg-green-600 text-white">
+        <tr>
+          <th className="px-2 py-1">{t('assembly_line_no')}</th>
+          <th className="px-2 py-1">{t('model')}</th>
+          <th className="px-2 py-1">{t('part_no')}</th>
+          <th className="px-2 py-1">{t('assembly_plan_qty')}</th>
+          <th className="px-2 py-1">{t('assembly_actual_qty')}</th>
+          <th className="px-2 py-1">{t('assembly_defect_qty')}</th>
+          <th className="px-2 py-1">{t('achievement_rate')}</th>
+          <th className="px-2 py-1">{t('defect_rate')}</th>
+          <th className="px-2 py-1">{t('uph')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <SkeletonRow />
+        <SkeletonRow />
+        <SkeletonRow />
+        <SkeletonRow />
+        <SkeletonRow />
+      </tbody>
+    </table>
+  );
 
   const safeNumber = (value: unknown): number => {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -155,6 +194,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   };
 
   if (!date) return null;
+  if (isLoading) return <SkeletonTable />;
   if (!enrichedList.length) return <p className="text-gray-500 text-sm">{t('no_data')}</p>;
 
   const totalPlan = enrichedList.reduce((sum: number, r) => sum + (r.plan_qty || 0), 0);

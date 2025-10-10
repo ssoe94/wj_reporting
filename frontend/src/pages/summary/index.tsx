@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { useLang } from '../../i18n';
-import { useReportSummary, useReports } from '../../hooks/useReports';
+import { useReportSummary, useReportDates } from '../../hooks/useReports';
 import ProdTrendChart from '../../components/ProdTrendChart';
 import ProdCalendar from '../../components/ProdCalendar';
 import DateRecordsTable from '../../components/DateRecordsTable';
@@ -17,7 +17,7 @@ import RecordForm from '../../components/RecordForm';
 export default function SummaryPage() {
   const { t } = useLang();
   const { data: summary } = useReportSummary();
-  const { data: reports = [] } = useReports();
+  const { data: reportDates = [] } = useReportDates();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const location = useLocation();
 
@@ -27,19 +27,14 @@ export default function SummaryPage() {
     const searchParams = new URLSearchParams(location.search);
     const dateParam = searchParams.get('date');
 
-    if (dateParam && reports.some(r => r.date === dateParam)) {
+    if (dateParam && reportDates.includes(dateParam)) {
       // URL에 날짜 파라미터가 있고 해당 날짜의 데이터가 존재하면 선택
       setSelectedDate(dateParam);
-    } else if (reports.length > 0 && !selectedDate) {
+    } else if (reportDates.length > 0 && !selectedDate) {
       // 그렇지 않으면 최근 날짜로 자동 선택
-      const sortedDates = reports
-        .map(r => r.date)
-        .sort((a, b) => b.localeCompare(a)); // 내림차순 정렬
-      if (sortedDates.length > 0) {
-        setSelectedDate(sortedDates[0]);
-      }
+      setSelectedDate(reportDates[0]);
     }
-  }, [reports, selectedDate, location.search]);
+  }, [reportDates, selectedDate, location.search]);
   // RecordForm 내부 상태로 대체했으므로 관련 코드 삭제
 
   // 사출기 목록, 포맷 함수 등은 RecordForm 내부로 이동했으므로 삭제합니다.
@@ -142,7 +137,7 @@ export default function SummaryPage() {
 
           {/* Calendar 오른쪽 */}
           <div className="flex-shrink-0 space-y-4 mt-9 md:mt-11">
-            <ProdCalendar selected={selectedDate} onSelect={setSelectedDate} />
+            <ProdCalendar selected={selectedDate} onSelect={setSelectedDate} availableDates={reportDates} />
 
             {/* CSV 버튼들 (캘린더 하단) */}
             <div className="flex justify-center gap-2">

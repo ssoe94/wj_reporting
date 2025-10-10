@@ -3,19 +3,17 @@ import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { ko, zhCN } from 'date-fns/locale';
 import dayjs from 'dayjs';
-import { useReports } from '@/hooks/useReports';
-import type { Report } from '@/hooks/useReports';
 import { useLang } from '@/i18n';
 
 interface Props {
   onSelect: (date: string) => void;
   selected: string | null;
+  availableDates: string[];
 }
 
-export default function ProdCalendar({ onSelect, selected }: Props) {
-  const { data: reports = [] } = useReports();
+export default function ProdCalendar({ onSelect, selected, availableDates }: Props) {
   const { lang } = useLang();
-  const datesWithData = new Set(reports.map((r: Report) => r.date));
+  const datesWithData = new Set(availableDates);
 
   const modifiers = {
     hasData: (d: Date) => datesWithData.has(dayjs(d).format('YYYY-MM-DD')),

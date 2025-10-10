@@ -83,6 +83,14 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
     serializer_class = InjectionReportSerializer
 
     @action(detail=False, methods=['get'])
+    def dates(self, request):
+        """
+        Returns a list of distinct dates for which there are reports.
+        """
+        dates = InjectionReport.objects.values_list('date', flat=True).distinct().order_by('-date')
+        return Response(list(dates))
+
+    @action(detail=False, methods=['get'])
     def summary(self, request):
         """사출 보고서 요약 통계"""
         qs = self.get_queryset()

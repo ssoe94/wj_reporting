@@ -32,25 +32,39 @@ interface Paginated<T> {
   results: T[];
 }
 
-export function useReports(): UseQueryResult<Report[]> {
+export function useReports(filters: { date?: string } = {}): UseQueryResult<Paginated<Report>> {
   return useQuery({
-    queryKey: ['reports'],
+    queryKey: ['reports', filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filters.date) {
+        params.append('date', filters.date);
+      }
+      const response = await api.get<Paginated<Report>>(`/reports/?${params.toString()}`);
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useAllReports(): UseQueryResult<Report[]> {
+  return useQuery({
+    queryKey: ['reports', 'all'],
     queryFn: async () => {
       const all: Report[] = [];
       let url: string | null = '/reports/';
 
       const rel = (u: string) => {
-        // 절대 URL → 상대 /reports/ 경로로 변환 (baseURL=/api 대비)
+        // Convert absolute links from the paginated API into relative /reports/ paths for the axios baseURL.
         if (u.startsWith('http')) {
           const obj = new URL(u);
           let p = obj.pathname + obj.search; // '/api/reports/?page=2'
           if (p.startsWith('/api/')) {
             p = p.replace('/api', ''); // '/reports/?page=2'
           }
-          if (p.startsWith('/')) p = p.slice(1);
-          return p;
+          return p.startsWith('/') ? p : `/${p}`;
         }
-        return u.startsWith('/') ? u.slice(1) : u;
+        return u.startsWith('/') ? u : `/${u}`;
       };
 
       while (url) {
@@ -60,6 +74,17 @@ export function useReports(): UseQueryResult<Report[]> {
         url = page.next ? rel(page.next) : null;
       }
       return all;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useReportDates() {
+  return useQuery({
+    queryKey: ['report-dates'],
+    queryFn: async () => {
+      const response = await api.get<string[]>('/reports/dates/');
+      return response.data;
     },
     staleTime: 1000 * 60 * 5,
   });

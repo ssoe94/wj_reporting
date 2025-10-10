@@ -1,4 +1,4 @@
-import { useReports } from '@/hooks/useReports';
+import { useAllReports } from '@/hooks/useReports';
 import { useLang } from '@/i18n';
 import React from 'react';
 import dayjs from 'dayjs';
@@ -22,7 +22,7 @@ interface DataPoint {
 }
 
 export default function ProdTrendChart() {
-  const { data: reports = [] } = useReports();
+  const { data: reports = [] } = useAllReports();
   const { t } = useLang();
   const isLiteMode = document.documentElement.classList.contains('lite-mode');
 
