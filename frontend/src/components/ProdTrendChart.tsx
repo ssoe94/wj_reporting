@@ -72,12 +72,15 @@ export default function ProdTrendChart() {
     <div className="w-full h-72">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={dailyData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-          <XAxis 
-            dataKey="date" 
+          <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical />
+          <XAxis
+            dataKey="date"
             tick={{ fontSize: 12, fill: chartColors.axis }}
             tickLine={{ stroke: chartColors.axis }}
             axisLine={{ stroke: chartColors.axis }}
+            interval={0}
+            allowDuplicatedCategory={false}
+            tickFormatter={(value: string) => (value?.length > 5 ? value.slice(5) : value)}
           />
           <YAxis 
             tick={{ fontSize: 12, fill: chartColors.axis }}
