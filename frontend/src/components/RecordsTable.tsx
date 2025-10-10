@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
-import { useReports } from '@/hooks/useReports';
+import { useAllReports } from '@/hooks/useReports';
 import { useLang } from '@/i18n';
 import type { Report } from '@/hooks/useReports';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { useQueryClient } from '@tanstack/react-query';
 
 export default function RecordsTable() {
-  const { data: reports = [], isLoading } = useReports();
+  const { data: reportsData, isLoading } = useAllReports();
+  const reports = reportsData ?? [];
   const [editing, setEditing] = useState<Report | null>(null);
   const { t } = useLang();
   const queryClient = useQueryClient();
@@ -25,6 +26,7 @@ export default function RecordsTable() {
       await api.delete(`/reports/${id}/`);
       toast.success(t('delete_success'));
       queryClient.invalidateQueries({ queryKey: ['reports'] });
+      queryClient.invalidateQueries({ queryKey: ['reports', 'all'] });
     } catch {
       toast.error(t('delete_fail'));
     }
@@ -37,6 +39,7 @@ export default function RecordsTable() {
       await api.patch(`/reports/${editing.id}/`, editing);
       toast.success(t('update_success'));
       queryClient.invalidateQueries({ queryKey: ['reports'] });
+      queryClient.invalidateQueries({ queryKey: ['reports', 'all'] });
       closeDialog();
     } catch {
       toast.error(t('update_fail'));

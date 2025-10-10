@@ -6,7 +6,7 @@ import HistoricalPerformanceChart from './HistoricalPerformanceChart';
 import { Button } from './ui/button';
 import { useLang } from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useReports } from '@/hooks/useReports';
+import { useAllReports } from '@/hooks/useReports';
 import type { Report } from '@/hooks/useReports';
 import dayjs from 'dayjs';
 
@@ -36,7 +36,8 @@ export default function HistoricalPerformanceModal({ isOpen, onClose, partPrefix
   const { t } = useLang();
   const [showDetailRecord, setShowDetailRecord] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<Report | null>(null);
-  const { data: reports = [] } = useReports();
+  const { data: reportsData } = useAllReports();
+  const reports = reportsData ?? [];
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['historicalPerformance', partPrefix],
