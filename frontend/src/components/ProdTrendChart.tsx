@@ -76,11 +76,11 @@ export default function ProdTrendChart() {
         <AreaChart data={dailyData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}>
           <defs>
             <linearGradient id="injectionPlanGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={chartColors.planArea} stopOpacity={0.35} />
+              <stop offset="5%" stopColor={chartColors.planArea} stopOpacity={0.24} />
               <stop offset="95%" stopColor={chartColors.planArea} stopOpacity={0} />
             </linearGradient>
             <linearGradient id="injectionActualGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={chartColors.actualArea} stopOpacity={0.35} />
+              <stop offset="5%" stopColor={chartColors.actualArea} stopOpacity={0.24} />
               <stop offset="95%" stopColor={chartColors.actualArea} stopOpacity={0} />
             </linearGradient>
           </defs>

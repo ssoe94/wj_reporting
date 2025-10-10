@@ -457,11 +457,11 @@ export default function AssemblyDashboard() {
                 <AreaChart data={chartData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}>
                   <defs>
                     <linearGradient id="assemblyPlanGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={assemblyChartColors.planArea} stopOpacity={0.35} />
+                      <stop offset="5%" stopColor={assemblyChartColors.planArea} stopOpacity={0.24} />
                       <stop offset="95%" stopColor={assemblyChartColors.planArea} stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="assemblyActualGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={assemblyChartColors.actualArea} stopOpacity={0.35} />
+                      <stop offset="5%" stopColor={assemblyChartColors.actualArea} stopOpacity={0.24} />
                       <stop offset="95%" stopColor={assemblyChartColors.actualArea} stopOpacity={0} />
                     </linearGradient>
                   </defs>
