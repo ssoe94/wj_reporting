@@ -500,6 +500,7 @@ export default function AssemblyDashboard() {
                     name={t('analysis_chart_plan')}
                     stroke={assemblyChartColors.planArea}
                     fill="url(#assemblyPlanGradient)"
+                    fillOpacity={0.6}
                     strokeWidth={2}
                   />
                   <Area
@@ -509,6 +510,7 @@ export default function AssemblyDashboard() {
                     name={t('analysis_chart_actual')}
                     stroke={assemblyChartColors.actualArea}
                     fill="url(#assemblyActualGradient)"
+                    fillOpacity={0.6}
                     strokeWidth={2}
                   />
                   <Line
