@@ -36,13 +36,14 @@ export default function AssemblyTrendChart() {
     });
 
     const allDates = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-    if (!allDates.length) return [];
+    if (!allDates.length) return [] as DataPoint[];
 
     allDates.forEach((item) => {
       item.achievementRate = item.plan > 0 ? Math.round((item.actual / item.plan) * 100) : 0;
     });
 
-    const cutoff = dayjs().subtract(29, 'day');
+    const maxDate = dayjs(allDates[allDates.length - 1].date);
+    const cutoff = maxDate.clone().subtract(29, 'day');
     return allDates
       .filter((item) => dayjs(item.date).diff(cutoff, 'day') >= 0)
       .slice(-30);
@@ -88,6 +89,7 @@ export default function AssemblyTrendChart() {
             tick={{ fontSize: 12, fill: chartColors.axis }}
             tickLine={{ stroke: chartColors.axis }}
             axisLine={{ stroke: chartColors.axis }}
+            domain={[0, (dataMax: number) => (dataMax ? Math.ceil(dataMax * 1.1) : 1)]}
           />
           <YAxis
             yAxisId="right"
@@ -96,6 +98,7 @@ export default function AssemblyTrendChart() {
             tickLine={{ stroke: chartColors.axis }}
             axisLine={{ stroke: chartColors.axis }}
             tickFormatter={(value) => `${value}%`}
+            domain={[0, (dataMax: number) => Math.min(100, dataMax ? Math.ceil(dataMax * 1.1) : 100)]}
           />
           <Tooltip
             contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
@@ -117,7 +120,7 @@ export default function AssemblyTrendChart() {
             dataKey="plan"
             name="Plan"
             stroke={chartColors.planArea}
-            strokeWidth={2}
+            strokeWidth={1.5}
             fill="url(#assemblyTrendPlan)"
           />
           <Area
@@ -126,7 +129,7 @@ export default function AssemblyTrendChart() {
             dataKey="actual"
             name="Actual"
             stroke={chartColors.actualArea}
-            strokeWidth={2}
+            strokeWidth={1.5}
             fill="url(#assemblyTrendActual)"
           />
           <Line
@@ -135,7 +138,7 @@ export default function AssemblyTrendChart() {
             dataKey="achievementRate"
             name="Achievement"
             stroke={chartColors.achievementLine}
-            strokeWidth={2}
+            strokeWidth={1.5}
             dot={false}
           />
         </AreaChart>

@@ -136,15 +136,17 @@ export default function AssemblyDashboard() {
   }, [records]);
 
   const minDay = React.useMemo(() => (uniqueDates.minDate ? dayjs(uniqueDates.minDate) : null), [uniqueDates]);
+  const maxDay = React.useMemo(() => (uniqueDates.maxDate ? dayjs(uniqueDates.maxDate) : null), [uniqueDates]);
 
   const computedStartDay = React.useMemo(() => {
-    const candidate = dayjs().subtract(29, 'day');
+    if (!maxDay) return null;
+    const candidate = maxDay.clone().subtract(29, 'day');
     if (minDay && candidate.isBefore(minDay)) return minDay;
     return candidate;
-  }, [minDay]);
+  }, [maxDay, minDay]);
 
   const effectiveStartValue = computedStartDay?.format('YYYY-MM-DD') ?? '';
-  const effectiveEndValue = dayjs().format('YYYY-MM-DD');
+  const effectiveEndValue = maxDay?.format('YYYY-MM-DD') ?? '';
 
   React.useEffect(() => {
     if (!effectiveStartValue || !effectiveEndValue) return;
@@ -495,12 +497,14 @@ export default function AssemblyDashboard() {
                     yAxisId="left"
                     tick={{ fontSize: 11, fill: isLiteMode ? '#1f2937' : '#4b5563' }}
                     tickFormatter={(value) => value.toLocaleString()}
+                    domain={[0, (dataMax: number) => (dataMax ? Math.ceil(dataMax * 1.1) : 1)]}
                   />
                   <YAxis
                     yAxisId="right"
                     orientation="right"
                     tick={{ fontSize: 11, fill: isLiteMode ? '#1f2937' : '#4b5563' }}
                     tickFormatter={(value) => `${value}%`}
+                    domain={[0, (dataMax: number) => Math.min(100, dataMax ? Math.ceil(dataMax * 1.1) : 100)]}
                   />
                   <Tooltip
                     formatter={(value: number, name) => {
@@ -518,7 +522,7 @@ export default function AssemblyDashboard() {
                     name={t('analysis_chart_plan')}
                     stroke={assemblyChartColors.planArea}
                     fill="url(#assemblyPlanGradient)"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                   />
                   <Area
                     yAxisId="left"
@@ -527,7 +531,7 @@ export default function AssemblyDashboard() {
                     name={t('analysis_chart_actual')}
                     stroke={assemblyChartColors.actualArea}
                     fill="url(#assemblyActualGradient)"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                   />
                   <Line
                     yAxisId="right"
@@ -535,7 +539,7 @@ export default function AssemblyDashboard() {
                     dataKey="achievement"
                     name={t('analysis_metric_achievement')}
                     stroke={assemblyChartColors.achievementLine}
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     dot={false}
                   />
                   <Line
@@ -544,7 +548,7 @@ export default function AssemblyDashboard() {
                     dataKey="quality"
                     name={t('analysis_metric_quality')}
                     stroke={assemblyChartColors.qualityLine}
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     dot={false}
                   />
                 </AreaChart>
