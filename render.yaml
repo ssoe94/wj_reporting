@@ -15,8 +15,8 @@ services:
     routes:
       # API proxy rule (from static.json)
       - type: rewrite
-        source: /api/:path*
-        destination: https://wj-reporting-backend.onrender.com/api/:path*
+        source: /api/*
+        destination: https://wj-reporting-backend.onrender.com/api/:splat
       # SPA rewrite rule for client-side routing
       - type: rewrite
         source: /*
