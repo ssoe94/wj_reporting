@@ -5,23 +5,16 @@ envVarGroups:
     # DATABASE_URL, SECRET_KEY 등 백엔드 서비스에 필요한 모든 비밀/환경 변수를 추가해야 합니다.
 
 services:
-  # Frontend Static Site
-  - type: static
-    name: wj_reporting
-    rootDir: frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
-    # Note: Static sites use static.json for routing configuration
-
-  # Backend Web Service
+  # Combined Frontend + Backend Web Service
   - type: web
-    name: wj_reporting_backend
+    name: wj_reporting
     env: python
-    rootDir: backend
-    buildCommand: bash build.sh
-    # Render가 PORT를 자동으로 설정하므로 --bind 인수는 제거하는 것이 좋습니다.
-    startCommand: python manage.py migrate && gunicorn config.wsgi:application --preload
-    # Connect to the shared environment variables
+    buildCommand: |
+      # Build frontend
+      cd frontend && npm ci && npm run build && cd ..
+      # Build backend
+      cd backend && bash build.sh
+    startCommand: cd backend && python manage.py migrate && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --preload
     envVarGroup: shared-secrets
 
   # Daily Inventory Snapshot Cron Job

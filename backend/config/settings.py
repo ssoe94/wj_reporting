@@ -213,11 +213,12 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Additional static files locations (frontend build output)
 STATICFILES_DIRS = [
-    BASE_DIR.parent / 'frontend' / 'dist',  # 실제 빌드 위치로 수정
+    BASE_DIR.parent / 'frontend' / 'dist',  # 프론트엔드 빌드 결과물
 ]
 
 # Default primary key field type
