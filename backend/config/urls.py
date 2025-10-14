@@ -18,9 +18,11 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from django.views.generic import TemplateView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .views import health_check
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/health/', health_check, name='health_check'),
     path('api/', include('injection.urls')),
     path('api/assembly/', include('assembly.urls')),
     path('api/sales/', include('sales.urls')),
