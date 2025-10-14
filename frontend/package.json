@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build && npm run build:legacy && npm run copy:static",
     "build:legacy": "postcss src/index.css -c ./postcss.legacy.config.cjs -o dist/legacy.css",
-    "copy:static": "cp static.json dist/static.json",
+    "copy:static": "node -e \"require('fs').copyFileSync('static.json', 'dist/static.json')\"",
     "lint": "eslint .",
     "preview": "vite preview"
   },
