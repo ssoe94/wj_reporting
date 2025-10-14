@@ -1,8 +1,16 @@
 {
+  "name": "production-site",
+  "version": "1.0.0",
+  "description": "WJ Reporting System",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:smoke": "bash scripts/quick-smoke-test.sh",
+    "verify:deployment": "node scripts/verify-deployment.js",
+    "release:check": "bash scripts/release-checklist.sh"
+  },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.10",
-    "autoprefixer": "^10.4.21",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.10"
+    "@playwright/test": "^1.40.0"
   }
 }
