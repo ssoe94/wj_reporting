@@ -125,23 +125,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Test Health Endpoint (JSON)
+      - name: Test Health Endpoint via Proxy (JSON)
         run: |
-          echo "Testing backend health endpoint directly..."
-          CONTENT_TYPE=$(curl -sI https://wj-reporting-backend.onrender.com/api/health/ | grep -i content-type | awk '{print $2}' | tr -d '\r')
+          echo "Testing /api/health/ via frontend proxy..."
+          CONTENT_TYPE=$(curl -sI https://wj-reporting.onrender.com/api/health/ | grep -i content-type | awk '{print $2}' | tr -d '\r')
           echo "Content-Type: $CONTENT_TYPE"
           
           if [[ ! "$CONTENT_TYPE" =~ "application/json" ]]; then
             echo "❌ FAIL: Expected application/json, got $CONTENT_TYPE"
+            echo "Proxy routing may not be working correctly"
             exit 1
           fi
-          echo "✅ PASS: Backend health endpoint returns JSON"
+          echo "✅ PASS: Proxy routes /api/* to backend correctly"
       
-      - name: Test Reports Summary (JSON)
+      - name: Test Reports Summary via Proxy (JSON)
         run: |
-          echo "Testing backend reports summary endpoint..."
+          echo "Testing /api/injection/reports/summary/ via proxy..."
           RESPONSE=$(curl -s -w "\n%{http_code}\n%{content_type}" \
-            "https://wj-reporting-backend.onrender.com/api/injection/reports/summary/?date=2025-10-14")
+            "https://wj-reporting.onrender.com/api/injection/reports/summary/?date=2025-10-14")
           
           STATUS=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
           CONTENT_TYPE=$(echo "$RESPONSE" | tail -n 1)
@@ -165,11 +166,11 @@ jobs:
           
           echo "✅ PASS: Reports endpoint returns JSON"
       
-      - name: Test 404 Returns JSON
+      - name: Test 404 Returns JSON via Proxy
         run: |
-          echo "Testing backend 404 error response format..."
+          echo "Testing 404 error response via proxy..."
           RESPONSE=$(curl -s -w "\n%{http_code}\n%{content_type}" \
-            "https://wj-reporting-backend.onrender.com/api/_404_check_nonexistent")
+            "https://wj-reporting.onrender.com/api/_404_check_nonexistent")
           
           STATUS=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
           CONTENT_TYPE=$(echo "$RESPONSE" | tail -n 1)
