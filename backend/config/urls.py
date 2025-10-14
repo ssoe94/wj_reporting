@@ -21,8 +21,14 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import health_check
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    # Health check must be first for Render
     path('api/health/', health_check, name='health_check'),
+    path('api/health', health_check, name='health_check_no_slash'),
+    
+    # Admin
+    path('admin/', admin.site.urls),
+    
+    # API routes
     path('api/', include('injection.urls')),
     path('api/assembly/', include('assembly.urls')),
     path('api/sales/', include('sales.urls')),
@@ -31,7 +37,8 @@ urlpatterns = [
     path('api/mes/', include('inventory.urls')),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    # ── SPA routes fallback ──
+    
+    # ── SPA routes fallback (MUST BE LAST) ──
     # 운영 환경에서 frontend/dist가 없을 때를 대비해 backend/static/index.html을 기본 템플릿으로 사용
-    re_path(r'^(?!api/).*$', TemplateView.as_view(template_name='index.html'), name='spa'),
+    re_path(r'^(?!api/).*', TemplateView.as_view(template_name='index.html'), name='spa'),
 ]
