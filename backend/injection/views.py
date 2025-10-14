@@ -82,6 +82,19 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
     serializer_class = InjectionReportSerializer
 
+    def get_queryset(self):
+        """
+        날짜 필터링을 지원하는 queryset 반환
+        """
+        queryset = super().get_queryset()
+        
+        # 날짜 필터링
+        date_str = self.request.query_params.get('date')
+        if date_str:
+            queryset = queryset.filter(date=date_str)
+        
+        return queryset.order_by('-date', 'machine_no', 'start_datetime')
+
     @action(detail=False, methods=['get'])
     def dates(self, request):
         """
