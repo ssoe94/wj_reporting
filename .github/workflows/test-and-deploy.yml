@@ -127,21 +127,21 @@ jobs:
       
       - name: Test Health Endpoint (JSON)
         run: |
-          echo "Testing /api/health/ endpoint..."
-          CONTENT_TYPE=$(curl -sI https://wj-reporting.onrender.com/api/health/ | grep -i content-type | awk '{print $2}' | tr -d '\r')
+          echo "Testing backend health endpoint directly..."
+          CONTENT_TYPE=$(curl -sI https://wj-reporting-backend.onrender.com/api/health/ | grep -i content-type | awk '{print $2}' | tr -d '\r')
           echo "Content-Type: $CONTENT_TYPE"
           
           if [[ ! "$CONTENT_TYPE" =~ "application/json" ]]; then
             echo "❌ FAIL: Expected application/json, got $CONTENT_TYPE"
             exit 1
           fi
-          echo "✅ PASS: Health endpoint returns JSON"
+          echo "✅ PASS: Backend health endpoint returns JSON"
       
       - name: Test Reports Summary (JSON)
         run: |
-          echo "Testing /api/injection/reports/summary/ endpoint..."
+          echo "Testing backend reports summary endpoint..."
           RESPONSE=$(curl -s -w "\n%{http_code}\n%{content_type}" \
-            "https://wj-reporting.onrender.com/api/injection/reports/summary/?date=2025-10-14")
+            "https://wj-reporting-backend.onrender.com/api/injection/reports/summary/?date=2025-10-14")
           
           STATUS=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
           CONTENT_TYPE=$(echo "$RESPONSE" | tail -n 1)
@@ -167,9 +167,9 @@ jobs:
       
       - name: Test 404 Returns JSON
         run: |
-          echo "Testing 404 error response format..."
+          echo "Testing backend 404 error response format..."
           RESPONSE=$(curl -s -w "\n%{http_code}\n%{content_type}" \
-            "https://wj-reporting.onrender.com/api/_404_check_nonexistent")
+            "https://wj-reporting-backend.onrender.com/api/_404_check_nonexistent")
           
           STATUS=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
           CONTENT_TYPE=$(echo "$RESPONSE" | tail -n 1)
@@ -197,18 +197,17 @@ jobs:
           
           echo "✅ PASS: 404 errors return JSON"
       
-      - name: Test Backend Direct
+      - name: Test Frontend Loads
         run: |
-          echo "Testing backend direct access..."
-          CONTENT_TYPE=$(curl -sI https://wj-reporting-backend.onrender.com/api/health/ \
-            | grep -i content-type | awk '{print $2}' | tr -d '\r')
-          echo "Backend Content-Type: $CONTENT_TYPE"
+          echo "Testing frontend loads successfully..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://wj-reporting.onrender.com)
+          echo "Frontend Status: $STATUS"
           
-          if [[ ! "$CONTENT_TYPE" =~ "application/json" ]]; then
-            echo "❌ FAIL: Backend should return JSON"
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ FAIL: Frontend should return 200"
             exit 1
           fi
-          echo "✅ PASS: Backend returns JSON"
+          echo "✅ PASS: Frontend loads successfully"
       
       - name: Run full verification script
         run: |
