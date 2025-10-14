@@ -1,28 +1,16 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
-// API 기본 URL 설정
-let API_URL = import.meta.env.VITE_APP_API_URL as string | undefined;
+// API 기본 URL 설정 - 환경 변수 우선, 없으면 프록시 사용
+const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
-if (!API_URL) {
-  // Render 환경 감지: 프론트 서비스 도메인 → xxx.onrender.com
-  const { hostname } = window.location;
-  console.log('Current hostname:', hostname);
-  
-  if (hostname.endsWith('.onrender.com') && !hostname.includes('backend')) {
-    // 백엔드 서비스는 "-backend" 접미사를 붙인 도메인이라고 가정
-    API_URL = `https://${hostname.split('.')[0]}-backend.onrender.com/api`;
-    console.log('Render backend URL configured:', API_URL);
-  } else {
-    API_URL = '/api'; // 로컬 또는 프록시 환경
-    console.log('Local/proxy API URL configured:', API_URL);
-  }
-} else {
-  console.log('Environment API URL configured:', API_URL);
-}
+console.log('[API Config] Base URL:', API_URL);
+console.log('[API Config] Environment:', import.meta.env.MODE);
 
 // axios 인스턴스 생성
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 30000, // 30초 타임아웃
+  withCredentials: true, // CORS 자격증명 포함
   headers: {
     'Content-Type': 'application/json',
   },
@@ -42,14 +30,41 @@ api.interceptors.request.use(
   }
 );
 
-// 응답 인터셉터: 토큰 만료 시 자동 갱신
+// 응답 인터셉터: 토큰 만료 시 자동 갱신 및 에러 로깅
 api.interceptors.response.use(
   (response) => {
+    // 응답 헤더 검증 (디버깅용)
+    const contentType = response.headers['content-type'];
+    if (contentType && !contentType.includes('application/json')) {
+      console.warn('[API Warning] Non-JSON response:', {
+        url: response.config.url,
+        contentType,
+        status: response.status,
+      });
+    }
     return response;
   },
-  async (error) => {
-    const originalRequest = error.config;
+  async (error: AxiosError) => {
+    const originalRequest = error.config as any;
     
+    // HTML 응답 감지 (프록시 실패 시)
+    if (error.response) {
+      const contentType = error.response.headers['content-type'];
+      if (contentType?.includes('text/html')) {
+        console.error('[API Error] Received HTML instead of JSON:', {
+          url: originalRequest?.url,
+          method: originalRequest?.method,
+          status: error.response.status,
+          contentType,
+          baseURL: API_URL,
+        });
+        return Promise.reject(new Error(
+          `API routing error: Received HTML instead of JSON. Check proxy configuration. URL: ${originalRequest?.url}`
+        ));
+      }
+    }
+    
+    // 401 에러 처리
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       
@@ -63,24 +78,58 @@ api.interceptors.response.use(
           return api(originalRequest);
         }
       } catch (refreshError) {
-        // 리프레시 토큰도 만료된 경우 로그아웃
         sessionStorage.removeItem('access_token');
         sessionStorage.removeItem('refresh_token');
         window.location.href = '/login';
       }
     }
     
+    // 일반 에러 로깅
+    console.error('[API Error]', {
+      url: originalRequest?.url,
+      method: originalRequest?.method,
+      status: error.response?.status,
+      message: error.message,
+      data: error.response?.data,
+    });
+    
     return Promise.reject(error);
   }
 );
 
-// API 엔드포인트
+// 파라미터 유효성 검증 헬퍼
+function validateAndEncodeParam(value: string | undefined, paramName: string): string {
+  if (!value || value.trim() === '') {
+    throw new Error(`Invalid ${paramName}: value is empty or undefined`);
+  }
+  
+  // 잘못된 문자 감지 (HTML 태그 등)
+  if (value.includes('<') || value.includes('>')) {
+    throw new Error(`Invalid ${paramName}: contains invalid characters`);
+  }
+  
+  return encodeURIComponent(value.trim());
+}
+
+// API 엔드포인트 (파라미터 가드 포함)
 export const endpoints = {
   // 사출 기록 관련
   records: {
-    list: (date?: string) => `/api/reports/${date ? `?date=${date}` : ''}`,
-    create: () => '/api/reports/',
-    summary: (date?: string) => `/api/reports/summary/${date ? `?date=${date}` : ''}`,
+    list: (date?: string) => {
+      if (date) {
+        const encodedDate = validateAndEncodeParam(date, 'date');
+        return `/reports/?date=${encodedDate}`;
+      }
+      return '/reports/';
+    },
+    create: () => '/reports/',
+    summary: (date?: string) => {
+      if (date) {
+        const encodedDate = validateAndEncodeParam(date, 'date');
+        return `/reports/summary/?date=${encodedDate}`;
+      }
+      return '/reports/summary/';
+    },
   },
 };
 

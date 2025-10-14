@@ -13,13 +13,14 @@ services:
     staticPublishPath: dist
     # All routing rules are now defined here. static.json is no longer needed.
     routes:
-      # API proxy rule (from static.json)
+      # API proxy rule - forward to backend (경로 중복 방지)
+      - type: redirect
+        source: /api/:path*
+        destination: https://wj-reporting-backend.onrender.com/api/:path*
+        status: 200
+      # SPA rewrite rule for client-side routing (only for non-API paths)
       - type: rewrite
-        source: /api/*
-        destination: https://wj-reporting-backend.onrender.com/api/:splat
-      # SPA rewrite rule for client-side routing
-      - type: rewrite
-        source: /*
+        source: /:path*
         destination: /index.html
 
   # Backend Web Service

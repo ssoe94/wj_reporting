@@ -76,6 +76,9 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Custom middleware for API handling
+    'config.middleware.NoCacheAPIMiddleware',
+    'config.middleware.APINotFoundMiddleware',
 ]
 
 # 보안 설정
@@ -97,6 +100,23 @@ CORS_ALLOWED_ORIGINS = [
     config('FRONTEND_URL', default='https://wj-reporting.onrender.com'),
 ]
 
+# CORS 자격증명 허용 (쿠키, 인증 헤더)
+CORS_ALLOW_CREDENTIALS = True
+
+# CSRF 신뢰 출처 (프론트엔드 도메인)
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    config('FRONTEND_URL', default='https://wj-reporting.onrender.com'),
+]
+
+# 프로덕션 환경에서 쿠키 보안 설정
+if ENVIRONMENT == 'production':
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SAMESITE = 'None'  # 크로스 도메인 허용
+    CSRF_COOKIE_SAMESITE = 'None'
+
 # REST Framework 설정
 REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': [
@@ -111,7 +131,13 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 100
+    'PAGE_SIZE': 100,
+    # API 응답 캐시 방지 (항상 최신 데이터)
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+    # 404/500 에러도 JSON으로 반환
+    'EXCEPTION_HANDLER': 'config.exceptions.custom_exception_handler',
 }
 
 ROOT_URLCONF = 'config.urls'

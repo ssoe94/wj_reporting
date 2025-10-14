@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Deployment Test</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 { color: #4ec9b0; }
+        h2 { color: #569cd6; margin-top: 30px; }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            background: #252526;
+        }
+        .pass { border-left: 4px solid #4ec9b0; }
+        .fail { border-left: 4px solid #f48771; }
+        .test-name { font-weight: bold; color: #dcdcaa; }
+        .test-url { color: #9cdcfe; font-size: 0.9em; }
+        .test-details { margin-top: 5px; font-size: 0.9em; }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover { background: #1177bb; }
+        pre {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.85em;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 API Deployment Verification</h1>
+    <p>브라우저 콘솔에서 API 응답을 검증합니다.</p>
+    
+    <button onclick="runTests()">테스트 실행</button>
+    
+    <div id="results"></div>
+    
+    <script>
+        const FRONTEND_URL = window.location.origin;
+        const BACKEND_URL = 'https://wj-reporting-backend.onrender.com';
+        const TEST_DATE = '2025-10-14';
+        
+        async function testEndpoint(url, expectedStatus, testName) {
+            const result = {
+                name: testName,
+                url: url,
+                pass: false,
+                details: []
+            };
+            
+            try {
+                const response = await fetch(url);
+                const contentType = response.headers.get('content-type') || '';
+                const status = response.status;
+                
+                result.details.push(`Status: ${status}`);
+                result.details.push(`Content-Type: ${contentType}`);
+                
+                // 상태 코드 검증
+                if (status !== expectedStatus) {
+                    result.details.push(`❌ Expected status ${expectedStatus}, got ${status}`);
+                    return result;
+                }
+                
+                // Content-Type 검증
+                if (!contentType.includes('application/json')) {
+                    result.details.push(`❌ Expected JSON, got ${contentType}`);
+                    const text = await response.text();
+                    result.details.push(`Body preview: ${text.substring(0, 200)}`);
+                    return result;
+                }
+                
+                // 응답 본문 검증
+                const text = await response.text();
+                
+                // HTML 태그 감지
+                if (text.includes('<html') || text.includes('<!DOCTYPE')) {
+                    result.details.push(`❌ Received HTML instead of JSON!`);
+                    result.details.push(`Body preview: ${text.substring(0, 200)}`);
+                    return result;
+                }
+                
+                // JSON 파싱 검증
+                try {
+                    const json = JSON.parse(text);
+                    result.details.push(`✅ Valid JSON response`);
+                    result.details.push(`Response keys: ${Object.keys(json).join(', ')}`);
+                    result.pass = true;
+                } catch (e) {
+                    result.details.push(`❌ Invalid JSON: ${e.message}`);
+                    return result;
+                }
+                
+            } catch (error) {
+                result.details.push(`❌ Error: ${error.message}`);
+            }
+            
+            return result;
+        }
+        
+        function displayResult(result) {
+            const div = document.createElement('div');
+            div.className = `test-result ${result.pass ? 'pass' : 'fail'}`;
+            
+            div.innerHTML = `
+                <div class="test-name">${result.pass ? '✅' : '❌'} ${result.name}</div>
+                <div class="test-url">${result.url}</div>
+                <div class="test-details">
+                    ${result.details.map(d => `<div>${d}</div>`).join('')}
+                </div>
+            `;
+            
+            document.getElementById('results').appendChild(div);
+        }
+        
+        async function runTests() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h2>테스트 실행 중...</h2>';
+            
+            const tests = [
+                // Backend Direct Tests
+                { url: `${BACKEND_URL}/api/health/`, status: 200, name: 'Health Check (Backend)' },
+                
+                // Frontend Proxy Tests
+                { url: `${FRONTEND_URL}/api/health/`, status: 200, name: 'Health Check (via Proxy)' },
+                { url: `${FRONTEND_URL}/api/injection/reports/summary/?date=${TEST_DATE}`, status: 200, name: 'Reports Summary (via Proxy)' },
+                
+                // 404 Tests
+                { url: `${FRONTEND_URL}/api/this-should-not-exist`, status: 404, name: 'Non-existent API endpoint' },
+                { url: `${BACKEND_URL}/api/invalid-path-test`, status: 404, name: 'Backend 404 JSON response' },
+            ];
+            
+            resultsDiv.innerHTML = '';
+            
+            let passed = 0;
+            for (const test of tests) {
+                const result = await testEndpoint(test.url, test.status, test.name);
+                displayResult(result);
+                if (result.pass) passed++;
+            }
+            
+            const summary = document.createElement('h2');
+            summary.textContent = `결과: ${passed}/${tests.length} 테스트 통과`;
+            summary.style.color = passed === tests.length ? '#4ec9b0' : '#f48771';
+            resultsDiv.insertBefore(summary, resultsDiv.firstChild);
+            
+            console.log(`테스트 완료: ${passed}/${tests.length} 통과`);
+        }
+    </script>
+</body>
+</html>
