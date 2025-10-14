@@ -11,17 +11,7 @@ services:
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
-    # All routing rules are now defined here. static.json is no longer needed.
-    routes:
-      # API proxy rule - forward to backend (경로 중복 방지)
-      - type: redirect
-        source: /api/:path*
-        destination: https://wj-reporting-backend.onrender.com/api/:path*
-        status: 200
-      # SPA rewrite rule for client-side routing (only for non-API paths)
-      - type: rewrite
-        source: /:path*
-        destination: /index.html
+    # Note: Static sites use static.json for routing configuration
 
   # Backend Web Service
   - type: web
