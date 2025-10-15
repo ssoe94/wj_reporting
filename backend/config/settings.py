@@ -101,7 +101,12 @@ def _normalize_origin(value: str) -> str:
     if not value:
         return value
     cleaned = value.strip()
-    return cleaned.rstrip('/') if cleaned else cleaned
+    if not cleaned:
+        return ''
+    normalized = cleaned.rstrip('/')
+    if normalized.endswith('.onrender.com') and not normalized.startswith('http'):
+        normalized = f"https://{normalized}"
+    return normalized
 
 _runtime_frontend_origin = _normalize_origin(os.getenv('FRONTEND_URL_RUNTIME', ''))
 _runtime_additional_origin = _normalize_origin(os.getenv('ADDITIONAL_FRONTEND_URL_RUNTIME', ''))
@@ -126,6 +131,13 @@ for origin in (
         _cors_allowed_origins.add(origin)
 
 CORS_ALLOWED_ORIGINS = list(_cors_allowed_origins)
+
+
+# Render.com의 모든 하위 도메인을 허용하는 정규식 추가
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.onrender\.com$",
+]
+
 
 # CSRF 신뢰 출처 (프론트엔드 도메인)
 _csrf_trusted_origins = {
