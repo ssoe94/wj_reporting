@@ -25,10 +25,10 @@ class QualityReport(models.Model):
     disposition = models.TextField('처리 방식', blank=True, default='')
     action_result = models.TextField('처리 결과', blank=True, default='')
     
-    # 이미지 필드 (Cloudinary에 저장) - 최대 3장
-    image1 = models.ImageField('불량 이미지 1', upload_to='quality_reports/', blank=True, null=True)
-    image2 = models.ImageField('불량 이미지 2', upload_to='quality_reports/', blank=True, null=True)
-    image3 = models.ImageField('불량 이미지 3', upload_to='quality_reports/', blank=True, null=True)
+    # 이미지 URL 필드 (Cloudinary URL 저장) - 최대 3장
+    image1 = models.URLField('불량 이미지 1', max_length=500, blank=True, null=True)
+    image2 = models.URLField('불량 이미지 2', max_length=500, blank=True, null=True)
+    image3 = models.URLField('불량 이미지 3', max_length=500, blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

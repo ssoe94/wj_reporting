@@ -1,4 +1,4 @@
-import { FileText, PlusCircle, Plus, X } from 'lucide-react';
+import { FileText, PlusCircle, Plus, X, Loader2 } from 'lucide-react';
 import { useLang } from '../../i18n';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,13 +16,25 @@ import { useAssemblyPartsByModel, useAssemblyPartspecsByModel, useAssemblyPartNo
 import { useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import machines from '../../constants/machines';
+import { uploadToCloudinary } from '../../utils/cloudinaryUpload';
 
 export default function QualityReportForm() {
   const { t, lang } = useLang();
   const queryClient = useQueryClient();
   
+  // 현재 시간을 YYYY-MM-DDTHH:mm 형식으로 가져오기
+  const getCurrentDateTime = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+  
   const [form, setForm] = useState({
-    report_dt: '',
+    report_dt: getCurrentDateTime(), // 현재 시간으로 자동 설정
     section: 'LQC_INJ',
     machineId: '',
     productionLine: '',
@@ -42,7 +54,9 @@ export default function QualityReportForm() {
   // 이미지 파일 상태 (최대 3장)
   const [imageFiles, setImageFiles] = useState<(File | null)[]>([null, null, null]);
   const [imagePreviews, setImagePreviews] = useState<(string | null)[]>([null, null, null]);
+  const [imageUrls, setImageUrls] = useState<(string | null)[]>([null, null, null]); // Cloudinary URLs
   const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   // 공급자 목록 (IQC용) - DB에서 불러오기
   const [suppliers, setSuppliers] = useState<string[]>([]);
@@ -302,53 +316,73 @@ export default function QualityReportForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // 보고일시가 비어있으면 현재 시간으로 자동 설정
     if (!form.report_dt) {
-      toast.error(t('quality.report_dt_required'));
-      return;
+      setForm(prev => ({ ...prev, report_dt: getCurrentDateTime() }));
     }
+    
     if (!form.model || !form.part_no) {
       toast.error(t('quality.model_part_no_required'));
       return;
     }
 
     (async () => {
-      // IQC인 경우 공급자 저장
-      if (form.section === 'IQC' && form.supplier) {
-        await addSupplier(form.supplier);
-      }
+      setIsUploading(true);
       try {
+        // IQC인 경우 공급자 저장
+        if (form.section === 'IQC' && form.supplier) {
+          await addSupplier(form.supplier);
+        }
+
+        // 1. 이미지를 Cloudinary에 업로드
+        const uploadedUrls: (string | null)[] = [null, null, null];
+        for (let i = 0; i < imageFiles.length; i++) {
+          if (imageFiles[i]) {
+            try {
+              toast.info(`이미지 ${i + 1} 업로드 중...`);
+              const result = await uploadToCloudinary(imageFiles[i]!, 'quality');
+              uploadedUrls[i] = result.secure_url;
+              console.log(`Image ${i + 1} uploaded:`, result.secure_url);
+            } catch (uploadError) {
+              console.error(`Image ${i + 1} upload failed:`, uploadError);
+              toast.error(`이미지 ${i + 1} 업로드 실패`);
+            }
+          }
+        }
+
+        // 2. 불량률 계산
         const insp = Number(form.inspection_qty) || 0;
         const defect = Number(form.defect_qty) || 0;
         const rate = insp > 0 ? Math.round((defect / insp) * 10000) / 100 : 0;
         
-        // FormData 생성 (이미지 포함)
-        const formData = new FormData();
-        formData.append('report_dt', form.report_dt);
-        formData.append('section', form.section);
-        formData.append('model', form.model);
-        formData.append('part_no', form.part_no);
-        if (form.lot_qty) formData.append('lot_qty', form.lot_qty);
-        if (form.inspection_qty) formData.append('inspection_qty', form.inspection_qty);
-        if (form.defect_qty) formData.append('defect_qty', form.defect_qty);
-        formData.append('defect_rate', `${rate}%`);
-        formData.append('judgement', form.judgement || 'NG');
-        formData.append('phenomenon', form.phenomenon);
-        formData.append('disposition', form.disposition);
+        // 3. JSON 데이터로 전송 (Cloudinary URL 포함)
+        const reportData = {
+          report_dt: form.report_dt,
+          section: form.section,
+          model: form.model,
+          part_no: form.part_no,
+          lot_qty: form.lot_qty ? Number(form.lot_qty) : null,
+          inspection_qty: form.inspection_qty ? Number(form.inspection_qty) : null,
+          defect_qty: form.defect_qty ? Number(form.defect_qty) : null,
+          defect_rate: `${rate}%`,
+          judgement: form.judgement || 'NG',
+          phenomenon: form.phenomenon || '',
+          disposition: form.disposition || '',
+          image1: uploadedUrls[0] || null,
+          image2: uploadedUrls[1] || null,
+          image3: uploadedUrls[2] || null,
+        };
         
-        // 이미지 파일 추가 (최대 3장)
-        if (imageFiles[0]) formData.append('image1', imageFiles[0]);
-        if (imageFiles[1]) formData.append('image2', imageFiles[1]);
-        if (imageFiles[2]) formData.append('image3', imageFiles[2]);
+        console.log('📤 Sending report data:', reportData);
 
-        await api.post('/quality/reports/', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        });
+        await api.post('/quality/reports/', reportData);
         toast.success(t('save_success'));
         queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
+        
+        // 폼 초기화 (보고일시는 현재 시간으로 재설정)
         setForm({
-          report_dt: '',
+          report_dt: getCurrentDateTime(),
           section: form.section,
           machineId: '',
           productionLine: '',
@@ -368,8 +402,12 @@ export default function QualityReportForm() {
         setSelectedPartSpec(null);
         setImageFiles([null, null, null]);
         setImagePreviews([null, null, null]);
+        setImageUrls([null, null, null]);
       } catch (err: any) {
+        console.error('Save error:', err);
         toast.error(t('save_fail'));
+      } finally {
+        setIsUploading(false);
       }
     })();
   };
@@ -824,10 +862,20 @@ export default function QualityReportForm() {
             <PermissionButton
               permission="can_edit_quality"
               type="submit"
-              className="px-6 py-3 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
+              disabled={isUploading}
+              className="px-6 py-3 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
             >
-              <PlusCircle className="h-5 w-5 shrink-0" />
-              {t('save')}
+              {isUploading ? (
+                <>
+                  <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+                  {t('saving')}
+                </>
+              ) : (
+                <>
+                  <PlusCircle className="h-5 w-5 shrink-0" />
+                  {t('save')}
+                </>
+              )}
             </PermissionButton>
           </div>
         </form>

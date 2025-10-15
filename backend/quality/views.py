@@ -1,9 +1,13 @@
-from rest_framework import viewsets, filters
-from rest_framework.decorators import action
+from rest_framework import viewsets, filters, status
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from .models import QualityReport, Supplier
 from .serializers import QualityReportSerializer, SupplierSerializer
+from .cloudinary_utils import get_upload_params
 
 
 class QualityReportViewSet(viewsets.ModelViewSet):
@@ -16,18 +20,18 @@ class QualityReportViewSet(viewsets.ModelViewSet):
     ordering = ['-report_dt']
 
     def perform_create(self, serializer):
-        part_no = self.request.data.get('part_no')
+        part_no = serializer.validated_data.get('part_no')
         if isinstance(part_no, str):
-            self.request.data._mutable = True if hasattr(self.request.data, '_mutable') else False
-            self.request.data['part_no'] = part_no.upper()
-        serializer.save()
+            serializer.save(part_no=part_no.upper())
+        else:
+            serializer.save()
 
     def perform_update(self, serializer):
-        part_no = self.request.data.get('part_no')
+        part_no = serializer.validated_data.get('part_no')
         if isinstance(part_no, str):
-            self.request.data._mutable = True if hasattr(self.request.data, '_mutable') else False
-            self.request.data['part_no'] = part_no.upper()
-        serializer.save()
+            serializer.save(part_no=part_no.upper())
+        else:
+            serializer.save()
 
 
 class SupplierViewSet(viewsets.ModelViewSet):
@@ -51,3 +55,37 @@ class SupplierViewSet(viewsets.ModelViewSet):
             'supplier': serializer.data,
             'created': created
         })
+
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_cloudinary_signature(request):
+    """
+    Cloudinary 업로드를 위한 서명 생성
+    
+    POST /api/quality/cloudinary-signature/
+    Body: { "folder": "quality" }  (optional, default: "quality")
+    
+    Returns:
+        {
+            "signature": "...",
+            "timestamp": 1234567890,
+            "upload_preset": "wj-reporting",
+            "api_key": "...",
+            "cloud_name": "deoic09y3"
+        }
+    
+    Note: 
+    - Signed preset 사용 시 timestamp만 서명
+    - folder는 프론트에서 직접 전송 (서명에 미포함)
+    """
+    try:
+        folder = request.data.get('folder', 'quality')
+        upload_params = get_upload_params(folder=folder)
+        return Response(upload_params, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

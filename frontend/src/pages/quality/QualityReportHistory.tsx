@@ -175,19 +175,42 @@ export default function QualityReportHistory() {
                           if (images.length === 0) {
                             return <span className="text-gray-400 text-xs">-</span>;
                           }
+                          
+                          // 이미지 URL 처리 (Cloudinary는 절대 URL 반환)
+                          const getImageUrl = (url: string) => {
+                            // 이미 절대 URL인 경우 (Cloudinary)
+                            if (url.startsWith('http://') || url.startsWith('https://')) {
+                              return url;
+                            }
+                            // 상대 경로인 경우 (로컬 개발 또는 기존 이미지)
+                            // API 베이스 URL 사용 (프록시를 통해 백엔드로 전달)
+                            const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+                            // /media로 시작하는 경우 백엔드 서버 URL 사용
+                            if (url.startsWith('/media')) {
+                              // 개발 환경: localhost:8000, 프로덕션: API 서버
+                              const backendUrl = apiBase || 'http://localhost:8000';
+                              return `${backendUrl}${url}`;
+                            }
+                            return `${apiBase}${url.startsWith('/') ? url : '/' + url}`;
+                          };
+                          
                           return (
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={() => {
-                                  setSelectedImages(images);
+                                  setSelectedImages(images.map(getImageUrl));
                                   setCurrentImageIndex(0);
                                 }}
                                 className="relative"
                               >
                                 <img
-                                  src={images[0]}
+                                  src={getImageUrl(images[0])}
                                   alt="Thumbnail"
                                   className="w-12 h-12 object-cover rounded border border-indigo-200 hover:border-indigo-400 transition-all cursor-pointer"
+                                  onError={(e) => {
+                                    console.error('Image load error:', images[0]);
+                                    e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="48" height="48"%3E%3Crect fill="%23ddd" width="48" height="48"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3E?%3C/text%3E%3C/svg%3E';
+                                  }}
                                 />
                                 {images.length > 1 && (
                                   <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
@@ -509,6 +532,24 @@ export default function QualityReportHistory() {
                 const images = [selectedReport.image1, selectedReport.image2, selectedReport.image3].filter(Boolean) as string[];
                 if (images.length === 0) return null;
                 
+                // 이미지 URL 처리 (Cloudinary는 절대 URL 반환)
+                const getImageUrl = (url: string) => {
+                  // 이미 절대 URL인 경우 (Cloudinary)
+                  if (url.startsWith('http://') || url.startsWith('https://')) {
+                    return url;
+                  }
+                  // 상대 경로인 경우 (로컬 개발 또는 기존 이미지)
+                  // API 베이스 URL 사용 (프록시를 통해 백엔드로 전달)
+                  const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+                  // /media로 시작하는 경우 백엔드 서버 URL 사용
+                  if (url.startsWith('/media')) {
+                    // 개발 환경: localhost:8000, 프로덕션: API 서버
+                    const backendUrl = apiBase || 'http://localhost:8000';
+                    return `${backendUrl}${url}`;
+                  }
+                  return `${apiBase}${url.startsWith('/') ? url : '/' + url}`;
+                };
+                
                 return (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -518,12 +559,16 @@ export default function QualityReportHistory() {
                       {images.map((img, idx) => (
                         <div key={idx} className="relative group">
                           <img
-                            src={img}
+                            src={getImageUrl(img)}
                             alt={`Image ${idx + 1}`}
                             className="w-full h-48 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:border-indigo-400 transition-all"
                             onClick={() => {
-                              setSelectedImages(images);
+                              setSelectedImages(images.map(getImageUrl));
                               setCurrentImageIndex(idx);
+                            }}
+                            onError={(e) => {
+                              console.error('Image load error:', img);
+                              e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999" font-size="20"%3EImage Error%3C/text%3E%3C/svg%3E';
                             }}
                           />
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all rounded-lg flex items-center justify-center">

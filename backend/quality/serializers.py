@@ -12,24 +12,8 @@ class QualityReportSerializer(serializers.ModelSerializer):
         if data.get('part_no'):
             data['part_no'] = data['part_no'].upper()
         
-        # 이미지 URL을 명시적으로 반환
-        if instance.image1:
-            try:
-                data['image1'] = instance.image1.url
-            except:
-                data['image1'] = None
-        
-        if instance.image2:
-            try:
-                data['image2'] = instance.image2.url
-            except:
-                data['image2'] = None
-        
-        if instance.image3:
-            try:
-                data['image3'] = instance.image3.url
-            except:
-                data['image3'] = None
+        # 이미지 URL은 이미 Cloudinary URL이므로 그대로 반환
+        # URLField이므로 별도 처리 불필요
         
         return data
 

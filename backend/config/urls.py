@@ -19,6 +19,8 @@ from django.urls import path, include, re_path
 from django.views.generic import TemplateView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import health_check
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     # Health check must be first for Render
@@ -42,3 +44,7 @@ urlpatterns = [
     # 운영 환경에서 frontend/dist가 없을 때를 대비해 backend/static/index.html을 기본 템플릿으로 사용
     re_path(r'^(?!api/).*', TemplateView.as_view(template_name='index.html'), name='spa'),
 ]
+
+# 개발 환경에서 미디어 파일 서빙
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

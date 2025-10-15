@@ -16,7 +16,7 @@ export default function QualityPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 space-y-6">
       {/* 페이지 제목과 토글을 같은 줄에 배치 */}
       <div className="flex items-center gap-4">
         <ClipboardList className="w-7 h-7 text-blue-600" />

@@ -23,7 +23,7 @@ import {
   ChartNoAxesCombined,
   Boxes,
   ShieldCheck,
-  ClipboardX,
+  AlertTriangle,
   BarChart3,
 } from "lucide-react";
 // 실제 Summary 페이지 컴포넌트
@@ -88,7 +88,7 @@ export function useNavItems() {
         label: t('nav_quality'),
         icon: ShieldCheck,
         children: [
-          { to: "/quality#report", label: t('nav_quality_report'), icon: ClipboardX },
+          { to: "/quality#report", label: t('nav_quality_report'), icon: AlertTriangle },
           { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
         ],
       },
@@ -154,7 +154,7 @@ export function useNavItems() {
     label: t('nav_quality'),
     icon: ShieldCheck,
     children: [
-      { to: "/quality#report", label: t('nav_quality_report'), icon: ClipboardX },
+      { to: "/quality#report", label: t('nav_quality_report'), icon: AlertTriangle },
       { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
     ],
   });

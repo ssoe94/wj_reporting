@@ -51,6 +51,10 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
+    # Cloudinary (must be after staticfiles)
+    'cloudinary_storage',
+    'cloudinary',
+    
     # Third party apps
     'rest_framework',
     'corsheaders',
@@ -92,23 +96,31 @@ if ENVIRONMENT == 'production':
 
 # CORS 설정 - 환경별 제어
 CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL', default=False, cast=bool)
+DEFAULT_FRONTEND_URL = config('FRONTEND_URL', default='https://wj-reporting.onrender.com')
+ADDITIONAL_FRONTEND_URL = config('ADDITIONAL_FRONTEND_URL', default='')
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",  # Vite 개발 서버
     "http://127.0.0.1:5173",
-    config('FRONTEND_URL', default='https://wj-reporting.onrender.com'),
+    DEFAULT_FRONTEND_URL,
 ]
 
-# CORS 자격증명 허용 (쿠키, 인증 헤더)
-CORS_ALLOW_CREDENTIALS = True
+if ADDITIONAL_FRONTEND_URL:
+    CORS_ALLOWED_ORIGINS.append(ADDITIONAL_FRONTEND_URL)
 
 # CSRF 신뢰 출처 (프론트엔드 도메인)
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    config('FRONTEND_URL', default='https://wj-reporting.onrender.com'),
+    DEFAULT_FRONTEND_URL,
 ]
+if ADDITIONAL_FRONTEND_URL:
+    CSRF_TRUSTED_ORIGINS.append(ADDITIONAL_FRONTEND_URL)
+
+# CORS 자격증명 허용 (쿠키, 인증 헤더)
+CORS_ALLOW_CREDENTIALS = True
 
 # 프로덕션 환경에서 쿠키 보안 설정
 if ENVIRONMENT == 'production':
@@ -220,6 +232,30 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR.parent / 'frontend' / 'dist',  # 프론트엔드 빌드 결과물
 ]
+
+# Cloudinary 설정
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME', default=''),
+    'API_KEY': config('CLOUDINARY_API_KEY', default=''),
+    'API_SECRET': config('CLOUDINARY_API_SECRET', default=''),
+}
+
+# Cloudinary 라이브러리 직접 설정
+cloudinary.config(
+    cloud_name=CLOUDINARY_STORAGE['CLOUD_NAME'],
+    api_key=CLOUDINARY_STORAGE['API_KEY'],
+    api_secret=CLOUDINARY_STORAGE['API_SECRET'],
+    secure=True
+)
+
+# Media files (User uploaded files) - Cloudinary 사용
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
