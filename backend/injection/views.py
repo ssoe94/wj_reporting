@@ -27,7 +27,7 @@ from .serializers import (
 )
 
 # For User related views
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from .permissions import (
     InjectionPermission,
     AssemblyPermission,
@@ -36,6 +36,7 @@ from .permissions import (
     DevelopmentPermission,
     AdminOnlyPermission,
 )
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import make_password
@@ -752,12 +753,17 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
 class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
     queryset = UserRegistrationRequest.objects.all()
     serializer_class = UserRegistrationRequestSerializer
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
 
-    @action(detail=True, methods=['post'], url_path='approve', permission_classes=[IsAuthenticated])
+    def get_queryset(self):
+        """
+        Order by creation date, newest first.
+        """
+        return super().get_queryset().order_by('-created_at')
+
+    @action(detail=True, methods=['post'], url_path='approve')
     def approve(self, request, pk=None):
-        if not request.user.is_staff:
-            return Response({'detail': '관리자 권한이 필요합니다.'}, status=status.HTTP_403_FORBIDDEN)
-
         signup_req = self.get_object()
         if signup_req.status != 'pending':
             return Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -836,11 +842,8 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
             'temporary_password': temp_password,
         })
 
-    @action(detail=True, methods=['post'], url_path='reject', permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=['post'], url_path='reject')
     def reject(self, request, pk=None):
-        if not request.user.is_staff:
-            return Response({'detail': '관리자 권한이 필요합니다.'}, status=status.HTTP_403_FORBIDDEN)
-
         signup_req = self.get_object()
         if signup_req.status != 'pending':
             return Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)

@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'django_filters',
     # 'django_celery_beat',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     
     # Local apps
     'injection',
@@ -94,77 +95,30 @@ if ENVIRONMENT == 'production':
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
 
-# CORS 설정 - 환경별 제어
-CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL', default=False, cast=bool)
-
-def _normalize_origin(value: str) -> str:
-    if not value:
-        return value
-    cleaned = value.strip()
-    if not cleaned:
-        return ''
-    normalized = cleaned.rstrip('/')
-    if normalized.endswith('.onrender.com') and not normalized.startswith('http'):
-        normalized = f"https://{normalized}"
-    return normalized
-
-_runtime_frontend_origin = _normalize_origin(os.getenv('FRONTEND_URL_RUNTIME', ''))
-_runtime_additional_origin = _normalize_origin(os.getenv('ADDITIONAL_FRONTEND_URL_RUNTIME', ''))
-DEFAULT_FRONTEND_URL = _normalize_origin(config('FRONTEND_URL', default='https://wj-reporting.onrender.com'))
-ADDITIONAL_FRONTEND_URL = _normalize_origin(config('ADDITIONAL_FRONTEND_URL', default=''))
-
-
-_cors_allowed_origins = {
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",  # Vite 개발 서버
+# CORS 설정
+CORS_ALLOWED_ORIGINS = [
+    "https://wj-reporting.onrender.com",
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
-}
-
-for origin in (
-    DEFAULT_FRONTEND_URL,
-    ADDITIONAL_FRONTEND_URL,
-    _runtime_frontend_origin,
-    _runtime_additional_origin,
-):
-    if origin:
-        _cors_allowed_origins.add(origin)
-
-CORS_ALLOWED_ORIGINS = list(_cors_allowed_origins)
-
-
-# Render.com의 모든 하위 도메인을 허용하는 정규식 추가
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://.*\.onrender\.com$",
 ]
+CORS_ALLOW_CREDENTIALS = False
+CORS_ALLOW_HEADERS = ["authorization", "content-type"]
 
 
 # CSRF 신뢰 출처 (프론트엔드 도메인)
-_csrf_trusted_origins = {
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-}
+CSRF_TRUSTED_ORIGINS = [
+    "https://wj-reporting.onrender.com",
+    "https://wj-reporting-backend.onrender.com",
+]
 
-for origin in (
-    DEFAULT_FRONTEND_URL,
-    ADDITIONAL_FRONTEND_URL,
-    _runtime_frontend_origin,
-    _runtime_additional_origin,
-):
-    if origin:
-        _csrf_trusted_origins.add(origin)
 
-CSRF_TRUSTED_ORIGINS = list(_csrf_trusted_origins)
-
-# CORS 자격증명 허용 (쿠키, 인증 헤더)
-CORS_ALLOW_CREDENTIALS = True
 
 # 프로덕션 환경에서 쿠키 보안 설정
 if ENVIRONMENT == 'production':
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_SAMESITE = 'None'  # 크로스 도메인 허용
-    CSRF_COOKIE_SAMESITE = 'None'
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
 
 # REST Framework 설정
 REST_FRAMEWORK = {
@@ -173,12 +127,12 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
-    'DEFAULT_AUTHENTICATION_CLASSES': [
+    'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
-    ],
+    ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 100,
     # API 응답 캐시 방지 (항상 최신 데이터)
@@ -301,6 +255,24 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 MES_API_BASE = os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn/api/openapi/domain/web/v1/route')
 MES_ACCESS_TOKEN = os.getenv('MES_ACCESS_TOKEN', '')
+
+
+from datetime import timedelta
+
+# ... (other imports)
+
+# Simple JWT 설정
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "VERIFYING_KEY": None,
+    "LEEWAY": 30,
+}
 
 
 # 로깅 설정

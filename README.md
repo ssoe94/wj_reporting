@@ -173,3 +173,19 @@ Private Project
 ---
 
 Made with ❤️ for WJ Manufacturing
+
+---
+
+## Security & Auth Refactoring (2025-10-15)
+
+This section summarizes the updated authentication and security model.
+
+- **JWT Usage**: The API (`/api/`) now exclusively uses JWT (`Bearer` token) for authentication. Cookie-based sessions are no longer used for the API.
+- **Token Endpoints**:
+  - `POST /api/token/`: Obtain `access` and `refresh` tokens.
+  - `POST /api/token/refresh/`: Obtain a new `access` token.
+- **CORS/CSRF Policy**:
+  - `CORS`: Only allows the production frontend origin (`https://wj-reporting.onrender.com`) and local development server. Credentials (cookies) are not allowed.
+  - `CSRF`: Protection is enabled, but trusted origins are configured. API calls do not require a CSRF token as they are not cookie-based.
+- **Admin Permission Criteria**: Actions like user approval require admin rights (`user.is_staff=True`), enforced by the `IsAdminUser` permission class on the backend.
+- **Testing Method**: Use `curl` to test token issuance and protected endpoint access. See developer documentation for examples.
