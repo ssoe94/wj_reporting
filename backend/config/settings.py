@@ -96,28 +96,38 @@ if ENVIRONMENT == 'production':
 
 # CORS 설정 - 환경별 제어
 CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL', default=False, cast=bool)
-DEFAULT_FRONTEND_URL = config('FRONTEND_URL', default='https://wj-reporting.onrender.com')
-ADDITIONAL_FRONTEND_URL = config('ADDITIONAL_FRONTEND_URL', default='')
+def _normalize_origin(value: str) -> str:
+    if not value:
+        return value
+    return value.rstrip('/')
 
-CORS_ALLOWED_ORIGINS = [
+DEFAULT_FRONTEND_URL = _normalize_origin(config('FRONTEND_URL', default='https://wj-reporting.onrender.com'))
+ADDITIONAL_FRONTEND_URL = _normalize_origin(config('ADDITIONAL_FRONTEND_URL', default=''))
+
+CORS_ALLOWED_ORIGINS = {
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",  # Vite 개발 서버
     "http://127.0.0.1:5173",
-    DEFAULT_FRONTEND_URL,
-]
+}
+
+if DEFAULT_FRONTEND_URL:
+    CORS_ALLOWED_ORIGINS.add(DEFAULT_FRONTEND_URL)
 
 if ADDITIONAL_FRONTEND_URL:
-    CORS_ALLOWED_ORIGINS.append(ADDITIONAL_FRONTEND_URL)
+    CORS_ALLOWED_ORIGINS.add(ADDITIONAL_FRONTEND_URL)
 
 # CSRF 신뢰 출처 (프론트엔드 도메인)
-CSRF_TRUSTED_ORIGINS = [
+CSRF_TRUSTED_ORIGINS = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    DEFAULT_FRONTEND_URL,
-]
+}
+
+if DEFAULT_FRONTEND_URL:
+    CSRF_TRUSTED_ORIGINS.add(DEFAULT_FRONTEND_URL)
+
 if ADDITIONAL_FRONTEND_URL:
-    CSRF_TRUSTED_ORIGINS.append(ADDITIONAL_FRONTEND_URL)
+    CSRF_TRUSTED_ORIGINS.add(ADDITIONAL_FRONTEND_URL)
 
 # CORS 자격증명 허용 (쿠키, 인증 헤더)
 CORS_ALLOW_CREDENTIALS = True
