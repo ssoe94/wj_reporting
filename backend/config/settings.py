@@ -95,9 +95,9 @@ if ENVIRONMENT == 'production':
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
 
-# CORS 설정 - 모든 origin 허용 (프로덕션에서 즉시 작동)
+# CORS 설정 - 모든 origin 허용
+# 주의: CORS_ALLOW_ALL_ORIGINS와 CORS_ALLOW_CREDENTIALS는 동시 사용 불가
 CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
 
 
 # CSRF 신뢰 출처 (프론트엔드 도메인)
