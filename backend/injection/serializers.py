@@ -153,7 +153,7 @@ class UserRegistrationRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserRegistrationRequest
         fields = [
-            'id', 'full_name', 'department', 'email', 'status', 'created_at',
+            'id', 'full_name', 'department', 'email', 'reason', 'status', 'created_at',
             'can_view_injection', 'can_view_assembly', 'can_view_quality',
             'can_view_sales', 'can_view_development', 'is_admin'
         ]
@@ -163,6 +163,16 @@ class UserRegistrationRequestSerializer(serializers.ModelSerializer):
         if not value.endswith('@njwanjia.com'):
             raise serializers.ValidationError('@njwanjia.com 도메인 이메일만 사용 가능합니다.')
         return value
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        if email:
+            existing = UserRegistrationRequest.objects.filter(email=email).exclude(status='rejected').first()
+            if existing and existing.pk != getattr(self.instance, 'pk', None):
+                raise serializers.ValidationError({
+                    'email': '이미 처리 중인 가입 요청이 존재합니다. 관리자 승인을 기다려주세요.'
+                })
+        return super().validate(attrs)
 
 
 class UserProfileSerializer(serializers.ModelSerializer):

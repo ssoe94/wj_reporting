@@ -803,17 +803,27 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
 
         # 프로필 권한 적용
         profile = UserProfile.get_user_permissions(user)
-        profile.can_view_injection = default_bool('can_view_injection')
         profile.can_edit_injection = default_bool('can_edit_injection')
-        profile.can_view_machining = default_bool('can_view_machining')
-        profile.can_edit_machining = default_bool('can_edit_machining')
-        profile.can_view_eco = default_bool('can_view_eco')
-        profile.can_edit_eco = default_bool('can_edit_eco')
-        profile.can_view_inventory = default_bool('can_view_inventory')
-        profile.can_edit_inventory = default_bool('can_edit_inventory')
+        profile.can_edit_assembly = default_bool('can_edit_assembly')
+        profile.can_edit_quality = default_bool('can_edit_quality')
+        profile.can_edit_sales = default_bool('can_edit_sales')
+        profile.can_edit_development = default_bool('can_edit_development')
+        profile.is_admin = default_bool('is_admin')
+
+        # 레거시 호환 필드 매핑 (모델에는 존재하지 않지만 필수 default 처리)
         profile.is_using_temp_password = True
         profile.password_reset_required = True
-        profile.save()
+        profile.save(update_fields=[
+            'can_edit_injection',
+            'can_edit_assembly',
+            'can_edit_quality',
+            'can_edit_sales',
+            'can_edit_development',
+            'is_admin',
+            'is_using_temp_password',
+            'password_reset_required',
+            'updated_at'
+        ])
 
         signup_req.status = 'approved'
         signup_req.approved_by = request.user
@@ -883,6 +893,37 @@ class SignupRequestView(generics.CreateAPIView):
             'email': request.data.get('email', '').strip(),
             'reason': request.data.get('reason', ''),
         }
+        email = data['email']
+
+        if not email:
+            return Response({'email': ['이메일을 입력해주세요.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_request = UserRegistrationRequest.objects.filter(email=email).first()
+
+        if existing_request:
+            if existing_request.status != 'rejected':
+                return Response(
+                    {'email': ['이미 처리 중인 가입 요청이 존재합니다. 관리자 승인을 기다려주세요.']},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            serializer = self.get_serializer(existing_request, data=data, partial=True)
+            serializer.is_valid(raise_exception=True)
+
+            # 기존 거절 요청을 재활성화: 최신 정보로 갱신하고 상태 초기화
+            for field in ['full_name', 'department', 'reason']:
+                setattr(existing_request, field, serializer.validated_data.get(field, getattr(existing_request, field)))
+            existing_request.status = 'pending'
+            existing_request.approved_by = None
+            existing_request.approved_at = None
+            existing_request.temporary_password = ''
+            existing_request.save(update_fields=[
+                'full_name', 'department', 'reason', 'status', 'approved_by', 'approved_at', 'temporary_password', 'updated_at'
+            ])
+
+            response_serializer = self.get_serializer(existing_request)
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
