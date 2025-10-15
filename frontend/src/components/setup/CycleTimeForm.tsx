@@ -39,7 +39,7 @@ export default function CycleTimeForm({ onSuccess }: CycleTimeFormProps) {
 
     // 기존 사이클 타임 조회
     try {
-      const response = await api.get('/parts/', {
+      const response = await api.get('/injection/parts/', {
         params: { search: partNo }
       });
 

@@ -9,7 +9,7 @@ export function useStdCT(partNos: string[]) {
       const unique = Array.from(new Set(partNos.filter(Boolean)));
       if (!unique.length) return {};
       const param = unique.join(',');
-      const { data } = await api.get<any>('/parts/', {
+      const { data } = await api.get<any>('/injection/parts/', {
         params: { 'part_no__in': param, page_size: unique.length },
       });
       const list: any[] = Array.isArray(data) ? data : data.results;

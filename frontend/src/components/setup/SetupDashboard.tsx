@@ -43,7 +43,7 @@ export default function SetupDashboard({ data, onRefresh, onMachineClick, setups
       const entries: Array<[string, { model_code?: string; description?: string }]> = [];
       for (const pn of unique) {
         try {
-          const { data } = await api.get('/parts/', { params: { search: pn, page_size: 5 } });
+          const { data } = await api.get('/injection/parts/', { params: { search: pn, page_size: 5 } });
           const results = data?.results || [];
           const exact = results.find((r: any) => r.part_no === pn) || results[0] || {};
           entries.push([pn, { model_code: exact.model_code, description: exact.description }]);

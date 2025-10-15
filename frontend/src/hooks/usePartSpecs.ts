@@ -38,7 +38,7 @@ export function usePartSpecSearch(query: string): UseQueryResult<PartSpec[]> {
       let all: PartSpec[] = [];
       if (!query.trim()) return all;
       while (true) {
-        const { data } = await api.get<Paginated<PartSpec>>('/parts/', {
+        const { data } = await api.get<Paginated<PartSpec>>('/injection/parts/', {
           params: { search: query, page, page_size: pageSize },
         });
         all = all.concat(data.results);
@@ -57,7 +57,7 @@ export function usePartSpecs(): UseQueryResult<PartSpec[]> {
   return useQuery({
     queryKey: ['parts-all'],
     queryFn: async () => {
-      const { data } = await api.get<Paginated<PartSpec>>('/parts/', {
+      const { data } = await api.get<Paginated<PartSpec>>('/injection/parts/', {
         params: { page_size: 1000 }, // Fetch up to 1000 parts
       });
       return data.results;
@@ -76,7 +76,7 @@ export function usePartListByModel(modelCode: string | undefined): UseQueryResul
       let all: PartSpec[] = [];
       if (!modelCode) return all;
       while (true) {
-        const { data } = await api.get<Paginated<PartSpec>>('/parts/', {
+        const { data } = await api.get<Paginated<PartSpec>>('/injection/parts/', {
           params: { model_code: modelCode, page, page_size: pageSize },
         });
         all = all.concat(data.results);

@@ -534,7 +534,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                       });
                     }
                     if (list.length === 0) {
-                      const res = await api.get('/parts/', { params: { search: prefix9, page_size: 10 } });
+                      const res = await api.get('/injection/parts/', { params: { search: prefix9, page_size: 10 } });
                       const inj = Array.isArray(res?.data?.results) ? res.data.results : [];
                       list = inj
                         .filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9))
@@ -590,7 +590,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                             console.warn('Failed to fetch injection part spec detail for prefill', error);
                           }
                           try {
-                            const { data: searchData } = await api.get('/parts/', {
+                            const { data: searchData } = await api.get('/injection/parts/', {
                               params: { search: top.part_no, page_size: 1 },
                             });
                             const pick = Array.isArray(searchData?.results)
@@ -617,7 +617,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                       }
                       if (needsEnhancement(detail) && top?.part_no) {
                         try {
-                          const { data: searchData } = await api.get('/parts/', {
+                          const { data: searchData } = await api.get('/injection/parts/', {
                             params: { search: top.part_no, page_size: 1 },
                           });
                           const pick = Array.isArray(searchData?.results)

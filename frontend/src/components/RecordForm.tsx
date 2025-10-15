@@ -370,7 +370,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                       });
                     }
                     if (list.length === 0) {
-                      const res = await api.get('/parts/', { params: { search: prefix9, page_size: 10 } });
+                      const res = await api.get('/injection/parts/', { params: { search: prefix9, page_size: 10 } });
                       const inj = Array.isArray(res?.data?.results) ? res.data.results : [];
                       list = inj
                         .filter((it: any) => String(it.part_no || '').toUpperCase().startsWith(prefix9))
@@ -423,7 +423,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                             console.warn('Failed to fetch injection part spec detail for prefill', error);
                           }
                           try {
-                            const { data: searchData } = await api.get('/parts/', {
+                            const { data: searchData } = await api.get('/injection/parts/', {
                               params: { search: first.part_no, page_size: 1 },
                             });
                             const pick = Array.isArray(searchData?.results)
@@ -450,7 +450,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                       }
                       if (needsEnhancement(detail) && first?.part_no) {
                         try {
-                          const { data: searchData } = await api.get('/parts/', {
+                          const { data: searchData } = await api.get('/injection/parts/', {
                             params: { search: first.part_no, page_size: 1 },
                           });
                           const pick = Array.isArray(searchData?.results)
@@ -785,7 +785,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                       toast.error('Part No / Model Code / Description을 입력하세요');
                       return;
                     }
-                    const newPart = await api.post('/parts/', {
+                    const newPart = await api.post('/injection/parts/', {
                       part_no: partNo,
                       model_code: modelCode,
                       description,

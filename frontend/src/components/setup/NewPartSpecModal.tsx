@@ -41,7 +41,7 @@ export default function NewPartSpecModal({
         if (initialPartNo && initialPartNo.length >= 9) {
           try {
             const prefix = initialPartNo.substring(0, 9);
-            const { data } = await api.get('/parts/', { params: { search: prefix, page_size: 1 } });
+            const { data } = await api.get('/injection/parts/', { params: { search: prefix, page_size: 1 } });
             if (data.results && data.results.length > 0) {
               const similarPart = data.results[0];
               const confirmPrefill = window.confirm(
@@ -78,7 +78,7 @@ export default function NewPartSpecModal({
     setLoading(true);
     setError('');
     try {
-      const response = await api.post('/parts/', newPartForm);
+      const response = await api.post('/injection/parts/', newPartForm);
       toast.success(t('new_part_added_success'));
       onSuccess(response.data);
     } catch (err: any) {

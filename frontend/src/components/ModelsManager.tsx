@@ -21,7 +21,7 @@ export default function ModelsManager() {
         page_size: 1000,
       };
       if (keyword.trim()) params.search = keyword.trim();
-      const { data } = await api.get('/parts/', { params });
+      const { data } = await api.get('/injection/parts/', { params });
       return Array.isArray(data) ? data : data.results;
     },
   });

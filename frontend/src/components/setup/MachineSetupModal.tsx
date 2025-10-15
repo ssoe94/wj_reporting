@@ -270,7 +270,7 @@ export default function MachineSetupModal({
     // Fetch standard and avg cycle times
     try {
       const [standardResponse, avgResponse] = await Promise.allSettled([
-        api.get(`/parts/${part.part_no}/standard-cycle-time/`),
+        api.get(`/injection/parts/${part.part_no}/standard-cycle-time/`),
         api.get('/injection/reports/avg-cycle-time/', { params: { part_no: part.part_no } })
       ]);
 

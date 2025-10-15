@@ -49,7 +49,7 @@ export default function ModelsPage() {
   const handleDeletePart = async (part: any) => {
     if (!confirm(`"${part.part_no}" 를 삭제하시겠습니까?`)) return;
     try {
-      await api.delete(`/parts/${part.id}/`);
+      await api.delete(`/injection/parts/${part.id}/`);
       toast.success('삭제되었습니다');
       queryClient.invalidateQueries({queryKey:['parts-all']});
     } catch (err: any) {
@@ -164,10 +164,10 @@ export default function ModelsPage() {
                   };
                   
                   if (editingPart) {
-                    await api.put(`/parts/${editingPart.id}/`, payload);
+                    await api.put(`/injection/parts/${editingPart.id}/`, payload);
                     toast.success('수정되었습니다');
                   } else {
-                    await api.post('/parts/', payload);
+                    await api.post('/injection/parts/', payload);
                     toast.success('저장되었습니다');
                   }
                   

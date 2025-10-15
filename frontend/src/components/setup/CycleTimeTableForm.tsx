@@ -130,7 +130,7 @@ export default function CycleTimeTableForm({ onSuccess }: CycleTimeTableFormProp
   const fetchStandardCycleTime = async (partNo: string) => {
     if (!partNo) return null;
     try {
-      const response = await api.get(`/parts/${partNo}/standard-cycle-time/`);
+      const response = await api.get(`/injection/parts/${partNo}/standard-cycle-time/`);
       return response.data.standard_cycle_time;
     } catch (error) { return null; }
   };
