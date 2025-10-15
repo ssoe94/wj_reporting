@@ -72,9 +72,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -96,13 +96,18 @@ if ENVIRONMENT == 'production':
 
 # CORS 설정 - 환경별 제어
 CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL', default=False, cast=bool)
+
 def _normalize_origin(value: str) -> str:
     if not value:
         return value
-    return value.rstrip('/')
+    cleaned = value.strip()
+    return cleaned.rstrip('/') if cleaned else cleaned
 
+_runtime_frontend_origin = _normalize_origin(os.getenv('FRONTEND_URL_RUNTIME', ''))
+_runtime_additional_origin = _normalize_origin(os.getenv('ADDITIONAL_FRONTEND_URL_RUNTIME', ''))
 DEFAULT_FRONTEND_URL = _normalize_origin(config('FRONTEND_URL', default='https://wj-reporting.onrender.com'))
 ADDITIONAL_FRONTEND_URL = _normalize_origin(config('ADDITIONAL_FRONTEND_URL', default=''))
+
 
 _cors_allowed_origins = {
     "http://localhost:3000",
@@ -111,11 +116,14 @@ _cors_allowed_origins = {
     "http://127.0.0.1:5173",
 }
 
-if DEFAULT_FRONTEND_URL:
-    _cors_allowed_origins.add(DEFAULT_FRONTEND_URL)
-
-if ADDITIONAL_FRONTEND_URL:
-    _cors_allowed_origins.add(ADDITIONAL_FRONTEND_URL)
+for origin in (
+    DEFAULT_FRONTEND_URL,
+    ADDITIONAL_FRONTEND_URL,
+    _runtime_frontend_origin,
+    _runtime_additional_origin,
+):
+    if origin:
+        _cors_allowed_origins.add(origin)
 
 CORS_ALLOWED_ORIGINS = list(_cors_allowed_origins)
 
@@ -125,11 +133,14 @@ _csrf_trusted_origins = {
     "http://127.0.0.1:5173",
 }
 
-if DEFAULT_FRONTEND_URL:
-    _csrf_trusted_origins.add(DEFAULT_FRONTEND_URL)
-
-if ADDITIONAL_FRONTEND_URL:
-    _csrf_trusted_origins.add(ADDITIONAL_FRONTEND_URL)
+for origin in (
+    DEFAULT_FRONTEND_URL,
+    ADDITIONAL_FRONTEND_URL,
+    _runtime_frontend_origin,
+    _runtime_additional_origin,
+):
+    if origin:
+        _csrf_trusted_origins.add(origin)
 
 CSRF_TRUSTED_ORIGINS = list(_csrf_trusted_origins)
 
