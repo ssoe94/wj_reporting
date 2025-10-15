@@ -13,19 +13,27 @@ class SimpleCorsMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        # Handle preflight OPTIONS request
-        if request.method == 'OPTIONS':
-            response = JsonResponse({}, status=200)
-        else:
-            response = self.get_response(request)
+        try:
+            # Handle preflight OPTIONS request
+            if request.method == 'OPTIONS':
+                response = JsonResponse({}, status=200)
+            else:
+                response = self.get_response(request)
 
-        # Add CORS headers to all responses
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-        response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
-        response['Access-Control-Max-Age'] = '86400'
+            # Add CORS headers to all responses
+            response['Access-Control-Allow-Origin'] = '*'
+            response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
+            response['Access-Control-Max-Age'] = '86400'
 
-        return response
+            return response
+        except Exception as e:
+            # If anything fails, return a simple response with CORS headers
+            response = JsonResponse({'error': 'Internal server error'}, status=500)
+            response['Access-Control-Allow-Origin'] = '*'
+            response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
+            return response
 
 
 class APINotFoundMiddleware:
