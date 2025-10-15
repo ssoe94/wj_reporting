@@ -1,11 +1,12 @@
 {
-  "routes": {
-    "/**": "index.html"
-  },
-  "redirects": [
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://wj-reporting-backend.onrender.com/api/$1"
+      "src": "/api/(.*)",
+      "dest": "https://wj-reporting-backend.onrender.com/api/:splat"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 } 
