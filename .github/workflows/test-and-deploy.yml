@@ -60,6 +60,13 @@ jobs:
             npm run test:ci --if-present || npm run test --if-present || echo "No test script found"
           fi
       
+      - name: Build frontend
+        run: |
+          if [ -f "frontend/package.json" ]; then
+            cd frontend
+            npm run build
+          fi
+
       - name: Setup Python (for backend tests)
         uses: actions/setup-python@v5
         with:
