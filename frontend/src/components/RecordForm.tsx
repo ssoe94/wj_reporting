@@ -15,6 +15,30 @@ import machines from '../constants/machines';
 import api from '../lib/api';
 import { PlusCircle, Plus } from 'lucide-react';
 
+const REPORT_DATE_STORAGE_KEY = 'injection:lastReportDate';
+const safeGetStoredReportDate = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(REPORT_DATE_STORAGE_KEY);
+    if (!raw) return null;
+    return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+};
+const safeSetStoredReportDate = (value: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      sessionStorage.setItem(REPORT_DATE_STORAGE_KEY, value);
+    } else {
+      sessionStorage.removeItem(REPORT_DATE_STORAGE_KEY);
+    }
+  } catch {
+    /* no-op */
+  }
+};
+
 // Utility functions (moved here for now, consider extracting to utils/date)
 const roundTo5 = (d: Date) => {
   d.setSeconds(0, 0);
@@ -80,8 +104,12 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     return Array.from(map.values());
   }, [searchResults]);
 
-  const [form, setForm] = useState(() => ({
-    date: getLocalDate(),
+  const [form, setForm] = useState(() => {
+    const storedDate = safeGetStoredReportDate();
+    const initialDate = storedDate ?? getLocalDate();
+    safeSetStoredReportDate(initialDate);
+    return {
+      date: initialDate,
     machineId: '',
     model: '',
     type: '',
@@ -94,15 +122,22 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     netG: '',
     srG: '',
     ct: '',
-    start: nowStr,
-    end: nowStr,
-    idle: '',
-    note: '',
-  }));
+      start: nowStr,
+      end: nowStr,
+      idle: '',
+      note: '',
+    };
+  });
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
-  ) => setForm({ ...form, [e.target.id]: e.target.value });
+  ) => {
+    const { id, value } = e.target;
+    if (id === 'date') {
+      safeSetStoredReportDate(value);
+    }
+    setForm((prev) => ({ ...prev, [id]: value }));
+  };
 
   const diffMinutes = () => {
     if (!form.start || !form.end) return 0;
@@ -152,9 +187,8 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
       queryClient.invalidateQueries({ queryKey: ['reports-summary'] });
       toast.success('저장되었습니다');
       if (onSaved) onSaved();
-      setForm({
-        ...form,
-        date: getLocalDate(),
+      setForm((prev) => ({
+        ...prev,
         model: '',
         type: '',
         plan: '',
@@ -165,7 +199,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         end: nowStr,
         idle: '',
         note: '',
-      });
+      }));
     } catch (err: any) {
       console.error(err);
       if (err.response?.status === 403) {

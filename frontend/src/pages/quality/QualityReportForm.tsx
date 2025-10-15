@@ -54,7 +54,6 @@ export default function QualityReportForm() {
   // 이미지 파일 상태 (최대 3장)
   const [imageFiles, setImageFiles] = useState<(File | null)[]>([null, null, null]);
   const [imagePreviews, setImagePreviews] = useState<(string | null)[]>([null, null, null]);
-  const [imageUrls, setImageUrls] = useState<(string | null)[]>([null, null, null]); // Cloudinary URLs
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -198,15 +197,14 @@ export default function QualityReportForm() {
     
     // 새로운 배열 생성
     const newFiles = [...imageFiles];
-    const newPreviews = [...imagePreviews];
-    
+
     // 각 파일 처리
     for (let i = 0; i < resizedFiles.length; i++) {
       const resizedFile = resizedFiles[i];
       const slotIndex = emptySlots[i];
-      
+
       newFiles[slotIndex] = resizedFile;
-      
+
       // 미리보기 생성
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -218,7 +216,7 @@ export default function QualityReportForm() {
       };
       reader.readAsDataURL(resizedFile);
     }
-    
+
     setImageFiles(newFiles);
     
     // input 초기화
@@ -230,10 +228,12 @@ export default function QualityReportForm() {
     const newFiles = [...imageFiles];
     newFiles[index] = null;
     setImageFiles(newFiles);
-    
-    const newPreviews = [...imagePreviews];
-    newPreviews[index] = null;
-    setImagePreviews(newPreviews);
+
+    setImagePreviews(prev => {
+      const updated = [...prev];
+      updated[index] = null;
+      return updated;
+    });
   };
 
   // 드래그 앤 드롭 핸들러
@@ -278,15 +278,14 @@ export default function QualityReportForm() {
     
     // 새로운 배열 생성
     const newFiles = [...imageFiles];
-    const newPreviews = [...imagePreviews];
-    
+
     // 각 파일 처리
     for (let i = 0; i < resizedFiles.length; i++) {
       const resizedFile = resizedFiles[i];
       const slotIndex = emptySlots[i];
-      
+
       newFiles[slotIndex] = resizedFile;
-      
+
       // 미리보기 생성
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -298,7 +297,7 @@ export default function QualityReportForm() {
       };
       reader.readAsDataURL(resizedFile);
     }
-    
+
     setImageFiles(newFiles);
   };
 
@@ -402,7 +401,6 @@ export default function QualityReportForm() {
         setSelectedPartSpec(null);
         setImageFiles([null, null, null]);
         setImagePreviews([null, null, null]);
-        setImageUrls([null, null, null]);
       } catch (err: any) {
         console.error('Save error:', err);
         toast.error(t('save_fail'));
@@ -416,7 +414,7 @@ export default function QualityReportForm() {
   const renderDynamicField = () => {
     const fieldVariants = {
       initial: { opacity: 0, rotateX: -90, scale: 0.8 },
-      animate: { opacity: 1, rotateX: 0, scale: 1, transition: { duration: 0.4, ease: 'easeOut' } },
+      animate: { opacity: 1, rotateX: 0, scale: 1, transition: { duration: 0.4 } },
       exit: { opacity: 0, rotateX: 90, scale: 0.8, transition: { duration: 0.3 } }
     };
 

@@ -1,4 +1,4 @@
-import { FolderOpen, Save, Image as ImageIcon, X, ChevronLeft, ChevronRight, Eye, Trash2, Edit } from 'lucide-react';
+import { FolderOpen, Save, X, ChevronLeft, ChevronRight, Eye, Trash2 } from 'lucide-react';
 import { useLang } from '../../i18n';
 import { useState } from 'react';
 import { Label } from '../../components/ui/label';
@@ -591,7 +591,7 @@ export default function QualityReportHistory() {
                 {t('close')}
               </Button>
               <Button
-                variant="destructive"
+                variant="danger"
                 onClick={() => handleDeleteReport(selectedReport.id)}
                 disabled={isDeleting}
                 className="bg-red-600 hover:bg-red-700 text-white"
