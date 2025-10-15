@@ -86,7 +86,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // 사용자 정보 가져오기
   const fetchUserInfo = async (): Promise<User | null> => {
     try {
-      const response = await api.get('/user/me/');
+      const response = await api.get('/injection/user/me/');
       return response.data;
     } catch (error) {
       console.error('Failed to fetch user info:', error);
