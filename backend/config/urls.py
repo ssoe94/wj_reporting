@@ -5,6 +5,8 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from django.views.generic import TemplateView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from . import views
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -16,6 +18,7 @@ api_urlpatterns = [
     path('api/overview/', include('overview.urls')),
     path('api/inventory/', include('inventory.urls')),
     path('api/quality/', include('quality.urls')),
+    path('api/health/', views.health_check, name='health_check'),
     # `api/signup-requests/` is defined within injection.urls, so this line is removed to avoid conflict.
     # path('api/signup-requests/', include('config.urls_auth')) 
 ]
