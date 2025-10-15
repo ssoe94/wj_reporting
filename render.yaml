@@ -19,6 +19,8 @@ services:
     rootDir: backend
     buildCommand: bash build.sh
     startCommand: python manage.py migrate && gunicorn config.wsgi:application --preload
+    healthCheck:
+      path: /api/health
     envVarGroup: shared-secrets
 
   # Daily Inventory Snapshot Cron Job
