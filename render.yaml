@@ -5,9 +5,9 @@ envVarGroups:
     # DATABASE_URL, SECRET_KEY 등 백엔드 서비스에 필요한 모든 비밀/환경 변수를 추가해야 합니다.
 
 services:
-  # Backend Web Service (now serving frontend)
+  # Web service serving both frontend and backend
   - type: web
-    name: wj_reporting_backend
+    name: wj_reporting
     env: python
     rootDir: backend
     buildCommand: bash build.sh
