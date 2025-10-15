@@ -34,7 +34,7 @@ interface ProductionMatrixData {
 // 생산 매트릭스 데이터 조회 (24시간)
 const fetchProductionMatrix = async (interval: string = '1hour', lang: string = 'ko'): Promise<ProductionMatrixData> => {
   const params = new URLSearchParams({ interval, columns: '24', lang });
-  const response = await api.get(`/production-matrix/?${params}`);
+  const response = await api.get(`/injection/production-matrix/?${params}`);
   return response.data;
 };
 
@@ -89,7 +89,7 @@ export default function InjectionMonitoringPage() {
 
     setIsUpdating(true);
     try {
-      const response = await api.post('/update-recent-snapshots/', { hours: 3 });
+      const response = await api.post('/injection/update-recent-snapshots/', { hours: 3 });
 
       if (response.status === 202) {
         alert(t('monitoring.update_started_in_background'));
