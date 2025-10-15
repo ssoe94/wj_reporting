@@ -766,7 +766,11 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
     def approve(self, request, pk=None):
         signup_req = self.get_object()
         if signup_req.status != 'pending':
-            return Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            response = Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            response['Access-Control-Allow-Origin'] = '*'
+            response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
+            return response
 
         # 권한 페이로드 파싱
         perms = (request.data or {}).get('permissions', {})
@@ -837,23 +841,35 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         signup_req.temporary_password = temp_password
         signup_req.save(update_fields=['status', 'approved_by', 'approved_at', 'temporary_password'])
 
-        return Response({
+        response = Response({
             'username': user.username,
             'temporary_password': temp_password,
         })
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
+        return response
 
     @action(detail=True, methods=['post'], url_path='reject')
     def reject(self, request, pk=None):
         signup_req = self.get_object()
         if signup_req.status != 'pending':
-            return Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            response = Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            response['Access-Control-Allow-Origin'] = '*'
+            response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
+            return response
 
         signup_req.status = 'rejected'
         signup_req.approved_by = request.user
         signup_req.approved_at = timezone.now()
         signup_req.save(update_fields=['status', 'approved_by', 'approved_at'])
 
-        return Response({'detail': '요청이 거부되었습니다.'})
+        response = Response({'detail': '요청이 거부되었습니다.'})
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
+        return response
 
 class UserProfileViewSet(viewsets.ModelViewSet):
     queryset = UserProfile.objects.all()
