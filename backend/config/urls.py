@@ -7,6 +7,8 @@ from django.views.generic import TemplateView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from . import views
+from . import urls_admin
+from injection.views import SignupRequestView, ChangePasswordView
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -20,6 +22,8 @@ api_urlpatterns = [
     path('api/quality/', include('quality.urls')),
     path('api/health/', views.health_check, name='health_check'),
     path('api/health', views.health_check, name='health_check_no_slash'),
+    path('api/signup-request/', SignupRequestView.as_view(), name='signup_request'),
+    path('api/user/change-password/', ChangePasswordView.as_view(), name='user_change_password'),
     # `api/signup-requests/` is defined within injection.urls, so this line is removed to avoid conflict.
     # path('api/signup-requests/', include('config.urls_auth')) 
 ]
@@ -35,6 +39,7 @@ urlpatterns = [
 
     # API routes
     path('', include(api_urlpatterns)),
+    path('api/admin/', include(urls_admin)),
 
     # SPA fallback
     re_path(r'^(?!api/|admin/|static/|media/).*$', TemplateView.as_view(template_name='index.html')),

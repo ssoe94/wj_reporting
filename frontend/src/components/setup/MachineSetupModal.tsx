@@ -105,7 +105,7 @@ export default function MachineSetupModal({
             mean_cycle_time: formData.avg_cycle_time ? Math.round(parseFloat(formData.avg_cycle_time)) : null,
             personnel_count: formData.personnel_count ? parseFloat(formData.personnel_count) : null,
         };
-        await api.post('/setup/', createData);
+        await api.post('/injection/setup/', createData);
         toast.success(t('setup.create_success'));
         onClose();
         if (onSuccess) onSuccess();
@@ -146,7 +146,7 @@ export default function MachineSetupModal({
         }
       });
 
-      await api.patch(`/setup/${setup.id}/`, updateData);
+      await api.patch(`/injection/setup/${setup.id}/`, updateData);
       toast.success(t('setup.update_success'));
       onClose();
       if (onSuccess) onSuccess();
@@ -184,7 +184,7 @@ export default function MachineSetupModal({
         }],
         duplicate_action: 'new_version'
       };
-      await api.post('/setup/bulk-create/', payload);
+      await api.post('/injection/setup/bulk-create/', payload);
       toast.success(t('setup.new_version_success'));
       onClose();
       if (onSuccess) onSuccess();
@@ -207,7 +207,7 @@ export default function MachineSetupModal({
     if (window.confirm(t('delete_confirm'))) {
       setLoading(true);
       try {
-        await api.delete(`/setup/${setup.id}/`);
+        await api.delete(`/injection/setup/${setup.id}/`);
         toast.success(t('delete_success'));
         onClose();
         if (onSuccess) onSuccess();
@@ -271,7 +271,7 @@ export default function MachineSetupModal({
     try {
       const [standardResponse, avgResponse] = await Promise.allSettled([
         api.get(`/parts/${part.part_no}/standard-cycle-time/`),
-        api.get('/reports/avg-cycle-time/', { params: { part_no: part.part_no } })
+        api.get('/injection/reports/avg-cycle-time/', { params: { part_no: part.part_no } })
       ]);
 
       const standardTime = standardResponse.status === 'fulfilled' ?

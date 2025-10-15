@@ -99,7 +99,7 @@ export default function NewSetupModal({
         return;
       }
 
-      await api.post('/setup/', createData);
+      await api.post('/injection/setup/', createData);
 
       toast.success(t('setup.create_success'));
       onClose();

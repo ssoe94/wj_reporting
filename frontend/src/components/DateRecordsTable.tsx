@@ -100,7 +100,7 @@ export default function DateRecordsTable({ date }: Props) {
   const handleSave = async (data: Partial<Report>) => {
     if(!detail) return;
     try {
-      await api.patch(`/reports/${detail.id}/`, data);
+      await api.patch(`/injection/reports/${detail.id}/`, data);
       toast.success('수정되었습니다');
       queryClient.invalidateQueries({ queryKey:['reports']});
       setEditing(false);
@@ -115,7 +115,7 @@ export default function DateRecordsTable({ date }: Props) {
     if (!detail) return;
     if (!confirm(t('confirm_delete') || '정말 삭제하시겠습니까?')) return;
     try {
-      await api.delete(`/reports/${detail.id}/`);
+      await api.delete(`/injection/reports/${detail.id}/`);
       toast.success(t('delete_success') || '삭제되었습니다');
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       setDetail(null);

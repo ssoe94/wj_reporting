@@ -40,7 +40,7 @@ export function useReports(filters: { date?: string } = {}): UseQueryResult<Pagi
       if (filters.date) {
         params.append('date', filters.date);
       }
-      const response = await api.get<Paginated<Report>>(`/reports/?${params.toString()}`);
+      const response = await api.get<Paginated<Report>>(`/injection/reports/?${params.toString()}`);
       return response.data;
     },
     staleTime: 1000 * 60 * 5,
@@ -52,7 +52,7 @@ export function useAllReports(): UseQueryResult<Report[]> {
     queryKey: ['reports', 'all'],
     queryFn: async () => {
       const all: Report[] = [];
-      let url: string | null = '/reports/';
+      let url: string | null = '/injection/reports/';
 
       const rel = (u: string) => {
         // Convert absolute links from the paginated API into relative /reports/ paths for the axios baseURL.
@@ -83,7 +83,7 @@ export function useReportDates() {
   return useQuery({
     queryKey: ['report-dates'],
     queryFn: async () => {
-      const response = await api.get<string[]>('/reports/dates/');
+      const response = await api.get<string[]>('/injection/reports/dates/');
       return response.data;
     },
     staleTime: 1000 * 60 * 5,
@@ -103,7 +103,7 @@ export function useReportSummary(date?: string): UseQueryResult<Summary> {
   return useQuery({
     queryKey: ['reports-summary', date],
     queryFn: async () => {
-      const { data } = await api.get<Summary>(`/reports/summary/`, {
+      const { data } = await api.get<Summary>(`/injection/reports/summary/`, {
         params: date ? { date } : {},
       });
       return data;

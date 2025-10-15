@@ -118,17 +118,17 @@ export const endpoints = {
     list: (date?: string) => {
       if (date) {
         const encodedDate = validateAndEncodeParam(date, 'date');
-        return `/reports/?date=${encodedDate}`;
+        return `/injection/reports/?date=${encodedDate}`;
       }
-      return '/reports/';
+      return '/injection/reports/';
     },
-    create: () => '/reports/',
+    create: () => '/injection/reports/',
     summary: (date?: string) => {
       if (date) {
         const encodedDate = validateAndEncodeParam(date, 'date');
-        return `/reports/summary/?date=${encodedDate}`;
+        return `/injection/reports/summary/?date=${encodedDate}`;
       }
-      return '/reports/summary/';
+      return '/injection/reports/summary/';
     },
   },
 };

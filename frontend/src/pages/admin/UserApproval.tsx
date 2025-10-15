@@ -86,7 +86,7 @@ export default function UserApproval() {
   // 가입 요청 목록 가져오기
   const fetchRequests = async () => {
     try {
-      const response = await api.get('/signup-requests/');
+      const response = await api.get('/admin/signup-requests/');
       setRequests(response.data.results || response.data);
     } catch (error: any) {
       console.error('Failed to fetch signup requests:', error);
@@ -98,7 +98,7 @@ export default function UserApproval() {
   // 사용자 프로필 목록 가져오기
   const fetchUserProfiles = async () => {
     try {
-      const response = await api.get('/user-profiles/');
+      const response = await api.get('/admin/user-profiles/');
       setUserProfiles(response.data.results || response.data);
     } catch (error: any) {
       console.error('Failed to fetch user profiles:', error);
@@ -118,7 +118,7 @@ export default function UserApproval() {
   const handleApprove = async (requestId: number) => {
     try {
       console.log('Sending permissions:', permissions);
-      const response = await api.post(`/signup-requests/${requestId}/approve/`, { permissions });
+      const response = await api.post(`/admin/signup-requests/${requestId}/approve/`, { permissions });
 
       setApprovalResult({
         username: response.data.username,
@@ -170,7 +170,7 @@ export default function UserApproval() {
     if (!confirm('정말 이 가입 요청을 거부하시겠습니까?')) return;
 
     try {
-      await api.post(`/signup-requests/${requestId}/reject/`);
+      await api.post(`/admin/signup-requests/${requestId}/reject/`);
       alert('가입 요청이 거부되었습니다.');
       fetchRequests(); // 목록 새로고침
       setSelectedRequest(null);
@@ -207,7 +207,7 @@ export default function UserApproval() {
     if (!selectedProfile) return;
 
     try {
-      await api.patch(`/user-profiles/${selectedProfile.id}/`, editingPermissions);
+      await api.patch(`/admin/user-profiles/${selectedProfile.id}/`, editingPermissions);
       alert('권한이 성공적으로 수정되었습니다.');
       setSelectedProfile(null);
       fetchUserProfiles(); // 목록 새로고침
@@ -231,7 +231,7 @@ export default function UserApproval() {
     if (!confirm('이 사용자의 비밀번호를 리셋하시겠습니까? 새로운 임시 비밀번호가 생성됩니다.')) return;
 
     try {
-      const response = await api.post('/user/reset-password/', { user_id: userId });
+      const response = await api.post('/admin/user/reset-password/', { user_id: userId });
       setResetPasswordResult({
         username: response.data.username,
         temporary_password: response.data.temporary_password,

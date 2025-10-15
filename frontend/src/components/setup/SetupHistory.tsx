@@ -38,7 +38,7 @@ const SetupHistory = ({ getStatusText }: SetupHistoryProps) => {
   const loadSetups = async () => {
     try {
       setIsLoading(true);
-      const response = await api.get('/setup/?ordering=-setup_date&limit=500');
+      const response = await api.get('/injection/setup/?ordering=-setup_date&limit=500');
       setSetups(response.data?.results || response.data || []);
     } catch (error: any) {
       toast.error(error?.response?.data?.detail || t('history.load_fail'));

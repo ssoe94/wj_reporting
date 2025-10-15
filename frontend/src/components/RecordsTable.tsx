@@ -23,7 +23,7 @@ export default function RecordsTable() {
   const handleDelete = async (id: number) => {
     if (!confirm(t('confirm_delete') || '정말 삭제하시겠습니까?')) return;
     try {
-      await api.delete(`/reports/${id}/`);
+      await api.delete(`/injection/reports/${id}/`);
       toast.success(t('delete_success'));
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       queryClient.invalidateQueries({ queryKey: ['reports', 'all'] });
@@ -36,7 +36,7 @@ export default function RecordsTable() {
     e.preventDefault();
     if (!editing) return;
     try {
-      await api.patch(`/reports/${editing.id}/`, editing);
+      await api.patch(`/injection/reports/${editing.id}/`, editing);
       toast.success(t('update_success'));
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       queryClient.invalidateQueries({ queryKey: ['reports', 'all'] });

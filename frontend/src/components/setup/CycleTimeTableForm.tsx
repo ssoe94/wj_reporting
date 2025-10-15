@@ -138,7 +138,7 @@ export default function CycleTimeTableForm({ onSuccess }: CycleTimeTableFormProp
   const fetchAvgCycleTime = async (partNo: string) => {
     if (!partNo) return null;
     try {
-      const response = await api.get('/reports/avg-cycle-time/', { params: { part_no: partNo } });
+      const response = await api.get('/injection/reports/avg-cycle-time/', { params: { part_no: partNo } });
       return response.data.avg_cycle_time;
     } catch (error: any) { return null; }
   };
@@ -173,7 +173,7 @@ export default function CycleTimeTableForm({ onSuccess }: CycleTimeTableFormProp
         })),
         ...(duplicateAction && { duplicate_action: duplicateAction })
       };
-      const response = await api.post('/setup/bulk-create/', payload);
+      const response = await api.post('/injection/setup/bulk-create/', payload);
       const { created_count = 0, updated_count = 0 } = response.data;
       if (created_count > 0) toast.success(t('ct_table.create_success', { count: created_count }));
       if (updated_count > 0) toast.success(`${updated_count}개 설정이 수정되었습니다.`);

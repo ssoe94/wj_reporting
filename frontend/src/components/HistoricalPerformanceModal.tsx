@@ -26,7 +26,7 @@ interface PerformanceData {
 
 const fetchHistoricalPerformance = async (partPrefix: string): Promise<PerformanceData[]> => {
   if (!partPrefix) return [];
-  const { data } = await api.get('/reports/historical-performance/', {
+  const { data } = await api.get('/injection/reports/historical-performance/', {
     params: { part_prefix: partPrefix },
   });
   return data;

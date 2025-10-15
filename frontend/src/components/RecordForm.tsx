@@ -182,7 +182,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         part_no: form.partNo,
         note: form.note,
       };
-      await api.post('/reports/', payload);
+      await api.post('/injection/reports/', payload);
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       queryClient.invalidateQueries({ queryKey: ['reports-summary'] });
       toast.success('저장되었습니다');

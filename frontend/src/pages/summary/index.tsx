@@ -41,7 +41,7 @@ export default function SummaryPage() {
 
   const downloadCsv = async () => {
     try {
-      const response = await api.get("/reports/export/", { responseType: "blob" });
+      const response = await api.get("/injection/reports/export/", { responseType: "blob" });
       const url = URL.createObjectURL(response.data);
       const a = document.createElement("a");
       a.href = url;
@@ -152,7 +152,7 @@ export default function SummaryPage() {
                   const fd = new FormData();
                   fd.append("file", file);
                   try {
-                    const { data } = await api.post("/reports/bulk-import/", fd, {
+                    const { data } = await api.post("/injection/reports/bulk-import/", fd, {
                       headers: { "Content-Type": "multipart/form-data" },
                     });
                     toast.success(`생성 ${data.created}건 / 중복 ${data.skipped}건 / 오류 ${data.errors}건`);

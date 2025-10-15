@@ -45,7 +45,7 @@ export default function InjectionSetupPage() {
   const loadDashboardData = async () => {
     try {
       setIsLoading(true);
-      const response = await api.get('/setup/dashboard/');
+      const response = await api.get('/injection/setup/dashboard/');
       setDashboardData(response.data);
     } catch (error) {
       toast.error(t('setup.load_dashboard_fail'));

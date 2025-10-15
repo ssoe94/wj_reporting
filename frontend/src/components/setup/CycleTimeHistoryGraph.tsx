@@ -74,7 +74,7 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get(`/setup/cycle-time-history/?part_prefix=${partPrefix}`);
+      const response = await api.get(`/injection/setup/cycle-time-history/?part_prefix=${partPrefix}`);
 
       // 데이터 가공
       const processedData = processHistoryData(response.data);
