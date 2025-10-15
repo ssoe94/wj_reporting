@@ -4,6 +4,30 @@ Custom middleware for API request handling
 from django.http import JsonResponse
 
 
+class SimpleCorsMiddleware:
+    """
+    Simple CORS middleware that adds CORS headers to all responses.
+    This is a fallback when django-cors-headers doesn't work properly.
+    """
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Handle preflight OPTIONS request
+        if request.method == 'OPTIONS':
+            response = JsonResponse({}, status=200)
+        else:
+            response = self.get_response(request)
+
+        # Add CORS headers to all responses
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
+        response['Access-Control-Max-Age'] = '86400'
+
+        return response
+
+
 class APINotFoundMiddleware:
     """
     Middleware to ensure /api/* paths that don't match any route
