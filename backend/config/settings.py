@@ -95,33 +95,9 @@ if ENVIRONMENT == 'production':
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
 
-# CORS 설정
-CORS_ALLOWED_ORIGINS = [
-    "https://wj-reporting.onrender.com",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+# CORS 설정 - 모든 origin 허용 (프로덕션에서 즉시 작동)
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_HEADERS = [
-    "accept",
-    "accept-encoding",
-    "authorization",
-    "content-type",
-    "dnt",
-    "origin",
-    "user-agent",
-    "x-csrftoken",
-    "x-requested-with",
-]
-CORS_ALLOW_METHODS = [
-    "DELETE",
-    "GET",
-    "OPTIONS",
-    "PATCH",
-    "POST",
-    "PUT",
-]
-CORS_EXPOSE_HEADERS = ["content-type", "x-csrftoken"]
 
 
 # CSRF 신뢰 출처 (프론트엔드 도메인)
