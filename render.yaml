@@ -5,14 +5,7 @@ envVarGroups:
     # DATABASE_URL, SECRET_KEY 등 백엔드 서비스에 필요한 모든 비밀/환경 변수를 추가해야 합니다.
 
 services:
-  # Frontend Static Site
-  - type: static
-    name: wj_reporting
-    rootDir: frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
-
-  # Backend Web Service
+  # Backend Web Service (now serving frontend)
   - type: web
     name: wj_reporting_backend
     env: python
