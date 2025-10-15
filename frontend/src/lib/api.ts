@@ -10,7 +10,7 @@ console.log('[API Config] Environment:', import.meta.env.MODE);
 const api = axios.create({
   baseURL: API_URL,
   timeout: 30000, // 30초 타임아웃
-  withCredentials: false, // CORS 자격증명 미포함
+  withCredentials: true, // CORS 자격증명 포함 (JWT 토큰 전송)
   headers: {
     'Content-Type': 'application/json',
   },
