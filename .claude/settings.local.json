@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./venv/Scripts/python.exe manage.py shell)"
+      "Bash(./venv/Scripts/python.exe manage.py shell)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nFix CORS credentials setting for production authentication\n\nEnable CORS_ALLOW_CREDENTIALS to allow browser to send JWT tokens\nin cross-origin requests. This fixes 403 Forbidden error when\napproving users in /admin/user-management on production.\n\n- Set CORS_ALLOW_CREDENTIALS = True\n- Required for JWT authentication between different domains\n- Resolves: User approval failing with CORS policy error\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": [],
