@@ -19,6 +19,7 @@ api_urlpatterns = [
     path('api/inventory/', include('inventory.urls')),
     path('api/quality/', include('quality.urls')),
     path('api/health/', views.health_check, name='health_check'),
+    path('api/health', views.health_check, name='health_check_no_slash'),
     # `api/signup-requests/` is defined within injection.urls, so this line is removed to avoid conflict.
     # path('api/signup-requests/', include('config.urls_auth')) 
 ]
@@ -28,7 +29,9 @@ urlpatterns = [
 
     # JWT endpoints (AllowAny by default)
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token', TokenObtainPairView.as_view(), name='token_obtain_pair_no_slash'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/token/refresh', TokenRefreshView.as_view(), name='token_refresh_no_slash'),
 
     # API routes
     path('', include(api_urlpatterns)),
