@@ -122,6 +122,7 @@ CORS_ALLOW_METHODS = [
     'POST',
     'PUT',
 ]
+CORS_PREFLIGHT_MAX_AGE = 86400
 
 
 # CSRF 신뢰 출처 (프론트엔드 도메인)

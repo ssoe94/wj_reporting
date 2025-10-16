@@ -762,8 +762,10 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         """
         return super().get_queryset().order_by('-created_at')
 
-    @action(detail=True, methods=['post'], url_path='approve')
+    @action(detail=True, methods=['post', 'options'], url_path='approve')
     def approve(self, request, pk=None):
+        if request.method == 'OPTIONS':
+            return Response(status=status.HTTP_200_OK)
         signup_req = self.get_object()
         if signup_req.status != 'pending':
             return Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -842,8 +844,10 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
             'temporary_password': temp_password,
         })
 
-    @action(detail=True, methods=['post'], url_path='reject')
+    @action(detail=True, methods=['post', 'options'], url_path='reject')
     def reject(self, request, pk=None):
+        if request.method == 'OPTIONS':
+            return Response(status=status.HTTP_200_OK)
         signup_req = self.get_object()
         if signup_req.status != 'pending':
             return Response({'detail': '이미 처리된 요청입니다.'}, status=status.HTTP_400_BAD_REQUEST)
