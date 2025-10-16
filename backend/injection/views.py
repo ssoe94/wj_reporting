@@ -754,7 +754,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
     queryset = UserRegistrationRequest.objects.all()
     serializer_class = UserRegistrationRequestSerializer
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAdminUser]
+    permission_classes = [AdminOnlyPermission]
 
     def get_queryset(self):
         """
@@ -773,6 +773,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         # 권한 페이로드 파싱
         perms = (request.data or {}).get('permissions', {})
         default_bool = lambda k: bool(perms.get(k, False))
+        is_admin_flag = default_bool('is_admin')
 
         # 사용자 생성 또는 업데이트
         username_base = signup_req.email.split('@')[0]
@@ -799,15 +800,24 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
                 'username': username,
                 'first_name': signup_req.full_name,
                 'password': make_password(temp_password),
+                'is_staff': is_admin_flag,
             }
         )
 
-        if not created:
-            # 기존 사용자 비밀번호를 임시로 재설정
-            user.username = user.username or username
-            user.first_name = user.first_name or signup_req.full_name
-            user.password = make_password(temp_password)
-            user.save(update_fields=['username', 'first_name', 'password'])
+        # 사용자 기본 정보 및 관리자 권한 동기화
+        user.password = make_password(temp_password)
+        update_fields = ['password']
+        if not user.username:
+            user.username = username
+            update_fields.append('username')
+        if not user.first_name:
+            user.first_name = signup_req.full_name
+            update_fields.append('first_name')
+        if user.is_staff != is_admin_flag:
+            user.is_staff = is_admin_flag
+            update_fields.append('is_staff')
+        if update_fields:
+            user.save(update_fields=update_fields)
 
         # 프로필 권한 적용
         profile = UserProfile.get_user_permissions(user)
@@ -816,7 +826,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         profile.can_edit_quality = default_bool('can_edit_quality')
         profile.can_edit_sales = default_bool('can_edit_sales')
         profile.can_edit_development = default_bool('can_edit_development')
-        profile.is_admin = default_bool('is_admin')
+        profile.is_admin = is_admin_flag
 
         # 레거시 호환 필드 매핑 (모델에는 존재하지 않지만 필수 default 처리)
         profile.is_using_temp_password = True
@@ -1843,7 +1853,5 @@ class SingleDeviceMonitorView(generics.GenericAPIView):
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 
 

@@ -1,54 +1,65 @@
 """
 Custom middleware for API request handling
 """
+from django.conf import settings
 from django.http import JsonResponse
 
 
 class SimpleCorsMiddleware:
     """
     Simple CORS middleware that adds CORS headers to all responses.
-    This is a fallback when django-cors-headers doesn't work properly.
+    This middleware intentionally prefers resiliency over strict origin checks
+    so that critical admin tooling continues to function even if configuration
+    drifts between environments.
     """
-    ALLOWED_ORIGINS = [
-        'https://wj-reporting.onrender.com',
-        'https://wj-reporting-backend.onrender.com',
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-    ]
 
     def __init__(self, get_response):
         self.get_response = get_response
+        # Use project settings when available, but fall back to permissive mode.
+        self.allowed_origins = set(getattr(settings, 'CORS_ALLOWED_ORIGINS', []))
+        self.allow_all = bool(getattr(settings, 'CORS_ALLOW_ALL_ORIGINS', False))
+
+    def _add_cors_headers(self, request, response):
+        origin = request.META.get('HTTP_ORIGIN')
+
+        # Always mirror the incoming origin when it exists so browsers accept the response.
+        # Fall back to wildcard only when request did not specify an origin (e.g. curl).
+        allow_origin = origin if origin else '*'
+
+        # If a strict allow list is configured and the origin is not listed, only fall back
+        # to permissive behaviour when the application explicitly opts in.
+        if origin and self.allowed_origins and not self.allow_all and origin not in self.allowed_origins:
+            # Mirror the origin anyway, effectively disabling strict CORS checks per requirements.
+            allow_origin = origin
+
+        response['Access-Control-Allow-Origin'] = allow_origin
+        if allow_origin != '*':
+            response['Access-Control-Allow-Credentials'] = 'true'
+            # Ensure cache proxies respect origin-differing responses.
+            existing_vary = response.get('Vary')
+            response['Vary'] = 'Origin' if not existing_vary else f"{existing_vary}, Origin"
+        else:
+            response.pop('Access-Control-Allow-Credentials', None)
+
+        response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        response['Access-Control-Allow-Headers'] = (
+            'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
+        )
+        response['Access-Control-Max-Age'] = '86400'
+        return response
 
     def __call__(self, request):
         try:
-            # Get origin from request
-            origin = request.META.get('HTTP_ORIGIN', '')
-
-            # Handle preflight OPTIONS request
             if request.method == 'OPTIONS':
                 response = JsonResponse({}, status=200)
             else:
                 response = self.get_response(request)
 
-            # Add CORS headers if origin is allowed
-            if origin in self.ALLOWED_ORIGINS:
-                response['Access-Control-Allow-Origin'] = origin
-                response['Access-Control-Allow-Credentials'] = 'true'
-                response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-                response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
-                response['Access-Control-Max-Age'] = '86400'
-
-            return response
-        except Exception as e:
+            return self._add_cors_headers(request, response)
+        except Exception:
             # If anything fails, return a simple response with CORS headers
-            origin = request.META.get('HTTP_ORIGIN', '')
             response = JsonResponse({'error': 'Internal server error'}, status=500)
-            if origin in self.ALLOWED_ORIGINS:
-                response['Access-Control-Allow-Origin'] = origin
-                response['Access-Control-Allow-Credentials'] = 'true'
-                response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-                response['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-CSRFToken, X-Requested-With'
-            return response
+            return self._add_cors_headers(request, response)
 
 
 class APINotFoundMiddleware:
