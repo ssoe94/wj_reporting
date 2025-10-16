@@ -6,6 +6,7 @@ interface ComboBoxProps {
   value: string;
   onChange: (value: string) => void;
   onSelect?: (value: string) => void;
+  onDelete?: (value: string) => void; // 옵션 삭제 핸들러
   placeholder?: string;
   disabled?: boolean;
   allowCustomInput?: boolean;
@@ -18,6 +19,7 @@ export function ComboBox({
   value,
   onChange,
   onSelect,
+  onDelete,
   placeholder = '',
   disabled = false,
   allowCustomInput = false,
@@ -148,7 +150,7 @@ export function ComboBox({
   };
 
   return (
-    <div ref={containerRef} className={`relative ${className}`}>
+    <div ref={containerRef} className={`static ${className}`}>
       <div className="relative">
         <input
           ref={inputRef}
@@ -160,9 +162,10 @@ export function ComboBox({
           placeholder={placeholder}
           disabled={disabled}
           className={`
-            w-full px-3 py-2 pr-10 border border-gray-300 rounded-md
-            focus:ring-2 focus:ring-blue-500 focus:border-transparent
+            w-full px-3 py-2 pr-10 border border-gray-300 rounded-md bg-white
+            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
             disabled:bg-gray-100 disabled:cursor-not-allowed
+            transition-all
             ${isOpen ? 'ring-2 ring-blue-500 border-transparent' : ''}
           `}
         />
@@ -199,7 +202,12 @@ export function ComboBox({
       {isOpen && filteredOptions.length > 0 && (
         <ul
           ref={listRef}
-          className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
+          className="fixed z-[9999] bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
+          style={{
+            top: `${(containerRef.current?.getBoundingClientRect().bottom ?? 0) + 4}px`,
+            left: `${containerRef.current?.getBoundingClientRect().left ?? 0}px`,
+            width: `${containerRef.current?.getBoundingClientRect().width ?? 0}px`,
+          }}
           role="listbox"
         >
           {filteredOptions.map((option, index) => (
@@ -207,15 +215,31 @@ export function ComboBox({
               key={option}
               role="option"
               aria-selected={index === activeIndex}
-              className={`px-3 py-2 cursor-pointer transition-colors ${
+              className={`group px-3 py-2 cursor-pointer transition-colors flex items-center justify-between ${
                 index === activeIndex
                   ? 'bg-blue-100 text-blue-900'
                   : 'hover:bg-gray-50'
               }`}
-              onClick={() => handleSelectOption(option)}
               onMouseEnter={() => setActiveIndex(index)}
             >
-              {option}
+              <span onClick={() => handleSelectOption(option)} className="flex-1">
+                {option}
+              </span>
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`"${option}"을(를) 삭제하시겠습니까?`)) {
+                      onDelete(option);
+                    }
+                  }}
+                  className="ml-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 rounded transition-opacity"
+                  title="삭제"
+                >
+                  <X className="w-3 h-3 text-red-500" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -223,7 +247,14 @@ export function ComboBox({
 
       {/* 옵션이 없을 때 */}
       {isOpen && filteredOptions.length === 0 && inputValue.trim() && allowCustomInput && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+        <div
+          className="fixed z-[9999] bg-white border border-gray-300 rounded-md shadow-lg"
+          style={{
+            top: `${(containerRef.current?.getBoundingClientRect().bottom ?? 0) + 4}px`,
+            left: `${containerRef.current?.getBoundingClientRect().left ?? 0}px`,
+            width: `${containerRef.current?.getBoundingClientRect().width ?? 0}px`,
+          }}
+        >
           <div
             className="px-3 py-2 text-blue-600 cursor-pointer hover:bg-blue-50"
             onClick={() => handleSelectOption(inputValue.trim())}

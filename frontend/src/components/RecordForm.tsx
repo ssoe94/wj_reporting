@@ -65,7 +65,7 @@ const formatTime = (mins: number, _t: (k: string) => string, lang: string) => {
 };
 
 interface RecordFormProps {
-  onSaved?: () => void; // 호출 측에서 저장 후 추가 동작이 필요할 때
+  onSaved?: (savedDate: string) => void; // 저장된 날짜를 전달받아 추가 동작 수행
 }
 
 const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
@@ -182,11 +182,22 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         part_no: form.partNo,
         note: form.note,
       };
-      await api.post('/injection/reports/', payload);
-      queryClient.invalidateQueries({ queryKey: ['reports'] });
-      queryClient.invalidateQueries({ queryKey: ['reports-summary'] });
+      const response = await api.post('/injection/reports/', payload);
+
+      // 쿼리 무효화하여 데이터 새로고침
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['reports'] }),
+        queryClient.invalidateQueries({ queryKey: ['reports-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['report-dates'] }),
+      ]);
+
       toast.success('저장되었습니다');
-      if (onSaved) onSaved();
+
+      // 부모 컴포넌트에 저장된 날짜 전달
+      if (onSaved) {
+        const savedDate = response.data?.date || form.date;
+        onSaved(savedDate);
+      }
       setForm((prev) => ({
         ...prev,
         model: '',

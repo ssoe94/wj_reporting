@@ -361,6 +361,43 @@ class AssemblyReportViewSet(viewsets.ModelViewSet):
                 status=500
             )
 
+    @action(detail=False, methods=['post'], url_path='delete-defect-type')
+    def delete_defect_type(self, request):
+        """불량 유형 삭제"""
+        try:
+            data = request.data
+            category = data.get('defect_category')
+            defect_type = data.get('defect_type')
+
+            if not category or not defect_type:
+                return Response(
+                    {'error': 'defect_category and defect_type are required'},
+                    status=400
+                )
+
+            if category not in ['processing', 'outsourcing']:
+                return Response(
+                    {'error': 'Invalid defect_category. Must be "processing" or "outsourcing"'},
+                    status=400
+                )
+
+            # 히스토리에서 삭제 (모델 필드명은 'category')
+            deleted_count = DefectHistory.objects.filter(
+                category=category,
+                defect_type=defect_type
+            ).delete()[0]
+
+            return Response({
+                'success': True,
+                'deleted_count': deleted_count
+            })
+
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=500
+            )
+
 def index(request):
     """기본 API 엔드포인트"""
     return JsonResponse({"message": "Assembly module ready"})

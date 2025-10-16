@@ -67,44 +67,53 @@ export const useAssemblyReportsSummary = (date?: string) => {
 
 export const useCreateAssemblyReport = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (data: Omit<AssemblyReport, 'id'>) => {
       const response = await api.post('/assembly/reports/', data);
       return response.data;
     },
     onSuccess: () => {
+      // 모든 관련 쿼리 무효화하여 캘린더와 상세기록 자동 업데이트
       queryClient.invalidateQueries({ queryKey: ['assembly-reports'] });
       queryClient.invalidateQueries({ queryKey: ['assembly-reports-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['assembly-report-dates'] });
+      queryClient.invalidateQueries({ queryKey: ['assembly-reports-trend-data'] });
     },
   });
 };
 
 export const useUpdateAssemblyReport = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<AssemblyReport> }) => {
       const response = await api.patch(`/assembly/reports/${id}/`, data);
       return response.data;
     },
     onSuccess: () => {
+      // 모든 관련 쿼리 무효화하여 캘린더와 상세기록 자동 업데이트
       queryClient.invalidateQueries({ queryKey: ['assembly-reports'] });
       queryClient.invalidateQueries({ queryKey: ['assembly-reports-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['assembly-report-dates'] });
+      queryClient.invalidateQueries({ queryKey: ['assembly-reports-trend-data'] });
     },
   });
 };
 
 export const useDeleteAssemblyReport = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (id: number) => {
       await api.delete(`/assembly/reports/${id}/`);
     },
     onSuccess: () => {
+      // 모든 관련 쿼리 무효화하여 캘린더와 상세기록 자동 업데이트
       queryClient.invalidateQueries({ queryKey: ['assembly-reports'] });
       queryClient.invalidateQueries({ queryKey: ['assembly-reports-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['assembly-report-dates'] });
+      queryClient.invalidateQueries({ queryKey: ['assembly-reports-trend-data'] });
     },
   });
 };

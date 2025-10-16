@@ -12,10 +12,16 @@ export default function AssemblyNewPage() {
 
   const handleSubmit = async (data: any) => {
     try {
-      await createMutation.mutateAsync(data);
+      const response = await createMutation.mutateAsync(data);
       toast.success('가공 생산 보고서가 등록되었습니다.');
-      const date = data?.date;
+
+      // 저장된 날짜 정보 가져오기
+      const date = response?.date || data?.date;
+
+      // 쿼리 무효화하여 캘린더와 상세기록 업데이트
+      // navigate 대신 쿼리 무효화만 하고 섹션 스크롤
       if (date) {
+        // URL에 date 파라미터 추가하고 records 섹션으로 이동
         navigate(`/assembly?date=${encodeURIComponent(date)}#records`, { replace: true });
       } else {
         navigate(`/assembly#records`, { replace: true });

@@ -35,7 +35,19 @@ export default function SummaryPage() {
       setSelectedDate(reportDates[0]);
     }
   }, [reportDates, selectedDate, location.search]);
-  // RecordForm 내부 상태로 대체했으므로 관련 코드 삭제
+
+  // 생산기록 저장 후 호출되는 핸들러
+  const handleRecordSaved = (savedDate: string) => {
+    // 저장된 날짜로 캘린더 업데이트
+    setSelectedDate(savedDate);
+    // #records 섹션으로 스크롤
+    setTimeout(() => {
+      const recordsEl = document.getElementById('records');
+      if (recordsEl) {
+        recordsEl.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 100);
+  };
 
   // 사출기 목록, 포맷 함수 등은 RecordForm 내부로 이동했으므로 삭제합니다.
 
@@ -190,7 +202,7 @@ export default function SummaryPage() {
             <h2 className="text-xl font-bold text-blue-700">{t('new_rec_title')}</h2>
           </CardHeader>
           <CardContent>
-            <RecordForm />
+            <RecordForm onSaved={handleRecordSaved} />
           </CardContent>
         </Card>
       </section>

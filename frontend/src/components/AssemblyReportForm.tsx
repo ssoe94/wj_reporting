@@ -41,7 +41,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
   const [outsourcingDefects, setOutsourcingDefects] = useState<DefectEntry[]>([]);
 
   // 불량 히스토리 관리
-  const { processingDefectHistory, outsourcingDefectHistory, recordDefectTypeUsage } = useLocalDefectHistory();
+  const { processingDefectHistory, outsourcingDefectHistory, recordDefectTypeUsage, deleteDefectType } = useLocalDefectHistory();
   // 불량 상세 입력 (집계용)
   const incomingDefectItems = [
     { key: 'scratch', label: '划伤' },
@@ -270,6 +270,24 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       toast.error(lang === 'zh' ? '请输入生产数量' : '생산수량을 입력하세요');
       return;
     }
+
+    // 불량 데이터 부분 입력 검증 (가공불량, 외주불량)
+    const partialProcessingEntries = processingDefects.filter(entry =>
+      (entry.type.trim() && entry.quantity === 0) || (!entry.type.trim() && entry.quantity > 0)
+    );
+    const partialOutsourcingEntries = outsourcingDefects.filter(entry =>
+      (entry.type.trim() && entry.quantity === 0) || (!entry.type.trim() && entry.quantity > 0)
+    );
+
+    if (partialProcessingEntries.length > 0 || partialOutsourcingEntries.length > 0) {
+      const warningMsg = lang === 'zh'
+        ? '不良记录中有未完成的行(仅填写了类型或数量)。是否继续保存？'
+        : '불량 기록에 미완성 행이 있습니다(유형 또는 수량만 입력됨). 그대로 저장하시겠습니까?';
+
+      const confirmed = window.confirm(warningMsg);
+      if (!confirmed) return;
+    }
+
     // 확인 다이얼로그: 계획 대비 달성률, 불량 안내
     const plan = Number(formData.plan_qty)||0;
     const actual = Number(formData.actual_qty)||0;
@@ -286,10 +304,20 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       };
       // 상세 불량 JSON 포함
       payload.incoming_defects_detail = { ...incomingDefectsDetail };
-      // 새로운 동적 불량 데이터 추가
-      payload.processing_defects_dynamic = processingDefects;
-      payload.outsourcing_defects_dynamic = outsourcingDefects;
+
+      // 빈 행 제거 (유형과 수량이 모두 비어있는 행)
+      const validProcessingDefects = processingDefects.filter(
+        entry => entry.type.trim() || entry.quantity > 0
+      );
+      const validOutsourcingDefects = outsourcingDefects.filter(
+        entry => entry.type.trim() || entry.quantity > 0
+      );
+
+      // 새로운 동적 불량 데이터 추가 (빈 행 제거 후)
+      payload.processing_defects_dynamic = validProcessingDefects;
+      payload.outsourcing_defects_dynamic = validOutsourcingDefects;
       payload.injection_defect = totalIncoming;
+
       // 빈 문자열은 0으로 변환하여 서버로 전송
       // 동적 불량값을 기존 필드에 설정
       payload.processing_defect = totalProcessingDefects;
@@ -302,6 +330,19 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       if (maybePromise && typeof (maybePromise as any).then === 'function') {
         await (maybePromise as Promise<any>);
       }
+
+      // 저장 성공 후 불량 유형들을 히스토리에 자동 추가
+      validProcessingDefects.forEach(entry => {
+        if (entry.type.trim()) {
+          recordDefectTypeUsage('processing', entry.type.trim());
+        }
+      });
+      validOutsourcingDefects.forEach(entry => {
+        if (entry.type.trim()) {
+          recordDefectTypeUsage('outsourcing', entry.type.trim());
+        }
+      });
+
       // 성공적으로 저장된 경우 폼 초기화
       setFormData({
         date: format(new Date(), 'yyyy-MM-dd'),
@@ -837,6 +878,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 onChange={setProcessingDefects}
                 historyOptions={processingDefectHistory}
                 onSelect={(type) => recordDefectTypeUsage('processing', type)}
+                onDeleteHistory={(type) => deleteDefectType('processing', type)}
                 className="border-amber-200"
               />
 
@@ -847,6 +889,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 onChange={setOutsourcingDefects}
                 historyOptions={outsourcingDefectHistory}
                 onSelect={(type) => recordDefectTypeUsage('outsourcing', type)}
+                onDeleteHistory={(type) => deleteDefectType('outsourcing', type)}
                 className="border-purple-200"
               />
             </div>

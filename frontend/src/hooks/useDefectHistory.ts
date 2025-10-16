@@ -100,16 +100,46 @@ export function useLocalDefectHistory() {
 
     // 서버에 기록 (비동기)
     recordUsageMutation.mutate({ category, defectType: trimmedType });
-    
+
     // 상태를 직접 업데이트하기보다, 로컬 스토리지를 변경하고 UI를 리렌더링하는 방식을 사용
     // 이 훅을 사용하는 컴포넌트가 리렌더링되면서 getCombinedHistory가 다시 호출됨
     // 강제 리렌더링이 필요하다면 queryClient를 사용할 수 있음
     queryClient.invalidateQueries({ queryKey: ['defectHistory'] }); // 서버 데이터와 동기화
   };
 
+  // 6. 서버에서 불량 유형을 삭제하는 Mutation
+  const deleteDefectTypeMutation = useMutation({
+    mutationFn: ({ category, defectType }: { category: string; defectType: string }) =>
+      api.post('/assembly/reports/delete-defect-type/', {
+        defect_category: category,
+        defect_type: defectType,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['defectHistory'] });
+    }
+  });
+
+  // 7. 로컬과 서버에서 불량 유형을 삭제하는 함수
+  const deleteDefectType = (category: 'processing' | 'outsourcing', type: string) => {
+    if (!type || type.trim() === '') return;
+
+    const trimmedType = type.trim();
+
+    // 로컬 스토리지에서 삭제
+    const localHistory = getLocalHistory();
+    if (localHistory[category] && localHistory[category][trimmedType]) {
+      delete localHistory[category][trimmedType];
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(localHistory));
+    }
+
+    // 서버에서 삭제 (비동기)
+    deleteDefectTypeMutation.mutate({ category, defectType: trimmedType });
+  };
+
   return {
     processingDefectHistory,
     outsourcingDefectHistory,
     recordDefectTypeUsage,
+    deleteDefectType,
   };
 }
