@@ -3,6 +3,7 @@ Custom middleware for API request handling
 """
 from django.conf import settings
 from django.http import JsonResponse
+from django.utils.cache import patch_vary_headers
 
 
 class SimpleCorsMiddleware:
@@ -35,11 +36,13 @@ class SimpleCorsMiddleware:
         response['Access-Control-Allow-Origin'] = allow_origin
         if allow_origin != '*':
             response['Access-Control-Allow-Credentials'] = 'true'
-            # Ensure cache proxies respect origin-differing responses.
-            existing_vary = response.get('Vary')
-            response['Vary'] = 'Origin' if not existing_vary else f"{existing_vary}, Origin"
+            patch_vary_headers(response, ('Origin',))
         else:
-            response.pop('Access-Control-Allow-Credentials', None)
+            # TemplateResponse 및 HttpResponse 모두 지원하도록 headers dict 우선 사용
+            if hasattr(response, 'headers'):
+                response.headers.pop('Access-Control-Allow-Credentials', None)
+            elif response.has_header('Access-Control-Allow-Credentials'):
+                del response['Access-Control-Allow-Credentials']
 
         response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
         response['Access-Control-Allow-Headers'] = (

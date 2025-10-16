@@ -1,23 +1,9 @@
 {
-  "routes": [
-    {
-      "src": "/api/(.*)",
+  "root": "dist/",
+  "routes": {
+    "/api/**": {
       "dest": "https://wj-reporting-backend.onrender.com/api/$1"
     },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/api/*",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "no-store, no-cache, must-revalidate"
-        }
-      ]
-    }
-  ]
+    "/**": "index.html"
+  }
 }
