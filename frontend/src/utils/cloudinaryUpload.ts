@@ -3,6 +3,7 @@
  */
 import api from '../lib/api';
 import axios from 'axios';
+import { resizeImage } from './imageResize';
 
 interface CloudinaryConfig {
   cloud_name: string;
@@ -42,9 +43,9 @@ async function getConfig(folder: string = 'quality'): Promise<CloudinaryConfig> 
 
 /**
  * Cloudinary로 이미지 업로드 (Unsigned Upload)
- * 
- * Unsigned preset 사용 - 서명 불필요, 가장 간단한 방식
- * 
+ *
+ * 업로드 전에 이미지를 리사이징합니다 (긴 변 기준 최대 1024px)
+ *
  * @param file - 업로드할 이미지 파일
  * @param folder - Cloudinary 폴더명 (기본값: 'quality')
  * @param onProgress - 업로드 진행률 콜백 (0-100)
@@ -56,7 +57,12 @@ export async function uploadToCloudinary(
   onProgress?: (progress: number) => void
 ): Promise<CloudinaryUploadResponse> {
   try {
-    // 1. 백엔드에서 설정 가져오기
+    // 1. 이미지 리사이징 (긴 변 기준 최대 1024px)
+    console.log(`📸 Original image: ${file.name}, size: ${(file.size / 1024).toFixed(1)}KB`);
+    const resizedFile = await resizeImage(file, { maxSize: 1024, quality: 0.9 });
+    console.log(`📦 Resized image ready for upload: ${(resizedFile.size / 1024).toFixed(1)}KB`);
+
+    // 2. 백엔드에서 설정 가져오기
     const config = await getConfig(folder);
 
     console.log('📝 Upload config:', {
@@ -64,9 +70,9 @@ export async function uploadToCloudinary(
       upload_preset: config.upload_preset,
     });
 
-    // 2. FormData 생성 (Unsigned - 서명 불필요!)
+    // 3. FormData 생성 (리사이징된 파일 사용)
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', resizedFile); // 리사이징된 파일 사용
     formData.append('upload_preset', config.upload_preset);
     formData.append('api_key', config.api_key);
     formData.append('timestamp', config.timestamp.toString());
@@ -75,7 +81,7 @@ export async function uploadToCloudinary(
       formData.append('folder', config.folder);
     }
 
-    // 3. Cloudinary로 직접 업로드
+    // 4. Cloudinary로 직접 업로드
     const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${config.cloud_name}/image/upload`;
 
     console.log('📤 Uploading to:', cloudinaryUrl);
