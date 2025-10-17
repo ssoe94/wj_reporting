@@ -16,7 +16,7 @@ export function useInventory(partIds: number[]): UseQueryResult<Record<number, n
       const params = partIds.map((id)=>['part_ids', id]);
       // convert to URLSearchParams manually to keep duplicates
       const search = new URLSearchParams(params as any);
-      const { data } = await api.get<Record<number, number>>('/api/inventory/', {
+      const { data } = await api.get<Record<number, number>>('/inventory/', {
         params: search,
         paramsSerializer: () => search.toString(),
       });
