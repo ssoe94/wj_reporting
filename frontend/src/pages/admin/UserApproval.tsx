@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { api } from '../../lib/api';
@@ -27,7 +27,7 @@ interface UserProfile {
   is_admin: boolean;
 }
 
-const backendApprovalUrl = 'https://wj-reporting-backend.onrender.com/staff/signup-approvals/';
+const backendApprovalUrl = 'https://wj-reporting-backend.onrender.com/admin/login/?next=/staff/signup-approvals/';
 
 function openPortal(requestId?: number) {
   const url = requestId ? `${backendApprovalUrl}?request=${requestId}` : backendApprovalUrl;
