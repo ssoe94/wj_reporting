@@ -14,11 +14,18 @@ from pathlib import Path
 from decouple import config
 import dj_database_url
 
-# 환경 설정
-ENVIRONMENT = config('ENVIRONMENT', default='development')
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load .env file for local development
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / '.env')
+except ImportError:
+    pass
+
+# 환경 설정
+ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
 
 
 # Quick-start development settings - unsuitable for production

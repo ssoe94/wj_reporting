@@ -21,6 +21,7 @@ def get_upload_params(folder: str = 'quality') -> Dict[str, object]:
     api_key = settings.CLOUDINARY_STORAGE.get('API_KEY')
     api_secret = settings.CLOUDINARY_STORAGE.get('API_SECRET')
 
+    logger.info(f"Cloudinary config - cloud_name: '{cloud_name}', api_key: '{api_key}', api_secret: {'*' * len(api_secret) if api_secret else 'None'}")
     logger.debug(f"Cloudinary config check - cloud_name: {bool(cloud_name)}, api_key: {bool(api_key)}, api_secret: {bool(api_secret)}")
 
     if not all([cloud_name, api_key, api_secret]):
