@@ -32,7 +32,6 @@ api_urlpatterns = [
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('staff/signup-approvals/', SignupApprovalPortalView.as_view(), name='signup-approval-portal'),
-    path('accounts/staff/signup-approvals/', SignupApprovalPortalView.as_view(), name='signup-approval-portal-accounts-prefix'),
 
     # JWT endpoints (AllowAny by default)
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
