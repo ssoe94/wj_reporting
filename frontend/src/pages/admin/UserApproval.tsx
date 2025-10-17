@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { api } from '../../lib/api';
-import { CheckCircle, XCircle, Edit, RotateCcw, User, Users } from 'lucide-react';
+import { CheckCircle, XCircle, Edit, RotateCcw, User, Users, Shield } from 'lucide-react';
 
 interface SignupRequest {
   id: number;
@@ -47,18 +47,19 @@ export default function UserApproval() {
   const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
   const [editingPermissions, setEditingPermissions] = useState<{[key: string]: boolean}>({});
   const [resetPasswordResult, setResetPasswordResult] = useState<ApprovalResult | null>(null);
+  const backendApprovalUrl = 'https://wj-reporting-backend.onrender.com/staff/signup-approvals/';
 
-  // 권한 옵션 목록 (편집 권한만 표시 - 조회는 기본 부여)
+  // 권한 옵션 목록 (편집 권한�?표시 - 조회�?기본 부�?
   const permissionOptions = [
     { key: 'can_edit_injection', label: '사출 편집/삭제' },
-    { key: 'can_edit_assembly', label: '가공 편집/삭제' },
+    { key: 'can_edit_assembly', label: '가�?편집/삭제' },
     { key: 'can_edit_quality', label: '품질 편집/삭제' },
     { key: 'can_edit_sales', label: '영업/재고 편집/삭제' },
     { key: 'can_edit_development', label: '개발/ECO 편집/삭제' },
     { key: 'is_admin', label: '관리자 권한' },
   ];
 
-  // 권한 설정 상태 (편집 권한만 관리)
+  // 권한 설정 상태 (편집 권한�?관�?
   const [permissions, setPermissions] = useState({
     can_edit_injection: false,
     can_edit_assembly: false,
@@ -75,34 +76,32 @@ export default function UserApproval() {
       return '관리자 (모든 권한)';
     }
     if (profile.can_edit_injection) permissions.push('사출');
-    if (profile.can_edit_assembly) permissions.push('가공');
+    if (profile.can_edit_assembly) permissions.push('가�?);
     if (profile.can_edit_quality) permissions.push('품질');
     if (profile.can_edit_sales) permissions.push('영업/재고');
     if (profile.can_edit_development) permissions.push('개발/ECO');
 
-    return permissions.length > 0 ? `${permissions.join(', ')} 편집권한` : '조회만 가능';
+    return permissions.length > 0 ? `${permissions.join(', ')} 편집권한` : '조회�?가�?;
   };
 
-  // 가입 요청 목록 가져오기
-  const fetchRequests = async () => {
+  // 가�?요청 목록 가져오�?  const fetchRequests = async () => {
     try {
       const response = await api.get('/admin/signup-requests/');
       setRequests(response.data.results || response.data);
     } catch (error: any) {
       console.error('Failed to fetch signup requests:', error);
-      const errorMessage = error?.response?.data?.detail || error?.message || '가입 요청 목록을 불러오는데 실패했습니다.';
+      const errorMessage = error?.response?.data?.detail || error?.message || '가�?요청 목록�?불러오는�?실패했습니다.';
       alert(errorMessage);
     }
   };
 
-  // 사용자 프로필 목록 가져오기
-  const fetchUserProfiles = async () => {
+  // 사용�?프로�?목록 가져오�?  const fetchUserProfiles = async () => {
     try {
       const response = await api.get('/admin/user-profiles/');
       setUserProfiles(response.data.results || response.data);
     } catch (error: any) {
       console.error('Failed to fetch user profiles:', error);
-      const errorMessage = error?.response?.data?.detail || error?.message || '사용자 프로필 목록을 불러오는데 실패했습니다.';
+      const errorMessage = error?.response?.data?.detail || error?.message || '사용�?프로�?목록�?불러오는�?실패했습니다.';
       alert(errorMessage);
     } finally {
       setLoading(false);
@@ -114,7 +113,7 @@ export default function UserApproval() {
     fetchUserProfiles();
   }, []);
 
-  // 가입 승인
+  // 가�?승인
   const handleApprove = async (requestId: number) => {
     try {
       console.log('Sending permissions:', permissions);
@@ -125,8 +124,7 @@ export default function UserApproval() {
         temporary_password: response.data.temporary_password,
       });
 
-      // 권한 초기화
-      setPermissions({
+      // 권한 초기�?      setPermissions({
         can_edit_injection: false,
         can_edit_assembly: false,
         can_edit_quality: false,
@@ -141,17 +139,16 @@ export default function UserApproval() {
         fetchUserProfiles()
       ]);
 
-      setSelectedRequest(null);
 
     } catch (error: any) {
       console.error('Approval failed:', error);
       console.error('Error response:', error.response?.data);
 
-      let errorMessage = '승인 처리 중 오류가 발생했습니다.';
+      let errorMessage = '승인 처리 �?오류가 발생했습니다.';
       if (error.response?.status === 401) {
-        errorMessage = '인증이 필요합니다. 다시 로그인해주세요.';
+        errorMessage = '인증�?필요합니�? 다시 로그인해주세�?';
       } else if (error.response?.status === 403) {
-        errorMessage = '권한이 없습니다. 관리자 권한이 필요합니다.';
+        errorMessage = '권한�?없습니다. 관리자 권한�?필요합니�?';
       } else if (error.response?.status === 500) {
         const serverError = error.response?.data?.error || error.response?.data?.detail;
         errorMessage = serverError || '서버 내부 오류가 발생했습니다.';
@@ -165,31 +162,30 @@ export default function UserApproval() {
     }
   };
 
-  // 가입 거부
+  // 가�?거부
   const handleReject = async (requestId: number) => {
-    if (!confirm('정말 이 가입 요청을 거부하시겠습니까?')) return;
+    if (!confirm('정말 �?가�?요청�?거부하시겠습니까?')) return;
 
     try {
       await api.post(`/admin/signup-requests/${requestId}/reject/`);
-      alert('가입 요청이 거부되었습니다.');
+      alert('가�?요청�?거부되었습니�?');
       fetchRequests(); // 목록 새로고침
       setSelectedRequest(null);
     } catch (error: any) {
       console.error('Rejection failed:', error);
-      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '거부 처리 중 오류가 발생했습니다.';
+      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '거부 처리 �?오류가 발생했습니다.';
       alert(errorMessage);
     }
   };
 
-  // 권한 체크박스 변경
-  const handlePermissionChange = (key: string, value: boolean) => {
+  // 권한 체크박스 변�?  const handlePermissionChange = (key: string, value: boolean) => {
     setPermissions(prev => ({
       ...prev,
       [key]: value
     }));
   };
 
-  // 사용자 권한 편집 시작
+  // 사용�?권한 편집 시작
   const handleEditUserPermissions = (profile: UserProfile) => {
     setSelectedProfile(profile);
     setEditingPermissions({
@@ -202,24 +198,22 @@ export default function UserApproval() {
     });
   };
 
-  // 사용자 권한 수정 저장
-  const handleUpdateUserPermissions = async () => {
+  // 사용�?권한 수정 저�?  const handleUpdateUserPermissions = async () => {
     if (!selectedProfile) return;
 
     try {
       await api.patch(`/admin/user-profiles/${selectedProfile.id}/`, editingPermissions);
-      alert('권한이 성공적으로 수정되었습니다.');
+      alert('권한�?성공적으�?수정되었습니�?');
       setSelectedProfile(null);
       fetchUserProfiles(); // 목록 새로고침
     } catch (error: any) {
       console.error('Failed to update permissions:', error);
-      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '권한 수정 중 오류가 발생했습니다.';
+      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '권한 수정 �?오류가 발생했습니다.';
       alert(errorMessage);
     }
   };
 
-  // 편집 권한 체크박스 변경
-  const handleEditingPermissionChange = (key: string, value: boolean) => {
+  // 편집 권한 체크박스 변�?  const handleEditingPermissionChange = (key: string, value: boolean) => {
     setEditingPermissions(prev => ({
       ...prev,
       [key]: value
@@ -228,7 +222,7 @@ export default function UserApproval() {
 
   // 비밀번호 리셋
   const handleResetPassword = async (userId: number) => {
-    if (!confirm('이 사용자의 비밀번호를 리셋하시겠습니까? 새로운 임시 비밀번호가 생성됩니다.')) return;
+    if (!confirm('�?사용자의 비밀번호�?리셋하시겠습니까? 새로�?임시 비밀번호가 생성됩니�?')) return;
 
     try {
       const response = await api.post('/admin/user/reset-password/', { user_id: userId });
@@ -239,7 +233,7 @@ export default function UserApproval() {
       fetchUserProfiles(); // 목록 새로고침
     } catch (error: any) {
       console.error('Password reset failed:', error);
-      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '비밀번호 리셋 중 오류가 발생했습니다.';
+      const errorMessage = error?.response?.data?.error || error?.response?.data?.detail || error?.message || '비밀번호 리셋 �?오류가 발생했습니다.';
       alert(errorMessage);
     }
   };
@@ -252,13 +246,39 @@ export default function UserApproval() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">사용자 관리</h1>
+      <h1 className="text-2xl font-bold mb-6">사용�?관�?/h1>
+
+      <div className="mb-6">
+        <Card>
+          <CardContent className="py-6">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="mt-1">
+                  <Shield className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">승인 포털 안내</h3>
+                  <p className="text-sm text-gray-600">
+                    브라우저에서 승인 요청이 차단될 경우, 아래 버튼을 눌러 백엔드 전용 포털에서 직접 진행할 수 있습니다.
+                  </p>
+                </div>
+              </div>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => window.open(backendApprovalUrl, '_blank', 'noopener,noreferrer')}
+              >
+                백엔드 승인 포털 열기
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* 승인 결과 모달 */}
       {approvalResult && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-4">가입 승인 완료</h3>
+            <h3 className="text-lg font-semibold mb-4">가�?승인 완료</h3>
             <div className="space-y-2">
               <p><strong>사용자명:</strong> {approvalResult.username}</p>
               <p><strong>임시 비밀번호:</strong>
@@ -271,7 +291,7 @@ export default function UserApproval() {
               <Button
                 onClick={() => {
                   navigator.clipboard.writeText(approvalResult.temporary_password);
-                  alert('임시 비밀번호가 클립보드에 복사되었습니다.');
+                  alert('임시 비밀번호가 클립보드�?복사되었습니�?');
                 }}
                 variant="secondary"
                 className="flex-1"
@@ -296,7 +316,7 @@ export default function UserApproval() {
             <h3 className="text-lg font-semibold mb-4">비밀번호 리셋 완료</h3>
             <div className="space-y-2">
               <p><strong>사용자명:</strong> {resetPasswordResult.username}</p>
-              <p><strong>새 임시 비밀번호:</strong>
+              <p><strong>�?임시 비밀번호:</strong>
                 <code className="bg-gray-100 px-2 py-1 rounded ml-2">
                   {resetPasswordResult.temporary_password}
                 </code>
@@ -306,7 +326,7 @@ export default function UserApproval() {
               <Button
                 onClick={() => {
                   navigator.clipboard.writeText(resetPasswordResult.temporary_password);
-                  alert('임시 비밀번호가 클립보드에 복사되었습니다.');
+                  alert('임시 비밀번호가 클립보드�?복사되었습니�?');
                 }}
                 variant="secondary"
                 className="flex-1"
@@ -324,14 +344,14 @@ export default function UserApproval() {
         </div>
       )}
 
-      {/* 대기 중인 요청 목록 */}
+      {/* 대�?중인 요청 목록 */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">대기 중인 가입 요청 ({pendingRequests.length}건)</h2>
+        <h2 className="text-xl font-semibold">대�?중인 가�?요청 ({pendingRequests.length}�?</h2>
 
         {pendingRequests.length === 0 ? (
           <Card>
             <CardContent className="p-6 text-center text-gray-500">
-              대기 중인 가입 요청이 없습니다.
+              대�?중인 가�?요청�?없습니다.
             </CardContent>
           </Card>
         ) : (
@@ -341,11 +361,11 @@ export default function UserApproval() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div>
                     <p><strong>성명:</strong> {request.full_name}</p>
-                    <p><strong>부서:</strong> {request.department}</p>
-                    <p><strong>이메일:</strong> {request.email}</p>
+                    <p><strong>부�?</strong> {request.department}</p>
+                    <p><strong>이메�?</strong> {request.email}</p>
                   </div>
                   <div>
-                    <p><strong>요청일:</strong> {new Date(request.created_at).toLocaleString()}</p>
+                    <p><strong>요청�?</strong> {new Date(request.created_at).toLocaleString()}</p>
                   </div>
                 </div>
 
@@ -398,7 +418,7 @@ export default function UserApproval() {
                       variant="secondary"
                       className="flex-1"
                     >
-                      권한 설정 및 처리
+                      권한 설정 �?처리
                     </Button>
                   )}
                 </div>
@@ -408,12 +428,12 @@ export default function UserApproval() {
         )}
       </div>
 
-      {/* 기존 사용자 권한 관리 */}
+      {/* 기존 사용�?권한 관�?*/}
       <div className="mt-8">
         <div className="flex items-center gap-2 mb-6">
           <Users className="w-5 h-5 text-gray-600" />
-          <h2 className="text-xl font-semibold">사용자 권한 관리</h2>
-          <span className="text-sm text-gray-500">({userProfiles.length}명)</span>
+          <h2 className="text-xl font-semibold">사용�?권한 관�?/h2>
+          <span className="text-sm text-gray-500">({userProfiles.length}�?</span>
         </div>
 
         <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -421,7 +441,7 @@ export default function UserApproval() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  사용자 정보
+                  사용�?정보
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   권한 요약
@@ -474,8 +494,7 @@ export default function UserApproval() {
                         className="text-orange-600 hover:text-orange-800 hover:bg-orange-50"
                       >
                         <RotateCcw className="w-4 h-4 mr-1" />
-                        비밀번호 재설정
-                      </Button>
+                        비밀번호 재설�?                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -523,8 +542,7 @@ export default function UserApproval() {
               <div className="flex gap-3 mt-6 pt-4 border-t">
                 <Button onClick={handleUpdateUserPermissions} className="flex-1">
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  저장
-                </Button>
+                  저�?                </Button>
                 <Button
                   onClick={() => setSelectedProfile(null)}
                   variant="secondary"
