@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from django.db import models as django_models
 from django.db.models import Q
 from django.contrib.auth import get_user_model
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render, redirect
 from django.http import HttpResponse
 import csv
 import io
@@ -45,6 +45,10 @@ from django.utils import timezone
 import secrets, string
 from datetime import timedelta
 import threading
+from django.views import View
+from django.utils.decorators import method_decorator
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 
 from .mes_service import mes_service
 
@@ -754,7 +758,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
     queryset = UserRegistrationRequest.objects.all()
     serializer_class = UserRegistrationRequestSerializer
     authentication_classes = [JWTAuthentication]
-    permission_classes = [AdminOnlyPermission]
+    permission_classes = [IsAdminUser]
 
     def get_queryset(self):
         """
@@ -868,6 +872,136 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         signup_req.save(update_fields=['status', 'approved_by', 'approved_at'])
 
         return Response({'detail': '요청이 거부되었습니다.'})
+
+@method_decorator(login_required, name='dispatch')
+class SignupApprovalPortalView(View):
+    template_name = 'injection/signup_approval_portal.html'
+    permission_options = [
+        ('can_edit_injection', '사출 편집/삭제'),
+        ('can_edit_assembly', '가공 편집/삭제'),
+        ('can_edit_quality', '품질 편집/삭제'),
+        ('can_edit_sales', '영업/재고 편집/삭제'),
+        ('can_edit_development', '개발/ECO 편집/삭제'),
+        ('is_admin', '관리자 권한'),
+    ]
+
+    def _ensure_staff(self, request):
+        if not request.user.is_staff:
+            messages.error(request, '관리자 권한이 필요합니다.')
+            return False
+        return True
+
+    def get(self, request):
+        if not self._ensure_staff(request):
+            return redirect('admin:login')
+
+        pending_requests = UserRegistrationRequest.objects.filter(status='pending').order_by('-created_at')
+        context = {
+            'pending_requests': pending_requests,
+            'permission_options': self.permission_options,
+        }
+        return render(request, self.template_name, context)
+
+    def post(self, request):
+        if not self._ensure_staff(request):
+            return redirect('admin:login')
+
+        action = request.POST.get('action')
+        request_id = request.POST.get('request_id')
+        signup_req = get_object_or_404(UserRegistrationRequest, pk=request_id)
+
+        if signup_req.status != 'pending':
+            messages.warning(request, '이미 처리된 요청입니다.')
+            return redirect('signup-approval-portal')
+
+        if action == 'approve':
+            perms = {
+                key: request.POST.get(key) == 'on'
+                for key, _ in self.permission_options
+            }
+            is_admin_flag = perms.get('is_admin', False)
+
+            username_base = signup_req.email.split('@')[0]
+            username = username_base
+            i = 1
+            while User.objects.filter(username=username).exclude(email=signup_req.email).exists():
+                username = f"{username_base}{i}"
+                i += 1
+
+            def generate_temp_password(length: int = 12) -> str:
+                alphabet = string.ascii_letters + string.digits
+                while True:
+                    pwd = ''.join(secrets.choice(alphabet) for _ in range(length))
+                    if any(c.islower() for c in pwd) and any(c.isupper() for c in pwd) and any(c.isdigit() for c in pwd):
+                        return pwd
+
+            temp_password = generate_temp_password(12)
+
+            user, _ = User.objects.get_or_create(
+                email=signup_req.email,
+                defaults={
+                    'username': username,
+                    'first_name': signup_req.full_name,
+                    'password': make_password(temp_password),
+                    'is_staff': is_admin_flag,
+                }
+            )
+
+            update_fields = ['password']
+            user.password = make_password(temp_password)
+            if not user.username:
+                user.username = username
+                update_fields.append('username')
+            if not user.first_name:
+                user.first_name = signup_req.full_name
+                update_fields.append('first_name')
+            if user.is_staff != is_admin_flag:
+                user.is_staff = is_admin_flag
+                update_fields.append('is_staff')
+            if update_fields:
+                user.save(update_fields=update_fields)
+
+            profile = UserProfile.get_user_permissions(user)
+            profile.can_edit_injection = perms.get('can_edit_injection', False)
+            profile.can_edit_assembly = perms.get('can_edit_assembly', False)
+            profile.can_edit_quality = perms.get('can_edit_quality', False)
+            profile.can_edit_sales = perms.get('can_edit_sales', False)
+            profile.can_edit_development = perms.get('can_edit_development', False)
+            profile.is_admin = is_admin_flag
+            profile.is_using_temp_password = True
+            profile.password_reset_required = True
+            profile.save(update_fields=[
+                'can_edit_injection',
+                'can_edit_assembly',
+                'can_edit_quality',
+                'can_edit_sales',
+                'can_edit_development',
+                'is_admin',
+                'is_using_temp_password',
+                'password_reset_required',
+                'updated_at',
+            ])
+
+            signup_req.status = 'approved'
+            signup_req.approved_by = request.user
+            signup_req.approved_at = timezone.now()
+            signup_req.temporary_password = temp_password
+            signup_req.save(update_fields=['status', 'approved_by', 'approved_at', 'temporary_password'])
+
+            messages.success(
+                request,
+                f"{signup_req.full_name} 승인 완료. 임시 비밀번호: {temp_password} (사용자: {user.username})"
+            )
+        elif action == 'reject':
+            signup_req.status = 'rejected'
+            signup_req.approved_by = request.user
+            signup_req.approved_at = timezone.now()
+            signup_req.save(update_fields=['status', 'approved_by', 'approved_at'])
+            messages.info(request, f"{signup_req.full_name} 요청을 거부했습니다.")
+        else:
+            messages.error(request, '잘못된 요청입니다.')
+
+        return redirect('signup-approval-portal')
 
 class UserProfileViewSet(viewsets.ModelViewSet):
     queryset = UserProfile.objects.all()

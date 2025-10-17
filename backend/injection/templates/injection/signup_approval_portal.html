@@ -1,0 +1,92 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>신규 사용자 승인 포털</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; background-color: #f5f5f5; }
+        h1 { margin-bottom: 1rem; }
+        table { width: 100%; border-collapse: collapse; background: #fff; }
+        th, td { padding: 0.75rem 1rem; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+        th { background: #f0f4ff; text-align: left; }
+        .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+        .permissions { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; margin: 0.5rem 0; }
+        label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; }
+        button { padding: 0.4rem 0.8rem; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+        button.approve { background-color: #2563eb; color: #fff; }
+        button.reject { background-color: #ef4444; color: #fff; }
+        .messages { margin-bottom: 1rem; }
+        .message { padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 0.5rem; }
+        .message.success { background-color: #dcfce7; color: #166534; }
+        .message.error { background-color: #fee2e2; color: #991b1b; }
+        .message.info { background-color: #e0f2fe; color: #075985; }
+        .empty-state { padding: 2rem; text-align: center; color: #555; background: #fff; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>신규 사용자 승인 포털</h1>
+    <p>이 페이지는 <strong>관리자 계정</strong>으로 로그인한 상태에서만 접근할 수 있습니다. 승인 시 임시 비밀번호가 자동 생성됩니다.</p>
+
+    <div class="messages">
+        {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+
+    {% if pending_requests %}
+        <table>
+            <thead>
+                <tr>
+                    <th>요청 정보</th>
+                    <th>권한 설정</th>
+                    <th>작업</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for req in pending_requests %}
+                <tr>
+                    <td>
+                        <div><strong>이름:</strong> {{ req.full_name }}</div>
+                        <div><strong>이메일:</strong> {{ req.email }}</div>
+                        <div><strong>부서:</strong> {{ req.department|default:'-' }}</div>
+                        <div><strong>사유:</strong> {{ req.reason|default:'-' }}</div>
+                        <div><strong>요청일:</strong> {{ req.created_at|date:"Y-m-d H:i" }}</div>
+                    </td>
+                    <td>
+                        <form method="post" class="actions">
+                            {% csrf_token %}
+                            <input type="hidden" name="request_id" value="{{ req.id }}">
+                            <input type="hidden" name="action" value="approve">
+                            <div class="permissions">
+                                {% for key, label in permission_options %}
+                                    <label>
+                                        <input type="checkbox" name="{{ key }}">
+                                        {{ label }}
+                                    </label>
+                                {% endfor %}
+                            </div>
+                            <div>
+                                <button type="submit" class="approve">승인</button>
+                            </div>
+                        </form>
+                    </td>
+                    <td>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="request_id" value="{{ req.id }}">
+                            <input type="hidden" name="action" value="reject">
+                            <button type="submit" class="reject">거부</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="empty-state">
+            현재 승인 대기 중인 요청이 없습니다.
+        </div>
+    {% endif %}
+</body>
+</html>

@@ -8,7 +8,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from . import views
 from . import urls_admin
-from injection.views import SignupRequestView, ChangePasswordView
+from injection.views import SignupRequestView, ChangePasswordView, SignupApprovalPortalView
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -30,6 +30,7 @@ api_urlpatterns = [
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('staff/signup-approvals/', SignupApprovalPortalView.as_view(), name='signup-approval-portal'),
 
     # JWT endpoints (AllowAny by default)
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
