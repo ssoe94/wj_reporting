@@ -27,8 +27,17 @@ interface CloudinaryUploadResponse {
  * 백엔드에서 Cloudinary 설정 가져오기
  */
 async function getConfig(folder: string = 'quality'): Promise<CloudinaryConfig> {
-  const { data } = await api.post('/quality/cloudinary-signature/', { folder });
-  return data;
+  try {
+    const { data } = await api.post('/quality/cloudinary-signature/', { folder });
+    return data;
+  } catch (error: any) {
+    console.error('❌ Failed to get Cloudinary config:', error);
+    if (error.response?.data) {
+      const errorMsg = error.response.data.detail || error.response.data.error || 'Cloudinary 설정을 가져오는데 실패했습니다';
+      throw new Error(errorMsg);
+    }
+    throw new Error('Cloudinary 설정을 가져오는데 실패했습니다');
+  }
 }
 
 /**

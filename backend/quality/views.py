@@ -8,6 +8,9 @@ from django.utils.decorators import method_decorator
 from .models import QualityReport, Supplier
 from .serializers import QualityReportSerializer, SupplierSerializer
 from .cloudinary_utils import get_upload_params
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class QualityReportViewSet(viewsets.ModelViewSet):
@@ -63,10 +66,10 @@ class SupplierViewSet(viewsets.ModelViewSet):
 def get_cloudinary_signature(request):
     """
     Cloudinary 업로드를 위한 서명 생성
-    
+
     POST /api/quality/cloudinary-signature/
     Body: { "folder": "quality" }  (optional, default: "quality")
-    
+
     Returns:
         {
             "signature": "...",
@@ -75,17 +78,26 @@ def get_cloudinary_signature(request):
             "api_key": "...",
             "cloud_name": "deoic09y3"
         }
-    
-    Note: 
+
+    Note:
     - Signed preset 사용 시 timestamp만 서명
     - folder는 프론트에서 직접 전송 (서명에 미포함)
     """
     try:
         folder = request.data.get('folder', 'quality')
+        logger.info(f"Cloudinary signature request for folder: {folder}")
         upload_params = get_upload_params(folder=folder)
+        logger.info(f"Cloudinary signature generated successfully")
         return Response(upload_params, status=status.HTTP_200_OK)
-    except Exception as e:
+    except ValueError as e:
+        logger.error(f"Cloudinary configuration error: {str(e)}")
         return Response(
-            {'error': str(e)},
+            {'error': str(e), 'detail': 'Cloudinary 환경 변수가 설정되지 않았습니다. 관리자에게 문의하세요.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        logger.error(f"Cloudinary signature error: {str(e)}", exc_info=True)
+        return Response(
+            {'error': str(e), 'detail': '서명 생성 중 오류가 발생했습니다.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

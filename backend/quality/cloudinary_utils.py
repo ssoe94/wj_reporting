@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import time
+import logging
 from typing import Dict
 
 from django.conf import settings
 from cloudinary.utils import api_sign_request
+
+logger = logging.getLogger(__name__)
 
 
 def get_upload_params(folder: str = 'quality') -> Dict[str, object]:
@@ -18,8 +21,19 @@ def get_upload_params(folder: str = 'quality') -> Dict[str, object]:
     api_key = settings.CLOUDINARY_STORAGE.get('API_KEY')
     api_secret = settings.CLOUDINARY_STORAGE.get('API_SECRET')
 
+    logger.debug(f"Cloudinary config check - cloud_name: {bool(cloud_name)}, api_key: {bool(api_key)}, api_secret: {bool(api_secret)}")
+
     if not all([cloud_name, api_key, api_secret]):
-        raise ValueError('Cloudinary 설정이 올바르지 않습니다. 환경변수를 확인하세요.')
+        missing = []
+        if not cloud_name:
+            missing.append('CLOUDINARY_CLOUD_NAME')
+        if not api_key:
+            missing.append('CLOUDINARY_API_KEY')
+        if not api_secret:
+            missing.append('CLOUDINARY_API_SECRET')
+        error_msg = f'Cloudinary 환경 변수가 설정되지 않았습니다: {", ".join(missing)}'
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
     timestamp = int(time.time())
 
