@@ -113,7 +113,12 @@ export function useNavItems() {
         label: '관리자',
         icon: Monitor,
         children: [
-          { to: "/admin/user-management", label: '사용자 관리', icon: ClipboardCheck },
+          {
+            to: "https://wj-reporting-backend.onrender.com/admin/login/?next=/staff/signup-approvals/",
+            label: '사용자 관리',
+            icon: ClipboardCheck,
+            external: true  // 외부 링크 표시
+          },
         ],
       },
     ];
@@ -180,7 +185,12 @@ export function useNavItems() {
       label: '관리자',
       icon: Monitor,
       children: [
-        { to: "/admin/user-management", label: '사용자 관리', icon: ClipboardCheck },
+        {
+          to: "https://wj-reporting-backend.onrender.com/admin/login/?next=/staff/signup-approvals/",
+          label: '사용자 관리',
+          icon: ClipboardCheck,
+          external: true  // 외부 링크 표시
+        },
       ],
     });
   }
@@ -383,6 +393,20 @@ function AppContent() {
                 </div>
                 {group.children.map((child) => {
                   const ChildIcon = child.icon as any;
+                  // 외부 링크 처리
+                  if ((child as any).external) {
+                    return (
+                      <a
+                        key={child.to}
+                        href={child.to}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                      >
+                        {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
+                      </a>
+                    );
+                  }
                   return (
                     <PermissionLink key={child.to} to={child.to} className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
                       {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
@@ -476,6 +500,21 @@ function AppContent() {
                     </div>
                     {group.children.map((child) => {
                       const ChildIcon = child.icon as any;
+                      // 외부 링크 처리
+                      if ((child as any).external) {
+                        return (
+                          <a
+                            key={child.to}
+                            href={child.to}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
+                          </a>
+                        );
+                      }
                       return (
                         <PermissionLink
                           key={child.to}
