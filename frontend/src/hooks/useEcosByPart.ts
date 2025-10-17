@@ -7,7 +7,7 @@ export function useEcosByPart(partNo: string) {
     queryKey: ['ecos-by-part', partNo],
     queryFn: async () => {
       if(!partNo.trim()) return [] as Eco[];
-      const { data } = await api.get('ecos/by-part/', { params:{ part_no: partNo.trim() }});
+      const { data } = await api.get('/ecos/by-part/', { params:{ part_no: partNo.trim() }});
       return Array.isArray(data) ? data : data.results;
     },
     enabled: !!partNo.trim(),

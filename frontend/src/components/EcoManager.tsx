@@ -57,9 +57,9 @@ export default function EcoManager() {
   const upsert = useMutation({
     mutationFn: async (payload: Partial<Eco>) => {
       if(payload.id) {
-        return api.patch(`ecos/${payload.id}/`, payload);
+        return api.patch(`/ecos/${payload.id}/`, payload);
       }
-      return api.post('ecos/', payload);
+      return api.post('/ecos/', payload);
     },
     onSuccess: ()=>{
       queryClient.invalidateQueries({queryKey:['ecos']});
@@ -82,7 +82,7 @@ export default function EcoManager() {
   });
 
   const del = useMutation({
-    mutationFn: async (id:number)=> api.delete(`ecos/${id}/`),
+    mutationFn: async (id:number)=> api.delete(`/ecos/${id}/`),
     onSuccess: ()=>{
       queryClient.invalidateQueries({queryKey:['ecos']});
       toast.success(t('delete_success'));
@@ -111,13 +111,13 @@ export default function EcoManager() {
       try{
         let ecoId = payload.id;
         if(payload.id){
-          await api.patch(`ecos/${payload.id}/`, header);
+          await api.patch(`/ecos/${payload.id}/`, header);
         }else{
-          const { data } = await api.post('ecos/', header);
+          const { data } = await api.post('/ecos/', header);
           ecoId = data.id;
         }
         if(details && details.length){
-          await api.post(`ecos/${ecoId}/details/bulk/`, {details});
+          await api.post(`/ecos/${ecoId}/details/bulk/`, {details});
         }
         queryClient.invalidateQueries({queryKey:['ecos']});
         toast.success(t('save_success'));
@@ -185,7 +185,7 @@ export default function EcoManager() {
                     <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={async ()=>{
                       setErrors({});
                       try {
-                        const { data } = await api.get(`ecos/${e.id}/`);
+                        const { data } = await api.get(`/ecos/${e.id}/`);
                         setForm(data);
                       } catch {
                         setForm(e);
@@ -200,7 +200,7 @@ export default function EcoManager() {
                       <Button size="icon" variant="ghost" onClick={async ()=>{
                         setErrors({});
                         try{
-                          const { data } = await api.get(`ecos/${e.id}/`);
+                          const { data } = await api.get(`/ecos/${e.id}/`);
                           setForm(data);
                         }catch{
                           setForm(e);
@@ -300,7 +300,7 @@ export default function EcoManager() {
                                 )}
                                 <td className="px-3 py-1 font-mono text-center cursor-pointer text-blue-600 underline" onClick={async ()=>{
                                   setErrors({});
-                                  const { data } = await api.get(`ecos/${row.eco_id}/`);
+                                  const { data } = await api.get(`/ecos/${row.eco_id}/`);
                                   setForm(data);
                                   setDialogOpen(true);
                                 }}>{row.eco_no}</td>

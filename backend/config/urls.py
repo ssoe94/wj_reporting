@@ -24,6 +24,7 @@ api_urlpatterns = [
     path('api/health', views.health_check, name='health_check_no_slash'),
     path('api/signup-request/', SignupRequestView.as_view(), name='signup_request'),
     path('api/user/change-password/', ChangePasswordView.as_view(), name='user_change_password'),
+    path('api/ecos/', include('injection.urls_ecos')),
     # `api/signup-requests/` is defined within injection.urls, so this line is removed to avoid conflict.
     # path('api/signup-requests/', include('config.urls_auth')) 
 ]

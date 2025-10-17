@@ -181,7 +181,7 @@ export default function Eco2Manager() {
   const [form, setForm] = useState<Partial<Eco>>(emptyForm);
 
   const del = useMutation({
-    mutationFn: async (id: number) => api.delete(`ecos/${id}/`),
+    mutationFn: async (id: number) => api.delete(`/ecos/${id}/`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unified-eco-search'] });
       toast.success(t('delete_success'));
@@ -192,7 +192,7 @@ export default function Eco2Manager() {
   });
 
   const bulkUpload = useMutation({
-    mutationFn: (data: Partial<Eco>[]) => api.post('ecos/bulk-upload/', data),
+    mutationFn: (data: Partial<Eco>[]) => api.post('/ecos/bulk-upload/', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unified-eco-search'] });
       toast.success(t('bulk_upload_success'));
@@ -226,13 +226,13 @@ export default function Eco2Manager() {
     try {
       let ecoId = payload.id;
       if (payload.id) {
-        await api.patch(`ecos/${payload.id}/`, header);
+        await api.patch(`/ecos/${payload.id}/`, header);
       } else {
-        const { data } = await api.post('ecos/', header);
+        const { data } = await api.post('/ecos/', header);
         ecoId = data.id;
       }
       if (details && details.length) {
-        await api.post(`ecos/${ecoId}/details/bulk/`, { details });
+        await api.post(`/ecos/${ecoId}/details/bulk/`, { details });
       }
       queryClient.invalidateQueries({ queryKey: ['unified-eco-search'] });
       toast.success(t('save_success'));
@@ -469,7 +469,7 @@ export default function Eco2Manager() {
                         onClick={async () => {
                           setErrors({});
                           try {
-                            const { data } = await api.get(`ecos/${e.id}/`);
+                            const { data } = await api.get(`/ecos/${e.id}/`);
                             setForm(data);
                           } catch {
                             setForm(e);

@@ -7,7 +7,7 @@ export function useEcosByParts(parts: string[]) {
     queryKey: ['ecos-by-parts', [...parts].sort().join(',')],
     queryFn: async () => {
       if (!parts.length) return [];
-      const tasks = parts.map((p) => api.get('ecos/by-part/', { params: { part_no: p } }));
+      const tasks = parts.map((p) => api.get('/ecos/by-part/', { params: { part_no: p } }));
       const responses = await Promise.all(tasks);
       const ecoMap = new Map<number, Eco>();
       responses.forEach((r) => {
