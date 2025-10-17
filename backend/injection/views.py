@@ -899,6 +899,7 @@ class SignupApprovalPortalView(View):
         context = {
             'pending_requests': pending_requests,
             'permission_options': self.permission_options,
+            'focus_request_id': request.GET.get('request') or request.GET.get('request_id'),
         }
         return render(request, self.template_name, context)
 
