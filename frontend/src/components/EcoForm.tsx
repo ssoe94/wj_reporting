@@ -137,7 +137,6 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
               <div>
                 <Label htmlFor="inventory_finished">{t('inventory_finished')}</Label>
                 <Input
-                  className={ctrlCls}
                   id="inventory_finished"
                   type="number"
                   inputMode="decimal"
@@ -158,7 +157,6 @@ export default function EcoForm({ initial, open, onClose, onSubmit, isSaving, er
               <div>
                 <Label htmlFor="inventory_material">{t('inventory_material')}</Label>
                 <Input
-                  className={ctrlCls}
                   id="inventory_material"
                   type="number"
                   inputMode="decimal"

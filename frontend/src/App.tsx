@@ -114,10 +114,9 @@ export function useNavItems() {
         icon: Monitor,
         children: [
           {
-            to: "https://wj-reporting-backend.onrender.com/admin/login/?next=/staff/signup-approvals/",
+            to: "/admin/user-management",
             label: '사용자 관리',
             icon: ClipboardCheck,
-            external: true  // 외부 링크 표시
           },
         ],
       },
@@ -186,10 +185,9 @@ export function useNavItems() {
       icon: Monitor,
       children: [
         {
-          to: "https://wj-reporting-backend.onrender.com/admin/login/?next=/staff/signup-approvals/",
+          to: "/admin/user-management",
           label: '사용자 관리',
           icon: ClipboardCheck,
-          external: true  // 외부 링크 표시
         },
       ],
     });
