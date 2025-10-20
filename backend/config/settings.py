@@ -11,8 +11,10 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
 from pathlib import Path
+import logging
 from decouple import config
 import dj_database_url
+from urllib.parse import urlparse
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -262,13 +264,49 @@ CLOUDINARY_STORAGE = {
     'API_SECRET': config('CLOUDINARY_API_SECRET', default=''),
 }
 
+cloudinary_logger = logging.getLogger('django')
+
+# Render 등 일부 환경에서는 CLOUDINARY_URL만 제공될 수 있으므로 파싱해서 보조값으로 사용한다.
+cloudinary_url = config('CLOUDINARY_URL', default='')
+if cloudinary_url and (
+    not CLOUDINARY_STORAGE['CLOUD_NAME']
+    or not CLOUDINARY_STORAGE['API_KEY']
+    or not CLOUDINARY_STORAGE['API_SECRET']
+):
+    try:
+        parsed_url = urlparse(cloudinary_url)
+        fallback_cloud_name = parsed_url.hostname or ''
+        fallback_api_key = parsed_url.username or ''
+        fallback_api_secret = parsed_url.password or ''
+    except ValueError:
+        cloudinary_logger.warning('Invalid CLOUDINARY_URL format. Skipping fallback parsing.')
+    else:
+        if not CLOUDINARY_STORAGE['CLOUD_NAME'] and fallback_cloud_name:
+            CLOUDINARY_STORAGE['CLOUD_NAME'] = fallback_cloud_name
+        if not CLOUDINARY_STORAGE['API_KEY'] and fallback_api_key:
+            CLOUDINARY_STORAGE['API_KEY'] = fallback_api_key
+        if not CLOUDINARY_STORAGE['API_SECRET'] and fallback_api_secret:
+            CLOUDINARY_STORAGE['API_SECRET'] = fallback_api_secret
+        cloudinary_logger.info('Cloudinary credentials populated from CLOUDINARY_URL fallback.')
+
 # Cloudinary 라이브러리 직접 설정
-cloudinary.config(
-    cloud_name=CLOUDINARY_STORAGE['CLOUD_NAME'],
-    api_key=CLOUDINARY_STORAGE['API_KEY'],
-    api_secret=CLOUDINARY_STORAGE['API_SECRET'],
-    secure=True
-)
+if all(
+    [
+        CLOUDINARY_STORAGE['CLOUD_NAME'],
+        CLOUDINARY_STORAGE['API_KEY'],
+        CLOUDINARY_STORAGE['API_SECRET'],
+    ]
+):
+    cloudinary.config(
+        cloud_name=CLOUDINARY_STORAGE['CLOUD_NAME'],
+        api_key=CLOUDINARY_STORAGE['API_KEY'],
+        api_secret=CLOUDINARY_STORAGE['API_SECRET'],
+        secure=True,
+    )
+else:
+    cloudinary_logger.warning(
+        'Cloudinary credentials are incomplete. Upload features will fail until they are provided.'
+    )
 
 # Media files (User uploaded files) - Cloudinary 사용
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'

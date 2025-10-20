@@ -56,6 +56,9 @@ Response:
 CLOUDINARY_CLOUD_NAME=deoic09y3
 CLOUDINARY_API_KEY=877653359158871
 CLOUDINARY_API_SECRET=yrbdGKk59s0Q3M8dWsBoUPdVUFE
+# Render 같은 PaaS에서는 아래처럼 단일 URL을 제공하기도 합니다.
+# CLOUDINARY_URL=cloudinary://877653359158871:yrbdGKk59s0Q3M8dWsBoUPdVUFE@deoic09y3
+# 백엔드는 위 URL을 자동으로 파싱하여 Cloud name과 키를 채워줍니다.
 ```
 
 ## 🧪 테스트 방법
