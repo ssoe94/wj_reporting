@@ -100,7 +100,7 @@ export default function UserApproval() {
     setNewPassword(null);
     try {
       const response = await api.post('/admin/user/reset-password/', { user_id: userId });
-      setNewPassword(response.data.new_password || '비밀번호가 리셋되었습니다');
+      setNewPassword(response.data.temporary_password || '비밀번호가 리셋되었습니다');
       setActionSuccess('비밀번호가 성공적으로 리셋되었습니다');
       setTimeout(() => setActionSuccess(null), 3000);
     } catch (err: any) {
