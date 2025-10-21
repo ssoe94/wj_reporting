@@ -27,7 +27,7 @@ export function useInventoryStatus(params: Record<string, any>) {
   return useQuery<InventoryResponse>({
     queryKey: ['inventories', params],
     queryFn: async () => {
-      const { data } = await api.get('/mes/inventory/', { params });
+      const { data } = await api.get('/inventory/', { params });
       // DRF pagination response: {count,next,previous,results}
       return {
         page: params.page || 1,

@@ -8,6 +8,7 @@ urlpatterns = [
     path('inventory/manual-snapshot/', views.ManualSnapshotView.as_view(), name='manual_snapshot'),
     path('inventory/last-update/', views.LastUpdateView.as_view(), name='last_update'),
     path('inventory/status/', views.inventory_status, name='inventory_status'),
+    path('inventory/export/', views.InventoryExportView.as_view(), name='inventory_export'),
     path('inventory/daily-report/', views.daily_report, name='daily_report'),
     path('inventory/daily-report/summary/', views.daily_report_summary, name='daily_report_summary'),
     path('inventory/daily-report/calendar/', views.daily_report_calendar, name='daily_report_calendar'),

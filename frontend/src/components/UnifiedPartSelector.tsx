@@ -78,7 +78,7 @@ export default function UnifiedPartSelector({
     queryFn: async () => {
       if (!searchQuery || searchQuery.length < 2) return [];
       
-      const { data } = await api.get('/mes/unified-parts/search/', {
+      const { data } = await api.get('/inventory/unified-parts/search/', {
         params: {
           q: searchQuery,
           mode,
@@ -113,7 +113,7 @@ export default function UnifiedPartSelector({
     }
 
     try {
-      const { data } = await api.post('/unified-parts/', {
+      const { data } = await api.post('/inventory/unified-parts/', {
         part_no: part_no.trim(),
         model_code: model_code.trim(),
         description: description.trim(),

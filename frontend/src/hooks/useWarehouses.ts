@@ -10,9 +10,9 @@ export function useWarehouses() {
   return useQuery<Warehouse[]>({
     queryKey: ['warehouses'],
     queryFn: async () => {
-      const { data } = await api.get('/mes/warehouses/');
+      const { data } = await api.get('/inventory/warehouses/');
       return data;
     },
     staleTime: 60 * 60 * 1000,
   });
-} 
+}

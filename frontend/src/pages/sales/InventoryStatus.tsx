@@ -46,12 +46,12 @@ export default function InventoryStatusPage() {
     
     try {
       // 업데이트 시작
-      await api.post('/mes/inventory/refresh/');
+      await api.post('/inventory/refresh/');
       
       // 진행 상황 폴링
       const pollInterval = setInterval(async () => {
         try {
-          const response = await api.get('/mes/inventory/refresh/');
+          const response = await api.get('/inventory/refresh/');
           setProgress(response.data);
           
           if (response.data.status === 'completed') {
@@ -169,7 +169,7 @@ export default function InventoryStatusPage() {
   const downloadCSV = async () => {
     try {
       // 현재 필터링된 데이터를 CSV로 다운로드
-      const response = await api.get('/mes/inventory/export/', { 
+      const response = await api.get('/inventory/export/', { 
         params: { 
           ...params, 
           size: 10000, // 최대 10000개까지 다운로드

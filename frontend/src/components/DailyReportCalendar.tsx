@@ -28,7 +28,7 @@ export default function DailyReportCalendar({ onDateSelect, selectedDate }: Dail
   const fetchCalendarData = async (year: number, month: number) => {
     setIsLoading(true);
     try {
-      const response = await api.get(`/mes/inventory/daily-report/calendar/`, {
+      const response = await api.get(`/inventory/daily-report/calendar/`, {
         params: { year, month }
       });
       setCalendarData(response.data.calendar_data || {});

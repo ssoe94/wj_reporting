@@ -1,12 +1,24 @@
 import { FolderOpen, Save, X, ChevronLeft, ChevronRight, Eye, Trash2 } from 'lucide-react';
 import { useLang } from '../../i18n';
-import { useState } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Label } from '../../components/ui/label';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import { toast } from 'react-toastify';
+import dayjs from 'dayjs';
+import { DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
+import { ko, zhCN } from 'date-fns/locale';
+import { Autocomplete, TextField } from '@mui/material';
+import { usePartSpecSearch, usePartListByModel } from '../../hooks/usePartSpecs';
+import {
+  useAssemblyPartNoSearch,
+  useAssemblyModelSearch,
+  useAssemblyPartspecsByModel,
+  useAssemblyPartsByModel,
+} from '../../hooks/useAssemblyParts';
 
 // 서버에서 받아올 데이터 타입 정의
 interface QualityReport {
@@ -28,14 +40,30 @@ interface QualityReport {
   image3?: string;
 }
 
+type ModelOption = {
+  model_code: string;
+  description?: string | null;
+};
+
+type PartOption = {
+  part_no: string;
+  model_code?: string | null;
+  description?: string | null;
+};
+
 export default function QualityReportHistory() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState({
-    dateFrom: '',
-    dateTo: '',
-    model: '',
-    part_no: ''
+  const [filters, setFilters] = useState(() => {
+    const defaultTo = dayjs().format('YYYY-MM-DD');
+    const defaultFrom = dayjs().subtract(29, 'day').format('YYYY-MM-DD');
+    return {
+      dateFrom: defaultFrom,
+      dateTo: defaultTo,
+      model: '',
+      part_no: '',
+      includeSimilar: false,
+    };
   });
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -46,20 +74,309 @@ export default function QualityReportHistory() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [selectedReport, setSelectedReport] = useState<QualityReport | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [modelInputValue, setModelInputValue] = useState('');
+  const [partInputValue, setPartInputValue] = useState('');
+  const [selectedModelOption, setSelectedModelOption] = useState<ModelOption | null>(null);
+  const [selectedPartOption, setSelectedPartOption] = useState<PartOption | null>(null);
+  const dateInputLang = lang === 'zh' ? 'zh-CN' : 'ko-KR';
+  const datePlaceholder = lang === 'zh' ? '年-月-日' : '년-월-일';
+  const dateInputClassName = 'text-center placeholder:text-center cursor-pointer';
+  const [openCalendar, setOpenCalendar] = useState<'from' | 'to' | null>(null);
+  const fromFieldRef = useRef<HTMLDivElement | null>(null);
+  const toFieldRef = useRef<HTMLDivElement | null>(null);
+  const dateLocale = lang === 'zh' ? zhCN : ko;
+  const hasPartFilter = filters.part_no.trim().length > 0;
+  const modelQuery = modelInputValue.trim();
+  const partQuery = partInputValue.trim();
+  const activeModelCodeRaw = (selectedModelOption?.model_code || filters.model || '').trim();
+  const normalizedActiveModelCode = activeModelCodeRaw.toUpperCase();
+  const hasActiveModel = normalizedActiveModelCode.length > 0;
+
+  // 모델 검색용 - modelQuery 사용
+  const { data: modelSearchResults = [] } = usePartSpecSearch(modelQuery.toUpperCase());
+  const { data: assemblyModelResults = [] } = useAssemblyModelSearch(modelQuery || '');
+  
+  // Part 검색용 - partQuery 사용 (항상 검색)
+  const { data: partSearchResults = [] } = usePartSpecSearch(partQuery.toUpperCase());
+  const { data: assemblyPartSearchResults = [] } = useAssemblyPartNoSearch(partQuery || '');
+
+  // 모델이 선택되었을 때 해당 모델의 part 목록 가져오기
+  const { data: partListByModel = [] } = usePartListByModel(activeModelCodeRaw || undefined);
+  const { data: asmPartsByModel = [] } = useAssemblyPartsByModel(activeModelCodeRaw || undefined);
+  const { data: asmPartspecsByModel = [] } = useAssemblyPartspecsByModel(activeModelCodeRaw || undefined);
+
+  const modelOptions = useMemo<ModelOption[]>(() => {
+    const map = new Map<string, ModelOption>();
+    const add = (opt?: Partial<ModelOption> | null) => {
+      const rawCode = (opt?.model_code || (opt as any)?.model || '').toString().trim();
+      if (!rawCode) return;
+      const normalized = rawCode.toUpperCase();
+      const desc = (opt?.description || '').toString().trim();
+      const key = `${normalized}|${desc}`;
+      if (!map.has(key)) {
+        map.set(key, { model_code: rawCode, description: desc });
+      }
+    };
+
+    (Array.isArray(modelSearchResults) ? modelSearchResults : []).forEach((item: any) => {
+      add({ model_code: item.model_code, description: item.description });
+    });
+
+    const assemblyModels = Array.isArray(assemblyModelResults)
+      ? assemblyModelResults
+      : Array.isArray((assemblyModelResults as any)?.results)
+        ? (assemblyModelResults as any).results
+        : [];
+    assemblyModels.forEach((item: any) => {
+      add({ model_code: item.model_code || item.model, description: item.description });
+    });
+
+    if (selectedModelOption) {
+      add(selectedModelOption);
+    }
+    if (activeModelCodeRaw) {
+      add({ model_code: activeModelCodeRaw });
+    }
+
+    return Array.from(map.values()).sort((a, b) => {
+      const codeCompare = a.model_code.localeCompare(b.model_code);
+      if (codeCompare !== 0) return codeCompare;
+      return (a.description || '').localeCompare(b.description || '');
+    });
+  }, [activeModelCodeRaw, assemblyModelResults, modelSearchResults, selectedModelOption]);
+
+  const partOptions = useMemo<PartOption[]>(() => {
+    const map = new Map<string, PartOption>();
+    const add = (opt?: Partial<PartOption> | null) => {
+      const partNoRaw = (opt?.part_no || '').toString().trim();
+      if (!partNoRaw) return;
+      const modelCodeRaw = ((opt?.model_code ?? (opt as any)?.model) || '').toString().trim();
+      const desc = (opt?.description || '').toString().trim();
+      const key = `${partNoRaw.toUpperCase()}|${modelCodeRaw.toUpperCase()}|${desc}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          part_no: partNoRaw,
+          model_code: modelCodeRaw,
+          description: desc,
+        });
+      }
+    };
+
+    // 모델이 선택된 경우: 해당 모델의 part 추가
+    if (selectedModelOption) {
+      (Array.isArray(partListByModel) ? partListByModel : []).forEach((item: any) => {
+        add({ part_no: item.part_no, model_code: item.model_code, description: item.description });
+      });
+      (Array.isArray(asmPartsByModel) ? asmPartsByModel : []).forEach((item: any) => {
+        add({ part_no: item.part_no, model_code: item.model_code || item.model, description: item.description });
+      });
+      (Array.isArray(asmPartspecsByModel) ? asmPartspecsByModel : []).forEach((item: any) => {
+        add({ part_no: item.part_no, model_code: item.model_code, description: item.description });
+      });
+    }
+    
+    // 검색 결과도 항상 추가 (모델 선택 여부와 관계없이)
+    (Array.isArray(partSearchResults) ? partSearchResults : []).forEach((item: any) => {
+      add({ part_no: item.part_no, model_code: item.model_code, description: item.description });
+    });
+
+    const assemblyPartList = Array.isArray(assemblyPartSearchResults)
+      ? assemblyPartSearchResults
+      : Array.isArray((assemblyPartSearchResults as any)?.results)
+        ? (assemblyPartSearchResults as any).results
+        : [];
+    assemblyPartList.forEach((item: any) => {
+      add({
+        part_no: item.part_no,
+        model_code: item.model_code || item.model,
+        description: item.description,
+      });
+    });
+
+    (Array.isArray(partListByModel) ? partListByModel : []).forEach((item: any) => {
+      add({ part_no: item.part_no, model_code: item.model_code ?? item.model, description: item.description });
+    });
+
+    (Array.isArray(asmPartsByModel) ? asmPartsByModel : []).forEach((item: any) => {
+      add({ part_no: item.part_no, model_code: item.model_code ?? item.model, description: item.description });
+    });
+
+    (Array.isArray(asmPartspecsByModel) ? asmPartspecsByModel : []).forEach((item: any) => {
+      add({ part_no: item.part_no, model_code: item.model_code ?? item.model, description: item.description });
+    });
+
+    if (selectedPartOption) {
+      add(selectedPartOption);
+    }
+
+    let list = Array.from(map.values());
+    if (hasActiveModel) {
+      list = list.filter((opt) => {
+        const optCode = (opt.model_code || '').trim().toUpperCase();
+        if (!optCode) return true;
+        return optCode === normalizedActiveModelCode;
+      });
+    }
+
+    return list.sort((a, b) => a.part_no.localeCompare(b.part_no));
+  }, [
+    asmPartsByModel,
+    asmPartspecsByModel,
+    assemblyPartSearchResults,
+    hasActiveModel,
+    normalizedActiveModelCode,
+    partListByModel,
+    partSearchResults,
+    selectedPartOption,
+  ]);
+
+  useEffect(() => {
+    if (!openCalendar) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (openCalendar === 'from' && fromFieldRef.current && !fromFieldRef.current.contains(target)) {
+        setOpenCalendar(null);
+      }
+      if (openCalendar === 'to' && toFieldRef.current && !toFieldRef.current.contains(target)) {
+        setOpenCalendar(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [openCalendar]);
+
+  const renderDateInput = (type: 'from' | 'to') => {
+    const value = type === 'from' ? filters.dateFrom : filters.dateTo;
+    const selectedDate = value ? dayjs(value, 'YYYY-MM-DD').toDate() : undefined;
+    const fieldRef = type === 'from' ? fromFieldRef : toFieldRef;
+    const [currentMonth, setCurrentMonth] = useState(selectedDate || dayjs().toDate());
+    
+    const handleSelect = (date: Date | undefined) => {
+      const formatted = date ? dayjs(date).format('YYYY-MM-DD') : '';
+      setPage(1);
+      setFilters(f => ({
+        ...f,
+        [type === 'from' ? 'dateFrom' : 'dateTo']: formatted,
+      }));
+      setOpenCalendar(null);
+    };
+
+    const clearLabel = lang === 'zh' ? '清除' : '초기화';
+    const todayLabel = lang === 'zh' ? '今天' : '오늘';
+
+    return (
+      <div ref={fieldRef} className="relative">
+        <Input
+          type="text"
+          lang={dateInputLang}
+          placeholder={datePlaceholder}
+          className={dateInputClassName}
+          readOnly
+          value={value}
+          onClick={() => setOpenCalendar(prev => (prev === type ? null : type))}
+        />
+        {openCalendar === type && (
+          <div className="absolute left-0 top-full z-20 mt-2">
+            <div className="w-[280px] rounded-lg border bg-white shadow-lg overflow-hidden">
+              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 px-3 py-2 border-b flex items-center justify-between">
+                <button 
+                  type="button" 
+                  onClick={() => setCurrentMonth(dayjs(currentMonth).subtract(1, 'month').toDate())}
+                  className="p-1 rounded hover:bg-white/50 transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4 text-gray-600" />
+                </button>
+                <span className="text-sm font-semibold text-gray-800">
+                  {dayjs(currentMonth).format(lang === 'zh' ? 'YYYY年 M月' : 'YYYY년 M월')}
+                </span>
+                <button 
+                  type="button" 
+                  onClick={() => setCurrentMonth(dayjs(currentMonth).add(1, 'month').toDate())}
+                  className="p-1 rounded hover:bg-white/50 transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-600" />
+                </button>
+              </div>
+              <div className="p-3">
+                <DayPicker
+                  mode="single"
+                  locale={dateLocale}
+                  selected={selectedDate}
+                  month={currentMonth}
+                  onMonthChange={setCurrentMonth}
+                  onSelect={handleSelect}
+                  weekStartsOn={1}
+                  className="mx-auto"
+                  classNames={{
+                    month: 'w-full',
+                    day: 'h-8 w-8 text-sm rounded hover:bg-indigo-50 transition-colors',
+                    day_selected: 'bg-indigo-500 text-white font-semibold hover:bg-indigo-600',
+                    day_today: 'font-bold text-indigo-600',
+                    nav: 'hidden',
+                    caption: 'hidden',
+                    head_cell: 'text-xs font-medium text-gray-500 w-8',
+                    table: 'w-full border-collapse',
+                    row: 'mt-0.5',
+                  }}
+                />
+              </div>
+              <div className="bg-gray-50 border-t px-3 py-2 flex items-center justify-between">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleSelect(new Date())}
+                >
+                  {todayLabel}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleSelect(undefined)}
+                >
+                  {clearLabel}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // useQuery를 사용하여 서버에서 데이터 가져오기
   const { data, isLoading, isError } = useQuery({
     queryKey: ['quality-reports', filters, page, pageSize],
     queryFn: async () => {
-      const { data } = await api.get('/quality/reports/', {
-        params: {
-          page: page,
-          page_size: pageSize,
-          report_dt_after: filters.dateFrom || undefined,
-          report_dt_before: filters.dateTo || undefined,
-          model__icontains: filters.model || undefined,
-          part_no__icontains: filters.part_no || undefined,
+      const params: Record<string, any> = {
+        page,
+        page_size: pageSize,
+        report_dt_after: filters.dateFrom || undefined,
+        report_dt_before: filters.dateTo || undefined,
+      };
+
+      const modelFilter = filters.model.trim();
+      if (modelFilter) {
+        params.model__icontains = modelFilter;
+      }
+
+      const partFilterRaw = filters.part_no.trim();
+      if (partFilterRaw) {
+        const normalizedPart = partFilterRaw.replace(/\s+/g, '').toUpperCase();
+        if (filters.includeSimilar) {
+          params.part_no__istartswith = normalizedPart.slice(0, 9);
+        } else {
+          params.part_no__icontains = normalizedPart;
         }
+      }
+
+      const { data } = await api.get('/quality/reports/', {
+        params,
       });
       return data;
     },
@@ -116,19 +433,383 @@ export default function QualityReportHistory() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
             <Label>{t('start_date')}</Label>
-            <Input type="date" value={filters.dateFrom} onChange={e => { setPage(1); setFilters(f => ({ ...f, dateFrom: e.target.value })); }} />
+            {renderDateInput('from')}
           </div>
           <div>
             <Label>{t('end_date')}</Label>
-            <Input type="date" value={filters.dateTo} onChange={e => { setPage(1); setFilters(f => ({ ...f, dateTo: e.target.value })); }} />
+            {renderDateInput('to')}
           </div>
           <div>
             <Label>{t('model')}</Label>
-            <Input value={filters.model} onChange={e => { setPage(1); setFilters(f => ({ ...f, model: e.target.value })); }} placeholder={t('quality.model_placeholder')} />
+            <Autocomplete<ModelOption, false, false, true>
+              options={modelOptions}
+              freeSolo
+              fullWidth
+              size="small"
+              value={selectedModelOption}
+              inputValue={modelInputValue}
+              onInputChange={(_, newInput) => {
+                setModelInputValue(newInput);
+                const trimmed = newInput.trim();
+                const normalized = trimmed.toUpperCase();
+                setFilters((prev) => {
+                  const prevNormalized = (prev.model || '').trim().toUpperCase();
+                  if (!trimmed) {
+                    if (!prev.model && !prev.part_no && !prev.includeSimilar) return prev;
+                    return { ...prev, model: '', part_no: '', includeSimilar: false };
+                  }
+                  if (normalized === prevNormalized) return prev;
+                  const next = { ...prev, model: trimmed };
+                  if (prev.part_no) {
+                    next.part_no = '';
+                    next.includeSimilar = false;
+                  }
+                  return next;
+                });
+                if (!trimmed) {
+                  setSelectedModelOption(null);
+                  setSelectedPartOption(null);
+                  setPartInputValue('');
+                } else if (
+                  selectedModelOption &&
+                  trimmed.toUpperCase() !== (selectedModelOption.model_code || '').toUpperCase()
+                ) {
+                  setSelectedModelOption(null);
+                  setSelectedPartOption(null);
+                  setPartInputValue('');
+                }
+                setPage(1);
+              }}
+              onChange={(_, newValue) => {
+                if (typeof newValue === 'string') {
+                  const trimmed = newValue.trim();
+                  const normalized = trimmed.toUpperCase();
+                  setSelectedModelOption(null);
+                  setModelInputValue(trimmed);
+                  setFilters((prev) => {
+                    const prevNormalized = (prev.model || '').trim().toUpperCase();
+                    if (!trimmed) {
+                      if (!prev.model && !prev.part_no && !prev.includeSimilar) return prev;
+                    }
+                    const next = { ...prev, model: trimmed };
+                    if (!trimmed) {
+                      next.part_no = '';
+                      next.includeSimilar = false;
+                      setSelectedPartOption(null);
+                      setPartInputValue('');
+                    }
+                    return normalized === prevNormalized && trimmed ? prev : next;
+                  });
+                  setPage(1);
+                  return;
+                }
+
+                if (newValue) {
+                  const modelCodeRaw = (newValue.model_code || '').trim();
+                  const normalized = modelCodeRaw.toUpperCase();
+                  setSelectedModelOption({
+                    model_code: modelCodeRaw,
+                    description: newValue.description || '',
+                  });
+                  setModelInputValue(modelCodeRaw);
+                  setFilters((prev) => {
+                    const prevNormalized = (prev.model || '').trim().toUpperCase();
+                    const next = { ...prev, model: modelCodeRaw };
+                    if (prev.part_no) {
+                      next.part_no = '';
+                    }
+                    if (prev.includeSimilar) {
+                      next.includeSimilar = false;
+                    }
+                    if (normalized === prevNormalized && !prev.part_no && !prev.includeSimilar) {
+                      return prev;
+                    }
+                    return next;
+                  });
+                  setSelectedPartOption(null);
+                  setPartInputValue('');
+                  setPage(1);
+                  return;
+                }
+
+                setSelectedModelOption(null);
+                setModelInputValue('');
+                setSelectedPartOption(null);
+                setPartInputValue('');
+                setFilters((prev) => {
+                  if (!prev.model && !prev.part_no && !prev.includeSimilar) return prev;
+                  return { ...prev, model: '', part_no: '', includeSimilar: false };
+                });
+                setPage(1);
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (typeof option === 'string' || typeof value === 'string') return false;
+                return option.model_code === value.model_code && (option.description || '') === (value.description || '');
+              }}
+              getOptionLabel={(option) => {
+                if (typeof option === 'string') return option;
+                return option.description ? `${option.model_code} – ${option.description}` : option.model_code;
+              }}
+              filterOptions={(options, state) => {
+                const input = (state.inputValue || '').trim().toUpperCase();
+                if (!input) return options;
+                return options.filter(
+                  (opt: string | ModelOption) => {
+                    if (typeof opt === 'string') return opt.toUpperCase().includes(input);
+                    return opt.model_code.toUpperCase().includes(input) ||
+                      (opt.description || '').toUpperCase().includes(input);
+                  }
+                );
+              }}
+              renderOption={(props, option) => {
+                const { key, ...rest } = props as any;
+                if (typeof option === 'string') {
+                  return (
+                    <li key={key} {...rest}>
+                      <span className="font-mono font-medium">{option}</span>
+                    </li>
+                  );
+                }
+                return (
+                  <li key={key} {...rest}>
+                    <div className="flex flex-col">
+                      <span className="font-mono font-medium">{option.model_code}</span>
+                      {option.description ? (
+                        <span className="text-xs text-gray-500">{option.description}</span>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  size="small"
+                  placeholder={t('model_search')}
+                  InputProps={{
+                    ...params.InputProps,
+                    className: (params.InputProps.className || '') + ' text-sm',
+                  }}
+                />
+              )}
+              noOptionsText={t('no_data')}
+              autoHighlight
+              slotProps={{
+                popper: {
+                  sx: { zIndex: 2000 },
+                },
+              }}
+            />
           </div>
           <div>
             <Label>{t('part_no')}</Label>
-            <Input value={filters.part_no} onChange={e => { setPage(1); setFilters(f => ({ ...f, part_no: e.target.value })); }} placeholder={t('quality.part_no_placeholder')} />
+            <Autocomplete<PartOption, false, false, true>
+              options={partOptions}
+              freeSolo
+              openOnFocus
+              fullWidth
+              size="small"
+              value={selectedPartOption}
+              inputValue={partInputValue}
+              onInputChange={(_, newInput) => {
+                setPartInputValue(newInput);
+                const trimmed = newInput.trim();
+                const normalized = trimmed.toUpperCase();
+                setFilters((prev) => {
+                  const prevNormalized = (prev.part_no || '').trim().toUpperCase();
+                  if (!trimmed) {
+                    if (!prev.part_no && !prev.includeSimilar) return prev;
+                    return { ...prev, part_no: '', includeSimilar: false };
+                  }
+                  if (normalized === prevNormalized) return prev;
+                  return { ...prev, part_no: trimmed };
+                });
+                if (!trimmed) {
+                  setSelectedPartOption(null);
+                } else if (
+                  selectedPartOption &&
+                  trimmed.toUpperCase() !== selectedPartOption.part_no.toUpperCase()
+                ) {
+                  setSelectedPartOption(null);
+                }
+                setPage(1);
+              }}
+              onChange={(_, newValue) => {
+                if (typeof newValue === 'string') {
+                  const trimmed = newValue.trim();
+                  const normalized = trimmed.toUpperCase();
+                  setSelectedPartOption(null);
+                  setPartInputValue(trimmed);
+                  setFilters((prev) => {
+                    const prevNormalized = (prev.part_no || '').trim().toUpperCase();
+                    if (!trimmed) {
+                      if (!prev.part_no && !prev.includeSimilar) return prev;
+                      return { ...prev, part_no: '', includeSimilar: false };
+                    }
+                    if (normalized === prevNormalized) return prev;
+                    return { ...prev, part_no: trimmed };
+                  });
+                  setPage(1);
+                  return;
+                }
+
+                if (newValue) {
+                  const partNoRaw = (newValue.part_no || '').trim();
+                  const normalizedPart = partNoRaw.toUpperCase();
+                  const modelCodeRaw = (newValue.model_code || '').trim();
+                  const normalizedModel = modelCodeRaw.toUpperCase();
+                  setSelectedPartOption({
+                    part_no: partNoRaw,
+                    model_code: modelCodeRaw,
+                    description: newValue.description || '',
+                  });
+                  setPartInputValue(partNoRaw);
+                  setFilters((prev) => {
+                    const prevNormalizedPart = (prev.part_no || '').trim().toUpperCase();
+                    const prevNormalizedModel = (prev.model || '').trim().toUpperCase();
+                    const trimmedPart = partNoRaw;
+                    let changed = false;
+                    const next = { ...prev };
+
+                    if (trimmedPart && normalizedPart !== prevNormalizedPart) {
+                      next.part_no = trimmedPart;
+                      changed = true;
+                    }
+                    if (!trimmedPart && prev.part_no) {
+                      next.part_no = '';
+                      next.includeSimilar = false;
+                      changed = true;
+                    }
+                    if (modelCodeRaw && normalizedModel !== prevNormalizedModel) {
+                      next.model = modelCodeRaw;
+                      changed = true;
+                    }
+
+                    return changed ? next : prev;
+                  });
+
+                  if (newValue.model_code) {
+                    const match = modelOptions.find(
+                      (opt) =>
+                        (opt.model_code || '').trim() === modelCodeRaw &&
+                        (opt.description || '') === (newValue.description || '')
+                    );
+                    const nextModel = match || {
+                      model_code: modelCodeRaw,
+                      description: newValue.description || '',
+                    };
+                    setSelectedModelOption(nextModel);
+                    setModelInputValue(nextModel.model_code || '');
+                  }
+                  setPage(1);
+                  return;
+                }
+
+                setSelectedPartOption(null);
+                setPartInputValue('');
+                setFilters((prev) => {
+                  if (!prev.part_no && !prev.includeSimilar) return prev;
+                  return { ...prev, part_no: '', includeSimilar: false };
+                });
+                setPage(1);
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (typeof option === 'string' || typeof value === 'string') {
+                  return option === value;
+                }
+                return option.part_no === value.part_no;
+              }}
+              getOptionLabel={(option) => (typeof option === 'string' ? option : option.part_no)}
+              filterOptions={(options, state) => {
+                let filtered = options.slice();
+
+                // 모델이 지정된 경우 해당 모델의 part만 필터링
+                if (hasActiveModel) {
+                  filtered = filtered.filter((opt) => {
+                    if (typeof opt === 'string') return true;
+                    const optCode = (opt.model_code || '').toUpperCase();
+                    if (!optCode) return true;
+                    return optCode === normalizedActiveModelCode;
+                  });
+                }
+
+                // 입력값으로 필터링
+                const input = (state.inputValue || '').trim().toUpperCase();
+                if (input) {
+                  filtered = filtered.filter((opt) => {
+                    const value = typeof opt === 'string' ? opt : (opt.part_no || '');
+                    return value.toUpperCase().includes(input);
+                  });
+                }
+
+                return filtered;
+              }}
+              renderOption={(props, option) => {
+                const { key, ...rest } = props as any;
+                if (typeof option === 'string') {
+                  return (
+                    <li key={key} {...rest}>
+                      <span className="font-mono font-medium">{option}</span>
+                    </li>
+                  );
+                }
+                return (
+                  <li key={key} {...rest}>
+                    <div className="flex flex-col">
+                      <span className="font-mono font-medium">{option.part_no}</span>
+                      {(option.model_code || option.description) && (
+                        <span className="text-xs text-gray-500">
+                          {[option.model_code, option.description].filter(Boolean).join(' - ')}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  size="small"
+                  placeholder={t('quality.part_no_placeholder')}
+                  InputProps={{
+                    ...params.InputProps,
+                    className: (params.InputProps.className || '') + ' text-sm',
+                  }}
+                />
+              )}
+              noOptionsText={t('no_data')}
+              autoHighlight
+              slotProps={{
+                popper: {
+                  sx: { zIndex: 2000 },
+                },
+              }}
+            />
+            <label
+              className={`mt-2 inline-flex items-center gap-2 text-sm ${
+                hasPartFilter ? 'text-gray-600' : 'text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                checked={filters.includeSimilar}
+                disabled={!hasPartFilter}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setFilters((prev) => {
+                    if (!prev.part_no.trim()) {
+                      if (!prev.includeSimilar) return prev;
+                      return { ...prev, includeSimilar: false };
+                    }
+                    if (prev.includeSimilar === checked) return prev;
+                    return { ...prev, includeSimilar: checked };
+                  });
+                  setPage(1);
+                }}
+              />
+              <span>{t('quality.show_similar_parts')}</span>
+            </label>
           </div>
         </div>
         {/* 테이블 */}

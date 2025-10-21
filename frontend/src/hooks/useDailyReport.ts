@@ -65,7 +65,7 @@ export function useDailyReport(params: DailyReportParams = {}) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['dailyReport', params],
     queryFn: async () => {
-      const response = await api.get('/mes/inventory/daily-report/', { params });
+      const response = await api.get('/inventory/daily-report/', { params });
       return response.data;
     },
     retry: 1,
@@ -83,7 +83,7 @@ export function useDailyReportSummary(date?: string) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['dailyReportSummary', date],
     queryFn: async () => {
-      const response = await api.get('/mes/inventory/daily-report/summary/', { 
+      const response = await api.get('/inventory/daily-report/summary/', { 
         params: { date } 
       });
       return response.data;
@@ -110,7 +110,7 @@ export function useCreateSnapshot() {
     setError(null);
     
     try {
-      const response = await api.post('/mes/inventory/snapshot/create/', {
+      const response = await api.post('/inventory/snapshot/create/', {
         date,
         force
       });
@@ -153,7 +153,7 @@ export function useDailyReportCompare(date1: string, date2: string, warehouse_co
           ...(warehouse_code && { warehouse_code })
         });
         
-        const response = await fetch(`/api/mes/inventory/daily-report/compare/?${params}`, {
+        const response = await fetch(`/api/inventory/daily-report/compare/?${params}`, {
           headers: {
             'Authorization': `Bearer ${getToken()}`,
           },
@@ -197,7 +197,7 @@ export function useDailyReportExport() {
         ...(params.compare_date && { compare_date: params.compare_date })
       });
       
-      const response = await fetch(`/api/mes/inventory/daily-report/export-csv/?${queryParams}`, {
+      const response = await fetch(`/api/inventory/daily-report/export-csv/?${queryParams}`, {
         headers: {
           'Authorization': `Bearer ${getToken()}`,
         },
@@ -240,7 +240,7 @@ export function useEmailSchedule() {
   }) => {
     setIsScheduling(true);
     try {
-      const response = await fetch('/api/mes/inventory/email/schedule/', {
+      const response = await fetch('/api/inventory/email/schedule/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -278,7 +278,7 @@ export function useEmailStatus(date: string) {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/mes/inventory/email/status/?date=${date}`, {
+        const response = await fetch(`/api/inventory/email/status/?date=${date}`, {
           headers: {
             'Authorization': `Bearer ${getToken()}`,
           },
