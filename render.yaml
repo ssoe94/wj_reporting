@@ -9,7 +9,7 @@ services:
   - type: static
     name: wj_reporting
     rootDir: frontend
-    buildCommand: npm ci && npm run build
+    buildCommand: npm install && npm run build
     staticPublishPath: dist
 
   # Backend Web Service

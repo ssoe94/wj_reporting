@@ -16,6 +16,7 @@ interface SignupRequest {
 
 interface UserProfile {
   id: number;
+  user: number;
   username: string;
   email: string;
   first_name: string;
@@ -355,7 +356,7 @@ export default function UserApproval() {
                 </Button>
                 {!newPassword && (
                   <Button
-                    onClick={() => handleResetPassword(resetPasswordModal.user!.id)}
+                    onClick={() => handleResetPassword(resetPasswordModal.user!.user)}
                     disabled={actionLoading}
                     className="bg-blue-600 text-white hover:bg-blue-700"
                   >
