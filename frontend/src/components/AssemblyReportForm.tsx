@@ -614,42 +614,42 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                     const ok = window.confirm(promptText);
                     if (ok) {
                       let detail: any = top;
-                      const maybeNumericId = typeof top?.id === 'number' || /^[0-9]+$/.test(String(top?.id || ''));
                       const sourceSystem = String(top?.source_system || '').toLowerCase();
                       const needsEnhancement = (obj: any) =>
                         ['mold_type', 'color', 'resin_type', 'resin_code', 'net_weight_g', 'sr_weight_g', 'cycle_time_sec', 'cavity'].every(
                           (key) => obj[key] === null || typeof obj[key] === 'undefined' || obj[key] === ''
                         );
 
-                      if (needsEnhancement(detail) && sourceSystem === 'injection' && maybeNumericId) {
-                        const targetId = Number(top.id);
+                      if (needsEnhancement(detail) && sourceSystem === 'injection' && top?.part_no) {
                         try {
-                          const { data: detailData } = await api.get(`/injection/parts/${targetId}/`);
-                          if (detailData) detail = detailData;
+                          const { data: searchData } = await api.get('/injection/parts/', {
+                            params: { search: top.part_no, page_size: 1 },
+                          });
+                          const pick = Array.isArray(searchData?.results)
+                            ? searchData.results.find((it: any) =>
+                                String(it.part_no || '').toUpperCase() === String(top.part_no || '').toUpperCase()
+                              )
+                            : null;
+                          if (pick) detail = pick;
                         } catch (error: any) {
                           if (error?.response?.status !== 404) {
                             console.warn('Failed to fetch injection part spec detail for prefill', error);
                           }
-                          try {
-                            const { data: searchData } = await api.get('/injection/parts/', {
-                              params: { search: top.part_no, page_size: 1 },
-                            });
-                            const pick = Array.isArray(searchData?.results)
-                              ? searchData.results.find((it: any) =>
-                                  String(it.part_no || '').toUpperCase() === String(top.part_no || '').toUpperCase()
-                                )
-                              : null;
-                            if (pick) detail = pick;
-                          } catch (fallbackError: any) {
-                            if (fallbackError?.response?.status !== 404) {
-                              console.warn('Failed to fetch part spec detail for prefill', fallbackError);
-                            }
-                          }
                         }
-                      } else if (needsEnhancement(detail) && sourceSystem === 'assembly' && maybeNumericId) {
+                      } else if (needsEnhancement(detail) && sourceSystem === 'assembly' && top?.part_no) {
                         try {
-                          const { data: detailData } = await api.get(`/assembly/partspecs/${Number(top.id)}/`);
-                          if (detailData) detail = detailData;
+                          const { data: searchData } = await api.get('/assembly/partspecs/', {
+                            params: { search: top.part_no, page_size: 1 },
+                          });
+                          const results = Array.isArray(searchData?.results)
+                            ? searchData.results
+                            : Array.isArray(searchData)
+                              ? searchData
+                              : [];
+                          const match = results.find((it: any) =>
+                            String(it.part_no || '').toUpperCase() === String(top.part_no || '').toUpperCase()
+                          );
+                          if (match) detail = match;
                         } catch (error: any) {
                           if (error?.response?.status !== 404) {
                             console.warn('Failed to fetch assembly part spec detail for prefill', error);
@@ -996,23 +996,60 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               <Button variant="ghost" size="sm" onClick={()=>setShowAddPartModal(false)}>{t('cancel')}</Button>
               <Button size="sm" onClick={async()=>{
                 try{
-                  const partNo = String(newPartForm.part_no || '').trim();
-                  const modelCode = String(newPartForm.model_code || '').trim();
+                  const partNo = String(newPartForm.part_no || '').trim().toUpperCase();
+                  const modelCode = String(newPartForm.model_code || '').trim().toUpperCase();
                   const description = String(newPartForm.description || '').trim();
                   if (!partNo || !modelCode || !description) {
-                    toast.error(lang==='zh' ? '请输入 Part No / Model Code / Description' : 'Part No / Model Code / Description을 입력하세요');
+                    toast.error(lang==='zh' ? '请填写 Part No / Model Code / Description' : 'Part No / Model Code / Description를 입력하세요.');
                     return;
                   }
-                  // Optional spec fields은 현재 전송하지 않음
 
-                  const newPart = await api.post('/assembly/partspecs/create-or-update/',{
+                  const cleanNumber = (value: any, parser: (v: string) => number) => {
+                    if (value === null || typeof value === 'undefined') return undefined;
+                    const trimmed = String(value).trim();
+                    if (trimmed === '') return undefined;
+                    const parsed = parser(trimmed.replace(/,/g, ''));
+                    return Number.isFinite(parsed) ? parsed : undefined;
+                  };
+
+                  const payload: Record<string, any> = {
                     part_no: partNo,
                     model_code: modelCode,
-                    description: description
-                  });
-                  
+                    description,
+                    valid_from: newPartForm.valid_from || new Date().toISOString().slice(0, 10),
+                  };
+
+                  if (newPartForm.mold_type) payload.mold_type = newPartForm.mold_type;
+                  if (newPartForm.color) payload.color = newPartForm.color;
+                  if (newPartForm.resin_type) payload.resin_type = newPartForm.resin_type;
+                  if (newPartForm.resin_code) payload.resin_code = newPartForm.resin_code;
+
+                  const netWeight = cleanNumber(newPartForm.net_weight_g, parseFloat);
+                  if (typeof netWeight !== 'undefined') payload.net_weight_g = netWeight;
+                  const srWeight = cleanNumber(newPartForm.sr_weight_g, parseFloat);
+                  if (typeof srWeight !== 'undefined') payload.sr_weight_g = srWeight;
+                  const cycleTime = cleanNumber(newPartForm.cycle_time_sec, (v) => parseInt(v, 10));
+                  if (typeof cycleTime !== 'undefined') payload.cycle_time_sec = cycleTime;
+                  const cavity = cleanNumber(newPartForm.cavity, (v) => parseInt(v, 10));
+                  if (typeof cavity !== 'undefined') payload.cavity = cavity;
+
+                  const newPartResponse = await api.post('/injection/parts/', payload);
+                  const createdPart = newPartResponse.data || {};
+
+                  try {
+                    await api.post('/assembly/partspecs/create-or-update/', {
+                      part_no: partNo,
+                      model_code: modelCode,
+                      description,
+                    });
+                  } catch (syncErr) {
+                    console.warn('Failed to sync ECO part spec for assembly', syncErr);
+                  }
+
                   toast.success(t('new_part_added_success'));
-                  // 새 PartSpec 즉시 반영을 위해 관련 쿼리 무효화
+                  queryClient.invalidateQueries({ queryKey: ['parts-search'] });
+                  queryClient.invalidateQueries({ queryKey: ['parts-all'] });
+                  queryClient.invalidateQueries({ queryKey: ['parts-model'] });
                   queryClient.invalidateQueries({ queryKey: ['assembly-partspecs'] });
                   queryClient.invalidateQueries({ queryKey: ['assembly-partspecs-by-model'] });
                   queryClient.invalidateQueries({ queryKey: ['assembly-parts-by-model'] });
@@ -1021,9 +1058,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   queryClient.invalidateQueries({ queryKey: ['assembly-part-search'] });
                   queryClient.invalidateQueries({ queryKey: ['assembly-model-search'] });
                   setShowAddPartModal(false);
-                  
-                  // 새로 생성된 Part를 자동으로 선택 (옵션 목록에 아직 없어도 즉시 폼 상태 갱신)
-                  const createdPart = newPart.data || {};
+
                   const createdModelCode = createdPart.model_code || modelCode;
                   const createdDesc = createdPart.description || description || '';
                   setProductQuery(createdModelCode);
@@ -1032,17 +1067,17 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                     part_no: createdPart.part_no || partNo,
                     model: createdModelCode,
                   }));
-                  // 모델 선택 상태 강제 설정(검색 목록에 아직 없어도 임시 옵션으로 표시)
                   const foundModelSpec = uniqueModelDesc.find((m) => m.model_code === createdModelCode && m.description === createdDesc);
                   if (foundModelSpec) {
                     setSelectedModelDesc(foundModelSpec);
                   } else {
                     setSelectedModelDesc({ id: -9998, part_no: '', model_code: createdModelCode, description: createdDesc } as any);
                   }
-                  // Part 선택값도 즉시 반영(옵션 리스트 갱신 전이더라도 표시)
                   setSelectedPartSpec({ part_no: createdPart.part_no || partNo, model_code: createdModelCode, description: createdDesc } as any);
-                }catch(err:any){
-                  toast.error(t('save_fail'));
+                } catch(err: any) {
+                  console.error('Failed to create new part:', err);
+                  const errorMsg = err?.response?.data?.detail || err?.message || 'Unknown error';
+                  toast.error(lang === 'zh' ? `保存失败: ${errorMsg}` : `저장 실패: ${errorMsg}`);
                 }
               }}>{t('save')}</Button>
             </div>

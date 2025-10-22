@@ -419,60 +419,67 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                     const ok = window.confirm(msg);
                     if (ok) {
                       let detail: any = first;
-                      const maybeNumericId = typeof first?.id === 'number' || /^[0-9]+$/.test(String(first?.id || ''));
                       const needsEnhancement = (obj: any) =>
                         ['mold_type', 'color', 'resin_type', 'resin_code', 'net_weight_g', 'sr_weight_g', 'cycle_time_sec', 'cavity'].every(
                           (key) => obj[key] === null || typeof obj[key] === 'undefined' || obj[key] === ''
                         );
-                      if (needsEnhancement(detail) && sourceSystem === 'injection' && maybeNumericId) {
-                        const targetId = Number(first.id);
-                        try {
-                          const { data: detailData } = await api.get(`/injection/parts/${targetId}/`);
-                          if (detailData) detail = detailData;
-                        } catch (error: any) {
-                          if (error?.response?.status !== 404) {
-                            console.warn('Failed to fetch injection part spec detail for prefill', error);
-                          }
+                      if (needsEnhancement(detail) && first?.part_no) {
+                        const partNoRaw = String(first.part_no || '').trim();
+                        const partNoUpper = partNoRaw.toUpperCase();
+
+                        const fetchInjectionDetail = async () => {
                           try {
                             const { data: searchData } = await api.get('/injection/parts/', {
-                              params: { search: first.part_no, page_size: 1 },
+                              params: { search: partNoRaw, page_size: 1 },
                             });
-                            const pick = Array.isArray(searchData?.results)
-                              ? searchData.results.find((it: any) =>
-                                  String(it.part_no || '').toUpperCase() === String(first.part_no || '').toUpperCase()
-                                )
-                              : null;
-                            if (pick) detail = pick;
-                          } catch (fallbackError: any) {
-                            if (fallbackError?.response?.status !== 404) {
-                              console.warn('Failed to fetch part spec detail for prefill', fallbackError);
+                            const list = Array.isArray(searchData?.results) ? searchData.results : [];
+                            return (
+                              list.find(
+                                (it: any) => String(it.part_no || '').toUpperCase() === partNoUpper
+                              ) || null
+                            );
+                          } catch (error: any) {
+                            if (error?.response?.status !== 404) {
+                              console.warn('Failed to fetch injection part spec detail for prefill', error);
                             }
+                            return null;
                           }
-                        }
-                      } else if (needsEnhancement(detail) && sourceSystem === 'assembly' && maybeNumericId) {
-                        try {
-                          const { data: detailData } = await api.get(`/assembly/partspecs/${Number(first.id)}/`);
-                          if (detailData) detail = detailData;
-                        } catch (error: any) {
-                          if (error?.response?.status !== 404) {
-                            console.warn('Failed to fetch assembly part spec detail for prefill', error);
+                        };
+
+                        const fetchAssemblyDetail = async () => {
+                          try {
+                            const { data: searchData } = await api.get('/assembly/partspecs/', {
+                              params: { search: partNoRaw, page_size: 1 },
+                            });
+                            const results = Array.isArray(searchData?.results)
+                              ? searchData.results
+                              : Array.isArray(searchData)
+                                ? searchData
+                                : [];
+                            return (
+                              results.find(
+                                (it: any) => String(it.part_no || '').toUpperCase() === partNoUpper
+                              ) || null
+                            );
+                          } catch (error: any) {
+                            if (error?.response?.status !== 404) {
+                              console.warn('Failed to fetch assembly part spec detail for prefill', error);
+                            }
+                            return null;
                           }
-                        }
-                      }
-                      if (needsEnhancement(detail) && first?.part_no) {
-                        try {
-                          const { data: searchData } = await api.get('/injection/parts/', {
-                            params: { search: first.part_no, page_size: 1 },
-                          });
-                          const pick = Array.isArray(searchData?.results)
-                            ? searchData.results.find((it: any) =>
-                                String(it.part_no || '').toUpperCase() === String(first.part_no || '').toUpperCase()
-                              )
-                            : null;
-                          if (pick) detail = pick;
-                        } catch (fallbackError: any) {
-                          if (fallbackError?.response?.status !== 404) {
-                            console.warn('Failed to fetch part spec detail for prefill', fallbackError);
+                        };
+
+                        const lookupOrder: Array<'injection' | 'assembly'> =
+                          sourceSystem === 'assembly' ? ['assembly', 'injection'] : ['injection', 'assembly'];
+
+                        for (const origin of lookupOrder) {
+                          const fetched =
+                            origin === 'assembly' ? await fetchAssemblyDetail() : await fetchInjectionDetail();
+                          if (fetched) {
+                            detail = fetched;
+                            if (!needsEnhancement(detail)) {
+                              break;
+                            }
                           }
                         }
                       }
@@ -789,44 +796,99 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                 className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200"
                 onClick={async () => {
                   try {
-                    const partNo = newPartForm.part_no.trim();
-                    const modelCode = newPartForm.model_code.trim();
+                    const partNo = newPartForm.part_no.trim().toUpperCase();
+                    const modelCode = newPartForm.model_code.trim().toUpperCase();
                     const description = newPartForm.description.trim();
                     if (!partNo || !modelCode || !description) {
                       toast.error('Part No / Model Code / Description을 입력하세요');
                       return;
                     }
-                    const newPart = await api.post('/injection/parts/', {
+
+                    const cleanNumber = (value: any, parser: (v: string) => number) => {
+                      if (value === null || value === undefined) return undefined;
+                      const trimmed = String(value).trim();
+                      if (trimmed === '') return undefined;
+                      const parsed = parser(trimmed.replace(/,/g, ''));
+                      return Number.isFinite(parsed) ? parsed : undefined;
+                    };
+
+                    const payload: Record<string, any> = {
                       part_no: partNo,
                       model_code: modelCode,
                       description,
-                      mold_type: newPartForm.mold_type || undefined,
-                      color: newPartForm.color || undefined,
-                      resin_type: newPartForm.resin_type || undefined,
-                      resin_code: newPartForm.resin_code || undefined,
-                      net_weight_g: newPartForm.net_weight_g ? Number(newPartForm.net_weight_g) : null,
-                      sr_weight_g: newPartForm.sr_weight_g ? Number(newPartForm.sr_weight_g) : null,
-                      cycle_time_sec: newPartForm.cycle_time_sec ? Number(newPartForm.cycle_time_sec) : null,
-                      cavity: newPartForm.cavity ? Number(newPartForm.cavity) : null,
                       valid_from: newPartForm.valid_from || undefined,
-                    });
+                    };
+
+                    if (newPartForm.mold_type) payload.mold_type = newPartForm.mold_type;
+                    if (newPartForm.color) payload.color = newPartForm.color;
+                    if (newPartForm.resin_type) payload.resin_type = newPartForm.resin_type;
+                    if (newPartForm.resin_code) payload.resin_code = newPartForm.resin_code;
+
+                    const netWeight = cleanNumber(newPartForm.net_weight_g, parseFloat);
+                    if (netWeight !== undefined) payload.net_weight_g = netWeight;
+                    const srWeight = cleanNumber(newPartForm.sr_weight_g, parseFloat);
+                    if (srWeight !== undefined) payload.sr_weight_g = srWeight;
+                    const cycleTime = cleanNumber(newPartForm.cycle_time_sec, (v) => parseInt(v, 10));
+                    if (cycleTime !== undefined) payload.cycle_time_sec = cycleTime;
+                    const cavity = cleanNumber(newPartForm.cavity, (v) => parseInt(v, 10));
+                    if (cavity !== undefined) payload.cavity = cavity;
+
+                    const newPart = await api.post('/injection/parts/', payload);
 
                     toast.success('새 Part가 추가되었습니다');
                     queryClient.invalidateQueries({ queryKey: ['parts-all'] });
                     queryClient.invalidateQueries({ queryKey: ['parts-search'] });
+                    queryClient.invalidateQueries({ queryKey: ['assembly-partspecs'] });
+                    queryClient.invalidateQueries({ queryKey: ['assembly-partspecs-by-model'] });
+                    queryClient.invalidateQueries({ queryKey: ['assembly-parts-by-model'] });
+                    queryClient.invalidateQueries({ queryKey: ['assembly-partno-search'] });
+                    queryClient.invalidateQueries({ queryKey: ['assembly-part-search'] });
+                    queryClient.invalidateQueries({ queryKey: ['assembly-model-search'] });
                     setShowAddPartModal(false);
 
                     const createdPart = newPart.data;
-                    setSelectedPartSpec(createdPart);
+                    const createdModelCode = createdPart.model_code || modelCode;
+                    const createdDesc = createdPart.description || description || '';
+
+                    setProductQuery(createdModelCode);
+                    setSelectedPartSpec({
+                      id: createdPart.id ?? -1,
+                      part_no: createdPart.part_no || partNo,
+                      model_code: createdModelCode,
+                      description: createdDesc,
+                      mold_type: createdPart.mold_type,
+                      color: createdPart.color,
+                      resin_type: createdPart.resin_type,
+                      resin_code: createdPart.resin_code,
+                      net_weight_g: createdPart.net_weight_g,
+                      sr_weight_g: createdPart.sr_weight_g,
+                      cycle_time_sec: createdPart.cycle_time_sec,
+                      cavity: createdPart.cavity,
+                      valid_from: createdPart.valid_from,
+                    });
+                    setSelectedModelDesc((prev) => {
+                      if (prev && prev.model_code === createdModelCode && prev.description === createdDesc) {
+                        return prev;
+                      }
+                      const found = uniqueModelDesc.find(
+                        (m) => m.model_code === createdModelCode && m.description === createdDesc
+                      );
+                      return found || ({
+                        id: -1,
+                        part_no: createdPart.part_no || partNo,
+                        model_code: createdModelCode,
+                        description: createdDesc,
+                      } as PartSpec);
+                    });
                     setForm((f) => ({
                       ...f,
-                      partNo: createdPart.part_no,
-                      model: createdPart.model_code,
-                      type: createdPart.description || '',
+                      partNo: createdPart.part_no || partNo,
+                      model: createdModelCode,
+                      type: createdDesc,
                       resin: createdPart.resin_type || '',
-                      netG: String(createdPart.net_weight_g || ''),
-                      srG: String(createdPart.sr_weight_g || ''),
-                      ct: String(createdPart.cycle_time_sec || ''),
+                      netG: String(createdPart.net_weight_g ?? ''),
+                      srG: String(createdPart.sr_weight_g ?? ''),
+                      ct: String(createdPart.cycle_time_sec ?? ''),
                     }));
                   } catch (err: any) {
                     if (err.response?.status === 403) {
