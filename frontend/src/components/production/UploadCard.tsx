@@ -1,4 +1,5 @@
-import React, { useState, FormEvent } from 'react';
+import React, { useState } from 'react';
+import type { FormEvent } from 'react';
 import { toast } from 'react-toastify';
 import { AxiosError } from 'axios';
 import { CloudUpload, CalendarDays, Loader2 } from 'lucide-react';
@@ -90,9 +91,8 @@ const UploadCard: React.FC<UploadCardProps> = ({ planType, onUploadSuccess, clas
             <p className="mt-1 text-sm text-gray-700">{selectedFile.name}</p>
           )}
           <div
-            className={`mt-3 flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-3 py-7 text-xs transition ${
-              isDragActive ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-300 bg-gray-50 text-gray-500'
-            }`}
+            className={`mt-3 flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-3 py-7 text-xs transition ${isDragActive ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-300 bg-gray-50 text-gray-500'
+              }`}
             onDragOver={(event) => {
               event.preventDefault();
               event.stopPropagation();

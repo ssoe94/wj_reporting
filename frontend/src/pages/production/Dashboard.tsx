@@ -41,7 +41,7 @@ const MachineCard: React.FC<{
   planType: 'injection' | 'machining';
   startAnimation: boolean;
 }> = ({ machine, planType, startAnimation }) => {
-  const { lang, t } = useLang();
+  const { t } = useLang();
   const [isExpanded, setIsExpanded] = useState(false);
 
   const displayMachineName = planType === 'injection'
