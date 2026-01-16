@@ -133,9 +133,6 @@ const lightenColor = (hex: string, amount: number) => {
     return `#${rgbComponentToHex(r)}${rgbComponentToHex(g)}${rgbComponentToHex(b)}`;
 };
 
-const RoundedBar: React.FC<any> = ({ x = 0, y = 0, width = 0, height = 0, fill }) => (
-    <rect x={x} y={y} width={width} height={height} fill={fill} rx={10} ry={10} />
-);
 
 const SquareBar: React.FC<any> = ({ x = 0, y = 0, width = 0, height = 0, fill }) => (
     <rect x={x} y={y} width={width} height={height} fill={fill} rx={0} ry={0} />
@@ -464,10 +461,6 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
     };
 
     const renderSegmentShape = (partKey: string) => (props: any) => {
-        if (planType === 'machining') {
-            const fill = modelColorMap[partKey] || COLOR_PALETTE[0];
-            return <SquareBar {...props} fill={fill} />;
-        }
         const { payload } = props;
         const machineKey = payload?.machineKey;
         const baseColor = (machineKey && machineColorMap[machineKey]) || COLOR_PALETTE[0];
@@ -475,8 +468,11 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
         const segmentCount = payload?.segmentCount || Object.keys(payload?.segmentOrder || {}).length || 1;
         const divisor = Math.max(segmentCount - 1, 1);
         const shadeAmount = segmentCount > 1 ? Math.min(0.55, (orderIndex / divisor) * 0.55) : 0;
-        const fill = lightenColor(baseColor, shadeAmount);
-        return <RoundedBar {...props} fill={fill} />;
+        const fill = (planType === 'machining')
+            ? (modelColorMap[partKey] || COLOR_PALETTE[0])
+            : lightenColor(baseColor, shadeAmount);
+
+        return <SquareBar {...props} fill={fill} />;
     };
 
     const labelGap = Y_AXIS_LABEL_WIDTH / 2;
