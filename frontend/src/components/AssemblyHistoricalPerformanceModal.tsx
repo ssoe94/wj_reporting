@@ -82,7 +82,7 @@ export default function AssemblyHistoricalPerformanceModal({ isOpen, onClose, pa
       const { data: record } = await api.get(`/assembly/reports/${recordSummary.id}/`);
       setSelectedRecord(record);
       setShowDetailRecord(true);
-    } catch (err) {
+    } catch (_err) {
       setSelectedRecord(null);
       setDetailError('상세 데이터를 가져오지 못했습니다.');
       setShowDetailRecord(true);

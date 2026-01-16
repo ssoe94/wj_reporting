@@ -55,7 +55,7 @@ import ProductionDashboardPage from './pages/production/Dashboard'; // New impor
 const queryClient = new QueryClient();
 
 // navItems를 함수로 생성 (언어별 및 권한별)
-export function useNavItems() {
+function useNavItems() {
   const { t } = useLang();
   const { user, hasPermission } = useAuth();
 

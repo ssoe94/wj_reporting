@@ -74,14 +74,13 @@ function DowntimeAnalysisSkeleton() {
 
 export default function DowntimeAnalysis() {
   const { data, isLoading, isFetching } = useAllReports();
-  const reports = data ?? [];
   const { startDate, endDate, excludeWeekends } = usePeriod();
   const { t } = useLang();
 
   const showSkeleton = !data && (isLoading || isFetching);
 
   // renderPieLabel을 컴포넌트 내부에서 정의하여 t 함수 사용 가능
-  const renderPieLabel = (props: any) => {
+  const renderPieLabel = useCallback((props: any) => {
     const { cx, cy, midAngle, outerRadius, percent, reason } = props;
     const isOther = reason === '기타' || reason === t('other');
     const displayReason = isOther ? t('other') : reason;
@@ -101,13 +100,14 @@ export default function DowntimeAnalysis() {
         {`${displayReason} ${(percent * 100).toFixed(0)}%`}
       </text>
     );
-  };
+  }, [t]);
 
   // 기간에 맞는 reports만 사용
   const filteredReports = useMemo(() => {
+    const reports = data ?? [];
     if (startDate && endDate) {
       let filtered = reports.filter(r => r.date >= startDate && r.date <= endDate);
-      
+
       // 주말 제외 필터링
       if (excludeWeekends) {
         filtered = filtered.filter(r => {
@@ -115,11 +115,11 @@ export default function DowntimeAnalysis() {
           return dayOfWeek !== 0 && dayOfWeek !== 6; // 일요일(0)과 토요일(6) 제외
         });
       }
-      
+
       return filtered;
     }
     return reports;
-  }, [reports, startDate, endDate, excludeWeekends]);
+  }, [data, startDate, endDate, excludeWeekends]);
 
   // downtimeRecords 생성
   const parseDowntimeFromNote = (note: string): Array<{ reason: string; duration: number }> => {

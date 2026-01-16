@@ -19,20 +19,22 @@ const rowCls = "bg-white border-t border-gray-200 hover:bg-gray-100 transition-c
 export default function EcoManager() {
   const { t } = useLang();
   const [keyword, setKeyword] = useState('');
-  const [mode, setMode] = useState<'eco'|'part'>('eco');
-  const [statusFilter, setStatusFilter] = useState<'ALL'|'OPEN'|'CLOSED'>('ALL');
+  const [mode, setMode] = useState<'eco' | 'part'>('eco');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'CLOSED'>('ALL');
   const [selectedParts, setSelectedParts] = useState<string[]>([]);
   const [selectedPart, setSelectedPart] = useState<string>('');
-  const { data: ecos = [] } = mode==='eco' ? useEcos(keyword) : useEcosByPart(selectedPart || '');
+  const { data: ecosAll = [] } = useEcos(mode === 'eco' ? keyword : '');
+  const { data: ecosByPart = [] } = useEcosByPart(mode === 'part' ? selectedPart : '');
+  const ecos = mode === 'eco' ? ecosAll : ecosByPart;
   // status filtering
-  const filteredEcos = statusFilter==='ALL' ? ecos : ecos.filter((e:any)=>e.status===statusFilter);
-  const { data: partCounts = [] } = usePartEcoCount(mode==='part'?keyword:'');
+  const filteredEcos = statusFilter === 'ALL' ? ecos : ecos.filter((e: any) => e.status === statusFilter);
+  const { data: partCounts = [] } = usePartEcoCount(mode === 'part' ? keyword : '');
   const ecosBySelectedParts = useEcosByParts(selectedParts);
   const queryClient = useQueryClient();
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [errors, setErrors] = useState<Record<string,string>>({});
-  const today = new Date().toISOString().slice(0,10);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const today = new Date().toISOString().slice(0, 10);
   const emptyForm: Partial<Eco> = {
     eco_no: '',
     eco_model: '',
@@ -56,19 +58,19 @@ export default function EcoManager() {
 
   const upsert = useMutation({
     mutationFn: async (payload: Partial<Eco>) => {
-      if(payload.id) {
+      if (payload.id) {
         return api.patch(`/ecos/${payload.id}/`, payload);
       }
       return api.post('/ecos/', payload);
     },
-    onSuccess: ()=>{
-      queryClient.invalidateQueries({queryKey:['ecos']});
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ecos'] });
       setKeyword('');
       setDialogOpen(false);
       setErrors({});
       toast.success(t('save_success'));
     },
-    onError: (err:any)=>{
+    onError: (err: any) => {
       try {
         const data = err.response?.data || err.data || {};
         setErrors(data);
@@ -82,19 +84,19 @@ export default function EcoManager() {
   });
 
   const del = useMutation({
-    mutationFn: async (id:number)=> api.delete(`/ecos/${id}/`),
-    onSuccess: ()=>{
-      queryClient.invalidateQueries({queryKey:['ecos']});
+    mutationFn: async (id: number) => api.delete(`/ecos/${id}/`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ecos'] });
       toast.success(t('delete_success'));
     },
-    onError: ()=>{
+    onError: () => {
       toast.error(t('delete_fail'));
     }
   });
 
-  const handleDelete = (eco:Eco)=>{
-    if(!eco.id) return;
-    if(!window.confirm(t('delete_confirm'))) return;
+  const handleDelete = (eco: Eco) => {
+    if (!eco.id) return;
+    if (!window.confirm(t('delete_confirm'))) return;
     del.mutate(eco.id);
   };
 
@@ -104,29 +106,29 @@ export default function EcoManager() {
     const { details, ...headerRaw } = payload as any;
     // 빈 값 제거
     const header: Record<string, any> = {};
-    Object.entries(headerRaw).forEach(([k,v])=>{
-      if(v!=='' && v!==null && v!==undefined) header[k]=v;
+    Object.entries(headerRaw).forEach(([k, v]) => {
+      if (v !== '' && v !== null && v !== undefined) header[k] = v;
     });
-    (async ()=>{
-      try{
+    (async () => {
+      try {
         let ecoId = payload.id;
-        if(payload.id){
+        if (payload.id) {
           await api.patch(`/ecos/${payload.id}/`, header);
-        }else{
+        } else {
           const { data } = await api.post('/ecos/', header);
           ecoId = data.id;
         }
-        if(details && details.length){
-          await api.post(`/ecos/${ecoId}/details/bulk/`, {details});
+        if (details && details.length) {
+          await api.post(`/ecos/${ecoId}/details/bulk/`, { details });
         }
-        queryClient.invalidateQueries({queryKey:['ecos']});
+        queryClient.invalidateQueries({ queryKey: ['ecos'] });
         toast.success(t('save_success'));
         setDialogOpen(false);
-      }catch(err:any){
+      } catch (err: any) {
         console.error('ECO save error:', err);
         const errorData = err.response?.data || err.data || {};
         console.error('Error response:', errorData);
-        
+
         // 에러 메시지 표시
         if (errorData && typeof errorData === 'object') {
           const firstKey = Object.keys(errorData)[0];
@@ -144,11 +146,11 @@ export default function EcoManager() {
     <>
       {/* Control Bar */}
       <div className="flex flex-wrap md:flex-nowrap items-center gap-2 mb-4">
-        <select value={mode} onChange={e=>{setKeyword(''); setMode(e.target.value as any);}} className={ctrlCls}>
+        <select value={mode} onChange={e => { setKeyword(''); setMode(e.target.value as any); }} className={ctrlCls}>
           <option value="eco">{t('eco_no')}</option>
           <option value="part">PART NO.</option>
         </select>
-        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value as any)} className={ctrlCls}>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className={ctrlCls}>
           <option value="ALL">{t('all')}</option>
           <option value="OPEN">OPEN</option>
           <option value="CLOSED">CLOSED</option>
@@ -157,16 +159,16 @@ export default function EcoManager() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
           <Input
             type="text"
-            placeholder={mode==='eco'? t('eco_search_placeholder') : t('part_search_placeholder')}
-            className={"pl-10 w-full "+ctrlCls}
+            placeholder={mode === 'eco' ? t('eco_search_placeholder') : t('part_search_placeholder')}
+            className={"pl-10 w-full " + ctrlCls}
             value={keyword}
-            onChange={(e)=>{setKeyword(e.target.value); if(mode==='part'){setSelectedPart('')}}}
+            onChange={(e) => { setKeyword(e.target.value); if (mode === 'part') { setSelectedPart('') } }}
           />
         </div>
-        <Button size="sm" onClick={()=>{setForm(emptyForm); setDialogOpen(true);}}>{t('new_eco')}</Button>
+        <Button size="sm" onClick={() => { setForm(emptyForm); setDialogOpen(true); }}>{t('new_eco')}</Button>
       </div>
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-        {mode==='eco' ? (
+        {mode === 'eco' ? (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-slate-100">
@@ -180,9 +182,9 @@ export default function EcoManager() {
                 </tr>
               </thead>
               <tbody>
-                {filteredEcos.map((e: any)=>(
+                {filteredEcos.map((e: any) => (
                   <tr key={e.id} className={rowCls}>
-                    <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={async ()=>{
+                    <td className="px-3 py-1 font-mono cursor-pointer text-blue-600 underline" onClick={async () => {
                       setErrors({});
                       try {
                         const { data } = await api.get(`/ecos/${e.id}/`);
@@ -197,19 +199,19 @@ export default function EcoManager() {
                     <td className="px-3 py-1">{e.issued_date}</td>
                     <td className="px-3 py-1">{e.status}</td>
                     <td className="px-3 py-1 text-right flex justify-end gap-1">
-                      <Button size="icon" variant="ghost" onClick={async ()=>{
+                      <Button size="icon" variant="ghost" onClick={async () => {
                         setErrors({});
-                        try{
+                        try {
                           const { data } = await api.get(`/ecos/${e.id}/`);
                           setForm(data);
-                        }catch{
+                        } catch {
                           setForm(e);
                         }
                         setDialogOpen(true);
                       }} aria-label={t('edit')}>
                         <Pencil className="w-4 h-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={()=>handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}>
+                      <Button size="icon" variant="ghost" onClick={() => handleDelete(e)} aria-label={t('delete')} disabled={del.isPending}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </td>
@@ -232,16 +234,16 @@ export default function EcoManager() {
                       </tr>
                     </thead>
                     <tbody>
-                      {partCounts.map(pc=> {
+                      {partCounts.map(pc => {
                         const checked = selectedParts.includes(pc.part_no);
                         return (
                           <tr key={pc.part_no} className={rowCls}>
                             <td className="px-3 py-1 font-mono flex items-center gap-2">
-                              <input type="checkbox" checked={checked} onChange={()=>{
+                              <input type="checkbox" checked={checked} onChange={() => {
                                 setSelectedPart('');
-                                setSelectedParts(prev=>checked? prev.filter(p=>p!==pc.part_no): [...prev, pc.part_no]);
+                                setSelectedParts(prev => checked ? prev.filter(p => p !== pc.part_no) : [...prev, pc.part_no]);
                               }} />
-                              <span className="cursor-pointer" onClick={()=>setSelectedPart(pc.part_no)}>{pc.part_no}</span>
+                              <span className="cursor-pointer" onClick={() => setSelectedPart(pc.part_no)}>{pc.part_no}</span>
                             </td>
                             <td className="px-3 py-1 text-xs cursor-pointer hover:bg-yellow-50" onClick={() => {
                               const newDesc = prompt(`${pc.part_no} ${t('description_edit_prompt')}:`, pc.description || '');
@@ -249,7 +251,7 @@ export default function EcoManager() {
                                 // API 호출하여 ECO Part description 업데이트
                                 api.patch(`eco-parts/${pc.part_no}/update-description/`, { description: newDesc })
                                   .then(() => {
-                                    queryClient.invalidateQueries({queryKey:['part-eco-count']});
+                                    queryClient.invalidateQueries({ queryKey: ['part-eco-count'] });
                                     toast.success(t('update_success'));
                                   })
                                   .catch(() => {
@@ -264,7 +266,7 @@ export default function EcoManager() {
                     </tbody>
                   </table>
                 </div>
-                {selectedParts.length>0 && (
+                {selectedParts.length > 0 && (
                   <div className="mt-4">
                     <h4 className="font-semibold mb-2 pl-2">{t('selected_part_eco_details')}</h4>
                     <div className="overflow-x-auto">
@@ -281,8 +283,8 @@ export default function EcoManager() {
                         <tbody>
                           {selectedParts.map(partNo => {
                             // 관련된 rows 추출
-                            const rows = ecosBySelectedParts.data?.filter((eco:any)=> statusFilter==='ALL'||eco.status===statusFilter).flatMap((eco:any)=>
-                              (eco.details||[]).filter((d:any)=>d.part_no.toUpperCase()===partNo.toUpperCase()).map((d:any)=>(
+                            const rows = ecosBySelectedParts.data?.filter((eco: any) => statusFilter === 'ALL' || eco.status === statusFilter).flatMap((eco: any) =>
+                              (eco.details || []).filter((d: any) => d.part_no.toUpperCase() === partNo.toUpperCase()).map((d: any) => (
                                 {
                                   part_no: d.part_no,
                                   eco_id: eco.id,
@@ -293,12 +295,12 @@ export default function EcoManager() {
                                 }
                               ))
                             ) || [];
-                            return rows.map((row,idx)=>(
+                            return rows.map((row, idx) => (
                               <tr key={`${row.part_no}-${row.eco_no}`} className={rowCls}>
-                                {idx===0 && (
+                                {idx === 0 && (
                                   <td className="px-3 py-1 font-mono text-center" rowSpan={rows.length}>{row.part_no}</td>
                                 )}
-                                <td className="px-3 py-1 font-mono text-center cursor-pointer text-blue-600 underline" onClick={async ()=>{
+                                <td className="px-3 py-1 font-mono text-center cursor-pointer text-blue-600 underline" onClick={async () => {
                                   setErrors({});
                                   const { data } = await api.get(`/ecos/${row.eco_id}/`);
                                   setForm(data);
@@ -328,8 +330,8 @@ export default function EcoManager() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredEcos.flatMap((eco:any)=> (eco.details||[]).filter((d:any)=>d.part_no===selectedPart).map((d:any)=>(
-                      <tr key={eco.id+'-'+d.id} className="border-t">
+                    {filteredEcos.flatMap((eco: any) => (eco.details || []).filter((d: any) => d.part_no === selectedPart).map((d: any) => (
+                      <tr key={eco.id + '-' + d.id} className="border-t">
                         <td className="px-3 py-1 font-mono">{eco.eco_no}</td>
                         <td className="px-3 py-1 text-xs">{d.change_details}</td>
                         <td className="px-3 py-1">{d.status}</td>
@@ -347,7 +349,7 @@ export default function EcoManager() {
       <EcoForm
         initial={form}
         open={dialogOpen}
-        onClose={()=>setDialogOpen(false)}
+        onClose={() => setDialogOpen(false)}
         onSubmit={handleUpsert}
         isSaving={upsert.isPending}
         errors={errors}

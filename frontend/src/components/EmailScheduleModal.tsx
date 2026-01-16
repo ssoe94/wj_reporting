@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -16,26 +16,26 @@ export default function EmailScheduleModal({ isOpen, onClose, selectedDate }: Em
   const [scheduledAt, setScheduledAt] = useState<string>('');
   const { scheduleEmail, isScheduling } = useEmailSchedule();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    
+
     if (!recipients.trim()) {
       toast.error('수신자 이메일을 입력해주세요.');
       return;
     }
 
     const recipientList = recipients.split(',').map(email => email.trim()).filter(email => email);
-    
+
     try {
       await scheduleEmail({
         date: selectedDate,
         recipients: recipientList,
         scheduled_at: scheduledAt || undefined,
       });
-      
+
       toast.success('이메일 발송이 예약되었습니다. (개발 중 - 실제 발송되지 않습니다)');
       onClose();
-    } catch (error) {
+    } catch (_error) {
       toast.error('이메일 발송 예약에 실패했습니다.');
     }
   };
@@ -57,7 +57,7 @@ export default function EmailScheduleModal({ isOpen, onClose, selectedDate }: Em
         </div>
 
         <h2 className="text-xl font-semibold mb-4">이메일 발송 예약</h2>
-        
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="date">날짜</Label>

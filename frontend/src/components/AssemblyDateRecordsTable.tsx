@@ -78,6 +78,75 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
     return 0;
   };
 
+  type EnrichedReport = AssemblyReport & { __totalDefectQty: number; __defectRate: number };
+
+  const enrichedList = useMemo<Array<EnrichedReport>>(() => {
+    const getIncomingDefectsInner = (report: AssemblyReport) => {
+      const direct = safeNumber((report as any)?.incoming_defect_qty);
+      if (direct > 0) return direct;
+      if (report.incoming_defects_detail) {
+        return Object.values(report.incoming_defects_detail).reduce<number>((sum, value) => sum + safeNumber(value), 0);
+      }
+      return 0;
+    };
+
+    const getProcessingDefectsInner = (report: AssemblyReport) => {
+      const direct = safeNumber(report.processing_defect);
+      if (direct > 0) return direct;
+      const dynamic = (report as any)?.processing_defects_dynamic;
+      if (Array.isArray(dynamic)) {
+        return dynamic.reduce<number>((sum, item) => sum + safeNumber(item?.quantity), 0);
+      }
+      return 0;
+    };
+
+    const getOutsourcingDefectsInner = (report: AssemblyReport) => {
+      const direct = safeNumber(report.outsourcing_defect);
+      if (direct > 0) return direct;
+      const dynamic = (report as any)?.outsourcing_defects_dynamic;
+      if (Array.isArray(dynamic)) {
+        return dynamic.reduce<number>((sum, item) => sum + safeNumber(item?.quantity), 0);
+      }
+      return 0;
+    };
+
+    const getTotalDefectQtyInner = (report: AssemblyReport) => {
+      const totalFromServer = safeNumber(report.total_defect_qty);
+      if (totalFromServer > 0) return totalFromServer;
+      const injection = safeNumber(report.injection_defect);
+      const processing = getProcessingDefectsInner(report);
+      const outsourcing = getOutsourcingDefectsInner(report);
+      const incoming = getIncomingDefectsInner(report);
+      return injection + processing + outsourcing + incoming;
+    };
+
+    const getDefectRateInner = (report: AssemblyReport, totalDefectQty: number) => {
+      const rateFromServer = safeNumber(report.defect_rate);
+      if (rateFromServer > 0) return rateFromServer;
+      const actualQty = safeNumber((report as any)?.actual_qty);
+      const denominator = actualQty + totalDefectQty;
+      if (denominator <= 0) return 0;
+      return Math.round((totalDefectQty / denominator) * 1000) / 10; // 소수 첫째자리 반올림
+    };
+
+    return reports
+      .filter((r: AssemblyReport) => r.date === date)
+      .map((report: AssemblyReport): EnrichedReport => {
+        const totalDefectQty = getTotalDefectQtyInner(report);
+        const defectRate = getDefectRateInner(report, totalDefectQty);
+        return {
+          ...report,
+          __totalDefectQty: totalDefectQty,
+          __defectRate: defectRate,
+        };
+      })
+      .sort((a: EnrichedReport, b: EnrichedReport) => {
+        if (a.line_no !== b.line_no) return (a.line_no || '').localeCompare(b.line_no || '');
+        return (a.start_datetime || '').localeCompare(b.start_datetime || '');
+      });
+  }, [reports, date]);
+
+  // Re-define helpers for use in formatDefectInfo/sum logic
   const getIncomingDefects = (report: AssemblyReport) => {
     const direct = safeNumber((report as any)?.incoming_defect_qty);
     if (direct > 0) return direct;
@@ -125,26 +194,6 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
     if (denominator <= 0) return 0;
     return Math.round((totalDefectQty / denominator) * 1000) / 10; // 소수 첫째자리 반올림
   };
-
-  type EnrichedReport = AssemblyReport & { __totalDefectQty: number; __defectRate: number };
-
-  const enrichedList = useMemo<Array<EnrichedReport>>(() => {
-    return reports
-      .filter((r: AssemblyReport) => r.date === date)
-      .map((report: AssemblyReport): EnrichedReport => {
-        const totalDefectQty = getTotalDefectQty(report);
-        const defectRate = getDefectRate(report, totalDefectQty);
-        return {
-          ...report,
-          __totalDefectQty: totalDefectQty,
-          __defectRate: defectRate,
-        };
-      })
-      .sort((a: EnrichedReport, b: EnrichedReport) => {
-        if (a.line_no !== b.line_no) return (a.line_no || '').localeCompare(b.line_no || '');
-        return (a.start_datetime || '').localeCompare(b.start_datetime || '');
-      });
-  }, [reports, date]);
 
   const handleSave = async (data: Partial<AssemblyReport>) => {
     if (!detail) return;
@@ -365,11 +414,11 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                       <tbody>
                         {(() => {
                           const inc = (detail as any)?.incoming_defects_detail || {};
-                          const items = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening','other'];
+                          const items = ['scratch', 'black_dot', 'eaten_meat', 'air_mark', 'deform', 'short_shot', 'broken_pillar', 'flow_mark', 'sink_mark', 'whitening', 'other'];
                           return items.map(k => (
                             <tr key={k} className="odd:bg-gray-50">
                               <td className="px-3 py-1 text-gray-700">{t(`def_${k}`)}</td>
-                              <td className="px-3 py-1 text-right font-mono">{Number(inc[k]||0)}</td>
+                              <td className="px-3 py-1 text-right font-mono">{Number(inc[k] || 0)}</td>
                             </tr>
                           ));
                         })()}
@@ -377,8 +426,8 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                           <td className="px-3 py-1 font-semibold">{t('sum')}</td>
                           <td className="px-3 py-1 text-right font-mono font-semibold">{(() => {
                             const inc = (detail as any)?.incoming_defects_detail || {};
-                            const items = ['scratch','black_dot','eaten_meat','air_mark','deform','short_shot','broken_pillar','flow_mark','sink_mark','whitening','other'];
-                            return items.reduce((a,k)=> a + (Number(inc[k]||0)), 0);
+                            const items = ['scratch', 'black_dot', 'eaten_meat', 'air_mark', 'deform', 'short_shot', 'broken_pillar', 'flow_mark', 'sink_mark', 'whitening', 'other'];
+                            return items.reduce((a, k) => a + (Number(inc[k] || 0)), 0);
                           })()}</td>
                         </tr>
                       </tbody>
@@ -402,10 +451,10 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                           return pr.map((item: any, idx: number) => {
                             const amount = safeNumber(item.quantity);
                             return (
-                            <tr key={idx} className="odd:bg-gray-50">
-                              <td className="px-3 py-1 text-gray-700">{item.type ?? item.defect_type ?? '-'}</td>
-                              <td className="px-3 py-1 text-right font-mono">{amount.toLocaleString()}</td>
-                            </tr>
+                              <tr key={idx} className="odd:bg-gray-50">
+                                <td className="px-3 py-1 text-gray-700">{item.type ?? item.defect_type ?? '-'}</td>
+                                <td className="px-3 py-1 text-right font-mono">{amount.toLocaleString()}</td>
+                              </tr>
                             );
                           });
                         })()}
@@ -438,10 +487,10 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                           return out.map((item: any, idx: number) => {
                             const amount = safeNumber(item.quantity);
                             return (
-                            <tr key={idx} className="odd:bg-gray-50">
-                              <td className="px-3 py-1 text-gray-700">{item.type ?? item.defect_type ?? '-'}</td>
-                              <td className="px-3 py-1 text-right font-mono">{amount.toLocaleString()}</td>
-                            </tr>
+                              <tr key={idx} className="odd:bg-gray-50">
+                                <td className="px-3 py-1 text-gray-700">{item.type ?? item.defect_type ?? '-'}</td>
+                                <td className="px-3 py-1 text-right font-mono">{amount.toLocaleString()}</td>
+                              </tr>
                             );
                           });
                         })()}

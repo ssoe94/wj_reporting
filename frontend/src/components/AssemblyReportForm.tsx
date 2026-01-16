@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, type FormEvent } from 'react';
 import { format } from 'date-fns';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader } from './ui/card';
@@ -19,7 +19,6 @@ import { Plus, PlusCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
-import React from 'react';
 
 interface AssemblyReportFormProps {
   onSubmit: (data: Omit<AssemblyReport, 'id'>) => void | Promise<any>;
@@ -82,8 +81,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
   const { data: asmPartsByModel = [] } = useAssemblyPartsByModel(selectedModelDesc?.model_code);
   const { data: asmPartspecsByModel = [] } = useAssemblyPartspecsByModel(selectedModelDesc?.model_code);
   const { data: asmPartNoSearch = [] } = useAssemblyPartNoSearch(productQuery || '');
-  
-  
+
+
   const uniqueModelDesc = React.useMemo(() => {
     const map = new Map<string, PartSpec>();
     searchResults.forEach((it) => {
@@ -163,7 +162,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       if ((initialData as any).outsourcing_defects_dynamic && Array.isArray((initialData as any).outsourcing_defects_dynamic)) {
         setOutsourcingDefects((initialData as any).outsourcing_defects_dynamic);
       }
-    } catch (_) {}
+    } catch (_) { }
   }, [initialData]);
 
   // 새로운 동적 불량 관리로 인한 총합 계산
@@ -192,23 +191,23 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     const idle = Number(formData.idle_time) || 0;
     const total = op + idle; // 총시간 = 작업시간 + 부동시간
     const actualOperationTime = op; // 작업시간은 직접 입력
-    
+
     // UPH = 생산수량 / 작업시간(시간)
     const act = Number(formData.actual_qty) || 0;
     const uph = actualOperationTime > 0 ? Math.round((act / (actualOperationTime / 60)) * 100) / 100 : 0;
-    
+
     // UPPH = 생산수량 / (작업시간(시간) × 작업인원)
     const workers = Number(formData.workers) || 0;
-    const upph = (actualOperationTime > 0 && workers > 0) ? 
+    const upph = (actualOperationTime > 0 && workers > 0) ?
       Math.round((act / ((actualOperationTime / 60) * workers)) * 100) / 100 : 0;
-    
+
     // 가동률 = 작업시간 / 총시간 × 100
-    const operationRate = total > 0 ? 
+    const operationRate = total > 0 ?
       Math.round((actualOperationTime / total) * 100 * 100) / 100 : 0;
-    
+
     // 생산달성률 = 생산수량 / 계획수량 × 100  
     const plan = Number(formData.plan_qty) || 0;
-    const achievementRate = plan > 0 ? 
+    const achievementRate = plan > 0 ?
       Math.round((act / plan) * 100 * 100) / 100 : 0;
 
     return {
@@ -222,7 +221,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     };
   }, [formData, totalProcessingDefects, totalOutsourcingDefects, totalIncoming]);
   const totalDefectsNow = totalIncoming + totalProcessingDefects + totalOutsourcingDefects;
-  const denomForRate = Math.max(1, (Number(formData.input_qty)||0) || ((Number(formData.actual_qty)||0) + totalDefectsNow));
+  const denomForRate = Math.max(1, (Number(formData.input_qty) || 0) || ((Number(formData.actual_qty) || 0) + totalDefectsNow));
   const badgeClassFor = (sum: number) => {
     const pct = (sum / denomForRate) * 100;
     if (pct <= 2) return 'bg-green-50 text-green-700';
@@ -289,11 +288,11 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     }
 
     // 확인 다이얼로그: 계획 대비 달성률, 불량 안내
-    const plan = Number(formData.plan_qty)||0;
-    const actual = Number(formData.actual_qty)||0;
+    const plan = Number(formData.plan_qty) || 0;
+    const actual = Number(formData.actual_qty) || 0;
     const totalDefects = totalIncoming + totalOutsourcingDefects + totalProcessingDefects;
     const rate = plan > 0 ? ((actual / plan) * 100).toFixed(1) : '0.0';
-    const confirmMsg = lang==='zh'
+    const confirmMsg = lang === 'zh'
       ? `计划数量对比良品数量为 ${rate}% 。不良数量 ${totalDefects} 件。是否保存？`
       : `계획수량 대비 생산수량은 ${rate}% 입니다. 불량 수량은 ${totalDefects}개 입니다. 입력하시겠습니까?`;
     const ok = window.confirm(confirmMsg);
@@ -323,7 +322,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       payload.processing_defect = totalProcessingDefects;
       payload.outsourcing_defect = totalOutsourcingDefects;
 
-      ['plan_qty','input_qty','actual_qty','rework_qty','injection_defect','outsourcing_defect','processing_defect','total_time','idle_time','operation_time','workers'].forEach((k)=>{
+      ['plan_qty', 'input_qty', 'actual_qty', 'rework_qty', 'injection_defect', 'outsourcing_defect', 'processing_defect', 'total_time', 'idle_time', 'operation_time', 'workers'].forEach((k) => {
         if (payload[k] === '' || payload[k] === undefined || payload[k] === null) payload[k] = 0;
       });
       const maybePromise = onSubmit(payload);
@@ -374,14 +373,14 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         incomingDefectItems.forEach(it => (init[it.key] = 0));
         return init;
       });
-    } catch (_) {
+    } catch (_err) {
       // 에러시 초기화하지 않음
     }
   };
 
   // 숫자 입력 시 기본 0이 선택되어 덮어쓰도록 포커스 시 전체 선택
   const selectOnFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    try { e.target.select(); } catch (_) {}
+    try { e.target.select(); } catch (_) { }
   };
 
   // Enter 키로 폼 제출 방지 및 다음 필드로 이동
@@ -483,7 +482,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 const parts = raw.split(/\s+[–-]\s+/);
                 const modelCode = (parts[0] || '').trim().toUpperCase();
                 const desc = (parts[1] || '').trim();
-                setNewPartForm((prev:any)=> ({
+                setNewPartForm((prev: any) => ({
                   ...prev,
                   part_no: '',
                   model_code: modelCode,
@@ -503,25 +502,25 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             options={(() => {
               const baseOptions = selectedModelDesc
                 ? (
-                    (asmPartspecsByModel as any).length
-                      ? (asmPartspecsByModel as any)
-                      : ((asmPartsByModel as any).length
-                          ? (asmPartsByModel as any)
-                          : modelParts)
-                  )
+                  (asmPartspecsByModel as any).length
+                    ? (asmPartspecsByModel as any)
+                    : ((asmPartsByModel as any).length
+                      ? (asmPartsByModel as any)
+                      : modelParts)
+                )
                 : (() => {
-                    const asmOptions = Array.isArray(asmPartNoSearch)
-                      ? (asmPartNoSearch as any[]).map((r:any)=> ({ part_no: r.part_no, model_code: r.model, description: r.description || '' }))
-                      : [];
-                    const merged = [...asmOptions, ...searchResults];
-                    const seen = new Set<string>();
-                    return merged.filter((o:any)=>{
-                      const key = String(o.part_no||'');
-                      if (seen.has(key)) return false;
-                      seen.add(key);
-                      return true;
-                    });
-                  })();
+                  const asmOptions = Array.isArray(asmPartNoSearch)
+                    ? (asmPartNoSearch as any[]).map((r: any) => ({ part_no: r.part_no, model_code: r.model, description: r.description || '' }))
+                    : [];
+                  const merged = [...asmOptions, ...searchResults];
+                  const seen = new Set<string>();
+                  return merged.filter((o: any) => {
+                    const key = String(o.part_no || '');
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                  });
+                })();
               if (productQuery.trim().length >= 2 && baseOptions.length === 0) return [{ isAddNew: true, part_no: productQuery.trim() } as any];
               if (selectedModelDesc && baseOptions.length === 0) return [{ isAddNewForModel: true } as any];
               return baseOptions;
@@ -560,7 +559,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   let list: any[] = [];
                   if (prefix9.length === 9) {
                     const { data } = await api.get('/assembly/products/search-parts/', { params: { search: prefix9, prefix_only: 1 } });
-                    let all = Array.isArray(data) ? data : [];
+                    const all = Array.isArray(data) ? data : [];
                     list = all
                       .map((it: any) => ({
                         ...it,
@@ -627,8 +626,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                           });
                           const pick = Array.isArray(searchData?.results)
                             ? searchData.results.find((it: any) =>
-                                String(it.part_no || '').toUpperCase() === String(top.part_no || '').toUpperCase()
-                              )
+                              String(it.part_no || '').toUpperCase() === String(top.part_no || '').toUpperCase()
+                            )
                             : null;
                           if (pick) detail = pick;
                         } catch (error: any) {
@@ -663,8 +662,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                           });
                           const pick = Array.isArray(searchData?.results)
                             ? searchData.results.find((it: any) =>
-                                String(it.part_no || '').toUpperCase() === String(top.part_no || '').toUpperCase()
-                              )
+                              String(it.part_no || '').toUpperCase() === String(top.part_no || '').toUpperCase()
+                            )
                             : null;
                           if (pick) detail = pick;
                         } catch (fallbackError: any) {
@@ -712,7 +711,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   sr_weight_g: (prefillData as any)?.sr_weight_g ?? '',
                   cycle_time_sec: (prefillData as any)?.cycle_time_sec ?? '',
                   cavity: (prefillData as any)?.cavity ?? '',
-                  valid_from: (prefillData as any)?.valid_from || new Date().toISOString().slice(0,10),
+                  valid_from: (prefillData as any)?.valid_from || new Date().toISOString().slice(0, 10),
                 }));
                 setPrefillOriginal({
                   part_no: desired,
@@ -726,7 +725,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   sr_weight_g: (prefillData as any)?.sr_weight_g ?? '',
                   cycle_time_sec: (prefillData as any)?.cycle_time_sec ?? '',
                   cavity: (prefillData as any)?.cavity ?? '',
-                  valid_from: (prefillData as any)?.valid_from || new Date().toISOString().slice(0,10),
+                  valid_from: (prefillData as any)?.valid_from || new Date().toISOString().slice(0, 10),
                 });
                 setShowAddPartModal(true);
                 return;
@@ -775,14 +774,14 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
           <select
             id="supply_type"
             value={formData.supply_type}
-            onChange={(e)=>handleChange('supply_type', e.target.value)}
+            onChange={(e) => handleChange('supply_type', e.target.value)}
             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
           >
             <option value="JIT">{"JIT / 上线"}</option>
             <option value="CSK">CSKD</option>
             <option value="SVC">SVC</option>
-            <option value="REWORK">{lang==='zh' ? '返工' : 'REWORK'}</option>
-            <option value="INSPECTION">{lang==='zh' ? '检验' : '검사'}</option>
+            <option value="REWORK">{lang === 'zh' ? '返工' : 'REWORK'}</option>
+            <option value="INSPECTION">{lang === 'zh' ? '检验' : '검사'}</option>
           </select>
         </div>
       </div>
@@ -800,11 +799,11 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="flex flex-col">
                       <Label htmlFor="plan_qty">{t('plan_qty_required')}</Label>
-                      <Input id="plan_qty" type="number" inputMode="numeric" min={0} value={formData.plan_qty as any} onChange={(e) => handleChange('plan_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                      <Input id="plan_qty" type="number" inputMode="numeric" min={0} value={formData.plan_qty as any} onChange={(e) => handleChange('plan_qty', e.target.value === '' ? '' : Number(e.target.value || 0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
                     </div>
                     <div className="flex flex-col">
                       <Label htmlFor="actual_qty">{t('production_qty_required')}</Label>
-                      <Input id="actual_qty" type="number" inputMode="numeric" min={0} value={formData.actual_qty as any} onChange={(e) => handleChange('actual_qty', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                      <Input id="actual_qty" type="number" inputMode="numeric" min={0} value={formData.actual_qty as any} onChange={(e) => handleChange('actual_qty', e.target.value === '' ? '' : Number(e.target.value || 0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
                     </div>
                     <div className="flex flex-col">
                       <Label htmlFor="workers">{t('worker_count')}</Label>
@@ -821,15 +820,15 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="flex flex-col">
                       <Label htmlFor="operation_time">{t('operation_time_min')}</Label>
-                      <Input id="operation_time" type="number" inputMode="numeric" min={0} value={formData.operation_time as any} onChange={(e) => handleChange('operation_time', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                      <Input id="operation_time" type="number" inputMode="numeric" min={0} value={formData.operation_time as any} onChange={(e) => handleChange('operation_time', e.target.value === '' ? '' : Number(e.target.value || 0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
                     </div>
                     <div className="flex flex-col">
                       <Label htmlFor="idle_time">{t('idle_time_min')}</Label>
-                      <Input id="idle_time" type="number" inputMode="numeric" min={0} value={formData.idle_time as any} onChange={(e) => handleChange('idle_time', e.target.value === '' ? '' : Number(e.target.value||0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
+                      <Input id="idle_time" type="number" inputMode="numeric" min={0} value={formData.idle_time as any} onChange={(e) => handleChange('idle_time', e.target.value === '' ? '' : Number(e.target.value || 0))} onFocus={selectOnFocus} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} required />
                     </div>
                     <div className="flex flex-col">
                       <Label htmlFor="total_time">{t('total_time')}</Label>
-                      <Input id="total_time" value={(formData.operation_time === '' && formData.idle_time === '') ? '' : (Number(formData.operation_time||0) + Number(formData.idle_time||0))} disabled className={`text-center bg-gray-100 ${compact ? 'h-8 text-sm px-2' : ''}`} />
+                      <Input id="total_time" value={(formData.operation_time === '' && formData.idle_time === '') ? '' : (Number(formData.operation_time || 0) + Number(formData.idle_time || 0))} disabled className={`text-center bg-gray-100 ${compact ? 'h-8 text-sm px-2' : ''}`} />
                     </div>
                   </div>
                 </CardContent>
@@ -862,7 +861,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                     <div key={it.key} className="flex flex-col">
                       <Label className="text-gray-600">{it.key === 'other' ? t('def_incoming_other') : t(`def_${it.key}`)}</Label>
                       <Input type="number" inputMode="numeric" min={0} className={`text-center ${compact ? 'h-8 text-sm px-2' : ''}`} value={incomingDefectsDetail[it.key] as any} onFocus={selectOnFocus}
-                        onChange={(e)=> { setIncomingDefectsDetail(prev => ({...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0)})); }} />
+                        onChange={(e) => { setIncomingDefectsDetail(prev => ({ ...prev, [it.key]: e.target.value === '' ? '' : (Number(e.target.value) || 0) })); }} />
                     </div>
                   ))}
                 </CardContent>
@@ -963,7 +962,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
-            <p className="text-xs text-gray-500">{lang==='zh' ? '必填: Part No / Model Code / Description' : '필수: Part No / Model Code / Description'}</p>
+            <p className="text-xs text-gray-500">{lang === 'zh' ? '必填: Part No / Model Code / Description' : '필수: Part No / Model Code / Description'}</p>
             <div className="grid grid-cols-2 gap-3">
               {(() => {
                 const isEdited = (k: string) => prefillOriginal && String(newPartForm[k] ?? '') !== String(prefillOriginal[k] ?? '');
@@ -971,36 +970,36 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 const prefilledCls = (k: string) => (prefillOriginal && prefillOriginal[k] && k !== 'part_no') ? ' bg-yellow-50 border-yellow-300' : '';
                 return (
                   <>
-                    <input 
-                      placeholder="Part No (MCK12345678…)" 
+                    <input
+                      placeholder="Part No (MCK12345678…)"
                       className={`border rounded px-2 py-1 col-span-2 bg-green-50 border-green-300`}
                       value={newPartForm.part_no}
-                      onChange={(e)=> setNewPartForm((f: any)=> ({...f, part_no: e.target.value}))}
+                      onChange={(e) => setNewPartForm((f: any) => ({ ...f, part_no: e.target.value }))}
                     />
-                    <input placeholder="Model Code (24TL510…)" className={`border rounded px-2 py-1 col-span-2${prefilledCls('model_code')}${editedCls('model_code')}`} value={newPartForm.model_code} onChange={(e)=> setNewPartForm((f:any)=> ({...f, model_code: e.target.value}))} />
-                    <input placeholder="Description (C/A, B/C…)" className={`border rounded px-2 py-1 col-span-2${prefilledCls('description')}${editedCls('description')}`} value={newPartForm.description} onChange={(e)=> setNewPartForm((f:any)=> ({...f, description: e.target.value}))} />
-                    <input placeholder="Mold Type" className={`border rounded px-2 py-1${prefilledCls('mold_type')}${editedCls('mold_type')}`} value={newPartForm.mold_type} onChange={(e)=> setNewPartForm((f:any)=> ({...f, mold_type: e.target.value}))} />
-                    <input placeholder="Color" className={`border rounded px-2 py-1${prefilledCls('color')}${editedCls('color')}`} value={newPartForm.color} onChange={(e)=> setNewPartForm((f:any)=> ({...f, color: e.target.value}))} />
-                    <input placeholder="Resin Type" className={`border rounded px-2 py-1${prefilledCls('resin_type')}${editedCls('resin_type')}`} value={newPartForm.resin_type} onChange={(e)=> setNewPartForm((f:any)=> ({...f, resin_type: e.target.value}))} />
-                    <input placeholder="Resin Code" className={`border rounded px-2 py-1${prefilledCls('resin_code')}${editedCls('resin_code')}`} value={newPartForm.resin_code} onChange={(e)=> setNewPartForm((f:any)=> ({...f, resin_code: e.target.value}))} />
-                    <input placeholder="Net(g)" className={`border rounded px-2 py-1${prefilledCls('net_weight_g')}${editedCls('net_weight_g')}`} value={newPartForm.net_weight_g} onChange={(e)=> setNewPartForm((f:any)=> ({...f, net_weight_g: e.target.value}))} />
-                    <input placeholder="S/R(g)" className={`border rounded px-2 py-1${prefilledCls('sr_weight_g')}${editedCls('sr_weight_g')}`} value={newPartForm.sr_weight_g} onChange={(e)=> setNewPartForm((f:any)=> ({...f, sr_weight_g: e.target.value}))} />
-                    <input placeholder="C/T(초)" className={`border rounded px-2 py-1${prefilledCls('cycle_time_sec')}${editedCls('cycle_time_sec')}`} value={newPartForm.cycle_time_sec} onChange={(e)=> setNewPartForm((f:any)=> ({...f, cycle_time_sec: e.target.value}))} />
-                    <input placeholder="Cavity" className={`border rounded px-2 py-1${prefilledCls('cavity')}${editedCls('cavity')}`} value={newPartForm.cavity} onChange={(e)=> setNewPartForm((f:any)=> ({...f, cavity: e.target.value}))} />
-                    <input type="date" className={`border rounded px-2 py-1${prefilledCls('valid_from')}${editedCls('valid_from')}`} value={newPartForm.valid_from} onChange={(e)=> setNewPartForm((f:any)=> ({...f, valid_from: e.target.value}))} />
+                    <input placeholder="Model Code (24TL510…)" className={`border rounded px-2 py-1 col-span-2${prefilledCls('model_code')}${editedCls('model_code')}`} value={newPartForm.model_code} onChange={(e) => setNewPartForm((f: any) => ({ ...f, model_code: e.target.value }))} />
+                    <input placeholder="Description (C/A, B/C…)" className={`border rounded px-2 py-1 col-span-2${prefilledCls('description')}${editedCls('description')}`} value={newPartForm.description} onChange={(e) => setNewPartForm((f: any) => ({ ...f, description: e.target.value }))} />
+                    <input placeholder="Mold Type" className={`border rounded px-2 py-1${prefilledCls('mold_type')}${editedCls('mold_type')}`} value={newPartForm.mold_type} onChange={(e) => setNewPartForm((f: any) => ({ ...f, mold_type: e.target.value }))} />
+                    <input placeholder="Color" className={`border rounded px-2 py-1${prefilledCls('color')}${editedCls('color')}`} value={newPartForm.color} onChange={(e) => setNewPartForm((f: any) => ({ ...f, color: e.target.value }))} />
+                    <input placeholder="Resin Type" className={`border rounded px-2 py-1${prefilledCls('resin_type')}${editedCls('resin_type')}`} value={newPartForm.resin_type} onChange={(e) => setNewPartForm((f: any) => ({ ...f, resin_type: e.target.value }))} />
+                    <input placeholder="Resin Code" className={`border rounded px-2 py-1${prefilledCls('resin_code')}${editedCls('resin_code')}`} value={newPartForm.resin_code} onChange={(e) => setNewPartForm((f: any) => ({ ...f, resin_code: e.target.value }))} />
+                    <input placeholder="Net(g)" className={`border rounded px-2 py-1${prefilledCls('net_weight_g')}${editedCls('net_weight_g')}`} value={newPartForm.net_weight_g} onChange={(e) => setNewPartForm((f: any) => ({ ...f, net_weight_g: e.target.value }))} />
+                    <input placeholder="S/R(g)" className={`border rounded px-2 py-1${prefilledCls('sr_weight_g')}${editedCls('sr_weight_g')}`} value={newPartForm.sr_weight_g} onChange={(e) => setNewPartForm((f: any) => ({ ...f, sr_weight_g: e.target.value }))} />
+                    <input placeholder="C/T(초)" className={`border rounded px-2 py-1${prefilledCls('cycle_time_sec')}${editedCls('cycle_time_sec')}`} value={newPartForm.cycle_time_sec} onChange={(e) => setNewPartForm((f: any) => ({ ...f, cycle_time_sec: e.target.value }))} />
+                    <input placeholder="Cavity" className={`border rounded px-2 py-1${prefilledCls('cavity')}${editedCls('cavity')}`} value={newPartForm.cavity} onChange={(e) => setNewPartForm((f: any) => ({ ...f, cavity: e.target.value }))} />
+                    <input type="date" className={`border rounded px-2 py-1${prefilledCls('valid_from')}${editedCls('valid_from')}`} value={newPartForm.valid_from} onChange={(e) => setNewPartForm((f: any) => ({ ...f, valid_from: e.target.value }))} />
                   </>
                 );
               })()}
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="ghost" size="sm" onClick={()=>setShowAddPartModal(false)}>{t('cancel')}</Button>
-              <Button size="sm" onClick={async()=>{
-                try{
+              <Button variant="ghost" size="sm" onClick={() => setShowAddPartModal(false)}>{t('cancel')}</Button>
+              <Button size="sm" onClick={async () => {
+                try {
                   const partNo = String(newPartForm.part_no || '').trim().toUpperCase();
                   const modelCode = String(newPartForm.model_code || '').trim().toUpperCase();
                   const description = String(newPartForm.description || '').trim();
                   if (!partNo || !modelCode || !description) {
-                    toast.error(lang==='zh' ? '请填写 Part No / Model Code / Description' : 'Part No / Model Code / Description를 입력하세요.');
+                    toast.error(lang === 'zh' ? '请填写 Part No / Model Code / Description' : 'Part No / Model Code / Description를 입력하세요.');
                     return;
                   }
 
@@ -1074,7 +1073,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                     setSelectedModelDesc({ id: -9998, part_no: '', model_code: createdModelCode, description: createdDesc } as any);
                   }
                   setSelectedPartSpec({ part_no: createdPart.part_no || partNo, model_code: createdModelCode, description: createdDesc } as any);
-                } catch(err: any) {
+                } catch (err: any) {
                   console.error('Failed to create new part:', err);
                   const errorMsg = err?.response?.data?.detail || err?.message || 'Unknown error';
                   toast.error(lang === 'zh' ? `保存失败: ${errorMsg}` : `저장 실패: ${errorMsg}`);

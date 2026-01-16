@@ -22,10 +22,9 @@ interface DataPoint {
 
 export default function AssemblyTrendChart() {
   const { data } = useAssemblyReportsTrendData();
-  const reports = (data as any) ?? [];
   const isLiteMode = document.documentElement.classList.contains('lite-mode');
-
   const dailyData: DataPoint[] = React.useMemo(() => {
+    const reports = (data as any) ?? [];
     const map = new Map<string, DataPoint>();
 
     reports.forEach((r: any) => {
@@ -47,7 +46,7 @@ export default function AssemblyTrendChart() {
     return allDates
       .filter((item) => dayjs(item.date).diff(cutoff, 'day') >= 0)
       .slice(-30);
-  }, [reports]);
+  }, [data]);
 
   const { yMin, yMax, ticks } = React.useMemo(() => {
     if (!dailyData.length) {
