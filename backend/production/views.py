@@ -32,7 +32,21 @@ class ProductionPlanSummaryView(APIView):
         plan_data_qs = ProductionPlan.objects.filter(plan_date=target_date)
         
         if not plan_data_qs.exists():
-            return Response({"error": "No plan data found for this date."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({
+                "plan_date": target_date.isoformat(),
+                "injection": {
+                    "records": [],
+                    "machine_summary": [],
+                    "model_summary": [],
+                    "daily_totals": []
+                },
+                "machining": {
+                    "records": [],
+                    "machine_summary": [],
+                    "model_summary": [],
+                    "daily_totals": []
+                }
+            })
 
         # Reconstruct the response format the frontend expects
         # Note: This is simplified. The original processor handled multiple days in one file.
