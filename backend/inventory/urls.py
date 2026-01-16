@@ -1,6 +1,11 @@
 from django.urls import path
 from . import views
 
+
+def finished_goods_transactions_view(request, *args, **kwargs):
+    from .finished_goods_views import finished_goods_transactions
+    return finished_goods_transactions(request, *args, **kwargs)
+
 urlpatterns = [
     path('', views.InventoryListView.as_view(), name='inventory_list'),
     path('refresh/', views.InventoryRefreshView.as_view(), name='inventory_refresh'),
@@ -19,6 +24,7 @@ urlpatterns = [
     path('email/schedule/', views.schedule_email_report, name='schedule_email_report'),
     path('email/status/', views.email_status, name='email_status'),
     path('warehouses/', views.WarehouseListView.as_view(), name='warehouse_list'),
+    path('finished-goods/transactions/', finished_goods_transactions_view, name='finished_goods_transactions'),
     
     # 통합 품목 관리 API
     path('unified-parts/', views.unified_parts_api, name='unified_parts_api'),

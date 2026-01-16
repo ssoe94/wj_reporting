@@ -2,9 +2,15 @@ from celery import shared_task
 from django.core.management import call_command
 from django.utils import timezone
 from datetime import timedelta
-from .models import DailyInventorySnapshot, DailyReportSummary
+from .models import (
+    DailyInventorySnapshot,
+    DailyReportSummary,
+    FinishedGoodsTransactionSnapshot,
+)
 import logging
 from django.db.models import Count, Sum
+
+from inventory.services.finished_goods import capture_finished_goods_transactions
 
 logger = logging.getLogger(__name__)
 
@@ -101,4 +107,36 @@ def cleanup_old_snapshots():
 def test_celery_connection():
     """Celery 연결 테스트용 태스크"""
     logger.info("Celery 연결 테스트 성공")
-    return "Celery is working!" 
+    return "Celery is working!"
+
+
+@shared_task
+def capture_finished_goods_slot(slot: str):
+    """완성품 입출고 스냅샷 생성 태스크"""
+    try:
+        result = capture_finished_goods_transactions(
+            slot=slot,
+            force=True,
+            logger=logger,
+        )
+        snapshot = result.snapshot
+        return {
+            "slot": slot,
+            "snapshot_id": snapshot.id,
+            "record_count": snapshot.record_count,
+            "total_in": float(snapshot.total_in),
+            "total_out": float(snapshot.total_out),
+        }
+    except Exception as exc:
+        logger.exception("Finished goods snapshot capture failed: %s", exc)
+        raise
+
+
+@shared_task
+def capture_finished_goods_morning():
+    return capture_finished_goods_slot(FinishedGoodsTransactionSnapshot.SLOT_MORNING)
+
+
+@shared_task
+def capture_finished_goods_evening():
+    return capture_finished_goods_slot(FinishedGoodsTransactionSnapshot.SLOT_EVENING)

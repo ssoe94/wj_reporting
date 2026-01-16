@@ -8,7 +8,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from . import views
 from . import urls_admin
-from injection.views import SignupRequestView, ChangePasswordView, SignupApprovalPortalView
+from injection.views import SignupRequestView, ChangePasswordView, SignupApprovalPortalView, ProductionPlanUploadView
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -20,10 +20,12 @@ api_urlpatterns = [
     path('api/overview/', include('overview.urls')),
     path('api/inventory/', include('inventory.urls')),
     path('api/quality/', include('quality.urls')),
+    path('api/production/', include('production.urls')),
     path('api/health/', views.health_check, name='health_check'),
     path('api/health', views.health_check, name='health_check_no_slash'),
     path('api/signup-request/', SignupRequestView.as_view(), name='signup_request'),
     path('api/user/change-password/', ChangePasswordView.as_view(), name='user_change_password'),
+    path('api/production/plan/upload/', ProductionPlanUploadView.as_view(), name='production-plan-upload-root'),
     path('api/ecos/', include('injection.urls_ecos')),
     path('api/eco-parts/', include('injection.urls_eco_parts')),
     path('api/admin/', include(urls_admin)),
@@ -45,7 +47,7 @@ urlpatterns = [
     path('', include(api_urlpatterns)),
 
     # SPA fallback
-    re_path(r'^(?!api/|admin/|static/|media/).*$', TemplateView.as_view(template_name='index.html')),
+    re_path(r'^(?!api/|admin/|static/|media/|accounts/).*$', TemplateView.as_view(template_name='index.html')),
 ]
 
 # 개발 환경에서 미디어 파일 서빙

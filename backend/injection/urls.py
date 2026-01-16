@@ -7,7 +7,8 @@ from .views import (
     ChangePasswordView, ResetPasswordView, CycleTimeSetupViewSet,
     CycleTimeTestRecordViewSet, InjectionMonitoringRecordListView,
     ResourceMonitorPageListView, ProductionMatrixView, MachineListView,
-    MesRawDebugView, SingleDeviceMonitorView, UpdateRecentSnapshotsView
+    MesRawDebugView, SingleDeviceMonitorView, UpdateRecentSnapshotsView,
+    ProductionPlanUploadView
 )
 
 router = DefaultRouter()
@@ -37,6 +38,7 @@ urlpatterns = [
     path('user/me/', UserMeView.as_view(), name='user-me'),
     path('user/change-password/', ChangePasswordView.as_view(), name='change-password'),
     path('user/reset-password/', ResetPasswordView.as_view(), name='reset-password'),
+    path('production/plan/upload/', ProductionPlanUploadView.as_view(), name='production-plan-upload'),
 
     # 사출 모니터링 데이터 수집 작업 관리
 

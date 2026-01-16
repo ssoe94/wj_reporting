@@ -312,6 +312,7 @@ class UserRegistrationRequest(models.Model):
 class UserProfile(models.Model):
     """사용자 권한 프로필"""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    department = models.CharField('부서', max_length=100, blank=True)
 
     # 조회 권한 (기본적으로 모든 사용자에게 부여)
     can_view_injection = models.BooleanField('사출 메뉴 접근', default=True)

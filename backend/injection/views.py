@@ -1,6 +1,7 @@
 from rest_framework import viewsets, generics, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.db import models as django_models
 from django.db.models import Q
 from django.contrib.auth import get_user_model
@@ -51,6 +52,8 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 
 from .mes_service import mes_service
+from .plan_processing import ProductionPlanProcessor, ProductionPlanProcessingError
+from production.models import ProductionPlan
 
 User = get_user_model()
 
@@ -825,6 +828,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
 
         # 프로필 권한 적용
         profile = UserProfile.get_user_permissions(user)
+        profile.department = signup_req.department
         profile.can_edit_injection = default_bool('can_edit_injection')
         profile.can_edit_assembly = default_bool('can_edit_assembly')
         profile.can_edit_quality = default_bool('can_edit_quality')
@@ -836,6 +840,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         profile.is_using_temp_password = True
         profile.password_reset_required = True
         profile.save(update_fields=[
+            'department',
             'can_edit_injection',
             'can_edit_assembly',
             'can_edit_quality',
@@ -1988,5 +1993,78 @@ class SingleDeviceMonitorView(generics.GenericAPIView):
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ProductionPlanUploadView(generics.GenericAPIView):
+    """Upload production-plan workbooks for injection or machining."""
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        uploaded_file = request.FILES.get("file")
+        plan_type = request.data.get("plan_type")
+        target_date = request.data.get("date")
+
+        if not uploaded_file:
+            return Response(
+                {"error": "파일이 제공되지 않았습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            processor = ProductionPlanProcessor(uploaded_file, plan_type, target_date)
+            response_data = processor.process()
+        except ProductionPlanProcessingError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # --- Begin: Save processed data to the database ---
+        try:
+            with transaction.atomic():
+                # 1. Get the date range and plan type from the processed data
+                available_days = response_data.get("available_days", [])
+                plan_type = response_data.get("plan_type")
+
+                if available_days and plan_type:
+                    # 2. Delete all existing plan entries within this date range for this plan type
+                    ProductionPlan.objects.filter(
+                        plan_date__in=available_days,
+                        plan_type=plan_type
+                    ).delete()
+
+                # 3. Create new records from the 'plan_long' data
+                plan_long_data = response_data.get("plan_long", [])
+                plans_to_create = []
+                for i, record in enumerate(plan_long_data):
+                    plans_to_create.append(
+                        ProductionPlan(
+                            plan_date=record.get("date"),
+                            plan_type=record.get("plan_type"),
+                            machine_name=record.get("machine"),
+                            lot_no=record.get("lot_no"),
+                            model_name=record.get("model"),
+                            part_spec=record.get("part_spec"),
+                            part_no=record.get("fg_part_no"), # fg_part_no is mapped to part_no
+                            planned_quantity=record.get("plan_qty"),
+                            sequence=record.get("original_order", i) # Use original_order, with i as fallback
+                        )
+                    )
+                
+                ProductionPlan.objects.bulk_create(plans_to_create)
+
+        except Exception as e:
+            # If the database operation fails, return an error.
+            # The file processing was successful, but saving failed.
+            return Response(
+                {"error": f"데이터베이스 저장 중 오류가 발생했습니다: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        # --- End: Save logic ---
+
+        # Return the original response data to the frontend
+        return Response(response_data)
 
 

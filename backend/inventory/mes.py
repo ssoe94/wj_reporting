@@ -21,6 +21,7 @@ USER_TOKEN_CACHE_KEY = 'mes_user_access_token'
 TOKEN_EXPIRES_KEY = 'mes_token_expires'
 
 INVENTORY_ENDPOINT = f'{MES_ROUTE_BASE}/inventory/open/v1/material_inventory/_list'
+INVENTORY_CHANGE_LOG_ENDPOINT = f'{MES_ROUTE_BASE}/inventory/open/v1/material_inventory/_list_change_log'
 
 
 def fetch_app_token() -> str:
@@ -134,4 +135,50 @@ def call_inventory_list(page:int=1, size:int=200, **filters):
                 raise
             else:
                 print(f'Retry {attempt + 1}/3 for page {page}: {str(e)}')
-                time.sleep(2)  # 2초 대기 후 재시도 
+                time.sleep(2)  # 2초 대기 후 재시도
+
+
+def call_inventory_change_log(page: int = 1, size: int = 200, **filters):
+    """
+    MES 재고 변동 기록(Change Log) API 호출
+    """
+    token = get_access_token()
+    url = f"{MES_BASE_URL}{INVENTORY_CHANGE_LOG_ENDPOINT}?access_token={token}"
+    body = {
+        'page': page,
+        'size': size,
+        **filters,
+    }
+
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json=body, timeout=120)
+            if resp.status_code == 401:
+                token = get_access_token(force_refresh=True)
+                url = f"{MES_BASE_URL}{INVENTORY_CHANGE_LOG_ENDPOINT}?access_token={token}"
+                resp = requests.post(url, json=body, timeout=120)
+
+            resp.raise_for_status()
+            response_data = resp.json()
+
+            if not response_data:
+                print(f'MES inventory change log: Empty response for page {page}')
+                return {}
+
+            if response_data.get('code') != 200:
+                error_msg = response_data.get('message', 'Unknown MES API error')
+                print(f'MES inventory change log error (page {page}): {error_msg}')
+                raise Exception(f'MES API error: {error_msg}')
+
+            return response_data.get('data') or response_data
+        except Exception as e:
+            if attempt == 2:
+                print(
+                    f'MES inventory change log error (page {page}):',
+                    resp.status_code if 'resp' in locals() else 'No response',
+                    str(e),
+                )
+                raise
+            print(f'Retry {attempt + 1}/3 for change log page {page}: {str(e)}')
+            time.sleep(2)
+    return {}

@@ -190,4 +190,81 @@ class DailyReportSummary(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.snapshot_date} - 요약 보고서" 
+        return f"{self.snapshot_date} - 요약 보고서"
+
+
+class FinishedGoodsTransactionSnapshot(models.Model):
+    """완성품 창고 입출고 집계 스냅샷 (08:00 / 20:00 기준)"""
+
+    SLOT_MORNING = 'morning'
+    SLOT_EVENING = 'evening'
+    SLOT_CHOICES = [
+        (SLOT_MORNING, '오전 8시'),
+        (SLOT_EVENING, '오후 8시'),
+    ]
+
+    slot = models.CharField('집계 구간', max_length=16, choices=SLOT_CHOICES, db_index=True)
+    report_date = models.DateField('보고 일자', db_index=True)
+    scheduled_at = models.DateTimeField('기준 시각', db_index=True)
+    range_start = models.DateTimeField('집계 시작 시각')
+    range_end = models.DateTimeField('집계 종료 시각')
+    record_count = models.IntegerField('입출고 레코드 수', default=0)
+    total_in = models.DecimalField('총 입고 수량', max_digits=20, decimal_places=4, default=0)
+    total_out = models.DecimalField('총 출고 수량', max_digits=20, decimal_places=4, default=0)
+    net_change = models.DecimalField('순 변동', max_digits=20, decimal_places=4, default=0)
+    warehouse_filter = models.JSONField('창고 필터', default=list, blank=True)
+    metadata = models.JSONField('부가 정보', default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = '완성품 입출고 스냅샷'
+        verbose_name_plural = '완성품 입출고 스냅샷'
+        ordering = ['-scheduled_at']
+        unique_together = [('slot', 'report_date')]
+        indexes = [
+            models.Index(fields=['slot', 'scheduled_at']),
+            models.Index(fields=['report_date', 'slot']),
+        ]
+
+    def __str__(self):
+        slot = dict(self.SLOT_CHOICES).get(self.slot, self.slot)
+        return f"{self.report_date} {slot}"
+
+
+class FinishedGoodsTransaction(models.Model):
+    """완성품 창고 입출고 집계 행"""
+
+    snapshot = models.ForeignKey(
+        FinishedGoodsTransactionSnapshot,
+        related_name='transactions',
+        on_delete=models.CASCADE,
+        verbose_name='연결된 스냅샷',
+    )
+    material_code = models.CharField('모델 코드', max_length=100, db_index=True)
+    material_name = models.CharField('모델 명', max_length=255, blank=True)
+    specification = models.CharField('규격', max_length=255, blank=True)
+    warehouse_code = models.CharField('창고 코드', max_length=50, blank=True)
+    warehouse_name = models.CharField('창고 이름', max_length=255, blank=True)
+    unit = models.CharField('단위', max_length=20, blank=True)
+    total_in = models.DecimalField('입고 수량', max_digits=20, decimal_places=4, default=0)
+    total_out = models.DecimalField('출고 수량', max_digits=20, decimal_places=4, default=0)
+    net_change = models.DecimalField('순 변동', max_digits=20, decimal_places=4, default=0)
+    record_count = models.IntegerField('레코드 수', default=0)
+    last_in_time = models.DateTimeField('마지막 입고 시간', null=True, blank=True)
+    last_out_time = models.DateTimeField('마지막 출고 시간', null=True, blank=True)
+    action_breakdown = models.JSONField('액션 집계', default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = '완성품 입출고 집계'
+        verbose_name_plural = '완성품 입출고 집계'
+        ordering = ['material_code']
+        indexes = [
+            models.Index(fields=['snapshot', 'material_code']),
+            models.Index(fields=['material_code']),
+        ]
+
+    def __str__(self):
+        return f"{self.material_code} ({self.snapshot})"

@@ -34,12 +34,12 @@ services:
     # Connect to the same shared environment variables to access the database etc.
     envVarGroup: shared-secrets
 
-  # Hourly Injection Monitoring Snapshot
+  # Injection Monitoring Snapshot (every 10 minutes)
   - type: cron
-    name: hourly-injection-snapshot
+    name: injection-snapshot-10min
     env: python
     rootDir: backend
-    schedule: "0 * * * *"  # Runs at the start of every hour (UTC)
+    schedule: "*/10 * * * *"  # Runs every 10 minutes (UTC)
     buildCommand: bash build.sh
     startCommand: python run_hourly_snapshot.py
     envVarGroup: shared-secrets

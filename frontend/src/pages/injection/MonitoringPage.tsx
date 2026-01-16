@@ -4,6 +4,9 @@ import { format } from 'date-fns';
 import { ko, zhCN } from 'date-fns/locale';
 import { useLang } from '@/i18n';
 import api from '@/lib/api';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Terminal } from 'lucide-react';
+import { InjectionIcon } from '@/components/common/CustomIcons';
 
 // 타입 정의
 interface MachineInfo {
@@ -20,6 +23,15 @@ interface TimeSlot {
   interval_minutes?: number;
 }
 
+interface SetupInfo {
+  part_no: string;
+  model_code: string;
+  target_cycle_time: number;
+  personnel_count: number;
+  status: string;
+  setup_date: string;
+}
+
 interface ProductionMatrixData {
   timestamp: string;
   time_slots: TimeSlot[];
@@ -29,6 +41,7 @@ interface ProductionMatrixData {
   cumulative_production_matrix: { [key: string]: number[] };
   actual_production_matrix: { [key: string]: number[] };
   oil_temperature_matrix: { [key: string]: number[] };
+  setup_data_map: { [key: string]: SetupInfo };
 }
 
 // 생산 매트릭스 데이터 조회 (24시간)
@@ -45,21 +58,43 @@ const getCumulativeStyle = (value: number) => {
   return 'text-purple-600 font-semibold';
 };
 
-const getActualCellStyle = (value: number) => {
-  if (value > 0) {
+const getActualCellStyle = (actual: number, targetUPH: number | null) => {
+  if (actual <= 0) {
+    return {
+      cellClass: 'bg-gray-100 border-gray-200',
+      textClass: 'text-gray-400',
+    };
+  }
+  if (targetUPH === null || targetUPH <= 0) {
     return {
       cellClass: 'bg-amber-50 border-amber-200',
       textClass: 'text-amber-700 font-semibold',
     };
   }
+
+  const ratio = actual / targetUPH;
+
+  if (ratio >= 0.95) { // 95% 이상: 매우 좋음
+    return {
+      cellClass: 'bg-green-100 border-green-200',
+      textClass: 'text-green-800 font-bold',
+    };
+  }
+  if (ratio >= 0.8) { // 80% 이상: 양호
+    return {
+      cellClass: 'bg-blue-50 border-blue-200',
+      textClass: 'text-blue-700 font-semibold',
+    };
+  }
+  // 80% 미만: 주의
   return {
-    cellClass: 'bg-gray-100 border-gray-200',
-    textClass: 'text-gray-400',
+    cellClass: 'bg-red-100 border-red-200',
+    textClass: 'text-red-700 font-bold',
   };
 };
 
 const getTemperatureStyle = (value: number | null, slotTime: string) => {
-  if (value === null || Number.isNaN(value)) {
+  if (value === null || Number.isNaN(value) || value === 0) {
     return 'text-gray-400';
   }
   const date = new Date(slotTime);
@@ -115,7 +150,18 @@ export default function InjectionMonitoringPage() {
   }
 
   if (error) {
-    return <div className="p-4 text-red-500">Error: {error.message}</div>;
+    return (
+      <div className="p-4">
+        <Alert variant="destructive">
+          <Terminal className="h-4 w-4" />
+          <AlertTitle>MES Data Error</AlertTitle>
+          <AlertDescription>
+            <p>MES 데이터 조회에 실패했습니다. MES 서비스 상태 또는 API 인증 정보를 확인해주세요.</p>
+            <p className="text-xs text-gray-500 mt-2">Details: {error.message}</p>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
   }
 
   if (!data) return null;
@@ -134,14 +180,13 @@ export default function InjectionMonitoringPage() {
           </div>
 
           <div className="flex items-center space-x-4">
-             <button
+            <button
               onClick={handleUpdate}
               disabled={isUpdating}
-              className={`px-4 py-2 rounded-lg transition-colors w-48 text-center ${
-                isUpdating
-                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
+              className={`px-4 py-2 rounded-lg transition-colors w-48 text-center ${isUpdating
+                ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
             >
               {isUpdating ? t('monitoring.updating_button') : t('monitoring.update_button')}
             </button>
@@ -162,14 +207,14 @@ export default function InjectionMonitoringPage() {
             <table className="min-w-full">
               <thead className="bg-white sticky top-0 z-10">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider border-r border-gray-200 min-w-[250px]">
                     {t('monitoring.machine_header')}
                   </th>
                   {reversedTimeSlots.map((slot) => (
                     <th
                       key={slot.hour_offset}
                       scope="col"
-                      className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 min-w-[100px]"
+                      className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 min-w-[120px]"
                     >
                       <>
                         <span>{format(new Date(slot.time), 'yyyy-MM-dd', { locale: lang === 'ko' ? ko : zhCN })}</span>
@@ -182,23 +227,48 @@ export default function InjectionMonitoringPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {data.machines.map((machine) => {
-                  const cumulativeData = data.cumulative_production_matrix[machine.machine_number.toString()]?.slice().reverse() || [];
-                  const actualData = data.actual_production_matrix[machine.machine_number.toString()]?.slice().reverse() || [];
-                  const tempData = data.oil_temperature_matrix[machine.machine_number.toString()]?.slice().reverse() || [];
+                  const machineNumStr = machine.machine_number.toString();
+                  const setup = data.setup_data_map?.[machineNumStr];
+                  const targetUPH = setup && setup.target_cycle_time > 0 ? 3600 / setup.target_cycle_time : null;
+
+                  const cumulativeData = data.cumulative_production_matrix[machineNumStr]?.slice().reverse() || [];
+                  const actualData = data.actual_production_matrix[machineNumStr]?.slice().reverse() || [];
+                  const tempData = data.oil_temperature_matrix[machineNumStr]?.slice().reverse() || [];
 
                   return (
                     <tr key={machine.machine_number} className="hover:bg-gray-50">
                       <td className="px-4 py-4 whitespace-nowrap border-r border-gray-200 text-center">
-                        <div className="text-sm font-medium text-gray-900">
+                        <div className="text-sm font-medium text-gray-900 flex items-center justify-center gap-2">
+                          <InjectionIcon className="w-5 h-5 text-blue-500" />
                           {(machine.display_name.endsWith('T') ? machine.display_name : `${machine.display_name}T`).replace('호기', t('호기'))}
                         </div>
+                        {setup ? (
+                          <div className="text-xs text-gray-600 mt-1 space-y-0.5">
+                            <div className="font-bold text-blue-700">{setup.part_no}</div>
+                            <div>
+                              <span className="font-semibold">{t('monitoring.target_uph')}:</span> {targetUPH ? Math.round(targetUPH) : '-'}
+                            </div>
+                            <div>
+                              <span className="font-semibold">{t('monitoring.target_ct')}:</span> {setup.target_cycle_time}s
+                            </div>
+                            <div>
+                              <span className="font-semibold">{t('monitoring.personnel')}:</span> {setup.personnel_count}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400 mt-1">{t('monitoring.no_setup_data')}</div>
+                        )}
                       </td>
                       {reversedTimeSlots.map((slot, index) => {
                         const cumulative = cumulativeData[index] || 0;
                         const actual = actualData[index] || 0;
                         const rawTemp = tempData[index];
                         const temperature = rawTemp === undefined ? null : Number(rawTemp);
-                        const { cellClass, textClass } = getActualCellStyle(actual);
+
+                        const intervalMinutes = data.interval_type === '30min' ? 30 : 60;
+                        const hourlyActual = actual * (60 / intervalMinutes);
+
+                        const { cellClass, textClass } = getActualCellStyle(hourlyActual, targetUPH);
                         const tempClass = getTemperatureStyle(temperature, slot.time);
 
                         return (
@@ -211,8 +281,9 @@ export default function InjectionMonitoringPage() {
                                 <div className={`${getCumulativeStyle(cumulative)} text-xs`}>
                                   {t('monitoring.cumulative_label')}: {cumulative.toLocaleString()}
                                 </div>
-                                <div className={`${textClass} text-xs font-medium`}>
-                                  {data.interval_type === '30min' ? t('monitoring.per_30min_label') : t('monitoring.per_hour_label')}: {actual}{t('monitoring.unit_label')}
+                                <div className={`${textClass} text-sm`}>
+                                  {hourlyActual.toFixed(0)}
+                                  <span className="text-xs"> UPH</span>
                                 </div>
                                 <div className={`${tempClass} text-xs`}>
                                   {t('monitoring.temp_label')}: {temperature !== null ? temperature.toFixed(1) : '-'}°C

@@ -183,7 +183,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = [
-            'id', 'user', 'username', 'email', 'first_name',
+            'id', 'user', 'username', 'email', 'first_name', 'department',
             'can_view_injection', 'can_view_assembly', 'can_view_quality',
             'can_view_sales', 'can_view_development',
             'can_edit_injection', 'can_edit_assembly', 'can_edit_quality',

@@ -131,7 +131,48 @@ export const endpoints = {
       return '/injection/reports/summary/';
     },
   },
+  production: {
+    upload: () => '/production/plan/upload/',
+    dashboard: (date: string, planType: 'injection' | 'machining') =>
+      `/production/dashboard/?date=${validateAndEncodeParam(date, 'date')}&plan_type=${validateAndEncodeParam(planType, 'planType')}`,
+    planDates: () => '/production/plan-dates/',
+    planSummary: (date: string) => `/production/plan-summary/?date=${validateAndEncodeParam(date, 'date')}`,
+    status: (date: string) => `/production/status/?date=${validateAndEncodeParam(date, 'date')}`,
+  },
 };
 
 export { api };
 export default api; 
+
+export async function uploadProductionPlanFile(file: File, planType: 'injection' | 'machining', targetDate: string) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('plan_type', planType);
+  // target_date is the key expected by the backend
+  formData.append('date', targetDate);
+
+  const response = await api.post(endpoints.production.upload(), formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+}
+
+export async function getProductionDashboardData(date: string, planType: 'injection' | 'machining') {
+  const response = await api.get(endpoints.production.dashboard(date, planType));
+  return response.data;
+}
+
+export async function getProductionStatusData(date: string) {
+  const response = await api.get(endpoints.production.status(date));
+  return response.data;
+}
+
+export async function getProductionPlanDates() {
+  const response = await api.get(endpoints.production.planDates());
+  return response.data;
+}
+
+export async function getProductionPlanSummary(date: string) {
+  const response = await api.get(endpoints.production.planSummary(date));
+  return response.data;
+}

@@ -1,191 +1,147 @@
 # WJ Reporting System
 
-![Test and Deploy](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/test-and-deploy.yml/badge.svg)
+## 1. Project Overview
+**WJ Reporting System** is a production data reporting system for manufacturing environments. It tracks injection molding records, assembly data, inventory snapshots, and quality monitoring.
 
-생산 현장 데이터 리포팅 시스템
+### Key Features
+- ✅ Injection Molding Records Management
+- ✅ Assembly Data Tracking
+- ✅ Inventory Snapshots
+- ✅ Quality Monitoring
+- ✅ Real-time Dashboard
+- ✅ Role-based Access Control (RBAC)
 
-## 🚀 빠른 시작
-
-### 배포 전
-```bash
-bash scripts/release-checklist.sh
-```
-
-### 배포
-```bash
-git push origin main
-```
-
-### 배포 후 검증
-```bash
-bash scripts/quick-smoke-test.sh
-```
-
-## 📁 프로젝트 구조
-
-```
-production-site/
-├── frontend/           # React + Vite 프론트엔드
-├── backend/            # Django REST API
-├── scripts/            # 배포 및 검증 스크립트
-├── tests/              # E2E 테스트
-└── .github/            # GitHub Actions 워크플로
-```
-
-## 🛠️ 기술 스택
+## 2. Technology Stack
 
 ### Frontend
-- React 18
-- TypeScript
-- Vite
-- Axios
-- TailwindCSS
+- **Framework**: React 18, TypeScript, Vite
+- **Styling**: TailwindCSS
+- **HTTP Client**: Axios
+- **State Management**: React Context / Hooks
 
 ### Backend
-- Django 5.2
-- Django REST Framework
-- PostgreSQL
-- JWT Authentication
+- **Framework**: Django 5.2, Django REST Framework (DRF)
+- **Database**: PostgreSQL
+- **Authentication**: JWT (JSON Web Tokens)
+- **Media Storage**: Cloudinary
 
 ### Infrastructure
-- Render (호스팅)
-- GitHub Actions (CI/CD)
+- **Hosting**: Render
+- **CI/CD**: GitHub Actions
 
-## 📚 문서
-
-- [배포 가이드](README_DEPLOYMENT.md) - 빠른 배포 가이드
-- [GitHub Actions 설정](GITHUB_SETUP.md) - CI/CD 설정 방법
-- [테스트 가이드](TESTING.md) - 테스트 실행 방법
-- [문제 해결](TROUBLESHOOTING.md) - 증상별 해결 방법
-- [배포 체크리스트](DEPLOYMENT_CHECKLIST.md) - 상세 체크리스트
-- [전체 솔루션](DEPLOYMENT_SOLUTION.md) - 아키텍처 및 솔루션
-
-## 🧪 테스트
-
-```bash
-# 빠른 스모크 테스트
-npm run test:smoke
-
-# 전체 배포 검증
-npm run verify:deployment
-
-# E2E 테스트
-npm run test:e2e
-
-# 릴리즈 체크리스트
-npm run release:check
+## 3. Project Structure
+```
+production-site/
+├── frontend/           # React + Vite Frontend
+├── backend/            # Django REST API
+├── scripts/            # Deployment & Verification Scripts
+├── tests/              # E2E Tests
+└── .github/            # GitHub Actions Workflows
 ```
 
-## 🔄 CI/CD 파이프라인
+## 4. Setup & Development Guide
 
-### PR 생성 시
-1. 린트 및 유닛 테스트 실행
-2. 백엔드 테스트 실행
-3. 현재 프로덕션 스모크 테스트
-4. ✅ 통과 시 머지 가능
+### Prerequisites
+- Node.js (v18+)
+- Python (v3.10+)
+- PostgreSQL
 
-### main 브랜치 푸시 시
-1. 모든 테스트 실행
-2. ✅ 통과 시 백엔드 배포
-3. 백엔드 Health Check 대기
-4. 프론트엔드 배포
-5. 배포 검증 (smoke test)
-6. 🎉 완료!
-
-## 🔧 개발 환경 설정
-
-### Frontend
+### Frontend Setup
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+- **Environment Variables** (`frontend/.env.production`):
+  - `VITE_API_BASE_URL=/api`
 
-### Backend
+### Backend Setup
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# Windows
+venv\Scripts\activate
+# Mac/Linux
+source venv/bin/activate
+
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py runserver
 ```
+- **Environment Variables** (`backend/.env`):
+  - `SECRET_KEY`: Your secret key
+  - `DEBUG`: True/False
+  - `DATABASE_URL`: PostgreSQL connection string
+  - `CLOUDINARY_*`: Cloudinary credentials
 
-## 🌐 환경 변수
+## 5. Deployment Guide (Render)
 
-### Frontend (.env.production)
+### Automation
+This project is configured for **automated deployment** on Render.
+- **Migrations**: Automatically applied via `startCommand`.
+- **User Setup**: Existing users and groups are automatically configured via migrations and signals.
+
+### Deployment Process
+1. **Push to Main**: `git push origin main` triggers the CI/CD pipeline.
+2. **CI/CD**: GitHub Actions runs tests.
+3. **Deploy**: If tests pass, Render automatically deploys the backend and frontend.
+
+### Verification
+After deployment, run the smoke test:
 ```bash
-VITE_API_BASE_URL=/api
+bash scripts/quick-smoke-test.sh
 ```
 
-### Backend (.env)
-```bash
-SECRET_KEY=your-secret-key
-DEBUG=False
-DATABASE_URL=postgresql://...
-FRONTEND_URL=https://your-frontend.onrender.com
-```
+## 6. Troubleshooting
 
-## 📊 주요 기능
+### Common Issues
+- **Unexpected token '<'**: Usually caused by incorrect proxy settings or 404s returning `index.html`. Check `render.yaml` rewrites.
+- **CORS Errors**: Check `CORS_ALLOWED_ORIGINS` in Django settings and ensure the frontend domain is listed.
+- **404 returning HTML**: Ensure `APINotFoundMiddleware` is active in Django.
+- **Environment Variables**: Frontend variables must start with `VITE_` and are baked in at build time.
+- **VPN/Network**: If you cannot connect to localhost, try temporarily disabling your VPN or checking firewall settings.
 
-- ✅ 사출 기록 관리
-- ✅ 조립 데이터 추적
-- ✅ 재고 스냅샷
-- ✅ 품질 모니터링
-- ✅ 실시간 대시보드
-- ✅ 권한 기반 접근 제어
+### Debugging Tools
+- **Browser DevTools**: Network tab for API requests.
+- **Django Logs**: Check Render dashboard logs.
+- **Verification Scripts**: `node scripts/verify-deployment.js`
 
-## 🔐 보안
+## 7. Cloudinary Setup
+Images are stored in Cloudinary.
+- **Backend**: Generates signed URLs for secure uploads.
+- **Frontend**: Uploads directly to Cloudinary using the signature.
+- **Credentials**: Managed via environment variables (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`).
 
-- JWT 기반 인증
-- CORS/CSRF 보호
-- 환경 변수로 민감 정보 관리
-- HTTPS 강제
-- 쿠키 보안 설정
+## 8. Security
+- **HTTPS**: Enforced in production.
+- **Secrets**: Managed via environment variables. Never commit `.env` files.
+- **DEBUG**: Must be `False` in production.
+- **Access Control**: JWT for API, RBAC for feature access.
 
-## 🐛 문제 해결
+## 9. Features & Functionality
 
-문제가 발생하면:
-1. [TROUBLESHOOTING.md](TROUBLESHOOTING.md) 참고
-2. 검증 스크립트 실행: `bash scripts/quick-smoke-test.sh`
-3. GitHub Actions 로그 확인
-4. Render 배포 로그 확인
+### Core Modules
+- **Injection**: Manage injection molding production records and machine data.
+- **Assembly**: Track assembly line production and performance.
+- **Quality**: Report defects, upload images (Cloudinary), and monitor quality metrics.
+- **Inventory**: View stock levels and manage inventory snapshots.
+- **ECO (Engineering Change Order)**: Manage and track engineering changes.
+- **Sales**: Track sales performance and orders.
+- **Analysis**: Visual data analysis and reporting tools.
+- **Admin**: User management, role-based access control (RBAC), and system configuration.
 
-## 📞 지원
+### System Features
+- **Authentication**: Secure login/signup with JWT.
+- **Dashboard**: Real-time overview of key metrics.
+- **Responsive Design**: Optimized for desktop and tablet use.
 
-- 문서: 위 링크 참고
-- 이슈: GitHub Issues
-- 로그: Render Dashboard
+## 10. Git Status & Deployment Info
+*(As of 2026-01-06)*
 
-## 📄 라이선스
-
-Private Project
-
-## 🙏 기여
-
-1. Fork the repository
-2. Create your feature branch
-3. Run tests: `npm run test:e2e`
-4. Commit your changes
-5. Push to the branch
-6. Create a Pull Request
-
----
-
-Made with ❤️ for WJ Manufacturing
-
----
-
-## Security & Auth Refactoring (2025-10-15)
-
-This section summarizes the updated authentication and security model.
-
-- **JWT Usage**: The API (`/api/`) now exclusively uses JWT (`Bearer` token) for authentication. Cookie-based sessions are no longer used for the API.
-- **Token Endpoints**:
-  - `POST /api/token/`: Obtain `access` and `refresh` tokens.
-  - `POST /api/token/refresh/`: Obtain a new `access` token.
-- **CORS/CSRF Policy**:
-  - `CORS`: Only allows the production frontend origin (`https://wj-reporting.onrender.com`) and local development server. Credentials (cookies) are not allowed.
-  - `CSRF`: Protection is enabled, but trusted origins are configured. API calls do not require a CSRF token as they are not cookie-based.
-- **Admin Permission Criteria**: Actions like user approval require admin rights (`user.is_staff=True`), enforced by the `IsAdminUser` permission class on the backend.
-- **Testing Method**: Use `curl` to test token issuance and protected endpoint access. See developer documentation for examples.
+- **Current Branch**: `main`
+- **Status**: Up to date with `origin/main`.
+- **Recent Updates**:
+  - Password reset functionality fixes.
+  - Deployment speed improvements.
+  - Cloudinary integration for quality reports.
+- **Deployed Version**: Matches `origin/main`.

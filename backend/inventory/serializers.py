@@ -1,5 +1,12 @@
 from rest_framework import serializers
-from .models import StagingInventory, FactInventory, DailyInventorySnapshot, UnifiedPartSpec
+from .models import (
+    StagingInventory,
+    FactInventory,
+    DailyInventorySnapshot,
+    UnifiedPartSpec,
+    FinishedGoodsTransaction,
+    FinishedGoodsTransactionSnapshot,
+)
 
 
 class StagingInventorySerializer(serializers.ModelSerializer):
@@ -62,4 +69,53 @@ class DailyReportSerializer(serializers.Serializer):
     quantity_change = serializers.DecimalField(max_digits=20, decimal_places=4, allow_null=True)
     quantity_change_percent = serializers.FloatField(allow_null=True)
     prev_cart_count = serializers.IntegerField(allow_null=True)
-    cart_count_change = serializers.IntegerField(allow_null=True) 
+    cart_count_change = serializers.IntegerField(allow_null=True)
+
+
+class FinishedGoodsTransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FinishedGoodsTransaction
+        fields = [
+            'id',
+            'material_code',
+            'material_name',
+            'specification',
+            'warehouse_code',
+            'warehouse_name',
+            'unit',
+            'total_in',
+            'total_out',
+            'net_change',
+            'record_count',
+            'last_in_time',
+            'last_out_time',
+            'action_breakdown',
+            'created_at',
+            'updated_at',
+        ]
+
+
+class FinishedGoodsTransactionSnapshotSerializer(serializers.ModelSerializer):
+    transactions = FinishedGoodsTransactionSerializer(many=True, read_only=True)
+    slot_display = serializers.CharField(source='get_slot_display', read_only=True)
+
+    class Meta:
+        model = FinishedGoodsTransactionSnapshot
+        fields = [
+            'id',
+            'slot',
+            'slot_display',
+            'report_date',
+            'scheduled_at',
+            'range_start',
+            'range_end',
+            'record_count',
+            'total_in',
+            'total_out',
+            'net_change',
+            'warehouse_filter',
+            'metadata',
+            'created_at',
+            'updated_at',
+            'transactions',
+        ]
