@@ -54,7 +54,7 @@ export default function OEEDashboard() {
   // 실제 데이터의 날짜 범위 계산
   const dataDateRange = useMemo(() => {
     if (reports.length === 0) return { minDate: '', maxDate: '' };
-    
+
     const dates = reports.map(r => r.date).sort();
     return {
       minDate: dates[0],
@@ -95,6 +95,7 @@ export default function OEEDashboard() {
     rangeMetrics,
     overallMetrics
   } = React.useMemo(() => {
+    const reports = data ?? [];
     if (!reports.length) {
       return {
         chartData: [] as OEEData[],
@@ -202,7 +203,7 @@ export default function OEEDashboard() {
   // 비교 모드에서 날짜 선택 처리
   const handleDateClick = (date: string) => {
     if (!compareMode) return;
-    
+
     setSelectedDates(prev => {
       if (prev.includes(date)) {
         return prev.filter(d => d !== date);
@@ -217,27 +218,27 @@ export default function OEEDashboard() {
   // 비교 데이터 계산
   const comparisonData = useMemo(() => {
     if (selectedDates.length !== 2) return null;
-    
+
     const [date1, date2] = selectedDates;
     const data1 = oeeData.find(d => d.date === date1);
     const data2 = oeeData.find(d => d.date === date2);
-    
+
     if (!data1 || !data2) return null;
-    
+
     return { date1: data1, date2: data2 };
   }, [selectedDates, oeeData]);
 
   // 사출기별 상세 데이터 계산
   const machineComparisonData = useMemo(() => {
     if (selectedDates.length !== 2) return null;
-    
+
     const [date1, date2] = selectedDates;
-    
+
     // 각 날짜별 사출기 데이터 그룹화
     const getMachineData = (date: string) => {
       const dayReports = reports.filter(r => r.date === date);
       const machineMap = new Map<number, any>();
-      
+
       dayReports.forEach(r => {
         const machineNo = r.machine_no;
         if (!machineMap.has(machineNo)) {
@@ -251,7 +252,7 @@ export default function OEEDashboard() {
             total_time: 0
           });
         }
-        
+
         const machine = machineMap.get(machineNo);
         machine.actual_qty += r.actual_qty || 0;
         machine.plan_qty += r.plan_qty || 0;
@@ -259,16 +260,16 @@ export default function OEEDashboard() {
         machine.operation_time += r.operation_time || 0;
         machine.total_time += r.total_time || 1440; // 기본 24시간
       });
-      
+
       // 성능률과 품질률 계산
       return Array.from(machineMap.values()).map(machine => {
-        const performance = machine.plan_qty > 0 
-          ? (machine.total_qty / machine.plan_qty) * 100 
+        const performance = machine.plan_qty > 0
+          ? (machine.total_qty / machine.plan_qty) * 100
           : 0;
-        const quality = machine.total_qty > 0 
-          ? (machine.actual_qty / machine.total_qty) * 100 
+        const quality = machine.total_qty > 0
+          ? (machine.actual_qty / machine.total_qty) * 100
           : 0;
-        
+
         return {
           ...machine,
           performance: Math.round(performance * 10) / 10,
@@ -276,16 +277,16 @@ export default function OEEDashboard() {
         };
       }).sort((a, b) => a.machine_no - b.machine_no);
     };
-    
+
     const date1Data = getMachineData(date1);
     const date2Data = getMachineData(date2);
-    
+
     // 모든 사출기 번호 수집
     const allMachineNos = new Set([
       ...date1Data.map(d => d.machine_no),
       ...date2Data.map(d => d.machine_no)
     ]);
-    
+
     return {
       date1,
       date2,
@@ -549,7 +550,7 @@ export default function OEEDashboard() {
                   {machineComparisonData.allMachineNos.map((machineNo, index) => {
                     const date1Machine = machineComparisonData.date1Data.find(d => d.machine_no === machineNo);
                     const date2Machine = machineComparisonData.date2Data.find(d => d.machine_no === machineNo);
-                    
+
                     return (
                       <tr key={machineNo} className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'} hover:bg-blue-50`}>
                         <td className="px-4 py-2 font-medium border-b">{machineNo}{t('호기')}</td>

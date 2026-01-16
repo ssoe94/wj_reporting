@@ -98,37 +98,37 @@ const minuteOptions = (step: number) => Array.from({ length: Math.floor(60 / ste
 // 직접 입력을 위한 파싱 함수 (엄격한 검증 포함)
 function parseDirectInput(value: string): Date | null {
   if (!value || value.length !== 16) return null; // "YYYY-MM-DD HH:mm" 정확한 길이만
-  
+
   // 정규식으로 정확한 형식 검증
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
   if (!match) return null;
-  
+
   const [, year, month, day, hour, minute] = match;
   const y = parseInt(year);
   const m = parseInt(month);
   const d = parseInt(day);
   const h = parseInt(hour);
   const min = parseInt(minute);
-  
+
   // 범위 검증
   if (y < 1900 || y > 2100) return null;
   if (m < 1 || m > 12) return null;
   if (d < 1 || d > 31) return null;
   if (h < 0 || h > 23) return null; // 24시간 형식
   if (min < 0 || min > 59) return null;
-  
+
   // Date 객체 생성 및 검증
   const date = new Date(y, m - 1, d, h, min, 0, 0);
-  
+
   // 생성된 Date가 입력값과 일치하는지 확인 (예: 2월 30일 같은 잘못된 날짜 방지)
-  if (date.getFullYear() !== y || 
-      date.getMonth() !== m - 1 || 
-      date.getDate() !== d ||
-      date.getHours() !== h ||
-      date.getMinutes() !== min) {
+  if (date.getFullYear() !== y ||
+    date.getMonth() !== m - 1 ||
+    date.getDate() !== d ||
+    date.getHours() !== h ||
+    date.getMinutes() !== min) {
     return null;
   }
-  
+
   return date;
 }
 
@@ -154,8 +154,8 @@ function formatDateTimeInput(value: string): string {
   if (!d.isValid()) {
     const digits = value.replace(/\D/g, '');
     if (digits.length > 4) {
-        let dateString = digits.substring(0,4) + '-' + digits.substring(4,6) + '-' + digits.substring(6,8) + ' ' + digits.substring(8,10) + ':' + digits.substring(10,12);
-        d = dayjs(dateString);
+      const dateString = digits.substring(0, 4) + '-' + digits.substring(4, 6) + '-' + digits.substring(6, 8) + ' ' + digits.substring(8, 10) + ':' + digits.substring(10, 12);
+      d = dayjs(dateString);
     }
   }
 
@@ -195,7 +195,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
 
     // storage 이벤트 리스너 (다른 탭에서 변경 시)
     window.addEventListener('storage', handleStorageChange);
-    
+
     // 동일 탭에서 변경 감지를 위한 주기적 체크
     const interval = setInterval(handleStorageChange, 100);
 
@@ -207,7 +207,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
 
   // const [currentStep, setCurrentStep] = React.useState<'start' | 'end'>('start'); // 경량모드 모달에서 사용되었으나 현재 미사용
   const [useDirectInput, setUseDirectInput] = React.useState(false);
-  
+
   // 직접 입력용 상태
   const [directStartInput, setDirectStartInput] = React.useState('');
   const [directEndInput, setDirectEndInput] = React.useState('');
@@ -223,7 +223,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
   const sDT = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), Number(sHour), Number(sMin), 0);
   const eDT = new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), Number(eHour), Number(eMin), 0);
   const durMin = Math.max(0, Math.floor((eDT.getTime() - sDT.getTime()) / 60000));
-  const summary = `${dayjs(sDT).format('M/D(dd) HH:mm')} ~ ${dayjs(eDT).format('M/D(dd) HH:mm')} · ${Math.floor(durMin/60)}h ${durMin%60}m`;
+  const summary = `${dayjs(sDT).format('M/D(dd) HH:mm')} ~ ${dayjs(eDT).format('M/D(dd) HH:mm')} · ${Math.floor(durMin / 60)}h ${durMin % 60}m`;
   const [sMonth, setSMonth] = React.useState<Date>(dayjs(sDate).startOf('month').toDate());
   const [eMonth, setEMonth] = React.useState<Date>(dayjs(eDate).startOf('month').toDate());
 
@@ -237,7 +237,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
     const v: ProductionTime & { durationMin: number } = {
       startAt: toLocalIso(s.getFullYear(), s.getMonth(), s.getDate(), Number(dayjs(s).format('HH')), Number(dayjs(s).format('mm'))),
       endAt: toLocalIso(e.getFullYear(), e.getMonth(), e.getDate(), Number(dayjs(e).format('HH')), Number(dayjs(e).format('mm'))),
-      durationMin: Math.max(0, Math.floor((e.getTime() - s.getTime())/60000)),
+      durationMin: Math.max(0, Math.floor((e.getTime() - s.getTime()) / 60000)),
     };
     const res = validate(s, e);
     onValidate && onValidate(res);
@@ -281,7 +281,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
   const applyDirectInput = (type: 'start' | 'end') => {
     const value = type === 'start' ? directStartInput : directEndInput;
     const formatted = formatDateTimeInput(value);
-    
+
     if (type === 'start') {
       setDirectStartInput(formatted);
     } else {
@@ -304,7 +304,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
       const v = validate(startDate, endDate);
       onValidate && onValidate(v);
       setDirectInputError(v.ok ? null : v.message || null);
-      
+
       if (v.ok) {
         emit(startDate, endDate);
         setSDate(startDate);
@@ -458,31 +458,31 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
   const standardDialogPanel = (
     <div className="w-full md:w-[740px] bg-white rounded-2xl shadow-xl border max-h-[80vh] overflow-hidden">
       <div className={`sticky top-0 z-10 bg-white p-4 border-b text-xs ${eDT.getTime() < sDT.getTime() ? 'text-red-600' : 'text-gray-500'}`}>{summary}
-        <button type="button" className="float-right text-gray-400 hover:text-gray-600" onClick={()=> setOpen(false)}>✕</button>
+        <button type="button" className="float-right text-gray-400 hover:text-gray-600" onClick={() => setOpen(false)}>✕</button>
       </div>
       <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-auto">
         {/* Start */}
         <div className="min-w-[320px] p-4">
           <div className="text-sm font-semibold mb-3">{L.start}</div>
           <div className="flex flex-wrap gap-2 mb-3">
-            <Button type="button" variant="secondary" onClick={()=>{ const d=dayjs(); setSDate(d.toDate()); setSHour(d.format('HH')); setSMin(d.format('mm')); }}>{L.now}</Button>
-            <Button type="button" variant="secondary" onClick={()=>{ const d=dayjs(); setSDate(d.toDate()); }}>{L.today}</Button>
-            <Button type="button" variant="secondary" onClick={()=>{ const d=dayjs().add(1,'day'); setSDate(d.toDate()); }}>{L.tomorrow}</Button>
-            <Button type="button" variant="secondary" onClick={()=>{ const d=dayjs().add(2,'day'); setSDate(d.toDate()); }}>{L.dayAfter}</Button>
+            <Button type="button" variant="secondary" onClick={() => { const d = dayjs(); setSDate(d.toDate()); setSHour(d.format('HH')); setSMin(d.format('mm')); }}>{L.now}</Button>
+            <Button type="button" variant="secondary" onClick={() => { const d = dayjs(); setSDate(d.toDate()); }}>{L.today}</Button>
+            <Button type="button" variant="secondary" onClick={() => { const d = dayjs().add(1, 'day'); setSDate(d.toDate()); }}>{L.tomorrow}</Button>
+            <Button type="button" variant="secondary" onClick={() => { const d = dayjs().add(2, 'day'); setSDate(d.toDate()); }}>{L.dayAfter}</Button>
           </div>
           <div className="flex flex-col gap-2 items-center">
             <div className="flex items-center justify-center gap-3 w-[300px]">
-              <button type="button" onClick={()=> setSMonth(dayjs(sMonth).subtract(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4"/></button>
-              <div className="text-sm font-semibold">{dayjs(sMonth).format(locale==='zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
-              <button type="button" onClick={()=> setSMonth(dayjs(sMonth).add(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4"/></button>
+              <button type="button" onClick={() => setSMonth(dayjs(sMonth).subtract(1, 'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+              <div className="text-sm font-semibold">{dayjs(sMonth).format(locale === 'zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
+              <button type="button" onClick={() => setSMonth(dayjs(sMonth).add(1, 'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
             </div>
-            <DayPicker 
+            <DayPicker
               mode="single"
               month={sMonth}
-              onMonthChange={(d)=> setSMonth(d)}
+              onMonthChange={(d) => setSMonth(d)}
               selected={sDate}
-              onSelect={(d)=> d && setSDate(d)}
-              locale={locale==='zh'? zhCN : dfKo}
+              onSelect={(d) => d && setSDate(d)}
+              locale={locale === 'zh' ? zhCN : dfKo}
               className="text-sm w-[300px]"
               classNames={{
                 month: 'w-full',
@@ -493,9 +493,9 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
               }}
             />
             <div className="flex items-center justify-center gap-3">
-              <select className="h-10 px-3 min-w-[96px] border rounded text-mono" value={sHour} onChange={(e)=> setSHour(e.target.value)}>{hourOptions.map(h=> <option key={h} value={h}>{h}</option>)}</select>
+              <select className="h-10 px-3 min-w-[96px] border rounded text-mono" value={sHour} onChange={(e) => setSHour(e.target.value)}>{hourOptions.map(h => <option key={h} value={h}>{h}</option>)}</select>
               <span className="text-lg">:</span>
-              <select className="h-10 px-3 min-w-[96px] border rounded text-mono" value={sMin} onChange={(e)=> setSMin(e.target.value)}>{minuteOptions(minuteStep).map(m=> <option key={m} value={m}>{m}</option>)}</select>
+              <select className="h-10 px-3 min-w-[96px] border rounded text-mono" value={sMin} onChange={(e) => setSMin(e.target.value)}>{minuteOptions(minuteStep).map(m => <option key={m} value={m}>{m}</option>)}</select>
             </div>
           </div>
         </div>
@@ -503,24 +503,24 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
         <div className="min-w-[320px] p-4">
           <div className="text-sm font-semibold mb-3">{L.end}</div>
           <div className="flex flex-wrap gap-2 mb-3">
-            <Button type="button" variant="secondary" onClick={()=> addToEnd('m15')}>{L.add15}</Button>
-            <Button type="button" variant="secondary" onClick={()=> addToEnd('m30')}>{L.add30}</Button>
-            <Button type="button" variant="secondary" onClick={()=> addToEnd('h1')}>{L.add1h}</Button>
-            <Button type="button" variant="secondary" onClick={()=> addToEnd('h3')}>{L.add3h}</Button>
+            <Button type="button" variant="secondary" onClick={() => addToEnd('m15')}>{L.add15}</Button>
+            <Button type="button" variant="secondary" onClick={() => addToEnd('m30')}>{L.add30}</Button>
+            <Button type="button" variant="secondary" onClick={() => addToEnd('h1')}>{L.add1h}</Button>
+            <Button type="button" variant="secondary" onClick={() => addToEnd('h3')}>{L.add3h}</Button>
           </div>
           <div className="flex flex-col gap-2 items-center">
             <div className="flex items-center justify-center gap-3 w-[300px]">
-              <button type="button" onClick={()=> setEMonth(dayjs(eMonth).subtract(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4"/></button>
-              <div className="text-sm font-semibold">{dayjs(eMonth).format(locale==='zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
-              <button type="button" onClick={()=> setEMonth(dayjs(eMonth).add(1,'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4"/></button>
+              <button type="button" onClick={() => setEMonth(dayjs(eMonth).subtract(1, 'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+              <div className="text-sm font-semibold">{dayjs(eMonth).format(locale === 'zh' ? 'YYYY年 M月' : 'YYYY년 M월')}</div>
+              <button type="button" onClick={() => setEMonth(dayjs(eMonth).add(1, 'month').toDate())} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
             </div>
-            <DayPicker 
+            <DayPicker
               mode="single"
               month={eMonth}
-              onMonthChange={(d)=> setEMonth(d)}
-              selected={eDate} 
-              onSelect={(d)=> d && setEDate(d)} 
-              locale={locale==='zh'? zhCN : dfKo} 
+              onMonthChange={(d) => setEMonth(d)}
+              selected={eDate}
+              onSelect={(d) => d && setEDate(d)}
+              locale={locale === 'zh' ? zhCN : dfKo}
               className="text-sm w-[300px]"
               classNames={{
                 month: 'w-full',
@@ -531,17 +531,17 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
               }}
             />
             <div className="flex items-center justify-center gap-3">
-              <select className="h-10 px-3 min-w-[96px] border rounded text-mono" value={eHour} onChange={(e)=> setEHour(e.target.value)}>{hourOptions.map(h=> <option key={h} value={h}>{h}</option>)}</select>
+              <select className="h-10 px-3 min-w-[96px] border rounded text-mono" value={eHour} onChange={(e) => setEHour(e.target.value)}>{hourOptions.map(h => <option key={h} value={h}>{h}</option>)}</select>
               <span className="text-lg">:</span>
-              <select className="h-10 px-3 min-w-[96px] border rounded text-mono" value={eMin} onChange={(e)=> setEMin(e.target.value)}>{minuteOptions(minuteStep).map(m=> <option key={m} value={m}>{m}</option>)}</select>
+              <select className="h-10 px-3 min-w-[96px] border rounded text-mono" value={eMin} onChange={(e) => setEMin(e.target.value)}>{minuteOptions(minuteStep).map(m => <option key={m} value={m}>{m}</option>)}</select>
             </div>
           </div>
         </div>
       </div>
       <div className="sticky bottom-0 bg-white border-t p-3 flex justify-between items-center gap-2">
-        <Button type="button" variant="ghost" onClick={()=>{ const n=dayjs(); setSDate(n.toDate()); setSHour(n.format('HH')); setSMin(n.format('mm')); const e=n.add(1,'hour'); setEDate(e.toDate()); setEHour(e.format('HH')); setEMin(e.format('mm')); }}>Reset</Button>
+        <Button type="button" variant="ghost" onClick={() => { const n = dayjs(); setSDate(n.toDate()); setSHour(n.format('HH')); setSMin(n.format('mm')); const e = n.add(1, 'hour'); setEDate(e.toDate()); setEHour(e.format('HH')); setEMin(e.format('mm')); }}>Reset</Button>
         <div className="flex gap-2">
-          <Button type="button" variant="secondary" onClick={()=> setOpen(false)}>{L.cancel}</Button>
+          <Button type="button" variant="secondary" onClick={() => setOpen(false)}>{L.cancel}</Button>
           <Button type="button" disabled={eDT.getTime() < sDT.getTime()} onClick={apply}>{L.confirm}</Button>
         </div>
       </div>
@@ -553,7 +553,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
     return (
       <div className="space-y-3">
         <div className="text-xs text-gray-500 mb-2">{L.summary}</div>
-        
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -569,7 +569,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               {L.endDateTime}
@@ -585,7 +585,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
             />
           </div>
         </div>
-        
+
         <div className="text-xs text-gray-500 space-y-1">
           <div>{summary}</div>
           {directInputError ? (
@@ -635,7 +635,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
               {L.useModal}
             </button>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -651,7 +651,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {L.endDateTime}
@@ -667,7 +667,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
               />
             </div>
           </div>
-          
+
           <div className="text-xs text-gray-500 space-y-1">
             <div>{summary}</div>
             {directInputError ? (
@@ -678,7 +678,7 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
           </div>
         </div>
       )}
-      
+
       {open && !useDirectInput && (
         ReactDOM.createPortal(
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20">

@@ -81,6 +81,9 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   type EnrichedReport = AssemblyReport & { __totalDefectQty: number; __defectRate: number };
 
   const enrichedList = useMemo<Array<EnrichedReport>>(() => {
+    // The useAssemblyReports hook already filters by date, so no need to filter again here.
+    // The 'reports' variable already contains only reports for the given 'date'.
+
     const getIncomingDefectsInner = (report: AssemblyReport) => {
       const direct = safeNumber((report as any)?.incoming_defect_qty);
       if (direct > 0) return direct;

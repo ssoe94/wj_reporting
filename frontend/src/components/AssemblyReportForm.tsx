@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback, type FormEvent } from 'react';
+import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader } from './ui/card';
@@ -325,6 +325,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       ['plan_qty', 'input_qty', 'actual_qty', 'rework_qty', 'injection_defect', 'outsourcing_defect', 'processing_defect', 'total_time', 'idle_time', 'operation_time', 'workers'].forEach((k) => {
         if (payload[k] === '' || payload[k] === undefined || payload[k] === null) payload[k] = 0;
       });
+      setFormData((f) => ({ ...f, ...payload }));
       const maybePromise = onSubmit(payload);
       if (maybePromise && typeof (maybePromise as any).then === 'function') {
         await (maybePromise as Promise<any>);
@@ -343,39 +344,42 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       });
 
       // 성공적으로 저장된 경우 폼 초기화
-      setFormData({
-        date: format(new Date(), 'yyyy-MM-dd'),
-        line_no: '',
-        part_no: '',
-        model: '',
-        supply_type: 'JIT',
-        plan_qty: 0,
-        input_qty: 0,
-        actual_qty: 0,
-        rework_qty: 0,
-        injection_defect: 0,
-        outsourcing_defect: 0,
-        processing_defect: 0,
-        total_time: 0,
-        idle_time: 0,
-        operation_time: 0,
-        workers: 1,
-        note: '',
-      });
-      setProductQuery('');
-      setSelectedModelDesc(null);
-      setSelectedPartSpec(null);
-      // 동적 불량 리스트도 초기화
-      setProcessingDefects([]);
-      setOutsourcingDefects([]);
-      setIncomingDefectsDetail(() => {
-        const init: Record<string, number> = {};
-        incomingDefectItems.forEach(it => (init[it.key] = 0));
-        return init;
-      });
-    } catch (_err) {
-      // 에러시 초기화하지 않음
+      resetForm();
+    } catch (_err: any) {
+      toast.error(lang === 'zh' ? '保存失败' : '저장에 실패했습니다');
     }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      date: format(new Date(), 'yyyy-MM-dd'),
+      line_no: '',
+      part_no: '',
+      model: '',
+      supply_type: 'JIT',
+      plan_qty: 0,
+      input_qty: 0,
+      actual_qty: 0,
+      rework_qty: 0,
+      injection_defect: 0,
+      outsourcing_defect: 0,
+      processing_defect: 0,
+      total_time: 0,
+      idle_time: 0,
+      operation_time: 0,
+      workers: 1,
+      note: '',
+    });
+    setProductQuery('');
+    setSelectedModelDesc(null);
+    setSelectedPartSpec(null);
+    setProcessingDefects([]);
+    setOutsourcingDefects([]);
+    setIncomingDefectsDetail(() => {
+      const init: Record<string, number | ''> = {};
+      incomingDefectItems.forEach(it => (init[it.key] = ''));
+      return init;
+    });
   };
 
   // 숫자 입력 시 기본 0이 선택되어 덮어쓰도록 포커스 시 전체 선택
