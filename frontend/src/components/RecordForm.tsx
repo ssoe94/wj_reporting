@@ -110,18 +110,18 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     safeSetStoredReportDate(initialDate);
     return {
       date: initialDate,
-    machineId: '',
-    model: '',
-    type: '',
-    partNo: '',
-    plan: '',
-    actual: '',
-    reportedDefect: '',
-    realDefect: '',
-    resin: '',
-    netG: '',
-    srG: '',
-    ct: '',
+      machineId: '',
+      model: '',
+      type: '',
+      partNo: '',
+      plan: '',
+      actual: '',
+      reportedDefect: '',
+      realDefect: '',
+      resin: '',
+      netG: '',
+      srG: '',
+      ct: '',
       start: nowStr,
       end: nowStr,
       idle: '',
@@ -152,12 +152,12 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     const requiredErrors: string[] = [];
-    if (!form.machineId) requiredErrors.push('사출기를 선택하세요');
-    if (!form.model.trim()) requiredErrors.push('모델명을 입력하세요');
-    if (!form.type) requiredErrors.push('구분을 선택하세요');
-    if (!form.plan) requiredErrors.push('계획수량을 입력하세요');
-    if (!form.actual) requiredErrors.push('실제수량을 입력하세요');
-    if (!form.start || !form.end) requiredErrors.push('시작·종료 시간을 입력하세요');
+    if (!form.machineId) requiredErrors.push(t('select_machine') || '사출기를 선택하세요');
+    if (!form.model.trim()) requiredErrors.push(t('enter_model') || '모델명을 입력하세요');
+    if (!form.type) requiredErrors.push(t('select_type') || '구분을 선택하세요');
+    if (!form.plan) requiredErrors.push(t('enter_plan_qty') || '계획수량을 입력하세요');
+    if (!form.actual) requiredErrors.push(t('enter_actual_qty') || '실제수량을 입력하세요');
+    if (!form.start || !form.end) requiredErrors.push(t('enter_times') || '시작·종료 시간을 입력하세요');
     if (requiredErrors.length) {
       toast.error(requiredErrors[0]);
       return;
@@ -191,7 +191,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         queryClient.invalidateQueries({ queryKey: ['report-dates'] }),
       ]);
 
-      toast.success('저장되었습니다');
+      toast.success(t('update_success'));
 
       // 부모 컴포넌트에 저장된 날짜 전달
       if (onSaved) {
@@ -214,15 +214,12 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     } catch (err: any) {
       console.error(err);
       if (err.response?.status === 403) {
-        const message = user?.username?.includes('chinese') || user?.department?.includes('中') 
-          ? '您没有保存数据的权限' 
-          : '데이터를 저장할 권한이 없습니다';
-        toast.error(message);
+        toast.error(t('no_permission') || '권한이 없습니다');
       } else if (err.response?.status === 400 && err.response.data) {
         const firstMsg = Object.values(err.response.data)[0] as any;
         toast.error(Array.isArray(firstMsg) ? firstMsg[0] : String(firstMsg));
       } else {
-        toast.error('저장 중 오류가 발생했습니다');
+        toast.error(t('update_fail'));
       }
     }
   };
@@ -269,7 +266,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
               if (input) {
                 const exists = filtered.some(o => `${o.model_code} – ${o.description}`.toUpperCase().includes(input.toUpperCase()));
                 if (!exists) {
-                  filtered = [ { id: -1, model_code: '', description: '' } as any, ...filtered ];
+                  filtered = [{ id: -1, model_code: '', description: '' } as any, ...filtered];
                 }
               }
               return filtered;
@@ -307,12 +304,12 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                 const modelCode = (parts[0] || '').trim().toUpperCase();
                 const desc = (parts[1] || '').trim();
                 setShowAddPartModal(true);
-                setTimeout(()=>{
-                  try{
+                setTimeout(() => {
+                  try {
                     (document.getElementById('newModelCode') as HTMLInputElement).value = modelCode;
                     (document.getElementById('newDescription') as HTMLInputElement).value = desc;
-                  }catch(_){/* no-op */}
-                },50);
+                  } catch (_) {/* no-op */ }
+                }, 50);
               }
             }}
             value={selectedModelDesc}
@@ -526,7 +523,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                 setShowAddPartModal(true);
                 return;
               }
-              
+
               setSelectedPartSpec(v as PartSpec);
               if (v && !('isAddNew' in v)) {
                 setForm((f) => ({
@@ -556,7 +553,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                   <li key={key} {...rest} className="bg-blue-50 hover:bg-blue-100 border-t border-blue-200">
                     <div className="flex items-center justify-center gap-2 text-blue-700 font-medium py-2 text-sm">
                       <Plus className="h-3 w-3" />
-                      <span>"{option.part_no}" 새 Part 추가</span>
+                      <span>"{option.part_no}" {t('add_new_part_spec')}</span>
                     </div>
                   </li>
                 );
@@ -591,7 +588,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
               <span className="font-medium font-mono">{form.resin || '-'}</span>
               <span className="text-gray-500">Color</span>
               <span className="font-medium font-mono">{selectedPartSpec.color || '-'}</span>
-              <span className="text-gray-500">기준 C/T(초)</span>
+              <span className="text-gray-500">{t('good_ct')}</span>
               <span className="font-medium font-mono">{form.ct}</span>
             </div>
             {/* Right */}
@@ -600,7 +597,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
               <span className="font-medium font-mono">{form.netG}</span>
               <span className="text-gray-500">S/R Wt (g)</span>
               <span className="font-medium font-mono">{form.srG}</span>
-              <span className="text-gray-500">기준 불량률</span>
+              <span className="text-gray-500">{t('avg_def')}</span>
               <span className="font-medium font-mono">
                 {selectedPartSpec.defect_rate_pct != null ? `${(selectedPartSpec.defect_rate_pct * 100).toFixed(1)}%` : '-'}
               </span>
@@ -704,8 +701,8 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
       {showAddPartModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
-            <h3 className="text-lg font-semibold mb-2">새 Part Spec 추가</h3>
-            <p className="text-xs text-gray-500">필수: Part No / Model Code / Description</p>
+            <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
+            <p className="text-xs text-gray-500">{t('quality.part_model_desc_required')}</p>
             <div className="grid grid-cols-2 gap-3">
               {(() => {
                 const isEdited = (k: string) => prefillOriginal && String(newPartForm[k as keyof typeof newPartForm] ?? '') !== String(prefillOriginal[k] ?? '');
@@ -732,25 +729,25 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                       onChange={(e) => setNewPartForm((f) => ({ ...f, description: e.target.value }))}
                     />
                     <input
-                      placeholder="Mold Type"
+                      placeholder={t('mold_type')}
                       className={`border rounded px-2 py-1${prefilledCls('mold_type')}${editedCls('mold_type')}`}
                       value={newPartForm.mold_type}
                       onChange={(e) => setNewPartForm((f) => ({ ...f, mold_type: e.target.value }))}
                     />
                     <input
-                      placeholder="Color"
+                      placeholder={t('color')}
                       className={`border rounded px-2 py-1${prefilledCls('color')}${editedCls('color')}`}
                       value={newPartForm.color}
                       onChange={(e) => setNewPartForm((f) => ({ ...f, color: e.target.value }))}
                     />
                     <input
-                      placeholder="Resin Type"
+                      placeholder={t('resin_type')}
                       className={`border rounded px-2 py-1${prefilledCls('resin_type')}${editedCls('resin_type')}`}
                       value={newPartForm.resin_type}
                       onChange={(e) => setNewPartForm((f) => ({ ...f, resin_type: e.target.value }))}
                     />
                     <input
-                      placeholder="Resin Code"
+                      placeholder={t('resin_code')}
                       className={`border rounded px-2 py-1${prefilledCls('resin_code')}${editedCls('resin_code')}`}
                       value={newPartForm.resin_code}
                       onChange={(e) => setNewPartForm((f) => ({ ...f, resin_code: e.target.value }))}
@@ -790,7 +787,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
               })()}
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="ghost" size="sm" onClick={() => setShowAddPartModal(false)}>취소</Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowAddPartModal(false)}>{t('cancel')}</Button>
               <PermissionButton
                 permission="can_edit_injection"
                 className="px-3 py-1 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200"
@@ -800,7 +797,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                     const modelCode = newPartForm.model_code.trim().toUpperCase();
                     const description = newPartForm.description.trim();
                     if (!partNo || !modelCode || !description) {
-                      toast.error('Part No / Model Code / Description을 입력하세요');
+                      toast.error(t('quality.part_model_desc_required'));
                       return;
                     }
 
@@ -835,15 +832,9 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
 
                     const newPart = await api.post('/injection/parts/', payload);
 
-                    toast.success('새 Part가 추가되었습니다');
+                    toast.success(t('part_spec_save_success'));
                     queryClient.invalidateQueries({ queryKey: ['parts-all'] });
                     queryClient.invalidateQueries({ queryKey: ['parts-search'] });
-                    queryClient.invalidateQueries({ queryKey: ['assembly-partspecs'] });
-                    queryClient.invalidateQueries({ queryKey: ['assembly-partspecs-by-model'] });
-                    queryClient.invalidateQueries({ queryKey: ['assembly-parts-by-model'] });
-                    queryClient.invalidateQueries({ queryKey: ['assembly-partno-search'] });
-                    queryClient.invalidateQueries({ queryKey: ['assembly-part-search'] });
-                    queryClient.invalidateQueries({ queryKey: ['assembly-model-search'] });
                     setShowAddPartModal(false);
 
                     const createdPart = newPart.data;
@@ -880,29 +871,13 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
                         description: createdDesc,
                       } as PartSpec);
                     });
-                    setForm((f) => ({
-                      ...f,
-                      partNo: createdPart.part_no || partNo,
-                      model: createdModelCode,
-                      type: createdDesc,
-                      resin: createdPart.resin_type || '',
-                      netG: String(createdPart.net_weight_g ?? ''),
-                      srG: String(createdPart.sr_weight_g ?? ''),
-                      ct: String(createdPart.cycle_time_sec ?? ''),
-                    }));
-                  } catch (err: any) {
-                    if (err.response?.status === 403) {
-                      const message = user?.username?.includes('chinese') || user?.department?.includes('中')
-                        ? '您没有创建新零件的权限'
-                        : '새 부품을 생성할 권한이 없습니다';
-                      toast.error(message);
-                    } else {
-                      toast.error('저장 실패');
-                    }
+                  } catch (err) {
+                    toast.error(t('save_fail'));
+                    console.error('Failed to create part spec:', err);
                   }
                 }}
               >
-                저장
+                {t('save')}
               </PermissionButton>
             </div>
           </div>
@@ -912,4 +887,4 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   );
 };
 
-export default RecordForm; 
+export default RecordForm;

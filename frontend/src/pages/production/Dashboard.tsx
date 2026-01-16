@@ -331,7 +331,7 @@ const ProductionDashboardPage: React.FC = () => {
             <StatCard
               title={t('dashboard_summary_trend')}
               value="+"
-              label="Steady"
+              label={t('dashboard_trend_steady')}
               icon={<BarChart3 className="w-6 h-6 text-indigo-600" />}
               colorClass="bg-indigo-50"
               delay={0.4}

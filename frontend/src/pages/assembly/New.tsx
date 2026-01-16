@@ -3,17 +3,17 @@ import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import AssemblyReportForm from '../../components/AssemblyReportForm';
 import { useCreateAssemblyReport } from '../../hooks/useAssemblyReports';
-// import { useLang } from '../../i18n';
+import { useLang } from '../../i18n';
 
 export default function AssemblyNewPage() {
-  // const { t } = useLang();
+  const { t } = useLang();
   const createMutation = useCreateAssemblyReport();
   const navigate = useNavigate();
 
   const handleSubmit = async (data: any) => {
     try {
       const response = await createMutation.mutateAsync(data);
-      toast.success('가공 생산 보고서가 등록되었습니다.');
+      toast.success(t('save_success'));
 
       // 저장된 날짜 정보 가져오기
       const date = response?.date || data?.date;
@@ -27,14 +27,14 @@ export default function AssemblyNewPage() {
         navigate(`/assembly#records`, { replace: true });
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || '등록에 실패했습니다.');
+      toast.error(error.response?.data?.detail || t('save_fail'));
     }
   };
 
   return (
     <div className="p-6">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <AssemblyReportForm 
+        <AssemblyReportForm
           onSubmit={handleSubmit}
           isLoading={createMutation.isPending}
         />

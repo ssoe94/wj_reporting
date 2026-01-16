@@ -30,7 +30,7 @@ export default function AssemblyRecordsPage() {
       setSelectedDate(reportDates[0]);
     }
   }, [reportDates, selectedDate]);
-  
+
   useEffect(() => {
     if (selectedDate && reportDates.length > 0 && !reportDates.includes(selectedDate)) {
       setSelectedDate(reportDates[0]);
@@ -40,9 +40,9 @@ export default function AssemblyRecordsPage() {
   const handleExport = async () => {
     try {
       await exportMutation.mutateAsync({});
-      toast.success('CSV 파일이 다운로드되었습니다.');
+      toast.success(t('csv_download_success'));
     } catch (error) {
-      toast.error('내보내기에 실패했습니다.');
+      toast.error(t('csv_export_fail'));
     }
   };
 
@@ -59,17 +59,17 @@ export default function AssemblyRecordsPage() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      toast.success(`생성 ${data.created}건 / 중복 ${data.skipped}건 / 오류 ${data.errors}건`);
+      toast.success(t('csv_upload_success', { created: data.created, skipped: data.skipped, errors: data.errors }));
       // 데이터 새로고침을 위해 쿼리 무효화
       window.location.reload();
     } catch (err: any) {
       console.error('CSV upload error:', err);
       if (err.response?.data?.detail) {
-        toast.error(`CSV 업로드 실패: ${err.response.data.detail}`);
+        toast.error(`${t('csv_upload_fail')}: ${err.response.data.detail}`);
       } else if (err.response?.status) {
-        toast.error(`CSV 업로드 실패: HTTP ${err.response.status}`);
+        toast.error(`${t('csv_upload_fail')}: HTTP ${err.response.status}`);
       } else {
-        toast.error('CSV 업로드 실패: 네트워크 오류');
+        toast.error(`${t('csv_upload_fail')}: ${t('network_error')}`);
       }
     } finally {
       // 파일 입력 초기화
@@ -92,7 +92,7 @@ export default function AssemblyRecordsPage() {
           ) : (
             <div className="flex items-center justify-center h-48">
               <p className="text-gray-400 text-lg">
-                {isDatesLoading ? '날짜 목록을 불러오는 중입니다…' : '날짜를 선택하면 해당 날짜의 생산 기록을 확인할 수 있습니다'}
+                {isDatesLoading ? t('loading_dates') : t('select_date_guide')}
               </p>
             </div>
           )}
@@ -115,11 +115,11 @@ export default function AssemblyRecordsPage() {
               variant="ghost"
               onClick={() => document.getElementById('csvFile')?.click()}
             >
-              CSV 업로드
+              {t('csv_upload')}
             </Button>
             <Button size="sm" className="gap-2" onClick={handleExport} disabled={exportMutation.isPending}>
               <DownloadCloud className="h-4 w-4" />
-              {exportMutation.isPending ? '내보내는 중...' : 'CSV 저장'}
+              {exportMutation.isPending ? t('exporting') : t('csv_save')}
             </Button>
           </div>
         </div>

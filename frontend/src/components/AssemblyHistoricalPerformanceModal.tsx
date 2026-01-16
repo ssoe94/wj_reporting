@@ -6,6 +6,7 @@ import AssemblyHistoricalPerformanceChart from './AssemblyHistoricalPerformanceC
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
+import { useLang } from '@/i18n';
 
 interface Props {
   isOpen: boolean;
@@ -56,6 +57,7 @@ const fetchAssemblyHistoricalPerformance = async (partPrefix: string): Promise<A
 };
 
 export default function AssemblyHistoricalPerformanceModal({ isOpen, onClose, partPrefix }: Props) {
+  const { t } = useLang();
   const [showDetailRecord, setShowDetailRecord] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<AssemblyReport | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -84,7 +86,7 @@ export default function AssemblyHistoricalPerformanceModal({ isOpen, onClose, pa
       setShowDetailRecord(true);
     } catch (_err) {
       setSelectedRecord(null);
-      setDetailError('상세 데이터를 가져오지 못했습니다.');
+      setDetailError(t('fetch_detailed_data_fail'));
       setShowDetailRecord(true);
     } finally {
       setDetailLoading(false);
@@ -122,18 +124,18 @@ export default function AssemblyHistoricalPerformanceModal({ isOpen, onClose, pa
               transition={{ duration: 0.3 }}
             >
               <Dialog.Title className="text-xl font-bold">
-                가공 생산 분석 - {partPrefix}**
+                {t('assembly_production_analysis')} - {partPrefix}**
               </Dialog.Title>
 
               <div className="min-h-[20rem] flex items-center justify-center">
-                {isLoading && <p>로딩 중...</p>}
-                {error && <p className="text-red-500">데이터 로딩 오류</p>}
+                {isLoading && <p>{t('loading')}</p>}
+                {error && <p className="text-red-500">{t('data_loading_error')}</p>}
                 {data && data.length > 0 && <AssemblyHistoricalPerformanceChart data={data} onBarClick={handleBarClick} />}
-                {data && data.length === 0 && <p>데이터가 없습니다</p>}
+                {data && data.length === 0 && <p>{t('no_data')}</p>}
               </div>
 
               <div className="flex justify-end">
-                <Button variant="secondary" onClick={handleClose}>닫기</Button>
+                <Button variant="secondary" onClick={handleClose}>{t('close')}</Button>
               </div>
             </motion.div>
           ) : (
@@ -147,15 +149,15 @@ export default function AssemblyHistoricalPerformanceModal({ isOpen, onClose, pa
             >
               <div className="flex items-center gap-4 mb-4">
                 <Button variant="secondary" onClick={handleBackToChart}>
-                  ← 뒤로
+                  ← {t('back')}
                 </Button>
                 <Dialog.Title className="text-xl font-bold">
-                  {dayjs(selectedRecord?.date).format('YYYY.MM.DD')} – {selectedRecord?.line_no}호기 상세 기록
+                  {dayjs(selectedRecord?.date).format('YYYY.MM.DD')} – {selectedRecord?.line_no} {t('line_unit')} {t('detailed_record')}
                 </Dialog.Title>
               </div>
 
               {detailLoading && (
-                <div className="text-center py-10 text-gray-500">상세 데이터를 불러오는 중...</div>
+                <div className="text-center py-10 text-gray-500">{t('loading_detailed_data')}</div>
               )}
 
               {detailError && (
@@ -166,15 +168,15 @@ export default function AssemblyHistoricalPerformanceModal({ isOpen, onClose, pa
                 <div className="grid grid-cols-2 gap-4 text-sm bg-gray-50 p-4 rounded-lg">
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">생산 날짜</span>
+                      <span className="text-gray-500 font-medium">{t('report_date')}</span>
                       <span>{selectedRecord.date}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">라인</span>
+                      <span className="text-gray-500 font-medium">{t('line')}</span>
                       <span>{selectedRecord.line_no}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">모델</span>
+                      <span className="text-gray-500 font-medium">{t('model')}</span>
                       <span>{selectedRecord.model}</span>
                     </div>
                     <div className="flex justify-between">
@@ -182,61 +184,61 @@ export default function AssemblyHistoricalPerformanceModal({ isOpen, onClose, pa
                       <span className="font-medium text-blue-600">{selectedRecord.part_no}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">계획 수량</span>
-                      <span>{selectedRecord.plan_qty}</span>
+                      <span className="text-gray-500 font-medium">{t('plan_qty')}</span>
+                      <span>{selectedRecord.plan_qty.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">투입 수량</span>
-                      <span>{selectedRecord.input_qty}</span>
+                      <span className="text-gray-500 font-medium">{t('input_qty')}</span>
+                      <span>{selectedRecord.input_qty.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">실제 생산량</span>
-                      <span className="font-medium text-green-600">{selectedRecord.actual_qty}</span>
+                      <span className="text-gray-500 font-medium">{t('actual_qty')}</span>
+                      <span className="font-medium text-green-600">{selectedRecord.actual_qty.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">재작업 수량</span>
-                      <span>{selectedRecord.rework_qty}</span>
+                      <span className="text-gray-500 font-medium">{t('rework_qty')}</span>
+                      <span>{selectedRecord.rework_qty.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">공급 타입</span>
+                      <span className="text-gray-500 font-medium">{t('supply_type')}</span>
                       <span>{selectedRecord.supply_type}</span>
                     </div>
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">사출 불량</span>
+                      <span className="text-gray-500 font-medium">{t('injection_defect')}</span>
                       <span className="text-red-600">{selectedRecord.injection_defect}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">외주 불량</span>
+                      <span className="text-gray-500 font-medium">{t('outsourcing_defect')}</span>
                       <span className="text-red-600">{selectedRecord.outsourcing_defect}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">가공 불량</span>
+                      <span className="text-gray-500 font-medium">{t('processing_defect')}</span>
                       <span className="text-red-600">{selectedRecord.processing_defect}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">총 불량</span>
+                      <span className="text-gray-500 font-medium">{t('defect_total')}</span>
                       <span className="font-medium text-red-600">{selectedRecord.total_defect_qty}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">총 시간</span>
-                      <span>{selectedRecord.total_time ? `${selectedRecord.total_time}분` : '-'}</span>
+                      <span className="text-gray-500 font-medium">{t('total_time')}</span>
+                      <span>{selectedRecord.total_time ? `${selectedRecord.total_time}${t('minutes_unit')}` : '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">대기 시간</span>
-                      <span>{selectedRecord.idle_time ? `${selectedRecord.idle_time}분` : '-'}</span>
+                      <span className="text-gray-500 font-medium">{t('idle_time')}</span>
+                      <span>{selectedRecord.idle_time ? `${selectedRecord.idle_time}${t('minutes_unit')}` : '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">작업 시간</span>
-                      <span className="font-medium text-blue-600">{selectedRecord.operation_time ? `${selectedRecord.operation_time}분` : '-'}</span>
+                      <span className="text-gray-500 font-medium">{t('prod_time')}</span>
+                      <span className="font-medium text-blue-600">{selectedRecord.operation_time ? `${selectedRecord.operation_time}${t('minutes_unit')}` : '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">작업자 수</span>
-                      <span>{selectedRecord.workers}</span>
+                      <span className="text-gray-500 font-medium">{t('worker_count')}</span>
+                      <span>{selectedRecord.workers}{t('people_unit')}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500 font-medium">UPH</span>
+                      <span className="text-gray-500 font-medium">{t('analysis_metric_uph')}</span>
                       <span className="font-medium text-orange-600">
                         {selectedRecord.actual_qty && selectedRecord.operation_time ?
                           `${((selectedRecord.actual_qty / (selectedRecord.operation_time / 60)).toFixed(1))}` :
@@ -247,7 +249,7 @@ export default function AssemblyHistoricalPerformanceModal({ isOpen, onClose, pa
                   </div>
                   {selectedRecord.note && (
                     <div className="col-span-2 pt-2 border-t border-gray-200">
-                      <span className="text-gray-500 font-medium">비고</span>
+                      <span className="text-gray-500 font-medium">{t('header_note')}</span>
                       <p className="mt-1 text-gray-700">{selectedRecord.note}</p>
                     </div>
                   )}
@@ -255,7 +257,7 @@ export default function AssemblyHistoricalPerformanceModal({ isOpen, onClose, pa
               )}
 
               <div className="flex justify-end mt-6">
-                <Button variant="secondary" onClick={handleClose}>닫기</Button>
+                <Button variant="secondary" onClick={handleClose}>{t('close')}</Button>
               </div>
             </motion.div>
           )}

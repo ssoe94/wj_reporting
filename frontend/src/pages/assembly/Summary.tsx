@@ -17,19 +17,19 @@ export default function AssemblySummaryPage() {
     {
       title: t('assembly_plan_qty'),
       value: summary?.total_plan_qty || 0,
-      unit: '개',
+      unit: t('pieces_unit'),
       color: 'bg-gray-500',
     },
     {
       title: t('assembly_actual_qty'),
       value: summary?.total_actual_qty || 0,
-      unit: '개',
+      unit: t('pieces_unit'),
       color: 'bg-green-500',
     },
     {
       title: t('assembly_defect_qty'),
       value: summary?.total_defect_qty || 0,
-      unit: '개',
+      unit: t('pieces_unit'),
       color: 'bg-red-500',
     },
   ];
@@ -39,15 +39,15 @@ export default function AssemblySummaryPage() {
       title: t('achievement_rate'),
       value: summary?.achievement_rate || 0,
       unit: '%',
-      color: (summary?.achievement_rate || 0) >= 100 ? 'text-green-600' : 
-             (summary?.achievement_rate || 0) >= 80 ? 'text-yellow-600' : 'text-red-600',
+      color: (summary?.achievement_rate || 0) >= 100 ? 'text-green-600' :
+        (summary?.achievement_rate || 0) >= 80 ? 'text-yellow-600' : 'text-red-600',
     },
     {
       title: t('defect_rate'),
       value: summary?.defect_rate || 0,
       unit: '%',
-      color: (summary?.defect_rate || 0) <= 2 ? 'text-green-600' : 
-             (summary?.defect_rate || 0) <= 5 ? 'text-yellow-600' : 'text-red-600',
+      color: (summary?.defect_rate || 0) <= 2 ? 'text-green-600' :
+        (summary?.defect_rate || 0) <= 5 ? 'text-yellow-600' : 'text-red-600',
     },
   ];
 
@@ -114,10 +114,9 @@ export default function AssemblySummaryPage() {
                   <div className="mt-2">
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className={`h-2 rounded-full ${
-                          performanceStats[0].value >= 100 ? 'bg-green-500' : 
-                          performanceStats[0].value >= 80 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}
+                        className={`h-2 rounded-full ${performanceStats[0].value >= 100 ? 'bg-green-500' :
+                            performanceStats[0].value >= 80 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
                         style={{ width: `${Math.min(performanceStats[0].value, 100)}%` }}
                       ></div>
                     </div>
@@ -135,24 +134,23 @@ export default function AssemblySummaryPage() {
                   <div className="mt-2">
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className={`h-2 rounded-full ${
-                          performanceStats[1].value <= 2 ? 'bg-green-500' : 
-                          performanceStats[1].value <= 5 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}
+                        className={`h-2 rounded-full ${performanceStats[1].value <= 2 ? 'bg-green-500' :
+                            performanceStats[1].value <= 5 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
                         style={{ width: `${Math.min(performanceStats[1].value * 10, 100)}%` }}
                       ></div>
                     </div>
                   </div>
-                  
+
                   {/* 불량 분류 오버레이 */}
                   <div className="mt-3 space-y-1">
                     {defectBreakdown.map((defect, index) => (
                       <div key={index} className="flex justify-between items-center text-xs">
-                        <span className="text-gray-600">{defect.type.replace('조립 ', '')}</span>
+                        <span className="text-gray-600">{defect.type.replace(t('nav_machining') + ' ', '')}</span>
                         <div className="flex items-center gap-1">
-                          <span className="font-medium">{defect.value}개</span>
+                          <span className="font-medium">{defect.value}{t('pieces_unit')}</span>
                           <span className="text-gray-500">
-                            ({summary?.total_defect_qty && summary.total_defect_qty > 0 
+                            ({summary?.total_defect_qty && summary.total_defect_qty > 0
                               ? `${((defect.value / summary.total_defect_qty) * 100).toFixed(1)}%`
                               : '0%'
                             })

@@ -332,7 +332,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
             {!editing ? (
               <>
                 <Dialog.Title className="text-lg font-bold">
-                  {dayjs(detail.date).format('YYYY.MM.DD')} – {detail.line_no} 라인
+                  {dayjs(detail.date).format('YYYY.MM.DD')} – {detail.line_no} {t('line_unit')}
                 </Dialog.Title>
                 {/* Header chips */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -366,7 +366,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                 {/* Info cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1">
                   <div className="rounded-lg shadow-sm">
-                    <div className="px-3 py-2 font-semibold text-blue-700 bg-blue-50">基本信息 / 기본 정보</div>
+                    <div className="px-3 py-2 font-semibold text-blue-700 bg-blue-50">{t('basic_info')}</div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm">
                       <span className="text-gray-500">{t('assembly_line_no')}</span><span>{detail.line_no}</span>
                       <span className="text-gray-500">{t('model')}</span><span>{detail.model}</span>
@@ -378,7 +378,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                             handlePartNoClick(detail.part_no, e);
                           }}
                           className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                          title="Part No. 히스토리 보기"
+                          title={t('part_no_history_tooltip')}
                         >
                           {detail.part_no}
                         </button>
@@ -388,7 +388,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                     </div>
                   </div>
                   <div className="rounded-lg shadow-sm">
-                    <div className="px-3 py-2 font-semibold text-emerald-700 bg-emerald-50">生产概要 / 생산 요약</div>
+                    <div className="px-3 py-2 font-semibold text-emerald-700 bg-emerald-50">{t('production_summary')}</div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 text-sm">
                       <span className="text-gray-500">{t('plan_qty_summary')}</span><span className="font-mono text-right">{detail.plan_qty?.toLocaleString()}</span>
                       <span className="text-gray-500">{t('actual_qty_summary')}</span><span className="font-mono text-right">{detail.actual_qty?.toLocaleString()}</span>
@@ -402,8 +402,8 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
                       <span className="text-gray-500">{t('workers_summary')}</span><span className="font-mono text-right">{detail.workers}{t('people_unit')}</span>
                       <span className="text-gray-500">{t('achievement_rate_summary')}</span><span className="font-mono text-right">{detail.achievement_rate}%</span>
                       <span className="text-gray-500">{t('defect_rate_summary')}</span><span className="font-mono text-right">{detailDefectRate.toFixed(1)}%</span>
-                      <span className="text-gray-500">UPH</span><span className="font-mono text-right">{detail.uph || '-'}</span>
-                      <span className="text-gray-500">UPPH</span><span className="font-mono text-right">{detail.upph || '-'}</span>
+                      <span className="text-gray-500">{t('analysis_metric_uph')}</span><span className="font-mono text-right">{detail.uph || '-'}</span>
+                      <span className="text-gray-500">{t('analysis_metric_upph')}</span><span className="font-mono text-right">{detail.upph || '-'}</span>
                     </div>
                   </div>
                 </div>
@@ -549,7 +549,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
             ) : (
               <>
                 <Dialog.Title className="text-lg font-bold">
-                  {dayjs(detail.date).format('YYYY.MM.DD')} – {detail.line_no} 라인 {t('edit')}
+                  {dayjs(detail.date).format('YYYY.MM.DD')} – {detail.line_no} {t('line_unit')} {t('edit')}
                 </Dialog.Title>
                 {loadingEdit && (
                   <div className="py-10 text-center text-gray-500 text-sm">Loading…</div>

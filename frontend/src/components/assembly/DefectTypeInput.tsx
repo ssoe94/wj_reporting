@@ -33,7 +33,7 @@ export function DefectTypeInput({
   disabled = false,
   className = '',
 }: DefectTypeInputProps) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
 
   const totalQuantity = useMemo(() => {
     return value.reduce((sum, entry) => sum + entry.quantity, 0);
@@ -108,8 +108,8 @@ export function DefectTypeInput({
       <CardContent className="space-y-3">
         {/* 테이블 헤더 */}
         <div className="grid grid-cols-[1fr_100px_40px] gap-2 text-sm font-medium text-gray-600 pb-1 border-b">
-          <div>{lang === 'zh' ? '不良类型' : '불량 유형'}</div>
-          <div className="text-center">{lang === 'zh' ? '数量' : '수량'}</div>
+          <div>{t('defect_type')}</div>
+          <div className="text-center">{t('quantity')}</div>
           <div></div>
         </div>
 
@@ -123,7 +123,7 @@ export function DefectTypeInput({
                 onChange={(newType) => handleTypeChange(entry.id, newType)}
                 onSelect={(newType) => handleTypeChange(entry.id, newType)}
                 onDelete={onDeleteHistory}
-                placeholder={lang === 'zh' ? '选择或输入类型' : '유형 선택 또는 입력'}
+                placeholder={t('select_or_input_type')}
                 allowCustomInput={true}
                 disabled={disabled}
                 className="w-full"
@@ -145,7 +145,7 @@ export function DefectTypeInput({
                 className="h-8 w-8 text-gray-500 hover:text-red-500"
                 onClick={() => handleDeleteRow(entry.id)}
                 disabled={disabled}
-                aria-label={lang === 'zh' ? '删除' : '삭제'}
+                aria-label={t('delete')}
               >
                 <Trash className="h-4 w-4" />
               </Button>
@@ -164,7 +164,7 @@ export function DefectTypeInput({
             className="w-full gap-2"
           >
             <Plus className="h-4 w-4" />
-            {lang === 'zh' ? '添加행' : '행 추가'}
+            {t('add_row')}
           </Button>
         </div>
       </CardContent>

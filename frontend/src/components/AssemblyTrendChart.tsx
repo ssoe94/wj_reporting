@@ -1,6 +1,7 @@
 import React from 'react';
 import dayjs from 'dayjs';
 import { useAssemblyReportsTrendData } from '@/hooks/useAssemblyReports';
+import { useLang } from '@/i18n';
 import {
   AreaChart,
   Area,
@@ -21,6 +22,7 @@ interface DataPoint {
 }
 
 export default function AssemblyTrendChart() {
+  const { t } = useLang();
   const { data } = useAssemblyReportsTrendData();
   const isLiteMode = document.documentElement.classList.contains('lite-mode');
   const dailyData: DataPoint[] = React.useMemo(() => {
@@ -69,7 +71,7 @@ export default function AssemblyTrendChart() {
   }, [dailyData]);
 
   if (!dailyData.length) {
-    return <p className="text-gray-500 text-sm">No data</p>;
+    return <p className="text-gray-500 text-sm">{t('no_data')}</p>;
   }
 
   const chartColors = {
@@ -125,14 +127,14 @@ export default function AssemblyTrendChart() {
           <Tooltip
             contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
             formatter={(value: any, name: string) => {
-              if (name === 'Plan' || name === 'Actual') {
+              if (name === t('plan_qty') || name === t('actual_qty')) {
                 return [Number(value).toLocaleString(), name];
               }
               return [`${value}%`, name];
             }}
             labelFormatter={(label) => {
               const dp = dailyData.find((d) => d.date === label);
-              return dp ? `${label} (달성율: ${dp.achievementRate}%)` : label;
+              return dp ? `${label} (${t('achievement_rate')}: ${dp.achievementRate}%)` : label;
             }}
           />
           <Legend wrapperStyle={{ color: chartColors.axis }} />
@@ -140,7 +142,7 @@ export default function AssemblyTrendChart() {
             yAxisId="left"
             type="monotone"
             dataKey="plan"
-            name="Plan"
+            name={t('plan_qty')}
             stroke={chartColors.planArea}
             strokeWidth={1}
             fill="url(#assemblyTrendPlan)"
@@ -150,7 +152,7 @@ export default function AssemblyTrendChart() {
             yAxisId="left"
             type="monotone"
             dataKey="actual"
-            name="Actual"
+            name={t('actual_qty')}
             stroke={chartColors.actualArea}
             strokeWidth={1}
             fill="url(#assemblyTrendActual)"
@@ -160,7 +162,7 @@ export default function AssemblyTrendChart() {
             yAxisId="right"
             type="monotone"
             dataKey="achievementRate"
-            name="Achievement"
+            name={t('achievement_rate')}
             strokeWidth={1}
             dot={{ r: 2 }}
           />

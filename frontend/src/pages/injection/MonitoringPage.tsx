@@ -283,7 +283,7 @@ export default function InjectionMonitoringPage() {
                                 </div>
                                 <div className={`${textClass} text-sm`}>
                                   {hourlyActual.toFixed(0)}
-                                  <span className="text-xs"> UPH</span>
+                                  {t('monitoring.uph_unit')}
                                 </div>
                                 <div className={`${tempClass} text-xs`}>
                                   {t('monitoring.temp_label')}: {temperature !== null ? temperature.toFixed(1) : '-'}°C

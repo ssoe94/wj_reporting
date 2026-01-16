@@ -98,7 +98,7 @@ export default function SummaryPage() {
     <div className="mx-auto max-w-7xl px-4 py-10 md:px-8 flex flex-col gap-10">
       {/* Summary Section */}
       <section id="summary" className="space-y-6">
-        <h2 className="sr-only">현황 요약</h2>
+        <h2 className="sr-only">{t('nav_summary')}</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <Card className="flex flex-col items-center">
             <CardHeader className="text-gray-500">{t('total_prod')}</CardHeader>

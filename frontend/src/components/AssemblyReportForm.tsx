@@ -42,19 +42,19 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
   // 불량 히스토리 관리
   const { processingDefectHistory, outsourcingDefectHistory, recordDefectTypeUsage, deleteDefectType } = useLocalDefectHistory();
   // 불량 상세 입력 (집계용)
-  const incomingDefectItems = [
-    { key: 'scratch', label: '划伤' },
-    { key: 'black_dot', label: '黑点' },
-    { key: 'eaten_meat', label: '吃肉' },
-    { key: 'air_mark', label: '气印' },
-    { key: 'deform', label: '变形' },
-    { key: 'short_shot', label: '浇不足' },
-    { key: 'broken_pillar', label: '断柱子' },
-    { key: 'flow_mark', label: '料花' },
-    { key: 'sink_mark', label: '缩瘪' },
-    { key: 'whitening', label: '发白' },
-    { key: 'other', label: '其他' },
-  ] as const;
+  const incomingDefectItems = React.useMemo(() => [
+    { key: 'scratch', label: t('defect_scratch') },
+    { key: 'black_dot', label: t('defect_black_dot') },
+    { key: 'eaten_meat', label: t('defect_eaten_meat') },
+    { key: 'air_mark', label: t('defect_air_mark') },
+    { key: 'deform', label: t('defect_deform') },
+    { key: 'short_shot', label: t('defect_short_shot') },
+    { key: 'broken_pillar', label: t('defect_broken_pillar') },
+    { key: 'flow_mark', label: t('defect_flow_mark') },
+    { key: 'sink_mark', label: t('defect_sink_mark') },
+    { key: 'whitening', label: t('defect_whitening') },
+    { key: 'other', label: t('defect_other') },
+  ], [t]);
   const [incomingDefectsDetail, setIncomingDefectsDetail] = useState<Record<string, number | ''>>(() => {
     const init: Record<string, number | ''> = {};
     incomingDefectItems.forEach(it => (init[it.key] = ''));
@@ -250,23 +250,23 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       return;
     }
     if (!formData.line_no) {
-      toast.error(lang === 'zh' ? '请选择产线号' : '라인번호를 선택하세요');
+      toast.error(t('select_line_error'));
       return;
     }
     if (!formData.model || !selectedModelDesc) {
-      toast.error(lang === 'zh' ? '请选择型号' : '모델을 선택하세요');
+      toast.error(t('select_model_error'));
       return;
     }
     if (!formData.part_no) {
-      toast.error(lang === 'zh' ? '请选择 Part No.' : 'Part No.를 선택하세요');
+      toast.error(t('select_part_no_error'));
       return;
     }
     if (!formData.plan_qty || Number(formData.plan_qty) <= 0) {
-      toast.error(lang === 'zh' ? '请输入计划数量' : '계획수량을 입력하세요');
+      toast.error(t('input_plan_qty_error'));
       return;
     }
     if (!formData.actual_qty || Number(formData.actual_qty) < 0) {
-      toast.error(lang === 'zh' ? '请输入生产数量' : '생산수량을 입력하세요');
+      toast.error(t('input_production_qty_error'));
       return;
     }
 
@@ -279,9 +279,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     );
 
     if (partialProcessingEntries.length > 0 || partialOutsourcingEntries.length > 0) {
-      const warningMsg = lang === 'zh'
-        ? '不良记录中有未完成的行(仅填写了类型或数量)。是否继续保存？'
-        : '불량 기록에 미완성 행이 있습니다(유형 또는 수량만 입력됨). 그대로 저장하시겠습니까?';
+      const warningMsg = t('incomplete_defect_warning');
 
       const confirmed = window.confirm(warningMsg);
       if (!confirmed) return;
@@ -292,9 +290,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
     const actual = Number(formData.actual_qty) || 0;
     const totalDefects = totalIncoming + totalOutsourcingDefects + totalProcessingDefects;
     const rate = plan > 0 ? ((actual / plan) * 100).toFixed(1) : '0.0';
-    const confirmMsg = lang === 'zh'
-      ? `计划数量对比良品数量为 ${rate}% 。不良数量 ${totalDefects} 件。是否保存？`
-      : `계획수량 대비 생산수량은 ${rate}% 입니다. 불량 수량은 ${totalDefects}개 입니다. 입력하시겠습니까?`;
+    const confirmMsg = t('save_confirm_with_stats', { rate, totalDefects });
     const ok = window.confirm(confirmMsg);
     if (!ok) return;
     try {
@@ -736,7 +732,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               }
               setSelectedPartSpec(v as PartSpec);
               if (v && !('isAddNew' in v)) {
-                setFormData((f) => ({ ...f, part_no: v.part_no, model: v.model_code }));
+                setFormData((f) => ({ ...f, part_no: (v as any).part_no, model: (v as any).model_code }));
                 const modelSpec = uniqueModelDesc.find((m) => m.model_code === v.model_code && m.description === v.description);
                 if (modelSpec) {
                   setSelectedModelDesc(modelSpec);
@@ -781,11 +777,11 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             onChange={(e) => handleChange('supply_type', e.target.value)}
             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
           >
-            <option value="JIT">{"JIT / 上线"}</option>
+            <option value="JIT">{t('jit_online')}</option>
             <option value="CSK">CSKD</option>
             <option value="SVC">SVC</option>
-            <option value="REWORK">{lang === 'zh' ? '返工' : 'REWORK'}</option>
-            <option value="INSPECTION">{lang === 'zh' ? '检验' : '검사'}</option>
+            <option value="REWORK">{t('rework')}</option>
+            <option value="INSPECTION">{t('inspection')}</option>
           </select>
         </div>
       </div>
@@ -909,12 +905,12 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             <div className="basis-full md:basis-[50%]">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>UPH</Label>
+                  <Label>{t('analysis_metric_uph')}</Label>
                   <Input value={calculatedValues.uph} disabled className="text-center bg-green-50 font-semibold" />
                   <p className="text-xs text-gray-500 mt-1">{t('production_per_hour')}</p>
                 </div>
                 <div>
-                  <Label>UPPH</Label>
+                  <Label>{t('analysis_metric_upph')}</Label>
                   <Input value={calculatedValues.upph} disabled className="text-center bg-green-50 font-semibold" />
                   <p className="text-xs text-gray-500 mt-1">{t('production_per_person_hour')}</p>
                 </div>
@@ -966,7 +962,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg w-[420px] p-6 space-y-4">
             <h3 className="text-lg font-semibold mb-2">{t('add_new_part_spec')}</h3>
-            <p className="text-xs text-gray-500">{lang === 'zh' ? '必填: Part No / Model Code / Description' : '필수: Part No / Model Code / Description'}</p>
+            <p className="text-xs text-gray-500">{t('quality.add_part_required_fields')}</p>
             <div className="grid grid-cols-2 gap-3">
               {(() => {
                 const isEdited = (k: string) => prefillOriginal && String(newPartForm[k] ?? '') !== String(prefillOriginal[k] ?? '');
@@ -975,21 +971,21 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 return (
                   <>
                     <input
-                      placeholder="Part No (MCK12345678…)"
+                      placeholder={`Part No (${t('quality.part_no_placeholder')}…)`}
                       className={`border rounded px-2 py-1 col-span-2 bg-green-50 border-green-300`}
                       value={newPartForm.part_no}
                       onChange={(e) => setNewPartForm((f: any) => ({ ...f, part_no: e.target.value }))}
                     />
-                    <input placeholder="Model Code (24TL510…)" className={`border rounded px-2 py-1 col-span-2${prefilledCls('model_code')}${editedCls('model_code')}`} value={newPartForm.model_code} onChange={(e) => setNewPartForm((f: any) => ({ ...f, model_code: e.target.value }))} />
-                    <input placeholder="Description (C/A, B/C…)" className={`border rounded px-2 py-1 col-span-2${prefilledCls('description')}${editedCls('description')}`} value={newPartForm.description} onChange={(e) => setNewPartForm((f: any) => ({ ...f, description: e.target.value }))} />
-                    <input placeholder="Mold Type" className={`border rounded px-2 py-1${prefilledCls('mold_type')}${editedCls('mold_type')}`} value={newPartForm.mold_type} onChange={(e) => setNewPartForm((f: any) => ({ ...f, mold_type: e.target.value }))} />
-                    <input placeholder="Color" className={`border rounded px-2 py-1${prefilledCls('color')}${editedCls('color')}`} value={newPartForm.color} onChange={(e) => setNewPartForm((f: any) => ({ ...f, color: e.target.value }))} />
-                    <input placeholder="Resin Type" className={`border rounded px-2 py-1${prefilledCls('resin_type')}${editedCls('resin_type')}`} value={newPartForm.resin_type} onChange={(e) => setNewPartForm((f: any) => ({ ...f, resin_type: e.target.value }))} />
-                    <input placeholder="Resin Code" className={`border rounded px-2 py-1${prefilledCls('resin_code')}${editedCls('resin_code')}`} value={newPartForm.resin_code} onChange={(e) => setNewPartForm((f: any) => ({ ...f, resin_code: e.target.value }))} />
-                    <input placeholder="Net(g)" className={`border rounded px-2 py-1${prefilledCls('net_weight_g')}${editedCls('net_weight_g')}`} value={newPartForm.net_weight_g} onChange={(e) => setNewPartForm((f: any) => ({ ...f, net_weight_g: e.target.value }))} />
-                    <input placeholder="S/R(g)" className={`border rounded px-2 py-1${prefilledCls('sr_weight_g')}${editedCls('sr_weight_g')}`} value={newPartForm.sr_weight_g} onChange={(e) => setNewPartForm((f: any) => ({ ...f, sr_weight_g: e.target.value }))} />
-                    <input placeholder="C/T(초)" className={`border rounded px-2 py-1${prefilledCls('cycle_time_sec')}${editedCls('cycle_time_sec')}`} value={newPartForm.cycle_time_sec} onChange={(e) => setNewPartForm((f: any) => ({ ...f, cycle_time_sec: e.target.value }))} />
-                    <input placeholder="Cavity" className={`border rounded px-2 py-1${prefilledCls('cavity')}${editedCls('cavity')}`} value={newPartForm.cavity} onChange={(e) => setNewPartForm((f: any) => ({ ...f, cavity: e.target.value }))} />
+                    <input placeholder={`Model Code (${t('quality.model_placeholder')}…)`} className={`border rounded px-2 py-1 col-span-2${prefilledCls('model_code')}${editedCls('model_code')}`} value={newPartForm.model_code} onChange={(e) => setNewPartForm((f: any) => ({ ...f, model_code: e.target.value }))} />
+                    <input placeholder={`Description (${t('description')}…)`} className={`border rounded px-2 py-1 col-span-2${prefilledCls('description')}${editedCls('description')}`} value={newPartForm.description} onChange={(e) => setNewPartForm((f: any) => ({ ...f, description: e.target.value }))} />
+                    <input placeholder={t('mold_type')} className={`border rounded px-2 py-1${prefilledCls('mold_type')}${editedCls('mold_type')}`} value={newPartForm.mold_type} onChange={(e) => setNewPartForm((f: any) => ({ ...f, mold_type: e.target.value }))} />
+                    <input placeholder={t('color')} className={`border rounded px-2 py-1${prefilledCls('color')}${editedCls('color')}`} value={newPartForm.color} onChange={(e) => setNewPartForm((f: any) => ({ ...f, color: e.target.value }))} />
+                    <input placeholder={t('resin_type')} className={`border rounded px-2 py-1${prefilledCls('resin_type')}${editedCls('resin_type')}`} value={newPartForm.resin_type} onChange={(e) => setNewPartForm((f: any) => ({ ...f, resin_type: e.target.value }))} />
+                    <input placeholder={t('resin_code')} className={`border rounded px-2 py-1${prefilledCls('resin_code')}${editedCls('resin_code')}`} value={newPartForm.resin_code} onChange={(e) => setNewPartForm((f: any) => ({ ...f, resin_code: e.target.value }))} />
+                    <input placeholder={t('net_g')} className={`border rounded px-2 py-1${prefilledCls('net_weight_g')}${editedCls('net_weight_g')}`} value={newPartForm.net_weight_g} onChange={(e) => setNewPartForm((f: any) => ({ ...f, net_weight_g: e.target.value }))} />
+                    <input placeholder={t('sr_g')} className={`border rounded px-2 py-1${prefilledCls('sr_weight_g')}${editedCls('sr_weight_g')}`} value={newPartForm.sr_weight_g} onChange={(e) => setNewPartForm((f: any) => ({ ...f, sr_weight_g: e.target.value }))} />
+                    <input placeholder={t('ct_s')} className={`border rounded px-2 py-1${prefilledCls('cycle_time_sec')}${editedCls('cycle_time_sec')}`} value={newPartForm.cycle_time_sec} onChange={(e) => setNewPartForm((f: any) => ({ ...f, cycle_time_sec: e.target.value }))} />
+                    <input placeholder={t('cavity')} className={`border rounded px-2 py-1${prefilledCls('cavity')}${editedCls('cavity')}`} value={newPartForm.cavity} onChange={(e) => setNewPartForm((f: any) => ({ ...f, cavity: e.target.value }))} />
                     <input type="date" className={`border rounded px-2 py-1${prefilledCls('valid_from')}${editedCls('valid_from')}`} value={newPartForm.valid_from} onChange={(e) => setNewPartForm((f: any) => ({ ...f, valid_from: e.target.value }))} />
                   </>
                 );
