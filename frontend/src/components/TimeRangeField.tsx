@@ -213,17 +213,17 @@ export default function TimeRangeField({ value, onChange, onValidate, locale, mi
   const [directEndInput, setDirectEndInput] = React.useState('');
   const [directInputError, setDirectInputError] = React.useState<string | null>(null);
 
-  // 직접 입력 값 초기화 및 동기화
-  React.useEffect(() => {
-    setDirectStartInput(formatDirectInput(sDT));
-    setDirectEndInput(formatDirectInput(eDT));
-  }, [value?.startAt, value?.endAt]);
-
   // const localeObj = locale === 'zh' ? zhCN : dfKo; // Currently unused
   const sDT = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate(), Number(sHour), Number(sMin), 0);
   const eDT = new Date(eDate.getFullYear(), eDate.getMonth(), eDate.getDate(), Number(eHour), Number(eMin), 0);
   const durMin = Math.max(0, Math.floor((eDT.getTime() - sDT.getTime()) / 60000));
   const summary = `${dayjs(sDT).format('M/D(dd) HH:mm')} ~ ${dayjs(eDT).format('M/D(dd) HH:mm')} · ${Math.floor(durMin / 60)}h ${durMin % 60}m`;
+
+  // 직접 입력 값 초기화 및 동기화
+  React.useEffect(() => {
+    setDirectStartInput(formatDirectInput(sDT));
+    setDirectEndInput(formatDirectInput(eDT));
+  }, [value?.startAt, value?.endAt, sDT, eDT]);
   const [sMonth, setSMonth] = React.useState<Date>(dayjs(sDate).startOf('month').toDate());
   const [eMonth, setEMonth] = React.useState<Date>(dayjs(eDate).startOf('month').toDate());
 

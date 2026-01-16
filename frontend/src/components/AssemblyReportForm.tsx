@@ -163,7 +163,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
         setOutsourcingDefects((initialData as any).outsourcing_defects_dynamic);
       }
     } catch (_) { }
-  }, [initialData]);
+  }, [initialData, incomingDefectItems]);
 
   // 새로운 동적 불량 관리로 인한 총합 계산
   const totalProcessingDefects = React.useMemo(() =>

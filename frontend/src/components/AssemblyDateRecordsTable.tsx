@@ -19,7 +19,6 @@ interface Props {
 export default function AssemblyDateRecordsTable({ date }: Props) {
   const { t } = useLang();
   const { data: reportsData, isLoading, isFetching } = useAssemblyReports({ date });
-  const reports = reportsData?.results || [];
   const [detail, setDetail] = useState<AssemblyReport | null>(null);
   const [editing, setEditing] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
@@ -81,6 +80,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
   type EnrichedReport = AssemblyReport & { __totalDefectQty: number; __defectRate: number };
 
   const enrichedList = useMemo<Array<EnrichedReport>>(() => {
+    const reports = reportsData?.results || [];
     // The useAssemblyReports hook already filters by date, so no need to filter again here.
     // The 'reports' variable already contains only reports for the given 'date'.
 
@@ -132,7 +132,7 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
       return Math.round((totalDefectQty / denominator) * 1000) / 10; // 소수 첫째자리 반올림
     };
 
-    return reports
+    const list = reports
       .filter((r: AssemblyReport) => r.date === date)
       .map((report: AssemblyReport): EnrichedReport => {
         const totalDefectQty = getTotalDefectQtyInner(report);
@@ -147,9 +147,9 @@ export default function AssemblyDateRecordsTable({ date }: Props) {
         if (a.line_no !== b.line_no) return (a.line_no || '').localeCompare(b.line_no || '');
         return (a.start_datetime || '').localeCompare(b.start_datetime || '');
       });
-  }, [reports, date]);
+    return list;
+  }, [reportsData, date]);
 
-  // Re-define helpers for use in formatDefectInfo/sum logic
   const getIncomingDefects = (report: AssemblyReport) => {
     const direct = safeNumber((report as any)?.incoming_defect_qty);
     if (direct > 0) return direct;

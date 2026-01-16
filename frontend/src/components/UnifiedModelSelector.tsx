@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Autocomplete, TextField } from '@mui/material';
 import { Plus } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -40,7 +40,7 @@ export default function UnifiedModelSelector({
     queryKey: ['unified-models', searchQuery],
     queryFn: async () => {
       if (!searchQuery || searchQuery.length < 2) return [];
-      
+
       const { data } = await api.get('/inventory/unified-parts/models/', {
         params: { search: searchQuery }
       });
@@ -51,14 +51,14 @@ export default function UnifiedModelSelector({
   });
 
   // 옵션 리스트 생성 (새 모델 추가 옵션 포함)
-  const options = React.useMemo(() => {
-    let opts: (UnifiedModel | { isAddNew: true; searchQuery: string })[] = [...searchResults];
-    
+  const options = useMemo(() => {
+    const opts: (UnifiedModel | { isAddNew: true; searchQuery: string })[] = [...searchResults];
+
     // 새 모델 추가 옵션 (검색어가 있고, 허용되는 경우, 결과가 없는 경우)
     if (allowCreate && searchQuery.trim().length >= 2 && searchResults.length === 0) {
       opts.push({ isAddNew: true, searchQuery: searchQuery.trim() });
     }
-    
+
     return opts;
   }, [searchResults, allowCreate, searchQuery]);
 
@@ -72,25 +72,25 @@ export default function UnifiedModelSelector({
       openOnFocus
       clearOnBlur={false}
       handleHomeEndKeys
-      
+
       // 옵션 레이블 설정
       getOptionLabel={(option) => {
         if ('isAddNew' in option) return option.searchQuery;
         return option.display_name;
       }}
-      
+
       // 옵션 동일성 비교
       isOptionEqualToValue={(option, value) => {
         if ('isAddNew' in option || 'isAddNew' in value) return false;
-        return option.model_code === value?.model_code && 
-               (option.description || '') === (value?.description || '');
+        return option.model_code === value?.model_code &&
+          (option.description || '') === (value?.description || '');
       }}
-      
+
       // 입력 변경 핸들러
       onInputChange={(_, newInputValue) => {
         setSearchQuery(newInputValue);
       }}
-      
+
       // 선택 변경 핸들러
       onChange={(_, newValue) => {
         if (newValue && 'isAddNew' in newValue) {
@@ -104,15 +104,15 @@ export default function UnifiedModelSelector({
           onModelChange?.(newModel.model_code, newModel.description);
           return;
         }
-        
+
         const selectedModel = newValue as UnifiedModel | null;
         onChange?.(selectedModel);
-        
+
         if (selectedModel) {
           onModelChange?.(selectedModel.model_code, selectedModel.description);
         }
       }}
-      
+
       // 렌더링 설정
       renderInput={(params) => (
         <TextField
@@ -123,10 +123,10 @@ export default function UnifiedModelSelector({
           helperText={required && !value ? (lang === 'zh' ? '请选择 Model' : 'Model을 선택하세요') : ''}
         />
       )}
-      
+
       renderOption={(props, option) => {
         const { key, ...restProps } = props as any;
-        
+
         if ('isAddNew' in option) {
           return (
             <li key={key} {...restProps} className="bg-green-50 hover:bg-green-100 border-t border-green-200">

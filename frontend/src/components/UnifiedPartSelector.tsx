@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Autocomplete, TextField } from '@mui/material';
 import { Plus } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -77,7 +77,7 @@ export default function UnifiedPartSelector({
     queryKey: ['unified-parts-search', searchQuery, mode],
     queryFn: async () => {
       if (!searchQuery || searchQuery.length < 2) return [];
-      
+
       const { data } = await api.get('/inventory/unified-parts/search/', {
         params: {
           q: searchQuery,
@@ -92,21 +92,21 @@ export default function UnifiedPartSelector({
   });
 
   // 옵션 리스트 생성 (새 항목 추가 옵션 포함)
-  const options = React.useMemo(() => {
-    let opts: (UnifiedPartSpec | { isAddNew: true; searchQuery: string })[] = [...searchResults];
-    
+  const options = useMemo(() => {
+    const opts: (UnifiedPartSpec | { isAddNew: true; searchQuery: string })[] = [...searchResults];
+
     // 새 항목 추가 옵션 (검색어가 있고, 허용되는 경우)
     if (allowCreate && searchQuery.trim().length >= 2 && searchResults.length === 0) {
       opts.push({ isAddNew: true, searchQuery: searchQuery.trim() });
     }
-    
+
     return opts;
   }, [searchResults, allowCreate, searchQuery]);
 
   // 새 Part 생성 핸들러
   const handleCreateNewPart = async () => {
     const { part_no, model_code, description } = newPartForm;
-    
+
     if (!part_no.trim() || !model_code.trim()) {
       toast.error(lang === 'zh' ? '请填写 Part No 和 Model Code' : 'Part No와 Model Code를 입력하세요');
       return;
@@ -122,17 +122,17 @@ export default function UnifiedPartSelector({
 
       // 캐시 무효화
       queryClient.invalidateQueries({ queryKey: ['unified-parts-search'] });
-      
+
       // 생성된 Part 선택
       onChange?.(data as UnifiedPartSpec);
       onModelChange?.(data.model_code, data.description);
       onPartChange?.(data.part_no);
-      
+
       setShowCreateModal(false);
       setNewPartForm({ part_no: '', model_code: '', description: '' });
-      
+
       toast.success(lang === 'zh' ? '已添加新的 Part' : '새로운 Part가 추가되었습니다');
-      
+
     } catch (error: any) {
       console.error('Part 생성 실패:', error);
       toast.error(error.response?.data?.error || (lang === 'zh' ? '添加失败' : '추가에 실패했습니다'));
@@ -150,26 +150,26 @@ export default function UnifiedPartSelector({
         openOnFocus
         clearOnBlur={false}
         handleHomeEndKeys
-        
+
         // 옵션 레이블 설정
         getOptionLabel={(option) => {
           if ('isAddNew' in option) return option.searchQuery;
-          return searchMode === 'part' ? option.part_no : 
-                 searchMode === 'model' ? `${option.model_code} - ${option.description}` :
-                 option.display_name;
+          return searchMode === 'part' ? option.part_no :
+            searchMode === 'model' ? `${option.model_code} - ${option.description}` :
+              option.display_name;
         }}
-        
+
         // 옵션 동일성 비교
         isOptionEqualToValue={(option, value) => {
           if ('isAddNew' in option || 'isAddNew' in value) return false;
           return option.part_no === value?.part_no;
         }}
-        
+
         // 입력 변경 핸들러
         onInputChange={(_, newInputValue) => {
           setSearchQuery(newInputValue);
         }}
-        
+
         // 선택 변경 핸들러
         onChange={(_, newValue) => {
           if (newValue && 'isAddNew' in newValue) {
@@ -182,16 +182,16 @@ export default function UnifiedPartSelector({
             setShowCreateModal(true);
             return;
           }
-          
+
           const selectedPart = newValue as UnifiedPartSpec | null;
           onChange?.(selectedPart);
-          
+
           if (selectedPart) {
             onModelChange?.(selectedPart.model_code, selectedPart.description);
             onPartChange?.(selectedPart.part_no);
           }
         }}
-        
+
         // 렌더링 설정
         renderInput={(params) => (
           <TextField
@@ -202,9 +202,9 @@ export default function UnifiedPartSelector({
             helperText={required && !value ? (lang === 'zh' ? '请选择 Part' : 'Part를 선택하세요') : ''}
           />
         )}
-        
+
         renderOption={(props, option) => {
-          const { key, ...restProps } = props as any;
+          const { ...restProps } = props as any;
 
           if ('isAddNew' in option) {
             return (
@@ -224,8 +224,8 @@ export default function UnifiedPartSelector({
                   <span className="font-mono font-medium">{option.part_no}</span>
                   <span className="text-xs text-gray-500 bg-gray-100 px-1 rounded">
                     {option.source_system === 'injection' ? '사출' :
-                     option.source_system === 'assembly' ? '가공' :
-                     option.source_system === 'quality' ? '품질' : '통합'}
+                      option.source_system === 'assembly' ? '가공' :
+                        option.source_system === 'quality' ? '품질' : '통합'}
                   </span>
                 </div>
                 <span className="text-sm text-gray-600">
@@ -245,7 +245,7 @@ export default function UnifiedPartSelector({
             <p className="text-xs text-gray-500">
               {lang === 'zh' ? '必填: Part No / Model Code' : '필수: Part No / Model Code'}
             </p>
-            
+
             <div className="space-y-3">
               <input
                 placeholder="Part No"
@@ -266,15 +266,15 @@ export default function UnifiedPartSelector({
                 onChange={(e) => setNewPartForm(prev => ({ ...prev, description: e.target.value }))}
               />
             </div>
-            
+
             <div className="flex justify-end gap-2 pt-2">
-              <button 
+              <button
                 className="px-3 py-1 text-sm"
                 onClick={() => setShowCreateModal(false)}
               >
                 {t('cancel')}
               </button>
-              <button 
+              <button
                 className="px-3 py-1 bg-blue-600 text-white text-sm rounded"
                 onClick={handleCreateNewPart}
               >

@@ -42,7 +42,6 @@ function OeeDashboardSkeleton() {
 
 export default function OEEDashboard() {
   const { data, isLoading, isFetching } = useAllReports();
-  const reports = data ?? [];
   const { t } = useLang();
   const { startDate, endDate, excludeWeekends, setStartDate, setEndDate } = usePeriod();
   const [compareMode, setCompareMode] = useState(false);
@@ -53,6 +52,7 @@ export default function OEEDashboard() {
 
   // 실제 데이터의 날짜 범위 계산
   const dataDateRange = useMemo(() => {
+    const reports = data ?? [];
     if (reports.length === 0) return { minDate: '', maxDate: '' };
 
     const dates = reports.map(r => r.date).sort();
@@ -60,7 +60,7 @@ export default function OEEDashboard() {
       minDate: dates[0],
       maxDate: dates[dates.length - 1]
     };
-  }, [reports]);
+  }, [data]);
 
   // 날짜 범위가 변경되면 자동으로 업데이트
   useEffect(() => {
@@ -198,7 +198,7 @@ export default function OEEDashboard() {
     const overallMetrics = aggregate(sortedEntries);
 
     return { chartData, rangeMetrics, overallMetrics };
-  }, [reports, startDate, endDate, excludeWeekends]);
+  }, [data, startDate, endDate, excludeWeekends]);
 
   // 비교 모드에서 날짜 선택 처리
   const handleDateClick = (date: string) => {
@@ -230,6 +230,7 @@ export default function OEEDashboard() {
 
   // 사출기별 상세 데이터 계산
   const machineComparisonData = useMemo(() => {
+    const reports = data ?? [];
     if (selectedDates.length !== 2) return null;
 
     const [date1, date2] = selectedDates;
@@ -294,7 +295,7 @@ export default function OEEDashboard() {
       date2Data: date2Data,
       allMachineNos: Array.from(allMachineNos).sort((a, b) => a - b)
     };
-  }, [selectedDates, reports]);
+  }, [selectedDates, data]);
 
 
   const getOeeColor = (value?: number) => {

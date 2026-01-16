@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import api from '@/lib/api';
@@ -66,11 +66,7 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
   // Part No. 앞 9자리 추출
   const partPrefix = partNo.substring(0, 9);
 
-  useEffect(() => {
-    loadHistoryData();
-  }, [partNo]);
-
-  const loadHistoryData = async () => {
+  const loadHistoryData = React.useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -85,7 +81,11 @@ export default function CycleTimeHistoryGraph({ partNo, onSelectSetup }: CycleTi
     } finally {
       setLoading(false);
     }
-  };
+  }, [partPrefix, t]);
+
+  useEffect(() => {
+    loadHistoryData();
+  }, [partNo, loadHistoryData]);
 
   const processHistoryData = (data: any): ProcessedData[] => {
     // 날짜별로 그룹화하고 평균 계산
