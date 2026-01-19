@@ -4,7 +4,6 @@ import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { useLang } from '../i18n';
-import { useAuth } from '../contexts/AuthContext';
 import PermissionButton from './common/PermissionButton';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
@@ -70,7 +69,6 @@ interface RecordFormProps {
 
 const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   const { t, lang } = useLang();
-  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const [productQuery, setProductQuery] = useState('');
