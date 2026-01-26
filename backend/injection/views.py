@@ -117,7 +117,10 @@ class UpdateRecentSnapshotsView(generics.GenericAPIView):
 
                 if latest_only:
                     cst = pytz.timezone('Asia/Shanghai')
-                    target_timestamp = datetime.now(cst).replace(second=0, microsecond=0)
+                    # 슬랏 정렬(10분 단위)과 맞추기 위해 10분 단위로 내림 처리
+                    now = datetime.now(cst).replace(second=0, microsecond=0)
+                    floored_min = (now.minute // 10) * 10
+                    target_timestamp = now.replace(minute=floored_min)
                     mes_service._update_single_hour_snapshot(
                         target_timestamp,
                         progress_callback=update_progress,

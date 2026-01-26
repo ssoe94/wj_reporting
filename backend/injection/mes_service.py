@@ -1,7 +1,7 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """
-BLACKLAKE MES API를 사용한 사출기 모니터링 서비스
-resources parameter monitoring API를 통해 실제 생산 데이터 조회
+BLACKLAKE MES API毳?靷毄頃?靷稖旮?氇媹韯半 靹滊箘鞀?
+resources parameter monitoring API毳?韱淀暣 鞁れ牅 靸濎偘 雿办澊韯?臁绊殞
 """
 import os
 import time
@@ -16,12 +16,12 @@ from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
 from injection.models import InjectionMonitoringRecord
 
 
-# BLACKLAKE API 엔드포인트
+# BLACKLAKE API 鞐旊摐韽澑韸?
 RESOURCE_MONITOR_ENDPOINT = '/resource/open/v1/resource_monitor/_page_list'
 
-# 환경 설정 (설비코드/파라미터코드 매핑)
-MES_DEVICE_CODE_MAP = os.getenv('MES_DEVICE_CODE_MAP', '')  # 예: "1:EQP001,2:EQP002"
-MES_DEVICE_CODE_PREFIX = os.getenv('MES_DEVICE_CODE_PREFIX', '')  # 예: "EQP" (없으면 기계번호 문자열 사용)
+# 頇橁步 靹れ爼 (靹る箘旖旊摐/韺岆澕氙疙劙旖旊摐 毵ろ晳)
+MES_DEVICE_CODE_MAP = os.getenv('MES_DEVICE_CODE_MAP', '')  # 鞓? "1:EQP001,2:EQP002"
+MES_DEVICE_CODE_PREFIX = os.getenv('MES_DEVICE_CODE_PREFIX', '')  # 鞓? "EQP" (鞐嗢溂氅?旮瓣硠氩堩樃 氍胳瀽鞐?靷毄)
 MES_PARAM_CODE_PROD = os.getenv('MES_PARAM_CODE_PROD', '')  # production param code
 MES_PARAM_CODE_TEMP = os.getenv('MES_PARAM_CODE_TEMP', '')  # oil temp param code
 MES_PARAM_CODE_POWER = os.getenv('MES_PARAM_CODE_POWER', '')  # power/energy param code
@@ -29,33 +29,33 @@ MES_PARAM_ID_PROD = os.getenv('MES_PARAM_ID_PROD', '')      # production param i
 MES_PARAM_ID_TEMP = os.getenv('MES_PARAM_ID_TEMP', '')      # oil temp param id
 MES_PARAM_ID_POWER = os.getenv('MES_PARAM_ID_POWER', '')    # power/energy param id
 
-# 프로젝트 기본값(확인된 값). 환경변수가 있으면 환경변수 우선
+# 頂勲鞝濏姼 旮半掣臧?頇曥澑霅?臧?. 頇橁步氤€靾橁皜 鞛堨溂氅?頇橁步氤€靾?鞖办劆
 if not MES_PARAM_ID_PROD:
     MES_PARAM_ID_PROD = '1741659367715995'
 if not MES_PARAM_ID_TEMP:
     MES_PARAM_ID_TEMP = '1741230035347466'
 
 class MESResourceService:
-    """BLACKLAKE MES 리소스 모니터링 서비스"""
+    """BLACKLAKE MES 毽唽鞀?氇媹韯半 靹滊箘鞀?""
 
     def __init__(self):
-        # MES BASE 조합: 환경변수에 route 가 포함되어 있으면 그대로 사용, 아니면 route 접합
+        # MES BASE 臁绊暕: 頇橁步氤€靾橃棎 route 臧€ 韽暔霅橃柎 鞛堨溂氅?攴鸽寑搿?靷毄, 鞎勲媹氅?route 鞝戫暕
         self.base_url = MES_BASE_URL if '/api/openapi/domain/web/v1/route' in MES_BASE_URL else f"{MES_BASE_URL}{MES_ROUTE_BASE}"
         self.endpoint = RESOURCE_MONITOR_ENDPOINT
 
-        # 설비 코드 매핑 테이블 파싱
+        # 靹る箘 旖旊摐 毵ろ晳 韰岇澊敫?韺岇嫳
         self.device_code_map: dict[str, str] = {}
         if MES_DEVICE_CODE_MAP:
             try:
-                # 구분자 ',' 로 분리, 각 항목은 '번호:코드'
+                # 甑秳鞛?',' 搿?攵勲Μ, 臧?頃鞚€ '氩堩樃:旖旊摐'
                 for pair in [p.strip() for p in MES_DEVICE_CODE_MAP.split(',') if p.strip()]:
                     k, v = [x.strip() for x in pair.split(':', 1)]
                     self.device_code_map[str(int(k))] = v
             except Exception:
-                # 잘못된 형식이면 무시하고 기본 매핑 사용
+                # 鞛橂霅?順曥嫕鞚措┐ 氍挫嫓頃橁碃 旮半掣 毵ろ晳 靷毄
                 self.device_code_map = {}
 
-        # 환경변수가 없으면 프로젝트 기본 매핑(1~17호기)을 사용
+        # 頇橁步氤€靾橁皜 鞐嗢溂氅?頂勲鞝濏姼 旮半掣 毵ろ晳(1~17順戈赴)鞚?靷毄
         if not self.device_code_map:
             self.device_code_map = {
                 '1': '850T-1',
@@ -84,7 +84,6 @@ class MESResourceService:
         if MES_DEVICE_CODE_PREFIX:
             return f"{MES_DEVICE_CODE_PREFIX}{machine_number}"
         return key
-
     def get_resource_monitoring_data(
         self,
         device_code: str,
@@ -94,11 +93,9 @@ class MESResourceService:
         page: int = 1,
         size: int = 1000,
         param_types: Optional[List[int]] = [0],
-        max_total_records: int = 10000 # New parameter
+        max_total_records: int = 10000
     ) -> Dict:
-        """
-        리소스 모니터링 데이터 조회
-        """
+        """Fetch resource monitoring data from MES (merges paged results)."""
         token = get_access_token()
         url = f"{self.base_url}{self.endpoint}?access_token={token}"
 
@@ -121,6 +118,7 @@ class MESResourceService:
         if param_types is not None:
             request_body["paramTypes"] = param_types
 
+        power_code = MES_PARAM_CODE_POWER or None
         if param_codes:
             request_body["paramCodeList"] = param_codes
         else:
@@ -134,16 +132,16 @@ class MESResourceService:
             if env_codes:
                 request_body["paramCodeList"] = env_codes
 
-        try:
+        def fetch(body: Dict) -> Dict:
             collected_list: List[Dict] = []
             current_page = page
-            for _ in range(100): # Max 100 pages
-                body = {**request_body, 'page': current_page}
-                response = requests.post(url, json=body, timeout=30)
+            for _ in range(100):  # Max 100 pages
+                body_page = {**body, 'page': current_page}
+                response = requests.post(url, json=body_page, timeout=30)
                 if response.status_code == 401:
                     token = get_access_token(force_refresh=True)
-                    url = f"{self.base_url}{self.endpoint}?access_token={token}"
-                    response = requests.post(url, json=body, timeout=30)
+                    url_retry = f"{self.base_url}{self.endpoint}?access_token={token}"
+                    response = requests.post(url_retry, json=body_page, timeout=30)
 
                 response.raise_for_status()
                 result = response.json()
@@ -155,9 +153,9 @@ class MESResourceService:
                 page_list = data.get('list', []) or []
                 collected_list.extend(page_list)
 
-                if len(collected_list) >= max_total_records: # Stop if max_total_records reached
+                if len(collected_list) >= max_total_records:
                     break
-                if len(page_list) < size: # Stop if last page
+                if len(page_list) < size:
                     break
                 current_page += 1
 
@@ -167,8 +165,23 @@ class MESResourceService:
                 'total': len(collected_list)
             }
 
+        try:
+            return fetch(request_body)
         except Exception as e:
-            print(f"MES API error for device {device_code}: {str(e)}")
+            msg = str(e)
+            # If MES rejects power code, retry once without it to keep prod/temp flowing.
+            if power_code and ('参数定义' in msg or 'param definition' in msg or '不存在' in msg or '电能' in msg):
+                logging.getLogger(__name__).warning(
+                    "MES power code '%s' rejected for device %s, retrying without power code", power_code, device_code
+                )
+                codes = [c for c in request_body.get("paramCodeList", []) if c != power_code]
+                if codes:
+                    request_body["paramCodeList"] = codes
+                else:
+                    request_body.pop("paramCodeList", None)
+                return fetch(request_body)
+
+            print(f"MES API error for device {device_code}: {msg}")
             raise
 
     def _parse_raw_records(self, data_list: List[Dict]) -> tuple[list, list, list]:
@@ -197,7 +210,7 @@ class MESResourceService:
                 power_records.append((ts, val)); continue
             if MES_PARAM_CODE_POWER and pcode == str(MES_PARAM_CODE_POWER):
                 power_records.append((ts, val)); continue
-            if '电能' in name or '电量' in name:
+            if '鐢佃兘' in name or '鐢甸噺' in name or '电能' in name or '电量' in name or ('电能' in pcode):
                 power_records.append((ts, val)); continue
 
             if any(k in name for k in ['production', 'output', 'capacity']):
@@ -235,7 +248,7 @@ class MESResourceService:
             InjectionMonitoringRecord(
                 device_code=device_code,
                 timestamp=ts,
-                machine_name=f'{machine_num}호기',
+                machine_name=f'{machine_num}順戈赴',
                 capacity=values.get('prod'),
                 oil_temperature=values.get('temp'),
                 power_kwh=values.get('power'),
@@ -269,7 +282,7 @@ class MESResourceService:
 
                 time_diff = current_time - slot_time
                 minutes_diff = int(time_diff.total_seconds() / 60)
-                label = f"{minutes_diff}분 전" if minutes_diff < 60 else f"{minutes_diff // 60}시간 전"
+                label = f"{minutes_diff}攵?鞝? if minutes_diff < 60 else f"{minutes_diff // 60}鞁滉皠 鞝?
 
                 time_slots.append({
                     'hour_offset': i,
@@ -289,9 +302,9 @@ class MESResourceService:
                 time_diff = current_time - slot_time
                 hours_diff = time_diff.total_seconds() / 3600
                 if hours_diff < 1:
-                    label = f"{int(time_diff.total_seconds() / 60)}분 전"
+                    label = f"{int(time_diff.total_seconds() / 60)}攵?鞝?
                 else:
-                    label = f"{hours_diff:.1f}시간 전"
+                    label = f"{hours_diff:.1f}鞁滉皠 鞝?
 
                 time_slots.append({
                     'hour_offset': i,
@@ -317,7 +330,7 @@ class MESResourceService:
                 time_slots.append({
                     'hour_offset': i,
                     'time': slot_time.isoformat(),
-                    'label': f'{i}시간 전' if i > 0 else '현재',
+                    'label': f'{i}鞁滉皠 鞝? if i > 0 else '順勳灛',
                     'interval_minutes': 60
                 })
 
@@ -337,7 +350,7 @@ class MESResourceService:
         for machine_num in machine_numbers:
             device_code = self._map_machine_to_device_code(machine_num)
             
-            last_record = InjectionMonitoringRecord.objects.filter(machine_name=f'{machine_num}호기').order_by('-timestamp').first()
+            last_record = InjectionMonitoringRecord.objects.filter(machine_name=f'{machine_num}順戈赴').order_by('-timestamp').first()
             
             # Ensure all datetimes are handled in the same timezone (CST) for consistency.
             if last_record and last_record.timestamp.astimezone(cst) > absolute_start_date:
@@ -398,7 +411,7 @@ class MESResourceService:
                     latest_oil_temp = pick_closest(temp_records)
                     latest_power = pick_closest(power_records)
 
-                    defaults = {'machine_name': f'{machine_num}호기'}
+                    defaults = {'machine_name': f'{machine_num}順戈赴'}
                     if latest_capacity is not None:
                         defaults['capacity'] = latest_capacity
                     if latest_oil_temp is not None:
@@ -453,47 +466,47 @@ class MESResourceService:
 
         for machine_num in machine_numbers:
             db_records = InjectionMonitoringRecord.objects.filter(
-                machine_name=f'{machine_num}호기',
+                machine_name=f'{machine_num}順戈赴',
                 timestamp__gte=start_of_first_slot,
                 timestamp__lt=end_of_last_slot
             ).order_by('timestamp')
 
-            # 1. 시간 슬롯별로 마지막 레코드를 미리 계산합니다.
+            # 1. 鞁滉皠 鞀’氤勲 毵堨毵?霠堨綌霌滊ゼ 氙鸽Μ 瓿勳偘頃╇媹雼?
             slot_records = {}
             for r in db_records:
-                # 레코드가 속하는 시간 슬롯을 찾습니다.
-                # time_slots는 시간순으로 정렬되어 있으므로, 뒤에서부터 찾는 것이 효율적입니다.
+                # 霠堨綌霌滉皜 靻嶍晿電?鞁滉皠 鞀’鞚?彀眷姷雼堧嫟.
+                # time_slots電?鞁滉皠靾滌溂搿?鞝曤牞霅橃柎 鞛堨溂氙€搿? 霋れ棎靹滊秬韯?彀倦姅 瓴冹澊 須湪鞝侅瀰雼堧嫟.
                 for slot in reversed(time_slots):
                     slot_start = datetime.fromisoformat(slot['time'])
                     if r.timestamp >= slot_start:
-                        # 이 슬롯에 속하는 레코드입니다.
-                        # db_records가 시간순이므로, 같은 슬롯에 여러 레코드가 있다면 마지막 레코드가 덮어쓰게 됩니다.
+                        # 鞚?鞀’鞐?靻嶍晿電?霠堨綌霌滌瀰雼堧嫟.
+                        # db_records臧€ 鞁滉皠靾滌澊氙€搿? 臧欖潃 鞀’鞐?鞐煬 霠堨綌霌滉皜 鞛堧嫟氅?毵堨毵?霠堨綌霌滉皜 雿柎鞊瓣矊 霅╇媹雼?
                         slot_records[slot['time']] = r
                         break
 
-            # 2. 매트릭스 행을 만듭니다.
+            # 2. 毵ろ姼毽姢 頄夓潉 毵岆摥雼堧嫟.
             cum_row: List[float] = []
             act_row: List[float] = []
             temp_row: List[float] = []
             power_row: List[float] = []
             power_act_row: List[float] = []
             
-            # 첫 번째 슬롯 이전의 누적 생산량을 찾아 시간당 생산량의 기준점으로 삼습니다.
+            # 觳?氩堨Ц 鞀’ 鞚挫爠鞚?雸勳爜 靸濎偘霟夓潉 彀眷晞 鞁滉皠雼?靸濎偘霟夓潣 旮办鞝愳溂搿?靷检姷雼堧嫟.
             record_before_first_slot = InjectionMonitoringRecord.objects.filter(
-                machine_name=f'{machine_num}호기',
+                machine_name=f'{machine_num}順戈赴',
                 timestamp__lt=start_of_first_slot,
                 capacity__isnull=False
             ).order_by('-timestamp').first()
 
             record_before_first_slot_power = InjectionMonitoringRecord.objects.filter(
-                machine_name=f'{machine_num}호기',
+                machine_name=f'{machine_num}順戈赴',
                 timestamp__lt=start_of_first_slot,
                 power_kwh__isnull=False
             ).order_by('-timestamp').first()
             
-            # 이전 슬롯의 확정된 누적값 (데이터가 있는 슬롯의 값만 사용)
+            # 鞚挫爠 鞀’鞚?頇曥爼霅?雸勳爜臧?(雿办澊韯瓣皜 鞛堧姅 鞀’鞚?臧掚 靷毄)
             prev_confirmed_cum = record_before_first_slot.capacity if record_before_first_slot else None
-            # 화면 표시용 이전 누적값 (데이터 없는 슬롯은 이전 값을 그대로 표시)
+            # 頇旊┐ 響滌嫓鞖?鞚挫爠 雸勳爜臧?(雿办澊韯?鞐嗠姅 鞀’鞚€ 鞚挫爠 臧掛潉 攴鸽寑搿?響滌嫓)
             prev_display_cum = prev_confirmed_cum if prev_confirmed_cum is not None else 0.0
             prev_confirmed_power = record_before_first_slot_power.power_kwh if record_before_first_slot_power else None
             prev_display_power = prev_confirmed_power if prev_confirmed_power is not None else 0.0
@@ -506,11 +519,11 @@ class MESResourceService:
                 t_val = record.oil_temperature if record and record.oil_temperature is not None else 0.0
                 p_val = record.power_kwh if record and record.power_kwh is not None else None
 
-                # 시간당 생산량은 확정된 누적값 간의 차이로 계산합니다.
+                # 鞁滉皠雼?靸濎偘霟夓潃 頇曥爼霅?雸勳爜臧?臧勳潣 彀澊搿?瓿勳偘頃╇媹雼?
                 act_val = (cum_val - prev_confirmed_cum) if (cum_val is not None and prev_confirmed_cum is not None and cum_val >= prev_confirmed_cum) else 0.0
                 power_act_val = (p_val - prev_confirmed_power) if (p_val is not None and prev_confirmed_power is not None and p_val >= prev_confirmed_power) else 0.0
                 
-                # 화면에 표시될 누적 생산량: 현재 슬롯에 데이터가 없으면 이전 값을 사용합니다.
+                # 頇旊┐鞐?響滌嫓霅?雸勳爜 靸濎偘霟? 順勳灛 鞀’鞐?雿办澊韯瓣皜 鞐嗢溂氅?鞚挫爠 臧掛潉 靷毄頃╇媹雼?
                 display_cum = cum_val if cum_val is not None else prev_display_cum
                 display_power = p_val if p_val is not None else prev_display_power
 
@@ -520,7 +533,7 @@ class MESResourceService:
                 power_row.append(round(display_power, 3))
                 power_act_row.append(round(power_act_val, 3))
 
-                # 다음 루프를 위해 값을 업데이트합니다.
+                # 雼れ潓 耄攧毳?鞙勴暣 臧掛潉 鞐呺嵃鞚错姼頃╇媹雼?
                 prev_display_cum = display_cum
                 prev_display_power = display_power
                 if cum_val is not None:
@@ -548,7 +561,7 @@ class MESResourceService:
             }
             tonnage = recent_report.tonnage if recent_report else default_tonnage_map.get(machine_no, f'{machine_no * 50}T')
             machine_info_map[machine_no] = {
-                'name': f'{machine_no}호기',
+                'name': f'{machine_no}順戈赴',
                 'tonnage': tonnage
             }
 
@@ -586,11 +599,10 @@ class MESResourceService:
         """
         logger = logging.getLogger(__name__)
 
-        # MES 데이터 수집 시점이 슬랏(10분 단위)과 딱 맞지 않을 때가 많아
-        # ±1분 범위로는 새 기록을 놓칠 수 있다. 충분한 여유(±10분)로 검색 후
-        # target_timestamp에 가장 가까운 값을 선택하도록 한다.
-        search_start_time = target_timestamp - timedelta(minutes=10)
-        search_end_time = target_timestamp + timedelta(minutes=1)
+        # MES 雿办澊韯?靾橃 鞁滌爯鞚?鞀瀼(10攵?雼渼)瓿?鞏搓笅雮?靾?鞛堨柎 於╇秳頌?雱撽矊 臁绊殞頃滊嫟.
+        # -30攵?~ +10攵?氩旍渼鞐愳劀 臧€鞛?臧€旯岇毚 臧掛潉 靹犿儩.
+        search_start_time = target_timestamp - timedelta(minutes=30)
+        search_end_time = target_timestamp + timedelta(minutes=10)
         target_ts_ms = int(target_timestamp.timestamp() * 1000)
 
         logger.info(f"=== Starting snapshot update for timestamp: {target_timestamp.isoformat()} ===")
@@ -603,7 +615,7 @@ class MESResourceService:
 
         for machine_num in machine_numbers:
             device_code = self._map_machine_to_device_code(machine_num)
-            machine_name = f'{machine_num}호기'
+            machine_name = f'{machine_num}順戈赴'
             logger.info(f"--- Processing machine {machine_num} (device_code: {device_code}) ---")
 
             try:
@@ -659,7 +671,7 @@ class MESResourceService:
                     timestamp=target_timestamp,
                     defaults=defaults
                 )
-                logger.info(f"✓ Saved snapshot for machine {machine_num} at {target_timestamp.isoformat()}")
+                logger.info(f"鉁?Saved snapshot for machine {machine_num} at {target_timestamp.isoformat()}")
 
             except Exception as e:
                 logger.error(f"Failed to update snapshot for machine {machine_num}: {e}", exc_info=True)
@@ -774,7 +786,7 @@ class MESResourceService:
             )
 
 
-# 서비스 인스턴스
+# 靹滊箘鞀?鞚胳姢韯挫姢
 mes_service = MESResourceService()
 ce = MESResourceService()
 
