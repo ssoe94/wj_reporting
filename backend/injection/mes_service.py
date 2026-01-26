@@ -586,7 +586,10 @@ class MESResourceService:
         """
         logger = logging.getLogger(__name__)
 
-        search_start_time = target_timestamp - timedelta(minutes=1)
+        # MES 데이터 수집 시점이 슬랏(10분 단위)과 딱 맞지 않을 때가 많아
+        # ±1분 범위로는 새 기록을 놓칠 수 있다. 충분한 여유(±10분)로 검색 후
+        # target_timestamp에 가장 가까운 값을 선택하도록 한다.
+        search_start_time = target_timestamp - timedelta(minutes=10)
         search_end_time = target_timestamp + timedelta(minutes=1)
         target_ts_ms = int(target_timestamp.timestamp() * 1000)
 
