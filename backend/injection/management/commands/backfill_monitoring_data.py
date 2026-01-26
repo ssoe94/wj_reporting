@@ -101,7 +101,7 @@ class Command(BaseCommand):
                     continue
 
                 # 마지막 레코드 찾기
-                prod_records, temp_records = mes_service._parse_raw_records(data_list)
+                prod_records, temp_records, power_records = mes_service._parse_raw_records(data_list)
                 
                 all_ts_records = {}
                 for ts, val in prod_records:
@@ -110,6 +110,9 @@ class Command(BaseCommand):
                 for ts, val in temp_records:
                     if ts not in all_ts_records: all_ts_records[ts] = {}
                     all_ts_records[ts]['temp'] = val
+                for ts, val in power_records:
+                    if ts not in all_ts_records: all_ts_records[ts] = {}
+                    all_ts_records[ts]['power'] = val
 
                 if not all_ts_records:
                     self.stdout.write(f'  Machine {machine_num}: No valid records parsed from MES data.')
@@ -126,6 +129,7 @@ class Command(BaseCommand):
                         'machine_name': machine_name,
                         'capacity': latest_record_data.get('prod'),
                         'oil_temperature': latest_record_data.get('temp'),
+                        'power_kwh': latest_record_data.get('power'),
                     }
                 )
                 self.stdout.write(self.style.SUCCESS(f'  Successfully saved snapshot for machine {machine_num}.'))

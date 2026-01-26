@@ -8,9 +8,10 @@ import time
 import requests
 import pytz
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 from datetime import datetime, timedelta
 from django.core.cache import cache
+from django.db.models.functions import TruncHour
 from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
 from injection.models import InjectionMonitoringRecord
 
@@ -21,10 +22,12 @@ RESOURCE_MONITOR_ENDPOINT = '/resource/open/v1/resource_monitor/_page_list'
 # 환경 설정 (설비코드/파라미터코드 매핑)
 MES_DEVICE_CODE_MAP = os.getenv('MES_DEVICE_CODE_MAP', '')  # 예: "1:EQP001,2:EQP002"
 MES_DEVICE_CODE_PREFIX = os.getenv('MES_DEVICE_CODE_PREFIX', '')  # 예: "EQP" (없으면 기계번호 문자열 사용)
-MES_PARAM_CODE_PROD = os.getenv('MES_PARAM_CODE_PROD', '')  # 누적 생산량 파라미터 코드
-MES_PARAM_CODE_TEMP = os.getenv('MES_PARAM_CODE_TEMP', '')  # 오일 온도 파라미터 코드
-MES_PARAM_ID_PROD = os.getenv('MES_PARAM_ID_PROD', '')      # 누적 생산량 paramId (숫자 문자열)
-MES_PARAM_ID_TEMP = os.getenv('MES_PARAM_ID_TEMP', '')      # 오일 온도 paramId (숫자 문자열)
+MES_PARAM_CODE_PROD = os.getenv('MES_PARAM_CODE_PROD', '')  # production param code
+MES_PARAM_CODE_TEMP = os.getenv('MES_PARAM_CODE_TEMP', '')  # oil temp param code
+MES_PARAM_CODE_POWER = os.getenv('MES_PARAM_CODE_POWER', '')  # power/energy param code
+MES_PARAM_ID_PROD = os.getenv('MES_PARAM_ID_PROD', '')      # production param id
+MES_PARAM_ID_TEMP = os.getenv('MES_PARAM_ID_TEMP', '')      # oil temp param id
+MES_PARAM_ID_POWER = os.getenv('MES_PARAM_ID_POWER', '')    # power/energy param id
 
 # 프로젝트 기본값(확인된 값). 환경변수가 있으면 환경변수 우선
 if not MES_PARAM_ID_PROD:
@@ -126,6 +129,8 @@ class MESResourceService:
                 env_codes.append(MES_PARAM_CODE_PROD)
             if MES_PARAM_CODE_TEMP:
                 env_codes.append(MES_PARAM_CODE_TEMP)
+            if MES_PARAM_CODE_POWER:
+                env_codes.append(MES_PARAM_CODE_POWER)
             if env_codes:
                 request_body["paramCodeList"] = env_codes
 
@@ -166,10 +171,11 @@ class MESResourceService:
             print(f"MES API error for device {device_code}: {str(e)}")
             raise
 
-    def _parse_raw_records(self, data_list: List[Dict]) -> tuple[list, list]:
-        """Helper to parse raw MES records into production and temperature lists."""
+    def _parse_raw_records(self, data_list: List[Dict]) -> tuple[list, list, list]:
+        """Helper to parse raw MES records into production, temperature, and power lists."""
         prod_records = []
         temp_records = []
+        power_records = []
         for rec in data_list:
             name = (rec.get('paramName') or '').lower()
             ts = rec.get('recordTime') or rec.get('ts')
@@ -182,18 +188,27 @@ class MESResourceService:
                 continue
 
             pid = str(rec.get('paramId') or '')
+            pcode = str(rec.get('paramCode') or '')
             if MES_PARAM_ID_PROD and pid == str(MES_PARAM_ID_PROD):
                 prod_records.append((ts, val)); continue
             if MES_PARAM_ID_TEMP and pid == str(MES_PARAM_ID_TEMP):
                 temp_records.append((ts, val)); continue
+            if MES_PARAM_ID_POWER and pid == str(MES_PARAM_ID_POWER):
+                power_records.append((ts, val)); continue
+            if MES_PARAM_CODE_POWER and pcode == str(MES_PARAM_CODE_POWER):
+                power_records.append((ts, val)); continue
+            if '电能' in name or '电量' in name:
+                power_records.append((ts, val)); continue
 
-            if any(k in name for k in ['产能', '产量', 'production', '생산', 'capacity']):
+            if any(k in name for k in ['production', 'output', 'capacity']):
                 prod_records.append((ts, val))
-            elif any(k in name for k in ['油温', '温度', 'temperature', '온도', 'oil', '油']):
+            elif any(k in name for k in ['temperature', 'temp', 'oil']):
                 temp_records.append((ts, val))
-        return prod_records, temp_records
+            elif any(k in name for k in ['energy', 'power', 'kwh']):
+                power_records.append((ts, val))
+        return prod_records, temp_records, power_records
 
-    def _save_monitoring_records(self, machine_num: int, device_code: str, prod_records: list, temp_records: list):
+    def _save_monitoring_records(self, machine_num: int, device_code: str, prod_records: list, temp_records: list, power_records: list):
         cst = pytz.timezone('Asia/Shanghai')
         
         all_records: dict[datetime, dict[str, float]] = {}
@@ -210,6 +225,12 @@ class MESResourceService:
                 all_records[ts] = {}
             all_records[ts]['temp'] = val
 
+        for ts_ms, val in power_records:
+            ts = datetime.fromtimestamp(ts_ms / 1000, tz=cst).replace(microsecond=0)
+            if ts not in all_records:
+                all_records[ts] = {}
+            all_records[ts]['power'] = val
+
         records_to_create = [
             InjectionMonitoringRecord(
                 device_code=device_code,
@@ -217,6 +238,7 @@ class MESResourceService:
                 machine_name=f'{machine_num}호기',
                 capacity=values.get('prod'),
                 oil_temperature=values.get('temp'),
+                power_kwh=values.get('power'),
             )
             for ts, values in all_records.items()
         ]
@@ -224,12 +246,38 @@ class MESResourceService:
         if records_to_create:
             InjectionMonitoringRecord.objects.bulk_create(records_to_create, ignore_conflicts=True)
 
-    def _build_time_slots(self, interval_type: str = '30min', columns: int = 13) -> List[Dict]:
+    def _build_time_slots(
+        self,
+        interval_type: str = '30min',
+        columns: int = 13,
+        reference_time: Optional[datetime] = None,
+        use_exact_latest: bool = False,
+    ) -> List[Dict]:
         cst = pytz.timezone('Asia/Shanghai')
-        current_time = datetime.now(cst)
+        current_time = reference_time or datetime.now(cst)
 
         time_slots: List[Dict] = []
-        if interval_type == '30min':
+        if interval_type == '10min':
+            for i in range(columns, 0, -1):
+                minutes_back = (i - 1) * 10
+                slot_time = current_time - timedelta(minutes=minutes_back)
+                if i == 1 and use_exact_latest:
+                    slot_time = slot_time.replace(second=0, microsecond=0)
+                else:
+                    floored = (slot_time.minute // 10) * 10
+                    slot_time = slot_time.replace(minute=floored, second=0, microsecond=0)
+
+                time_diff = current_time - slot_time
+                minutes_diff = int(time_diff.total_seconds() / 60)
+                label = f"{minutes_diff}분 전" if minutes_diff < 60 else f"{minutes_diff // 60}시간 전"
+
+                time_slots.append({
+                    'hour_offset': i,
+                    'time': slot_time.isoformat(),
+                    'label': label,
+                    'interval_minutes': 10
+                })
+        elif interval_type == '30min':
             for i in range(columns, 0, -1):
                 minutes_back = (i - 1) * 30
                 slot_time = current_time - timedelta(minutes=minutes_back)
@@ -250,6 +298,17 @@ class MESResourceService:
                     'time': slot_time.isoformat(),
                     'label': label,
                     'interval_minutes': 30
+                })
+        elif interval_type == '1day':
+            day_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            for i in range(columns - 1, -1, -1):
+                slot_time = day_start - timedelta(days=i)
+                label = 'today' if i == 0 else f'{i}d ago'
+                time_slots.append({
+                    'hour_offset': i * 24,
+                    'time': slot_time.isoformat(),
+                    'label': label,
+                    'interval_minutes': 1440
                 })
         else: # '1hour'
             for i in range(columns - 1, -1, -1):
@@ -289,40 +348,31 @@ class MESResourceService:
             
             end_fetch_time = datetime.now(cst)
 
-            # Generate snapshot times (on the hour and half-hour)
+            # Generate snapshot times (every 10 minutes)
             snapshot_times = []
             current_snapshot_time = begin_fetch_time.replace(second=0, microsecond=0)
-            # Adjust to the next nearest 30-min mark if not already there
-            if current_snapshot_time.minute > 30:
-                current_snapshot_time = current_snapshot_time.replace(minute=0) + timedelta(hours=1)
-            elif current_snapshot_time.minute > 0 and current_snapshot_time.minute < 30:
-                current_snapshot_time = current_snapshot_time.replace(minute=30)
+            # Adjust to the next nearest 10-min mark if not already there
+            minute_block = (current_snapshot_time.minute // 10) * 10
+            if current_snapshot_time.minute % 10 != 0:
+                current_snapshot_time = current_snapshot_time.replace(minute=minute_block, second=0, microsecond=0) + timedelta(minutes=10)
 
             while current_snapshot_time <= end_fetch_time:
                 snapshot_times.append(current_snapshot_time)
-                current_snapshot_time += timedelta(minutes=30) # Move to next 30-min mark
+                current_snapshot_time += timedelta(minutes=10) # Move to next 10-min mark
 
             for target_ts in snapshot_times:
                 search_start = target_ts - timedelta(minutes=1)
                 search_end = target_ts + timedelta(minutes=1)
+                target_ts_ms = int(target_ts.timestamp() * 1000)
 
                 try:
-                    # Check if this snapshot already exists in DB
-                    existing_snapshot = InjectionMonitoringRecord.objects.filter(
-                        device_code=device_code,
-                        timestamp=target_ts.replace(microsecond=0)
-                    ).first()
-                    if existing_snapshot:
-                        # print(f"  - Snapshot for {machine_num} at {target_ts} already exists. Skipping.")
-                        continue
-
                     print(f"Fetching snapshot for Machine {machine_num} at {target_ts} (window: {search_start}-{search_end})...")
                     raw = self.get_resource_monitoring_data(
                         device_code=device_code,
                         begin_time=search_start,
                         end_time=search_end,
-                        size=10, # Only need a few records to find the first one
-                        max_total_records=100 # Small limit
+                        size=100,
+                        max_total_records=500
                     ) or {}
 
                     data_list: List[Dict] = raw.get('list', []) or []
@@ -330,19 +380,41 @@ class MESResourceService:
                         # print(f"  - No data found for snapshot {machine_num} at {target_ts}.")
                         continue
 
-                    # Sort by timestamp to get the first record
-                    data_list.sort(key=lambda x: x.get('recordTime') or x.get('ts'))
+                    prod_records, temp_records, power_records = self._parse_raw_records(data_list)
 
-                    # Pick the first record
-                    first_record = data_list[0]
+                    def pick_closest(records: list[tuple[int, float]]) -> Optional[float]:
+                        if not records:
+                            return None
+                        ts, val = min(
+                            records,
+                            key=lambda item: (
+                                abs(item[0] - target_ts_ms),
+                                0 if item[0] >= target_ts_ms else 1
+                            )
+                        )
+                        return val
 
-                    # Parse and save this single record
-                    prod_records, temp_records = self._parse_raw_records([first_record]) # Pass as list for _parse_raw_records
-                    
-                    if prod_records or temp_records:
-                        # _save_monitoring_records expects lists, so pass them as is
-                        self._save_monitoring_records(machine_num, device_code, prod_records, temp_records)
-                        print(f"  - Saved snapshot for {machine_num} at {target_ts}.")
+                    latest_capacity = pick_closest(prod_records)
+                    latest_oil_temp = pick_closest(temp_records)
+                    latest_power = pick_closest(power_records)
+
+                    defaults = {'machine_name': f'{machine_num}호기'}
+                    if latest_capacity is not None:
+                        defaults['capacity'] = latest_capacity
+                    if latest_oil_temp is not None:
+                        defaults['oil_temperature'] = latest_oil_temp
+                    if latest_power is not None:
+                        defaults['power_kwh'] = latest_power
+
+                    if len(defaults) == 1:
+                        continue
+
+                    InjectionMonitoringRecord.objects.update_or_create(
+                        device_code=device_code,
+                        timestamp=target_ts.replace(microsecond=0),
+                        defaults=defaults
+                    )
+                    print(f"  - Saved snapshot for {machine_num} at {target_ts}.")
 
                 except Exception as e:
                     print(f"  - Failed to fetch or save snapshot for machine {machine_num} at {target_ts}: {e}")
@@ -357,16 +429,27 @@ class MESResourceService:
 
         # 2. Proceed with reading from the DB and building the matrix.
         machine_numbers = list(range(1, 18))
-        time_slots = self._build_time_slots(interval_type=interval_type, columns=columns)
         cst = pytz.timezone('Asia/Shanghai')
+        latest_record = InjectionMonitoringRecord.objects.order_by('-timestamp').first()
+        latest_time = latest_record.timestamp.astimezone(cst) if latest_record else datetime.now(cst)
+        use_exact_latest = latest_time.minute % 10 != 0
+        time_slots = self._build_time_slots(
+            interval_type=interval_type,
+            columns=columns,
+            reference_time=latest_time,
+            use_exact_latest=use_exact_latest,
+        )
 
         cumulative_matrix: Dict[str, List[float]] = {}
         actual_matrix: Dict[str, List[float]] = {}
         temperature_matrix: Dict[str, List[float]] = {}
+        power_matrix: Dict[str, List[float]] = {}
+        power_usage_matrix: Dict[str, List[float]] = {}
 
         start_of_first_slot = datetime.fromisoformat(time_slots[0]['time'])
         last_slot = time_slots[-1]
-        end_of_last_slot = datetime.fromisoformat(last_slot['time']) + timedelta(minutes=30 if last_slot.get('interval_minutes', 60) == 30 else 60*60)
+        interval_minutes = last_slot.get('interval_minutes', 60)
+        end_of_last_slot = datetime.fromisoformat(last_slot['time']) + timedelta(minutes=interval_minutes)
 
         for machine_num in machine_numbers:
             db_records = InjectionMonitoringRecord.objects.filter(
@@ -392,6 +475,8 @@ class MESResourceService:
             cum_row: List[float] = []
             act_row: List[float] = []
             temp_row: List[float] = []
+            power_row: List[float] = []
+            power_act_row: List[float] = []
             
             # 첫 번째 슬롯 이전의 누적 생산량을 찾아 시간당 생산량의 기준점으로 삼습니다.
             record_before_first_slot = InjectionMonitoringRecord.objects.filter(
@@ -399,11 +484,19 @@ class MESResourceService:
                 timestamp__lt=start_of_first_slot,
                 capacity__isnull=False
             ).order_by('-timestamp').first()
+
+            record_before_first_slot_power = InjectionMonitoringRecord.objects.filter(
+                machine_name=f'{machine_num}호기',
+                timestamp__lt=start_of_first_slot,
+                power_kwh__isnull=False
+            ).order_by('-timestamp').first()
             
             # 이전 슬롯의 확정된 누적값 (데이터가 있는 슬롯의 값만 사용)
             prev_confirmed_cum = record_before_first_slot.capacity if record_before_first_slot else None
             # 화면 표시용 이전 누적값 (데이터 없는 슬롯은 이전 값을 그대로 표시)
             prev_display_cum = prev_confirmed_cum if prev_confirmed_cum is not None else 0.0
+            prev_confirmed_power = record_before_first_slot_power.power_kwh if record_before_first_slot_power else None
+            prev_display_power = prev_confirmed_power if prev_confirmed_power is not None else 0.0
 
             for slot in time_slots:
                 slot_time_iso = slot['time']
@@ -411,25 +504,35 @@ class MESResourceService:
 
                 cum_val = record.capacity if record and record.capacity is not None else None
                 t_val = record.oil_temperature if record and record.oil_temperature is not None else 0.0
+                p_val = record.power_kwh if record and record.power_kwh is not None else None
 
                 # 시간당 생산량은 확정된 누적값 간의 차이로 계산합니다.
                 act_val = (cum_val - prev_confirmed_cum) if (cum_val is not None and prev_confirmed_cum is not None and cum_val >= prev_confirmed_cum) else 0.0
+                power_act_val = (p_val - prev_confirmed_power) if (p_val is not None and prev_confirmed_power is not None and p_val >= prev_confirmed_power) else 0.0
                 
                 # 화면에 표시될 누적 생산량: 현재 슬롯에 데이터가 없으면 이전 값을 사용합니다.
                 display_cum = cum_val if cum_val is not None else prev_display_cum
+                display_power = p_val if p_val is not None else prev_display_power
 
                 cum_row.append(round(display_cum, 3))
                 act_row.append(round(act_val, 3))
                 temp_row.append(round(t_val, 3))
+                power_row.append(round(display_power, 3))
+                power_act_row.append(round(power_act_val, 3))
 
                 # 다음 루프를 위해 값을 업데이트합니다.
                 prev_display_cum = display_cum
+                prev_display_power = display_power
                 if cum_val is not None:
                     prev_confirmed_cum = cum_val
+                if p_val is not None:
+                    prev_confirmed_power = p_val
 
             cumulative_matrix[str(machine_num)] = cum_row
             actual_matrix[str(machine_num)] = act_row
             temperature_matrix[str(machine_num)] = temp_row
+            power_matrix[str(machine_num)] = power_row
+            power_usage_matrix[str(machine_num)] = power_act_row
 
         # --- Machine Info and Final Response ---
         now = datetime.now(cst)
@@ -468,23 +571,32 @@ class MESResourceService:
             'cumulative_production_matrix': cumulative_matrix,
             'actual_production_matrix': actual_matrix,
             'oil_temperature_matrix': temperature_matrix,
+            'power_kwh_matrix': power_matrix,
+            'power_usage_matrix': power_usage_matrix,
             'mes_source': True
         }
 
-    def _update_single_hour_snapshot(self, target_timestamp: datetime):
+    def _update_single_hour_snapshot(
+        self,
+        target_timestamp: datetime,
+        progress_callback: Optional[Callable[[int, int, datetime], None]] = None,
+    ):
         """
         Helper function to fetch and save the snapshot for a single, specific hour.
         """
         logger = logging.getLogger(__name__)
 
-        search_end_time = target_timestamp
-        search_start_time = search_end_time - timedelta(minutes=10) # Search window: 10 minutes before target
+        search_start_time = target_timestamp - timedelta(minutes=1)
+        search_end_time = target_timestamp + timedelta(minutes=1)
+        target_ts_ms = int(target_timestamp.timestamp() * 1000)
 
         logger.info(f"=== Starting snapshot update for timestamp: {target_timestamp.isoformat()} ===")
         logger.info(f"Search range: {search_start_time.isoformat()} ~ {search_end_time.isoformat()}")
 
         machine_numbers = list(range(1, 18))
-        logger.info(f"Processing {len(machine_numbers)} machines...")
+        total_machines = len(machine_numbers)
+        processed_machines = 0
+        logger.info("Processing %s machines..." % total_machines)
 
         for machine_num in machine_numbers:
             device_code = self._map_machine_to_device_code(machine_num)
@@ -508,55 +620,62 @@ class MESResourceService:
                     logger.warning(f"No data found for machine {machine_num} in range {search_start_time} - {search_end_time}.")
                     continue
 
-                prod_records, temp_records = self._parse_raw_records(data_list)
-                logger.info(f"Machine {machine_num}: Parsed {len(prod_records)} production records and {len(temp_records)} temperature records")
+                prod_records, temp_records, power_records = self._parse_raw_records(data_list)
+                logger.info(f"Machine {machine_num}: Parsed {len(prod_records)} production records, {len(temp_records)} temperature records, and {len(power_records)} power records")
 
-                all_ts_records = {}
-                for ts, val in prod_records:
-                    if ts not in all_ts_records: all_ts_records[ts] = {}
-                    all_ts_records[ts]['prod'] = val
-                for ts, val in temp_records:
-                    if ts not in all_ts_records: all_ts_records[ts] = {}
-                    all_ts_records[ts]['temp'] = val
+                def pick_closest(records: list[tuple[int, float]]) -> Optional[float]:
+                    if not records:
+                        return None
+                    ts, val = min(
+                        records,
+                        key=lambda item: (
+                            abs(item[0] - target_ts_ms),
+                            0 if item[0] >= target_ts_ms else 1
+                        )
+                    )
+                    return val
 
-                if not all_ts_records:
+                latest_capacity = pick_closest(prod_records)
+                latest_oil_temp = pick_closest(temp_records)
+                latest_power = pick_closest(power_records)
+
+                if latest_capacity is None and latest_oil_temp is None and latest_power is None:
                     logger.warning(f"No valid production/temperature records found for machine {machine_num}.")
                     continue
 
-                latest_ts = max(all_ts_records.keys())
-                latest_record_data = all_ts_records[latest_ts]
-
-                latest_capacity = latest_record_data.get('prod')
-                latest_oil_temp = latest_record_data.get('temp')
-
-                cst = pytz.timezone('Asia/Shanghai')
-                latest_record_time = datetime.fromtimestamp(latest_ts / 1000, tz=cst)
-                logger.info(f"Machine {machine_num}: Latest record from {latest_record_time.isoformat()} - Capacity: {latest_capacity}, Temp: {latest_oil_temp}")
+                defaults = {'machine_name': machine_name}
+                if latest_capacity is not None:
+                    defaults['capacity'] = latest_capacity
+                if latest_oil_temp is not None:
+                    defaults['oil_temperature'] = latest_oil_temp
+                if latest_power is not None:
+                    defaults['power_kwh'] = latest_power
 
                 InjectionMonitoringRecord.objects.update_or_create(
                     device_code=device_code,
                     timestamp=target_timestamp,
-                    defaults={
-                        'machine_name': machine_name,
-                        'capacity': latest_capacity,
-                        'oil_temperature': latest_oil_temp,
-                    }
+                    defaults=defaults
                 )
                 logger.info(f"✓ Saved snapshot for machine {machine_num} at {target_timestamp.isoformat()}")
 
             except Exception as e:
                 logger.error(f"Failed to update snapshot for machine {machine_num}: {e}", exc_info=True)
+            finally:
+                processed_machines += 1
+                if progress_callback:
+                    progress_callback(processed_machines, total_machines, target_timestamp)
 
     def update_hourly_snapshot_from_mes(self):
         """
-        매시간 정각에 실행되어, 직전 시간의 마지막 데이터를 시간 스냅샷으로 저장합니다.
+        10? ??? ?? ???? ????? ?????.
         """
         logger = logging.getLogger(__name__)
         cst = pytz.timezone('Asia/Shanghai')
         now = datetime.now(cst)
-        target_timestamp = now.replace(minute=0, second=0, microsecond=0)
+        floored = (now.minute // 10) * 10
+        target_timestamp = now.replace(minute=floored, second=0, microsecond=0)
 
-        logger.info(f"=== Hourly snapshot update started at {now.isoformat()} ===")
+        logger.info(f"=== Interval snapshot update started at {now.isoformat()} ===")
         logger.info(f"Target timestamp: {target_timestamp.isoformat()}")
 
         try:
@@ -564,31 +683,92 @@ class MESResourceService:
 
             # Count successful records
             records_count = InjectionMonitoringRecord.objects.filter(timestamp=target_timestamp).count()
-            logger.info(f"=== Hourly snapshot update completed successfully ===")
+            logger.info(f"=== Interval snapshot update completed successfully ===")
             logger.info(f"Total records saved: {records_count} / 17 machines")
 
+            self.compact_monitoring_records(retention_hours=24, hours_to_compact=2)
             return {"status": "completed", "timestamp": now.isoformat(), "records_saved": records_count}
 
         except Exception as e:
-            logger.error(f"=== Hourly snapshot update failed ===", exc_info=True)
+            logger.error(f"=== Interval snapshot update failed ===", exc_info=True)
             return {"status": "failed", "timestamp": now.isoformat(), "error": str(e)}
 
-    def update_recent_hourly_snapshots(self, hours_to_update: int):
+    def update_recent_hourly_snapshots(
+        self,
+        hours_to_update: int,
+        progress_callback: Optional[Callable[[int, int, datetime], None]] = None,
+    ):
         """
-        주어진 시간만큼 최신 시간대부터 역순으로 스냅샷을 업데이트합니다.
+        ??? ???? ?? 10? ??? ???? ???????.
         """
         logger = logging.getLogger(__name__)
         cst = pytz.timezone('Asia/Shanghai')
         now = datetime.now(cst)
+        floored = (now.minute // 10) * 10
+        target_base = now.replace(minute=floored, second=0, microsecond=0)
 
         logger.info(f"Starting update for recent {hours_to_update} hours.")
 
-        for i in range(hours_to_update):
-            target_timestamp = (now - timedelta(hours=i)).replace(minute=0, second=0, microsecond=0)
-            self._update_single_hour_snapshot(target_timestamp)
-        
+        total_minutes = max(0, hours_to_update) * 60
+
+        for minutes_back in range(0, total_minutes + 1, 10):
+            target_timestamp = target_base - timedelta(minutes=minutes_back)
+            slot_callback = None
+            if progress_callback:
+                slot_callback = lambda completed, total, slot_time=target_timestamp: progress_callback(completed, total, slot_time)
+            self._update_single_hour_snapshot(target_timestamp, progress_callback=slot_callback)
+
+        self.compact_monitoring_records(retention_hours=24, hours_to_compact=6)
         logger.info(f"Finished update for recent {hours_to_update} hours.")
         return {"status": "completed", "hours_updated": hours_to_update}
+
+    def compact_monitoring_records(self, retention_hours: int = 24, hours_to_compact: int = 2) -> None:
+        """
+        Keep 10-min snapshots for the last retention_hours and compact older data to hourly.
+        """
+        if hours_to_compact <= 0:
+            return
+
+        logger = logging.getLogger(__name__)
+        cst = pytz.timezone('Asia/Shanghai')
+        now = datetime.now(cst)
+        cutoff = now - timedelta(hours=retention_hours)
+        compact_before = cutoff.replace(minute=0, second=0, microsecond=0)
+        compact_start = compact_before - timedelta(hours=hours_to_compact)
+
+        candidates = InjectionMonitoringRecord.objects.filter(
+            timestamp__gte=compact_start,
+            timestamp__lt=compact_before
+        )
+        if not candidates.exists():
+            return
+
+        grouped_hours = candidates.annotate(hour=TruncHour('timestamp')).values('device_code', 'hour').distinct()
+
+        deleted_total = 0
+        for entry in grouped_hours:
+            hour_start = entry['hour']
+            if hour_start is None:
+                continue
+            hour_end = hour_start + timedelta(hours=1)
+            hour_qs = candidates.filter(
+                device_code=entry['device_code'],
+                timestamp__gte=hour_start,
+                timestamp__lt=hour_end
+            ).order_by('-timestamp')
+            latest = hour_qs.first()
+            if not latest:
+                continue
+            deleted_count, _ = hour_qs.exclude(id=latest.id).delete()
+            deleted_total += deleted_count
+
+        if deleted_total:
+            logger.info(
+                "Compacted monitoring records: kept hourly snapshots for %s~%s (deleted %s rows).",
+                compact_start.isoformat(),
+                compact_before.isoformat(),
+                deleted_total
+            )
 
 
 # 서비스 인스턴스

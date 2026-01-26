@@ -450,6 +450,7 @@ class InjectionMonitoringRecord(models.Model):
     timestamp = models.DateTimeField('측정시간', db_index=True)
     capacity = models.FloatField('생산량', null=True, blank=True)
     oil_temperature = models.FloatField('오일온도', null=True, blank=True)
+    power_kwh = models.FloatField('Power (kWh)', null=True, blank=True)
 
     class Meta:
         verbose_name = '사출기 모니터링 기록'

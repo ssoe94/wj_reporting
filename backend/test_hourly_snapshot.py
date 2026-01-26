@@ -129,10 +129,11 @@ def test_mes_api_connection():
             logger.info(f"\nSample record:")
             logger.info(f"  {data_list[0]}")
 
-            prod_records, temp_records = mes_service._parse_raw_records(data_list)
+            prod_records, temp_records, power_records = mes_service._parse_raw_records(data_list)
             logger.info(f"\nParsed:")
             logger.info(f"  Production records: {len(prod_records)}")
             logger.info(f"  Temperature records: {len(temp_records)}")
+            logger.info(f"  Power records: {len(power_records)}")
 
             return True
         else:

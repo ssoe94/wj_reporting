@@ -45,5 +45,8 @@ frontend/node_modules/
 # References
 references/
 
+# DB dumps / backups
+backups/
+
 # Claude
 .claude/

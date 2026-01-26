@@ -8,6 +8,7 @@ from .views import (
     CycleTimeTestRecordViewSet, InjectionMonitoringRecordListView,
     ResourceMonitorPageListView, ProductionMatrixView, MachineListView,
     MesRawDebugView, SingleDeviceMonitorView, UpdateRecentSnapshotsView,
+    UpdateRecentSnapshotsStatusView,
     ProductionPlanUploadView
 )
 
@@ -27,6 +28,7 @@ urlpatterns = [
     path('inventory/', InventoryView.as_view(), name='inventory'),
     path('monitoring-data/', InjectionMonitoringRecordListView.as_view(), name='injection-monitoring-data'),
     path('update-recent-snapshots/', UpdateRecentSnapshotsView.as_view(), name='update-recent-snapshots'),
+    path('update-recent-snapshots/status/', UpdateRecentSnapshotsStatusView.as_view(), name='update-recent-snapshots-status'),
     # BLACKLAKE 스펙을 따르는 새로운 API 엔드포인트
     path('resource/open/v1/resource_monitor/_page_list/', ResourceMonitorPageListView.as_view(), name='resource-monitor-page-list'),
     # 생산 모니터링 매트릭스 API

@@ -21,12 +21,12 @@ def update_production_matrix_hourly():
 
     try:
         current_time = timezone.now()
-        logger.info(f"Starting hourly production matrix update task at {current_time.isoformat()}")
+        logger.info(f"Starting interval production matrix update task at {current_time.isoformat()}")
 
         # MES 서비스의 스냅샷 업데이트 함수를 직접 호출
         result = mes_service.update_hourly_snapshot_from_mes()
 
-        logger.info(f"Hourly production matrix update task finished with result: {result}")
+        logger.info(f"Interval production matrix update task finished with result: {result}")
         return {
             'status': 'success',
             'updated_at': current_time.isoformat(),

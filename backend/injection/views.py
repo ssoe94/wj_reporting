@@ -43,8 +43,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import make_password
 from django.db import transaction
 from django.utils import timezone
+from django.core.cache import cache
 import secrets, string
-from datetime import timedelta
+from datetime import datetime, timedelta
+import pytz
 import threading
 from django.views import View
 from django.utils.decorators import method_decorator
@@ -69,21 +71,125 @@ class UpdateRecentSnapshotsView(generics.GenericAPIView):
         except (ValueError, TypeError):
             hours = 3 # Default to 3 hours on invalid input
 
+        mode = str(request.data.get('mode') or '').lower()
+        latest_only = mode == 'latest' or str(request.data.get('latest_only') or '').lower() in ('1', 'true', 'yes')
+
+        job_id = secrets.token_hex(8)
+        status_key = f"injection_update_status:{job_id}"
+        latest_key = "injection_update_latest_job_id"
+        machine_total = len(getattr(mes_service, 'device_code_map', {}) or {}) or 17
+        total_steps = machine_total
+        started_at = timezone.now().isoformat()
+
+        cache.set(
+            status_key,
+            {
+                "status": "running",
+                "job_id": job_id,
+                "total_steps": total_steps,
+                "completed_steps": 0,
+                "percent": 0,
+                "started_at": started_at,
+                "last_slot": None,
+            },
+            timeout=60 * 60,
+        )
+        cache.set(latest_key, job_id, timeout=60 * 60)
+
         def run_update_in_background():
             print(f"Background task started: Updating last {hours} hours.")
             try:
-                mes_service.update_recent_hourly_snapshots(hours_to_update=hours)
+                def update_progress(completed_steps: int, total: int, slot_time):
+                    percent = int((completed_steps / total) * 100) if total > 0 else 0
+                    cache.set(
+                        status_key,
+                        {
+                            "status": "running",
+                            "job_id": job_id,
+                            "total_steps": total,
+                            "completed_steps": completed_steps,
+                            "percent": percent,
+                            "started_at": started_at,
+                            "last_slot": slot_time.isoformat(),
+                        },
+                        timeout=60 * 60,
+                    )
+
+                if latest_only:
+                    cst = pytz.timezone('Asia/Shanghai')
+                    target_timestamp = datetime.now(cst).replace(second=0, microsecond=0)
+                    mes_service._update_single_hour_snapshot(
+                        target_timestamp,
+                        progress_callback=update_progress,
+                    )
+                else:
+                    mes_service.update_recent_hourly_snapshots(
+                        hours_to_update=hours,
+                        progress_callback=update_progress,
+                    )
+                cache.set(
+                    status_key,
+                    {
+                        "status": "completed",
+                        "job_id": job_id,
+                        "total_steps": total_steps,
+                        "completed_steps": total_steps,
+                        "percent": 100,
+                        "started_at": started_at,
+                        "finished_at": timezone.now().isoformat(),
+                        "last_slot": None,
+                    },
+                    timeout=60 * 60,
+                )
                 print(f"Background task finished: Successfully updated {hours} hours.")
             except Exception as e:
+                cache.set(
+                    status_key,
+                    {
+                        "status": "failed",
+                        "job_id": job_id,
+                        "total_steps": total_steps,
+                        "completed_steps": 0,
+                        "percent": 0,
+                        "started_at": started_at,
+                        "finished_at": timezone.now().isoformat(),
+                        "error": str(e),
+                        "last_slot": None,
+                    },
+                    timeout=60 * 60,
+                )
                 print(f"Background task failed: {e}")
 
-        thread = threading.Thread(target=run_update_in_background)
+        thread = threading.Thread(target=run_update_in_background, daemon=True)
         thread.start()
 
         return Response(
-            {"status": "accepted", "message": f"Update process for the last {hours} hours started in the background."},
+            {
+                "status": "running",
+                "message": f"Update process for the last {hours} hours started in the background.",
+                "job_id": job_id,
+                "total_steps": total_steps,
+                "started_at": started_at,
+            },
             status=status.HTTP_202_ACCEPTED
         )
+
+
+class UpdateRecentSnapshotsStatusView(generics.GenericAPIView):
+    """Check the progress of the background snapshot update job."""
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        job_id = request.query_params.get("job_id") or cache.get("injection_update_latest_job_id")
+        if not job_id:
+            return Response({"status": "idle"}, status=status.HTTP_200_OK)
+
+        status_key = f"injection_update_status:{job_id}"
+        payload = cache.get(status_key)
+        if not payload:
+            return Response({"status": "idle", "job_id": job_id}, status=status.HTTP_200_OK)
+
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class InjectionReportViewSet(viewsets.ModelViewSet):
@@ -1794,6 +1900,39 @@ class ResourceMonitorPageListView(generics.GenericAPIView):
                     'ppDownsLimit': None
                 })
 
+            # 전력(kWh) 데이터 추가
+            if record.power_kwh is not None:
+                resource_monitors.append({
+                    'deviceId': None,
+                    'resourceId': record.device_code,
+                    'resourceName': record.machine_name,
+                    'paramId': 3,
+                    'paramName': '电能',
+                    'paramUnit': 'kWh',
+                    'paramType': {'code': 1, 'message': '资源参数'},
+                    'paramClassification': '能耗',
+                    'val': str(record.power_kwh),
+                    'recordTime': record_time_ms,
+                    'ts': record_time_ms,
+                    'beginTime': None,
+                    'endTime': None,
+                    'refTaskId': None,
+                    'refTaskType': None,
+                    'createType': {'code': 1, 'message': '自动采集'},
+                    'rpStatus': {'code': 1, 'message': '正常'},
+                    'rpStandardVal': None,
+                    'rpUpLimit': None,
+                    'rpUpsLimit': None,
+                    'rpDownLimit': None,
+                    'rpDownsLimit': None,
+                    'ppStatus': None,
+                    'ppStandardVal': None,
+                    'ppUpLimit': None,
+                    'ppUpsLimit': None,
+                    'ppDownLimit': None,
+                    'ppDownsLimit': None
+                })
+
         # BLACKLAKE 표준 응답 형식
         response_data = {
             'code': 200,
@@ -1878,7 +2017,7 @@ class ProductionMatrixView(generics.GenericAPIView):
         from .mes_service import mes_service
 
         # 파라미터 처리
-        interval_type = request.query_params.get('interval', '30min')  # '30min' or '1hour'
+        interval_type = request.query_params.get('interval', '30min')  # '10min', '30min', '1hour', or '1day'
         columns = int(request.query_params.get('columns', '13'))  # 기본 13열
 
         # 1) MES 우선 시도 (항상)
@@ -1965,6 +2104,7 @@ class SingleDeviceMonitorView(generics.GenericAPIView):
             
             latest_capacity = None
             latest_oil_temp = None
+            latest_power = None
 
             for record in sorted(records, key=lambda x: x.get('recordTime', 0), reverse=True):
                 param_name = record.get('paramName')
@@ -1974,7 +2114,10 @@ class SingleDeviceMonitorView(generics.GenericAPIView):
                 elif param_name == '油温' and latest_oil_temp is None:
                     try: latest_oil_temp = float(record.get('val'))
                     except (ValueError, TypeError): pass
-                if latest_capacity is not None and latest_oil_temp is not None: break
+                elif param_name == '电能' and latest_power is None:
+                    try: latest_power = float(record.get('val'))
+                    except (ValueError, TypeError): pass
+                if latest_capacity is not None and latest_oil_temp is not None and latest_power is not None: break
 
             machine_name = get_machine_name_from_device_code(device_code)
             
@@ -1985,6 +2128,7 @@ class SingleDeviceMonitorView(generics.GenericAPIView):
                     'machine_name': machine_name,
                     'capacity': latest_capacity,
                     'oil_temperature': latest_oil_temp,
+                    'power_kwh': latest_power,
                 }
             )
             
