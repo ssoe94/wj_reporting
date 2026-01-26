@@ -600,8 +600,8 @@ class MESResourceService:
 
         # MES 雿办澊韯?靾橃 鞁滌爯鞚?鞀瀼(10攵?雼渼)瓿?鞏搓笅雮?靾?鞛堨柎 於╇秳頌?雱撽矊 臁绊殞頃滊嫟.
         # -30攵?~ +10攵?氩旍渼鞐愳劀 臧€鞛?臧€旯岇毚 臧掛潉 靹犿儩.
-        search_start_time = target_timestamp - timedelta(minutes=30)
-        search_end_time = target_timestamp + timedelta(minutes=10)
+        search_start_time = target_timestamp - timedelta(minutes=1)
+        search_end_time = target_timestamp + timedelta(minutes=1)
         target_ts_ms = int(target_timestamp.timestamp() * 1000)
 
         logger.info(f"=== Starting snapshot update for timestamp: {target_timestamp.isoformat()} ===")

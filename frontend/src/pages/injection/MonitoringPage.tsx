@@ -739,24 +739,24 @@ export default function InjectionMonitoringPage() {
                   {displaySlots.map(({ slot, index }) => {
                     const displayDate = new Date(slot.time);
                     return (
-                    <th
-                      key={`${slot.time}-${index}`}
-                      scope="col"
-                      className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 min-w-[120px]"
-                    >
-                      {viewMode === 'day' ? (
-                        <span className="font-bold">
-                          {format(displayDate, 'yyyy-MM-dd', { locale: lang === 'ko' ? ko : zhCN })}
-                        </span>
-                      ) : (
-                        <>
-                          <span>{format(displayDate, 'yyyy-MM-dd', { locale: lang === 'ko' ? ko : zhCN })}</span>
-                          <br />
-                          <span className="font-bold">{format(displayDate, 'HH:mm', { locale: lang === 'ko' ? ko : zhCN })}</span>
-                        </>
-                      )}
-                    </th>
-                  );
+                      <th
+                        key={`${slot.time}-${index}`}
+                        scope="col"
+                        className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 min-w-[120px]"
+                      >
+                        {viewMode === 'day' ? (
+                          <span className="font-bold">
+                            {format(displayDate, 'yyyy-MM-dd', { locale: lang === 'ko' ? ko : zhCN })}
+                          </span>
+                        ) : (
+                          <>
+                            <span>{format(displayDate, 'yyyy-MM-dd', { locale: lang === 'ko' ? ko : zhCN })}</span>
+                            <br />
+                            <span className="font-bold">{format(displayDate, 'HH:mm', { locale: lang === 'ko' ? ko : zhCN })}</span>
+                          </>
+                        )}
+                      </th>
+                    );
                   })}
                 </tr>
               </thead>
@@ -773,7 +773,7 @@ export default function InjectionMonitoringPage() {
                     <tr key={machine.machine_number} className="hover:bg-gray-50">
                       <td className="px-4 py-4 whitespace-nowrap border-r border-gray-200 text-center">
                         <div className="text-sm font-medium text-gray-900">
-                          {(machine.display_name.endsWith('T') ? machine.display_name : `${machine.display_name}T`).replace('호기', t('호기'))}
+                          {`${machine.machine_number}${t('호기')} - ${machine.tonnage}T`}
                         </div>
                         {setup ? (
                           <div className="text-xs text-gray-600 mt-1 space-y-0.5">
