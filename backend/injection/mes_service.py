@@ -36,8 +36,7 @@ if not MES_PARAM_ID_TEMP:
     MES_PARAM_ID_TEMP = '1741230035347466'
 
 class MESResourceService:
-    """BLACKLAKE MES 毽唽鞀?氇媹韯半 靹滊箘鞀?""
-
+    """BLACKLAKE MES 자원 파라미터 모니터링 서비스"""
     def __init__(self):
         # MES BASE 臁绊暕: 頇橁步氤€靾橃棎 route 臧€ 韽暔霅橃柎 鞛堨溂氅?攴鸽寑搿?靷毄, 鞎勲媹氅?route 鞝戫暕
         self.base_url = MES_BASE_URL if '/api/openapi/domain/web/v1/route' in MES_BASE_URL else f"{MES_BASE_URL}{MES_ROUTE_BASE}"
@@ -282,7 +281,7 @@ class MESResourceService:
 
                 time_diff = current_time - slot_time
                 minutes_diff = int(time_diff.total_seconds() / 60)
-                label = f"{minutes_diff}攵?鞝? if minutes_diff < 60 else f"{minutes_diff // 60}鞁滉皠 鞝?
+                label = f"{minutes_diff} min" if minutes_diff < 60 else f"{minutes_diff // 60} h"
 
                 time_slots.append({
                     'hour_offset': i,
@@ -302,9 +301,9 @@ class MESResourceService:
                 time_diff = current_time - slot_time
                 hours_diff = time_diff.total_seconds() / 3600
                 if hours_diff < 1:
-                    label = f"{int(time_diff.total_seconds() / 60)}攵?鞝?
+                    label = f"{int(time_diff.total_seconds() / 60)} min"
                 else:
-                    label = f"{hours_diff:.1f}鞁滉皠 鞝?
+                    label = f"{hours_diff:.1f} h"
 
                 time_slots.append({
                     'hour_offset': i,
@@ -330,7 +329,7 @@ class MESResourceService:
                 time_slots.append({
                     'hour_offset': i,
                     'time': slot_time.isoformat(),
-                    'label': f'{i}鞁滉皠 鞝? if i > 0 else '順勳灛',
+                    'label': f'{i} h' if i > 0 else 'now',
                     'interval_minutes': 60
                 })
 
