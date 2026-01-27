@@ -248,7 +248,7 @@ const MachineDetailDrawer: FC<{
                             <div className="shrink-0 scale-125 md:scale-100">
                               <DonutChart
                                 progress={part.progress}
-                                actual={part.actual_quantity}
+                                actual={roundQty(part.actual_quantity)}
                                 planned={roundQty(part.planned_quantity)}
                                 size={100}
                                 strokeWidth={10}
@@ -277,7 +277,7 @@ const MachineDetailDrawer: FC<{
                                   </div>
                                   <div>
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">ACTUAL</p>
-                                    <p className="text-lg font-black text-gray-900 leading-none">{part.actual_quantity.toLocaleString()}</p>
+                                    <p className="text-lg font-black text-gray-900 leading-none">{roundQty(part.actual_quantity).toLocaleString()}</p>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-100">

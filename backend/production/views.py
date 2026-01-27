@@ -311,7 +311,7 @@ class ProductionStatusView(APIView):
 
         injection_results = []
 
-        def compute_injection_actual(machine_monitor_name: str) -> float:
+        def compute_injection_actual(machine_monitor_name: str) -> int:
             """
             Compute total production within the 8:00~8:00 window by summing positive deltas.
             Falls back to the first value if no baseline exists and handles counter resets.
@@ -341,7 +341,7 @@ class ProductionStatusView(APIView):
                 if delta > 0:
                     total += delta
                 prev = capacity
-            return float(total)
+            return int(round(total))
 
         
         # 3. Group sorted plans by machine name
@@ -355,7 +355,7 @@ class ProductionStatusView(APIView):
             monitoring_machine_name = f"{machine_number}호기"
 
             daily_production_delta = compute_injection_actual(monitoring_machine_name)
-            remaining_production = daily_production_delta
+            remaining_production = int(daily_production_delta)
 
             machine_parts = []
             total_planned = 0
@@ -363,7 +363,7 @@ class ProductionStatusView(APIView):
 
             # 6. Apply sequential fulfillment logic
             for plan in plans:
-                planned_qty = plan.planned_quantity
+                planned_qty = int(round(plan.planned_quantity or 0))
                 if not planned_qty or planned_qty <= 0:
                     continue
                 actual_qty = 0
