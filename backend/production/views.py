@@ -3,8 +3,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from django.utils.dateparse import parse_date
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 import pandas as pd
+import pytz
+import re
 
 from .models import ProductionPlan
 from injection.models import InjectionMonitoringRecord
@@ -260,19 +262,37 @@ class ProductionStatusView(APIView):
             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
         # --- INJECTION LOGIC ---
-        start_datetime = pd.Timestamp(target_date, tz='Asia/Shanghai').replace(hour=8, minute=0, second=0, microsecond=0)
-        end_datetime = start_datetime + timedelta(days=1)
+        cst = pytz.timezone('Asia/Shanghai')
+        start_local = cst.localize(datetime.combine(target_date, time(8, 0, 0)))
+        end_local = start_local + timedelta(days=1)
+        # Convert to UTC for DB filtering (USE_TZ=True)
+        start_datetime = start_local.astimezone(pytz.UTC)
+        end_datetime = end_local.astimezone(pytz.UTC)
         
         # 1. Fetch plans
         injection_plans_qs = ProductionPlan.objects.filter(plan_date=target_date, plan_type='injection')
         
         # 2. Custom sort in Python
+        def extract_machine_number(name: str | None) -> int | None:
+            if not name:
+                return None
+            # Prefer explicit machine markers over tonnage.
+            match = re.search(r'(\d+)\s*(?:호기)', name)
+            if match:
+                return int(match.group(1))
+            match = re.search(r'-(\d+)\s*$', name)
+            if match:
+                return int(match.group(1))
+            match = re.search(r'^\s*(\d+)\b', name)
+            if match:
+                return int(match.group(1))
+            return None
+
         def get_sort_key(plan):
-            try:
-                machine_number = int(plan.machine_name.split('-')[-1])
-                return (machine_number, plan.sequence)
-            except (ValueError, IndexError):
+            machine_number = extract_machine_number(plan.machine_name)
+            if machine_number is None:
                 return (999, plan.sequence)
+            return (machine_number, plan.sequence)
 
         sorted_plans = sorted(list(injection_plans_qs), key=get_sort_key)
 
@@ -309,17 +329,17 @@ class ProductionStatusView(APIView):
                     total += delta
                 prev = capacity
             return float(total)
+
         
         # 3. Group sorted plans by machine name
         for machine_name, plans_group in groupby(sorted_plans, key=lambda p: p.machine_name):
             plans = list(plans_group)
             
             # Map plan machine name to monitoring machine name
-            try:
-                machine_number_str = machine_name.split('-')[-1]
-                monitoring_machine_name = f"{machine_number_str}호기"
-            except IndexError:
+            machine_number = extract_machine_number(machine_name)
+            if machine_number is None:
                 continue
+            monitoring_machine_name = f"{machine_number}호기"
 
             daily_production_delta = compute_injection_actual(monitoring_machine_name)
             remaining_production = daily_production_delta

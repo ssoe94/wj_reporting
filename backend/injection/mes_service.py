@@ -54,7 +54,7 @@ class MESResourceService:
                 # 鞛橂霅?順曥嫕鞚措┐ 氍挫嫓頃橁碃 旮半掣 毵ろ晳 靷毄
                 self.device_code_map = {}
 
-        # 頇橁步氤€靾橁皜 鞐嗢溂氅?頂勲鞝濏姼 旮半掣 毵ろ晳(1~17順戈赴)鞚?靷毄
+        # 頇橁步氤€靾橁皜 鞐嗢溂氅?頂勲鞝濏姼 旮半掣 毵ろ晳(1~17??)鞚?靷毄
         if not self.device_code_map:
             self.device_code_map = {
                 '1': '850T-1',
@@ -247,7 +247,7 @@ class MESResourceService:
             InjectionMonitoringRecord(
                 device_code=device_code,
                 timestamp=ts,
-                machine_name=f'{machine_num}順戈赴',
+                machine_name=f'{machine_num}호기',
                 capacity=values.get('prod'),
                 oil_temperature=values.get('temp'),
                 power_kwh=values.get('power'),
@@ -349,7 +349,7 @@ class MESResourceService:
         for machine_num in machine_numbers:
             device_code = self._map_machine_to_device_code(machine_num)
             
-            last_record = InjectionMonitoringRecord.objects.filter(machine_name=f'{machine_num}順戈赴').order_by('-timestamp').first()
+            last_record = InjectionMonitoringRecord.objects.filter(machine_name=f'{machine_num}호기').order_by('-timestamp').first()
             
             # Ensure all datetimes are handled in the same timezone (CST) for consistency.
             if last_record and last_record.timestamp.astimezone(cst) > absolute_start_date:
@@ -410,7 +410,7 @@ class MESResourceService:
                     latest_oil_temp = pick_closest(temp_records)
                     latest_power = pick_closest(power_records)
 
-                    defaults = {'machine_name': f'{machine_num}順戈赴'}
+                    defaults = {'machine_name': f'{machine_num}호기'}
                     if latest_capacity is not None:
                         defaults['capacity'] = latest_capacity
                     if latest_oil_temp is not None:
@@ -465,7 +465,7 @@ class MESResourceService:
 
         for machine_num in machine_numbers:
             db_records = InjectionMonitoringRecord.objects.filter(
-                machine_name=f'{machine_num}順戈赴',
+                machine_name=f'{machine_num}호기',
                 timestamp__gte=start_of_first_slot,
                 timestamp__lt=end_of_last_slot
             ).order_by('timestamp')
@@ -492,13 +492,13 @@ class MESResourceService:
             
             # 觳?氩堨Ц 鞀’ 鞚挫爠鞚?雸勳爜 靸濎偘霟夓潉 彀眷晞 鞁滉皠雼?靸濎偘霟夓潣 旮办鞝愳溂搿?靷检姷雼堧嫟.
             record_before_first_slot = InjectionMonitoringRecord.objects.filter(
-                machine_name=f'{machine_num}順戈赴',
+                machine_name=f'{machine_num}호기',
                 timestamp__lt=start_of_first_slot,
                 capacity__isnull=False
             ).order_by('-timestamp').first()
 
             record_before_first_slot_power = InjectionMonitoringRecord.objects.filter(
-                machine_name=f'{machine_num}順戈赴',
+                machine_name=f'{machine_num}호기',
                 timestamp__lt=start_of_first_slot,
                 power_kwh__isnull=False
             ).order_by('-timestamp').first()
@@ -560,7 +560,7 @@ class MESResourceService:
             }
             tonnage = recent_report.tonnage if recent_report else default_tonnage_map.get(machine_no, f'{machine_no * 50}T')
             machine_info_map[machine_no] = {
-                'name': f'{machine_no}順戈赴',
+                'name': f'{machine_no}호기',
                 'tonnage': tonnage
             }
 
@@ -614,7 +614,7 @@ class MESResourceService:
 
         for machine_num in machine_numbers:
             device_code = self._map_machine_to_device_code(machine_num)
-            machine_name = f'{machine_num}順戈赴'
+            machine_name = f'{machine_num}호기'
             logger.info(f"--- Processing machine {machine_num} (device_code: {device_code}) ---")
 
             try:
@@ -681,7 +681,7 @@ class MESResourceService:
 
     def update_hourly_snapshot_from_mes(self):
         """
-        10? ??? ?? ???? ????? ?????.
+        10? ?? ?? ?? ?? ??.
         """
         logger = logging.getLogger(__name__)
         cst = pytz.timezone('Asia/Shanghai')
@@ -713,7 +713,7 @@ class MESResourceService:
         progress_callback: Optional[Callable[[int, int, datetime], None]] = None,
     ):
         """
-        ??? ???? ?? 10? ??? ???? ???????.
+        ?? ?? ?? 10? ?? ?? ??.
         """
         logger = logging.getLogger(__name__)
         cst = pytz.timezone('Asia/Shanghai')
