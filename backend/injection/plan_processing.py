@@ -196,8 +196,8 @@ class ProductionPlanProcessor:
                 "daily_plan": [],
             }
             for column in day_columns:
-                qty = self._clean_number(row.get(column))
-                if not qty:
+                qty = self._clean_plan_qty(row.get(column))
+                if not qty or qty <= 0:
                     continue
                 if column not in day_map:
                     continue
@@ -233,15 +233,17 @@ class ProductionPlanProcessor:
         ]
         melted = df.melt(id_vars=id_vars, value_vars=day_columns, var_name="day", value_name="plan_qty")
         melted = melted.dropna(subset=["plan_qty"])
-        melted = melted[melted["plan_qty"] != 0]
+        melted["plan_qty"] = pd.to_numeric(melted["plan_qty"], errors="coerce")
+        melted["plan_qty"] = melted["plan_qty"].round()
+        melted = melted[melted["plan_qty"] > 0]
 
         # Keys for grouping, EXCLUDING original_order
         agg_keys = [col for col in id_vars if col != 'original_order' and col in melted.columns]
         agg_keys.append("day")
 
         if agg_keys:
-            melted['plan_qty'] = pd.to_numeric(melted['plan_qty'], errors='coerce').fillna(0)
-            
+            melted['plan_qty'] = melted['plan_qty'].fillna(0).astype(int)
+
             # Group by plan identifiers and aggregate: sum quantities and get the MIN original_order
             aggregated = melted.groupby(agg_keys, as_index=False, dropna=False).agg(
                 plan_qty=('plan_qty', 'sum'),
@@ -271,7 +273,7 @@ class ProductionPlanProcessor:
                     "material": self._clean_str(row.get("material")),
                     "color": self._clean_str(row.get("color")),
                     "date": plan_date.isoformat(),
-                    "plan_qty": self._clean_number(row.get("plan_qty")),
+                    "plan_qty": int(row.get("plan_qty") or 0),
                     "plan_type": self.plan_type,
                 }
             )
@@ -304,6 +306,13 @@ class ProductionPlanProcessor:
         if abs(number) < 1e-6:
             return 0
         return number
+
+    def _clean_plan_qty(self, value: Any) -> Optional[int]:
+        number = self._clean_number(value)
+        if number is None:
+            return None
+        rounded = int(round(number))
+        return rounded
 
     def _clean_date(self, value: Any) -> Optional[str]:
         if value in (None, "", " "):

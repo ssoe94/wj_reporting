@@ -63,6 +63,7 @@ const formatNumber = (value?: number | null) => {
     if (value === null || value === undefined) return '0';
     return numberFormatter.format(value);
 };
+const normalizeQty = (value?: number | null) => Math.round(Number(value) || 0);
 const COLOR_PALETTE = ['#2563eb', '#22c55e', '#a855f7', '#f97316', '#14b8a6', '#ef4444', '#0ea5e9'];
 const BAR_SIZE = 24;
 const BAR_GAP = 20;
@@ -194,7 +195,7 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
             const displayLabel = planType === 'injection'
                 ? formatInjectionMachineLabel(rawMachineName, t)
                 : (rawMachineName || t('plan_unknown_machine'));
-            const qty = Number(record.planned_quantity) || 0;
+            const qty = normalizeQty(record.planned_quantity);
             const partLabelCandidate =
                 (typeof record.part_no === 'string' && record.part_no.trim()) ||
                 (typeof record.model_name === 'string' && record.model_name.trim()) ||
@@ -236,7 +237,7 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
             const fallbackData: MachineChartRow[] = sortMachineSummary(summary.machine_summary || [], planType).map((row, index) => ({
                 machineKey: row.machine_name || `machine-${index}`,
                 machine_name: row.machine_name,
-                plan_qty: row.plan_qty || 0,
+                plan_qty: normalizeQty(row.plan_qty),
                 plan_date: row.plan_date,
                 displayLabel: planType === 'injection'
                     ? formatInjectionMachineLabel(row.machine_name, t)
@@ -244,7 +245,7 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
                 partPlans: [],
                 segmentOrder: { [fallbackKey]: 0 },
                 segmentCount: 1,
-                [fallbackKey]: row.plan_qty || 0,
+                [fallbackKey]: normalizeQty(row.plan_qty),
                 baseColor: undefined,
             }));
 

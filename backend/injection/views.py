@@ -2186,6 +2186,13 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                 plan_long_data = response_data.get("plan_long", [])
                 plans_to_create = []
                 for i, record in enumerate(plan_long_data):
+                    plan_qty = record.get("plan_qty")
+                    try:
+                        plan_qty = int(round(float(plan_qty)))
+                    except (TypeError, ValueError):
+                        plan_qty = 0
+                    if plan_qty <= 0:
+                        continue
                     plans_to_create.append(
                         ProductionPlan(
                             plan_date=record.get("date"),
@@ -2195,7 +2202,7 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                             model_name=record.get("model"),
                             part_spec=record.get("part_spec"),
                             part_no=record.get("fg_part_no"), # fg_part_no is mapped to part_no
-                            planned_quantity=record.get("plan_qty"),
+                            planned_quantity=plan_qty,
                             sequence=record.get("original_order", i) # Use original_order, with i as fallback
                         )
                     )

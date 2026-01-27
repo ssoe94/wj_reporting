@@ -31,7 +31,7 @@ class ProductionPlanSummaryView(APIView):
             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Fetch all plan data for the target date
-        plan_data_qs = ProductionPlan.objects.filter(plan_date=target_date)
+        plan_data_qs = ProductionPlan.objects.filter(plan_date=target_date, planned_quantity__gt=0)
         
         if not plan_data_qs.exists():
             return Response({
@@ -61,6 +61,10 @@ class ProductionPlanSummaryView(APIView):
         records_machining = list(plan_data_qs.filter(plan_type='machining').values(
             'machine_name', 'lot_no', 'model_name', 'part_spec', 'part_no', 'planned_quantity'
         ))
+        for record in records_injection:
+            record['planned_quantity'] = int(round(record.get('planned_quantity') or 0))
+        for record in records_machining:
+            record['planned_quantity'] = int(round(record.get('planned_quantity') or 0))
 
         # 2. 'machine_summary'
         machine_summary_injection = list(plan_data_qs.filter(plan_type='injection').values('machine_name')
@@ -83,12 +87,16 @@ class ProductionPlanSummaryView(APIView):
         # 4. 'daily_totals'
         daily_total_injection = plan_data_qs.filter(plan_type='injection').aggregate(total=Sum('planned_quantity'))['total'] or 0
         daily_total_machining = plan_data_qs.filter(plan_type='machining').aggregate(total=Sum('planned_quantity'))['total'] or 0
+        daily_total_injection = int(round(daily_total_injection))
+        daily_total_machining = int(round(daily_total_machining))
 
         # Helper to convert date objects to strings for JSON serialization
         def serialize_summary(summary_list):
             for item in summary_list:
                 if 'plan_date' in item and hasattr(item['plan_date'], 'isoformat'):
                     item['plan_date'] = item['plan_date'].isoformat()
+                if 'plan_qty' in item:
+                    item['plan_qty'] = int(round(item.get('plan_qty') or 0))
             return summary_list
 
 
