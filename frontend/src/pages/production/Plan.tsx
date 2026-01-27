@@ -5,8 +5,6 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import type { TooltipProps } from 'recharts';
 import { FileSpreadsheet, AlertTriangle, Layers } from 'lucide-react';
 import { useLang } from '../../i18n';
-import { Dialog, Transition } from '@headlessui/react';
-import { Fragment } from 'react';
 import { getProductionPlanDates, getProductionPlanSummary, updateProductionPartCavity } from '../../lib/api';
 import PlanCalendar from '../../components/production/PlanCalendar';
 import UploadCard from '../../components/production/UploadCard';
@@ -74,7 +72,6 @@ const ROW_HEIGHT = BAR_SIZE + BAR_GAP;
 const MIN_CHART_HEIGHT = 240;
 const GRAPH_BOTTOM_PADDING = 60;
 const DETAIL_CARD_MULTIPLIER = 1.05;
-const LIST_CARD_MULTIPLIER = 2;
 const Y_AXIS_LABEL_WIDTH = 180;
 const CHART_LEFT_SHIFT = 80;
 
@@ -99,9 +96,7 @@ const estimateDetailHeight = (summary?: PlanSummary, planType?: 'injection' | 'm
 };
 
 const estimateListHeight = (summary?: PlanSummary, planType?: 'injection' | 'machining') => {
-    const columnHeight = estimateColumnHeight(summary, planType);
-    if (typeof columnHeight !== 'number') return undefined;
-    return columnHeight * LIST_CARD_MULTIPLIER;
+    return estimateDetailHeight(summary, planType);
 };
 
 const parseLotOrder = (value: any, fallback: number) => {
@@ -167,7 +162,6 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
     const [hoveredMachine, setHoveredMachine] = useState<string | null>(null);
     const [cavityOverrides, setCavityOverrides] = useState<Record<string, number>>({});
     const [savingCavity, setSavingCavity] = useState<Record<string, boolean>>({});
-    const [isDetailOpen, setIsDetailOpen] = useState(false);
 
     useEffect(() => {
         setSelectedMachine(null);
@@ -433,8 +427,7 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
     const columnHeight = columnHeightOverride ?? baseColumnHeight;
     const baseDetailHeight = columnHeight * DETAIL_CARD_MULTIPLIER;
     const detailCardHeight = detailHeightOverride ?? baseDetailHeight;
-    const baseListHeight = columnHeight * LIST_CARD_MULTIPLIER;
-    const listCardHeight = listHeightOverride ?? baseListHeight;
+    const listCardHeight = listHeightOverride ?? detailCardHeight;
     const activeMachineKey = hoveredMachine ?? selectedMachine;
     const selectedPlans = activeMachineKey ? machineDetailsMap[activeMachineKey] : null;
     const selectedMachineLabel = activeMachineKey ? (machineLabelMap[activeMachineKey] || activeMachineKey) : '';
@@ -569,7 +562,7 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
                 </div>
                 <div
                     className="bg-white rounded-xl shadow p-5 flex flex-col"
-                    style={{ minHeight: Math.min(200, listCardHeight), maxHeight: Math.min(200, listCardHeight) }}
+                    style={{ minHeight: listCardHeight, maxHeight: listCardHeight }}
                 >
                     <div className="flex items-center justify-between gap-2 mb-4">
                         <div className="flex items-center gap-2">
@@ -590,130 +583,76 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
                             </button>
                         )}
                     </div>
-                    <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
-                        <button
-                            type="button"
-                            onClick={() => setIsDetailOpen(true)}
-                            className="px-4 py-2 rounded-full bg-gray-900 text-white text-xs font-semibold shadow hover:bg-gray-800 transition"
-                        >
-                            {t('dashboard_production_details')}
-                        </button>
+                    <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                        {(() => {
+                            const plansToShow = activeMachineKey ? selectedPlans : globalPlans;
+                            if (!plansToShow || plansToShow.length === 0) {
+                                return <p className="text-sm text-gray-500">{t('plan_no_machine_detail')}</p>;
+                            }
+                            return (
+                                <div className="space-y-2">
+                                    {plansToShow.map((plan, idx) => {
+                                        const partKey = plan.partNo?.toUpperCase();
+                                        const cavityValue = partKey ? (cavityOverrides[partKey] ?? plan.cavity ?? 1) : 1;
+                                        return (
+                                            <div key={plan.id} className="border border-gray-100 rounded-lg p-3 space-y-2">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-900">
+                                                            {plan.partNo || plan.partLabel}
+                                                        </p>
+                                                        {plan.modelName && (
+                                                            <p className="text-xs text-gray-500">{plan.modelName}</p>
+                                                        )}
+                                                        {!activeMachineKey && plan.machineLabel && (
+                                                            <p className="text-[11px] text-gray-400 font-medium">
+                                                                {plan.machineLabel}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm font-mono text-gray-900">
+                                                        {formatNumber(plan.qty)}
+                                                    </p>
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                                                    <span className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 font-medium text-blue-700">
+                                                        {t('plan_sequence_badge', { order: idx + 1 })}
+                                                    </span>
+                                                    <span>{t('plan_qty_summary')}</span>
+                                                    {partKey && (
+                                                        <label className="ml-auto flex items-center gap-1 text-[11px] text-gray-500">
+                                                            <span>{t('cavity')}</span>
+                                                            <input
+                                                                type="number"
+                                                                min={1}
+                                                                className="w-16 rounded-md border border-gray-200 px-2 py-0.5 text-right text-[11px] font-semibold text-gray-700 focus:border-blue-400 focus:outline-none"
+                                                                value={cavityValue}
+                                                                onChange={(e) => {
+                                                                    const next = Math.max(1, Number(e.target.value || 1));
+                                                                    setCavityOverrides((prev) => ({ ...prev, [partKey]: next }));
+                                                                }}
+                                                                onBlur={() => handleCavitySave(partKey)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.currentTarget.blur();
+                                                                    }
+                                                                }}
+                                                            />
+                                                            {savingCavity[partKey] && (
+                                                                <span className="text-[10px] text-gray-400">...</span>
+                                                            )}
+                                                        </label>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>
-            <Transition.Root show={isDetailOpen} as={Fragment}>
-                <Dialog as="div" className="relative z-50" onClose={setIsDetailOpen}>
-                    <Transition.Child
-                        as={Fragment}
-                        enter="ease-out duration-200"
-                        enterFrom="opacity-0"
-                        enterTo="opacity-100"
-                        leave="ease-in duration-150"
-                        leaveFrom="opacity-100"
-                        leaveTo="opacity-0"
-                    >
-                        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm" />
-                    </Transition.Child>
-                    <div className="fixed inset-0 overflow-y-auto">
-                        <div className="flex min-h-full items-center justify-center p-4">
-                            <Transition.Child
-                                as={Fragment}
-                                enter="ease-out duration-200"
-                                enterFrom="opacity-0 scale-95"
-                                enterTo="opacity-100 scale-100"
-                                leave="ease-in duration-150"
-                                leaveFrom="opacity-100 scale-100"
-                                leaveTo="opacity-0 scale-95"
-                            >
-                                <Dialog.Panel className="w-full max-w-3xl rounded-2xl bg-white shadow-xl border border-gray-100 p-6">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <Dialog.Title className="text-lg font-semibold text-gray-900">
-                                            {activeMachineKey
-                                                ? t('plan_machine_schedule_for', { machine: selectedMachineLabel })
-                                                : t('plan_models_title')}
-                                        </Dialog.Title>
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsDetailOpen(false)}
-                                            className="text-xs font-semibold text-gray-500 hover:text-gray-700"
-                                        >
-                                            {t('close')}
-                                        </button>
-                                    </div>
-                                    <div className="max-h-[65vh] overflow-y-auto space-y-2 pr-1">
-                                        {(() => {
-                                            const plansToShow = activeMachineKey ? selectedPlans : globalPlans;
-                                            if (!plansToShow || plansToShow.length === 0) {
-                                                return <p className="text-sm text-gray-500">{t('plan_no_machine_detail')}</p>;
-                                            }
-                                            return (
-                                                <div className="space-y-2">
-                                                    {plansToShow.map((plan, idx) => {
-                                                        const partKey = plan.partNo?.toUpperCase();
-                                                        const cavityValue = partKey ? (cavityOverrides[partKey] ?? plan.cavity ?? 1) : 1;
-                                                        return (
-                                                            <div key={plan.id} className="border border-gray-100 rounded-lg p-3 space-y-2">
-                                                                <div className="flex items-center justify-between gap-3">
-                                                                    <div>
-                                                                        <p className="text-sm font-semibold text-gray-900">
-                                                                            {plan.partNo || plan.partLabel}
-                                                                        </p>
-                                                                        {plan.modelName && (
-                                                                            <p className="text-xs text-gray-500">{plan.modelName}</p>
-                                                                        )}
-                                                                        {!activeMachineKey && plan.machineLabel && (
-                                                                            <p className="text-[11px] text-gray-400 font-medium">
-                                                                                {plan.machineLabel}
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-                                                                    <p className="text-sm font-mono text-gray-900">
-                                                                        {formatNumber(plan.qty)}
-                                                                    </p>
-                                                                </div>
-                                                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-                                                                    <span className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 font-medium text-blue-700">
-                                                                        {t('plan_sequence_badge', { order: idx + 1 })}
-                                                                    </span>
-                                                                    <span>{t('plan_qty_summary')}</span>
-                                                                    {partKey && (
-                                                                        <label className="ml-auto flex items-center gap-1 text-[11px] text-gray-500">
-                                                                            <span>{t('cavity')}</span>
-                                                                            <input
-                                                                                type="number"
-                                                                                min={1}
-                                                                                className="w-16 rounded-md border border-gray-200 px-2 py-0.5 text-right text-[11px] font-semibold text-gray-700 focus:border-blue-400 focus:outline-none"
-                                                                                value={cavityValue}
-                                                                                onChange={(e) => {
-                                                                                    const next = Math.max(1, Number(e.target.value || 1));
-                                                                                    setCavityOverrides((prev) => ({ ...prev, [partKey]: next }));
-                                                                                }}
-                                                                                onBlur={() => handleCavitySave(partKey)}
-                                                                                onKeyDown={(e) => {
-                                                                                    if (e.key === 'Enter') {
-                                                                                        e.currentTarget.blur();
-                                                                                    }
-                                                                                }}
-                                                                            />
-                                                                            {savingCavity[partKey] && (
-                                                                                <span className="text-[10px] text-gray-400">...</span>
-                                                                            )}
-                                                                        </label>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-                                </Dialog.Panel>
-                            </Transition.Child>
-                        </div>
-                    </div>
-                </Dialog>
-            </Transition.Root>
         </div>
     )
 }

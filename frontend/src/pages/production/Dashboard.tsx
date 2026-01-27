@@ -171,144 +171,142 @@ const MachineDetailDrawer: FC<{
           <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" />
         </Transition.Child>
 
-        <div className="fixed inset-0 overflow-hidden">
-          <div className="absolute inset-0 overflow-hidden">
-            <div className="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10">
-              <Transition.Child
-                as={Fragment}
-                enter="transform transition ease-in-out duration-500 sm:duration-700"
-                enterFrom="translate-x-full"
-                enterTo="translate-x-0"
-                leave="transform transition ease-in-out duration-500 sm:duration-700"
-                leaveFrom="translate-x-0"
-                leaveTo="translate-x-full"
-              >
-                <Dialog.Panel className="pointer-events-auto w-screen max-w-2xl">
-                  <div className="flex h-full flex-col overflow-y-scroll bg-white shadow-2xl">
-                    <div className="px-4 py-8 sm:px-8 bg-gradient-to-br from-blue-50 to-white border-b border-gray-100">
-                      <div className="flex items-start justify-between">
-                        <div className="flex gap-6 items-center">
-                          <div className={`p-5 rounded-3xl ${planType === 'injection' ? 'bg-blue-600 shadow-[0_8px_30px_rgb(37,99,235,0.4)]' : 'bg-emerald-600 shadow-[0_8px_30px_rgb(5,150,105,0.4)]'}`}>
-                            {planType === 'injection' ? (
-                              <InjectionIcon className="w-10 h-10 text-white" />
-                            ) : (
-                              <MachiningIcon className="w-10 h-10 text-white" />
-                            )}
-                          </div>
-                          <div>
-                            <Dialog.Title className="text-3xl font-black text-gray-900 tracking-tighter">
-                              {displayMachineName}
-                            </Dialog.Title>
-                            <div className="flex items-center gap-3 mt-1.5 text-gray-500">
-                              <p className="text-sm font-bold flex items-center gap-1.5">
-                                <Activity className="w-4 h-4 text-blue-500" />
-                                {t('dashboard_production_details')}
-                              </p>
-                              <span className="w-1 h-1 bg-gray-300 rounded-full" />
-                              <p className="text-sm font-bold">{machine.parts.length} {t('pieces_unit')}</p>
-                            </div>
-                          </div>
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 sm:p-8">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+              enterTo="opacity-100 translate-y-0 sm:scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+              leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-3xl overflow-hidden rounded-[32px] bg-white shadow-2xl ring-1 ring-black/5">
+                <div className="max-h-[85vh] overflow-y-auto">
+                  <div className="px-4 py-8 sm:px-8 bg-gradient-to-br from-blue-50 to-white border-b border-gray-100">
+                    <div className="flex items-start justify-between">
+                      <div className="flex gap-6 items-center">
+                        <div className={`p-5 rounded-3xl ${planType === 'injection' ? 'bg-blue-600 shadow-[0_8px_30px_rgb(37,99,235,0.4)]' : 'bg-emerald-600 shadow-[0_8px_30px_rgb(5,150,105,0.4)]'}`}>
+                          {planType === 'injection' ? (
+                            <InjectionIcon className="w-10 h-10 text-white" />
+                          ) : (
+                            <MachiningIcon className="w-10 h-10 text-white" />
+                          )}
                         </div>
-                        <div className="ml-3 flex h-7 items-center">
-                          <button
-                            type="button"
-                            className="relative rounded-2xl bg-white p-2 text-gray-400 hover:text-gray-500 hover:shadow-lg transition-all border border-gray-100"
-                            onClick={onClose}
-                          >
-                            <ChevronDown className="h-6 w-6 rotate-[-90deg]" aria-hidden="true" />
-                          </button>
+                        <div>
+                          <Dialog.Title className="text-3xl font-black text-gray-900 tracking-tighter">
+                            {displayMachineName}
+                          </Dialog.Title>
+                          <div className="flex items-center gap-3 mt-1.5 text-gray-500">
+                            <p className="text-sm font-bold flex items-center gap-1.5">
+                              <Activity className="w-4 h-4 text-blue-500" />
+                              {t('dashboard_production_details')}
+                            </p>
+                            <span className="w-1 h-1 bg-gray-300 rounded-full" />
+                            <p className="text-sm font-bold">{machine.parts.length} {t('pieces_unit')}</p>
+                          </div>
                         </div>
                       </div>
-
-                      <div className="grid grid-cols-3 gap-6 mt-10">
-                        <div className="bg-white p-5 rounded-[24px] shadow-sm border border-gray-100">
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">{t('achievement_rate')}</p>
-                          <p className={`text-4xl font-black tracking-tighter ${machine.progress >= 100 ? 'text-emerald-500' : 'text-blue-600'}`}>{machine.progress}%</p>
-                        </div>
-                        <div className="bg-white p-5 rounded-[24px] shadow-sm border border-gray-100 col-span-2">
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">{t('dashboard_summary_planned_vs_actual')}</p>
-                          <div className="flex items-baseline gap-2">
-                            <p className="text-4xl font-black tracking-tighter text-gray-900">{roundQty(machine.total_actual).toLocaleString()}</p>
-                            <p className="text-xl font-bold text-gray-300 tracking-tight">/ {roundQty(machine.total_planned).toLocaleString()}</p>
-                          </div>
-                        </div>
+                      <div className="ml-3 flex h-7 items-center">
+                        <button
+                          type="button"
+                          className="relative rounded-2xl bg-white p-2 text-gray-400 hover:text-gray-500 hover:shadow-lg transition-all border border-gray-100"
+                          onClick={onClose}
+                        >
+                          <ChevronDown className="h-6 w-6 rotate-180" aria-hidden="true" />
+                        </button>
                       </div>
                     </div>
 
-                    <div className="relative flex-1 p-4 sm:p-8 bg-gray-50/50">
-                      <div className="space-y-6">
-                        {machine.parts.map((part, idx) => (
-                          <motion.div
-                            key={`${part.part_no}-${idx}`}
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: idx * 0.05 }}
-                            className="bg-white p-6 rounded-[28px] border border-gray-100 flex flex-col md:flex-row items-center gap-8 shadow-sm hover:shadow-xl transition-shadow"
-                          >
-                            <div className="shrink-0 scale-125 md:scale-100">
-                              <DonutChart
-                                progress={part.progress}
-                                actual={roundQty(part.actual_quantity)}
-                                planned={roundQty(part.planned_quantity)}
-                                size={100}
-                                strokeWidth={10}
-                              />
-                            </div>
-                            <div className="flex-1 w-full flex flex-col min-w-0">
-                              <div className="flex items-start justify-between mb-4">
-                                <div className="min-w-0">
-                                  <h4 className="font-black text-gray-900 text-xl tracking-tight truncate group">
-                                    <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-lg text-xs mr-2 border border-blue-100 align-middle">PN</span>
-                                    {part.part_no}
-                                  </h4>
-                                  <p className="text-sm font-bold text-gray-400 truncate mt-1">{part.model_name || t('plan_unknown_machine')}</p>
-                                </div>
-                                <div className="hidden sm:block text-right">
-                                  <span className={`text-2xl font-black ${part.progress >= 100 ? 'text-emerald-500' : 'text-blue-600'} tracking-tighter`}>
-                                    {part.progress}%
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                                  <div className="p-2 bg-white rounded-xl shadow-sm">
-                                    <Package className="w-4 h-4 text-blue-500" />
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">ACTUAL</p>
-                                    <p className="text-lg font-black text-gray-900 leading-none">{roundQty(part.actual_quantity).toLocaleString()}</p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                                  <div className="p-2 bg-white rounded-xl shadow-sm">
-                                    <Target className="w-4 h-4 text-gray-400" />
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">PLAN</p>
-                                  <p className="text-lg font-black text-gray-500 leading-none">{roundQty(part.planned_quantity).toLocaleString()}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        ))}
+                    <div className="grid grid-cols-3 gap-6 mt-10">
+                      <div className="bg-white p-5 rounded-[24px] shadow-sm border border-gray-100">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">{t('achievement_rate')}</p>
+                        <p className={`text-4xl font-black tracking-tighter ${machine.progress >= 100 ? 'text-emerald-500' : 'text-blue-600'}`}>{machine.progress}%</p>
                       </div>
-                    </div>
-
-                    <div className="shrink-0 border-t border-gray-100 bg-white p-6 sm:px-8">
-                      <button
-                        type="button"
-                        className="w-full rounded-[20px] bg-gray-900 py-4 text-sm font-black text-white shadow-xl hover:bg-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900 transition-all uppercase tracking-widest"
-                        onClick={onClose}
-                      >
-                        {t('close')}
-                      </button>
+                      <div className="bg-white p-5 rounded-[24px] shadow-sm border border-gray-100 col-span-2">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">{t('dashboard_summary_planned_vs_actual')}</p>
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-4xl font-black tracking-tighter text-gray-900">{roundQty(machine.total_actual).toLocaleString()}</p>
+                          <p className="text-xl font-bold text-gray-300 tracking-tight">/ {roundQty(machine.total_planned).toLocaleString()}</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </Dialog.Panel>
-              </Transition.Child>
-            </div>
+
+                  <div className="relative p-4 sm:p-8 bg-gray-50/50">
+                    <div className="space-y-6">
+                      {machine.parts.map((part, idx) => (
+                        <motion.div
+                          key={`${part.part_no}-${idx}`}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.05 }}
+                          className="bg-white p-6 rounded-[28px] border border-gray-100 flex flex-col md:flex-row items-center gap-8 shadow-sm hover:shadow-xl transition-shadow"
+                        >
+                          <div className="shrink-0 scale-125 md:scale-100">
+                            <DonutChart
+                              progress={part.progress}
+                              actual={roundQty(part.actual_quantity)}
+                              planned={roundQty(part.planned_quantity)}
+                              size={100}
+                              strokeWidth={10}
+                            />
+                          </div>
+                          <div className="flex-1 w-full flex flex-col min-w-0">
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="min-w-0">
+                                <h4 className="font-black text-gray-900 text-xl tracking-tight truncate group">
+                                  <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-lg text-xs mr-2 border border-blue-100 align-middle">PN</span>
+                                  {part.part_no}
+                                </h4>
+                                <p className="text-sm font-bold text-gray-400 truncate mt-1">{part.model_name || t('plan_unknown_machine')}</p>
+                              </div>
+                              <div className="hidden sm:block text-right">
+                                <span className={`text-2xl font-black ${part.progress >= 100 ? 'text-emerald-500' : 'text-blue-600'} tracking-tighter`}>
+                                  {part.progress}%
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                                <div className="p-2 bg-white rounded-xl shadow-sm">
+                                  <Package className="w-4 h-4 text-blue-500" />
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">ACTUAL</p>
+                                  <p className="text-lg font-black text-gray-900 leading-none">{roundQty(part.actual_quantity).toLocaleString()}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                                <div className="p-2 bg-white rounded-xl shadow-sm">
+                                  <Target className="w-4 h-4 text-gray-400" />
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">PLAN</p>
+                                  <p className="text-lg font-black text-gray-500 leading-none">{roundQty(part.planned_quantity).toLocaleString()}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-gray-100 bg-white p-6 sm:px-8">
+                    <button
+                      type="button"
+                      className="w-full rounded-[20px] bg-gray-900 py-4 text-sm font-black text-white shadow-xl hover:bg-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900 transition-all uppercase tracking-widest"
+                      onClick={onClose}
+                    >
+                      {t('close')}
+                    </button>
+                  </div>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
           </div>
         </div>
       </Dialog>
