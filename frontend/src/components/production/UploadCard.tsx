@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import type { FormEvent } from 'react';
+import { useState } from 'react';
+import type { FC, FormEvent } from 'react';
 import { toast } from 'react-toastify';
 import { AxiosError } from 'axios';
 import { CloudUpload, CalendarDays, Loader2 } from 'lucide-react';
@@ -15,7 +15,7 @@ interface UploadCardProps {
   className?: string;
 }
 
-const UploadCard: React.FC<UploadCardProps> = ({ planType, onUploadSuccess, className }) => {
+const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className }) => {
   const { t } = useLang();
   const [targetDate, setTargetDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

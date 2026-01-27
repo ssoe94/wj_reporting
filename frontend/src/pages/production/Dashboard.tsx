@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { FC, ReactNode } from 'react';
 import dayjs from 'dayjs';
 import { toast } from 'react-toastify';
 import { AxiosError } from 'axios';
 import {
   BarChart3, CalendarDays, Loader2, ServerCrash,
-  ChevronDown, ChevronUp, Activity,
+  ChevronDown, Activity,
   Package, Target, TrendingUp, Info
 } from 'lucide-react';
 import { useLang } from '../../i18n';
 import { getProductionStatusData } from '../../lib/api';
 import DonutChart from '../../components/common/DonutChart';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 import { formatInjectionMachineLabel } from '../../lib/productionUtils';
 import { InjectionIcon, MachiningIcon } from '../../components/common/CustomIcons';
@@ -38,7 +39,7 @@ interface DashboardData {
   machining: MachineStatus[];
 }
 
-const MachineCard: React.FC<{
+const MachineCard: FC<{
   machine: MachineStatus;
   planType: 'injection' | 'machining';
   startAnimation: boolean;
@@ -137,7 +138,7 @@ const MachineCard: React.FC<{
   );
 };
 
-const MachineDetailDrawer: React.FC<{
+const MachineDetailDrawer: FC<{
   isOpen: boolean;
   onClose: () => void;
   machine: MachineStatus | null;
@@ -310,11 +311,11 @@ const MachineDetailDrawer: React.FC<{
   );
 };
 
-const StatCard: React.FC<{
+const StatCard: FC<{
   title: string;
   value: string | number;
   label?: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   colorClass: string;
   delay?: number;
 }> = ({ title, value, label, icon, colorClass, delay = 0 }) => (
@@ -337,7 +338,7 @@ const StatCard: React.FC<{
   </motion.div>
 );
 
-const ProductionDashboardPage: React.FC = () => {
+const ProductionDashboardPage: FC = () => {
   const { lang, t } = useLang();
   const [targetDate, setTargetDate] = useState(() => dayjs().format('YYYY-MM-DD'));
   const [isLoading, setIsLoading] = useState(true);
@@ -374,7 +375,7 @@ const ProductionDashboardPage: React.FC = () => {
   }, [targetDate, t]);
 
   // Aggregate statistics
-  const stats = React.useMemo(() => {
+  const stats = useMemo(() => {
     if (!data) return null;
     const all = [...data.injection, ...data.machining];
     const totalPlanned = all.reduce((sum, item) => sum + item.total_planned, 0);
