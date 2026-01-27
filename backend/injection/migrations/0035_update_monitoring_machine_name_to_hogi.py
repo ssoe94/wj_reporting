@@ -7,8 +7,8 @@ def forwards(apps, schema_editor):
     old = '順戈赴'
     new = '호기'
     schema_editor.execute(
-        f\"UPDATE {table} SET machine_name = REPLACE(machine_name, %s, %s) WHERE machine_name LIKE %s\",
-        [old, new, f\"%{old}%\"]
+        f"UPDATE {table} SET machine_name = REPLACE(machine_name, %s, %s) WHERE machine_name LIKE %s",
+        [old, new, f"%{old}%"],
     )
 
 
@@ -18,8 +18,8 @@ def backwards(apps, schema_editor):
     old = '호기'
     new = '順戈赴'
     schema_editor.execute(
-        f\"UPDATE {table} SET machine_name = REPLACE(machine_name, %s, %s) WHERE machine_name LIKE %s\",
-        [old, new, f\"%{old}%\"]
+        f"UPDATE {table} SET machine_name = REPLACE(machine_name, %s, %s) WHERE machine_name LIKE %s",
+        [old, new, f"%{old}%"],
     )
 
 
