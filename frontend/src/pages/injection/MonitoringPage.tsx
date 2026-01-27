@@ -323,14 +323,10 @@ export default function InjectionMonitoringPage() {
     }
     return slots.filter(({ slot }, idx) => idx === 0 || new Date(slot.time).getMinutes() === 0);
   }, [reversedTimeSlots, viewMode]);
-  const latestSlot = reversedTimeSlots[0];
+  const latestDisplaySlotIndex = displaySlots[0]?.index ?? null;
+  const latestSlot = latestDisplaySlotIndex !== null ? reversedTimeSlots[latestDisplaySlotIndex] : undefined;
   const latestSlotTime = latestSlot ? new Date(latestSlot.time) : null;
   const latestPartialHour = viewMode === 'hour' && latestSlotTime !== null && latestSlotTime.getMinutes() !== 0;
-  const latestHourSlotIndex = useMemo(() => {
-    if (!latestPartialHour) return null;
-    const entry = displaySlots.find(({ slot }) => new Date(slot.time).getMinutes() === 0);
-    return entry?.index ?? null;
-  }, [displaySlots, latestPartialHour]);
   const prevSlotIndexMap = useMemo(() => {
     const map = new Map<number, number>();
     displaySlots.forEach((entry, displayIndex) => {
@@ -386,25 +382,30 @@ export default function InjectionMonitoringPage() {
     );
   }, [data, getMetricForSlot]);
 
+  const getPartialHourActual = useCallback((machineNumStr: string) => {
+    if (!data) return 0;
+    if (!latestPartialHour || !latestSlotTime) return 0;
+    const values = data.actual_production_matrix[machineNumStr];
+    if (!values || values.length === 0) return 0;
+    const hourStart = new Date(latestSlotTime);
+    hourStart.setMinutes(0, 0, 0);
+    let sum = 0;
+    reversedTimeSlots.forEach((slot, idx) => {
+      const slotTime = new Date(slot.time);
+      if (slotTime >= hourStart && slotTime <= latestSlotTime) {
+        sum += getSlotValue(values, idx);
+      }
+    });
+    return sum;
+  }, [data, latestPartialHour, latestSlotTime, reversedTimeSlots]);
+
   const getTableActualForSlot = useCallback((machineNumStr: string, slotIndex: number) => {
     if (!data) return 0;
-    if (latestPartialHour && latestHourSlotIndex !== null && slotIndex === latestHourSlotIndex) {
-      const values = data.actual_production_matrix[machineNumStr];
-      if (!values || values.length === 0) return 0;
-      const latestIndex = 0;
-      const startValueIndex = values.length - 1 - slotIndex;
-      const endValueIndex = values.length - 1 - latestIndex;
-      if (startValueIndex < 0 || endValueIndex < 0) return 0;
-      const from = Math.min(startValueIndex, endValueIndex);
-      const to = Math.max(startValueIndex, endValueIndex);
-      let sum = 0;
-      for (let i = from; i <= to; i += 1) {
-        sum += values[i] ?? 0;
-      }
-      return sum;
+    if (latestPartialHour && latestDisplaySlotIndex !== null && slotIndex === latestDisplaySlotIndex) {
+      return getPartialHourActual(machineNumStr);
     }
     return getActualForSlot(machineNumStr, slotIndex);
-  }, [data, getActualForSlot, latestHourSlotIndex, latestPartialHour]);
+  }, [data, getActualForSlot, getPartialHourActual, latestDisplaySlotIndex, latestPartialHour]);
 
   const getPowerForSlot = useCallback((machineNumStr: string, slotIndex: number) => {
     if (!data) return 0;
@@ -514,15 +515,14 @@ export default function InjectionMonitoringPage() {
       start.setDate(end.getDate() - 1);
       return { start, end };
     }
-    if (latestPartialHour && latestHourSlotIndex !== null && slotIndex === latestHourSlotIndex && latestSlotTime) {
-      const start = new Date(end);
+    if (latestPartialHour && latestDisplaySlotIndex !== null && slotIndex === latestDisplaySlotIndex && latestSlotTime) {
+      const start = new Date(latestSlotTime);
       start.setMinutes(0, 0, 0);
       return { start, end: latestSlotTime };
     }
-    const intervalMinutes = slot.interval_minutes ?? 60;
-    const start = new Date(end.getTime() - intervalMinutes * 60000);
+    const start = new Date(end.getTime() - 60 * 60000);
     return { start, end };
-  }, [latestHourSlotIndex, latestPartialHour, latestSlotTime, viewMode]);
+  }, [latestDisplaySlotIndex, latestPartialHour, latestSlotTime, viewMode]);
 
   const ChartTooltip = ({ active, payload }: any) => {
     if (!active || !payload || payload.length === 0) return null;
