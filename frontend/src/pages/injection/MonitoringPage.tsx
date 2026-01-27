@@ -323,6 +323,14 @@ export default function InjectionMonitoringPage() {
     }
     return slots.filter(({ slot }, idx) => idx === 0 || new Date(slot.time).getMinutes() === 0);
   }, [reversedTimeSlots, viewMode]);
+  const latestSlot = reversedTimeSlots[0];
+  const latestSlotTime = latestSlot ? new Date(latestSlot.time) : null;
+  const latestPartialHour = viewMode === 'hour' && latestSlotTime !== null && latestSlotTime.getMinutes() !== 0;
+  const latestHourSlotIndex = useMemo(() => {
+    if (!latestPartialHour) return null;
+    const entry = displaySlots.find(({ slot }) => new Date(slot.time).getMinutes() === 0);
+    return entry?.index ?? null;
+  }, [displaySlots, latestPartialHour]);
   const prevSlotIndexMap = useMemo(() => {
     const map = new Map<number, number>();
     displaySlots.forEach((entry, displayIndex) => {
@@ -377,6 +385,26 @@ export default function InjectionMonitoringPage() {
       slotIndex,
     );
   }, [data, getMetricForSlot]);
+
+  const getTableActualForSlot = useCallback((machineNumStr: string, slotIndex: number) => {
+    if (!data) return 0;
+    if (latestPartialHour && latestHourSlotIndex !== null && slotIndex === latestHourSlotIndex) {
+      const values = data.actual_production_matrix[machineNumStr];
+      if (!values || values.length === 0) return 0;
+      const latestIndex = 0;
+      const startValueIndex = values.length - 1 - slotIndex;
+      const endValueIndex = values.length - 1 - latestIndex;
+      if (startValueIndex < 0 || endValueIndex < 0) return 0;
+      const from = Math.min(startValueIndex, endValueIndex);
+      const to = Math.max(startValueIndex, endValueIndex);
+      let sum = 0;
+      for (let i = from; i <= to; i += 1) {
+        sum += values[i] ?? 0;
+      }
+      return sum;
+    }
+    return getActualForSlot(machineNumStr, slotIndex);
+  }, [data, getActualForSlot, latestHourSlotIndex, latestPartialHour]);
 
   const getPowerForSlot = useCallback((machineNumStr: string, slotIndex: number) => {
     if (!data) return 0;
@@ -478,6 +506,23 @@ export default function InjectionMonitoringPage() {
     const payload = chartEvent.activePayload[0].payload as ChartSlotData;
     setSelectedSlot(payload);
   };
+
+  const getHeaderRange = useCallback((slot: TimeSlot, slotIndex: number) => {
+    const end = new Date(slot.time);
+    if (viewMode === 'day') {
+      const start = new Date(end);
+      start.setDate(end.getDate() - 1);
+      return { start, end };
+    }
+    if (latestPartialHour && latestHourSlotIndex !== null && slotIndex === latestHourSlotIndex && latestSlotTime) {
+      const start = new Date(end);
+      start.setMinutes(0, 0, 0);
+      return { start, end: latestSlotTime };
+    }
+    const intervalMinutes = slot.interval_minutes ?? 60;
+    const start = new Date(end.getTime() - intervalMinutes * 60000);
+    return { start, end };
+  }, [latestHourSlotIndex, latestPartialHour, latestSlotTime, viewMode]);
 
   const ChartTooltip = ({ active, payload }: any) => {
     if (!active || !payload || payload.length === 0) return null;
@@ -737,24 +782,28 @@ export default function InjectionMonitoringPage() {
                     {t('monitoring.machine_header')}
                   </th>
                   {displaySlots.map(({ slot, index }) => {
-                    const displayDate = new Date(slot.time);
+                    const range = getHeaderRange(slot, index);
+                    const isCrossDay = format(range.start, 'yyyy-MM-dd') !== format(range.end, 'yyyy-MM-dd');
+                    const rangeDate = isCrossDay
+                      ? `${format(range.start, 'MM-dd', { locale: lang === 'ko' ? ko : zhCN })} ~ ${format(range.end, 'MM-dd', { locale: lang === 'ko' ? ko : zhCN })}`
+                      : format(range.end, 'MM-dd', { locale: lang === 'ko' ? ko : zhCN });
+                    const startLabel = format(range.start, viewMode === 'day' ? 'MM-dd' : 'HH:mm', { locale: lang === 'ko' ? ko : zhCN });
+                    const endLabel = format(range.end, viewMode === 'day' ? 'MM-dd' : 'HH:mm', { locale: lang === 'ko' ? ko : zhCN });
+                    const rangeLabel = `${startLabel} ~ ${endLabel}`;
                     return (
                       <th
                         key={`${slot.time}-${index}`}
                         scope="col"
-                        className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 min-w-[120px]"
+                        className="px-2 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider border-r border-slate-200 min-w-[140px] bg-slate-50/80 backdrop-blur"
                       >
-                        {viewMode === 'day' ? (
-                          <span className="font-bold">
-                            {format(displayDate, 'yyyy-MM-dd', { locale: lang === 'ko' ? ko : zhCN })}
+                        <div className="flex flex-col items-center gap-1">
+                          {viewMode === 'hour' && (
+                            <span className="text-[11px] font-semibold text-slate-500">{rangeDate}</span>
+                          )}
+                          <span className="px-2.5 py-1 rounded-full bg-white text-slate-700 text-[11px] font-bold tracking-tight shadow-sm border border-slate-200">
+                            {rangeLabel}
                           </span>
-                        ) : (
-                          <>
-                            <span>{format(displayDate, 'yyyy-MM-dd', { locale: lang === 'ko' ? ko : zhCN })}</span>
-                            <br />
-                            <span className="font-bold">{format(displayDate, 'HH:mm', { locale: lang === 'ko' ? ko : zhCN })}</span>
-                          </>
-                        )}
+                        </div>
                       </th>
                     );
                   })}
@@ -794,7 +843,7 @@ export default function InjectionMonitoringPage() {
                       </td>
                       {displaySlots.map(({ slot, index }) => {
                         const cumulative = cumulativeData[index] || 0;
-                        const actual = getActualForSlot(machineNumStr, index);
+                        const actual = getTableActualForSlot(machineNumStr, index);
                         const powerUsage = getPowerForSlot(machineNumStr, index);
                         const rawTemp = tempData[index];
                         const temperature = rawTemp === undefined ? null : Number(rawTemp);
