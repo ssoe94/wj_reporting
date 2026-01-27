@@ -596,8 +596,8 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
                             return (
                                 <div className="space-y-2">
                                     {plansToShow.map((plan, idx) => {
-                                        const partNo = plan.partNo?.toUpperCase();
-                                        const cavityValue = partNo ? (cavityOverrides[partNo] ?? plan.cavity ?? 1) : 1;
+                                        const partKey = plan.partNo?.toUpperCase();
+                                        const cavityValue = partKey ? (cavityOverrides[partKey] ?? plan.cavity ?? 1) : 1;
                                         return (
                                         <div key={plan.id} className="border border-gray-100 rounded-lg p-3 space-y-2">
                                             <div className="flex items-center justify-between gap-3">
@@ -623,7 +623,7 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
                                                     {t('plan_sequence_badge', { order: idx + 1 })}
                                                 </span>
                                                 <span>{t('plan_qty_summary')}</span>
-                                                {plan.partNo && (
+                                                {partKey && (
                                                     <label className="ml-auto flex items-center gap-1 text-[11px] text-gray-500">
                                                         <span>{t('cavity')}</span>
                                                         <input
@@ -633,16 +633,16 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
                                                             value={cavityValue}
                                                             onChange={(e) => {
                                                                 const next = Math.max(1, Number(e.target.value || 1));
-                                                                setCavityOverrides((prev) => ({ ...prev, [partNo!]: next }));
+                                                                setCavityOverrides((prev) => ({ ...prev, [partKey]: next }));
                                                             }}
-                                                            onBlur={() => handleCavitySave(partNo)}
+                                                            onBlur={() => handleCavitySave(partKey)}
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter') {
                                                                     e.currentTarget.blur();
                                                                 }
                                                             }}
                                                         />
-                                                        {savingCavity[partNo] && (
+                                                        {savingCavity[partKey] && (
                                                             <span className="text-[10px] text-gray-400">...</span>
                                                         )}
                                                     </label>
