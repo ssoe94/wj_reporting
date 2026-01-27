@@ -39,6 +39,8 @@ interface DashboardData {
   machining: MachineStatus[];
 }
 
+const roundQty = (value: number) => Math.round(value);
+
 const MachineCard: FC<{
   machine: MachineStatus;
   planType: 'injection' | 'machining';
@@ -62,6 +64,9 @@ const MachineCard: FC<{
     : machine.progress > 80
       ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.3)]'
       : 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.3)]';
+
+  const plannedDisplay = roundQty(machine.total_planned);
+  const actualDisplay = roundQty(machine.total_actual);
 
   return (
     <motion.div
@@ -114,14 +119,14 @@ const MachineCard: FC<{
           <div className="bg-gray-50/80 backdrop-blur-sm rounded-2xl p-4 border border-white transition-colors group-hover:bg-white/50">
             <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.15em] mb-1.5">{t('dashboard_table_actual')}</p>
             <div className="flex items-end gap-1">
-              <p className="text-xl font-black text-gray-900 leading-none">{machine.total_actual.toLocaleString()}</p>
+              <p className="text-xl font-black text-gray-900 leading-none">{actualDisplay.toLocaleString()}</p>
               <span className="text-[10px] font-bold text-gray-400 mb-0.5">{t('pieces_unit')}</span>
             </div>
           </div>
           <div className="bg-gray-50/80 backdrop-blur-sm rounded-2xl p-4 border border-white transition-colors group-hover:bg-white/50">
             <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.15em] mb-1.5">{t('dashboard_table_planned')}</p>
             <div className="flex items-end gap-1">
-              <p className="text-xl font-bold text-gray-500 leading-none">{machine.total_planned.toLocaleString()}</p>
+              <p className="text-xl font-bold text-gray-500 leading-none">{plannedDisplay.toLocaleString()}</p>
               <span className="text-[10px] font-bold text-gray-400 mb-0.5">{t('pieces_unit')}</span>
             </div>
           </div>
@@ -223,8 +228,8 @@ const MachineDetailDrawer: FC<{
                         <div className="bg-white p-5 rounded-[24px] shadow-sm border border-gray-100 col-span-2">
                           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">{t('dashboard_summary_planned_vs_actual')}</p>
                           <div className="flex items-baseline gap-2">
-                            <p className="text-4xl font-black tracking-tighter text-gray-900">{machine.total_actual.toLocaleString()}</p>
-                            <p className="text-xl font-bold text-gray-300 tracking-tight">/ {machine.total_planned.toLocaleString()}</p>
+                            <p className="text-4xl font-black tracking-tighter text-gray-900">{roundQty(machine.total_actual).toLocaleString()}</p>
+                            <p className="text-xl font-bold text-gray-300 tracking-tight">/ {roundQty(machine.total_planned).toLocaleString()}</p>
                           </div>
                         </div>
                       </div>
@@ -244,7 +249,7 @@ const MachineDetailDrawer: FC<{
                               <DonutChart
                                 progress={part.progress}
                                 actual={part.actual_quantity}
-                                planned={part.planned_quantity}
+                                planned={roundQty(part.planned_quantity)}
                                 size={100}
                                 strokeWidth={10}
                               />
@@ -281,7 +286,7 @@ const MachineDetailDrawer: FC<{
                                   </div>
                                   <div>
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">PLAN</p>
-                                    <p className="text-lg font-black text-gray-500 leading-none">{part.planned_quantity.toLocaleString()}</p>
+                                  <p className="text-lg font-black text-gray-500 leading-none">{roundQty(part.planned_quantity).toLocaleString()}</p>
                                   </div>
                                 </div>
                               </div>
@@ -460,8 +465,8 @@ const ProductionDashboardPage: FC = () => {
             />
             <StatCard
               title={t('dashboard_summary_planned_vs_actual')}
-              value={stats.totalActual.toLocaleString()}
-              label={`/ ${stats.totalPlanned.toLocaleString()}`}
+              value={roundQty(stats.totalActual).toLocaleString()}
+              label={`/ ${roundQty(stats.totalPlanned).toLocaleString()}`}
               icon={<Package className="w-6 h-6 text-orange-600" />}
               colorClass="bg-orange-50"
               delay={0.3}
