@@ -277,6 +277,38 @@ class ProductionStatusView(APIView):
         sorted_plans = sorted(list(injection_plans_qs), key=get_sort_key)
 
         injection_results = []
+
+        def compute_injection_actual(machine_monitor_name: str) -> float:
+            """
+            Compute total production within the 8:00~8:00 window by summing positive deltas.
+            Falls back to the first value if no baseline exists and handles counter resets.
+            """
+            baseline = InjectionMonitoringRecord.objects.filter(
+                machine_name=machine_monitor_name,
+                capacity__isnull=False,
+                timestamp__lt=start_datetime
+            ).order_by('-timestamp').values_list('capacity', flat=True).first()
+
+            records = InjectionMonitoringRecord.objects.filter(
+                machine_name=machine_monitor_name,
+                capacity__isnull=False,
+                timestamp__gte=start_datetime,
+                timestamp__lt=end_datetime
+            ).order_by('timestamp').values_list('capacity', flat=True)
+
+            prev = baseline
+            total = 0.0
+            for capacity in records:
+                if capacity is None:
+                    continue
+                if prev is None:
+                    delta = capacity
+                else:
+                    delta = capacity - prev if capacity >= prev else capacity
+                if delta > 0:
+                    total += delta
+                prev = capacity
+            return float(total)
         
         # 3. Group sorted plans by machine name
         for machine_name, plans_group in groupby(sorted_plans, key=lambda p: p.machine_name):
@@ -289,21 +321,7 @@ class ProductionStatusView(APIView):
             except IndexError:
                 continue
 
-            # Get baseline and latest records
-            baseline_record = InjectionMonitoringRecord.objects.filter(
-                machine_name=monitoring_machine_name,
-                timestamp__lt=start_datetime
-            ).order_by('-timestamp').first()
-            baseline_counter = baseline_record.capacity if baseline_record else 0
-
-            latest_record = InjectionMonitoringRecord.objects.filter(
-                machine_name=monitoring_machine_name,
-                timestamp__gte=start_datetime,
-                timestamp__lt=end_datetime
-            ).order_by('-timestamp').first()
-            latest_counter = latest_record.capacity if latest_record else baseline_counter
-            
-            daily_production_delta = latest_counter - baseline_counter if latest_counter >= baseline_counter else latest_counter
+            daily_production_delta = compute_injection_actual(monitoring_machine_name)
             remaining_production = daily_production_delta
 
             machine_parts = []
@@ -443,4 +461,3 @@ class DebugPlanView(APIView):
         ))
 
         return Response(data)
-
