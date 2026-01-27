@@ -186,7 +186,8 @@ class ProductionDashboardView(APIView):
         # 3. Query Plan Data
         plan_queryset = ProductionPlan.objects.filter(
             plan_date=target_date,
-            plan_type=plan_type
+            plan_type=plan_type,
+            planned_quantity__gt=0,
         ).values('machine_name', 'planned_quantity')
         
         if not plan_queryset.exists():
@@ -278,7 +279,11 @@ class ProductionStatusView(APIView):
         end_datetime = end_local.astimezone(pytz.UTC)
         
         # 1. Fetch plans
-        injection_plans_qs = ProductionPlan.objects.filter(plan_date=target_date, plan_type='injection')
+        injection_plans_qs = ProductionPlan.objects.filter(
+            plan_date=target_date,
+            plan_type='injection',
+            planned_quantity__gt=0,
+        )
         
         # 2. Custom sort in Python
         def extract_machine_number(name: str | None) -> int | None:
@@ -359,6 +364,8 @@ class ProductionStatusView(APIView):
             # 6. Apply sequential fulfillment logic
             for plan in plans:
                 planned_qty = plan.planned_quantity
+                if not planned_qty or planned_qty <= 0:
+                    continue
                 actual_qty = 0
                 
                 if remaining_production > 0:
@@ -392,7 +399,11 @@ class ProductionStatusView(APIView):
             })
 
         # --- MACHINING LOGIC ---
-        machining_plans = ProductionPlan.objects.filter(plan_date=target_date, plan_type='machining')
+        machining_plans = ProductionPlan.objects.filter(
+            plan_date=target_date,
+            plan_type='machining',
+            planned_quantity__gt=0,
+        )
         assembly_reports = AssemblyReport.objects.filter(date=target_date)
         
         machining_results = []
@@ -418,6 +429,8 @@ class ProductionStatusView(APIView):
                 
                 for _, row in machine_df.iterrows():
                     planned_qty = row['planned_quantity']
+                    if not planned_qty or planned_qty <= 0:
+                        continue
                     actual_qty = row['actual_quantity']
                     progress = (actual_qty / planned_qty * 100) if planned_qty > 0 else 100 if actual_qty > 0 else 0
                     

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FC, ReactNode } from 'react';
 import dayjs from 'dayjs';
 import { toast } from 'react-toastify';
@@ -351,32 +351,59 @@ const ProductionDashboardPage: FC = () => {
   const [data, setData] = useState<DashboardData | null>(null);
   const [startAnimation, setStartAnimation] = useState(false);
   const [selectedMachine, setSelectedMachine] = useState<{ machine: MachineStatus, type: 'injection' | 'machining' } | null>(null);
+  const initialLoadRef = useRef(true);
 
   useEffect(() => {
+    let active = true;
+
     const fetchData = async () => {
-      setIsLoading(true);
+      if (!active) return;
+      const showLoader = initialLoadRef.current;
+      if (showLoader) {
+        setIsLoading(true);
+        setData(null);
+      }
       setStartAnimation(false);
       setError(null);
-      setData(null);
 
       try {
         const response = await getProductionStatusData(targetDate);
+        if (!active) return;
         setData(response);
         if (response.injection.length === 0 && response.machining.length === 0) {
           toast.info(t('dashboard_no_data_found'));
         }
       } catch (err) {
+        if (!active) return;
         const axiosError = err as AxiosError<{ error?: string }>;
         const errorMessage = axiosError.response?.data?.error || 'An unexpected error occurred';
         setError(errorMessage);
         toast.error(errorMessage);
       } finally {
-        setIsLoading(false);
+        if (!active) return;
+        if (showLoader) {
+          setIsLoading(false);
+        }
+        initialLoadRef.current = false;
         setTimeout(() => setStartAnimation(true), 200);
       }
     };
 
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData();
+      }
+    };
+
     fetchData();
+    const intervalId = window.setInterval(fetchData, 60 * 1000);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [targetDate, t]);
 
   // Aggregate statistics
