@@ -138,6 +138,7 @@ export const endpoints = {
     planDates: () => '/production/plan-dates/',
     planSummary: (date: string) => `/production/plan-summary/?date=${validateAndEncodeParam(date, 'date')}`,
     status: (date: string) => `/production/status/?date=${validateAndEncodeParam(date, 'date')}`,
+    partCavity: () => '/production/part-cavity/',
   },
 };
 
@@ -174,5 +175,13 @@ export async function getProductionPlanDates() {
 
 export async function getProductionPlanSummary(date: string) {
   const response = await api.get(endpoints.production.planSummary(date));
+  return response.data;
+}
+
+export async function updateProductionPartCavity(partNo: string, cavity: number) {
+  const response = await api.post(endpoints.production.partCavity(), {
+    part_no: partNo,
+    cavity,
+  });
   return response.data;
 }

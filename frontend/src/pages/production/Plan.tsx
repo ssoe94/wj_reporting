@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import dayjs from 'dayjs';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import { FileSpreadsheet, AlertTriangle, Layers } from 'lucide-react';
 import { useLang } from '../../i18n';
-import { getProductionPlanDates, getProductionPlanSummary } from '../../lib/api';
+import { getProductionPlanDates, getProductionPlanSummary, updateProductionPartCavity } from '../../lib/api';
 import PlanCalendar from '../../components/production/PlanCalendar';
 import UploadCard from '../../components/production/UploadCard';
 import { Skeleton } from '../../components/ui/skeleton';
@@ -44,6 +44,7 @@ interface MachinePlanDetail {
     machineLabel?: string;
     qty: number;
     order: number;
+    cavity?: number;
 }
 
 interface MachineChartRow extends MachineSummaryRow {
@@ -158,9 +159,12 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
     listHeightOverride,
 }) => {
     const { t } = useLang();
+    const queryClient = useQueryClient();
     const title = planType === 'injection' ? t('plan_toggle_injection') : t('plan_toggle_machining');
     const [selectedMachine, setSelectedMachine] = useState<string | null>(null);
     const [hoveredMachine, setHoveredMachine] = useState<string | null>(null);
+    const [cavityOverrides, setCavityOverrides] = useState<Record<string, number>>({});
+    const [savingCavity, setSavingCavity] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         setSelectedMachine(null);
@@ -229,6 +233,7 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
                 machineLabel: displayLabel,
                 qty,
                 order: parseLotOrder(record.lot_no, index),
+                cavity: normalizeQty(record.cavity ?? 1),
             });
         });
 
@@ -461,6 +466,19 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
         );
     };
 
+    const handleCavitySave = async (partNo?: string | null) => {
+        if (!partNo) return;
+        const key = partNo.toUpperCase();
+        const value = cavityOverrides[key] ?? 1;
+        setSavingCavity((prev) => ({ ...prev, [key]: true }));
+        try {
+            await updateProductionPartCavity(key, value);
+            await queryClient.invalidateQueries({ queryKey: ['planSummary'] });
+        } finally {
+            setSavingCavity((prev) => ({ ...prev, [key]: false }));
+        }
+    };
+
     const renderSegmentShape = (partKey: string) => (props: any) => {
         const { payload } = props;
         const machineKey = payload?.machineKey;
@@ -577,7 +595,10 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
                             }
                             return (
                                 <div className="space-y-2">
-                                    {plansToShow.map((plan, idx) => (
+                                    {plansToShow.map((plan, idx) => {
+                                        const partNo = plan.partNo?.toUpperCase();
+                                        const cavityValue = partNo ? (cavityOverrides[partNo] ?? plan.cavity ?? 1) : 1;
+                                        return (
                                         <div key={plan.id} className="border border-gray-100 rounded-lg p-3 space-y-2">
                                             <div className="flex items-center justify-between gap-3">
                                                 <div>
@@ -597,14 +618,39 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
                                                     {formatNumber(plan.qty)}
                                                 </p>
                                             </div>
-                                            <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
                                                 <span className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 font-medium text-blue-700">
                                                     {t('plan_sequence_badge', { order: idx + 1 })}
                                                 </span>
                                                 <span>{t('plan_qty_summary')}</span>
+                                                {plan.partNo && (
+                                                    <label className="ml-auto flex items-center gap-1 text-[11px] text-gray-500">
+                                                        <span>{t('cavity')}</span>
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            className="w-16 rounded-md border border-gray-200 px-2 py-0.5 text-right text-[11px] font-semibold text-gray-700 focus:border-blue-400 focus:outline-none"
+                                                            value={cavityValue}
+                                                            onChange={(e) => {
+                                                                const next = Math.max(1, Number(e.target.value || 1));
+                                                                setCavityOverrides((prev) => ({ ...prev, [partNo!]: next }));
+                                                            }}
+                                                            onBlur={() => handleCavitySave(partNo)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.currentTarget.blur();
+                                                                }
+                                                            }}
+                                                        />
+                                                        {savingCavity[partNo] && (
+                                                            <span className="text-[10px] text-gray-400">...</span>
+                                                        )}
+                                                    </label>
+                                                )}
                                             </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             );
                         })()}

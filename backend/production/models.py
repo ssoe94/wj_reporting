@@ -27,3 +27,16 @@ class ProductionPlan(models.Model):
 
     def __str__(self):
         return f"{self.plan_date} - {self.machine_name} - {self.part_no} ({self.planned_quantity})"
+
+
+class ProductionPartCavity(models.Model):
+    """Store cavity counts per part no for injection production."""
+    part_no = models.CharField(max_length=100, unique=True, db_index=True)
+    cavity = models.PositiveSmallIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['part_no']
+
+    def __str__(self):
+        return f"{self.part_no} - {self.cavity}"

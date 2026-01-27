@@ -8,11 +8,13 @@ import pandas as pd
 import pytz
 import re
 
-from .models import ProductionPlan
+from .models import ProductionPlan, ProductionPartCavity
 from injection.models import InjectionMonitoringRecord
 from assembly.models import AssemblyReport
 
 from django.db.models import Sum
+from rest_framework.permissions import IsAuthenticated
+import math
 
 class ProductionPlanSummaryView(APIView):
     """
@@ -32,6 +34,11 @@ class ProductionPlanSummaryView(APIView):
 
         # Fetch all plan data for the target date
         plan_data_qs = ProductionPlan.objects.filter(plan_date=target_date, planned_quantity__gt=0)
+        cavity_map = {
+            row['part_no']: row['cavity']
+            for row in ProductionPartCavity.objects.filter(part_no__in=plan_data_qs.values_list('part_no', flat=True))
+            .values('part_no', 'cavity')
+        }
         
         if not plan_data_qs.exists():
             return Response({
@@ -63,8 +70,10 @@ class ProductionPlanSummaryView(APIView):
         ))
         for record in records_injection:
             record['planned_quantity'] = int(round(record.get('planned_quantity') or 0))
+            record['cavity'] = int(cavity_map.get(record.get('part_no'), 1) or 1)
         for record in records_machining:
             record['planned_quantity'] = int(round(record.get('planned_quantity') or 0))
+            record['cavity'] = int(cavity_map.get(record.get('part_no'), 1) or 1)
 
         # 2. 'machine_summary'
         machine_summary_injection = list(plan_data_qs.filter(plan_type='injection').values('machine_name')
@@ -284,6 +293,11 @@ class ProductionStatusView(APIView):
             plan_type='injection',
             planned_quantity__gt=0,
         )
+        cavity_map = {
+            row['part_no']: row['cavity']
+            for row in ProductionPartCavity.objects.filter(part_no__in=injection_plans_qs.values_list('part_no', flat=True))
+            .values('part_no', 'cavity')
+        }
         
         # 2. Custom sort in Python
         def extract_machine_number(name: str | None) -> int | None:
@@ -366,15 +380,16 @@ class ProductionStatusView(APIView):
                 planned_qty = int(round(plan.planned_quantity or 0))
                 if not planned_qty or planned_qty <= 0:
                     continue
+                cavity = int(cavity_map.get(plan.part_no, 1) or 1)
+                cavity = max(cavity, 1)
                 actual_qty = 0
                 
                 if remaining_production > 0:
-                    if remaining_production >= planned_qty:
-                        actual_qty = planned_qty
-                        remaining_production -= planned_qty
-                    else:
-                        actual_qty = remaining_production
-                        remaining_production = 0
+                    remaining_shots = max(0, int(math.floor(remaining_production)))
+                    shots_needed = int(math.ceil(planned_qty / cavity))
+                    shots_used = min(remaining_shots, shots_needed)
+                    actual_qty = min(planned_qty, shots_used * cavity)
+                    remaining_production = max(0, remaining_production - shots_used)
                 
                 progress = (actual_qty / planned_qty * 100) if planned_qty > 0 else 100 if actual_qty > 0 else 0
                 
@@ -382,7 +397,7 @@ class ProductionStatusView(APIView):
                     'part_no': plan.part_no,
                     'model_name': plan.model_name,
                     'planned_quantity': planned_qty,
-                    'actual_quantity': actual_qty,
+                    'actual_quantity': int(actual_qty),
                     'progress': round(progress, 1)
                 })
                 total_planned += planned_qty
@@ -459,10 +474,31 @@ class ProductionStatusView(APIView):
             'machining': machining_results
         })
 
-        return Response({
-            'injection': injection_results,
-            'machining': machining_results
-        })
+class ProductionPartCavityView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        part_no = (request.query_params.get('part_no') or '').strip().upper()
+        if not part_no:
+            return Response({"error": "part_no is required."}, status=status.HTTP_400_BAD_REQUEST)
+        cavity = ProductionPartCavity.objects.filter(part_no=part_no).values_list('cavity', flat=True).first() or 1
+        return Response({"part_no": part_no, "cavity": int(cavity)})
+
+    def post(self, request, *args, **kwargs):
+        part_no = (request.data.get('part_no') or '').strip().upper()
+        cavity = request.data.get('cavity')
+        if not part_no:
+            return Response({"error": "part_no is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            cavity_val = int(cavity)
+        except (TypeError, ValueError):
+            return Response({"error": "cavity must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+        cavity_val = max(1, cavity_val)
+        obj, _ = ProductionPartCavity.objects.update_or_create(
+            part_no=part_no,
+            defaults={'cavity': cavity_val},
+        )
+        return Response({"part_no": obj.part_no, "cavity": obj.cavity})
 
 class DebugPlanView(APIView):
     """
