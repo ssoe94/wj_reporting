@@ -49,6 +49,7 @@ from datetime import datetime, timedelta
 import pytz
 import threading
 from django.views import View
+from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -866,6 +867,7 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
     queryset = UserRegistrationRequest.objects.all()
     serializer_class = UserRegistrationRequestSerializer
