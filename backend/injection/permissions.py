@@ -54,6 +54,8 @@ class DevelopmentPermission(SectionPermission):
 
 class AdminOnlyPermission(permissions.BasePermission):
     def has_permission(self, request, view):
+        if request.method == 'OPTIONS':
+            return True
         if not request.user.is_authenticated:
             return False
 

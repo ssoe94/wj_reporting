@@ -410,14 +410,26 @@ const ProductionDashboardPage: FC = () => {
     const all = [...data.injection, ...data.machining];
     const totalPlanned = all.reduce((sum, item) => sum + item.total_planned, 0);
     const totalActual = all.reduce((sum, item) => sum + item.total_actual, 0);
-    const avgProgress = all.length > 0 ? (totalActual / totalPlanned) * 100 : 0;
+    const avgProgress = totalPlanned > 0 ? (totalActual / totalPlanned) * 100 : 0;
     const activeCount = all.filter(item => item.total_actual > 0).length;
+
+    let trendLabel = t('dashboard_trend_no_data');
+    if (totalPlanned > 0) {
+      if (avgProgress >= 100) {
+        trendLabel = t('dashboard_trend_over');
+      } else if (avgProgress >= 70) {
+        trendLabel = t('dashboard_trend_steady');
+      } else {
+        trendLabel = t('dashboard_trend_alert');
+      }
+    }
 
     return {
       avgProgress: Math.round(avgProgress),
       activeCount,
       totalActual,
-      totalPlanned
+      totalPlanned,
+      trendLabel,
     };
   }, [data]);
 
@@ -483,7 +495,7 @@ const ProductionDashboardPage: FC = () => {
             <StatCard
               title={t('dashboard_summary_active_machines')}
               value={stats.activeCount}
-              label={t('unit.records') || (lang === 'ko' ? '건' : '件')}
+              label={t('unit.records')}
               icon={<Activity className="w-6 h-6 text-green-600" />}
               colorClass="bg-green-50"
               delay={0.2}
@@ -499,7 +511,7 @@ const ProductionDashboardPage: FC = () => {
             <StatCard
               title={t('dashboard_summary_trend')}
               value="+"
-              label={t('dashboard_trend_steady')}
+              label={stats.trendLabel}
               icon={<BarChart3 className="w-6 h-6 text-indigo-600" />}
               colorClass="bg-indigo-50"
               delay={0.4}

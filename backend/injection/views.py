@@ -28,7 +28,7 @@ from .serializers import (
 )
 
 # For User related views
-from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .permissions import (
     InjectionPermission,
     AssemblyPermission,
@@ -870,7 +870,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
     queryset = UserRegistrationRequest.objects.all()
     serializer_class = UserRegistrationRequestSerializer
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAdminUser]
+    permission_classes = [AdminOnlyPermission]
 
     def get_queryset(self):
         """
@@ -1121,6 +1121,7 @@ class SignupApprovalPortalView(View):
 class UserProfileViewSet(viewsets.ModelViewSet):
     queryset = UserProfile.objects.all()
     serializer_class = UserProfileSerializer
+    permission_classes = [AdminOnlyPermission]
 
 class InventoryView(generics.GenericAPIView):
     """
@@ -1230,11 +1231,9 @@ class ChangePasswordView(generics.GenericAPIView):
         return Response({'detail': '비밀번호가 변경되었습니다.'})
 
 class ResetPasswordView(generics.CreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AdminOnlyPermission]
 
     def post(self, request, *args, **kwargs):
-        if not request.user.is_staff:
-            return Response({'detail': '관리자 권한이 필요합니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         user_id = request.data.get('user_id')
         if not user_id:

@@ -376,7 +376,7 @@ class ProductionStatusView(APIView):
             total_actual = 0
 
             # 6. Apply sequential fulfillment logic
-            for plan in plans:
+            for idx, plan in enumerate(plans):
                 planned_qty = int(round(plan.planned_quantity or 0))
                 if not planned_qty or planned_qty <= 0:
                     continue
@@ -387,8 +387,11 @@ class ProductionStatusView(APIView):
                 if remaining_production > 0:
                     remaining_shots = max(0, int(math.floor(remaining_production)))
                     shots_needed = int(math.ceil(planned_qty / cavity))
-                    shots_used = min(remaining_shots, shots_needed)
-                    actual_qty = min(planned_qty, shots_used * cavity)
+                    if idx == len(plans) - 1:
+                        shots_used = remaining_shots
+                    else:
+                        shots_used = min(remaining_shots, shots_needed)
+                    actual_qty = shots_used * cavity
                     remaining_production = max(0, remaining_production - shots_used)
                 
                 progress = (actual_qty / planned_qty * 100) if planned_qty > 0 else 100 if actual_qty > 0 else 0

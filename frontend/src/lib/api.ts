@@ -1,7 +1,23 @@
 import axios, { AxiosError } from 'axios';
 
 // API 기본 URL 설정 - 환경 변수 우선, 없으면 프록시 사용
-const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const ENV_API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const resolveApiBase = () => {
+  if (typeof window === 'undefined') return ENV_API_URL;
+  const isAbsolute = /^https?:\/\//i.test(ENV_API_URL);
+  if (!isAbsolute) return ENV_API_URL;
+  try {
+    const envOrigin = new URL(ENV_API_URL).origin;
+    if (import.meta.env.PROD && envOrigin !== window.location.origin) {
+      return '/api';
+    }
+  } catch {
+    return '/api';
+  }
+  return ENV_API_URL;
+};
+
+const API_URL = resolveApiBase();
 
 console.log('[API Config] Base URL:', API_URL);
 console.log('[API Config] Environment:', import.meta.env.MODE);

@@ -30,7 +30,8 @@ const DonutChart: React.FC<DonutChartProps> = ({
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   // Use the animated progress for the offset calculation
-  const offset = circumference - (displayProgress / 100) * circumference;
+  const progressForArc = Math.min(displayProgress, 100);
+  const offset = circumference - (progressForArc / 100) * circumference;
 
   const plannedQty = planned > 1000 ? `${(planned / 1000).toFixed(1)}k` : numberFormatter.format(planned);
   const actualQty = actual > 1000 ? `${(actual / 1000).toFixed(1)}k` : numberFormatter.format(actual);
@@ -79,4 +80,3 @@ const DonutChart: React.FC<DonutChartProps> = ({
 };
 
 export default DonutChart;
-
