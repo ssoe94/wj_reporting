@@ -1,7 +1,9 @@
 import axios, { AxiosError } from 'axios';
 
 // API 기본 URL 설정 - 환경 변수 우선, 없으면 프록시 사용
-const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const API_URL = import.meta.env.PROD
+  ? '/api'
+  : (import.meta.env.VITE_API_BASE_URL || '/api');
 
 console.log('[API Config] Base URL:', API_URL);
 console.log('[API Config] Environment:', import.meta.env.MODE);
