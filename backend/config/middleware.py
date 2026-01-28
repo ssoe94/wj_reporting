@@ -61,6 +61,11 @@ class DisableCSRFMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.path.startswith('/api/'):
+        # Skip CSRF for API paths or any request that carries a Bearer token.
+        # This avoids CSRF 403s when requests are proxied and the /api prefix
+        # is altered by the hosting layer.
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        path = request.path_info or request.path
+        if path.startswith('/api') or auth_header.startswith('Bearer '):
             request._dont_enforce_csrf_checks = True
         return self.get_response(request)

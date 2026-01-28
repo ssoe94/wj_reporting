@@ -64,7 +64,7 @@ export default function UserApproval() {
     setError(null);
     try {
       const [requestsRes, profilesRes] = await Promise.all([
-        api.get('/admin/signup-requests/'),
+        api.get('/admin/approval-requests/?status=pending'),
         api.get('/admin/user-profiles/'),
       ]);
       setRequests(requestsRes.data.results || requestsRes.data || []);
@@ -96,7 +96,7 @@ export default function UserApproval() {
     setError(null);
     setNewPassword(null);
     try {
-      const response = await api.post(`/admin/signup-requests/${requestId}/approve/`, { permissions });
+      const response = await api.post(`/admin/approval-requests/${requestId}/approve/`, { permissions });
       setNewPassword(response.data.temporary_password);
       setActionSuccess('사용자 가입이 승인되었습니다');
       setApprovalModal({ open: true, request: null }); // Keep modal open for password display (using resetPasswordModal's structure or similar)
@@ -118,7 +118,7 @@ export default function UserApproval() {
     setActionLoading(true);
     setError(null);
     try {
-      await api.post(`/admin/signup-requests/${requestId}/reject/`);
+      await api.post(`/admin/approval-requests/${requestId}/reject/`);
       setActionSuccess('가입 요청이 거부되었습니다');
       setTimeout(() => setActionSuccess(null), 3000);
       await fetchData();
