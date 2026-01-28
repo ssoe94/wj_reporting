@@ -342,7 +342,7 @@ const StatCard: FC<{
 );
 
 const ProductionDashboardPage: FC = () => {
-  const { lang, t } = useLang();
+  const { t } = useLang();
   const [targetDate, setTargetDate] = useState(() => dayjs().format('YYYY-MM-DD'));
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
