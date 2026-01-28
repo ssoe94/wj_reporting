@@ -1,8 +1,8 @@
 # Environment variable group to share secrets between services
 envVarGroups:
   - name: shared-secrets
-    # 중요: 이 그룹을 Render 대시보드의 "Environment" 탭에서 생성하고,
-    # DATABASE_URL, SECRET_KEY 등 백엔드 서비스에 필요한 모든 비밀/환경 변수를 추가해야 합니다.
+    # NOTE: Create this group in Render > Environment and add secrets like
+    # DATABASE_URL and SECRET_KEY there. These are shared by the backend and cron jobs.
 
 services:
   # Frontend Static Site

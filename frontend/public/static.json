@@ -1,6 +1,6 @@
 {
   "routes": [
-    { "src": "/api/(.*)", "dest": "https://wj-reporting-backend.onrender.com/api/$1" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    { "src": "/api/*", "dest": "https://wj-reporting-backend.onrender.com/api/*" },
+    { "src": "/*", "dest": "/index.html" }
   ]
 }
