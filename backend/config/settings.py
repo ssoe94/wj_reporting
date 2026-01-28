@@ -107,7 +107,7 @@ if ENVIRONMENT == 'production':
 
 # CORS 설정
 CORS_ALLOW_ALL_ORIGINS = True  # 연결 안정성을 위해 허용 (운영 환경)
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_CREDENTIALS = False
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
