@@ -860,13 +860,13 @@ export default function ProductionPlanPage() {
         setSelectedIds(new Set());
         return;
     }
-        const items = Array.isArray(planItemsData)
+        const items = (Array.isArray(planItemsData)
             ? planItemsData
             : Array.isArray((planItemsData as any)?.results)
                 ? (planItemsData as any).results
-                : [];
+                : []) as PlanEditItem[];
         setEditItems(items);
-        setOriginalEditItems(items.reduce<Record<number, PlanEditItem>>((acc, item) => {
+        setOriginalEditItems(items.reduce((acc: Record<number, PlanEditItem>, item: PlanEditItem) => {
             acc[item.id] = item;
             return acc;
         }, {}));
@@ -961,7 +961,7 @@ export default function ProductionPlanPage() {
             ...prev,
             {
                 id: newId,
-                plan_date: editDateStr,
+                plan_date: editDateStr!,
                 plan_type: editPlanType,
                 machine_name: '',
                 part_no: '',
