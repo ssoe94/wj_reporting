@@ -933,7 +933,7 @@ export default function ProductionPlanPage() {
                 existingItems.map((item) =>
                     updateProductionPlanItem(item.id, {
                         machine_name: item.machine_name,
-                        part_no: item.part_no || null,
+                        part_no: item.part_no || undefined,
                         model_name: item.model_name ?? null,
                         lot_no: item.lot_no ?? null,
                         planned_quantity: item.planned_quantity,
