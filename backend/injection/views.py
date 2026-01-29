@@ -57,6 +57,7 @@ from django.contrib import messages
 from .mes_service import mes_service
 from .plan_processing import ProductionPlanProcessor, ProductionPlanProcessingError
 from production.models import ProductionPlan
+from production.permissions import user_can_edit_plan
 
 User = get_user_model()
 
@@ -2160,6 +2161,18 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if plan_type not in ['injection', 'machining']:
+            return Response(
+                {"error": "Invalid plan_type. Use 'injection' or 'machining'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not user_can_edit_plan(request.user, plan_type):
+            return Response(
+                {"detail": "Permission denied."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         try:
             processor = ProductionPlanProcessor(uploaded_file, plan_type, target_date)
             response_data = processor.process()
@@ -2186,6 +2199,7 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                 # 3. Create new records from the 'plan_long' data
                 plan_long_data = response_data.get("plan_long", [])
                 plans_to_create = []
+                part_map = {}
                 for i, record in enumerate(plan_long_data):
                     plan_qty = record.get("plan_qty")
                     try:
@@ -2194,6 +2208,10 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                         plan_qty = 0
                     if plan_qty <= 0:
                         continue
+                    part_no = (record.get("fg_part_no") or "").strip().upper()
+                    model_name = (record.get("model") or "").strip() or None
+                    if part_no:
+                        part_map[(record.get("plan_type"), part_no)] = model_name
                     plans_to_create.append(
                         ProductionPlan(
                             plan_date=record.get("date"),
@@ -2202,13 +2220,23 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                             lot_no=record.get("lot_no"),
                             model_name=record.get("model"),
                             part_spec=record.get("part_spec"),
-                            part_no=record.get("fg_part_no"), # fg_part_no is mapped to part_no
+                            part_no=part_no, # fg_part_no is mapped to part_no
                             planned_quantity=plan_qty,
                             sequence=record.get("original_order", i) # Use original_order, with i as fallback
                         )
                     )
                 
                 ProductionPlan.objects.bulk_create(plans_to_create)
+                if part_map:
+                    from production.models import ProductionPlanPart
+                    for (plan_type_key, part_no_key), model_name in part_map.items():
+                        if plan_type_key not in ['injection', 'machining']:
+                            continue
+                        ProductionPlanPart.objects.update_or_create(
+                            plan_type=plan_type_key,
+                            part_no=part_no_key,
+                            defaults={'model_name': model_name},
+                        )
 
         except Exception as e:
             # If the database operation fails, return an error.

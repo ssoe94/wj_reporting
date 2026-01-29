@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dayjs from 'dayjs';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { TooltipProps } from 'recharts';
-import { FileSpreadsheet, AlertTriangle, Layers } from 'lucide-react';
+import { FileSpreadsheet, AlertTriangle, Layers, PencilLine, RefreshCcw, X } from 'lucide-react';
 import { useLang } from '../../i18n';
-import { getProductionPlanDates, getProductionPlanSummary, updateProductionPartCavity } from '../../lib/api';
+import { getProductionPlanDates, getProductionPlanSummary, getProductionPlanItems, updateProductionPartCavity, updateProductionPlanItem, createProductionPlanItem, deleteProductionPlanItem, searchProductionPlanParts } from '../../lib/api';
 import PlanCalendar from '../../components/production/PlanCalendar';
 import UploadCard from '../../components/production/UploadCard';
 import { Skeleton } from '../../components/ui/skeleton';
 import { formatInjectionMachineLabel, getInjectionMachineOrder, getMachiningLineOrder, sortMachineSummary } from '../../lib/productionUtils';
+import { Button } from '../../components/ui/button';
+import { useAuth } from '../../contexts/AuthContext';
+import machines from '../../constants/machines';
 
 // Re-defining interfaces needed for the summary view
 interface MachineSummaryRow {
@@ -45,6 +48,25 @@ interface MachinePlanDetail {
     qty: number;
     order: number;
     cavity?: number;
+}
+
+interface PlanEditItem {
+    id: number;
+    plan_date: string;
+    plan_type: 'injection' | 'machining';
+    machine_name: string;
+    part_no: string;
+    model_name?: string | null;
+    part_spec?: string | null;
+    lot_no?: string | null;
+    planned_quantity: number;
+    sequence?: number | null;
+    isNew?: boolean;
+}
+
+interface PartSuggestion {
+    part_no: string;
+    model_code?: string;
 }
 
 interface MachineChartRow extends MachineSummaryRow {
@@ -145,6 +167,8 @@ interface SummaryDisplayProps {
     columnHeightOverride?: number;
     detailHeightOverride?: number;
     listHeightOverride?: number;
+    canEdit?: boolean;
+    onEditClick?: () => void;
 }
 
 const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
@@ -154,6 +178,8 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
     columnHeightOverride,
     detailHeightOverride,
     listHeightOverride,
+    canEdit,
+    onEditClick,
 }) => {
     const { t } = useLang();
     const queryClient = useQueryClient();
@@ -498,7 +524,19 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
 
     return (
         <div className="space-y-6">
-            <h3 className="text-xl font-bold text-gray-800 border-b pb-2">{title}</h3>
+            <div className="flex items-center justify-between gap-3 border-b pb-2">
+                <h3 className="text-xl font-bold text-gray-800">{title}</h3>
+                {canEdit && onEditClick && (
+                    <button
+                        type="button"
+                        onClick={onEditClick}
+                        className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                    >
+                        <PencilLine className="h-3.5 w-3.5" />
+                        {t('plan_edit_button')}
+                    </button>
+                )}
+            </div>
             <div className="space-y-6">
                 <div
                     className="bg-white rounded-xl shadow p-5 flex flex-col"
@@ -656,12 +694,133 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
         </div>
     )
 }
-
-
 export default function ProductionPlanPage() {
     const { t } = useLang();
+    const { user, hasPermission } = useAuth();
+    const queryClient = useQueryClient();
 
     const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+    const [editPlanType, setEditPlanType] = useState<'injection' | 'machining' | null>(null);
+    const [editItems, setEditItems] = useState<PlanEditItem[]>([]);
+    const [originalEditItems, setOriginalEditItems] = useState<Record<number, PlanEditItem>>({});
+    const [editError, setEditError] = useState<string | null>(null);
+    const [isSavingAll, setIsSavingAll] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [partSearchTerm, setPartSearchTerm] = useState('');
+    const [partSuggestions, setPartSuggestions] = useState<PartSuggestion[]>([]);
+    const tableContainerRef = useRef<HTMLDivElement | null>(null);
+    const partSearchCacheRef = useRef<Map<string, PartSuggestion[]>>(new Map());
+    const machineOptions = useMemo(() => {
+        if (editPlanType === 'injection') {
+            const baseOptions = machines
+                .slice()
+                .sort((a, b) => a.id - b.id)
+                .map((machine) => {
+                    const label = `${machine.ton}T-${machine.id}`;
+                    return { value: label, label };
+                });
+            const existingNames = new Set(
+                editItems
+                    .map((item) => item.machine_name)
+                    .filter((name): name is string => Boolean(name && name.trim()))
+            );
+            const merged = [...baseOptions];
+            existingNames.forEach((name) => {
+                if (!merged.find((option) => option.value === name)) {
+                    merged.push({ value: name, label: name });
+                }
+            });
+            return merged.sort((a, b) => getInjectionMachineOrder(a.value) - getInjectionMachineOrder(b.value));
+        }
+        const names = new Set(
+            editItems
+                .map((item) => item.machine_name)
+                .filter((name): name is string => Boolean(name && name.trim()))
+        );
+        return Array.from(names)
+            .sort((a, b) => {
+                const orderA = getMachiningLineOrder(a);
+                const orderB = getMachiningLineOrder(b);
+                if (orderA !== orderB) return orderA - orderB;
+                return a.localeCompare(b);
+            })
+            .map((name) => ({ value: name, label: name }));
+    }, [editItems, editPlanType]);
+    const partSuggestionMap = useMemo(() => {
+        const map = new Map<string, PartSuggestion>();
+        partSuggestions.forEach((suggestion) => {
+            if (suggestion.part_no && !map.has(suggestion.part_no)) {
+                map.set(suggestion.part_no, suggestion);
+            }
+        });
+        return map;
+    }, [partSuggestions]);
+    const modelOptions = useMemo(() => {
+        const set = new Set(
+            partSuggestions
+                .map((suggestion) => suggestion.model_code)
+                .filter((value): value is string => Boolean(value && value.trim()))
+        );
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }, [partSuggestions]);
+    const dirtyItems = useMemo(() => {
+        return editItems.filter((item) => {
+            const original = originalEditItems[item.id];
+            if (!original) return true;
+            if (item.isNew) return true;
+            const machineChanged = (original.machine_name || '') !== (item.machine_name || '');
+            const partChanged = (original.part_no || '') !== (item.part_no || '');
+            const modelChanged = (original.model_name || '') !== (item.model_name || '');
+            const lotChanged = (original.lot_no || '') !== (item.lot_no || '');
+            const qtyChanged = Number(original.planned_quantity ?? 0) !== Number(item.planned_quantity ?? 0);
+            return machineChanged || partChanged || modelChanged || lotChanged || qtyChanged;
+        });
+    }, [editItems, originalEditItems]);
+
+    useEffect(() => {
+        if (!partSearchTerm || partSearchTerm.trim().length < 2) {
+            setPartSuggestions([]);
+            return;
+        }
+        const normalizedTerm = partSearchTerm.trim().toUpperCase();
+        const cached = partSearchCacheRef.current.get(normalizedTerm);
+        if (cached) {
+            setPartSuggestions(cached);
+            return;
+        }
+        const handle = window.setTimeout(async () => {
+            try {
+                const response = await searchProductionPlanParts(normalizedTerm, editPlanType || undefined);
+                const raw = Array.isArray(response)
+                    ? response
+                    : Array.isArray(response?.results)
+                        ? response.results
+                        : [];
+                const map = new Map<string, PartSuggestion>();
+                raw.forEach((item: any) => {
+                    const partNo = (item?.part_no || '').toString().trim().toUpperCase();
+                    if (!partNo) return;
+                    if (!map.has(partNo)) {
+                        map.set(partNo, {
+                            part_no: partNo,
+                            model_code: (item?.model_name || item?.model_code || item?.model || '').toString().trim(),
+                        });
+                    }
+                });
+                const suggestions = Array.from(map.values());
+                partSearchCacheRef.current.set(normalizedTerm, suggestions);
+                setPartSuggestions(suggestions);
+            } catch {
+                setPartSuggestions([]);
+            }
+        }, 250);
+        return () => window.clearTimeout(handle);
+    }, [partSearchTerm]);
+    const canEditInjection = Boolean(user?.is_staff || user?.permissions?.is_admin || hasPermission('can_edit_injection'));
+    const canEditMachining = Boolean(user?.is_staff || user?.permissions?.is_admin || hasPermission('can_edit_assembly'));
+    const editPlanLabel = editPlanType
+        ? (editPlanType === 'injection' ? t('plan_toggle_injection') : t('plan_toggle_machining'))
+        : '';
 
     // Fetch plan dates for the calendar
     const { data: planDatesData, refetch: refetchPlanDates } = useQuery({
@@ -682,8 +841,193 @@ export default function ProductionPlanPage() {
         enabled: !!selectedDate,
     });
 
+    const editDateStr = selectedDate ? dayjs(selectedDate).format('YYYY-MM-DD') : null;
+    const {
+        data: planItemsData,
+        isLoading: isPlanItemsLoading,
+        refetch: refetchPlanItems,
+        error: planItemsError,
+    } = useQuery({
+        queryKey: ['planItems', editDateStr, editPlanType],
+        queryFn: () => getProductionPlanItems(editDateStr!, editPlanType!),
+        enabled: !!editPlanType && !!editDateStr,
+    });
+
+    useEffect(() => {
+        if (!planItemsData) {
+        setEditItems([]);
+        setOriginalEditItems({});
+        setSelectedIds(new Set());
+        return;
+    }
+        const items = Array.isArray(planItemsData)
+            ? planItemsData
+            : Array.isArray((planItemsData as any)?.results)
+                ? (planItemsData as any).results
+                : [];
+        setEditItems(items);
+        setOriginalEditItems(items.reduce<Record<number, PlanEditItem>>((acc, item) => {
+            acc[item.id] = item;
+            return acc;
+        }, {}));
+        setSelectedIds(new Set());
+    }, [planItemsData, editPlanType]);
+
+    useEffect(() => {
+        if (!planItemsError) return;
+        const message =
+            (planItemsError as any)?.response?.data?.detail ||
+            (planItemsError as any)?.response?.data?.error ||
+            (planItemsError as any)?.message ||
+            t('plan_upload_error');
+        setEditError(message);
+        setEditItems([]);
+    }, [planItemsError, t]);
+
     const handleUploadSuccess = () => {
         refetchPlanDates();
+    };
+
+    const openEditModal = (type: 'injection' | 'machining') => {
+        setEditPlanType(type);
+        setEditItems([]);
+        setEditError(null);
+    };
+
+    const closeEditModal = () => {
+        setEditPlanType(null);
+        setEditItems([]);
+        setOriginalEditItems({});
+        setSelectedIds(new Set());
+        setEditError(null);
+    };
+
+    const updateEditItem = (id: number, field: keyof PlanEditItem, value: any) => {
+        setEditItems((prev) =>
+            prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+        );
+    };
+
+    const handleSaveAll = async () => {
+        if (dirtyItems.length === 0 || isSavingAll) return;
+        setIsSavingAll(true);
+        setEditError(null);
+        try {
+            const newItems = dirtyItems.filter((item) => item.isNew);
+            const existingItems = dirtyItems.filter((item) => !item.isNew);
+            await Promise.all(
+                newItems.map((item) =>
+                    createProductionPlanItem({
+                        plan_date: item.plan_date,
+                        plan_type: item.plan_type,
+                        machine_name: item.machine_name,
+                        part_no: item.part_no || null,
+                        model_name: item.model_name ?? null,
+                        part_spec: item.part_spec ?? null,
+                        lot_no: item.lot_no ?? null,
+                        planned_quantity: item.planned_quantity,
+                    })
+                )
+            );
+            await Promise.all(
+                existingItems.map((item) =>
+                    updateProductionPlanItem(item.id, {
+                        machine_name: item.machine_name,
+                        part_no: item.part_no || null,
+                        model_name: item.model_name ?? null,
+                        lot_no: item.lot_no ?? null,
+                        planned_quantity: item.planned_quantity,
+                    })
+                )
+            );
+            await queryClient.invalidateQueries({ queryKey: ['planSummary'] });
+            await refetchPlanItems();
+        } catch (err: any) {
+            const message =
+                err?.response?.data?.detail ||
+                err?.response?.data?.error ||
+                err?.message ||
+                t('plan_upload_error');
+            setEditError(message);
+        } finally {
+            setIsSavingAll(false);
+        }
+    };
+
+    const handleAddRow = () => {
+        if (!editPlanType || !editDateStr) return;
+        const newId = -Date.now();
+        setEditItems((prev) => ([
+            ...prev,
+            {
+                id: newId,
+                plan_date: editDateStr,
+                plan_type: editPlanType,
+                machine_name: '',
+                part_no: '',
+                model_name: '',
+                part_spec: '',
+                lot_no: '',
+                planned_quantity: 0,
+                sequence: null,
+                isNew: true,
+            },
+        ]));
+        window.setTimeout(() => {
+            if (tableContainerRef.current) {
+                tableContainerRef.current.scrollTo({
+                    top: tableContainerRef.current.scrollHeight,
+                    behavior: 'smooth',
+                });
+            }
+        }, 0);
+    };
+
+    const toggleSelected = (id: number) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        setSelectedIds((prev) => {
+            if (prev.size === editItems.length) {
+                return new Set();
+            }
+            return new Set(editItems.map((item) => item.id));
+        });
+    };
+
+    const handleDeleteSelected = async () => {
+        if (selectedIds.size === 0) return;
+        setEditError(null);
+        const ids = Array.from(selectedIds);
+        const newIds = ids.filter((id) => id < 0);
+        if (newIds.length) {
+            setEditItems((prev) => prev.filter((item) => !newIds.includes(item.id)));
+        }
+        const existingIds = ids.filter((id) => id > 0);
+        if (existingIds.length) {
+            try {
+                await Promise.all(existingIds.map((id) => deleteProductionPlanItem(id)));
+                await queryClient.invalidateQueries({ queryKey: ['planSummary'] });
+                await refetchPlanItems();
+            } catch (err: any) {
+                const message =
+                    err?.response?.data?.detail ||
+                    err?.response?.data?.error ||
+                    err?.message ||
+                    t('plan_upload_error');
+                setEditError(message);
+            }
+        }
+        setSelectedIds(new Set());
     };
 
     const { uniformChartHeight, uniformColumnHeight, uniformDetailHeight, uniformListHeight } = useMemo(() => {
@@ -750,10 +1094,10 @@ export default function ProductionPlanPage() {
                         />
                     </div>
                     <div className="h-full">
-                        <UploadCard planType="injection" onUploadSuccess={handleUploadSuccess} />
+                        <UploadCard planType="injection" onUploadSuccess={handleUploadSuccess} canEdit={canEditInjection} />
                     </div>
                     <div className="h-full">
-                        <UploadCard planType="machining" onUploadSuccess={handleUploadSuccess} />
+                        <UploadCard planType="machining" onUploadSuccess={handleUploadSuccess} canEdit={canEditMachining} />
                     </div>
                 </div>
 
@@ -789,6 +1133,8 @@ export default function ProductionPlanPage() {
                                         columnHeightOverride={uniformColumnHeight}
                                         detailHeightOverride={uniformDetailHeight}
                                         listHeightOverride={uniformListHeight}
+                                        canEdit={canEditInjection}
+                                        onEditClick={() => openEditModal('injection')}
                                     />
                                 ) : (
                                     <p className="text-sm text-gray-500">
@@ -805,6 +1151,8 @@ export default function ProductionPlanPage() {
                                         columnHeightOverride={uniformColumnHeight}
                                         detailHeightOverride={uniformDetailHeight}
                                         listHeightOverride={uniformListHeight}
+                                        canEdit={canEditMachining}
+                                        onEditClick={() => openEditModal('machining')}
                                     />
                                 ) : (
                                     <p className="text-sm text-gray-500">
@@ -821,6 +1169,218 @@ export default function ProductionPlanPage() {
                         </div>
                     )}
                 </div>
+            {editPlanType && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl p-6 max-h-[85vh] overflow-hidden flex flex-col">
+                        <div className="flex items-start justify-between gap-3 mb-4">
+                            <div>
+                                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
+                                    {t('plan_edit_modal_title')}
+                                </p>
+                                <h3 className="text-xl font-bold text-gray-900">
+                                    {editPlanLabel} - {editDateStr}
+                                </h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeEditModal}
+                                className="rounded-full border border-gray-200 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        {editError && (
+                            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {editError}
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                            <p className="text-xs text-gray-500">{t('plan_edit_helper')}</p>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => refetchPlanItems()}
+                                className="gap-2"
+                            >
+                                <RefreshCcw className="h-4 w-4" />
+                                {t('plan_edit_refresh')}
+                            </Button>
+                        </div>
+
+                        <div ref={tableContainerRef} className="flex-1 overflow-auto border border-gray-100 rounded-lg">
+                            {isPlanItemsLoading ? (
+                                <div className="p-6 text-sm text-gray-500">{t('plan_edit_loading')}</div>
+                            ) : editItems.length === 0 ? (
+                                <div className="p-6 text-sm text-gray-500">{t('plan_edit_no_data')}</div>
+                            ) : (
+                                <table className="min-w-full text-sm">
+                                    <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 text-gray-600">
+                                        <tr>
+                                            <th className="px-3 py-2 text-center font-semibold">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={editItems.length > 0 && selectedIds.size === editItems.length}
+                                                    onChange={toggleSelectAll}
+                                                />
+                                            </th>
+                                            <th className="px-3 py-2 text-left font-semibold">{t('plan_edit_machine')}</th>
+                                            <th className="px-3 py-2 text-left font-semibold">{t('plan_edit_part_no')}</th>
+                                            <th className="px-3 py-2 text-left font-semibold">{t('plan_edit_model')}</th>
+                                            <th className="px-3 py-2 text-left font-semibold">{t('plan_edit_lot')}</th>
+                                            <th className="px-3 py-2 text-right font-semibold">{t('plan_edit_qty')}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {editItems.map((item) => (
+                                            (() => {
+                                                const original = originalEditItems[item.id];
+                                                const machineDirty = item.isNew || (!!original && (original.machine_name || '') !== (item.machine_name || ''));
+                                                const partDirty = item.isNew || (!!original && (original.part_no || '') !== (item.part_no || ''));
+                                                const modelDirty = item.isNew || (!!original && (original.model_name || '') !== (item.model_name || ''));
+                                                const lotDirty = item.isNew || (!!original && (original.lot_no || '') !== (item.lot_no || ''));
+                                                const qtyDirty = item.isNew || (!!original && Number(original.planned_quantity ?? 0) !== Number(item.planned_quantity ?? 0));
+                                                const highlightClass = (dirty: boolean) =>
+                                                    dirty ? 'bg-amber-50 border-amber-300 text-amber-900' : '';
+                                                return (
+                                            <tr key={item.id} className="hover:bg-gray-50">
+                                                <td className="px-3 py-2 text-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedIds.has(item.id)}
+                                                        onChange={() => toggleSelected(item.id)}
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <select
+                                                        value={item.machine_name || ''}
+                                                        onChange={(e) => updateEditItem(item.id, 'machine_name', e.target.value)}
+                                                        className={`w-full rounded-md border border-gray-200 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none ${highlightClass(machineDirty)}`}
+                                                    >
+                                                        <option value="">{t('select')}</option>
+                                                        {machineOptions.map((machine) => (
+                                                            <option key={machine.value} value={machine.value}>
+                                                                {machine.label}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <input
+                                                        value={item.part_no || ''}
+                                                        list="plan-partno-options"
+                                                        onChange={(e) => {
+                                                            const next = e.target.value.toUpperCase();
+                                                            updateEditItem(item.id, 'part_no', next);
+                                                            setPartSearchTerm(next);
+                                                            const match = partSuggestionMap.get(next);
+                                                            if (match?.model_code) {
+                                                                updateEditItem(item.id, 'model_name', match.model_code);
+                                                            }
+                                                        }}
+                                                        className={`w-full rounded-md border border-gray-200 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none ${highlightClass(partDirty)}`}
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <input
+                                                        value={item.model_name || ''}
+                                                        list="plan-model-options"
+                                                        onChange={(e) => {
+                                                            const next = e.target.value;
+                                                            updateEditItem(item.id, 'model_name', next);
+                                                            setPartSearchTerm(next);
+                                                            if (!item.part_no) {
+                                                                const matches = partSuggestions.filter((suggestion) => suggestion.model_code === next);
+                                                                if (matches.length === 1 && matches[0]?.part_no) {
+                                                                    updateEditItem(item.id, 'part_no', matches[0].part_no);
+                                                                }
+                                                            }
+                                                        }}
+                                                        className={`w-full rounded-md border border-gray-200 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none ${highlightClass(modelDirty)}`}
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    {item.isNew ? (
+                                                        <input
+                                                            value={item.lot_no || ''}
+                                                            onChange={(e) => updateEditItem(item.id, 'lot_no', e.target.value)}
+                                                            className={`w-full rounded-md border border-gray-200 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none ${highlightClass(lotDirty)}`}
+                                                        />
+                                                    ) : (
+                                                        <span className="block text-xs text-gray-700">{item.lot_no || '-'}</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-2 text-right">
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        value={formatNumber(item.planned_quantity ?? 0)}
+                                                        onChange={(e) => {
+                                                            const raw = e.target.value.replace(/,/g, '').replace(/[^\d]/g, '');
+                                                            updateEditItem(item.id, 'planned_quantity', Number(raw || 0));
+                                                        }}
+                                                        className={`w-28 rounded-md border border-gray-200 px-2 py-1 text-right text-xs focus:border-blue-400 focus:outline-none ${highlightClass(qtyDirty)}`}
+                                                    />
+                                                </td>
+                                            </tr>
+                                                );
+                                            })()
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                        <datalist id="plan-partno-options">
+                            {partSuggestions.map((suggestion) => (
+                                <option
+                                    key={suggestion.part_no}
+                                    value={suggestion.part_no}
+                                    label={suggestion.model_code || ''}
+                                />
+                            ))}
+                        </datalist>
+                        <datalist id="plan-model-options">
+                            {modelOptions.map((model) => (
+                                <option key={model} value={model} />
+                            ))}
+                        </datalist>
+
+                        <div className="mt-4 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    type="button"
+                                    onClick={handleAddRow}
+                                    className="bg-emerald-600 text-white hover:bg-emerald-700"
+                                >
+                                    {t('add')}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    onClick={handleDeleteSelected}
+                                    disabled={selectedIds.size === 0}
+                                    className="bg-rose-600 text-white hover:bg-rose-700 disabled:bg-rose-200"
+                                >
+                                    {t('delete')}
+                                </Button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    type="button"
+                                    onClick={handleSaveAll}
+                                    disabled={dirtyItems.length === 0 || isSavingAll}
+                                >
+                                    {isSavingAll ? t('plan_edit_saving') : t('plan_edit_save')}
+                                </Button>
+                                <Button type="button" variant="secondary" onClick={closeEditModal}>
+                                    {t('plan_edit_close')}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
             </div>
         </div>
     );

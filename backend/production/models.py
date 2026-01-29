@@ -40,3 +40,18 @@ class ProductionPartCavity(models.Model):
 
     def __str__(self):
         return f"{self.part_no} - {self.cavity}"
+
+
+class ProductionPlanPart(models.Model):
+    """Stores part number to model mappings derived from production plan uploads."""
+    plan_type = models.CharField(max_length=20, db_index=True)
+    part_no = models.CharField(max_length=100, db_index=True)
+    model_name = models.CharField(max_length=100, null=True, blank=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('plan_type', 'part_no')
+        ordering = ['plan_type', 'part_no']
+
+    def __str__(self):
+        return f"{self.plan_type}: {self.part_no} - {self.model_name or ''}"

@@ -141,6 +141,8 @@ export const endpoints = {
     planSummary: (date: string) => `/production/plan-summary/?date=${validateAndEncodeParam(date, 'date')}`,
     status: (date: string) => `/production/status/?date=${validateAndEncodeParam(date, 'date')}`,
     partCavity: () => '/production/part-cavity/',
+    planItems: (date: string, planType: 'injection' | 'machining') =>
+      `/production/plans/?date=${validateAndEncodeParam(date, 'date')}&plan_type=${validateAndEncodeParam(planType, 'planType')}`,
   },
 };
 
@@ -184,6 +186,56 @@ export async function updateProductionPartCavity(partNo: string, cavity: number)
   const response = await api.post(endpoints.production.partCavity(), {
     part_no: partNo,
     cavity,
+  });
+  return response.data;
+}
+
+export async function getProductionPlanItems(date: string, planType: 'injection' | 'machining') {
+  const response = await api.get(endpoints.production.planItems(date, planType));
+  return response.data;
+}
+
+export async function updateProductionPlanItem(
+  planId: number,
+  payload: Partial<{
+    machine_name: string;
+    part_no: string;
+    model_name: string | null;
+    part_spec: string | null;
+    lot_no: string | null;
+    planned_quantity: number;
+    sequence: number | null;
+  }>,
+) {
+  const response = await api.patch(`/production/plans/${planId}/`, payload);
+  return response.data;
+}
+
+export async function createProductionPlanItem(payload: {
+  plan_date: string;
+  plan_type: 'injection' | 'machining';
+  machine_name: string;
+  part_no?: string | null;
+  model_name?: string | null;
+  part_spec?: string | null;
+  lot_no?: string | null;
+  planned_quantity: number;
+}) {
+  const response = await api.post('/production/plans/', payload);
+  return response.data;
+}
+
+export async function deleteProductionPlanItem(planId: number) {
+  const response = await api.delete(`/production/plans/${planId}/`);
+  return response.data;
+}
+
+export async function searchProductionPlanParts(search: string, planType?: 'injection' | 'machining') {
+  const response = await api.get('/production/plan-parts/', {
+    params: {
+      search,
+      plan_type: planType,
+    },
   });
   return response.data;
 }

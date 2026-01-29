@@ -13,14 +13,16 @@ interface UploadCardProps {
   planType: PlanType;
   onUploadSuccess: () => void;
   className?: string;
+  canEdit?: boolean;
 }
 
-const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className }) => {
+const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className, canEdit = true }) => {
   const { t } = useLang();
   const [targetDate, setTargetDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
+  const isReadOnly = !canEdit;
 
   const descriptionText = planType === 'injection' ? t('plan_form_description_injection') : t('plan_form_description_machining');
   const fileHintText = planType === 'injection' ? t('plan_form_file_hint_injection') : t('plan_form_file_hint_machining');
@@ -28,6 +30,10 @@ const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className 
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isReadOnly) {
+      toast.error(t('plan_edit_permission_required'));
+      return;
+    }
     if (!selectedFile) {
       toast.error(t('plan_form_file_required')); // A key that should exist
       return;
@@ -67,6 +73,7 @@ const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className 
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
               value={targetDate}
               onChange={(event) => setTargetDate(event.target.value)}
+              disabled={isReadOnly}
             />
             <CalendarDays className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
@@ -86,6 +93,7 @@ const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className 
             key={selectedFile ? 'file-selected' : 'no-file'} // Force re-render to clear file name
             className="block w-full text-sm text-gray-600 file:mr-4 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-blue-600 hover:file:bg-blue-100"
             onChange={(event) => setSelectedFile(event.target.files?.[0] || null)}
+            disabled={isReadOnly}
           />
           {selectedFile && (
             <p className="mt-1 text-sm text-gray-700">{selectedFile.name}</p>
@@ -94,16 +102,19 @@ const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className 
             className={`mt-3 flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-3 py-7 text-xs transition ${isDragActive ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-gray-300 bg-gray-50 text-gray-500'
               }`}
             onDragOver={(event) => {
+              if (isReadOnly) return;
               event.preventDefault();
               event.stopPropagation();
               setIsDragActive(true);
             }}
             onDragLeave={(event) => {
+              if (isReadOnly) return;
               event.preventDefault();
               event.stopPropagation();
               setIsDragActive(false);
             }}
             onDrop={(event) => {
+              if (isReadOnly) return;
               event.preventDefault();
               event.stopPropagation();
               setIsDragActive(false);
@@ -117,11 +128,14 @@ const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className 
               {t('plan_drag_drop_hint') ||
                 '여기로 파일을 끌어다 놓거나, 위의 파일 선택을 눌러 업로드하세요.'}
             </span>
+            {isReadOnly && (
+              <span className="text-[11px] text-red-500 mt-2">{t('plan_edit_permission_required')}</span>
+            )}
           </div>
         </div>
 
         <div className="mt-auto">
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button type="submit" className="w-full" disabled={isSubmitting || isReadOnly}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isSubmitting ? t('plan_uploading') : t('plan_upload_button')}
           </Button>

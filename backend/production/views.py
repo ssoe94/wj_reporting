@@ -1,7 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework import status, generics
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.utils.dateparse import parse_date
 from datetime import datetime, time, timedelta
 import pandas as pd
@@ -12,8 +13,11 @@ from .models import ProductionPlan, ProductionPartCavity
 from injection.models import InjectionMonitoringRecord
 from assembly.models import AssemblyReport
 
-from django.db.models import Sum
-from rest_framework.permissions import IsAuthenticated
+from django.db.models import Sum, Q, Max
+from django.db.utils import OperationalError, ProgrammingError, IntegrityError
+from .serializers import ProductionPlanSerializer
+from .permissions import user_can_edit_plan
+from .models import ProductionPlanPart
 import math
 
 class ProductionPlanSummaryView(APIView):
@@ -128,6 +132,93 @@ class ProductionPlanSummaryView(APIView):
         return Response(response)
 
 
+class ProductionPlanListView(generics.ListCreateAPIView):
+    serializer_class = ProductionPlanSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        date_str = self.request.query_params.get('date')
+        plan_type = self.request.query_params.get('plan_type')
+        if not date_str or not plan_type:
+            raise ValidationError({'detail': 'date and plan_type are required.'})
+
+        target_date = parse_date(date_str)
+        if not target_date:
+            raise ValidationError({'detail': 'Invalid date format. Use YYYY-MM-DD.'})
+
+        if not user_can_edit_plan(self.request.user, plan_type):
+            raise PermissionDenied('You do not have permission to edit this plan type.')
+
+        return ProductionPlan.objects.filter(
+            plan_date=target_date,
+            plan_type=plan_type,
+        ).order_by('machine_name', 'sequence', 'id')
+
+    def perform_create(self, serializer):
+        plan_type = self.request.data.get('plan_type')
+        date_str = self.request.data.get('plan_date')
+        if not plan_type or not date_str:
+            raise ValidationError({'detail': 'plan_date and plan_type are required.'})
+        target_date = parse_date(date_str)
+        if not target_date:
+            raise ValidationError({'detail': 'Invalid date format. Use YYYY-MM-DD.'})
+        if plan_type not in ['injection', 'machining']:
+            raise ValidationError({'detail': 'Invalid plan_type.'})
+        if not user_can_edit_plan(self.request.user, plan_type):
+            raise PermissionDenied('You do not have permission to edit this plan type.')
+        machine_name = (serializer.validated_data.get('machine_name') or '').strip()
+        sequence = serializer.validated_data.get('sequence')
+        if sequence is None:
+            last_seq = ProductionPlan.objects.filter(
+                plan_date=target_date,
+                plan_type=plan_type,
+                machine_name=machine_name,
+            ).aggregate(max_seq=Max('sequence'))['max_seq']
+            sequence = (last_seq or 0) + 1
+        try:
+            obj = serializer.save(plan_date=target_date, plan_type=plan_type, sequence=sequence)
+            part_no = (obj.part_no or '').strip().upper()
+            if part_no:
+                try:
+                    ProductionPlanPart.objects.update_or_create(
+                        plan_type=obj.plan_type,
+                        part_no=part_no,
+                        defaults={'model_name': (obj.model_name or '').strip() or None},
+                    )
+                except (OperationalError, ProgrammingError):
+                    # Mapping table not ready; ignore to avoid 500 on plan creation.
+                    pass
+        except IntegrityError:
+            raise ValidationError({'detail': 'Plan entry already exists for this machine/part.'})
+
+
+class ProductionPlanDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ProductionPlanSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = ProductionPlan.objects.all()
+
+    def get_object(self):
+        obj = super().get_object()
+        if not user_can_edit_plan(self.request.user, obj.plan_type):
+            raise PermissionDenied('You do not have permission to edit this plan type.')
+        return obj
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        part_no = (obj.part_no or '').strip().upper()
+        if part_no:
+            try:
+                ProductionPlanPart.objects.update_or_create(
+                    plan_type=obj.plan_type,
+                    part_no=part_no,
+                    defaults={'model_name': (obj.model_name or '').strip() or None},
+                )
+            except (OperationalError, ProgrammingError):
+                # Mapping table not ready; ignore to avoid 500 on plan update.
+                pass
+
+
 class ProductionPlanDatesView(APIView):
     """
     API view to get distinct dates for which production plans exist.
@@ -156,6 +247,50 @@ class ProductionPlanDatesView(APIView):
             'injection': injection_dates_str,
             'machining': machining_dates_str,
         })
+
+
+class ProductionPlanPartSearchView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        search = (request.query_params.get('search') or '').strip()
+        plan_type = request.query_params.get('plan_type')
+        if not search:
+            return Response([])
+
+        try:
+            queryset = ProductionPlanPart.objects.all()
+            if plan_type in ['injection', 'machining']:
+                queryset = queryset.filter(plan_type=plan_type)
+
+            queryset = queryset.filter(
+                Q(part_no__istartswith=search) | Q(model_name__icontains=search)
+            ).order_by('part_no')[:30]
+
+            data = [
+                {
+                    'part_no': row.part_no,
+                    'model_name': row.model_name or '',
+                }
+                for row in queryset
+            ]
+        except (OperationalError, ProgrammingError):
+            # Fallback if mapping table is missing or not migrated.
+            plan_qs = ProductionPlan.objects.all()
+            if plan_type in ['injection', 'machining']:
+                plan_qs = plan_qs.filter(plan_type=plan_type)
+            plan_qs = plan_qs.filter(
+                Q(part_no__istartswith=search) | Q(model_name__icontains=search)
+            ).values('part_no', 'model_name').distinct()[:30]
+            data = [
+                {
+                    'part_no': (row.get('part_no') or '').strip().upper(),
+                    'model_name': row.get('model_name') or '',
+                }
+                for row in plan_qs
+                if row.get('part_no')
+            ]
+        return Response(data)
 
 class ProductionDashboardView(APIView):
     """
