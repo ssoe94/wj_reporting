@@ -46,6 +46,8 @@ import PasswordChangeModal from './components/PasswordChangeModal';
 import PermissionLink from './components/common/PermissionLink';
 import PageTransition from './components/common/PageTransition';
 import QualityPage from './pages/quality';
+import AssemblyDashboardPage from './pages/assembly/Dashboard';
+import InjectionDashboardPage from './pages/injection/Dashboard';
 import InjectionSetupPage from './pages/injection/Setup';
 import InjectionMonitoringPage from './pages/injection/MonitoringPage';
 import ProductionPlanPage from './pages/production/Plan';
@@ -81,6 +83,7 @@ function useNavItems() {
         label: t('nav_injection'),
         icon: Monitor,
         children: [
+          { to: "/injection/dashboard", label: t('nav_injection_dashboard'), icon: BarChart3 },
           { to: "/injection#top", label: t('nav_injection_summary'), icon: ChartNoAxesCombined },
           { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
           { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
@@ -92,6 +95,7 @@ function useNavItems() {
         label: t('nav_machining'),
         icon: Wrench,
         children: [
+          { to: "/assembly/dashboard", label: t('nav_machining_dashboard'), icon: BarChart3 },
           { to: "/assembly#top", label: t('nav_machining_summary'), icon: ChartNoAxesCombined },
           { to: "/assembly#records", label: t('nav_machining_records'), icon: ClipboardList },
           { to: "/assembly#new", label: t('nav_machining_new'), icon: PlusSquare },
@@ -161,6 +165,7 @@ function useNavItems() {
     label: t('nav_injection'),
     icon: Monitor,
     children: [
+      { to: "/injection/dashboard", label: t('nav_injection_dashboard'), icon: BarChart3 },
       { to: "/injection#top", label: t('nav_injection_summary'), icon: ChartNoAxesCombined },
       { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
       { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
@@ -172,6 +177,7 @@ function useNavItems() {
     label: t('nav_machining'),
     icon: Wrench,
     children: [
+      { to: "/assembly/dashboard", label: t('nav_machining_dashboard'), icon: BarChart3 },
       { to: "/assembly#top", label: t('nav_machining_summary'), icon: ChartNoAxesCombined },
       { to: "/assembly#records", label: t('nav_machining_records'), icon: ClipboardList },
       { to: "/assembly#new", label: t('nav_machining_new'), icon: PlusSquare },
@@ -278,8 +284,10 @@ function AppContent() {
   const navItems = useNavItems();
   const pathname = routerLocation.pathname;
   let breadcrumbLabel = t('brand');
-  if (pathname.startsWith('/assembly')) breadcrumbLabel = t('brand_machining');
+  if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
+  else if (pathname.startsWith('/assembly')) breadcrumbLabel = t('brand_machining');
   else if (pathname.startsWith('/production')) breadcrumbLabel = t('nav_production');
+  else if (pathname.startsWith('/injection/dashboard')) breadcrumbLabel = t('nav_injection_dashboard');
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
   else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_dashboard');
   else if (pathname.startsWith('/sales')) breadcrumbLabel = t('nav_sales');
@@ -567,6 +575,7 @@ function AppContent() {
             <Route path="/analysis" element={<PrivateRoute><PageTransition><AnalysisPage /></PageTransition></PrivateRoute>} />
 
             {/* Injection page (single) */}
+            <Route path="/injection/dashboard" element={<PrivateRoute><PageTransition><InjectionDashboardPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection" element={<PrivateRoute><PageTransition><SummaryPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/setup" element={<PrivateRoute><PageTransition><InjectionSetupPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/monitoring" element={<PrivateRoute><PageTransition><InjectionMonitoringPage /></PageTransition></PrivateRoute>} />
@@ -577,6 +586,7 @@ function AppContent() {
             <Route path="/production/stats" element={<PrivateRoute><PageTransition><ProductionStatsPage /></PageTransition></PrivateRoute>} />
 
             {/* Assembly single page */}
+            <Route path="/assembly/dashboard" element={<PrivateRoute><PageTransition><AssemblyDashboardPage /></PageTransition></PrivateRoute>} />
             <Route path="/assembly" element={<PrivateRoute><PageTransition><AssemblyPage /></PageTransition></PrivateRoute>} />
 
             {/* Quality single page */}

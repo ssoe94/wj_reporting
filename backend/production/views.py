@@ -4,20 +4,22 @@ from rest_framework import status, generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.utils.dateparse import parse_date
+from django.utils import timezone
 from datetime import datetime, time, timedelta
 import pandas as pd
 import pytz
 import re
 
-from .models import ProductionPlan, ProductionPartCavity
-from injection.models import InjectionMonitoringRecord
+from .models import ProductionExecution, ProductionMesReportRecord, ProductionPlan, ProductionPartCavity
+from injection.models import CycleTimeSetup, InjectionMonitoringRecord, PartSpec
 from assembly.models import AssemblyReport
 
 from django.db.models import Sum, Q, Max
 from django.db.utils import OperationalError, ProgrammingError, IntegrityError
-from .serializers import ProductionPlanSerializer
+from .serializers import ProductionExecutionSerializer, ProductionPlanSerializer
 from .permissions import user_can_edit_plan
 from .models import ProductionPlanPart
+from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
 import math
 
 class ProductionPlanSummaryView(APIView):
@@ -638,6 +640,298 @@ class ProductionPartCavityView(APIView):
         )
         return Response({"part_no": obj.part_no, "cavity": obj.cavity})
 
+
+class ProductionConsoleView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        date_str = request.query_params.get('date')
+        plan_type = request.query_params.get('plan_type')
+        if not date_str or not plan_type:
+            return Response({"error": "date and plan_type are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_date = parse_date(date_str)
+        if not target_date:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        if plan_type not in ['injection', 'machining']:
+            return Response({"error": "Invalid plan_type."}, status=status.HTTP_400_BAD_REQUEST)
+
+        plans = list(
+            ProductionPlan.objects.filter(
+                plan_date=target_date,
+                plan_type=plan_type,
+                planned_quantity__gt=0,
+            )
+            .order_by('machine_name', 'sequence', 'id')
+            .values(
+                'machine_name',
+                'lot_no',
+                'model_name',
+                'part_spec',
+                'part_no',
+                'planned_quantity',
+                'sequence',
+            )
+        )
+
+        execution_map = {
+            self._key(exec_row.plan_date, exec_row.plan_type, exec_row.machine_name, exec_row.part_no, exec_row.lot_no, exec_row.sequence): exec_row
+            for exec_row in ProductionExecution.objects.filter(plan_date=target_date, plan_type=plan_type)
+        }
+
+        part_nos = sorted({(row.get('part_no') or '').strip().upper() for row in plans if row.get('part_no')})
+        cavity_map = {
+            row['part_no']: int(row['cavity'] or 1)
+            for row in ProductionPartCavity.objects.filter(part_no__in=part_nos).values('part_no', 'cavity')
+        }
+
+        latest_partspec_map = {}
+        if part_nos:
+            for spec in PartSpec.objects.filter(part_no__in=part_nos).order_by('part_no', '-valid_from'):
+                latest_partspec_map.setdefault(spec.part_no, spec)
+
+        latest_setup_map = {}
+        if plan_type == 'injection':
+            machine_numbers = sorted({
+                number for number in (self._extract_machine_number(row.get('machine_name')) for row in plans)
+                if isinstance(number, int)
+            })
+            if machine_numbers and part_nos:
+                setups = CycleTimeSetup.objects.filter(
+                    machine_no__in=machine_numbers,
+                    part_no__in=part_nos,
+                ).exclude(status='REJECTED').order_by('machine_no', 'part_no', '-setup_date')
+                for setup in setups:
+                    latest_setup_map.setdefault((setup.machine_no, setup.part_no), setup)
+
+        rows = []
+        total_planned = 0
+        total_actual = 0
+        total_defect = 0
+
+        for row in plans:
+            machine_name = (row.get('machine_name') or '').strip()
+            part_no = (row.get('part_no') or '').strip().upper()
+            lot_no = (row.get('lot_no') or '').strip() or None
+            sequence = int(row.get('sequence') or 0)
+            planned_quantity = int(round(float(row.get('planned_quantity') or 0)))
+            key = self._key(target_date, plan_type, machine_name, part_no, lot_no, sequence)
+            execution = execution_map.get(key)
+            machine_number = self._extract_machine_number(machine_name)
+            setup = latest_setup_map.get((machine_number, part_no)) if machine_number is not None else None
+            spec = latest_partspec_map.get(part_no)
+
+            actual_qty = int(execution.actual_qty if execution else 0)
+            defect_qty = int(execution.defect_qty if execution else 0)
+            idle_time = int(execution.idle_time if execution else 0)
+            personnel_count = float(execution.personnel_count if execution else (setup.personnel_count if setup else 0))
+            operating_ct = (
+                float(execution.operating_ct)
+                if execution and execution.operating_ct is not None
+                else float(setup.target_cycle_time)
+                if setup and setup.target_cycle_time is not None
+                else float(spec.cycle_time_sec)
+                if spec and spec.cycle_time_sec is not None
+                else None
+            )
+            status_value = self._derive_status(
+                planned_quantity=planned_quantity,
+                actual_qty=actual_qty,
+                idle_time=idle_time,
+                explicit_status=execution.status if execution else None,
+                has_started=bool(execution and execution.start_datetime),
+            )
+
+            rows.append({
+                'key': self._key_str(target_date, plan_type, machine_name, part_no, lot_no, sequence),
+                'execution_id': execution.id if execution else None,
+                'plan_date': target_date.isoformat(),
+                'plan_type': plan_type,
+                'machine_name': machine_name,
+                'machine_number': machine_number,
+                'sequence': sequence,
+                'part_no': part_no,
+                'model_name': row.get('model_name') or '',
+                'part_spec': row.get('part_spec') or '',
+                'lot_no': lot_no,
+                'planned_quantity': planned_quantity,
+                'actual_qty': actual_qty,
+                'defect_qty': defect_qty,
+                'idle_time': idle_time,
+                'personnel_count': personnel_count,
+                'operating_ct': operating_ct,
+                'start_datetime': execution.start_datetime.isoformat() if execution and execution.start_datetime else None,
+                'end_datetime': execution.end_datetime.isoformat() if execution and execution.end_datetime else None,
+                'note': execution.note if execution else '',
+                'status': status_value,
+                'progress': round((actual_qty / planned_quantity) * 100, 1) if planned_quantity > 0 else 0,
+                'cavity': cavity_map.get(part_no, 1),
+                'baseline_ct': int(spec.cycle_time_sec) if spec and spec.cycle_time_sec is not None else None,
+                'target_cycle_time': int(setup.target_cycle_time) if setup else None,
+                'standard_cycle_time': int(setup.standard_cycle_time) if setup and setup.standard_cycle_time is not None else None,
+                'mean_cycle_time': int(setup.mean_cycle_time) if setup and setup.mean_cycle_time is not None else None,
+            })
+
+            total_planned += planned_quantity
+            total_actual += actual_qty
+            total_defect += defect_qty
+
+        return Response({
+            'date': target_date.isoformat(),
+            'plan_type': plan_type,
+            'summary': {
+                'total_planned': total_planned,
+                'total_actual': total_actual,
+                'total_defect': total_defect,
+                'achievement_rate': round((total_actual / total_planned) * 100, 1) if total_planned > 0 else 0,
+                'defect_rate': round((total_defect / total_actual) * 100, 1) if total_actual > 0 else 0,
+                'pending_count': sum(1 for row in rows if row['status'] == 'pending'),
+                'running_count': sum(1 for row in rows if row['status'] == 'running'),
+                'paused_count': sum(1 for row in rows if row['status'] == 'paused'),
+                'completed_count': sum(1 for row in rows if row['status'] == 'completed'),
+                'avg_operating_ct': round(
+                    sum(row['operating_ct'] for row in rows if row['operating_ct'] is not None) /
+                    sum(1 for row in rows if row['operating_ct'] is not None),
+                    1,
+                ) if any(row['operating_ct'] is not None for row in rows) else 0,
+            },
+            'rows': rows,
+        })
+
+    @staticmethod
+    def _extract_machine_number(name):
+        if not name:
+            return None
+        text = str(name)
+        patterns = (
+            r'-(\d+)\s*$',
+            r'^\s*(\d+)\b',
+            r'(\d+)',
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return int(match.group(1))
+        return None
+
+    @staticmethod
+    def _extract_line_key(name):
+        if not name:
+            return ''
+        text = str(name).strip().upper()
+        match = re.search(r'([A-Z])', text)
+        if match:
+            return match.group(1)
+        return text
+
+    @classmethod
+    def _normalize_equipment_key(cls, plan_type, equipment_name):
+        if plan_type == 'injection':
+            number = cls._extract_machine_number(equipment_name)
+            return str(number) if number is not None else ''
+        return cls._extract_line_key(equipment_name)
+
+    @classmethod
+    def _format_equipment_label(cls, plan_type, equipment_name, equipment_key):
+        if plan_type == 'injection':
+            number = cls._extract_machine_number(equipment_name) if equipment_name else None
+            machine_number = number if number is not None else int(equipment_key)
+            tonnage_match = re.search(r'(\d{2,5}T)', str(equipment_name or '').upper())
+            tonnage = tonnage_match.group(1) if tonnage_match else ''
+            return f"{machine_number}\uD638\uAE30 {tonnage}".strip()
+        return f"{equipment_key}\uB77C\uC778"
+
+    @classmethod
+    def _equipment_sort_order(cls, plan_type, equipment_key):
+        if plan_type == 'injection':
+            try:
+                return int(equipment_key)
+            except (TypeError, ValueError):
+                return 9999
+        return ord(str(equipment_key or 'Z')[0])
+
+    @staticmethod
+    def _format_report_time(value):
+        if not value:
+            return None
+        try:
+            dt = datetime.fromtimestamp(int(value) / 1000, tz=timezone.get_current_timezone())
+            return dt.isoformat()
+        except (TypeError, ValueError, OSError):
+            return None
+
+
+class ProductionExecutionUpsertView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        plan_type = request.data.get('plan_type')
+        if plan_type not in ['injection', 'machining']:
+            return Response({'detail': 'Invalid plan_type.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not user_can_edit_plan(request.user, plan_type):
+            raise PermissionDenied('You do not have permission to edit this plan type.')
+
+        payload = request.data.copy()
+        payload['part_no'] = (payload.get('part_no') or '').strip().upper()
+        payload['lot_no'] = (payload.get('lot_no') or '').strip() or None
+        payload['machine_name'] = (payload.get('machine_name') or '').strip()
+
+        target_date = parse_date(payload.get('plan_date'))
+        if not target_date:
+            return Response({'detail': 'Invalid plan_date.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            sequence = int(payload.get('sequence') or 0)
+            planned_quantity = int(round(float(payload.get('planned_quantity') or 0)))
+        except (TypeError, ValueError):
+            return Response({'detail': 'Invalid numeric payload.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        plan_queryset = ProductionPlan.objects.filter(
+            plan_date=target_date,
+            plan_type=plan_type,
+            machine_name=payload['machine_name'],
+            part_no=payload['part_no'],
+            sequence=sequence,
+        )
+        if payload['lot_no']:
+            plan_queryset = plan_queryset.filter(lot_no=payload['lot_no'])
+        else:
+            plan_queryset = plan_queryset.filter(Q(lot_no__isnull=True) | Q(lot_no=''))
+
+        if not plan_queryset.exists():
+            return Response({'detail': 'Matching production plan row not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        execution_queryset = ProductionExecution.objects.filter(
+            plan_date=target_date,
+            plan_type=plan_type,
+            machine_name=payload['machine_name'],
+            part_no=payload['part_no'],
+            sequence=sequence,
+        )
+        if payload['lot_no']:
+            execution_queryset = execution_queryset.filter(lot_no=payload['lot_no'])
+        else:
+            execution_queryset = execution_queryset.filter(Q(lot_no__isnull=True) | Q(lot_no=''))
+
+        existing = execution_queryset.first()
+
+        serializer = ProductionExecutionSerializer(instance=existing, data=payload, partial=bool(existing))
+        serializer.is_valid(raise_exception=True)
+
+        actual_qty = int(serializer.validated_data.get('actual_qty', existing.actual_qty if existing else 0) or 0)
+        idle_time = int(serializer.validated_data.get('idle_time', existing.idle_time if existing else 0) or 0)
+        status_value = ProductionConsoleView._derive_status(
+            planned_quantity=planned_quantity,
+            actual_qty=actual_qty,
+            idle_time=idle_time,
+            explicit_status=request.data.get('status'),
+            has_started=bool(serializer.validated_data.get('start_datetime') or (existing.start_datetime if existing else None)),
+        )
+
+        saved = serializer.save(updated_by=request.user, status=status_value)
+        return Response(ProductionExecutionSerializer(saved).data)
+
+
 class DebugPlanView(APIView):
     """
     A temporary view to debug the state of ProductionPlan data for a specific machine and date.
@@ -653,7 +947,7 @@ class DebugPlanView(APIView):
                 {"error": "Date and machine_name parameters are required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
             target_date = parse_date(date_str)
         except (ValueError, TypeError):
@@ -676,3 +970,147 @@ class DebugPlanView(APIView):
         ))
 
         return Response(data)
+
+
+class ProductionMesReportStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        date_str = request.query_params.get('date')
+        plan_type = request.query_params.get('plan_type', 'injection')
+        if not date_str:
+            return Response({'detail': 'date is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if plan_type not in {'injection', 'machining'}:
+            return Response({'detail': 'Invalid plan_type.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_date = parse_date(date_str)
+        if not target_date:
+            return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        tz = pytz.timezone('Asia/Shanghai')
+        range_mode = 'day'
+        business_start = time(hour=8, minute=0)
+        start_dt = tz.localize(datetime.combine(target_date, business_start))
+        end_dt = tz.localize(datetime.combine(target_date + timedelta(days=1), business_start))
+
+        mes_groups = {}
+        raw_count = ProductionMesReportRecord.objects.filter(
+            report_time__gte=start_dt,
+            report_time__lt=end_dt,
+        ).count()
+        mes_records = ProductionMesReportRecord.objects.filter(
+            business_date=target_date,
+            plan_type=plan_type,
+        ).order_by('report_time')
+        filtered_count = mes_records.count()
+
+        for record in mes_records:
+            key = (record.equipment_key, record.part_no)
+            group = mes_groups.setdefault(key, {
+                'equipment_key': record.equipment_key,
+                'equipment_name': record.equipment_name,
+                'part_no': record.part_no,
+                'mes_qty': 0,
+                'mes_report_count': 0,
+                'latest_report_time': None,
+                'process_code': record.process_code,
+                'mes_material_name': record.material_name,
+            })
+            group['mes_qty'] += int(record.report_qty or 0)
+            group['mes_report_count'] += 1
+            latest_report_time = record.report_time.isoformat() if record.report_time else None
+            if latest_report_time and (
+                not group['latest_report_time'] or latest_report_time > group['latest_report_time']
+            ):
+                group['latest_report_time'] = latest_report_time
+
+        plan_groups = {}
+        plans = ProductionPlan.objects.filter(plan_date=target_date, plan_type=plan_type, planned_quantity__gt=0)
+        for plan in plans:
+            equipment_key = normalize_equipment_key(plan_type, plan.machine_name)
+            part_no = normalize_part_no(plan.part_no)
+            if not equipment_key or not part_no:
+                continue
+            key = (equipment_key, part_no)
+            group = plan_groups.setdefault(key, {
+                'equipment_key': equipment_key,
+                'machine_name': plan.machine_name,
+                'part_no': part_no,
+                'model_name': plan.model_name or '',
+                'planned_qty': 0,
+                'plan_row_count': 0,
+            })
+            group['planned_qty'] += int(round(plan.planned_quantity or 0))
+            group['plan_row_count'] += 1
+            if not group['model_name'] and plan.model_name:
+                group['model_name'] = plan.model_name
+
+        keys = sorted(
+            set(plan_groups.keys()) | set(mes_groups.keys()),
+            key=lambda item: (equipment_sort_order(plan_type, item[0]), item[1]),
+        )
+
+        rows = []
+        total_planned = 0
+        total_mes = 0
+        matched_rows = 0
+        plan_only_rows = 0
+        mes_only_rows = 0
+
+        for equipment_key, part_no in keys:
+            plan_group = plan_groups.get((equipment_key, part_no), {})
+            mes_group = mes_groups.get((equipment_key, part_no), {})
+            planned_qty = int(plan_group.get('planned_qty') or 0)
+            mes_qty = int(round(mes_group.get('mes_qty') or 0))
+            gap_qty = mes_qty - planned_qty
+            equipment_name = plan_group.get('machine_name') or mes_group.get('equipment_name') or equipment_key
+
+            if planned_qty and mes_qty:
+                compare_status = 'matched'
+                matched_rows += 1
+            elif planned_qty:
+                compare_status = 'plan_only'
+                plan_only_rows += 1
+            else:
+                compare_status = 'mes_only'
+                mes_only_rows += 1
+
+            rows.append({
+                'equipment_key': equipment_key,
+                'equipment_name': equipment_name,
+                'equipment_label': format_equipment_label(plan_type, equipment_name, equipment_key),
+                'part_no': part_no,
+                'model_name': plan_group.get('model_name') or mes_group.get('mes_material_name') or '',
+                'planned_qty': planned_qty,
+                'mes_qty': mes_qty,
+                'gap_qty': gap_qty,
+                'achievement_rate': round((mes_qty / planned_qty) * 100, 1) if planned_qty > 0 else None,
+                'mes_report_count': int(mes_group.get('mes_report_count') or 0),
+                'latest_report_time': mes_group.get('latest_report_time'),
+                'compare_status': compare_status,
+                'process_code': mes_group.get('process_code') or ('ZS' if plan_type == 'injection' else 'JG'),
+                'plan_row_count': int(plan_group.get('plan_row_count') or 0),
+            })
+            total_planned += planned_qty
+            total_mes += mes_qty
+
+        return Response({
+            'date': target_date.isoformat(),
+            'plan_type': plan_type,
+            'range_mode': range_mode,
+            'range_start': start_dt.isoformat(),
+            'range_end': end_dt.isoformat(),
+            'latest_synced_at': mes_records.order_by('-updated_at').values_list('updated_at', flat=True).first(),
+            'summary': {
+                'total_planned': total_planned,
+                'total_mes': total_mes,
+                'gap_qty': total_mes - total_planned,
+                'achievement_rate': round((total_mes / total_planned) * 100, 1) if total_planned > 0 else 0,
+                'matched_rows': matched_rows,
+                'plan_only_rows': plan_only_rows,
+                'mes_only_rows': mes_only_rows,
+                'raw_mes_count': raw_count,
+                'grouped_mes_count': filtered_count,
+            },
+            'rows': rows,
+        })

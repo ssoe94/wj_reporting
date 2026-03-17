@@ -22,7 +22,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Load .env file for local development
 try:
     from dotenv import load_dotenv
-    load_dotenv(BASE_DIR / '.env')
+    # Local .env should win over stray machine-level env vars so dev matches the repo config.
+    load_dotenv(BASE_DIR / '.env', override=True)
 except ImportError:
     pass
 
@@ -36,8 +37,19 @@ ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-wh%&py10w)!ug#vdky(q+f8+5q0!!@nz+5+-_e$g_^n8=wrf&i')
 
+def _parse_debug(value):
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {'1', 'true', 't', 'yes', 'y', 'on', 'debug', 'development', 'dev'}:
+        return True
+    if normalized in {'0', 'false', 'f', 'no', 'n', 'off', 'release', 'production', 'prod', ''}:
+        return False
+    return False
+
+
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=False, cast=bool)
+DEBUG = _parse_debug(config('DEBUG', default='False'))
 
 ALLOWED_HOSTS = [
     'localhost',
@@ -195,7 +207,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-db_url = os.getenv('INTERNAL_DATABASE_URL') or os.getenv('DATABASE_URL')
+db_url = config('INTERNAL_DATABASE_URL', default='') or config('DATABASE_URL', default='')
 if not db_url:
     db_url = f'sqlite:///{BASE_DIR / "db.sqlite3"}'
 

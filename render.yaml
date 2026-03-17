@@ -50,3 +50,13 @@ services:
     buildCommand: bash build.sh
     startCommand: python run_hourly_snapshot.py
     envVarGroup: shared-secrets
+
+  # MES Progress Report Sync (initial 24h backfill, then incremental 5min)
+  - type: cron
+    name: production-mes-progress-sync
+    env: python
+    rootDir: backend
+    schedule: "*/5 * * * *"
+    buildCommand: bash build.sh
+    startCommand: python manage.py sync_mes_progress_reports
+    envVarGroup: shared-secrets

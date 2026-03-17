@@ -135,6 +135,11 @@ export const endpoints = {
   },
   production: {
     upload: () => '/production/plan/upload/',
+    console: (date: string, planType: 'injection' | 'machining') =>
+      `/production/console/?date=${validateAndEncodeParam(date, 'date')}&plan_type=${validateAndEncodeParam(planType, 'planType')}`,
+    executionUpsert: () => '/production/executions/upsert/',
+    mesReportStats: (date: string, planType: 'injection' | 'machining', rangeMode: 'day' | 'recent24h' = 'day') =>
+      `/production/mes-report-stats/?date=${validateAndEncodeParam(date, 'date')}&plan_type=${validateAndEncodeParam(planType, 'planType')}&range_mode=${validateAndEncodeParam(rangeMode, 'rangeMode')}`,
     dashboard: (date: string, planType: 'injection' | 'machining') =>
       `/production/dashboard/?date=${validateAndEncodeParam(date, 'date')}&plan_type=${validateAndEncodeParam(planType, 'planType')}`,
     planDates: () => '/production/plan-dates/',
@@ -164,6 +169,43 @@ export async function uploadProductionPlanFile(file: File, planType: 'injection'
 
 export async function getProductionDashboardData(date: string, planType: 'injection' | 'machining') {
   const response = await api.get(endpoints.production.dashboard(date, planType));
+  return response.data;
+}
+
+export async function getProductionConsoleData(date: string, planType: 'injection' | 'machining') {
+  const response = await api.get(endpoints.production.console(date, planType));
+  return response.data;
+}
+
+export async function getProductionMesReportStats(
+  date: string,
+  planType: 'injection' | 'machining',
+  rangeMode: 'day' | 'recent24h' = 'day',
+) {
+  const response = await api.get(endpoints.production.mesReportStats(date, planType, rangeMode));
+  return response.data;
+}
+
+export async function upsertProductionExecution(payload: {
+  plan_date: string;
+  plan_type: 'injection' | 'machining';
+  machine_name: string;
+  part_no: string;
+  lot_no?: string | null;
+  sequence: number;
+  planned_quantity: number;
+  model_name?: string | null;
+  actual_qty?: number;
+  defect_qty?: number;
+  idle_time?: number;
+  personnel_count?: number;
+  operating_ct?: number | null;
+  start_datetime?: string | null;
+  end_datetime?: string | null;
+  note?: string;
+  status?: 'pending' | 'running' | 'completed' | 'paused';
+}) {
+  const response = await api.post(endpoints.production.executionUpsert(), payload);
   return response.data;
 }
 

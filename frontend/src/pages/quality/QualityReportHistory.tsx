@@ -813,8 +813,8 @@ export default function QualityReportHistory() {
           </div>
         </div>
         {/* 테이블 */}
-        <div className="overflow-x-auto border border-indigo-200 rounded-lg shadow-sm">
-          <table className="min-w-full text-sm">
+        <div className="overflow-x-hidden border border-indigo-200 rounded-lg shadow-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="bg-gradient-to-r from-indigo-50 to-blue-50 whitespace-nowrap">
               <tr className="border-b border-indigo-200">
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('date')}</th>
@@ -824,18 +824,19 @@ export default function QualityReportHistory() {
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.lot_size')}</th>
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.defect_rate')}</th>
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.judgement')}</th>
+                <th className="px-2 py-3 text-center font-semibold text-gray-700 w-[140px]">{t('quality.defect_phenomenon')}</th>
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.image_upload')}</th>
-                <th className="px-3 py-3 text-center font-semibold text-gray-700 min-w-[250px]">{t('quality.action_result')}</th>
+                <th className="px-2 py-3 text-center font-semibold text-gray-700 w-[144px]">{t('quality.action_result')}</th>
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-indigo-100 bg-white">
               {isLoading ? (
-                <tr><td colSpan={10} className="text-center py-10 text-gray-500">{t('loading')}...</td></tr>
+                <tr><td colSpan={11} className="text-center py-10 text-gray-500">{t('loading')}...</td></tr>
               ) : isError ? (
-                <tr><td colSpan={10} className="text-center py-10 text-red-500">{t('error_loading_data')}</td></tr>
+                <tr><td colSpan={11} className="text-center py-10 text-red-500">{t('error_loading_data')}</td></tr>
               ) : reports.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-10 text-gray-500">{t('no_data')}</td></tr>
+                <tr><td colSpan={11} className="text-center py-10 text-gray-500">{t('no_data')}</td></tr>
               ) : (
                 reports.map((r: QualityReport) => {
                   const isEditing = editingId === r.id;
@@ -843,13 +844,18 @@ export default function QualityReportHistory() {
                   
                   return (
                     <tr key={r.id} className="hover:bg-indigo-50/50 transition-colors duration-150">
-                      <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{(r.report_dt || '').replace('T', ' ').slice(0, 16)}</td>
+                      <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{(r.report_dt || '').slice(0, 10)}</td>
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.section}</td>
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.model}</td>
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.part_no}</td>
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.lot_qty}</td>
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.defect_rate}</td>
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.judgement}</td>
+                      <td className="px-2 py-3 text-center text-gray-700">
+                        <div className="mx-auto max-w-[140px] truncate text-center" title={r.phenomenon || '-'}>
+                          {r.phenomenon || '-'}
+                        </div>
+                      </td>
                       <td className="px-3 py-3 text-center">
                         {(() => {
                           const images = [r.image1, r.image2, r.image3].filter(Boolean) as string[];
@@ -903,8 +909,8 @@ export default function QualityReportHistory() {
                           );
                         })()}
                       </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-2">
+                      <td className="px-2 py-3 w-[144px] align-top">
+                        <div className="flex flex-col gap-1">
                           <Input
                             value={currentValue}
                             onChange={(e) => {
@@ -912,14 +918,14 @@ export default function QualityReportHistory() {
                               if (!isEditing) setEditingId(r.id);
                             }}
                             placeholder={t('quality.action_result_placeholder')}
-                            className="text-sm min-w-[200px]"
+                            className="text-sm w-full min-w-0"
                           />
                           {isEditing && (
                             <Button
                               size="sm"
                               onClick={() => handleSaveActionResult(r.id)}
                               disabled={savingId === r.id}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white whitespace-nowrap"
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white whitespace-nowrap px-2 text-xs"
                             >
                               {savingId === r.id ? (
                                 <span className="flex items-center gap-1">
@@ -973,7 +979,7 @@ export default function QualityReportHistory() {
       {/* 이미지 모달 (다중 이미지 지원) */}
       {selectedImages.length > 0 && (
         <div
-          className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] p-4"
           onClick={() => {
             setSelectedImages([]);
             setCurrentImageIndex(0);

@@ -1,6 +1,9 @@
 from django.urls import path
 from .views import (
+    ProductionConsoleView,
     ProductionDashboardView,
+    ProductionExecutionUpsertView,
+    ProductionMesReportStatsView,
     ProductionPlanDatesView,
     ProductionPlanSummaryView,
     ProductionStatusView,
@@ -12,7 +15,10 @@ from .views import (
 )
 
 urlpatterns = [
+    path('console/', ProductionConsoleView.as_view(), name='production-console'),
     path('dashboard/', ProductionDashboardView.as_view(), name='production-dashboard'),
+    path('executions/upsert/', ProductionExecutionUpsertView.as_view(), name='production-execution-upsert'),
+    path('mes-report-stats/', ProductionMesReportStatsView.as_view(), name='production-mes-report-stats'),
     path('plan-dates/', ProductionPlanDatesView.as_view(), name='production-plan-dates'),
     path('plan-summary/', ProductionPlanSummaryView.as_view(), name='production-plan-summary'),
     path('plans/', ProductionPlanListView.as_view(), name='production-plan-list'),

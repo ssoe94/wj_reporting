@@ -41,7 +41,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import make_password
-from django.db import transaction
+from django.db import transaction, OperationalError, ProgrammingError
 from django.utils import timezone
 from django.core.cache import cache
 import secrets, string
@@ -2208,6 +2208,11 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                         plan_qty = 0
                     if plan_qty <= 0:
                         continue
+                    sequence = record.get("original_order", i)
+                    try:
+                        sequence = int(sequence)
+                    except (TypeError, ValueError):
+                        sequence = i
                     part_no = (record.get("fg_part_no") or "").strip().upper()
                     model_name = (record.get("model") or "").strip() or None
                     if part_no:
@@ -2222,21 +2227,26 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                             part_spec=record.get("part_spec"),
                             part_no=part_no, # fg_part_no is mapped to part_no
                             planned_quantity=plan_qty,
-                            sequence=record.get("original_order", i) # Use original_order, with i as fallback
+                            sequence=sequence # Cast pandas/numpy values to plain int for DB writes
                         )
                     )
                 
                 ProductionPlan.objects.bulk_create(plans_to_create)
                 if part_map:
                     from production.models import ProductionPlanPart
-                    for (plan_type_key, part_no_key), model_name in part_map.items():
-                        if plan_type_key not in ['injection', 'machining']:
-                            continue
-                        ProductionPlanPart.objects.update_or_create(
-                            plan_type=plan_type_key,
-                            part_no=part_no_key,
-                            defaults={'model_name': model_name},
-                        )
+                    try:
+                        for (plan_type_key, part_no_key), model_name in part_map.items():
+                            if plan_type_key not in ['injection', 'machining']:
+                                continue
+                            ProductionPlanPart.objects.update_or_create(
+                                plan_type=plan_type_key,
+                                part_no=part_no_key,
+                                defaults={'model_name': model_name},
+                            )
+                    except (OperationalError, ProgrammingError):
+                        # Local DB can be missing the optional mapping table.
+                        # Plan upload should still succeed because the main plan rows are already saved.
+                        pass
 
         except Exception as e:
             # If the database operation fails, return an error.
