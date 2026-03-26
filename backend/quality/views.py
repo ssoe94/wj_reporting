@@ -1,4 +1,5 @@
 from rest_framework import viewsets, filters, status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -13,14 +14,47 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class QualityReportPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+
 class QualityReportViewSet(viewsets.ModelViewSet):
     queryset = QualityReport.objects.all()
     serializer_class = QualityReportSerializer
+    pagination_class = QualityReportPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['section', 'model', 'part_no']
     search_fields = ['model', 'part_no', 'phenomenon', 'disposition']
     ordering_fields = ['report_dt', 'created_at']
     ordering = ['-report_dt']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        query_params = self.request.query_params
+
+        date_after = query_params.get('report_dt_after')
+        if date_after:
+            queryset = queryset.filter(report_dt__date__gte=date_after)
+
+        date_before = query_params.get('report_dt_before')
+        if date_before:
+            queryset = queryset.filter(report_dt__date__lte=date_before)
+
+        model_filter = query_params.get('model__icontains')
+        if model_filter:
+            queryset = queryset.filter(model__icontains=model_filter)
+
+        part_contains = query_params.get('part_no__icontains')
+        if part_contains:
+            queryset = queryset.filter(part_no__icontains=part_contains)
+
+        part_startswith = query_params.get('part_no__istartswith')
+        if part_startswith:
+            queryset = queryset.filter(part_no__istartswith=part_startswith)
+
+        return queryset
 
     def perform_create(self, serializer):
         part_no = serializer.validated_data.get('part_no')

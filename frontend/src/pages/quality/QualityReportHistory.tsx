@@ -67,6 +67,7 @@ export default function QualityReportHistory() {
   });
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  const [pageInput, setPageInput] = useState('1');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [actionResults, setActionResults] = useState<Record<number, string>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -386,6 +387,27 @@ export default function QualityReportHistory() {
   const reports = data?.results || [];
   const totalCount = data?.count || 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  useEffect(() => {
+    setPageInput(String(page));
+  }, [page]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const handlePageJump = () => {
+    const nextPage = Number.parseInt(pageInput, 10);
+    if (Number.isNaN(nextPage)) {
+      setPageInput(String(page));
+      return;
+    }
+    const clampedPage = Math.min(Math.max(nextPage, 1), totalPages);
+    setPage(clampedPage);
+    setPageInput(String(clampedPage));
+  };
 
   const handleSaveActionResult = async (reportId: number) => {
     const actionResult = actionResults[reportId] || '';
@@ -972,6 +994,22 @@ export default function QualityReportHistory() {
         <div className="flex items-center justify-end gap-2">
           <Button type="button" variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>{t('quality.prev_page')}</Button>
           <span className="text-xs text-gray-500">{page} / {totalPages}</span>
+          <Input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={pageInput}
+            onChange={(e) => setPageInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handlePageJump();
+              }
+            }}
+            className="h-9 w-20 text-center"
+          />
+          <Button type="button" variant="secondary" onClick={handlePageJump}>
+            {lang === 'zh' ? '跳转' : '이동'}
+          </Button>
           <Button type="button" variant="secondary" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>{t('quality.next_page')}</Button>
         </div>
       </div>
