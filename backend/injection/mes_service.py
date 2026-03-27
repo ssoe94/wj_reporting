@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from django.core.cache import cache
 from django.db.models.functions import TruncHour
 from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
-from injection.models import InjectionMonitoringRecord
+from injection.models import InjectionMonitoringRecord, adjust_monitoring_capacity
 
 
 # BLACKLAKE API 鞐旊摐韽澑韸?
@@ -248,7 +248,7 @@ class MESResourceService:
                 device_code=device_code,
                 timestamp=ts,
                 machine_name=f'{machine_num}호기',
-                capacity=values.get('prod'),
+                capacity=adjust_monitoring_capacity(f'{machine_num}호기', values.get('prod')),
                 oil_temperature=values.get('temp'),
                 power_kwh=values.get('power'),
             )
@@ -412,7 +412,7 @@ class MESResourceService:
 
                     defaults = {'machine_name': f'{machine_num}호기'}
                     if latest_capacity is not None:
-                        defaults['capacity'] = latest_capacity
+                        defaults['capacity'] = adjust_monitoring_capacity(f'{machine_num}호기', latest_capacity)
                     if latest_oil_temp is not None:
                         defaults['oil_temperature'] = latest_oil_temp
                     if latest_power is not None:
@@ -659,7 +659,7 @@ class MESResourceService:
 
                 defaults = {'machine_name': machine_name}
                 if latest_capacity is not None:
-                    defaults['capacity'] = latest_capacity
+                    defaults['capacity'] = adjust_monitoring_capacity(machine_name, latest_capacity)
                 if latest_oil_temp is not None:
                     defaults['oil_temperature'] = latest_oil_temp
                 if latest_power is not None:

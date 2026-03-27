@@ -14,7 +14,7 @@ import io
 from .models import (
     InjectionReport, Product, PartSpec, EcoPartSpec, EngineeringChangeOrder,
     UserRegistrationRequest, UserProfile, EcoDetail, InventorySnapshot,
-    CycleTimeSetup, CycleTimeTestRecord, InjectionMonitoringRecord
+    CycleTimeSetup, CycleTimeTestRecord, InjectionMonitoringRecord, adjust_monitoring_capacity
 )
 
 # Import actual serializers
@@ -2131,7 +2131,7 @@ class SingleDeviceMonitorView(generics.GenericAPIView):
                 timestamp=record_time,
                 defaults={
                     'machine_name': machine_name,
-                    'capacity': latest_capacity,
+                    'capacity': adjust_monitoring_capacity(machine_name, latest_capacity),
                     'oil_temperature': latest_oil_temp,
                     'power_kwh': latest_power,
                 }

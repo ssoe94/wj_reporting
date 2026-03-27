@@ -1,8 +1,35 @@
+import os
+import re
+
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+
+
+def get_monitoring_capacity_factor(machine_name: str | None) -> float:
+    machine_label = (machine_name or '').strip()
+    match = re.search(r'(\d+)\s*호기', machine_label)
+    if not match:
+        return 1.0
+
+    machine_number = int(match.group(1))
+    if machine_number != 3:
+        return 1.0
+
+    raw_factor = (os.getenv('INJECTION_MACHINE_3_CAPACITY_FACTOR') or '0.5').strip()
+    try:
+        factor = float(raw_factor)
+    except (TypeError, ValueError):
+        factor = 0.5
+    return max(factor, 0.0)
+
+
+def adjust_monitoring_capacity(machine_name: str | None, capacity: float | None) -> float | None:
+    if capacity is None:
+        return None
+    return round(float(capacity) * get_monitoring_capacity_factor(machine_name), 6)
 
 class InjectionReport(models.Model):
     SECTION_CHOICES = [
