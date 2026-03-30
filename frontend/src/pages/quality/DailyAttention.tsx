@@ -61,19 +61,37 @@ const SECTION_ORDER: Record<string, number> = {
 
 function normalizeSection(section: string): string {
   const value = (section || '').trim().toUpperCase();
-  if (value.startsWith('LQC')) return 'LQC';
-  if (value.startsWith('OQC')) return 'OQC';
   if (value.startsWith('CS')) return 'CS';
+  if (value.startsWith('OQC')) return 'OQC';
+  if (value.startsWith('LQC')) return 'LQC';
   return value || 'ETC';
+}
+
+function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
+  const raw = (value || '').trim();
+  if (!raw) return emptyLabel;
+
+  return raw
+    .normalize('NFKC')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[，、,;；]+/g, ' ')
+    .replace(/[／/|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[。．.]+$/g, '')
+    .trim()
+    .replace(/\s/g, '');
 }
 
 function groupReportsByPhenomenon(reports: HistoricalReport[], emptyLabel: string): PhenomenonGroup[] {
   const groups = new Map<string, HistoricalReport[]>();
 
   reports.forEach((report) => {
-    const phenomenon = (report.phenomenon || '').trim() || emptyLabel;
+    const phenomenon = normalizePhenomenonLabel(report.phenomenon || '', emptyLabel);
     const current = groups.get(phenomenon) ?? [];
-    current.push(report);
+    current.push({
+      ...report,
+      phenomenon,
+    });
     groups.set(phenomenon, current);
   });
 
@@ -95,7 +113,9 @@ function groupReportsByPhenomenon(reports: HistoricalReport[], emptyLabel: strin
         .map(([section, count]) => ({ section, count }))
         .sort((a, b) => (SECTION_ORDER[a.section] ?? 99) - (SECTION_ORDER[b.section] ?? 99));
 
-      const primaryOrder = Math.min(...sectionCounts.map((entry) => SECTION_ORDER[entry.section] ?? 99));
+      const primaryOrder = sectionCounts.length > 0
+        ? Math.min(...sectionCounts.map((entry) => SECTION_ORDER[entry.section] ?? 99))
+        : 99;
 
       return {
         phenomenon,
@@ -118,9 +138,9 @@ export default function DailyAttentionPage() {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, Record<string, boolean>>>({});
 
   const noPhenomenonLabel = lang === 'zh' ? '未填写现象' : '현상 미기재';
-  const expandAllLabel = lang === 'zh' ? '모두 펼치기' : '모두 펼치기';
-  const collapseAllLabel = lang === 'zh' ? '모두 접기' : '모두 접기';
-  const rowsLabel = lang === 'zh' ? '행' : 'rows';
+  const expandAllLabel = lang === 'zh' ? '전체 펼치기' : '모두 펼치기';
+  const collapseAllLabel = lang === 'zh' ? '전체 접기' : '모두 접기';
+  const rowsLabel = lang === 'zh' ? '行' : 'rows';
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery<DailyAttentionResponse>({
     queryKey: ['quality-daily-attention', targetDate],
