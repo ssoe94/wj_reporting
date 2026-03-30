@@ -71,7 +71,7 @@ function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
   const raw = (value || '').trim();
   if (!raw) return emptyLabel;
 
-  return raw
+  const normalized = raw
     .normalize('NFKC')
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/[，、,;；]+/g, ' ')
@@ -80,6 +80,115 @@ function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
     .replace(/[。．.]+$/g, '')
     .trim()
     .replace(/\s/g, '');
+
+  if (!normalized) return emptyLabel;
+
+  const tokens = new Set<string>();
+
+  if (
+    normalized.includes('脏污') ||
+    normalized.includes('油污') ||
+    normalized.includes('油渍') ||
+    normalized.includes('油点') ||
+    normalized.includes('灰尘') ||
+    normalized.includes('污渍') ||
+    normalized.includes('擦拭印')
+  ) {
+    tokens.add('脏污');
+  }
+
+  if (
+    normalized.includes('白色粉末') ||
+    normalized.includes('粉末残留')
+  ) {
+    tokens.add('白色粉末残留');
+  }
+
+  if (
+    normalized.includes('毛刺') ||
+    normalized.includes('飞边')
+  ) {
+    tokens.add('毛刺未去除');
+  }
+
+  if (normalized.includes('毛絮')) {
+    tokens.add('毛絮残留');
+  }
+
+  if (normalized.includes('糊斑')) {
+    tokens.add('糊斑');
+  }
+
+  if (normalized.includes('气印')) {
+    tokens.add('气印发白');
+  }
+
+  if (
+    normalized.includes('缩印') ||
+    normalized.includes('缩影')
+  ) {
+    tokens.add('缩印');
+  }
+
+  if (normalized.includes('缺胶')) {
+    tokens.add('缺胶');
+  }
+
+  if (
+    normalized.includes('发亮') ||
+    normalized.includes('高光')
+  ) {
+    tokens.add('发亮');
+  }
+
+  if (
+    normalized.includes('拉伤') ||
+    normalized.includes('擦伤') ||
+    normalized.includes('削伤') ||
+    normalized.includes('磕伤') ||
+    normalized.includes('夹伤') ||
+    normalized.includes('损伤')
+  ) {
+    tokens.add('擦伤/碰伤');
+  }
+
+  if (
+    normalized.includes('夹色') ||
+    normalized.includes('黑点') ||
+    normalized.includes('料花')
+  ) {
+    tokens.add('夹色/黑点/料花');
+  }
+
+  if (
+    normalized.includes('标签') ||
+    normalized.includes('重码') ||
+    normalized.includes('漏贴')
+  ) {
+    tokens.add('标签异常');
+  }
+
+  if (
+    normalized.includes('包装') ||
+    normalized.includes('包袋') ||
+    normalized.includes('水渍')
+  ) {
+    tokens.add('包装异常');
+  }
+
+  if (tokens.size > 0) {
+    return Array.from(tokens).join(' / ');
+  }
+
+  if (normalized.includes('脏污')) {
+    return '脏污';
+  }
+
+  if (normalized.includes('毛刺')) {
+    return '毛刺未去除';
+  }
+
+  return normalized;
 }
 
 function groupReportsByPhenomenon(reports: HistoricalReport[], emptyLabel: string): PhenomenonGroup[] {
