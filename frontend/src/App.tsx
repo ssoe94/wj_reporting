@@ -46,6 +46,7 @@ import PasswordChangeModal from './components/PasswordChangeModal';
 import PermissionLink from './components/common/PermissionLink';
 import PageTransition from './components/common/PageTransition';
 import QualityPage from './pages/quality';
+import DailyAttentionPage from './pages/quality/DailyAttention';
 import AssemblyDashboardPage from './pages/assembly/Dashboard';
 import InjectionDashboardPage from './pages/injection/Dashboard';
 import InjectionSetupPage from './pages/injection/Setup';
@@ -105,6 +106,7 @@ function useNavItems() {
         label: t('nav_quality'),
         icon: ShieldCheck,
         children: [
+          { to: "/quality/daily-attention", label: t('nav_quality_daily_attention'), icon: ClipboardCheck },
           { to: "/quality#report", label: t('nav_quality_report'), icon: AlertTriangle },
           { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
         ],
@@ -187,6 +189,7 @@ function useNavItems() {
     label: t('nav_quality'),
     icon: ShieldCheck,
     children: [
+      { to: "/quality/daily-attention", label: t('nav_quality_daily_attention'), icon: ClipboardCheck },
       { to: "/quality#report", label: t('nav_quality_report'), icon: AlertTriangle },
       { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
     ],
@@ -591,6 +594,7 @@ function AppContent() {
 
             {/* Quality single page */}
             <Route path="/quality" element={<PrivateRoute><PageTransition><QualityPage /></PageTransition></PrivateRoute>} />
+            <Route path="/quality/daily-attention" element={<PrivateRoute><PageTransition><DailyAttentionPage /></PageTransition></PrivateRoute>} />
 
             {/* Sales */}
             <Route path="/sales/inventory" element={<PrivateRoute><PageTransition><SalesInventoryPage /></PageTransition></PrivateRoute>} />
