@@ -141,13 +141,55 @@ class DailyQualityAttentionView(APIView):
                 if prefix:
                     report_groups[prefix].append(report)
 
+        grouped_plan_rows: dict[tuple[str, str], dict] = {}
+        for row in plan_rows:
+            machine_name = row.get('machine_name') or ''
+            part_no = self._normalize_part_no(row.get('part_no'))
+            prefix = self._part_prefix(part_no)
+            if not machine_name or not prefix:
+                continue
+
+            group_key = (machine_name, prefix)
+            group = grouped_plan_rows.setdefault(
+                group_key,
+                {
+                    'machine_name': machine_name,
+                    'machine_number': self._extract_machine_number(machine_name),
+                    'sequence': row.get('sequence'),
+                    'part_prefix': prefix,
+                    'part_nos': [],
+                    'model_names': [],
+                    'lot_nos': [],
+                    'planned_quantity': 0,
+                    'plan_row_count': 0,
+                },
+            )
+
+            row_sequence = row.get('sequence')
+            current_sequence = group.get('sequence')
+            if row_sequence is not None:
+                group['sequence'] = row_sequence if current_sequence is None else min(current_sequence, row_sequence)
+
+            if part_no and part_no not in group['part_nos']:
+                group['part_nos'].append(part_no)
+
+            model_name = (row.get('model_name') or '').strip()
+            if model_name and model_name not in group['model_names']:
+                group['model_names'].append(model_name)
+
+            lot_no = (row.get('lot_no') or '').strip()
+            if lot_no and lot_no not in group['lot_nos']:
+                group['lot_nos'].append(lot_no)
+
+            group['planned_quantity'] += int(round(row.get('planned_quantity') or 0))
+            group['plan_row_count'] += 1
+
         items = []
         without_history = 0
         total_matching_reports = 0
 
-        for row in plan_rows:
-            part_no = self._normalize_part_no(row.get('part_no'))
-            prefix = self._part_prefix(part_no)
+        for group in grouped_plan_rows.values():
+            prefix = group['part_prefix']
             matched_reports = report_groups.get(prefix, [])
             top_phenomena = Counter(
                 (report.phenomenon or '').strip()
@@ -168,7 +210,7 @@ class DailyQualityAttentionView(APIView):
                     'action_result': report.action_result or '',
                     'images': [img for img in [report.image1, report.image2, report.image3] if img],
                 }
-                for report in matched_reports[:6]
+                for report in matched_reports
             ]
 
             if not matched_reports:
@@ -176,14 +218,15 @@ class DailyQualityAttentionView(APIView):
             total_matching_reports += len(matched_reports)
 
             items.append({
-                'machine_name': row.get('machine_name') or '',
-                'machine_number': self._extract_machine_number(row.get('machine_name')),
-                'sequence': row.get('sequence'),
-                'model_name': row.get('model_name') or '',
-                'part_no': part_no,
+                'machine_name': group['machine_name'],
+                'machine_number': group['machine_number'],
+                'sequence': group['sequence'],
                 'part_prefix': prefix,
-                'lot_no': row.get('lot_no') or '',
-                'planned_quantity': int(round(row.get('planned_quantity') or 0)),
+                'part_nos': group['part_nos'],
+                'model_names': group['model_names'],
+                'lot_nos': group['lot_nos'],
+                'planned_quantity': int(group['planned_quantity']),
+                'plan_row_count': int(group['plan_row_count']),
                 'matching_report_count': len(matched_reports),
                 'latest_report_dt': reports_data[0]['report_dt'] if reports_data else None,
                 'top_phenomena': [

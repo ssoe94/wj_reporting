@@ -25,11 +25,12 @@ type DailyAttentionItem = {
   machine_name: string;
   machine_number: number | null;
   sequence: number | null;
-  model_name: string;
-  part_no: string;
   part_prefix: string;
-  lot_no: string;
+  part_nos: string[];
+  model_names: string[];
+  lot_nos: string[];
   planned_quantity: number;
+  plan_row_count: number;
   matching_report_count: number;
   latest_report_dt: string | null;
   top_phenomena: Array<{ phenomenon: string; count: number }>;
@@ -112,15 +113,16 @@ export default function DailyAttentionPage() {
       ) : (
         <div className="space-y-4">
           {sortedItems.map((item) => (
-            <section key={`${item.machine_name}-${item.sequence}-${item.part_no}`} className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <section key={`${item.machine_name}-${item.sequence}-${item.part_prefix}`} className="rounded-xl border border-gray-200 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="text-lg font-semibold text-slate-900">
-                    {item.machine_name} / {item.part_no}
+                    {item.machine_name} / {item.part_nos.join(', ')}
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
-                    {item.model_name || '-'} · {t('quality.daily_attention_planned_qty')}: {item.planned_quantity.toLocaleString()}
-                    {item.lot_no ? ` · LOT ${item.lot_no}` : ''}
+                    {(item.model_names.length > 0 ? item.model_names.join(', ') : '-')} · {t('quality.daily_attention_planned_qty')}: {item.planned_quantity.toLocaleString()}
+                    {item.lot_nos.length > 0 ? ` · LOT ${item.lot_nos.join(', ')}` : ''}
+                    {item.plan_row_count > 1 ? ` · ${item.plan_row_count} rows` : ''}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -149,7 +151,7 @@ export default function DailyAttentionPage() {
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {item.top_phenomena.map((phenomenon) => (
-                        <span key={`${item.part_no}-${phenomenon.phenomenon}`} className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm text-amber-800">
+                        <span key={`${item.part_prefix}-${phenomenon.phenomenon}`} className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm text-amber-800">
                           {phenomenon.phenomenon} · {phenomenon.count}
                         </span>
                       ))}
@@ -160,7 +162,7 @@ export default function DailyAttentionPage() {
                 <div>
                   <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
                     <CalendarDays className="h-4 w-4" />
-                    {t('quality.daily_attention_historical_reports')}
+                    {t('quality.daily_attention_historical_reports')} ({item.reports.length})
                   </div>
                   {item.reports.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
