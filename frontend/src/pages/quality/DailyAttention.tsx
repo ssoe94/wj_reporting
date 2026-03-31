@@ -345,7 +345,7 @@ function buildPrintDocumentHtml(params: {
   <meta charset="utf-8" />
   <title>${escapeHtml(`${labels.title} - ${item.machine_name}`)}</title>
   <style>
-    @page { size: A4; margin: 12mm; }
+    @page { size: A4; margin: 9mm; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -359,78 +359,78 @@ function buildPrintDocumentHtml(params: {
     .header {
       display: flex;
       justify-content: space-between;
-      gap: 16px;
+      gap: 12px;
       align-items: flex-start;
       border-bottom: 2px solid #dbeafe;
-      padding-bottom: 12px;
-      margin-bottom: 14px;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
     }
     .title {
-      font-size: 20px;
+      font-size: 16px;
       font-weight: 700;
-      margin: 0 0 6px;
+      margin: 0 0 4px;
     }
     .subtitle, .meta-text {
-      font-size: 12px;
+      font-size: 10px;
       color: #475569;
-      line-height: 1.5;
+      line-height: 1.35;
     }
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      margin-bottom: 12px;
+      gap: 6px;
+      margin-bottom: 8px;
     }
     .summary-card {
       border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 10px 12px;
+      border-radius: 8px;
+      padding: 7px 9px;
       background: #f8fafc;
       page-break-inside: avoid;
     }
     .summary-label {
-      font-size: 11px;
+      font-size: 10px;
       color: #64748b;
-      margin-bottom: 4px;
+      margin-bottom: 2px;
     }
     .summary-value {
-      font-size: 14px;
+      font-size: 11px;
       font-weight: 700;
       word-break: break-word;
     }
     .content-grid {
       display: grid;
-      grid-template-columns: 280px minmax(0, 1fr);
-      gap: 12px;
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 8px;
       align-items: flex-start;
     }
     .summary-panel {
       border: 1px solid #e2e8f0;
-      border-radius: 12px;
+      border-radius: 10px;
       background: #f8fafc;
-      padding: 12px;
+      padding: 8px;
       page-break-inside: avoid;
     }
     .panel-title {
-      font-size: 13px;
+      font-size: 11px;
       font-weight: 700;
-      margin-bottom: 10px;
+      margin-bottom: 6px;
     }
     .summary-tag {
       border: 1px solid #fbbf24;
-      border-radius: 10px;
+      border-radius: 8px;
       background: #ffffff;
-      padding: 9px 10px;
-      margin-bottom: 8px;
+      padding: 6px 7px;
+      margin-bottom: 6px;
     }
     .summary-tag-title {
-      font-size: 13px;
+      font-size: 11px;
       font-weight: 700;
       color: #9a3412;
     }
     .summary-tag-meta {
-      margin-top: 4px;
-      font-size: 12px;
+      margin-top: 2px;
+      font-size: 10px;
       color: #475569;
     }
     .photo-panel {
@@ -438,9 +438,9 @@ function buildPrintDocumentHtml(params: {
     }
     .photo-section {
       border: 1px solid #e2e8f0;
-      border-radius: 10px;
+      border-radius: 8px;
       overflow: hidden;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       page-break-inside: avoid;
     }
     .photo-section-header {
@@ -450,33 +450,33 @@ function buildPrintDocumentHtml(params: {
       align-items: center;
       background: #f8fafc;
       border-bottom: 1px solid #e2e8f0;
-      padding: 10px 12px;
+      padding: 7px 9px;
     }
     .photo-section-title {
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 700;
     }
     .photo-section-count {
-      min-width: 28px;
-      height: 28px;
+      min-width: 22px;
+      height: 22px;
       border-radius: 999px;
       background: #fff7ed;
       color: #c2410c;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: 10px;
       font-weight: 700;
     }
     .photo-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-      padding: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      padding: 8px;
     }
     .photo-card {
       border: 1px solid #e2e8f0;
-      border-radius: 10px;
+      border-radius: 8px;
       overflow: hidden;
       background: #ffffff;
       page-break-inside: avoid;
@@ -494,10 +494,10 @@ function buildPrintDocumentHtml(params: {
       object-fit: cover;
     }
     .photo-meta {
-      padding: 10px;
-      font-size: 12px;
+      padding: 7px;
+      font-size: 10px;
       color: #475569;
-      line-height: 1.5;
+      line-height: 1.35;
       word-break: break-word;
     }
     .photo-meta-row {
@@ -505,22 +505,22 @@ function buildPrintDocumentHtml(params: {
       justify-content: space-between;
       gap: 8px;
       align-items: center;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
       color: #334155;
     }
     .photo-badge {
-      font-size: 11px;
+      font-size: 9px;
       border-radius: 999px;
-      padding: 3px 8px;
+      padding: 2px 6px;
       background: #e2e8f0;
     }
     .empty {
       border: 1px dashed #cbd5e1;
-      border-radius: 10px;
+      border-radius: 8px;
       background: #f8fafc;
       color: #64748b;
-      padding: 16px;
-      font-size: 12px;
+      padding: 12px;
+      font-size: 10px;
       text-align: center;
     }
     @media print {
