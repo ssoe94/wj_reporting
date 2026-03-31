@@ -53,6 +53,24 @@ type PhenomenonGroup = {
   primaryOrder: number;
 };
 
+type PrintableImage = {
+  id: string;
+  imageUrl: string;
+  phenomenon: string;
+  reportDt: string;
+  section: string;
+  partNo: string;
+  disposition: string;
+  actionResult: string;
+};
+
+type PrintSelectionState = {
+  item: DailyAttentionItem;
+  groups: PhenomenonGroup[];
+  images: PrintableImage[];
+  selectedIds: string[];
+};
+
 type PrintLabels = {
   title: string;
   machine: string;
@@ -66,6 +84,8 @@ type PrintLabels = {
   section: string;
   action: string;
   date: string;
+  selectedPhotos: string;
+  topPhenomena: string;
 };
 
 const SECTION_ORDER: Record<string, number> = {
@@ -248,54 +268,76 @@ function formatSectionCounts(sectionCounts: Array<{ section: string; count: numb
   return sectionCounts.map((entry) => `${entry.section} ${entry.count}`).join(' / ');
 }
 
+function collectPrintableImages(groups: PhenomenonGroup[]): PrintableImage[] {
+  return groups.flatMap((group) =>
+    group.reports.flatMap((report) =>
+      report.images.map((imageUrl, imageIndex) => ({
+        id: `${report.id}-${imageIndex}`,
+        imageUrl,
+        phenomenon: group.phenomenon,
+        reportDt: report.report_dt,
+        section: report.section,
+        partNo: report.part_no,
+        disposition: report.disposition,
+        actionResult: report.action_result,
+      })),
+    ),
+  );
+}
+
 function buildPrintDocumentHtml(params: {
   date: string;
   item: DailyAttentionItem;
   groups: PhenomenonGroup[];
+  selectedImages: PrintableImage[];
   labels: PrintLabels;
   noPhenomenonLabel: string;
 }) {
-  const { date, item, groups, labels, noPhenomenonLabel } = params;
+  const { date, item, groups, selectedImages, labels, noPhenomenonLabel } = params;
 
-  const groupHtml = groups.length === 0
+  const summaryHtml = groups.length === 0
     ? `<div class="empty">${escapeHtml(labels.none)}</div>`
-    : groups.map((group) => {
-        const cardsHtml = group.reports.map((report) => {
-          const imageHtml = report.images.length > 0
-            ? report.images.map((image, index) => `
-                <figure class="image-card">
-                  <img src="${escapeHtml(image)}" alt="${escapeHtml(`${group.phenomenon} ${index + 1}`)}" />
+    : groups.map((group) => `
+        <div class="summary-tag">
+          <div class="summary-tag-title">${escapeHtml(group.phenomenon)}</div>
+          <div class="summary-tag-meta">${group.totalCount} | ${escapeHtml(formatSectionCounts(group.sectionCounts))}</div>
+        </div>
+      `).join('');
+
+  const selectedGroupMap = new Map<string, PrintableImage[]>();
+  selectedImages.forEach((image) => {
+    const current = selectedGroupMap.get(image.phenomenon) ?? [];
+    current.push(image);
+    selectedGroupMap.set(image.phenomenon, current);
+  });
+
+  const selectedHtml = selectedImages.length === 0
+    ? `<div class="empty">${escapeHtml(labels.none)}</div>`
+    : Array.from(selectedGroupMap.entries()).map(([phenomenon, images]) => `
+        <section class="photo-section">
+          <div class="photo-section-header">
+            <div class="photo-section-title">${escapeHtml(phenomenon || noPhenomenonLabel)}</div>
+            <div class="photo-section-count">${images.length}</div>
+          </div>
+          <div class="photo-grid">
+            ${images.map((image) => `
+              <article class="photo-card">
+                <figure class="photo-frame">
+                  <img src="${escapeHtml(image.imageUrl)}" alt="${escapeHtml(image.phenomenon || noPhenomenonLabel)}" />
                 </figure>
-              `).join('')
-            : `<div class="image-empty">${escapeHtml(labels.none)}</div>`;
-
-          return `
-            <article class="report-card">
-              <div class="report-meta-row">
-                <div class="report-title">${escapeHtml(report.phenomenon || noPhenomenonLabel)}</div>
-                <div class="report-badge">${escapeHtml(normalizeSection(report.section))}</div>
-              </div>
-              <div class="report-meta">${escapeHtml(labels.date)}: ${escapeHtml(dayjs(report.report_dt).format('YYYY-MM-DD'))}</div>
-              <div class="report-meta">${escapeHtml(labels.partNo)}: ${escapeHtml(report.part_no || '-')}</div>
-              <div class="report-meta">${escapeHtml(labels.section)}: ${escapeHtml(report.section || '-')}</div>
-              <div class="report-meta">${escapeHtml(labels.action)}: ${escapeHtml(report.disposition || report.action_result || '-')}</div>
-              <div class="image-grid">${imageHtml}</div>
-            </article>
-          `;
-        }).join('');
-
-        return `
-          <section class="phenomenon-block">
-            <div class="phenomenon-header">
-              <div>
-                <div class="phenomenon-title">${escapeHtml(group.phenomenon)}</div>
-                <div class="phenomenon-meta">${group.totalCount} / ${escapeHtml(formatSectionCounts(group.sectionCounts))}</div>
-              </div>
-            </div>
-            <div class="report-grid">${cardsHtml}</div>
-          </section>
-        `;
-      }).join('');
+                <div class="photo-meta">
+                  <div class="photo-meta-row">
+                    <span class="photo-badge">${escapeHtml(normalizeSection(image.section))}</span>
+                    <span>${escapeHtml(dayjs(image.reportDt).format('YYYY-MM-DD'))}</span>
+                  </div>
+                  <div>${escapeHtml(labels.partNo)}: ${escapeHtml(image.partNo || '-')}</div>
+                  <div>${escapeHtml(labels.action)}: ${escapeHtml(image.disposition || image.actionResult || '-')}</div>
+                </div>
+              </article>
+            `).join('')}
+          </div>
+        </section>
+      `).join('');
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -337,7 +379,7 @@ function buildPrintDocumentHtml(params: {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
     .summary-card {
       border: 1px solid #e2e8f0;
@@ -356,85 +398,123 @@ function buildPrintDocumentHtml(params: {
       font-weight: 700;
       word-break: break-word;
     }
-    .phenomenon-block {
+    .content-grid {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .summary-panel {
       border: 1px solid #e2e8f0;
       border-radius: 12px;
-      margin-bottom: 12px;
-      overflow: hidden;
+      background: #f8fafc;
+      padding: 12px;
       page-break-inside: avoid;
     }
-    .phenomenon-header {
-      background: #f8fafc;
-      border-bottom: 1px solid #e2e8f0;
-      padding: 10px 12px;
-    }
-    .phenomenon-title {
-      font-size: 15px;
+    .panel-title {
+      font-size: 13px;
       font-weight: 700;
+      margin-bottom: 10px;
     }
-    .phenomenon-meta {
+    .summary-tag {
+      border: 1px solid #fbbf24;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 9px 10px;
+      margin-bottom: 8px;
+    }
+    .summary-tag-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #9a3412;
+    }
+    .summary-tag-meta {
       margin-top: 4px;
       font-size: 12px;
       color: #475569;
     }
-    .report-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 10px;
-      padding: 12px;
+    .photo-panel {
+      min-width: 0;
     }
-    .report-card {
+    .photo-section {
       border: 1px solid #e2e8f0;
       border-radius: 10px;
-      padding: 10px;
+      overflow: hidden;
+      margin-bottom: 12px;
       page-break-inside: avoid;
     }
-    .report-meta-row {
+    .photo-section-header {
       display: flex;
       justify-content: space-between;
       gap: 8px;
-      align-items: flex-start;
-      margin-bottom: 6px;
+      align-items: center;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 10px 12px;
     }
-    .report-title {
+    .photo-section-title {
       font-size: 14px;
       font-weight: 700;
-      line-height: 1.4;
     }
-    .report-badge {
+    .photo-section-count {
+      min-width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: #fff7ed;
+      color: #c2410c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .photo-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+    }
+    .photo-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #ffffff;
+      page-break-inside: avoid;
+    }
+    .photo-frame {
+      margin: 0;
+      background: #f8fafc;
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+    }
+    .photo-frame img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .photo-meta {
+      padding: 10px;
+      font-size: 12px;
+      color: #475569;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .photo-meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 6px;
+      color: #334155;
+    }
+    .photo-badge {
       font-size: 11px;
       border-radius: 999px;
       padding: 3px 8px;
       background: #e2e8f0;
-      white-space: nowrap;
     }
-    .report-meta {
-      font-size: 12px;
-      color: #475569;
-      margin-bottom: 4px;
-      line-height: 1.45;
-      word-break: break-word;
-    }
-    .image-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 10px;
-    }
-    .image-card {
-      margin: 0;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      overflow: hidden;
-      background: #ffffff;
-    }
-    .image-card img {
-      display: block;
-      width: 100%;
-      height: auto;
-      object-fit: cover;
-    }
-    .image-empty, .empty {
+    .empty {
       border: 1px dashed #cbd5e1;
       border-radius: 10px;
       background: #f8fafc;
@@ -442,6 +522,13 @@ function buildPrintDocumentHtml(params: {
       padding: 16px;
       font-size: 12px;
       text-align: center;
+    }
+    @media print {
+      .photo-section,
+      .photo-card,
+      .summary-panel {
+        break-inside: avoid;
+      }
     }
   </style>
 </head>
@@ -481,9 +568,21 @@ function buildPrintDocumentHtml(params: {
         <div class="summary-label">${escapeHtml(labels.history)}</div>
         <div class="summary-value">${item.matching_report_count.toLocaleString()}</div>
       </div>
+      <div class="summary-card">
+        <div class="summary-label">${escapeHtml(labels.selectedPhotos)}</div>
+        <div class="summary-value">${selectedImages.length.toLocaleString()}</div>
+      </div>
     </section>
 
-    ${groupHtml}
+    <section class="content-grid">
+      <aside class="summary-panel">
+        <div class="panel-title">${escapeHtml(labels.topPhenomena)}</div>
+        ${summaryHtml}
+      </aside>
+      <div class="photo-panel">
+        ${selectedHtml}
+      </div>
+    </section>
   </div>
   <script>
     window.onload = function () {
@@ -503,12 +602,21 @@ export default function DailyAttentionPage() {
   const { t, lang } = useLang();
   const [targetDate, setTargetDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, Record<string, boolean>>>({});
+  const [printSelection, setPrintSelection] = useState<PrintSelectionState | null>(null);
 
   const noPhenomenonLabel = lang === 'zh' ? '未填写现象' : '현상 미입력';
   const expandAllLabel = lang === 'zh' ? '全部 펼치기' : '모두 펼치기';
   const collapseAllLabel = lang === 'zh' ? '全部 접기' : '모두 접기';
   const rowsLabel = lang === 'zh' ? '행' : '행';
   const printLabel = lang === 'zh' ? 'A4 PDF / 打印' : 'A4 PDF / 인쇄';
+  const printPickerTitle = lang === 'zh' ? '选择要打印的照片' : '인쇄할 사진 선택';
+  const printPickerDescription = lang === 'zh' ? '勾选后只打印所选照片。' : '체크한 사진만 인쇄 문서에 포함됩니다.';
+  const selectAllPhotosLabel = lang === 'zh' ? '全部选择' : '전체 선택';
+  const clearSelectedPhotosLabel = lang === 'zh' ? '全部取消' : '전체 해제';
+  const printSelectedPhotosLabel = lang === 'zh' ? '选择后打印' : '선택 후 인쇄';
+  const closeLabel = lang === 'zh' ? '关闭' : '닫기';
+  const selectedCountLabel = lang === 'zh' ? '已选照片' : '선택 사진';
+  const noSelectableImagesLabel = lang === 'zh' ? '可选图片不存在，将摘要直接打印。' : '선택할 사진이 없어 요약만 인쇄됩니다.';
 
   const printLabels: PrintLabels = {
     title: t('quality.daily_attention_title'),
@@ -523,6 +631,8 @@ export default function DailyAttentionPage() {
     section: lang === 'zh' ? '区段' : '구분',
     action: lang === 'zh' ? '处理结果' : '처리 결과',
     date: t('date'),
+    selectedPhotos: lang === 'zh' ? '选择照片数' : '선택 사진 수',
+    topPhenomena: t('quality.daily_attention_top_phenomena'),
   };
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery<DailyAttentionResponse>({
@@ -571,7 +681,7 @@ export default function DailyAttentionPage() {
     setCollapsedGroups((prev) => ({ ...prev, [itemKey]: nextState }));
   };
 
-  const handlePrintItem = (item: DailyAttentionItem, groups: PhenomenonGroup[]) => {
+  const openPrintWindow = (item: DailyAttentionItem, groups: PhenomenonGroup[], selectedImages: PrintableImage[]) => {
     const printWindow = window.open('', '_blank', 'width=1200,height=900');
     if (!printWindow) return;
 
@@ -579,6 +689,7 @@ export default function DailyAttentionPage() {
       date: targetDate,
       item,
       groups,
+      selectedImages,
       labels: printLabels,
       noPhenomenonLabel,
     });
@@ -587,6 +698,51 @@ export default function DailyAttentionPage() {
     printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
+  };
+
+  const handlePrintItem = (item: DailyAttentionItem, groups: PhenomenonGroup[]) => {
+    const images = collectPrintableImages(groups);
+    if (images.length === 0) {
+      openPrintWindow(item, groups, []);
+      return;
+    }
+
+    setPrintSelection({
+      item,
+      groups,
+      images,
+      selectedIds: images.map((image) => image.id),
+    });
+  };
+
+  const togglePrintImage = (imageId: string) => {
+    setPrintSelection((prev) => {
+      if (!prev) return prev;
+      const isSelected = prev.selectedIds.includes(imageId);
+      return {
+        ...prev,
+        selectedIds: isSelected
+          ? prev.selectedIds.filter((id) => id !== imageId)
+          : [...prev.selectedIds, imageId],
+      };
+    });
+  };
+
+  const setAllPrintImages = (selected: boolean) => {
+    setPrintSelection((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        selectedIds: selected ? prev.images.map((image) => image.id) : [],
+      };
+    });
+  };
+
+  const confirmPrintSelection = () => {
+    if (!printSelection) return;
+    const selectedImages = printSelection.images.filter((image) => printSelection.selectedIds.includes(image.id));
+    openPrintWindow(printSelection.item, printSelection.groups, selectedImages);
+    setPrintSelection(null);
   };
 
   return (
@@ -772,6 +928,89 @@ export default function DailyAttentionPage() {
               </section>
             );
           })}
+        </div>
+      )}
+
+      {printSelection && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">{printPickerTitle}</h2>
+                  <p className="mt-1 text-sm text-slate-600">{printPickerDescription}</p>
+                  <p className="mt-2 text-sm font-medium text-slate-800">
+                    {printSelection.item.machine_name} / {printSelection.item.part_nos.join(', ')}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+                    {selectedCountLabel}: {printSelection.selectedIds.length} / {printSelection.images.length}
+                  </span>
+                  <Button type="button" variant="secondary" onClick={() => setAllPrintImages(true)}>
+                    {selectAllPhotosLabel}
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => setAllPrintImages(false)}>
+                    {clearSelectedPhotosLabel}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {printSelection.images.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+                  {noSelectableImagesLabel}
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {printSelection.images.map((image) => {
+                    const isSelected = printSelection.selectedIds.includes(image.id);
+                    return (
+                      <label
+                        key={image.id}
+                        className={`overflow-hidden rounded-xl border transition ${
+                          isSelected
+                            ? 'border-blue-400 bg-blue-50/60 shadow-sm'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="relative aspect-[4/3] bg-slate-100">
+                          <img src={image.imageUrl} alt={image.phenomenon} className="h-full w-full object-cover" />
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => togglePrintImage(image.id)}
+                            className="absolute left-3 top-3 h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div className="space-y-1 px-4 py-3 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-semibold text-slate-900">{image.phenomenon || noPhenomenonLabel}</div>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                              {normalizeSection(image.section)}
+                            </span>
+                          </div>
+                          <div className="text-slate-600">{dayjs(image.reportDt).format('YYYY-MM-DD')}</div>
+                          <div className="text-slate-600">{image.partNo || '-'}</div>
+                          <div className="line-clamp-2 text-slate-700">{image.disposition || image.actionResult || '-'}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <Button type="button" variant="secondary" onClick={() => setPrintSelection(null)}>
+                {closeLabel}
+              </Button>
+              <Button type="button" onClick={confirmPrintSelection} disabled={printSelection.selectedIds.length === 0 && printSelection.images.length > 0}>
+                {printSelectedPhotosLabel}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
