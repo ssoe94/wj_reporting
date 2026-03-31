@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CalendarDays, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronRight, FolderOpen, Printer } from 'lucide-react';
 import dayjs from 'dayjs';
 
 import api from '../../lib/api';
@@ -53,6 +53,21 @@ type PhenomenonGroup = {
   primaryOrder: number;
 };
 
+type PrintLabels = {
+  title: string;
+  machine: string;
+  partNo: string;
+  plannedQty: string;
+  models: string;
+  lots: string;
+  history: string;
+  none: string;
+  latest: string;
+  section: string;
+  action: string;
+  date: string;
+};
+
 const SECTION_ORDER: Record<string, number> = {
   CS: 0,
   OQC: 1,
@@ -74,8 +89,7 @@ function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
   const normalized = raw
     .normalize('NFKC')
     .replace(/[\r\n\t]+/g, ' ')
-    .replace(/[，、,;；]+/g, ' ')
-    .replace(/[／/|]+/g, ' ')
+    .replace(/[，、,;；/／|]+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/[。．.]+$/g, '')
     .trim()
@@ -97,17 +111,11 @@ function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
     tokens.add('脏污');
   }
 
-  if (
-    normalized.includes('白色粉末') ||
-    normalized.includes('粉末残留')
-  ) {
+  if (normalized.includes('白色粉末') || normalized.includes('粉末残留')) {
     tokens.add('白色粉末残留');
   }
 
-  if (
-    normalized.includes('毛刺') ||
-    normalized.includes('飞边')
-  ) {
+  if (normalized.includes('毛刺') || normalized.includes('飞边')) {
     tokens.add('毛刺未去除');
   }
 
@@ -123,10 +131,7 @@ function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
     tokens.add('气印发白');
   }
 
-  if (
-    normalized.includes('缩印') ||
-    normalized.includes('缩影')
-  ) {
+  if (normalized.includes('缩印') || normalized.includes('缩影')) {
     tokens.add('缩印');
   }
 
@@ -134,10 +139,7 @@ function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
     tokens.add('缺胶');
   }
 
-  if (
-    normalized.includes('发亮') ||
-    normalized.includes('高光')
-  ) {
+  if (normalized.includes('发亮') || normalized.includes('高光')) {
     tokens.add('发亮');
   }
 
@@ -170,7 +172,7 @@ function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
 
   if (
     normalized.includes('包装') ||
-    normalized.includes('包袋') ||
+    normalized.includes('包裹') ||
     normalized.includes('水渍')
   ) {
     tokens.add('包装异常');
@@ -178,14 +180,6 @@ function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
 
   if (tokens.size > 0) {
     return Array.from(tokens).join(' / ');
-  }
-
-  if (normalized.includes('脏污')) {
-    return '脏污';
-  }
-
-  if (normalized.includes('毛刺')) {
-    return '毛刺未去除';
   }
 
   return normalized;
@@ -241,15 +235,295 @@ function groupReportsByPhenomenon(reports: HistoricalReport[], emptyLabel: strin
     });
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatSectionCounts(sectionCounts: Array<{ section: string; count: number }>): string {
+  return sectionCounts.map((entry) => `${entry.section} ${entry.count}`).join(' / ');
+}
+
+function buildPrintDocumentHtml(params: {
+  date: string;
+  item: DailyAttentionItem;
+  groups: PhenomenonGroup[];
+  labels: PrintLabels;
+  noPhenomenonLabel: string;
+}) {
+  const { date, item, groups, labels, noPhenomenonLabel } = params;
+
+  const groupHtml = groups.length === 0
+    ? `<div class="empty">${escapeHtml(labels.none)}</div>`
+    : groups.map((group) => {
+        const cardsHtml = group.reports.map((report) => {
+          const imageHtml = report.images.length > 0
+            ? report.images.map((image, index) => `
+                <figure class="image-card">
+                  <img src="${escapeHtml(image)}" alt="${escapeHtml(`${group.phenomenon} ${index + 1}`)}" />
+                </figure>
+              `).join('')
+            : `<div class="image-empty">${escapeHtml(labels.none)}</div>`;
+
+          return `
+            <article class="report-card">
+              <div class="report-meta-row">
+                <div class="report-title">${escapeHtml(report.phenomenon || noPhenomenonLabel)}</div>
+                <div class="report-badge">${escapeHtml(normalizeSection(report.section))}</div>
+              </div>
+              <div class="report-meta">${escapeHtml(labels.date)}: ${escapeHtml(dayjs(report.report_dt).format('YYYY-MM-DD'))}</div>
+              <div class="report-meta">${escapeHtml(labels.partNo)}: ${escapeHtml(report.part_no || '-')}</div>
+              <div class="report-meta">${escapeHtml(labels.section)}: ${escapeHtml(report.section || '-')}</div>
+              <div class="report-meta">${escapeHtml(labels.action)}: ${escapeHtml(report.disposition || report.action_result || '-')}</div>
+              <div class="image-grid">${imageHtml}</div>
+            </article>
+          `;
+        }).join('');
+
+        return `
+          <section class="phenomenon-block">
+            <div class="phenomenon-header">
+              <div>
+                <div class="phenomenon-title">${escapeHtml(group.phenomenon)}</div>
+                <div class="phenomenon-meta">${group.totalCount} / ${escapeHtml(formatSectionCounts(group.sectionCounts))}</div>
+              </div>
+            </div>
+            <div class="report-grid">${cardsHtml}</div>
+          </section>
+        `;
+      }).join('');
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(`${labels.title} - ${item.machine_name}`)}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #0f172a;
+      font-family: "Microsoft YaHei", "PingFang SC", "Malgun Gothic", sans-serif;
+      background: #ffffff;
+    }
+    .page {
+      width: 100%;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      border-bottom: 2px solid #dbeafe;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .title {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0 0 6px;
+    }
+    .subtitle, .meta-text {
+      font-size: 12px;
+      color: #475569;
+      line-height: 1.5;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .summary-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      page-break-inside: avoid;
+    }
+    .summary-label {
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .summary-value {
+      font-size: 14px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+    .phenomenon-block {
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      page-break-inside: avoid;
+    }
+    .phenomenon-header {
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 10px 12px;
+    }
+    .phenomenon-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .phenomenon-meta {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #475569;
+    }
+    .report-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      padding: 12px;
+    }
+    .report-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px;
+      page-break-inside: avoid;
+    }
+    .report-meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+      margin-bottom: 6px;
+    }
+    .report-title {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .report-badge {
+      font-size: 11px;
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: #e2e8f0;
+      white-space: nowrap;
+    }
+    .report-meta {
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 4px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .image-card {
+      margin: 0;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+    .image-card img {
+      display: block;
+      width: 100%;
+      height: auto;
+      object-fit: cover;
+    }
+    .image-empty, .empty {
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #64748b;
+      padding: 16px;
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div>
+        <h1 class="title">${escapeHtml(labels.title)}</h1>
+        <div class="subtitle">${escapeHtml(labels.machine)}: ${escapeHtml(item.machine_name)}</div>
+        <div class="subtitle">${escapeHtml(labels.date)}: ${escapeHtml(dayjs(date).format('YYYY-MM-DD'))}</div>
+      </div>
+      <div class="meta-text">${escapeHtml(labels.history)}: ${item.matching_report_count}</div>
+    </header>
+
+    <section class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-label">${escapeHtml(labels.partNo)}</div>
+        <div class="summary-value">${escapeHtml(item.part_nos.join(', ') || '-')}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">${escapeHtml(labels.plannedQty)}</div>
+        <div class="summary-value">${item.planned_quantity.toLocaleString()}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">${escapeHtml(labels.models)}</div>
+        <div class="summary-value">${escapeHtml(item.model_names.join(', ') || '-')}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">${escapeHtml(labels.lots)}</div>
+        <div class="summary-value">${escapeHtml(item.lot_nos.join(', ') || '-')}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">${escapeHtml(labels.latest)}</div>
+        <div class="summary-value">${escapeHtml(item.latest_report_dt ? dayjs(item.latest_report_dt).format('YYYY-MM-DD') : '-')}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">${escapeHtml(labels.history)}</div>
+        <div class="summary-value">${item.matching_report_count.toLocaleString()}</div>
+      </div>
+    </section>
+
+    ${groupHtml}
+  </div>
+  <script>
+    window.onload = function () {
+      setTimeout(function () {
+        window.print();
+      }, 120);
+    };
+    window.onafterprint = function () {
+      window.close();
+    };
+  </script>
+</body>
+</html>`;
+}
+
 export default function DailyAttentionPage() {
   const { t, lang } = useLang();
   const [targetDate, setTargetDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, Record<string, boolean>>>({});
 
-  const noPhenomenonLabel = lang === 'zh' ? '未填写现象' : '현상 미기재';
-  const expandAllLabel = lang === 'zh' ? '전체 펼치기' : '모두 펼치기';
-  const collapseAllLabel = lang === 'zh' ? '전체 접기' : '모두 접기';
-  const rowsLabel = lang === 'zh' ? '行' : 'rows';
+  const noPhenomenonLabel = lang === 'zh' ? '未填写现象' : '현상 미입력';
+  const expandAllLabel = lang === 'zh' ? '全部 펼치기' : '모두 펼치기';
+  const collapseAllLabel = lang === 'zh' ? '全部 접기' : '모두 접기';
+  const rowsLabel = lang === 'zh' ? '행' : '행';
+  const printLabel = lang === 'zh' ? 'A4 PDF / 打印' : 'A4 PDF / 인쇄';
+
+  const printLabels: PrintLabels = {
+    title: t('quality.daily_attention_title'),
+    machine: lang === 'zh' ? '注塑机' : '사출기',
+    partNo: t('part_no'),
+    plannedQty: t('quality.daily_attention_planned_qty'),
+    models: lang === 'zh' ? '机种' : '모델',
+    lots: 'LOT',
+    history: t('quality.daily_attention_historical_reports'),
+    none: t('quality.daily_attention_no_history'),
+    latest: t('quality.daily_attention_latest_issue'),
+    section: lang === 'zh' ? '区段' : '구분',
+    action: lang === 'zh' ? '处理结果' : '처리 결과',
+    date: t('date'),
+  };
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery<DailyAttentionResponse>({
     queryKey: ['quality-daily-attention', targetDate],
@@ -295,6 +569,24 @@ export default function DailyAttentionPage() {
       return acc;
     }, {});
     setCollapsedGroups((prev) => ({ ...prev, [itemKey]: nextState }));
+  };
+
+  const handlePrintItem = (item: DailyAttentionItem, groups: PhenomenonGroup[]) => {
+    const printWindow = window.open('', '_blank', 'width=1200,height=900');
+    if (!printWindow) return;
+
+    const html = buildPrintDocumentHtml({
+      date: targetDate,
+      item,
+      groups,
+      labels: printLabels,
+      noPhenomenonLabel,
+    });
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
   };
 
   return (
@@ -354,9 +646,9 @@ export default function DailyAttentionPage() {
                       {item.machine_name} / {item.part_nos.join(', ')}
                     </div>
                     <div className="mt-1 text-sm text-slate-600">
-                      {(item.model_names.length > 0 ? item.model_names.join(', ') : '-')} · {t('quality.daily_attention_planned_qty')}: {item.planned_quantity.toLocaleString()}
-                      {item.lot_nos.length > 0 ? ` · LOT ${item.lot_nos.join(', ')}` : ''}
-                      {item.plan_row_count > 1 ? ` · ${item.plan_row_count} ${rowsLabel}` : ''}
+                      {(item.model_names.length > 0 ? item.model_names.join(', ') : '-')} | {t('quality.daily_attention_planned_qty')}: {item.planned_quantity.toLocaleString()}
+                      {item.lot_nos.length > 0 ? ` | LOT ${item.lot_nos.join(', ')}` : ''}
+                      {item.plan_row_count > 1 ? ` | ${item.plan_row_count} ${rowsLabel}` : ''}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -369,6 +661,10 @@ export default function DailyAttentionPage() {
                     <span className="rounded-full bg-blue-100 px-3 py-1 font-medium text-blue-800">
                       {t('quality.daily_attention_latest_issue')}: {item.latest_report_dt ? dayjs(item.latest_report_dt).format('YYYY-MM-DD') : '-'}
                     </span>
+                    <Button type="button" variant="secondary" onClick={() => handlePrintItem(item, phenomenonGroups)} className="gap-2">
+                      <Printer className="h-4 w-4" />
+                      {printLabel}
+                    </Button>
                   </div>
                 </div>
 
@@ -388,7 +684,7 @@ export default function DailyAttentionPage() {
                           <div key={`${itemKey}-${group.phenomenon}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2">
                             <div className="font-medium text-amber-900">{group.phenomenon}</div>
                             <div className="mt-1 text-sm text-amber-700">
-                              {group.totalCount} · {group.sectionCounts.map((entry) => `${entry.section} ${entry.count}`).join(' / ')}
+                              {group.totalCount} | {formatSectionCounts(group.sectionCounts)}
                             </div>
                           </div>
                         ))}
@@ -432,7 +728,7 @@ export default function DailyAttentionPage() {
                                 <div>
                                   <div className="font-semibold text-slate-900">{group.phenomenon}</div>
                                   <div className="mt-1 text-sm text-slate-600">
-                                    {group.totalCount} · {group.sectionCounts.map((entry) => `${entry.section} ${entry.count}`).join(' / ')}
+                                    {group.totalCount} | {formatSectionCounts(group.sectionCounts)}
                                   </div>
                                 </div>
                                 {isOpen ? <ChevronDown className="h-5 w-5 text-slate-500" /> : <ChevronRight className="h-5 w-5 text-slate-500" />}
@@ -458,7 +754,7 @@ export default function DailyAttentionPage() {
                                             {normalizeSection(report.section)}
                                           </span>
                                         </div>
-                                        <div className="text-slate-600">{dayjs(report.report_dt).format('YYYY-MM-DD')} · {report.section}</div>
+                                        <div className="text-slate-600">{dayjs(report.report_dt).format('YYYY-MM-DD')} | {report.section}</div>
                                         <div className="text-slate-600">{report.part_no}</div>
                                         <div className="line-clamp-3 text-slate-700">{report.disposition || report.action_result || '-'}</div>
                                       </div>
