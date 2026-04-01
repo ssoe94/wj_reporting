@@ -1,13 +1,14 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 
 interface PrivateRouteProps {
   children: React.ReactNode;
 }
 
 export default function PrivateRoute({ children }: PrivateRouteProps) {
-  const { isAuthenticated, isLoading, canAccessRoute } = useAuth();
+  const { isAuthenticated, isLoading, canAccessRoute, user } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -24,7 +25,7 @@ export default function PrivateRoute({ children }: PrivateRouteProps) {
 
   // 경로별 권한 검사: 접근 불가 시 대시보드로 이동
   if (!canAccessRoute(location.pathname)) {
-    return <Navigate to="/analysis" replace />;
+    return <Navigate to={parseFieldTerminalUser(user?.username) ? '/field' : '/analysis'} replace />;
   }
 
   return <>{children}</>;

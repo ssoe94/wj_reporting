@@ -10,6 +10,7 @@ import { useLang } from '@/i18n';
 import { useAuth } from '@/contexts/AuthContext';
 import { getProductionConsoleData, upsertProductionExecution } from '@/lib/api';
 import { extractInjectionMachineInfo, getInjectionMachineOrder, getMachiningLineOrder } from '@/lib/productionUtils';
+import { getFieldStationById, matchesFieldStation } from '@/lib/fieldTerminal';
 
 type PlanType = 'injection' | 'machining';
 type StatusType = 'pending' | 'running' | 'completed' | 'paused';
@@ -66,6 +67,10 @@ interface ConsoleResponse {
 
 interface ProductionConsoleProps {
   planType: PlanType;
+  stationFilter?: string | null;
+  kioskMode?: boolean;
+  title?: string;
+  subtitle?: string;
 }
 
 interface TableRowView {
@@ -144,7 +149,13 @@ const getMachineDisplayLabel = (planType: PlanType, row: ConsoleRow, t: (key: st
   return row.machine_name;
 };
 
-export default function ProductionConsole({ planType }: ProductionConsoleProps) {
+export default function ProductionConsole({
+  planType,
+  stationFilter = null,
+  kioskMode = false,
+  title,
+  subtitle,
+}: ProductionConsoleProps) {
   const { t } = useLang();
   const { hasPermission, user } = useAuth();
   const queryClient = useQueryClient();
@@ -175,14 +186,35 @@ export default function ProductionConsole({ planType }: ProductionConsoleProps) 
     setDirtyMap({});
   }, [data]);
 
+  const visibleRows = useMemo(() => {
+    if (!stationFilter) return rows;
+
+    const fieldStation = getFieldStationById(
+      planType === 'injection'
+        ? `imm${stationFilter.padStart(2, '0')}`
+        : `assy0${stationFilter.toUpperCase().charCodeAt(0) - 64}`,
+    );
+
+    if (fieldStation) {
+      return rows.filter((row) => matchesFieldStation(row.machine_name, fieldStation));
+    }
+
+    return rows.filter((row) => {
+      if (planType === 'injection') {
+        return String(row.machine_number ?? extractInjectionMachineInfo(row.machine_name).machineNumber ?? '') === stationFilter;
+      }
+      return (row.machine_name || '').toUpperCase().includes(stationFilter.toUpperCase());
+    });
+  }, [planType, rows, stationFilter]);
+
   const selectedRow = useMemo(
-    () => rows.find((row) => row.key === selectedKey) ?? null,
-    [rows, selectedKey],
+    () => visibleRows.find((row) => row.key === selectedKey) ?? null,
+    [selectedKey, visibleRows],
   );
 
   const tableRows = useMemo<TableRowView[]>(() => {
     const sorter = planType === 'injection' ? getInjectionMachineOrder : getMachiningLineOrder;
-    const sortedRows = [...rows].sort((a, b) => {
+    const sortedRows = [...visibleRows].sort((a, b) => {
       const machineDiff = sorter(a.machine_name) - sorter(b.machine_name);
       if (machineDiff !== 0) return machineDiff;
       const nameDiff = (a.machine_name || '').localeCompare(b.machine_name || '');
@@ -211,14 +243,14 @@ export default function ProductionConsole({ planType }: ProductionConsoleProps) 
       previousGroupKey = groupKey;
       return view;
     });
-  }, [planType, rows, t]);
+  }, [planType, visibleRows, t]);
 
   const liveSummary = useMemo(() => {
-    const totalPlanned = rows.reduce((sum, row) => sum + row.planned_quantity, 0);
-    const totalActual = rows.reduce((sum, row) => sum + row.actual_qty, 0);
-    const totalDefect = rows.reduce((sum, row) => sum + row.defect_qty, 0);
-    const statuses = rows.map((row) => deriveStatus(row));
-    const ctRows = rows.filter((row) => row.operating_ct !== null && row.operating_ct !== undefined);
+    const totalPlanned = visibleRows.reduce((sum, row) => sum + row.planned_quantity, 0);
+    const totalActual = visibleRows.reduce((sum, row) => sum + row.actual_qty, 0);
+    const totalDefect = visibleRows.reduce((sum, row) => sum + row.defect_qty, 0);
+    const statuses = visibleRows.map((row) => deriveStatus(row));
+    const ctRows = visibleRows.filter((row) => row.operating_ct !== null && row.operating_ct !== undefined);
 
     return {
       totalPlanned,
@@ -234,7 +266,15 @@ export default function ProductionConsole({ planType }: ProductionConsoleProps) 
         ? Math.round((ctRows.reduce((sum, row) => sum + Number(row.operating_ct || 0), 0) / ctRows.length) * 10) / 10
         : 0,
     };
-  }, [rows]);
+  }, [visibleRows]);
+
+  useEffect(() => {
+    setSelectedKey((current) => {
+      if (!visibleRows.length) return null;
+      if (current && visibleRows.some((row) => row.key === current)) return current;
+      return visibleRows[0].key;
+    });
+  }, [visibleRows]);
 
   const handleNumericChange = (key: string, field: NumericField, value: string) => {
     setRows((prev) =>
@@ -328,15 +368,15 @@ export default function ProductionConsole({ planType }: ProductionConsoleProps) 
   ];
 
   return (
-    <div className="space-y-6">
+    <div className={kioskMode ? 'space-y-4' : 'space-y-6'}>
       <Card className="border-blue-100 shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-2xl font-black tracking-tight text-slate-900">
-                {t('console_title')}
+              <h2 className={`${kioskMode ? 'text-xl' : 'text-2xl'} font-black tracking-tight text-slate-900`}>
+                {title || t('console_title')}
               </h2>
-              <p className="text-sm text-slate-500">{t('console_subtitle')}</p>
+              <p className="text-sm text-slate-500">{subtitle || t('console_subtitle')}</p>
             </div>
             <div className="flex items-center gap-3">
               <Input
@@ -349,7 +389,7 @@ export default function ProductionConsole({ planType }: ProductionConsoleProps) 
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className={`grid gap-4 md:grid-cols-2 ${kioskMode ? 'xl:grid-cols-2' : 'xl:grid-cols-4'}`}>
             {summaryCards.map((card) => {
               const Icon = card.icon;
               return (
@@ -385,7 +425,7 @@ export default function ProductionConsole({ planType }: ProductionConsoleProps) 
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)]">
+      <div className={`${kioskMode ? 'gap-4' : 'gap-6'} grid xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)]`}>
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="pb-3">
             <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">

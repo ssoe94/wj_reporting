@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../lib/api';
 import type { ReactNode } from 'react';
+import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 
 export interface UserPermissions {
   // 조회 권한 (기본적으로 모든 사용자에게 부여)
@@ -173,6 +174,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (user.is_staff || hasPermission('is_admin')) return true;
 
     const base = route.split('#')[0].split('?')[0];
+    const fieldTerminalUser = parseFieldTerminalUser(user.username);
+    if (fieldTerminalUser) {
+      return base === '/field' || base.startsWith('/field/');
+    }
+
     if (base === '/' || base === '' || base === '/analysis') return true;
 
     if (base.startsWith('/admin')) return false;

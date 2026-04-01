@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLang } from '../i18n';
@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { api } from '../lib/api';
+import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -15,7 +16,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [showSignupModal, setShowSignupModal] = useState(false);
   
-  // 가입 요청 상태
+  // Signup request modal state.
   const [signupForm, setSignupForm] = useState({
     fullName: '',
     department: '',
@@ -36,9 +37,9 @@ export default function LoginPage() {
     const success = await login(username, password);
     
     if (success) {
-      navigate('/');
+      navigate(parseFieldTerminalUser(username) ? '/field' : '/');
     } else {
-      setError('로그인에 실패했습니다. 사용자명과 비밀번호를 확인해주세요.');
+      setError('로그인에 실패했습니다. 아이디와 비밀번호를 확인하세요.');
     }
     
     setIsLoading(false);
@@ -49,7 +50,6 @@ export default function LoginPage() {
     setSignupLoading(true);
     setSignupError('');
 
-    // 이메일 도메인 검증
     if (!signupForm.email.endsWith('@njwanjia.com')) {
       setSignupError(t('email_domain_error'));
       setSignupLoading(false);
@@ -62,7 +62,7 @@ export default function LoginPage() {
         department: signupForm.department,
         email: signupForm.email
       };
-      console.log('Sending request data:', requestData); // 디버그 로그
+      console.log('Sending request data:', requestData);
       
       const response = await api.post('/signup-request/', requestData);
 
@@ -71,7 +71,7 @@ export default function LoginPage() {
         setShowSignupModal(false);
         setSignupForm({ fullName: '', department: '', email: '' });
       } else {
-        console.log('Error response:', response.data); // 오류 상세 정보 출력
+        console.log('Error response:', response.data);
         setSignupError(t('signup_request_error'));
       }
     } catch (error) {
@@ -147,7 +147,7 @@ export default function LoginPage() {
               </div>
             </form>
             
-            {/* 가입요청 버튼 */}
+            {/* Signup request */}
             <div className="mt-4 pt-4 border-t border-gray-200">
               <Button
                 type="button"
@@ -161,7 +161,7 @@ export default function LoginPage() {
           </CardContent>
         </Card>
         
-        {/* 언어 토글 */}
+        {/* Language selector */}
         <div className="flex justify-center">
           <div className="inline-flex rounded-lg border border-gray-300 bg-white p-1">
             <button
@@ -172,7 +172,7 @@ export default function LoginPage() {
                   : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              한국어
+              KOR
             </button>
             <button
               onClick={() => setLang('zh')}
@@ -182,12 +182,12 @@ export default function LoginPage() {
                   : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              中文
+              涓枃
             </button>
           </div>
         </div>
         
-        {/* 가입요청 모달 */}
+        {/* Signup modal */}
         {showSignupModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">

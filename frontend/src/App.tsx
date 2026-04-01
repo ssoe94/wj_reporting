@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LangProvider } from "./i18n";
@@ -28,9 +28,7 @@ import {
   Factory,
   FileSpreadsheet,
 } from "lucide-react";
-// 실제 Summary 페이지 컴포넌트
 import SummaryPage from "./pages/summary";
-// 실제 페이지 컴포넌트 임포트
 import ModelsPage from './pages/models';
 import Eco2Page from './pages/eco2';
 import AnalysisPage from './pages/analysis';
@@ -51,18 +49,25 @@ import AssemblyDashboardPage from './pages/assembly/Dashboard';
 import InjectionDashboardPage from './pages/injection/Dashboard';
 import InjectionSetupPage from './pages/injection/Setup';
 import InjectionMonitoringPage from './pages/injection/MonitoringPage';
+import FieldLauncherPage from './pages/field/Launcher';
+import FieldStationPage from './pages/field/Station';
 import ProductionPlanPage from './pages/production/Plan';
 import ProductionStatsPage from './pages/production/Stats';
 import ProductionDashboardPage from './pages/production/Dashboard'; // New import
+import { parseFieldTerminalUser } from './lib/fieldTerminal';
 
 const queryClient = new QueryClient();
 
-// navItems를 함수로 생성 (언어별 및 권한별)
+function HomeRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={parseFieldTerminalUser(user?.username) ? "/field" : "/analysis"} replace />;
+}
+
 function useNavItems() {
   const { t } = useLang();
   const { user, hasPermission } = useAuth();
 
-  // 스태프는 모든 메뉴 접근 가능
+  // Staff users see the full navigation tree.
   if (user?.is_staff) {
     return [
       {
@@ -142,7 +147,7 @@ function useNavItems() {
     ];
   }
 
-  // 일반 사용자는 권한에 따라 메뉴 필터링
+  // Regular users get the same sections, trimmed by permission-aware links.
   const navItems = [];
 
   navItems.push({
@@ -238,22 +243,23 @@ function AppContent() {
   const { lang, setLang, t } = useLang();
   const { user, logout, isAuthenticated, isLoading } = useAuth();
   const routerLocation = useLocation();
+  const fieldTerminalUser = parseFieldTerminalUser(user?.username);
+  const isFieldTerminal = Boolean(fieldTerminalUser);
 
-  // 페이지 전환 애니메이션을 위한 key
   const locationKey = routerLocation.pathname;
 
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
 
-  // 임시 비밀번호 사용자 체크
+  // Force password change when a temporary password is in use.
   useEffect(() => {
     if (user && user.is_using_temp_password) {
       setPasswordModalOpen(true);
     }
   }, [user]);
 
-  // 라이트 모드 적용
+  // Toggle lite mode on the document root.
   useEffect(() => {
     if (isLiteMode) {
       document.documentElement.classList.add('lite-mode');
@@ -272,7 +278,7 @@ function AppContent() {
     }
   };
 
-  // 드롭다운 외부 클릭 시 닫기
+  // Close the user dropdown when clicking outside.
   useEffect(() => {
     const handleClickOutside = () => {
       if (userDropdownOpen) {
@@ -299,7 +305,7 @@ function AppContent() {
   else if (pathname.startsWith('/quality')) breadcrumbLabel = t('brand_quality');
   else if (pathname.startsWith('/models')) breadcrumbLabel = t('nav_model_management');
 
-  // 인증 로딩 중 스피너 표시
+  // Global auth loading state.
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -308,7 +314,7 @@ function AppContent() {
     );
   }
 
-  // 인증되지 않았고 /login 이 아니라면 로그인 페이지로 이동
+  // Redirect anonymous users to login.
   if (!isAuthenticated && routerLocation.pathname !== "/login") {
     return <Navigate to="/login" state={{ from: routerLocation }} replace />;
   }
@@ -316,7 +322,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      {isAuthenticated && (
+      {isAuthenticated && !isFieldTerminal && (
         <header className="sticky top-0 z-30 bg-white/80 backdrop-blur shadow-xs md:hidden">
           <div className="flex items-center justify-between px-4 py-2">
             <Link to="/" className="flex items-center">
@@ -340,7 +346,7 @@ function AppContent() {
                     : 'text-gray-700 hover:bg-gray-50'
                     }`}
                 >
-                  中文
+                  涓枃
                 </button>
               </div>
               {user && (
@@ -357,7 +363,7 @@ function AppContent() {
       )}
 
       {/* Breadcrumb */}
-      {isAuthenticated && (
+      {isAuthenticated && !isFieldTerminal && (
         <div className="sticky top-14 md:top-0 z-20 bg-white/80 backdrop-blur border-b border-gray-200 h-20 px-4 flex items-center gap-2 md:ml-56">
           <Link to="/">
             <HomeIcon className="w-4 h-4 text-gray-500" />
@@ -404,13 +410,13 @@ function AppContent() {
       )}
 
       {/* Sidebar (Desktop) */}
-      {isAuthenticated && (
+      {isAuthenticated && !isFieldTerminal && (
         <aside className="fixed left-0 top-0 hidden h-screen w-56 overflow-y-auto border-r border-gray-200 bg-white shadow-md md:flex flex-col">
           {/* Top logo/title */}
           <div className="h-28 flex items-end justify-center px-4 pb-4 border-b border-gray-200">
             <Link to="/" className="flex flex-col items-center gap-1">
               <img src="/logo.jpg" alt="logo" className="h-10 w-10 rounded-full shadow-md" />
-              <span className="text-lg font-extrabold text-gray-700 tracking-tight">万佳数据平台</span>
+              <span className="text-lg font-extrabold text-gray-700 tracking-tight">涓囦匠鏁版嵁骞冲彴</span>
             </Link>
           </div>
           {/* Menu */}
@@ -424,7 +430,7 @@ function AppContent() {
                   </div>
                   {group.children.map((child) => {
                     const ChildIcon = child.icon as any;
-                    // 외부 링크 처리
+                    // 鞕鸽秬 毵來伂 觳橂Μ
                     if ((child as any).external) {
                       return (
                         <a
@@ -459,7 +465,7 @@ function AppContent() {
                     : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                     }`}
                 >
-                  한국어
+                  KOR
                 </button>
                 <button
                   onClick={() => setLang('zh')}
@@ -468,7 +474,7 @@ function AppContent() {
                     : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                     }`}
                 >
-                  中文
+                  涓枃
                 </button>
               </div>
             </div>
@@ -487,7 +493,7 @@ function AppContent() {
       )}
 
       {/* Sidebar (Mobile) */}
-      {isAuthenticated && (
+      {isAuthenticated && !isFieldTerminal && (
         <AnimatePresence>
           {sidebarOpen && (
             <motion.div
@@ -501,7 +507,7 @@ function AppContent() {
         </AnimatePresence>
       )}
 
-      {isAuthenticated && (
+      {isAuthenticated && !isFieldTerminal && (
         <AnimatePresence>
           {sidebarOpen && (
             <motion.aside
@@ -513,7 +519,7 @@ function AppContent() {
               <div className="flex items-center justify-between p-4 border-b">
                 <Link to="/" className="flex flex-col items-center gap-1" onClick={() => setSidebarOpen(false)}>
                   <img src="/logo.jpg" alt="logo" className="h-10 w-10 rounded-full shadow-md" />
-                  <span className="text-lg font-extrabold text-gray-700 tracking-tight">万佳数据平台</span>
+                  <span className="text-lg font-extrabold text-gray-700 tracking-tight">涓囦匠鏁版嵁骞冲彴</span>
                 </Link>
                 <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
                   <XIcon className="h-6 w-6" />
@@ -529,7 +535,7 @@ function AppContent() {
                       </div>
                       {group.children.map((child) => {
                         const ChildIcon = child.icon as any;
-                        // 외부 링크 처리
+                        // 鞕鸽秬 毵來伂 觳橂Μ
                         if ((child as any).external) {
                           return (
                             <a
@@ -565,13 +571,15 @@ function AppContent() {
       )}
 
       {/* Main content */}
-      <main className={isAuthenticated ? "md:ml-56" : ""}>
+      <main className={isAuthenticated && !isFieldTerminal ? "md:ml-56" : ""}>
         <AnimatePresence mode="wait">
           <Routes location={routerLocation} key={locationKey}>
-            {/* 로그인 라우트 */}
+            {/* Public routes */}
             <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
-            {/* 보호된 라우트 */}
-            <Route path="/" element={<PrivateRoute><PageTransition><AnalysisPage /></PageTransition></PrivateRoute>} />
+            {/* Private routes */}
+            <Route path="/" element={<PrivateRoute><PageTransition><HomeRedirect /></PageTransition></PrivateRoute>} />
+            <Route path="/field" element={<PrivateRoute><PageTransition><FieldLauncherPage /></PageTransition></PrivateRoute>} />
+            <Route path="/field/:stationId" element={<PrivateRoute><PageTransition><FieldStationPage /></PageTransition></PrivateRoute>} />
             <Route path="/models" element={<PrivateRoute><PageTransition><ModelsPage /></PageTransition></PrivateRoute>} />
             <Route path="/eco" element={<Navigate to="/eco2" replace />} />
             <Route path="/eco2" element={<PrivateRoute><PageTransition><Eco2Page /></PageTransition></PrivateRoute>} />
@@ -604,7 +612,7 @@ function AppContent() {
 
             {/* Admin routes */}
             <Route path="/admin/user-management" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} />
-            <Route path="/admin/user-approval" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} /> {/* 기존 URL 호환성 */}
+            <Route path="/admin/user-approval" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} /> {/* Legacy URL compatibility */}
 
             {/* Existing placeholders */}
             <Route path="/overview" element={<PrivateRoute><PageTransition><OverviewPage /></PageTransition></PrivateRoute>} />
@@ -613,13 +621,13 @@ function AppContent() {
         </AnimatePresence>
       </main>
 
-      {/* 비밀번호 변경 모달 */}
+      {/* Password change modal */}
       <PasswordChangeModal
         isOpen={passwordModalOpen}
         onClose={() => setPasswordModalOpen(false)}
         isRequired={user?.is_using_temp_password || false}
         onSuccess={() => {
-          // 비밀번호 변경 성공 시 사용자 정보 다시 불러오기
+          // Refresh user info after a successful password change.
           window.location.reload();
         }}
       />
@@ -642,3 +650,4 @@ export default function App() {
     </QueryClientProvider>
   );
 }
+
