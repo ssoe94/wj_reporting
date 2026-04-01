@@ -82,5 +82,11 @@ export function matchesFieldStation(machineName: string | null | undefined, stat
   }
 
   const upper = value.toUpperCase();
-  return upper.includes(`${station.machineFilterValue}-`) || upper.includes(`${station.machineFilterValue}线`) || upper.includes(`${station.machineFilterValue}流水线`);
+  return (
+    upper.includes(`${station.machineFilterValue}-`) ||
+    upper.includes(`${station.machineFilterValue} LINE`) ||
+    upper.includes(`${station.machineFilterValue}LINE`) ||
+    upper.includes(`${station.machineFilterValue}线`) ||
+    upper.includes(`${station.machineFilterValue}流水线`)
+  );
 }

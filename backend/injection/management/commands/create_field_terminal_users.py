@@ -33,10 +33,10 @@ class Command(BaseCommand):
                     'first_name': f'注塑{index:02d}',
                     'department': '注塑现场',
                     'can_view_injection': True,
-                    'can_view_assembly': False,
-                    'can_view_quality': False,
-                    'can_view_sales': False,
-                    'can_view_development': False,
+                    'can_view_assembly': True,
+                    'can_view_quality': True,
+                    'can_view_sales': True,
+                    'can_view_development': True,
                     'can_edit_injection': True,
                     'can_edit_assembly': False,
                     'can_edit_quality': False,
@@ -51,11 +51,11 @@ class Command(BaseCommand):
                     'username': f'assy{index:02d}',
                     'first_name': f'加工{label}',
                     'department': '加工现场',
-                    'can_view_injection': False,
+                    'can_view_injection': True,
                     'can_view_assembly': True,
-                    'can_view_quality': False,
-                    'can_view_sales': False,
-                    'can_view_development': False,
+                    'can_view_quality': True,
+                    'can_view_sales': True,
+                    'can_view_development': True,
                     'can_edit_injection': False,
                     'can_edit_assembly': True,
                     'can_edit_quality': False,
@@ -123,4 +123,3 @@ class Command(BaseCommand):
                 f'Field terminal users ready. created={created_count}, updated={updated_count}, password="{password}"'
             )
         )
-

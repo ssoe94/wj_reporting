@@ -17,7 +17,7 @@ from assembly.models import AssemblyReport
 from django.db.models import Sum, Q, Max
 from django.db.utils import OperationalError, ProgrammingError, IntegrityError
 from .serializers import ProductionExecutionSerializer, ProductionPlanSerializer
-from .permissions import user_can_edit_plan
+from .permissions import user_can_edit_plan, user_can_view_plan
 from .models import ProductionPlanPart
 from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
 import math
@@ -149,8 +149,8 @@ class ProductionPlanListView(generics.ListCreateAPIView):
         if not target_date:
             raise ValidationError({'detail': 'Invalid date format. Use YYYY-MM-DD.'})
 
-        if not user_can_edit_plan(self.request.user, plan_type):
-            raise PermissionDenied('You do not have permission to edit this plan type.')
+        if not user_can_view_plan(self.request.user, plan_type):
+            raise PermissionDenied('You do not have permission to view this plan type.')
 
         return ProductionPlan.objects.filter(
             plan_date=target_date,
@@ -202,6 +202,11 @@ class ProductionPlanDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_object(self):
         obj = super().get_object()
+        if self.request.method in ['GET', 'HEAD', 'OPTIONS']:
+            if not user_can_view_plan(self.request.user, obj.plan_type):
+                raise PermissionDenied('You do not have permission to view this plan type.')
+            return obj
+
         if not user_can_edit_plan(self.request.user, obj.plan_type):
             raise PermissionDenied('You do not have permission to edit this plan type.')
         return obj

@@ -1,117 +1,155 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Factory, LogOut, MonitorSmartphone, Wrench } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { LogOut } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
-import { allFieldStations, injectionStations, machiningStations, parseFieldTerminalUser } from '@/lib/fieldTerminal';
+import { getProductionPlanSummary } from '@/lib/api';
+import {
+  injectionStations,
+  machiningStations,
+  matchesFieldStation,
+  parseFieldTerminalUser,
+  type FieldStation,
+} from '@/lib/fieldTerminal';
+
+type PlanItem = {
+  machine_name: string;
+  planned_quantity: number;
+};
+
+type LauncherCell =
+  | { key: string; station: FieldStation; accentGap: boolean }
+  | { key: string; station: null; accentGap: boolean };
+
+function getBusinessDateString() {
+  const now = new Date();
+  const businessDate = new Date(now);
+  if (now.getHours() < 8) {
+    businessDate.setDate(businessDate.getDate() - 1);
+  }
+  return format(businessDate, 'yyyy-MM-dd');
+}
 
 export default function FieldLauncherPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
   const currentFieldUser = useMemo(() => parseFieldTerminalUser(user?.username), [user?.username]);
+  const businessDate = useMemo(() => getBusinessDateString(), []);
+
+  const { data: planData } = useQuery({
+    queryKey: ['field-launcher-plan-status', businessDate],
+    queryFn: async () => {
+      const summary = await getProductionPlanSummary(businessDate);
+      return {
+        injection: Array.isArray(summary?.injection?.records) ? (summary.injection.records as PlanItem[]) : [],
+        machining: Array.isArray(summary?.machining?.records) ? (summary.machining.records as PlanItem[]) : [],
+      };
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const activeStationIds = useMemo(() => {
+    const active = new Set<string>();
+
+    for (const station of injectionStations) {
+      const hasPlan = (planData?.injection || []).some(
+        (item) => Number(item.planned_quantity || 0) > 0 && matchesFieldStation(item.machine_name, station),
+      );
+      if (hasPlan) active.add(station.id);
+    }
+
+    for (const station of machiningStations) {
+      const hasPlan = (planData?.machining || []).some(
+        (item) => Number(item.planned_quantity || 0) > 0 && matchesFieldStation(item.machine_name, station),
+      );
+      if (hasPlan) active.add(station.id);
+    }
+
+    return active;
+  }, [planData]);
+
+  const gridCells = useMemo<LauncherCell[]>(() => {
+    const cells: LauncherCell[] = [];
+
+    for (let row = 0; row < 4; row += 1) {
+      for (let col = 0; col < 5; col += 1) {
+        const index = row * 5 + col;
+        const station = injectionStations[index] ?? null;
+        cells.push({
+          key: station?.id ?? `blank-${row}-${col}`,
+          station,
+          accentGap: false,
+        });
+      }
+
+      cells.push({
+        key: machiningStations[row].id,
+        station: machiningStations[row],
+        accentGap: true,
+      });
+    }
+
+    return cells;
+  }, []);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#eff6ff,_#f8fafc_45%,_#e2e8f0_100%)] px-4 py-6 md:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-blue-100 p-3 text-blue-700">
-                  <MonitorSmartphone className="h-7 w-7" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-black tracking-tight text-slate-900">现场终端</h1>
-                  <p className="mt-1 text-sm text-slate-600">터치스크린 전용 시작 화면입니다. 설비 또는 라인을 선택해 바로 작업 화면으로 이동합니다.</p>
-                </div>
-              </div>
-              {currentFieldUser && (
-                <div className="mt-4 inline-flex rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-                  현재 계정: {currentFieldUser.username} / 기본 스테이션: {currentFieldUser.stationLabel}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                size="lg"
-                onClick={() => navigate(currentFieldUser ? `/field/${currentFieldUser.stationId}` : `/field/${allFieldStations[0].id}`)}
-              >
-                내 스테이션 바로가기
-              </Button>
-              <Button type="button" variant="secondary" size="lg" onClick={logout} className="gap-2">
-                <LogOut className="h-4 w-4" />
-                로그아웃
-              </Button>
+    <div className="min-h-screen overflow-hidden bg-[#eef3f8] text-slate-900">
+      <div className="mx-auto flex h-screen w-full max-w-[1920px] flex-col px-4 py-4">
+        <section className="flex h-[88px] items-center justify-between rounded-2xl border border-slate-200 bg-white px-6 shadow-sm">
+          <div className="min-w-0">
+            <h1 className="text-[34px] font-black tracking-tight text-slate-900">现场终端</h1>
+            <div className="mt-1 text-[18px] font-semibold text-slate-600">
+              当前账号: {currentFieldUser?.username || '-'} / 基本工位: {currentFieldUser?.stationLabel || '-'}
             </div>
           </div>
-        </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            className="h-12 rounded-xl border border-slate-300 bg-white px-5 text-lg font-bold text-slate-700 hover:bg-slate-50"
+            onClick={logout}
+          >
+            <LogOut className="mr-2 h-5 w-5" />
+            登出
+          </Button>
+        </section>
 
-        <div className="grid gap-6 xl:grid-cols-2">
-          <Card className="rounded-3xl border-slate-200 shadow-sm">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-blue-100 p-3 text-blue-700">
-                  <Factory className="h-6 w-6" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-black text-slate-900">注塑</h2>
-                  <p className="text-sm text-slate-500">01호기부터 17호기까지 바로 진입</p>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                {injectionStations.map((station) => (
-                  <Button
-                    key={station.id}
-                    type="button"
-                    size="lg"
-                    className="h-24 rounded-2xl text-xl font-black"
-                    onClick={() => navigate(`/field/${station.id}`)}
-                  >
-                    {station.label}
-                  </Button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+        <section className="mt-4 grid min-h-0 flex-1 grid-cols-6 grid-rows-4 gap-4">
+          {gridCells.map((cell) => {
+            if (!cell.station) {
+              return <div key={cell.key} className="pointer-events-none" />;
+            }
 
-          <Card className="rounded-3xl border-slate-200 shadow-sm">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-amber-100 p-3 text-amber-700">
-                  <Wrench className="h-6 w-6" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-black text-slate-900">加工</h2>
-                  <p className="text-sm text-slate-500">A라인부터 D라인까지 바로 진입</p>
-                </div>
+            const hasPlan = activeStationIds.has(cell.station.id);
+            const isInjection = cell.station.type === 'injection';
+            const activeClass = isInjection
+              ? 'border-blue-300 bg-[#2563eb] text-white hover:bg-[#1d4ed8]'
+              : 'border-amber-300 bg-[#f59e0b] text-white hover:bg-[#d97706]';
+            const inactiveClass =
+              'border-slate-300 bg-slate-300 text-slate-600 hover:bg-slate-300';
+
+            return (
+              <div key={cell.key} className={cell.accentGap ? 'translate-x-2' : ''}>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/field/${cell.station.id}`)}
+                  className={`flex h-full min-h-0 w-full items-center justify-center rounded-2xl border text-center shadow-sm transition ${
+                    hasPlan ? activeClass : inactiveClass
+                  }`}
+                >
+                  <span className="text-[34px] font-black tracking-tight">{cell.station.label}</span>
+                </button>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                {machiningStations.map((station) => (
-                  <Button
-                    key={station.id}
-                    type="button"
-                    size="lg"
-                    variant="secondary"
-                    className="h-24 rounded-2xl text-xl font-black"
-                    onClick={() => navigate(`/field/${station.id}`)}
-                  >
-                    {station.label}
-                  </Button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            );
+          })}
+        </section>
       </div>
     </div>
   );
 }
-

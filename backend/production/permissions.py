@@ -1,6 +1,14 @@
 from typing import Optional
 
 
+def user_can_view_plan(user, plan_type: Optional[str]) -> bool:
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if plan_type in {'injection', 'machining'}:
+        return True
+    return False
+
+
 def user_can_edit_plan(user, plan_type: Optional[str]) -> bool:
     if not user or not getattr(user, 'is_authenticated', False):
         return False
