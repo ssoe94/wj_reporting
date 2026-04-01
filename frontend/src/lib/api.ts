@@ -224,6 +224,16 @@ export async function getProductionPlanSummary(date: string) {
   return response.data;
 }
 
+export async function getInjectionProductionMatrix(interval: '10min' | '30min' | '1hour' | '1day' = '1day', columns = 1, lang = 'zh') {
+  const params = new URLSearchParams({
+    interval,
+    columns: String(columns),
+    lang,
+  });
+  const response = await api.get(`/injection/production-matrix/?${params.toString()}`);
+  return response.data;
+}
+
 export async function updateProductionPartCavity(partNo: string, cavity: number) {
   const response = await api.post(endpoints.production.partCavity(), {
     part_no: partNo,

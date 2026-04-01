@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useLang } from '@/i18n';
 import { useAuth } from '@/contexts/AuthContext';
-import { getProductionConsoleData, upsertProductionExecution } from '@/lib/api';
+import { getProductionConsoleData, getProductionPlanItems, getProductionStatusData, upsertProductionExecution } from '@/lib/api';
 import { extractInjectionMachineInfo, getInjectionMachineOrder, getMachiningLineOrder } from '@/lib/productionUtils';
 import { getFieldStationById, matchesFieldStation } from '@/lib/fieldTerminal';
 
@@ -65,6 +65,16 @@ interface ConsoleResponse {
   rows: ConsoleRow[];
 }
 
+interface PlanItemCard {
+  id: number;
+  machine_name: string;
+  sequence: number | null;
+  part_no: string;
+  model_name?: string | null;
+  part_spec?: string | null;
+  planned_quantity: number;
+}
+
 interface ProductionConsoleProps {
   planType: PlanType;
   stationFilter?: string | null;
@@ -81,9 +91,13 @@ interface TableRowView {
   groupLabel: string;
 }
 
-const getLocalDate = () => {
+const getBusinessDateString = () => {
   const now = new Date();
-  const adjusted = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  const businessDate = new Date(now);
+  if (businessDate.getHours() < 8) {
+    businessDate.setDate(businessDate.getDate() - 1);
+  }
+  const adjusted = new Date(businessDate.getTime() - businessDate.getTimezoneOffset() * 60000);
   return adjusted.toISOString().slice(0, 10);
 };
 
@@ -159,7 +173,7 @@ export default function ProductionConsole({
   const { t } = useLang();
   const { hasPermission, user } = useAuth();
   const queryClient = useQueryClient();
-  const [selectedDate, setSelectedDate] = useState(getLocalDate);
+  const [selectedDate, setSelectedDate] = useState(getBusinessDateString);
   const [rows, setRows] = useState<ConsoleRow[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -174,6 +188,22 @@ export default function ProductionConsole({
   const { data, isLoading } = useQuery<ConsoleResponse>({
     queryKey: ['production-console', planType, selectedDate],
     queryFn: () => getProductionConsoleData(selectedDate, planType),
+  });
+
+  const { data: productionStatusData } = useQuery<any>({
+    queryKey: ['production-status', selectedDate],
+    queryFn: () => getProductionStatusData(selectedDate),
+    enabled: kioskMode && Boolean(stationFilter),
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: true,
+    staleTime: 30 * 1000,
+  });
+
+  const { data: kioskPlanItems } = useQuery<PlanItemCard[]>({
+    queryKey: ['production-plan-items-kiosk', selectedDate, planType],
+    queryFn: () => getProductionPlanItems(selectedDate, planType),
+    enabled: kioskMode,
+    staleTime: 30 * 1000,
   });
 
   useEffect(() => {
@@ -366,6 +396,400 @@ export default function ProductionConsole({
       tone: 'text-amber-700 bg-amber-100',
     },
   ];
+
+  const kioskPlanCards = useMemo(() => {
+    if (!kioskPlanItems?.length) {
+      return [];
+    }
+
+    const filtered = stationFilter
+      ? kioskPlanItems.filter((item) => {
+          const fieldStation = getFieldStationById(
+            planType === 'injection'
+              ? `imm${stationFilter.padStart(2, '0')}`
+              : `assy0${stationFilter.toUpperCase().charCodeAt(0) - 64}`,
+          );
+
+          if (fieldStation) {
+            return matchesFieldStation(item.machine_name, fieldStation);
+          }
+
+          if (planType === 'injection') {
+            return String(extractInjectionMachineInfo(item.machine_name).machineNumber ?? '') === stationFilter;
+          }
+          return String(item.machine_name || '').toUpperCase().includes(stationFilter.toUpperCase());
+        })
+      : kioskPlanItems;
+
+    return [...filtered].sort((a, b) => {
+      const seqDiff = Number(a.sequence ?? 999) - Number(b.sequence ?? 999);
+      if (seqDiff !== 0) return seqDiff;
+      return (a.part_no || '').localeCompare(b.part_no || '');
+    });
+  }, [kioskPlanItems, planType, stationFilter]);
+
+  const kioskStationSummary = useMemo(() => {
+    if (!stationFilter || !productionStatusData) {
+      return null;
+    }
+
+    const source =
+      planType === 'injection'
+        ? Array.isArray(productionStatusData.injection) ? productionStatusData.injection : []
+        : Array.isArray(productionStatusData.machining) ? productionStatusData.machining : [];
+
+    const fieldStation = getFieldStationById(
+      planType === 'injection'
+        ? `imm${stationFilter.padStart(2, '0')}`
+        : `assy0${stationFilter.toUpperCase().charCodeAt(0) - 64}`,
+    );
+
+    if (fieldStation) {
+      return source.find((item: any) => matchesFieldStation(item.machine_name, fieldStation)) ?? null;
+    }
+
+    return (
+      source.find((item: any) => {
+        if (planType === 'injection') {
+          return String(extractInjectionMachineInfo(item.machine_name).machineNumber ?? '') === stationFilter;
+        }
+        return String(item.machine_name || '').toUpperCase().includes(stationFilter.toUpperCase());
+      }) ?? null
+    );
+  }, [planType, productionStatusData, stationFilter]);
+
+  const kioskSummaryValues = kioskStationSummary
+    ? {
+        actual: Number(kioskStationSummary.total_actual || 0).toLocaleString(),
+        planned: Number(kioskStationSummary.total_planned || 0).toLocaleString(),
+        progress: `${Number(kioskStationSummary.progress || 0).toFixed(1)}%`,
+      }
+    : {
+        actual: liveSummary.totalActual.toLocaleString(),
+        planned: liveSummary.totalPlanned.toLocaleString(),
+        progress: `${liveSummary.achievementRate}%`,
+      };
+
+  if (kioskMode) {
+    return (
+      <div className="flex h-[calc(100vh-152px)] min-h-[820px] flex-col gap-4">
+        <Card className="border-slate-200 shadow-sm">
+          <CardContent className="px-6 py-4">
+            <div className="grid grid-cols-3 divide-x divide-slate-200 text-center">
+              <div className="px-4">
+                <div className="text-sm font-bold text-slate-500">实绩</div>
+                <div className="mt-1 text-3xl font-black tracking-tight text-slate-900">{kioskSummaryValues.actual}</div>
+              </div>
+              <div className="px-4">
+                <div className="text-sm font-bold text-slate-500">计划</div>
+                <div className="mt-1 text-3xl font-black tracking-tight text-slate-900">{kioskSummaryValues.planned}</div>
+              </div>
+              <div className="px-4">
+                <div className="text-sm font-bold text-slate-500">达成率</div>
+                <div className="mt-1 text-3xl font-black tracking-tight text-slate-900">{kioskSummaryValues.progress}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[20%_minmax(0,1.45fr)_minmax(360px,0.9fr)]">
+          <Card className="flex min-h-0 flex-col border-slate-200 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="text-center">
+                <h3 className="text-xl font-black text-slate-900">今日生产计划</h3>
+              </div>
+            </CardHeader>
+            <CardContent className="min-h-0 flex-1 overflow-hidden">
+              <div className="flex h-full flex-col gap-2 overflow-y-auto pr-1">
+                {kioskPlanCards.map((item) => {
+                  const matchedRow = visibleRows.find(
+                    (row) =>
+                      row.part_no === item.part_no &&
+                      row.sequence === Number(item.sequence ?? row.sequence) &&
+                      row.machine_name === item.machine_name,
+                  );
+                  const isSelected = matchedRow ? selectedKey === matchedRow.key : false;
+                  return (
+                    <button
+                      key={`${item.id}-${item.part_no}`}
+                      type="button"
+                      onClick={() => {
+                        if (matchedRow) {
+                          setSelectedKey(matchedRow.key);
+                        }
+                      }}
+                      className={`flex min-h-[152px] w-full flex-col rounded-2xl border px-4 py-4 text-left transition ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-600 text-white shadow-md'
+                          : 'border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="text-xl font-black leading-tight">{item.part_no || '-'}</div>
+                      <div className={`mt-2 line-clamp-3 text-base font-semibold leading-snug ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>
+                        {item.model_name || '-'}{item.part_spec ? ` - ${item.part_spec}` : ''}
+                      </div>
+                      <div className={`mt-auto pt-4 text-2xl font-black leading-none ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                        计划 {Number(item.planned_quantity || 0).toLocaleString()}
+                      </div>
+                    </button>
+                  );
+                })}
+                {kioskPlanCards.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-10 text-center text-base text-slate-500">
+                    暂无今日计划
+                  </div>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="flex min-h-0 flex-col border-slate-200 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-black text-slate-900">今日执行输入</h3>
+                  <p className="text-base text-slate-500">点击计划后，直接输入良品数和不良数。</p>
+                </div>
+                <div className="text-base text-slate-500">
+                  达成率 <span className="font-bold text-slate-900">{liveSummary.achievementRate}%</span>
+                  {' / '}
+                  不良率 <span className="font-bold text-slate-900">{liveSummary.defectRate}%</span>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="min-h-0 flex-1 overflow-auto px-0 pb-0">
+              <table className="min-w-full text-base">
+                <thead className="sticky top-0 bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="px-4 py-4 text-center">顺序</th>
+                    <th className="px-4 py-4 text-left">Part No.</th>
+                    <th className="px-4 py-4 text-left">型号 / Part</th>
+                    <th className="px-4 py-4 text-right">计划</th>
+                    <th className="px-4 py-4 text-right">良品</th>
+                    <th className="px-4 py-4 text-right">不良</th>
+                    <th className="px-4 py-4 text-center">状态</th>
+                    <th className="px-4 py-4 text-center">保存</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-16 text-center text-slate-500">{t('loading')}</td>
+                    </tr>
+                  ) : tableRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-16 text-center text-slate-500">{t('no_data')}</td>
+                    </tr>
+                  ) : (
+                    tableRows.map(({ row, displaySequence }) => {
+                      const derivedStatus = deriveStatus(row);
+                      const isSelected = row.key === selectedKey;
+                      return (
+                        <tr
+                          key={row.key}
+                          className={`border-t border-slate-100 transition-colors ${
+                            isSelected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
+                          }`}
+                          onClick={() => setSelectedKey(row.key)}
+                        >
+                          <td className="px-4 py-4 text-center font-bold text-slate-700">{displaySequence}</td>
+                          <td className="px-4 py-4 font-mono text-lg font-bold text-slate-900">{row.part_no || '-'}</td>
+                          <td className="px-4 py-4 text-slate-700">
+                            <div className="font-semibold text-slate-900">{row.model_name || '-'}</div>
+                            <div className="mt-1 text-sm text-slate-500">{row.part_spec || '-'}</div>
+                          </td>
+                          <td className="px-4 py-4 text-right text-lg font-bold text-slate-900">
+                            {row.planned_quantity.toLocaleString()}
+                          </td>
+                          <td className="w-[132px] px-4 py-4">
+                            <Input
+                              type="number"
+                              min="0"
+                              value={row.actual_qty}
+                              onChange={(event) => handleNumericChange(row.key, 'actual_qty', event.target.value)}
+                              disabled={!canEdit}
+                              className="h-12 text-right text-lg font-bold"
+                            />
+                          </td>
+                          <td className="w-[132px] px-4 py-4">
+                            <Input
+                              type="number"
+                              min="0"
+                              value={row.defect_qty}
+                              onChange={(event) => handleNumericChange(row.key, 'defect_qty', event.target.value)}
+                              disabled={!canEdit}
+                              className="h-12 text-right text-lg font-bold"
+                            />
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <span className={`inline-flex rounded-full px-3 py-1.5 text-sm font-bold ${statusTone[derivedStatus]}`}>
+                              {t(`console_status_${derivedStatus}`)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <Button
+                              size="lg"
+                              variant={dirtyMap[row.key] ? 'primary' : 'secondary'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void saveRow(row);
+                              }}
+                              disabled={!canEdit || savingKey === row.key}
+                            >
+                              <Save className="mr-2 h-4 w-4" />
+                              {savingKey === row.key ? t('saving') : '保存'}
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          <Card className="flex min-h-0 flex-col border-slate-200 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-black text-slate-900">当前计划详情</h3>
+                  <p className="text-base text-slate-500">开始、结束、停机、人员和运行 C/T 在这里维护。</p>
+                </div>
+                {selectedRow && dirtyMap[selectedRow.key] && (
+                  <span className="rounded-full bg-amber-100 px-3 py-1.5 text-sm font-bold text-amber-700">
+                    待保存
+                  </span>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="min-h-0 flex-1 overflow-auto">
+              {selectedRow ? (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <div className="text-sm font-bold text-slate-500">Part No.</div>
+                      <div className="mt-2 font-mono text-xl font-black text-slate-900">{selectedRow.part_no || '-'}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <div className="text-sm font-bold text-slate-500">{planType === 'injection' ? '机台' : '线体'}</div>
+                      <div className="mt-2 text-xl font-black text-slate-900">{getMachineDisplayLabel(planType, selectedRow, t)}</div>
+                    </div>
+                    <div className="col-span-2 rounded-xl bg-slate-50 p-4">
+                      <div className="text-sm font-bold text-slate-500">型号 / Part</div>
+                      <div className="mt-2 text-xl font-black text-slate-900">{selectedRow.model_name || '-'}</div>
+                      <div className="mt-1 text-base text-slate-500">{selectedRow.part_spec || '-'}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-base">
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      计划数量: <span className="font-bold">{selectedRow.planned_quantity.toLocaleString()}</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      达成率: <span className="font-bold">{selectedRow.progress.toFixed(1)}%</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      目标 C/T: <span className="font-bold">{formatDisplayNumber(selectedRow.target_cycle_time, 's')}</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      基准 C/T: <span className="font-bold">{formatDisplayNumber(selectedRow.baseline_ct, 's')}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-bold text-slate-700">开始时间</label>
+                      <Input
+                        type="datetime-local"
+                        value={toLocalInput(selectedRow.start_datetime)}
+                        onChange={(event) => handleTextChange(selectedRow.key, 'start_datetime', event.target.value)}
+                        disabled={!canEdit}
+                        className="h-12 text-base"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-bold text-slate-700">结束时间</label>
+                      <Input
+                        type="datetime-local"
+                        value={toLocalInput(selectedRow.end_datetime)}
+                        onChange={(event) => handleTextChange(selectedRow.key, 'end_datetime', event.target.value)}
+                        disabled={!canEdit}
+                        className="h-12 text-base"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-bold text-slate-700">停机(分)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={selectedRow.idle_time}
+                        onChange={(event) => handleNumericChange(selectedRow.key, 'idle_time', event.target.value)}
+                        disabled={!canEdit}
+                        className="h-12 text-base"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-bold text-slate-700">人员</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={selectedRow.personnel_count}
+                        onChange={(event) => handleNumericChange(selectedRow.key, 'personnel_count', event.target.value)}
+                        disabled={!canEdit}
+                        className="h-12 text-base"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-bold text-slate-700">运行 C/T</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={selectedRow.operating_ct ?? ''}
+                        onChange={(event) => handleNumericChange(selectedRow.key, 'operating_ct', event.target.value)}
+                        disabled={!canEdit}
+                        className="h-12 text-base"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-bold text-slate-700">穴数</label>
+                      <Input value={selectedRow.cavity ?? 1} disabled className="h-12 text-base" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-base font-bold text-slate-700">备注</label>
+                    <Textarea
+                      rows={4}
+                      value={selectedRow.note || ''}
+                      onChange={(event) => handleTextChange(selectedRow.key, 'note', event.target.value)}
+                      disabled={!canEdit}
+                      className="text-base"
+                    />
+                  </div>
+
+                  <Button
+                    className="h-12 w-full text-base font-bold"
+                    onClick={() => void saveRow(selectedRow)}
+                    disabled={!canEdit || savingKey === selectedRow.key}
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {savingKey === selectedRow.key ? t('saving') : '保存当前计划'}
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-16 text-center text-lg text-slate-500">
+                  请选择左侧或右侧计划块。
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={kioskMode ? 'space-y-4' : 'space-y-6'}>
