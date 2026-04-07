@@ -472,35 +472,27 @@ export default function ProductionConsole({
 
   if (kioskMode) {
     return (
-      <div className="flex h-[calc(100vh-152px)] min-h-[820px] flex-col gap-4">
-        <Card className="border-slate-200 shadow-sm">
-          <CardContent className="px-6 py-4">
-            <div className="grid grid-cols-3 divide-x divide-slate-200 text-center">
-              <div className="px-4">
-                <div className="text-sm font-bold text-slate-500">实绩</div>
-                <div className="mt-1 text-3xl font-black tracking-tight text-slate-900">{kioskSummaryValues.actual}</div>
-              </div>
-              <div className="px-4">
-                <div className="text-sm font-bold text-slate-500">计划</div>
-                <div className="mt-1 text-3xl font-black tracking-tight text-slate-900">{kioskSummaryValues.planned}</div>
-              </div>
-              <div className="px-4">
-                <div className="text-sm font-bold text-slate-500">达成率</div>
-                <div className="mt-1 text-3xl font-black tracking-tight text-slate-900">{kioskSummaryValues.progress}</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex h-[calc(100vh-96px)] min-h-[820px] flex-col gap-2">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="border-2 border-slate-300 bg-sky-50 px-4 py-3 text-center">
+            <div className="text-lg font-bold text-slate-600">??</div>
+            <div className="mt-1 text-4xl font-black text-slate-900">{kioskSummaryValues.actual}</div>
+          </div>
+          <div className="border-2 border-slate-300 bg-amber-50 px-4 py-3 text-center">
+            <div className="text-lg font-bold text-slate-600">??</div>
+            <div className="mt-1 text-4xl font-black text-slate-900">{kioskSummaryValues.planned}</div>
+          </div>
+          <div className="border-2 border-slate-300 bg-emerald-50 px-4 py-3 text-center">
+            <div className="text-lg font-bold text-slate-600">???</div>
+            <div className="mt-1 text-4xl font-black text-slate-900">{kioskSummaryValues.progress}</div>
+          </div>
+        </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[20%_minmax(0,1.45fr)_minmax(360px,0.9fr)]">
-          <Card className="flex min-h-0 flex-col border-slate-200 shadow-sm">
-            <CardHeader className="pb-3">
-              <div className="text-center">
-                <h3 className="text-xl font-black text-slate-900">今日生产计划</h3>
-              </div>
-            </CardHeader>
-            <CardContent className="min-h-0 flex-1 overflow-hidden">
-              <div className="flex h-full flex-col gap-2 overflow-y-auto pr-1">
+        <div className="grid min-h-0 flex-1 gap-2 xl:grid-cols-[22%_minmax(0,1.4fr)_minmax(360px,0.9fr)]">
+          <div className="flex min-h-0 flex-col border-2 border-slate-300 bg-white">
+            <div className="border-b-2 border-slate-300 bg-slate-100 px-4 py-3 text-center text-2xl font-black text-slate-900">??????</div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              <div className="flex flex-col gap-2">
                 {kioskPlanCards.map((item) => {
                   const matchedRow = visibleRows.find(
                     (row) =>
@@ -518,57 +510,46 @@ export default function ProductionConsole({
                           setSelectedKey(matchedRow.key);
                         }
                       }}
-                      className={`flex min-h-[152px] w-full flex-col rounded-2xl border px-4 py-4 text-left transition ${
+                      className={`min-h-[156px] border-2 px-4 py-4 text-left ${
                         isSelected
-                          ? 'border-blue-500 bg-blue-600 text-white shadow-md'
-                          : 'border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100'
+                          ? 'border-blue-700 bg-blue-100 text-slate-900'
+                          : 'border-slate-300 bg-white text-slate-900'
                       }`}
                     >
                       <div className="text-xl font-black leading-tight">{item.part_no || '-'}</div>
-                      <div className={`mt-2 line-clamp-3 text-base font-semibold leading-snug ${isSelected ? 'text-blue-100' : 'text-slate-600'}`}>
+                      <div className="mt-3 text-lg font-bold leading-snug text-slate-700">
                         {item.model_name || '-'}{item.part_spec ? ` - ${item.part_spec}` : ''}
                       </div>
-                      <div className={`mt-auto pt-4 text-2xl font-black leading-none ${isSelected ? 'text-white' : 'text-slate-900'}`}>
-                        计划 {Number(item.planned_quantity || 0).toLocaleString()}
-                      </div>
+                      <div className="mt-4 text-3xl font-black leading-none">?? {Number(item.planned_quantity || 0).toLocaleString()}</div>
                     </button>
                   );
                 })}
                 {kioskPlanCards.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-10 text-center text-base text-slate-500">
-                    暂无今日计划
+                  <div className="border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-lg font-bold text-slate-500">
+                    ??????
                   </div>
                 ) : null}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card className="flex min-h-0 flex-col border-slate-200 shadow-sm">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-xl font-black text-slate-900">今日执行输入</h3>
-                  <p className="text-base text-slate-500">点击计划后，直接输入良品数和不良数。</p>
-                </div>
-                <div className="text-base text-slate-500">
-                  达成率 <span className="font-bold text-slate-900">{liveSummary.achievementRate}%</span>
-                  {' / '}
-                  不良率 <span className="font-bold text-slate-900">{liveSummary.defectRate}%</span>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="min-h-0 flex-1 overflow-auto px-0 pb-0">
-              <table className="min-w-full text-base">
-                <thead className="sticky top-0 bg-slate-50 text-slate-600">
+          <div className="flex min-h-0 flex-col border-2 border-slate-300 bg-white">
+            <div className="flex items-center justify-between border-b-2 border-slate-300 bg-slate-100 px-4 py-3">
+              <div className="text-2xl font-black text-slate-900">??????</div>
+              <div className="text-lg font-bold text-slate-700">??? {liveSummary.achievementRate}%   ??? {liveSummary.defectRate}%</div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto">
+              <table className="min-w-full text-lg">
+                <thead className="sticky top-0 bg-slate-100 text-slate-700">
                   <tr>
-                    <th className="px-4 py-4 text-center">顺序</th>
-                    <th className="px-4 py-4 text-left">Part No.</th>
-                    <th className="px-4 py-4 text-left">型号 / Part</th>
-                    <th className="px-4 py-4 text-right">计划</th>
-                    <th className="px-4 py-4 text-right">良品</th>
-                    <th className="px-4 py-4 text-right">不良</th>
-                    <th className="px-4 py-4 text-center">状态</th>
-                    <th className="px-4 py-4 text-center">保存</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">??</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-left">Part No.</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-left">?? / Part</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">??</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">??</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">??</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">??</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">??</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -587,49 +568,46 @@ export default function ProductionConsole({
                       return (
                         <tr
                           key={row.key}
-                          className={`border-t border-slate-100 transition-colors ${
-                            isSelected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
-                          }`}
+                          className={isSelected ? 'bg-blue-50' : 'bg-white'}
                           onClick={() => setSelectedKey(row.key)}
                         >
-                          <td className="px-4 py-4 text-center font-bold text-slate-700">{displaySequence}</td>
-                          <td className="px-4 py-4 font-mono text-lg font-bold text-slate-900">{row.part_no || '-'}</td>
-                          <td className="px-4 py-4 text-slate-700">
-                            <div className="font-semibold text-slate-900">{row.model_name || '-'}</div>
+                          <td className="border-b border-slate-200 px-3 py-3 text-center font-bold text-slate-700">{displaySequence}</td>
+                          <td className="border-b border-slate-200 px-3 py-3 font-mono text-xl font-black text-slate-900">{row.part_no || '-'}</td>
+                          <td className="border-b border-slate-200 px-3 py-3 text-slate-700">
+                            <div className="font-bold text-slate-900">{row.model_name || '-'}</div>
                             <div className="mt-1 text-sm text-slate-500">{row.part_spec || '-'}</div>
                           </td>
-                          <td className="px-4 py-4 text-right text-lg font-bold text-slate-900">
-                            {row.planned_quantity.toLocaleString()}
-                          </td>
-                          <td className="w-[132px] px-4 py-4">
+                          <td className="border-b border-slate-200 px-3 py-3 text-right text-xl font-black text-slate-900">{row.planned_quantity.toLocaleString()}</td>
+                          <td className="border-b border-slate-200 px-3 py-3">
                             <Input
                               type="number"
                               min="0"
                               value={row.actual_qty}
                               onChange={(event) => handleNumericChange(row.key, 'actual_qty', event.target.value)}
                               disabled={!canEdit}
-                              className="h-12 text-right text-lg font-bold"
+                              className="h-12 rounded-none border-2 border-slate-300 text-right text-xl font-black"
                             />
                           </td>
-                          <td className="w-[132px] px-4 py-4">
+                          <td className="border-b border-slate-200 px-3 py-3">
                             <Input
                               type="number"
                               min="0"
                               value={row.defect_qty}
                               onChange={(event) => handleNumericChange(row.key, 'defect_qty', event.target.value)}
                               disabled={!canEdit}
-                              className="h-12 text-right text-lg font-bold"
+                              className="h-12 rounded-none border-2 border-slate-300 text-right text-xl font-black"
                             />
                           </td>
-                          <td className="px-4 py-4 text-center">
-                            <span className={`inline-flex rounded-full px-3 py-1.5 text-sm font-bold ${statusTone[derivedStatus]}`}>
+                          <td className="border-b border-slate-200 px-3 py-3 text-center">
+                            <span className={`inline-block px-3 py-2 text-base font-bold ${statusTone[derivedStatus]}`}>
                               {t(`console_status_${derivedStatus}`)}
                             </span>
                           </td>
-                          <td className="px-4 py-4 text-center">
+                          <td className="border-b border-slate-200 px-3 py-3 text-center">
                             <Button
                               size="lg"
                               variant={dirtyMap[row.key] ? 'primary' : 'secondary'}
+                              className="rounded-none border-2 border-slate-300 px-4 shadow-none"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 void saveRow(row);
@@ -637,7 +615,7 @@ export default function ProductionConsole({
                               disabled={!canEdit || savingKey === row.key}
                             >
                               <Save className="mr-2 h-4 w-4" />
-                              {savingKey === row.key ? t('saving') : '保存'}
+                              {savingKey === row.key ? t('saving') : '??'}
                             </Button>
                           </td>
                         </tr>
@@ -646,146 +624,68 @@ export default function ProductionConsole({
                   )}
                 </tbody>
               </table>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card className="flex min-h-0 flex-col border-slate-200 shadow-sm">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-xl font-black text-slate-900">当前计划详情</h3>
-                  <p className="text-base text-slate-500">开始、结束、停机、人员和运行 C/T 在这里维护。</p>
-                </div>
-                {selectedRow && dirtyMap[selectedRow.key] && (
-                  <span className="rounded-full bg-amber-100 px-3 py-1.5 text-sm font-bold text-amber-700">
-                    待保存
-                  </span>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="min-h-0 flex-1 overflow-auto">
+          <div className="flex min-h-0 flex-col border-2 border-slate-300 bg-white">
+            <div className="flex items-center justify-between border-b-2 border-slate-300 bg-slate-100 px-4 py-3">
+              <div className="text-2xl font-black text-slate-900">??????</div>
+              {selectedRow && dirtyMap[selectedRow.key] ? <div className="text-base font-bold text-amber-700">???</div> : <div />}
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-4">
               {selectedRow ? (
-                <div className="space-y-5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-slate-50 p-4">
-                      <div className="text-sm font-bold text-slate-500">Part No.</div>
-                      <div className="mt-2 font-mono text-xl font-black text-slate-900">{selectedRow.part_no || '-'}</div>
+                <div className="space-y-4">
+                  <div className="border-2 border-slate-300 bg-slate-50 p-4">
+                    <div className="text-base font-bold text-slate-500">Part No.</div>
+                    <div className="mt-2 text-2xl font-black text-slate-900">{selectedRow.part_no || '-'}</div>
+                  </div>
+                  <div className="border-2 border-slate-300 bg-slate-50 p-4">
+                    <div className="text-base font-bold text-slate-500">?? / Part</div>
+                    <div className="mt-2 text-2xl font-black text-slate-900">{selectedRow.model_name || '-'}</div>
+                    <div className="mt-1 text-lg font-bold text-slate-600">{selectedRow.part_spec || '-'}</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="border-2 border-slate-300 p-3 text-lg font-bold text-slate-800">???? {selectedRow.planned_quantity.toLocaleString()}</div>
+                    <div className="border-2 border-slate-300 p-3 text-lg font-bold text-slate-800">??? {selectedRow.progress.toFixed(1)}%</div>
+                  </div>
+                  <div className="grid gap-3">
+                    <div>
+                      <label className="mb-1 block text-base font-bold text-slate-700">????</label>
+                      <Input type="datetime-local" value={toLocalInput(selectedRow.start_datetime)} onChange={(event) => handleTextChange(selectedRow.key, 'start_datetime', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
                     </div>
-                    <div className="rounded-xl bg-slate-50 p-4">
-                      <div className="text-sm font-bold text-slate-500">{planType === 'injection' ? '机台' : '线体'}</div>
-                      <div className="mt-2 text-xl font-black text-slate-900">{getMachineDisplayLabel(planType, selectedRow, t)}</div>
+                    <div>
+                      <label className="mb-1 block text-base font-bold text-slate-700">????</label>
+                      <Input type="datetime-local" value={toLocalInput(selectedRow.end_datetime)} onChange={(event) => handleTextChange(selectedRow.key, 'end_datetime', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
                     </div>
-                    <div className="col-span-2 rounded-xl bg-slate-50 p-4">
-                      <div className="text-sm font-bold text-slate-500">型号 / Part</div>
-                      <div className="mt-2 text-xl font-black text-slate-900">{selectedRow.model_name || '-'}</div>
-                      <div className="mt-1 text-base text-slate-500">{selectedRow.part_spec || '-'}</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="mb-1 block text-base font-bold text-slate-700">??(?)</label>
+                        <Input type="number" min="0" value={selectedRow.idle_time} onChange={(event) => handleNumericChange(selectedRow.key, 'idle_time', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-base font-bold text-slate-700">??</label>
+                        <Input type="number" min="0" step="0.5" value={selectedRow.personnel_count} onChange={(event) => handleNumericChange(selectedRow.key, 'personnel_count', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-base font-bold text-slate-700">?? C/T</label>
+                      <Input type="number" min="0" step="0.1" value={selectedRow.operating_ct ?? ''} onChange={(event) => handleNumericChange(selectedRow.key, 'operating_ct', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-base font-bold text-slate-700">??</label>
+                      <Textarea rows={4} value={selectedRow.note || ''} onChange={(event) => handleTextChange(selectedRow.key, 'note', event.target.value)} disabled={!canEdit} className="rounded-none border-2 border-slate-300 text-base" />
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-base">
-                    <div className="rounded-xl border border-slate-200 bg-white p-3">
-                      计划数量: <span className="font-bold">{selectedRow.planned_quantity.toLocaleString()}</span>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white p-3">
-                      达成率: <span className="font-bold">{selectedRow.progress.toFixed(1)}%</span>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white p-3">
-                      目标 C/T: <span className="font-bold">{formatDisplayNumber(selectedRow.target_cycle_time, 's')}</span>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white p-3">
-                      基准 C/T: <span className="font-bold">{formatDisplayNumber(selectedRow.baseline_ct, 's')}</span>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-base font-bold text-slate-700">开始时间</label>
-                      <Input
-                        type="datetime-local"
-                        value={toLocalInput(selectedRow.start_datetime)}
-                        onChange={(event) => handleTextChange(selectedRow.key, 'start_datetime', event.target.value)}
-                        disabled={!canEdit}
-                        className="h-12 text-base"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-bold text-slate-700">结束时间</label>
-                      <Input
-                        type="datetime-local"
-                        value={toLocalInput(selectedRow.end_datetime)}
-                        onChange={(event) => handleTextChange(selectedRow.key, 'end_datetime', event.target.value)}
-                        disabled={!canEdit}
-                        className="h-12 text-base"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-bold text-slate-700">停机(分)</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={selectedRow.idle_time}
-                        onChange={(event) => handleNumericChange(selectedRow.key, 'idle_time', event.target.value)}
-                        disabled={!canEdit}
-                        className="h-12 text-base"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-bold text-slate-700">人员</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={selectedRow.personnel_count}
-                        onChange={(event) => handleNumericChange(selectedRow.key, 'personnel_count', event.target.value)}
-                        disabled={!canEdit}
-                        className="h-12 text-base"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-bold text-slate-700">运行 C/T</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={selectedRow.operating_ct ?? ''}
-                        onChange={(event) => handleNumericChange(selectedRow.key, 'operating_ct', event.target.value)}
-                        disabled={!canEdit}
-                        className="h-12 text-base"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-bold text-slate-700">穴数</label>
-                      <Input value={selectedRow.cavity ?? 1} disabled className="h-12 text-base" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-base font-bold text-slate-700">备注</label>
-                    <Textarea
-                      rows={4}
-                      value={selectedRow.note || ''}
-                      onChange={(event) => handleTextChange(selectedRow.key, 'note', event.target.value)}
-                      disabled={!canEdit}
-                      className="text-base"
-                    />
-                  </div>
-
-                  <Button
-                    className="h-12 w-full text-base font-bold"
-                    onClick={() => void saveRow(selectedRow)}
-                    disabled={!canEdit || savingKey === selectedRow.key}
-                  >
+                  <Button className="h-12 rounded-none border-2 border-slate-300 bg-slate-900 text-lg font-bold text-white shadow-none" onClick={() => void saveRow(selectedRow)} disabled={!canEdit || savingKey === selectedRow.key}>
                     <Save className="mr-2 h-4 w-4" />
-                    {savingKey === selectedRow.key ? t('saving') : '保存当前计划'}
+                    {savingKey === selectedRow.key ? t('saving') : '??????'}
                   </Button>
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-16 text-center text-lg text-slate-500">
-                  请选择左侧或右侧计划块。
-                </div>
+                <div className="border-2 border-dashed border-slate-300 px-4 py-16 text-center text-lg font-bold text-slate-400">?????</div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
     );
