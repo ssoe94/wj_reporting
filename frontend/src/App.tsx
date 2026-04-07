@@ -346,7 +346,7 @@ function AppContent() {
                     : 'text-gray-700 hover:bg-gray-50'
                     }`}
                 >
-                  涓枃
+                  中文
                 </button>
               </div>
               {user && (
@@ -413,10 +413,10 @@ function AppContent() {
       {isAuthenticated && !isFieldTerminal && (
         <aside className="fixed left-0 top-0 hidden h-screen w-56 overflow-y-auto border-r border-gray-200 bg-white shadow-md md:flex flex-col">
           {/* Top logo/title */}
-          <div className="h-28 flex items-end justify-center px-4 pb-4 border-b border-gray-200">
-            <Link to="/" className="flex flex-col items-center gap-1">
+          <div className="flex h-20 items-center justify-center border-b border-gray-200 px-4 pt-3 pb-2">
+            <Link to="/" className="flex flex-col items-center gap-1.5">
               <img src="/logo.jpg" alt="logo" className="h-10 w-10 rounded-full shadow-md" />
-              <span className="text-lg font-extrabold text-gray-700 tracking-tight">涓囦匠鏁版嵁骞冲彴</span>
+              <span className="text-lg font-extrabold text-gray-700 tracking-tight">{t('brand_full')}</span>
             </Link>
           </div>
           {/* Menu */}
@@ -474,7 +474,7 @@ function AppContent() {
                     : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                     }`}
                 >
-                  涓枃
+                  中文
                 </button>
               </div>
             </div>
@@ -516,10 +516,10 @@ function AppContent() {
               exit={{ x: '-100%' }}
               className="fixed left-0 top-0 z-50 h-screen w-64 bg-white shadow-xl"
             >
-              <div className="flex items-center justify-between p-4 border-b">
-                <Link to="/" className="flex flex-col items-center gap-1" onClick={() => setSidebarOpen(false)}>
+              <div className="flex items-center justify-between border-b border-gray-200 px-4 pt-4 pb-3">
+                <Link to="/" className="flex flex-col items-center gap-1.5" onClick={() => setSidebarOpen(false)}>
                   <img src="/logo.jpg" alt="logo" className="h-10 w-10 rounded-full shadow-md" />
-                  <span className="text-lg font-extrabold text-gray-700 tracking-tight">涓囦匠鏁版嵁骞冲彴</span>
+                  <span className="text-lg font-extrabold text-gray-700 tracking-tight">{t('brand_full')}</span>
                 </Link>
                 <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
                   <XIcon className="h-6 w-6" />
