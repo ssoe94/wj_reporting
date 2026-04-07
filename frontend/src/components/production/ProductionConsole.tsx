@@ -475,22 +475,22 @@ export default function ProductionConsole({
       <div className="flex h-[calc(100vh-96px)] min-h-[820px] flex-col gap-2">
         <div className="grid grid-cols-3 gap-2">
           <div className="border-2 border-slate-300 bg-sky-50 px-4 py-3 text-center">
-            <div className="text-lg font-bold text-slate-600">??</div>
+            <div className="text-lg font-bold text-slate-600">实绩</div>
             <div className="mt-1 text-4xl font-black text-slate-900">{kioskSummaryValues.actual}</div>
           </div>
           <div className="border-2 border-slate-300 bg-amber-50 px-4 py-3 text-center">
-            <div className="text-lg font-bold text-slate-600">??</div>
+            <div className="text-lg font-bold text-slate-600">计划</div>
             <div className="mt-1 text-4xl font-black text-slate-900">{kioskSummaryValues.planned}</div>
           </div>
           <div className="border-2 border-slate-300 bg-emerald-50 px-4 py-3 text-center">
-            <div className="text-lg font-bold text-slate-600">???</div>
+            <div className="text-lg font-bold text-slate-600">达成率</div>
             <div className="mt-1 text-4xl font-black text-slate-900">{kioskSummaryValues.progress}</div>
           </div>
         </div>
 
         <div className="grid min-h-0 flex-1 gap-2 xl:grid-cols-[22%_minmax(0,1.4fr)_minmax(360px,0.9fr)]">
           <div className="flex min-h-0 flex-col border-2 border-slate-300 bg-white">
-            <div className="border-b-2 border-slate-300 bg-slate-100 px-4 py-3 text-center text-2xl font-black text-slate-900">??????</div>
+            <div className="border-b-2 border-slate-300 bg-slate-100 px-4 py-3 text-center text-2xl font-black text-slate-900">今日生产计划</div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               <div className="flex flex-col gap-2">
                 {kioskPlanCards.map((item) => {
@@ -520,13 +520,13 @@ export default function ProductionConsole({
                       <div className="mt-3 text-lg font-bold leading-snug text-slate-700">
                         {item.model_name || '-'}{item.part_spec ? ` - ${item.part_spec}` : ''}
                       </div>
-                      <div className="mt-4 text-3xl font-black leading-none">?? {Number(item.planned_quantity || 0).toLocaleString()}</div>
+                      <div className="mt-4 text-3xl font-black leading-none">计划 {Number(item.planned_quantity || 0).toLocaleString()}</div>
                     </button>
                   );
                 })}
                 {kioskPlanCards.length === 0 ? (
                   <div className="border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-lg font-bold text-slate-500">
-                    ??????
+                    暂无今日计划
                   </div>
                 ) : null}
               </div>
@@ -535,21 +535,21 @@ export default function ProductionConsole({
 
           <div className="flex min-h-0 flex-col border-2 border-slate-300 bg-white">
             <div className="flex items-center justify-between border-b-2 border-slate-300 bg-slate-100 px-4 py-3">
-              <div className="text-2xl font-black text-slate-900">??????</div>
-              <div className="text-lg font-bold text-slate-700">??? {liveSummary.achievementRate}%   ??? {liveSummary.defectRate}%</div>
+              <div className="text-2xl font-black text-slate-900">今日执行输入</div>
+              <div className="text-lg font-bold text-slate-700">达成率 {liveSummary.achievementRate}%   不良率 {liveSummary.defectRate}%</div>
             </div>
             <div className="min-h-0 flex-1 overflow-auto">
               <table className="min-w-full text-lg">
                 <thead className="sticky top-0 bg-slate-100 text-slate-700">
                   <tr>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">??</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">顺序</th>
                     <th className="border-b-2 border-slate-300 px-3 py-3 text-left">Part No.</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-left">?? / Part</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">??</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">??</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">??</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">??</th>
-                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">??</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-left">型号 / Part</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">计划</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">良品</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-right">不良</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">状态</th>
+                    <th className="border-b-2 border-slate-300 px-3 py-3 text-center">保存</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -615,7 +615,7 @@ export default function ProductionConsole({
                               disabled={!canEdit || savingKey === row.key}
                             >
                               <Save className="mr-2 h-4 w-4" />
-                              {savingKey === row.key ? t('saving') : '??'}
+                              {savingKey === row.key ? t('saving') : '保存'}
                             </Button>
                           </td>
                         </tr>
@@ -629,8 +629,8 @@ export default function ProductionConsole({
 
           <div className="flex min-h-0 flex-col border-2 border-slate-300 bg-white">
             <div className="flex items-center justify-between border-b-2 border-slate-300 bg-slate-100 px-4 py-3">
-              <div className="text-2xl font-black text-slate-900">??????</div>
-              {selectedRow && dirtyMap[selectedRow.key] ? <div className="text-base font-bold text-amber-700">???</div> : <div />}
+              <div className="text-2xl font-black text-slate-900">当前计划详情</div>
+              {selectedRow && dirtyMap[selectedRow.key] ? <div className="text-base font-bold text-amber-700">待保存</div> : <div />}
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
               {selectedRow ? (
@@ -640,49 +640,49 @@ export default function ProductionConsole({
                     <div className="mt-2 text-2xl font-black text-slate-900">{selectedRow.part_no || '-'}</div>
                   </div>
                   <div className="border-2 border-slate-300 bg-slate-50 p-4">
-                    <div className="text-base font-bold text-slate-500">?? / Part</div>
+                    <div className="text-base font-bold text-slate-500">型号 / Part</div>
                     <div className="mt-2 text-2xl font-black text-slate-900">{selectedRow.model_name || '-'}</div>
                     <div className="mt-1 text-lg font-bold text-slate-600">{selectedRow.part_spec || '-'}</div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="border-2 border-slate-300 p-3 text-lg font-bold text-slate-800">???? {selectedRow.planned_quantity.toLocaleString()}</div>
-                    <div className="border-2 border-slate-300 p-3 text-lg font-bold text-slate-800">??? {selectedRow.progress.toFixed(1)}%</div>
+                    <div className="border-2 border-slate-300 p-3 text-lg font-bold text-slate-800">计划数量 {selectedRow.planned_quantity.toLocaleString()}</div>
+                    <div className="border-2 border-slate-300 p-3 text-lg font-bold text-slate-800">达成率 {selectedRow.progress.toFixed(1)}%</div>
                   </div>
                   <div className="grid gap-3">
                     <div>
-                      <label className="mb-1 block text-base font-bold text-slate-700">????</label>
+                      <label className="mb-1 block text-base font-bold text-slate-700">开始时间</label>
                       <Input type="datetime-local" value={toLocalInput(selectedRow.start_datetime)} onChange={(event) => handleTextChange(selectedRow.key, 'start_datetime', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-base font-bold text-slate-700">????</label>
+                      <label className="mb-1 block text-base font-bold text-slate-700">结束时间</label>
                       <Input type="datetime-local" value={toLocalInput(selectedRow.end_datetime)} onChange={(event) => handleTextChange(selectedRow.key, 'end_datetime', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="mb-1 block text-base font-bold text-slate-700">??(?)</label>
+                        <label className="mb-1 block text-base font-bold text-slate-700">停机(分)</label>
                         <Input type="number" min="0" value={selectedRow.idle_time} onChange={(event) => handleNumericChange(selectedRow.key, 'idle_time', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
                       </div>
                       <div>
-                        <label className="mb-1 block text-base font-bold text-slate-700">??</label>
+                        <label className="mb-1 block text-base font-bold text-slate-700">人员</label>
                         <Input type="number" min="0" step="0.5" value={selectedRow.personnel_count} onChange={(event) => handleNumericChange(selectedRow.key, 'personnel_count', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
                       </div>
                     </div>
                     <div>
-                      <label className="mb-1 block text-base font-bold text-slate-700">?? C/T</label>
+                      <label className="mb-1 block text-base font-bold text-slate-700">运行 C/T</label>
                       <Input type="number" min="0" step="0.1" value={selectedRow.operating_ct ?? ''} onChange={(event) => handleNumericChange(selectedRow.key, 'operating_ct', event.target.value)} disabled={!canEdit} className="h-12 rounded-none border-2 border-slate-300 text-base" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-base font-bold text-slate-700">??</label>
+                      <label className="mb-1 block text-base font-bold text-slate-700">备注</label>
                       <Textarea rows={4} value={selectedRow.note || ''} onChange={(event) => handleTextChange(selectedRow.key, 'note', event.target.value)} disabled={!canEdit} className="rounded-none border-2 border-slate-300 text-base" />
                     </div>
                   </div>
                   <Button className="h-12 rounded-none border-2 border-slate-300 bg-slate-900 text-lg font-bold text-white shadow-none" onClick={() => void saveRow(selectedRow)} disabled={!canEdit || savingKey === selectedRow.key}>
                     <Save className="mr-2 h-4 w-4" />
-                    {savingKey === selectedRow.key ? t('saving') : '??????'}
+                    {savingKey === selectedRow.key ? t('saving') : '保存当前计划'}
                   </Button>
                 </div>
               ) : (
-                <div className="border-2 border-dashed border-slate-300 px-4 py-16 text-center text-lg font-bold text-slate-400">?????</div>
+                <div className="border-2 border-dashed border-slate-300 px-4 py-16 text-center text-lg font-bold text-slate-400">请选择计划</div>
               )}
             </div>
           </div>
