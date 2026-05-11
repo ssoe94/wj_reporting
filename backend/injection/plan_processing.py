@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 import pandas as pd
+import re
 from django.utils import timezone
 
 
@@ -121,15 +122,26 @@ class ProductionPlanProcessor:
         }
 
     def _resolve_sheet_name(self, sheet_names: Iterable[str]) -> str:
-        candidates = [
-            f"{self.target_date.month}-{self.target_date.day}",
-            f"{self.target_date.month}-{self.target_date.day:02d}",
-        ]
-        for candidate in candidates:
-            if candidate in sheet_names:
-                return candidate
+        date_sheet_candidates = []
+        for sheet_name in sheet_names:
+            match = re.match(r"^\s*(\d{1,2})-(\d{1,2})\s*$", str(sheet_name))
+            if not match:
+                continue
+            month = int(match.group(1))
+            day = int(match.group(2))
+            try:
+                sheet_date = date(self.target_date.year, month, day)
+            except ValueError:
+                continue
+            date_sheet_candidates.append((sheet_date, sheet_name))
+
+        if date_sheet_candidates:
+            latest_sheet_date, latest_sheet_name = max(date_sheet_candidates, key=lambda item: item[0])
+            self.target_date = latest_sheet_date
+            return latest_sheet_name
+
         raise ProductionPlanProcessingError(
-            f"{self.target_date.month}-{self.target_date.day} 시트를 찾을 수 없습니다."
+            "날짜 형식의 계획 시트를 찾을 수 없습니다. 예: 5-8"
         )
 
     def _extract_day_columns(self, columns: Iterable[Any]) -> List[Any]:

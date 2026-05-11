@@ -30,9 +30,10 @@ logger = logging.getLogger(__name__)
 
 def run_snapshot():
     """
-    This script is intended to be run by a scheduler (e.g., cron) every 10 minutes.
-    It fetches the latest data point and saves it as a snapshot for the current 10-minute slot.
-    Example: When run at 18:12, it saves the latest record with an 18:10 timestamp.
+    This script is intended to be run by a scheduler, preferably every minute.
+    It fetches the latest MES data point and saves it as a snapshot for the
+    current minute. Example: When run at 18:12:30, it saves the latest record
+    with an 18:12 timestamp.
     """
     logger.info("=" * 80)
     logger.info("INTERVAL SNAPSHOT UPDATE - CRON JOB EXECUTION")
@@ -43,7 +44,7 @@ def run_snapshot():
     logger.info(f"Django settings: {os.environ.get('DJANGO_SETTINGS_MODULE')}")
     logger.info("=" * 80)
 
-    logger.info("Starting the 10-minute snapshot update process...")
+    logger.info("Starting the minute snapshot update process...")
     try:
         result = mes_service.update_hourly_snapshot_from_mes()
         logger.info(f"Interval snapshot update completed. Result: {result}")
@@ -54,7 +55,7 @@ def run_snapshot():
         logger.error("=" * 80)
         logger.error("CRON JOB FAILED")
         logger.error("=" * 80)
-        logger.error(f"An error occurred during the hourly snapshot update: {e}", exc_info=True)
+        logger.error(f"An error occurred during the minute snapshot update: {e}", exc_info=True)
         sys.exit(1)
 
 if __name__ == '__main__':

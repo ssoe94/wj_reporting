@@ -269,7 +269,23 @@ class MESResourceService:
         current_time = reference_time or datetime.now(cst)
 
         time_slots: List[Dict] = []
-        if interval_type == '10min':
+        if interval_type == '1min':
+            for i in range(columns, 0, -1):
+                minutes_back = i - 1
+                slot_time = current_time - timedelta(minutes=minutes_back)
+                slot_time = slot_time.replace(second=0, microsecond=0)
+
+                time_diff = current_time - slot_time
+                minutes_diff = int(time_diff.total_seconds() / 60)
+                label = f"{minutes_diff} min" if minutes_diff < 60 else f"{minutes_diff // 60} h"
+
+                time_slots.append({
+                    'hour_offset': i,
+                    'time': slot_time.isoformat(),
+                    'label': label,
+                    'interval_minutes': 1
+                })
+        elif interval_type == '10min':
             for i in range(columns, 0, -1):
                 minutes_back = (i - 1) * 10
                 slot_time = current_time - timedelta(minutes=minutes_back)
@@ -598,8 +614,8 @@ class MESResourceService:
         """
         logger = logging.getLogger(__name__)
 
-        # MES 雿办澊韯?靾橃 鞁滌爯鞚?鞀瀼(10攵?雼渼)瓿?鞏搓笅雮?靾?鞛堨柎 於╇秳頌?雱撽矊 臁绊殞頃滊嫟.
-        # -30攵?~ +10攵?氩旍渼鞐愳劀 臧€鞛?臧€旯岇毚 臧掛潉 靹犿儩.
+        # Each snapshot is stored at the exact minute. Search around the target
+        # minute because MES record times may drift by a few seconds.
         search_start_time = target_timestamp - timedelta(minutes=1)
         search_end_time = target_timestamp + timedelta(minutes=1)
         target_ts_ms = int(target_timestamp.timestamp() * 1000)
@@ -681,13 +697,12 @@ class MESResourceService:
 
     def update_hourly_snapshot_from_mes(self):
         """
-        10? ?? ?? ?? ?? ??.
+        Fetch and store the latest 1-minute snapshot.
         """
         logger = logging.getLogger(__name__)
         cst = pytz.timezone('Asia/Shanghai')
         now = datetime.now(cst)
-        floored = (now.minute // 10) * 10
-        target_timestamp = now.replace(minute=floored, second=0, microsecond=0)
+        target_timestamp = now.replace(second=0, microsecond=0)
 
         logger.info(f"=== Interval snapshot update started at {now.isoformat()} ===")
         logger.info(f"Target timestamp: {target_timestamp.isoformat()}")
@@ -718,14 +733,13 @@ class MESResourceService:
         logger = logging.getLogger(__name__)
         cst = pytz.timezone('Asia/Shanghai')
         now = datetime.now(cst)
-        floored = (now.minute // 10) * 10
-        target_base = now.replace(minute=floored, second=0, microsecond=0)
+        target_base = now.replace(second=0, microsecond=0)
 
         logger.info(f"Starting update for recent {hours_to_update} hours.")
 
         total_minutes = max(0, hours_to_update) * 60
 
-        for minutes_back in range(0, total_minutes + 1, 10):
+        for minutes_back in range(0, total_minutes + 1):
             target_timestamp = target_base - timedelta(minutes=minutes_back)
             slot_callback = None
             if progress_callback:
@@ -738,7 +752,7 @@ class MESResourceService:
 
     def compact_monitoring_records(self, retention_hours: int = 24, hours_to_compact: int = 2) -> None:
         """
-        Keep 10-min snapshots for the last retention_hours and compact older data to hourly.
+        Keep minute-level snapshots for the last retention_hours and compact older data to hourly.
         """
         if hours_to_compact <= 0:
             return

@@ -1,6 +1,6 @@
 """
 사출기 모니터링을 위한 Celery 태스크 정의
-MES 시스템에서 정각마다 최신 데이터를 자동으로 업데이트
+MES 시스템에서 최신 스냅샷 데이터를 자동으로 업데이트
 """
 
 from celery import shared_task
@@ -13,9 +13,8 @@ logger = logging.getLogger(__name__)
 @shared_task
 def update_production_matrix_hourly():
     """
-    매 정시에 MES 시스템에서 생산 매트릭스 데이터를 갱신합니다.
-    mes_service의 update_hourly_snapshot_from_mes 함수를 호출하여, 
-    직전 1시간의 마지막 데이터를 정각 스냅샷으로 저장합니다.
+    MES 시스템에서 현재 분 기준 생산 매트릭스 데이터를 갱신합니다.
+    기존 task 이름은 Celery 호환성을 위해 유지합니다.
     """
     from .mes_service import mes_service
 
