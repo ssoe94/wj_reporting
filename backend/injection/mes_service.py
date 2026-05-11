@@ -11,6 +11,7 @@ import logging
 from typing import List, Dict, Optional, Callable
 from datetime import datetime, timedelta
 from django.core.cache import cache
+from django.db import connection
 from django.db.models.functions import TruncHour
 from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
 from injection.models import InjectionMonitoringRecord, adjust_monitoring_capacity
@@ -18,6 +19,8 @@ from injection.models import InjectionMonitoringRecord, adjust_monitoring_capaci
 
 # BLACKLAKE API 鞐旊摐韽澑韸?
 RESOURCE_MONITOR_ENDPOINT = '/resource/open/v1/resource_monitor/_page_list'
+SNAPSHOT_UPDATE_LOCK_KEY = 2026051101
+SNAPSHOT_UPDATE_CACHE_LOCK_KEY = 'injection:snapshot-update:lock'
 
 # 頇橁步 靹れ爼 (靹る箘旖旊摐/韺岆澕氙疙劙旖旊摐 毵ろ晳)
 MES_DEVICE_CODE_MAP = os.getenv('MES_DEVICE_CODE_MAP', '')  # 鞓? "1:EQP001,2:EQP002"
@@ -284,6 +287,23 @@ class MESResourceService:
                     'time': slot_time.isoformat(),
                     'label': label,
                     'interval_minutes': 1
+                })
+        elif interval_type == '2min':
+            for i in range(columns, 0, -1):
+                minutes_back = (i - 1) * 2
+                slot_time = current_time - timedelta(minutes=minutes_back)
+                floored = (slot_time.minute // 2) * 2
+                slot_time = slot_time.replace(minute=floored, second=0, microsecond=0)
+
+                time_diff = current_time - slot_time
+                minutes_diff = int(time_diff.total_seconds() / 60)
+                label = f"{minutes_diff} min" if minutes_diff < 60 else f"{minutes_diff // 60} h"
+
+                time_slots.append({
+                    'hour_offset': i,
+                    'time': slot_time.isoformat(),
+                    'label': label,
+                    'interval_minutes': 2
                 })
         elif interval_type == '10min':
             for i in range(columns, 0, -1):
@@ -697,7 +717,7 @@ class MESResourceService:
 
     def update_hourly_snapshot_from_mes(self):
         """
-        Fetch and store the latest 1-minute snapshot.
+        Fetch and store the latest interval snapshot.
         """
         logger = logging.getLogger(__name__)
         cst = pytz.timezone('Asia/Shanghai')
@@ -706,6 +726,15 @@ class MESResourceService:
 
         logger.info(f"=== Interval snapshot update started at {now.isoformat()} ===")
         logger.info(f"Target timestamp: {target_timestamp.isoformat()}")
+
+        lock_token = self._acquire_snapshot_update_lock(lock_timeout_seconds=300)
+        if not lock_token:
+            logger.warning("Snapshot update skipped because another run is still active.")
+            return {
+                "status": "skipped",
+                "timestamp": now.isoformat(),
+                "reason": "snapshot_update_already_running"
+            }
 
         try:
             self._update_single_hour_snapshot(target_timestamp)
@@ -721,6 +750,42 @@ class MESResourceService:
         except Exception as e:
             logger.error(f"=== Interval snapshot update failed ===", exc_info=True)
             return {"status": "failed", "timestamp": now.isoformat(), "error": str(e)}
+        finally:
+            self._release_snapshot_update_lock(lock_token)
+
+    def _acquire_snapshot_update_lock(self, lock_timeout_seconds: int = 300) -> Optional[str]:
+        """
+        Prevent overlapping Render/Celery cron executions.
+
+        PostgreSQL advisory locks are preferred because they work across
+        separate cron processes and are automatically released if a process
+        exits. Local/dev environments fall back to Django cache best-effort.
+        """
+        logger = logging.getLogger(__name__)
+        if connection.vendor == 'postgresql':
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_try_advisory_lock(%s)", [SNAPSHOT_UPDATE_LOCK_KEY])
+                    locked = cursor.fetchone()[0]
+                return 'postgresql' if locked else None
+            except Exception:
+                logger.warning("Failed to acquire PostgreSQL advisory lock; falling back to cache lock.", exc_info=True)
+
+        acquired = cache.add(SNAPSHOT_UPDATE_CACHE_LOCK_KEY, '1', timeout=lock_timeout_seconds)
+        return 'cache' if acquired else None
+
+    def _release_snapshot_update_lock(self, lock_token: str) -> None:
+        logger = logging.getLogger(__name__)
+        if lock_token == 'postgresql':
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_unlock(%s)", [SNAPSHOT_UPDATE_LOCK_KEY])
+            except Exception:
+                logger.warning("Failed to release PostgreSQL advisory lock.", exc_info=True)
+            return
+
+        if lock_token == 'cache':
+            cache.delete(SNAPSHOT_UPDATE_CACHE_LOCK_KEY)
 
     def update_recent_hourly_snapshots(
         self,

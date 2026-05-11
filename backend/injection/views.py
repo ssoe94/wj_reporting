@@ -2015,11 +2015,11 @@ class ProductionMatrixView(generics.GenericAPIView):
         return machine_info
 
     def get(self, request):
-        """생산 매트릭스 데이터 조회 - 1분/10분/30분/1시간/1일 단위 지원"""
+        """생산 매트릭스 데이터 조회 - 1분/2분/10분/30분/1시간/1일 단위 지원"""
         from .mes_service import mes_service
 
         # 파라미터 처리
-        interval_type = request.query_params.get('interval', '30min')  # '10min', '30min', '1hour', or '1day'
+        interval_type = request.query_params.get('interval', '30min')  # '1min', '2min', '10min', '30min', '1hour', or '1day'
         columns = int(request.query_params.get('columns', '13'))  # 기본 13열
 
         # 1) MES 우선 시도 (항상)
@@ -2256,4 +2256,3 @@ class ProductionPlanUploadView(generics.GenericAPIView):
 
         # Return the original response data to the frontend
         return Response(response_data)
-

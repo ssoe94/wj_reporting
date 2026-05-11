@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 def run_snapshot():
     """
-    This script is intended to be run by a scheduler, preferably every minute.
+    This script is intended to be run by a scheduler, preferably every 2 minutes.
     It fetches the latest MES data point and saves it as a snapshot for the
     current minute. Example: When run at 18:12:30, it saves the latest record
     with an 18:12 timestamp.

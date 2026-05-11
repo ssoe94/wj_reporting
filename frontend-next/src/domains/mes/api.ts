@@ -19,7 +19,7 @@ export type InjectionMachineInfo = {
 export type InjectionProductionMatrix = {
   timestamp: string;
   time_slots: TimeSlot[];
-  interval_type?: "10min" | "30min" | "1hour" | "1day";
+  interval_type?: "1min" | "2min" | "10min" | "30min" | "1hour" | "1day";
   columns?: number;
   machines: InjectionMachineInfo[];
   cumulative_production_matrix: Record<string, number[]>;
@@ -49,26 +49,26 @@ function mesEndpoint(path: string) {
 }
 
 export async function getInjectionProductionMatrix() {
-  const minuteProbeParams = new URLSearchParams({
-    interval: "1min",
-    columns: "60",
+  const twoMinuteProbeParams = new URLSearchParams({
+    interval: "2min",
+    columns: "30",
   });
-  const minuteProbeResponse = await http.get<InjectionProductionMatrix>(
-    mesEndpoint(`/injection/production-matrix/?${minuteProbeParams.toString()}`),
+  const twoMinuteProbeResponse = await http.get<InjectionProductionMatrix>(
+    mesEndpoint(`/injection/production-matrix/?${twoMinuteProbeParams.toString()}`),
     { skipAuth: true },
   );
-  const firstSlotInterval = minuteProbeResponse.data.time_slots[0]?.interval_minutes;
+  const firstSlotInterval = twoMinuteProbeResponse.data.time_slots[0]?.interval_minutes;
 
-  if (firstSlotInterval === 1) {
-    const minuteParams = new URLSearchParams({
-      interval: "1min",
-      columns: "1440",
+  if (firstSlotInterval === 2) {
+    const twoMinuteParams = new URLSearchParams({
+      interval: "2min",
+      columns: "720",
     });
-    const minuteResponse = await http.get<InjectionProductionMatrix>(
-      mesEndpoint(`/injection/production-matrix/?${minuteParams.toString()}`),
+    const twoMinuteResponse = await http.get<InjectionProductionMatrix>(
+      mesEndpoint(`/injection/production-matrix/?${twoMinuteParams.toString()}`),
       { skipAuth: true },
     );
-    return minuteResponse.data;
+    return twoMinuteResponse.data;
   }
 
   const fallbackParams = new URLSearchParams({

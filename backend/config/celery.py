@@ -20,11 +20,11 @@ app.autodiscover_tasks()
 
 # Beat 스케줄 설정
 app.conf.beat_schedule = {
-    'update-production-matrix-every-minute': {
+    'update-production-matrix-every-2-minutes': {
         'task': 'injection.tasks.update_production_matrix_hourly',
-        'schedule': 60.0,  # 1분
+        'schedule': 120.0,  # 2분
         'options': {
-            'expires': 55,
+            'expires': 115,
         }
     },
     'capture-finished-goods-morning': {
