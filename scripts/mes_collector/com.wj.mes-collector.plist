@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.wj.mes-collector</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/ssoe94/reporting_v2/wj_reporting/scripts/mes_collector/collect_mes_minute_logs.py</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/ssoe94/wj-data/mes/collector.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/ssoe94/wj-data/mes/collector.err.log</string>
+</dict>
+</plist>

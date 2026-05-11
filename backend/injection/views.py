@@ -119,10 +119,7 @@ class UpdateRecentSnapshotsView(generics.GenericAPIView):
 
                 if latest_only:
                     cst = pytz.timezone('Asia/Shanghai')
-                    # 슬랏 정렬(10분 단위)과 맞추기 위해 10분 단위로 내림 처리
-                    now = datetime.now(cst).replace(second=0, microsecond=0)
-                    floored_min = (now.minute // 10) * 10
-                    target_timestamp = now.replace(minute=floored_min)
+                    target_timestamp = datetime.now(cst).replace(second=0, microsecond=0)
                     mes_service._update_single_hour_snapshot(
                         target_timestamp,
                         progress_callback=update_progress,
@@ -2018,7 +2015,7 @@ class ProductionMatrixView(generics.GenericAPIView):
         return machine_info
 
     def get(self, request):
-        """생산 매트릭스 데이터 조회 - 30분/1시간 단위, 13열 지원(MES 고정)"""
+        """생산 매트릭스 데이터 조회 - 1분/10분/30분/1시간/1일 단위 지원"""
         from .mes_service import mes_service
 
         # 파라미터 처리
@@ -2259,5 +2256,4 @@ class ProductionPlanUploadView(generics.GenericAPIView):
 
         # Return the original response data to the frontend
         return Response(response_data)
-
 
