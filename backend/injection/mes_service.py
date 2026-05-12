@@ -13,6 +13,7 @@ from typing import List, Dict, Optional, Callable
 from datetime import datetime, timedelta
 from django.core.cache import cache
 from django.db import connection
+from django.db.models import Q
 from django.db.models.functions import TruncHour
 from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
 from injection.models import InjectionMonitoringRecord, adjust_monitoring_capacity
@@ -501,16 +502,45 @@ class MESResourceService:
         end_of_last_slot = datetime.fromisoformat(last_slot['time']) + timedelta(minutes=interval_minutes)
         slot_starts = [datetime.fromisoformat(slot['time']) for slot in time_slots]
         slot_keys = [slot['time'] for slot in time_slots]
+        machine_names = [f'{machine_num}호기' for machine_num in machine_numbers]
+        records_by_machine: Dict[int, List[InjectionMonitoringRecord]] = {machine_num: [] for machine_num in machine_numbers}
+        baseline_capacity_by_machine: Dict[int, Optional[InjectionMonitoringRecord]] = {machine_num: None for machine_num in machine_numbers}
+        baseline_power_by_machine: Dict[int, Optional[InjectionMonitoringRecord]] = {machine_num: None for machine_num in machine_numbers}
+
+        db_records = InjectionMonitoringRecord.objects.filter(
+            machine_name__in=machine_names,
+            timestamp__gte=start_of_first_slot,
+            timestamp__lt=end_of_last_slot,
+        ).order_by('machine_name', 'timestamp')
+        for record in db_records:
+            try:
+                machine_num = int(record.machine_name.replace('호기', '').strip())
+            except (TypeError, ValueError):
+                continue
+            if machine_num in records_by_machine:
+                records_by_machine[machine_num].append(record)
+
+        baseline_records = InjectionMonitoringRecord.objects.filter(
+            machine_name__in=machine_names,
+            timestamp__lt=start_of_first_slot,
+        ).filter(
+            Q(capacity__isnull=False) | Q(power_kwh__isnull=False)
+        ).order_by('machine_name', '-timestamp')
+        for record in baseline_records:
+            try:
+                machine_num = int(record.machine_name.replace('호기', '').strip())
+            except (TypeError, ValueError):
+                continue
+            if machine_num not in records_by_machine:
+                continue
+            if record.capacity is not None and baseline_capacity_by_machine[machine_num] is None:
+                baseline_capacity_by_machine[machine_num] = record
+            if record.power_kwh is not None and baseline_power_by_machine[machine_num] is None:
+                baseline_power_by_machine[machine_num] = record
 
         for machine_num in machine_numbers:
-            db_records = InjectionMonitoringRecord.objects.filter(
-                machine_name=f'{machine_num}호기',
-                timestamp__gte=start_of_first_slot,
-                timestamp__lt=end_of_last_slot
-            ).order_by('timestamp')
-
             slot_records = {}
-            for r in db_records:
+            for r in records_by_machine[machine_num]:
                 slot_index = bisect_right(slot_starts, r.timestamp) - 1
                 if 0 <= slot_index < len(slot_keys):
                     slot_records[slot_keys[slot_index]] = r
@@ -521,22 +551,9 @@ class MESResourceService:
             power_row: List[float] = []
             power_act_row: List[float] = []
             
-            # 觳?氩堨Ц 鞀’ 鞚挫爠鞚?雸勳爜 靸濎偘霟夓潉 彀眷晞 鞁滉皠雼?靸濎偘霟夓潣 旮办鞝愳溂搿?靷检姷雼堧嫟.
-            record_before_first_slot = InjectionMonitoringRecord.objects.filter(
-                machine_name=f'{machine_num}호기',
-                timestamp__lt=start_of_first_slot,
-                capacity__isnull=False
-            ).order_by('-timestamp').first()
-
-            record_before_first_slot_power = InjectionMonitoringRecord.objects.filter(
-                machine_name=f'{machine_num}호기',
-                timestamp__lt=start_of_first_slot,
-                power_kwh__isnull=False
-            ).order_by('-timestamp').first()
-            
-            # 鞚挫爠 鞀’鞚?頇曥爼霅?雸勳爜臧?(雿办澊韯瓣皜 鞛堧姅 鞀’鞚?臧掚 靷毄)
+            record_before_first_slot = baseline_capacity_by_machine[machine_num]
+            record_before_first_slot_power = baseline_power_by_machine[machine_num]
             prev_confirmed_cum = record_before_first_slot.capacity if record_before_first_slot else None
-            # 頇旊┐ 響滌嫓鞖?鞚挫爠 雸勳爜臧?(雿办澊韯?鞐嗠姅 鞀’鞚€ 鞚挫爠 臧掛潉 攴鸽寑搿?響滌嫓)
             prev_display_cum = prev_confirmed_cum if prev_confirmed_cum is not None else 0.0
             prev_confirmed_power = record_before_first_slot_power.power_kwh if record_before_first_slot_power else None
             prev_display_power = prev_confirmed_power if prev_confirmed_power is not None else 0.0
