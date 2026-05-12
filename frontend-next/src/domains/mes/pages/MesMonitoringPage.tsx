@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type InjectionProductionMatrix,
   type MesDataSource,
+  getInjectionSnapshotUpdateStatus,
   getInjectionProductionMatrix,
   requestInjectionSnapshotUpdate,
 } from "@/domains/mes/api";
@@ -55,6 +56,8 @@ const pageCopy = {
     inventory: "재고 정보",
     refresh: "최근 24시간 보강 수집",
     refreshing: "보강 수집 중",
+    loadingData: "MES 데이터를 불러오는 중입니다.",
+    backfillProgress: "보강 진행률",
     lastUpdated: "마지막 갱신",
     activeMachines: "가동 설비",
     todayOutput: "금일 총 형합수",
@@ -113,6 +116,8 @@ const pageCopy = {
     inventory: "库存信息",
     refresh: "补采最近 24 小时",
     refreshing: "补采中",
+    loadingData: "正在读取 MES 数据。",
+    backfillProgress: "补采进度",
     lastUpdated: "最后更新",
     activeMachines: "运行设备",
     todayOutput: "今日总合模数",
@@ -615,10 +620,51 @@ function SummaryMetricCard({
   );
 }
 
+function MesMonitoringSkeleton({ copy }: { copy: Record<string, string> }) {
+  return (
+    <>
+      <div className="mes-stats-grid">
+        {Array.from({ length: 5 }, (_, index) => (
+          <article className="stat-card mes-stat-card mes-skeleton-card" key={index}>
+            <span className="mes-skeleton-line mes-skeleton-line--short" />
+            <span className="mes-skeleton-line mes-skeleton-line--value" />
+            <span className="mes-skeleton-line" />
+          </article>
+        ))}
+      </div>
+
+      <section className="panel mes-monitor-panel">
+        <div className="mes-skeleton-heading">
+          <span className="mes-skeleton-line mes-skeleton-line--eyebrow" />
+          <span className="mes-skeleton-line mes-skeleton-line--title" />
+          <span className="mes-skeleton-line mes-skeleton-line--wide" />
+        </div>
+        <div className="mes-machine-rail">
+          {Array.from({ length: 17 }, (_, index) => (
+            <span className="mes-machine-tile mes-skeleton-tile" key={index} />
+          ))}
+        </div>
+        <div className="mes-live-layout">
+          <div className="mes-summary-column">
+            <article className="mes-period-card mes-skeleton-block" />
+            <article className="mes-period-card mes-skeleton-block" />
+          </div>
+          <article className="mes-trend-card mes-skeleton-chart">
+            <span className="mes-skeleton-line mes-skeleton-line--title" />
+            <span className="mes-skeleton-chart__box" />
+          </article>
+        </div>
+        <p className="mes-loading-note">{copy.loadingData}</p>
+      </section>
+    </>
+  );
+}
+
 export function MesMonitoringPage() {
   const [language] = useStoredLanguage();
   const [selectedSource, setSelectedSource] = useState<MesDataSource>("injection");
   const [selectedMachineNumber, setSelectedMachineNumber] = useState(1);
+  const [snapshotJobId, setSnapshotJobId] = useState<string | null>(null);
   const copy = pageCopy[language];
   const queryClient = useQueryClient();
 
@@ -631,10 +677,27 @@ export function MesMonitoringPage() {
 
   const updateMutation = useMutation({
     mutationFn: requestInjectionSnapshotUpdate,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["mes", "injection-production-matrix"] });
+    onSuccess: (data) => {
+      if (data.job_id) {
+        setSnapshotJobId(data.job_id);
+      }
     },
   });
+
+  const updateStatusQuery = useQuery({
+    queryKey: ["mes", "injection-snapshot-update-status", snapshotJobId],
+    queryFn: () => getInjectionSnapshotUpdateStatus(snapshotJobId ?? undefined),
+    enabled: Boolean(snapshotJobId),
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 3_000 : false),
+  });
+
+  useEffect(() => {
+    const status = updateStatusQuery.data?.status;
+    if (status === "completed" || status === "skipped" || status === "failed") {
+      void queryClient.invalidateQueries({ queryKey: ["mes", "injection-production-matrix"] });
+      window.setTimeout(() => setSnapshotJobId(null), 2000);
+    }
+  }, [queryClient, updateStatusQuery.data?.status]);
 
   const machineRows = useMemo(() => buildRows(injectionQuery.data), [injectionQuery.data]);
   const latestSlot = injectionQuery.data?.time_slots.at(-1);
@@ -731,6 +794,9 @@ export function MesMonitoringPage() {
     todayFleetSummary.power !== null && previousDayFleetSummary.power !== null
       ? todayFleetSummary.power - previousDayFleetSummary.power
       : null;
+  const isInitialMesLoading = selectedSource === "injection" && !injectionQuery.data && injectionQuery.isFetching;
+  const isBackfillRunning = updateMutation.isPending || updateStatusQuery.data?.status === "running";
+  const backfillPercent = updateStatusQuery.data?.percent ?? 0;
 
   return (
     <section className="page mes-page">
@@ -764,6 +830,9 @@ export function MesMonitoringPage() {
       </section>
 
       {selectedSource === "injection" ? (
+        isInitialMesLoading ? (
+          <MesMonitoringSkeleton copy={copy} />
+        ) : (
         <>
           <div className="mes-stats-grid">
             <SummaryMetricCard
@@ -824,13 +893,21 @@ export function MesMonitoringPage() {
                 <button
                   className="button button--primary"
                   type="button"
-                  disabled={updateMutation.isPending}
+                  disabled={isBackfillRunning}
                   onClick={() => updateMutation.mutate()}
                 >
-                  {updateMutation.isPending ? copy.refreshing : copy.refresh}
+                  {isBackfillRunning
+                    ? `${copy.refreshing}${backfillPercent ? ` ${backfillPercent}%` : ""}`
+                    : copy.refresh}
                 </button>
               </div>
             </div>
+            {isBackfillRunning && (
+              <div className="mes-backfill-progress" aria-label={copy.backfillProgress}>
+                <span style={{ width: `${Math.max(2, backfillPercent)}%` }} />
+                <strong>{copy.backfillProgress} {backfillPercent}%</strong>
+              </div>
+            )}
 
             {injectionQuery.isError ? (
               <div className="notice notice--warning">{copy.fetchError}</div>
@@ -941,6 +1018,7 @@ export function MesMonitoringPage() {
             )}
           </section>
         </>
+        )
       ) : (
         <section className="panel mes-ready-panel">
           <p className="panel-card__eyebrow">{copy.readyStatus}</p>

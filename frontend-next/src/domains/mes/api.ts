@@ -49,17 +49,7 @@ function mesEndpoint(path: string) {
 }
 
 export async function getInjectionProductionMatrix() {
-  const twoMinuteProbeParams = new URLSearchParams({
-    interval: "2min",
-    columns: "30",
-  });
-  const twoMinuteProbeResponse = await http.get<InjectionProductionMatrix>(
-    mesEndpoint(`/injection/production-matrix/?${twoMinuteProbeParams.toString()}`),
-    { skipAuth: true },
-  );
-  const firstSlotInterval = twoMinuteProbeResponse.data.time_slots[0]?.interval_minutes;
-
-  if (firstSlotInterval === 2) {
+  try {
     const twoMinuteParams = new URLSearchParams({
       interval: "2min",
       columns: "1440",
@@ -69,23 +59,32 @@ export async function getInjectionProductionMatrix() {
       { skipAuth: true },
     );
     return twoMinuteResponse.data;
+  } catch {
+    const fallbackParams = new URLSearchParams({
+      interval: "10min",
+      columns: "144",
+    });
+    const fallbackResponse = await http.get<InjectionProductionMatrix>(
+      mesEndpoint(`/injection/production-matrix/?${fallbackParams.toString()}`),
+      { skipAuth: true },
+    );
+    return fallbackResponse.data;
   }
-
-  const fallbackParams = new URLSearchParams({
-    interval: "10min",
-    columns: "144",
-  });
-  const fallbackResponse = await http.get<InjectionProductionMatrix>(
-    mesEndpoint(`/injection/production-matrix/?${fallbackParams.toString()}`),
-    { skipAuth: true },
-  );
-  return fallbackResponse.data;
 }
 
 export async function requestInjectionSnapshotUpdate() {
   const response = await http.post<SnapshotUpdateStatus>(
     mesEndpoint("/injection/update-recent-snapshots/"),
     { hours: 24, step_minutes: 2 },
+    { skipAuth: true },
+  );
+  return response.data;
+}
+
+export async function getInjectionSnapshotUpdateStatus(jobId?: string) {
+  const params = jobId ? `?job_id=${encodeURIComponent(jobId)}` : "";
+  const response = await http.get<SnapshotUpdateStatus>(
+    mesEndpoint(`/injection/update-recent-snapshots/status/${params}`),
     { skipAuth: true },
   );
   return response.data;
