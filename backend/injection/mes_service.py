@@ -791,29 +791,66 @@ class MESResourceService:
         self,
         hours_to_update: int,
         progress_callback: Optional[Callable[[int, int, datetime], None]] = None,
+        step_minutes: int = 2,
     ):
         """
-        ?? ?? ?? 10? ?? ?? ??.
+        Backfill recent MES snapshots at the configured monitoring interval.
         """
         logger = logging.getLogger(__name__)
         cst = pytz.timezone('Asia/Shanghai')
         now = datetime.now(cst)
         target_base = now.replace(second=0, microsecond=0)
+        floored_minute = (target_base.minute // step_minutes) * step_minutes
+        target_base = target_base.replace(minute=floored_minute)
 
-        logger.info(f"Starting update for recent {hours_to_update} hours.")
+        logger.info(f"Starting update for recent {hours_to_update} hours at {step_minutes}-minute intervals.")
 
         total_minutes = max(0, hours_to_update) * 60
+        target_timestamps = [
+            target_base - timedelta(minutes=minutes_back)
+            for minutes_back in range(0, total_minutes + 1, max(1, step_minutes))
+        ]
+        total_machines = 17
+        total_steps = len(target_timestamps) * total_machines
+        completed_steps = 0
 
-        for minutes_back in range(0, total_minutes + 1):
-            target_timestamp = target_base - timedelta(minutes=minutes_back)
-            slot_callback = None
-            if progress_callback:
-                slot_callback = lambda completed, total, slot_time=target_timestamp: progress_callback(completed, total, slot_time)
-            self._update_single_hour_snapshot(target_timestamp, progress_callback=slot_callback)
+        lock_token = self._acquire_snapshot_update_lock(lock_timeout_seconds=max(600, hours_to_update * 180))
+        if not lock_token:
+            logger.warning("Recent snapshot update skipped because another run is still active.")
+            return {
+                "status": "skipped",
+                "reason": "snapshot_update_already_running",
+                "hours_updated": 0,
+            }
 
-        self.compact_monitoring_records(retention_hours=24, hours_to_compact=6)
-        logger.info(f"Finished update for recent {hours_to_update} hours.")
-        return {"status": "completed", "hours_updated": hours_to_update}
+        try:
+            for target_timestamp in target_timestamps:
+                existing_count = InjectionMonitoringRecord.objects.filter(timestamp=target_timestamp).count()
+                if existing_count >= total_machines:
+                    completed_steps += total_machines
+                    if progress_callback:
+                        progress_callback(completed_steps, total_steps, target_timestamp)
+                    continue
+
+                if progress_callback:
+                    def slot_callback(completed, total, slot_time=target_timestamp):
+                        progress_callback(completed_steps + completed, total_steps, slot_time)
+                else:
+                    slot_callback = None
+
+                self._update_single_hour_snapshot(target_timestamp, progress_callback=slot_callback)
+                completed_steps += total_machines
+
+            self.compact_monitoring_records(retention_hours=24, hours_to_compact=6)
+            logger.info(f"Finished update for recent {hours_to_update} hours.")
+            return {
+                "status": "completed",
+                "hours_updated": hours_to_update,
+                "step_minutes": step_minutes,
+                "slots_checked": len(target_timestamps),
+            }
+        finally:
+            self._release_snapshot_update_lock(lock_token)
 
     def compact_monitoring_records(self, retention_hours: int = 24, hours_to_compact: int = 2) -> None:
         """

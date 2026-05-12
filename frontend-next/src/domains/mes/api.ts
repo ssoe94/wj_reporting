@@ -31,7 +31,7 @@ export type InjectionProductionMatrix = {
 };
 
 export type SnapshotUpdateStatus = {
-  status?: "idle" | "running" | "completed" | "failed";
+  status?: "idle" | "running" | "completed" | "failed" | "skipped";
   job_id?: string;
   percent?: number;
   completed_steps?: number;
@@ -62,7 +62,7 @@ export async function getInjectionProductionMatrix() {
   if (firstSlotInterval === 2) {
     const twoMinuteParams = new URLSearchParams({
       interval: "2min",
-      columns: "720",
+      columns: "1440",
     });
     const twoMinuteResponse = await http.get<InjectionProductionMatrix>(
       mesEndpoint(`/injection/production-matrix/?${twoMinuteParams.toString()}`),
@@ -85,7 +85,7 @@ export async function getInjectionProductionMatrix() {
 export async function requestInjectionSnapshotUpdate() {
   const response = await http.post<SnapshotUpdateStatus>(
     mesEndpoint("/injection/update-recent-snapshots/"),
-    { mode: "latest" },
+    { hours: 24, step_minutes: 2 },
     { skipAuth: true },
   );
   return response.data;

@@ -62,16 +62,23 @@ from production.permissions import user_can_edit_plan
 User = get_user_model()
 
 class UpdateRecentSnapshotsView(generics.GenericAPIView):
-    """On-demand API to trigger an update of the last 3 hours of snapshots from the MES."""
+    """On-demand API to trigger a recent snapshot backfill from the MES."""
     permission_classes = [AllowAny] # Or IsAuthenticated, depending on requirements
 
     def post(self, request, *args, **kwargs):
         try:
             hours = int(request.data.get('hours', 3))
-            if not 1 <= hours <= 24:
-                raise ValueError("Hours must be between 1 and 24.")
+            if not 1 <= hours <= 48:
+                raise ValueError("Hours must be between 1 and 48.")
         except (ValueError, TypeError):
             hours = 3 # Default to 3 hours on invalid input
+
+        try:
+            step_minutes = int(request.data.get('step_minutes', 2))
+            if step_minutes not in (1, 2, 5, 10):
+                raise ValueError("Unsupported step_minutes.")
+        except (ValueError, TypeError):
+            step_minutes = 2
 
         mode = str(request.data.get('mode') or '').lower()
         latest_only = mode == 'latest' or str(request.data.get('latest_only') or '').lower() in ('1', 'true', 'yes')
@@ -80,7 +87,7 @@ class UpdateRecentSnapshotsView(generics.GenericAPIView):
         status_key = f"injection_update_status:{job_id}"
         latest_key = "injection_update_latest_job_id"
         machine_total = len(getattr(mes_service, 'device_code_map', {}) or {}) or 17
-        total_steps = machine_total
+        total_steps = machine_total if latest_only else ((hours * 60) // step_minutes + 1) * machine_total
         started_at = timezone.now().isoformat()
 
         cache.set(
@@ -124,22 +131,27 @@ class UpdateRecentSnapshotsView(generics.GenericAPIView):
                         target_timestamp,
                         progress_callback=update_progress,
                     )
+                    result = {"status": "completed"}
                 else:
-                    mes_service.update_recent_hourly_snapshots(
+                    result = mes_service.update_recent_hourly_snapshots(
                         hours_to_update=hours,
                         progress_callback=update_progress,
+                        step_minutes=step_minutes,
                     )
+
+                final_status = "skipped" if result.get("status") == "skipped" else "completed"
                 cache.set(
                     status_key,
                     {
-                        "status": "completed",
+                        "status": final_status,
                         "job_id": job_id,
                         "total_steps": total_steps,
-                        "completed_steps": total_steps,
-                        "percent": 100,
+                        "completed_steps": total_steps if final_status == "completed" else 0,
+                        "percent": 100 if final_status == "completed" else 0,
                         "started_at": started_at,
                         "finished_at": timezone.now().isoformat(),
                         "last_slot": None,
+                        "result": result,
                     },
                     timeout=60 * 60,
                 )
@@ -171,6 +183,8 @@ class UpdateRecentSnapshotsView(generics.GenericAPIView):
                 "message": f"Update process for the last {hours} hours started in the background.",
                 "job_id": job_id,
                 "total_steps": total_steps,
+                "hours": hours,
+                "step_minutes": step_minutes,
                 "started_at": started_at,
             },
             status=status.HTTP_202_ACCEPTED

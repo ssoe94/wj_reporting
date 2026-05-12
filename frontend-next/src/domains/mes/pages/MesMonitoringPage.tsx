@@ -6,8 +6,7 @@ import {
   getInjectionProductionMatrix,
   requestInjectionSnapshotUpdate,
 } from "@/domains/mes/api";
-import { PageHeader } from "@/shared/components/PageHeader";
-import { StatCard } from "@/shared/components/StatCard";
+import { getProductionPlanSummary } from "@/domains/production/api";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
 
 type InjectionMachineRow = {
@@ -45,21 +44,29 @@ const pageCopy = {
   ko: {
     eyebrow: "MES MONITORING",
     title: "MES 데이터 모니터링",
-    description: "MES에서 수집한 생산·설비 데이터를 저장하고, 계획 대비 모니터링 화면으로 확장합니다.",
-    sourceLabel: "조회 대상",
-    sourceTitle: "데이터 조회 범위",
-    sourceDescription: "먼저 사출기의 형합수, 오일온도, 전력 사용량을 안정적으로 저장하고 모니터링합니다.",
+    description: "MES에서 수집한 생산·설비 데이터를 저장하고 모니터링합니다.",
+    availableData: "조회 가능 데이터",
+    sourceDescriptionInjection: "사출기의 형합수, 오일온도, 전력 사용량을 2분 단위로 저장하고 24시간 추이를 확인합니다.",
+    sourceDescriptionMachining: "가공 생산 완료 보고를 연결해 계획 대비 진행률과 미보고 항목을 확인할 예정입니다.",
+    sourceDescriptionInventory: "재고 API를 연결해 품번별 현재고, 부족 수량, 입출고 변동을 확인할 예정입니다.",
     selectHint: "현재 선택",
     injection: "사출기 정보",
     machining: "가공 생산보고 정보",
     inventory: "재고 정보",
-    refresh: "최신 데이터 수집·저장",
-    refreshing: "수집 중",
+    refresh: "최근 24시간 보강 수집",
+    refreshing: "보강 수집 중",
     lastUpdated: "마지막 갱신",
     activeMachines: "가동 설비",
-    latestOutput: "최근 60분 형합수",
+    todayOutput: "금일 총 형합수",
+    recentOutput60: "최근 60분 형합수",
+    recentAvgOil60: "최근 60분 평균 오일온도",
     avgOil: "평균 오일온도",
-    powerUsage: "최근 전력 사용량",
+    todayPowerUsage: "금일 총 전력 사용량",
+    planShortage: "계획 대비 부족",
+    planReady: "계획 수량 기준",
+    previous60: "직전 60분 대비",
+    previousDay: "전일 동일 시간대 대비",
+    noCompareData: "비교 데이터 부족",
     injectionTitle: "사출기 실시간 현황",
     injectionHint: "1~17호기를 순서대로 확인하고, 선택한 호기의 24시간 추세를 분석합니다.",
     machineRailTitle: "설비 선택",
@@ -71,6 +78,7 @@ const pageCopy = {
     trendHint: "10분 수집 데이터를 정시간 단위로 집계해 형합수, 전력, 오일온도 추세를 표시합니다.",
     output: "형합수",
     cumulative: "누적",
+    todayCumulative: "금일 누적",
     oil: "오일온도",
     power: "전력",
     powerTotal: "누적 전력",
@@ -94,21 +102,29 @@ const pageCopy = {
   zh: {
     eyebrow: "MES MONITORING",
     title: "MES 数据监控",
-    description: "保存 MES 采集的生产与设备数据，并扩展为计划对比监控页面。",
-    sourceLabel: "查询对象",
-    sourceTitle: "数据查询范围",
-    sourceDescription: "优先稳定保存并监控注塑机合模数、油温、电力使用量。",
+    description: "保存并监控 MES 采集的生产与设备数据。",
+    availableData: "可查询数据",
+    sourceDescriptionInjection: "以 2 分钟周期保存注塑机合模数、油温、电力使用量，并查看 24 小时趋势。",
+    sourceDescriptionMachining: "后续连接加工生产完成报告，用于查看计划对比进度和未报告项目。",
+    sourceDescriptionInventory: "后续连接库存 API，用于查看品号当前库存、缺口数量和出入库变动。",
     selectHint: "当前选择",
     injection: "注塑机信息",
     machining: "加工生产报告",
     inventory: "库存信息",
-    refresh: "采集并保存最新数据",
-    refreshing: "采集中",
+    refresh: "补采最近 24 小时",
+    refreshing: "补采中",
     lastUpdated: "最后更新",
     activeMachines: "运行设备",
-    latestOutput: "最近 60 分钟合模数",
+    todayOutput: "今日总合模数",
+    recentOutput60: "最近 60 分钟合模数",
+    recentAvgOil60: "最近 60 分钟平均油温",
     avgOil: "平均油温",
-    powerUsage: "最近用电量",
+    todayPowerUsage: "今日总用电量",
+    planShortage: "计划差额",
+    planReady: "按计划数量",
+    previous60: "较前 60 分钟",
+    previousDay: "较昨日同时段",
+    noCompareData: "比较数据不足",
     injectionTitle: "注塑机实时状态",
     injectionHint: "按 1~17 号设备顺序查看，并分析所选设备的 24 小时趋势。",
     machineRailTitle: "设备选择",
@@ -120,6 +136,7 @@ const pageCopy = {
     trendHint: "将 10 分钟采集数据按整点汇总，显示合模数、电力、油温趋势。",
     output: "合模数",
     cumulative: "累计",
+    todayCumulative: "今日累计",
     oil: "油温",
     power: "电力",
     powerTotal: "累计电力",
@@ -175,8 +192,20 @@ function formatTemperature(value: number | null) {
   return value === null ? "-" : `${formatDecimal(value)}°C`;
 }
 
+function formatSignedNumber(value: number, suffix = "") {
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatDecimal(value, suffix ? 1 : 0)}${suffix}`;
+}
+
 function formatTonnage(value: string) {
   return value.endsWith("T") ? value : `${value}T`;
+}
+
+function formatDateParam(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatDateTime(value: string, language: AppLanguage) {
@@ -329,6 +358,41 @@ function buildPeriodSummary(
   };
 }
 
+function buildFleetPeriodSummary(
+  data: InjectionProductionMatrix | undefined,
+  startTime: Date | null,
+  endTime: Date | null,
+): PeriodSummary {
+  if (!data || !startTime || !endTime) {
+    return { output: 0, power: null, oilTemperature: null };
+  }
+
+  let output = 0;
+  let power = 0;
+  let hasPower = false;
+  let oilTotal = 0;
+  let oilCount = 0;
+
+  data.machines.forEach((machine) => {
+    const summary = buildPeriodSummary(data, machine.machine_number, startTime, endTime);
+    output += summary.output;
+    if (summary.power !== null) {
+      power += summary.power;
+      hasPower = true;
+    }
+    if (summary.oilTemperature !== null) {
+      oilTotal += summary.oilTemperature;
+      oilCount += 1;
+    }
+  });
+
+  return {
+    output,
+    power: hasPower ? power : null,
+    oilTemperature: oilCount > 0 ? oilTotal / oilCount : null,
+  };
+}
+
 function buildHourlyTrend(
   data: InjectionProductionMatrix | undefined,
   machineNumber: number,
@@ -438,9 +502,11 @@ function CombinedTrendChart({
               <text className="mes-combined-chart__date" x={Math.min(width - 94, startX + 8)} y={plotTop + 12}>
                 {section.dateLabel}
               </text>
-              <text className="mes-combined-chart__shift-label" x={Math.min(width - 116, startX + 8)} y={plotTop + 25}>
-                {section.shiftLabel}
-              </text>
+              {section.shift === "night" && (
+                <text className="mes-combined-chart__shift-label" x={Math.min(width - 116, startX + 8)} y={plotTop + 25}>
+                  {section.shiftLabel}
+                </text>
+              )}
             </g>
           );
         })}
@@ -526,6 +592,29 @@ function CombinedTrendChart({
   );
 }
 
+function SummaryMetricCard({
+  title,
+  value,
+  hint,
+  delta,
+  deltaTone = "neutral",
+}: {
+  title: string;
+  value: string;
+  hint: string;
+  delta?: string;
+  deltaTone?: "up" | "down" | "neutral";
+}) {
+  return (
+    <article className="stat-card mes-stat-card">
+      <p className="stat-card__title">{title}</p>
+      <strong className="stat-card__value">{value}</strong>
+      {delta && <span className={`mes-stat-card__delta mes-stat-card__delta--${deltaTone}`}>{delta}</span>}
+      <p className="stat-card__hint">{hint}</p>
+    </article>
+  );
+}
+
 export function MesMonitoringPage() {
   const [language] = useStoredLanguage();
   const [selectedSource, setSelectedSource] = useState<MesDataSource>("injection");
@@ -550,8 +639,20 @@ export function MesMonitoringPage() {
   const machineRows = useMemo(() => buildRows(injectionQuery.data), [injectionQuery.data]);
   const latestSlot = injectionQuery.data?.time_slots.at(-1);
   const latestTime = getLatestTime(injectionQuery.data);
+  const planDate = latestTime ? formatDateParam(latestTime) : formatDateParam(new Date());
+  const planSummaryQuery = useQuery({
+    queryKey: ["production-plan-summary", planDate],
+    queryFn: () => getProductionPlanSummary(planDate),
+    enabled: selectedSource === "injection" && Boolean(planDate),
+  });
   const selectedMachine = machineRows.find((row) => row.machineNumber === selectedMachineNumber) ?? machineRows[0];
   const selectedMachineKey = selectedMachine?.machineNumber ?? selectedMachineNumber;
+  const selectedSourceDescription =
+    selectedSource === "injection"
+      ? copy.sourceDescriptionInjection
+      : selectedSource === "machining"
+        ? copy.sourceDescriptionMachining
+        : copy.sourceDescriptionInventory;
   const shiftSummary = useMemo(
     () => buildPeriodSummary(injectionQuery.data, selectedMachineKey, getShiftStart(latestTime), latestTime),
     [injectionQuery.data, latestTime, selectedMachineKey],
@@ -569,57 +670,143 @@ export function MesMonitoringPage() {
     () => buildHourlyTrend(injectionQuery.data, selectedMachineKey, language),
     [injectionQuery.data, language, selectedMachineKey],
   );
+  const dayStart = useMemo(() => {
+    if (!latestTime) return null;
+    const start = new Date(latestTime);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }, [latestTime]);
+  const recentStart = useMemo(
+    () => (latestTime ? new Date(latestTime.getTime() - 60 * 60 * 1000) : null),
+    [latestTime],
+  );
+  const previousRecentStart = useMemo(
+    () => (latestTime ? new Date(latestTime.getTime() - 120 * 60 * 1000) : null),
+    [latestTime],
+  );
+  const previousDayStart = useMemo(
+    () => (dayStart ? new Date(dayStart.getTime() - 24 * 60 * 60 * 1000) : null),
+    [dayStart],
+  );
+  const previousDayEnd = useMemo(
+    () => (latestTime ? new Date(latestTime.getTime() - 24 * 60 * 60 * 1000) : null),
+    [latestTime],
+  );
+  const todayFleetSummary = useMemo(
+    () => buildFleetPeriodSummary(injectionQuery.data, dayStart, latestTime),
+    [dayStart, injectionQuery.data, latestTime],
+  );
+  const recentFleetSummary = useMemo(
+    () => buildFleetPeriodSummary(injectionQuery.data, recentStart, latestTime),
+    [injectionQuery.data, latestTime, recentStart],
+  );
+  const previousRecentFleetSummary = useMemo(
+    () => buildFleetPeriodSummary(injectionQuery.data, previousRecentStart, recentStart),
+    [injectionQuery.data, previousRecentStart, recentStart],
+  );
+  const previousDayFleetSummary = useMemo(
+    () => buildFleetPeriodSummary(injectionQuery.data, previousDayStart, previousDayEnd),
+    [injectionQuery.data, previousDayEnd, previousDayStart],
+  );
+  const injectionPlanQty = useMemo(() => {
+    const dailyTotal = planSummaryQuery.data?.injection.daily_totals.find((item) => item.date === planDate);
+    if (dailyTotal) return dailyTotal.plan_qty;
+    return planSummaryQuery.data?.injection.records.reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0) ?? 0;
+  }, [planDate, planSummaryQuery.data]);
   const summary = useMemo(() => {
     const runningRows = machineRows.filter((row) => row.status === "running");
-    const temperatureRows = machineRows.filter((row) => row.oilTemperature !== null);
-    const totalOutput = machineRows.reduce((sum, row) => sum + row.recentOutput, 0);
-    const totalPower = machineRows.reduce((sum, row) => sum + (row.powerUsage ?? 0), 0);
-    const avgOil =
-      temperatureRows.length > 0
-        ? temperatureRows.reduce((sum, row) => sum + (row.oilTemperature ?? 0), 0) / temperatureRows.length
-        : null;
 
     return {
       running: runningRows.length,
       total: machineRows.length,
-      totalOutput,
-      totalPower,
-      avgOil,
     };
   }, [machineRows]);
+  const todayPlanGap = todayFleetSummary.output - injectionPlanQty;
+  const recentOutputDelta = recentFleetSummary.output - previousRecentFleetSummary.output;
+  const recentOilDelta =
+    recentFleetSummary.oilTemperature !== null && previousRecentFleetSummary.oilTemperature !== null
+      ? recentFleetSummary.oilTemperature - previousRecentFleetSummary.oilTemperature
+      : null;
+  const todayPowerDelta =
+    todayFleetSummary.power !== null && previousDayFleetSummary.power !== null
+      ? todayFleetSummary.power - previousDayFleetSummary.power
+      : null;
 
   return (
     <section className="page mes-page">
-      <PageHeader eyebrow={copy.eyebrow} title={copy.title} description={copy.description} />
-
-      <section className="panel mes-source-panel">
-        <div>
-          <p className="panel-card__eyebrow">{copy.sourceLabel}</p>
-          <h3 className="panel__title">{copy.sourceTitle}</h3>
-          <p className="mes-source-panel__description">{copy.sourceDescription}</p>
+      <section className="panel mes-hero-panel">
+        <div className="mes-hero-panel__main">
+          <p className="panel-card__eyebrow">{copy.eyebrow}</p>
+          <h2>{copy.title}</h2>
+          <p>{copy.description}</p>
+          <div className="mes-source-chips" aria-label={copy.availableData}>
+            <span>{copy.injection}</span>
+            <span>{copy.machining}</span>
+            <span>{copy.inventory}</span>
+          </div>
         </div>
-        <label className="mes-source-select">
-          <span>{copy.selectHint}</span>
-          <select
-            value={selectedSource}
-            onChange={(event) => setSelectedSource(event.target.value as MesDataSource)}
-          >
-            {sourceOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {copy[option.labelKey]}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mes-hero-panel__control">
+          <label className="mes-source-select">
+            <span>{copy.selectHint}</span>
+            <select
+              value={selectedSource}
+              onChange={(event) => setSelectedSource(event.target.value as MesDataSource)}
+            >
+              {sourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {copy[option.labelKey]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p>{selectedSourceDescription}</p>
+        </div>
       </section>
 
       {selectedSource === "injection" ? (
         <>
-          <div className="stats-grid">
-            <StatCard title={copy.activeMachines} value={`${summary.running}/${summary.total}`} hint={copy.savedByBackend} />
-            <StatCard title={copy.latestOutput} value={formatNumber(summary.totalOutput)} hint={copy.output} />
-            <StatCard title={copy.avgOil} value={formatTemperature(summary.avgOil)} hint={copy.oil} />
-            <StatCard title={copy.powerUsage} value={`${formatDecimal(summary.totalPower, 2)} kWh`} hint={copy.power} />
+          <div className="mes-stats-grid">
+            <SummaryMetricCard
+              title={copy.activeMachines}
+              value={`${summary.running}/${summary.total}`}
+              hint={copy.savedByBackend}
+            />
+            <SummaryMetricCard
+              title={copy.todayOutput}
+              value={`${formatNumber(todayFleetSummary.output)} / ${formatNumber(injectionPlanQty)}`}
+              hint={`${copy.planShortage} ${formatSignedNumber(todayPlanGap)}`}
+              delta={copy.planReady}
+              deltaTone={todayPlanGap >= 0 ? "up" : "down"}
+            />
+            <SummaryMetricCard
+              title={copy.recentOutput60}
+              value={formatNumber(recentFleetSummary.output)}
+              hint={copy.output}
+              delta={`${copy.previous60} ${formatSignedNumber(recentOutputDelta)}`}
+              deltaTone={recentOutputDelta > 0 ? "up" : recentOutputDelta < 0 ? "down" : "neutral"}
+            />
+            <SummaryMetricCard
+              title={copy.recentAvgOil60}
+              value={formatTemperature(recentFleetSummary.oilTemperature)}
+              hint={copy.oil}
+              delta={
+                recentOilDelta === null
+                  ? copy.noCompareData
+                  : `${copy.previous60} ${formatSignedNumber(recentOilDelta, "°C")}`
+              }
+              deltaTone={recentOilDelta === null ? "neutral" : recentOilDelta > 0 ? "up" : recentOilDelta < 0 ? "down" : "neutral"}
+            />
+            <SummaryMetricCard
+              title={copy.todayPowerUsage}
+              value={`${formatDecimal(todayFleetSummary.power, 2)} kWh`}
+              hint={copy.power}
+              delta={
+                todayPowerDelta === null
+                  ? copy.noCompareData
+                  : `${copy.previousDay} ${formatSignedNumber(todayPowerDelta, " kWh")}`
+              }
+              deltaTone={todayPowerDelta === null ? "neutral" : todayPowerDelta > 0 ? "up" : todayPowerDelta < 0 ? "down" : "neutral"}
+            />
           </div>
 
           <section className="panel mes-monitor-panel">
@@ -729,8 +916,8 @@ export function MesMonitoringPage() {
                           </h4>
                         </div>
                         <div className="mes-trend-card__current">
-                          <span>{copy.cumulative}</span>
-                          <strong>{formatNumber(selectedMachine.cumulativeOutput)}</strong>
+                          <span>{copy.todayCumulative}</span>
+                          <strong>{formatNumber(shiftSummary.output)}</strong>
                         </div>
                       </div>
 
