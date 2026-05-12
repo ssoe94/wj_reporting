@@ -8,6 +8,7 @@ import time
 import requests
 import pytz
 import logging
+from bisect import bisect_right
 from typing import List, Dict, Optional, Callable
 from datetime import datetime, timedelta
 from django.core.cache import cache
@@ -498,6 +499,8 @@ class MESResourceService:
         last_slot = time_slots[-1]
         interval_minutes = last_slot.get('interval_minutes', 60)
         end_of_last_slot = datetime.fromisoformat(last_slot['time']) + timedelta(minutes=interval_minutes)
+        slot_starts = [datetime.fromisoformat(slot['time']) for slot in time_slots]
+        slot_keys = [slot['time'] for slot in time_slots]
 
         for machine_num in machine_numbers:
             db_records = InjectionMonitoringRecord.objects.filter(
@@ -506,20 +509,12 @@ class MESResourceService:
                 timestamp__lt=end_of_last_slot
             ).order_by('timestamp')
 
-            # 1. 鞁滉皠 鞀’氤勲 毵堨毵?霠堨綌霌滊ゼ 氙鸽Μ 瓿勳偘頃╇媹雼?
             slot_records = {}
             for r in db_records:
-                # 霠堨綌霌滉皜 靻嶍晿電?鞁滉皠 鞀’鞚?彀眷姷雼堧嫟.
-                # time_slots電?鞁滉皠靾滌溂搿?鞝曤牞霅橃柎 鞛堨溂氙€搿? 霋れ棎靹滊秬韯?彀倦姅 瓴冹澊 須湪鞝侅瀰雼堧嫟.
-                for slot in reversed(time_slots):
-                    slot_start = datetime.fromisoformat(slot['time'])
-                    if r.timestamp >= slot_start:
-                        # 鞚?鞀’鞐?靻嶍晿電?霠堨綌霌滌瀰雼堧嫟.
-                        # db_records臧€ 鞁滉皠靾滌澊氙€搿? 臧欖潃 鞀’鞐?鞐煬 霠堨綌霌滉皜 鞛堧嫟氅?毵堨毵?霠堨綌霌滉皜 雿柎鞊瓣矊 霅╇媹雼?
-                        slot_records[slot['time']] = r
-                        break
+                slot_index = bisect_right(slot_starts, r.timestamp) - 1
+                if 0 <= slot_index < len(slot_keys):
+                    slot_records[slot_keys[slot_index]] = r
 
-            # 2. 毵ろ姼毽姢 頄夓潉 毵岆摥雼堧嫟.
             cum_row: List[float] = []
             act_row: List[float] = []
             temp_row: List[float] = []
