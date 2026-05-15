@@ -21,6 +21,7 @@ type InjectionMachineRow = {
   oilTemperature: number | null;
   powerUsage: number | null;
   powerTotal: number | null;
+  shiftOutput: number;
   recentOutput: number;
   status: "running" | "idle" | "warning";
 };
@@ -361,11 +362,13 @@ function buildRows(data?: InjectionProductionMatrix): InjectionMachineRow[] {
   if (!data || data.time_slots.length === 0) return [];
   const latestIndex = data.time_slots.length - 1;
   const latestTime = getLatestTime(data);
+  const shiftStartTime = getShiftStart(latestTime);
   const recentStartTime = latestTime ? new Date(latestTime.getTime() - 60 * 60 * 1000) : null;
 
   return data.machines.map((machine) => {
     const key = String(machine.machine_number);
     const latestOutput = numberAt(data.actual_production_matrix[key], latestIndex);
+    const shiftOutput = buildPeriodSummary(data, machine.machine_number, shiftStartTime, latestTime).output;
     const recentOutput = buildPeriodSummary(data, machine.machine_number, recentStartTime, latestTime).output;
     const cumulativeOutput = numberAt(data.cumulative_production_matrix[key], latestIndex);
     const oilTemperature = nullableNumberAt(data.oil_temperature_matrix[key], latestIndex);
@@ -382,6 +385,7 @@ function buildRows(data?: InjectionProductionMatrix): InjectionMachineRow[] {
       oilTemperature,
       powerUsage,
       powerTotal,
+      shiftOutput,
       recentOutput,
       status,
     };
@@ -1358,7 +1362,7 @@ export function MesMonitoringPage() {
                     >
                       <span className="mes-machine-tile__name">{row.machineNumber}</span>
                       <span className="mes-machine-tile__ton">{formatTonnage(row.tonnage)}</span>
-                      <strong>{formatNumber(row.recentOutput)}</strong>
+                      <strong>{formatNumber(row.shiftOutput)}</strong>
                       <small>{formatTemperature(row.oilTemperature)}</small>
                     </button>
                   ))}
