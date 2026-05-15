@@ -15,7 +15,9 @@ Thumbs.db
 
 # Python virtual environments
 venv/
+.venv/
 backend/venv/
+backend/.venv/
 
 # Django
 db.sqlite3
