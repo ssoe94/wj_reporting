@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
-from .models import ProductionExecution, ProductionPlan
+from .models import ProductionExecution, ProductionPlan, ProductionPlanChangeLog
+from .product_context import extract_plan_product_context
 
 
 class ProductionPlanSerializer(serializers.ModelSerializer):
@@ -14,11 +15,21 @@ class ProductionPlanSerializer(serializers.ModelSerializer):
             'lot_no',
             'model_name',
             'part_spec',
+            'product_family_code',
+            'product_family_name',
+            'is_finished_product',
             'part_no',
             'planned_quantity',
             'sequence',
+            'created_at',
+            'updated_at',
         ]
-        read_only_fields = ['id', 'plan_date', 'plan_type']
+        read_only_fields = ['id', 'plan_date', 'plan_type', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        if 'part_spec' in attrs:
+            attrs.update(extract_plan_product_context(attrs.get('part_spec')))
+        return attrs
 
     def validate_planned_quantity(self, value):
         try:
@@ -65,3 +76,32 @@ class ProductionExecutionSerializer(serializers.ModelSerializer):
 
     def validate_personnel_count(self, value):
         return max(0, float(value or 0))
+
+
+class ProductionPlanChangeLogSerializer(serializers.ModelSerializer):
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductionPlanChangeLog
+        fields = [
+            'id',
+            'plan_date',
+            'plan_type',
+            'action',
+            'machine_name',
+            'part_no',
+            'model_name',
+            'lot_no',
+            'plan_id',
+            'before',
+            'after',
+            'summary',
+            'changed_by_name',
+            'created_at',
+        ]
+
+    def get_changed_by_name(self, obj):
+        user = obj.changed_by
+        if not user:
+            return None
+        return getattr(user, 'username', None) or getattr(user, 'email', None) or str(user)

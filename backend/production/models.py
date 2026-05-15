@@ -11,6 +11,9 @@ class ProductionPlan(models.Model):
     lot_no = models.CharField(max_length=100, null=True, blank=True)
     model_name = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     part_spec = models.CharField(max_length=100, null=True, blank=True)
+    product_family_code = models.CharField(max_length=20, null=True, blank=True, db_index=True)
+    product_family_name = models.CharField(max_length=100, null=True, blank=True)
+    is_finished_product = models.BooleanField(default=False, db_index=True)
     part_no = models.CharField(max_length=100, null=True, blank=True, db_index=True)  # Corresponds to fg_part_no
     planned_quantity = models.FloatField()
     sequence = models.IntegerField(default=-1) # To preserve order from upload
@@ -28,6 +31,47 @@ class ProductionPlan(models.Model):
 
     def __str__(self):
         return f"{self.plan_date} - {self.machine_name} - {self.part_no} ({self.planned_quantity})"
+
+
+class ProductionPlanChangeLog(models.Model):
+    """Append-only audit log for production plan uploads and edits."""
+
+    ACTION_CHOICES = [
+        ('upload', 'Upload'),
+        ('create', 'Create'),
+        ('update', 'Update'),
+        ('reorder', 'Reorder'),
+        ('delete', 'Delete'),
+    ]
+
+    plan_date = models.DateField(db_index=True)
+    plan_type = models.CharField(max_length=20, db_index=True)
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES, db_index=True)
+    machine_name = models.CharField(max_length=100, null=True, blank=True)
+    part_no = models.CharField(max_length=100, null=True, blank=True)
+    model_name = models.CharField(max_length=100, null=True, blank=True)
+    lot_no = models.CharField(max_length=100, null=True, blank=True)
+    plan_id = models.IntegerField(null=True, blank=True)
+    before = models.JSONField(default=dict, blank=True)
+    after = models.JSONField(default=dict, blank=True)
+    summary = models.CharField(max_length=255, blank=True, default='')
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='production_plan_change_logs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['plan_date', 'plan_type', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.plan_date} {self.plan_type} {self.action} {self.summary}"
 
 
 class ProductionPartCavity(models.Model):

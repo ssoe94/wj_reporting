@@ -10,18 +10,48 @@ import pandas as pd
 import pytz
 import re
 
-from .models import ProductionExecution, ProductionMesReportRecord, ProductionPlan, ProductionPartCavity
+from .models import ProductionExecution, ProductionMesReportRecord, ProductionPlan, ProductionPlanChangeLog, ProductionPartCavity
 from injection.models import CycleTimeSetup, InjectionMonitoringRecord, PartSpec
 from assembly.models import AssemblyReport
 
 from django.db.models import Sum, Q, Max
 from django.db.utils import OperationalError, ProgrammingError, IntegrityError
-from .serializers import ProductionExecutionSerializer, ProductionPlanSerializer
+from .serializers import ProductionExecutionSerializer, ProductionPlanChangeLogSerializer, ProductionPlanSerializer
 from .permissions import user_can_edit_plan, user_can_view_plan
 from .models import ProductionPlanPart
 from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
+from .ai_answer import build_ai_briefing
+from .ai_gateway import answer_from_intent, build_injection_plan_context, request_local_llm, request_question_intent
 from .counter_utils import calculate_cumulative_counter_delta
 import math
+
+
+def serialize_plan_for_log(plan):
+    return {
+        'machine_name': plan.machine_name,
+        'part_no': plan.part_no,
+        'model_name': plan.model_name,
+        'lot_no': plan.lot_no,
+        'planned_quantity': int(round(plan.planned_quantity or 0)),
+        'sequence': plan.sequence,
+    }
+
+
+def build_plan_change_summary(before, after):
+    labels = {
+        'machine_name': '설비',
+        'part_no': 'Part No',
+        'model_name': '모델',
+        'lot_no': 'Lot',
+        'planned_quantity': '수량',
+        'sequence': '순서',
+    }
+    changes = [
+        f"{labels.get(key, key)} {before.get(key) or '-'} → {after.get(key) or '-'}"
+        for key in labels
+        if before.get(key) != after.get(key)
+    ]
+    return ', '.join(changes[:3]) if changes else '변경 없음'
 
 class ProductionPlanSummaryView(APIView):
     """
@@ -41,15 +71,21 @@ class ProductionPlanSummaryView(APIView):
 
         # Fetch all plan data for the target date
         plan_data_qs = ProductionPlan.objects.filter(plan_date=target_date, planned_quantity__gt=0)
+        latest_updated_at = plan_data_qs.aggregate(latest=Max('updated_at'))['latest']
+        part_nos = {
+            (part_no or '').strip().upper()
+            for part_no in plan_data_qs.values_list('part_no', flat=True)
+            if part_no
+        }
         cavity_map = {
-            row['part_no']: row['cavity']
-            for row in ProductionPartCavity.objects.filter(part_no__in=plan_data_qs.values_list('part_no', flat=True))
-            .values('part_no', 'cavity')
+            (row['part_no'] or '').strip().upper(): row['cavity']
+            for row in ProductionPartCavity.objects.filter(part_no__in=part_nos).values('part_no', 'cavity')
         }
         
         if not plan_data_qs.exists():
             return Response({
                 "plan_date": target_date.isoformat(),
+                "latest_updated_at": latest_updated_at.isoformat() if latest_updated_at else None,
                 "injection": {
                     "records": [],
                     "machine_summary": [],
@@ -70,17 +106,23 @@ class ProductionPlanSummaryView(APIView):
 
         # 1. 'records' format (simplified)
         records_injection = list(plan_data_qs.filter(plan_type='injection').values(
-            'machine_name', 'lot_no', 'model_name', 'part_spec', 'part_no', 'planned_quantity'
+            'id', 'machine_name', 'lot_no', 'model_name', 'part_spec',
+            'product_family_code', 'product_family_name', 'is_finished_product',
+            'part_no', 'planned_quantity', 'sequence', 'created_at', 'updated_at'
         ))
         records_machining = list(plan_data_qs.filter(plan_type='machining').values(
-            'machine_name', 'lot_no', 'model_name', 'part_spec', 'part_no', 'planned_quantity'
+            'id', 'machine_name', 'lot_no', 'model_name', 'part_spec',
+            'product_family_code', 'product_family_name', 'is_finished_product',
+            'part_no', 'planned_quantity', 'sequence', 'created_at', 'updated_at'
         ))
         for record in records_injection:
             record['planned_quantity'] = int(round(record.get('planned_quantity') or 0))
-            record['cavity'] = int(cavity_map.get(record.get('part_no'), 1) or 1)
+            part_no = (record.get('part_no') or '').strip().upper()
+            record['cavity'] = int(cavity_map.get(part_no, 1) or 1)
         for record in records_machining:
             record['planned_quantity'] = int(round(record.get('planned_quantity') or 0))
-            record['cavity'] = int(cavity_map.get(record.get('part_no'), 1) or 1)
+            part_no = (record.get('part_no') or '').strip().upper()
+            record['cavity'] = int(cavity_map.get(part_no, 1) or 1)
 
         # 2. 'machine_summary'
         machine_summary_injection = list(plan_data_qs.filter(plan_type='injection').values('machine_name')
@@ -118,6 +160,7 @@ class ProductionPlanSummaryView(APIView):
 
         response = {
             "plan_date": target_date.isoformat(),
+            "latest_updated_at": latest_updated_at.isoformat() if latest_updated_at else None,
             "injection": {
                 "records": records_injection,
                 "machine_summary": serialize_summary(machine_summary_injection),
@@ -181,6 +224,19 @@ class ProductionPlanListView(generics.ListCreateAPIView):
             sequence = (last_seq or 0) + 1
         try:
             obj = serializer.save(plan_date=target_date, plan_type=plan_type, sequence=sequence)
+            ProductionPlanChangeLog.objects.create(
+                plan_date=obj.plan_date,
+                plan_type=obj.plan_type,
+                action='create',
+                machine_name=obj.machine_name,
+                part_no=obj.part_no,
+                model_name=obj.model_name,
+                lot_no=obj.lot_no,
+                plan_id=obj.id,
+                after=serialize_plan_for_log(obj),
+                summary=f"{obj.machine_name} {obj.part_no or obj.model_name or '-'} 생성",
+                changed_by=self.request.user if self.request.user.is_authenticated else None,
+            )
             part_no = (obj.part_no or '').strip().upper()
             if part_no:
                 try:
@@ -194,6 +250,75 @@ class ProductionPlanListView(generics.ListCreateAPIView):
                     pass
         except IntegrityError:
             raise ValidationError({'detail': 'Plan entry already exists for this machine/part.'})
+
+
+class ProductionAiAskView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        question = (request.data.get('question') or '').strip()
+        date_str = request.data.get('date') or timezone.localdate().isoformat()
+        language = request.data.get('language') or 'ko'
+
+        if not question:
+            return Response({'detail': 'question is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_date = parse_date(date_str)
+        if not target_date:
+            return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        intent = request_question_intent(question, target_date.isoformat(), language)
+        context = build_injection_plan_context(target_date.isoformat())
+        calculated_answer = answer_from_intent(intent, context, language)
+        if calculated_answer:
+            return Response({
+                'answer': calculated_answer,
+                'source': 'intent_calculated',
+                'intent': intent,
+                'context': {
+                    'business_date': context['business_date'],
+                    'range_start': context['range_start'],
+                    'range_end': context['range_end'],
+                    'recent_range_start': context['recent_range_start'],
+                    'recent_range_end': context['recent_range_end'],
+                },
+            })
+
+        try:
+            answer = request_local_llm(question, context, language)
+        except Exception as exc:
+            return Response({
+                'answer': '로컬 LLM 응답 시간이 길어져 중단했습니다. 계산형 질문은 더 빠르게 답할 수 있도록 계속 보강하겠습니다.',
+                'source': 'timeout_or_llm_error',
+                'detail': str(exc),
+            })
+
+        return Response({
+            'answer': answer,
+            'source': 'local_llm',
+            'intent': intent,
+            'context': {
+                'business_date': context['business_date'],
+                'range_start': context['range_start'],
+                'range_end': context['range_end'],
+                'recent_range_start': context['recent_range_start'],
+                'recent_range_end': context['recent_range_end'],
+            },
+        })
+
+
+class ProductionAiBriefingView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        date_str = request.query_params.get('date') or timezone.localdate().isoformat()
+        language = request.query_params.get('language') or 'ko'
+        target_date = parse_date(date_str)
+        if not target_date:
+            return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        payload = build_ai_briefing(target_date, language)
+        return Response(payload.to_dict())
 
 
 class ProductionPlanDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -213,7 +338,24 @@ class ProductionPlanDetailView(generics.RetrieveUpdateDestroyAPIView):
         return obj
 
     def perform_update(self, serializer):
+        before = serialize_plan_for_log(self.get_object())
         obj = serializer.save()
+        after = serialize_plan_for_log(obj)
+        action = 'reorder' if set(key for key in after if before.get(key) != after.get(key)) == {'sequence'} else 'update'
+        ProductionPlanChangeLog.objects.create(
+            plan_date=obj.plan_date,
+            plan_type=obj.plan_type,
+            action=action,
+            machine_name=obj.machine_name,
+            part_no=obj.part_no,
+            model_name=obj.model_name,
+            lot_no=obj.lot_no,
+            plan_id=obj.id,
+            before=before,
+            after=after,
+            summary=build_plan_change_summary(before, after),
+            changed_by=self.request.user if self.request.user.is_authenticated else None,
+        )
         part_no = (obj.part_no or '').strip().upper()
         if part_no:
             try:
@@ -299,6 +441,40 @@ class ProductionPlanPartSearchView(APIView):
                 if row.get('part_no')
             ]
         return Response(data)
+
+
+class ProductionPlanChangeLogView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        date_str = request.query_params.get('date')
+        if not date_str:
+            return Response({'detail': 'date is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_date = parse_date(date_str)
+        if not target_date:
+            return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        logs = ProductionPlanChangeLog.objects.filter(plan_date=target_date)
+        plan_type = request.query_params.get('plan_type')
+        if plan_type in ['injection', 'machining']:
+            logs = logs.filter(plan_type=plan_type)
+
+        latest_plan_updated_at = ProductionPlan.objects.filter(plan_date=target_date).aggregate(
+            latest=Max('updated_at'),
+        )['latest']
+        latest_log_at = logs.aggregate(latest=Max('created_at'))['latest']
+        latest_updated_at = max(
+            [value for value in [latest_plan_updated_at, latest_log_at] if value],
+            default=None,
+        )
+
+        logs = logs.select_related('changed_by')[:100]
+        return Response({
+            'date': target_date.isoformat(),
+            'latest_updated_at': latest_updated_at.isoformat() if latest_updated_at else None,
+            'logs': ProductionPlanChangeLogSerializer(logs, many=True).data,
+        })
 
 class ProductionDashboardView(APIView):
     """
@@ -436,10 +612,14 @@ class ProductionStatusView(APIView):
             plan_type='injection',
             planned_quantity__gt=0,
         )
+        injection_part_nos = {
+            (part_no or '').strip().upper()
+            for part_no in injection_plans_qs.values_list('part_no', flat=True)
+            if part_no
+        }
         cavity_map = {
-            row['part_no']: row['cavity']
-            for row in ProductionPartCavity.objects.filter(part_no__in=injection_plans_qs.values_list('part_no', flat=True))
-            .values('part_no', 'cavity')
+            (row['part_no'] or '').strip().upper(): row['cavity']
+            for row in ProductionPartCavity.objects.filter(part_no__in=injection_part_nos).values('part_no', 'cavity')
         }
         
         # 2. Custom sort in Python
@@ -511,7 +691,8 @@ class ProductionStatusView(APIView):
                 planned_qty = int(round(plan.planned_quantity or 0))
                 if not planned_qty or planned_qty <= 0:
                     continue
-                cavity = int(cavity_map.get(plan.part_no, 1) or 1)
+                part_no_key = (plan.part_no or '').strip().upper()
+                cavity = int(cavity_map.get(part_no_key, 1) or 1)
                 cavity = max(cavity, 1)
                 actual_qty = 0
                 
@@ -662,6 +843,9 @@ class ProductionConsoleView(APIView):
                 'lot_no',
                 'model_name',
                 'part_spec',
+                'product_family_code',
+                'product_family_name',
+                'is_finished_product',
                 'part_no',
                 'planned_quantity',
                 'sequence',

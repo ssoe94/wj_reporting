@@ -48,12 +48,15 @@ function mesEndpoint(path: string) {
   return `${MES_API_BASE_URL.replace(/\/$/, "")}${path}`;
 }
 
-export async function getInjectionProductionMatrix() {
+async function fetchInjectionProductionMatrix(date?: string) {
   try {
     const twoMinuteParams = new URLSearchParams({
       interval: "2min",
-      columns: "1440",
+      columns: "721",
     });
+    if (date) {
+      twoMinuteParams.set("date", date);
+    }
     const twoMinuteResponse = await http.get<InjectionProductionMatrix>(
       mesEndpoint(`/injection/production-matrix/?${twoMinuteParams.toString()}`),
       { skipAuth: true },
@@ -62,14 +65,37 @@ export async function getInjectionProductionMatrix() {
   } catch {
     const fallbackParams = new URLSearchParams({
       interval: "10min",
-      columns: "144",
+      columns: date ? "145" : "144",
     });
+    if (date) {
+      fallbackParams.set("date", date);
+    }
     const fallbackResponse = await http.get<InjectionProductionMatrix>(
       mesEndpoint(`/injection/production-matrix/?${fallbackParams.toString()}`),
       { skipAuth: true },
     );
     return fallbackResponse.data;
   }
+}
+
+export async function getInjectionProductionMatrix() {
+  return fetchInjectionProductionMatrix();
+}
+
+export async function getInjectionProductionMatrixForDate(date: string) {
+  return fetchInjectionProductionMatrix(date);
+}
+
+export async function getInjectionUtilizationMatrix(columns = 336) {
+  const params = new URLSearchParams({
+    interval: "1hour",
+    columns: String(columns),
+  });
+  const response = await http.get<InjectionProductionMatrix>(
+    mesEndpoint(`/injection/production-matrix/?${params.toString()}`),
+    { skipAuth: true },
+  );
+  return response.data;
 }
 
 export async function requestInjectionSnapshotUpdate() {

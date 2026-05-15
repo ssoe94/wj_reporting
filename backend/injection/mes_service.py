@@ -471,7 +471,12 @@ class MESResourceService:
                     # Do not re-raise here, continue to next snapshot
                     # The outer get_production_matrix will handle overall errors if no data is found
 
-    def get_production_matrix(self, interval_type: str = '30min', columns: int = 13) -> Dict:
+    def get_production_matrix(
+        self,
+        interval_type: str = '30min',
+        columns: int = 13,
+        reference_time: Optional[datetime] = None,
+    ) -> Dict:
         from injection.models import InjectionReport
 
         # 1. Trigger the incremental update for all machines. (REMOVED FOR PERFORMANCE)
@@ -481,8 +486,8 @@ class MESResourceService:
         machine_numbers = list(range(1, 18))
         cst = pytz.timezone('Asia/Shanghai')
         latest_record = InjectionMonitoringRecord.objects.order_by('-timestamp').first()
-        latest_time = latest_record.timestamp.astimezone(cst) if latest_record else datetime.now(cst)
-        use_exact_latest = latest_time.minute % 10 != 0
+        latest_time = reference_time or (latest_record.timestamp.astimezone(cst) if latest_record else datetime.now(cst))
+        use_exact_latest = reference_time is None and latest_time.minute % 10 != 0
         time_slots = self._build_time_slots(
             interval_type=interval_type,
             columns=columns,
