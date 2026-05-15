@@ -42,10 +42,14 @@ export type SnapshotUpdateStatus = {
 
 const MES_API_BASE_URL =
   import.meta.env.VITE_MES_API_BASE_URL ||
-  (import.meta.env.DEV ? "https://wj-reporting.onrender.com/api" : "/api");
+  (import.meta.env.DEV ? "https://wj-reporting.onrender.com/api" : "");
 
 function mesEndpoint(path: string) {
-  return `${MES_API_BASE_URL.replace(/\/$/, "")}${path}`;
+  const baseUrl = MES_API_BASE_URL.trim().replace(/\/$/, "");
+  if (!baseUrl || baseUrl === "/api") {
+    return path;
+  }
+  return `${baseUrl}${path}`;
 }
 
 async function fetchInjectionProductionMatrix(date?: string) {
