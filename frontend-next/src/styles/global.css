@@ -3739,10 +3739,29 @@ select {
   line-height: 1;
 }
 
+.mes-machine-tile__metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  line-height: 1;
+}
+
+.mes-machine-tile__metric em {
+  color: var(--muted);
+  font-size: 0.56rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .mes-machine-tile small {
   color: var(--muted);
   font-size: 0.66rem;
   font-weight: 700;
+}
+
+.mes-machine-tile__production {
+  color: var(--accent-strong) !important;
+  font-size: 0.6rem !important;
 }
 
 .mes-live-layout {
