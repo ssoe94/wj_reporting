@@ -1,5 +1,10 @@
 import { type InjectionProductionMatrix } from "@/domains/mes/api";
-import { type ProductionPlanRecord, type ProductionPlanSummaryResponse } from "@/domains/production/api";
+import {
+  type ProductionPlanRecord,
+  type ProductionPlanSummaryResponse,
+  type ProductionStatusMachine,
+  type ProductionStatusResponse,
+} from "@/domains/production/api";
 
 export type RealtimeProgressSegmentStatus = "completed" | "in_progress" | "pending";
 
@@ -98,6 +103,7 @@ function getOrderedPlanRecords(records: ProductionPlanRecord[]) {
 export function buildRealtimeProgressSummary(
   planSummary: ProductionPlanSummaryResponse | undefined,
   mesData: InjectionProductionMatrix | undefined,
+  productionStatus?: ProductionStatusResponse,
 ): RealtimeProgressSummary {
   const latestTime = getLatestTime(mesData);
   const productionDayStart = getProductionDayStart(latestTime);
@@ -145,6 +151,10 @@ export function buildRealtimeProgressSummary(
     shotMap.set(key, { shotCount, recentShots, label: machine.display_name || `${machine.machine_number}호기` });
   }
 
+  if (productionStatus?.injection?.length) {
+    return buildStatusBackedProgressSummary(productionStatus.injection, planMap, shotMap);
+  }
+
   const rows = [...planMap.keys()].map((key) => {
     const plan = planMap.get(key);
     const shots = shotMap.get(key);
@@ -155,9 +165,11 @@ export function buildRealtimeProgressSummary(
     const segments = getOrderedPlanRecords(plan?.records ?? []).map((record, index) => {
       const segmentPlannedQty = Number(record.planned_quantity ?? 0);
       const cavity = Math.max(1, Number(record.cavity ?? 1) || 1);
-      const requiredShots = segmentPlannedQty > 0 ? segmentPlannedQty / cavity : 0;
-      const allocatedShots = Math.max(0, Math.min(remainingShots, requiredShots));
-      const estimatedQty = Math.min(segmentPlannedQty, Math.round(allocatedShots * cavity));
+      const requiredShots = segmentPlannedQty > 0 ? Math.ceil(segmentPlannedQty / cavity) : 0;
+      const allocatedShots = index === (plan?.records.length ?? 0) - 1
+        ? Math.max(0, remainingShots)
+        : Math.max(0, Math.min(remainingShots, requiredShots));
+      const estimatedQty = Math.round(allocatedShots * cavity);
       const progressRate = segmentPlannedQty > 0 ? (estimatedQty / segmentPlannedQty) * 100 : 0;
       const status: RealtimeProgressSegmentStatus = progressRate >= 99.9
         ? "completed"
@@ -218,6 +230,107 @@ export function buildRealtimeProgressSummary(
       return leftNumber - rightNumber;
     }
     return left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" });
+  });
+
+  const plannedQty = rows.reduce((sum, row) => sum + row.plannedQty, 0);
+  const estimatedQty = rows.reduce((sum, row) => sum + row.estimatedQty, 0);
+  const shotCount = rows.reduce((sum, row) => sum + row.shotCount, 0);
+  const completedCount = rows.reduce((sum, row) => sum + row.completedCount, 0);
+  const inProgressCount = rows.reduce((sum, row) => sum + row.inProgressCount, 0);
+  const pendingCount = rows.reduce((sum, row) => sum + row.pendingCount, 0);
+
+  return {
+    plannedQty,
+    shotCount,
+    estimatedQty,
+    progressRate: plannedQty > 0 ? (estimatedQty / plannedQty) * 100 : 0,
+    runningCount: rows.filter((row) => row.isRunning).length,
+    completedCount,
+    inProgressCount,
+    pendingCount,
+    partCount: completedCount + inProgressCount + pendingCount,
+    rows,
+  };
+}
+
+function buildStatusBackedProgressSummary(
+  statusRows: ProductionStatusMachine[],
+  planMap: Map<string, {
+    label: string;
+    plannedQty: number;
+    cavityWeightedQty: number;
+    records: ProductionPlanRecord[];
+  }>,
+  shotMap: Map<string, { shotCount: number; recentShots: number; label: string }>,
+): RealtimeProgressSummary {
+  const rows = statusRows.map((statusRow) => {
+    const machineNumber = getMachineNumberFromName(statusRow.machine_name);
+    const key = machineNumber ?? (statusRow.machine_name || "unknown");
+    const plan = planMap.get(key);
+    const shots = shotMap.get(key);
+    const orderedRecords = getOrderedPlanRecords(plan?.records ?? []);
+    const plannedQty = Number(statusRow.total_planned ?? 0);
+    const estimatedQty = Number(statusRow.total_actual ?? 0);
+    const avgCavity = plannedQty > 0 ? (plan?.cavityWeightedQty ?? plannedQty) / plannedQty : 1;
+    const segments = (statusRow.parts ?? []).map((part, index) => {
+      const matchingRecord = orderedRecords.find((record) => {
+        const recordPart = String(record.part_no ?? "").trim().toUpperCase();
+        const partNo = String(part.part_no ?? "").trim().toUpperCase();
+        return recordPart && partNo && recordPart === partNo;
+      }) ?? orderedRecords[index];
+      const segmentPlannedQty = Number(part.planned_quantity ?? matchingRecord?.planned_quantity ?? 0);
+      const segmentActualQty = Number(part.actual_quantity ?? 0);
+      const cavity = Math.max(1, Number(matchingRecord?.cavity ?? 1) || 1);
+      const requiredShots = segmentPlannedQty > 0 ? Math.ceil(segmentPlannedQty / cavity) : 0;
+      const allocatedShots = segmentActualQty > 0 ? segmentActualQty / cavity : 0;
+      const progressRate = segmentPlannedQty > 0 ? (segmentActualQty / segmentPlannedQty) * 100 : 0;
+      const status: RealtimeProgressSegmentStatus = progressRate >= 99.9
+        ? "completed"
+        : progressRate > 0
+          ? "in_progress"
+          : "pending";
+
+      return {
+        key: `${matchingRecord?.id ?? index}-${part.part_no ?? part.model_name ?? "part"}`,
+        sequence: index + 1,
+        partNo: part.part_no || matchingRecord?.part_no || matchingRecord?.model_name || "-",
+        modelName: part.model_name || matchingRecord?.model_name || matchingRecord?.part_spec || "-",
+        lotNo: matchingRecord?.lot_no || "-",
+        productFamilyCode: matchingRecord?.product_family_code || null,
+        productFamilyName: matchingRecord?.product_family_name || null,
+        isFinishedProduct: Boolean(matchingRecord?.is_finished_product),
+        plannedQty: segmentPlannedQty,
+        cavity,
+        requiredShots,
+        allocatedShots,
+        estimatedQty: segmentActualQty,
+        progressRate,
+        status,
+      };
+    });
+    const completedCount = segments.filter((segment) => segment.status === "completed").length;
+    const inProgressCount = segments.filter((segment) => segment.status === "in_progress").length;
+    const pendingCount = segments.filter((segment) => segment.status === "pending").length;
+    const recentShots = shots?.recentShots ?? 0;
+
+    return {
+      key,
+      label: statusRow.machine_name || plan?.label || shots?.label || key,
+      plannedQty,
+      shotCount: shots?.shotCount ?? 0,
+      recentShots,
+      recentCycleTimeSec: recentShots > 0 ? 3600 / recentShots : null,
+      estimatedQty,
+      progressRate: plannedQty > 0 ? (estimatedQty / plannedQty) * 100 : Number(statusRow.progress ?? 0),
+      gapQty: estimatedQty - plannedQty,
+      partCount: segments.length,
+      avgCavity,
+      isRunning: recentShots > 0,
+      completedCount,
+      inProgressCount,
+      pendingCount,
+      segments,
+    };
   });
 
   const plannedQty = rows.reduce((sum, row) => sum + row.plannedQty, 0);

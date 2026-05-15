@@ -8,7 +8,7 @@ import {
   getInjectionUtilizationMatrix,
   requestInjectionSnapshotUpdate,
 } from "@/domains/mes/api";
-import { getProductionPlanSummary } from "@/domains/production/api";
+import { getProductionPlanSummary, getProductionStatus } from "@/domains/production/api";
 import { buildRealtimeProgressSummary } from "@/domains/production/realtime-progress";
 import { PageHeaderIcon } from "@/shared/components/PageHeader";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
@@ -1081,6 +1081,12 @@ export function MesMonitoringPage() {
     queryFn: () => getProductionPlanSummary(planDate),
     enabled: selectedSource === "injection" && Boolean(planDate),
   });
+  const productionStatusQuery = useQuery({
+    queryKey: ["production-status", planDate],
+    queryFn: () => getProductionStatus(planDate),
+    enabled: selectedSource === "injection" && Boolean(planDate),
+    refetchInterval: selectedSource === "injection" ? 60_000 : false,
+  });
   const selectedMachine = machineRows.find((row) => row.machineNumber === selectedMachineNumber) ?? machineRows[0];
   const selectedMachineKey = selectedMachine?.machineNumber ?? selectedMachineNumber;
   const selectedSourceDescription =
@@ -1176,8 +1182,8 @@ export function MesMonitoringPage() {
     return planSummaryQuery.data?.injection.records.reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0) ?? 0;
   }, [planDate, planSummaryQuery.data]);
   const realtimeProgress = useMemo(
-    () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data),
-    [injectionQuery.data, planSummaryQuery.data],
+    () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data, productionStatusQuery.data),
+    [injectionQuery.data, planSummaryQuery.data, productionStatusQuery.data],
   );
   const todayProductionQty = realtimeProgress.estimatedQty;
   const todayProductionPlanQty = realtimeProgress.plannedQty || injectionPlanQty;

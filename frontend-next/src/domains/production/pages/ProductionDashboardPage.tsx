@@ -10,10 +10,19 @@ import {
   getProductionAiBriefing,
   getProductionMesReportStats,
   getProductionPlanSummary,
+  getProductionStatus,
   type ProductionMesReportStatsResponse,
   type ProductionPlanRecord,
   type ProductionPlanSummaryResponse,
+  type ProductionStatusResponse,
 } from "@/domains/production/api";
+import {
+  buildRealtimeProgressSummary,
+  type RealtimeProgressRow,
+  type RealtimeProgressSegment,
+  type RealtimeProgressSegmentStatus,
+  type RealtimeProgressSummary,
+} from "@/domains/production/realtime-progress";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatCard } from "@/shared/components/StatCard";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
@@ -33,58 +42,6 @@ type ProductionBriefContext = {
   topMachines: Array<{ machine: string; output: number }>;
   lowOutputMachines: Array<{ machine: string; output: number }>;
   latestUpdatedAt: string | null;
-};
-
-type RealtimeProgressRow = {
-  key: string;
-  label: string;
-  plannedQty: number;
-  shotCount: number;
-  recentShots: number;
-  recentCycleTimeSec: number | null;
-  estimatedQty: number;
-  progressRate: number;
-  gapQty: number;
-  partCount: number;
-  avgCavity: number;
-  isRunning: boolean;
-  completedCount: number;
-  inProgressCount: number;
-  pendingCount: number;
-  segments: RealtimeProgressSegment[];
-};
-
-type RealtimeProgressSummary = {
-  plannedQty: number;
-  shotCount: number;
-  estimatedQty: number;
-  progressRate: number;
-  runningCount: number;
-  completedCount: number;
-  inProgressCount: number;
-  pendingCount: number;
-  partCount: number;
-  rows: RealtimeProgressRow[];
-};
-
-type RealtimeProgressSegmentStatus = "completed" | "in_progress" | "pending";
-
-type RealtimeProgressSegment = {
-  key: string;
-  sequence: number;
-  partNo: string;
-  modelName: string;
-  lotNo: string;
-  productFamilyCode: string | null;
-  productFamilyName: string | null;
-  isFinishedProduct: boolean;
-  plannedQty: number;
-  cavity: number;
-  requiredShots: number;
-  allocatedShots: number;
-  estimatedQty: number;
-  progressRate: number;
-  status: RealtimeProgressSegmentStatus;
 };
 
 type MachiningProgressPreview = {
@@ -433,6 +390,7 @@ function buildProductionBriefContext(
   planSummary: ProductionPlanSummaryResponse | undefined,
   mesData: InjectionProductionMatrix | undefined,
   machiningStats: ProductionMesReportStatsResponse | undefined,
+  productionStatus: ProductionStatusResponse | undefined,
 ): ProductionBriefContext {
   const latestTime = getLatestTime(mesData);
   const productionDayStart = getProductionDayStart(latestTime);
@@ -459,7 +417,7 @@ function buildProductionBriefContext(
       recentOutput,
     };
   }) ?? [];
-  const realtimeSummary = buildRealtimeProgressSummary(planSummary, mesData);
+  const realtimeSummary = buildRealtimeProgressSummary(planSummary, mesData, productionStatus);
   const actualMachineOutputs = realtimeSummary.rows
     .filter((row) => row.estimatedQty > 0)
     .map((row) => ({ machine: row.label, output: row.estimatedQty }));
@@ -487,153 +445,6 @@ function buildProductionBriefContext(
     topMachines: sortedActiveMachines.slice(0, 4).map(({ machine, output }) => ({ machine, output })),
     lowOutputMachines: sortedActiveMachines.slice(-4).map(({ machine, output }) => ({ machine, output })),
     latestUpdatedAt: latestTime?.toISOString() ?? null,
-  };
-}
-
-function buildRealtimeProgressSummary(
-  planSummary: ProductionPlanSummaryResponse | undefined,
-  mesData: InjectionProductionMatrix | undefined,
-): RealtimeProgressSummary {
-  const latestTime = getLatestTime(mesData);
-  const productionDayStart = getProductionDayStart(latestTime);
-  const recentStart = latestTime ? new Date(latestTime.getTime() - 60 * 60 * 1000) : null;
-  const planMap = new Map<string, {
-    label: string;
-    plannedQty: number;
-    cavityWeightedQty: number;
-    records: ProductionPlanRecord[];
-  }>();
-
-  for (const record of planSummary?.injection.records ?? []) {
-    const machineNumber = getMachineNumberFromName(record.machine_name);
-    const key = machineNumber ?? (record.machine_name || "unknown");
-    const plannedQty = Number(record.planned_quantity ?? 0);
-    const cavity = Math.max(1, Number(record.cavity ?? 1) || 1);
-    const current = planMap.get(key) ?? {
-      label: record.machine_name || (machineNumber ? `${machineNumber}호기` : "-"),
-      plannedQty: 0,
-      cavityWeightedQty: 0,
-      records: [],
-    };
-
-    current.plannedQty += plannedQty;
-    current.cavityWeightedQty += plannedQty * cavity;
-    current.records.push(record);
-    planMap.set(key, current);
-  }
-
-  const shotMap = new Map<string, { shotCount: number; recentShots: number; label: string }>();
-  for (const machine of mesData?.machines ?? []) {
-    const key = String(machine.machine_number);
-    let shotCount = 0;
-    let recentShots = 0;
-    mesData?.time_slots.forEach((slot, index) => {
-      const slotTime = new Date(slot.time);
-      const output = numberAt(mesData.actual_production_matrix[key], index);
-      if (productionDayStart && latestTime && slotTime >= productionDayStart && slotTime <= latestTime) {
-        shotCount += output;
-      }
-      if (recentStart && latestTime && slotTime >= recentStart && slotTime <= latestTime) {
-        recentShots += output;
-      }
-    });
-    shotMap.set(key, { shotCount, recentShots, label: machine.display_name || `${machine.machine_number}호기` });
-  }
-
-  const allKeys = new Set([...planMap.keys()]);
-  const rows = [...allKeys].map((key) => {
-    const plan = planMap.get(key);
-    const shots = shotMap.get(key);
-    const plannedQty = plan?.plannedQty ?? 0;
-    const avgCavity = plannedQty > 0 ? (plan?.cavityWeightedQty ?? plannedQty) / plannedQty : 1;
-    const shotCount = shots?.shotCount ?? 0;
-    let remainingShots = shotCount;
-    const segments = getOrderedPlanRecords(plan?.records ?? []).map((record, index) => {
-      const segmentPlannedQty = Number(record.planned_quantity ?? 0);
-      const cavity = Math.max(1, Number(record.cavity ?? 1) || 1);
-      const requiredShots = segmentPlannedQty > 0 ? segmentPlannedQty / cavity : 0;
-      const allocatedShots = Math.max(0, Math.min(remainingShots, requiredShots));
-      const estimatedQty = Math.min(segmentPlannedQty, Math.round(allocatedShots * cavity));
-      const progressRate = segmentPlannedQty > 0 ? (estimatedQty / segmentPlannedQty) * 100 : 0;
-      const status: RealtimeProgressSegmentStatus = progressRate >= 99.9
-        ? "completed"
-        : progressRate > 0
-          ? "in_progress"
-          : "pending";
-
-      remainingShots -= allocatedShots;
-      return {
-        key: `${record.id ?? index}-${record.part_no ?? record.model_name ?? "part"}`,
-        sequence: index + 1,
-        partNo: record.part_no || record.model_name || record.part_spec || "-",
-        modelName: record.model_name || record.part_spec || "-",
-        lotNo: record.lot_no || "-",
-        productFamilyCode: record.product_family_code || null,
-        productFamilyName: record.product_family_name || null,
-        isFinishedProduct: Boolean(record.is_finished_product),
-        plannedQty: segmentPlannedQty,
-        cavity,
-        requiredShots,
-        allocatedShots,
-        estimatedQty,
-        progressRate,
-        status,
-      };
-    });
-    const cappedEstimatedQty = segments.reduce((sum, segment) => sum + segment.estimatedQty, 0);
-    const extraQty = remainingShots > 0 ? Math.round(remainingShots * avgCavity) : 0;
-    const estimatedQty = cappedEstimatedQty + extraQty;
-    const progressRate = plannedQty > 0 ? Math.min(999, (estimatedQty / plannedQty) * 100) : 0;
-    const completedCount = segments.filter((segment) => segment.status === "completed").length;
-    const inProgressCount = segments.filter((segment) => segment.status === "in_progress").length;
-    const pendingCount = segments.filter((segment) => segment.status === "pending").length;
-
-    const recentShots = shots?.recentShots ?? 0;
-    return {
-      key,
-      label: plan?.label ?? shots?.label ?? key,
-      plannedQty,
-      shotCount,
-      recentShots,
-      recentCycleTimeSec: recentShots > 0 ? 3600 / recentShots : null,
-      estimatedQty,
-      progressRate,
-      gapQty: estimatedQty - plannedQty,
-      partCount: segments.length,
-      avgCavity,
-      isRunning: (shots?.recentShots ?? 0) > 0,
-      completedCount,
-      inProgressCount,
-      pendingCount,
-      segments,
-    };
-  }).sort((left, right) => {
-    const leftNumber = Number(getMachineNumberFromName(left.label) ?? left.key);
-    const rightNumber = Number(getMachineNumberFromName(right.label) ?? right.key);
-    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
-      return leftNumber - rightNumber;
-    }
-    return left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" });
-  });
-
-  const plannedQty = rows.reduce((sum, row) => sum + row.plannedQty, 0);
-  const estimatedQty = rows.reduce((sum, row) => sum + row.estimatedQty, 0);
-  const shotCount = rows.reduce((sum, row) => sum + row.shotCount, 0);
-  const completedCount = rows.reduce((sum, row) => sum + row.completedCount, 0);
-  const inProgressCount = rows.reduce((sum, row) => sum + row.inProgressCount, 0);
-  const pendingCount = rows.reduce((sum, row) => sum + row.pendingCount, 0);
-
-  return {
-    plannedQty,
-    shotCount,
-    estimatedQty,
-    progressRate: plannedQty > 0 ? (estimatedQty / plannedQty) * 100 : 0,
-    runningCount: rows.filter((row) => row.isRunning).length,
-    completedCount,
-    inProgressCount,
-    pendingCount,
-    partCount: completedCount + inProgressCount + pendingCount,
-    rows,
   };
 }
 
@@ -958,6 +769,11 @@ export function ProductionDashboardPage() {
     queryKey: ["production-plan-summary", businessDate],
     queryFn: () => getProductionPlanSummary(businessDate),
   });
+  const productionStatusQuery = useQuery({
+    queryKey: ["production-status", businessDate],
+    queryFn: () => getProductionStatus(businessDate),
+    refetchInterval: isCurrentDate ? 60_000 : false,
+  });
   const machiningStatsQuery = useQuery({
     queryKey: ["production-mes-report-stats", "machining", businessDate],
     queryFn: () => getProductionMesReportStats(businessDate, "machining"),
@@ -967,7 +783,7 @@ export function ProductionDashboardPage() {
     queryFn: () => (isCurrentDate ? getInjectionProductionMatrix() : getInjectionProductionMatrixForDate(businessDate)),
     refetchInterval: isCurrentDate ? 60_000 : false,
   });
-  const isDashboardDataReady = planSummaryQuery.isSuccess && mesQuery.isSuccess && machiningStatsQuery.isSuccess;
+  const isDashboardDataReady = planSummaryQuery.isSuccess && mesQuery.isSuccess && machiningStatsQuery.isSuccess && productionStatusQuery.isSuccess;
   const aiBriefingQuery = useQuery({
     queryKey: ["production", "ai-briefing", businessDate, language],
     queryFn: () => getProductionAiBriefing(businessDate, language),
@@ -982,12 +798,13 @@ export function ProductionDashboardPage() {
       planSummaryQuery.data,
       mesQuery.data,
       machiningStatsQuery.data,
+      productionStatusQuery.data,
     ),
-    [businessDate, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data],
+    [businessDate, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
   );
   const realtimeProgress = useMemo(
-    () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data),
-    [mesQuery.data, planSummaryQuery.data],
+    () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data),
+    [mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
   );
   const machiningProgress = useMemo(
     () => buildMachiningProgressPreview(planSummaryQuery.data),
@@ -1021,7 +838,7 @@ export function ProductionDashboardPage() {
     aiQuestionMutation.mutate();
   }
 
-  const isLoading = planSummaryQuery.isLoading || mesQuery.isLoading || machiningStatsQuery.isLoading;
+  const isLoading = planSummaryQuery.isLoading || mesQuery.isLoading || machiningStatsQuery.isLoading || productionStatusQuery.isLoading;
   const injectionCompletionRate = briefContext.injectionPlanQty > 0
     ? (briefContext.actualInjectionOutput / briefContext.injectionPlanQty) * 100
     : 0;
