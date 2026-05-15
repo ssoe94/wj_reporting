@@ -9,6 +9,7 @@ import {
   requestInjectionSnapshotUpdate,
 } from "@/domains/mes/api";
 import { getProductionPlanSummary } from "@/domains/production/api";
+import { buildRealtimeProgressSummary } from "@/domains/production/realtime-progress";
 import { PageHeaderIcon } from "@/shared/components/PageHeader";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
 
@@ -67,7 +68,7 @@ const pageCopy = {
     title: "MES 데이터 모니터링",
     description: "MES에서 수집한 생산·설비 데이터를 저장하고 모니터링합니다.",
     availableData: "조회 가능 데이터",
-    sourceDescriptionInjection: "사출기의 형합수, 오일온도, 전력 사용량을 확인할 수 있습니다.",
+    sourceDescriptionInjection: "사출기의 생산량, 형합수, 오일온도, 전력 사용량을 확인할 수 있습니다.",
     sourceDescriptionMachining: "가공 생산 완료 보고를 연결해 계획 대비 진행률과 미보고 항목을 확인할 예정입니다.",
     sourceDescriptionInventory: "재고 API를 연결해 품번별 현재고, 부족 수량, 입출고 변동을 확인할 예정입니다.",
     selectHint: "현재 선택",
@@ -80,7 +81,7 @@ const pageCopy = {
     backfillProgress: "보강 진행률",
     lastUpdated: "마지막 갱신",
     activeMachines: "가동 설비",
-    todayOutput: "금일 총 형합수",
+    todayOutput: "금일 총 생산량",
     recentOutput60: "최근 60분 형합수",
     recentAvgOil60: "최근 60분 평균 오일온도",
     avgOil: "평균 오일온도",
@@ -151,7 +152,7 @@ const pageCopy = {
     backfillProgress: "补采进度",
     lastUpdated: "最后更新",
     activeMachines: "运行设备",
-    todayOutput: "今日总合模数",
+    todayOutput: "今日总产量",
     recentOutput60: "最近 60 分钟合模数",
     recentAvgOil60: "最近 60 分钟平均油温",
     avgOil: "平均油温",
@@ -1174,6 +1175,12 @@ export function MesMonitoringPage() {
     if (dailyTotal) return dailyTotal.plan_qty;
     return planSummaryQuery.data?.injection.records.reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0) ?? 0;
   }, [planDate, planSummaryQuery.data]);
+  const realtimeProgress = useMemo(
+    () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data),
+    [injectionQuery.data, planSummaryQuery.data],
+  );
+  const todayProductionQty = realtimeProgress.estimatedQty;
+  const todayProductionPlanQty = realtimeProgress.plannedQty || injectionPlanQty;
   const summary = useMemo(() => {
     const runningRows = machineRows.filter((row) => row.status === "running");
 
@@ -1182,7 +1189,7 @@ export function MesMonitoringPage() {
       total: machineRows.length,
     };
   }, [machineRows]);
-  const todayPlanGap = todayFleetSummary.output - injectionPlanQty;
+  const todayPlanGap = todayProductionQty - todayProductionPlanQty;
   const utilizationTone =
     utilization24.rate === null ? "neutral" : utilization24.rate >= 70 ? "up" : utilization24.rate >= 40 ? "info" : "down";
   const recentOutputDelta = recentFleetSummary.output - previousRecentFleetSummary.output;
@@ -1272,7 +1279,7 @@ export function MesMonitoringPage() {
             />
             <SummaryMetricCard
               title={copy.todayOutput}
-              value={`${formatNumber(todayFleetSummary.output)} / ${formatNumber(injectionPlanQty)}`}
+              value={`${formatNumber(todayProductionQty)} / ${formatNumber(todayProductionPlanQty)}`}
               delta={copy.planReady}
               deltaTone={todayPlanGap >= 0 ? "up" : "down"}
             />
