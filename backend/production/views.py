@@ -20,6 +20,7 @@ from .serializers import ProductionExecutionSerializer, ProductionPlanSerializer
 from .permissions import user_can_edit_plan, user_can_view_plan
 from .models import ProductionPlanPart
 from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
+from .counter_utils import calculate_cumulative_counter_delta
 import math
 
 class ProductionPlanSummaryView(APIView):
@@ -470,7 +471,7 @@ class ProductionStatusView(APIView):
         def compute_injection_actual(machine_monitor_name: str) -> int:
             """
             Compute total production within the 8:00~8:00 window by summing positive deltas.
-            Falls back to the first value if no baseline exists and handles counter resets.
+            Uses the first in-window value as the baseline if no earlier baseline exists.
             """
             baseline = InjectionMonitoringRecord.objects.filter(
                 machine_name=machine_monitor_name,
@@ -485,19 +486,7 @@ class ProductionStatusView(APIView):
                 timestamp__lt=end_datetime
             ).order_by('timestamp').values_list('capacity', flat=True)
 
-            prev = baseline
-            total = 0.0
-            for capacity in records:
-                if capacity is None:
-                    continue
-                if prev is None:
-                    delta = capacity
-                else:
-                    delta = capacity - prev if capacity >= prev else capacity
-                if delta > 0:
-                    total += delta
-                prev = capacity
-            return int(round(total))
+            return calculate_cumulative_counter_delta(records, baseline=baseline)
 
         
         # 3. Group sorted plans by machine name
