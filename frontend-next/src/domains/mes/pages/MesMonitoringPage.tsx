@@ -82,8 +82,6 @@ const pageCopy = {
     lastUpdated: "마지막 갱신",
     activeMachines: "가동 설비",
     todayOutput: "금일 총 생산량",
-    shotCountShort: "형합",
-    productionQtyShort: "생산",
     recentOutput60: "최근 60분 형합수",
     recentAvgOil60: "최근 60분 평균 오일온도",
     avgOil: "평균 오일온도",
@@ -155,8 +153,6 @@ const pageCopy = {
     lastUpdated: "最后更新",
     activeMachines: "运行设备",
     todayOutput: "今日总产量",
-    shotCountShort: "合模",
-    productionQtyShort: "产量",
     recentOutput60: "最近 60 分钟合模数",
     recentAvgOil60: "最近 60 分钟平均油温",
     avgOil: "平均油温",
@@ -1189,9 +1185,6 @@ export function MesMonitoringPage() {
     () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data, productionStatusQuery.data),
     [injectionQuery.data, planSummaryQuery.data, productionStatusQuery.data],
   );
-  const productionQtyByMachine = useMemo(() => {
-    return new Map(realtimeProgress.rows.map((row) => [row.key, row.estimatedQty]));
-  }, [realtimeProgress.rows]);
   const todayProductionQty = realtimeProgress.estimatedQty;
   const todayProductionPlanQty = realtimeProgress.plannedQty || injectionPlanQty;
   const summary = useMemo(() => {
@@ -1371,32 +1364,21 @@ export function MesMonitoringPage() {
                 </div>
 
                 <div className="mes-machine-rail" aria-label={copy.machineRailTitle}>
-                  {machineRows.map((row) => {
-                    const productionQty = productionQtyByMachine.get(String(row.machineNumber));
-                    return (
-                      <button
-                        key={row.machineNumber}
-                        type="button"
-                        className={`mes-machine-tile mes-machine-tile--${row.status} ${
-                          selectedMachineKey === row.machineNumber ? "mes-machine-tile--active" : ""
-                        }`}
-                        onClick={() => setSelectedMachineNumber(row.machineNumber)}
-                      >
-                        <span className="mes-machine-tile__name">{row.machineNumber}</span>
-                        <span className="mes-machine-tile__ton">{formatTonnage(row.tonnage)}</span>
-                        <span className="mes-machine-tile__metric">
-                          <strong>{formatNumber(row.shiftOutput)}</strong>
-                          <em>{copy.shotCountShort}</em>
-                        </span>
-                        <small>{formatTemperature(row.oilTemperature)}</small>
-                        {productionQty !== undefined ? (
-                          <small className="mes-machine-tile__production">
-                            {copy.productionQtyShort} {formatNumber(productionQty)}
-                          </small>
-                        ) : null}
-                      </button>
-                    );
-                  })}
+                  {machineRows.map((row) => (
+                    <button
+                      key={row.machineNumber}
+                      type="button"
+                      className={`mes-machine-tile mes-machine-tile--${row.status} ${
+                        selectedMachineKey === row.machineNumber ? "mes-machine-tile--active" : ""
+                      }`}
+                      onClick={() => setSelectedMachineNumber(row.machineNumber)}
+                    >
+                      <span className="mes-machine-tile__name">{row.machineNumber}</span>
+                      <span className="mes-machine-tile__ton">{formatTonnage(row.tonnage)}</span>
+                      <strong>{formatNumber(row.shiftOutput)}</strong>
+                      <small>{formatTemperature(row.oilTemperature)}</small>
+                    </button>
+                  ))}
                 </div>
 
                 {selectedMachine && (
