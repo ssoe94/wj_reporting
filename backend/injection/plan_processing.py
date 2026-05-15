@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 import pandas as pd
 import re
 from django.utils import timezone
+from production.product_context import extract_plan_product_context
 
 
 class ProductionPlanProcessingError(Exception):
@@ -191,11 +192,14 @@ class ProductionPlanProcessor:
     ) -> List[Dict[str, Any]]:
         records: List[Dict[str, Any]] = []
         for _, row in df.iterrows():
+            part_spec = self._clean_str(row.get("part_spec") or row.get("spec_detail"))
+            product_context = extract_plan_product_context(part_spec)
             base = {
                 "machine": self._clean_str(row.get("machine")),
                 "lot_no": self._clean_str(row.get("lot_no")),
                 "model": self._clean_str(row.get("model")),
-                "part_spec": self._clean_str(row.get("part_spec") or row.get("spec_detail")),
+                "part_spec": part_spec,
+                **product_context,
                 "fg_part_no": self._clean_str(row.get("fg_part_no")),
                 "sg_part_no": self._clean_str(row.get("sg_part_no")),
                 "material": self._clean_str(row.get("material")),
@@ -273,13 +277,16 @@ class ProductionPlanProcessor:
             plan_date = day_map.get(row["day"])
             if not plan_date:
                 continue
+            part_spec = self._clean_str(row.get("part_spec"))
+            product_context = extract_plan_product_context(part_spec)
             payload.append(
                 {
                     "original_order": row.get("original_order"),
                     "machine": self._clean_str(row.get("machine")),
                     "lot_no": self._clean_str(row.get("lot_no")),
                     "model": self._clean_str(row.get("model")),
-                    "part_spec": self._clean_str(row.get("part_spec")),
+                    "part_spec": part_spec,
+                    **product_context,
                     "fg_part_no": self._clean_str(row.get("fg_part_no")),
                     "sg_part_no": self._clean_str(row.get("sg_part_no")),
                     "material": self._clean_str(row.get("material")),

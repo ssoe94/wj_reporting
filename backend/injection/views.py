@@ -45,7 +45,7 @@ from django.db import transaction, OperationalError, ProgrammingError
 from django.utils import timezone
 from django.core.cache import cache
 import secrets, string
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 import pytz
 import threading
 from django.views import View
@@ -56,7 +56,7 @@ from django.contrib import messages
 
 from .mes_service import mes_service
 from .plan_processing import ProductionPlanProcessor, ProductionPlanProcessingError
-from production.models import ProductionPlan
+from production.models import ProductionPlan, ProductionPlanChangeLog
 from production.permissions import user_can_edit_plan
 
 User = get_user_model()
@@ -2035,10 +2035,26 @@ class ProductionMatrixView(generics.GenericAPIView):
         # 파라미터 처리
         interval_type = request.query_params.get('interval', '30min')  # '1min', '2min', '10min', '30min', '1hour', or '1day'
         columns = int(request.query_params.get('columns', '13'))  # 기본 13열
+        date_str = request.query_params.get('date')
+        reference_time = None
+        if date_str:
+            try:
+                cst = pytz.timezone('Asia/Shanghai')
+                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                reference_time = cst.localize(datetime.combine(target_date + timedelta(days=1), time(8, 0, 0)))
+            except (TypeError, ValueError):
+                return Response(
+                    {"message": "Invalid date format. Use YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # 1) MES 우선 시도 (항상)
         try:
-            mes_data = mes_service.get_production_matrix(interval_type=interval_type, columns=columns)
+            mes_data = mes_service.get_production_matrix(
+                interval_type=interval_type,
+                columns=columns,
+                reference_time=reference_time,
+            )
             
             # mes_data가 비어있거나 mes_source가 없는 경우, 에러로 간주
             if not mes_data or not mes_data.get('mes_source'):
@@ -2202,10 +2218,12 @@ class ProductionPlanUploadView(generics.GenericAPIView):
 
                 if available_days and plan_type:
                     # 2. Delete all existing plan entries within this date range for this plan type
-                    ProductionPlan.objects.filter(
+                    deleted_count, _ = ProductionPlan.objects.filter(
                         plan_date__in=available_days,
                         plan_type=plan_type
                     ).delete()
+                else:
+                    deleted_count = 0
 
                 # 3. Create new records from the 'plan_long' data
                 plan_long_data = response_data.get("plan_long", [])
@@ -2236,6 +2254,9 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                             lot_no=record.get("lot_no"),
                             model_name=record.get("model"),
                             part_spec=record.get("part_spec"),
+                            product_family_code=record.get("product_family_code"),
+                            product_family_name=record.get("product_family_name"),
+                            is_finished_product=bool(record.get("is_finished_product")),
                             part_no=part_no, # fg_part_no is mapped to part_no
                             planned_quantity=plan_qty,
                             sequence=sequence # Cast pandas/numpy values to plain int for DB writes
@@ -2243,6 +2264,26 @@ class ProductionPlanUploadView(generics.GenericAPIView):
                     )
                 
                 ProductionPlan.objects.bulk_create(plans_to_create)
+                if available_days and plan_type:
+                    for plan_date in available_days:
+                        created_count = sum(
+                            1
+                            for plan in plans_to_create
+                            if str(plan.plan_date) == str(plan_date) and plan.plan_type == plan_type
+                        )
+                        ProductionPlanChangeLog.objects.create(
+                            plan_date=plan_date,
+                            plan_type=plan_type,
+                            action='upload',
+                            summary=f"{uploaded_file.name} 업로드 · {created_count}행 생성 · 기존 {deleted_count}행 교체",
+                            after={
+                                'file_name': uploaded_file.name,
+                                'created_count': created_count,
+                                'deleted_count': deleted_count,
+                                'available_days': available_days,
+                            },
+                            changed_by=request.user if request.user.is_authenticated else None,
+                        )
                 if part_map:
                     from production.models import ProductionPlanPart
                     try:
