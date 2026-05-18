@@ -113,6 +113,17 @@ def normalize_plan_type(process_code: Any) -> str | None:
     return None
 
 
+def normalize_process_name(process_name: Any) -> str:
+    return re.sub(r'\s+', '', str(process_name or '')).upper()
+
+
+def is_machining_progress_report(row: dict[str, Any]) -> bool:
+    return (
+        str(row.get('processCode') or '').strip().upper() == 'JG'
+        and normalize_process_name(row.get('processName')) == '加工'
+    )
+
+
 def extract_equipment_name(row: dict[str, Any]) -> str:
     equipments = row.get('equipments') or []
     if isinstance(equipments, list) and equipments:
@@ -131,12 +142,15 @@ def extract_mes_material_name(row: dict[str, Any]) -> str:
 
 
 def normalize_mes_part_no(row: dict[str, Any]) -> str:
-    main_part = normalize_part_no(row.get('mainMaterialCode'))
-    if main_part:
-        return main_part
     material_info = row.get('materialInfo') or {}
-    base_info = material_info.get('baseInfo') or {}
-    return normalize_part_no(base_info.get('code'))
+    if isinstance(material_info, dict):
+        base_info = material_info.get('baseInfo') or {}
+    else:
+        base_info = {}
+    report_part = normalize_part_no(base_info.get('code'))
+    if report_part:
+        return report_part
+    return normalize_part_no(row.get('mainMaterialCode'))
 
 
 def extract_qty(row: dict[str, Any]) -> int:

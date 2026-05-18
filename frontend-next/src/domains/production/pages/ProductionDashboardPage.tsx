@@ -1,5 +1,5 @@
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getInjectionProductionMatrix,
   getInjectionProductionMatrixForDate,
@@ -7,6 +7,9 @@ import {
 } from "@/domains/mes/api";
 import {
   askProductionAi,
+  cancelAiJob,
+  createAiJob,
+  getAiJob,
   getProductionAiBriefing,
   getProductionMesReportStats,
   getProductionPlanSummary,
@@ -15,6 +18,8 @@ import {
   type ProductionPlanRecord,
   type ProductionPlanSummaryResponse,
   type ProductionStatusResponse,
+  type AiJob,
+  type AiJobStatus,
 } from "@/domains/production/api";
 import {
   buildRealtimeProgressSummary,
@@ -46,11 +51,22 @@ type ProductionBriefContext = {
 
 type MachiningProgressPreview = {
   plannedQty: number;
+  actualQty: number;
   partCount: number;
+  progressRate: number;
+  completedCount: number;
+  inProgressCount: number;
+  pendingCount: number;
   rows: Array<{
     key: string;
     label: string;
     plannedQty: number;
+    actualQty: number;
+    gapQty: number;
+    progressRate: number;
+    completedCount: number;
+    inProgressCount: number;
+    pendingCount: number;
     segments: RealtimeProgressSegment[];
   }>;
 };
@@ -81,6 +97,16 @@ const pageCopy = {
     deterministicBrief: "계산형 RAG 브리핑",
     askAi: "AI에게 질문하기",
     closeAi: "질문 닫기",
+    runWorkerAnalysis: "로컬 AI 분석 실행",
+    workerAnalysisRunning: "분석 작업 대기 중",
+    workerJobTitle: "Mac Studio Worker 분석",
+    workerJobStatus: "작업 상태",
+    workerJobWaiting: "Mac Studio Worker가 작업을 가져가면 분석이 시작됩니다.",
+    workerJobCancel: "작업 취소",
+    workerJobResult: "분석 결과",
+    workerJobIssue: "확인 이슈",
+    workerJobNoIssue: "별도 이슈가 없습니다.",
+    workerJobFallback: "로컬 LLM 응답 지연으로 계산 기반 분석을 표시합니다.",
     askingAi: "AI 답변 중",
     aiQuestionPlaceholder: "예: 오늘 계획 대비 가장 먼저 확인해야 할 사출기는 어디야?",
     aiAnswerTitle: "AI 답변",
@@ -116,7 +142,7 @@ const pageCopy = {
     estimatedVsPlan: "추정 / 계획",
     progressHint: "각 설비의 계획 순서대로 형합수를 배분해 완료/진행중/대기를 표시합니다.",
     noProgressRows: "계획 또는 MES 실적이 없습니다.",
-    machiningPending: "가공은 MES 생산완료 보고 기준 확정 후 실시간 진행률을 연결할 예정입니다.",
+    machiningPending: "Blacklake JG/加工 생산보고 수량을 계획 순서대로 배분해 진행률을 표시합니다.",
     plannedOnly: "계획 수량 기준 준비",
     rawTitle: "운영 API 확인",
   },
@@ -145,6 +171,16 @@ const pageCopy = {
     deterministicBrief: "计算型 RAG 简报",
     askAi: "向 AI 提问",
     closeAi: "关闭提问",
+    runWorkerAnalysis: "运行本地 AI 分析",
+    workerAnalysisRunning: "分析任务等待中",
+    workerJobTitle: "Mac Studio Worker 分析",
+    workerJobStatus: "任务状态",
+    workerJobWaiting: "Mac Studio Worker 领取任务后将开始分析。",
+    workerJobCancel: "取消任务",
+    workerJobResult: "分析结果",
+    workerJobIssue: "确认事项",
+    workerJobNoIssue: "暂无特别事项。",
+    workerJobFallback: "本地 LLM 响应延迟，当前显示基于计算的分析。",
     askingAi: "AI 回答中",
     aiQuestionPlaceholder: "例：今天计划对比最需要先确认哪台注塑机？",
     aiAnswerTitle: "AI 回答",
@@ -180,7 +216,7 @@ const pageCopy = {
     estimatedVsPlan: "估算 / 计划",
     progressHint: "按设备计划顺序分配合模数，显示完成/进行中/待开始。",
     noProgressRows: "暂无计划或 MES 实绩。",
-    machiningPending: "加工将在 MES 完成报工基准确定后连接实时进度。",
+    machiningPending: "按 Blacklake JG/加工报工数量分配到计划顺序并显示进度。",
     plannedOnly: "按计划数量准备",
     rawTitle: "运营 API 确认",
   },
@@ -204,6 +240,54 @@ type DashboardAiIntent = {
 
 function formatNumber(value: number) {
   return Math.round(value).toLocaleString();
+}
+
+function isAiJobTerminal(status?: AiJobStatus) {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+function getAiJobStatusLabel(status: AiJobStatus | undefined, language: AppLanguage) {
+  const labels = {
+    ko: {
+      pending: "대기",
+      claimed: "Worker 배정",
+      running: "분석 중",
+      completed: "완료",
+      failed: "실패",
+      cancelled: "취소",
+    },
+    zh: {
+      pending: "等待",
+      claimed: "已分配",
+      running: "分析中",
+      completed: "完成",
+      failed: "失败",
+      cancelled: "已取消",
+    },
+  } satisfies Record<AppLanguage, Record<AiJobStatus, string>>;
+  return status ? labels[language][status] : "-";
+}
+
+function getStringField(source: Record<string, unknown>, key: string) {
+  const value = source[key];
+  return typeof value === "string" ? value : "";
+}
+
+function getTopIssues(source: Record<string, unknown>) {
+  const issues = source.top_issues;
+  return Array.isArray(issues)
+    ? issues
+      .filter((issue): issue is Record<string, unknown> => Boolean(issue) && typeof issue === "object")
+      .slice(0, 5)
+    : [];
+}
+
+function getIssueText(issue: Record<string, unknown>) {
+  const evidence = issue.evidence;
+  if (Array.isArray(evidence)) {
+    return evidence.map((item) => String(item)).filter(Boolean).join(" · ");
+  }
+  return getStringField(issue, "detail") || getStringField(issue, "summary");
 }
 
 function normalizeProductFamily(value: unknown) {
@@ -371,6 +455,16 @@ function getOrderedPlanRecords(records: ProductionPlanRecord[]) {
     .map(({ record }) => record);
 }
 
+function normalizeDashboardPartNo(value: string | null | undefined) {
+  return String(value ?? "").replace(/\s+/g, "").toUpperCase();
+}
+
+function getMachiningEquipmentKey(value: string | null | undefined) {
+  const text = String(value ?? "").trim().toUpperCase();
+  const match = text.match(/[A-Z]/);
+  return match ? match[0] : text;
+}
+
 function getProgressLabel(status: RealtimeProgressSegmentStatus, copy: Record<string, string>) {
   if (status === "completed") return copy.completed;
   if (status === "in_progress") return copy.inProgress;
@@ -451,12 +545,17 @@ function buildProductionBriefContext(
   };
 }
 
-function buildMachiningProgressPreview(planSummary: ProductionPlanSummaryResponse | undefined): MachiningProgressPreview {
+function buildMachiningProgressPreview(
+  planSummary: ProductionPlanSummaryResponse | undefined,
+  machiningStats: ProductionMesReportStatsResponse | undefined,
+): MachiningProgressPreview {
   const planMap = new Map<string, {
     label: string;
     plannedQty: number;
     records: ProductionPlanRecord[];
   }>();
+  const plannedKeys = new Set<string>();
+  const plannedParts = new Set<string>();
 
   for (const record of planSummary?.machining.records ?? []) {
     const key = record.machine_name || "unknown";
@@ -468,6 +567,63 @@ function buildMachiningProgressPreview(planSummary: ProductionPlanSummaryRespons
     current.plannedQty += Number(record.planned_quantity ?? 0);
     current.records.push(record);
     planMap.set(key, current);
+
+    const equipmentKey = getMachiningEquipmentKey(record.machine_name);
+    const partNo = normalizeDashboardPartNo(record.part_no);
+    if (partNo) {
+      plannedParts.add(partNo);
+    }
+    if (equipmentKey && partNo) {
+      plannedKeys.add(`${equipmentKey}|${partNo}`);
+    }
+  }
+
+  const exactMesQtyByKey = new Map<string, number>();
+  const orphanMesQtyByPart = new Map<string, number>();
+  const mesOnlyRows: MachiningProgressPreview["rows"] = [];
+
+  for (const row of machiningStats?.rows ?? []) {
+    const equipmentKey = getMachiningEquipmentKey(row.equipment_key || row.equipment_name);
+    const partNo = normalizeDashboardPartNo(row.part_no);
+    const mesQty = Number(row.mes_qty ?? 0);
+    if (!equipmentKey || !partNo || mesQty <= 0) continue;
+
+    const key = `${equipmentKey}|${partNo}`;
+    exactMesQtyByKey.set(key, (exactMesQtyByKey.get(key) ?? 0) + mesQty);
+    if (!plannedKeys.has(key)) {
+      orphanMesQtyByPart.set(partNo, (orphanMesQtyByPart.get(partNo) ?? 0) + mesQty);
+      if (row.compare_status === "mes_only" && !plannedParts.has(partNo)) {
+        const segment: RealtimeProgressSegment = {
+          key: `mes-only-${key}`,
+          sequence: 1,
+          partNo: row.part_no || "-",
+          modelName: row.model_name || "-",
+          lotNo: "-",
+          productFamilyCode: null,
+          productFamilyName: null,
+          isFinishedProduct: false,
+          plannedQty: 0,
+          cavity: 1,
+          requiredShots: 0,
+          allocatedShots: mesQty,
+          estimatedQty: mesQty,
+          progressRate: 100,
+          status: "completed",
+        };
+        mesOnlyRows.push({
+          key: `mes-only-${key}`,
+          label: row.equipment_label || row.equipment_name || row.equipment_key || "-",
+          plannedQty: 0,
+          actualQty: mesQty,
+          gapQty: mesQty,
+          progressRate: 100,
+          completedCount: 1,
+          inProgressCount: 0,
+          pendingCount: 0,
+          segments: [segment],
+        });
+      }
+    }
   }
 
   const rows = [...planMap.entries()]
@@ -475,8 +631,34 @@ function buildMachiningProgressPreview(planSummary: ProductionPlanSummaryRespons
       key,
       label: plan.label,
       plannedQty: plan.plannedQty,
+      actualQty: 0,
+      gapQty: 0,
+      progressRate: 0,
+      completedCount: 0,
+      inProgressCount: 0,
+      pendingCount: 0,
       segments: getOrderedPlanRecords(plan.records).map((record, index) => {
         const segmentPlannedQty = Number(record.planned_quantity ?? 0);
+        const partNo = normalizeDashboardPartNo(record.part_no);
+        const equipmentKey = getMachiningEquipmentKey(record.machine_name);
+        const exactKey = `${equipmentKey}|${partNo}`;
+        const exactRemaining = exactMesQtyByKey.get(exactKey) ?? 0;
+        const orphanRemaining = orphanMesQtyByPart.get(partNo) ?? 0;
+        const availableQty = exactRemaining > 0 ? exactRemaining : orphanRemaining;
+        const estimatedQty = Math.min(segmentPlannedQty, Math.max(0, availableQty));
+
+        if (exactRemaining > 0) {
+          exactMesQtyByKey.set(exactKey, Math.max(0, exactRemaining - estimatedQty));
+        } else if (orphanRemaining > 0) {
+          orphanMesQtyByPart.set(partNo, Math.max(0, orphanRemaining - estimatedQty));
+        }
+
+        const progressRate = segmentPlannedQty > 0 ? (estimatedQty / segmentPlannedQty) * 100 : 0;
+        const status: RealtimeProgressSegmentStatus = estimatedQty >= segmentPlannedQty && segmentPlannedQty > 0
+          ? "completed"
+          : estimatedQty > 0
+            ? "in_progress"
+            : "pending";
         return {
           key: `${record.id ?? index}-${record.part_no ?? record.model_name ?? "part"}`,
           sequence: index + 1,
@@ -488,20 +670,65 @@ function buildMachiningProgressPreview(planSummary: ProductionPlanSummaryRespons
           isFinishedProduct: Boolean(record.is_finished_product),
           plannedQty: segmentPlannedQty,
           cavity: Math.max(1, Number(record.cavity ?? 1) || 1),
-          requiredShots: 0,
-          allocatedShots: 0,
-          estimatedQty: 0,
-          progressRate: 0,
-          status: "pending" as RealtimeProgressSegmentStatus,
+          requiredShots: segmentPlannedQty,
+          allocatedShots: estimatedQty,
+          estimatedQty,
+          progressRate,
+          status,
         };
       }),
     }))
+    .map((row) => {
+      const actualQty = row.segments.reduce((sum, segment) => sum + segment.estimatedQty, 0);
+      const completedCount = row.segments.filter((segment) => segment.status === "completed").length;
+      const inProgressCount = row.segments.filter((segment) => segment.status === "in_progress").length;
+      const pendingCount = row.segments.filter((segment) => segment.status === "pending").length;
+      const extraExactKeys = new Set<string>();
+      const extraPartKeys = new Set<string>();
+      const extraQty = getOrderedPlanRecords(planMap.get(row.key)?.records ?? []).reduce((sum, record) => {
+        const partNo = normalizeDashboardPartNo(record.part_no);
+        const equipmentKey = getMachiningEquipmentKey(record.machine_name);
+        const exactKey = `${equipmentKey}|${partNo}`;
+        let extra = 0;
+        if (!extraExactKeys.has(exactKey)) {
+          extra += exactMesQtyByKey.get(exactKey) ?? 0;
+          exactMesQtyByKey.set(exactKey, 0);
+          extraExactKeys.add(exactKey);
+        }
+        if (partNo && !extraPartKeys.has(partNo)) {
+          extra += orphanMesQtyByPart.get(partNo) ?? 0;
+          orphanMesQtyByPart.set(partNo, 0);
+          extraPartKeys.add(partNo);
+        }
+        return sum + extra;
+      }, 0);
+      const totalActualQty = actualQty + extraQty;
+      return {
+        ...row,
+        actualQty: totalActualQty,
+        gapQty: totalActualQty - row.plannedQty,
+        progressRate: row.plannedQty > 0 ? (totalActualQty / row.plannedQty) * 100 : 0,
+        completedCount,
+        inProgressCount,
+        pendingCount,
+      };
+    })
     .sort((left, right) => left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" }));
 
+  const allRows = [...rows, ...mesOnlyRows]
+    .sort((left, right) => left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" }));
+  const plannedQty = allRows.reduce((sum, row) => sum + row.plannedQty, 0);
+  const actualQty = allRows.reduce((sum, row) => sum + row.actualQty, 0);
+
   return {
-    plannedQty: rows.reduce((sum, row) => sum + row.plannedQty, 0),
-    partCount: rows.reduce((sum, row) => sum + row.segments.length, 0),
-    rows,
+    plannedQty,
+    actualQty,
+    partCount: allRows.reduce((sum, row) => sum + row.segments.length, 0),
+    progressRate: plannedQty > 0 ? (actualQty / plannedQty) * 100 : 0,
+    completedCount: allRows.reduce((sum, row) => sum + row.completedCount, 0),
+    inProgressCount: allRows.reduce((sum, row) => sum + row.inProgressCount, 0),
+    pendingCount: allRows.reduce((sum, row) => sum + row.pendingCount, 0),
+    rows: allRows,
   };
 }
 
@@ -759,12 +986,14 @@ function ProductionDashboardSkeleton({ copy }: { copy: Record<string, string> })
 }
 
 export function ProductionDashboardPage() {
+  const queryClient = useQueryClient();
   const [language] = useStoredLanguage();
   const currentDate = getShanghaiDateString();
   const [businessDate, setBusinessDate] = useState(currentDate);
   const [isAiAskOpen, setIsAiAskOpen] = useState(false);
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [activeAiJobId, setActiveAiJobId] = useState<number | null>(null);
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
   const copy = pageCopy[language];
   const isCurrentDate = businessDate === currentDate;
@@ -794,6 +1023,31 @@ export function ProductionDashboardPage() {
     refetchInterval: isCurrentDate && isDashboardDataReady ? 5 * 60_000 : false,
     retry: 1,
   });
+  const aiJobQuery = useQuery({
+    queryKey: ["ai-job", activeAiJobId],
+    queryFn: () => getAiJob(activeAiJobId ?? 0),
+    enabled: Boolean(activeAiJobId),
+    refetchInterval: (query) => {
+      const job = query.state.data as AiJob | undefined;
+      return job && !isAiJobTerminal(job.status) ? 3_000 : false;
+    },
+  });
+  const createAiJobMutation = useMutation({
+    mutationFn: () => createAiJob({
+      job_type: "production_daily_analysis",
+      scope: { date: businessDate, language },
+    }),
+    onSuccess: (job) => {
+      setActiveAiJobId(job.id);
+      queryClient.setQueryData(["ai-job", job.id], job);
+    },
+  });
+  const cancelAiJobMutation = useMutation({
+    mutationFn: (jobId: number) => cancelAiJob(jobId),
+    onSuccess: (job) => {
+      queryClient.setQueryData(["ai-job", job.id], job);
+    },
+  });
 
   const briefContext = useMemo(
     () => buildProductionBriefContext(
@@ -810,11 +1064,15 @@ export function ProductionDashboardPage() {
     [businessDate, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
   );
   const machiningProgress = useMemo(
-    () => buildMachiningProgressPreview(planSummaryQuery.data),
-    [planSummaryQuery.data],
+    () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data),
+    [machiningStatsQuery.data, planSummaryQuery.data],
   );
   const ruleBasedBrief = useMemo(() => buildRuleBasedBrief(briefContext, language), [briefContext, language]);
   const briefingText = aiBriefingQuery.data?.answer || ruleBasedBrief;
+  const activeAiJob = aiJobQuery.data;
+  const activeAiJobResult = activeAiJob?.result_payload ?? {};
+  const activeAiJobSummary = getStringField(activeAiJobResult, "summary");
+  const activeAiJobTopIssues = getTopIssues(activeAiJobResult);
   const aiQuestionMutation = useMutation({
     mutationFn: async () => {
       try {
@@ -834,6 +1092,10 @@ export function ProductionDashboardPage() {
   useEffect(() => {
     setAiAnswer(null);
   }, [language, briefContext.businessDate, briefContext.latestUpdatedAt]);
+
+  useEffect(() => {
+    setActiveAiJobId(null);
+  }, [businessDate, language]);
 
   function submitAiQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -871,12 +1133,12 @@ export function ProductionDashboardPage() {
     );
   }
 
-  function renderProgressSegment(segment: RealtimeProgressSegment, row: RealtimeProgressRow | null) {
+  function renderProgressSegment(segment: RealtimeProgressSegment, row: { plannedQty: number } | null) {
     const tooltip = getProgressTooltip([
       `${copy.currentPart} ${segment.sequence} · ${getProgressLabel(segment.status, copy)}`,
       `Part No: ${segment.partNo}`,
       `${language === "ko" ? "모델" : "型号"}: ${segment.modelName}`,
-      row ? `${copy.estimatedVsPlan}: ${formatNumber(segment.estimatedQty)} / ${formatNumber(segment.plannedQty)}` : `${copy.planned}: ${formatNumber(segment.plannedQty)}`,
+      `${copy.estimatedVsPlan}: ${formatNumber(segment.estimatedQty)} / ${formatNumber(segment.plannedQty)}`,
       `${copy.progress}: ${Math.round(segment.progressRate)}%`,
       `${copy.cavity}: ${segment.cavity}`,
     ]);
@@ -953,20 +1215,40 @@ export function ProductionDashboardPage() {
   }
 
   function renderMachiningPreviewRow(row: MachiningProgressPreview["rows"][number]) {
+    const progress = Math.max(0, Math.min(100, row.progressRate));
+    const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
+    const isActive = row.inProgressCount > 0;
     return (
       <article className="production-progress-row production-progress-row--preview" key={row.key}>
         <div className="production-progress-row__head">
           <div>
             <strong>{row.label}</strong>
-            <span>{copy.plannedOnly}</span>
+            <span>{currentSegment ? `${copy.currentPart} ${currentSegment.partNo}` : `${copy.actualEstimate} ${formatNumber(row.actualQty)} / ${formatNumber(row.plannedQty)}`}</span>
           </div>
           <div className="production-progress-row__state">
-            <span>-</span>
-            <em className="production-progress-status">{copy.pending}</em>
+            <span>{Math.round(progress)}%</span>
+            <em className={isActive ? "production-progress-status production-progress-status--running" : "production-progress-status"}>
+              {isActive ? copy.running : "-"}
+            </em>
           </div>
         </div>
-        <div className="production-part-track production-part-track--preview">
-          {row.segments.map((segment) => renderProgressSegment(segment, null))}
+        <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : " production-part-track--preview"}`}>
+          {row.segments.map((segment) => renderProgressSegment(segment, { plannedQty: row.plannedQty }))}
+          {row.gapQty > 0 ? (
+            <span
+              className="production-part-overrun"
+              data-tooltip={`${copy.overrun}: +${formatNumber(row.gapQty)}`}
+              style={{ flexGrow: Math.max(row.gapQty, 1) }}
+            >
+              <span />
+            </span>
+          ) : null}
+        </div>
+        <div className="production-progress-state-strip">
+          <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {row.completedCount}</span>
+          <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {row.inProgressCount}</span>
+          <span className="production-progress-chip">{copy.pending} {row.pendingCount}</span>
+          {renderOverrunChip(row.gapQty)}
         </div>
       </article>
     );
@@ -1019,13 +1301,23 @@ export function ProductionDashboardPage() {
                 <p className="panel-card__eyebrow">{copy.localBrief}</p>
                 <h3 className="panel__title">{copy.briefTitle}</h3>
               </div>
-              <button
-                className="button button--ghost"
-                type="button"
-                onClick={() => setIsAiAskOpen((isOpen) => !isOpen)}
-              >
-                {isAiAskOpen ? copy.closeAi : copy.askAi}
-              </button>
+              <div className="production-brief-panel__actions">
+                <button
+                  className="button button--primary"
+                  disabled={createAiJobMutation.isPending || Boolean(activeAiJob && !isAiJobTerminal(activeAiJob.status))}
+                  type="button"
+                  onClick={() => createAiJobMutation.mutate()}
+                >
+                  {createAiJobMutation.isPending ? copy.workerAnalysisRunning : copy.runWorkerAnalysis}
+                </button>
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  onClick={() => setIsAiAskOpen((isOpen) => !isOpen)}
+                >
+                  {isAiAskOpen ? copy.closeAi : copy.askAi}
+                </button>
+              </div>
             </div>
 
             <div className="production-brief-panel__body">
@@ -1088,6 +1380,62 @@ export function ProductionDashboardPage() {
               </div>
             ) : null}
 
+            {activeAiJob ? (
+              <div className={`production-ai-job production-ai-job--${activeAiJob.status}`}>
+                <div className="production-ai-job__header">
+                  <div>
+                    <strong>{copy.workerJobTitle}</strong>
+                    <span>
+                      {copy.workerJobStatus}: {getAiJobStatusLabel(activeAiJob.status, language)}
+                      {activeAiJob.claimed_by ? ` · ${activeAiJob.claimed_by}` : ""}
+                    </span>
+                  </div>
+                  {!isAiJobTerminal(activeAiJob.status) ? (
+                    <button
+                      className="button button--ghost button--mini"
+                      disabled={cancelAiJobMutation.isPending}
+                      onClick={() => cancelAiJobMutation.mutate(activeAiJob.id)}
+                      type="button"
+                    >
+                      {copy.workerJobCancel}
+                    </button>
+                  ) : null}
+                </div>
+
+                {!isAiJobTerminal(activeAiJob.status) ? (
+                  <p className="production-ai-job__message">{copy.workerJobWaiting}</p>
+                ) : null}
+
+                {activeAiJob.status === "completed" ? (
+                  <div className="production-ai-job__result">
+                    <strong>{copy.workerJobResult}</strong>
+                    {activeAiJobResult.llm_fallback ? (
+                      <div className="notice notice--warning">{copy.workerJobFallback}</div>
+                    ) : null}
+                    <p>{activeAiJobSummary || getStringField(activeAiJobResult, "title") || copy.workerJobNoIssue}</p>
+                    <div className="production-ai-job__issues">
+                      {activeAiJobTopIssues.length ? activeAiJobTopIssues.map((issue, index) => (
+                        <div className="production-ai-job__issue" key={`${getStringField(issue, "label")}-${index}`}>
+                          <span>{copy.workerJobIssue}</span>
+                          <strong>{getStringField(issue, "label") || getStringField(issue, "type") || "-"}</strong>
+                          <p>{getIssueText(issue)}</p>
+                        </div>
+                      )) : (
+                        <div className="production-ai-job__issue">
+                          <span>{copy.workerJobIssue}</span>
+                          <strong>{copy.workerJobNoIssue}</strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeAiJob.status === "failed" ? (
+                  <div className="notice notice--warning">{activeAiJob.error_message || copy.llmError}</div>
+                ) : null}
+              </div>
+            ) : null}
+
             {aiQuestionMutation.isError ? (
               <div className="notice notice--warning">
                 {copy.llmError}
@@ -1142,15 +1490,18 @@ export function ProductionDashboardPage() {
 
               <article className="production-progress-card production-progress-card--pending">
                 <div className="production-progress-visual-summary">
-                  <div className="production-progress-ring production-progress-ring--pending">
-                    <strong>-</strong>
+                  <div className={`production-progress-ring${machiningProgress.actualQty > machiningProgress.plannedQty ? " production-progress-ring--overrun" : ""}`} style={getRingStyle(machiningProgress.progressRate)}>
+                    <strong>{Math.round(machiningProgress.progressRate)}%</strong>
                     <span>{copy.totalProgress}</span>
                   </div>
                   <div className="production-progress-summary-text">
                     <h4>{copy.machiningProgress}</h4>
                     <p>{copy.machiningPending}</p>
                     <div className="production-progress-state-strip">
-                      <span className="production-progress-chip">{copy.pending} {machiningProgress.partCount}</span>
+                      <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {machiningProgress.completedCount}</span>
+                      <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {machiningProgress.inProgressCount}</span>
+                      <span className="production-progress-chip">{copy.pending} {machiningProgress.pendingCount}</span>
+                      {renderOverrunChip(machiningProgress.actualQty - machiningProgress.plannedQty)}
                     </div>
                   </div>
                 </div>

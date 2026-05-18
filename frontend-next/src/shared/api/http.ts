@@ -5,6 +5,7 @@ import {
   getRefreshToken,
   setAccessToken,
 } from "@/domains/auth/auth-storage";
+import { isDevSessionToken } from "@/domains/auth/dev-session";
 
 const API_BASE_URL = import.meta.env.PROD
   ? "/api"
@@ -34,7 +35,7 @@ http.interceptors.request.use((config) => {
   }
 
   const token = getAccessToken();
-  if (token) {
+  if (token && !isDevSessionToken(token)) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -48,9 +49,18 @@ http.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    const access = getAccessToken();
+    if (isDevSessionToken(access)) {
+      return Promise.reject(error);
+    }
+
     const refresh = getRefreshToken();
     if (!refresh) {
       clearTokens();
+      return Promise.reject(error);
+    }
+
+    if (isDevSessionToken(refresh)) {
       return Promise.reject(error);
     }
 

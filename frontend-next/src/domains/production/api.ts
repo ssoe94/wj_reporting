@@ -221,6 +221,34 @@ export type ProductionAiBriefingResponse = {
   };
 };
 
+export type AiJobStatus = "pending" | "claimed" | "running" | "completed" | "failed" | "cancelled";
+
+export type AiJob = {
+  id: number;
+  job_type: "production_daily_analysis" | "production_machine_analysis";
+  status: AiJobStatus;
+  scope: Record<string, unknown>;
+  input_payload: Record<string, unknown>;
+  result_payload: Record<string, unknown>;
+  error_message: string;
+  claimed_by: string;
+  claimed_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  model_name: string;
+  prompt_version: string;
+  created_by: number | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateAiJobPayload = {
+  job_type: AiJob["job_type"];
+  scope?: Record<string, unknown>;
+  input_payload?: Record<string, unknown>;
+};
+
 export async function getProductionPlanDates() {
   if (shouldUseMockProductionApi()) {
     return getMockPlanDates();
@@ -352,6 +380,21 @@ export async function getProductionAiBriefing(date: string, language: "ko" | "zh
   const response = await http.get<ProductionAiBriefingResponse>(
     `/production/ai/briefing/?date=${encodeURIComponent(date)}&language=${encodeURIComponent(language)}`,
   );
+  return response.data;
+}
+
+export async function createAiJob(payload: CreateAiJobPayload) {
+  const response = await http.post<AiJob>("/ai/jobs/", payload);
+  return response.data;
+}
+
+export async function getAiJob(jobId: number) {
+  const response = await http.get<AiJob>(`/ai/jobs/${jobId}/`);
+  return response.data;
+}
+
+export async function cancelAiJob(jobId: number) {
+  const response = await http.post<AiJob>(`/ai/jobs/${jobId}/cancel/`);
   return response.data;
 }
 

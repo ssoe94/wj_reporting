@@ -1,8 +1,8 @@
 import { getAccessToken } from "@/domains/auth/auth-storage";
 import type { CurrentUser, TokenPair } from "@/domains/auth/types";
 
-const DEV_LOGIN_USERNAME = "admin";
-const DEV_LOGIN_PASSWORD = "admin123";
+const DEV_LOGIN_USERNAME = "superuser";
+const DEV_LOGIN_PASSWORD = "";
 const DEV_TOKEN_MARKER = "wj-next-local";
 const ENABLE_DEV_LOGIN = import.meta.env.VITE_ENABLE_DEV_LOGIN !== "false";
 
@@ -38,8 +38,7 @@ function createDevJwt(kind: "access" | "refresh") {
 export function canUseDevLogin(payload: { username: string; password: string }) {
   return ENABLE_DEV_LOGIN &&
     import.meta.env.DEV &&
-    payload.username === DEV_LOGIN_USERNAME &&
-    payload.password === DEV_LOGIN_PASSWORD;
+    payload.username === DEV_LOGIN_USERNAME;
 }
 
 export function createDevTokenPair(): TokenPair {
@@ -63,7 +62,7 @@ export function getDevCurrentUser(): CurrentUser {
   return {
     id: 1,
     username: DEV_LOGIN_USERNAME,
-    email: "admin@local.preview",
+    email: "superuser@local.preview",
     is_staff: true,
     groups: ["local-preview"],
     department: "Production",

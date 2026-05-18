@@ -8,7 +8,12 @@ import {
   getInjectionUtilizationMatrix,
   requestInjectionSnapshotUpdate,
 } from "@/domains/mes/api";
-import { getProductionPlanSummary, getProductionStatus } from "@/domains/production/api";
+import {
+  getProductionMesReportStats,
+  getProductionPlanSummary,
+  getProductionStatus,
+  type ProductionMesReportStatsResponse,
+} from "@/domains/production/api";
 import { buildRealtimeProgressSummary } from "@/domains/production/realtime-progress";
 import { PageHeaderIcon } from "@/shared/components/PageHeader";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
@@ -129,7 +134,27 @@ const pageCopy = {
     fetchError: "MES 데이터를 불러오지 못했습니다.",
     savedByBackend: "수집 시 백엔드 DB에 시간대별 기록으로 저장됩니다.",
     machiningTitle: "가공 생산보고 모니터링",
-    machiningBody: "추후 MES 완료 보고를 연결해 계획 수량 대비 완료 수량, 지연 공정, 미보고 항목을 보여줄 예정입니다.",
+    machiningBody: "Blacklake 报工记录列表의 JG/加工 보고를 생산 계획과 비교합니다.",
+    machiningDate: "기준일",
+    machiningTotalPlan: "가공 계획",
+    machiningTotalMes: "MES 보고",
+    machiningAchievement: "달성률",
+    machiningGap: "계획 대비 차이",
+    machiningUnreported: "미보고 항목",
+    machiningLatest: "최신 보고",
+    machiningTableTitle: "라인별 생산보고",
+    machiningTableHint: "오전 08:00 ~ 익일 08:00 기준으로 报工数量을 Part No. 계획에 매칭합니다.",
+    machiningLine: "라인",
+    machiningPartNo: "Part No.",
+    machiningModel: "모델",
+    machiningPlanned: "계획",
+    machiningReported: "보고",
+    machiningReports: "보고 건수",
+    machiningStatus: "상태",
+    machiningMatched: "매칭",
+    machiningPlanOnly: "미보고",
+    machiningMesOnly: "계획 없음",
+    machiningEmpty: "가공 계획 또는 MES 생산보고가 없습니다.",
     inventoryTitle: "재고 정보 모니터링",
     inventoryBody: "재고 API 연결 후 품번별 현재고, 계획 대비 부족 수량, 입출고 변동을 같은 구조로 조회합니다.",
     readyStatus: "API 계약 준비",
@@ -200,7 +225,27 @@ const pageCopy = {
     fetchError: "无法读取 MES 数据。",
     savedByBackend: "采集时会按时间段保存到后端数据库。",
     machiningTitle: "加工生产报告监控",
-    machiningBody: "后续连接 MES 完成报告，显示计划数量对比完成数量、延迟工序和未报告项目。",
+    machiningBody: "对接 Blacklake 报工记录列表中的 JG/加工报告，并与生产计划比较。",
+    machiningDate: "基准日",
+    machiningTotalPlan: "加工计划",
+    machiningTotalMes: "MES 报工",
+    machiningAchievement: "达成率",
+    machiningGap: "计划差异",
+    machiningUnreported: "未报工项目",
+    machiningLatest: "最新报工",
+    machiningTableTitle: "按线别生产报工",
+    machiningTableHint: "按上午 08:00 ~ 次日 08:00 将报工数量匹配到 Part No. 计划。",
+    machiningLine: "线别",
+    machiningPartNo: "Part No.",
+    machiningModel: "型号",
+    machiningPlanned: "计划",
+    machiningReported: "报工",
+    machiningReports: "报工数",
+    machiningStatus: "状态",
+    machiningMatched: "匹配",
+    machiningPlanOnly: "未报工",
+    machiningMesOnly: "无计划",
+    machiningEmpty: "暂无加工计划或 MES 报工。",
     inventoryTitle: "库存信息监控",
     inventoryBody: "库存 API 连接后，以相同结构查看品号별 현재库存、计划缺口和出入库变动。",
     readyStatus: "API 契约准备中",
@@ -252,6 +297,20 @@ function formatSignedNumber(value: number, suffix = "") {
 function formatSignedInteger(value: number, suffix = "") {
   const prefix = value > 0 ? "+" : "";
   return `${prefix}${formatNumber(value)}${suffix}`;
+}
+
+function formatSignedQty(value: number) {
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatNumber(value)}`;
+}
+
+function compareStatusLabel(
+  status: ProductionMesReportStatsResponse["rows"][number]["compare_status"],
+  copy: Record<string, string>,
+) {
+  if (status === "matched") return copy.machiningMatched;
+  if (status === "plan_only") return copy.machiningPlanOnly;
+  return copy.machiningMesOnly;
 }
 
 function formatTonnage(value: string) {
@@ -1015,6 +1074,7 @@ export function MesMonitoringPage() {
   const [selectedMachineNumber, setSelectedMachineNumber] = useState(1);
   const [snapshotJobId, setSnapshotJobId] = useState<string | null>(null);
   const [isUtilizationModalOpen, setIsUtilizationModalOpen] = useState(false);
+  const [machiningDate, setMachiningDate] = useState(() => formatDateParam(startOfProductionDay(new Date())));
   const [utilizationStartDate, setUtilizationStartDate] = useState(() => formatDateParam(addDays(new Date(), -13)));
   const [utilizationEndDate, setUtilizationEndDate] = useState(() => formatDateParam(new Date()));
   const copy = pageCopy[language];
@@ -1041,6 +1101,13 @@ export function MesMonitoringPage() {
     queryFn: () => getInjectionSnapshotUpdateStatus(snapshotJobId ?? undefined),
     enabled: Boolean(snapshotJobId),
     refetchInterval: (query) => (query.state.data?.status === "running" ? 3_000 : false),
+  });
+
+  const machiningStatsQuery = useQuery({
+    queryKey: ["production-mes-report-stats", "machining", machiningDate],
+    queryFn: () => getProductionMesReportStats(machiningDate, "machining"),
+    enabled: selectedSource === "machining" && Boolean(machiningDate),
+    refetchInterval: selectedSource === "machining" ? 60_000 : false,
   });
 
   const utilizationColumns = useMemo(
@@ -1211,6 +1278,14 @@ export function MesMonitoringPage() {
   const isBackfillRunning = updateMutation.isPending || updateStatusQuery.data?.status === "running";
   const backfillPercent = updateStatusQuery.data?.percent ?? 0;
   const isUtilizationAnalysisLoading = isUtilizationModalOpen && utilizationQuery.isFetching && !utilizationQuery.data;
+  const machiningStats = machiningStatsQuery.data;
+  const machiningRows = machiningStats?.rows ?? [];
+  const machiningGapTone = (machiningStats?.summary.gap_qty ?? 0) >= 0 ? "up" : "down";
+  const machiningLatestReportTime = machiningRows
+    .map((row) => row.latest_report_time)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
 
   useEffect(() => {
     if (!dailyUtilizationPoints.length || !latestTime) return;
@@ -1457,14 +1532,129 @@ export function MesMonitoringPage() {
           </section>
         </>
         )
+      ) : selectedSource === "machining" ? (
+        <>
+          <div className="mes-stats-grid">
+            <SummaryMetricCard
+              title={copy.machiningTotalPlan}
+              value={formatNumber(machiningStats?.summary.total_planned ?? 0)}
+              delta={copy.planReady}
+              deltaTone="info"
+            />
+            <SummaryMetricCard
+              title={copy.machiningTotalMes}
+              value={formatNumber(machiningStats?.summary.total_mes ?? 0)}
+              delta={`${copy.machiningReports} ${formatNumber(machiningStats?.summary.grouped_mes_count ?? 0)}`}
+              deltaTone="up"
+            />
+            <SummaryMetricCard
+              title={copy.machiningAchievement}
+              value={formatPercent(machiningStats?.summary.achievement_rate ?? 0)}
+              delta={`${copy.machiningMatched} ${formatNumber(machiningStats?.summary.matched_rows ?? 0)}`}
+              deltaTone="neutral"
+            />
+            <SummaryMetricCard
+              title={copy.machiningGap}
+              value={formatSignedQty(machiningStats?.summary.gap_qty ?? 0)}
+              delta={copy.previousDay}
+              deltaTone={machiningGapTone}
+            />
+            <SummaryMetricCard
+              title={copy.machiningUnreported}
+              value={formatNumber(machiningStats?.summary.plan_only_rows ?? 0)}
+              delta={`${copy.machiningMesOnly} ${formatNumber(machiningStats?.summary.mes_only_rows ?? 0)}`}
+              deltaTone={(machiningStats?.summary.plan_only_rows ?? 0) > 0 ? "down" : "up"}
+            />
+          </div>
+
+          <section className="panel mes-monitor-panel mes-machining-panel">
+            <div className="mes-monitor-panel__header">
+              <div>
+                <p className="panel-card__eyebrow">Machining</p>
+                <h3 className="panel__title">{copy.machiningTitle}</h3>
+                <p className="mes-machining-panel__hint">{copy.machiningTableHint}</p>
+              </div>
+              <div className="mes-monitor-panel__actions mes-machining-toolbar">
+                <label className="mes-date-field">
+                  <span>{copy.machiningDate}</span>
+                  <input
+                    type="date"
+                    value={machiningDate}
+                    onChange={(event) => setMachiningDate(event.target.value)}
+                  />
+                </label>
+                <span>
+                  {copy.machiningLatest}:{" "}
+                  {machiningLatestReportTime ? formatDateTime(machiningLatestReportTime, language) : copy.noData}
+                </span>
+              </div>
+            </div>
+
+            {machiningStatsQuery.isError ? (
+              <div className="notice notice--warning">{copy.fetchError}</div>
+            ) : machiningStatsQuery.isLoading && !machiningStats ? (
+              <div className="notice notice--neutral">{copy.loadingData}</div>
+            ) : machiningRows.length ? (
+              <div className="mes-machining-table-wrap">
+                <table className="mes-machining-table">
+                  <thead>
+                    <tr>
+                      <th>{copy.machiningLine}</th>
+                      <th>{copy.machiningPartNo}</th>
+                      <th>{copy.machiningModel}</th>
+                      <th>{copy.machiningPlanned}</th>
+                      <th>{copy.machiningReported}</th>
+                      <th>{copy.machiningStatus}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {machiningRows.map((row) => {
+                      const achievement = row.achievement_rate ?? (row.planned_qty > 0 ? 0 : 100);
+                      const progress = Math.max(0, Math.min(100, achievement));
+                      const isOverrun = row.gap_qty > 0;
+                      return (
+                        <tr key={`${row.equipment_key}-${row.part_no}`}>
+                          <td>
+                            <strong>{row.equipment_label || row.equipment_name || row.equipment_key}</strong>
+                            <span>{row.equipment_name || "-"}</span>
+                          </td>
+                          <td>{row.part_no}</td>
+                          <td>{row.model_name || "-"}</td>
+                          <td>{formatNumber(row.planned_qty)}</td>
+                          <td>
+                            <div className="mes-machining-progress-cell">
+                              <strong>{formatNumber(row.mes_qty)}</strong>
+                              <div className={`mes-machining-progress${isOverrun ? " mes-machining-progress--overrun" : ""}`}>
+                                <span style={{ width: `${progress}%` }} />
+                              </div>
+                              <small>{row.achievement_rate === null ? "-" : formatPercent(row.achievement_rate)}</small>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`mes-machining-status mes-machining-status--${row.compare_status}`}>
+                              {compareStatusLabel(row.compare_status, copy)}
+                            </span>
+                            <small>{copy.machiningReports} {formatNumber(row.mes_report_count)}</small>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="notice notice--neutral">{copy.machiningEmpty}</div>
+            )}
+          </section>
+        </>
       ) : (
         <section className="panel mes-ready-panel">
           <p className="panel-card__eyebrow">{copy.readyStatus}</p>
           <h3 className="panel__title">
-            {selectedSource === "machining" ? copy.machiningTitle : copy.inventoryTitle}
+            {copy.inventoryTitle}
           </h3>
           <p>
-            {selectedSource === "machining" ? copy.machiningBody : copy.inventoryBody}
+            {copy.inventoryBody}
           </p>
         </section>
       )}
