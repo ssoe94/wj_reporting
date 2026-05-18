@@ -1104,11 +1104,27 @@ export function ProductionDashboardPage() {
     return `${Math.round(Math.max(0, progressRate))}%`;
   }
 
-  function renderOverrunChip(quantity: number) {
+  function getOverrunRate(gapQty: number, plannedQty: number) {
+    if (gapQty <= 0 || plannedQty <= 0) return null;
+    return Math.round((gapQty / plannedQty) * 100);
+  }
+
+  function getOverrunText(gapQty: number, plannedQty: number) {
+    const overrunRate = getOverrunRate(gapQty, plannedQty);
+    const quantityText = `+${formatNumber(gapQty)}`;
+    return overrunRate === null ? quantityText : `${quantityText} (+${overrunRate}%)`;
+  }
+
+  function getOverrunLabel(gapQty: number, plannedQty: number) {
+    const overrunRate = getOverrunRate(gapQty, plannedQty);
+    return overrunRate === null ? `+${formatNumber(gapQty)}` : `+${overrunRate}%`;
+  }
+
+  function renderOverrunChip(quantity: number, plannedQty: number) {
     if (quantity <= 0) return null;
     return (
       <span className="production-progress-chip production-progress-chip--overrun">
-        {copy.overrunShort} +{formatNumber(quantity)}
+        {copy.overrunShort} {getOverrunText(quantity, plannedQty)}
       </span>
     );
   }
@@ -1129,7 +1145,7 @@ export function ProductionDashboardPage() {
         className={`production-part-segment production-part-segment--${segment.status}`}
         data-tooltip={tooltip}
         key={segment.key}
-        style={{ flexGrow: Math.max(segment.plannedQty, 1) }}
+        style={{ flexBasis: 0, flexGrow: Math.max(segment.plannedQty, 1) }}
       >
         <span
           className="production-part-segment__fill"
@@ -1171,17 +1187,17 @@ export function ProductionDashboardPage() {
         </div>
         <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${row.label} ${progressText}`}>
           {row.segments.length ? row.segments.map((segment) => renderProgressSegment(segment, row)) : (
-            <span className="production-part-segment production-part-segment--pending" style={{ flexGrow: 1 }}>
+            <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
               <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
             </span>
           )}
           {row.gapQty > 0 ? (
             <span
               className="production-part-overrun"
-              data-tooltip={`${copy.overrun}: +${formatNumber(row.gapQty)}`}
-              style={{ flexGrow: Math.max(row.gapQty, 1) }}
+              data-tooltip={`${copy.overrun}: ${getOverrunText(row.gapQty, row.plannedQty)}`}
+              style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
             >
-              <span />
+              <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
             </span>
           ) : null}
         </div>
@@ -1189,7 +1205,7 @@ export function ProductionDashboardPage() {
           <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {row.completedCount}</span>
           <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {row.inProgressCount}</span>
           <span className="production-progress-chip">{copy.pending} {row.pendingCount}</span>
-          {renderOverrunChip(row.gapQty)}
+          {renderOverrunChip(row.gapQty, row.plannedQty)}
         </div>
       </article>
     );
@@ -1219,10 +1235,10 @@ export function ProductionDashboardPage() {
           {row.gapQty > 0 ? (
             <span
               className="production-part-overrun"
-              data-tooltip={`${copy.overrun}: +${formatNumber(row.gapQty)}`}
-              style={{ flexGrow: Math.max(row.gapQty, 1) }}
+              data-tooltip={`${copy.overrun}: ${getOverrunText(row.gapQty, row.plannedQty)}`}
+              style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
             >
-              <span />
+              <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
             </span>
           ) : null}
         </div>
@@ -1230,7 +1246,7 @@ export function ProductionDashboardPage() {
           <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {row.completedCount}</span>
           <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {row.inProgressCount}</span>
           <span className="production-progress-chip">{copy.pending} {row.pendingCount}</span>
-          {renderOverrunChip(row.gapQty)}
+          {renderOverrunChip(row.gapQty, row.plannedQty)}
         </div>
       </article>
     );
@@ -1457,7 +1473,7 @@ export function ProductionDashboardPage() {
                       <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {realtimeProgress.completedCount}</span>
                       <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {realtimeProgress.inProgressCount}</span>
                       <span className="production-progress-chip">{copy.pending} {realtimeProgress.pendingCount}</span>
-                      {renderOverrunChip(realtimeProgress.estimatedQty - realtimeProgress.plannedQty)}
+                      {renderOverrunChip(realtimeProgress.estimatedQty - realtimeProgress.plannedQty, realtimeProgress.plannedQty)}
                     </div>
                   </div>
                 </div>
@@ -1483,7 +1499,7 @@ export function ProductionDashboardPage() {
                       <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {machiningProgress.completedCount}</span>
                       <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {machiningProgress.inProgressCount}</span>
                       <span className="production-progress-chip">{copy.pending} {machiningProgress.pendingCount}</span>
-                      {renderOverrunChip(machiningProgress.actualQty - machiningProgress.plannedQty)}
+                      {renderOverrunChip(machiningProgress.actualQty - machiningProgress.plannedQty, machiningProgress.plannedQty)}
                     </div>
                   </div>
                 </div>
