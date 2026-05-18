@@ -1100,6 +1100,10 @@ export function ProductionDashboardPage() {
     return { "--progress-deg": `${degree}deg` } as CSSProperties;
   }
 
+  function getProgressText(progressRate: number) {
+    return `${Math.round(Math.max(0, progressRate))}%`;
+  }
+
   function renderOverrunChip(quantity: number) {
     if (quantity <= 0) return null;
     return (
@@ -1115,7 +1119,7 @@ export function ProductionDashboardPage() {
       `Part No: ${segment.partNo}`,
       `${language === "ko" ? "모델" : "型号"}: ${segment.modelName}`,
       `${copy.estimatedVsPlan}: ${formatNumber(segment.estimatedQty)} / ${formatNumber(segment.plannedQty)}`,
-      `${copy.progress}: ${Math.round(segment.progressRate)}%`,
+      `${copy.progress}: ${getProgressText(segment.progressRate)}`,
       `${copy.cavity}: ${segment.cavity}`,
     ]);
     const share = row && row.plannedQty > 0 ? segment.plannedQty / row.plannedQty : 0;
@@ -1138,6 +1142,7 @@ export function ProductionDashboardPage() {
 
   function renderProgressRow(row: RealtimeProgressRow) {
     const progress = Math.max(0, Math.min(100, row.progressRate));
+    const progressText = getProgressText(row.progressRate);
     const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
 
     return (
@@ -1158,13 +1163,13 @@ export function ProductionDashboardPage() {
             <span>{currentSegment ? `${copy.currentPart} ${currentSegment.partNo}` : copy.partProgress}</span>
           </div>
           <div className="production-progress-row__state">
-            <span>{Math.round(progress)}%</span>
+            <span>{progressText}</span>
             <em className={row.isRunning ? "production-progress-status production-progress-status--running" : "production-progress-status"}>
               {row.isRunning ? copy.running : "-"}
             </em>
           </div>
         </div>
-        <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${row.label} ${Math.round(row.progressRate)}%`}>
+        <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${row.label} ${progressText}`}>
           {row.segments.length ? row.segments.map((segment) => renderProgressSegment(segment, row)) : (
             <span className="production-part-segment production-part-segment--pending" style={{ flexGrow: 1 }}>
               <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
@@ -1192,6 +1197,7 @@ export function ProductionDashboardPage() {
 
   function renderMachiningPreviewRow(row: MachiningProgressPreview["rows"][number]) {
     const progress = Math.max(0, Math.min(100, row.progressRate));
+    const progressText = getProgressText(row.progressRate);
     const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
     const isActive = row.inProgressCount > 0;
     return (
@@ -1202,7 +1208,7 @@ export function ProductionDashboardPage() {
             <span>{currentSegment ? `${copy.currentPart} ${currentSegment.partNo}` : `${copy.actualEstimate} ${formatNumber(row.actualQty)} / ${formatNumber(row.plannedQty)}`}</span>
           </div>
           <div className="production-progress-row__state">
-            <span>{Math.round(progress)}%</span>
+            <span>{progressText}</span>
             <em className={isActive ? "production-progress-status production-progress-status--running" : "production-progress-status"}>
               {isActive ? copy.running : "-"}
             </em>
@@ -1441,7 +1447,7 @@ export function ProductionDashboardPage() {
               <article className="production-progress-card">
                 <div className="production-progress-visual-summary">
                   <div className={`production-progress-ring${realtimeProgress.estimatedQty > realtimeProgress.plannedQty ? " production-progress-ring--overrun" : ""}`} style={getRingStyle(realtimeProgress.progressRate)}>
-                    <strong>{Math.round(realtimeProgress.progressRate)}%</strong>
+                    <strong>{getProgressText(realtimeProgress.progressRate)}</strong>
                     <span>{copy.totalProgress}</span>
                   </div>
                   <div className="production-progress-summary-text">
@@ -1467,7 +1473,7 @@ export function ProductionDashboardPage() {
               <article className="production-progress-card production-progress-card--pending">
                 <div className="production-progress-visual-summary">
                   <div className={`production-progress-ring${machiningProgress.actualQty > machiningProgress.plannedQty ? " production-progress-ring--overrun" : ""}`} style={getRingStyle(machiningProgress.progressRate)}>
-                    <strong>{Math.round(machiningProgress.progressRate)}%</strong>
+                    <strong>{getProgressText(machiningProgress.progressRate)}</strong>
                     <span>{copy.totalProgress}</span>
                   </div>
                   <div className="production-progress-summary-text">
@@ -1505,7 +1511,7 @@ export function ProductionDashboardPage() {
                     <p className="panel-card__eyebrow">{copy.machineDetailTitle}</p>
                     <h3 className="panel__title">{selectedProgressRow.label}</h3>
                     <p className="production-progress-modal__meta">
-                      {copy.totalProgress} {Math.round(selectedProgressRow.progressRate)}% · {copy.estimatedVsPlan} {formatNumber(selectedProgressRow.estimatedQty)} / {formatNumber(selectedProgressRow.plannedQty)}
+                      {copy.totalProgress} {getProgressText(selectedProgressRow.progressRate)} · {copy.estimatedVsPlan} {formatNumber(selectedProgressRow.estimatedQty)} / {formatNumber(selectedProgressRow.plannedQty)}
                     </p>
                   </div>
                   <button className="button button--ghost" onClick={() => setSelectedProgressRow(null)} type="button">
@@ -1550,7 +1556,7 @@ export function ProductionDashboardPage() {
                             <span style={{ width: `${Math.max(0, Math.min(100, segment.progressRate))}%` }} />
                           </div>
                           <em className={`production-progress-chip production-progress-chip--${segment.status === "completed" ? "completed" : segment.status === "in_progress" ? "active" : "pending"}`}>
-                            {Math.round(segment.progressRate)}%
+                            {getProgressText(segment.progressRate)}
                           </em>
                         </div>
                       </span>
