@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:render": "vite --mode render --host 127.0.0.1 --port 5174",
+    "dev:local": "VITE_DEV_API_PROXY_TARGET=http://localhost:8000 VITE_API_BASE_URL=/api VITE_MES_API_BASE_URL=/api VITE_USE_REMOTE_PRODUCTION_API=false vite --host 127.0.0.1 --port 5174",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
