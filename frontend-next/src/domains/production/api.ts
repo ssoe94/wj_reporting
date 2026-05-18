@@ -14,14 +14,6 @@ function shouldUseMockProductionApi() {
   return isDevSessionActive() && !USE_REMOTE_PRODUCTION_API;
 }
 
-function isAuthError(error: unknown) {
-  if (!error || typeof error !== "object" || !("response" in error)) {
-    return false;
-  }
-  const status = (error as { response?: { status?: number } }).response?.status;
-  return status === 401 || status === 403;
-}
-
 export type ProductionStatusPart = {
   part_no: string | null;
   model_name: string | null;
@@ -265,21 +257,29 @@ export async function getProductionPlanItems(date: string, planType: PlanType) {
   if (shouldUseMockProductionApi()) {
     return getMockPlanItems(date, planType);
   }
+
+  async function getSummaryRecords() {
+    const summary = await getProductionPlanSummary(date);
+    return summary[planType].records;
+  }
+
   try {
-    const [itemsResponse, summary] = await Promise.all([
+    const [itemsResponse, summaryRecords] = await Promise.all([
       http.get<ProductionPlanRecord[]>(
         `/production/plans/?date=${encodeURIComponent(date)}&plan_type=${encodeURIComponent(planType)}`,
       ),
-      planType === "injection" ? getProductionPlanSummary(date) : Promise.resolve(null),
+      getSummaryRecords().catch(() => [] as ProductionPlanRecord[]),
     ]);
-    return mergeCavityFromSummary(itemsResponse.data, summary?.[planType].records ?? []);
+    if (!itemsResponse.data.length && summaryRecords.length) {
+      return summaryRecords;
+    }
+    return mergeCavityFromSummary(itemsResponse.data, summaryRecords);
   } catch (error) {
-    if (!isAuthError(error)) {
+    try {
+      return await getSummaryRecords();
+    } catch {
       throw error;
     }
-
-    const summary = await getProductionPlanSummary(date);
-    return summary[planType].records;
   }
 }
 

@@ -73,6 +73,27 @@ function getProductionDayStart(latestTime: Date | null) {
   return start;
 }
 
+function getBusinessDayWindow(businessDate: string | undefined, latestTime: Date | null) {
+  if (!businessDate) {
+    const start = getProductionDayStart(latestTime);
+    return {
+      start,
+      end: latestTime,
+    };
+  }
+
+  const start = new Date(`${businessDate}T08:00:00+08:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const referenceEnd = latestTime
+    ? new Date(Math.min(Math.max(latestTime.getTime(), start.getTime()), end.getTime()))
+    : end;
+
+  return {
+    start,
+    end: referenceEnd,
+  };
+}
+
 function numberAt(values: number[] | undefined, index: number) {
   if (!values || index < 0) return 0;
   return Number(values[index] ?? 0);
@@ -104,9 +125,10 @@ export function buildRealtimeProgressSummary(
   planSummary: ProductionPlanSummaryResponse | undefined,
   mesData: InjectionProductionMatrix | undefined,
   productionStatus?: ProductionStatusResponse,
+  businessDate?: string,
 ): RealtimeProgressSummary {
   const latestTime = getLatestTime(mesData);
-  const productionDayStart = getProductionDayStart(latestTime);
+  const productionWindow = getBusinessDayWindow(businessDate, latestTime);
   const recentStart = latestTime ? new Date(latestTime.getTime() - 60 * 60 * 1000) : null;
   const planMap = new Map<string, {
     label: string;
@@ -141,7 +163,7 @@ export function buildRealtimeProgressSummary(
     mesData?.time_slots.forEach((slot, index) => {
       const slotTime = new Date(slot.time);
       const output = numberAt(mesData.actual_production_matrix[key], index);
-      if (productionDayStart && latestTime && slotTime >= productionDayStart && slotTime <= latestTime) {
+      if (productionWindow.start && productionWindow.end && slotTime >= productionWindow.start && slotTime <= productionWindow.end) {
         shotCount += output;
       }
       if (recentStart && latestTime && slotTime >= recentStart && slotTime <= latestTime) {
@@ -272,15 +294,23 @@ function buildStatusBackedProgressSummary(
     const plannedQty = Number(statusRow.total_planned ?? 0);
     const estimatedQty = Number(statusRow.total_actual ?? 0);
     const avgCavity = plannedQty > 0 ? (plan?.cavityWeightedQty ?? plannedQty) / plannedQty : 1;
-    const segments = (statusRow.parts ?? []).map((part, index) => {
-      const matchingRecord = orderedRecords.find((record) => {
-        const recordPart = String(record.part_no ?? "").trim().toUpperCase();
-        const partNo = String(part.part_no ?? "").trim().toUpperCase();
-        return recordPart && partNo && recordPart === partNo;
-      }) ?? orderedRecords[index];
-      const segmentPlannedQty = Number(part.planned_quantity ?? matchingRecord?.planned_quantity ?? 0);
-      const segmentActualQty = Number(part.actual_quantity ?? 0);
-      const cavity = Math.max(1, Number(matchingRecord?.cavity ?? 1) || 1);
+    const sourceRecords = orderedRecords.length
+      ? orderedRecords
+      : (statusRow.parts ?? []).map((part) => ({
+        part_no: part.part_no,
+        model_name: part.model_name,
+        part_spec: part.model_name,
+        planned_quantity: part.planned_quantity,
+        cavity: 1,
+      } as ProductionPlanRecord));
+    let remainingActualQty = Math.max(0, estimatedQty);
+    const segments = sourceRecords.map((record, index) => {
+      const segmentPlannedQty = Number(record.planned_quantity ?? 0);
+      const cavity = Math.max(1, Number(record.cavity ?? 1) || 1);
+      const isLastSegment = index === sourceRecords.length - 1;
+      const segmentActualQty = isLastSegment
+        ? Math.max(0, remainingActualQty)
+        : Math.max(0, Math.min(remainingActualQty, segmentPlannedQty));
       const requiredShots = segmentPlannedQty > 0 ? Math.ceil(segmentPlannedQty / cavity) : 0;
       const allocatedShots = segmentActualQty > 0 ? segmentActualQty / cavity : 0;
       const progressRate = segmentPlannedQty > 0 ? (segmentActualQty / segmentPlannedQty) * 100 : 0;
@@ -289,16 +319,17 @@ function buildStatusBackedProgressSummary(
         : progressRate > 0
           ? "in_progress"
           : "pending";
+      remainingActualQty = Math.max(0, remainingActualQty - segmentActualQty);
 
       return {
-        key: `${matchingRecord?.id ?? index}-${part.part_no ?? part.model_name ?? "part"}`,
+        key: `${record.id ?? index}-${record.part_no ?? record.model_name ?? "part"}`,
         sequence: index + 1,
-        partNo: part.part_no || matchingRecord?.part_no || matchingRecord?.model_name || "-",
-        modelName: part.model_name || matchingRecord?.model_name || matchingRecord?.part_spec || "-",
-        lotNo: matchingRecord?.lot_no || "-",
-        productFamilyCode: matchingRecord?.product_family_code || null,
-        productFamilyName: matchingRecord?.product_family_name || null,
-        isFinishedProduct: Boolean(matchingRecord?.is_finished_product),
+        partNo: record.part_no || record.model_name || record.part_spec || "-",
+        modelName: record.model_name || record.part_spec || "-",
+        lotNo: record.lot_no || "-",
+        productFamilyCode: record.product_family_code || null,
+        productFamilyName: record.product_family_name || null,
+        isFinishedProduct: Boolean(record.is_finished_product),
         plannedQty: segmentPlannedQty,
         cavity,
         requiredShots,
@@ -331,6 +362,13 @@ function buildStatusBackedProgressSummary(
       pendingCount,
       segments,
     };
+  }).sort((left, right) => {
+    const leftNumber = Number(getMachineNumberFromName(left.label) ?? left.key);
+    const rightNumber = Number(getMachineNumberFromName(right.label) ?? right.key);
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
+      return leftNumber - rightNumber;
+    }
+    return left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" });
   });
 
   const plannedQty = rows.reduce((sum, row) => sum + row.plannedQty, 0);

@@ -311,23 +311,25 @@ function getLatestTime(data?: InjectionProductionMatrix) {
   return latestSlot ? new Date(latestSlot.time) : null;
 }
 
-function getProductionDayStart(latestTime: Date | null) {
-  if (!latestTime) return null;
-  const start = new Date(latestTime);
-  start.setHours(8, 0, 0, 0);
-  if (latestTime < start) {
-    start.setDate(start.getDate() - 1);
-  }
-  return start;
-}
-
 function getBusinessDayStart(businessDate: string) {
   return new Date(`${businessDate}T08:00:00+08:00`);
 }
 
+function getBusinessDayEnd(businessDate: string) {
+  return new Date(getBusinessDayStart(businessDate).getTime() + 24 * 60 * 60 * 1000);
+}
+
+function getBusinessDayReferenceEnd(businessDate: string, mesData?: InjectionProductionMatrix) {
+  const start = getBusinessDayStart(businessDate);
+  const end = getBusinessDayEnd(businessDate);
+  const latestTime = getLatestTime(mesData);
+  if (!latestTime) return end;
+  return new Date(Math.min(Math.max(latestTime.getTime(), start.getTime()), end.getTime()));
+}
+
 function getProductionElapsedRate(businessDate: string, mesData?: InjectionProductionMatrix) {
   const start = getBusinessDayStart(businessDate);
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const end = getBusinessDayEnd(businessDate);
   const latestTime = getLatestTime(mesData);
   const fallbackTime = businessDate === getShanghaiDateString() ? new Date() : end;
   const referenceTime = latestTime ?? fallbackTime;
@@ -393,7 +395,8 @@ function buildProductionBriefContext(
   productionStatus: ProductionStatusResponse | undefined,
 ): ProductionBriefContext {
   const latestTime = getLatestTime(mesData);
-  const productionDayStart = getProductionDayStart(latestTime);
+  const productionDayStart = getBusinessDayStart(businessDate);
+  const productionDayEnd = getBusinessDayReferenceEnd(businessDate, mesData);
   const recentStart = latestTime ? new Date(latestTime.getTime() - 60 * 60 * 1000) : null;
   const machineOutputs = mesData?.machines.map((machine) => {
     const key = String(machine.machine_number);
@@ -403,7 +406,7 @@ function buildProductionBriefContext(
     mesData.time_slots.forEach((slot, index) => {
       const slotTime = new Date(slot.time);
       const output = numberAt(mesData.actual_production_matrix[key], index);
-      if (productionDayStart && latestTime && slotTime >= productionDayStart && slotTime <= latestTime) {
+      if (slotTime >= productionDayStart && slotTime <= productionDayEnd) {
         shiftOutput += output;
       }
       if (recentStart && latestTime && slotTime >= recentStart && slotTime <= latestTime) {
@@ -417,7 +420,7 @@ function buildProductionBriefContext(
       recentOutput,
     };
   }) ?? [];
-  const realtimeSummary = buildRealtimeProgressSummary(planSummary, mesData, productionStatus);
+  const realtimeSummary = buildRealtimeProgressSummary(planSummary, mesData, productionStatus, businessDate);
   const actualMachineOutputs = realtimeSummary.rows
     .filter((row) => row.estimatedQty > 0)
     .map((row) => ({ machine: row.label, output: row.estimatedQty }));
@@ -803,8 +806,8 @@ export function ProductionDashboardPage() {
     [businessDate, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
   );
   const realtimeProgress = useMemo(
-    () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data),
-    [mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
+    () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data, businessDate),
+    [businessDate, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
   );
   const machiningProgress = useMemo(
     () => buildMachiningProgressPreview(planSummaryQuery.data),
