@@ -7,6 +7,7 @@ import {
 } from "react";
 import { deriveCapabilities } from "@/domains/auth/capabilities";
 import { fetchCurrentUser, requestLogin } from "@/domains/auth/auth-api";
+import { getDevCurrentUser, isDevSessionToken } from "@/domains/auth/dev-session";
 import {
   clearTokens,
   getAccessToken,
@@ -49,7 +50,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     async function initialize() {
       const token = getAccessToken();
-      if (!token || isTokenExpired(token)) {
+      if (!token) {
+        clearTokens();
+        setIsLoading(false);
+        return;
+      }
+
+      if (isDevSessionToken(token)) {
+        setUser(getDevCurrentUser());
+        setIsLoading(false);
+        return;
+      }
+
+      if (isTokenExpired(token)) {
         clearTokens();
         setIsLoading(false);
         return;
@@ -59,8 +72,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const currentUser = await fetchCurrentUser();
         setUser(currentUser);
       } catch {
-        clearTokens();
-        setUser(null);
+        if (isDevSessionToken(getAccessToken())) {
+          setUser(getDevCurrentUser());
+        } else {
+          clearTokens();
+          setUser(null);
+        }
       } finally {
         setIsLoading(false);
       }

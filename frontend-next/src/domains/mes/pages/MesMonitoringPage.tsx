@@ -5,9 +5,17 @@ import {
   type MesDataSource,
   getInjectionSnapshotUpdateStatus,
   getInjectionProductionMatrix,
+  getInjectionUtilizationMatrix,
   requestInjectionSnapshotUpdate,
 } from "@/domains/mes/api";
-import { getProductionPlanSummary } from "@/domains/production/api";
+import {
+  getProductionMesReportStats,
+  getProductionPlanSummary,
+  getProductionStatus,
+  type ProductionMesReportStatsResponse,
+} from "@/domains/production/api";
+import { buildRealtimeProgressSummary } from "@/domains/production/realtime-progress";
+import { PageHeaderIcon } from "@/shared/components/PageHeader";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
 
 type InjectionMachineRow = {
@@ -19,6 +27,7 @@ type InjectionMachineRow = {
   oilTemperature: number | null;
   powerUsage: number | null;
   powerTotal: number | null;
+  shiftOutput: number;
   recentOutput: number;
   status: "running" | "idle" | "warning";
 };
@@ -27,6 +36,23 @@ type PeriodSummary = {
   output: number;
   power: number | null;
   oilTemperature: number | null;
+};
+
+type UtilizationSummary = {
+  rate: number | null;
+  runningMinutes: number;
+  totalMinutes: number;
+  output: number;
+  activeMachines?: number;
+};
+
+type DailyUtilizationPoint = {
+  date: string;
+  label: string;
+  activeMachines: number;
+  utilizationRate: number | null;
+  runningMinutes: number;
+  totalMinutes: number;
 };
 
 type HourlyTrendPoint = {
@@ -47,7 +73,7 @@ const pageCopy = {
     title: "MES 데이터 모니터링",
     description: "MES에서 수집한 생산·설비 데이터를 저장하고 모니터링합니다.",
     availableData: "조회 가능 데이터",
-    sourceDescriptionInjection: "사출기의 형합수, 오일온도, 전력 사용량을 2분 단위로 저장하고 24시간 추이를 확인합니다.",
+    sourceDescriptionInjection: "사출기의 생산량, 형합수, 오일온도, 전력 사용량을 확인할 수 있습니다.",
     sourceDescriptionMachining: "가공 생산 완료 보고를 연결해 계획 대비 진행률과 미보고 항목을 확인할 예정입니다.",
     sourceDescriptionInventory: "재고 API를 연결해 품번별 현재고, 부족 수량, 입출고 변동을 확인할 예정입니다.",
     selectHint: "현재 선택",
@@ -60,15 +86,26 @@ const pageCopy = {
     backfillProgress: "보강 진행률",
     lastUpdated: "마지막 갱신",
     activeMachines: "가동 설비",
-    todayOutput: "금일 총 형합수",
+    todayOutput: "금일 총 생산량",
     recentOutput60: "최근 60분 형합수",
     recentAvgOil60: "최근 60분 평균 오일온도",
     avgOil: "평균 오일온도",
     todayPowerUsage: "금일 총 전력 사용량",
     planShortage: "계획 대비 부족",
     planReady: "계획 수량 기준",
+    utilization24: "최근 24시간 가동률",
+    utilizationModalTitle: "가동률 상세 분석",
+    utilizationModalSubtitle: "날짜별 가동 기기 수와 가동률",
+    utilizationPeriod: "분석 기간",
+    utilizationStartDate: "시작일",
+    utilizationEndDate: "종료일",
+    recentTwoWeeks: "최근 2주",
+    utilizationRate: "가동률",
+    activeMachineCount: "가동 기기 수",
+    utilizationSavedAt: "저장 갱신",
+    close: "닫기",
     previous60: "직전 60분 대비",
-    previousDay: "전일 동일 시간대 대비",
+    previousDay: "전일 동시간 대비",
     noCompareData: "비교 데이터 부족",
     injectionTitle: "사출기 실시간 현황",
     injectionHint: "1~17호기를 순서대로 확인하고, 선택한 호기의 24시간 추세를 분석합니다.",
@@ -97,7 +134,27 @@ const pageCopy = {
     fetchError: "MES 데이터를 불러오지 못했습니다.",
     savedByBackend: "수집 시 백엔드 DB에 시간대별 기록으로 저장됩니다.",
     machiningTitle: "가공 생산보고 모니터링",
-    machiningBody: "추후 MES 완료 보고를 연결해 계획 수량 대비 완료 수량, 지연 공정, 미보고 항목을 보여줄 예정입니다.",
+    machiningBody: "Blacklake 报工记录列表의 JG/加工 보고를 생산 계획과 비교합니다.",
+    machiningDate: "기준일",
+    machiningTotalPlan: "가공 계획",
+    machiningTotalMes: "MES 보고",
+    machiningAchievement: "달성률",
+    machiningGap: "계획 대비 차이",
+    machiningUnreported: "미보고 항목",
+    machiningLatest: "최신 보고",
+    machiningTableTitle: "라인별 생산보고",
+    machiningTableHint: "오전 08:00 ~ 익일 08:00 기준으로 报工数量을 Part No. 계획에 매칭합니다.",
+    machiningLine: "라인",
+    machiningPartNo: "Part No.",
+    machiningModel: "모델",
+    machiningPlanned: "계획",
+    machiningReported: "보고",
+    machiningReports: "보고 건수",
+    machiningStatus: "상태",
+    machiningMatched: "매칭",
+    machiningPlanOnly: "미보고",
+    machiningMesOnly: "계획 없음",
+    machiningEmpty: "가공 계획 또는 MES 생산보고가 없습니다.",
     inventoryTitle: "재고 정보 모니터링",
     inventoryBody: "재고 API 연결 후 품번별 현재고, 계획 대비 부족 수량, 입출고 변동을 같은 구조로 조회합니다.",
     readyStatus: "API 계약 준비",
@@ -107,7 +164,7 @@ const pageCopy = {
     title: "MES 数据监控",
     description: "保存并监控 MES 采集的生产与设备数据。",
     availableData: "可查询数据",
-    sourceDescriptionInjection: "以 2 分钟周期保存注塑机合模数、油温、电力使用量，并查看 24 小时趋势。",
+    sourceDescriptionInjection: "可查看注塑机合模数、油温和电力使用量。",
     sourceDescriptionMachining: "后续连接加工生产完成报告，用于查看计划对比进度和未报告项目。",
     sourceDescriptionInventory: "后续连接库存 API，用于查看品号当前库存、缺口数量和出入库变动。",
     selectHint: "当前选择",
@@ -120,13 +177,24 @@ const pageCopy = {
     backfillProgress: "补采进度",
     lastUpdated: "最后更新",
     activeMachines: "运行设备",
-    todayOutput: "今日总合模数",
+    todayOutput: "今日总产量",
     recentOutput60: "最近 60 分钟合模数",
     recentAvgOil60: "最近 60 分钟平均油温",
     avgOil: "平均油温",
     todayPowerUsage: "今日总用电量",
     planShortage: "计划差额",
     planReady: "按计划数量",
+    utilization24: "最近24小时运行率",
+    utilizationModalTitle: "运行率详细分析",
+    utilizationModalSubtitle: "按日期查看运行设备数与运行率",
+    utilizationPeriod: "分析期间",
+    utilizationStartDate: "开始日",
+    utilizationEndDate: "结束日",
+    recentTwoWeeks: "最近2周",
+    utilizationRate: "运行率",
+    activeMachineCount: "运行设备数",
+    utilizationSavedAt: "保存更新",
+    close: "关闭",
     previous60: "较前 60 分钟",
     previousDay: "较昨日同时段",
     noCompareData: "比较数据不足",
@@ -157,7 +225,27 @@ const pageCopy = {
     fetchError: "无法读取 MES 数据。",
     savedByBackend: "采集时会按时间段保存到后端数据库。",
     machiningTitle: "加工生产报告监控",
-    machiningBody: "后续连接 MES 完成报告，显示计划数量对比完成数量、延迟工序和未报告项目。",
+    machiningBody: "对接 Blacklake 报工记录列表中的 JG/加工报告，并与生产计划比较。",
+    machiningDate: "基准日",
+    machiningTotalPlan: "加工计划",
+    machiningTotalMes: "MES 报工",
+    machiningAchievement: "达成率",
+    machiningGap: "计划差异",
+    machiningUnreported: "未报工项目",
+    machiningLatest: "最新报工",
+    machiningTableTitle: "按线别生产报工",
+    machiningTableHint: "按上午 08:00 ~ 次日 08:00 将报工数量匹配到 Part No. 计划。",
+    machiningLine: "线别",
+    machiningPartNo: "Part No.",
+    machiningModel: "型号",
+    machiningPlanned: "计划",
+    machiningReported: "报工",
+    machiningReports: "报工数",
+    machiningStatus: "状态",
+    machiningMatched: "匹配",
+    machiningPlanOnly: "未报工",
+    machiningMesOnly: "无计划",
+    machiningEmpty: "暂无加工计划或 MES 报工。",
     inventoryTitle: "库存信息监控",
     inventoryBody: "库存 API 连接后，以相同结构查看品号별 현재库存、计划缺口和出入库变动。",
     readyStatus: "API 契约准备中",
@@ -197,9 +285,32 @@ function formatTemperature(value: number | null) {
   return value === null ? "-" : `${formatDecimal(value)}°C`;
 }
 
+function formatPercent(value: number | null) {
+  return value === null ? "-" : `${formatDecimal(value, 1)}%`;
+}
+
 function formatSignedNumber(value: number, suffix = "") {
   const prefix = value > 0 ? "+" : "";
   return `${prefix}${formatDecimal(value, suffix ? 1 : 0)}${suffix}`;
+}
+
+function formatSignedInteger(value: number, suffix = "") {
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatNumber(value)}${suffix}`;
+}
+
+function formatSignedQty(value: number) {
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatNumber(value)}`;
+}
+
+function compareStatusLabel(
+  status: ProductionMesReportStatsResponse["rows"][number]["compare_status"],
+  copy: Record<string, string>,
+) {
+  if (status === "matched") return copy.machiningMatched;
+  if (status === "plan_only") return copy.machiningPlanOnly;
+  return copy.machiningMesOnly;
 }
 
 function formatTonnage(value: string) {
@@ -211,6 +322,39 @@ function formatDateParam(value: Date) {
   const month = String(value.getMonth() + 1).padStart(2, "0");
   const day = String(value.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function startOfLocalDay(value: Date) {
+  const day = new Date(value);
+  day.setHours(0, 0, 0, 0);
+  return day;
+}
+
+function startOfProductionDay(value: Date) {
+  const day = new Date(value);
+  day.setHours(8, 0, 0, 0);
+  if (value < day) {
+    day.setDate(day.getDate() - 1);
+  }
+  return day;
+}
+
+function addDays(value: Date, days: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function clampDateRangeColumns(startDate: string, latestTime: Date | null) {
+  if (!startDate || !latestTime) return 336;
+  const start = startOfLocalDay(new Date(startDate));
+  const hours = hoursBetween(start, latestTime) + 24;
+  return Math.min(1440, Math.max(336, hours));
+}
+
+function hoursBetween(startTime: Date, endTime: Date) {
+  const diff = Math.ceil((endTime.getTime() - startTime.getTime()) / (60 * 60 * 1000));
+  return Number.isFinite(diff) && diff > 0 ? diff : 0;
 }
 
 function formatDateTime(value: string, language: AppLanguage) {
@@ -278,11 +422,13 @@ function buildRows(data?: InjectionProductionMatrix): InjectionMachineRow[] {
   if (!data || data.time_slots.length === 0) return [];
   const latestIndex = data.time_slots.length - 1;
   const latestTime = getLatestTime(data);
+  const shiftStartTime = getShiftStart(latestTime);
   const recentStartTime = latestTime ? new Date(latestTime.getTime() - 60 * 60 * 1000) : null;
 
   return data.machines.map((machine) => {
     const key = String(machine.machine_number);
     const latestOutput = numberAt(data.actual_production_matrix[key], latestIndex);
+    const shiftOutput = buildPeriodSummary(data, machine.machine_number, shiftStartTime, latestTime).output;
     const recentOutput = buildPeriodSummary(data, machine.machine_number, recentStartTime, latestTime).output;
     const cumulativeOutput = numberAt(data.cumulative_production_matrix[key], latestIndex);
     const oilTemperature = nullableNumberAt(data.oil_temperature_matrix[key], latestIndex);
@@ -299,6 +445,7 @@ function buildRows(data?: InjectionProductionMatrix): InjectionMachineRow[] {
       oilTemperature,
       powerUsage,
       powerTotal,
+      shiftOutput,
       recentOutput,
       status,
     };
@@ -398,6 +545,142 @@ function buildFleetPeriodSummary(
   };
 }
 
+function getSlotIntervalMinutes(data: InjectionProductionMatrix, index: number) {
+  const explicitInterval = data.time_slots[index]?.interval_minutes;
+  if (explicitInterval) return explicitInterval;
+
+  const currentTime = new Date(data.time_slots[index]?.time ?? 0);
+  const nextSlot = data.time_slots[index + 1];
+  if (!Number.isNaN(currentTime.getTime()) && nextSlot) {
+    const nextTime = new Date(nextSlot.time);
+    const diffMinutes = (nextTime.getTime() - currentTime.getTime()) / (60 * 1000);
+    if (diffMinutes > 0) return diffMinutes;
+  }
+
+  return 2;
+}
+
+function buildMachineUtilizationSummary(
+  data: InjectionProductionMatrix | undefined,
+  machineNumber: number,
+  startTime: Date | null,
+  endTime: Date | null,
+  idleThresholdMinutes = 10,
+): UtilizationSummary {
+  if (!data || !startTime || !endTime) {
+    return { rate: null, runningMinutes: 0, totalMinutes: 0, output: 0 };
+  }
+
+  let runningMinutes = 0;
+  let totalMinutes = 0;
+  let outputTotal = 0;
+  const key = String(machineNumber);
+  const productionRow = data.actual_production_matrix[key] ?? [];
+  let lastOutputTime: Date | null = null;
+
+  data.time_slots.forEach((slot, index) => {
+    const slotTime = new Date(slot.time);
+    if (slotTime <= startTime || slotTime > endTime) return;
+
+    const intervalMinutes = getSlotIntervalMinutes(data, index);
+    totalMinutes += intervalMinutes;
+
+    const output = numberAt(productionRow, index);
+    outputTotal += output;
+    if (output > 0) {
+      runningMinutes += intervalMinutes;
+      lastOutputTime = slotTime;
+      return;
+    }
+
+    if (
+      lastOutputTime &&
+      (slotTime.getTime() - lastOutputTime.getTime()) / (60 * 1000) < idleThresholdMinutes
+    ) {
+      runningMinutes += intervalMinutes;
+    }
+  });
+
+  return {
+    rate: totalMinutes > 0 ? (runningMinutes / totalMinutes) * 100 : null,
+    runningMinutes,
+    totalMinutes,
+    output: outputTotal,
+  };
+}
+
+function buildFleetUtilizationSummary(
+  data: InjectionProductionMatrix | undefined,
+  startTime: Date | null,
+  endTime: Date | null,
+  idleThresholdMinutes = 10,
+): UtilizationSummary {
+  if (!data || !startTime || !endTime) {
+    return { rate: null, runningMinutes: 0, totalMinutes: 0, output: 0, activeMachines: 0 };
+  }
+
+  return data.machines.reduce<UtilizationSummary>(
+    (summary, machine) => {
+      const machineSummary = buildMachineUtilizationSummary(
+        data,
+        machine.machine_number,
+        startTime,
+        endTime,
+        idleThresholdMinutes,
+      );
+      summary.runningMinutes += machineSummary.runningMinutes;
+      summary.totalMinutes += machineSummary.totalMinutes;
+      summary.output += machineSummary.output;
+      if (machineSummary.output > 0) {
+        summary.activeMachines = (summary.activeMachines ?? 0) + 1;
+      }
+      summary.rate = summary.totalMinutes > 0 ? (summary.runningMinutes / summary.totalMinutes) * 100 : null;
+      return summary;
+    },
+    { rate: null, runningMinutes: 0, totalMinutes: 0, output: 0, activeMachines: 0 },
+  );
+}
+
+function buildDailyUtilizationPoints(
+  data: InjectionProductionMatrix | undefined,
+  language: AppLanguage,
+): DailyUtilizationPoint[] {
+  const latestTime = getLatestTime(data);
+  const firstSlot = data?.time_slots[0];
+  if (!data || !firstSlot || !latestTime) return [];
+
+  const firstDay = startOfProductionDay(new Date(firstSlot.time));
+  const lastDay = startOfProductionDay(latestTime);
+  const points: DailyUtilizationPoint[] = [];
+
+  for (let day = firstDay; day <= lastDay; day = addDays(day, 1)) {
+    const nextDay = addDays(day, 1);
+    const rangeStart = new Date(day.getTime() - 1);
+    const rangeEnd = nextDay > latestTime ? latestTime : new Date(nextDay.getTime() - 1);
+    const summary = buildFleetUtilizationSummary(data, rangeStart, rangeEnd);
+
+    points.push({
+      date: formatDateParam(day),
+      label: formatShortDate(day, language),
+      activeMachines: summary.activeMachines ?? 0,
+      utilizationRate: summary.rate,
+      runningMinutes: summary.runningMinutes,
+      totalMinutes: summary.totalMinutes,
+    });
+  }
+
+  return points.filter((point) => point.totalMinutes > 0);
+}
+
+function filterDailyUtilizationPoints(
+  points: DailyUtilizationPoint[],
+  startDate: string,
+  endDate: string,
+) {
+  if (!startDate || !endDate) return points;
+  return points.filter((point) => point.date >= startDate && point.date <= endDate);
+}
+
 function buildHourlyTrend(
   data: InjectionProductionMatrix | undefined,
   machineNumber: number,
@@ -495,6 +778,9 @@ function CombinedTrendChart({
         {shiftSections.map((section) => {
           const startX = Math.max(0, section.startIndex * xGap - xGap / 2);
           const endX = Math.min(width, section.endIndex * xGap + xGap / 2);
+          const isTrailingSection = section.endIndex === points.length - 1;
+          const visibleHours = section.endIndex - section.startIndex + 1;
+          const hideDateLabel = isTrailingSection && visibleHours < 3;
           return (
             <g key={section.key}>
               <rect
@@ -504,14 +790,18 @@ function CombinedTrendChart({
                 width={Math.max(1, endX - startX)}
                 height={plotBottom - plotTop}
               />
-              <text className="mes-combined-chart__date" x={Math.min(width - 94, startX + 8)} y={plotTop + 12}>
-                {section.dateLabel}
-              </text>
-              {section.shift === "night" && (
-                <text className="mes-combined-chart__shift-label" x={Math.min(width - 116, startX + 8)} y={plotTop + 25}>
-                  {section.shiftLabel}
+              {!hideDateLabel && (
+                <text className="mes-combined-chart__date" x={Math.min(width - 94, startX + 8)} y={plotTop + 12}>
+                  {section.dateLabel}
                 </text>
               )}
+              <text
+                className="mes-combined-chart__shift-label"
+                x={Math.min(width - 116, startX + 8)}
+                y={hideDateLabel ? plotTop + 14 : plotTop + 25}
+              >
+                {section.shiftLabel}
+              </text>
             </g>
           );
         })}
@@ -597,25 +887,143 @@ function CombinedTrendChart({
   );
 }
 
+function DailyUtilizationChart({
+  points,
+  labels,
+}: {
+  points: DailyUtilizationPoint[];
+  labels: { utilizationRate: string; activeMachineCount: string };
+}) {
+  const [hoveredPoint, setHoveredPoint] = useState<DailyUtilizationPoint | null>(null);
+  const width = 720;
+  const height = 260;
+  const plotTop = 24;
+  const plotRight = 28;
+  const plotBottom = 196;
+  const plotLeft = 42;
+  const plotWidth = width - plotLeft - plotRight;
+  const xGap = plotWidth / Math.max(1, points.length - 1);
+  const maxMachines = Math.max(17, ...points.map((point) => point.activeMachines));
+  const yForRate = (rate: number | null) => plotBottom - ((rate ?? 0) / 100) * (plotBottom - plotTop);
+  const yForMachineCount = (count: number) => plotBottom - (count / maxMachines) * (plotBottom - plotTop);
+  const linePoints = points
+    .map((point, index) => `${plotLeft + index * xGap},${yForRate(point.utilizationRate)}`)
+    .join(" ");
+  const tooltipIndex = hoveredPoint ? points.findIndex((point) => point.date === hoveredPoint.date) : -1;
+  const tooltipLeft = tooltipIndex >= 0 ? ((plotLeft + tooltipIndex * xGap) / width) * 100 : 0;
+  const tooltipAlign = tooltipIndex > points.length - 3 ? "end" : "center";
+
+  return (
+    <div className="mes-utilization-chart-stage" onMouseLeave={() => setHoveredPoint(null)}>
+      <svg className="mes-utilization-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-hidden="true">
+        {[0, 1, 2, 3, 4].map((line) => {
+          const y = plotTop + ((plotBottom - plotTop) / 4) * line;
+          return <line key={line} className="mes-utilization-chart__grid" x1={plotLeft} x2={width - plotRight} y1={y} y2={y} />;
+        })}
+        {points.map((point, index) => {
+          const x = plotLeft + index * xGap;
+          const barHeight = plotBottom - yForMachineCount(point.activeMachines);
+          const rateY = yForRate(point.utilizationRate);
+          return (
+            <g key={point.date}>
+              <rect
+                className="mes-utilization-chart__bar"
+                x={x - 14}
+                y={plotBottom - barHeight}
+                width="28"
+                height={Math.max(2, barHeight)}
+                rx="4"
+              />
+              <text className="mes-utilization-chart__value" x={x} y={plotBottom - barHeight - 8} textAnchor="middle">
+                {formatNumber(point.activeMachines)}
+              </text>
+              <text className="mes-utilization-chart__rate-value" x={x} y={rateY - 12} textAnchor="middle">
+                {formatPercent(point.utilizationRate)}
+              </text>
+              <text className="mes-utilization-chart__label" x={x} y={plotBottom + 24} textAnchor="middle">
+                {point.label}
+              </text>
+              <rect
+                className="mes-utilization-chart__hit"
+                x={Math.max(plotLeft, x - xGap / 2)}
+                y="0"
+                width={index === 0 || index === points.length - 1 ? Math.max(34, xGap / 2) : Math.max(34, xGap)}
+                height={height}
+                onMouseEnter={() => setHoveredPoint(point)}
+                onMouseMove={() => setHoveredPoint(point)}
+              />
+            </g>
+          );
+        })}
+        <polyline className="mes-utilization-chart__line" points={linePoints} />
+        {points.map((point, index) => (
+          <circle
+            key={`rate-${point.date}`}
+            className="mes-utilization-chart__dot"
+            cx={plotLeft + index * xGap}
+            cy={yForRate(point.utilizationRate)}
+            r="4"
+          />
+        ))}
+      </svg>
+      {hoveredPoint && (
+        <div
+          className={`mes-chart-tooltip mes-chart-tooltip--${tooltipAlign}`}
+          style={{ left: `${tooltipLeft}%` }}
+        >
+          <strong>
+            <span>{hoveredPoint.label}</span>
+          </strong>
+          <span>{labels.utilizationRate} {formatPercent(hoveredPoint.utilizationRate)}</span>
+          <span>{labels.activeMachineCount} {formatNumber(hoveredPoint.activeMachines)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SummaryMetricCard({
   title,
   value,
   hint,
   delta,
   deltaTone = "neutral",
+  onClick,
+  actionLabel,
 }: {
   title: string;
   value: string;
-  hint: string;
+  hint?: string;
   delta?: string;
-  deltaTone?: "up" | "down" | "neutral";
+  deltaTone?: "up" | "down" | "neutral" | "info";
+  onClick?: () => void;
+  actionLabel?: string;
 }) {
-  return (
-    <article className="stat-card mes-stat-card">
+  const content = (
+    <>
       <p className="stat-card__title">{title}</p>
       <strong className="stat-card__value">{value}</strong>
       {delta && <span className={`mes-stat-card__delta mes-stat-card__delta--${deltaTone}`}>{delta}</span>}
-      <p className="stat-card__hint">{hint}</p>
+      {hint ? <p className="stat-card__hint">{hint}</p> : null}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        className="stat-card mes-stat-card mes-stat-card--button"
+        type="button"
+        onClick={onClick}
+        aria-label={actionLabel ?? title}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <article className="stat-card mes-stat-card">
+      {content}
     </article>
   );
 }
@@ -665,6 +1073,10 @@ export function MesMonitoringPage() {
   const [selectedSource, setSelectedSource] = useState<MesDataSource>("injection");
   const [selectedMachineNumber, setSelectedMachineNumber] = useState(1);
   const [snapshotJobId, setSnapshotJobId] = useState<string | null>(null);
+  const [isUtilizationModalOpen, setIsUtilizationModalOpen] = useState(false);
+  const [machiningDate, setMachiningDate] = useState(() => formatDateParam(startOfProductionDay(new Date())));
+  const [utilizationStartDate, setUtilizationStartDate] = useState(() => formatDateParam(addDays(new Date(), -13)));
+  const [utilizationEndDate, setUtilizationEndDate] = useState(() => formatDateParam(new Date()));
   const copy = pageCopy[language];
   const queryClient = useQueryClient();
 
@@ -691,6 +1103,25 @@ export function MesMonitoringPage() {
     refetchInterval: (query) => (query.state.data?.status === "running" ? 3_000 : false),
   });
 
+  const machiningStatsQuery = useQuery({
+    queryKey: ["production-mes-report-stats", "machining", machiningDate],
+    queryFn: () => getProductionMesReportStats(machiningDate, "machining"),
+    enabled: selectedSource === "machining" && Boolean(machiningDate),
+    refetchInterval: selectedSource === "machining" ? 60_000 : false,
+  });
+
+  const utilizationColumns = useMemo(
+    () => clampDateRangeColumns(utilizationStartDate, getLatestTime(injectionQuery.data) ?? new Date()),
+    [injectionQuery.data, utilizationStartDate],
+  );
+
+  const utilizationQuery = useQuery({
+    queryKey: ["mes", "injection-utilization-matrix", utilizationColumns],
+    queryFn: () => getInjectionUtilizationMatrix(utilizationColumns),
+    enabled: selectedSource === "injection" && isUtilizationModalOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
     const status = updateStatusQuery.data?.status;
     if (status === "completed" || status === "skipped" || status === "failed") {
@@ -702,11 +1133,26 @@ export function MesMonitoringPage() {
   const machineRows = useMemo(() => buildRows(injectionQuery.data), [injectionQuery.data]);
   const latestSlot = injectionQuery.data?.time_slots.at(-1);
   const latestTime = getLatestTime(injectionQuery.data);
+  const defaultUtilizationEndDate = latestTime ? formatDateParam(latestTime) : formatDateParam(new Date());
+  const defaultUtilizationStartDate = latestTime
+    ? formatDateParam(addDays(latestTime, -13))
+    : formatDateParam(addDays(new Date(), -13));
+  useEffect(() => {
+    if (!isUtilizationModalOpen) return;
+    setUtilizationStartDate(defaultUtilizationStartDate);
+    setUtilizationEndDate(defaultUtilizationEndDate);
+  }, [defaultUtilizationEndDate, defaultUtilizationStartDate, isUtilizationModalOpen]);
   const planDate = latestTime ? formatDateParam(latestTime) : formatDateParam(new Date());
   const planSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", planDate],
     queryFn: () => getProductionPlanSummary(planDate),
     enabled: selectedSource === "injection" && Boolean(planDate),
+  });
+  const productionStatusQuery = useQuery({
+    queryKey: ["production-status", planDate],
+    queryFn: () => getProductionStatus(planDate),
+    enabled: selectedSource === "injection" && Boolean(planDate),
+    refetchInterval: selectedSource === "injection" ? 60_000 : false,
   });
   const selectedMachine = machineRows.find((row) => row.machineNumber === selectedMachineNumber) ?? machineRows[0];
   const selectedMachineKey = selectedMachine?.machineNumber ?? selectedMachineNumber;
@@ -733,11 +1179,29 @@ export function MesMonitoringPage() {
     () => buildHourlyTrend(injectionQuery.data, selectedMachineKey, language),
     [injectionQuery.data, language, selectedMachineKey],
   );
+  const utilizationMatrix = utilizationQuery.data;
+  const dailyUtilizationPoints = useMemo(
+    () => filterDailyUtilizationPoints(
+      buildDailyUtilizationPoints(utilizationMatrix, language),
+      utilizationStartDate,
+      utilizationEndDate,
+    ),
+    [language, utilizationEndDate, utilizationMatrix, utilizationStartDate],
+  );
+  const selectedUtilizationSummary = useMemo(() => {
+    const totalMinutes = dailyUtilizationPoints.reduce((sum, point) => sum + point.totalMinutes, 0);
+    const runningMinutes = dailyUtilizationPoints.reduce((sum, point) => sum + point.runningMinutes, 0);
+    const activeMachines = dailyUtilizationPoints.length
+      ? dailyUtilizationPoints.reduce((sum, point) => sum + point.activeMachines, 0) / dailyUtilizationPoints.length
+      : 0;
+
+    return {
+      rate: totalMinutes > 0 ? (runningMinutes / totalMinutes) * 100 : null,
+      activeMachines,
+    };
+  }, [dailyUtilizationPoints]);
   const dayStart = useMemo(() => {
-    if (!latestTime) return null;
-    const start = new Date(latestTime);
-    start.setHours(0, 0, 0, 0);
-    return start;
+    return getShiftStart(latestTime);
   }, [latestTime]);
   const recentStart = useMemo(
     () => (latestTime ? new Date(latestTime.getTime() - 60 * 60 * 1000) : null),
@@ -771,11 +1235,25 @@ export function MesMonitoringPage() {
     () => buildFleetPeriodSummary(injectionQuery.data, previousDayStart, previousDayEnd),
     [injectionQuery.data, previousDayEnd, previousDayStart],
   );
+  const utilizationStart = useMemo(
+    () => (latestTime ? new Date(latestTime.getTime() - 24 * 60 * 60 * 1000) : null),
+    [latestTime],
+  );
+  const utilization24 = useMemo(
+    () => buildFleetUtilizationSummary(injectionQuery.data, utilizationStart, latestTime),
+    [injectionQuery.data, latestTime, utilizationStart],
+  );
   const injectionPlanQty = useMemo(() => {
     const dailyTotal = planSummaryQuery.data?.injection.daily_totals.find((item) => item.date === planDate);
     if (dailyTotal) return dailyTotal.plan_qty;
     return planSummaryQuery.data?.injection.records.reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0) ?? 0;
   }, [planDate, planSummaryQuery.data]);
+  const realtimeProgress = useMemo(
+    () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data, productionStatusQuery.data),
+    [injectionQuery.data, planSummaryQuery.data, productionStatusQuery.data],
+  );
+  const todayProductionQty = realtimeProgress.estimatedQty;
+  const todayProductionPlanQty = realtimeProgress.plannedQty || injectionPlanQty;
   const summary = useMemo(() => {
     const runningRows = machineRows.filter((row) => row.status === "running");
 
@@ -784,7 +1262,9 @@ export function MesMonitoringPage() {
       total: machineRows.length,
     };
   }, [machineRows]);
-  const todayPlanGap = todayFleetSummary.output - injectionPlanQty;
+  const todayPlanGap = todayProductionQty - todayProductionPlanQty;
+  const utilizationTone =
+    utilization24.rate === null ? "neutral" : utilization24.rate >= 70 ? "up" : utilization24.rate >= 40 ? "info" : "down";
   const recentOutputDelta = recentFleetSummary.output - previousRecentFleetSummary.output;
   const recentOilDelta =
     recentFleetSummary.oilTemperature !== null && previousRecentFleetSummary.oilTemperature !== null
@@ -797,14 +1277,49 @@ export function MesMonitoringPage() {
   const isInitialMesLoading = selectedSource === "injection" && !injectionQuery.data && injectionQuery.isFetching;
   const isBackfillRunning = updateMutation.isPending || updateStatusQuery.data?.status === "running";
   const backfillPercent = updateStatusQuery.data?.percent ?? 0;
+  const isUtilizationAnalysisLoading = isUtilizationModalOpen && utilizationQuery.isFetching && !utilizationQuery.data;
+  const machiningStats = machiningStatsQuery.data;
+  const machiningRows = machiningStats?.rows ?? [];
+  const machiningGapTone = (machiningStats?.summary.gap_qty ?? 0) >= 0 ? "up" : "down";
+  const machiningLatestReportTime = machiningRows
+    .map((row) => row.latest_report_time)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
+
+  useEffect(() => {
+    if (!dailyUtilizationPoints.length || !latestTime) return;
+
+    window.localStorage.setItem(
+      "wj_mes_daily_utilization",
+      JSON.stringify({
+        updatedAt: latestTime.toISOString(),
+        records: dailyUtilizationPoints,
+      }),
+    );
+  }, [dailyUtilizationPoints, latestTime]);
+
+  useEffect(() => {
+    if (!isUtilizationModalOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsUtilizationModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isUtilizationModalOpen]);
 
   return (
     <section className="page mes-page">
       <section className="panel mes-hero-panel">
         <div className="mes-hero-panel__main">
-          <p className="panel-card__eyebrow">{copy.eyebrow}</p>
-          <h2>{copy.title}</h2>
-          <p>{copy.description}</p>
+          <PageHeaderIcon icon="mes" />
+          <div className="mes-hero-panel__content">
+            <h2>{copy.title}</h2>
+            <p>{copy.description}</p>
+          </div>
           <div className="mes-source-chips" aria-label={copy.availableData}>
             <span>{copy.injection}</span>
             <span>{copy.machining}</span>
@@ -838,26 +1353,26 @@ export function MesMonitoringPage() {
             <SummaryMetricCard
               title={copy.activeMachines}
               value={`${summary.running}/${summary.total}`}
-              hint={copy.savedByBackend}
+              delta={`${copy.utilization24} ${formatPercent(utilization24.rate)}`}
+              deltaTone={utilizationTone}
+              onClick={() => setIsUtilizationModalOpen(true)}
+              actionLabel={copy.utilizationModalTitle}
             />
             <SummaryMetricCard
               title={copy.todayOutput}
-              value={`${formatNumber(todayFleetSummary.output)} / ${formatNumber(injectionPlanQty)}`}
-              hint={`${copy.planShortage} ${formatSignedNumber(todayPlanGap)}`}
+              value={`${formatNumber(todayProductionQty)} / ${formatNumber(todayProductionPlanQty)}`}
               delta={copy.planReady}
               deltaTone={todayPlanGap >= 0 ? "up" : "down"}
             />
             <SummaryMetricCard
               title={copy.recentOutput60}
               value={formatNumber(recentFleetSummary.output)}
-              hint={copy.output}
               delta={`${copy.previous60} ${formatSignedNumber(recentOutputDelta)}`}
               deltaTone={recentOutputDelta > 0 ? "up" : recentOutputDelta < 0 ? "down" : "neutral"}
             />
             <SummaryMetricCard
               title={copy.recentAvgOil60}
               value={formatTemperature(recentFleetSummary.oilTemperature)}
-              hint={copy.oil}
               delta={
                 recentOilDelta === null
                   ? copy.noCompareData
@@ -868,11 +1383,10 @@ export function MesMonitoringPage() {
             <SummaryMetricCard
               title={copy.todayPowerUsage}
               value={`${formatDecimal(todayFleetSummary.power, 2)} kWh`}
-              hint={copy.power}
               delta={
                 todayPowerDelta === null
                   ? copy.noCompareData
-                  : `${copy.previousDay} ${formatSignedNumber(todayPowerDelta, " kWh")}`
+                  : `${copy.previousDay} ${formatSignedInteger(todayPowerDelta, " kWh")}`
               }
               deltaTone={todayPowerDelta === null ? "neutral" : todayPowerDelta > 0 ? "up" : todayPowerDelta < 0 ? "down" : "neutral"}
             />
@@ -883,7 +1397,6 @@ export function MesMonitoringPage() {
               <div>
                 <p className="panel-card__eyebrow">Injection</p>
                 <h3 className="panel__title">{copy.injectionTitle}</h3>
-                <p className="plan-dashboard__meta">{copy.injectionHint}</p>
               </div>
               <div className="mes-monitor-panel__actions">
                 <span>
@@ -937,7 +1450,7 @@ export function MesMonitoringPage() {
                     >
                       <span className="mes-machine-tile__name">{row.machineNumber}</span>
                       <span className="mes-machine-tile__ton">{formatTonnage(row.tonnage)}</span>
-                      <strong>{formatNumber(row.recentOutput)}</strong>
+                      <strong>{formatNumber(row.shiftOutput)}</strong>
                       <small>{formatTemperature(row.oilTemperature)}</small>
                     </button>
                   ))}
@@ -1019,17 +1532,238 @@ export function MesMonitoringPage() {
           </section>
         </>
         )
+      ) : selectedSource === "machining" ? (
+        <>
+          <div className="mes-stats-grid">
+            <SummaryMetricCard
+              title={copy.machiningTotalPlan}
+              value={formatNumber(machiningStats?.summary.total_planned ?? 0)}
+              delta={copy.planReady}
+              deltaTone="info"
+            />
+            <SummaryMetricCard
+              title={copy.machiningTotalMes}
+              value={formatNumber(machiningStats?.summary.total_mes ?? 0)}
+              delta={`${copy.machiningReports} ${formatNumber(machiningStats?.summary.grouped_mes_count ?? 0)}`}
+              deltaTone="up"
+            />
+            <SummaryMetricCard
+              title={copy.machiningAchievement}
+              value={formatPercent(machiningStats?.summary.achievement_rate ?? 0)}
+              delta={`${copy.machiningMatched} ${formatNumber(machiningStats?.summary.matched_rows ?? 0)}`}
+              deltaTone="neutral"
+            />
+            <SummaryMetricCard
+              title={copy.machiningGap}
+              value={formatSignedQty(machiningStats?.summary.gap_qty ?? 0)}
+              delta={copy.previousDay}
+              deltaTone={machiningGapTone}
+            />
+            <SummaryMetricCard
+              title={copy.machiningUnreported}
+              value={formatNumber(machiningStats?.summary.plan_only_rows ?? 0)}
+              delta={`${copy.machiningMesOnly} ${formatNumber(machiningStats?.summary.mes_only_rows ?? 0)}`}
+              deltaTone={(machiningStats?.summary.plan_only_rows ?? 0) > 0 ? "down" : "up"}
+            />
+          </div>
+
+          <section className="panel mes-monitor-panel mes-machining-panel">
+            <div className="mes-monitor-panel__header">
+              <div>
+                <p className="panel-card__eyebrow">Machining</p>
+                <h3 className="panel__title">{copy.machiningTitle}</h3>
+                <p className="mes-machining-panel__hint">{copy.machiningTableHint}</p>
+              </div>
+              <div className="mes-monitor-panel__actions mes-machining-toolbar">
+                <label className="mes-date-field">
+                  <span>{copy.machiningDate}</span>
+                  <input
+                    type="date"
+                    value={machiningDate}
+                    onChange={(event) => setMachiningDate(event.target.value)}
+                  />
+                </label>
+                <span>
+                  {copy.machiningLatest}:{" "}
+                  {machiningLatestReportTime ? formatDateTime(machiningLatestReportTime, language) : copy.noData}
+                </span>
+              </div>
+            </div>
+
+            {machiningStatsQuery.isError ? (
+              <div className="notice notice--warning">{copy.fetchError}</div>
+            ) : machiningStatsQuery.isLoading && !machiningStats ? (
+              <div className="notice notice--neutral">{copy.loadingData}</div>
+            ) : machiningRows.length ? (
+              <div className="mes-machining-table-wrap">
+                <table className="mes-machining-table">
+                  <thead>
+                    <tr>
+                      <th>{copy.machiningLine}</th>
+                      <th>{copy.machiningPartNo}</th>
+                      <th>{copy.machiningModel}</th>
+                      <th>{copy.machiningPlanned}</th>
+                      <th>{copy.machiningReported}</th>
+                      <th>{copy.machiningStatus}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {machiningRows.map((row) => {
+                      const achievement = row.achievement_rate ?? (row.planned_qty > 0 ? 0 : 100);
+                      const progress = Math.max(0, Math.min(100, achievement));
+                      const isOverrun = row.gap_qty > 0;
+                      return (
+                        <tr key={`${row.equipment_key}-${row.part_no}`}>
+                          <td>
+                            <strong>{row.equipment_label || row.equipment_name || row.equipment_key}</strong>
+                            <span>{row.equipment_name || "-"}</span>
+                          </td>
+                          <td>{row.part_no}</td>
+                          <td>{row.model_name || "-"}</td>
+                          <td>{formatNumber(row.planned_qty)}</td>
+                          <td>
+                            <div className="mes-machining-progress-cell">
+                              <strong>{formatNumber(row.mes_qty)}</strong>
+                              <div className={`mes-machining-progress${isOverrun ? " mes-machining-progress--overrun" : ""}`}>
+                                <span style={{ width: `${progress}%` }} />
+                              </div>
+                              <small>{row.achievement_rate === null ? "-" : formatPercent(row.achievement_rate)}</small>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`mes-machining-status mes-machining-status--${row.compare_status}`}>
+                              {compareStatusLabel(row.compare_status, copy)}
+                            </span>
+                            <small>{copy.machiningReports} {formatNumber(row.mes_report_count)}</small>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="notice notice--neutral">{copy.machiningEmpty}</div>
+            )}
+          </section>
+        </>
       ) : (
         <section className="panel mes-ready-panel">
           <p className="panel-card__eyebrow">{copy.readyStatus}</p>
           <h3 className="panel__title">
-            {selectedSource === "machining" ? copy.machiningTitle : copy.inventoryTitle}
+            {copy.inventoryTitle}
           </h3>
           <p>
-            {selectedSource === "machining" ? copy.machiningBody : copy.inventoryBody}
+            {copy.inventoryBody}
           </p>
         </section>
       )}
+      {isUtilizationModalOpen ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsUtilizationModalOpen(false);
+            }
+          }}
+        >
+          <section
+            className="modal-card mes-utilization-modal"
+            aria-label={copy.utilizationModalTitle}
+            aria-modal="true"
+            role="dialog"
+          >
+            <div className="modal-card__header">
+              <div>
+                <p className="panel-card__eyebrow">{copy.utilization24}</p>
+                <h3 className="panel__title">{copy.utilizationModalTitle}</h3>
+                <p className="plan-dashboard__meta">{copy.utilizationModalSubtitle}</p>
+              </div>
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={() => setIsUtilizationModalOpen(false)}
+              >
+                {copy.close}
+              </button>
+            </div>
+
+            <div className="mes-utilization-filter">
+              <span>{copy.utilizationPeriod}</span>
+              <label>
+                {copy.utilizationStartDate}
+                <input
+                  type="date"
+                  value={utilizationStartDate}
+                  max={utilizationEndDate}
+                  onChange={(event) => setUtilizationStartDate(event.target.value)}
+                />
+              </label>
+              <label>
+                {copy.utilizationEndDate}
+                <input
+                  type="date"
+                  value={utilizationEndDate}
+                  min={utilizationStartDate}
+                  max={defaultUtilizationEndDate}
+                  onChange={(event) => setUtilizationEndDate(event.target.value)}
+                />
+              </label>
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={() => {
+                  setUtilizationStartDate(defaultUtilizationStartDate);
+                  setUtilizationEndDate(defaultUtilizationEndDate);
+                }}
+              >
+                {copy.recentTwoWeeks}
+              </button>
+            </div>
+
+            {isUtilizationAnalysisLoading ? (
+              <div className="mes-utilization-loading">
+                <span className="mes-skeleton-line mes-skeleton-line--wide" />
+                <span className="mes-skeleton-chart__box" />
+                <p className="mes-loading-note">{copy.loadingData}</p>
+              </div>
+            ) : (
+              <>
+                <div className="mes-utilization-summary">
+                  <div>
+                    <span>{copy.utilizationRate}</span>
+                    <strong>{formatPercent(selectedUtilizationSummary.rate)}</strong>
+                  </div>
+                  <div>
+                    <span>{copy.activeMachineCount}</span>
+                    <strong>{formatNumber(selectedUtilizationSummary.activeMachines)}</strong>
+                  </div>
+                  <div>
+                    <span>{copy.utilizationSavedAt}</span>
+                    <strong>{latestTime ? formatDateTime(latestTime.toISOString(), language) : copy.noData}</strong>
+                  </div>
+                </div>
+
+                <div className="mes-utilization-chart-panel">
+                  <DailyUtilizationChart
+                    points={dailyUtilizationPoints}
+                    labels={{
+                      utilizationRate: copy.utilizationRate,
+                      activeMachineCount: copy.activeMachineCount,
+                    }}
+                  />
+                </div>
+
+                <div className="mes-trend-legend mes-utilization-legend">
+                  <span><i className="mes-utilization-legend__bar" />{copy.activeMachineCount}</span>
+                  <span><i className="mes-utilization-legend__line" />{copy.utilizationRate}</span>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

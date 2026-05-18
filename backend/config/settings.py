@@ -92,6 +92,7 @@ INSTALLED_APPS = [
     'inventory',
     'quality',
     'production',
+    'ai_core',
 ]
 
 MIDDLEWARE = [
@@ -129,6 +130,7 @@ CORS_ALLOW_HEADERS = [
     'dnt',
     'origin',
     'user-agent',
+    'x-ai-worker-token',
     'x-csrftoken',
     'x-requested-with',
 ]
@@ -329,6 +331,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 MES_API_BASE = os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn/api/openapi/domain/web/v1/route')
 MES_ACCESS_TOKEN = os.getenv('MES_ACCESS_TOKEN', '')
+
+AI_WORKER_TOKEN = os.getenv('AI_WORKER_TOKEN', '')
+AI_JOB_CLAIM_LIMIT = int(os.getenv('AI_JOB_CLAIM_LIMIT', '1') or 1)
+AI_JOB_TIMEOUT_SECONDS = int(os.getenv('AI_JOB_TIMEOUT_SECONDS', '600') or 600)
 
 
 from datetime import timedelta

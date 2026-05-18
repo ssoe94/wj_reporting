@@ -21,7 +21,7 @@ export function AppRouter() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/production/plans" replace />} />
+        <Route index element={<Navigate to="/production" replace />} />
         <Route
           path="analysis"
           element={

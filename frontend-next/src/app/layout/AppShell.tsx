@@ -12,16 +12,16 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   {
-    to: "/production/plans",
-    label: { ko: "생산 계획", zh: "生产计划" },
-    capability: "production.read",
-    description: { ko: "업로드 계획과 설비별 순서 확인", zh: "确认上传计划和设备顺序" },
-  },
-  {
     to: "/production",
     label: { ko: "생산 대시보드", zh: "生产看板" },
     capability: "production.read",
     description: { ko: "진행 현황과 병목 확인", zh: "查看进度和瓶颈" },
+  },
+  {
+    to: "/production/plans",
+    label: { ko: "생산 계획", zh: "生产计划" },
+    capability: "production.read",
+    description: { ko: "업로드 계획과 설비별 순서 확인", zh: "确认上传计划和设备顺序" },
   },
   {
     to: "/mes/monitoring",

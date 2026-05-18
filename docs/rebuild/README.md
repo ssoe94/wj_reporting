@@ -77,6 +77,10 @@
    - 생산계획 엑셀 업로드와 일자별 대시보드 설계
    - 기존 파서/API 계약과 새 프런트 화면 구성 정리
 
+19. `19-ai-rag-architecture.md`
+   - 생산 계획, MES, 보고서 데이터를 AI가 사용할 수 있게 하는 RAG 데이터 계층 설계
+   - 검색/집계/권한/근거 제공 파이프라인과 Mac Studio MLX 운영 구조 정리
+
 ## 이 문서를 쓰는 이유
 
 현재 시스템은 이미 운영 기능이 넓습니다.
@@ -114,4 +118,5 @@
 13. `16-injection-issue-requirements.md`로 사출 이슈 요구사항을 고정
 14. `17-production-screen-flows.md`로 실제 화면 흐름과 전이 규칙을 고정
 15. `18-production-plan-upload-dashboard-design.md`로 업로드와 일자별 대시보드 계약을 고정
-16. 그 다음에 화면 설계, 프런트 구현, API 정리, DB 정리 시작
+16. `19-ai-rag-architecture.md`로 AI RAG 검색/집계/권한/근거 계층을 고정
+17. 그 다음에 화면 설계, 프런트 구현, API 정리, DB 정리 시작

@@ -12,6 +12,7 @@ from production.mes_progress import (
     extract_qty,
     fetch_all_progress_reports,
     get_business_date,
+    is_machining_progress_report,
     normalize_equipment_key,
     normalize_mes_part_no,
     normalize_plan_type,
@@ -65,6 +66,9 @@ class Command(BaseCommand):
             detail_id = row.get('reportRecordDetailId') or row.get('id')
 
             if not detail_id or not report_time or not plan_type or not equipment_key or not part_no:
+                skipped += 1
+                continue
+            if plan_type == 'machining' and not is_machining_progress_report(row):
                 skipped += 1
                 continue
 

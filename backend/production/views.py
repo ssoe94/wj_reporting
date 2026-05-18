@@ -1151,7 +1151,7 @@ class DebugPlanView(APIView):
 
 
 class ProductionMesReportStatsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = []
 
     def get(self, request, *args, **kwargs):
         date_str = request.query_params.get('date')
@@ -1175,6 +1175,7 @@ class ProductionMesReportStatsView(APIView):
         raw_count = ProductionMesReportRecord.objects.filter(
             report_time__gte=start_dt,
             report_time__lt=end_dt,
+            plan_type=plan_type,
         ).count()
         mes_records = ProductionMesReportRecord.objects.filter(
             business_date=target_date,

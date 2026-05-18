@@ -40,7 +40,7 @@ export function LoginPage() {
   const copy = loginCopy[language];
 
   const state = location.state as LocationState | null;
-  const redirectTo = state?.from || "/production/plans";
+  const redirectTo = state?.from || "/production";
 
   if (isAuthenticated) {
     return <Navigate to={redirectTo} replace />;
@@ -67,6 +67,9 @@ export function LoginPage() {
 
   return (
     <div className="login login--work">
+      <div className="login__aurora login__aurora--blue" />
+      <div className="login__aurora login__aurora--green" />
+      <div className="login__aurora login__aurora--gold" />
       <main className="login__main">
         <section className="login__panel" aria-label={copy.ariaLabel}>
           <div className="login-card">
