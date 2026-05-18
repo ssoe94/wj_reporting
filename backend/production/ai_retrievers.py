@@ -250,13 +250,13 @@ def get_machining_summary(target_date: Any) -> dict[str, Any]:
         plan_type="machining",
     ).order_by("report_time")
 
-    plan_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    plan_groups: dict[str, dict[str, Any]] = {}
     for plan in plan_queryset:
         equipment_key = normalize_equipment_key("machining", plan.machine_name)
         part_no = normalize_part_no(plan.part_no)
-        if not equipment_key or not part_no:
+        if not part_no:
             continue
-        key = (equipment_key, part_no)
+        key = part_no
         group = plan_groups.setdefault(key, {
             "equipment_key": equipment_key,
             "equipment_name": plan.machine_name,
@@ -270,9 +270,9 @@ def get_machining_summary(target_date: Any) -> dict[str, Any]:
         if not group["model_name"] and plan.model_name:
             group["model_name"] = plan.model_name
 
-    mes_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    mes_groups: dict[str, dict[str, Any]] = {}
     for record in mes_queryset:
-        key = (record.equipment_key, record.part_no)
+        key = record.part_no
         group = mes_groups.setdefault(key, {
             "equipment_key": record.equipment_key,
             "equipment_name": record.equipment_name,
@@ -289,14 +289,18 @@ def get_machining_summary(target_date: Any) -> dict[str, Any]:
 
     keys = sorted(
         set(plan_groups.keys()) | set(mes_groups.keys()),
-        key=lambda item: (equipment_sort_order("machining", item[0]), item[1]),
+        key=lambda item: (
+            equipment_sort_order("machining", (plan_groups.get(item) or mes_groups.get(item) or {}).get("equipment_key") or ""),
+            (plan_groups.get(item) or mes_groups.get(item) or {}).get("part_no") or "",
+        ),
     )
     rows = []
-    for equipment_key, part_no in keys:
-        plan = plan_groups.get((equipment_key, part_no), {})
-        mes = mes_groups.get((equipment_key, part_no), {})
+    for part_no in keys:
+        plan = plan_groups.get(part_no, {})
+        mes = mes_groups.get(part_no, {})
         planned_qty = safe_int(plan.get("planned_qty"))
         actual_qty = safe_int(mes.get("actual_qty"))
+        equipment_key = plan.get("equipment_key") or mes.get("equipment_key") or ""
         equipment_name = plan.get("equipment_name") or mes.get("equipment_name") or equipment_key
         rows.append({
             "equipment_key": equipment_key,

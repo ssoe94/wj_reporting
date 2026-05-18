@@ -1183,8 +1183,13 @@ class ProductionMesReportStatsView(APIView):
         ).order_by('report_time')
         filtered_count = mes_records.count()
 
+        def stats_key(equipment_key, part_no):
+            if plan_type == 'machining':
+                return part_no
+            return (equipment_key, part_no)
+
         for record in mes_records:
-            key = (record.equipment_key, record.part_no)
+            key = stats_key(record.equipment_key, record.part_no)
             group = mes_groups.setdefault(key, {
                 'equipment_key': record.equipment_key,
                 'equipment_name': record.equipment_name,
@@ -1208,9 +1213,9 @@ class ProductionMesReportStatsView(APIView):
         for plan in plans:
             equipment_key = normalize_equipment_key(plan_type, plan.machine_name)
             part_no = normalize_part_no(plan.part_no)
-            if not equipment_key or not part_no:
+            if not part_no or (plan_type != 'machining' and not equipment_key):
                 continue
-            key = (equipment_key, part_no)
+            key = stats_key(equipment_key, part_no)
             group = plan_groups.setdefault(key, {
                 'equipment_key': equipment_key,
                 'machine_name': plan.machine_name,
@@ -1226,7 +1231,10 @@ class ProductionMesReportStatsView(APIView):
 
         keys = sorted(
             set(plan_groups.keys()) | set(mes_groups.keys()),
-            key=lambda item: (equipment_sort_order(plan_type, item[0]), item[1]),
+            key=lambda item: (
+                equipment_sort_order(plan_type, (plan_groups.get(item) or mes_groups.get(item) or {}).get('equipment_key') or ''),
+                (plan_groups.get(item) or mes_groups.get(item) or {}).get('part_no') or '',
+            ),
         )
 
         rows = []
@@ -1236,12 +1244,14 @@ class ProductionMesReportStatsView(APIView):
         plan_only_rows = 0
         mes_only_rows = 0
 
-        for equipment_key, part_no in keys:
-            plan_group = plan_groups.get((equipment_key, part_no), {})
-            mes_group = mes_groups.get((equipment_key, part_no), {})
+        for key in keys:
+            plan_group = plan_groups.get(key, {})
+            mes_group = mes_groups.get(key, {})
             planned_qty = int(plan_group.get('planned_qty') or 0)
             mes_qty = int(round(mes_group.get('mes_qty') or 0))
             gap_qty = mes_qty - planned_qty
+            equipment_key = plan_group.get('equipment_key') or mes_group.get('equipment_key') or ''
+            part_no = plan_group.get('part_no') or mes_group.get('part_no') or ''
             equipment_name = plan_group.get('machine_name') or mes_group.get('equipment_name') or equipment_key
 
             if planned_qty and mes_qty:

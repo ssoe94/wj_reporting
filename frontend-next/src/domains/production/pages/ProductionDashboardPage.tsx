@@ -459,12 +459,6 @@ function normalizeDashboardPartNo(value: string | null | undefined) {
   return String(value ?? "").replace(/\s+/g, "").toUpperCase();
 }
 
-function getMachiningEquipmentKey(value: string | null | undefined) {
-  const text = String(value ?? "").trim().toUpperCase();
-  const match = text.match(/[A-Z]/);
-  return match ? match[0] : text;
-}
-
 function getProgressLabel(status: RealtimeProgressSegmentStatus, copy: Record<string, string>) {
   if (status === "completed") return copy.completed;
   if (status === "in_progress") return copy.inProgress;
@@ -554,7 +548,6 @@ function buildMachiningProgressPreview(
     plannedQty: number;
     records: ProductionPlanRecord[];
   }>();
-  const plannedKeys = new Set<string>();
   const plannedParts = new Set<string>();
 
   for (const record of planSummary?.machining.records ?? []) {
@@ -568,65 +561,26 @@ function buildMachiningProgressPreview(
     current.records.push(record);
     planMap.set(key, current);
 
-    const equipmentKey = getMachiningEquipmentKey(record.machine_name);
     const partNo = normalizeDashboardPartNo(record.part_no);
     if (partNo) {
       plannedParts.add(partNo);
     }
-    if (equipmentKey && partNo) {
-      plannedKeys.add(`${equipmentKey}|${partNo}`);
-    }
   }
 
-  const exactMesQtyByKey = new Map<string, number>();
-  const orphanMesQtyByPart = new Map<string, number>();
-  const mesOnlyRows: MachiningProgressPreview["rows"] = [];
+  const mesQtyByPart = new Map<string, number>();
+  const mesRowsByPart = new Map<string, ProductionMesReportStatsResponse["rows"]>();
 
   for (const row of machiningStats?.rows ?? []) {
-    const equipmentKey = getMachiningEquipmentKey(row.equipment_key || row.equipment_name);
     const partNo = normalizeDashboardPartNo(row.part_no);
     const mesQty = Number(row.mes_qty ?? 0);
-    if (!equipmentKey || !partNo || mesQty <= 0) continue;
+    if (!partNo || mesQty <= 0) continue;
 
-    const key = `${equipmentKey}|${partNo}`;
-    exactMesQtyByKey.set(key, (exactMesQtyByKey.get(key) ?? 0) + mesQty);
-    if (!plannedKeys.has(key)) {
-      orphanMesQtyByPart.set(partNo, (orphanMesQtyByPart.get(partNo) ?? 0) + mesQty);
-      if (row.compare_status === "mes_only" && !plannedParts.has(partNo)) {
-        const segment: RealtimeProgressSegment = {
-          key: `mes-only-${key}`,
-          sequence: 1,
-          partNo: row.part_no || "-",
-          modelName: row.model_name || "-",
-          lotNo: "-",
-          productFamilyCode: null,
-          productFamilyName: null,
-          isFinishedProduct: false,
-          plannedQty: 0,
-          cavity: 1,
-          requiredShots: 0,
-          allocatedShots: mesQty,
-          estimatedQty: mesQty,
-          progressRate: 100,
-          status: "completed",
-        };
-        mesOnlyRows.push({
-          key: `mes-only-${key}`,
-          label: row.equipment_label || row.equipment_name || row.equipment_key || "-",
-          plannedQty: 0,
-          actualQty: mesQty,
-          gapQty: mesQty,
-          progressRate: 100,
-          completedCount: 1,
-          inProgressCount: 0,
-          pendingCount: 0,
-          segments: [segment],
-        });
-      }
-    }
+    mesQtyByPart.set(partNo, (mesQtyByPart.get(partNo) ?? 0) + mesQty);
+    mesRowsByPart.set(partNo, [...(mesRowsByPart.get(partNo) ?? []), row]);
   }
 
   const rows = [...planMap.entries()]
+    .sort((left, right) => left[1].label.localeCompare(right[1].label, "ko-KR", { numeric: true, sensitivity: "base" }))
     .map(([key, plan]) => ({
       key,
       label: plan.label,
@@ -640,17 +594,11 @@ function buildMachiningProgressPreview(
       segments: getOrderedPlanRecords(plan.records).map((record, index) => {
         const segmentPlannedQty = Number(record.planned_quantity ?? 0);
         const partNo = normalizeDashboardPartNo(record.part_no);
-        const equipmentKey = getMachiningEquipmentKey(record.machine_name);
-        const exactKey = `${equipmentKey}|${partNo}`;
-        const exactRemaining = exactMesQtyByKey.get(exactKey) ?? 0;
-        const orphanRemaining = orphanMesQtyByPart.get(partNo) ?? 0;
-        const availableQty = exactRemaining > 0 ? exactRemaining : orphanRemaining;
+        const availableQty = partNo ? (mesQtyByPart.get(partNo) ?? 0) : 0;
         const estimatedQty = Math.min(segmentPlannedQty, Math.max(0, availableQty));
 
-        if (exactRemaining > 0) {
-          exactMesQtyByKey.set(exactKey, Math.max(0, exactRemaining - estimatedQty));
-        } else if (orphanRemaining > 0) {
-          orphanMesQtyByPart.set(partNo, Math.max(0, orphanRemaining - estimatedQty));
+        if (partNo) {
+          mesQtyByPart.set(partNo, Math.max(0, availableQty - estimatedQty));
         }
 
         const progressRate = segmentPlannedQty > 0 ? (estimatedQty / segmentPlannedQty) * 100 : 0;
@@ -683,24 +631,16 @@ function buildMachiningProgressPreview(
       const completedCount = row.segments.filter((segment) => segment.status === "completed").length;
       const inProgressCount = row.segments.filter((segment) => segment.status === "in_progress").length;
       const pendingCount = row.segments.filter((segment) => segment.status === "pending").length;
-      const extraExactKeys = new Set<string>();
       const extraPartKeys = new Set<string>();
       const extraQty = getOrderedPlanRecords(planMap.get(row.key)?.records ?? []).reduce((sum, record) => {
         const partNo = normalizeDashboardPartNo(record.part_no);
-        const equipmentKey = getMachiningEquipmentKey(record.machine_name);
-        const exactKey = `${equipmentKey}|${partNo}`;
-        let extra = 0;
-        if (!extraExactKeys.has(exactKey)) {
-          extra += exactMesQtyByKey.get(exactKey) ?? 0;
-          exactMesQtyByKey.set(exactKey, 0);
-          extraExactKeys.add(exactKey);
-        }
         if (partNo && !extraPartKeys.has(partNo)) {
-          extra += orphanMesQtyByPart.get(partNo) ?? 0;
-          orphanMesQtyByPart.set(partNo, 0);
+          const extra = mesQtyByPart.get(partNo) ?? 0;
+          mesQtyByPart.set(partNo, 0);
           extraPartKeys.add(partNo);
+          return sum + extra;
         }
-        return sum + extra;
+        return sum;
       }, 0);
       const totalActualQty = actualQty + extraQty;
       return {
@@ -714,6 +654,42 @@ function buildMachiningProgressPreview(
       };
     })
     .sort((left, right) => left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" }));
+
+  const mesOnlyRows = [...mesRowsByPart.entries()]
+    .filter(([partNo]) => !plannedParts.has(partNo))
+    .map(([partNo, mesRows]) => {
+      const mesQty = mesRows.reduce((sum, row) => sum + Number(row.mes_qty ?? 0), 0);
+      const firstRow = mesRows[0];
+      const segment: RealtimeProgressSegment = {
+        key: `mes-only-${partNo}`,
+        sequence: 1,
+        partNo: firstRow?.part_no || partNo || "-",
+        modelName: firstRow?.model_name || "-",
+        lotNo: "-",
+        productFamilyCode: null,
+        productFamilyName: null,
+        isFinishedProduct: false,
+        plannedQty: 0,
+        cavity: 1,
+        requiredShots: 0,
+        allocatedShots: mesQty,
+        estimatedQty: mesQty,
+        progressRate: 100,
+        status: "completed" as const,
+      };
+      return {
+        key: `mes-only-${partNo}`,
+        label: firstRow?.equipment_label || firstRow?.equipment_name || firstRow?.equipment_key || "-",
+        plannedQty: 0,
+        actualQty: mesQty,
+        gapQty: mesQty,
+        progressRate: 100,
+        completedCount: 1,
+        inProgressCount: 0,
+        pendingCount: 0,
+        segments: [segment],
+      };
+    });
 
   const allRows = [...rows, ...mesOnlyRows]
     .sort((left, right) => left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" }));

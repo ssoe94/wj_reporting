@@ -110,7 +110,7 @@ class MesProgressSyncCommandTests(DjangoTestCase):
 
 
 class ProductionMesReportStatsApiTests(DjangoTestCase):
-    def test_stats_api_compares_plan_and_mes_rows_without_auth(self):
+    def test_stats_api_matches_machining_rows_by_part_no_without_auth(self):
         target_date = datetime(2026, 5, 18).date()
         tz = pytz.timezone('Asia/Shanghai')
         report_time = tz.localize(datetime(2026, 5, 18, 10, 0))
@@ -139,8 +139,8 @@ class ProductionMesReportStatsApiTests(DjangoTestCase):
             plan_type='machining',
             process_code='JG',
             report_time=report_time,
-            equipment_name='A LINE',
-            equipment_key='A',
+            equipment_name='C LINE',
+            equipment_key='C',
             part_no='PART-A',
             material_name='Part A',
             report_qty=70,
@@ -176,7 +176,9 @@ class ProductionMesReportStatsApiTests(DjangoTestCase):
         self.assertEqual(payload['summary']['plan_only_rows'], 1)
         self.assertEqual(payload['summary']['mes_only_rows'], 1)
 
-        statuses = {(row['equipment_key'], row['part_no']): row['compare_status'] for row in payload['rows']}
-        self.assertEqual(statuses[('A', 'PART-A')], 'matched')
-        self.assertEqual(statuses[('B', 'PART-B')], 'plan_only')
-        self.assertEqual(statuses[('C', 'PART-C')], 'mes_only')
+        rows_by_part = {row['part_no']: row for row in payload['rows']}
+        self.assertEqual(rows_by_part['PART-A']['compare_status'], 'matched')
+        self.assertEqual(rows_by_part['PART-A']['equipment_key'], 'A')
+        self.assertEqual(rows_by_part['PART-A']['mes_qty'], 70)
+        self.assertEqual(rows_by_part['PART-B']['compare_status'], 'plan_only')
+        self.assertEqual(rows_by_part['PART-C']['compare_status'], 'mes_only')
