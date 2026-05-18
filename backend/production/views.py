@@ -308,7 +308,7 @@ class ProductionAiAskView(APIView):
 
 
 class ProductionAiBriefingView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = []
 
     def get(self, request, *args, **kwargs):
         date_str = request.query_params.get('date') or timezone.localdate().isoformat()

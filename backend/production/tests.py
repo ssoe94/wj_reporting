@@ -110,6 +110,15 @@ class MesProgressSyncCommandTests(DjangoTestCase):
 
 
 class ProductionMesReportStatsApiTests(DjangoTestCase):
+    def test_ai_briefing_api_allows_read_only_access_without_auth(self):
+        response = APIClient().get('/api/production/ai/briefing/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('answer', response.json())
+
     def test_stats_api_matches_machining_rows_by_part_no_without_auth(self):
         target_date = datetime(2026, 5, 18).date()
         tz = pytz.timezone('Asia/Shanghai')
