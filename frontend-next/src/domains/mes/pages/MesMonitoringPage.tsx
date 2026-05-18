@@ -1615,8 +1615,10 @@ export function MesMonitoringPage() {
                       return (
                         <tr key={`${row.equipment_key}-${row.part_no}`}>
                           <td>
-                            <strong>{row.equipment_label || row.equipment_name || row.equipment_key}</strong>
-                            <span>{row.equipment_name || "-"}</span>
+                            <div className="mes-machining-line-cell">
+                              <strong>{row.equipment_label || row.equipment_name || row.equipment_key}</strong>
+                              <span>{row.equipment_name || "-"}</span>
+                            </div>
                           </td>
                           <td>{row.part_no}</td>
                           <td>{row.model_name || "-"}</td>

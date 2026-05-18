@@ -4446,9 +4446,10 @@ select {
 
 .mes-machining-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 980px;
   border-collapse: collapse;
   font-size: 0.82rem;
+  table-layout: fixed;
 }
 
 .mes-machining-table th,
@@ -4457,6 +4458,10 @@ select {
   border-bottom: 1px solid rgba(24, 141, 194, 0.10);
   text-align: left;
   vertical-align: middle;
+}
+
+.mes-machining-table tbody tr {
+  height: 72px;
 }
 
 .mes-machining-table th {
@@ -4472,21 +4477,60 @@ select {
   text-align: right;
 }
 
-.mes-machining-table td:first-child {
-  display: grid;
-  gap: 2px;
+.mes-machining-table th:nth-child(1),
+.mes-machining-table td:nth-child(1) {
+  width: 96px;
 }
 
-.mes-machining-table td:first-child strong {
+.mes-machining-table th:nth-child(2),
+.mes-machining-table td:nth-child(2) {
+  width: 148px;
+}
+
+.mes-machining-table th:nth-child(3),
+.mes-machining-table td:nth-child(3) {
+  width: 240px;
+}
+
+.mes-machining-table th:nth-child(4),
+.mes-machining-table td:nth-child(4) {
+  width: 84px;
+}
+
+.mes-machining-table th:nth-child(5),
+.mes-machining-table td:nth-child(5) {
+  width: 240px;
+}
+
+.mes-machining-table th:nth-child(6),
+.mes-machining-table td:nth-child(6) {
+  width: 168px;
+}
+
+.mes-machining-line-cell {
+  display: grid;
+  gap: 2px;
+  min-height: 44px;
+  align-content: center;
+}
+
+.mes-machining-line-cell strong {
   color: var(--text);
   font-size: 0.9rem;
 }
 
-.mes-machining-table td:first-child span,
+.mes-machining-line-cell span,
 .mes-machining-table small {
   color: var(--muted);
   font-size: 0.7rem;
   font-weight: 800;
+}
+
+.mes-machining-table td:nth-child(2),
+.mes-machining-table td:nth-child(3) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mes-machining-progress-cell {
@@ -4494,6 +4538,8 @@ select {
   justify-items: end;
   gap: 5px;
   min-width: 156px;
+  min-height: 44px;
+  align-content: center;
 }
 
 .mes-machining-progress-cell strong {
@@ -4534,6 +4580,10 @@ select {
   border-radius: 999px;
   font-size: 0.68rem;
   font-weight: 900;
+}
+
+.mes-machining-table td:last-child {
+  white-space: nowrap;
 }
 
 .mes-machining-status--matched {
