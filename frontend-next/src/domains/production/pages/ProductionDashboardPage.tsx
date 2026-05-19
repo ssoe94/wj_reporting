@@ -26,7 +26,10 @@ import {
   type AiJobStatus,
 } from "@/domains/production/api";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
-import { buildInjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
+import {
+  buildInjectionTransitionAnalysis,
+  type InjectionTransitionAnalysis,
+} from "@/domains/production/injection-transition-analysis";
 import {
   buildRealtimeProgressSummary,
   type RealtimeProgressRow,
@@ -611,6 +614,7 @@ function buildProductionBriefContext(
   machiningStats: ProductionMesReportStatsResponse | undefined,
   productionStatus: ProductionStatusResponse | undefined,
   machiningProvision?: MachiningProvisionResponse,
+  transitionAnalysis?: InjectionTransitionAnalysis,
 ): ProductionBriefContext {
   const latestTime = getLatestTime(mesData);
   const productionDayStart = getBusinessDayStart(businessDate);
@@ -638,7 +642,7 @@ function buildProductionBriefContext(
       recentOutput,
     };
   }) ?? [];
-  const realtimeSummary = buildRealtimeProgressSummary(planSummary, mesData, productionStatus, businessDate);
+  const realtimeSummary = buildRealtimeProgressSummary(planSummary, mesData, productionStatus, businessDate, transitionAnalysis);
   const actualMachineOutputs = realtimeSummary.rows
     .filter((row) => row.estimatedQty > 0)
     .map((row) => ({ machine: row.label, output: row.estimatedQty }));
@@ -1339,21 +1343,6 @@ export function ProductionDashboardPage() {
     },
   });
 
-  const briefContext = useMemo(
-    () => buildProductionBriefContext(
-      businessDate,
-      planSummaryQuery.data,
-      mesQuery.data,
-      machiningStatsQuery.data,
-      productionStatusQuery.data,
-      machiningProvisionQuery.data,
-    ),
-    [businessDate, machiningProvisionQuery.data, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
-  );
-  const realtimeProgress = useMemo(
-    () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data, businessDate),
-    [businessDate, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
-  );
   const transitionAnalysis = useMemo(
     () => buildInjectionTransitionAnalysis(
       planSummaryQuery.data,
@@ -1365,6 +1354,22 @@ export function ProductionDashboardPage() {
       ),
     ),
     [businessDate, mesQuery.data, nextPlanSummaryQuery.data, planSummaryQuery.data, secondNextPlanSummaryQuery.data],
+  );
+  const briefContext = useMemo(
+    () => buildProductionBriefContext(
+      businessDate,
+      planSummaryQuery.data,
+      mesQuery.data,
+      machiningStatsQuery.data,
+      productionStatusQuery.data,
+      machiningProvisionQuery.data,
+      transitionAnalysis,
+    ),
+    [businessDate, machiningProvisionQuery.data, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
+  );
+  const realtimeProgress = useMemo(
+    () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data, businessDate, transitionAnalysis),
+    [businessDate, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
   );
   const machiningProgress = useMemo(
     () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),

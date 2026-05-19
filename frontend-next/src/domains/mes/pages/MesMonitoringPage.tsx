@@ -1464,10 +1464,6 @@ export function MesMonitoringPage() {
     if (dailyTotal) return dailyTotal.plan_qty;
     return planSummaryQuery.data?.injection.records.reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0) ?? 0;
   }, [planDate, planSummaryQuery.data]);
-  const realtimeProgress = useMemo(
-    () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data, productionStatusQuery.data, planDate),
-    [injectionQuery.data, planDate, planSummaryQuery.data, productionStatusQuery.data],
-  );
   const transitionAnalysis = useMemo(
     () => buildInjectionTransitionAnalysis(
       planSummaryQuery.data,
@@ -1479,6 +1475,10 @@ export function MesMonitoringPage() {
       ),
     ),
     [injectionQuery.data, nextPlanSummaryQuery.data, planDate, planSummaryQuery.data, secondNextPlanSummaryQuery.data],
+  );
+  const realtimeProgress = useMemo(
+    () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data, productionStatusQuery.data, planDate, transitionAnalysis),
+    [injectionQuery.data, planDate, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
   );
   const todayProductionQty = realtimeProgress.estimatedQty;
   const todayProductionPlanQty = realtimeProgress.plannedQty || injectionPlanQty;

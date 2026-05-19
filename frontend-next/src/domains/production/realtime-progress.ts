@@ -5,6 +5,7 @@ import {
   type ProductionStatusMachine,
   type ProductionStatusResponse,
 } from "@/domains/production/api";
+import { type InjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
 
 export type RealtimeProgressSegmentStatus = "completed" | "in_progress" | "pending";
 
@@ -121,11 +122,105 @@ function getOrderedPlanRecords(records: ProductionPlanRecord[]) {
     .map(({ record }) => record);
 }
 
+function getRecordIdentity(record: ProductionPlanRecord | undefined) {
+  if (!record) return "";
+  if (record.id !== undefined && record.id !== null) return `id:${record.id}`;
+  return [
+    record.part_no ?? "",
+    record.model_name ?? "",
+    record.lot_no ?? "",
+    record.sequence ?? "",
+  ].join("|");
+}
+
+function findRecordIndex(records: ProductionPlanRecord[], target: ProductionPlanRecord | undefined, minimumIndex = 0) {
+  const targetIdentity = getRecordIdentity(target);
+  if (!targetIdentity) return -1;
+  return records.findIndex((record, index) => index >= minimumIndex && getRecordIdentity(record) === targetIdentity);
+}
+
+function getEquipmentTransitionEvents(transitionAnalysis: InjectionTransitionAnalysis | undefined, machineKey: string) {
+  return (transitionAnalysis?.events ?? [])
+    .filter((event) => (
+      event.machineKey === machineKey
+      && (event.type === "mold_change" || event.type === "core_change")
+      && event.fromRecord
+      && event.toRecord
+    ))
+    .sort((left, right) => new Date(left.startTime).getTime() - new Date(right.startTime).getTime());
+}
+
+function allocateQuantitiesByTransitionSignals(
+  records: ProductionPlanRecord[],
+  totalQty: number,
+  machineKey: string,
+  transitionAnalysis: InjectionTransitionAnalysis | undefined,
+) {
+  if (!transitionAnalysis || records.length === 0) return null;
+  const allocations = Array.from({ length: records.length }, () => 0);
+  const transitions = getEquipmentTransitionEvents(transitionAnalysis, machineKey);
+  let activeIndex = 0;
+  let remainingQty = Math.max(0, totalQty);
+
+  transitions.forEach((event) => {
+    const fromIndex = findRecordIndex(records, event.fromRecord, activeIndex);
+    const toIndex = findRecordIndex(records, event.toRecord, Math.max(fromIndex + 1, activeIndex + 1));
+    if (fromIndex < 0 || toIndex < 0 || remainingQty <= 0) return;
+
+    activeIndex = fromIndex;
+    const producedBeforeChange = Math.max(0, Number(event.evidence.cumulativeQtyAtStop ?? 0) || 0);
+    const allocatedQty = Math.min(remainingQty, producedBeforeChange);
+    allocations[fromIndex] += allocatedQty;
+    remainingQty = Math.max(0, remainingQty - allocatedQty);
+    activeIndex = toIndex;
+  });
+
+  if (remainingQty > 0) {
+    allocations[Math.min(activeIndex, records.length - 1)] += remainingQty;
+  }
+
+  return allocations;
+}
+
+function allocateShotsByTransitionSignals(
+  records: ProductionPlanRecord[],
+  totalShots: number,
+  machineKey: string,
+  transitionAnalysis: InjectionTransitionAnalysis | undefined,
+) {
+  if (!transitionAnalysis || records.length === 0) return null;
+  const allocations = Array.from({ length: records.length }, () => 0);
+  const transitions = getEquipmentTransitionEvents(transitionAnalysis, machineKey);
+  let activeIndex = 0;
+  let remainingShots = Math.max(0, totalShots);
+
+  transitions.forEach((event) => {
+    const fromIndex = findRecordIndex(records, event.fromRecord, activeIndex);
+    const toIndex = findRecordIndex(records, event.toRecord, Math.max(fromIndex + 1, activeIndex + 1));
+    if (fromIndex < 0 || toIndex < 0 || remainingShots <= 0) return;
+
+    activeIndex = fromIndex;
+    const cavity = Math.max(1, Number(records[fromIndex]?.cavity ?? 1) || 1);
+    const producedShotsBeforeChange = Math.max(0, Number(event.evidence.cumulativeQtyAtStop ?? 0) || 0) / cavity;
+    const allocatedShots = Math.min(remainingShots, producedShotsBeforeChange);
+    allocations[fromIndex] += allocatedShots;
+    remainingShots = Math.max(0, remainingShots - allocatedShots);
+    activeIndex = toIndex;
+  });
+
+  if (remainingShots > 0) {
+    allocations[Math.min(activeIndex, records.length - 1)] += remainingShots;
+  }
+
+  return allocations;
+}
+
 export function buildRealtimeProgressSummary(
   planSummary: ProductionPlanSummaryResponse | undefined,
   mesData: InjectionProductionMatrix | undefined,
   productionStatus?: ProductionStatusResponse,
   businessDate?: string,
+  transitionAnalysis?: InjectionTransitionAnalysis,
 ): RealtimeProgressSummary {
   const latestTime = getLatestTime(mesData);
   const productionWindow = getBusinessDayWindow(businessDate, latestTime);
@@ -174,7 +269,7 @@ export function buildRealtimeProgressSummary(
   }
 
   if (productionStatus?.injection?.length) {
-    return buildStatusBackedProgressSummary(productionStatus.injection, planMap, shotMap);
+    return buildStatusBackedProgressSummary(productionStatus.injection, planMap, shotMap, transitionAnalysis);
   }
 
   const rows = [...planMap.keys()].map((key) => {
@@ -184,13 +279,17 @@ export function buildRealtimeProgressSummary(
     const avgCavity = plannedQty > 0 ? (plan?.cavityWeightedQty ?? plannedQty) / plannedQty : 1;
     const shotCount = shots?.shotCount ?? 0;
     let remainingShots = shotCount;
-    const segments = getOrderedPlanRecords(plan?.records ?? []).map((record, index) => {
+    const orderedRecords = getOrderedPlanRecords(plan?.records ?? []);
+    const transitionShotAllocations = allocateShotsByTransitionSignals(orderedRecords, shotCount, key, transitionAnalysis);
+    const segments = orderedRecords.map((record, index) => {
       const segmentPlannedQty = Number(record.planned_quantity ?? 0);
       const cavity = Math.max(1, Number(record.cavity ?? 1) || 1);
       const requiredShots = segmentPlannedQty > 0 ? Math.ceil(segmentPlannedQty / cavity) : 0;
-      const allocatedShots = index === (plan?.records.length ?? 0) - 1
-        ? Math.max(0, remainingShots)
-        : Math.max(0, Math.min(remainingShots, requiredShots));
+      const allocatedShots = transitionShotAllocations
+        ? Math.max(0, transitionShotAllocations[index] ?? 0)
+        : index === orderedRecords.length - 1
+          ? Math.max(0, remainingShots)
+          : Math.max(0, Math.min(remainingShots, requiredShots));
       const estimatedQty = Math.round(allocatedShots * cavity);
       const progressRate = segmentPlannedQty > 0 ? (estimatedQty / segmentPlannedQty) * 100 : 0;
       const status: RealtimeProgressSegmentStatus = progressRate >= 99.9
@@ -284,6 +383,7 @@ function buildStatusBackedProgressSummary(
     records: ProductionPlanRecord[];
   }>,
   shotMap: Map<string, { shotCount: number; recentShots: number; label: string }>,
+  transitionAnalysis?: InjectionTransitionAnalysis,
 ): RealtimeProgressSummary {
   const rows = statusRows.map((statusRow) => {
     const machineNumber = getMachineNumberFromName(statusRow.machine_name);
@@ -303,14 +403,17 @@ function buildStatusBackedProgressSummary(
         planned_quantity: part.planned_quantity,
         cavity: 1,
       } as ProductionPlanRecord));
+    const transitionQtyAllocations = allocateQuantitiesByTransitionSignals(sourceRecords, estimatedQty, key, transitionAnalysis);
     let remainingActualQty = Math.max(0, estimatedQty);
     const segments = sourceRecords.map((record, index) => {
       const segmentPlannedQty = Number(record.planned_quantity ?? 0);
       const cavity = Math.max(1, Number(record.cavity ?? 1) || 1);
       const isLastSegment = index === sourceRecords.length - 1;
-      const segmentActualQty = isLastSegment
-        ? Math.max(0, remainingActualQty)
-        : Math.max(0, Math.min(remainingActualQty, segmentPlannedQty));
+      const segmentActualQty = transitionQtyAllocations
+        ? Math.max(0, transitionQtyAllocations[index] ?? 0)
+        : isLastSegment
+          ? Math.max(0, remainingActualQty)
+          : Math.max(0, Math.min(remainingActualQty, segmentPlannedQty));
       const requiredShots = segmentPlannedQty > 0 ? Math.ceil(segmentPlannedQty / cavity) : 0;
       const allocatedShots = segmentActualQty > 0 ? segmentActualQty / cavity : 0;
       const progressRate = segmentPlannedQty > 0 ? (segmentActualQty / segmentPlannedQty) * 100 : 0;

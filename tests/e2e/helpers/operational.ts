@@ -408,15 +408,15 @@ export async function installOperationalApiMocks(page: Page) {
       json: {
         injection: [{
           machine_name: '850T-1',
-          total_planned: 100,
-          total_actual: 40,
-          progress: 40,
+          total_planned: 200,
+          total_actual: 180,
+          progress: 90,
           parts: [{
             part_no: 'PART-A',
             model_name: 'MODEL-A',
             planned_quantity: 100,
-            actual_quantity: 40,
-            progress: 40,
+            actual_quantity: 180,
+            progress: 180,
           }],
         }],
         machining: [],
@@ -674,15 +674,15 @@ export async function installOperationalApiMocks(page: Page) {
   await page.route('**/api/production/ai/briefing/**', async (route) => {
     await route.fulfill({
       json: {
-        answer: '기준일 2026-05-18 사출 완료율은 40%입니다.',
+        answer: '기준일 2026-05-18 사출 완료율은 90%입니다.',
         severity: 'normal',
         facts: {
           injection: {
-            actual_qty: 40,
-            planned_qty: 100,
-            progress_rate: 40,
+            actual_qty: 180,
+            planned_qty: 200,
+            progress_rate: 90,
             time_progress_rate: 10,
-            gap_qty: -60,
+            gap_qty: -20,
             status: 'ahead',
             active_equipment_count: 1,
             running_equipment_count: 1,
