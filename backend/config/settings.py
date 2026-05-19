@@ -93,6 +93,7 @@ INSTALLED_APPS = [
     'quality',
     'production',
     'ai_core',
+    'analytics',
 ]
 
 MIDDLEWARE = [

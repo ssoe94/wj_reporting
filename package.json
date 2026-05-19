@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "description": "WJ Reporting System",
   "scripts": {
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
+    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts --project=chromium",
+    "test:e2e:api": "PLAYWRIGHT_SKIP_WEB_SERVER=1 RUN_API_ROUTING=1 playwright test -c tests/e2e/playwright.config.ts --project=chromium api-routing.spec.ts",
+    "test:e2e:all": "playwright test -c tests/e2e/playwright.config.ts",
+    "test:e2e:ui": "playwright test -c tests/e2e/playwright.config.ts --ui",
+    "test:e2e:headed": "playwright test -c tests/e2e/playwright.config.ts --project=chromium --headed",
     "test:smoke": "bash scripts/quick-smoke-test.sh",
     "verify:deployment": "node scripts/verify-deployment.js",
     "release:check": "bash scripts/release-checklist.sh"

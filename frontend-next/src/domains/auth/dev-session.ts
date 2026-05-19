@@ -49,6 +49,7 @@ export function createDevTokenPair(): TokenPair {
 }
 
 export function isDevSessionToken(token?: string | null) {
+  if (!ENABLE_DEV_LOGIN) return false;
   if (!token) return false;
   const payload = decodePayload(token);
   return payload?.env === DEV_TOKEN_MARKER;

@@ -81,6 +81,14 @@
    - 생산 계획, MES, 보고서 데이터를 AI가 사용할 수 있게 하는 RAG 데이터 계층 설계
    - 검색/집계/권한/근거 제공 파이프라인과 Mac Studio MLX 운영 구조 정리
 
+20. `20-analytics-storage-visualization-design.md`
+   - 분석용 `raw -> fact -> mart` 저장 계층과 보존 정책 설계
+   - `/analysis`, `/production`, `/mes/monitoring`, `/inventory` 시각화 계약과 예외 중심 화면 구조 정리
+
+21. `21-machining-mes-first-manual-reconciliation.md`
+   - 가공 MES 우선 집계, 수기 보정, 선진행 생산, MES 후등록 대사 설계
+   - 수기 보고와 MES 보고가 중복 계상되지 않도록 하는 데이터/화면/API 계약 정리
+
 ## 이 문서를 쓰는 이유
 
 현재 시스템은 이미 운영 기능이 넓습니다.
@@ -119,4 +127,6 @@
 14. `17-production-screen-flows.md`로 실제 화면 흐름과 전이 규칙을 고정
 15. `18-production-plan-upload-dashboard-design.md`로 업로드와 일자별 대시보드 계약을 고정
 16. `19-ai-rag-architecture.md`로 AI RAG 검색/집계/권한/근거 계층을 고정
-17. 그 다음에 화면 설계, 프런트 구현, API 정리, DB 정리 시작
+17. `20-analytics-storage-visualization-design.md`로 분석 저장/시각화/예외 계층을 고정
+18. `21-machining-mes-first-manual-reconciliation.md`로 가공 MES 우선 보정과 중복 방지 기준을 고정
+19. 그 다음에 화면 설계, 프런트 구현, API 정리, DB 정리 시작

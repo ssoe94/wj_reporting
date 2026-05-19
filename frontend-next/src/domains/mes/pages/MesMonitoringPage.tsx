@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type InjectionProductionMatrix,
@@ -14,6 +14,8 @@ import {
   getProductionStatus,
   type ProductionMesReportStatsResponse,
 } from "@/domains/production/api";
+import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
+import { buildInjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
 import { buildRealtimeProgressSummary } from "@/domains/production/realtime-progress";
 import { PageHeaderIcon } from "@/shared/components/PageHeader";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
@@ -55,6 +57,13 @@ type DailyUtilizationPoint = {
   totalMinutes: number;
 };
 
+type ProductionWindowSummary = {
+  output: number;
+  activeHours: number;
+  startTime: Date | null;
+  endTime: Date | null;
+};
+
 type HourlyTrendPoint = {
   label: string;
   dateLabel: string;
@@ -65,6 +74,11 @@ type HourlyTrendPoint = {
   output: number;
   power: number;
   oilTemperature: number | null;
+};
+
+type HourlyTrendScale = {
+  powerMax: number;
+  oilMax: number;
 };
 
 const pageCopy = {
@@ -91,6 +105,15 @@ const pageCopy = {
     recentAvgOil60: "최근 60분 평균 오일온도",
     avgOil: "평균 오일온도",
     todayPowerUsage: "금일 총 전력 사용량",
+    fleetProductionEyebrow: "INJECTION TOTAL",
+    fleetProductionTitle: "전체 사출기 총합 생산현황",
+    fleetProductionDescription: "기준일 08:00부터 현재까지 17대 사출기의 MES 형합수와 생산계획 기준 추정 실적을 합산합니다.",
+    fleetPlanProgress: "계획 진행률",
+    fleetPlanGap: "계획 대비",
+    fleetMachineSpread: "설비별 생산 분포",
+    fleetElapsedUph: "생산구간 UPH",
+    fleetMachineTotal: "총",
+    uph: "UPH",
     planShortage: "계획 대비 부족",
     planReady: "계획 수량 기준",
     utilization24: "최근 24시간 가동률",
@@ -155,6 +178,30 @@ const pageCopy = {
     machiningPlanOnly: "미보고",
     machiningMesOnly: "계획 없음",
     machiningEmpty: "가공 계획 또는 MES 생산보고가 없습니다.",
+    transitionEyebrow: "INJECTION STOP ANALYSIS",
+    transitionTitle: "사출 정지/전환 분석",
+    transitionDescription: "MES 형합수에서 10분 이상 무생산 구간을 찾고, 생산계획과 Part No를 비교해 금형 교체, 코어 교체, 사출조건준비(调机), 생산 중지 후보로 분류합니다. 계획이 없거나 작업지시 사이 장기 대기인 일반 정지는 제외합니다.",
+    transitionEventCount: "정지 후보",
+    moldChangeTime: "금형 교체",
+    coreChangeTime: "코어 교체",
+    tuningTime: "사출조건준비(调机)",
+    productionStopTime: "생산 중지",
+    moldChangeEstimate: "금형 교체 추정",
+    coreChangeEstimate: "코어 교체 추정",
+    productionStopEstimate: "생산 중지",
+    tuningEstimate: "사출조건준비(调机)",
+    requiresInjectionNote: "사출과 확인 필요",
+    noTransitionEvents: "전체 사출기에서 10분 이상 정지 후보가 없습니다.",
+    duration: "소요",
+    stableStart: "양산 안정 시작",
+    eventEvidence: "판정 근거",
+    fromTo: "전환",
+    producedBeforeStop: "정지 전 생산",
+    targetWorkOrder: "작업지시",
+    overproductionFlag: "초과 생산 확인 필요",
+    advanceProductionFlag: "선행 생산 가능성",
+    planDate: "계획일",
+    outputQty: "형합수",
     inventoryTitle: "재고 정보 모니터링",
     inventoryBody: "재고 API 연결 후 품번별 현재고, 계획 대비 부족 수량, 입출고 변동을 같은 구조로 조회합니다.",
     readyStatus: "API 계약 준비",
@@ -182,6 +229,15 @@ const pageCopy = {
     recentAvgOil60: "最近 60 分钟平均油温",
     avgOil: "平均油温",
     todayPowerUsage: "今日总用电量",
+    fleetProductionEyebrow: "INJECTION TOTAL",
+    fleetProductionTitle: "全部注塑机汇总生产状态",
+    fleetProductionDescription: "按基准日 08:00 至当前，汇总 17 台注塑机的 MES 合模数与生产计划推定实绩。",
+    fleetPlanProgress: "计划进度",
+    fleetPlanGap: "计划对比",
+    fleetMachineSpread: "设备产量分布",
+    fleetElapsedUph: "生产区间 UPH",
+    fleetMachineTotal: "总",
+    uph: "UPH",
     planShortage: "计划差额",
     planReady: "按计划数量",
     utilization24: "最近24小时运行率",
@@ -246,6 +302,30 @@ const pageCopy = {
     machiningPlanOnly: "未报工",
     machiningMesOnly: "无计划",
     machiningEmpty: "暂无加工计划或 MES 报工。",
+    transitionEyebrow: "INJECTION STOP ANALYSIS",
+    transitionTitle: "注塑停机/切换分析",
+    transitionDescription: "从 MES 合模数识别 10 分钟以上无生产区间，并结合生产计划和 Part No 分类为模具更换、型芯更换、调机、生产停机候选。无计划或工单之间长时间等待的一般停机不纳入候选。",
+    transitionEventCount: "停机候选",
+    moldChangeTime: "模具更换",
+    coreChangeTime: "型芯更换",
+    tuningTime: "调机",
+    productionStopTime: "生产停机",
+    moldChangeEstimate: "模具更换推定",
+    coreChangeEstimate: "型芯更换推定",
+    productionStopEstimate: "生产停机",
+    tuningEstimate: "调机",
+    requiresInjectionNote: "注塑科需确认",
+    noTransitionEvents: "全部注塑机暂无 10 分钟以上停机候选。",
+    duration: "耗时",
+    stableStart: "量产稳定开始",
+    eventEvidence: "判断依据",
+    fromTo: "切换",
+    producedBeforeStop: "停机前产量",
+    targetWorkOrder: "工单",
+    overproductionFlag: "超计划生产需确认",
+    advanceProductionFlag: "可能提前生产",
+    planDate: "计划日",
+    outputQty: "合模数",
     inventoryTitle: "库存信息监控",
     inventoryBody: "库存 API 连接后，以相同结构查看品号별 현재库存、计划缺口和出入库变动。",
     readyStatus: "API 契约准备中",
@@ -477,7 +557,9 @@ function buildPeriodSummary(
     return { output: 0, power: null, oilTemperature: null };
   }
 
-  const key = String(machineNumber);
+  const productionRow = getMachineMatrixValues(data, data.actual_production_matrix, machineNumber);
+  const powerUsageRow = getMachineMatrixValues(data, data.power_usage_matrix, machineNumber);
+  const oilTemperatureRow = getMachineMatrixValues(data, data.oil_temperature_matrix, machineNumber);
   let output = 0;
   let power = 0;
   let oilTotal = 0;
@@ -488,15 +570,15 @@ function buildPeriodSummary(
     const slotTime = new Date(slot.time);
     if (slotTime <= startTime || slotTime > endTime) return;
 
-    output += numberAt(data.actual_production_matrix[key], index);
+    output += numberAt(productionRow, index);
 
-    const powerValue = nullableNumberAt(data.power_usage_matrix?.[key], index);
+    const powerValue = nullableNumberAt(powerUsageRow, index);
     if (powerValue !== null) {
       power += powerValue;
       hasPower = true;
     }
 
-    const oilValue = nullableNumberAt(data.oil_temperature_matrix[key], index);
+    const oilValue = nullableNumberAt(oilTemperatureRow, index);
     if (oilValue !== null) {
       oilTotal += oilValue;
       oilCount += 1;
@@ -560,6 +642,92 @@ function getSlotIntervalMinutes(data: InjectionProductionMatrix, index: number) 
   return 2;
 }
 
+function getMachineMatrixValues(
+  data: InjectionProductionMatrix | undefined,
+  matrix: Record<string, number[]> | undefined,
+  machineNumber: number,
+) {
+  if (!data || !matrix) return [];
+  const machine = data.machines.find((item) => item.machine_number === machineNumber);
+  const candidateKeys = [
+    String(machineNumber),
+    machine?.machine_name,
+    machine?.display_name,
+    `${machineNumber}호기`,
+  ].filter((value): value is string => Boolean(value));
+
+  for (const key of candidateKeys) {
+    const values = matrix[key];
+    if (values) return values;
+  }
+
+  return [];
+}
+
+function buildMachineProductionWindow(
+  data: InjectionProductionMatrix | undefined,
+  machineNumber: number,
+  startTime: Date | null,
+  endTime: Date | null,
+): ProductionWindowSummary {
+  if (!data || !startTime || !endTime) {
+    return { output: 0, activeHours: 0, startTime: null, endTime: null };
+  }
+
+  const productionRow = getMachineMatrixValues(data, data.actual_production_matrix, machineNumber);
+  let output = 0;
+  let firstProductionMs: number | null = null;
+  let lastProductionEndMs: number | null = null;
+
+  data.time_slots.forEach((slot, index) => {
+    const slotTime = new Date(slot.time);
+    if (slotTime <= startTime || slotTime > endTime) return;
+
+    const slotOutput = numberAt(productionRow, index);
+    if (slotOutput <= 0) return;
+
+    output += slotOutput;
+    firstProductionMs = firstProductionMs ?? slotTime.getTime();
+    lastProductionEndMs = slotTime.getTime() + getSlotIntervalMinutes(data, index) * 60 * 1000;
+  });
+
+  const activeHours = firstProductionMs !== null && lastProductionEndMs !== null
+    ? Math.max(1 / 60, (lastProductionEndMs - firstProductionMs) / (60 * 60 * 1000))
+    : 0;
+
+  return {
+    output,
+    activeHours,
+    startTime: firstProductionMs === null ? null : new Date(firstProductionMs),
+    endTime: lastProductionEndMs === null ? null : new Date(lastProductionEndMs),
+  };
+}
+
+function buildFleetProductionWindow(
+  data: InjectionProductionMatrix | undefined,
+  startTime: Date | null,
+  endTime: Date | null,
+): ProductionWindowSummary {
+  if (!data || !startTime || !endTime) {
+    return { output: 0, activeHours: 0, startTime: null, endTime: null };
+  }
+
+  return data.machines.reduce<ProductionWindowSummary>((summary, machine) => {
+    const machineWindow = buildMachineProductionWindow(data, machine.machine_number, startTime, endTime);
+    summary.output += machineWindow.output;
+    if (machineWindow.startTime && (!summary.startTime || machineWindow.startTime < summary.startTime)) {
+      summary.startTime = machineWindow.startTime;
+    }
+    if (machineWindow.endTime && (!summary.endTime || machineWindow.endTime > summary.endTime)) {
+      summary.endTime = machineWindow.endTime;
+    }
+    summary.activeHours = summary.startTime && summary.endTime
+      ? Math.max(1 / 60, (summary.endTime.getTime() - summary.startTime.getTime()) / (60 * 60 * 1000))
+      : 0;
+    return summary;
+  }, { output: 0, activeHours: 0, startTime: null, endTime: null });
+}
+
 function buildMachineUtilizationSummary(
   data: InjectionProductionMatrix | undefined,
   machineNumber: number,
@@ -574,8 +742,7 @@ function buildMachineUtilizationSummary(
   let runningMinutes = 0;
   let totalMinutes = 0;
   let outputTotal = 0;
-  const key = String(machineNumber);
-  const productionRow = data.actual_production_matrix[key] ?? [];
+  const productionRow = getMachineMatrixValues(data, data.actual_production_matrix, machineNumber);
   let lastOutputTime: Date | null = null;
 
   data.time_slots.forEach((slot, index) => {
@@ -719,24 +886,57 @@ function maxTrendValue(points: HourlyTrendPoint[], metric: keyof Pick<HourlyTren
   return Math.max(1, ...values);
 }
 
+function buildFleetHourlyTrendScale(
+  data: InjectionProductionMatrix | undefined,
+  language: AppLanguage,
+): HourlyTrendScale {
+  if (!data) {
+    return { powerMax: 1, oilMax: 50 };
+  }
+
+  const allPoints = data.machines.flatMap((machine) => buildHourlyTrend(data, machine.machine_number, language));
+  return {
+    powerMax: maxTrendValue(allPoints, "power"),
+    oilMax: Math.max(50, maxTrendValue(allPoints, "oilTemperature")),
+  };
+}
+
 function CombinedTrendChart({
   points,
   labels,
   language,
+  scale,
 }: {
   points: HourlyTrendPoint[];
   labels: { output: string; power: string; oil: string };
   language: AppLanguage;
+  scale: HourlyTrendScale;
 }) {
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const [hoveredPoint, setHoveredPoint] = useState<{ point: HourlyTrendPoint; index: number } | null>(null);
-  const width = 720;
-  const height = 210;
+  const [chartWidth, setChartWidth] = useState(720);
+  useEffect(() => {
+    if (!stageRef.current || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver((entries) => {
+      const nextWidth = Math.round(entries[0]?.contentRect.width ?? 720);
+      setChartWidth((currentWidth) => {
+        const clampedWidth = Math.max(360, nextWidth);
+        return Math.abs(currentWidth - clampedWidth) > 2 ? clampedWidth : currentWidth;
+      });
+    });
+    observer.observe(stageRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const width = chartWidth;
+  const height = Math.max(210, Math.min(300, Math.round(width * 0.32)));
   const plotTop = 14;
-  const plotBottom = 166;
+  const plotBottom = height - 44;
   const xGap = width / Math.max(1, points.length - 1);
   const outputMax = maxTrendValue(points, "output");
-  const powerMax = maxTrendValue(points, "power");
-  const oilMax = Math.max(50, maxTrendValue(points, "oilTemperature"));
+  const powerMax = Math.max(1, scale.powerMax);
+  const oilMax = Math.max(50, scale.oilMax);
   const yFor = (value: number, max: number) => plotBottom - (value / max) * (plotBottom - plotTop);
   const lineFor = (metric: "power" | "oilTemperature", max: number) =>
     points
@@ -773,8 +973,8 @@ function CombinedTrendChart({
   const tooltipAlign = hoveredPoint && hoveredPoint.index > points.length - 5 ? "end" : "center";
 
   return (
-    <div className="mes-combined-chart-stage" onMouseLeave={() => setHoveredPoint(null)}>
-      <svg className="mes-combined-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-hidden="true">
+    <div className="mes-combined-chart-stage" ref={stageRef} onMouseLeave={() => setHoveredPoint(null)}>
+      <svg className="mes-combined-chart" viewBox={`0 0 ${width} ${height}`} style={{ height }} role="img" aria-hidden="true">
         {shiftSections.map((section) => {
           const startX = Math.max(0, section.startIndex * xGap - xGap / 2);
           const endX = Math.min(width, section.endIndex * xGap + xGap / 2);
@@ -1142,11 +1342,23 @@ export function MesMonitoringPage() {
     setUtilizationStartDate(defaultUtilizationStartDate);
     setUtilizationEndDate(defaultUtilizationEndDate);
   }, [defaultUtilizationEndDate, defaultUtilizationStartDate, isUtilizationModalOpen]);
-  const planDate = latestTime ? formatDateParam(latestTime) : formatDateParam(new Date());
+  const planDate = latestTime ? formatDateParam(startOfProductionDay(latestTime)) : formatDateParam(startOfProductionDay(new Date()));
+  const nextPlanDate = formatDateParam(addDays(new Date(`${planDate}T08:00:00+08:00`), 1));
+  const secondNextPlanDate = formatDateParam(addDays(new Date(`${planDate}T08:00:00+08:00`), 2));
   const planSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", planDate],
     queryFn: () => getProductionPlanSummary(planDate),
     enabled: selectedSource === "injection" && Boolean(planDate),
+  });
+  const nextPlanSummaryQuery = useQuery({
+    queryKey: ["production-plan-summary", nextPlanDate],
+    queryFn: () => getProductionPlanSummary(nextPlanDate),
+    enabled: selectedSource === "injection" && Boolean(nextPlanDate),
+  });
+  const secondNextPlanSummaryQuery = useQuery({
+    queryKey: ["production-plan-summary", secondNextPlanDate],
+    queryFn: () => getProductionPlanSummary(secondNextPlanDate),
+    enabled: selectedSource === "injection" && Boolean(secondNextPlanDate),
   });
   const productionStatusQuery = useQuery({
     queryKey: ["production-status", planDate],
@@ -1178,6 +1390,10 @@ export function MesMonitoringPage() {
   const hourlyTrend = useMemo(
     () => buildHourlyTrend(injectionQuery.data, selectedMachineKey, language),
     [injectionQuery.data, language, selectedMachineKey],
+  );
+  const fleetHourlyTrendScale = useMemo(
+    () => buildFleetHourlyTrendScale(injectionQuery.data, language),
+    [injectionQuery.data, language],
   );
   const utilizationMatrix = utilizationQuery.data;
   const dailyUtilizationPoints = useMemo(
@@ -1249,11 +1465,25 @@ export function MesMonitoringPage() {
     return planSummaryQuery.data?.injection.records.reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0) ?? 0;
   }, [planDate, planSummaryQuery.data]);
   const realtimeProgress = useMemo(
-    () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data, productionStatusQuery.data),
-    [injectionQuery.data, planSummaryQuery.data, productionStatusQuery.data],
+    () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data, productionStatusQuery.data, planDate),
+    [injectionQuery.data, planDate, planSummaryQuery.data, productionStatusQuery.data],
+  );
+  const transitionAnalysis = useMemo(
+    () => buildInjectionTransitionAnalysis(
+      planSummaryQuery.data,
+      injectionQuery.data,
+      planDate,
+      undefined,
+      [nextPlanSummaryQuery.data, secondNextPlanSummaryQuery.data].filter(
+        (summary): summary is NonNullable<typeof summary> => Boolean(summary),
+      ),
+    ),
+    [injectionQuery.data, nextPlanSummaryQuery.data, planDate, planSummaryQuery.data, secondNextPlanSummaryQuery.data],
   );
   const todayProductionQty = realtimeProgress.estimatedQty;
   const todayProductionPlanQty = realtimeProgress.plannedQty || injectionPlanQty;
+  const fleetProgressRate = todayProductionPlanQty > 0 ? (todayProductionQty / todayProductionPlanQty) * 100 : 0;
+  const fleetProgressWidth = Math.max(0, Math.min(100, fleetProgressRate));
   const summary = useMemo(() => {
     const runningRows = machineRows.filter((row) => row.status === "running");
 
@@ -1262,6 +1492,20 @@ export function MesMonitoringPage() {
       total: machineRows.length,
     };
   }, [machineRows]);
+  const machineProductionWindows = useMemo(() => new Map(
+    machineRows.map((row) => [
+      row.machineNumber,
+      buildMachineProductionWindow(injectionQuery.data, row.machineNumber, dayStart, latestTime),
+    ]),
+  ), [dayStart, injectionQuery.data, latestTime, machineRows]);
+  const fleetProductionWindow = useMemo(
+    () => buildFleetProductionWindow(injectionQuery.data, dayStart, latestTime),
+    [dayStart, injectionQuery.data, latestTime],
+  );
+  const fleetElapsedUph = fleetProductionWindow.activeHours > 0
+    ? fleetProductionWindow.output / fleetProductionWindow.activeHours
+    : 0;
+  const maxMachineShiftOutput = Math.max(1, ...machineRows.map((row) => row.shiftOutput));
   const todayPlanGap = todayProductionQty - todayProductionPlanQty;
   const utilizationTone =
     utilization24.rate === null ? "neutral" : utilization24.rate >= 70 ? "up" : utilization24.rate >= 40 ? "info" : "down";
@@ -1392,6 +1636,76 @@ export function MesMonitoringPage() {
             />
           </div>
 
+          <section className="panel mes-fleet-production-card">
+            <div className="mes-fleet-production-card__header">
+              <div>
+                <p className="panel-card__eyebrow">{copy.fleetProductionEyebrow}</p>
+                <h3 className="panel__title">{copy.fleetProductionTitle}</h3>
+                <p>{copy.fleetProductionDescription}</p>
+              </div>
+              <div className="mes-fleet-production-card__total">
+                <span>{copy.fleetPlanProgress}</span>
+                <strong>{formatPercent(fleetProgressRate)}</strong>
+              </div>
+            </div>
+
+            <div className="mes-fleet-production-card__body">
+              <div className="mes-fleet-production-card__progress">
+                <div>
+                  <strong>{formatNumber(todayProductionQty)} / {formatNumber(todayProductionPlanQty)}</strong>
+                  <span className={todayPlanGap >= 0 ? "mes-fleet-production-card__gap mes-fleet-production-card__gap--up" : "mes-fleet-production-card__gap mes-fleet-production-card__gap--down"}>
+                    {copy.fleetPlanGap} {formatSignedQty(todayPlanGap)}
+                  </span>
+                </div>
+                <div className="mes-fleet-progress-bar" aria-label={copy.fleetPlanProgress}>
+                  <span style={{ width: `${fleetProgressWidth}%` }} />
+                </div>
+              </div>
+
+              <div className="mes-fleet-production-metrics">
+                <div>
+                  <span>{copy.activeMachines}</span>
+                  <strong>{summary.running}/{summary.total}</strong>
+                </div>
+                <div>
+                  <span>{copy.recentOutput60}</span>
+                  <strong>{formatNumber(recentFleetSummary.output)}</strong>
+                </div>
+                <div>
+                  <span>{copy.fleetElapsedUph}</span>
+                  <strong>{formatDecimal(fleetElapsedUph, 1)}</strong>
+                </div>
+                <div>
+                  <span>{copy.utilization24}</span>
+                  <strong>{formatPercent(utilization24.rate)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="mes-fleet-machine-spread">
+              <div className="mes-fleet-machine-spread__header">
+                <span>{copy.fleetMachineSpread}</span>
+                <em>{copy.lastUpdated}: {latestSlot ? formatDateTime(latestSlot.time, language) : copy.noData}</em>
+              </div>
+              <div className="mes-fleet-machine-spread__grid">
+                {machineRows.map((row) => {
+                  const productionWindow = machineProductionWindows.get(row.machineNumber);
+                  const machineUph = productionWindow?.activeHours ? row.shiftOutput / productionWindow.activeHours : 0;
+                  return (
+                    <div className={`mes-fleet-machine-spread__item mes-fleet-machine-spread__item--${row.status}`} key={row.machineNumber}>
+                      <span>{row.machineNumber}</span>
+                      <div>
+                        <i style={{ height: `${Math.max(4, (row.shiftOutput / maxMachineShiftOutput) * 100)}%` }} />
+                      </div>
+                      <strong>{copy.fleetMachineTotal} {formatNumber(row.shiftOutput)}</strong>
+                      <small>{copy.uph} {formatDecimal(machineUph, 1)}</small>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
           <section className="panel mes-monitor-panel">
             <div className="mes-monitor-panel__header">
               <div>
@@ -1516,6 +1830,7 @@ export function MesMonitoringPage() {
                           points={hourlyTrend}
                           labels={{ output: copy.output, power: copy.power, oil: copy.oil }}
                           language={language}
+                          scale={fleetHourlyTrendScale}
                         />
                       </div>
 
@@ -1530,6 +1845,12 @@ export function MesMonitoringPage() {
               </>
             )}
           </section>
+
+          <InjectionTransitionPanel
+            analysis={transitionAnalysis}
+            copy={copy}
+            language={language}
+          />
         </>
         )
       ) : selectedSource === "machining" ? (

@@ -10,7 +10,8 @@ from django.db.models import Max, Q
 from injection.models import InjectionMonitoringRecord
 
 from .ai_metrics import business_range, elapsed_rate, reference_time_for_business_day, safe_int, safe_rate
-from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
+from .machining_reconciliation import build_machining_provision_payload
+from .mes_progress import format_equipment_label
 from .models import ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
 
 
@@ -240,79 +241,35 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
 
 def get_machining_summary(target_date: Any) -> dict[str, Any]:
     range_start, range_end = business_range(target_date)
-    plan_queryset = ProductionPlan.objects.filter(
-        plan_date=target_date,
-        plan_type="machining",
-        planned_quantity__gt=0,
-    )
+    provision = build_machining_provision_payload(target_date, days=1)
+    plan_queryset = ProductionPlan.objects.filter(plan_date=target_date, plan_type="machining", planned_quantity__gt=0)
     mes_queryset = ProductionMesReportRecord.objects.filter(
         business_date=target_date,
         plan_type="machining",
     ).order_by("report_time")
 
-    plan_groups: dict[str, dict[str, Any]] = {}
-    for plan in plan_queryset:
-        equipment_key = normalize_equipment_key("machining", plan.machine_name)
-        part_no = normalize_part_no(plan.part_no)
-        if not part_no:
-            continue
-        key = part_no
-        group = plan_groups.setdefault(key, {
-            "equipment_key": equipment_key,
-            "equipment_name": plan.machine_name,
-            "part_no": part_no,
-            "model_name": plan.model_name or "",
-            "planned_qty": 0,
-            "plan_row_count": 0,
-        })
-        group["planned_qty"] += safe_int(plan.planned_quantity)
-        group["plan_row_count"] += 1
-        if not group["model_name"] and plan.model_name:
-            group["model_name"] = plan.model_name
-
-    mes_groups: dict[str, dict[str, Any]] = {}
-    for record in mes_queryset:
-        key = record.part_no
-        group = mes_groups.setdefault(key, {
-            "equipment_key": record.equipment_key,
-            "equipment_name": record.equipment_name,
-            "part_no": record.part_no,
-            "model_name": record.material_name or "",
-            "actual_qty": 0,
-            "mes_report_count": 0,
-            "latest_report_time": None,
-        })
-        group["actual_qty"] += safe_int(record.report_qty)
-        group["mes_report_count"] += 1
-        if record.report_time and (not group["latest_report_time"] or record.report_time > group["latest_report_time"]):
-            group["latest_report_time"] = record.report_time
-
-    keys = sorted(
-        set(plan_groups.keys()) | set(mes_groups.keys()),
-        key=lambda item: (
-            equipment_sort_order("machining", (plan_groups.get(item) or mes_groups.get(item) or {}).get("equipment_key") or ""),
-            (plan_groups.get(item) or mes_groups.get(item) or {}).get("part_no") or "",
-        ),
-    )
     rows = []
-    for part_no in keys:
-        plan = plan_groups.get(part_no, {})
-        mes = mes_groups.get(part_no, {})
-        planned_qty = safe_int(plan.get("planned_qty"))
-        actual_qty = safe_int(mes.get("actual_qty"))
-        equipment_key = plan.get("equipment_key") or mes.get("equipment_key") or ""
-        equipment_name = plan.get("equipment_name") or mes.get("equipment_name") or equipment_key
+    for row in provision.get("rows", []):
+        planned_qty = safe_int(row.get("planned_qty"))
+        actual_qty = safe_int(row.get("effective_actual_qty"))
+        equipment_key = row.get("equipment_key") or ""
+        equipment_name = row.get("machine_name") or equipment_key
         rows.append({
             "equipment_key": equipment_key,
             "equipment_name": equipment_name,
-            "equipment_label": format_equipment_label("machining", equipment_name, equipment_key),
-            "part_no": part_no,
-            "model_name": plan.get("model_name") or mes.get("model_name") or "",
+            "equipment_label": row.get("equipment_label") or format_equipment_label("machining", equipment_name, equipment_key),
+            "part_no": row.get("part_no") or "",
+            "model_name": row.get("model_name") or "",
             "planned_qty": planned_qty,
             "actual_qty": actual_qty,
             "gap_qty": actual_qty - planned_qty,
             "progress_rate": safe_rate(actual_qty, planned_qty),
-            "latest_report_time": mes.get("latest_report_time"),
+            "latest_report_time": None,
+            "mes_qty": safe_int(row.get("mes_qty")),
+            "manual_open_qty": safe_int(row.get("manual_open_qty")),
+            "matched_manual_qty": safe_int(row.get("matched_manual_qty")),
+            "defect_qty": safe_int(row.get("defect_qty")),
+            "status": row.get("status"),
         })
 
     planned_qty = sum(row["planned_qty"] for row in rows)

@@ -571,3 +571,152 @@
 2. 실적 입력은 계획 키 기준 upsert로 간다.
 3. 사출 모니터링은 slot 요약 API가 있어야 프런트가 단순해진다.
 4. 이슈 데이터는 모니터링 수치와 사람 설명을 함께 저장해야 한다.
+
+## 15. 가공 MES 우선 수기 보정 계약
+
+가공 집계는 일반 `ProductionExecution` upsert와 다르게 다룬다. 가공의 기본 실적은 MES `报工`이고, 수기 입력은 MES 누락을 보정하는 별도 이벤트로 저장한다.
+
+기준 문서:
+
+- [docs/rebuild/21-machining-mes-first-manual-reconciliation.md](/Users/ssoe94/reporting_v2/wj_reporting/docs/rebuild/21-machining-mes-first-manual-reconciliation.md:1)
+
+## 15.1 날짜 필드
+
+가공 수기 보정에서는 아래 날짜를 반드시 분리한다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `business_date` | 실제 생산한 업무일 |
+| `plan_date` | 원래 계획이 걸려 있던 날짜 |
+| `credit_business_date` | 보정 후 실적을 귀속할 업무일 |
+| `mes_business_date` | MES 보고가 들어온 업무일 |
+
+원칙:
+
+- 선진행 생산은 `business_date < plan_date`로 표현한다.
+- 나중에 MES가 들어와도 실제 생산일 기준 분석은 `credit_business_date`를 사용한다.
+- MES 장부 기준 분석은 `mes_business_date`를 별도 지표로 둔다.
+
+## 15.2 권장 엔터티
+
+### MachiningManualReport
+
+의미:
+
+- MES에 아직 잡히지 않은 가공 생산을 사람이 보정 입력한 이벤트
+
+핵심 필드:
+
+- `business_date`
+- `plan_date`
+- `plan_id`
+- `plan_identity_hash`
+- `machine_name`
+- `equipment_key`
+- `part_no`
+- `model_name`
+- `lot_no`
+- `sequence`
+- `planned_qty_at_report`
+- `good_qty`
+- `defect_qty`
+- `total_reported_qty`
+- `reason_code`
+- `note`
+- `status`
+- `credit_business_date`
+- `reported_by`
+- `reported_at`
+
+`total_reported_qty`는 기본적으로 `good_qty`와 같다. 불량 수량은 진행률 수량에 자동 합산하지 않고, 별도 품질/불량 지표로 집계한다. 특정 현장 기준에서 MES 보고 수량이 양품+불량 합산이라면 이 필드만 별도 입력해 운영 기준을 명확히 남긴다.
+
+권장 상태:
+
+- `open`
+- `partial`
+- `matched`
+- `mismatch`
+- `cancelled`
+
+### MachiningManualReportDefect
+
+의미:
+
+- 수기 보정에 포함된 불량 유형별 수량
+
+핵심 필드:
+
+- `manual_report_id`
+- `defect_category`
+- `defect_type`
+- `quantity`
+- `note`
+
+### MachiningManualReportMatch
+
+의미:
+
+- 수기 보정과 MES 보고의 대사 이력
+
+핵심 필드:
+
+- `manual_report_id`
+- `mes_report_record_id`
+- `matched_qty`
+- `match_confidence`
+- `match_reason`
+- `matched_by`
+- `matched_at`
+
+## 15.3 중복 방지 집계
+
+가공 진행률에 사용하는 최종 실적은 아래 기준으로 계산한다.
+
+```text
+effective_actual_qty
+  = MES 보고 수량
+  + max(0, 수기 보정 수량 - MES와 매칭된 수기 보정 수량)
+```
+
+원칙:
+
+- MES와 매칭된 수기 보정은 다시 더하지 않는다.
+- 부분 매칭이면 미대사 잔량만 수기 실적으로 남긴다.
+- MES 수량이 수기 수량보다 크면 MES 수량을 우선하고, 차이는 mismatch 또는 overrun으로 표시한다.
+- 화면은 MES 수량과 수기 보정 수량을 나눠 보여주되, 진행률은 `effective_actual_qty`를 사용한다.
+- 수기 보정 수정 UI는 별도 화면보다 생산대시보드 가공 진행 카드 또는 상세 모달 안에 우선 배치한다.
+
+## 15.4 API 계약
+
+Provision 조회:
+
+- `GET /api/production/machining/provision/?business_date=YYYY-MM-DD&days=3`
+
+수기 보정 생성:
+
+- `POST /api/production/machining/manual-reports/`
+
+대사 큐 조회:
+
+- `GET /api/production/machining/reconciliation/?business_date=YYYY-MM-DD&status=open,mismatch`
+
+수동 매칭 확정:
+
+- `POST /api/production/machining/reconciliation/{manual_report_id}/confirm/`
+
+기존 생산 상태 API:
+
+- `GET /api/production/status/?date=YYYY-MM-DD`
+- 가공 숫자는 canonical context의 `effective_actual_qty` 기준을 사용한다.
+- 새 백엔드는 `total_mes`, `total_manual_open`, `total_manual_matched`, `total_defect`와 part별 분해값을 추가로 내려준다.
+- provision API가 아직 배포되지 않은 Render 백엔드를 볼 때 프론트는 기존 MES stats로 fallback하고 수기 보정 입력만 숨긴다.
+
+## 15.5 검증 기준
+
+필수 테스트:
+
+- 수기 100, MES 없음이면 최종 실적 100
+- 수기 100, MES 100 후등록이면 최종 실적 100
+- 수기 100, MES 60이면 최종 실적 100, 미대사 수기 잔량 40
+- 수기 100, MES 120이면 최종 실적 120, mismatch 또는 overrun 표시
+- `business_date < plan_date`이면 선진행 예외 생성

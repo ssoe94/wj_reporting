@@ -22,7 +22,14 @@ from .models import ProductionPlanPart
 from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
 from .ai_answer import build_ai_briefing
 from .ai_gateway import answer_from_intent, build_injection_plan_context, request_local_llm, request_question_intent
+from .ai_retrievers import get_daily_production_context
 from .counter_utils import calculate_cumulative_counter_delta
+from .machining_reconciliation import (
+    build_machining_provision_payload,
+    build_manual_report_payload,
+    confirm_manual_report_match,
+    create_manual_report,
+)
 import math
 
 
@@ -582,7 +589,7 @@ from itertools import groupby
 class ProductionStatusView(APIView):
     """
     API view to provide consolidated production status data for the main dashboard.
-    [V4 - Handles machine name mismatch and custom sorting]
+    Uses the same canonical production context as AI briefing and analytics marts.
     """
     permission_classes = []
 
@@ -598,195 +605,76 @@ class ProductionStatusView(APIView):
         except (ValueError, TypeError):
             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # --- INJECTION LOGIC ---
-        cst = pytz.timezone('Asia/Shanghai')
-        start_local = cst.localize(datetime.combine(target_date, time(8, 0, 0)))
-        end_local = start_local + timedelta(days=1)
-        # Convert to UTC for DB filtering (USE_TZ=True)
-        start_datetime = start_local.astimezone(pytz.UTC)
-        end_datetime = end_local.astimezone(pytz.UTC)
-        
-        # 1. Fetch plans
-        injection_plans_qs = ProductionPlan.objects.filter(
-            plan_date=target_date,
-            plan_type='injection',
-            planned_quantity__gt=0,
-        )
-        injection_part_nos = {
-            (part_no or '').strip().upper()
-            for part_no in injection_plans_qs.values_list('part_no', flat=True)
-            if part_no
-        }
-        cavity_map = {
-            (row['part_no'] or '').strip().upper(): row['cavity']
-            for row in ProductionPartCavity.objects.filter(part_no__in=injection_part_nos).values('part_no', 'cavity')
-        }
-        
-        # 2. Custom sort in Python
-        def extract_machine_number(name: str | None) -> int | None:
-            if not name:
-                return None
-            # Prefer explicit machine markers over tonnage.
-            match = re.search(r'(\d+)\s*(?:호기)', name)
-            if match:
-                return int(match.group(1))
-            match = re.search(r'-(\d+)\s*$', name)
-            if match:
-                return int(match.group(1))
-            match = re.search(r'^\s*(\d+)\b', name)
-            if match:
-                return int(match.group(1))
-            return None
+        context = get_daily_production_context(target_date)
 
-        def get_sort_key(plan):
-            machine_number = extract_machine_number(plan.machine_name)
-            if machine_number is None:
-                return (999, plan.sequence)
-            return (machine_number, plan.sequence)
+        injection_results = [
+            {
+                'machine_name': row.get('machine_name') or row.get('machine') or '',
+                'total_planned': int(row.get('planned_qty') or 0),
+                'total_actual': int(row.get('actual_qty') or 0),
+                'progress': float(row.get('progress_rate') or 0),
+                'parts': [
+                    {
+                        'part_no': part.get('part_no'),
+                        'model_name': part.get('model_name'),
+                        'planned_quantity': int(part.get('planned_qty') or 0),
+                        'actual_quantity': int(part.get('estimated_qty') or 0),
+                        'progress': float(part.get('progress_rate') or 0),
+                    }
+                    for part in row.get('parts', [])
+                ],
+            }
+            for row in context['injection'].get('machine_rows', [])
+        ]
 
-        sorted_plans = sorted(list(injection_plans_qs), key=get_sort_key)
-
-        injection_results = []
-
-        def compute_injection_actual(machine_monitor_name: str) -> int:
-            """
-            Compute total production within the 8:00~8:00 window by summing positive deltas.
-            Uses the first in-window value as the baseline if no earlier baseline exists.
-            """
-            baseline = InjectionMonitoringRecord.objects.filter(
-                machine_name=machine_monitor_name,
-                capacity__isnull=False,
-                timestamp__lt=start_datetime
-            ).order_by('-timestamp').values_list('capacity', flat=True).first()
-
-            records = InjectionMonitoringRecord.objects.filter(
-                machine_name=machine_monitor_name,
-                capacity__isnull=False,
-                timestamp__gte=start_datetime,
-                timestamp__lt=end_datetime
-            ).order_by('timestamp').values_list('capacity', flat=True)
-
-            return calculate_cumulative_counter_delta(records, baseline=baseline)
-
-        
-        # 3. Group sorted plans by machine name
-        for machine_name, plans_group in groupby(sorted_plans, key=lambda p: p.machine_name):
-            plans = list(plans_group)
-            
-            # Map plan machine name to monitoring machine name
-            machine_number = extract_machine_number(machine_name)
-            if machine_number is None:
-                continue
-            monitoring_machine_name = f"{machine_number}호기"
-
-            daily_production_delta = compute_injection_actual(monitoring_machine_name)
-            remaining_production = int(daily_production_delta)
-
-            machine_parts = []
-            total_planned = 0
-            total_actual = 0
-
-            # 6. Apply sequential fulfillment logic
-            for idx, plan in enumerate(plans):
-                planned_qty = int(round(plan.planned_quantity or 0))
-                if not planned_qty or planned_qty <= 0:
-                    continue
-                part_no_key = (plan.part_no or '').strip().upper()
-                cavity = int(cavity_map.get(part_no_key, 1) or 1)
-                cavity = max(cavity, 1)
-                actual_qty = 0
-                
-                if remaining_production > 0:
-                    remaining_shots = max(0, int(math.floor(remaining_production)))
-                    shots_needed = int(math.ceil(planned_qty / cavity))
-                    if idx == len(plans) - 1:
-                        shots_used = remaining_shots
-                    else:
-                        shots_used = min(remaining_shots, shots_needed)
-                    actual_qty = shots_used * cavity
-                    remaining_production = max(0, remaining_production - shots_used)
-                
-                progress = (actual_qty / planned_qty * 100) if planned_qty > 0 else 100 if actual_qty > 0 else 0
-                
-                machine_parts.append({
-                    'part_no': plan.part_no,
-                    'model_name': plan.model_name,
-                    'planned_quantity': planned_qty,
-                    'actual_quantity': int(actual_qty),
-                    'progress': round(progress, 1)
-                })
-                total_planned += planned_qty
-                total_actual += actual_qty
-
-            total_progress = (total_actual / total_planned * 100) if total_planned > 0 else 0
-            
-            injection_results.append({
-                'machine_name': machine_name,
-                'total_planned': total_planned,
-                'total_actual': total_actual,
-                'progress': round(total_progress, 1),
-                'parts': machine_parts
+        machining_by_equipment = {}
+        for row in context['machining'].get('rows', []):
+            equipment_key = row.get('equipment_key') or row.get('equipment_label') or row.get('equipment_name') or ''
+            group = machining_by_equipment.setdefault(equipment_key, {
+                'machine_name': row.get('equipment_label') or row.get('equipment_name') or equipment_key,
+                'total_planned': 0,
+                'total_actual': 0,
+                'total_mes': 0,
+                'total_manual_open': 0,
+                'total_manual_matched': 0,
+                'total_defect': 0,
+                'parts': [],
+            })
+            planned_qty = int(row.get('planned_qty') or 0)
+            actual_qty = int(row.get('actual_qty') or 0)
+            mes_qty = int(row.get('mes_qty') or 0)
+            manual_open_qty = int(row.get('manual_open_qty') or 0)
+            matched_manual_qty = int(row.get('matched_manual_qty') or 0)
+            defect_qty = int(row.get('defect_qty') or 0)
+            group['total_planned'] += planned_qty
+            group['total_actual'] += actual_qty
+            group['total_mes'] += mes_qty
+            group['total_manual_open'] += manual_open_qty
+            group['total_manual_matched'] += matched_manual_qty
+            group['total_defect'] += defect_qty
+            group['parts'].append({
+                'part_no': row.get('part_no'),
+                'model_name': row.get('model_name'),
+                'planned_quantity': planned_qty,
+                'actual_quantity': actual_qty,
+                'progress': float(row.get('progress_rate') or 0),
+                'mes_qty': mes_qty,
+                'manual_open_qty': manual_open_qty,
+                'matched_manual_qty': matched_manual_qty,
+                'defect_qty': defect_qty,
+                'status': row.get('status'),
             })
 
-        # --- MACHINING LOGIC ---
-        machining_plans = ProductionPlan.objects.filter(
-            plan_date=target_date,
-            plan_type='machining',
-            planned_quantity__gt=0,
-        )
-        assembly_reports = AssemblyReport.objects.filter(date=target_date)
-        
         machining_results = []
-        if machining_plans.exists():
-            plan_df = pd.DataFrame(list(machining_plans.values('machine_name', 'part_no', 'model_name', 'planned_quantity')))
-            
-            if assembly_reports.exists():
-                actual_df = pd.DataFrame(list(assembly_reports.values('line_no', 'part_no', 'actual_qty')))
-                actual_df.rename(columns={'line_no': 'machine_name', 'actual_qty': 'actual_quantity'}, inplace=True)
-                actual_summary = actual_df.groupby(['machine_name', 'part_no'])['actual_quantity'].sum().reset_index()
-                merged_df = pd.merge(plan_df, actual_summary, on=['machine_name', 'part_no'], how='left')
-            else:
-                merged_df = plan_df
-                merged_df['actual_quantity'] = 0
-
-            merged_df['actual_quantity'] = merged_df['actual_quantity'].fillna(0)
-            
-            # Group by machine to create structural response
-            for machine_name, machine_df in merged_df.groupby('machine_name'):
-                machine_parts = []
-                total_planned = 0
-                total_actual = 0
-                
-                for _, row in machine_df.iterrows():
-                    planned_qty = row['planned_quantity']
-                    if not planned_qty or planned_qty <= 0:
-                        continue
-                    actual_qty = row['actual_quantity']
-                    progress = (actual_qty / planned_qty * 100) if planned_qty > 0 else 100 if actual_qty > 0 else 0
-                    
-                    machine_parts.append({
-                        'part_no': row['part_no'],
-                        'model_name': row.get('model_name', ''),
-                        'planned_quantity': int(planned_qty),
-                        'actual_quantity': int(actual_qty),
-                        'progress': round(progress, 1)
-                    })
-                    total_planned += planned_qty
-                    total_actual += actual_qty
-                
-                total_progress = (total_actual / total_planned * 100) if total_planned > 0 else 0
-                
-                machining_results.append({
-                    'machine_name': machine_name,
-                    'total_planned': int(total_planned),
-                    'total_actual': int(total_actual),
-                    'progress': round(total_progress, 1),
-                    'parts': machine_parts
-                })
+        for row in machining_by_equipment.values():
+            total_planned = int(row['total_planned'])
+            total_actual = int(row['total_actual'])
+            row['progress'] = round((total_actual / total_planned) * 100, 1) if total_planned > 0 else 0
+            machining_results.append(row)
 
         return Response({
             'injection': injection_results,
-            'machining': machining_results
+            'machining': sorted(machining_results, key=lambda item: item['machine_name'])
         })
 
 class ProductionPartCavityView(APIView):
@@ -1037,6 +925,54 @@ class ProductionConsoleView(APIView):
             return dt.isoformat()
         except (TypeError, ValueError, OSError):
             return None
+
+    @staticmethod
+    def _key(plan_date, plan_type, machine_name, part_no, lot_no, sequence):
+        normalized_lot_no = (lot_no or '').strip() or None
+        return (
+            plan_date,
+            (plan_type or '').strip(),
+            (machine_name or '').strip(),
+            (part_no or '').strip().upper(),
+            normalized_lot_no,
+            int(sequence or 0),
+        )
+
+    @classmethod
+    def _key_str(cls, plan_date, plan_type, machine_name, part_no, lot_no, sequence):
+        return '|'.join(str(value or '') for value in cls._key(
+            plan_date,
+            plan_type,
+            machine_name,
+            part_no,
+            lot_no,
+            sequence,
+        ))
+
+    @staticmethod
+    def _derive_status(planned_quantity, actual_qty, idle_time, explicit_status=None, has_started=False):
+        valid_statuses = {'pending', 'running', 'completed', 'paused'}
+        if explicit_status in {'paused', 'completed'}:
+            return explicit_status
+
+        try:
+            planned = int(round(float(planned_quantity or 0)))
+            actual = int(round(float(actual_qty or 0)))
+            idle_minutes = int(round(float(idle_time or 0)))
+        except (TypeError, ValueError):
+            planned = 0
+            actual = 0
+            idle_minutes = 0
+
+        if planned > 0 and actual >= planned:
+            return 'completed'
+        if explicit_status == 'running' or actual > 0 or has_started:
+            return 'running'
+        if idle_minutes > 0:
+            return 'paused'
+        if explicit_status in valid_statuses:
+            return explicit_status
+        return 'pending'
 
 
 class ProductionExecutionUpsertView(APIView):
@@ -1303,3 +1239,81 @@ class ProductionMesReportStatsView(APIView):
             },
             'rows': rows,
         })
+
+
+class MachiningProvisionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        business_date = request.query_params.get('business_date') or request.query_params.get('date')
+        if not business_date:
+            return Response({'detail': 'business_date is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            days = int(request.query_params.get('days') or 3)
+        except (TypeError, ValueError):
+            days = 3
+
+        payload = build_machining_provision_payload(business_date, days=days)
+        return Response(payload)
+
+
+class MachiningManualReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        if not user_can_edit_plan(request.user, 'machining'):
+            raise PermissionDenied('You do not have permission to edit machining reports.')
+        try:
+            report = create_manual_report(user=request.user, payload=request.data)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(build_manual_report_payload(report), status=status.HTTP_201_CREATED)
+
+
+class MachiningReconciliationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        business_date = request.query_params.get('business_date') or request.query_params.get('date')
+        if not business_date:
+            return Response({'detail': 'business_date is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        statuses = {
+            value.strip()
+            for value in (request.query_params.get('status') or 'open,partial,mismatch').split(',')
+            if value.strip()
+        }
+        payload = build_machining_provision_payload(business_date, days=3)
+        reports = []
+        for row in payload.get('rows', []):
+            for report in row.get('manual_reports', []):
+                if report.get('status') in statuses:
+                    reports.append({**report, 'row': {
+                        'plan_id': row.get('plan_id'),
+                        'plan_date': row.get('plan_date'),
+                        'machine_name': row.get('machine_name'),
+                        'part_no': row.get('part_no'),
+                        'planned_qty': row.get('planned_qty'),
+                    }})
+        return Response({
+            'business_date': payload.get('business_date'),
+            'reports': reports,
+        })
+
+
+class MachiningManualReportConfirmMatchView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, manual_report_id, *args, **kwargs):
+        if not user_can_edit_plan(request.user, 'machining'):
+            raise PermissionDenied('You do not have permission to edit machining reports.')
+        try:
+            report = confirm_manual_report_match(
+                manual_report_id=manual_report_id,
+                mes_report_record_ids=[int(value) for value in request.data.get('mes_report_record_ids') or []],
+                matched_qty=int(request.data.get('matched_qty') or 0),
+                user=request.user,
+                note=(request.data.get('note') or '').strip(),
+            )
+        except (ValueError, TypeError) as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(build_manual_report_payload(report))

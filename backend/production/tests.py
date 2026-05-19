@@ -1,15 +1,20 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest import TestCase
 from unittest.mock import patch
 
 import pytz
 from django.core.management import call_command
+from django.contrib.auth import get_user_model
 from django.test import TestCase as DjangoTestCase
 from rest_framework.test import APIClient
 
+from injection.models import InjectionMonitoringRecord
+
 from .mes_progress import get_business_date, is_machining_progress_report, normalize_mes_part_no
 from .counter_utils import calculate_cumulative_counter_delta
-from .models import ProductionMesReportRecord, ProductionPlan
+from .ai_context import build_context_pack
+from .ai_retrievers import get_daily_production_context, get_injection_summary
+from .models import MachiningManualReport, ProductionExecution, ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
 
 
 class CumulativeCounterDeltaTests(TestCase):
@@ -191,3 +196,526 @@ class ProductionMesReportStatsApiTests(DjangoTestCase):
         self.assertEqual(rows_by_part['PART-A']['mes_qty'], 70)
         self.assertEqual(rows_by_part['PART-B']['compare_status'], 'plan_only')
         self.assertEqual(rows_by_part['PART-C']['compare_status'], 'mes_only')
+
+
+class MachiningManualSupplementContractTests(DjangoTestCase):
+    def setUp(self):
+        self.business_date = datetime(2026, 5, 18).date()
+        self.advance_plan_date = datetime(2026, 5, 19).date()
+        self.tz = pytz.timezone('Asia/Shanghai')
+        self.user = get_user_model().objects.create_user(
+            username='machining-admin',
+            password='test-password',
+            is_staff=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.plan = ProductionPlan.objects.create(
+            plan_date=self.advance_plan_date,
+            plan_type='machining',
+            machine_name='A LINE',
+            part_no='PART-ADV',
+            lot_no='LOT-ADV',
+            model_name='Model Advance',
+            planned_quantity=120,
+            sequence=1,
+        )
+
+    def test_dashboard_provision_uses_manual_open_qty_when_mes_is_missing(self):
+        response = self.client.post('/api/production/machining/manual-reports/', {
+            'business_date': self.business_date.isoformat(),
+            'plan_id': self.plan.id,
+            'good_qty': 100,
+            'defect_qty': 2,
+            'defect_items': [
+                {'defect_category': 'processing', 'defect_type': 'scratch', 'quantity': 2},
+            ],
+            'reason_code': 'mes_work_order_missing',
+            'note': '5/19 plan produced early without MES work order',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        report_payload = response.json()
+        self.assertEqual(report_payload['total_reported_qty'], 100)
+        self.assertEqual(report_payload['defect_qty'], 2)
+        self.assertEqual(report_payload['status'], 'open')
+
+        provision_response = self.client.get('/api/production/machining/provision/', {
+            'business_date': self.business_date.isoformat(),
+            'days': 2,
+        })
+
+        self.assertEqual(provision_response.status_code, 200)
+        payload = provision_response.json()
+        self.assertEqual(payload['summary']['effective_actual_qty'], 100)
+        self.assertEqual(payload['summary']['manual_open_qty'], 100)
+        self.assertEqual(payload['summary']['advance_qty'], 100)
+        row = next(item for item in payload['rows'] if item['part_no'] == 'PART-ADV')
+        self.assertEqual(row['plan_date'], self.advance_plan_date.isoformat())
+        self.assertEqual(row['day_offset'], 1)
+        self.assertEqual(row['status'], 'manual_open')
+        self.assertEqual(row['defect_qty'], 2)
+
+    def test_manual_match_prevents_late_mes_from_being_counted_twice(self):
+        manual_report = MachiningManualReport.objects.create(
+            business_date=self.business_date,
+            plan_date=self.advance_plan_date,
+            plan=self.plan,
+            plan_identity_hash='',
+            machine_name='A LINE',
+            equipment_key='A',
+            part_no='PART-ADV',
+            model_name='Model Advance',
+            lot_no='LOT-ADV',
+            sequence=1,
+            planned_qty_at_report=120,
+            good_qty=100,
+            defect_qty=0,
+            total_reported_qty=100,
+            reason_code='mes_work_order_missing',
+            credit_business_date=self.business_date,
+            reported_by=self.user,
+            updated_by=self.user,
+        )
+        mes_record = ProductionMesReportRecord.objects.create(
+            report_record_detail_id=3001,
+            report_record_id=701,
+            report_record_code='R-3001',
+            business_date=self.advance_plan_date,
+            plan_type='machining',
+            process_code='JG',
+            report_time=self.tz.localize(datetime(2026, 5, 19, 10, 0)),
+            equipment_name='A LINE',
+            equipment_key='A',
+            part_no='PART-ADV',
+            material_name='Model Advance',
+            report_qty=100,
+            raw_payload={},
+        )
+
+        confirm_response = self.client.post(
+            f'/api/production/machining/reconciliation/{manual_report.id}/confirm/',
+            {
+                'mes_report_record_ids': [mes_record.id],
+                'matched_qty': 100,
+                'note': 'MES 후등록분과 동일 생산으로 확인',
+            },
+            format='json',
+        )
+
+        self.assertEqual(confirm_response.status_code, 200)
+        manual_report.refresh_from_db()
+        self.assertEqual(manual_report.status, 'matched')
+
+        original_day = self.client.get('/api/production/machining/provision/', {
+            'business_date': self.business_date.isoformat(),
+            'days': 2,
+        }).json()
+        mes_day = self.client.get('/api/production/machining/provision/', {
+            'business_date': self.advance_plan_date.isoformat(),
+            'days': 1,
+        }).json()
+
+        self.assertEqual(original_day['summary']['effective_actual_qty'], 100)
+        self.assertEqual(original_day['summary']['manual_open_qty'], 0)
+        self.assertEqual(original_day['summary']['manual_matched_qty'], 100)
+        self.assertEqual(mes_day['summary']['effective_actual_qty'], 0)
+
+    def test_reconcile_command_auto_matches_later_mes_report(self):
+        MachiningManualReport.objects.create(
+            business_date=self.business_date,
+            plan_date=self.advance_plan_date,
+            plan=self.plan,
+            plan_identity_hash='',
+            machine_name='A LINE',
+            equipment_key='A',
+            part_no='PART-ADV',
+            model_name='Model Advance',
+            lot_no='LOT-ADV',
+            sequence=1,
+            planned_qty_at_report=120,
+            good_qty=60,
+            total_reported_qty=60,
+            reason_code='mes_work_order_missing',
+            credit_business_date=self.business_date,
+            reported_by=self.user,
+            updated_by=self.user,
+        )
+        ProductionMesReportRecord.objects.create(
+            report_record_detail_id=3002,
+            report_record_id=702,
+            report_record_code='R-3002',
+            business_date=self.advance_plan_date,
+            plan_type='machining',
+            process_code='JG',
+            report_time=self.tz.localize(datetime(2026, 5, 19, 11, 0)),
+            equipment_name='A LINE',
+            equipment_key='A',
+            part_no='PART-ADV',
+            material_name='Model Advance',
+            report_qty=60,
+            raw_payload={},
+        )
+
+        call_command(
+            'reconcile_machining_manual_reports',
+            from_date=self.business_date.isoformat(),
+            to_date=self.advance_plan_date.isoformat(),
+        )
+
+        report = MachiningManualReport.objects.get(part_no='PART-ADV')
+        self.assertEqual(report.status, 'matched')
+        provision = self.client.get('/api/production/machining/provision/', {
+            'business_date': self.business_date.isoformat(),
+            'days': 2,
+        }).json()
+        self.assertEqual(provision['summary']['effective_actual_qty'], 60)
+        self.assertEqual(provision['summary']['manual_open_qty'], 0)
+
+
+class ProductionConsoleContractTests(DjangoTestCase):
+    def setUp(self):
+        self.target_date = datetime(2026, 5, 18).date()
+        self.user = get_user_model().objects.create_user(
+            username='production-admin',
+            password='test-password',
+            is_staff=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        ProductionPlan.objects.create(
+            plan_date=self.target_date,
+            plan_type='injection',
+            machine_name='850T-1',
+            part_no='PART-A',
+            lot_no='',
+            model_name='Model A',
+            planned_quantity=100,
+            sequence=1,
+        )
+
+    def test_console_returns_plan_anchored_rows_before_execution_exists(self):
+        response = self.client.get('/api/production/console/', {
+            'date': self.target_date.isoformat(),
+            'plan_type': 'injection',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['summary']['total_planned'], 100)
+        self.assertEqual(payload['summary']['pending_count'], 1)
+        self.assertEqual(payload['rows'][0]['key'], '2026-05-18|injection|850T-1|PART-A||1')
+        self.assertEqual(payload['rows'][0]['status'], 'pending')
+
+    def test_execution_upsert_preserves_plan_key_and_updates_idempotently(self):
+        first_response = self.client.post('/api/production/executions/upsert/', {
+            'plan_date': self.target_date.isoformat(),
+            'plan_type': 'injection',
+            'machine_name': '850T-1',
+            'part_no': 'part-a',
+            'lot_no': '',
+            'sequence': 1,
+            'planned_quantity': 100,
+            'actual_qty': 40,
+            'defect_qty': -5,
+            'idle_time': -10,
+            'personnel_count': 1,
+        }, format='json')
+
+        self.assertEqual(first_response.status_code, 200)
+        first_payload = first_response.json()
+        self.assertEqual(first_payload['part_no'], 'PART-A')
+        self.assertEqual(first_payload['actual_qty'], 40)
+        self.assertEqual(first_payload['defect_qty'], 0)
+        self.assertEqual(first_payload['idle_time'], 0)
+        self.assertEqual(first_payload['status'], 'running')
+
+        second_response = self.client.post('/api/production/executions/upsert/', {
+            'plan_date': self.target_date.isoformat(),
+            'plan_type': 'injection',
+            'machine_name': '850T-1',
+            'part_no': 'PART-A',
+            'lot_no': None,
+            'sequence': 1,
+            'planned_quantity': 100,
+            'actual_qty': 120,
+            'personnel_count': 2,
+        }, format='json')
+
+        self.assertEqual(second_response.status_code, 200)
+        second_payload = second_response.json()
+        self.assertEqual(second_payload['status'], 'completed')
+        self.assertEqual(ProductionExecution.objects.count(), 1)
+
+
+class AiBriefingContractTests(DjangoTestCase):
+    def test_ai_briefing_response_contains_deterministic_evidence_contract(self):
+        target_date = datetime(2026, 5, 18).date()
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='injection',
+            machine_name='850T-1',
+            part_no='PART-A',
+            lot_no='A01',
+            model_name='Model A',
+            planned_quantity=100,
+            sequence=1,
+        )
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='machining',
+            machine_name='A LINE',
+            part_no='PART-M',
+            lot_no='M01',
+            model_name='Machining A',
+            planned_quantity=80,
+            sequence=1,
+        )
+
+        response = APIClient().get('/api/production/ai/briefing/', {
+            'date': target_date.isoformat(),
+            'language': 'ko',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['answer'])
+        self.assertIn('facts', payload)
+        self.assertIn('top_risks', payload)
+        self.assertIn('used_data', payload)
+        self.assertIn('calculation_basis', payload)
+        self.assertIn('context_pack', payload)
+        self.assertIn('cache', payload)
+
+        self.assertEqual(payload['facts']['injection']['planned_qty'], 100)
+        self.assertEqual(payload['facts']['machining']['planned_qty'], 80)
+        self.assertGreaterEqual(len(payload['used_data']), 3)
+        self.assertTrue(any(item['name'] == 'ProductionPlan' for item in payload['used_data']))
+        self.assertTrue(any('08:00' in item for item in payload['calculation_basis']))
+
+        context_pack = payload['context_pack']
+        self.assertEqual(context_pack['scope']['business_date'], target_date.isoformat())
+        self.assertEqual(context_pack['scope']['processes'], ['injection', 'machining'])
+        self.assertIn('data_freshness', context_pack)
+        self.assertIn('warnings', context_pack)
+        self.assertIn('retrieval_trace', context_pack)
+        self.assertTrue(any('production.plan' in item for item in context_pack['retrieval_trace']))
+
+    def test_ai_briefing_uses_same_facts_for_korean_and_chinese(self):
+        target_date = datetime(2026, 5, 18).date()
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='injection',
+            machine_name='850T-1',
+            part_no='PART-A',
+            planned_quantity=100,
+            sequence=1,
+        )
+
+        client = APIClient()
+        ko_response = client.get('/api/production/ai/briefing/', {
+            'date': target_date.isoformat(),
+            'language': 'ko',
+        })
+        zh_response = client.get('/api/production/ai/briefing/', {
+            'date': target_date.isoformat(),
+            'language': 'zh',
+        })
+
+        self.assertEqual(ko_response.status_code, 200)
+        self.assertEqual(zh_response.status_code, 200)
+        self.assertEqual(ko_response.json()['facts'], zh_response.json()['facts'])
+
+
+class InjectionAllocationContractTests(DjangoTestCase):
+    def test_status_and_ai_retriever_allocate_shots_by_sequence_and_cavity(self):
+        target_date = datetime(2026, 5, 18).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 5, 18, 8, 0))
+
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='injection',
+            machine_name='850T-1',
+            part_no='PART-A',
+            model_name='Model A',
+            planned_quantity=30,
+            sequence=1,
+        )
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='injection',
+            machine_name='850T-1',
+            part_no='PART-B',
+            model_name='Model B',
+            planned_quantity=40,
+            sequence=2,
+        )
+        ProductionPartCavity.objects.create(part_no='PART-A', cavity=2)
+        ProductionPartCavity.objects.create(part_no='PART-B', cavity=4)
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='inj-1',
+            timestamp=start - timedelta(minutes=1),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='inj-1',
+            timestamp=start + timedelta(minutes=10),
+            capacity=110,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='inj-1',
+            timestamp=start + timedelta(minutes=20),
+            capacity=120,
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machine = response.json()['injection'][0]
+        self.assertEqual(machine['total_planned'], 70)
+        self.assertEqual(machine['total_actual'], 50)
+        self.assertEqual(machine['parts'][0]['part_no'], 'PART-A')
+        self.assertEqual(machine['parts'][0]['actual_quantity'], 30)
+        self.assertEqual(machine['parts'][0]['progress'], 100.0)
+        self.assertEqual(machine['parts'][1]['part_no'], 'PART-B')
+        self.assertEqual(machine['parts'][1]['actual_quantity'], 20)
+        self.assertEqual(machine['parts'][1]['progress'], 50.0)
+
+        summary = get_injection_summary(target_date)
+        summary_row = summary['machine_rows'][0]
+        self.assertEqual(summary_row['planned_qty'], 70)
+        self.assertEqual(summary_row['actual_qty'], 50)
+        self.assertEqual(summary_row['parts'][0]['estimated_qty'], 30)
+        self.assertEqual(summary_row['parts'][0]['status'], 'completed')
+        self.assertEqual(summary_row['parts'][1]['estimated_qty'], 20)
+        self.assertEqual(summary_row['parts'][1]['status'], 'in_progress')
+
+    def test_status_api_uses_canonical_mes_context_for_machining(self):
+        target_date = datetime(2026, 5, 18).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        report_time = tz.localize(datetime(2026, 5, 18, 10, 0))
+
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='machining',
+            machine_name='A LINE',
+            part_no='PART-M',
+            model_name='Machining A',
+            planned_quantity=80,
+            sequence=1,
+        )
+        ProductionMesReportRecord.objects.create(
+            report_record_detail_id=3001,
+            report_record_id=701,
+            report_record_code='R-3001',
+            business_date=target_date,
+            plan_type='machining',
+            process_code='JG',
+            report_time=report_time,
+            equipment_name='A LINE',
+            equipment_key='A',
+            part_no='PART-M',
+            material_name='Machining A',
+            report_qty=60,
+            raw_payload={},
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machining = response.json()['machining'][0]
+        self.assertEqual(machining['machine_name'], 'A라인')
+        self.assertEqual(machining['total_planned'], 80)
+        self.assertEqual(machining['total_actual'], 60)
+        self.assertEqual(machining['progress'], 75.0)
+        self.assertEqual(machining['parts'][0]['part_no'], 'PART-M')
+        self.assertEqual(machining['parts'][0]['actual_quantity'], 60)
+
+    def test_status_api_uses_manual_machining_supplement_until_mes_arrives(self):
+        target_date = datetime(2026, 5, 18).date()
+        plan = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='machining',
+            machine_name='B LINE',
+            part_no='PART-MANUAL',
+            model_name='Manual Model',
+            planned_quantity=80,
+            sequence=1,
+        )
+        MachiningManualReport.objects.create(
+            business_date=target_date,
+            credit_business_date=target_date,
+            plan_date=target_date,
+            plan=plan,
+            machine_name='B LINE',
+            equipment_key='B',
+            part_no='PART-MANUAL',
+            model_name='Manual Model',
+            sequence=1,
+            planned_qty_at_report=80,
+            good_qty=25,
+            defect_qty=3,
+            total_reported_qty=25,
+            reason_code='mes_work_order_missing',
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machining = response.json()['machining'][0]
+        self.assertEqual(machining['machine_name'], 'B라인')
+        self.assertEqual(machining['total_planned'], 80)
+        self.assertEqual(machining['total_actual'], 25)
+        self.assertEqual(machining['total_manual_open'], 25)
+        self.assertEqual(machining['total_defect'], 3)
+        self.assertEqual(machining['progress'], 31.2)
+        self.assertEqual(machining['parts'][0]['part_no'], 'PART-MANUAL')
+        self.assertEqual(machining['parts'][0]['actual_quantity'], 25)
+        self.assertEqual(machining['parts'][0]['manual_open_qty'], 25)
+        self.assertEqual(machining['parts'][0]['defect_qty'], 3)
+
+    def test_ai_context_uses_manual_machining_supplement_until_mes_arrives(self):
+        target_date = datetime(2026, 5, 18).date()
+        plan = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='machining',
+            machine_name='D LINE',
+            part_no='PART-AI-MANUAL',
+            model_name='AI Manual Model',
+            planned_quantity=100,
+            sequence=1,
+        )
+        MachiningManualReport.objects.create(
+            business_date=target_date,
+            credit_business_date=target_date,
+            plan_date=target_date,
+            plan=plan,
+            machine_name='D LINE',
+            equipment_key='D',
+            part_no='PART-AI-MANUAL',
+            model_name='AI Manual Model',
+            sequence=1,
+            planned_qty_at_report=100,
+            good_qty=40,
+            defect_qty=2,
+            total_reported_qty=40,
+            reason_code='mes_work_order_missing',
+        )
+
+        context = get_daily_production_context(target_date)
+        context_pack = build_context_pack(context, 'ko')
+        machining_table = next(table for table in context_pack.tables if table['name'] == 'machining_line_progress')
+
+        self.assertEqual(context_pack.facts['machining']['planned_qty'], 100)
+        self.assertEqual(context_pack.facts['machining']['actual_qty'], 40)
+        self.assertEqual(machining_table['rows'][0]['actual_qty'], 40)

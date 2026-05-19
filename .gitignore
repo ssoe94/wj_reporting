@@ -47,6 +47,11 @@ frontend-next/node_modules/
 frontend-next/dist/
 *.tsbuildinfo
 
+# Playwright reports
+playwright-report/
+test-results/
+tests/e2e/test-results/
+
 # References
 references/
 

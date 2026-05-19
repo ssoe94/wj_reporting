@@ -8,12 +8,16 @@ import {
 import {
   askProductionAi,
   cancelAiJob,
+  createMachiningManualReport,
   createAiJob,
   getAiJob,
+  getMachiningProvision,
   getProductionAiBriefing,
   getProductionMesReportStats,
   getProductionPlanSummary,
   getProductionStatus,
+  type MachiningProvisionResponse,
+  type MachiningProvisionRow,
   type ProductionMesReportStatsResponse,
   type ProductionPlanRecord,
   type ProductionPlanSummaryResponse,
@@ -21,6 +25,8 @@ import {
   type AiJob,
   type AiJobStatus,
 } from "@/domains/production/api";
+import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
+import { buildInjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
 import {
   buildRealtimeProgressSummary,
   type RealtimeProgressRow,
@@ -67,6 +73,12 @@ type MachiningProgressPreview = {
     completedCount: number;
     inProgressCount: number;
     pendingCount: number;
+    mesQty: number;
+    manualOpenQty: number;
+    matchedManualQty: number;
+    defectQty: number;
+    status: MachiningProvisionRow["status"] | "legacy";
+    provisionRow?: MachiningProvisionRow;
     segments: RealtimeProgressSegment[];
   }>;
 };
@@ -139,11 +151,57 @@ const pageCopy = {
     model: "모델",
     lot: "Lot",
     progress: "진행률",
+    completion: "완성도",
     estimatedVsPlan: "추정 / 계획",
     progressHint: "각 설비의 계획 순서대로 형합수를 배분해 완료/진행중/대기를 표시합니다.",
     noProgressRows: "계획 또는 MES 실적이 없습니다.",
     machiningPending: "Blacklake JG/加工 생산보고 수량을 계획 순서대로 배분해 진행률을 표시합니다.",
+    machiningSupplementHint: "MES 실적을 우선하고, 누락된 선진행 생산만 수기 보정합니다.",
+    mesQty: "MES",
+    manualOpen: "MES 미등록 수기",
+    manualMatched: "MES 확인 수기",
+    effectiveQty: "보정 후",
+    advanceQty: "선진행",
+    manualReport: "수기 보정",
+    manualReportTitle: "가공 수기 보정",
+    goodQty: "양품 수량",
+    defectQty: "불량 수량",
+    defectType: "불량 유형",
+    defectTypePlaceholder: "예: scratch",
+    reasonCode: "보정 사유",
+    reasonPlaceholder: "예: MES 작업지시 없음",
+    note: "비고",
+    saveManualReport: "보정 저장",
+    savingManualReport: "저장 중",
+    manualReportSaved: "수기 보정을 저장했습니다.",
+    manualReportError: "수기 보정을 저장하지 못했습니다.",
+    machineSummaryTitle: "기기 요약",
+    workOrders: "작업지시",
     plannedOnly: "계획 수량 기준 준비",
+    transitionEyebrow: "INJECTION STOP ANALYSIS",
+    transitionTitle: "사출 정지/전환 분석",
+    transitionDescription: "MES 형합수에서 10분 이상 무생산 구간을 찾고, 생산계획과 Part No를 비교해 금형 교체, 코어 교체, 사출조건준비(调机), 생산 중지 후보로 분류합니다. 계획이 없거나 작업지시 사이 장기 대기인 일반 정지는 제외합니다.",
+    transitionEventCount: "정지 후보",
+    moldChangeTime: "금형 교체",
+    coreChangeTime: "코어 교체",
+    tuningTime: "사출조건준비(调机)",
+    productionStopTime: "생산 중지",
+    moldChangeEstimate: "금형 교체 추정",
+    coreChangeEstimate: "코어 교체 추정",
+    productionStopEstimate: "생산 중지",
+    tuningEstimate: "사출조건준비(调机)",
+    requiresInjectionNote: "사출과 확인 필요",
+    noTransitionEvents: "10분 이상 정지 후보가 없습니다.",
+    duration: "소요",
+    stableStart: "양산 안정 시작",
+    eventEvidence: "판정 근거",
+    fromTo: "전환",
+    producedBeforeStop: "정지 전 생산",
+    targetWorkOrder: "작업지시",
+    overproductionFlag: "초과 생산 확인 필요",
+    advanceProductionFlag: "선행 생산 가능성",
+    planDate: "계획일",
+    outputQty: "형합수",
     rawTitle: "운영 API 확인",
   },
   zh: {
@@ -213,17 +271,65 @@ const pageCopy = {
     model: "型号",
     lot: "Lot",
     progress: "进度",
+    completion: "完成度",
     estimatedVsPlan: "估算 / 计划",
     progressHint: "按设备计划顺序分配合模数，显示完成/进行中/待开始。",
     noProgressRows: "暂无计划或 MES 实绩。",
     machiningPending: "按 Blacklake JG/加工报工数量分配到计划顺序并显示进度。",
+    machiningSupplementHint: "优先使用 MES 实绩，仅对漏报的提前生产进行手工补正。",
+    mesQty: "MES",
+    manualOpen: "MES未登记手工",
+    manualMatched: "MES已确认手工",
+    effectiveQty: "补正后",
+    advanceQty: "提前生产",
+    manualReport: "手工补正",
+    manualReportTitle: "加工手工补正",
+    goodQty: "良品数量",
+    defectQty: "不良数量",
+    defectType: "不良类型",
+    defectTypePlaceholder: "例: scratch",
+    reasonCode: "补正原因",
+    reasonPlaceholder: "例: MES 工单未生成",
+    note: "备注",
+    saveManualReport: "保存补正",
+    savingManualReport: "保存中",
+    manualReportSaved: "手工补正已保存。",
+    manualReportError: "无法保存手工补正。",
+    machineSummaryTitle: "设备汇总",
+    workOrders: "工单",
     plannedOnly: "按计划数量准备",
+    transitionEyebrow: "INJECTION STOP ANALYSIS",
+    transitionTitle: "注塑停机/切换分析",
+    transitionDescription: "从 MES 合模数识别 10 分钟以上无生产区间，并结合生产计划和 Part No 分类为模具更换、型芯更换、调机、生产停机候选。无计划或工单之间长时间等待的一般停机不纳入候选。",
+    transitionEventCount: "停机候选",
+    moldChangeTime: "模具更换",
+    coreChangeTime: "型芯更换",
+    tuningTime: "调机",
+    productionStopTime: "生产停机",
+    moldChangeEstimate: "模具更换推定",
+    coreChangeEstimate: "型芯更换推定",
+    productionStopEstimate: "生产停机",
+    tuningEstimate: "调机",
+    requiresInjectionNote: "注塑科需确认",
+    noTransitionEvents: "暂无 10 分钟以上停机候选。",
+    duration: "耗时",
+    stableStart: "量产稳定开始",
+    eventEvidence: "判断依据",
+    fromTo: "切换",
+    producedBeforeStop: "停机前产量",
+    targetWorkOrder: "工单",
+    overproductionFlag: "超计划生产需确认",
+    advanceProductionFlag: "可能提前生产",
+    planDate: "计划日",
+    outputQty: "合模数",
     rawTitle: "运营 API 确认",
   },
 } satisfies Record<AppLanguage, Record<string, string>>;
 
 const LOCAL_LLM_BASE_URL = import.meta.env.VITE_LOCAL_LLM_BASE_URL || "http://127.0.0.1:8080/v1";
 const LOCAL_LLM_MODEL = import.meta.env.VITE_LOCAL_LLM_MODEL || "mlx-community/gemma-4-e2b-it-8bit";
+const LIVE_DATA_REFRESH_INTERVAL_MS = 120_000;
+const AI_BRIEFING_REFRESH_INTERVAL_MS = 5 * 60_000;
 
 type DashboardAiIntent = {
   intent: "injection_cycle_time" | "production_output" | "production_status" | "production_summary" | "unknown";
@@ -403,6 +509,19 @@ function getBusinessDayEnd(businessDate: string) {
   return new Date(getBusinessDayStart(businessDate).getTime() + 24 * 60 * 60 * 1000);
 }
 
+function formatDateParam(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addBusinessDateDays(businessDate: string, days: number) {
+  const nextDate = getBusinessDayStart(businessDate);
+  nextDate.setDate(nextDate.getDate() + days);
+  return formatDateParam(nextDate);
+}
+
 function getBusinessDayReferenceEnd(businessDate: string, mesData?: InjectionProductionMatrix) {
   const start = getBusinessDayStart(businessDate);
   const end = getBusinessDayEnd(businessDate);
@@ -465,8 +584,18 @@ function getProgressLabel(status: RealtimeProgressSegmentStatus, copy: Record<st
   return copy.pending;
 }
 
-function getProgressTooltip(lines: Array<string | null | undefined>) {
-  return lines.filter(Boolean).join("\n");
+const progressStatusSortOrder: Record<RealtimeProgressSegmentStatus, number> = {
+  completed: 0,
+  in_progress: 1,
+  pending: 2,
+};
+
+function getDisplaySegments(segments: RealtimeProgressSegment[]) {
+  return [...segments].sort((left, right) => {
+    const statusDiff = progressStatusSortOrder[left.status] - progressStatusSortOrder[right.status];
+    if (statusDiff !== 0) return statusDiff;
+    return Number(left.sequence ?? 0) - Number(right.sequence ?? 0);
+  });
 }
 
 function sumPlannedQuantity(summary: ProductionPlanSummaryResponse | undefined, bucket: "injection" | "machining", date: string) {
@@ -481,6 +610,7 @@ function buildProductionBriefContext(
   mesData: InjectionProductionMatrix | undefined,
   machiningStats: ProductionMesReportStatsResponse | undefined,
   productionStatus: ProductionStatusResponse | undefined,
+  machiningProvision?: MachiningProvisionResponse,
 ): ProductionBriefContext {
   const latestTime = getLatestTime(mesData);
   const productionDayStart = getBusinessDayStart(businessDate);
@@ -514,8 +644,8 @@ function buildProductionBriefContext(
     .map((row) => ({ machine: row.label, output: row.estimatedQty }));
   const injectionPlanQty = realtimeSummary.plannedQty || sumPlannedQuantity(planSummary, "injection", businessDate);
   const actualInjectionOutput = realtimeSummary.estimatedQty;
-  const machiningPlanQty = sumPlannedQuantity(planSummary, "machining", businessDate);
-  const actualMachiningOutput = Number(machiningStats?.summary.total_mes ?? 0);
+  const machiningPlanQty = Number(machiningProvision?.summary.total_planned ?? sumPlannedQuantity(planSummary, "machining", businessDate));
+  const actualMachiningOutput = Number(machiningProvision?.summary.effective_actual_qty ?? machiningStats?.summary.total_mes ?? 0);
   const activeMachineCount = machineOutputs.filter((item) => item.output > 0).length;
   const runningMachineCount = machineOutputs.filter((item) => item.recentOutput > 0).length;
   const sortedActiveMachines = actualMachineOutputs
@@ -542,7 +672,130 @@ function buildProductionBriefContext(
 function buildMachiningProgressPreview(
   planSummary: ProductionPlanSummaryResponse | undefined,
   machiningStats: ProductionMesReportStatsResponse | undefined,
+  machiningProvision?: MachiningProvisionResponse,
 ): MachiningProgressPreview {
+  if (machiningProvision) {
+    const provisionGroups = new Map<string, {
+      key: string;
+      label: string;
+      plannedQty: number;
+      actualQty: number;
+      mesQty: number;
+      manualOpenQty: number;
+      matchedManualQty: number;
+      defectQty: number;
+      provisionRows: MachiningProvisionRow[];
+      segments: RealtimeProgressSegment[];
+    }>();
+
+    machiningProvision.rows.forEach((row, index) => {
+      const plannedQty = Number(row.planned_qty ?? 0);
+      const actualQty = Number(row.effective_actual_qty ?? 0);
+      const progressRate = plannedQty > 0 ? (actualQty / plannedQty) * 100 : actualQty > 0 ? 100 : 0;
+      const segmentStatus: RealtimeProgressSegmentStatus = plannedQty > 0 && actualQty >= plannedQty
+        ? "completed"
+        : actualQty > 0
+          ? "in_progress"
+          : "pending";
+      const segment: RealtimeProgressSegment = {
+        key: `${row.plan_id ?? (row.plan_identity_hash || index)}-${row.part_no}`,
+        sequence: Number(row.sequence ?? index + 1),
+        partNo: row.part_no || "-",
+        modelName: row.model_name || "-",
+        lotNo: row.lot_no || "-",
+        productFamilyCode: null,
+        productFamilyName: null,
+        isFinishedProduct: false,
+        plannedQty,
+        cavity: 1,
+        requiredShots: plannedQty,
+        allocatedShots: actualQty,
+        estimatedQty: actualQty,
+        progressRate,
+        status: segmentStatus,
+      };
+      const groupKey = row.equipment_key || row.equipment_label || row.machine_name || `unknown-${index}`;
+      const group = provisionGroups.get(groupKey) ?? {
+        key: groupKey,
+        label: row.equipment_label || row.machine_name || row.equipment_key || "-",
+        plannedQty: 0,
+        actualQty: 0,
+        mesQty: 0,
+        manualOpenQty: 0,
+        matchedManualQty: 0,
+        defectQty: 0,
+        provisionRows: [],
+        segments: [],
+      };
+      group.plannedQty += plannedQty;
+      group.actualQty += actualQty;
+      group.mesQty += Number(row.mes_qty ?? 0);
+      group.manualOpenQty += Number(row.manual_open_qty ?? 0);
+      group.matchedManualQty += Number(row.matched_manual_qty ?? 0);
+      group.defectQty += Number(row.defect_qty ?? 0);
+      group.provisionRows.push(row);
+      group.segments.push(segment);
+      provisionGroups.set(groupKey, group);
+    });
+
+    const rows = [...provisionGroups.values()]
+      .map((group) => {
+        const completedCount = group.segments.filter((segment) => segment.status === "completed").length;
+        const inProgressCount = group.segments.filter((segment) => segment.status === "in_progress").length;
+        const pendingCount = group.segments.filter((segment) => segment.status === "pending").length;
+        const provisionRow = [...group.provisionRows].sort((left, right) => {
+          const leftActual = Number(left.effective_actual_qty ?? 0);
+          const leftPlan = Number(left.planned_qty ?? 0);
+          const rightActual = Number(right.effective_actual_qty ?? 0);
+          const rightPlan = Number(right.planned_qty ?? 0);
+          const leftDone = leftPlan > 0 && leftActual >= leftPlan;
+          const rightDone = rightPlan > 0 && rightActual >= rightPlan;
+          if (leftDone !== rightDone) return leftDone ? 1 : -1;
+          return Number(left.sequence ?? 0) - Number(right.sequence ?? 0);
+        }).find((item) => item.plan_id) ?? group.provisionRows.find((item) => item.plan_id);
+        return {
+          key: group.key,
+          label: group.label,
+          plannedQty: group.plannedQty,
+          actualQty: group.actualQty,
+          gapQty: group.actualQty - group.plannedQty,
+          progressRate: group.plannedQty > 0 ? (group.actualQty / group.plannedQty) * 100 : group.actualQty > 0 ? 100 : 0,
+          completedCount,
+          inProgressCount,
+          pendingCount,
+          mesQty: group.mesQty,
+          manualOpenQty: group.manualOpenQty,
+          matchedManualQty: group.matchedManualQty,
+          defectQty: group.defectQty,
+          status: group.provisionRows.some((item) => item.status === "manual_mismatch")
+            ? "manual_mismatch"
+            : group.provisionRows.some((item) => item.status === "manual_open")
+              ? "manual_open"
+              : group.provisionRows.some((item) => item.status === "manual_partial")
+                ? "manual_partial"
+                : group.provisionRows.some((item) => item.status === "manual_matched")
+                  ? "manual_matched"
+                  : group.provisionRows.some((item) => item.status === "mes_reported")
+                    ? "mes_reported"
+                    : group.provisionRows[0]?.status ?? "needs_review",
+          provisionRow,
+          segments: group.segments,
+        };
+      })
+      .sort((left, right) => left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" }));
+
+    return {
+      plannedQty: Number(machiningProvision.summary.total_planned ?? 0),
+      actualQty: Number(machiningProvision.summary.effective_actual_qty ?? 0),
+      partCount: rows.reduce((sum, row) => sum + row.segments.length, 0),
+      progressRate: Number(machiningProvision.summary.achievement_rate ?? 0),
+      completedCount: rows.reduce((sum, row) => sum + row.completedCount, 0),
+      inProgressCount: rows.reduce((sum, row) => sum + row.inProgressCount, 0),
+      pendingCount: rows.reduce((sum, row) => sum + row.pendingCount, 0),
+      rows,
+    };
+  }
+
   const planMap = new Map<string, {
     label: string;
     plannedQty: number;
@@ -651,6 +904,11 @@ function buildMachiningProgressPreview(
         completedCount,
         inProgressCount,
         pendingCount,
+        mesQty: totalActualQty,
+        manualOpenQty: 0,
+        matchedManualQty: 0,
+        defectQty: 0,
+        status: "legacy" as const,
       };
     })
     .sort((left, right) => left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" }));
@@ -687,6 +945,11 @@ function buildMachiningProgressPreview(
         completedCount: 1,
         inProgressCount: 0,
         pendingCount: 0,
+        mesQty,
+        manualOpenQty: 0,
+        matchedManualQty: 0,
+        defectQty: 0,
+        status: "legacy" as const,
         segments: [segment],
       };
     });
@@ -971,32 +1234,57 @@ export function ProductionDashboardPage() {
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
   const [activeAiJobId, setActiveAiJobId] = useState<number | null>(null);
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
+  const [selectedMachiningRow, setSelectedMachiningRow] = useState<MachiningProvisionRow | null>(null);
+  const [manualForm, setManualForm] = useState({
+    goodQty: "",
+    defectQty: "0",
+    defectType: "",
+    reasonCode: "mes_work_order_missing",
+    note: "",
+  });
   const copy = pageCopy[language];
   const isCurrentDate = businessDate === currentDate;
+  const liveDataRefetchInterval = isCurrentDate ? LIVE_DATA_REFRESH_INTERVAL_MS : false;
+  const nextBusinessDate = addBusinessDateDays(businessDate, 1);
+  const secondNextBusinessDate = addBusinessDateDays(businessDate, 2);
   const planSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", businessDate],
     queryFn: () => getProductionPlanSummary(businessDate),
   });
+  const nextPlanSummaryQuery = useQuery({
+    queryKey: ["production-plan-summary", nextBusinessDate],
+    queryFn: () => getProductionPlanSummary(nextBusinessDate),
+  });
+  const secondNextPlanSummaryQuery = useQuery({
+    queryKey: ["production-plan-summary", secondNextBusinessDate],
+    queryFn: () => getProductionPlanSummary(secondNextBusinessDate),
+  });
   const productionStatusQuery = useQuery({
     queryKey: ["production-status", businessDate],
     queryFn: () => getProductionStatus(businessDate),
-    refetchInterval: isCurrentDate ? 60_000 : false,
+    refetchInterval: liveDataRefetchInterval,
   });
   const machiningStatsQuery = useQuery({
     queryKey: ["production-mes-report-stats", "machining", businessDate],
     queryFn: () => getProductionMesReportStats(businessDate, "machining"),
   });
+  const machiningProvisionQuery = useQuery({
+    queryKey: ["production", "machining-provision", businessDate],
+    queryFn: () => getMachiningProvision(businessDate, 3),
+    refetchInterval: liveDataRefetchInterval,
+    retry: false,
+  });
   const mesQuery = useQuery({
     queryKey: ["mes", "production-dashboard-matrix", businessDate, isCurrentDate],
     queryFn: () => (isCurrentDate ? getInjectionProductionMatrix() : getInjectionProductionMatrixForDate(businessDate)),
-    refetchInterval: isCurrentDate ? 60_000 : false,
+    refetchInterval: liveDataRefetchInterval,
   });
-  const isDashboardDataReady = planSummaryQuery.isSuccess && mesQuery.isSuccess && machiningStatsQuery.isSuccess && productionStatusQuery.isSuccess;
+  const isCoreDashboardDataReady = Boolean(planSummaryQuery.data && mesQuery.data && machiningStatsQuery.data);
   const aiBriefingQuery = useQuery({
     queryKey: ["production", "ai-briefing", businessDate, language],
     queryFn: () => getProductionAiBriefing(businessDate, language),
-    enabled: isDashboardDataReady,
-    refetchInterval: isCurrentDate && isDashboardDataReady ? 5 * 60_000 : false,
+    enabled: isCoreDashboardDataReady,
+    refetchInterval: isCurrentDate && isCoreDashboardDataReady ? AI_BRIEFING_REFRESH_INTERVAL_MS : false,
     retry: 1,
   });
   const aiJobQuery = useQuery({
@@ -1024,6 +1312,32 @@ export function ProductionDashboardPage() {
       queryClient.setQueryData(["ai-job", job.id], job);
     },
   });
+  const createManualReportMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedMachiningRow?.plan_id) {
+        throw new Error("plan_id is required");
+      }
+      const defectQty = Math.max(0, Number(manualForm.defectQty || 0) || 0);
+      const defectType = manualForm.defectType.trim();
+      return createMachiningManualReport({
+        business_date: businessDate,
+        plan_id: selectedMachiningRow.plan_id,
+        good_qty: Math.max(0, Number(manualForm.goodQty || 0) || 0),
+        defect_qty: defectQty,
+        defect_items: defectQty > 0 && defectType
+          ? [{ defect_category: "processing", defect_type: defectType, quantity: defectQty }]
+          : [],
+        reason_code: manualForm.reasonCode.trim() || "mes_work_order_missing",
+        note: manualForm.note.trim(),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["production", "machining-provision"] });
+      queryClient.invalidateQueries({ queryKey: ["production-status"] });
+      queryClient.invalidateQueries({ queryKey: ["production", "ai-briefing"] });
+      setSelectedMachiningRow(null);
+    },
+  });
 
   const briefContext = useMemo(
     () => buildProductionBriefContext(
@@ -1032,16 +1346,29 @@ export function ProductionDashboardPage() {
       mesQuery.data,
       machiningStatsQuery.data,
       productionStatusQuery.data,
+      machiningProvisionQuery.data,
     ),
-    [businessDate, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
+    [businessDate, machiningProvisionQuery.data, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
   );
   const realtimeProgress = useMemo(
     () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data, businessDate),
     [businessDate, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data],
   );
+  const transitionAnalysis = useMemo(
+    () => buildInjectionTransitionAnalysis(
+      planSummaryQuery.data,
+      mesQuery.data,
+      businessDate,
+      undefined,
+      [nextPlanSummaryQuery.data, secondNextPlanSummaryQuery.data].filter(
+        (summary): summary is NonNullable<typeof summary> => Boolean(summary),
+      ),
+    ),
+    [businessDate, mesQuery.data, nextPlanSummaryQuery.data, planSummaryQuery.data, secondNextPlanSummaryQuery.data],
+  );
   const machiningProgress = useMemo(
-    () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data),
-    [machiningStatsQuery.data, planSummaryQuery.data],
+    () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),
+    [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
   );
   const ruleBasedBrief = useMemo(() => buildRuleBasedBrief(briefContext, language), [briefContext, language]);
   const briefingText = aiBriefingQuery.data?.answer || ruleBasedBrief;
@@ -1079,7 +1406,8 @@ export function ProductionDashboardPage() {
     aiQuestionMutation.mutate();
   }
 
-  const isLoading = planSummaryQuery.isLoading || mesQuery.isLoading || machiningStatsQuery.isLoading || productionStatusQuery.isLoading;
+  const isInitialLoading = !isCoreDashboardDataReady && (planSummaryQuery.isFetching || mesQuery.isFetching || machiningStatsQuery.isFetching);
+  const isLiveDataRefreshing = isCoreDashboardDataReady && (productionStatusQuery.isFetching || machiningProvisionQuery.isFetching || mesQuery.isFetching);
   const injectionCompletionRate = briefContext.injectionPlanQty > 0
     ? (briefContext.actualInjectionOutput / briefContext.injectionPlanQty) * 100
     : 0;
@@ -1088,12 +1416,33 @@ export function ProductionDashboardPage() {
     : 0;
   const productionElapsedRate = getProductionElapsedRate(businessDate, mesQuery.data);
   const injectionRateTone = getRateTone(injectionCompletionRate, productionElapsedRate);
+  const machiningSummaryMesQty = Number(machiningProvisionQuery.data?.summary.mes_qty ?? machiningStatsQuery.data?.summary.total_mes ?? machiningProgress.actualQty);
+  const machiningSummaryManualOpenQty = Number(machiningProvisionQuery.data?.summary.manual_open_qty ?? 0);
+  const machiningSummaryEffectiveQty = Number(machiningProvisionQuery.data?.summary.effective_actual_qty ?? machiningProgress.actualQty);
+  const machiningSummaryAdvanceQty = Number(machiningProvisionQuery.data?.summary.advance_qty ?? 0);
   const activeMachiningLineCount = new Set(
-    (machiningStatsQuery.data?.rows ?? [])
-      .filter((row) => Number(row.mes_qty ?? 0) > 0)
-      .map((row) => row.equipment_label || row.equipment_name || row.equipment_key)
+    (machiningProvisionQuery.data?.rows ?? machiningProgress.rows)
+      .filter((row) => Number("effective_actual_qty" in row ? row.effective_actual_qty : row.actualQty) > 0)
+      .map((row) => {
+        if ("equipment_label" in row) {
+          return row.equipment_label || row.machine_name || row.equipment_key;
+        }
+        return row.label;
+      })
       .filter(Boolean),
   ).size;
+
+  function openMachiningManualReport(row: MachiningProvisionRow) {
+    const remainingQty = Math.max(0, Number(row.planned_qty ?? 0) - Number(row.effective_actual_qty ?? 0));
+    setSelectedMachiningRow(row);
+    setManualForm({
+      goodQty: remainingQty > 0 ? String(remainingQty) : "",
+      defectQty: "0",
+      defectType: "",
+      reasonCode: "mes_work_order_missing",
+      note: "",
+    });
+  }
 
   function getRingStyle(progressRate: number) {
     const degree = Math.max(0, Math.min(100, progressRate)) * 3.6;
@@ -1130,20 +1479,11 @@ export function ProductionDashboardPage() {
   }
 
   function renderProgressSegment(segment: RealtimeProgressSegment, row: { plannedQty: number } | null) {
-    const tooltip = getProgressTooltip([
-      `${copy.currentPart} ${segment.sequence} · ${getProgressLabel(segment.status, copy)}`,
-      `Part No: ${segment.partNo}`,
-      `${language === "ko" ? "모델" : "型号"}: ${segment.modelName}`,
-      `${copy.estimatedVsPlan}: ${formatNumber(segment.estimatedQty)} / ${formatNumber(segment.plannedQty)}`,
-      `${copy.progress}: ${getProgressText(segment.progressRate)}`,
-      `${copy.cavity}: ${segment.cavity}`,
-    ]);
     const share = row && row.plannedQty > 0 ? segment.plannedQty / row.plannedQty : 0;
 
     return (
       <span
         className={`production-part-segment production-part-segment--${segment.status}`}
-        data-tooltip={tooltip}
         key={segment.key}
         style={{ flexBasis: 0, flexGrow: Math.max(segment.plannedQty, 1) }}
       >
@@ -1156,10 +1496,122 @@ export function ProductionDashboardPage() {
     );
   }
 
+  function renderProgressHoverCard(options: {
+    label: string;
+    progressText: string;
+    actualLabel: string;
+    actualQty: number;
+    plannedQty: number;
+    gapQty: number;
+    completedCount: number;
+    inProgressCount: number;
+    pendingCount: number;
+    currentPart?: string;
+    shotCount?: number;
+    recentShots?: number;
+    avgCavity?: number;
+    mesQty?: number;
+    manualOpenQty?: number;
+    matchedManualQty?: number;
+    defectQty?: number;
+    showInjectionMetrics?: boolean;
+    segments: RealtimeProgressSegment[];
+  }) {
+    const displaySegments = getDisplaySegments(options.segments);
+    return (
+      <div className="production-progress-hover-card" role="tooltip">
+        <div className="production-progress-hover-card__head">
+          <span>{copy.machineSummaryTitle}</span>
+          <strong>{options.label}</strong>
+          <em>{options.progressText}</em>
+        </div>
+        <dl>
+          <div>
+            <dt>{options.actualLabel}</dt>
+            <dd>{formatNumber(options.actualQty)} / {formatNumber(options.plannedQty)}</dd>
+          </div>
+          <div>
+            <dt>{copy.gap}</dt>
+            <dd className={options.gapQty >= 0 ? "production-progress-gap--up" : "production-progress-gap--down"}>
+              {options.gapQty >= 0 ? "+" : "-"}{formatNumber(Math.abs(options.gapQty))}
+            </dd>
+          </div>
+          <div>
+            <dt>{copy.workOrders}</dt>
+            <dd>{copy.completed} {options.completedCount} · {copy.inProgress} {options.inProgressCount} · {copy.pending} {options.pendingCount}</dd>
+          </div>
+          {options.currentPart ? (
+            <div>
+              <dt>{copy.currentPart}</dt>
+              <dd>{options.currentPart}</dd>
+            </div>
+          ) : null}
+          {options.showInjectionMetrics ? (
+            <>
+              <div>
+                <dt>{copy.shotCount}</dt>
+                <dd>{formatNumber(options.shotCount ?? 0)}</dd>
+              </div>
+              <div>
+                <dt>{copy.recentRunning}</dt>
+                <dd>{formatNumber(options.recentShots ?? 0)}</dd>
+              </div>
+              <div>
+                <dt>{copy.cavity}</dt>
+                <dd>{(options.avgCavity ?? 1).toFixed(1)}</dd>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <dt>{copy.mesQty}</dt>
+                <dd>{formatNumber(options.mesQty ?? 0)}</dd>
+              </div>
+              <div>
+                <dt>{copy.manualOpen}</dt>
+                <dd>{formatNumber(options.manualOpenQty ?? 0)}</dd>
+              </div>
+              <div>
+                <dt>{copy.manualMatched}</dt>
+                <dd>{formatNumber(options.matchedManualQty ?? 0)}</dd>
+              </div>
+              {(options.defectQty ?? 0) > 0 ? (
+                <div>
+                  <dt>{copy.defectQty}</dt>
+                  <dd>{formatNumber(options.defectQty ?? 0)}</dd>
+                </div>
+              ) : null}
+            </>
+          )}
+        </dl>
+        <div className="production-progress-hover-card__jobs">
+          <div className="production-progress-hover-card__jobs-head">
+            <span>{copy.workOrders}</span>
+            <span>{options.actualLabel}</span>
+            <span>{copy.progress}</span>
+            <span>{copy.completion}</span>
+          </div>
+          {displaySegments.map((segment) => (
+            <div className="production-progress-hover-card__job" key={segment.key}>
+              <span>
+                <i>{segment.sequence}</i>
+                {segment.partNo}
+              </span>
+              <span>{formatNumber(segment.estimatedQty)} / {formatNumber(segment.plannedQty)}</span>
+              <span>{getProgressText(segment.progressRate)}</span>
+              <span>{getProgressLabel(segment.status, copy)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   function renderProgressRow(row: RealtimeProgressRow) {
     const progress = Math.max(0, Math.min(100, row.progressRate));
     const progressText = getProgressText(row.progressRate);
     const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
+    const displaySegments = getDisplaySegments(row.segments);
 
     return (
       <article className="production-progress-row" key={row.key}>
@@ -1185,21 +1637,39 @@ export function ProductionDashboardPage() {
             </em>
           </div>
         </div>
-        <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${row.label} ${progressText}`}>
-          {row.segments.length ? row.segments.map((segment) => renderProgressSegment(segment, row)) : (
-            <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
-              <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
-            </span>
-          )}
-          {row.gapQty > 0 ? (
-            <span
-              className="production-part-overrun"
-              data-tooltip={`${copy.overrun}: ${getOverrunText(row.gapQty, row.plannedQty)}`}
-              style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
-            >
-              <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
-            </span>
-          ) : null}
+        <div className="production-progress-track-wrap">
+          <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${row.label} ${progressText}`}>
+            {displaySegments.length ? displaySegments.map((segment) => renderProgressSegment(segment, row)) : (
+              <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
+                <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
+              </span>
+            )}
+            {row.gapQty > 0 ? (
+              <span
+                className="production-part-overrun"
+                style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
+              >
+                <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
+              </span>
+            ) : null}
+          </div>
+          {renderProgressHoverCard({
+            label: row.label,
+            progressText,
+            actualLabel: copy.estimatedVsPlan,
+            actualQty: row.estimatedQty,
+            plannedQty: row.plannedQty,
+            gapQty: row.gapQty,
+            completedCount: row.completedCount,
+            inProgressCount: row.inProgressCount,
+            pendingCount: row.pendingCount,
+            currentPart: currentSegment?.partNo,
+            shotCount: row.shotCount,
+            recentShots: row.recentShots,
+            avgCavity: row.avgCavity,
+            showInjectionMetrics: true,
+            segments: row.segments,
+          })}
         </div>
         <div className="production-progress-state-strip">
           <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {row.completedCount}</span>
@@ -1215,13 +1685,26 @@ export function ProductionDashboardPage() {
     const progress = Math.max(0, Math.min(100, row.progressRate));
     const progressText = getProgressText(row.progressRate);
     const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
+    const displaySegments = getDisplaySegments(row.segments);
     const isActive = row.inProgressCount > 0;
     return (
       <article className="production-progress-row production-progress-row--preview" key={row.key}>
         <div className="production-progress-row__head">
-          <div>
-            <strong>{row.label}</strong>
-            <span>{currentSegment ? `${copy.currentPart} ${currentSegment.partNo}` : `${copy.actualEstimate} ${formatNumber(row.actualQty)} / ${formatNumber(row.plannedQty)}`}</span>
+          <div className="production-progress-row__identity">
+            <div className="production-progress-row__title">
+              <strong>{row.label}</strong>
+              {row.provisionRow?.plan_id ? (
+                <button
+                  aria-label={`${row.label} ${copy.manualReport}`}
+                  className="production-progress-detail-button"
+                  onClick={() => openMachiningManualReport(row.provisionRow as MachiningProvisionRow)}
+                  type="button"
+                >
+                  {copy.manualReport}
+                </button>
+              ) : null}
+            </div>
+            <span>{currentSegment ? `${copy.currentPart} ${currentSegment.partNo}` : `${copy.effectiveQty} ${formatNumber(row.actualQty)} / ${formatNumber(row.plannedQty)}`}</span>
           </div>
           <div className="production-progress-row__state">
             <span>{progressText}</span>
@@ -1230,19 +1713,41 @@ export function ProductionDashboardPage() {
             </em>
           </div>
         </div>
-        <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : " production-part-track--preview"}`}>
-          {row.segments.map((segment) => renderProgressSegment(segment, { plannedQty: row.plannedQty }))}
-          {row.gapQty > 0 ? (
-            <span
-              className="production-part-overrun"
-              data-tooltip={`${copy.overrun}: ${getOverrunText(row.gapQty, row.plannedQty)}`}
-              style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
-            >
-              <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
-            </span>
-          ) : null}
+        <div className="production-progress-track-wrap">
+          <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : " production-part-track--preview"}`}>
+            {displaySegments.map((segment) => renderProgressSegment(segment, { plannedQty: row.plannedQty }))}
+            {row.gapQty > 0 ? (
+              <span
+                className="production-part-overrun"
+                style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
+              >
+                <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
+              </span>
+            ) : null}
+          </div>
+          {renderProgressHoverCard({
+            label: row.label,
+            progressText,
+            actualLabel: copy.effectiveQty,
+            actualQty: row.actualQty,
+            plannedQty: row.plannedQty,
+            gapQty: row.gapQty,
+            completedCount: row.completedCount,
+            inProgressCount: row.inProgressCount,
+            pendingCount: row.pendingCount,
+            currentPart: currentSegment?.partNo,
+            mesQty: row.mesQty,
+            manualOpenQty: row.manualOpenQty,
+            matchedManualQty: row.matchedManualQty,
+            defectQty: row.defectQty,
+            segments: row.segments,
+          })}
         </div>
         <div className="production-progress-state-strip">
+          <span className="production-progress-chip">{copy.mesQty} {formatNumber(row.mesQty)}</span>
+          <span className="production-progress-chip production-progress-chip--active">{copy.manualOpen} {formatNumber(row.manualOpenQty)}</span>
+          <span className="production-progress-chip production-progress-chip--completed">{copy.manualMatched} {formatNumber(row.matchedManualQty)}</span>
+          {row.defectQty > 0 ? <span className="production-progress-chip production-progress-chip--overrun">{copy.defectQty} {formatNumber(row.defectQty)}</span> : null}
           <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {row.completedCount}</span>
           <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {row.inProgressCount}</span>
           <span className="production-progress-chip">{copy.pending} {row.pendingCount}</span>
@@ -1253,16 +1758,16 @@ export function ProductionDashboardPage() {
   }
 
   return (
-    <section className="page production-dashboard">
+    <section className="page production-dashboard" aria-busy={isLiveDataRefreshing}>
       <PageHeader
         eyebrow={copy.eyebrow}
         title={copy.title}
         description={copy.description}
       />
 
-      {isLoading ? <ProductionDashboardSkeleton copy={copy} /> : null}
+      {isInitialLoading ? <ProductionDashboardSkeleton copy={copy} /> : null}
 
-      {!isLoading ? (
+      {!isInitialLoading ? (
         <>
           <div className="stats-grid">
             <label className="stat-card production-date-card">
@@ -1494,8 +1999,14 @@ export function ProductionDashboardPage() {
                   </div>
                   <div className="production-progress-summary-text">
                     <h4>{copy.machiningProgress}</h4>
-                    <p>{copy.machiningPending}</p>
+                    <p>{copy.machiningSupplementHint}</p>
                     <div className="production-progress-state-strip">
+                      <span className="production-progress-chip">{copy.mesQty} {formatNumber(machiningSummaryMesQty)}</span>
+                      <span className="production-progress-chip production-progress-chip--active">{copy.manualOpen} {formatNumber(machiningSummaryManualOpenQty)}</span>
+                      <span className="production-progress-chip production-progress-chip--completed">{copy.effectiveQty} {formatNumber(machiningSummaryEffectiveQty)}</span>
+                      {machiningSummaryAdvanceQty > 0 ? (
+                        <span className="production-progress-chip production-progress-chip--overrun">{copy.advanceQty} {formatNumber(machiningSummaryAdvanceQty)}</span>
+                      ) : null}
                       <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {machiningProgress.completedCount}</span>
                       <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {machiningProgress.inProgressCount}</span>
                       <span className="production-progress-chip">{copy.pending} {machiningProgress.pendingCount}</span>
@@ -1513,6 +2024,12 @@ export function ProductionDashboardPage() {
               </article>
             </div>
           </section>
+
+          <InjectionTransitionPanel
+            analysis={transitionAnalysis}
+            copy={copy}
+            language={language}
+          />
 
           {selectedProgressRow ? (
             <div className="modal-backdrop" role="presentation" onClick={() => setSelectedProgressRow(null)}>
@@ -1560,7 +2077,7 @@ export function ProductionDashboardPage() {
                     <span>{copy.estimatedVsPlan}</span>
                     <span>{copy.progress}</span>
                   </div>
-                  {selectedProgressRow.segments.map((segment) => (
+                  {getDisplaySegments(selectedProgressRow.segments).map((segment) => (
                     <div className="production-progress-modal__row" key={segment.key}>
                       <span>{segment.sequence}</span>
                       <span>{segment.partNo}</span>
@@ -1579,6 +2096,112 @@ export function ProductionDashboardPage() {
                     </div>
                   ))}
                 </div>
+              </section>
+            </div>
+          ) : null}
+
+          {selectedMachiningRow ? (
+            <div className="modal-backdrop" role="presentation" onClick={() => setSelectedMachiningRow(null)}>
+              <section
+                className="modal-card production-progress-modal production-machining-manual-modal"
+                aria-modal="true"
+                role="dialog"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="modal-card__header">
+                  <div>
+                    <p className="panel-card__eyebrow">Machining</p>
+                    <h3 className="panel__title">{copy.manualReportTitle}</h3>
+                    <p className="production-progress-modal__meta">
+                      {selectedMachiningRow.equipment_label} · {selectedMachiningRow.part_no} · {copy.planned} {formatNumber(selectedMachiningRow.planned_qty)} · {copy.effectiveQty} {formatNumber(selectedMachiningRow.effective_actual_qty)}
+                    </p>
+                  </div>
+                  <button className="button button--ghost" onClick={() => setSelectedMachiningRow(null)} type="button">
+                    {copy.close}
+                  </button>
+                </div>
+
+                <div className="production-progress-modal__summary">
+                  <div>
+                    <span>{copy.mesQty}</span>
+                    <strong>{formatNumber(selectedMachiningRow.mes_qty)}</strong>
+                  </div>
+                  <div>
+                    <span>{copy.manualOpen}</span>
+                    <strong>{formatNumber(selectedMachiningRow.manual_open_qty)}</strong>
+                  </div>
+                  <div>
+                    <span>{copy.defectQty}</span>
+                    <strong>{formatNumber(selectedMachiningRow.defect_qty)}</strong>
+                  </div>
+                </div>
+
+                <form
+                  className="production-manual-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!selectedMachiningRow.plan_id || createManualReportMutation.isPending) return;
+                    createManualReportMutation.mutate();
+                  }}
+                >
+                  <label>
+                    <span>{copy.goodQty}</span>
+                    <input
+                      min="0"
+                      inputMode="numeric"
+                      type="number"
+                      value={manualForm.goodQty}
+                      onChange={(event) => setManualForm((current) => ({ ...current, goodQty: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>{copy.defectQty}</span>
+                    <input
+                      min="0"
+                      inputMode="numeric"
+                      type="number"
+                      value={manualForm.defectQty}
+                      onChange={(event) => setManualForm((current) => ({ ...current, defectQty: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>{copy.defectType}</span>
+                    <input
+                      placeholder={copy.defectTypePlaceholder}
+                      value={manualForm.defectType}
+                      onChange={(event) => setManualForm((current) => ({ ...current, defectType: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>{copy.reasonCode}</span>
+                    <input
+                      placeholder={copy.reasonPlaceholder}
+                      value={manualForm.reasonCode}
+                      onChange={(event) => setManualForm((current) => ({ ...current, reasonCode: event.target.value }))}
+                    />
+                  </label>
+                  <label className="production-manual-form__wide">
+                    <span>{copy.note}</span>
+                    <textarea
+                      rows={3}
+                      value={manualForm.note}
+                      onChange={(event) => setManualForm((current) => ({ ...current, note: event.target.value }))}
+                    />
+                  </label>
+                  {createManualReportMutation.isError ? (
+                    <div className="notice notice--warning production-manual-form__wide">{copy.manualReportError}</div>
+                  ) : null}
+                  <div className="production-manual-form__actions production-manual-form__wide">
+                    <span>{copy.machiningSupplementHint}</span>
+                    <button
+                      className="button button--primary"
+                      disabled={!selectedMachiningRow.plan_id || Number(manualForm.goodQty || 0) <= 0 || createManualReportMutation.isPending}
+                      type="submit"
+                    >
+                      {createManualReportMutation.isPending ? copy.savingManualReport : copy.saveManualReport}
+                    </button>
+                  </div>
+                </form>
               </section>
             </div>
           ) : null}

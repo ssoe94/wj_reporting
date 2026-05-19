@@ -20,6 +20,11 @@ export type ProductionStatusPart = {
   planned_quantity: number;
   actual_quantity: number;
   progress: number;
+  mes_qty?: number;
+  manual_open_qty?: number;
+  matched_manual_qty?: number;
+  defect_qty?: number;
+  status?: string | null;
 };
 
 export type ProductionStatusMachine = {
@@ -27,6 +32,10 @@ export type ProductionStatusMachine = {
   total_planned: number;
   total_actual: number;
   progress: number;
+  total_mes?: number;
+  total_manual_open?: number;
+  total_manual_matched?: number;
+  total_defect?: number;
   parts: ProductionStatusPart[];
 };
 
@@ -146,6 +155,111 @@ export type ProductionMesReportStatsResponse = {
     process_code: string;
     plan_row_count: number;
   }>;
+};
+
+export type MachiningManualReport = {
+  id: number;
+  business_date: string;
+  plan_date: string;
+  plan_id: number | null;
+  machine_name: string;
+  equipment_key: string;
+  part_no: string;
+  model_name: string;
+  lot_no: string | null;
+  sequence: number;
+  planned_qty_at_report: number;
+  good_qty: number;
+  defect_qty: number;
+  total_reported_qty: number;
+  matched_qty: number;
+  open_qty: number;
+  reason_code: string;
+  note: string;
+  status: "open" | "partial" | "matched" | "mismatch" | "cancelled";
+  credit_business_date: string;
+  reported_by_name: string | null;
+  reported_at: string | null;
+  updated_at: string | null;
+  defect_items: Array<{
+    id: number;
+    defect_category: string;
+    defect_type: string;
+    quantity: number;
+    note: string;
+  }>;
+};
+
+export type MachiningProvisionRow = {
+  business_date: string;
+  plan_date: string | null;
+  day_offset: number | null;
+  plan_id: number | null;
+  plan_identity_hash: string;
+  machine_name: string;
+  equipment_key: string;
+  equipment_label: string;
+  part_no: string;
+  model_name: string;
+  lot_no: string | null;
+  sequence: number;
+  planned_qty: number;
+  mes_qty: number;
+  direct_mes_qty: number;
+  matched_manual_qty: number;
+  manual_qty: number;
+  manual_open_qty: number;
+  effective_actual_qty: number;
+  gap_qty: number;
+  achievement_rate: number | null;
+  status:
+    | "mes_reported"
+    | "manual_open"
+    | "manual_matched"
+    | "manual_partial"
+    | "manual_mismatch"
+    | "needs_review"
+    | "unplanned_mes";
+  defect_qty: number;
+  manual_reports: MachiningManualReport[];
+};
+
+export type MachiningProvisionResponse = {
+  business_date: string;
+  range: {
+    plan_date_from: string;
+    plan_date_to: string;
+    range_start: string;
+    range_end: string;
+  };
+  summary: {
+    total_planned: number;
+    mes_qty: number;
+    manual_open_qty: number;
+    manual_matched_qty: number;
+    effective_actual_qty: number;
+    gap_qty: number;
+    achievement_rate: number;
+    open_manual_count: number;
+    mismatch_count: number;
+    advance_qty: number;
+  };
+  rows: MachiningProvisionRow[];
+};
+
+export type CreateMachiningManualReportPayload = {
+  business_date: string;
+  plan_id: number;
+  good_qty: number;
+  defect_qty?: number;
+  defect_items?: Array<{
+    defect_category: string;
+    defect_type: string;
+    quantity: number;
+    note?: string;
+  }>;
+  reason_code?: string;
+  note?: string;
 };
 
 export type ProductionPlanUploadResponse = {
@@ -278,6 +392,18 @@ export async function getProductionMesReportStats(date: string, planType: PlanTy
   const response = await http.get<ProductionMesReportStatsResponse>(
     `/production/mes-report-stats/?date=${encodeURIComponent(date)}&plan_type=${encodeURIComponent(planType)}`,
   );
+  return response.data;
+}
+
+export async function getMachiningProvision(businessDate: string, days = 3) {
+  const response = await http.get<MachiningProvisionResponse>(
+    `/production/machining/provision/?business_date=${encodeURIComponent(businessDate)}&days=${encodeURIComponent(days)}`,
+  );
+  return response.data;
+}
+
+export async function createMachiningManualReport(payload: CreateMachiningManualReportPayload) {
+  const response = await http.post<MachiningManualReport>("/production/machining/manual-reports/", payload);
   return response.data;
 }
 
