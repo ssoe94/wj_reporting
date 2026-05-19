@@ -197,6 +197,48 @@ class ProductionMesReportStatsApiTests(DjangoTestCase):
         self.assertEqual(rows_by_part['PART-B']['compare_status'], 'plan_only')
         self.assertEqual(rows_by_part['PART-C']['compare_status'], 'mes_only')
 
+    def test_stats_api_preserves_injection_mes_material_name_candidates(self):
+        target_date = datetime(2026, 5, 18).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        report_time = tz.localize(datetime(2026, 5, 18, 10, 0))
+
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='injection',
+            machine_name='850T-1',
+            part_no='ABJ76763510',
+            model_name='27GR75',
+            planned_quantity=100,
+            sequence=1,
+        )
+        ProductionMesReportRecord.objects.create(
+            report_record_detail_id=2101,
+            report_record_id=701,
+            report_record_code='R-2101',
+            business_date=target_date,
+            plan_type='injection',
+            process_code='ZS',
+            report_time=report_time,
+            equipment_name='850T-1',
+            equipment_key='1',
+            part_no='MBH65682501',
+            material_name='ABJ76763501/02/06/10',
+            report_qty=40,
+            raw_payload={},
+        )
+
+        response = APIClient().get('/api/production/mes-report-stats/', {
+            'date': '2026-05-18',
+            'plan_type': 'injection',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        rows_by_part = {row['part_no']: row for row in payload['rows']}
+        self.assertEqual(rows_by_part['MBH65682501']['compare_status'], 'mes_only')
+        self.assertEqual(rows_by_part['MBH65682501']['model_name'], 'ABJ76763501/02/06/10')
+        self.assertEqual(rows_by_part['MBH65682501']['mes_material_names'], ['ABJ76763501/02/06/10'])
+
 
 class MachiningManualSupplementContractTests(DjangoTestCase):
     def setUp(self):

@@ -5245,7 +5245,6 @@ select {
   width: 150px;
 }
 
-.mes-injection-receipt-table td:nth-child(2),
 .mes-injection-receipt-table td:nth-child(3) {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5258,6 +5257,13 @@ select {
 
 .mes-injection-receipt-table .is-down {
   color: #a0442c;
+}
+
+.mes-injection-receipt-status-cell {
+  display: grid;
+  gap: 3px;
+  align-content: center;
+  white-space: nowrap;
 }
 
 .mes-injection-receipt-machine {
@@ -5278,6 +5284,24 @@ select {
   color: var(--muted);
   font-size: 0.7rem;
   font-weight: 400;
+}
+
+.mes-injection-receipt-part {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mes-injection-receipt-part span,
+.mes-injection-receipt-part small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mes-injection-receipt-part span {
+  color: var(--text);
+  font-weight: 500;
 }
 
 .mes-injection-receipt-progress {

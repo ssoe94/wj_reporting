@@ -154,6 +154,7 @@ export type ProductionMesReportStatsResponse = {
     compare_status: "matched" | "plan_only" | "mes_only";
     process_code: string;
     plan_row_count: number;
+    mes_material_names?: string[];
   }>;
 };
 

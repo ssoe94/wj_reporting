@@ -82,6 +82,7 @@ type HourlyTrendScale = {
 };
 
 type InjectionReceiptStatus = "matched" | "shortage" | "over" | "missing" | "receipt_only";
+type InjectionReceiptMatchMethod = "direct_part_no" | "model_candidate" | "unmatched";
 
 type InjectionReceiptComparisonRow = {
   key: string;
@@ -98,6 +99,8 @@ type InjectionReceiptComparisonRow = {
   latestReportTime: string | null;
   status: InjectionReceiptStatus;
   sequence: number;
+  receiptPartNos: string[];
+  matchMethods: InjectionReceiptMatchMethod[];
 };
 
 type InjectionReceiptComparison = {
@@ -195,7 +198,8 @@ const pageCopy = {
     injectionReceiptGap: "ZS-형합수",
     injectionReceiptIssue: "확인 필요",
     injectionReceiptMachine: "설비",
-    injectionReceiptPartNo: "Part No.",
+    injectionReceiptPartNo: "작업지시 Part No.",
+    injectionReceiptSourcePartNo: "ZS Part No.",
     injectionReceiptModel: "모델",
     injectionReceiptPlan: "계획",
     injectionReceiptStatus: "대사 상태",
@@ -205,6 +209,10 @@ const pageCopy = {
     injectionReceiptOver: "ZS 입고 초과",
     injectionReceiptMissing: "ZS 미입고",
     injectionReceiptOnly: "형합수 없음",
+    injectionReceiptMatchBy: "매칭 기준",
+    injectionReceiptDirectPartNo: "직접 Part No.",
+    injectionReceiptModelCandidate: "모델/품번 후보",
+    injectionReceiptUnmatched: "미매칭",
     injectionReceiptEmpty: "비교할 ZS 입고 또는 형합수 추정 실적이 없습니다.",
     machiningTitle: "가공 생산보고 모니터링",
     machiningBody: "Blacklake 报工记录列表의 JG/加工 보고를 생산 계획과 비교합니다.",
@@ -337,7 +345,8 @@ const pageCopy = {
     injectionReceiptGap: "ZS-合模数",
     injectionReceiptIssue: "需确认",
     injectionReceiptMachine: "设备",
-    injectionReceiptPartNo: "Part No.",
+    injectionReceiptPartNo: "工单 Part No.",
+    injectionReceiptSourcePartNo: "ZS Part No.",
     injectionReceiptModel: "型号",
     injectionReceiptPlan: "计划",
     injectionReceiptStatus: "对账状态",
@@ -347,6 +356,10 @@ const pageCopy = {
     injectionReceiptOver: "ZS 入库超出",
     injectionReceiptMissing: "未入 ZS",
     injectionReceiptOnly: "无合模数",
+    injectionReceiptMatchBy: "匹配依据",
+    injectionReceiptDirectPartNo: "直接 Part No.",
+    injectionReceiptModelCandidate: "型号/品号候选",
+    injectionReceiptUnmatched: "未匹配",
     injectionReceiptEmpty: "暂无可比较的 ZS 入库或合模数推定实绩。",
     machiningTitle: "加工生产报告监控",
     machiningBody: "对接 Blacklake 报工记录列表中的 JG/加工报告，并与生产计划比较。",
@@ -462,7 +475,11 @@ function compareStatusLabel(
 }
 
 function normalizeComparisonPartNo(value: string | null | undefined) {
-  return String(value ?? "").trim().toUpperCase();
+  return normalizeComparisonIdentity(value);
+}
+
+function normalizeComparisonIdentity(value: string | number | null | undefined) {
+  return String(value ?? "").replace(/\s+/g, "").trim().toUpperCase();
 }
 
 function normalizeComparisonMachineKey(value: string | number | null | undefined) {
@@ -494,11 +511,109 @@ function resolveInjectionReceiptStatus(estimatedQty: number, receiptQty: number)
   return "receipt_only";
 }
 
+function expandSlashComparisonToken(token: string) {
+  const normalized = normalizeComparisonIdentity(token);
+  if (!normalized.includes("/")) return [normalized];
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length < 2) return [normalized];
+
+  const expanded = new Set<string>([normalized, parts[0]]);
+  const base = parts[0];
+  for (const suffix of parts.slice(1)) {
+    if (!suffix) continue;
+    if (/[A-Z]/.test(suffix) && suffix.length >= base.length / 2) {
+      expanded.add(suffix);
+      continue;
+    }
+    const prefixLength = Math.max(0, base.length - suffix.length);
+    expanded.add(`${base.slice(0, prefixLength)}${suffix}`);
+  }
+
+  return [...expanded];
+}
+
+function isUsefulComparisonToken(token: string) {
+  const normalized = normalizeComparisonIdentity(token);
+  return normalized.length >= 4;
+}
+
+function getComparisonTokens(...values: Array<string | number | null | undefined>) {
+  const tokens = new Set<string>();
+
+  for (const value of values) {
+    const rawText = String(value ?? "").trim();
+    if (!rawText) continue;
+
+    const whole = normalizeComparisonIdentity(rawText);
+    if (isUsefulComparisonToken(whole)) tokens.add(whole);
+
+    const textTokens = rawText.toUpperCase().match(/[A-Z0-9][A-Z0-9._/-]*[A-Z0-9]/g) ?? [];
+    for (const token of textTokens) {
+      for (const expanded of expandSlashComparisonToken(token)) {
+        const normalized = normalizeComparisonIdentity(expanded);
+        if (isUsefulComparisonToken(normalized)) tokens.add(normalized);
+      }
+    }
+  }
+
+  return [...tokens];
+}
+
+function addReceiptPartNo(row: InjectionReceiptComparisonRow, partNo: string | null | undefined) {
+  const normalized = normalizeComparisonPartNo(partNo);
+  if (!normalized) return;
+  if (!row.receiptPartNos.some((item) => normalizeComparisonPartNo(item) === normalized)) {
+    row.receiptPartNos.push(String(partNo ?? "").trim() || normalized);
+  }
+}
+
+function addReceiptMatchMethod(row: InjectionReceiptComparisonRow, method: InjectionReceiptMatchMethod) {
+  if (!row.matchMethods.includes(method)) {
+    row.matchMethods.push(method);
+  }
+}
+
+function receiptMatchMethodLabel(method: InjectionReceiptMatchMethod, copy: Record<string, string>) {
+  if (method === "direct_part_no") return copy.injectionReceiptDirectPartNo;
+  if (method === "model_candidate") return copy.injectionReceiptModelCandidate;
+  return copy.injectionReceiptUnmatched;
+}
+
+function registerInjectionReceiptCandidate(
+  candidateIndex: Map<string, string | null>,
+  machineKey: string,
+  rowKey: string,
+  ...values: Array<string | number | null | undefined>
+) {
+  for (const token of getComparisonTokens(...values)) {
+    const candidateKey = `${machineKey}::${token}`;
+    const existing = candidateIndex.get(candidateKey);
+    if (existing === undefined) {
+      candidateIndex.set(candidateKey, rowKey);
+    } else if (existing !== rowKey) {
+      candidateIndex.set(candidateKey, null);
+    }
+  }
+}
+
+function resolveInjectionReceiptRowKey(
+  candidateIndex: Map<string, string | null>,
+  machineKey: string,
+  ...values: Array<string | number | null | undefined>
+) {
+  for (const token of getComparisonTokens(...values)) {
+    const rowKey = candidateIndex.get(`${machineKey}::${token}`);
+    if (rowKey) return rowKey;
+  }
+  return null;
+}
+
 function buildInjectionReceiptComparison(
   realtimeProgress: RealtimeProgressSummary,
   reportStats: ProductionMesReportStatsResponse | undefined,
 ): InjectionReceiptComparison {
   const rowsByKey = new Map<string, InjectionReceiptComparisonRow>();
+  const candidateIndex = new Map<string, string | null>();
 
   for (const progressRow of realtimeProgress.rows) {
     const machineKey = normalizeComparisonMachineKey(progressRow.key) || normalizeComparisonMachineKey(progressRow.label);
@@ -522,6 +637,8 @@ function buildInjectionReceiptComparison(
         latestReportTime: null,
         status: "missing" as InjectionReceiptStatus,
         sequence: segment.sequence,
+        receiptPartNos: [],
+        matchMethods: [],
       };
       current.plannedQty += Number(segment.plannedQty ?? 0);
       current.estimatedQty += Number(segment.estimatedQty ?? 0);
@@ -531,6 +648,7 @@ function buildInjectionReceiptComparison(
         current.modelName = segment.modelName;
       }
       rowsByKey.set(key, current);
+      registerInjectionReceiptCandidate(candidateIndex, machineKey, key, segment.partNo, segment.modelName);
     }
   }
 
@@ -542,7 +660,15 @@ function buildInjectionReceiptComparison(
     );
     const partKey = normalizeComparisonPartNo(reportRow.part_no);
     if (!machineKey || !partKey) continue;
-    const key = `${machineKey}::${partKey}`;
+    const directKey = `${machineKey}::${partKey}`;
+    const matchedPlanKey = resolveInjectionReceiptRowKey(
+      candidateIndex,
+      machineKey,
+      reportRow.part_no,
+      reportRow.model_name,
+      ...(reportRow.mes_material_names ?? []),
+    );
+    const key = rowsByKey.has(directKey) ? directKey : matchedPlanKey ?? directKey;
     const current = rowsByKey.get(key) ?? {
       key,
       machineKey,
@@ -558,7 +684,21 @@ function buildInjectionReceiptComparison(
       latestReportTime: null,
       status: "receipt_only" as InjectionReceiptStatus,
       sequence: 9999,
+      receiptPartNos: [],
+      matchMethods: [],
     };
+    const hasReceipt = Number(reportRow.mes_qty ?? 0) > 0 || Number(reportRow.mes_report_count ?? 0) > 0;
+    if (hasReceipt) {
+      addReceiptPartNo(current, reportRow.part_no);
+      addReceiptMatchMethod(
+        current,
+        key === directKey && rowsByKey.has(directKey)
+          ? "direct_part_no"
+          : matchedPlanKey
+            ? "model_candidate"
+            : "unmatched",
+      );
+    }
     current.receiptQty += Number(reportRow.mes_qty ?? 0);
     current.reportCount += Number(reportRow.mes_report_count ?? 0);
     if (!current.plannedQty) {
@@ -2005,6 +2145,9 @@ export function MesMonitoringPage() {
                   <tbody>
                     {injectionReceiptComparison.rows.map((row) => {
                       const progressRate = row.plannedQty > 0 ? Math.min(100, (row.estimatedQty / row.plannedQty) * 100) : 0;
+                      const alternateReceiptPartNos = row.receiptPartNos.filter(
+                        (partNo) => normalizeComparisonPartNo(partNo) !== normalizeComparisonPartNo(row.partNo),
+                      );
                       return (
                         <tr key={row.key}>
                           <td>
@@ -2013,7 +2156,16 @@ export function MesMonitoringPage() {
                               <small>{language === "ko" ? `${row.machineKey}호기` : `${row.machineKey}号机`}</small>
                             </div>
                           </td>
-                          <td>{row.partNo}</td>
+                          <td>
+                            <div className="mes-injection-receipt-part">
+                              <span>{row.partNo}</span>
+                              {alternateReceiptPartNos.length ? (
+                                <small>
+                                  {copy.injectionReceiptSourcePartNo} {alternateReceiptPartNos.join(", ")}
+                                </small>
+                              ) : null}
+                            </div>
+                          </td>
                           <td>{row.modelName || "-"}</td>
                           <td>{formatNumber(row.plannedQty)}</td>
                           <td>
@@ -2028,10 +2180,18 @@ export function MesMonitoringPage() {
                           <td>{formatNumber(row.receiptQty)}</td>
                           <td className={row.gapQty >= 0 ? "is-up" : "is-down"}>{formatSignedQty(row.gapQty)}</td>
                           <td>
-                            <span className={`mes-injection-receipt-status mes-injection-receipt-status--${row.status}`}>
-                              {injectionReceiptStatusLabel(row.status, copy)}
-                            </span>
-                            <small>{copy.machiningReports} {formatNumber(row.reportCount)}</small>
+                            <div className="mes-injection-receipt-status-cell">
+                              <span className={`mes-injection-receipt-status mes-injection-receipt-status--${row.status}`}>
+                                {injectionReceiptStatusLabel(row.status, copy)}
+                              </span>
+                              <small>{copy.machiningReports} {formatNumber(row.reportCount)}</small>
+                              {row.matchMethods.length ? (
+                                <small>
+                                  {copy.injectionReceiptMatchBy}{" "}
+                                  {row.matchMethods.map((method) => receiptMatchMethodLabel(method, copy)).join(", ")}
+                                </small>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
                       );

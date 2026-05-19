@@ -1135,7 +1135,10 @@ class ProductionMesReportStatsView(APIView):
                 'latest_report_time': None,
                 'process_code': record.process_code,
                 'mes_material_name': record.material_name,
+                'mes_material_names': set(),
             })
+            if record.material_name:
+                group['mes_material_names'].add(record.material_name)
             group['mes_qty'] += int(record.report_qty or 0)
             group['mes_report_count'] += 1
             latest_report_time = record.report_time.isoformat() if record.report_time else None
@@ -1215,6 +1218,7 @@ class ProductionMesReportStatsView(APIView):
                 'compare_status': compare_status,
                 'process_code': mes_group.get('process_code') or ('ZS' if plan_type == 'injection' else 'JG'),
                 'plan_row_count': int(plan_group.get('plan_row_count') or 0),
+                'mes_material_names': sorted(mes_group.get('mes_material_names') or []),
             })
             total_planned += planned_qty
             total_mes += mes_qty
