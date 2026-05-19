@@ -5127,6 +5127,220 @@ select {
   line-height: 1.55;
 }
 
+.mes-injection-receipt-panel__hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.mes-injection-receipt-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.mes-injection-receipt-summary div {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(0, 142, 195, 0.10);
+  border-radius: 8px;
+  background: rgba(248, 252, 253, 0.78);
+}
+
+.mes-injection-receipt-summary span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mes-injection-receipt-summary strong {
+  color: var(--text);
+  font-size: 1.12rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.mes-injection-receipt-summary .is-up {
+  color: #047241;
+}
+
+.mes-injection-receipt-summary .is-down {
+  color: #a0442c;
+}
+
+.mes-injection-receipt-table-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(24, 141, 194, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.mes-injection-receipt-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  table-layout: fixed;
+}
+
+.mes-injection-receipt-table th,
+.mes-injection-receipt-table td {
+  padding: 10px 11px;
+  border-bottom: 1px solid rgba(24, 141, 194, 0.10);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.mes-injection-receipt-table tbody tr {
+  height: 70px;
+}
+
+.mes-injection-receipt-table th {
+  background: rgba(238, 249, 255, 0.72);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mes-injection-receipt-table th:nth-child(1),
+.mes-injection-receipt-table td:nth-child(1) {
+  width: 126px;
+}
+
+.mes-injection-receipt-table th:nth-child(2),
+.mes-injection-receipt-table td:nth-child(2) {
+  width: 150px;
+}
+
+.mes-injection-receipt-table th:nth-child(3),
+.mes-injection-receipt-table td:nth-child(3) {
+  width: 180px;
+}
+
+.mes-injection-receipt-table th:nth-child(4),
+.mes-injection-receipt-table td:nth-child(4),
+.mes-injection-receipt-table th:nth-child(6),
+.mes-injection-receipt-table td:nth-child(6),
+.mes-injection-receipt-table th:nth-child(7),
+.mes-injection-receipt-table td:nth-child(7) {
+  width: 92px;
+  text-align: right;
+}
+
+.mes-injection-receipt-table th:nth-child(5),
+.mes-injection-receipt-table td:nth-child(5) {
+  width: 210px;
+}
+
+.mes-injection-receipt-table th:nth-child(8),
+.mes-injection-receipt-table td:nth-child(8) {
+  width: 150px;
+}
+
+.mes-injection-receipt-table td:nth-child(2),
+.mes-injection-receipt-table td:nth-child(3) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mes-injection-receipt-table .is-up {
+  color: #047241;
+}
+
+.mes-injection-receipt-table .is-down {
+  color: #a0442c;
+}
+
+.mes-injection-receipt-machine {
+  display: grid;
+  gap: 2px;
+  min-height: 42px;
+  align-content: center;
+}
+
+.mes-injection-receipt-machine span {
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+
+.mes-injection-receipt-machine small,
+.mes-injection-receipt-table small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+
+.mes-injection-receipt-progress {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+  min-width: 156px;
+}
+
+.mes-injection-receipt-progress > span {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.mes-injection-receipt-progress div {
+  overflow: hidden;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(104, 128, 147, 0.16);
+}
+
+.mes-injection-receipt-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(0, 142, 195, 0.80), rgba(0, 156, 73, 0.68));
+}
+
+.mes-injection-receipt-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 86px;
+  margin-bottom: 5px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.mes-injection-receipt-status--matched {
+  background: rgba(0, 156, 73, 0.12);
+  color: #047241;
+}
+
+.mes-injection-receipt-status--shortage,
+.mes-injection-receipt-status--missing {
+  background: rgba(224, 106, 59, 0.12);
+  color: #a0442c;
+}
+
+.mes-injection-receipt-status--over {
+  background: rgba(247, 185, 36, 0.18);
+  color: #8a5a00;
+}
+
+.mes-injection-receipt-status--receipt_only {
+  background: rgba(0, 142, 195, 0.12);
+  color: #006b9a;
+}
+
 .mes-machining-panel__hint {
   margin: 4px 0 0;
   color: var(--muted);
@@ -5482,6 +5696,7 @@ select {
   .production-progress-grid,
   .mes-fleet-production-card__body,
   .mes-fleet-production-metrics,
+  .mes-injection-receipt-summary,
   .injection-transition-summary,
   .injection-transition-grid,
   .mes-utilization-summary,

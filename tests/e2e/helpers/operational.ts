@@ -425,6 +425,68 @@ export async function installOperationalApiMocks(page: Page) {
   });
 
   await page.route('**/api/production/mes-report-stats/**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const requestedPlanType = requestUrl.searchParams.get('plan_type') ?? 'injection';
+
+    if (requestedPlanType === 'injection') {
+      await route.fulfill({
+        json: {
+          date,
+          plan_type: 'injection',
+          range_mode: 'day',
+          range_start: '2026-05-18T08:00:00+08:00',
+          range_end: '2026-05-19T08:00:00+08:00',
+          latest_synced_at: '2026-05-18T10:30:00+08:00',
+          summary: {
+            total_planned: 200,
+            total_mes: 165,
+            gap_qty: -35,
+            achievement_rate: 82.5,
+            matched_rows: 2,
+            plan_only_rows: 0,
+            mes_only_rows: 0,
+            raw_mes_count: 2,
+            grouped_mes_count: 2,
+          },
+          rows: [
+            {
+              equipment_key: '1',
+              equipment_name: '850T-1',
+              equipment_label: '1호기 850T',
+              part_no: 'PART-A',
+              model_name: 'MODEL-A',
+              planned_qty: 100,
+              mes_qty: 110,
+              gap_qty: 10,
+              achievement_rate: 110,
+              mes_report_count: 1,
+              latest_report_time: '2026-05-18T10:20:00+08:00',
+              compare_status: 'matched',
+              process_code: 'ZS',
+              plan_row_count: 1,
+            },
+            {
+              equipment_key: '1',
+              equipment_name: '850T-1',
+              equipment_label: '1호기 850T',
+              part_no: 'PART-B',
+              model_name: 'MODEL-B',
+              planned_qty: 100,
+              mes_qty: 55,
+              gap_qty: -45,
+              achievement_rate: 55,
+              mes_report_count: 1,
+              latest_report_time: '2026-05-18T10:30:00+08:00',
+              compare_status: 'matched',
+              process_code: 'ZS',
+              plan_row_count: 1,
+            },
+          ],
+        },
+      });
+      return;
+    }
+
     await route.fulfill({
       json: {
         date,

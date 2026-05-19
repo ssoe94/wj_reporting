@@ -36,6 +36,13 @@ test.describe('MES monitoring operational scenario', () => {
     await expect(transitionPanel).not.toContainText('1300T-3');
     await expect(transitionPanel).not.toContainText('1400T-5');
     await expect(transitionPanel).not.toContainText('Cavity');
+    await expect(page.getByRole('heading', { name: '注塑 ZS 입고 / 형합수 비교' })).toBeVisible();
+    const zsReceiptTable = page.locator('.mes-injection-receipt-table');
+    await expect(zsReceiptTable.getByText('PART-A')).toBeVisible();
+    await expect(zsReceiptTable.getByText('PART-B')).toBeVisible();
+    await expect(zsReceiptTable.getByText('ZS 입고 부족')).toHaveCount(2);
+    await expect(page.getByText('형합수 추정').first()).toBeVisible();
+    await expect(page.getByText('ZS 입고').first()).toBeVisible();
 
     await page.getByRole('button', { name: '가동률 상세 분석' }).click();
     const utilizationDialog = page.getByRole('dialog', { name: '가동률 상세 분석' });

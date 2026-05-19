@@ -16,7 +16,7 @@ import {
 } from "@/domains/production/api";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
 import { buildInjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
-import { buildRealtimeProgressSummary } from "@/domains/production/realtime-progress";
+import { buildRealtimeProgressSummary, type RealtimeProgressSummary } from "@/domains/production/realtime-progress";
 import { PageHeaderIcon } from "@/shared/components/PageHeader";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
 
@@ -79,6 +79,38 @@ type HourlyTrendPoint = {
 type HourlyTrendScale = {
   powerMax: number;
   oilMax: number;
+};
+
+type InjectionReceiptStatus = "matched" | "shortage" | "over" | "missing" | "receipt_only";
+
+type InjectionReceiptComparisonRow = {
+  key: string;
+  machineKey: string;
+  machineLabel: string;
+  partNo: string;
+  modelName: string;
+  plannedQty: number;
+  estimatedQty: number;
+  allocatedShots: number;
+  receiptQty: number;
+  gapQty: number;
+  reportCount: number;
+  latestReportTime: string | null;
+  status: InjectionReceiptStatus;
+  sequence: number;
+};
+
+type InjectionReceiptComparison = {
+  rows: InjectionReceiptComparisonRow[];
+  summary: {
+    plannedQty: number;
+    estimatedQty: number;
+    receiptQty: number;
+    gapQty: number;
+    matchedCount: number;
+    issueCount: number;
+    latestReportTime: string | null;
+  };
 };
 
 const pageCopy = {
@@ -156,6 +188,24 @@ const pageCopy = {
     noData: "데이터 없음",
     fetchError: "MES 데이터를 불러오지 못했습니다.",
     savedByBackend: "수집 시 백엔드 DB에 시간대별 기록으로 저장됩니다.",
+    injectionReceiptTitle: "注塑 ZS 입고 / 형합수 비교",
+    injectionReceiptBody: "MES ZS 입고 보고 수량을 같은 설비·품번의 형합수 기반 추정 생산량과 비교합니다.",
+    injectionReceiptEstimated: "형합수 추정",
+    injectionReceiptReported: "ZS 입고",
+    injectionReceiptGap: "ZS-형합수",
+    injectionReceiptIssue: "확인 필요",
+    injectionReceiptMachine: "설비",
+    injectionReceiptPartNo: "Part No.",
+    injectionReceiptModel: "모델",
+    injectionReceiptPlan: "계획",
+    injectionReceiptStatus: "대사 상태",
+    injectionReceiptLatest: "최신 ZS",
+    injectionReceiptMatched: "수량 일치",
+    injectionReceiptShortage: "ZS 입고 부족",
+    injectionReceiptOver: "ZS 입고 초과",
+    injectionReceiptMissing: "ZS 미입고",
+    injectionReceiptOnly: "형합수 없음",
+    injectionReceiptEmpty: "비교할 ZS 입고 또는 형합수 추정 실적이 없습니다.",
     machiningTitle: "가공 생산보고 모니터링",
     machiningBody: "Blacklake 报工记录列表의 JG/加工 보고를 생산 계획과 비교합니다.",
     machiningDate: "기준일",
@@ -280,6 +330,24 @@ const pageCopy = {
     noData: "无数据",
     fetchError: "无法读取 MES 数据。",
     savedByBackend: "采集时会按时间段保存到后端数据库。",
+    injectionReceiptTitle: "注塑 ZS 入库 / 合模数对比",
+    injectionReceiptBody: "将 MES ZS 入库报工数量与同一设备、品号的合模数推定生产量进行对账。",
+    injectionReceiptEstimated: "合模数推定",
+    injectionReceiptReported: "ZS 入库",
+    injectionReceiptGap: "ZS-合模数",
+    injectionReceiptIssue: "需确认",
+    injectionReceiptMachine: "设备",
+    injectionReceiptPartNo: "Part No.",
+    injectionReceiptModel: "型号",
+    injectionReceiptPlan: "计划",
+    injectionReceiptStatus: "对账状态",
+    injectionReceiptLatest: "最新 ZS",
+    injectionReceiptMatched: "数量一致",
+    injectionReceiptShortage: "ZS 入库不足",
+    injectionReceiptOver: "ZS 入库超出",
+    injectionReceiptMissing: "未入 ZS",
+    injectionReceiptOnly: "无合模数",
+    injectionReceiptEmpty: "暂无可比较的 ZS 入库或合模数推定实绩。",
     machiningTitle: "加工生产报告监控",
     machiningBody: "对接 Blacklake 报工记录列表中的 JG/加工报告，并与生产计划比较。",
     machiningDate: "基准日",
@@ -391,6 +459,167 @@ function compareStatusLabel(
   if (status === "matched") return copy.machiningMatched;
   if (status === "plan_only") return copy.machiningPlanOnly;
   return copy.machiningMesOnly;
+}
+
+function normalizeComparisonPartNo(value: string | null | undefined) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeComparisonMachineKey(value: string | number | null | undefined) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const suffixMatch = text.match(/-(\d+)\s*$/);
+  if (suffixMatch) return suffixMatch[1];
+  const koreanMatch = text.match(/(\d+)\s*호기/);
+  if (koreanMatch) return koreanMatch[1];
+  const leadingMatch = text.match(/^(\d+)(?:\D|$)/);
+  if (leadingMatch) return leadingMatch[1];
+  return text;
+}
+
+function injectionReceiptStatusLabel(status: InjectionReceiptStatus, copy: Record<string, string>) {
+  if (status === "matched") return copy.injectionReceiptMatched;
+  if (status === "shortage") return copy.injectionReceiptShortage;
+  if (status === "over") return copy.injectionReceiptOver;
+  if (status === "missing") return copy.injectionReceiptMissing;
+  return copy.injectionReceiptOnly;
+}
+
+function resolveInjectionReceiptStatus(estimatedQty: number, receiptQty: number): InjectionReceiptStatus {
+  if (estimatedQty > 0 && receiptQty > 0) {
+    if (Math.round(estimatedQty) === Math.round(receiptQty)) return "matched";
+    return receiptQty > estimatedQty ? "over" : "shortage";
+  }
+  if (estimatedQty > 0) return "missing";
+  return "receipt_only";
+}
+
+function buildInjectionReceiptComparison(
+  realtimeProgress: RealtimeProgressSummary,
+  reportStats: ProductionMesReportStatsResponse | undefined,
+): InjectionReceiptComparison {
+  const rowsByKey = new Map<string, InjectionReceiptComparisonRow>();
+
+  for (const progressRow of realtimeProgress.rows) {
+    const machineKey = normalizeComparisonMachineKey(progressRow.key) || normalizeComparisonMachineKey(progressRow.label);
+    if (!machineKey) continue;
+    for (const segment of progressRow.segments) {
+      const partKey = normalizeComparisonPartNo(segment.partNo);
+      if (!partKey || partKey === "-") continue;
+      const key = `${machineKey}::${partKey}`;
+      const current = rowsByKey.get(key) ?? {
+        key,
+        machineKey,
+        machineLabel: progressRow.label || `${machineKey}호기`,
+        partNo: segment.partNo,
+        modelName: segment.modelName,
+        plannedQty: 0,
+        estimatedQty: 0,
+        allocatedShots: 0,
+        receiptQty: 0,
+        gapQty: 0,
+        reportCount: 0,
+        latestReportTime: null,
+        status: "missing" as InjectionReceiptStatus,
+        sequence: segment.sequence,
+      };
+      current.plannedQty += Number(segment.plannedQty ?? 0);
+      current.estimatedQty += Number(segment.estimatedQty ?? 0);
+      current.allocatedShots += Number(segment.allocatedShots ?? 0);
+      current.sequence = Math.min(current.sequence, segment.sequence);
+      if (!current.modelName || current.modelName === "-") {
+        current.modelName = segment.modelName;
+      }
+      rowsByKey.set(key, current);
+    }
+  }
+
+  for (const reportRow of reportStats?.rows ?? []) {
+    const machineKey = (
+      normalizeComparisonMachineKey(reportRow.equipment_key)
+      || normalizeComparisonMachineKey(reportRow.equipment_name)
+      || normalizeComparisonMachineKey(reportRow.equipment_label)
+    );
+    const partKey = normalizeComparisonPartNo(reportRow.part_no);
+    if (!machineKey || !partKey) continue;
+    const key = `${machineKey}::${partKey}`;
+    const current = rowsByKey.get(key) ?? {
+      key,
+      machineKey,
+      machineLabel: reportRow.equipment_label || reportRow.equipment_name || `${machineKey}호기`,
+      partNo: reportRow.part_no,
+      modelName: reportRow.model_name || "-",
+      plannedQty: Number(reportRow.planned_qty ?? 0),
+      estimatedQty: 0,
+      allocatedShots: 0,
+      receiptQty: 0,
+      gapQty: 0,
+      reportCount: 0,
+      latestReportTime: null,
+      status: "receipt_only" as InjectionReceiptStatus,
+      sequence: 9999,
+    };
+    current.receiptQty += Number(reportRow.mes_qty ?? 0);
+    current.reportCount += Number(reportRow.mes_report_count ?? 0);
+    if (!current.plannedQty) {
+      current.plannedQty = Number(reportRow.planned_qty ?? 0);
+    }
+    if ((!current.modelName || current.modelName === "-") && reportRow.model_name) {
+      current.modelName = reportRow.model_name;
+    }
+    if (reportRow.latest_report_time && (!current.latestReportTime || reportRow.latest_report_time > current.latestReportTime)) {
+      current.latestReportTime = reportRow.latest_report_time;
+    }
+    rowsByKey.set(key, current);
+  }
+
+  const rows = [...rowsByKey.values()]
+    .map((row) => {
+      const roundedEstimated = Math.round(row.estimatedQty);
+      const roundedReceipt = Math.round(row.receiptQty);
+      const gapQty = roundedReceipt - roundedEstimated;
+      return {
+        ...row,
+        estimatedQty: roundedEstimated,
+        allocatedShots: Math.round(row.allocatedShots),
+        receiptQty: roundedReceipt,
+        gapQty,
+        status: resolveInjectionReceiptStatus(roundedEstimated, roundedReceipt),
+      };
+    })
+    .filter((row) => row.estimatedQty > 0 || row.receiptQty > 0)
+    .sort((left, right) => {
+      const leftMachine = Number(left.machineKey);
+      const rightMachine = Number(right.machineKey);
+      if (Number.isFinite(leftMachine) && Number.isFinite(rightMachine) && leftMachine !== rightMachine) {
+        return leftMachine - rightMachine;
+      }
+      if (left.sequence !== right.sequence) return left.sequence - right.sequence;
+      return left.partNo.localeCompare(right.partNo, "ko-KR", { numeric: true, sensitivity: "base" });
+    });
+
+  const latestReportTime = rows
+    .map((row) => row.latestReportTime)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1) ?? null;
+  const estimatedQty = rows.reduce((sum, row) => sum + row.estimatedQty, 0);
+  const receiptQty = rows.reduce((sum, row) => sum + row.receiptQty, 0);
+  const matchedCount = rows.filter((row) => row.status === "matched").length;
+  const issueCount = rows.filter((row) => row.status !== "matched").length;
+
+  return {
+    rows,
+    summary: {
+      plannedQty: rows.reduce((sum, row) => sum + row.plannedQty, 0),
+      estimatedQty,
+      receiptQty,
+      gapQty: receiptQty - estimatedQty,
+      matchedCount,
+      issueCount,
+      latestReportTime,
+    },
+  };
 }
 
 function formatTonnage(value: string) {
@@ -1345,6 +1574,12 @@ export function MesMonitoringPage() {
   const planDate = latestTime ? formatDateParam(startOfProductionDay(latestTime)) : formatDateParam(startOfProductionDay(new Date()));
   const nextPlanDate = formatDateParam(addDays(new Date(`${planDate}T08:00:00+08:00`), 1));
   const secondNextPlanDate = formatDateParam(addDays(new Date(`${planDate}T08:00:00+08:00`), 2));
+  const injectionReportStatsQuery = useQuery({
+    queryKey: ["production-mes-report-stats", "injection", planDate],
+    queryFn: () => getProductionMesReportStats(planDate, "injection"),
+    enabled: selectedSource === "injection" && Boolean(planDate),
+    refetchInterval: selectedSource === "injection" ? 60_000 : false,
+  });
   const planSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", planDate],
     queryFn: () => getProductionPlanSummary(planDate),
@@ -1479,6 +1714,10 @@ export function MesMonitoringPage() {
   const realtimeProgress = useMemo(
     () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data, productionStatusQuery.data, planDate, transitionAnalysis),
     [injectionQuery.data, planDate, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
+  );
+  const injectionReceiptComparison = useMemo(
+    () => buildInjectionReceiptComparison(realtimeProgress, injectionReportStatsQuery.data),
+    [injectionReportStatsQuery.data, realtimeProgress],
   );
   const todayProductionQty = realtimeProgress.estimatedQty;
   const todayProductionPlanQty = realtimeProgress.plannedQty || injectionPlanQty;
@@ -1704,6 +1943,105 @@ export function MesMonitoringPage() {
                 })}
               </div>
             </div>
+          </section>
+
+          <section className="panel mes-monitor-panel mes-injection-receipt-panel">
+            <div className="mes-monitor-panel__header">
+              <div>
+                <p className="panel-card__eyebrow">Injection ZS</p>
+                <h3 className="panel__title">{copy.injectionReceiptTitle}</h3>
+                <p className="mes-injection-receipt-panel__hint">{copy.injectionReceiptBody}</p>
+              </div>
+              <div className="mes-monitor-panel__actions">
+                <span>
+                  {copy.injectionReceiptLatest}:{" "}
+                  {injectionReceiptComparison.summary.latestReportTime
+                    ? formatDateTime(injectionReceiptComparison.summary.latestReportTime, language)
+                    : copy.noData}
+                </span>
+              </div>
+            </div>
+
+            <div className="mes-injection-receipt-summary">
+              <div>
+                <span>{copy.injectionReceiptEstimated}</span>
+                <strong>{formatNumber(injectionReceiptComparison.summary.estimatedQty)}</strong>
+              </div>
+              <div>
+                <span>{copy.injectionReceiptReported}</span>
+                <strong>{formatNumber(injectionReceiptComparison.summary.receiptQty)}</strong>
+              </div>
+              <div>
+                <span>{copy.injectionReceiptGap}</span>
+                <strong className={injectionReceiptComparison.summary.gapQty >= 0 ? "is-up" : "is-down"}>
+                  {formatSignedQty(injectionReceiptComparison.summary.gapQty)}
+                </strong>
+              </div>
+              <div>
+                <span>{copy.injectionReceiptIssue}</span>
+                <strong>{formatNumber(injectionReceiptComparison.summary.issueCount)}</strong>
+              </div>
+            </div>
+
+            {injectionReportStatsQuery.isError ? (
+              <div className="notice notice--warning">{copy.fetchError}</div>
+            ) : injectionReportStatsQuery.isLoading && !injectionReportStatsQuery.data ? (
+              <div className="notice notice--neutral">{copy.loadingData}</div>
+            ) : injectionReceiptComparison.rows.length ? (
+              <div className="mes-injection-receipt-table-wrap">
+                <table className="mes-injection-receipt-table">
+                  <thead>
+                    <tr>
+                      <th>{copy.injectionReceiptMachine}</th>
+                      <th>{copy.injectionReceiptPartNo}</th>
+                      <th>{copy.injectionReceiptModel}</th>
+                      <th>{copy.injectionReceiptPlan}</th>
+                      <th>{copy.injectionReceiptEstimated}</th>
+                      <th>{copy.injectionReceiptReported}</th>
+                      <th>{copy.injectionReceiptGap}</th>
+                      <th>{copy.injectionReceiptStatus}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {injectionReceiptComparison.rows.map((row) => {
+                      const progressRate = row.plannedQty > 0 ? Math.min(100, (row.estimatedQty / row.plannedQty) * 100) : 0;
+                      return (
+                        <tr key={row.key}>
+                          <td>
+                            <div className="mes-injection-receipt-machine">
+                              <span>{row.machineLabel}</span>
+                              <small>{language === "ko" ? `${row.machineKey}호기` : `${row.machineKey}号机`}</small>
+                            </div>
+                          </td>
+                          <td>{row.partNo}</td>
+                          <td>{row.modelName || "-"}</td>
+                          <td>{formatNumber(row.plannedQty)}</td>
+                          <td>
+                            <div className="mes-injection-receipt-progress">
+                              <span>{formatNumber(row.estimatedQty)}</span>
+                              <div>
+                                <i style={{ width: `${progressRate}%` }} />
+                              </div>
+                              <small>{copy.outputQty} {formatNumber(row.allocatedShots)}</small>
+                            </div>
+                          </td>
+                          <td>{formatNumber(row.receiptQty)}</td>
+                          <td className={row.gapQty >= 0 ? "is-up" : "is-down"}>{formatSignedQty(row.gapQty)}</td>
+                          <td>
+                            <span className={`mes-injection-receipt-status mes-injection-receipt-status--${row.status}`}>
+                              {injectionReceiptStatusLabel(row.status, copy)}
+                            </span>
+                            <small>{copy.machiningReports} {formatNumber(row.reportCount)}</small>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="notice notice--neutral">{copy.injectionReceiptEmpty}</div>
+            )}
           </section>
 
           <section className="panel mes-monitor-panel">
