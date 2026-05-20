@@ -43,6 +43,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import make_password
 from django.db import transaction, OperationalError, ProgrammingError
 from django.utils import timezone
+from django.db.models.functions import TruncDate
 from django.core.cache import cache
 import secrets, string
 from datetime import datetime, time, timedelta
@@ -1710,6 +1711,43 @@ class InjectionMonitoringRecordListView(generics.ListAPIView):
             queryset = queryset.filter(timestamp__date__lte=end_date)
 
         return queryset.order_by('timestamp', 'device_code')
+
+
+class InjectionMonitoringDatesView(generics.GenericAPIView):
+    """저장된 사출 MES 모니터링 데이터의 생산 기준일 목록."""
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            limit = int(request.query_params.get('limit', '120'))
+            limit = max(1, min(limit, 365))
+        except (TypeError, ValueError):
+            limit = 120
+
+        cst = pytz.timezone('Asia/Shanghai')
+
+        bounds = InjectionMonitoringRecord.objects.aggregate(
+            earliest=django_models.Min('timestamp'),
+            latest=django_models.Max('timestamp'),
+        )
+        business_timestamp = django_models.ExpressionWrapper(
+            django_models.F('timestamp') - timedelta(hours=8),
+            output_field=django_models.DateTimeField(),
+        )
+        date_rows = (
+            InjectionMonitoringRecord.objects
+            .annotate(business_date=TruncDate(business_timestamp, tzinfo=cst))
+            .values_list('business_date', flat=True)
+            .distinct()
+            .order_by('-business_date')[:limit]
+        )
+        dates = [value.isoformat() for value in date_rows if value]
+
+        return Response({
+            'dates': dates,
+            'latest_timestamp': bounds['latest'].isoformat() if bounds['latest'] else None,
+            'earliest_timestamp': bounds['earliest'].isoformat() if bounds['earliest'] else None,
+        })
 
 class MesRawDebugView(generics.GenericAPIView):
     """MES 원시 응답 점검용 디버그 API"""

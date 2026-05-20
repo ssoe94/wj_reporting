@@ -139,6 +139,119 @@ function findRecordIndex(records: ProductionPlanRecord[], target: ProductionPlan
   return records.findIndex((record, index) => index >= minimumIndex && getRecordIdentity(record) === targetIdentity);
 }
 
+function normalizeComparableText(value: string | null | undefined) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeComparableCode(value: string | null | undefined) {
+  return String(value ?? "").replace(/[^0-9A-Z]/gi, "").toUpperCase();
+}
+
+function getRecordPlannedQty(record: ProductionPlanRecord | undefined) {
+  return Math.max(0, Number(record?.planned_quantity ?? 0) || 0);
+}
+
+function getRecordCavity(record: ProductionPlanRecord | undefined) {
+  return Math.max(1, Number(record?.cavity ?? 1) || 1);
+}
+
+function getRecordRequiredShots(record: ProductionPlanRecord | undefined) {
+  const plannedQty = getRecordPlannedQty(record);
+  const cavity = getRecordCavity(record);
+  return plannedQty > 0 ? Math.ceil(plannedQty / cavity) : 0;
+}
+
+function hasSameFamily(left: ProductionPlanRecord | undefined, right: ProductionPlanRecord | undefined) {
+  const leftCode = normalizeComparableText(left?.product_family_code);
+  const rightCode = normalizeComparableText(right?.product_family_code);
+  if (leftCode && rightCode && leftCode !== rightCode) return false;
+
+  const leftName = normalizeComparableText(left?.product_family_name);
+  const rightName = normalizeComparableText(right?.product_family_name);
+  if (leftName && rightName && leftName !== rightName) return false;
+
+  return true;
+}
+
+function hasSamePartPrefixExceptSuffix(left: ProductionPlanRecord | undefined, right: ProductionPlanRecord | undefined) {
+  const leftPartNo = normalizeComparableCode(left?.part_no);
+  const rightPartNo = normalizeComparableCode(right?.part_no);
+  if (!leftPartNo || !rightPartNo) return false;
+  if (leftPartNo === rightPartNo) return true;
+  if (leftPartNo.length !== 11 || rightPartNo.length !== 11) return false;
+  return leftPartNo.slice(0, -2) === rightPartNo.slice(0, -2);
+}
+
+function canRolloverWithoutTransition(left: ProductionPlanRecord | undefined, right: ProductionPlanRecord | undefined) {
+  if (!left || !right) return false;
+  if (getRecordCavity(left) !== getRecordCavity(right)) return false;
+
+  const leftModel = normalizeComparableText(left.model_name || left.part_spec);
+  const rightModel = normalizeComparableText(right.model_name || right.part_spec);
+  if (!leftModel || !rightModel || leftModel !== rightModel) return false;
+  if (!hasSameFamily(left, right)) return false;
+
+  return hasSamePartPrefixExceptSuffix(left, right);
+}
+
+function allocateRemainingQuantitiesByRollover(
+  records: ProductionPlanRecord[],
+  allocations: number[],
+  startIndex: number,
+  totalQty: number,
+) {
+  let remainingQty = Math.max(0, totalQty);
+  let cursor = Math.min(Math.max(0, startIndex), records.length - 1);
+
+  while (remainingQty > 0 && cursor < records.length) {
+    const canRollover = cursor < records.length - 1 && canRolloverWithoutTransition(records[cursor], records[cursor + 1]);
+    if (!canRollover) {
+      allocations[cursor] += remainingQty;
+      return;
+    }
+
+    const capacity = Math.max(0, getRecordPlannedQty(records[cursor]) - (allocations[cursor] ?? 0));
+    const allocatedQty = Math.min(remainingQty, capacity);
+    allocations[cursor] += allocatedQty;
+    remainingQty = Math.max(0, remainingQty - allocatedQty);
+    if (remainingQty <= 0) return;
+    cursor += 1;
+  }
+
+  if (remainingQty > 0 && records.length > 0) {
+    allocations[records.length - 1] += remainingQty;
+  }
+}
+
+function allocateRemainingShotsByRollover(
+  records: ProductionPlanRecord[],
+  allocations: number[],
+  startIndex: number,
+  totalShots: number,
+) {
+  let remainingShots = Math.max(0, totalShots);
+  let cursor = Math.min(Math.max(0, startIndex), records.length - 1);
+
+  while (remainingShots > 0 && cursor < records.length) {
+    const canRollover = cursor < records.length - 1 && canRolloverWithoutTransition(records[cursor], records[cursor + 1]);
+    if (!canRollover) {
+      allocations[cursor] += remainingShots;
+      return;
+    }
+
+    const capacity = Math.max(0, getRecordRequiredShots(records[cursor]) - (allocations[cursor] ?? 0));
+    const allocatedShots = Math.min(remainingShots, capacity);
+    allocations[cursor] += allocatedShots;
+    remainingShots = Math.max(0, remainingShots - allocatedShots);
+    if (remainingShots <= 0) return;
+    cursor += 1;
+  }
+
+  if (remainingShots > 0 && records.length > 0) {
+    allocations[records.length - 1] += remainingShots;
+  }
+}
+
 function getEquipmentTransitionEvents(transitionAnalysis: InjectionTransitionAnalysis | undefined, machineKey: string) {
   return (transitionAnalysis?.events ?? [])
     .filter((event) => (
@@ -176,7 +289,7 @@ function allocateQuantitiesByTransitionSignals(
   });
 
   if (remainingQty > 0) {
-    allocations[Math.min(activeIndex, records.length - 1)] += remainingQty;
+    allocateRemainingQuantitiesByRollover(records, allocations, activeIndex, remainingQty);
   }
 
   return allocations;
@@ -209,7 +322,7 @@ function allocateShotsByTransitionSignals(
   });
 
   if (remainingShots > 0) {
-    allocations[Math.min(activeIndex, records.length - 1)] += remainingShots;
+    allocateRemainingShotsByRollover(records, allocations, activeIndex, remainingShots);
   }
 
   return allocations;

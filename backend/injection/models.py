@@ -483,6 +483,9 @@ class InjectionMonitoringRecord(models.Model):
         verbose_name = '사출기 모니터링 기록'
         verbose_name_plural = '사출기 모니터링 기록 목록'
         unique_together = ('device_code', 'timestamp')
+        indexes = [
+            models.Index(fields=['machine_name', 'timestamp'], name='inj_mon_machine_ts_idx'),
+        ]
         ordering = ['-timestamp', 'machine_name']
 
     def __str__(self):

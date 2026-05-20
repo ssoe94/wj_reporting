@@ -154,6 +154,25 @@ export async function installOperationalApiMocks(page: Page) {
     planned_quantity: 400,
     sequence: 2,
   };
+  const rolloverPlanRecord = {
+    ...planRecord,
+    id: 9,
+    machine_name: '1050T-16',
+    lot_no: 'R01',
+    model_name: '27G523',
+    part_no: 'ACQ30854203',
+    planned_quantity: 37,
+    cavity: 1,
+    sequence: 1,
+  };
+  const rolloverSecondPlanRecord = {
+    ...rolloverPlanRecord,
+    id: 10,
+    lot_no: 'R02',
+    part_no: 'ACQ30854211',
+    planned_quantity: 1475,
+    sequence: 2,
+  };
   const injectionPlanRecords = [
     planRecord,
     secondPlanRecord,
@@ -162,6 +181,8 @@ export async function installOperationalApiMocks(page: Page) {
     coreSecondPlanRecord,
     delayedGeneralStopPlanRecord,
     delayedGeneralStopSecondPlanRecord,
+    rolloverPlanRecord,
+    rolloverSecondPlanRecord,
   ];
   const tonnageMap: Record<number, string> = {
     1: '850T',
@@ -380,6 +401,7 @@ export async function installOperationalApiMocks(page: Page) {
               { machine_name: '1300T-3', plan_qty: 500, plan_date: requestedDate },
               { machine_name: '1400T-4', plan_qty: 440, plan_date: requestedDate },
               { machine_name: '1400T-5', plan_qty: 440, plan_date: requestedDate },
+              { machine_name: '1050T-16', plan_qty: 1512, plan_date: requestedDate },
             ],
           model_summary: isFutureDate ? [
             { model_name: 'MODEL-FUTURE', plan_qty: 80, plan_date: requestedDate },
@@ -390,8 +412,9 @@ export async function installOperationalApiMocks(page: Page) {
             { model_name: 'MODEL-CORE', plan_qty: 440, plan_date: date },
             { model_name: 'MODEL-GENERAL-A', plan_qty: 40, plan_date: date },
             { model_name: 'MODEL-GENERAL-B', plan_qty: 400, plan_date: date },
+            { model_name: '27G523', plan_qty: 1512, plan_date: date },
           ],
-          daily_totals: [{ date: requestedDate, plan_qty: isFutureDate ? 80 : 1580 }],
+          daily_totals: [{ date: requestedDate, plan_qty: isFutureDate ? 80 : 3092 }],
         },
         machining: {
           records: [],
@@ -406,19 +429,34 @@ export async function installOperationalApiMocks(page: Page) {
   await page.route('**/api/production/status/**', async (route) => {
     await route.fulfill({
       json: {
-        injection: [{
-          machine_name: '850T-1',
-          total_planned: 200,
-          total_actual: 180,
-          progress: 90,
-          parts: [{
-            part_no: 'PART-A',
-            model_name: 'MODEL-A',
-            planned_quantity: 100,
-            actual_quantity: 180,
-            progress: 180,
-          }],
-        }],
+        injection: [
+          {
+            machine_name: '850T-1',
+            total_planned: 200,
+            total_actual: 180,
+            progress: 90,
+            parts: [{
+              part_no: 'PART-A',
+              model_name: 'MODEL-A',
+              planned_quantity: 100,
+              actual_quantity: 180,
+              progress: 180,
+            }],
+          },
+          {
+            machine_name: '1050T-16',
+            total_planned: 1512,
+            total_actual: 1452,
+            progress: 96,
+            parts: [{
+              part_no: 'ACQ30854203',
+              model_name: '27G523',
+              planned_quantity: 37,
+              actual_quantity: 1452,
+              progress: 3924,
+            }],
+          },
+        ],
         machining: [],
       },
     });
@@ -467,9 +505,9 @@ export async function installOperationalApiMocks(page: Page) {
               mes_material_names: ['PART-X/A'],
             },
             {
-              equipment_key: '1',
-              equipment_name: '850T-1',
-              equipment_label: '1호기 850T',
+              equipment_key: '2',
+              equipment_name: '850T-2',
+              equipment_label: '2호기 850T',
               part_no: 'SEMI-PART-B',
               model_name: 'MODEL-B',
               planned_qty: 0,
@@ -482,6 +520,40 @@ export async function installOperationalApiMocks(page: Page) {
               process_code: 'ZS',
               plan_row_count: 0,
               mes_material_names: ['MODEL-B'],
+            },
+            {
+              equipment_key: '16',
+              equipment_name: '1050T-16',
+              equipment_label: '16호기 1050T',
+              part_no: 'ACQ30854203',
+              model_name: '27G523',
+              planned_qty: 37,
+              mes_qty: 37,
+              gap_qty: 0,
+              achievement_rate: 100,
+              mes_report_count: 1,
+              latest_report_time: '2026-05-18T10:36:00+08:00',
+              compare_status: 'matched',
+              process_code: 'ZS',
+              plan_row_count: 1,
+              mes_material_names: ['27G523'],
+            },
+            {
+              equipment_key: '16',
+              equipment_name: '1050T-16',
+              equipment_label: '16호기 1050T',
+              part_no: 'ACQ30854211',
+              model_name: '27G523',
+              planned_qty: 1475,
+              mes_qty: 1415,
+              gap_qty: -60,
+              achievement_rate: 95.9,
+              mes_report_count: 1,
+              latest_report_time: '2026-05-18T10:40:00+08:00',
+              compare_status: 'matched',
+              process_code: 'ZS',
+              plan_row_count: 1,
+              mes_material_names: ['27G523'],
             },
           ],
         },
@@ -717,6 +789,16 @@ export async function installOperationalApiMocks(page: Page) {
     });
   });
 
+  await page.route('**/api/injection/monitoring-dates/**', async (route) => {
+    await route.fulfill({
+      json: {
+        dates: [date],
+        latest_timestamp: '2026-05-18T10:00:00+08:00',
+        earliest_timestamp: '2026-05-18T08:00:00+08:00',
+      },
+    });
+  });
+
   await page.route('**/api/injection/production-matrix/**', async (route) => {
     await route.fulfill({
       json: {
@@ -738,15 +820,15 @@ export async function installOperationalApiMocks(page: Page) {
   await page.route('**/api/production/ai/briefing/**', async (route) => {
     await route.fulfill({
       json: {
-        answer: '기준일 2026-05-18 사출 완료율은 90%입니다.',
+        answer: '기준일 2026-05-18 사출 완료율은 95%입니다.',
         severity: 'normal',
         facts: {
           injection: {
-            actual_qty: 180,
-            planned_qty: 200,
-            progress_rate: 90,
+            actual_qty: 1632,
+            planned_qty: 1712,
+            progress_rate: 95,
             time_progress_rate: 10,
-            gap_qty: -20,
+            gap_qty: -80,
             status: 'ahead',
             active_equipment_count: 1,
             running_equipment_count: 1,

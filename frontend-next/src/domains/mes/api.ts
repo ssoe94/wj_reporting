@@ -40,6 +40,12 @@ export type SnapshotUpdateStatus = {
   error?: string;
 };
 
+export type InjectionMonitoringDatesResponse = {
+  dates: string[];
+  latest_timestamp: string | null;
+  earliest_timestamp: string | null;
+};
+
 const MES_API_BASE_URL =
   import.meta.env.VITE_MES_API_BASE_URL ||
   (import.meta.env.DEV ? "https://wj-reporting.onrender.com/api" : "");
@@ -88,6 +94,14 @@ export async function getInjectionProductionMatrix() {
 
 export async function getInjectionProductionMatrixForDate(date: string) {
   return fetchInjectionProductionMatrix(date);
+}
+
+export async function getInjectionMonitoringDates() {
+  const response = await http.get<InjectionMonitoringDatesResponse>(
+    mesEndpoint("/injection/monitoring-dates/"),
+    { skipAuth: true },
+  );
+  return response.data;
 }
 
 export async function getInjectionUtilizationMatrix(columns = 336) {

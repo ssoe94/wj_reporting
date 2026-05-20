@@ -7,7 +7,7 @@ import {
 } from '../helpers/operational';
 
 test.describe('MES monitoring operational scenario', () => {
-  test('renders injection machine rail, utilization modal, refresh status, and machining rows', async ({ page }) => {
+  test('renders historical injection date, machine rail, utilization modal, and machining rows', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);
     await installDevSession(page, 'ko');
@@ -16,6 +16,7 @@ test.describe('MES monitoring operational scenario', () => {
 
     await expect(page.getByRole('heading', { name: 'MES 데이터 모니터링' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'MES 데이터 모니터링' })).toBeVisible();
+    await expect(page.getByLabel('사출 기준일')).toHaveValue('2026-05-18');
     await expect(page.getByRole('heading', { name: '전체 사출기 총합 생산현황' })).toBeVisible();
     await expect(page.getByText('설비별 생산 분포')).toBeVisible();
     await expect(page.getByText('생산구간 UPH')).toBeVisible();
@@ -36,17 +37,25 @@ test.describe('MES monitoring operational scenario', () => {
     await expect(transitionPanel).not.toContainText('1300T-3');
     await expect(transitionPanel).not.toContainText('1400T-5');
     await expect(transitionPanel).not.toContainText('Cavity');
-    await expect(page.getByRole('heading', { name: '注塑 ZS 입고 / 형합수 비교' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'MES 입고 / 형합수 비교' })).toBeVisible();
     const zsReceiptTable = page.locator('.mes-injection-receipt-table');
     await expect(zsReceiptTable.getByText('PART-A', { exact: true })).toBeVisible();
     await expect(zsReceiptTable.getByText('PART-B', { exact: true })).toBeVisible();
-    await expect(zsReceiptTable.locator('tbody tr')).toHaveCount(2);
+    await expect(zsReceiptTable.locator('tbody tr')).toHaveCount(4);
     await expect(zsReceiptTable.getByText('SEMI-PART-A')).toBeVisible();
-    await expect(zsReceiptTable.getByText('수량 일치')).toBeVisible();
-    await expect(zsReceiptTable.getByText('ZS 입고 부족')).toHaveCount(1);
-    await expect(zsReceiptTable.getByText('매칭 기준 모델/품번 후보')).toHaveCount(2);
+    await expect(zsReceiptTable.getByText('수량 일치').first()).toBeVisible();
+    await expect(zsReceiptTable.getByText('MES 입고 부족')).toHaveCount(1);
+    await expect(zsReceiptTable.getByText('매칭 기준 모델/품번 후보')).toHaveCount(1);
+    await expect(zsReceiptTable.getByText('매칭 기준 설비 보정')).toHaveCount(1);
+    await expect(zsReceiptTable.getByText('MES 설비 850T-2')).toBeVisible();
+    const firstRolloverRow = zsReceiptTable.locator('tbody tr').filter({ hasText: 'ACQ30854203' });
+    await expect(firstRolloverRow).toContainText('37');
+    await expect(firstRolloverRow).toContainText('형합수 37');
+    const secondRolloverRow = zsReceiptTable.locator('tbody tr').filter({ hasText: 'ACQ30854211' });
+    await expect(secondRolloverRow).toContainText('1,475');
+    await expect(secondRolloverRow).toContainText('형합수 1,415');
     await expect(page.getByText('형합수 추정').first()).toBeVisible();
-    await expect(page.getByText('ZS 입고').first()).toBeVisible();
+    await expect(page.getByText('MES 입고').first()).toBeVisible();
 
     await page.getByRole('button', { name: '가동률 상세 분석' }).click();
     const utilizationDialog = page.getByRole('dialog', { name: '가동률 상세 분석' });
@@ -54,12 +63,7 @@ test.describe('MES monitoring operational scenario', () => {
     await expect(utilizationDialog.getByText('가동률').first()).toBeVisible();
     await page.getByRole('button', { name: '닫기' }).click();
 
-    const refreshRequest = page.waitForRequest((request) => (
-      request.method() === 'POST'
-      && request.url().includes('/api/injection/update-recent-snapshots/')
-    ));
-    await page.getByRole('button', { name: '최근 24시간 보강 수집' }).click();
-    await refreshRequest;
+    await expect(page.getByText('저장된 스냅샷 조회 중').first()).toBeVisible();
 
     await page.locator('select').selectOption('machining');
     await expect(page.getByRole('heading', { name: '가공 생산보고 모니터링' })).toBeVisible();

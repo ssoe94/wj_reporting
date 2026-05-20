@@ -6,7 +6,7 @@ from .views import (
     UserRegistrationRequestViewSet, UserProfileViewSet, UserMeView,
     ChangePasswordView, ResetPasswordView, CycleTimeSetupViewSet,
     CycleTimeTestRecordViewSet, InjectionMonitoringRecordListView,
-    ResourceMonitorPageListView, ProductionMatrixView, MachineListView,
+    InjectionMonitoringDatesView, ResourceMonitorPageListView, ProductionMatrixView, MachineListView,
     MesRawDebugView, SingleDeviceMonitorView, UpdateRecentSnapshotsView,
     UpdateRecentSnapshotsStatusView,
     ProductionPlanUploadView
@@ -27,6 +27,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('inventory/', InventoryView.as_view(), name='inventory'),
     path('monitoring-data/', InjectionMonitoringRecordListView.as_view(), name='injection-monitoring-data'),
+    path('monitoring-dates/', InjectionMonitoringDatesView.as_view(), name='injection-monitoring-dates'),
     path('update-recent-snapshots/', UpdateRecentSnapshotsView.as_view(), name='update-recent-snapshots'),
     path('update-recent-snapshots/status/', UpdateRecentSnapshotsStatusView.as_view(), name='update-recent-snapshots-status'),
     # BLACKLAKE 스펙을 따르는 새로운 API 엔드포인트

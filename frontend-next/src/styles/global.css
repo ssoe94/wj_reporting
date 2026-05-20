@@ -5397,6 +5397,16 @@ select {
   font: inherit;
 }
 
+.mes-date-field--stacked {
+  display: grid;
+  align-items: stretch;
+  gap: 5px;
+}
+
+.mes-date-field--stacked input {
+  width: 100%;
+}
+
 .mes-machining-table-wrap {
   overflow-x: auto;
   border: 1px solid rgba(24, 141, 194, 0.12);
