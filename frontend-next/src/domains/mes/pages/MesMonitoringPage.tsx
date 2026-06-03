@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type InjectionProductionMatrix,
-  type MesDataSource,
   getInjectionMonitoringDates,
   getInjectionSnapshotUpdateStatus,
   getInjectionProductionMatrix,
@@ -119,20 +118,25 @@ type InjectionReceiptComparison = {
   };
 };
 
+type MesInfoView = "production" | "inventory";
+
 const pageCopy = {
   ko: {
     eyebrow: "MES MONITORING",
     title: "MES 데이터 모니터링",
     description: "MES에서 수집한 생산·설비 데이터를 저장하고 모니터링합니다.",
     availableData: "조회 가능 데이터",
+    sourceDescriptionProduction: "사출기 모니터링과 가공 생산보고를 같은 기준일로 확인합니다.",
     sourceDescriptionInjection: "사출기의 생산량, 형합수, 오일온도, 전력 사용량을 확인할 수 있습니다.",
     sourceDescriptionMachining: "가공 생산 완료 보고를 연결해 계획 대비 진행률과 미보고 항목을 확인할 예정입니다.",
     sourceDescriptionInventory: "재고 API를 연결해 품번별 현재고, 부족 수량, 입출고 변동을 확인할 예정입니다.",
     selectHint: "현재 선택",
-    injectionDate: "사출 기준일",
+    injectionDate: "기준일",
     savedDateHint: "저장된 MES 스냅샷 기준일을 선택해 과거 데이터를 조회합니다.",
     latestLiveMode: "현재 기준일은 자동 갱신됩니다.",
     historicalSnapshotMode: "저장된 스냅샷 조회 중",
+    productionInfo: "생산 정보",
+    inventoryInfo: "재고 정보",
     injection: "사출기 정보",
     machining: "가공 생산보고 정보",
     inventory: "재고 정보",
@@ -278,14 +282,17 @@ const pageCopy = {
     title: "MES 数据监控",
     description: "保存并监控 MES 采集的生产与设备数据。",
     availableData: "可查询数据",
+    sourceDescriptionProduction: "按同一基准日查看注塑监控与加工生产报告。",
     sourceDescriptionInjection: "可查看注塑机合模数、油温和电力使用量。",
     sourceDescriptionMachining: "后续连接加工生产完成报告，用于查看计划对比进度和未报告项目。",
     sourceDescriptionInventory: "后续连接库存 API，用于查看品号当前库存、缺口数量和出入库变动。",
     selectHint: "当前选择",
-    injectionDate: "注塑基准日",
+    injectionDate: "基准日",
     savedDateHint: "选择已保存的 MES 快照基准日查看历史数据。",
     latestLiveMode: "当前基准日会自动刷新。",
     historicalSnapshotMode: "正在查看已保存快照",
+    productionInfo: "生产信息",
+    inventoryInfo: "库存信息",
     injection: "注塑机信息",
     machining: "加工生产报告",
     inventory: "库存信息",
@@ -428,11 +435,10 @@ const pageCopy = {
   },
 } satisfies Record<AppLanguage, Record<string, string>>;
 
-const sourceOptions = [
-  { value: "injection", labelKey: "injection" },
-  { value: "machining", labelKey: "machining" },
-  { value: "inventory", labelKey: "inventory" },
-] satisfies Array<{ value: MesDataSource; labelKey: "injection" | "machining" | "inventory" }>;
+const infoOptions = [
+  { value: "production", labelKey: "productionInfo" },
+  { value: "inventory", labelKey: "inventoryInfo" },
+] satisfies Array<{ value: MesInfoView; labelKey: "productionInfo" | "inventoryInfo" }>;
 
 function numberAt(values: number[] | undefined, index: number) {
   if (!values || index < 0) return 0;
@@ -443,6 +449,12 @@ function nullableNumberAt(values: number[] | undefined, index: number) {
   if (!values || index < 0 || values[index] === undefined || values[index] === null) return null;
   const value = Number(values[index]);
   return Number.isFinite(value) && value !== 0 ? value : null;
+}
+
+function finiteNumberAt(values: number[] | undefined, index: number) {
+  if (!values || index < 0 || values[index] === undefined || values[index] === null) return null;
+  const value = Number(values[index]);
+  return Number.isFinite(value) ? value : null;
 }
 
 function formatNumber(value: number) {
@@ -1002,6 +1014,90 @@ function getShiftStart(latestTime: Date | null) {
   return shiftStart;
 }
 
+function findLastFiniteValueAtOrBefore(
+  data: InjectionProductionMatrix,
+  values: number[] | undefined,
+  targetTime: Date,
+) {
+  let matchedValue: number | null = null;
+  for (let index = 0; index < data.time_slots.length; index += 1) {
+    const slotTime = new Date(data.time_slots[index].time);
+    if (slotTime > targetTime) break;
+    const value = finiteNumberAt(values, index);
+    if (value !== null) {
+      matchedValue = value;
+    }
+  }
+  return matchedValue;
+}
+
+function buildCumulativePowerUsage(
+  data: InjectionProductionMatrix,
+  powerTotalRow: number[] | undefined,
+  startTime: Date,
+  endTime: Date,
+) {
+  if (!powerTotalRow?.length) return null;
+
+  const startValue = findLastFiniteValueAtOrBefore(data, powerTotalRow, startTime);
+  const endValue = findLastFiniteValueAtOrBefore(data, powerTotalRow, endTime);
+  if (startValue !== null && endValue !== null && endValue >= startValue) {
+    return endValue - startValue;
+  }
+
+  let previousValue = startValue;
+  let usage = 0;
+  let hasUsage = false;
+  data.time_slots.forEach((slot, index) => {
+    const slotTime = new Date(slot.time);
+    if (slotTime <= startTime || slotTime > endTime) return;
+
+    const currentValue = finiteNumberAt(powerTotalRow, index);
+    if (currentValue === null) return;
+
+    if (previousValue !== null && currentValue >= previousValue) {
+      usage += currentValue - previousValue;
+      hasUsage = true;
+    }
+    previousValue = currentValue;
+  });
+
+  return hasUsage ? usage : null;
+}
+
+function buildFallbackPowerUsage(
+  data: InjectionProductionMatrix,
+  powerUsageRow: number[] | undefined,
+  startTime: Date,
+  endTime: Date,
+) {
+  let usage = 0;
+  let hasUsage = false;
+  data.time_slots.forEach((slot, index) => {
+    const slotTime = new Date(slot.time);
+    if (slotTime <= startTime || slotTime > endTime) return;
+
+    const powerValue = nullableNumberAt(powerUsageRow, index);
+    if (powerValue !== null) {
+      usage += powerValue;
+      hasUsage = true;
+    }
+  });
+
+  return hasUsage ? usage : null;
+}
+
+function buildPowerUsage(
+  data: InjectionProductionMatrix,
+  powerTotalRow: number[] | undefined,
+  powerUsageRow: number[] | undefined,
+  startTime: Date,
+  endTime: Date,
+) {
+  return buildCumulativePowerUsage(data, powerTotalRow, startTime, endTime)
+    ?? buildFallbackPowerUsage(data, powerUsageRow, startTime, endTime);
+}
+
 function buildPeriodSummary(
   data: InjectionProductionMatrix | undefined,
   machineNumber: number,
@@ -1014,24 +1110,17 @@ function buildPeriodSummary(
 
   const productionRow = getMachineMatrixValues(data, data.actual_production_matrix, machineNumber);
   const powerUsageRow = getMachineMatrixValues(data, data.power_usage_matrix, machineNumber);
+  const powerTotalRow = getMachineMatrixValues(data, data.power_kwh_matrix, machineNumber);
   const oilTemperatureRow = getMachineMatrixValues(data, data.oil_temperature_matrix, machineNumber);
   let output = 0;
-  let power = 0;
   let oilTotal = 0;
   let oilCount = 0;
-  let hasPower = false;
 
   data.time_slots.forEach((slot, index) => {
     const slotTime = new Date(slot.time);
     if (slotTime <= startTime || slotTime > endTime) return;
 
     output += numberAt(productionRow, index);
-
-    const powerValue = nullableNumberAt(powerUsageRow, index);
-    if (powerValue !== null) {
-      power += powerValue;
-      hasPower = true;
-    }
 
     const oilValue = nullableNumberAt(oilTemperatureRow, index);
     if (oilValue !== null) {
@@ -1042,7 +1131,7 @@ function buildPeriodSummary(
 
   return {
     output,
-    power: hasPower ? power : null,
+    power: buildPowerUsage(data, powerTotalRow, powerUsageRow, startTime, endTime),
     oilTemperature: oilCount > 0 ? oilTotal / oilCount : null,
   };
 }
@@ -1725,31 +1814,31 @@ function MesMonitoringSkeleton({ copy }: { copy: Record<string, string> }) {
 
 export function MesMonitoringPage() {
   const [language] = useStoredLanguage();
-  const [selectedSource, setSelectedSource] = useState<MesDataSource>("injection");
+  const [selectedInfoView, setSelectedInfoView] = useState<MesInfoView>("production");
   const [selectedMachineNumber, setSelectedMachineNumber] = useState(1);
   const [snapshotJobId, setSnapshotJobId] = useState<string | null>(null);
   const [isUtilizationModalOpen, setIsUtilizationModalOpen] = useState(false);
   const [injectionDate, setInjectionDate] = useState(() => getCurrentProductionDate());
   const [hasUserSelectedInjectionDate, setHasUserSelectedInjectionDate] = useState(false);
-  const [machiningDate, setMachiningDate] = useState(() => formatDateParam(startOfProductionDay(new Date())));
   const [utilizationStartDate, setUtilizationStartDate] = useState(() => formatDateParam(addDays(new Date(), -13)));
   const [utilizationEndDate, setUtilizationEndDate] = useState(() => formatDateParam(new Date()));
   const copy = pageCopy[language];
   const queryClient = useQueryClient();
   const currentProductionDate = getCurrentProductionDate();
   const isCurrentInjectionDate = injectionDate === currentProductionDate;
+  const isProductionInfoView = selectedInfoView === "production";
 
   const injectionQuery = useQuery({
     queryKey: ["mes", "injection-production-matrix", injectionDate, isCurrentInjectionDate],
     queryFn: () => (isCurrentInjectionDate ? getInjectionProductionMatrix() : getInjectionProductionMatrixForDate(injectionDate)),
-    enabled: selectedSource === "injection",
-    refetchInterval: selectedSource === "injection" && isCurrentInjectionDate ? 60_000 : false,
+    enabled: isProductionInfoView,
+    refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
   });
 
   const monitoringDatesQuery = useQuery({
     queryKey: ["mes", "injection-monitoring-dates"],
     queryFn: getInjectionMonitoringDates,
-    enabled: selectedSource === "injection",
+    enabled: isProductionInfoView,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -1777,10 +1866,10 @@ export function MesMonitoringPage() {
   });
 
   const machiningStatsQuery = useQuery({
-    queryKey: ["production-mes-report-stats", "machining", machiningDate],
-    queryFn: () => getProductionMesReportStats(machiningDate, "machining"),
-    enabled: selectedSource === "machining" && Boolean(machiningDate),
-    refetchInterval: selectedSource === "machining" ? 60_000 : false,
+    queryKey: ["production-mes-report-stats", "machining", injectionDate],
+    queryFn: () => getProductionMesReportStats(injectionDate, "machining"),
+    enabled: isProductionInfoView && Boolean(injectionDate),
+    refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
   });
 
   const utilizationColumns = useMemo(
@@ -1791,7 +1880,7 @@ export function MesMonitoringPage() {
   const utilizationQuery = useQuery({
     queryKey: ["mes", "injection-utilization-matrix", utilizationColumns],
     queryFn: () => getInjectionUtilizationMatrix(utilizationColumns),
-    enabled: selectedSource === "injection" && isUtilizationModalOpen,
+    enabled: isProductionInfoView && isUtilizationModalOpen,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -1826,38 +1915,32 @@ export function MesMonitoringPage() {
   const injectionReportStatsQuery = useQuery({
     queryKey: ["production-mes-report-stats", "injection", planDate],
     queryFn: () => getProductionMesReportStats(planDate, "injection"),
-    enabled: selectedSource === "injection" && Boolean(planDate),
-    refetchInterval: selectedSource === "injection" && isCurrentInjectionDate ? 60_000 : false,
+    enabled: isProductionInfoView && Boolean(planDate),
+    refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
   });
   const planSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", planDate],
     queryFn: () => getProductionPlanSummary(planDate),
-    enabled: selectedSource === "injection" && Boolean(planDate),
+    enabled: isProductionInfoView && Boolean(planDate),
   });
   const nextPlanSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", nextPlanDate],
     queryFn: () => getProductionPlanSummary(nextPlanDate),
-    enabled: selectedSource === "injection" && Boolean(nextPlanDate),
+    enabled: isProductionInfoView && Boolean(nextPlanDate),
   });
   const secondNextPlanSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", secondNextPlanDate],
     queryFn: () => getProductionPlanSummary(secondNextPlanDate),
-    enabled: selectedSource === "injection" && Boolean(secondNextPlanDate),
+    enabled: isProductionInfoView && Boolean(secondNextPlanDate),
   });
   const productionStatusQuery = useQuery({
     queryKey: ["production-status", planDate],
     queryFn: () => getProductionStatus(planDate),
-    enabled: selectedSource === "injection" && Boolean(planDate),
-    refetchInterval: selectedSource === "injection" && isCurrentInjectionDate ? 60_000 : false,
+    enabled: isProductionInfoView && Boolean(planDate),
+    refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
   });
   const selectedMachine = machineRows.find((row) => row.machineNumber === selectedMachineNumber) ?? machineRows[0];
   const selectedMachineKey = selectedMachine?.machineNumber ?? selectedMachineNumber;
-  const selectedSourceDescription =
-    selectedSource === "injection"
-      ? copy.sourceDescriptionInjection
-      : selectedSource === "machining"
-        ? copy.sourceDescriptionMachining
-        : copy.sourceDescriptionInventory;
   const shiftSummary = useMemo(
     () => buildPeriodSummary(injectionQuery.data, selectedMachineKey, dayStart, referenceEndTime),
     [dayStart, injectionQuery.data, referenceEndTime, selectedMachineKey],
@@ -2003,7 +2086,7 @@ export function MesMonitoringPage() {
     todayFleetSummary.power !== null && previousDayFleetSummary.power !== null
       ? todayFleetSummary.power - previousDayFleetSummary.power
       : null;
-  const isInitialMesLoading = selectedSource === "injection" && !injectionQuery.data && injectionQuery.isFetching;
+  const isInitialMesLoading = isProductionInfoView && !injectionQuery.data && injectionQuery.isFetching;
   const isBackfillRunning = updateMutation.isPending || updateStatusQuery.data?.status === "running";
   const backfillPercent = updateStatusQuery.data?.percent ?? 0;
   const isUtilizationAnalysisLoading = isUtilizationModalOpen && utilizationQuery.isFetching && !utilizationQuery.data;
@@ -2051,52 +2134,49 @@ export function MesMonitoringPage() {
             <p>{copy.description}</p>
           </div>
           <div className="mes-source-chips" aria-label={copy.availableData}>
-            <span>{copy.injection}</span>
-            <span>{copy.machining}</span>
-            <span>{copy.inventory}</span>
+            <span>{copy.productionInfo}</span>
+            <span>{copy.inventoryInfo}</span>
           </div>
         </div>
         <div className="mes-hero-panel__control">
-          <label className="mes-source-select">
-            <span>{copy.selectHint}</span>
-            <select
-              value={selectedSource}
-              onChange={(event) => setSelectedSource(event.target.value as MesDataSource)}
-            >
-              {sourceOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {copy[option.labelKey]}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selectedSource === "injection" ? (
-            <label className="mes-date-field mes-date-field--stacked">
-              <span>{copy.injectionDate}</span>
-              <input
-                type="date"
-                value={injectionDate}
-                list="mes-monitoring-dates"
-                onChange={(event) => {
-                  setHasUserSelectedInjectionDate(true);
-                  setInjectionDate(event.target.value || getCurrentProductionDate());
-                }}
-              />
-              <datalist id="mes-monitoring-dates">
-                {monitoringDates.map((date) => (
-                  <option key={date} value={date} />
+          <div className={`mes-hero-panel__field-row${isProductionInfoView ? "" : " mes-hero-panel__field-row--single"}`}>
+            <label className="mes-source-select">
+              <span>{copy.selectHint}</span>
+              <select
+                value={selectedInfoView}
+                onChange={(event) => setSelectedInfoView(event.target.value as MesInfoView)}
+              >
+                {infoOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {copy[option.labelKey]}
+                  </option>
                 ))}
-              </datalist>
+              </select>
             </label>
-          ) : null}
-          <p>{selectedSourceDescription}</p>
-          {selectedSource === "injection" ? (
-            <p>{isCurrentInjectionDate ? copy.latestLiveMode : copy.historicalSnapshotMode}</p>
-          ) : null}
+            {isProductionInfoView ? (
+              <label className="mes-date-field mes-date-field--stacked">
+                <span>{copy.injectionDate}</span>
+                <input
+                  type="date"
+                  value={injectionDate}
+                  list="mes-monitoring-dates"
+                  onChange={(event) => {
+                    setHasUserSelectedInjectionDate(true);
+                    setInjectionDate(event.target.value || getCurrentProductionDate());
+                  }}
+                />
+                <datalist id="mes-monitoring-dates">
+                  {monitoringDates.map((date) => (
+                    <option key={date} value={date} />
+                  ))}
+                </datalist>
+              </label>
+            ) : null}
+          </div>
         </div>
       </section>
 
-      {selectedSource === "injection" ? (
+      {isProductionInfoView ? (
         isInitialMesLoading ? (
           <MesMonitoringSkeleton copy={copy} />
         ) : (
@@ -2487,10 +2567,7 @@ export function MesMonitoringPage() {
             copy={copy}
             language={language}
           />
-        </>
-        )
-      ) : selectedSource === "machining" ? (
-        <>
+
           <div className="mes-stats-grid">
             <SummaryMetricCard
               title={copy.machiningTotalPlan}
@@ -2532,14 +2609,6 @@ export function MesMonitoringPage() {
                 <p className="mes-machining-panel__hint">{copy.machiningTableHint}</p>
               </div>
               <div className="mes-monitor-panel__actions mes-machining-toolbar">
-                <label className="mes-date-field">
-                  <span>{copy.machiningDate}</span>
-                  <input
-                    type="date"
-                    value={machiningDate}
-                    onChange={(event) => setMachiningDate(event.target.value)}
-                  />
-                </label>
                 <span>
                   {copy.machiningLatest}:{" "}
                   {machiningLatestReportTime ? formatDateTime(machiningLatestReportTime, language) : copy.noData}
@@ -2606,6 +2675,7 @@ export function MesMonitoringPage() {
             )}
           </section>
         </>
+        )
       ) : (
         <section className="panel mes-ready-panel">
           <p className="panel-card__eyebrow">{copy.readyStatus}</p>

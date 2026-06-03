@@ -97,12 +97,32 @@ export async function installOperationalApiMocks(page: Page) {
   const futurePlanRecord = {
     ...planRecord,
     id: 3,
-    machine_name: '850T-2',
+    machine_name: '1800T-7',
     lot_no: 'F01',
     model_name: 'MODEL-FUTURE',
     part_no: 'PART-FUTURE',
     planned_quantity: 80,
     sequence: 1,
+  };
+  const sameLengthCorePlanRecord = {
+    ...planRecord,
+    id: 13,
+    machine_name: '850T-2',
+    lot_no: 'B01',
+    model_name: '32QN600',
+    part_no: 'ABJ76507604',
+    planned_quantity: 198,
+    cavity: 1,
+    sequence: 1,
+  };
+  const sameLengthCoreSecondPlanRecord = {
+    ...sameLengthCorePlanRecord,
+    id: 14,
+    lot_no: 'B02',
+    model_name: '32QN600-CORE',
+    part_no: 'ABJ76507601',
+    planned_quantity: 539,
+    sequence: 2,
   };
   const compensatedMesPlanRecord = {
     ...planRecord,
@@ -173,9 +193,30 @@ export async function installOperationalApiMocks(page: Page) {
     planned_quantity: 1475,
     sequence: 2,
   };
+  const duplicatePartPlanRecord = {
+    ...planRecord,
+    id: 11,
+    machine_name: '2500T-6',
+    lot_no: 'D01',
+    model_name: '24U411B-BA.AWFYJVN',
+    part_no: 'ACQ30776309',
+    planned_quantity: 1000,
+    cavity: 1,
+    sequence: 1,
+  };
+  const duplicatePartSecondPlanRecord = {
+    ...duplicatePartPlanRecord,
+    id: 12,
+    lot_no: 'D02',
+    model_name: '24U411B-BA.AWFYJVN',
+    planned_quantity: 920,
+    sequence: 2,
+  };
   const injectionPlanRecords = [
     planRecord,
     secondPlanRecord,
+    sameLengthCorePlanRecord,
+    sameLengthCoreSecondPlanRecord,
     compensatedMesPlanRecord,
     corePlanRecord,
     coreSecondPlanRecord,
@@ -183,6 +224,8 @@ export async function installOperationalApiMocks(page: Page) {
     delayedGeneralStopSecondPlanRecord,
     rolloverPlanRecord,
     rolloverSecondPlanRecord,
+    duplicatePartPlanRecord,
+    duplicatePartSecondPlanRecord,
   ];
   const tonnageMap: Record<number, string> = {
     1: '850T',
@@ -242,13 +285,10 @@ export async function installOperationalApiMocks(page: Page) {
     1, 3, 7, 7, 7,
   ], 7);
   const machineOneCumulative = toCumulative(machineOneActual);
-  const machineTwoActual = padSeries([
-    0, 2, 2, 2,
-    0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0,
-  ]);
+  const machineTwoActual = Array.from({ length: slotCount }, (_, index) => {
+    if (index < 79) return 6;
+    return 5;
+  });
   const machineTwoCumulative = toCumulative(machineTwoActual);
   const machineThreeActual = Array.from({ length: slotCount }, (_, index) => {
     if (index < 4) return 5;
@@ -269,6 +309,26 @@ export async function installOperationalApiMocks(page: Page) {
     return 5;
   });
   const machineFiveCumulative = toCumulative(machineFiveActual);
+  const machineSixActual = Array.from({ length: slotCount }, (_, index) => {
+    if (index < 78) return 25;
+    if (index === 78) return 24;
+    return 0;
+  });
+  const machineSixCumulative = toCumulative(machineSixActual);
+  const machineSevenActual = padSeries([
+    0, 2, 2, 2,
+    0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0,
+  ]);
+  const machineSevenCumulative = toCumulative(machineSevenActual);
+  const machineSixteenActual = Array.from({ length: slotCount }, (_, index) => {
+    if (index < 72) return 20;
+    if (index === 72) return 12;
+    return 0;
+  });
+  const machineSixteenCumulative = toCumulative(machineSixteenActual);
   const zeroSeries = Array.from({ length: timeSlots.length }, () => 0);
   const matrixKeys = machines.map((machine) => machine.machine_name);
   const cumulativeProductionMatrix = Object.fromEntries(
@@ -284,7 +344,13 @@ export async function installOperationalApiMocks(page: Page) {
               ? machineFourCumulative
               : machineName === '5호기'
                 ? machineFiveCumulative
-                : zeroSeries,
+                : machineName === '6호기'
+                  ? machineSixCumulative
+                  : machineName === '7호기'
+                    ? machineSevenCumulative
+                    : machineName === '16호기'
+                      ? machineSixteenCumulative
+                      : zeroSeries,
     ]),
   );
   const actualProductionMatrix = Object.fromEntries(
@@ -300,7 +366,13 @@ export async function installOperationalApiMocks(page: Page) {
               ? machineFourActual
               : machineName === '5호기'
                 ? machineFiveActual
-                : zeroSeries,
+                : machineName === '6호기'
+                  ? machineSixActual
+                  : machineName === '7호기'
+                    ? machineSevenActual
+                    : machineName === '16호기'
+                      ? machineSixteenActual
+                      : zeroSeries,
     ]),
   );
   const oilTemperatureMatrix = Object.fromEntries(
@@ -310,7 +382,7 @@ export async function installOperationalApiMocks(page: Page) {
     matrixKeys.map((machineName) => [machineName, machineName === '1호기' ? timeSlots.map((_, index) => index + 1) : zeroSeries]),
   );
   const powerUsageMatrix = Object.fromEntries(
-    matrixKeys.map((machineName) => [machineName, machineName === '1호기' ? timeSlots.map((_, index) => (index === 0 ? 0 : 1)) : zeroSeries]),
+    matrixKeys.map((machineName) => [machineName, machineName === '1호기' ? timeSlots.map((_, index) => index + 1) : zeroSeries]),
   );
 
   await page.route('**/api/injection/user/me/**', async (route) => {
@@ -390,17 +462,19 @@ export async function installOperationalApiMocks(page: Page) {
     const records = isFutureDate ? [futurePlanRecord] : injectionPlanRecords;
     await route.fulfill({
       json: {
-        plan_date: requestedDate,
-        latest_updated_at: '2026-05-18T08:00:00+08:00',
-        injection: {
-          records,
+          plan_date: requestedDate,
+          latest_updated_at: '2026-05-18T08:00:00+08:00',
+          injection: {
+            records,
           machine_summary: isFutureDate
-            ? [{ machine_name: '850T-2', plan_qty: 80, plan_date: requestedDate }]
+            ? [{ machine_name: '1800T-7', plan_qty: 80, plan_date: requestedDate }]
             : [
               { machine_name: '850T-1', plan_qty: 200, plan_date: requestedDate },
+              { machine_name: '850T-2', plan_qty: 737, plan_date: requestedDate },
               { machine_name: '1300T-3', plan_qty: 500, plan_date: requestedDate },
               { machine_name: '1400T-4', plan_qty: 440, plan_date: requestedDate },
               { machine_name: '1400T-5', plan_qty: 440, plan_date: requestedDate },
+              { machine_name: '2500T-6', plan_qty: 1920, plan_date: requestedDate },
               { machine_name: '1050T-16', plan_qty: 1512, plan_date: requestedDate },
             ],
           model_summary: isFutureDate ? [
@@ -408,13 +482,16 @@ export async function installOperationalApiMocks(page: Page) {
           ] : [
             { model_name: 'MODEL-A', plan_qty: 100, plan_date: date },
             { model_name: 'MODEL-B', plan_qty: 100, plan_date: date },
+            { model_name: '32QN600', plan_qty: 198, plan_date: date },
+            { model_name: '32QN600-CORE', plan_qty: 539, plan_date: date },
             { model_name: 'MODEL-MES-COMPENSATED', plan_qty: 500, plan_date: date },
             { model_name: 'MODEL-CORE', plan_qty: 440, plan_date: date },
             { model_name: 'MODEL-GENERAL-A', plan_qty: 40, plan_date: date },
             { model_name: 'MODEL-GENERAL-B', plan_qty: 400, plan_date: date },
             { model_name: '27G523', plan_qty: 1512, plan_date: date },
+            { model_name: '24U411B-BA.AWFYJVN', plan_qty: 1920, plan_date: date },
           ],
-          daily_totals: [{ date: requestedDate, plan_qty: isFutureDate ? 80 : 3092 }],
+          daily_totals: [{ date: requestedDate, plan_qty: isFutureDate ? 80 : 5749 }],
         },
         machining: {
           records: [],
@@ -444,6 +521,19 @@ export async function installOperationalApiMocks(page: Page) {
             }],
           },
           {
+            machine_name: '850T-2',
+            total_planned: 737,
+            total_actual: 479,
+            progress: 65,
+            parts: [{
+              part_no: 'ABJ76507604',
+              model_name: '32QN600',
+              planned_quantity: 737,
+              actual_quantity: 479,
+              progress: 65,
+            }],
+          },
+          {
             machine_name: '1050T-16',
             total_planned: 1512,
             total_actual: 1452,
@@ -454,6 +544,19 @@ export async function installOperationalApiMocks(page: Page) {
               planned_quantity: 37,
               actual_quantity: 1452,
               progress: 3924,
+            }],
+          },
+          {
+            machine_name: '2500T-6',
+            total_planned: 1920,
+            total_actual: 1974,
+            progress: 102.8,
+            parts: [{
+              part_no: 'ACQ30776309',
+              model_name: '24U411B-BA.AWFYJVN',
+              planned_quantity: 1920,
+              actual_quantity: 1974,
+              progress: 102.8,
             }],
           },
         ],
@@ -522,6 +625,40 @@ export async function installOperationalApiMocks(page: Page) {
               mes_material_names: ['MODEL-B'],
             },
             {
+              equipment_key: '2',
+              equipment_name: '850T-2',
+              equipment_label: '2호기 850T',
+              part_no: 'ABJ76507604',
+              model_name: '32QN600',
+              planned_qty: 198,
+              mes_qty: 198,
+              gap_qty: 0,
+              achievement_rate: 100,
+              mes_report_count: 1,
+              latest_report_time: '2026-05-18T10:32:00+08:00',
+              compare_status: 'matched',
+              process_code: 'ZS',
+              plan_row_count: 1,
+              mes_material_names: ['32QN600'],
+            },
+            {
+              equipment_key: '2',
+              equipment_name: '850T-2',
+              equipment_label: '2호기 850T',
+              part_no: 'ABJ76507601',
+              model_name: '32QN600-CORE',
+              planned_qty: 539,
+              mes_qty: 281,
+              gap_qty: -258,
+              achievement_rate: 52.1,
+              mes_report_count: 1,
+              latest_report_time: '2026-05-18T10:34:00+08:00',
+              compare_status: 'matched',
+              process_code: 'ZS',
+              plan_row_count: 1,
+              mes_material_names: ['32QN600-CORE'],
+            },
+            {
               equipment_key: '16',
               equipment_name: '1050T-16',
               equipment_label: '16호기 1050T',
@@ -554,6 +691,23 @@ export async function installOperationalApiMocks(page: Page) {
               process_code: 'ZS',
               plan_row_count: 1,
               mes_material_names: ['27G523'],
+            },
+            {
+              equipment_key: '6',
+              equipment_name: '2500T-6',
+              equipment_label: '6호기 2500T',
+              part_no: 'ACQ30776309',
+              model_name: '24U411B-BA.AWFYJVN',
+              planned_qty: 1920,
+              mes_qty: 1974,
+              gap_qty: 0,
+              achievement_rate: 102.8,
+              mes_report_count: 2,
+              latest_report_time: '2026-05-18T10:42:00+08:00',
+              compare_status: 'matched',
+              process_code: 'ZS',
+              plan_row_count: 2,
+              mes_material_names: ['24U411B-BA.AWFYJVN'],
             },
           ],
         },

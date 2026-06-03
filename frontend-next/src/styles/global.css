@@ -4070,10 +4070,10 @@ select {
 
 .mes-hero-panel {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 16px 18px;
+  gap: 16px;
+  padding: 12px 16px;
   background: #ffffff;
   box-shadow: 0 8px 22px rgba(21, 70, 104, 0.05);
 }
@@ -4081,17 +4081,37 @@ select {
 .mes-hero-panel__main {
   display: grid;
   grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "mark content"
+    "mark chips";
   align-items: center;
-  gap: 14px;
+  column-gap: 12px;
+  row-gap: 6px;
   min-width: 0;
+}
+
+.mes-hero-panel__main .page-header__mark {
+  grid-area: mark;
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
+}
+
+.mes-hero-panel__main .page-header__mark svg {
+  width: 25px;
+  height: 25px;
+}
+
+.mes-hero-panel__content {
+  grid-area: content;
 }
 
 .mes-hero-panel__main h2 {
   margin: 0 0 4px;
   color: var(--text);
-  font-size: clamp(1.45rem, 2.2vw, 2.05rem);
+  font-size: clamp(1.35rem, 1.9vw, 1.8rem);
   line-height: 1.04;
-  letter-spacing: -0.055em;
+  letter-spacing: 0;
 }
 
 .mes-hero-panel__main p {
@@ -4103,16 +4123,17 @@ select {
 
 .mes-source-chips {
   grid-column: 2;
+  grid-area: chips;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: 0;
 }
 
 .mes-source-chips span {
   border: 1px solid rgba(0, 142, 195, 0.16);
   border-radius: 999px;
-  padding: 5px 9px;
+  padding: 4px 9px;
   background: #f7fbfd;
   color: #376079;
   font-size: 0.73rem;
@@ -4122,12 +4143,23 @@ select {
 .mes-hero-panel__control {
   display: grid;
   align-content: center;
-  width: min(390px, 38vw);
+  width: min(540px, 46vw);
   gap: 8px;
   border: 1px solid rgba(0, 142, 195, 0.14);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px 12px;
   background: #ffffff;
+}
+
+.mes-hero-panel__field-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.9fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.mes-hero-panel__field-row--single {
+  grid-template-columns: 1fr;
 }
 
 .mes-hero-panel__control p {
@@ -5825,7 +5857,10 @@ select {
   }
 
   .mes-hero-panel__main {
-    grid-template-columns: 1fr;
+    grid-template-areas:
+      "mark content"
+      "chips chips";
+    grid-template-columns: auto 1fr;
   }
 
   .mes-source-chips {
@@ -5834,6 +5869,10 @@ select {
 
   .mes-hero-panel__control {
     width: auto;
+  }
+
+  .mes-hero-panel__field-row {
+    grid-template-columns: 1fr;
   }
 
   .mes-live-layout {

@@ -16,7 +16,7 @@ test.describe('production dashboard operational scenario', () => {
     await page.locator('input[type="date"]').fill('2026-05-18');
 
     await expect(page.getByRole('heading', { name: '생산 대시보드' })).toBeVisible();
-    await expect(page.locator('.stat-card__value', { hasText: '1,632 / 1,712' })).toBeVisible();
+    await expect(page.locator('.stat-card__value', { hasText: '4,831 / 4,369' })).toBeVisible();
     await expect(page.getByText('기준일 2026-05-18 사출 완료율은 95%입니다.')).toBeVisible();
     await expect(page.getByRole('heading', { name: '실시간 프로그레스' })).toBeVisible();
     await expect(page.getByText('사출 실시간 진행')).toBeVisible();
@@ -61,7 +61,16 @@ test.describe('production dashboard operational scenario', () => {
     await expect(detailDialog.getByRole('heading', { name: '850T-1' })).toBeVisible();
     await expect(detailDialog.getByText('PART-A')).toBeVisible();
     await expect(detailDialog.getByText('120 / 100')).toBeVisible();
-    await expect(detailDialog.getByText('60 / 100')).toBeVisible();
+    await expect(detailDialog.getByText('806 / 100')).toBeVisible();
+    await detailDialog.getByRole('button', { name: '닫기' }).click();
+
+    await page.getByRole('button', { name: /850T-2 상세/ }).click();
+    await expect(detailDialog).toBeVisible();
+    await expect(detailDialog.getByRole('heading', { name: '850T-2' })).toBeVisible();
+    await expect(detailDialog.getByText('ABJ76507604')).toBeVisible();
+    await expect(detailDialog.getByText('ABJ76507601')).toBeVisible();
+    await expect(detailDialog.getByText('198 / 198')).toBeVisible();
+    await expect(detailDialog.getByText('281 / 539')).toBeVisible();
     await detailDialog.getByRole('button', { name: '닫기' }).click();
 
     await page.getByRole('button', { name: /1050T-16 상세/ }).click();
@@ -70,6 +79,14 @@ test.describe('production dashboard operational scenario', () => {
     await expect(detailDialog.getByText('ACQ30854203')).toBeVisible();
     await expect(detailDialog.getByText('37 / 37')).toBeVisible();
     await expect(detailDialog.getByText('1,415 / 1,475')).toBeVisible();
+    await detailDialog.getByRole('button', { name: '닫기' }).click();
+
+    await page.getByRole('button', { name: /2500T-6 상세/ }).click();
+    await expect(detailDialog).toBeVisible();
+    await expect(detailDialog.getByRole('heading', { name: '2500T-6' })).toBeVisible();
+    await expect(detailDialog.getByText('ACQ30776309')).toHaveCount(2);
+    await expect(detailDialog.getByText('1,000 / 1,000')).toBeVisible();
+    await expect(detailDialog.getByText('974 / 920')).toBeVisible();
 
     await expectNoUndefinedOrNaN(page);
     guard.assertClean();

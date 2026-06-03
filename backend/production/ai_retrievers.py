@@ -13,6 +13,7 @@ from .ai_metrics import business_range, elapsed_rate, reference_time_for_busines
 from .machining_reconciliation import build_machining_provision_payload
 from .mes_progress import format_equipment_label
 from .models import ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
+from .counter_utils import calculate_cumulative_counter_delta
 
 
 MACHINE_TONNAGE = {
@@ -77,19 +78,7 @@ def sum_positive_monitoring_delta(machine_name: str, field_name: str, start_dt: 
         .values_list(field_name, flat=True)
     )
 
-    previous = baseline
-    total = 0.0
-    for value in values:
-        if value is None:
-            continue
-        if previous is None:
-            delta = float(value)
-        else:
-            delta = float(value) - float(previous) if float(value) >= float(previous) else float(value)
-        if delta > 0:
-            total += delta
-        previous = value
-    return int(round(total))
+    return calculate_cumulative_counter_delta(values, baseline=baseline)
 
 
 def cavity_map_for_plans(plans: list[ProductionPlan]) -> dict[str, int]:

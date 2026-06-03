@@ -141,6 +141,7 @@ const DEFAULT_STOP_THRESHOLD_MINUTES = 10;
 const GENERAL_STOP_AFTER_PLAN_COMPLETE_MINUTES = 90;
 const OVERPRODUCTION_CHECK_MIN_RATE = 1.05;
 const OVERPRODUCTION_CHECK_MIN_QTY = 5;
+const CORE_PART_NO_MIN_LENGTH = 10;
 
 function numberAt(values: number[] | undefined, index: number) {
   if (!values || index < 0) return 0;
@@ -291,7 +292,15 @@ function normalizeModelName(record: ProductionPlanRecord | undefined) {
 function hasSamePartNoExceptLastTwo(fromRecord: ProductionPlanRecord | undefined, toRecord: ProductionPlanRecord | undefined) {
   const fromPartNo = normalizePartNo(fromRecord);
   const toPartNo = normalizePartNo(toRecord);
-  if (fromPartNo.length !== 11 || toPartNo.length !== 11) return false;
+  if (!fromPartNo || !toPartNo) return false;
+  if (fromPartNo === toPartNo) return false;
+  if (fromPartNo.length !== toPartNo.length) return false;
+  if (fromPartNo.length < CORE_PART_NO_MIN_LENGTH) return false;
+
+  const fromSuffix = fromPartNo.slice(-2);
+  const toSuffix = toPartNo.slice(-2);
+  if (!/^\d{2}$/.test(fromSuffix) || !/^\d{2}$/.test(toSuffix)) return false;
+
   return fromPartNo.slice(0, -2) === toPartNo.slice(0, -2) && fromPartNo.slice(-2) !== toPartNo.slice(-2);
 }
 
@@ -301,12 +310,11 @@ function getPlannedTransitionType(
 ): InjectionTransitionEventType {
   const fromPartNo = normalizePartNo(fromRecord);
   const toPartNo = normalizePartNo(toRecord);
-  if (fromPartNo.length === 11 && toPartNo.length === 11) {
+  if (fromPartNo && toPartNo) {
     if (fromPartNo === toPartNo) return "production_stop";
     if (hasSamePartNoExceptLastTwo(fromRecord, toRecord)) return "core_change";
     return "mold_change";
   }
-  if (fromPartNo && toPartNo && fromPartNo === toPartNo) return "production_stop";
 
   const fromModelName = normalizeModelName(fromRecord);
   const toModelName = normalizeModelName(toRecord);

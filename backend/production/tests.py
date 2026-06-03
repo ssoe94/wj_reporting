@@ -638,6 +638,41 @@ class InjectionAllocationContractTests(DjangoTestCase):
         self.assertEqual(summary_row['parts'][1]['estimated_qty'], 20)
         self.assertEqual(summary_row['parts'][1]['status'], 'in_progress')
 
+    def test_status_api_does_not_count_first_cumulative_value_without_baseline(self):
+        target_date = datetime(2026, 5, 18).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 5, 18, 8, 0))
+
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='injection',
+            machine_name='850T-1',
+            part_no='PART-A',
+            model_name='Model A',
+            planned_quantity=100,
+            sequence=1,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='inj-1',
+            timestamp=start,
+            capacity=1000,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='inj-1',
+            timestamp=start + timedelta(minutes=10),
+            capacity=1010,
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machine = response.json()['injection'][0]
+        self.assertEqual(machine['total_actual'], 10)
+
     def test_status_api_uses_canonical_mes_context_for_machining(self):
         target_date = datetime(2026, 5, 18).date()
         tz = pytz.timezone('Asia/Shanghai')

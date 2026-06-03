@@ -100,6 +100,23 @@ function numberAt(values: number[] | undefined, index: number) {
   return Number(values[index] ?? 0);
 }
 
+function getMachineMatrixValues(data: InjectionProductionMatrix, machineNumber: number) {
+  const machine = data.machines.find((item) => item.machine_number === machineNumber);
+  const candidateKeys = [
+    String(machineNumber),
+    machine?.machine_name,
+    machine?.display_name,
+    `${machineNumber}호기`,
+  ].filter((value): value is string => Boolean(value));
+
+  for (const key of candidateKeys) {
+    const values = data.actual_production_matrix[key];
+    if (values) return values;
+  }
+
+  return [];
+}
+
 function getMachineNumberFromName(value: string | null | undefined) {
   const text = String(value ?? "");
   const suffixMatch = text.match(/-(\d+)\s*$/);
@@ -139,13 +156,11 @@ function findRecordIndex(records: ProductionPlanRecord[], target: ProductionPlan
   return records.findIndex((record, index) => index >= minimumIndex && getRecordIdentity(record) === targetIdentity);
 }
 
-function normalizeComparableText(value: string | null | undefined) {
-  return String(value ?? "").trim().toUpperCase();
-}
-
 function normalizeComparableCode(value: string | null | undefined) {
   return String(value ?? "").replace(/[^0-9A-Z]/gi, "").toUpperCase();
 }
+
+const CORE_PART_NO_MIN_LENGTH = 10;
 
 function getRecordPlannedQty(record: ProductionPlanRecord | undefined) {
   return Math.max(0, Number(record?.planned_quantity ?? 0) || 0);
@@ -161,16 +176,17 @@ function getRecordRequiredShots(record: ProductionPlanRecord | undefined) {
   return plannedQty > 0 ? Math.ceil(plannedQty / cavity) : 0;
 }
 
-function hasSameFamily(left: ProductionPlanRecord | undefined, right: ProductionPlanRecord | undefined) {
-  const leftCode = normalizeComparableText(left?.product_family_code);
-  const rightCode = normalizeComparableText(right?.product_family_code);
-  if (leftCode && rightCode && leftCode !== rightCode) return false;
+function hasCoreSuffixPartNoChange(leftPartNo: string, rightPartNo: string) {
+  if (!leftPartNo || !rightPartNo) return false;
+  if (leftPartNo === rightPartNo) return false;
+  if (leftPartNo.length !== rightPartNo.length) return false;
+  if (leftPartNo.length < CORE_PART_NO_MIN_LENGTH) return false;
 
-  const leftName = normalizeComparableText(left?.product_family_name);
-  const rightName = normalizeComparableText(right?.product_family_name);
-  if (leftName && rightName && leftName !== rightName) return false;
+  const leftSuffix = leftPartNo.slice(-2);
+  const rightSuffix = rightPartNo.slice(-2);
+  if (!/^\d{2}$/.test(leftSuffix) || !/^\d{2}$/.test(rightSuffix)) return false;
 
-  return true;
+  return leftPartNo.slice(0, -2) === rightPartNo.slice(0, -2);
 }
 
 function hasSamePartPrefixExceptSuffix(left: ProductionPlanRecord | undefined, right: ProductionPlanRecord | undefined) {
@@ -178,18 +194,12 @@ function hasSamePartPrefixExceptSuffix(left: ProductionPlanRecord | undefined, r
   const rightPartNo = normalizeComparableCode(right?.part_no);
   if (!leftPartNo || !rightPartNo) return false;
   if (leftPartNo === rightPartNo) return true;
-  if (leftPartNo.length !== 11 || rightPartNo.length !== 11) return false;
-  return leftPartNo.slice(0, -2) === rightPartNo.slice(0, -2);
+  return hasCoreSuffixPartNoChange(leftPartNo, rightPartNo);
 }
 
 function canRolloverWithoutTransition(left: ProductionPlanRecord | undefined, right: ProductionPlanRecord | undefined) {
   if (!left || !right) return false;
   if (getRecordCavity(left) !== getRecordCavity(right)) return false;
-
-  const leftModel = normalizeComparableText(left.model_name || left.part_spec);
-  const rightModel = normalizeComparableText(right.model_name || right.part_spec);
-  if (!leftModel || !rightModel || leftModel !== rightModel) return false;
-  if (!hasSameFamily(left, right)) return false;
 
   return hasSamePartPrefixExceptSuffix(left, right);
 }
@@ -280,9 +290,14 @@ function allocateQuantitiesByTransitionSignals(
     const toIndex = findRecordIndex(records, event.toRecord, Math.max(fromIndex + 1, activeIndex + 1));
     if (fromIndex < 0 || toIndex < 0 || remainingQty <= 0) return;
 
-    activeIndex = fromIndex;
     const producedBeforeChange = Math.max(0, Number(event.evidence.cumulativeQtyAtStop ?? 0) || 0);
-    const allocatedQty = Math.min(remainingQty, producedBeforeChange);
+    if (producedBeforeChange <= 0) return;
+
+    activeIndex = fromIndex;
+    const rolloverCapacity = canRolloverWithoutTransition(records[fromIndex], records[toIndex])
+      ? getRecordPlannedQty(records[fromIndex])
+      : producedBeforeChange;
+    const allocatedQty = Math.min(remainingQty, producedBeforeChange, rolloverCapacity);
     allocations[fromIndex] += allocatedQty;
     remainingQty = Math.max(0, remainingQty - allocatedQty);
     activeIndex = toIndex;
@@ -312,10 +327,15 @@ function allocateShotsByTransitionSignals(
     const toIndex = findRecordIndex(records, event.toRecord, Math.max(fromIndex + 1, activeIndex + 1));
     if (fromIndex < 0 || toIndex < 0 || remainingShots <= 0) return;
 
-    activeIndex = fromIndex;
     const cavity = Math.max(1, Number(records[fromIndex]?.cavity ?? 1) || 1);
     const producedShotsBeforeChange = Math.max(0, Number(event.evidence.cumulativeQtyAtStop ?? 0) || 0) / cavity;
-    const allocatedShots = Math.min(remainingShots, producedShotsBeforeChange);
+    if (producedShotsBeforeChange <= 0) return;
+
+    activeIndex = fromIndex;
+    const rolloverCapacity = canRolloverWithoutTransition(records[fromIndex], records[toIndex])
+      ? getRecordRequiredShots(records[fromIndex])
+      : producedShotsBeforeChange;
+    const allocatedShots = Math.min(remainingShots, producedShotsBeforeChange, rolloverCapacity);
     allocations[fromIndex] += allocatedShots;
     remainingShots = Math.max(0, remainingShots - allocatedShots);
     activeIndex = toIndex;
@@ -364,21 +384,24 @@ export function buildRealtimeProgressSummary(
   }
 
   const shotMap = new Map<string, { shotCount: number; recentShots: number; label: string }>();
-  for (const machine of mesData?.machines ?? []) {
-    const key = String(machine.machine_number);
-    let shotCount = 0;
-    let recentShots = 0;
-    mesData?.time_slots.forEach((slot, index) => {
-      const slotTime = new Date(slot.time);
-      const output = numberAt(mesData.actual_production_matrix[key], index);
-      if (productionWindow.start && productionWindow.end && slotTime >= productionWindow.start && slotTime <= productionWindow.end) {
-        shotCount += output;
-      }
-      if (recentStart && latestTime && slotTime >= recentStart && slotTime <= latestTime) {
-        recentShots += output;
-      }
-    });
-    shotMap.set(key, { shotCount, recentShots, label: machine.display_name || `${machine.machine_number}호기` });
+  if (mesData) {
+    for (const machine of mesData.machines) {
+      const key = String(machine.machine_number);
+      const productionRow = getMachineMatrixValues(mesData, machine.machine_number);
+      let shotCount = 0;
+      let recentShots = 0;
+      mesData.time_slots.forEach((slot, index) => {
+        const slotTime = new Date(slot.time);
+        const output = numberAt(productionRow, index);
+        if (productionWindow.start && productionWindow.end && slotTime >= productionWindow.start && slotTime <= productionWindow.end) {
+          shotCount += output;
+        }
+        if (recentStart && latestTime && slotTime >= recentStart && slotTime <= latestTime) {
+          recentShots += output;
+        }
+      });
+      shotMap.set(key, { shotCount, recentShots, label: machine.display_name || `${machine.machine_number}호기` });
+    }
   }
 
   if (productionStatus?.injection?.length) {
@@ -505,7 +528,9 @@ function buildStatusBackedProgressSummary(
     const shots = shotMap.get(key);
     const orderedRecords = getOrderedPlanRecords(plan?.records ?? []);
     const plannedQty = Number(statusRow.total_planned ?? 0);
-    const estimatedQty = Number(statusRow.total_actual ?? 0);
+    const statusEstimatedQty = Number(statusRow.total_actual ?? 0);
+    const shotCount = shots?.shotCount ?? 0;
+    const useMesShotActual = Boolean(shots);
     const avgCavity = plannedQty > 0 ? (plan?.cavityWeightedQty ?? plannedQty) / plannedQty : 1;
     const sourceRecords = orderedRecords.length
       ? orderedRecords
@@ -516,25 +541,43 @@ function buildStatusBackedProgressSummary(
         planned_quantity: part.planned_quantity,
         cavity: 1,
       } as ProductionPlanRecord));
-    const transitionQtyAllocations = allocateQuantitiesByTransitionSignals(sourceRecords, estimatedQty, key, transitionAnalysis);
-    let remainingActualQty = Math.max(0, estimatedQty);
+    const transitionShotAllocations = useMesShotActual
+      ? allocateShotsByTransitionSignals(sourceRecords, shotCount, key, transitionAnalysis)
+      : null;
+    const transitionQtyAllocations = useMesShotActual
+      ? null
+      : allocateQuantitiesByTransitionSignals(sourceRecords, statusEstimatedQty, key, transitionAnalysis);
+    let remainingShots = Math.max(0, shotCount);
+    let remainingActualQty = Math.max(0, statusEstimatedQty);
     const segments = sourceRecords.map((record, index) => {
       const segmentPlannedQty = Number(record.planned_quantity ?? 0);
       const cavity = Math.max(1, Number(record.cavity ?? 1) || 1);
       const isLastSegment = index === sourceRecords.length - 1;
-      const segmentActualQty = transitionQtyAllocations
-        ? Math.max(0, transitionQtyAllocations[index] ?? 0)
-        : isLastSegment
-          ? Math.max(0, remainingActualQty)
-          : Math.max(0, Math.min(remainingActualQty, segmentPlannedQty));
       const requiredShots = segmentPlannedQty > 0 ? Math.ceil(segmentPlannedQty / cavity) : 0;
-      const allocatedShots = segmentActualQty > 0 ? segmentActualQty / cavity : 0;
+      const allocatedShots = useMesShotActual
+        ? transitionShotAllocations
+          ? Math.max(0, transitionShotAllocations[index] ?? 0)
+          : isLastSegment
+            ? Math.max(0, remainingShots)
+            : Math.max(0, Math.min(remainingShots, requiredShots))
+        : 0;
+      const segmentActualQty = useMesShotActual
+        ? Math.round(allocatedShots * cavity)
+        : transitionQtyAllocations
+          ? Math.max(0, transitionQtyAllocations[index] ?? 0)
+          : isLastSegment
+            ? Math.max(0, remainingActualQty)
+            : Math.max(0, Math.min(remainingActualQty, segmentPlannedQty));
+      const displayAllocatedShots = useMesShotActual
+        ? allocatedShots
+        : segmentActualQty > 0 ? segmentActualQty / cavity : 0;
       const progressRate = segmentPlannedQty > 0 ? (segmentActualQty / segmentPlannedQty) * 100 : 0;
       const status: RealtimeProgressSegmentStatus = progressRate >= 99.9
         ? "completed"
         : progressRate > 0
           ? "in_progress"
           : "pending";
+      remainingShots = Math.max(0, remainingShots - allocatedShots);
       remainingActualQty = Math.max(0, remainingActualQty - segmentActualQty);
 
       return {
@@ -549,12 +592,15 @@ function buildStatusBackedProgressSummary(
         plannedQty: segmentPlannedQty,
         cavity,
         requiredShots,
-        allocatedShots,
+        allocatedShots: displayAllocatedShots,
         estimatedQty: segmentActualQty,
         progressRate,
         status,
       };
     });
+    const estimatedQty = useMesShotActual
+      ? segments.reduce((sum, segment) => sum + segment.estimatedQty, 0)
+      : statusEstimatedQty;
     const completedCount = segments.filter((segment) => segment.status === "completed").length;
     const inProgressCount = segments.filter((segment) => segment.status === "in_progress").length;
     const pendingCount = segments.filter((segment) => segment.status === "pending").length;
@@ -564,7 +610,7 @@ function buildStatusBackedProgressSummary(
       key,
       label: statusRow.machine_name || plan?.label || shots?.label || key,
       plannedQty,
-      shotCount: shots?.shotCount ?? 0,
+      shotCount,
       recentShots,
       recentCycleTimeSec: recentShots > 0 ? 3600 / recentShots : null,
       estimatedQty,
