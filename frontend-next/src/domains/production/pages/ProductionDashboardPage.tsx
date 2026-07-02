@@ -125,6 +125,16 @@ type MachineActivityRow = {
   segments: MachineActivitySegment[];
 };
 
+type MachineActivitySlot = {
+  slotIndex: number;
+  slotTime: Date;
+  slotEnd: Date;
+  intervalMinutes: number;
+  output: number;
+  active: boolean;
+  displayActive: boolean;
+};
+
 type MachineUtilizationPoint = {
   key: string;
   label: string;
@@ -487,6 +497,8 @@ const AI_BRIEFING_REFRESH_INTERVAL_MS = 5 * 60_000;
 const INJECTION_MACHINE_TOTAL = 17;
 const MACHINE_UTILIZATION_BUCKET_MINUTES = 5;
 const MACHINE_ACTIVITY_DETAIL_RETENTION_DAYS = 7;
+const MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_MINUTES = 6;
+const MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_PCT = (MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_MINUTES / (24 * 60)) * 100;
 const UTILIZATION_CHART_TOP_Y = 4;
 const UTILIZATION_CHART_BOTTOM_Y = 54;
 
@@ -1076,6 +1088,47 @@ function buildMachiningCumulativeTrend(
   };
 }
 
+function bridgeShortInactiveActivitySlots(
+  slots: MachineActivitySlot[],
+  maxBridgeMinutes = MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_MINUTES,
+) {
+  const bridgedSlots = slots.map((slot) => ({ ...slot }));
+  let runStart = 0;
+
+  while (runStart < bridgedSlots.length) {
+    if (bridgedSlots[runStart].active) {
+      runStart += 1;
+      continue;
+    }
+
+    let runEnd = runStart + 1;
+    while (runEnd < bridgedSlots.length && !bridgedSlots[runEnd].active) {
+      runEnd += 1;
+    }
+
+    const previousSlot = bridgedSlots[runStart - 1];
+    const nextSlot = bridgedSlots[runEnd];
+    const idleMinutes = bridgedSlots
+      .slice(runStart, runEnd)
+      .reduce((sum, slot) => sum + slot.intervalMinutes, 0);
+    const isBoundedByProduction = Boolean(previousSlot?.active && nextSlot?.active);
+    const isTimeContinuous = previousSlot && nextSlot
+      ? Math.abs(bridgedSlots[runStart].slotTime.getTime() - previousSlot.slotEnd.getTime()) < 1000 &&
+        Math.abs(nextSlot.slotTime.getTime() - bridgedSlots[runEnd - 1].slotEnd.getTime()) < 1000
+      : false;
+
+    if (isBoundedByProduction && isTimeContinuous && idleMinutes <= maxBridgeMinutes) {
+      for (let index = runStart; index < runEnd; index += 1) {
+        bridgedSlots[index].displayActive = true;
+      }
+    }
+
+    runStart = runEnd;
+  }
+
+  return bridgedSlots;
+}
+
 function buildMachineActivityRows(
   businessDate: string,
   mesData: InjectionProductionMatrix | undefined,
@@ -1102,39 +1155,64 @@ function buildMachineActivityRows(
     const segments: MachineActivitySegment[] = [];
     let output = 0;
     let activeMinutes = 0;
+    const rawSlots: MachineActivitySlot[] = [];
 
     activitySlots?.forEach((slot, slotIndex) => {
       const slotTime = new Date(slot.time);
-      if (slotTime < businessStart || slotTime > businessEnd) return;
+      if (slotTime < businessStart || slotTime >= businessEnd) return;
 
       const intervalMinutes = slot.interval_minutes ?? (useRollupDensity ? activitySeries.bucketMinutes : (mesData ? getSlotIntervalMinutes(mesData, slotIndex) : 2));
       const slotEnd = new Date(Math.min(slotTime.getTime() + intervalMinutes * 60 * 1000, businessEnd.getTime()));
-      const startPct = clampPercent(((slotTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100);
-      const widthPct = Math.max(0.1, clampPercent(((slotEnd.getTime() - slotTime.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100));
       const slotOutput = numberAt(productionRow, slotIndex);
       const active = slotOutput > 0;
-      const density = active
-        ? (useRollupDensity ? Math.min(1, Math.max(0.22, 0.22 + (slotOutput / maxSegmentOutput) * 0.78)) : 0.88)
+      rawSlots.push({
+        slotIndex,
+        slotTime,
+        slotEnd,
+        intervalMinutes,
+        output: slotOutput,
+        active,
+        displayActive: active,
+      });
+    });
+
+    const displaySlots = useRollupDensity
+      ? rawSlots
+      : bridgeShortInactiveActivitySlots(rawSlots);
+
+    displaySlots.forEach((slot) => {
+      const startPct = clampPercent(((slot.slotTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100);
+      const widthPct = Math.max(0.1, clampPercent(((slot.slotEnd.getTime() - slot.slotTime.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100));
+      const displayActive = slot.displayActive;
+      const density = displayActive
+        ? (useRollupDensity ? Math.min(1, Math.max(0.22, 0.22 + (slot.output / maxSegmentOutput) * 0.78)) : 0.88)
         : undefined;
-      output += slotOutput;
-      if (active) activeMinutes += intervalMinutes;
+      output += slot.output;
+      if (slot.active) activeMinutes += slot.intervalMinutes;
 
       const previous = segments.at(-1);
-      const contiguous = previous && Math.abs((previous.startPct + previous.widthPct) - startPct) < 0.08;
-      const matchingDensity = !useRollupDensity || !active || Math.abs((previous?.density ?? 0) - (density ?? 0)) < 0.03;
-      const canMergeSegment = !useRollupDensity || !active;
-      if (previous && previous.active === active && contiguous && matchingDensity && canMergeSegment) {
-        previous.widthPct += widthPct;
-        previous.output += slotOutput;
+      const previousEndPct = previous ? previous.startPct + previous.widthPct : 0;
+      const gapPct = startPct - previousEndPct;
+      const contiguous = previous && Math.abs(gapPct) < 0.08;
+      const bridgeableDisplayGap = !useRollupDensity &&
+        previous?.active &&
+        displayActive &&
+        gapPct > 0 &&
+        gapPct <= MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_PCT;
+      const matchingDensity = !useRollupDensity || !displayActive || Math.abs((previous?.density ?? 0) - (density ?? 0)) < 0.03;
+      const canMergeSegment = !useRollupDensity || !displayActive;
+      if (previous && previous.active === displayActive && (contiguous || bridgeableDisplayGap) && matchingDensity && canMergeSegment) {
+        previous.widthPct += (bridgeableDisplayGap ? gapPct : 0) + widthPct;
+        previous.output += slot.output;
         return;
       }
 
       segments.push({
-        key: `${machineNumber}-${slotIndex}`,
-        active,
+        key: `${machineNumber}-${slot.slotIndex}`,
+        active: displayActive,
         startPct,
         widthPct,
-        output: slotOutput,
+        output: slot.output,
         density,
       });
     });
