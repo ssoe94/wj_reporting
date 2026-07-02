@@ -2771,11 +2771,10 @@ export function ProductionDashboardPage() {
 
   function getActivitySelectionLayerPoint(
     origin: MachineActivitySelection["origin"],
-    event: ReactPointerEvent<HTMLElement>,
+    rect: DOMRect,
     startPct: number,
     endPct: number,
   ) {
-    const rect = event.currentTarget.getBoundingClientRect();
     const centerPct = clampPercent((startPct + endPct) / 2);
     const layerWidth = origin === "timeline" ? 640 : 560;
     const layerHeight = origin === "timeline" ? 178 : 206;
@@ -2799,7 +2798,8 @@ export function ProductionDashboardPage() {
       return;
     }
     const pct = getActivityPointerPercent(event);
-    const layerPoint = getActivitySelectionLayerPoint(origin, event, pct, pct);
+    const targetRect = event.currentTarget.getBoundingClientRect();
+    const layerPoint = getActivitySelectionLayerPoint(origin, targetRect, pct, pct);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     setActivitySelection({
       origin,
@@ -2817,9 +2817,10 @@ export function ProductionDashboardPage() {
     machineNumber?: number,
   ) {
     const pct = getActivityPointerPercent(event);
+    const targetRect = event.currentTarget.getBoundingClientRect();
     setActivitySelection((current) => {
       if (!current?.isDragging || current.origin !== origin || current.machineNumber !== machineNumber) return current;
-      return { ...current, endPct: pct, ...getActivitySelectionLayerPoint(origin, event, current.startPct, pct) };
+      return { ...current, endPct: pct, ...getActivitySelectionLayerPoint(origin, targetRect, current.startPct, pct) };
     });
   }
 
@@ -2829,6 +2830,7 @@ export function ProductionDashboardPage() {
     machineNumber?: number,
   ) {
     const pct = getActivityPointerPercent(event);
+    const targetRect = event.currentTarget.getBoundingClientRect();
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     setActivitySelection((current) => {
       if (!current || current.origin !== origin || current.machineNumber !== machineNumber) return current;
@@ -2837,7 +2839,7 @@ export function ProductionDashboardPage() {
         ...current,
         endPct: nextEndPct,
         isDragging: false,
-        ...getActivitySelectionLayerPoint(origin, event, current.startPct, nextEndPct),
+        ...getActivitySelectionLayerPoint(origin, targetRect, current.startPct, nextEndPct),
       };
     });
   }
