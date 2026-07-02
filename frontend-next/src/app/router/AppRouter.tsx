@@ -69,6 +69,21 @@ function AuthenticatedLayout() {
   return isEmbedded ? <EmbeddedLayout /> : <AppShell />;
 }
 
+function QueryViewPage() {
+  const location = useLocation();
+  const view = new URLSearchParams(location.search).get("view");
+
+  if (view === "production") {
+    return <ProductionDashboardPage />;
+  }
+
+  if (view === "mes-monitoring") {
+    return <MesMonitoringPage />;
+  }
+
+  return <Navigate to="/production" replace />;
+}
+
 export function AppRouter() {
   return (
     <Routes>
@@ -82,6 +97,7 @@ export function AppRouter() {
         }
       >
         <Route index element={<Navigate to="/production" replace />} />
+        <Route path="index.html" element={<QueryViewPage />} />
         <Route
           path="analysis"
           element={

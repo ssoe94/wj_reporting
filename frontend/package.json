@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run build:legacy",
+    "build": "tsc -b && vite build && npm run build:legacy && node ../scripts/build-next-into-frontend.mjs",
     "build:legacy": "postcss src/index.css -c ./postcss.legacy.config.cjs -o dist/legacy.css",
     "lint": "eslint .",
     "preview": "vite preview"

@@ -63,6 +63,15 @@ function HomeRedirect() {
   return <Navigate to={parseFieldTerminalUser(user?.username) ? "/field" : "/analysis"} replace />;
 }
 
+function NextStaticRedirect({ view }: { view: 'production' | 'mes-monitoring' }) {
+  useEffect(() => {
+    const params = new URLSearchParams({ view });
+    window.location.replace(`/next/index.html?${params.toString()}`);
+  }, [view]);
+
+  return null;
+}
+
 function useNavItems() {
   const { t } = useLang();
   const { user, hasPermission } = useAuth();
@@ -579,6 +588,10 @@ function AppContent() {
             <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
             {/* Private routes */}
             <Route path="/" element={<PrivateRoute><PageTransition><HomeRedirect /></PageTransition></PrivateRoute>} />
+            <Route path="/next/production" element={<PrivateRoute><NextStaticRedirect view="production" /></PrivateRoute>} />
+            <Route path="/next/production/" element={<PrivateRoute><NextStaticRedirect view="production" /></PrivateRoute>} />
+            <Route path="/next/mes/monitoring" element={<PrivateRoute><NextStaticRedirect view="mes-monitoring" /></PrivateRoute>} />
+            <Route path="/next/mes/monitoring/" element={<PrivateRoute><NextStaticRedirect view="mes-monitoring" /></PrivateRoute>} />
             <Route path="/field" element={<PrivateRoute><PageTransition><FieldLauncherPage /></PageTransition></PrivateRoute>} />
             <Route path="/field/:stationId" element={<PrivateRoute><PageTransition><FieldStationPage /></PageTransition></PrivateRoute>} />
             <Route path="/models" element={<PrivateRoute><PageTransition><ModelsPage /></PageTransition></PrivateRoute>} />

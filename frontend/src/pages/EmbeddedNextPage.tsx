@@ -32,8 +32,8 @@ export default function EmbeddedNextPage({ page }: EmbeddedNextPageProps) {
   const [frameHeight, setFrameHeight] = useState(MIN_FRAME_HEIGHT);
   const copy = embedCopy[lang];
   const title = page === 'production' ? copy.production : copy.mesMonitoring;
-  const targetPath = page === 'production' ? '/production' : '/mes/monitoring';
-  const src = `${NEXT_APP_BASE_PATH}${targetPath}?embed=1&frameId=${encodeURIComponent(frameId)}`;
+  const view = page === 'production' ? 'production' : 'mes-monitoring';
+  const src = `${NEXT_APP_BASE_PATH}/index.html?view=${encodeURIComponent(view)}&embed=1&frameId=${encodeURIComponent(frameId)}`;
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
