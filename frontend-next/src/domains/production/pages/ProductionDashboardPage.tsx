@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getInjectionProductionMatrix,
@@ -113,6 +113,13 @@ type MachineActivitySegment = {
   startPct: number;
   widthPct: number;
   output: number;
+  estimatedQty: number;
+  partNo?: string;
+  partFamily?: string;
+  partVariant?: string;
+  partHue?: number;
+  partLightness?: number;
+  partSaturation?: number;
   density?: number;
 };
 
@@ -123,6 +130,7 @@ type MachineActivityRow = {
   activeMinutes: number;
   isActive: boolean;
   segments: MachineActivitySegment[];
+  slots: MachineActivitySlot[];
 };
 
 type MachineActivitySlot = {
@@ -131,8 +139,47 @@ type MachineActivitySlot = {
   slotEnd: Date;
   intervalMinutes: number;
   output: number;
+  estimatedQty: number;
+  partNo?: string;
+  partFamily?: string;
+  partVariant?: string;
+  partHue?: number;
+  partLightness?: number;
+  partSaturation?: number;
+  cavity: number;
   active: boolean;
   displayActive: boolean;
+};
+
+type MachineActivitySelection = {
+  origin: "timeline" | "utilization";
+  startPct: number;
+  endPct: number;
+  isDragging: boolean;
+  machineNumber?: number;
+};
+
+type ActivitySelectionSummary = {
+  startLabel: string;
+  endLabel: string;
+  totalOutput: number;
+  totalEstimatedQty: number;
+  partRows: Array<{
+    key: string;
+    partNo: string;
+    machineLabel: string;
+    output: number;
+    estimatedQty: number;
+    partHue?: number;
+    partLightness?: number;
+    partSaturation?: number;
+  }>;
+  machineRows: Array<{
+    key: string;
+    machineLabel: string;
+    output: number;
+    estimatedQty: number;
+  }>;
 };
 
 type MachineUtilizationPoint = {
@@ -490,6 +537,35 @@ const kpiDetailCopy = {
   },
 } satisfies Record<AppLanguage, Record<string, string>>;
 
+const activitySelectionCopy = {
+  ko: {
+    range: "선택 구간",
+    selectedParts: "Part별 생산",
+    selectedMachines: "설비별 형합",
+    clampCount: "형합수",
+    estimatedQty: "추정수량",
+    total: "합계",
+    clear: "선택 해제",
+    partUnknown: "파트 미지정",
+    noSelection: "선택 구간에 생산 기록 없음",
+    dragHint: "드래그로 구간 분석",
+    selectionFocus: "구간 분석",
+  },
+  zh: {
+    range: "选择区间",
+    selectedParts: "按 Part 生产",
+    selectedMachines: "按设备合模",
+    clampCount: "合模数",
+    estimatedQty: "推定数量",
+    total: "合计",
+    clear: "清除选择",
+    partUnknown: "未指定 Part",
+    noSelection: "所选区间无生产记录",
+    dragHint: "拖拽分析区间",
+    selectionFocus: "区间分析",
+  },
+} satisfies Record<AppLanguage, Record<string, string>>;
+
 const LOCAL_LLM_BASE_URL = import.meta.env.VITE_LOCAL_LLM_BASE_URL || "http://127.0.0.1:8080/v1";
 const LOCAL_LLM_MODEL = import.meta.env.VITE_LOCAL_LLM_MODEL || "mlx-community/gemma-4-e2b-it-8bit";
 const LIVE_DATA_REFRESH_INTERVAL_MS = 120_000;
@@ -501,6 +577,9 @@ const MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_MINUTES = 6;
 const MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_PCT = (MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_MINUTES / (24 * 60)) * 100;
 const UTILIZATION_CHART_TOP_Y = 4;
 const UTILIZATION_CHART_BOTTOM_Y = 54;
+const ACTIVITY_PART_SEQUENCE_HUES = [154, 170, 188, 206, 224, 42];
+const ACTIVITY_PART_VARIANT_LIGHTNESS = [36, 42, 48, 54];
+const ACTIVITY_PART_SEQUENCE_SATURATION = 54;
 
 type DashboardAiIntent = {
   intent: "injection_cycle_time" | "production_output" | "production_status" | "production_summary" | "unknown";
@@ -1133,6 +1212,7 @@ function buildMachineActivityRows(
   businessDate: string,
   mesData: InjectionProductionMatrix | undefined,
   language: AppLanguage,
+  progressSummary?: RealtimeProgressSummary,
 ): MachineActivityRow[] {
   const businessStart = getBusinessDayStart(businessDate);
   const businessEnd = getBusinessDayEnd(businessDate);
@@ -1156,6 +1236,9 @@ function buildMachineActivityRows(
     let output = 0;
     let activeMinutes = 0;
     const rawSlots: MachineActivitySlot[] = [];
+    const progressRow = getMachineProgressRow(progressSummary, machineNumber);
+    const partSequence = getPartVisualSequence(progressRow);
+    let cumulativeShots = 0;
 
     activitySlots?.forEach((slot, slotIndex) => {
       const slotTime = new Date(slot.time);
@@ -1165,20 +1248,32 @@ function buildMachineActivityRows(
       const slotEnd = new Date(Math.min(slotTime.getTime() + intervalMinutes * 60 * 1000, businessEnd.getTime()));
       const slotOutput = numberAt(productionRow, slotIndex);
       const active = slotOutput > 0;
+      const segment = active ? getProgressSegmentForShot(progressRow, cumulativeShots) : undefined;
+      const partFields = getSlotPartFields(segment, partSequence);
+      const estimatedQty = active ? Math.round(slotOutput * partFields.cavity) : 0;
+      cumulativeShots += slotOutput;
       rawSlots.push({
         slotIndex,
         slotTime,
         slotEnd,
         intervalMinutes,
         output: slotOutput,
+        estimatedQty,
+        partNo: active ? partFields.partNo : undefined,
+        partFamily: active ? partFields.partFamily : undefined,
+        partVariant: active ? partFields.partVariant : undefined,
+        partHue: active ? partFields.partHue : undefined,
+        partLightness: active ? partFields.partLightness : undefined,
+        partSaturation: active ? partFields.partSaturation : undefined,
+        cavity: partFields.cavity,
         active,
         displayActive: active,
       });
     });
 
-    const displaySlots = useRollupDensity
+    const displaySlots = applyAdjacentPartFieldsToDisplaySlots(useRollupDensity
       ? rawSlots
-      : bridgeShortInactiveActivitySlots(rawSlots);
+      : bridgeShortInactiveActivitySlots(rawSlots));
 
     displaySlots.forEach((slot) => {
       const startPct = clampPercent(((slot.slotTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100);
@@ -1200,10 +1295,15 @@ function buildMachineActivityRows(
         gapPct > 0 &&
         gapPct <= MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_PCT;
       const matchingDensity = !useRollupDensity || !displayActive || Math.abs((previous?.density ?? 0) - (density ?? 0)) < 0.03;
+      const matchingPartVisual = !displayActive || (
+        previous?.partFamily === slot.partFamily &&
+        previous?.partVariant === slot.partVariant
+      );
       const canMergeSegment = !useRollupDensity || !displayActive;
-      if (previous && previous.active === displayActive && (contiguous || bridgeableDisplayGap) && matchingDensity && canMergeSegment) {
+      if (previous && previous.active === displayActive && (contiguous || bridgeableDisplayGap) && matchingDensity && matchingPartVisual && canMergeSegment) {
         previous.widthPct += (bridgeableDisplayGap ? gapPct : 0) + widthPct;
         previous.output += slot.output;
+        previous.estimatedQty += slot.estimatedQty;
         return;
       }
 
@@ -1213,6 +1313,13 @@ function buildMachineActivityRows(
         startPct,
         widthPct,
         output: slot.output,
+        estimatedQty: slot.estimatedQty,
+        partNo: displayActive ? slot.partNo : undefined,
+        partFamily: displayActive ? slot.partFamily : undefined,
+        partVariant: displayActive ? slot.partVariant : undefined,
+        partHue: displayActive ? slot.partHue : undefined,
+        partLightness: displayActive ? slot.partLightness : undefined,
+        partSaturation: displayActive ? slot.partSaturation : undefined,
         density,
       });
     });
@@ -1227,6 +1334,7 @@ function buildMachineActivityRows(
       activeMinutes,
       isActive: output > 0,
       segments,
+      slots: displaySlots,
     };
   }).sort((left, right) => left.machineNumber - right.machineNumber);
 }
@@ -1235,10 +1343,58 @@ function buildMachineUtilizationPoints(
   businessDate: string,
   mesData: InjectionProductionMatrix | undefined,
   totalMachines: number,
+  rows?: MachineActivityRow[],
 ): MachineUtilizationPoint[] {
   const businessStart = getBusinessDayStart(businessDate);
   const businessEnd = getBusinessDayEnd(businessDate);
   const referenceEnd = getBusinessDayReferenceEnd(businessDate, mesData);
+  const displayRows = rows?.filter((row) => row.slots.length) ?? [];
+  if (displayRows.length) {
+    const bucketMs = MACHINE_UTILIZATION_BUCKET_MINUTES * 60 * 1000;
+    const points: MachineUtilizationPoint[] = [];
+
+    for (
+      let bucketStartMs = businessStart.getTime(), bucketIndex = 0;
+      bucketStartMs < referenceEnd.getTime() && bucketStartMs < businessEnd.getTime();
+      bucketStartMs += bucketMs, bucketIndex += 1
+    ) {
+      const bucketEndMs = Math.min(bucketStartMs + bucketMs, referenceEnd.getTime(), businessEnd.getTime());
+      if (bucketEndMs <= bucketStartMs) continue;
+
+      let activeMs = 0;
+      const activeMachines = new Set<number>();
+
+      displayRows.forEach((row) => {
+        row.slots.forEach((slot) => {
+          if (!slot.displayActive) return;
+
+          const overlapMs = Math.min(slot.slotEnd.getTime(), bucketEndMs) - Math.max(slot.slotTime.getTime(), bucketStartMs);
+          if (overlapMs <= 0) return;
+
+          activeMs += overlapMs;
+          activeMachines.add(row.machineNumber);
+        });
+      });
+
+      const bucketDurationMinutes = (bucketEndMs - bucketStartMs) / (60 * 1000);
+      const utilizationRate = totalMachines > 0 && bucketDurationMinutes > 0
+        ? (activeMs / (bucketDurationMinutes * 60 * 1000 * totalMachines)) * 100
+        : 0;
+      const pointTime = new Date(bucketEndMs);
+
+      points.push({
+        key: `${businessDate}-bucket-${bucketIndex}`,
+        label: formatTimeLabel(pointTime),
+        timestampMs: pointTime.getTime(),
+        elapsedRate: clampPercent(((pointTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100),
+        utilizationRate,
+        activeMachineCount: activeMachines.size,
+      });
+    }
+
+    return points;
+  }
+
   const activitySeries = getMachineActivitySeries(businessDate, mesData);
   const activitySlots = activitySeries.slots;
   const activityMatrix = activitySeries.matrix;
@@ -1317,11 +1473,12 @@ function buildMachineActivitySummary(
   mesData: InjectionProductionMatrix | undefined,
   rows: MachineActivityRow[],
   previousMesData?: InjectionProductionMatrix,
+  previousRows: MachineActivityRow[] = [],
 ): MachineActivitySummary {
   const totalMachines = INJECTION_MACHINE_TOTAL;
-  const points = buildMachineUtilizationPoints(businessDate, mesData, totalMachines);
+  const points = buildMachineUtilizationPoints(businessDate, mesData, totalMachines, rows);
   const historyPoints = previousMesData
-    ? buildMachineUtilizationPoints(addBusinessDateDays(businessDate, -1), previousMesData, totalMachines)
+    ? buildMachineUtilizationPoints(addBusinessDateDays(businessDate, -1), previousMesData, totalMachines, previousRows)
     : [];
 
   const latestPoint = points.at(-1);
@@ -1411,6 +1568,215 @@ function getOrderedPlanRecords(records: ProductionPlanRecord[]) {
 
 function normalizeDashboardPartNo(value: string | null | undefined) {
   return String(value ?? "").replace(/\s+/g, "").toUpperCase();
+}
+
+function getPartVisualIdentity(value: string | null | undefined) {
+  const partNo = normalizeDashboardPartNo(value);
+  const compact = partNo.replace(/[^0-9A-Z]/g, "");
+  if (!compact || compact === "-") {
+    return {
+      partNo: partNo || "-",
+      partFamily: "UNKNOWN",
+      partVariant: "",
+    };
+  }
+
+  return {
+    partNo,
+    partFamily: compact.length > 2 ? compact.slice(0, -2) : compact,
+    partVariant: compact.length > 2 ? compact.slice(-2) : "",
+  };
+}
+
+function getPartVisualSequence(row: RealtimeProgressRow | undefined) {
+  const familyOrder = new Map<string, number>();
+  const variantOrderByFamily = new Map<string, Map<string, number>>();
+
+  [...(row?.segments ?? [])]
+    .sort((left, right) => Number(left.sequence ?? 0) - Number(right.sequence ?? 0))
+    .forEach((segment) => {
+      const identity = getPartVisualIdentity(segment.partNo);
+      if (!familyOrder.has(identity.partFamily)) {
+        familyOrder.set(identity.partFamily, familyOrder.size);
+      }
+
+      const variantOrder = variantOrderByFamily.get(identity.partFamily) ?? new Map<string, number>();
+      if (!variantOrder.has(identity.partVariant)) {
+        variantOrder.set(identity.partVariant, variantOrder.size);
+      }
+      variantOrderByFamily.set(identity.partFamily, variantOrder);
+    });
+
+  return {
+    familyOrder,
+    variantOrderByFamily,
+  };
+}
+
+function getPartVisualStyle(
+  value: string | null | undefined,
+  sequence?: ReturnType<typeof getPartVisualSequence>,
+) {
+  const identity = getPartVisualIdentity(value);
+  const familyIndex = sequence?.familyOrder.get(identity.partFamily) ?? 0;
+  const variantIndex = sequence?.variantOrderByFamily.get(identity.partFamily)?.get(identity.partVariant) ?? 0;
+
+  return {
+    ...identity,
+    partHue: ACTIVITY_PART_SEQUENCE_HUES[familyIndex % ACTIVITY_PART_SEQUENCE_HUES.length],
+    partLightness: ACTIVITY_PART_VARIANT_LIGHTNESS[variantIndex % ACTIVITY_PART_VARIANT_LIGHTNESS.length],
+    partSaturation: ACTIVITY_PART_SEQUENCE_SATURATION,
+  };
+}
+
+function getMachineProgressRow(progressSummary: RealtimeProgressSummary | undefined, machineNumber: number) {
+  return progressSummary?.rows.find((row) => {
+    const rowMachineNumber = Number(getMachineNumberFromName(row.label) ?? row.key);
+    return Number.isFinite(rowMachineNumber) && rowMachineNumber === machineNumber;
+  });
+}
+
+function getProgressSegmentForShot(row: RealtimeProgressRow | undefined, shotCursor: number) {
+  const orderedSegments = [...(row?.segments ?? [])]
+    .sort((left, right) => Number(left.sequence ?? 0) - Number(right.sequence ?? 0));
+  if (!orderedSegments.length) return undefined;
+
+  let cursor = 0;
+  for (const segment of orderedSegments) {
+    const allocatedShots = Math.max(0, Number(segment.allocatedShots ?? 0) || 0);
+    if (allocatedShots > 0 && shotCursor < cursor + allocatedShots) return segment;
+    cursor += allocatedShots;
+  }
+
+  return orderedSegments.find((segment) => segment.status === "in_progress") ??
+    orderedSegments.find((segment) => segment.status === "pending") ??
+    orderedSegments.at(-1);
+}
+
+function getSlotPartFields(
+  segment: RealtimeProgressSegment | undefined,
+  sequence?: ReturnType<typeof getPartVisualSequence>,
+) {
+  const style = getPartVisualStyle(segment?.partNo, sequence);
+  const cavity = Math.max(1, Number(segment?.cavity ?? 1) || 1);
+  return {
+    partNo: style.partNo,
+    partFamily: style.partFamily,
+    partVariant: style.partVariant,
+    partHue: style.partHue,
+    partLightness: style.partLightness,
+    partSaturation: style.partSaturation,
+    cavity,
+  };
+}
+
+function applyAdjacentPartFieldsToDisplaySlots(slots: MachineActivitySlot[]) {
+  const patchedSlots = slots.map((slot) => ({ ...slot }));
+
+  patchedSlots.forEach((slot, index) => {
+    if (!slot.displayActive || slot.partNo) return;
+
+    let source = patchedSlots.slice(0, index).reverse().find((candidate) => Boolean(candidate.partNo));
+    if (!source) {
+      source = patchedSlots.slice(index + 1).find((candidate) => Boolean(candidate.partNo));
+    }
+    if (!source) return;
+
+    slot.partNo = source.partNo;
+    slot.partFamily = source.partFamily;
+    slot.partVariant = source.partVariant;
+    slot.partHue = source.partHue;
+    slot.partLightness = source.partLightness;
+    slot.partSaturation = source.partSaturation;
+    slot.cavity = source.cavity;
+  });
+
+  return patchedSlots;
+}
+
+function getActivitySelectionBounds(selection: MachineActivitySelection) {
+  const startPct = clampPercent(Math.min(selection.startPct, selection.endPct));
+  const endPct = clampPercent(Math.max(selection.startPct, selection.endPct));
+  return {
+    startPct,
+    endPct,
+    widthPct: Math.max(0.35, endPct - startPct),
+  };
+}
+
+function summarizeActivitySelection(
+  selection: MachineActivitySelection | null,
+  businessDate: string,
+  rows: MachineActivityRow[],
+  language: AppLanguage,
+): ActivitySelectionSummary | null {
+  if (!selection) return null;
+
+  const businessStart = getBusinessDayStart(businessDate);
+  const businessEnd = getBusinessDayEnd(businessDate);
+  const durationMs = businessEnd.getTime() - businessStart.getTime();
+  const bounds = getActivitySelectionBounds(selection);
+  const startMs = businessStart.getTime() + durationMs * (bounds.startPct / 100);
+  const endMs = businessStart.getTime() + durationMs * ((bounds.startPct + bounds.widthPct) / 100);
+  const targetRows = selection.machineNumber
+    ? rows.filter((row) => row.machineNumber === selection.machineNumber)
+    : rows;
+  const partMap = new Map<string, ActivitySelectionSummary["partRows"][number]>();
+  const machineMap = new Map<string, ActivitySelectionSummary["machineRows"][number]>();
+
+  targetRows.forEach((row) => {
+    row.slots.forEach((slot) => {
+      if (!slot.active || slot.output <= 0) return;
+
+      const slotStartMs = slot.slotTime.getTime();
+      const slotEndMs = slot.slotEnd.getTime();
+      const overlapMs = Math.min(slotEndMs, endMs) - Math.max(slotStartMs, startMs);
+      if (overlapMs <= 0 || slotEndMs <= slotStartMs) return;
+
+      const ratio = overlapMs / (slotEndMs - slotStartMs);
+      const output = slot.output * ratio;
+      const estimatedQty = slot.estimatedQty * ratio;
+      const machineLabel = getLocalizedMachineLabel(row.label, language);
+      const partNo = slot.partNo && slot.partNo !== "-" ? slot.partNo : activitySelectionCopy[language].partUnknown;
+      const partKey = `${row.machineNumber}-${partNo}`;
+      const partRow = partMap.get(partKey) ?? {
+        key: partKey,
+        partNo,
+        machineLabel,
+        output: 0,
+        estimatedQty: 0,
+        partHue: slot.partHue,
+        partLightness: slot.partLightness,
+        partSaturation: slot.partSaturation,
+      };
+      partRow.output += output;
+      partRow.estimatedQty += estimatedQty;
+      partMap.set(partKey, partRow);
+
+      const machineKey = String(row.machineNumber);
+      const machineRow = machineMap.get(machineKey) ?? {
+        key: machineKey,
+        machineLabel,
+        output: 0,
+        estimatedQty: 0,
+      };
+      machineRow.output += output;
+      machineRow.estimatedQty += estimatedQty;
+      machineMap.set(machineKey, machineRow);
+    });
+  });
+
+  const partRows = [...partMap.values()].sort((left, right) => right.output - left.output);
+  const machineRows = [...machineMap.values()].sort((left, right) => right.output - left.output);
+
+  return {
+    startLabel: formatTimeLabel(new Date(startMs)),
+    endLabel: formatTimeLabel(new Date(endMs)),
+    totalOutput: partRows.reduce((sum, row) => sum + row.output, 0),
+    totalEstimatedQty: partRows.reduce((sum, row) => sum + row.estimatedQty, 0),
+    partRows,
+    machineRows,
+  };
 }
 
 function getProgressLabel(status: RealtimeProgressSegmentStatus, copy: Record<string, string>) {
@@ -2073,6 +2439,7 @@ export function ProductionDashboardPage() {
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
   const [selectedMachiningRow, setSelectedMachiningRow] = useState<MachiningProvisionRow | null>(null);
   const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailKey | null>(null);
+  const [activitySelection, setActivitySelection] = useState<MachineActivitySelection | null>(null);
   const [manualForm, setManualForm] = useState({
     goodQty: "",
     defectQty: "0",
@@ -2082,6 +2449,7 @@ export function ProductionDashboardPage() {
   });
   const copy = pageCopy[language];
   const detailCopy = kpiDetailCopy[language];
+  const activityCopy = activitySelectionCopy[language];
   const isCurrentDate = businessDate === currentDate;
   const liveDataRefetchInterval = isCurrentDate ? LIVE_DATA_REFRESH_INTERVAL_MS : false;
   const previousBusinessDate = addBusinessDateDays(businessDate, -1);
@@ -2248,6 +2616,10 @@ export function ProductionDashboardPage() {
     setActiveAiJobId(null);
   }, [businessDate, language]);
 
+  useEffect(() => {
+    setActivitySelection(null);
+  }, [businessDate, language]);
+
   function submitAiQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!aiQuestion.trim() || aiQuestionMutation.isPending) return;
@@ -2309,12 +2681,20 @@ export function ProductionDashboardPage() {
     ],
   );
   const machineActivityRows = useMemo(
-    () => buildMachineActivityRows(businessDate, mesQuery.data, language),
-    [businessDate, language, mesQuery.data],
+    () => buildMachineActivityRows(businessDate, mesQuery.data, language, realtimeProgress),
+    [businessDate, language, mesQuery.data, realtimeProgress],
+  );
+  const previousMachineActivityRows = useMemo(
+    () => buildMachineActivityRows(previousBusinessDate, previousMesQuery.data, language),
+    [language, previousBusinessDate, previousMesQuery.data],
   );
   const machineActivitySummary = useMemo(
-    () => buildMachineActivitySummary(businessDate, mesQuery.data, machineActivityRows, previousMesQuery.data),
-    [businessDate, machineActivityRows, mesQuery.data, previousMesQuery.data],
+    () => buildMachineActivitySummary(businessDate, mesQuery.data, machineActivityRows, previousMesQuery.data, previousMachineActivityRows),
+    [businessDate, machineActivityRows, mesQuery.data, previousMachineActivityRows, previousMesQuery.data],
+  );
+  const activitySelectionSummary = useMemo(
+    () => summarizeActivitySelection(activitySelection, businessDate, machineActivityRows, language),
+    [activitySelection, businessDate, language, machineActivityRows],
   );
 
   function openMachiningManualReport(row: MachiningProvisionRow) {
@@ -2360,6 +2740,175 @@ export function ProductionDashboardPage() {
       <span className="production-progress-chip production-progress-chip--overrun">
         {copy.overrunShort} {getOverrunText(quantity, plannedQty)}
       </span>
+    );
+  }
+
+  function getActivityPointerPercent(event: ReactPointerEvent<HTMLElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
+    return clampPercent(((event.clientX - rect.left) / rect.width) * 100);
+  }
+
+  function beginActivitySelection(
+    origin: MachineActivitySelection["origin"],
+    event: ReactPointerEvent<HTMLElement>,
+    machineNumber?: number,
+  ) {
+    if (event.button !== 0) return;
+    const pct = getActivityPointerPercent(event);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setActivitySelection({
+      origin,
+      machineNumber,
+      startPct: pct,
+      endPct: pct,
+      isDragging: true,
+    });
+  }
+
+  function moveActivitySelection(
+    origin: MachineActivitySelection["origin"],
+    event: ReactPointerEvent<HTMLElement>,
+    machineNumber?: number,
+  ) {
+    const pct = getActivityPointerPercent(event);
+    setActivitySelection((current) => {
+      if (!current?.isDragging || current.origin !== origin || current.machineNumber !== machineNumber) return current;
+      return { ...current, endPct: pct };
+    });
+  }
+
+  function endActivitySelection(
+    origin: MachineActivitySelection["origin"],
+    event: ReactPointerEvent<HTMLElement>,
+    machineNumber?: number,
+  ) {
+    const pct = getActivityPointerPercent(event);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setActivitySelection((current) => {
+      if (!current || current.origin !== origin || current.machineNumber !== machineNumber) return current;
+      if (Math.abs(current.startPct - pct) < 0.35) {
+        return {
+          ...current,
+          endPct: Math.min(100, current.startPct + 2),
+          isDragging: false,
+        };
+      }
+      return { ...current, endPct: pct, isDragging: false };
+    });
+  }
+
+  function getActivitySelectionStyle(origin: MachineActivitySelection["origin"], machineNumber?: number) {
+    if (!activitySelection || activitySelection.origin !== origin || activitySelection.machineNumber !== machineNumber) return undefined;
+    const bounds = getActivitySelectionBounds(activitySelection);
+    return {
+      left: `${bounds.startPct}%`,
+      width: `${bounds.widthPct}%`,
+    } as CSSProperties;
+  }
+
+  function getActivitySelectionVisuals(origin: MachineActivitySelection["origin"], machineNumber?: number) {
+    if (!activitySelection || activitySelection.origin !== origin || activitySelection.machineNumber !== machineNumber) return null;
+    const bounds = getActivitySelectionBounds(activitySelection);
+    const centerPct = Math.max(10, Math.min(90, bounds.startPct + bounds.widthPct / 2));
+    return {
+      selectionStyle: {
+        left: `${bounds.startPct}%`,
+        width: `${bounds.widthPct}%`,
+      } as CSSProperties,
+      leftDimStyle: {
+        left: "0%",
+        width: `${bounds.startPct}%`,
+      } as CSSProperties,
+      rightDimStyle: {
+        left: `${bounds.startPct + bounds.widthPct}%`,
+        width: `${Math.max(0, 100 - bounds.startPct - bounds.widthPct)}%`,
+      } as CSSProperties,
+      calloutStyle: {
+        left: `${centerPct}%`,
+      } as CSSProperties,
+    };
+  }
+
+  function renderActivitySelectionOverlays(origin: MachineActivitySelection["origin"], machineNumber?: number) {
+    if (!activitySelection || !activitySelectionSummary) return null;
+    const visuals = getActivitySelectionVisuals(origin, machineNumber);
+    if (!visuals) return null;
+
+    return (
+      <>
+        <span className="production-machine-activity__selection-dim" style={visuals.leftDimStyle} aria-hidden="true" />
+        <span className="production-machine-activity__selection-dim" style={visuals.rightDimStyle} aria-hidden="true" />
+        <span className="production-machine-activity__selection" style={visuals.selectionStyle} aria-hidden="true" />
+        <span className="production-machine-activity__selection-callout" style={visuals.calloutStyle}>
+          <b>{activityCopy.selectionFocus}</b>
+          <em>{activitySelectionSummary.startLabel} - {activitySelectionSummary.endLabel}</em>
+          <strong>{activityCopy.clampCount} {formatNumber(activitySelectionSummary.totalOutput)}</strong>
+        </span>
+      </>
+    );
+  }
+
+  function renderActivitySelectionSummary() {
+    if (!activitySelection || !activitySelectionSummary) return null;
+    const partRows = activitySelectionSummary.partRows.slice(0, 6);
+    const machineRows = activitySelectionSummary.machineRows.slice(0, 8);
+
+    return (
+      <div className="production-machine-activity__selection-panel">
+        <div className="production-machine-activity__selection-head">
+          <div>
+            <span>{activityCopy.range}</span>
+            <strong>{activitySelectionSummary.startLabel} - {activitySelectionSummary.endLabel}</strong>
+          </div>
+          <div>
+            <span>{activityCopy.total}</span>
+            <strong>
+              {activityCopy.clampCount} {formatNumber(activitySelectionSummary.totalOutput)}
+              {" · "}
+              {activityCopy.estimatedQty} {formatNumber(activitySelectionSummary.totalEstimatedQty)}
+            </strong>
+          </div>
+          <button type="button" onClick={() => setActivitySelection(null)}>
+            {activityCopy.clear}
+          </button>
+        </div>
+        {partRows.length || machineRows.length ? (
+          <div className="production-machine-activity__selection-grid">
+            <div>
+              <strong>{activityCopy.selectedParts}</strong>
+              <ul>
+                {partRows.map((row) => (
+                  <li key={row.key}>
+                    <i
+                      style={{
+                        "--activity-hue": row.partHue ? String(row.partHue) : undefined,
+                        "--activity-lightness": row.partLightness ? `${row.partLightness}%` : undefined,
+                        "--activity-saturation": row.partSaturation ? `${row.partSaturation}%` : undefined,
+                      } as CSSProperties}
+                    />
+                    <span>{row.machineLabel} · {row.partNo}</span>
+                    <b>{activityCopy.clampCount} {formatNumber(row.output)} · {activityCopy.estimatedQty} {formatNumber(row.estimatedQty)}</b>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <strong>{activityCopy.selectedMachines}</strong>
+              <ul>
+                {machineRows.map((row) => (
+                  <li key={row.key}>
+                    <span>{row.machineLabel}</span>
+                    <b>{activityCopy.clampCount} {formatNumber(row.output)} · {activityCopy.estimatedQty} {formatNumber(row.estimatedQty)}</b>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : (
+          <p className="production-machine-activity__selection-empty">{activityCopy.noSelection}</p>
+        )}
+      </div>
     );
   }
 
@@ -2881,7 +3430,7 @@ export function ProductionDashboardPage() {
       : "production-machine-activity__annotation-badge--peak-start";
 
     return (
-      <section className="panel production-kpi-detail production-machine-activity">
+      <section className={`panel production-kpi-detail production-machine-activity${activitySelection ? " production-machine-activity--has-selection" : ""}`}>
         <div className="production-kpi-detail__header">
           <div>
             <p className="panel-card__eyebrow">{detailCopy.equipmentTimeline}</p>
@@ -2918,7 +3467,13 @@ export function ProductionDashboardPage() {
                   </div>
                 </div>
                 <div className="production-machine-activity__timeline-area">
-                  <div className="production-machine-activity__utilization-plot">
+                  <div
+                    className="production-machine-activity__utilization-plot"
+                    onPointerDown={(event) => beginActivitySelection("utilization", event)}
+                    onPointerMove={(event) => moveActivitySelection("utilization", event)}
+                    onPointerUp={(event) => endActivitySelection("utilization", event)}
+                    onPointerCancel={(event) => endActivitySelection("utilization", event)}
+                  >
                     <svg viewBox="0 0 100 56" preserveAspectRatio="none" role="img">
                       {utilizationGridTicks.map((tick) => (
                         <line
@@ -2963,6 +3518,9 @@ export function ProductionDashboardPage() {
                         <span className={`production-machine-activity__ma-legend--${series.key}`} key={series.key}>{series.label}</span>
                       ))}
                     </div>
+                    {!activitySelection ? (
+                      <span className="production-machine-activity__drag-hint">{activityCopy.dragHint}</span>
+                    ) : null}
                     <span className="production-machine-activity__annotation-badge production-machine-activity__annotation-badge--average" style={{ top: `${averageLabelTop}%` }}>
                       {detailCopy.averageLine} {Math.round(machineActivitySummary.averageUtilizationRate)}%
                     </span>
@@ -2977,6 +3535,7 @@ export function ProductionDashboardPage() {
                         {detailCopy.peakPoint} {Math.round(machineActivitySummary.peakUtilizationRate)}%
                       </span>
                     ) : null}
+                    {renderActivitySelectionOverlays("utilization")}
                   </div>
                 </div>
               </div>
@@ -2991,16 +3550,34 @@ export function ProductionDashboardPage() {
           </div>
         </div>
 
+        {renderActivitySelectionSummary()}
+
         <div className="production-machine-activity__list">
           {machineActivityRows.map((row) => {
             const displayLabel = getLocalizedMachineLabel(row.label, language);
+            const isSelectedBySelection = activitySelection?.origin === "timeline" && activitySelection.machineNumber === row.machineNumber;
+            const isMutedBySelection = activitySelection?.origin === "timeline" && activitySelection.machineNumber !== row.machineNumber;
             return (
-              <article className={row.isActive ? "production-machine-activity__row production-machine-activity__row--active" : "production-machine-activity__row"} key={row.machineNumber}>
+              <article
+                className={[
+                  "production-machine-activity__row",
+                  row.isActive ? "production-machine-activity__row--active" : "",
+                  isSelectedBySelection ? "production-machine-activity__row--selection-focused" : "",
+                  isMutedBySelection ? "production-machine-activity__row--selection-muted" : "",
+                ].filter(Boolean).join(" ")}
+                key={row.machineNumber}
+              >
                 <div className="production-machine-activity__label">
                   <strong>{displayLabel}</strong>
                   <span>{detailCopy.clampCount} {formatNumber(row.output)} · {detailCopy.activeTime} {formatHoursFromMinutes(row.activeMinutes)}</span>
                 </div>
-                <div className="production-machine-activity__track">
+                <div
+                  className="production-machine-activity__track"
+                  onPointerDown={(event) => beginActivitySelection("timeline", event, row.machineNumber)}
+                  onPointerMove={(event) => moveActivitySelection("timeline", event, row.machineNumber)}
+                  onPointerUp={(event) => endActivitySelection("timeline", event, row.machineNumber)}
+                  onPointerCancel={(event) => endActivitySelection("timeline", event, row.machineNumber)}
+                >
                   {row.segments.length ? row.segments.map((segment) => (
                     <i
                       className={segment.active ? "production-machine-activity__segment production-machine-activity__segment--active" : "production-machine-activity__segment"}
@@ -3009,12 +3586,16 @@ export function ProductionDashboardPage() {
                         left: `${segment.startPct}%`,
                         width: `${segment.widthPct}%`,
                         "--activity-alpha": segment.density ? String(segment.density) : undefined,
+                        "--activity-hue": segment.partHue ? String(segment.partHue) : undefined,
+                        "--activity-lightness": segment.partLightness ? `${segment.partLightness}%` : undefined,
+                        "--activity-saturation": segment.partSaturation ? `${segment.partSaturation}%` : undefined,
                       } as CSSProperties}
-                      title={`${segment.active ? detailCopy.running : detailCopy.idle} · ${detailCopy.clampCount} ${formatNumber(segment.output)}`}
+                      title={`${segment.active ? `${segment.partNo ?? activityCopy.partUnknown} · ` : ""}${segment.active ? detailCopy.running : detailCopy.idle} · ${detailCopy.clampCount} ${formatNumber(segment.output)}`}
                     />
                   )) : (
                     <i className="production-machine-activity__segment production-machine-activity__segment--empty" style={{ left: "0%", width: "100%" }} />
                   )}
+                  {renderActivitySelectionOverlays("timeline", row.machineNumber)}
                 </div>
               </article>
             );
