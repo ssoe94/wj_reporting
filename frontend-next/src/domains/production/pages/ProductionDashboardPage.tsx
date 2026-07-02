@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getInjectionProductionMatrix,
@@ -156,6 +156,8 @@ type MachineActivitySelection = {
   startPct: number;
   endPct: number;
   isDragging: boolean;
+  layerX: number;
+  layerY: number;
   machineNumber?: number;
 };
 
@@ -2440,6 +2442,7 @@ export function ProductionDashboardPage() {
   const [selectedMachiningRow, setSelectedMachiningRow] = useState<MachiningProvisionRow | null>(null);
   const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailKey | null>(null);
   const [activitySelection, setActivitySelection] = useState<MachineActivitySelection | null>(null);
+  const suppressNextActivityPointerRef = useRef(false);
   const [manualForm, setManualForm] = useState({
     goodQty: "",
     defectQty: "0",
@@ -2697,6 +2700,23 @@ export function ProductionDashboardPage() {
     [activitySelection, businessDate, language, machineActivityRows],
   );
 
+  useEffect(() => {
+    if (!activitySelection || activitySelection.isDragging) return undefined;
+
+    function clearSelectionFromOutside(event: PointerEvent) {
+      const target = event.target as Element | null;
+      if (target?.closest(".production-machine-activity__selection-layer")) return;
+      suppressNextActivityPointerRef.current = true;
+      window.setTimeout(() => {
+        suppressNextActivityPointerRef.current = false;
+      }, 0);
+      setActivitySelection(null);
+    }
+
+    document.addEventListener("pointerdown", clearSelectionFromOutside, true);
+    return () => document.removeEventListener("pointerdown", clearSelectionFromOutside, true);
+  }, [activitySelection]);
+
   function openMachiningManualReport(row: MachiningProvisionRow) {
     const remainingQty = Math.max(0, Number(row.planned_qty ?? 0) - Number(row.effective_actual_qty ?? 0));
     setSelectedMachiningRow(row);
@@ -2749,13 +2769,37 @@ export function ProductionDashboardPage() {
     return clampPercent(((event.clientX - rect.left) / rect.width) * 100);
   }
 
+  function getActivitySelectionLayerPoint(
+    origin: MachineActivitySelection["origin"],
+    event: ReactPointerEvent<HTMLElement>,
+    startPct: number,
+    endPct: number,
+  ) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const centerPct = clampPercent((startPct + endPct) / 2);
+    const layerWidth = origin === "timeline" ? 640 : 560;
+    const layerHeight = origin === "timeline" ? 178 : 206;
+    const margin = 18;
+    const rawX = rect.left + rect.width * (centerPct / 100);
+    const rawY = origin === "timeline" ? rect.bottom + 14 : rect.top + 14;
+    return {
+      layerX: Math.max(margin + layerWidth / 2, Math.min(window.innerWidth - margin - layerWidth / 2, rawX)),
+      layerY: Math.max(margin, Math.min(window.innerHeight - layerHeight - margin, rawY)),
+    };
+  }
+
   function beginActivitySelection(
     origin: MachineActivitySelection["origin"],
     event: ReactPointerEvent<HTMLElement>,
     machineNumber?: number,
   ) {
     if (event.button !== 0) return;
+    if (suppressNextActivityPointerRef.current) {
+      suppressNextActivityPointerRef.current = false;
+      return;
+    }
     const pct = getActivityPointerPercent(event);
+    const layerPoint = getActivitySelectionLayerPoint(origin, event, pct, pct);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     setActivitySelection({
       origin,
@@ -2763,6 +2807,7 @@ export function ProductionDashboardPage() {
       startPct: pct,
       endPct: pct,
       isDragging: true,
+      ...layerPoint,
     });
   }
 
@@ -2774,7 +2819,7 @@ export function ProductionDashboardPage() {
     const pct = getActivityPointerPercent(event);
     setActivitySelection((current) => {
       if (!current?.isDragging || current.origin !== origin || current.machineNumber !== machineNumber) return current;
-      return { ...current, endPct: pct };
+      return { ...current, endPct: pct, ...getActivitySelectionLayerPoint(origin, event, current.startPct, pct) };
     });
   }
 
@@ -2787,30 +2832,19 @@ export function ProductionDashboardPage() {
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     setActivitySelection((current) => {
       if (!current || current.origin !== origin || current.machineNumber !== machineNumber) return current;
-      if (Math.abs(current.startPct - pct) < 0.35) {
-        return {
-          ...current,
-          endPct: Math.min(100, current.startPct + 2),
-          isDragging: false,
-        };
-      }
-      return { ...current, endPct: pct, isDragging: false };
+      const nextEndPct = Math.abs(current.startPct - pct) < 0.35 ? Math.min(100, current.startPct + 2) : pct;
+      return {
+        ...current,
+        endPct: nextEndPct,
+        isDragging: false,
+        ...getActivitySelectionLayerPoint(origin, event, current.startPct, nextEndPct),
+      };
     });
-  }
-
-  function getActivitySelectionStyle(origin: MachineActivitySelection["origin"], machineNumber?: number) {
-    if (!activitySelection || activitySelection.origin !== origin || activitySelection.machineNumber !== machineNumber) return undefined;
-    const bounds = getActivitySelectionBounds(activitySelection);
-    return {
-      left: `${bounds.startPct}%`,
-      width: `${bounds.widthPct}%`,
-    } as CSSProperties;
   }
 
   function getActivitySelectionVisuals(origin: MachineActivitySelection["origin"], machineNumber?: number) {
     if (!activitySelection || activitySelection.origin !== origin || activitySelection.machineNumber !== machineNumber) return null;
     const bounds = getActivitySelectionBounds(activitySelection);
-    const centerPct = Math.max(10, Math.min(90, bounds.startPct + bounds.widthPct / 2));
     return {
       selectionStyle: {
         left: `${bounds.startPct}%`,
@@ -2824,8 +2858,9 @@ export function ProductionDashboardPage() {
         left: `${bounds.startPct + bounds.widthPct}%`,
         width: `${Math.max(0, 100 - bounds.startPct - bounds.widthPct)}%`,
       } as CSSProperties,
-      calloutStyle: {
-        left: `${centerPct}%`,
+      layerStyle: {
+        left: `${activitySelection.layerX}px`,
+        top: `${activitySelection.layerY}px`,
       } as CSSProperties,
     };
   }
@@ -2834,17 +2869,79 @@ export function ProductionDashboardPage() {
     if (!activitySelection || !activitySelectionSummary) return null;
     const visuals = getActivitySelectionVisuals(origin, machineNumber);
     if (!visuals) return null;
+    const partRows = activitySelectionSummary.partRows.slice(0, origin === "timeline" ? 2 : 3);
+    const machineRows = activitySelectionSummary.machineRows.slice(0, origin === "timeline" ? 2 : 3);
+    const layerClassName = [
+      "production-machine-activity__selection-layer",
+      origin === "timeline" ? "production-machine-activity__selection-layer--track" : "",
+    ].filter(Boolean).join(" ");
 
     return (
       <>
         <span className="production-machine-activity__selection-dim" style={visuals.leftDimStyle} aria-hidden="true" />
         <span className="production-machine-activity__selection-dim" style={visuals.rightDimStyle} aria-hidden="true" />
         <span className="production-machine-activity__selection" style={visuals.selectionStyle} aria-hidden="true" />
-        <span className="production-machine-activity__selection-callout" style={visuals.calloutStyle}>
-          <b>{activityCopy.selectionFocus}</b>
-          <em>{activitySelectionSummary.startLabel} - {activitySelectionSummary.endLabel}</em>
-          <strong>{activityCopy.clampCount} {formatNumber(activitySelectionSummary.totalOutput)}</strong>
-        </span>
+        <div className={layerClassName} style={visuals.layerStyle}>
+          <div className="production-machine-activity__selection-layer-head">
+            <div>
+              <span>{activityCopy.range}</span>
+              <strong>{activitySelectionSummary.startLabel} - {activitySelectionSummary.endLabel}</strong>
+            </div>
+            <div>
+              <span>{activityCopy.total}</span>
+              <strong>
+                {activityCopy.clampCount} {formatNumber(activitySelectionSummary.totalOutput)}
+                {" · "}
+                {activityCopy.estimatedQty} {formatNumber(activitySelectionSummary.totalEstimatedQty)}
+              </strong>
+            </div>
+            <button
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                setActivitySelection(null);
+              }}
+            >
+              {activityCopy.clear}
+            </button>
+          </div>
+          {partRows.length || machineRows.length ? (
+            <div className="production-machine-activity__selection-layer-grid">
+              <div>
+                <strong>{activityCopy.selectedParts}</strong>
+                <ul>
+                  {partRows.map((row) => (
+                    <li key={row.key}>
+                      <i
+                        style={{
+                          "--activity-hue": row.partHue ? String(row.partHue) : undefined,
+                          "--activity-lightness": row.partLightness ? `${row.partLightness}%` : undefined,
+                          "--activity-saturation": row.partSaturation ? `${row.partSaturation}%` : undefined,
+                        } as CSSProperties}
+                      />
+                      <span>{row.machineLabel} · {row.partNo}</span>
+                      <b>{activityCopy.clampCount} {formatNumber(row.output)} · {activityCopy.estimatedQty} {formatNumber(row.estimatedQty)}</b>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <strong>{activityCopy.selectedMachines}</strong>
+                <ul>
+                  {machineRows.map((row) => (
+                    <li key={row.key}>
+                      <span>{row.machineLabel}</span>
+                      <b>{activityCopy.clampCount} {formatNumber(row.output)} · {activityCopy.estimatedQty} {formatNumber(row.estimatedQty)}</b>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <p className="production-machine-activity__selection-layer-empty">{activityCopy.noSelection}</p>
+          )}
+        </div>
       </>
     );
   }
@@ -3431,6 +3528,14 @@ export function ProductionDashboardPage() {
 
     return (
       <section className={`panel production-kpi-detail production-machine-activity${activitySelection ? " production-machine-activity--has-selection" : ""}`}>
+        {activitySelection ? (
+          <button
+            type="button"
+            className="production-machine-activity__screen-dim"
+            aria-label={activityCopy.clear}
+            onClick={() => setActivitySelection(null)}
+          />
+        ) : null}
         <div className="production-kpi-detail__header">
           <div>
             <p className="panel-card__eyebrow">{detailCopy.equipmentTimeline}</p>
@@ -3444,7 +3549,12 @@ export function ProductionDashboardPage() {
         </div>
 
         <div className="production-machine-activity__summary">
-          <div className="production-machine-activity__summary-chart">
+          <div
+            className={[
+              "production-machine-activity__summary-chart",
+              activitySelection?.origin === "utilization" ? "production-machine-activity__summary-chart--selection-focused" : "",
+            ].filter(Boolean).join(" ")}
+          >
             <div className="production-kpi-chart production-machine-activity__utilization-chart" aria-label={`${detailCopy.utilizationSummary} ${detailCopy.utilizationTrend}`}>
               <div className="production-machine-activity__timeline-aligner">
                 <div className="production-machine-activity__timeline-gutter">
@@ -3549,8 +3659,6 @@ export function ProductionDashboardPage() {
             {axisLabels.map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
           </div>
         </div>
-
-        {renderActivitySelectionSummary()}
 
         <div className="production-machine-activity__list">
           {machineActivityRows.map((row) => {
