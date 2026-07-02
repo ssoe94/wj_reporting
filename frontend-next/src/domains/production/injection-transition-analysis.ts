@@ -152,8 +152,8 @@ function getMachineNumberFromName(value: string | null | undefined) {
   const text = String(value ?? "");
   const suffixMatch = text.match(/-(\d+)\s*$/);
   if (suffixMatch) return suffixMatch[1];
-  const koreanMatch = text.match(/^(\d+)\s*호기/);
-  if (koreanMatch) return koreanMatch[1];
+  const machineLabelMatch = text.match(/^(\d+)\s*(?:호기|号机)/);
+  if (machineLabelMatch) return machineLabelMatch[1];
   const leadingMatch = text.match(/^(\d+)\D/);
   return leadingMatch ? leadingMatch[1] : null;
 }
@@ -179,16 +179,16 @@ function getBusinessDayEnd(businessDate: string) {
 }
 
 function getLatestTime(data?: InjectionProductionMatrix) {
-  const latestSlot = data?.time_slots.at(-1);
+  const latestSlot = data?.time_slots?.at(-1);
   return latestSlot ? new Date(latestSlot.time) : null;
 }
 
 function getSlotIntervalMinutes(data: InjectionProductionMatrix, index: number) {
-  const explicitInterval = data.time_slots[index]?.interval_minutes;
+  const explicitInterval = data.time_slots?.[index]?.interval_minutes;
   if (explicitInterval) return explicitInterval;
 
-  const currentTime = new Date(data.time_slots[index]?.time ?? 0);
-  const nextSlot = data.time_slots[index + 1];
+  const currentTime = new Date(data.time_slots?.[index]?.time ?? 0);
+  const nextSlot = data.time_slots?.[index + 1];
   if (!Number.isNaN(currentTime.getTime()) && nextSlot) {
     const nextTime = new Date(nextSlot.time);
     const diffMinutes = (nextTime.getTime() - currentTime.getTime()) / (60 * 1000);
@@ -212,7 +212,7 @@ function getMachineMatrixRow(data: InjectionProductionMatrix, machine: Injection
   ].filter(Boolean);
 
   for (const key of candidateKeys) {
-    const row = data.actual_production_matrix[key];
+    const row = data.actual_production_matrix?.[key];
     if (row) return row;
   }
 
@@ -222,7 +222,7 @@ function getMachineMatrixRow(data: InjectionProductionMatrix, machine: Injection
 function buildPlanMap(planSummary?: ProductionPlanSummaryResponse) {
   const planMap = new Map<string, { label: string; records: ProductionPlanRecord[] }>();
 
-  for (const record of planSummary?.injection.records ?? []) {
+  for (const record of planSummary?.injection?.records ?? []) {
     const machineNumber = getMachineNumberFromName(record.machine_name);
     const key = machineNumber ?? record.machine_name ?? "unknown";
     const current = planMap.get(key) ?? {
@@ -418,7 +418,7 @@ function buildSlotStates(
   let cumulativeShots = 0;
   const states: SlotState[] = [];
 
-  data.time_slots.forEach((slot, index) => {
+  (data.time_slots ?? []).forEach((slot, index) => {
     const time = new Date(slot.time);
     if (time < dayStart || time > referenceEnd) return;
 
@@ -988,7 +988,7 @@ export function buildInjectionTransitionAnalysis(
 
   const planMap = buildPlanMap(planSummary);
   const futurePlanMap = buildFuturePlanMap(futurePlanSummaries);
-  const machines = mesData.machines.map((machine) => {
+  const machines = (mesData.machines ?? []).map((machine) => {
     const key = String(machine.machine_number);
     const planRecords = planMap.get(key)?.records ?? [];
     const futurePlanRecords = futurePlanMap.get(key) ?? [];

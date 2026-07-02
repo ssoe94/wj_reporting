@@ -17,10 +17,12 @@ type AppProvidersProps = {
   children: ReactNode;
 };
 
+const routerBaseName = import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
+
 export function AppProviders({ children }: AppProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={routerBaseName}>
         <AuthProvider>{children}</AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

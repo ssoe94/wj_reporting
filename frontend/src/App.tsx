@@ -53,7 +53,7 @@ import FieldLauncherPage from './pages/field/Launcher';
 import FieldStationPage from './pages/field/Station';
 import ProductionPlanPage from './pages/production/Plan';
 import ProductionStatsPage from './pages/production/Stats';
-import ProductionDashboardPage from './pages/production/Dashboard'; // New import
+import EmbeddedNextPage from './pages/EmbeddedNextPage';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
 
 const queryClient = new QueryClient();
@@ -81,7 +81,7 @@ function useNavItems() {
         label: t('nav_production'),
         icon: Factory,
         children: [
-          { to: "/production", label: t('nav_production_dashboard'), icon: BarChart3 }, // New: Dashboard for production overview
+          { to: "/production", label: t('nav_production_dashboard'), icon: BarChart3 },
           { to: "/production/plan", label: t('nav_production_plan'), icon: FileSpreadsheet },
           { to: "/production/stats", label: t('nav_production_stats'), icon: BarChart3 },
         ],
@@ -94,7 +94,7 @@ function useNavItems() {
           { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
           { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
           { to: "/injection/setup", label: t('setup.page_title'), icon: Monitor },
-          { to: "/injection/monitoring", label: t('monitoring.title'), icon: BarChart3 },
+          { to: "/mes/monitoring", label: t('monitoring.title'), icon: BarChart3 },
         ],
       },
       {
@@ -162,7 +162,7 @@ function useNavItems() {
     label: t('nav_production'),
     icon: Factory,
     children: [
-      { to: "/production", label: t('nav_production_dashboard'), icon: BarChart3 }, // New: Dashboard for production overview
+      { to: "/production", label: t('nav_production_dashboard'), icon: BarChart3 },
       { to: "/production/plan", label: t('nav_production_plan'), icon: FileSpreadsheet },
       { to: "/production/stats", label: t('nav_production_stats'), icon: BarChart3 },
     ],
@@ -177,7 +177,7 @@ function useNavItems() {
       { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
       { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
       { to: "/injection/setup", label: t('setup.page_title'), icon: Monitor },
-      { to: "/injection/monitoring", label: t('monitoring.title'), icon: BarChart3 },
+      { to: "/mes/monitoring", label: t('monitoring.title'), icon: BarChart3 },
     ],
   });
   navItems.push({
@@ -445,7 +445,7 @@ function AppContent() {
                       );
                     }
                     return (
-                      <PermissionLink key={child.to} to={child.to} className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
+                      <PermissionLink key={child.to} to={child.to} reloadDocument={(child as any).reloadDocument} className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
                         {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
                       </PermissionLink>
                     );
@@ -554,6 +554,7 @@ function AppContent() {
                           <PermissionLink
                             key={child.to}
                             to={child.to}
+                            reloadDocument={(child as any).reloadDocument}
                             className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
                             onClick={() => setSidebarOpen(false)}
                           >
@@ -590,9 +591,10 @@ function AppContent() {
             <Route path="/injection" element={<PrivateRoute><PageTransition><SummaryPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/setup" element={<PrivateRoute><PageTransition><InjectionSetupPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/monitoring" element={<PrivateRoute><PageTransition><InjectionMonitoringPage /></PageTransition></PrivateRoute>} />
+            <Route path="/mes/monitoring" element={<PrivateRoute><PageTransition><EmbeddedNextPage page="mes-monitoring" /></PageTransition></PrivateRoute>} />
 
             {/* Production */}
-            <Route path="/production" element={<PrivateRoute><PageTransition><ProductionDashboardPage /></PageTransition></PrivateRoute>} />
+            <Route path="/production" element={<PrivateRoute><PageTransition><EmbeddedNextPage page="production" /></PageTransition></PrivateRoute>} />
             <Route path="/production/plan" element={<PrivateRoute><PageTransition><ProductionPlanPage /></PageTransition></PrivateRoute>} />
             <Route path="/production/stats" element={<PrivateRoute><PageTransition><ProductionStatsPage /></PageTransition></PrivateRoute>} />
 
@@ -650,4 +652,3 @@ export default function App() {
     </QueryClientProvider>
   );
 }
-

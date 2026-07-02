@@ -45,7 +45,7 @@ http.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const request = error.config as RetriableRequest | undefined;
-    if (!request || error.response?.status !== 401 || request._retry) {
+    if (!request || request.skipAuth || error.response?.status !== 401 || request._retry) {
       return Promise.reject(error);
     }
 

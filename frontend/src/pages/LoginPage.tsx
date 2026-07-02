@@ -182,7 +182,7 @@ export default function LoginPage() {
                   : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              涓枃
+              中文
             </button>
           </div>
         </div>

@@ -3,10 +3,13 @@ import { useAuth } from "@/domains/auth/auth-context";
 import type { AppCapability } from "@/domains/auth/types";
 import { setStoredLanguage, useStoredLanguage, type AppLanguage } from "@/shared/i18n/language";
 
+const publicAssetBase = import.meta.env.BASE_URL.replace(/\/$/, "");
+const wjLogoUrl = `${publicAssetBase}/wjlogo.png`;
+
 type NavItem = {
   to: string;
   label: Record<AppLanguage, string>;
-  capability: AppCapability;
+  capability?: AppCapability;
   description: Record<AppLanguage, string>;
 };
 
@@ -14,7 +17,6 @@ const navItems: NavItem[] = [
   {
     to: "/production",
     label: { ko: "생산 대시보드", zh: "生产看板" },
-    capability: "production.read",
     description: { ko: "진행 현황과 병목 확인", zh: "查看进度和瓶颈" },
   },
   {
@@ -26,7 +28,6 @@ const navItems: NavItem[] = [
   {
     to: "/mes/monitoring",
     label: { ko: "MES 모니터링", zh: "MES 监控" },
-    capability: "production.read",
     description: { ko: "사출 MES 수집과 공정 진행 추적", zh: "采集注塑 MES 并跟踪工序进度" },
   },
   {
@@ -64,7 +65,7 @@ export function AppShell() {
   const { user, logout, hasCapability } = useAuth();
   const [language, setLanguage] = useStoredLanguage();
   const copy = shellCopy[language];
-  const visibleItems = navItems.filter((item) => hasCapability(item.capability));
+  const visibleItems = navItems.filter((item) => !item.capability || hasCapability(item.capability));
 
   function handleLanguageChange(nextLanguage: AppLanguage) {
     setLanguage(nextLanguage);
@@ -76,7 +77,7 @@ export function AppShell() {
       <aside className="shell__sidebar">
         <div className="sidebar-main">
           <div className="brand">
-            <img alt="WJ company logo" className="brand__logo" src="/wjlogo.png" />
+            <img alt="WJ company logo" className="brand__logo" src={wjLogoUrl} />
             <h1 className={`brand__title brand__title--${language}`}>{copy.brandTitle}</h1>
           </div>
 

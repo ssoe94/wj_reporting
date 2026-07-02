@@ -187,3 +187,30 @@ input[type=number] {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+.embedded-next-page {
+  position: relative;
+  min-height: calc(100vh - 5rem);
+  background: #f5f8fb;
+}
+
+.embedded-next-page__frame {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  min-height: calc(100vh - 5rem);
+  border: 0;
+  background: #f5f8fb;
+}
+
+.embedded-next-page__loading {
+  position: absolute;
+  inset: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 0.95rem;
+  pointer-events: none;
+}

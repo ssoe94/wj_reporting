@@ -60,7 +60,7 @@ export type RealtimeProgressSummary = {
 };
 
 function getLatestTime(data?: InjectionProductionMatrix) {
-  const latestSlot = data?.time_slots.at(-1);
+  const latestSlot = data?.time_slots?.at(-1);
   return latestSlot ? new Date(latestSlot.time) : null;
 }
 
@@ -121,8 +121,8 @@ function getMachineNumberFromName(value: string | null | undefined) {
   const text = String(value ?? "");
   const suffixMatch = text.match(/-(\d+)\s*$/);
   if (suffixMatch) return suffixMatch[1];
-  const koreanMatch = text.match(/^(\d+)\s*호기/);
-  if (koreanMatch) return koreanMatch[1];
+  const machineLabelMatch = text.match(/^(\d+)\s*(?:호기|号机)/);
+  if (machineLabelMatch) return machineLabelMatch[1];
   const leadingMatch = text.match(/^(\d+)\D/);
   return leadingMatch ? leadingMatch[1] : null;
 }
@@ -365,7 +365,7 @@ export function buildRealtimeProgressSummary(
     records: ProductionPlanRecord[];
   }>();
 
-  for (const record of planSummary?.injection.records ?? []) {
+  for (const record of planSummary?.injection?.records ?? []) {
     const machineNumber = getMachineNumberFromName(record.machine_name);
     const key = machineNumber ?? (record.machine_name || "unknown");
     const plannedQty = Number(record.planned_quantity ?? 0);
@@ -385,12 +385,12 @@ export function buildRealtimeProgressSummary(
 
   const shotMap = new Map<string, { shotCount: number; recentShots: number; label: string }>();
   if (mesData) {
-    for (const machine of mesData.machines) {
+    for (const machine of mesData.machines ?? []) {
       const key = String(machine.machine_number);
-      const productionRow = getMachineMatrixValues(mesData, machine.machine_number);
       let shotCount = 0;
       let recentShots = 0;
-      mesData.time_slots.forEach((slot, index) => {
+      const productionRow = getMachineMatrixValues(mesData, machine.machine_number);
+      (mesData.time_slots ?? []).forEach((slot, index) => {
         const slotTime = new Date(slot.time);
         const output = numberAt(productionRow, index);
         if (productionWindow.start && productionWindow.end && slotTime >= productionWindow.start && slotTime <= productionWindow.end) {

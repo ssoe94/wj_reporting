@@ -1791,10 +1791,28 @@ const LangContext = createContext<LangContextValue>({
   t: (key: string, _params?: any) => key,
 });
 
+const LANGUAGE_STORAGE_KEYS = ['lang', 'wj_next_language', 'wj_next_login_language'] as const;
+const LANGUAGE_CHANGE_EVENT = 'wj_next_language_change';
+
+function getStoredLang(): 'ko' | 'zh' {
+  for (const key of LANGUAGE_STORAGE_KEYS) {
+    const value = localStorage.getItem(key);
+    if (value === 'ko' || value === 'zh') return value;
+  }
+  return 'ko';
+}
+
+function setStoredLang(lang: 'ko' | 'zh') {
+  for (const key of LANGUAGE_STORAGE_KEYS) {
+    localStorage.setItem(key, lang);
+  }
+  window.dispatchEvent(new CustomEvent(LANGUAGE_CHANGE_EVENT, { detail: lang }));
+}
+
 export function LangProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<'ko' | 'zh'>(() => (localStorage.getItem('lang') as 'ko' | 'zh') || 'ko');
+  const [lang, setLang] = useState<'ko' | 'zh'>(getStoredLang);
   useEffect(() => {
-    localStorage.setItem('lang', lang);
+    setStoredLang(lang);
   }, [lang]);
   const t = (key: string, params?: any) => {
     let translation = translations[lang][key] || key;
@@ -1815,4 +1833,3 @@ export function LangProvider({ children }: { children: ReactNode }) {
 export function useLang() {
   return useContext(LangContext);
 }
-

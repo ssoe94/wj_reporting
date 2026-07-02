@@ -4,6 +4,7 @@ import {
   getInjectionProductionMatrix,
   getInjectionProductionMatrixForDate,
   type InjectionProductionMatrix,
+  type TimeSlot,
 } from "@/domains/mes/api";
 import {
   askProductionAi,
@@ -84,6 +85,75 @@ type MachiningProgressPreview = {
     provisionRow?: MachiningProvisionRow;
     segments: RealtimeProgressSegment[];
   }>;
+};
+
+type KpiDetailKey = "injection" | "machining" | "machines";
+
+type CumulativeTrendPoint = {
+  key: string;
+  label: string;
+  elapsedRate: number;
+  actualQty: number;
+  targetQty: number;
+};
+
+type CumulativeTrendSummary = {
+  plannedQty: number;
+  actualQty: number;
+  completionRate: number;
+  elapsedRate: number;
+  latestPoint: CumulativeTrendPoint;
+  points: CumulativeTrendPoint[];
+  axisLabels: string[];
+};
+
+type MachineActivitySegment = {
+  key: string;
+  active: boolean;
+  startPct: number;
+  widthPct: number;
+  output: number;
+  density?: number;
+};
+
+type MachineActivityRow = {
+  machineNumber: number;
+  label: string;
+  output: number;
+  activeMinutes: number;
+  isActive: boolean;
+  segments: MachineActivitySegment[];
+};
+
+type MachineUtilizationPoint = {
+  key: string;
+  label: string;
+  timestampMs: number;
+  elapsedRate: number;
+  utilizationRate: number;
+  activeMachineCount: number;
+};
+
+type MachineActivitySummary = {
+  totalMachines: number;
+  activeMachineCount: number;
+  utilizationScaleMin: number;
+  utilizationScaleMax: number;
+  utilizationAxisTicks: number[];
+  averageUtilizationRate: number;
+  averageActiveMachineCount: number;
+  peakUtilizationRate: number;
+  peakActiveMachineCount: number;
+  peakPoint: MachineUtilizationPoint | null;
+  currentUtilizationRate: number;
+  currentActiveMachineCount: number;
+  points: MachineUtilizationPoint[];
+  movingAverageSeries: Array<{
+    key: string;
+    label: string;
+    points: MachineUtilizationPoint[];
+  }>;
+  axisLabels: string[];
 };
 
 const pageCopy = {
@@ -329,10 +399,96 @@ const pageCopy = {
   },
 } satisfies Record<AppLanguage, Record<string, string>>;
 
+const kpiDetailCopy = {
+  ko: {
+    clickHint: "클릭해서 상세 보기",
+    injectionTitle: "사출 계획 및 실행율 상세",
+    machiningTitle: "가공 실적 / 계획 상세",
+    machinesTitle: "기준일 가동 설비 상세",
+    cumulativeTrend: "누적 추이",
+    actualLine: "실적",
+    targetLine: "시간 목표",
+    targetTotal: "목표",
+    currentGap: "현재 차이",
+    completionRate: "완료율",
+    elapsedRate: "시간 기준",
+    compactSummary: "요약",
+    updatedAt: "업데이트",
+    inProgressNow: "진행 중",
+    paceGap: "시간목표 대비",
+    paceRateGap: "시간 대비",
+    quantityGap: "수량 차이",
+    timeShort: "시간",
+    quantityShort: "수량",
+    byMachine: "설비별 진행",
+    byLine: "라인별 진행",
+    equipmentTimeline: "24시간 가동 타임라인",
+    activeFirst: "당일 가동 설비 우선 · 08:00~익일 08:00",
+    running: "생산 있음",
+    idle: "생산 없음",
+    output: "실적",
+    clampCount: "형합수",
+    activeTime: "가동 시간",
+    utilizationSummary: "전체 가동율 요약",
+    utilizationTrend: "금일 가동률 추이",
+    currentUtilization: "현재 가동률",
+    averageUtilization: "평균 가동률",
+    peakUtilization: "최대 가동률",
+    averageLine: "평균선",
+    peakPoint: "최대점",
+    movingAverage: "이동평균",
+    noData: "표시할 상세 데이터가 없습니다.",
+  },
+  zh: {
+    clickHint: "点击查看详情",
+    injectionTitle: "注塑计划与执行率详情",
+    machiningTitle: "加工实绩 / 计划详情",
+    machinesTitle: "基准日运行设备详情",
+    cumulativeTrend: "累计趋势",
+    actualLine: "实绩",
+    targetLine: "时间目标",
+    targetTotal: "目标",
+    currentGap: "当前差异",
+    completionRate: "完成率",
+    elapsedRate: "时间基准",
+    compactSummary: "摘要",
+    updatedAt: "更新",
+    inProgressNow: "进行中",
+    paceGap: "较时间目标",
+    paceRateGap: "较时间",
+    quantityGap: "数量差异",
+    timeShort: "时间",
+    quantityShort: "数量",
+    byMachine: "设备别进度",
+    byLine: "产线别进度",
+    equipmentTimeline: "24小时运行时间线",
+    activeFirst: "当日有生产的设备优先 · 08:00~次日 08:00",
+    running: "有生产",
+    idle: "无生产",
+    output: "实绩",
+    clampCount: "合模数",
+    activeTime: "运行时间",
+    utilizationSummary: "整体运行率摘要",
+    utilizationTrend: "今日运行率趋势",
+    currentUtilization: "当前运行率",
+    averageUtilization: "平均运行率",
+    peakUtilization: "最高运行率",
+    averageLine: "平均线",
+    peakPoint: "峰值",
+    movingAverage: "移动平均",
+    noData: "没有可显示的详细数据。",
+  },
+} satisfies Record<AppLanguage, Record<string, string>>;
+
 const LOCAL_LLM_BASE_URL = import.meta.env.VITE_LOCAL_LLM_BASE_URL || "http://127.0.0.1:8080/v1";
 const LOCAL_LLM_MODEL = import.meta.env.VITE_LOCAL_LLM_MODEL || "mlx-community/gemma-4-e2b-it-8bit";
 const LIVE_DATA_REFRESH_INTERVAL_MS = 120_000;
 const AI_BRIEFING_REFRESH_INTERVAL_MS = 5 * 60_000;
+const INJECTION_MACHINE_TOTAL = 17;
+const MACHINE_UTILIZATION_BUCKET_MINUTES = 5;
+const MACHINE_ACTIVITY_DETAIL_RETENTION_DAYS = 7;
+const UTILIZATION_CHART_TOP_Y = 4;
+const UTILIZATION_CHART_BOTTOM_Y = 54;
 
 type DashboardAiIntent = {
   intent: "injection_cycle_time" | "production_output" | "production_status" | "production_summary" | "unknown";
@@ -500,7 +656,7 @@ function heuristicDashboardIntent(question: string): DashboardAiIntent {
 }
 
 function getLatestTime(data?: InjectionProductionMatrix) {
-  const latestSlot = data?.time_slots.at(-1);
+  const latestSlot = data?.time_slots?.at(-1);
   return latestSlot ? new Date(latestSlot.time) : null;
 }
 
@@ -523,6 +679,142 @@ function addBusinessDateDays(businessDate: string, days: number) {
   const nextDate = getBusinessDayStart(businessDate);
   nextDate.setDate(nextDate.getDate() + days);
   return formatDateParam(nextDate);
+}
+
+function getBusinessDateAgeDays(businessDate: string) {
+  const todayStart = getBusinessDayStart(getShanghaiDateString());
+  const targetStart = getBusinessDayStart(businessDate);
+  return Math.floor((todayStart.getTime() - targetStart.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function hasSparseHistoricalActivityData(businessDate: string, mesData?: InjectionProductionMatrix) {
+  if (!mesData || getBusinessDateAgeDays(businessDate) <= 0) return false;
+  const slots = mesData.time_slots ?? [];
+  if (slots.length < 2) return false;
+  const slotIntervals = slots
+    .slice(1)
+    .map((slot, index) => (
+      (new Date(slot.time).getTime() - new Date(slots[index].time).getTime()) / (60 * 1000)
+    ))
+    .filter((minutes) => Number.isFinite(minutes) && minutes > 0)
+    .sort((left, right) => left - right);
+  const medianSlotInterval = slotIntervals.length
+    ? slotIntervals[Math.floor(slotIntervals.length / 2)]
+    : 0;
+  if (medianSlotInterval >= 30) return true;
+
+  let activeSlotCount = 0;
+  const activeMinuteBuckets = new Map<number, number>();
+
+  slots.forEach((slot, slotIndex) => {
+    const slotTime = new Date(slot.time);
+    if (Number.isNaN(slotTime.getTime())) return;
+
+    let hasProduction = false;
+    for (let machineNumber = 1; machineNumber <= INJECTION_MACHINE_TOTAL; machineNumber += 1) {
+      const productionRow = getMachineMatrixValues(mesData, mesData.actual_production_matrix, machineNumber);
+      if (numberAt(productionRow, slotIndex) > 0) {
+        hasProduction = true;
+        break;
+      }
+    }
+
+    if (!hasProduction) return;
+    activeSlotCount += 1;
+    const minuteBucket = Math.round(slotTime.getMinutes() / 5) * 5 % 60;
+    activeMinuteBuckets.set(minuteBucket, (activeMinuteBuckets.get(minuteBucket) ?? 0) + 1);
+  });
+
+  if (activeSlotCount < 8) return false;
+  const activeSlotRatio = activeSlotCount / slots.length;
+  const dominantMinuteShare = Math.max(...activeMinuteBuckets.values()) / activeSlotCount;
+  return activeSlotRatio <= 0.20 && dominantMinuteShare >= 0.50;
+}
+
+function shouldPreferActivityDensity(businessDate: string, mesData?: InjectionProductionMatrix) {
+  return getBusinessDateAgeDays(businessDate) >= MACHINE_ACTIVITY_DETAIL_RETENTION_DAYS ||
+    hasSparseHistoricalActivityData(businessDate, mesData);
+}
+
+function buildLocalBucketedActivitySeries(
+  businessDate: string,
+  mesData: InjectionProductionMatrix | undefined,
+  bucketMinutes = 60,
+) {
+  if (!mesData) return null;
+  const businessStart = getBusinessDayStart(businessDate);
+  const businessEnd = getBusinessDayEnd(businessDate);
+  const bucketMs = bucketMinutes * 60 * 1000;
+  const slots: TimeSlot[] = [];
+  const matrix: Record<string, number[]> = {};
+
+  for (
+    let slotTimeMs = businessStart.getTime(), index = 0;
+    slotTimeMs < businessEnd.getTime();
+    slotTimeMs += bucketMs, index += 1
+  ) {
+    const slotTime = new Date(slotTimeMs);
+    slots.push({
+      hour_offset: index,
+      time: slotTime.toISOString(),
+      label: formatTimeLabel(slotTime),
+      interval_minutes: bucketMinutes,
+    });
+  }
+
+  for (let machineNumber = 1; machineNumber <= INJECTION_MACHINE_TOTAL; machineNumber += 1) {
+    matrix[String(machineNumber)] = Array.from({ length: slots.length }, () => 0);
+  }
+
+  (mesData.time_slots ?? []).forEach((slot, slotIndex) => {
+    const slotTime = new Date(slot.time);
+    if (Number.isNaN(slotTime.getTime()) || slotTime < businessStart || slotTime >= businessEnd) return;
+    const targetIndex = Math.floor((slotTime.getTime() - businessStart.getTime()) / bucketMs);
+    if (targetIndex < 0 || targetIndex >= slots.length) return;
+
+    for (let machineNumber = 1; machineNumber <= INJECTION_MACHINE_TOTAL; machineNumber += 1) {
+      const productionRow = getMachineMatrixValues(mesData, mesData.actual_production_matrix, machineNumber);
+      matrix[String(machineNumber)][targetIndex] += numberAt(productionRow, slotIndex);
+    }
+  });
+
+  return {
+    slots,
+    matrix,
+    bucketMinutes,
+  };
+}
+
+function getMachineActivitySeries(businessDate: string, mesData?: InjectionProductionMatrix) {
+  const rollupSlots = mesData?.rollup_time_slots ?? mesData?.hourly_rollup_time_slots;
+  const rollupMatrix = mesData?.rollup_production_matrix ?? mesData?.hourly_production_matrix;
+  const useDensity = shouldPreferActivityDensity(businessDate, mesData);
+
+  if (useDensity && rollupSlots?.length && rollupMatrix) {
+    return {
+      slots: rollupSlots,
+      matrix: rollupMatrix,
+      bucketMinutes: mesData?.rollup_bucket_minutes ?? rollupSlots[0]?.interval_minutes ?? 30,
+      useDensity: true,
+    };
+  }
+
+  if (useDensity) {
+    const localSeries = buildLocalBucketedActivitySeries(businessDate, mesData, 60);
+    if (localSeries) {
+      return {
+        ...localSeries,
+        useDensity: true,
+      };
+    }
+  }
+
+  return {
+    slots: mesData?.time_slots,
+    matrix: mesData?.actual_production_matrix,
+    bucketMinutes: MACHINE_UTILIZATION_BUCKET_MINUTES,
+    useDensity: false,
+  };
 }
 
 function getBusinessDayReferenceEnd(businessDate: string, mesData?: InjectionProductionMatrix) {
@@ -559,10 +851,472 @@ function getMachineNumberFromName(value: string | null | undefined) {
   const text = String(value ?? "");
   const suffixMatch = text.match(/-(\d+)\s*$/);
   if (suffixMatch) return suffixMatch[1];
-  const koreanMatch = text.match(/^(\d+)\s*호기/);
-  if (koreanMatch) return koreanMatch[1];
+  const machineLabelMatch = text.match(/^(\d+)\s*(?:호기|号机)/);
+  if (machineLabelMatch) return machineLabelMatch[1];
   const leadingMatch = text.match(/^(\d+)\D/);
   return leadingMatch ? leadingMatch[1] : null;
+}
+
+function getMachineFallbackLabel(machineNumber: number, language: AppLanguage) {
+  return language === "zh" ? `${machineNumber}号机` : `${machineNumber}호기`;
+}
+
+function getLocalizedMachineLabel(value: string | null | undefined, language: AppLanguage) {
+  const label = String(value ?? "").trim();
+  if (language !== "zh") return label;
+  return label.replace(/호기/g, "号机");
+}
+
+function clampPercent(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function formatHourLabel(value: Date) {
+  return `${String(value.getHours()).padStart(2, "0")}:00`;
+}
+
+function formatTimeLabel(value: Date) {
+  return `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatHoursFromMinutes(minutes: number) {
+  if (minutes <= 0) return "0h";
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = Math.round(minutes % 60);
+  if (hours <= 0) return `${restMinutes}m`;
+  return restMinutes > 0 ? `${hours}h ${restMinutes}m` : `${hours}h`;
+}
+
+function getSlotIntervalMinutes(data: InjectionProductionMatrix, index: number) {
+  const explicitInterval = data.time_slots?.[index]?.interval_minutes;
+  if (explicitInterval) return explicitInterval;
+
+  const currentTime = new Date(data.time_slots?.[index]?.time ?? 0);
+  const nextSlot = data.time_slots?.[index + 1];
+  if (!Number.isNaN(currentTime.getTime()) && nextSlot) {
+    const nextTime = new Date(nextSlot.time);
+    const diffMinutes = (nextTime.getTime() - currentTime.getTime()) / (60 * 1000);
+    if (diffMinutes > 0) return diffMinutes;
+  }
+
+  return 2;
+}
+
+function getMachineMatrixValues(
+  data: InjectionProductionMatrix | undefined,
+  matrix: Record<string, number[]> | undefined,
+  machineNumber: number,
+) {
+  if (!data || !matrix) return [];
+  const machine = data.machines?.find((item) => item.machine_number === machineNumber);
+  const keys = [
+    String(machineNumber),
+    machine?.machine_name,
+    machine?.display_name,
+  ].filter((key): key is string => Boolean(key));
+  for (const key of keys) {
+    if (matrix[key]) return matrix[key];
+  }
+  return [];
+}
+
+function getTrendAxisLabels(businessDate: string) {
+  const start = getBusinessDayStart(businessDate);
+  return [0, 4, 8, 12, 16, 20, 24].map((hour) => {
+    const tick = new Date(start.getTime() + hour * 60 * 60 * 1000);
+    return formatHourLabel(tick);
+  });
+}
+
+function getTrendPoint(
+  key: string,
+  time: Date,
+  actualQty: number,
+  plannedQty: number,
+  businessStart: Date,
+  businessEnd: Date,
+): CumulativeTrendPoint {
+  const elapsedRate = clampPercent(((time.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100);
+  return {
+    key,
+    label: formatTimeLabel(time),
+    elapsedRate,
+    actualQty,
+    targetQty: Math.round(plannedQty * (elapsedRate / 100)),
+  };
+}
+
+function buildInjectionCumulativeTrend(
+  businessDate: string,
+  plannedQty: number,
+  actualQty: number,
+  mesData?: InjectionProductionMatrix,
+): CumulativeTrendSummary {
+  const businessStart = getBusinessDayStart(businessDate);
+  const businessEnd = getBusinessDayEnd(businessDate);
+  const referenceEnd = getBusinessDayReferenceEnd(businessDate, mesData);
+  const points: CumulativeTrendPoint[] = [getTrendPoint("start", businessStart, 0, plannedQty, businessStart, businessEnd)];
+  let cumulativeQty = 0;
+
+  mesData?.time_slots?.forEach((slot, index) => {
+    const slotTime = new Date(slot.time);
+    if (slotTime <= businessStart || slotTime > referenceEnd || slotTime > businessEnd) return;
+    cumulativeQty += (mesData.machines ?? []).reduce((sum, machine) => {
+      const row = getMachineMatrixValues(mesData, mesData.actual_production_matrix, machine.machine_number);
+      return sum + numberAt(row, index);
+    }, 0);
+    points.push(getTrendPoint(`slot-${index}`, slotTime, cumulativeQty, plannedQty, businessStart, businessEnd));
+  });
+
+  if (points.length === 1 && referenceEnd > businessStart) {
+    points.push(getTrendPoint("reference", referenceEnd, actualQty, plannedQty, businessStart, businessEnd));
+  }
+
+  const latestPoint = points.at(-1) ?? getTrendPoint("start", businessStart, 0, plannedQty, businessStart, businessEnd);
+
+  return {
+    plannedQty,
+    actualQty,
+    completionRate: plannedQty > 0 ? (actualQty / plannedQty) * 100 : 0,
+    elapsedRate: getProductionElapsedRate(businessDate, mesData),
+    latestPoint,
+    points,
+    axisLabels: getTrendAxisLabels(businessDate),
+  };
+}
+
+function getMachiningReportTime(
+  row: MachiningProvisionRow,
+  machiningStats: ProductionMesReportStatsResponse | undefined,
+  fallbackTime: Date,
+) {
+  const manualTimes = (row.manual_reports ?? [])
+    .map((report) => report.reported_at || report.updated_at)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()));
+  if (manualTimes.length) {
+    return new Date(Math.max(...manualTimes.map((value) => value.getTime())));
+  }
+
+  const rowPartNo = normalizeDashboardPartNo(row.part_no);
+  const matchedStat = machiningStats?.rows.find((statRow) => {
+    const samePart = normalizeDashboardPartNo(statRow.part_no) === rowPartNo;
+    const sameEquipment = [statRow.equipment_key, statRow.equipment_label, statRow.equipment_name]
+      .filter(Boolean)
+      .some((value) => value === row.equipment_key || value === row.equipment_label || value === row.machine_name);
+    return samePart && sameEquipment && statRow.latest_report_time;
+  });
+
+  if (matchedStat?.latest_report_time) {
+    const reportTime = new Date(matchedStat.latest_report_time);
+    if (!Number.isNaN(reportTime.getTime())) return reportTime;
+  }
+
+  return fallbackTime;
+}
+
+function buildMachiningCumulativeTrend(
+  businessDate: string,
+  plannedQty: number,
+  actualQty: number,
+  machiningProgress: MachiningProgressPreview,
+  machiningStats: ProductionMesReportStatsResponse | undefined,
+  machiningProvision: MachiningProvisionResponse | undefined,
+  mesData?: InjectionProductionMatrix,
+): CumulativeTrendSummary {
+  const businessStart = getBusinessDayStart(businessDate);
+  const businessEnd = getBusinessDayEnd(businessDate);
+  const referenceEnd = getBusinessDayReferenceEnd(businessDate, mesData);
+  const points: CumulativeTrendPoint[] = [getTrendPoint("start", businessStart, 0, plannedQty, businessStart, businessEnd)];
+  const events = machiningProvision?.rows?.length
+    ? machiningProvision.rows.map((row, index) => ({
+      key: `provision-${row.plan_identity_hash || row.plan_id || index}`,
+      qty: Math.max(0, Number(row.effective_actual_qty ?? 0) || 0),
+      time: getMachiningReportTime(row, machiningStats, referenceEnd),
+    }))
+    : (machiningStats?.rows ?? []).map((row, index) => ({
+      key: `stats-${row.equipment_key}-${row.part_no}-${index}`,
+      qty: Math.max(0, Number(row.mes_qty ?? 0) || 0),
+      time: row.latest_report_time ? new Date(row.latest_report_time) : referenceEnd,
+    }));
+
+  let cumulativeQty = 0;
+  events
+    .filter((event) => event.qty > 0)
+    .map((event) => ({
+      ...event,
+      time: Number.isNaN(event.time.getTime()) ? referenceEnd : event.time,
+    }))
+    .sort((left, right) => left.time.getTime() - right.time.getTime())
+    .forEach((event) => {
+      const clampedTime = new Date(Math.min(Math.max(event.time.getTime(), businessStart.getTime()), businessEnd.getTime()));
+      cumulativeQty += event.qty;
+      points.push(getTrendPoint(event.key, clampedTime, cumulativeQty, plannedQty, businessStart, businessEnd));
+    });
+
+  if (points.length === 1 && machiningProgress.actualQty > 0) {
+    points.push(getTrendPoint("summary-actual", referenceEnd, machiningProgress.actualQty, plannedQty, businessStart, businessEnd));
+  }
+
+  if (points.length === 1 && referenceEnd > businessStart) {
+    points.push(getTrendPoint("reference", referenceEnd, 0, plannedQty, businessStart, businessEnd));
+  }
+
+  const latestPoint = points.at(-1) ?? getTrendPoint("start", businessStart, 0, plannedQty, businessStart, businessEnd);
+
+  return {
+    plannedQty,
+    actualQty,
+    completionRate: plannedQty > 0 ? (actualQty / plannedQty) * 100 : 0,
+    elapsedRate: getProductionElapsedRate(businessDate, mesData),
+    latestPoint,
+    points,
+    axisLabels: getTrendAxisLabels(businessDate),
+  };
+}
+
+function buildMachineActivityRows(
+  businessDate: string,
+  mesData: InjectionProductionMatrix | undefined,
+  language: AppLanguage,
+): MachineActivityRow[] {
+  const businessStart = getBusinessDayStart(businessDate);
+  const businessEnd = getBusinessDayEnd(businessDate);
+  const machineInfo = new Map((mesData?.machines ?? []).map((machine) => [machine.machine_number, machine]));
+  const activitySeries = getMachineActivitySeries(businessDate, mesData);
+  const useRollupDensity = activitySeries.useDensity;
+  const activitySlots = activitySeries.slots;
+  const activityMatrix = activitySeries.matrix;
+  const maxSegmentOutput = Math.max(
+    1,
+    ...Array.from({ length: INJECTION_MACHINE_TOTAL }, (_, index) => (
+      getMachineMatrixValues(mesData, activityMatrix, index + 1)
+    )).flat().map((value) => Number(value) || 0),
+  );
+
+  return Array.from({ length: INJECTION_MACHINE_TOTAL }, (_, index) => {
+    const machineNumber = index + 1;
+    const machine = machineInfo.get(machineNumber);
+    const productionRow = getMachineMatrixValues(mesData, activityMatrix, machineNumber);
+    const segments: MachineActivitySegment[] = [];
+    let output = 0;
+    let activeMinutes = 0;
+
+    activitySlots?.forEach((slot, slotIndex) => {
+      const slotTime = new Date(slot.time);
+      if (slotTime < businessStart || slotTime > businessEnd) return;
+
+      const intervalMinutes = slot.interval_minutes ?? (useRollupDensity ? activitySeries.bucketMinutes : (mesData ? getSlotIntervalMinutes(mesData, slotIndex) : 2));
+      const slotEnd = new Date(Math.min(slotTime.getTime() + intervalMinutes * 60 * 1000, businessEnd.getTime()));
+      const startPct = clampPercent(((slotTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100);
+      const widthPct = Math.max(0.1, clampPercent(((slotEnd.getTime() - slotTime.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100));
+      const slotOutput = numberAt(productionRow, slotIndex);
+      const active = slotOutput > 0;
+      const density = active
+        ? (useRollupDensity ? Math.min(1, Math.max(0.22, 0.22 + (slotOutput / maxSegmentOutput) * 0.78)) : 0.88)
+        : undefined;
+      output += slotOutput;
+      if (active) activeMinutes += intervalMinutes;
+
+      const previous = segments.at(-1);
+      const contiguous = previous && Math.abs((previous.startPct + previous.widthPct) - startPct) < 0.08;
+      const matchingDensity = !useRollupDensity || !active || Math.abs((previous?.density ?? 0) - (density ?? 0)) < 0.03;
+      const canMergeSegment = !useRollupDensity || !active;
+      if (previous && previous.active === active && contiguous && matchingDensity && canMergeSegment) {
+        previous.widthPct += widthPct;
+        previous.output += slotOutput;
+        return;
+      }
+
+      segments.push({
+        key: `${machineNumber}-${slotIndex}`,
+        active,
+        startPct,
+        widthPct,
+        output: slotOutput,
+        density,
+      });
+    });
+
+    return {
+      machineNumber,
+      label: getLocalizedMachineLabel(
+        machine?.display_name || machine?.machine_name || getMachineFallbackLabel(machineNumber, language),
+        language,
+      ),
+      output,
+      activeMinutes,
+      isActive: output > 0,
+      segments,
+    };
+  }).sort((left, right) => left.machineNumber - right.machineNumber);
+}
+
+function buildMachineUtilizationPoints(
+  businessDate: string,
+  mesData: InjectionProductionMatrix | undefined,
+  totalMachines: number,
+): MachineUtilizationPoint[] {
+  const businessStart = getBusinessDayStart(businessDate);
+  const businessEnd = getBusinessDayEnd(businessDate);
+  const referenceEnd = getBusinessDayReferenceEnd(businessDate, mesData);
+  const activitySeries = getMachineActivitySeries(businessDate, mesData);
+  const activitySlots = activitySeries.slots;
+  const activityMatrix = activitySeries.matrix;
+  const bucketMinutes = activitySeries.useDensity
+    ? Math.max(MACHINE_UTILIZATION_BUCKET_MINUTES, activitySeries.bucketMinutes)
+    : MACHINE_UTILIZATION_BUCKET_MINUTES;
+  const bucketMs = bucketMinutes * 60 * 1000;
+  const buckets = new Map<number, {
+    activeMachines: Set<number>;
+    latestSampleTime: Date;
+  }>();
+
+  activitySlots?.forEach((slot, slotIndex) => {
+    const slotTime = new Date(slot.time);
+    if (Number.isNaN(slotTime.getTime()) || slotTime < businessStart || slotTime > referenceEnd || slotTime > businessEnd) return;
+
+    const elapsedMs = Math.max(0, slotTime.getTime() - businessStart.getTime());
+    const bucketIndex = Math.floor(elapsedMs / bucketMs);
+    const bucket = buckets.get(bucketIndex) ?? {
+      activeMachines: new Set<number>(),
+      latestSampleTime: slotTime,
+    };
+
+    for (let machineNumber = 1; machineNumber <= totalMachines; machineNumber += 1) {
+      const productionRow = getMachineMatrixValues(mesData, activityMatrix, machineNumber);
+      if (numberAt(productionRow, slotIndex) > 0) bucket.activeMachines.add(machineNumber);
+    }
+
+    bucket.latestSampleTime = slotTime > bucket.latestSampleTime ? slotTime : bucket.latestSampleTime;
+    buckets.set(bucketIndex, bucket);
+  });
+
+  return Array.from(buckets.entries())
+    .sort(([leftIndex], [rightIndex]) => leftIndex - rightIndex)
+    .map(([bucketIndex, bucket]) => {
+      const activeMachineCount = bucket.activeMachines.size;
+      return {
+        key: `${businessDate}-bucket-${bucketIndex}`,
+        label: formatTimeLabel(bucket.latestSampleTime),
+        timestampMs: bucket.latestSampleTime.getTime(),
+        elapsedRate: clampPercent(((bucket.latestSampleTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100),
+        utilizationRate: totalMachines > 0 ? (activeMachineCount / totalMachines) * 100 : 0,
+        activeMachineCount,
+      };
+    });
+}
+
+function buildMovingAveragePoints(
+  points: MachineUtilizationPoint[],
+  historyPoints: MachineUtilizationPoint[],
+  windowHours: number,
+): MachineUtilizationPoint[] {
+  const windowMs = windowHours * 60 * 60 * 1000;
+  const allPoints = [...historyPoints, ...points].sort((left, right) => left.timestampMs - right.timestampMs);
+  return points.map((point) => {
+    const windowStartMs = point.timestampMs - windowMs;
+    const windowPoints = allPoints.filter((candidate) => (
+      candidate.timestampMs >= windowStartMs && candidate.timestampMs <= point.timestampMs
+    ));
+    const divisor = Math.max(1, windowPoints.length);
+    const utilizationRate = windowPoints.reduce((sum, candidate) => sum + candidate.utilizationRate, 0) / divisor;
+    const activeMachineCount = windowPoints.reduce((sum, candidate) => sum + candidate.activeMachineCount, 0) / divisor;
+    return {
+      key: `${point.key}-ma-${windowHours}`,
+      label: point.label,
+      timestampMs: point.timestampMs,
+      elapsedRate: point.elapsedRate,
+      utilizationRate,
+      activeMachineCount: Math.round(activeMachineCount),
+    };
+  });
+}
+
+function buildMachineActivitySummary(
+  businessDate: string,
+  mesData: InjectionProductionMatrix | undefined,
+  rows: MachineActivityRow[],
+  previousMesData?: InjectionProductionMatrix,
+): MachineActivitySummary {
+  const totalMachines = INJECTION_MACHINE_TOTAL;
+  const points = buildMachineUtilizationPoints(businessDate, mesData, totalMachines);
+  const historyPoints = previousMesData
+    ? buildMachineUtilizationPoints(addBusinessDateDays(businessDate, -1), previousMesData, totalMachines)
+    : [];
+
+  const latestPoint = points.at(-1);
+  const peakPoint = points.reduce<MachineUtilizationPoint | null>((currentPeak, point) => {
+    if (!currentPeak || point.utilizationRate > currentPeak.utilizationRate) return point;
+    return currentPeak;
+  }, null);
+  const averageUtilizationRate = points.length
+    ? points.reduce((sum, point) => sum + point.utilizationRate, 0) / points.length
+    : 0;
+  const averageActiveMachineCount = points.length
+    ? points.reduce((sum, point) => sum + point.activeMachineCount, 0) / points.length
+    : 0;
+  const movingAverageSeries = [2, 4, 8, 24].map((hours) => ({
+    key: `ma-${hours}`,
+    label: `MA ${hours}h`,
+    points: buildMovingAveragePoints(points, historyPoints, hours),
+  }));
+  const scaleRates = [
+    ...points.map((point) => point.utilizationRate),
+    ...movingAverageSeries.flatMap((series) => series.points.map((point) => point.utilizationRate)),
+    averageUtilizationRate,
+  ].filter((rate) => Number.isFinite(rate));
+  const rawScaleMin = scaleRates.length ? Math.min(...scaleRates) : 0;
+  const rawScaleMax = scaleRates.length ? Math.max(...scaleRates) : 0;
+  const scalePadding = Math.max(2, (rawScaleMax - rawScaleMin) * 0.22);
+  const minimumScaleSpan = 12;
+  let scaleMinCandidate = rawScaleMin - scalePadding;
+  let scaleMaxCandidate = rawScaleMax + scalePadding;
+
+  if (scaleMaxCandidate - scaleMinCandidate < minimumScaleSpan) {
+    const scaleCenter = (rawScaleMin + rawScaleMax) / 2;
+    scaleMinCandidate = scaleCenter - minimumScaleSpan / 2;
+    scaleMaxCandidate = scaleCenter + minimumScaleSpan / 2;
+  }
+
+  let utilizationScaleMin = Math.max(0, Math.floor(scaleMinCandidate / 5) * 5);
+  let utilizationScaleMax = Math.min(100, Math.ceil(scaleMaxCandidate / 5) * 5);
+
+  if (utilizationScaleMax - utilizationScaleMin < 10) {
+    if (utilizationScaleMin === 0) {
+      utilizationScaleMax = Math.min(100, utilizationScaleMin + 10);
+    } else if (utilizationScaleMax === 100) {
+      utilizationScaleMin = Math.max(0, utilizationScaleMax - 10);
+    } else {
+      const missingSpan = 10 - (utilizationScaleMax - utilizationScaleMin);
+      utilizationScaleMin = Math.max(0, utilizationScaleMin - Math.ceil(missingSpan / 2));
+      utilizationScaleMax = Math.min(100, utilizationScaleMax + Math.ceil(missingSpan / 2));
+    }
+  }
+
+  const tickStep = (utilizationScaleMax - utilizationScaleMin) / 3;
+  const utilizationAxisTicks = Array.from({ length: 4 }, (_, index) => (
+    Math.round(utilizationScaleMax - tickStep * index)
+  ));
+
+  return {
+    totalMachines,
+    activeMachineCount: rows.filter((row) => row.isActive).length,
+    utilizationScaleMin,
+    utilizationScaleMax,
+    utilizationAxisTicks,
+    averageUtilizationRate,
+    averageActiveMachineCount,
+    peakUtilizationRate: peakPoint?.utilizationRate ?? 0,
+    peakActiveMachineCount: peakPoint?.activeMachineCount ?? 0,
+    peakPoint,
+    currentUtilizationRate: latestPoint?.utilizationRate ?? 0,
+    currentActiveMachineCount: latestPoint?.activeMachineCount ?? 0,
+    points,
+    movingAverageSeries,
+    axisLabels: getTrendAxisLabels(businessDate),
+  };
 }
 
 function getOrderedPlanRecords(records: ProductionPlanRecord[]) {
@@ -604,7 +1358,7 @@ function getDisplaySegments(segments: RealtimeProgressSegment[]) {
 function sumPlannedQuantity(summary: ProductionPlanSummaryResponse | undefined, bucket: "injection" | "machining", date: string) {
   const dailyTotal = summary?.[bucket].daily_totals.find((item) => item.date === date);
   if (dailyTotal) return Number(dailyTotal.plan_qty ?? 0);
-  return summary?.[bucket].records.reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0) ?? 0;
+  return (summary?.[bucket]?.records ?? []).reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0);
 }
 
 function buildProductionBriefContext(
@@ -615,19 +1369,20 @@ function buildProductionBriefContext(
   productionStatus: ProductionStatusResponse | undefined,
   machiningProvision?: MachiningProvisionResponse,
   transitionAnalysis?: InjectionTransitionAnalysis,
+  language: AppLanguage = "ko",
 ): ProductionBriefContext {
   const latestTime = getLatestTime(mesData);
   const productionDayStart = getBusinessDayStart(businessDate);
   const productionDayEnd = getBusinessDayReferenceEnd(businessDate, mesData);
   const recentStart = latestTime ? new Date(latestTime.getTime() - 60 * 60 * 1000) : null;
-  const machineOutputs = mesData?.machines.map((machine) => {
+  const machineOutputs = mesData?.machines?.map((machine) => {
     const key = String(machine.machine_number);
     let shiftOutput = 0;
     let recentOutput = 0;
 
-    mesData.time_slots.forEach((slot, index) => {
+    (mesData.time_slots ?? []).forEach((slot, index) => {
       const slotTime = new Date(slot.time);
-      const output = numberAt(mesData.actual_production_matrix[key], index);
+      const output = numberAt(mesData.actual_production_matrix?.[key], index);
       if (slotTime >= productionDayStart && slotTime <= productionDayEnd) {
         shiftOutput += output;
       }
@@ -637,7 +1392,7 @@ function buildProductionBriefContext(
     });
 
     return {
-      machine: `${machine.machine_number}호기`,
+      machine: getMachineFallbackLabel(machine.machine_number, language),
       output: shiftOutput,
       recentOutput,
     };
@@ -645,11 +1400,11 @@ function buildProductionBriefContext(
   const realtimeSummary = buildRealtimeProgressSummary(planSummary, mesData, productionStatus, businessDate, transitionAnalysis);
   const actualMachineOutputs = realtimeSummary.rows
     .filter((row) => row.estimatedQty > 0)
-    .map((row) => ({ machine: row.label, output: row.estimatedQty }));
+    .map((row) => ({ machine: getLocalizedMachineLabel(row.label, language), output: row.estimatedQty }));
   const injectionPlanQty = realtimeSummary.plannedQty || sumPlannedQuantity(planSummary, "injection", businessDate);
   const actualInjectionOutput = realtimeSummary.estimatedQty;
-  const machiningPlanQty = Number(machiningProvision?.summary.total_planned ?? sumPlannedQuantity(planSummary, "machining", businessDate));
-  const actualMachiningOutput = Number(machiningProvision?.summary.effective_actual_qty ?? machiningStats?.summary.total_mes ?? 0);
+  const machiningPlanQty = Number(machiningProvision?.summary?.total_planned ?? sumPlannedQuantity(planSummary, "machining", businessDate));
+  const actualMachiningOutput = Number(machiningProvision?.summary?.effective_actual_qty ?? machiningStats?.summary?.total_mes ?? 0);
   const activeMachineCount = machineOutputs.filter((item) => item.output > 0).length;
   const runningMachineCount = machineOutputs.filter((item) => item.recentOutput > 0).length;
   const sortedActiveMachines = actualMachineOutputs
@@ -666,7 +1421,7 @@ function buildProductionBriefContext(
     machiningPlanGap: actualMachiningOutput - machiningPlanQty,
     activeMachineCount,
     runningMachineCount,
-    totalMachines: mesData?.machines.length || 17,
+    totalMachines: mesData?.machines?.length || 17,
     topMachines: sortedActiveMachines.slice(0, 4).map(({ machine, output }) => ({ machine, output })),
     lowOutputMachines: sortedActiveMachines.slice(-4).map(({ machine, output }) => ({ machine, output })),
     latestUpdatedAt: latestTime?.toISOString() ?? null,
@@ -807,7 +1562,7 @@ function buildMachiningProgressPreview(
   }>();
   const plannedParts = new Set<string>();
 
-  for (const record of planSummary?.machining.records ?? []) {
+  for (const record of planSummary?.machining?.records ?? []) {
     const key = record.machine_name || "unknown";
     const current = planMap.get(key) ?? {
       label: record.machine_name || "-",
@@ -1044,7 +1799,7 @@ function answerDashboardIntent(intent: DashboardAiIntent, realtimeProgress: Real
       if (productFamily && current?.productFamilyCode !== productFamily) return false;
       return true;
     });
-    const labels = runningRows.map((row) => row.label).join(", ") || "-";
+    const labels = runningRows.map((row) => getLocalizedMachineLabel(row.label, language)).join(", ") || "-";
     return isChinese
       ? `最近60分钟合模数 기준 현재 생산중인 사출기는 ${runningRows.length}대입니다. 대상 설비: ${labels}.`
       : `최근 60분 형합수 기준 현재 생산중인 사출기는 ${runningRows.length}대입니다. 대상 설비는 ${labels}입니다.`;
@@ -1060,7 +1815,7 @@ function answerDashboardIntent(intent: DashboardAiIntent, realtimeProgress: Real
         return row.recentCycleTimeSec !== null;
       })
       .map(({ row, current }) => ({
-        machine: row.label,
+        machine: getLocalizedMachineLabel(row.label, language),
         partNo: current?.partNo ?? "-",
         modelName: current?.modelName ?? "-",
         family: current?.productFamilyName ?? "-",
@@ -1090,7 +1845,7 @@ function answerDashboardIntent(intent: DashboardAiIntent, realtimeProgress: Real
         return true;
       })
       .map((segment) => ({
-        machine: row.label,
+        machine: getLocalizedMachineLabel(row.label, language),
         partNo: segment.partNo,
         estimatedQty: segment.estimatedQty,
         plannedQty: segment.plannedQty,
@@ -1117,7 +1872,7 @@ function answerDashboardIntent(intent: DashboardAiIntent, realtimeProgress: Real
       .filter((row) => row.estimatedQty > 0)
       .sort((a, b) => b.estimatedQty - a.estimatedQty)
       .slice(0, 4)
-      .map((row) => `${row.label} ${formatNumber(row.estimatedQty)}개`)
+      .map((row) => `${getLocalizedMachineLabel(row.label, language)} ${formatNumber(row.estimatedQty)}개`)
       .join(", ") || "-";
     return isChinese
       ? `今天注塑进度约 ${Math.round(progressRate)}%，推定实绩 ${formatNumber(estimatedQty)} / 计划 ${formatNumber(plannedQty)} 个。最近60分钟运行设备 ${runningRows.length}台，状态为完成 ${completed}、进行中 ${inProgress}、待开始 ${pending}。主要生产设备: ${topRows}。`
@@ -1239,6 +1994,7 @@ export function ProductionDashboardPage() {
   const [activeAiJobId, setActiveAiJobId] = useState<number | null>(null);
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
   const [selectedMachiningRow, setSelectedMachiningRow] = useState<MachiningProvisionRow | null>(null);
+  const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailKey | null>(null);
   const [manualForm, setManualForm] = useState({
     goodQty: "",
     defectQty: "0",
@@ -1247,8 +2003,10 @@ export function ProductionDashboardPage() {
     note: "",
   });
   const copy = pageCopy[language];
+  const detailCopy = kpiDetailCopy[language];
   const isCurrentDate = businessDate === currentDate;
   const liveDataRefetchInterval = isCurrentDate ? LIVE_DATA_REFRESH_INTERVAL_MS : false;
+  const previousBusinessDate = addBusinessDateDays(businessDate, -1);
   const nextBusinessDate = addBusinessDateDays(businessDate, 1);
   const secondNextBusinessDate = addBusinessDateDays(businessDate, 2);
   const planSummaryQuery = useQuery({
@@ -1282,6 +2040,12 @@ export function ProductionDashboardPage() {
     queryKey: ["mes", "production-dashboard-matrix", businessDate, isCurrentDate],
     queryFn: () => (isCurrentDate ? getInjectionProductionMatrix() : getInjectionProductionMatrixForDate(businessDate)),
     refetchInterval: liveDataRefetchInterval,
+  });
+  const previousMesQuery = useQuery({
+    queryKey: ["mes", "production-dashboard-matrix", previousBusinessDate, "ma-history"],
+    queryFn: () => getInjectionProductionMatrixForDate(previousBusinessDate),
+    retry: false,
+    staleTime: 5 * 60_000,
   });
   const isCoreDashboardDataReady = Boolean(planSummaryQuery.data && mesQuery.data && machiningStatsQuery.data);
   const aiBriefingQuery = useQuery({
@@ -1364,8 +2128,9 @@ export function ProductionDashboardPage() {
       productionStatusQuery.data,
       machiningProvisionQuery.data,
       transitionAnalysis,
+      language,
     ),
-    [businessDate, machiningProvisionQuery.data, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
+    [businessDate, language, machiningProvisionQuery.data, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
   );
   const realtimeProgress = useMemo(
     () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data, businessDate, transitionAnalysis),
@@ -1436,6 +2201,43 @@ export function ProductionDashboardPage() {
       })
       .filter(Boolean),
   ).size;
+  const injectionTrend = useMemo(
+    () => buildInjectionCumulativeTrend(
+      businessDate,
+      briefContext.injectionPlanQty,
+      briefContext.actualInjectionOutput,
+      mesQuery.data,
+    ),
+    [briefContext.actualInjectionOutput, briefContext.injectionPlanQty, businessDate, mesQuery.data],
+  );
+  const machiningTrend = useMemo(
+    () => buildMachiningCumulativeTrend(
+      businessDate,
+      briefContext.machiningPlanQty,
+      briefContext.actualMachiningOutput,
+      machiningProgress,
+      machiningStatsQuery.data,
+      machiningProvisionQuery.data,
+      mesQuery.data,
+    ),
+    [
+      briefContext.actualMachiningOutput,
+      briefContext.machiningPlanQty,
+      businessDate,
+      machiningProgress,
+      machiningProvisionQuery.data,
+      machiningStatsQuery.data,
+      mesQuery.data,
+    ],
+  );
+  const machineActivityRows = useMemo(
+    () => buildMachineActivityRows(businessDate, mesQuery.data, language),
+    [businessDate, language, mesQuery.data],
+  );
+  const machineActivitySummary = useMemo(
+    () => buildMachineActivitySummary(businessDate, mesQuery.data, machineActivityRows, previousMesQuery.data),
+    [businessDate, machineActivityRows, mesQuery.data, previousMesQuery.data],
+  );
 
   function openMachiningManualReport(row: MachiningProvisionRow) {
     const remainingQty = Math.max(0, Number(row.planned_qty ?? 0) - Number(row.effective_actual_qty ?? 0));
@@ -1617,15 +2419,16 @@ export function ProductionDashboardPage() {
     const progressText = getProgressText(row.progressRate);
     const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
     const displaySegments = getDisplaySegments(row.segments);
+    const displayLabel = getLocalizedMachineLabel(row.label, language);
 
     return (
       <article className="production-progress-row" key={row.key}>
         <div className="production-progress-row__head">
           <div className="production-progress-row__identity">
             <div className="production-progress-row__title">
-              <strong>{row.label}</strong>
+              <strong>{displayLabel}</strong>
               <button
-                aria-label={`${row.label} ${copy.detail}`}
+                aria-label={`${displayLabel} ${copy.detail}`}
                 className="production-progress-detail-button"
                 onClick={() => setSelectedProgressRow(row)}
                 type="button"
@@ -1643,7 +2446,7 @@ export function ProductionDashboardPage() {
           </div>
         </div>
         <div className="production-progress-track-wrap">
-          <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${row.label} ${progressText}`}>
+          <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${displayLabel} ${progressText}`}>
             {displaySegments.length ? displaySegments.map((segment) => renderProgressSegment(segment, row)) : (
               <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
                 <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
@@ -1659,7 +2462,7 @@ export function ProductionDashboardPage() {
             ) : null}
           </div>
           {renderProgressHoverCard({
-            label: row.label,
+            label: displayLabel,
             progressText,
             actualLabel: copy.estimatedVsPlan,
             actualQty: row.estimatedQty,
@@ -1692,15 +2495,16 @@ export function ProductionDashboardPage() {
     const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
     const displaySegments = getDisplaySegments(row.segments);
     const isActive = row.inProgressCount > 0;
+    const displayLabel = getLocalizedMachineLabel(row.label, language);
     return (
       <article className="production-progress-row production-progress-row--preview" key={row.key}>
         <div className="production-progress-row__head">
           <div className="production-progress-row__identity">
             <div className="production-progress-row__title">
-              <strong>{row.label}</strong>
+              <strong>{displayLabel}</strong>
               {row.provisionRow?.plan_id ? (
                 <button
-                  aria-label={`${row.label} ${copy.manualReport}`}
+                  aria-label={`${displayLabel} ${copy.manualReport}`}
                   className="production-progress-detail-button"
                   onClick={() => openMachiningManualReport(row.provisionRow as MachiningProvisionRow)}
                   type="button"
@@ -1731,7 +2535,7 @@ export function ProductionDashboardPage() {
             ) : null}
           </div>
           {renderProgressHoverCard({
-            label: row.label,
+            label: displayLabel,
             progressText,
             actualLabel: copy.effectiveQty,
             actualQty: row.actualQty,
@@ -1762,6 +2566,386 @@ export function ProductionDashboardPage() {
     );
   }
 
+  function toggleKpiDetail(nextDetail: KpiDetailKey) {
+    setActiveKpiDetail((current) => (current === nextDetail ? null : nextDetail));
+  }
+
+  function getTrendChartMax(trend: CumulativeTrendSummary) {
+    const currentRangeMax = Math.max(
+      ...trend.points.map((point) => Math.max(point.actualQty, point.targetQty)),
+      trend.plannedQty,
+      1,
+    );
+    return currentRangeMax * 1.08;
+  }
+
+  function getTrendPointPosition(trend: CumulativeTrendSummary, point: CumulativeTrendPoint, valueKey: "actualQty" | "targetQty") {
+    const chartMax = getTrendChartMax(trend);
+    const top = 5;
+    const bottom = 52;
+    const height = bottom - top;
+    const y = bottom - (Math.max(0, point[valueKey]) / chartMax) * height;
+    return {
+      x: point.elapsedRate,
+      y: Math.max(top, Math.min(bottom, y)),
+    };
+  }
+
+  function getTrendPolylinePoints(trend: CumulativeTrendSummary, valueKey: "actualQty" | "targetQty") {
+    return trend.points
+      .map((point) => {
+        const position = getTrendPointPosition(trend, point, valueKey);
+        return `${position.x.toFixed(2)},${position.y.toFixed(2)}`;
+      })
+      .join(" ");
+  }
+
+  function getTrendTargetPolylinePoints(trend: CumulativeTrendSummary) {
+    const targetPoints: CumulativeTrendPoint[] = [
+      {
+        key: "target-start",
+        label: "08:00",
+        elapsedRate: 0,
+        actualQty: 0,
+        targetQty: 0,
+      },
+      {
+        key: "target-end",
+        label: "08:00",
+        elapsedRate: 100,
+        actualQty: 0,
+        targetQty: trend.plannedQty,
+      },
+    ];
+    return targetPoints
+      .map((point) => {
+        const position = getTrendPointPosition(trend, point, "targetQty");
+        return `${position.x.toFixed(2)},${position.y.toFixed(2)}`;
+      })
+      .join(" ");
+  }
+
+  function getUtilizationY(utilizationRate: number, summary: MachineActivitySummary) {
+    const top = UTILIZATION_CHART_TOP_Y;
+    const bottom = UTILIZATION_CHART_BOTTOM_Y;
+    const scaleMin = summary.utilizationScaleMin;
+    const scaleMax = summary.utilizationScaleMax;
+    const scaleRange = Math.max(1, scaleMax - scaleMin);
+    const clippedRate = Math.max(scaleMin, Math.min(scaleMax, utilizationRate));
+    const y = bottom - ((clippedRate - scaleMin) / scaleRange) * (bottom - top);
+    return Math.max(top, Math.min(bottom, y));
+  }
+
+  function getUtilizationPointPosition(point: MachineUtilizationPoint, summary: MachineActivitySummary) {
+    return {
+      x: point.elapsedRate,
+      y: getUtilizationY(point.utilizationRate, summary),
+    };
+  }
+
+  function getUtilizationPolylinePoints(points: MachineUtilizationPoint[], summary: MachineActivitySummary) {
+    return points
+      .map((point) => {
+        const position = getUtilizationPointPosition(point, summary);
+        return `${position.x.toFixed(2)},${position.y.toFixed(2)}`;
+      })
+      .join(" ");
+  }
+
+  function renderCumulativeKpiDetail(options: {
+    detailKey: "injection" | "machining";
+    title: string;
+    trend: CumulativeTrendSummary;
+    rowLabel: string;
+    rows: Array<{
+      key: string;
+      label: string;
+      actualQty: number;
+      plannedQty: number;
+      progressRate: number;
+      gapQty: number;
+      completedCount: number;
+      inProgressCount: number;
+      pendingCount: number;
+    }>;
+  }) {
+    const currentPoint = options.trend.latestPoint;
+    const markerPosition = getTrendPointPosition(options.trend, currentPoint, "actualQty");
+    const markerTop = (markerPosition.y / 56) * 100;
+    const markerProgressRate = options.trend.plannedQty > 0
+      ? (currentPoint.actualQty / options.trend.plannedQty) * 100
+      : 0;
+    const targetGap = currentPoint.actualQty - currentPoint.targetQty;
+    const paceRateGap = markerProgressRate - options.trend.elapsedRate;
+    const sortedRows = [...options.rows].sort((left, right) => {
+      if (options.detailKey === "injection") {
+        const leftMachineNumber = Number(getMachineNumberFromName(left.label) ?? Number.POSITIVE_INFINITY);
+        const rightMachineNumber = Number(getMachineNumberFromName(right.label) ?? Number.POSITIVE_INFINITY);
+        if (leftMachineNumber !== rightMachineNumber) return leftMachineNumber - rightMachineNumber;
+        return left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" });
+      }
+
+      return right.actualQty - left.actualQty;
+    });
+
+    return (
+      <section className={`panel production-kpi-detail production-kpi-detail--${options.detailKey}`}>
+        <div className="production-kpi-detail__header">
+          <div>
+            <p className="panel-card__eyebrow">{detailCopy.cumulativeTrend}</p>
+            <h3 className="panel__title">{options.title}</h3>
+          </div>
+          <div className="production-kpi-detail__legend">
+            <span><i className="production-kpi-detail__legend-line production-kpi-detail__legend-line--actual" />{detailCopy.actualLine}</span>
+            <span><i className="production-kpi-detail__legend-line production-kpi-detail__legend-line--target" />{detailCopy.targetLine}</span>
+          </div>
+        </div>
+
+        <div className="production-kpi-detail__body">
+          <div className="production-kpi-chart production-kpi-chart--compact" aria-label={`${options.title} ${detailCopy.cumulativeTrend}`}>
+            <div className="production-kpi-chart__summary">
+              <div>
+                <span>{detailCopy.compactSummary}</span>
+                <strong>{formatNumber(currentPoint.actualQty)} / {formatNumber(options.trend.plannedQty)}</strong>
+              </div>
+              <div className="production-kpi-chart__summary-stats">
+                <span>{detailCopy.completionRate} {Math.round(markerProgressRate)}%</span>
+                <span>{detailCopy.elapsedRate} {Math.round(options.trend.elapsedRate)}%</span>
+                <span className={targetGap >= 0 ? "production-progress-gap--up" : "production-progress-gap--down"}>
+                  {detailCopy.paceRateGap} {paceRateGap >= 0 ? "+" : "-"}{Math.abs(Math.round(paceRateGap))}%p
+                </span>
+                <span className={targetGap >= 0 ? "production-progress-gap--up" : "production-progress-gap--down"}>
+                  {detailCopy.quantityGap} {targetGap >= 0 ? "+" : "-"}{formatNumber(Math.abs(targetGap))}
+                </span>
+                <span className="production-kpi-chart__live-status">
+                  <i />
+                  {detailCopy.inProgressNow} {currentPoint.label} · {Math.round(markerProgressRate)}%
+                </span>
+              </div>
+            </div>
+
+            <div className="production-kpi-chart__plot">
+              <svg viewBox="0 0 100 56" preserveAspectRatio="none" role="img">
+                <line className="production-kpi-chart__grid" x1="0" x2="100" y1="52" y2="52" />
+                <line className="production-kpi-chart__grid" x1="0" x2="100" y1="28" y2="28" />
+                <polyline className="production-kpi-chart__line production-kpi-chart__line--target" points={getTrendTargetPolylinePoints(options.trend)} />
+                <polyline className="production-kpi-chart__line production-kpi-chart__line--actual" points={getTrendPolylinePoints(options.trend, "actualQty")} />
+                <line className="production-kpi-chart__cursor" x1={markerPosition.x} x2={markerPosition.x} y1="5" y2="52" />
+              </svg>
+              <span
+                aria-hidden="true"
+                className="production-kpi-chart__marker"
+                style={{ left: `${markerPosition.x}%`, top: `${markerTop}%` }}
+              />
+            </div>
+
+            <div className="production-kpi-chart__axis production-kpi-chart__axis--timeline">
+              {options.trend.axisLabels.map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
+            </div>
+            <p className="production-kpi-chart__updated">{detailCopy.updatedAt} {currentPoint.label}</p>
+          </div>
+        </div>
+
+        <div className="production-kpi-rank">
+          <div className="production-kpi-rank__header">
+            <strong>{options.rowLabel}</strong>
+            <span>{detailCopy.paceRateGap} · {detailCopy.output} / {detailCopy.targetTotal}</span>
+          </div>
+          {sortedRows.length ? (
+            <div className="production-kpi-rank__grid">
+              {sortedRows.map((row) => {
+                const rowExpectedQty = Math.round(row.plannedQty * (options.trend.elapsedRate / 100));
+                const rowPaceQtyGap = row.actualQty - rowExpectedQty;
+                const rowPaceRateGap = row.plannedQty > 0
+                  ? row.progressRate - options.trend.elapsedRate
+                  : (row.actualQty > 0 ? 100 : 0);
+                const rowGapClass = rowPaceQtyGap >= 0 ? "production-kpi-rank__delta production-kpi-rank__delta--up" : "production-kpi-rank__delta production-kpi-rank__delta--down";
+                const displayLabel = getLocalizedMachineLabel(row.label, language);
+                return (
+                  <article className="production-kpi-rank__card" key={row.key}>
+                    <div className="production-kpi-rank__card-head">
+                      <strong>{displayLabel}</strong>
+                      <span>{Math.round(row.progressRate)}%</span>
+                    </div>
+                    <div className="production-kpi-rank__card-meta">
+                      <em className={rowGapClass}>{detailCopy.timeShort} {rowPaceRateGap >= 0 ? "+" : "-"}{Math.abs(Math.round(rowPaceRateGap))}%p</em>
+                      <span>{detailCopy.quantityShort} {rowPaceQtyGap >= 0 ? "+" : "-"}{formatNumber(Math.abs(rowPaceQtyGap))}</span>
+                    </div>
+                    <div className="production-kpi-rank__progress">
+                      <span>{formatNumber(row.actualQty)} / {formatNumber(row.plannedQty)}</span>
+                      <div><i style={{ width: `${Math.max(0, Math.min(100, row.progressRate))}%` }} /></div>
+                    </div>
+                    <p>{copy.completed} {row.completedCount} · {copy.inProgress} {row.inProgressCount} · {copy.pending} {row.pendingCount}</p>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="notice notice--neutral">{detailCopy.noData}</div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  function renderMachineActivityDetail() {
+    const axisLabels = getTrendAxisLabels(businessDate);
+    const utilizationGridTicks = [0, 4, 8, 12, 16, 20, 24].map((hour) => (hour / 24) * 100);
+    const averageY = getUtilizationY(machineActivitySummary.averageUtilizationRate, machineActivitySummary);
+    const averageLabelTop = (averageY / 56) * 100;
+    const peakPosition = machineActivitySummary.peakPoint
+      ? getUtilizationPointPosition(machineActivitySummary.peakPoint, machineActivitySummary)
+      : null;
+    const peakMarkerTop = peakPosition ? (peakPosition.y / 56) * 100 : 0;
+    const peakLabelTop = peakPosition ? Math.max(15, Math.min(82, peakMarkerTop)) : 0;
+    const peakLabelClass = peakPosition && peakPosition.x > 82
+      ? "production-machine-activity__annotation-badge--peak-end"
+      : "production-machine-activity__annotation-badge--peak-start";
+
+    return (
+      <section className="panel production-kpi-detail production-machine-activity">
+        <div className="production-kpi-detail__header">
+          <div>
+            <p className="panel-card__eyebrow">{detailCopy.equipmentTimeline}</p>
+            <h3 className="panel__title">{detailCopy.machinesTitle}</h3>
+            <p className="production-machine-activity__hint">{detailCopy.activeFirst}</p>
+          </div>
+          <div className="production-kpi-detail__legend">
+            <span><i className="production-machine-activity__legend production-machine-activity__legend--active" />{detailCopy.running}</span>
+            <span><i className="production-machine-activity__legend production-machine-activity__legend--idle" />{detailCopy.idle}</span>
+          </div>
+        </div>
+
+        <div className="production-machine-activity__summary">
+          <div className="production-machine-activity__summary-chart">
+            <div className="production-kpi-chart production-machine-activity__utilization-chart" aria-label={`${detailCopy.utilizationSummary} ${detailCopy.utilizationTrend}`}>
+              <div className="production-machine-activity__timeline-aligner">
+                <div className="production-machine-activity__timeline-gutter">
+                  <div className="production-machine-activity__side-summary">
+                    <strong>{detailCopy.utilizationTrend}</strong>
+                    <dl className="production-machine-activity__summary-metrics">
+                      <div>
+                        <dt>{detailCopy.currentUtilization}</dt>
+                        <dd>{Math.round(machineActivitySummary.currentUtilizationRate)}%</dd>
+                      </div>
+                      <div>
+                        <dt>{detailCopy.averageUtilization}</dt>
+                        <dd>{Math.round(machineActivitySummary.averageUtilizationRate)}%</dd>
+                      </div>
+                      <div>
+                        <dt>{detailCopy.peakUtilization}</dt>
+                        <dd>{Math.round(machineActivitySummary.peakUtilizationRate)}%</dd>
+                      </div>
+                    </dl>
+                  </div>
+                </div>
+                <div className="production-machine-activity__timeline-area">
+                  <div className="production-machine-activity__utilization-plot">
+                    <svg viewBox="0 0 100 56" preserveAspectRatio="none" role="img">
+                      {utilizationGridTicks.map((tick) => (
+                        <line
+                          className="production-machine-activity__vertical-grid"
+                          key={`utilization-grid-${tick}`}
+                          x1={tick}
+                          x2={tick}
+                          y1={UTILIZATION_CHART_TOP_Y}
+                          y2={UTILIZATION_CHART_BOTTOM_Y}
+                        />
+                      ))}
+                      {machineActivitySummary.utilizationAxisTicks.map((tick, index) => (
+                        <line
+                          className="production-machine-activity__horizontal-grid"
+                          key={`utilization-y-grid-${tick}-${index}`}
+                          x1="0"
+                          x2="100"
+                          y1={getUtilizationY(tick, machineActivitySummary)}
+                          y2={getUtilizationY(tick, machineActivitySummary)}
+                        />
+                      ))}
+                      <line className="production-machine-activity__average-line" x1="0" x2="100" y1={averageY} y2={averageY} />
+                      {machineActivitySummary.movingAverageSeries.map((series) => (
+                        <polyline
+                          className={`production-machine-activity__ma-line production-machine-activity__ma-line--${series.key}`}
+                          key={series.key}
+                          points={getUtilizationPolylinePoints(series.points, machineActivitySummary)}
+                        />
+                      ))}
+                      <polyline className="production-kpi-chart__line production-machine-activity__utilization-line" points={getUtilizationPolylinePoints(machineActivitySummary.points, machineActivitySummary)} />
+                    </svg>
+                    <div className="production-machine-activity__y-axis" aria-hidden="true">
+                      {machineActivitySummary.utilizationAxisTicks.map((tick, index) => (
+                        <span key={`utilization-y-label-${tick}-${index}`} style={{ top: `${(getUtilizationY(tick, machineActivitySummary) / 56) * 100}%` }}>
+                          {tick}%
+                        </span>
+                      ))}
+                    </div>
+                    <div className="production-machine-activity__ma-legend production-machine-activity__ma-legend--overlay" aria-label={detailCopy.movingAverage}>
+                      <span className="production-machine-activity__ma-legend--avg">{detailCopy.averageLine}</span>
+                      {machineActivitySummary.movingAverageSeries.map((series) => (
+                        <span className={`production-machine-activity__ma-legend--${series.key}`} key={series.key}>{series.label}</span>
+                      ))}
+                    </div>
+                    <span className="production-machine-activity__annotation-badge production-machine-activity__annotation-badge--average" style={{ top: `${averageLabelTop}%` }}>
+                      {detailCopy.averageLine} {Math.round(machineActivitySummary.averageUtilizationRate)}%
+                    </span>
+                    {peakPosition ? (
+                      <span className="production-machine-activity__peak-marker" style={{ left: `${peakPosition.x}%`, top: `${peakMarkerTop}%` }} aria-hidden="true" />
+                    ) : null}
+                    {peakPosition ? (
+                      <span
+                        className={`production-machine-activity__annotation-badge ${peakLabelClass}`}
+                        style={{ left: `${peakPosition.x}%`, top: `${peakLabelTop}%` }}
+                      >
+                        {detailCopy.peakPoint} {Math.round(machineActivitySummary.peakUtilizationRate)}%
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="production-machine-activity__axis">
+          <span />
+          <div>
+            {axisLabels.map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
+          </div>
+        </div>
+
+        <div className="production-machine-activity__list">
+          {machineActivityRows.map((row) => {
+            const displayLabel = getLocalizedMachineLabel(row.label, language);
+            return (
+              <article className={row.isActive ? "production-machine-activity__row production-machine-activity__row--active" : "production-machine-activity__row"} key={row.machineNumber}>
+                <div className="production-machine-activity__label">
+                  <strong>{displayLabel}</strong>
+                  <span>{detailCopy.clampCount} {formatNumber(row.output)} · {detailCopy.activeTime} {formatHoursFromMinutes(row.activeMinutes)}</span>
+                </div>
+                <div className="production-machine-activity__track">
+                  {row.segments.length ? row.segments.map((segment) => (
+                    <i
+                      className={segment.active ? "production-machine-activity__segment production-machine-activity__segment--active" : "production-machine-activity__segment"}
+                      key={segment.key}
+                      style={{
+                        left: `${segment.startPct}%`,
+                        width: `${segment.widthPct}%`,
+                        "--activity-alpha": segment.density ? String(segment.density) : undefined,
+                      } as CSSProperties}
+                      title={`${segment.active ? detailCopy.running : detailCopy.idle} · ${detailCopy.clampCount} ${formatNumber(segment.output)}`}
+                    />
+                  )) : (
+                    <i className="production-machine-activity__segment production-machine-activity__segment--empty" style={{ left: "0%", width: "100%" }} />
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="page production-dashboard" aria-busy={isLiveDataRefreshing}>
       <PageHeader
@@ -1788,20 +2972,64 @@ export function ProductionDashboardPage() {
             <StatCard
               hint={`${copy.completedRate} ${Math.round(injectionCompletionRate)}% · ${copy.timeRate} ${Math.round(productionElapsedRate)}%`}
               hintTone={injectionRateTone}
+              isActive={activeKpiDetail === "injection"}
+              onClick={() => toggleKpiDetail("injection")}
               title={copy.injectionActualPlan}
               value={`${formatNumber(briefContext.actualInjectionOutput)} / ${formatNumber(briefContext.injectionPlanQty)}`}
             />
             <StatCard
               hint={`${copy.completedRate} ${Math.round(machiningCompletionRate)}%`}
+              isActive={activeKpiDetail === "machining"}
+              onClick={() => toggleKpiDetail("machining")}
               title={copy.machiningActualPlan}
               value={`${formatNumber(briefContext.actualMachiningOutput)} / ${formatNumber(briefContext.machiningPlanQty)}`}
             />
             <StatCard
               hint={`${copy.injectionFacilities} ${briefContext.activeMachineCount} · ${copy.machiningFacilities} ${activeMachiningLineCount}`}
+              isActive={activeKpiDetail === "machines"}
+              onClick={() => toggleKpiDetail("machines")}
               title={copy.activeMachines}
               value={`${briefContext.activeMachineCount}/${briefContext.totalMachines}`}
             />
           </div>
+
+          {activeKpiDetail === "injection" ? renderCumulativeKpiDetail({
+            detailKey: "injection",
+            title: detailCopy.injectionTitle,
+            trend: injectionTrend,
+            rowLabel: detailCopy.byMachine,
+            rows: realtimeProgress.rows.map((row) => ({
+              key: row.key,
+              label: row.label,
+              actualQty: row.estimatedQty,
+              plannedQty: row.plannedQty,
+              progressRate: row.progressRate,
+              gapQty: row.gapQty,
+              completedCount: row.completedCount,
+              inProgressCount: row.inProgressCount,
+              pendingCount: row.pendingCount,
+            })),
+          }) : null}
+
+          {activeKpiDetail === "machining" ? renderCumulativeKpiDetail({
+            detailKey: "machining",
+            title: detailCopy.machiningTitle,
+            trend: machiningTrend,
+            rowLabel: detailCopy.byLine,
+            rows: machiningProgress.rows.map((row) => ({
+              key: row.key,
+              label: row.label,
+              actualQty: row.actualQty,
+              plannedQty: row.plannedQty,
+              progressRate: row.progressRate,
+              gapQty: row.gapQty,
+              completedCount: row.completedCount,
+              inProgressCount: row.inProgressCount,
+              pendingCount: row.pendingCount,
+            })),
+          }) : null}
+
+          {activeKpiDetail === "machines" ? renderMachineActivityDetail() : null}
 
           <section className="panel production-brief-panel">
             <div className="production-brief-panel__header">
@@ -2047,7 +3275,7 @@ export function ProductionDashboardPage() {
                 <div className="modal-card__header">
                   <div>
                     <p className="panel-card__eyebrow">{copy.machineDetailTitle}</p>
-                    <h3 className="panel__title">{selectedProgressRow.label}</h3>
+                    <h3 className="panel__title">{getLocalizedMachineLabel(selectedProgressRow.label, language)}</h3>
                     <p className="production-progress-modal__meta">
                       {copy.totalProgress} {getProgressText(selectedProgressRow.progressRate)} · {copy.estimatedVsPlan} {formatNumber(selectedProgressRow.estimatedQty)} / {formatNumber(selectedProgressRow.plannedQty)}
                     </p>
@@ -2118,7 +3346,7 @@ export function ProductionDashboardPage() {
                     <p className="panel-card__eyebrow">Machining</p>
                     <h3 className="panel__title">{copy.manualReportTitle}</h3>
                     <p className="production-progress-modal__meta">
-                      {selectedMachiningRow.equipment_label} · {selectedMachiningRow.part_no} · {copy.planned} {formatNumber(selectedMachiningRow.planned_qty)} · {copy.effectiveQty} {formatNumber(selectedMachiningRow.effective_actual_qty)}
+                      {getLocalizedMachineLabel(selectedMachiningRow.equipment_label, language)} · {selectedMachiningRow.part_no} · {copy.planned} {formatNumber(selectedMachiningRow.planned_qty)} · {copy.effectiveQty} {formatNumber(selectedMachiningRow.effective_actual_qty)}
                     </p>
                   </div>
                   <button className="button button--ghost" onClick={() => setSelectedMachiningRow(null)} type="button">

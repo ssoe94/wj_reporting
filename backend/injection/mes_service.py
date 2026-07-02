@@ -9,14 +9,14 @@ import requests
 import pytz
 import logging
 from bisect import bisect_right
-from typing import List, Dict, Optional, Callable
+from typing import Any, List, Dict, Optional, Callable, Tuple
 from datetime import datetime, timedelta
 from django.core.cache import cache
 from django.db import connection
 from django.db.models import Q
 from django.db.models.functions import TruncHour
 from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
-from injection.models import InjectionMonitoringRecord, adjust_monitoring_capacity
+from injection.models import InjectionMonitoringRecord, InjectionMonitoringRollup, adjust_monitoring_capacity
 
 
 # BLACKLAKE API 鞐旊摐韽澑韸?
@@ -373,6 +373,207 @@ class MESResourceService:
 
         return time_slots
 
+    def _floor_bucket_start(self, value: datetime, bucket_minutes: int) -> datetime:
+        cst = pytz.timezone('Asia/Shanghai')
+        local_value = value.astimezone(cst)
+        day_start = local_value.replace(hour=0, minute=0, second=0, microsecond=0)
+        elapsed_minutes = int((local_value - day_start).total_seconds() // 60)
+        bucket_index = elapsed_minutes // bucket_minutes
+        return day_start + timedelta(minutes=bucket_index * bucket_minutes)
+
+    def upsert_monitoring_rollups(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        bucket_minutes: int = 60,
+    ) -> int:
+        """
+        Store bucketed shot counts before compacting raw monitoring records.
+
+        The source counter is cumulative, so positive deltas are assigned to
+        the bucket containing the later sample timestamp. This preserves hourly
+        production volume even when old minute-level snapshots are compacted.
+        """
+        if bucket_minutes <= 0 or start_time >= end_time:
+            return 0
+
+        cst = pytz.timezone('Asia/Shanghai')
+        start_time = start_time.astimezone(cst)
+        end_time = end_time.astimezone(cst)
+        machine_names = [f'{machine_num}호기' for machine_num in range(1, 18)]
+        updated_count = 0
+
+        for machine_name in machine_names:
+            records = list(
+                InjectionMonitoringRecord.objects
+                .filter(
+                    machine_name=machine_name,
+                    timestamp__gte=start_time,
+                    timestamp__lt=end_time,
+                    capacity__isnull=False,
+                )
+                .order_by('timestamp')
+            )
+            if not records:
+                continue
+
+            baseline = (
+                InjectionMonitoringRecord.objects
+                .filter(
+                    machine_name=machine_name,
+                    timestamp__lt=start_time,
+                    capacity__isnull=False,
+                )
+                .order_by('-timestamp')
+                .first()
+            )
+
+            prev_capacity = baseline.capacity if baseline else None
+            prev_time = baseline.timestamp if baseline else None
+            grouped: Dict[datetime, Dict[str, Any]] = {}
+
+            def ensure_grouped_bucket(bucket_start: datetime, record: InjectionMonitoringRecord, start_capacity: Optional[float]) -> Dict[str, Any]:
+                return grouped.setdefault(bucket_start, {
+                    'machine_name': record.machine_name,
+                    'device_code': record.device_code,
+                    'shot_count': 0.0,
+                    'active_minutes': 0.0,
+                    'sample_count': 0,
+                    'start_capacity': start_capacity,
+                    'end_capacity': record.capacity,
+                    'max_power_kwh': record.power_kwh,
+                })
+
+            for record in records:
+                bucket_start = self._floor_bucket_start(record.timestamp, bucket_minutes)
+                bucket = ensure_grouped_bucket(bucket_start, record, prev_capacity)
+                bucket['sample_count'] = int(bucket['sample_count'] or 0) + 1
+                bucket['device_code'] = record.device_code
+                bucket['machine_name'] = record.machine_name
+                bucket['end_capacity'] = record.capacity
+                if record.power_kwh is not None:
+                    previous_power = bucket.get('max_power_kwh')
+                    bucket['max_power_kwh'] = max(float(previous_power), record.power_kwh) if previous_power is not None else record.power_kwh
+
+                if prev_capacity is not None and record.capacity is not None and record.capacity >= prev_capacity:
+                    delta = record.capacity - prev_capacity
+                    if delta > 0:
+                        if prev_time is not None:
+                            interval_start = max(prev_time.astimezone(cst), start_time)
+                            interval_end = record.timestamp.astimezone(cst)
+                            interval_minutes = max(1.0, (interval_end - interval_start).total_seconds() / 60)
+                            cursor = interval_start
+                            while cursor < interval_end:
+                                target_bucket_start = self._floor_bucket_start(cursor, bucket_minutes)
+                                target_bucket_end = target_bucket_start + timedelta(minutes=bucket_minutes)
+                                overlap_end = min(target_bucket_end, interval_end)
+                                overlap_minutes = max(0.0, (overlap_end - cursor).total_seconds() / 60)
+                                if overlap_minutes > 0 and target_bucket_start >= start_time and target_bucket_start < end_time:
+                                    target_bucket = ensure_grouped_bucket(target_bucket_start, record, prev_capacity)
+                                    target_bucket['device_code'] = record.device_code
+                                    target_bucket['machine_name'] = record.machine_name
+                                    target_bucket['end_capacity'] = record.capacity
+                                    target_bucket['shot_count'] = float(target_bucket['shot_count'] or 0) + (delta * (overlap_minutes / interval_minutes))
+                                    target_bucket['active_minutes'] = min(
+                                        float(target_bucket['active_minutes'] or 0) + overlap_minutes,
+                                        float(bucket_minutes),
+                                    )
+                                if overlap_end <= cursor:
+                                    break
+                                cursor = overlap_end
+                        else:
+                            bucket['shot_count'] = float(bucket['shot_count'] or 0) + delta
+                            bucket['active_minutes'] = min(
+                                float(bucket['active_minutes'] or 0) + 1.0,
+                                float(bucket_minutes),
+                            )
+
+                prev_capacity = record.capacity
+                prev_time = record.timestamp
+
+            for bucket_start, values in grouped.items():
+                InjectionMonitoringRollup.objects.update_or_create(
+                    device_code=str(values['device_code']),
+                    bucket_start=bucket_start,
+                    bucket_minutes=bucket_minutes,
+                    defaults={
+                        'machine_name': str(values['machine_name']),
+                        'shot_count': round(float(values['shot_count'] or 0), 3),
+                        'active_minutes': round(float(values['active_minutes'] or 0), 3),
+                        'sample_count': int(values['sample_count'] or 0),
+                        'start_capacity': values['start_capacity'],
+                        'end_capacity': values['end_capacity'],
+                        'max_power_kwh': values['max_power_kwh'],
+                    },
+                )
+                updated_count += 1
+
+        return updated_count
+
+    def _build_bucket_rollup_matrix(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        machine_numbers: List[int],
+        actual_matrix: Dict[str, List[float]],
+        source_time_slots: List[Dict],
+        bucket_minutes: int = 30,
+    ) -> Tuple[List[Dict], Dict[str, List[float]], bool]:
+        cst = pytz.timezone('Asia/Shanghai')
+        if bucket_minutes <= 0:
+            return [], {}, False
+
+        first_bucket = self._floor_bucket_start(start_time, bucket_minutes)
+        if first_bucket < start_time.astimezone(cst):
+            first_bucket += timedelta(minutes=bucket_minutes)
+
+        rollup_slots = []
+        slot_time = first_bucket
+        while slot_time < end_time.astimezone(cst):
+            rollup_slots.append({
+                'hour_offset': len(rollup_slots),
+                'time': slot_time.isoformat(),
+                'label': slot_time.strftime('%H:%M'),
+                'interval_minutes': bucket_minutes,
+            })
+            slot_time += timedelta(minutes=bucket_minutes)
+
+        rollup_matrix: Dict[str, List[float]] = {
+            str(machine_num): [0.0 for _ in rollup_slots]
+            for machine_num in machine_numbers
+        }
+        bucket_index = {
+            datetime.fromisoformat(slot['time']): index
+            for index, slot in enumerate(rollup_slots)
+        }
+
+        for machine_num in machine_numbers:
+            row = actual_matrix.get(str(machine_num), [])
+            for slot_index, source_slot in enumerate(source_time_slots):
+                source_time = datetime.fromisoformat(source_slot['time']).astimezone(cst)
+                bucket_start = self._floor_bucket_start(source_time, bucket_minutes)
+                target_index = bucket_index.get(bucket_start)
+                if target_index is not None:
+                    rollup_matrix[str(machine_num)][target_index] += float(row[slot_index] if slot_index < len(row) else 0)
+
+        rollups = InjectionMonitoringRollup.objects.filter(
+            bucket_minutes=bucket_minutes,
+            bucket_start__gte=first_bucket,
+            bucket_start__lt=end_time,
+        )
+        has_rollup_source = rollups.exists()
+        if has_rollup_source:
+            for rollup in rollups:
+                try:
+                    machine_num = int(rollup.machine_name.replace('호기', '').strip())
+                except (TypeError, ValueError):
+                    continue
+                target_index = bucket_index.get(rollup.bucket_start.astimezone(cst))
+                if machine_num in machine_numbers and target_index is not None:
+                    rollup_matrix[str(machine_num)][target_index] = round(float(rollup.shot_count or 0), 3)
+
+        return rollup_slots, rollup_matrix, has_rollup_source
+
     def update_records_from_mes(self):
         """
         Performs an incremental update for all machines based on their
@@ -626,15 +827,31 @@ class MESResourceService:
             }
             for num, info in machine_info_map.items() if num in machine_numbers
         ]
+        rollup_bucket_minutes = 30
+        rollup_slots, rollup_matrix, has_rollups = self._build_bucket_rollup_matrix(
+            start_of_first_slot,
+            end_of_last_slot,
+            machine_numbers,
+            actual_matrix,
+            time_slots,
+            bucket_minutes=rollup_bucket_minutes,
+        )
 
         return {
             'timestamp': now.isoformat(),
             'time_slots': time_slots,
+            'rollup_time_slots': rollup_slots,
+            'rollup_bucket_minutes': rollup_bucket_minutes,
+            'rollup_source': has_rollups,
+            'hourly_rollup_time_slots': rollup_slots,
             'interval_type': interval_type,
             'columns': columns,
             'machines': machines,
             'cumulative_production_matrix': cumulative_matrix,
             'actual_production_matrix': actual_matrix,
+            'rollup_production_matrix': rollup_matrix,
+            'hourly_production_matrix': rollup_matrix,
+            'hourly_rollup_source': has_rollups,
             'oil_temperature_matrix': temperature_matrix,
             'power_kwh_matrix': power_matrix,
             'power_usage_matrix': power_usage_matrix,
@@ -761,7 +978,12 @@ class MESResourceService:
             logger.info(f"=== Interval snapshot update completed successfully ===")
             logger.info(f"Total records saved: {records_count} / 17 machines")
 
-            self.compact_monitoring_records(retention_hours=24, hours_to_compact=2)
+            rollup_start = target_timestamp - timedelta(minutes=60)
+            rollup_end = target_timestamp + timedelta(minutes=1)
+            self.upsert_monitoring_rollups(rollup_start, rollup_end, bucket_minutes=5)
+            self.upsert_monitoring_rollups(rollup_start, rollup_end, bucket_minutes=30)
+            self.upsert_monitoring_rollups(rollup_start, rollup_end, bucket_minutes=60)
+            self.compact_monitoring_records(retention_hours=168, hours_to_compact=2)
             return {"status": "completed", "timestamp": now.isoformat(), "records_saved": records_count}
 
         except Exception as e:
@@ -858,7 +1080,12 @@ class MESResourceService:
                 self._update_single_hour_snapshot(target_timestamp, progress_callback=slot_callback)
                 completed_steps += total_machines
 
-            self.compact_monitoring_records(retention_hours=24, hours_to_compact=6)
+            range_start = min(target_timestamps) if target_timestamps else target_base
+            range_end = target_base + timedelta(minutes=max(1, step_minutes))
+            self.upsert_monitoring_rollups(range_start, range_end, bucket_minutes=5)
+            self.upsert_monitoring_rollups(range_start, range_end, bucket_minutes=30)
+            self.upsert_monitoring_rollups(range_start, range_end, bucket_minutes=60)
+            self.compact_monitoring_records(retention_hours=168, hours_to_compact=6)
             logger.info(f"Finished update for recent {hours_to_update} hours.")
             return {
                 "status": "completed",
@@ -869,9 +1096,9 @@ class MESResourceService:
         finally:
             self._release_snapshot_update_lock(lock_token)
 
-    def compact_monitoring_records(self, retention_hours: int = 24, hours_to_compact: int = 2) -> None:
+    def compact_monitoring_records(self, retention_hours: int = 168, hours_to_compact: int = 2) -> None:
         """
-        Keep minute-level snapshots for the last retention_hours and compact older data to hourly.
+        Keep detailed snapshots for the last retention_hours and compact older data.
         """
         if hours_to_compact <= 0:
             return
@@ -889,6 +1116,10 @@ class MESResourceService:
         )
         if not candidates.exists():
             return
+
+        self.upsert_monitoring_rollups(compact_start, compact_before, bucket_minutes=5)
+        self.upsert_monitoring_rollups(compact_start, compact_before, bucket_minutes=30)
+        self.upsert_monitoring_rollups(compact_start, compact_before, bucket_minutes=60)
 
         grouped_hours = candidates.annotate(hour=TruncHour('timestamp')).values('device_code', 'hour').distinct()
 
@@ -911,7 +1142,7 @@ class MESResourceService:
 
         if deleted_total:
             logger.info(
-                "Compacted monitoring records: kept hourly snapshots for %s~%s (deleted %s rows).",
+                "Compacted monitoring records after rollup creation for %s~%s (deleted %s rows).",
                 compact_start.isoformat(),
                 compact_before.isoformat(),
                 deleted_total

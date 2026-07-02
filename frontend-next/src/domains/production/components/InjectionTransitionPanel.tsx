@@ -45,6 +45,11 @@ function formatNumber(value: number) {
   return Math.round(value).toLocaleString();
 }
 
+function formatMachineLabel(value: string, language: AppLanguage) {
+  if (language !== "zh") return value;
+  return value.replace(/호기/g, "号机");
+}
+
 function formatDuration(minutes: number, language: AppLanguage) {
   const rounded = Math.round(minutes);
   const hours = Math.floor(rounded / 60);
@@ -187,7 +192,7 @@ export function InjectionTransitionPanel({
           {visibleMachines.map((machine) => (
             <article className="injection-transition-card" key={machine.machineKey}>
               <div className="injection-transition-card__head">
-                <strong>{machine.machineLabel}</strong>
+                <strong>{formatMachineLabel(machine.machineLabel, language)}</strong>
                 <span>{copy.requiresInjectionNote} {formatNumber(machine.totals.noteRequiredCount)}</span>
               </div>
               {machine.flags.length ? (

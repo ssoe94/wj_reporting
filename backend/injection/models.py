@@ -490,3 +490,31 @@ class InjectionMonitoringRecord(models.Model):
 
     def __str__(self):
         return f"{self.timestamp.strftime('%Y-%m-%d %H:%M')} - {self.machine_name}"
+
+
+class InjectionMonitoringRollup(models.Model):
+    """Bucketed monitoring summary for long-range charts."""
+    machine_name = models.CharField('Machine Name', max_length=50)
+    device_code = models.CharField('Device Code', max_length=100, db_index=True)
+    bucket_start = models.DateTimeField('Bucket Start', db_index=True)
+    bucket_minutes = models.PositiveSmallIntegerField('Bucket Minutes', db_index=True)
+    shot_count = models.FloatField('Shot Count', default=0)
+    active_minutes = models.FloatField('Active Minutes', default=0)
+    sample_count = models.PositiveIntegerField('Sample Count', default=0)
+    start_capacity = models.FloatField('Start Capacity', null=True, blank=True)
+    end_capacity = models.FloatField('End Capacity', null=True, blank=True)
+    max_power_kwh = models.FloatField('Max Power (kWh)', null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Injection monitoring rollup'
+        verbose_name_plural = 'Injection monitoring rollups'
+        unique_together = ('device_code', 'bucket_start', 'bucket_minutes')
+        indexes = [
+            models.Index(fields=['bucket_minutes', 'bucket_start'], name='inj_roll_bucket_idx'),
+            models.Index(fields=['machine_name', 'bucket_start'], name='inj_roll_machine_idx'),
+        ]
+        ordering = ['-bucket_start', 'machine_name']
+
+    def __str__(self):
+        return f"{self.bucket_start.strftime('%Y-%m-%d %H:%M')} - {self.machine_name} ({self.bucket_minutes}m)"

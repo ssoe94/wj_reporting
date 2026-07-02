@@ -73,6 +73,15 @@ test.describe('production dashboard operational scenario', () => {
     await expect(detailDialog.getByText('281 / 539')).toBeVisible();
     await detailDialog.getByRole('button', { name: '닫기' }).click();
 
+    await page.getByRole('button', { name: /850T-2 상세/ }).click();
+    await expect(detailDialog).toBeVisible();
+    await expect(detailDialog.getByRole('heading', { name: '850T-2' })).toBeVisible();
+    await expect(detailDialog.getByText('ABJ76507604')).toBeVisible();
+    await expect(detailDialog.getByText('ABJ76507601')).toBeVisible();
+    await expect(detailDialog.getByText('198 / 198')).toBeVisible();
+    await expect(detailDialog.getByText('281 / 539')).toBeVisible();
+    await detailDialog.getByRole('button', { name: '닫기' }).click();
+
     await page.getByRole('button', { name: /1050T-16 상세/ }).click();
     await expect(detailDialog).toBeVisible();
     await expect(detailDialog.getByRole('heading', { name: '1050T-16' })).toBeVisible();

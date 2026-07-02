@@ -1,8 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation } from "react-router-dom";
+import { getLoginFailureReason, type LoginFailureReason } from "@/domains/auth/auth-api";
 import { useAuth } from "@/domains/auth/auth-context";
 import { devLoginHint } from "@/domains/auth/dev-session";
 import { type AppLanguage, setStoredLanguage, useStoredLanguage } from "@/shared/i18n/language";
+
+const publicAssetBase = import.meta.env.BASE_URL.replace(/\/$/, "");
+const wjLogoUrl = `${publicAssetBase}/wjlogo.png`;
 
 type LocationState = {
   from?: string;
@@ -15,7 +19,12 @@ const loginCopy = {
     password: "비밀번호",
     submit: "로그인",
     submitting: "로그인 중",
-    error: "로그인에 실패했습니다. 계정 또는 비밀번호를 확인해주세요.",
+    errors: {
+      invalidCredentials: "로그인에 실패했습니다. 계정 또는 비밀번호를 확인해주세요.",
+      network: "로그인 서버에 연결할 수 없습니다. API 서버가 실행 중인지 확인해주세요.",
+      server: "로그인 서버에서 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+      unknown: "로그인 중 알 수 없는 오류가 발생했습니다. 다시 시도해주세요.",
+    },
     ariaLabel: "로그인",
   },
   zh: {
@@ -24,10 +33,22 @@ const loginCopy = {
     password: "密码",
     submit: "登录",
     submitting: "登录中",
-    error: "登录失败。请确认账号或密码。",
+    errors: {
+      invalidCredentials: "登录失败。请确认账号或密码。",
+      network: "无法连接登录服务器。请确认 API 服务器是否正在运行。",
+      server: "登录服务器发生错误。请稍后再试。",
+      unknown: "登录时发生未知错误。请再试一次。",
+    },
     ariaLabel: "登录",
   },
 };
+
+function getErrorMessage(
+  errors: Record<LoginFailureReason, string>,
+  error: unknown,
+) {
+  return errors[getLoginFailureReason(error)];
+}
 
 export function LoginPage() {
   const location = useLocation();
@@ -53,8 +74,8 @@ export function LoginPage() {
 
     try {
       await login(username, password);
-    } catch {
-      setError(copy.error);
+    } catch (loginError) {
+      setError(getErrorMessage(copy.errors, loginError));
     } finally {
       setIsSubmitting(false);
     }
@@ -74,7 +95,7 @@ export function LoginPage() {
         <section className="login__panel" aria-label={copy.ariaLabel}>
           <div className="login-card">
             <div className="login-card__header">
-              <img alt="WJ company logo" className="login-card__logo" src="/wjlogo.png" />
+              <img alt="WJ company logo" className="login-card__logo" src={wjLogoUrl} />
               <div className="language-switch" aria-label="Language">
                 <button
                   className={language === "ko" ? "language-switch__item language-switch__item--active" : "language-switch__item"}

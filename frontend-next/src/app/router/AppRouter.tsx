@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "@/app/layout/AppShell";
 import { AnalysisPage } from "@/domains/analysis/pages/AnalysisPage";
 import { RequireAuth } from "@/domains/auth/RequireAuth";
@@ -9,6 +10,65 @@ import { MesMonitoringPage } from "@/domains/mes/pages/MesMonitoringPage";
 import { ProductionDashboardPage } from "@/domains/production/pages/ProductionDashboardPage";
 import { ProductionPlansPage } from "@/domains/production/pages/ProductionPlansPage";
 
+function useIsEmbedded() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  return params.get("embed") === "1";
+}
+
+function EmbeddedLayout() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const frameId = params.get("frameId") ?? "";
+
+    function getDocumentHeight() {
+      return Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight,
+        document.documentElement.offsetHeight,
+        document.body.offsetHeight,
+      );
+    }
+
+    function postHeight() {
+      window.parent.postMessage({
+        type: "wj-next-embed-height",
+        frameId,
+        height: getDocumentHeight(),
+      }, window.location.origin);
+    }
+
+    document.documentElement.classList.add("is-embedded-next");
+    postHeight();
+
+    const resizeObserver = new ResizeObserver(postHeight);
+    resizeObserver.observe(document.documentElement);
+    resizeObserver.observe(document.body);
+    window.addEventListener("load", postHeight);
+    window.addEventListener("resize", postHeight);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("load", postHeight);
+      window.removeEventListener("resize", postHeight);
+      document.documentElement.classList.remove("is-embedded-next");
+    };
+  }, [location.search]);
+
+  return (
+    <main className="embedded-app__main">
+      <Outlet />
+    </main>
+  );
+}
+
+function AuthenticatedLayout() {
+  const isEmbedded = useIsEmbedded();
+  return isEmbedded ? <EmbeddedLayout /> : <AppShell />;
+}
+
 export function AppRouter() {
   return (
     <Routes>
@@ -17,7 +77,7 @@ export function AppRouter() {
         path="/"
         element={
           <RequireAuth>
-            <AppShell />
+            <AuthenticatedLayout />
           </RequireAuth>
         }
       >
@@ -32,19 +92,11 @@ export function AppRouter() {
         />
         <Route
           path="production"
-          element={
-            <RequireCapabilities capabilities={["production.read"]}>
-              <ProductionDashboardPage />
-            </RequireCapabilities>
-          }
+          element={<ProductionDashboardPage />}
         />
         <Route
           path="mes/monitoring"
-          element={
-            <RequireCapabilities capabilities={["production.read"]}>
-              <MesMonitoringPage />
-            </RequireCapabilities>
-          }
+          element={<MesMonitoringPage />}
         />
         <Route
           path="production/plans"

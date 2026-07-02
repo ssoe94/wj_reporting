@@ -14,6 +14,10 @@ function shouldUseMockProductionApi() {
   return isDevSessionActive() && !USE_REMOTE_PRODUCTION_API;
 }
 
+function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 export type ProductionStatusPart = {
   part_no: string | null;
   model_name: string | null;
@@ -44,9 +48,22 @@ export type ProductionStatusResponse = {
   machining: ProductionStatusMachine[];
 };
 
+function normalizeProductionStatus(data: Partial<ProductionStatusResponse> | null | undefined): ProductionStatusResponse {
+  return {
+    injection: asArray(data?.injection).map((machine) => ({
+      ...machine,
+      parts: asArray(machine.parts),
+    })),
+    machining: asArray(data?.machining).map((machine) => ({
+      ...machine,
+      parts: asArray(machine.parts),
+    })),
+  };
+}
+
 export async function getProductionStatus(date: string) {
   const response = await http.get<ProductionStatusResponse>(`/production/status/?date=${encodeURIComponent(date)}`);
-  return response.data;
+  return normalizeProductionStatus(response.data);
 }
 
 export type PlanType = "injection" | "machining";
@@ -97,6 +114,27 @@ export type ProductionPlanSummaryResponse = {
   injection: ProductionPlanSummaryBucket;
   machining: ProductionPlanSummaryBucket;
 };
+
+function normalizePlanBucket(bucket: Partial<ProductionPlanSummaryBucket> | null | undefined): ProductionPlanSummaryBucket {
+  return {
+    records: asArray(bucket?.records),
+    machine_summary: asArray(bucket?.machine_summary),
+    model_summary: asArray(bucket?.model_summary),
+    daily_totals: asArray(bucket?.daily_totals),
+  };
+}
+
+function normalizeProductionPlanSummary(
+  data: Partial<ProductionPlanSummaryResponse> | null | undefined,
+  date: string,
+): ProductionPlanSummaryResponse {
+  return {
+    plan_date: data?.plan_date ?? date,
+    latest_updated_at: data?.latest_updated_at ?? null,
+    injection: normalizePlanBucket(data?.injection),
+    machining: normalizePlanBucket(data?.machining),
+  };
+}
 
 export type ProductionPlanChangeLog = {
   id: number;
@@ -157,6 +195,33 @@ export type ProductionMesReportStatsResponse = {
     mes_material_names?: string[];
   }>;
 };
+
+function normalizeProductionMesReportStats(
+  data: Partial<ProductionMesReportStatsResponse> | null | undefined,
+  date: string,
+  planType: PlanType,
+): ProductionMesReportStatsResponse {
+  return {
+    date: data?.date ?? date,
+    plan_type: data?.plan_type ?? planType,
+    range_mode: data?.range_mode ?? "business_day",
+    range_start: data?.range_start ?? "",
+    range_end: data?.range_end ?? "",
+    latest_synced_at: data?.latest_synced_at ?? null,
+    summary: {
+      total_planned: Number(data?.summary?.total_planned ?? 0),
+      total_mes: Number(data?.summary?.total_mes ?? 0),
+      gap_qty: Number(data?.summary?.gap_qty ?? 0),
+      achievement_rate: Number(data?.summary?.achievement_rate ?? 0),
+      matched_rows: Number(data?.summary?.matched_rows ?? 0),
+      plan_only_rows: Number(data?.summary?.plan_only_rows ?? 0),
+      mes_only_rows: Number(data?.summary?.mes_only_rows ?? 0),
+      raw_mes_count: Number(data?.summary?.raw_mes_count ?? 0),
+      grouped_mes_count: Number(data?.summary?.grouped_mes_count ?? 0),
+    },
+    rows: asArray(data?.rows),
+  };
+}
 
 export type MachiningManualReport = {
   id: number;
@@ -247,6 +312,37 @@ export type MachiningProvisionResponse = {
   };
   rows: MachiningProvisionRow[];
 };
+
+function normalizeMachiningProvision(
+  data: Partial<MachiningProvisionResponse> | null | undefined,
+  businessDate: string,
+): MachiningProvisionResponse {
+  return {
+    business_date: data?.business_date ?? businessDate,
+    range: {
+      plan_date_from: data?.range?.plan_date_from ?? businessDate,
+      plan_date_to: data?.range?.plan_date_to ?? businessDate,
+      range_start: data?.range?.range_start ?? "",
+      range_end: data?.range?.range_end ?? "",
+    },
+    summary: {
+      total_planned: Number(data?.summary?.total_planned ?? 0),
+      mes_qty: Number(data?.summary?.mes_qty ?? 0),
+      manual_open_qty: Number(data?.summary?.manual_open_qty ?? 0),
+      manual_matched_qty: Number(data?.summary?.manual_matched_qty ?? 0),
+      effective_actual_qty: Number(data?.summary?.effective_actual_qty ?? 0),
+      gap_qty: Number(data?.summary?.gap_qty ?? 0),
+      achievement_rate: Number(data?.summary?.achievement_rate ?? 0),
+      open_manual_count: Number(data?.summary?.open_manual_count ?? 0),
+      mismatch_count: Number(data?.summary?.mismatch_count ?? 0),
+      advance_qty: Number(data?.summary?.advance_qty ?? 0),
+    },
+    rows: asArray(data?.rows).map((row) => ({
+      ...row,
+      manual_reports: asArray(row.manual_reports),
+    })),
+  };
+}
 
 export type CreateMachiningManualReportPayload = {
   business_date: string;
@@ -369,7 +465,10 @@ export async function getProductionPlanDates() {
     return getMockPlanDates();
   }
   const response = await http.get<ProductionPlanDatesResponse>("/production/plan-dates/");
-  return response.data;
+  return {
+    injection: asArray(response.data?.injection),
+    machining: asArray(response.data?.machining),
+  };
 }
 
 export async function getProductionPlanSummary(date: string) {
@@ -379,7 +478,7 @@ export async function getProductionPlanSummary(date: string) {
   const response = await http.get<ProductionPlanSummaryResponse>(
     `/production/plan-summary/?date=${encodeURIComponent(date)}`,
   );
-  return response.data;
+  return normalizeProductionPlanSummary(response.data, date);
 }
 
 export async function getProductionPlanChangeLogs(date: string) {
@@ -393,14 +492,14 @@ export async function getProductionMesReportStats(date: string, planType: PlanTy
   const response = await http.get<ProductionMesReportStatsResponse>(
     `/production/mes-report-stats/?date=${encodeURIComponent(date)}&plan_type=${encodeURIComponent(planType)}`,
   );
-  return response.data;
+  return normalizeProductionMesReportStats(response.data, date, planType);
 }
 
 export async function getMachiningProvision(businessDate: string, days = 3) {
   const response = await http.get<MachiningProvisionResponse>(
     `/production/machining/provision/?business_date=${encodeURIComponent(businessDate)}&days=${encodeURIComponent(days)}`,
   );
-  return response.data;
+  return normalizeMachiningProvision(response.data, businessDate);
 }
 
 export async function createMachiningManualReport(payload: CreateMachiningManualReportPayload) {
@@ -425,10 +524,11 @@ export async function getProductionPlanItems(date: string, planType: PlanType) {
       ),
       getSummaryRecords().catch(() => [] as ProductionPlanRecord[]),
     ]);
-    if (!itemsResponse.data.length && summaryRecords.length) {
+    const items = asArray(itemsResponse.data);
+    if (!items.length && summaryRecords.length) {
       return summaryRecords;
     }
-    return mergeCavityFromSummary(itemsResponse.data, summaryRecords);
+    return mergeCavityFromSummary(items, summaryRecords);
   } catch (error) {
     try {
       return await getSummaryRecords();

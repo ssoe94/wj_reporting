@@ -965,20 +965,20 @@ function getShiftSectionInfo(value: Date, language: AppLanguage) {
 }
 
 function buildRows(data?: InjectionProductionMatrix, businessDate?: string): InjectionMachineRow[] {
-  if (!data || data.time_slots.length === 0) return [];
+  if (!data || !data.time_slots?.length) return [];
   const latestIndex = data.time_slots.length - 1;
   const latestTime = getLatestTime(data);
   const shiftStartTime = businessDate ? getBusinessDayStart(businessDate) : getShiftStart(latestTime);
   const referenceEndTime = businessDate ? getBusinessDayReferenceEnd(businessDate, latestTime) : latestTime;
   const recentStartTime = referenceEndTime ? new Date(referenceEndTime.getTime() - 60 * 60 * 1000) : null;
 
-  return data.machines.map((machine) => {
+  return (data.machines ?? []).map((machine) => {
     const key = String(machine.machine_number);
-    const latestOutput = numberAt(data.actual_production_matrix[key], latestIndex);
+    const latestOutput = numberAt(data.actual_production_matrix?.[key], latestIndex);
     const shiftOutput = buildPeriodSummary(data, machine.machine_number, shiftStartTime, referenceEndTime).output;
     const recentOutput = buildPeriodSummary(data, machine.machine_number, recentStartTime, referenceEndTime).output;
-    const cumulativeOutput = numberAt(data.cumulative_production_matrix[key], latestIndex);
-    const oilTemperature = nullableNumberAt(data.oil_temperature_matrix[key], latestIndex);
+    const cumulativeOutput = numberAt(data.cumulative_production_matrix?.[key], latestIndex);
+    const oilTemperature = nullableNumberAt(data.oil_temperature_matrix?.[key], latestIndex);
     const powerUsage = nullableNumberAt(data.power_usage_matrix?.[key], latestIndex);
     const powerTotal = nullableNumberAt(data.power_kwh_matrix?.[key], latestIndex);
     const status = recentOutput > 0 ? "running" : "idle";
@@ -1000,7 +1000,7 @@ function buildRows(data?: InjectionProductionMatrix, businessDate?: string): Inj
 }
 
 function getLatestTime(data?: InjectionProductionMatrix) {
-  const latestSlot = data?.time_slots.at(-1);
+  const latestSlot = data?.time_slots?.at(-1);
   return latestSlot ? new Date(latestSlot.time) : null;
 }
 
@@ -1048,7 +1048,7 @@ function buildCumulativePowerUsage(
   let previousValue = startValue;
   let usage = 0;
   let hasUsage = false;
-  data.time_slots.forEach((slot, index) => {
+  (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
     if (slotTime <= startTime || slotTime > endTime) return;
 
@@ -1073,7 +1073,7 @@ function buildFallbackPowerUsage(
 ) {
   let usage = 0;
   let hasUsage = false;
-  data.time_slots.forEach((slot, index) => {
+  (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
     if (slotTime <= startTime || slotTime > endTime) return;
 
@@ -1116,7 +1116,7 @@ function buildPeriodSummary(
   let oilTotal = 0;
   let oilCount = 0;
 
-  data.time_slots.forEach((slot, index) => {
+  (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
     if (slotTime <= startTime || slotTime > endTime) return;
 
@@ -1151,7 +1151,7 @@ function buildFleetPeriodSummary(
   let oilTotal = 0;
   let oilCount = 0;
 
-  data.machines.forEach((machine) => {
+  (data.machines ?? []).forEach((machine) => {
     const summary = buildPeriodSummary(data, machine.machine_number, startTime, endTime);
     output += summary.output;
     if (summary.power !== null) {
@@ -1172,11 +1172,11 @@ function buildFleetPeriodSummary(
 }
 
 function getSlotIntervalMinutes(data: InjectionProductionMatrix, index: number) {
-  const explicitInterval = data.time_slots[index]?.interval_minutes;
+  const explicitInterval = data.time_slots?.[index]?.interval_minutes;
   if (explicitInterval) return explicitInterval;
 
-  const currentTime = new Date(data.time_slots[index]?.time ?? 0);
-  const nextSlot = data.time_slots[index + 1];
+  const currentTime = new Date(data.time_slots?.[index]?.time ?? 0);
+  const nextSlot = data.time_slots?.[index + 1];
   if (!Number.isNaN(currentTime.getTime()) && nextSlot) {
     const nextTime = new Date(nextSlot.time);
     const diffMinutes = (nextTime.getTime() - currentTime.getTime()) / (60 * 1000);
@@ -1192,7 +1192,7 @@ function getMachineMatrixValues(
   machineNumber: number,
 ) {
   if (!data || !matrix) return [];
-  const machine = data.machines.find((item) => item.machine_number === machineNumber);
+  const machine = data.machines?.find((item) => item.machine_number === machineNumber);
   const candidateKeys = [
     String(machineNumber),
     machine?.machine_name,
@@ -1223,7 +1223,7 @@ function buildMachineProductionWindow(
   let firstProductionMs: number | null = null;
   let lastProductionEndMs: number | null = null;
 
-  data.time_slots.forEach((slot, index) => {
+  (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
     if (slotTime <= startTime || slotTime > endTime) return;
 
@@ -1289,7 +1289,7 @@ function buildMachineUtilizationSummary(
   const productionRow = getMachineMatrixValues(data, data.actual_production_matrix, machineNumber);
   let lastOutputTime: Date | null = null;
 
-  data.time_slots.forEach((slot, index) => {
+  (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
     if (slotTime <= startTime || slotTime > endTime) return;
 
@@ -1893,7 +1893,7 @@ export function MesMonitoringPage() {
   }, [queryClient, updateStatusQuery.data?.status]);
 
   const machineRows = useMemo(() => buildRows(injectionQuery.data, injectionDate), [injectionDate, injectionQuery.data]);
-  const latestSlot = injectionQuery.data?.time_slots.at(-1);
+  const latestSlot = injectionQuery.data?.time_slots?.at(-1);
   const latestTime = getLatestTime(injectionQuery.data);
   const dayStart = useMemo(() => getBusinessDayStart(injectionDate), [injectionDate]);
   const referenceEndTime = useMemo(

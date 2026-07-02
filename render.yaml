@@ -9,12 +9,33 @@ services:
   - type: static
     name: wj_reporting
     rootDir: frontend
-    buildCommand: npm install && npm run build
+    buildCommand: node ../scripts/build-render-static.mjs
     staticPublishPath: dist
     routes:
       - type: rewrite
         source: /api/*
         destination: https://wj-reporting-backend.onrender.com/api/*
+      - type: rewrite
+        source: /next/login
+        destination: /next/index.html
+      - type: rewrite
+        source: /next/login/
+        destination: /next/index.html
+      - type: rewrite
+        source: /next/production
+        destination: /next/index.html
+      - type: rewrite
+        source: /next/production/
+        destination: /next/index.html
+      - type: rewrite
+        source: /next/mes/monitoring
+        destination: /next/index.html
+      - type: rewrite
+        source: /next/mes/monitoring/
+        destination: /next/index.html
+      - type: redirect
+        source: /injection/monitoring
+        destination: /mes/monitoring
       - type: rewrite
         source: /*
         destination: /index.html

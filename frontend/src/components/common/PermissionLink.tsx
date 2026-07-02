@@ -13,6 +13,7 @@ interface PermissionLinkProps {
   className?: string;
   activeClassName?: string;
   showTooltip?: boolean;
+  reloadDocument?: boolean;
   onClick?: (e: React.MouseEvent) => void;
 }
 
@@ -25,6 +26,7 @@ const PermissionLink: React.FC<PermissionLinkProps> = ({
   className = '',
   activeClassName = '',
   showTooltip = true,
+  reloadDocument = false,
   onClick,
 }) => {
   const { hasPermission, user, canAccessRoute } = useAuth();
@@ -87,6 +89,7 @@ const PermissionLink: React.FC<PermissionLinkProps> = ({
     <Link 
       to={to} 
       className={linkClassName}
+      reloadDocument={reloadDocument}
       onClick={handleClick}
     >
       {children}
