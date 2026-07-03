@@ -4936,39 +4936,6 @@ select {
   line-height: 1;
 }
 
-.cavity-group-tools {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 108px auto auto;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid rgba(0, 142, 195, 0.10);
-  background: rgba(248, 253, 255, 0.72);
-}
-
-.cavity-group-tools > div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.cavity-group-tools span {
-  color: #5e7488;
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.cavity-group-tools strong {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 0.76rem;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .cavity-pattern-select {
   height: 28px;
   font-weight: 800;
@@ -5057,7 +5024,7 @@ select {
 
 .schedule-job {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) minmax(112px, 0.52fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) minmax(248px, 0.72fr) auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -5089,6 +5056,13 @@ select {
   border-color: rgba(0, 142, 195, 0.38);
   background: rgba(239, 250, 255, 0.92);
   box-shadow: inset 3px 0 0 rgba(0, 142, 195, 0.64);
+}
+
+.schedule-job--cavity-grouped {
+  border-color: rgba(0, 142, 195, 0.22);
+  background:
+    linear-gradient(90deg, rgba(239, 250, 255, 0.86), rgba(255, 255, 255, 0.86));
+  box-shadow: inset 4px 0 0 var(--cavity-group-color, rgba(0, 142, 195, 0.64));
 }
 
 .schedule-job--drop-before {
@@ -5186,6 +5160,11 @@ select {
   line-height: 1.1;
 }
 
+.schedule-job__model-line .cavity-group-chip {
+  background: color-mix(in srgb, var(--cavity-group-color, #008ec3) 16%, white);
+  color: var(--cavity-group-color, #008ec3);
+}
+
 .schedule-job__main span {
   color: var(--muted);
   font-size: 0.72rem;
@@ -5215,12 +5194,80 @@ select {
   line-height: 1;
 }
 
-.cavity-row-check {
+.cavity-inline-editor {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cavity-inline-editor__inputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px;
+  border: 1px solid rgba(0, 142, 195, 0.16);
+  border-radius: 7px;
+  background: rgba(248, 253, 255, 0.96);
+}
+
+.cavity-inline-editor__inputs input {
+  width: 30px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+  outline: 1px solid rgba(0, 142, 195, 0.10);
+}
+
+.cavity-inline-editor__inputs span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.cavity-inline-editor__partner {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cavity-inline-editor__partner > span {
   flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.cavity-inline-editor__partner select {
+  max-width: 184px;
+  min-width: 138px;
+  height: 28px;
+  border: 1px solid rgba(0, 142, 195, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.98);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.cavity-inline-editor__partner select[multiple] {
+  height: auto;
+}
+
+.cavity-inline-editor__partner small {
+  max-width: 124px;
+  color: #a15c00;
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .schedule-job__edit {
@@ -7222,15 +7269,6 @@ select {
 
   .production-machine-activity__selection-grid {
     grid-template-columns: 1fr;
-  }
-
-  .cavity-group-tools {
-    grid-template-columns: minmax(0, 1fr) 92px;
-  }
-
-  .cavity-group-tools .button {
-    justify-content: center;
-    width: 100%;
   }
 
   .production-machine-activity__selection-head button {

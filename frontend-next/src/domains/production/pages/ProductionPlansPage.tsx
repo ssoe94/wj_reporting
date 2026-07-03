@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -98,8 +98,15 @@ type DropPreview = {
   position: "before" | "after";
 };
 
+type CavityRowDraft = {
+  parts: string;
+  cavity: string;
+  partners: string[];
+};
+
 const processTypes: PlanType[] = ["injection", "machining"];
 const cavityPatternOptions = ["1x1", "1x2", "2x2"] as const;
+const cavityGroupColors = ["#008ec3", "#00a65a", "#7c3aed", "#f97316", "#0f766e", "#db2777"];
 const cavityUiCopy = {
   ko: {
     group: "캐비티 묶음",
@@ -107,6 +114,12 @@ const cavityUiCopy = {
     apply: "적용",
     clear: "선택 해제",
     row: "캐비티 묶음 행 선택",
+    linked: "묶음",
+    partner: "함께 생산 Part",
+    partnerHint: "같은 사출기 내 Part No.를 선택하세요.",
+    save: "저장",
+    saving: "저장 중",
+    needPartner: "함께 생산되는 Part No. 선택 필요",
   },
   zh: {
     group: "型腔组合",
@@ -114,8 +127,26 @@ const cavityUiCopy = {
     apply: "应用",
     clear: "取消选择",
     row: "选择型腔组合行",
+    linked: "组合",
+    partner: "共同生产 Part",
+    partnerHint: "请选择同一注塑机内的 Part No.",
+    save: "保存",
+    saving: "保存中",
+    needPartner: "需要选择共同生产的 Part No.",
   },
-} satisfies Record<AppLanguage, { group: string; select: string; apply: string; clear: string; row: string }>;
+} satisfies Record<AppLanguage, {
+  group: string;
+  select: string;
+  apply: string;
+  clear: string;
+  row: string;
+  linked: string;
+  partner: string;
+  partnerHint: string;
+  save: string;
+  saving: string;
+  needPartner: string;
+}>;
 
 const pageCopy = {
   ko: {
@@ -373,11 +404,6 @@ function formatCavityPattern(value: string | null | undefined) {
   return parseCavityPattern(value).pattern.replace("x", " x ");
 }
 
-function getCavityGroupLabel(record: ProductionPlanRecord) {
-  const parsed = parseCavityPattern(record.cavity_pattern ?? null, Number(record.cavity ?? 1), Number(record.parts_per_shot ?? 1));
-  return `${parsed.pattern.replace("x", " x ")}${parsed.partsPerShot > 1 ? " group" : ""}`;
-}
-
 function buildMachineGroups(records: ProductionPlanRecord[], unsetMachineLabel: string, planType: PlanType) {
   const groupMap = new Map<string, MachinePlanGroup>();
 
@@ -604,8 +630,7 @@ export function ProductionPlansPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
   const [pendingOrders, setPendingOrders] = useState<Record<string, string[]>>({});
-  const [cavitySelections, setCavitySelections] = useState<Record<string, string[]>>({});
-  const [cavityDrafts, setCavityDrafts] = useState<Record<string, string>>({});
+  const [cavityRowDrafts, setCavityRowDrafts] = useState<Record<string, CavityRowDraft>>({});
   const [draggedJob, setDraggedJob] = useState<DraggedJob | null>(null);
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   const [editDraft, setEditDraft] = useState<PlanEditDraft>({
@@ -646,8 +671,7 @@ export function ProductionPlansPage() {
 
   useEffect(() => {
     setPendingOrders({});
-    setCavitySelections({});
-    setCavityDrafts({});
+    setCavityRowDrafts({});
     setDraggedJob(null);
     setDropPreview(null);
     setEditingRowId(null);
@@ -800,13 +824,13 @@ export function ProductionPlansPage() {
   });
 
   const cavityGroupMutation = useMutation({
-    mutationFn: async (variables: { orderKey: string; partNos: string[]; cavityPattern: string }) => {
+    mutationFn: async (variables: { recordKey: string; partNos: string[]; cavityPattern: string }) => {
       return updateProductionPartCavityGroup(variables.partNos, variables.cavityPattern);
     },
     onSuccess: async (_data, variables) => {
-      setCavitySelections((current) => {
+      setCavityRowDrafts((current) => {
         const next = { ...current };
-        delete next[variables.orderKey];
+        delete next[variables.recordKey];
         return next;
       });
       await Promise.all([
@@ -1055,50 +1079,6 @@ export function ProductionPlansPage() {
     reorderMutation.mutate({ orderKey, planType, records: getOrderedRecords(records, orderKey) });
   }
 
-  function getSelectedCavityKeys(orderKey: string) {
-    return new Set(cavitySelections[orderKey] ?? []);
-  }
-
-  function toggleCavitySelection(orderKey: string, recordKey: string, checked: boolean) {
-    setCavitySelections((current) => {
-      const selected = new Set(current[orderKey] ?? []);
-      if (checked) {
-        selected.add(recordKey);
-      } else {
-        selected.delete(recordKey);
-      }
-      return {
-        ...current,
-        [orderKey]: [...selected],
-      };
-    });
-  }
-
-  function getSelectedCavityRecords(orderKey: string, records: ProductionPlanRecord[]) {
-    const selected = getSelectedCavityKeys(orderKey);
-    return records.filter((record, index) => selected.has(getRecordKey(record, index)));
-  }
-
-  function getPartNoList(records: ProductionPlanRecord[]) {
-    return [...new Set(records.map((record) => (record.part_no || "").trim().toUpperCase()).filter(Boolean))];
-  }
-
-  function getCavityDraftPattern(orderKey: string, records: ProductionPlanRecord[]) {
-    if (cavityDrafts[orderKey]) return cavityDrafts[orderKey];
-
-    const selectedPatterns = [
-      ...new Set(getSelectedCavityRecords(orderKey, records).map((record) => getPlanCavityPattern(record))),
-    ];
-    return selectedPatterns.length === 1 ? selectedPatterns[0] : "1x1";
-  }
-
-  function applyCavityGroup(orderKey: string, records: ProductionPlanRecord[]) {
-    const cavityPattern = getCavityDraftPattern(orderKey, records);
-    const selectedPartNos = getPartNoList(getSelectedCavityRecords(orderKey, records));
-    if (!selectedPartNos.length) return;
-    cavityGroupMutation.mutate({ orderKey, partNos: selectedPartNos, cavityPattern });
-  }
-
   function renderCavityPatternSelect(value: string, onChange: (value: string) => void) {
     return (
       <select className="table-input cavity-pattern-select" onChange={(event) => onChange(event.target.value)} value={value}>
@@ -1111,47 +1091,208 @@ export function ProductionPlansPage() {
     );
   }
 
-  function renderCavityGroupTools(orderKey: string, records: ProductionPlanRecord[]) {
-    const selectedRows = getSelectedCavityRecords(orderKey, records);
-    const selectedPartNos = getPartNoList(selectedRows);
-    const cavityPattern = getCavityDraftPattern(orderKey, records);
-    const parsed = parseCavityPattern(cavityPattern);
-    const canApply = selectedPartNos.length > 0 && (parsed.partsPerShot === 1 || selectedPartNos.length >= parsed.partsPerShot);
+  function getNormalizedPartNo(record: ProductionPlanRecord | undefined) {
+    return String(record?.part_no ?? "").trim().toUpperCase();
+  }
+
+  function getRecordCavityGroupKey(record: ProductionPlanRecord | undefined) {
+    if (!record) return "";
+    const parsed = parseCavityPattern(record.cavity_pattern ?? null, Number(record.cavity ?? 1), Number(record.parts_per_shot ?? 1));
+    const partNo = getNormalizedPartNo(record);
+    const groupKey = String(record.cavity_group ?? "").trim().toUpperCase();
+    if (parsed.partsPerShot <= 1 || !groupKey || groupKey === partNo) return "";
+    return groupKey;
+  }
+
+  function getCavityGroupPartNos(record: ProductionPlanRecord, records: ProductionPlanRecord[]) {
+    const groupKey = getRecordCavityGroupKey(record);
+    const currentPartNo = getNormalizedPartNo(record);
+    if (!groupKey) return [];
+    return [
+      ...new Set(
+        records
+          .filter((candidate) => getRecordCavityGroupKey(candidate) === groupKey)
+          .map(getNormalizedPartNo)
+          .filter((partNo) => partNo && partNo !== currentPartNo),
+      ),
+    ];
+  }
+
+  function getDefaultCavityDraft(record: ProductionPlanRecord, records: ProductionPlanRecord[]): CavityRowDraft {
+    const parsed = parseCavityPattern(record.cavity_pattern ?? null, Number(record.cavity ?? 1), Number(record.parts_per_shot ?? 1));
+    return {
+      parts: String(parsed.partsPerShot),
+      cavity: String(parsed.cavity),
+      partners: getCavityGroupPartNos(record, records),
+    };
+  }
+
+  function getCavityDraft(recordKey: string, record: ProductionPlanRecord, records: ProductionPlanRecord[]) {
+    return cavityRowDrafts[recordKey] ?? getDefaultCavityDraft(record, records);
+  }
+
+  function updateCavityDraft(recordKey: string, patch: Partial<CavityRowDraft>, baseDraft?: CavityRowDraft) {
+    setCavityRowDrafts((current) => ({
+      ...current,
+      [recordKey]: {
+        ...(current[recordKey] ?? baseDraft ?? { parts: "1", cavity: "1", partners: [] }),
+        ...patch,
+      },
+    }));
+  }
+
+  function normalizeCavityNumber(value: string) {
+    return value.replace(/[^\d]/g, "").slice(0, 2);
+  }
+
+  function getCavityPartOptions(record: ProductionPlanRecord, records: ProductionPlanRecord[]) {
+    const currentPartNo = getNormalizedPartNo(record);
+    const seen = new Set<string>();
+    return records.flatMap((candidate) => {
+      const partNo = getNormalizedPartNo(candidate);
+      if (!partNo || partNo === currentPartNo || seen.has(partNo)) return [];
+      seen.add(partNo);
+      return [{
+        partNo,
+        label: `${candidate.model_name || candidate.part_spec || copy.unsetModel} · ${partNo}`,
+      }];
+    });
+  }
+
+  function getCavityNumbers(draft: CavityRowDraft) {
+    const parts = Math.max(1, Number(draft.parts) || 1);
+    const cavity = Math.max(1, Number(draft.cavity) || 1);
+    return { parts, cavity };
+  }
+
+  function getCavitySubmissionPartNos(record: ProductionPlanRecord, records: ProductionPlanRecord[], draft: CavityRowDraft) {
+    const currentPartNo = getNormalizedPartNo(record);
+    const { parts } = getCavityNumbers(draft);
+    if (parts > 1) {
+      return [currentPartNo, ...draft.partners].filter(Boolean);
+    }
+
+    const groupKey = getRecordCavityGroupKey(record);
+    if (!groupKey) return [currentPartNo].filter(Boolean);
+    return [
+      ...new Set(
+        records
+          .filter((candidate) => getRecordCavityGroupKey(candidate) === groupKey)
+          .map(getNormalizedPartNo)
+          .filter(Boolean),
+      ),
+    ];
+  }
+
+  function saveCavityRow(recordKey: string, record: ProductionPlanRecord, records: ProductionPlanRecord[]) {
+    const draft = getCavityDraft(recordKey, record, records);
+    const { parts, cavity } = getCavityNumbers(draft);
+    const partNos = getCavitySubmissionPartNos(record, records, draft);
+    if (!partNos.length) return;
+    cavityGroupMutation.mutate({
+      recordKey,
+      partNos,
+      cavityPattern: `${parts}x${cavity}`,
+    });
+  }
+
+  function buildCavityGroupColorMap(records: ProductionPlanRecord[]) {
+    const counts = new Map<string, number>();
+    records.forEach((record) => {
+      const groupKey = getRecordCavityGroupKey(record);
+      if (groupKey) counts.set(groupKey, (counts.get(groupKey) ?? 0) + 1);
+    });
+
+    const colorMap = new Map<string, string>();
+    [...counts.entries()].forEach(([groupKey, count]) => {
+      if (count > 1) {
+        colorMap.set(groupKey, cavityGroupColors[colorMap.size % cavityGroupColors.length]);
+      }
+    });
+    return colorMap;
+  }
+
+  function getCavityGroupColor(record: ProductionPlanRecord, colorMap: Map<string, string>) {
+    const groupKey = getRecordCavityGroupKey(record);
+    return groupKey ? colorMap.get(groupKey) : undefined;
+  }
+
+  function renderCavityInlineEditor(recordKey: string, record: ProductionPlanRecord, records: ProductionPlanRecord[]) {
+    const draft = getCavityDraft(recordKey, record, records);
+    const { parts } = getCavityNumbers(draft);
+    const requiredPartners = Math.max(0, parts - 1);
+    const options = getCavityPartOptions(record, records);
+    const missingPartners = requiredPartners > 0 && draft.partners.length < requiredPartners;
+    const disabled = cavityGroupMutation.isPending || !getNormalizedPartNo(record) || missingPartners;
 
     return (
-      <div className="cavity-group-tools">
-        <div>
-          <span>{cavityCopy.group}</span>
-          <strong>{selectedPartNos.length ? selectedPartNos.join(" + ") : cavityCopy.select}</strong>
+      <div className="cavity-inline-editor">
+        <div className="cavity-inline-editor__inputs" aria-label={copy.cavity}>
+          <input
+            aria-label={`${copy.cavity} part count`}
+            inputMode="numeric"
+            min="1"
+            onChange={(event) => {
+              const nextParts = normalizeCavityNumber(event.target.value);
+              const nextCount = Math.max(1, Number(nextParts) || 1);
+              updateCavityDraft(recordKey, {
+                parts: nextParts,
+                partners: draft.partners.slice(0, Math.max(0, nextCount - 1)),
+              }, draft);
+            }}
+            value={draft.parts}
+          />
+          <span>x</span>
+          <input
+            aria-label={`${copy.cavity} count`}
+            inputMode="numeric"
+            min="1"
+            onChange={(event) => updateCavityDraft(recordKey, { cavity: normalizeCavityNumber(event.target.value) }, draft)}
+            value={draft.cavity}
+          />
         </div>
-        {renderCavityPatternSelect(cavityPattern, (value) => {
-          setCavityDrafts((current) => ({ ...current, [orderKey]: value }));
-        })}
+        {requiredPartners > 0 ? (
+          <label className="cavity-inline-editor__partner">
+            <span>{cavityCopy.partner}</span>
+            <select
+              multiple={requiredPartners > 1}
+              onChange={(event) => {
+                const selected = [...event.currentTarget.selectedOptions].map((option) => option.value).slice(0, requiredPartners);
+                updateCavityDraft(recordKey, { partners: selected }, draft);
+              }}
+              size={requiredPartners > 1 ? Math.min(3, Math.max(2, options.length)) : undefined}
+              value={requiredPartners > 1 ? draft.partners : draft.partners[0] ?? ""}
+            >
+              {requiredPartners === 1 ? <option value="">{cavityCopy.select}</option> : null}
+              {options.map((option) => (
+                <option key={option.partNo} value={option.partNo}>{option.label}</option>
+              ))}
+            </select>
+            {missingPartners ? <small>{cavityCopy.needPartner}</small> : <small>{cavityCopy.partnerHint}</small>}
+          </label>
+        ) : null}
         <button
           className="button button--mini button--primary"
-          disabled={!canApply || cavityGroupMutation.isPending}
-          onClick={() => applyCavityGroup(orderKey, records)}
+          disabled={disabled}
+          onClick={() => saveCavityRow(recordKey, record, records)}
           type="button"
         >
-          {cavityCopy.apply}
-        </button>
-        <button
-          className="button button--mini button--ghost"
-          disabled={!selectedPartNos.length || cavityGroupMutation.isPending}
-          onClick={() => setCavitySelections((current) => {
-            const next = { ...current };
-            delete next[orderKey];
-            return next;
-          })}
-          type="button"
-        >
-          {cavityCopy.clear}
+          {cavityGroupMutation.isPending ? cavityCopy.saving : cavityCopy.save}
         </button>
       </div>
     );
   }
 
-  function getPlanSegmentColor(index: number, planType: PlanType) {
+  function getPlanSegmentColor(
+    index: number,
+    planType: PlanType,
+    record?: ProductionPlanRecord,
+    colorMap?: Map<string, string>,
+  ) {
+    if (record && colorMap) {
+      const cavityColor = getCavityGroupColor(record, colorMap);
+      if (cavityColor) return cavityColor;
+    }
     const injectionColors = ["#008ec3", "#00a65a", "#55b8dd", "#f7b924", "#4d8fb5", "#67c587"];
     const machiningColors = ["#0f9f7a", "#56b991", "#81c9b0", "#f7b924", "#008ec3", "#93b7c9"];
     const colors = planType === "injection" ? injectionColors : machiningColors;
@@ -1248,7 +1389,12 @@ export function ProductionPlansPage() {
     );
   }
 
-  function renderPlanTrack(records: ProductionPlanRecord[], totalQty: number, planType: PlanType) {
+  function renderPlanTrack(
+    records: ProductionPlanRecord[],
+    totalQty: number,
+    planType: PlanType,
+    cavityColorMap: Map<string, string>,
+  ) {
     if (!records.length || totalQty <= 0) return null;
 
     return (
@@ -1270,7 +1416,7 @@ export function ProductionPlansPage() {
               data-tooltip={tooltip}
               key={`${record.id ?? index}-${record.part_no}-${record.lot_no}-segment`}
               style={{
-                backgroundColor: getPlanSegmentColor(index, planType),
+                backgroundColor: getPlanSegmentColor(index, planType, record, cavityColorMap),
                 flexGrow: Math.max(quantity, 1),
                 minWidth: share > 0.12 ? 54 : 18,
               }}
@@ -1316,12 +1462,15 @@ export function ProductionPlansPage() {
     orderKey: string,
     changedRecordKeys: Set<string>,
     groupRecords: ProductionPlanRecord[],
+    cavityColorMap: Map<string, string>,
   ) {
     const isEditing = item.id === editingRowId;
     const recordKey = getRecordKey(item, index);
     const isOrderChanged = changedRecordKeys.has(recordKey);
     const isDropTarget = dropPreview?.orderKey === orderKey && dropPreview.recordKey === recordKey;
-    const isCavitySelected = planType === "injection" && getSelectedCavityKeys(orderKey).has(recordKey);
+    const cavityColor = planType === "injection" ? getCavityGroupColor(item, cavityColorMap) : undefined;
+    const isCavityGrouped = Boolean(cavityColor);
+    const rowStyle = cavityColor ? ({ "--cavity-group-color": cavityColor } as CSSProperties) : undefined;
 
     return (
       <li
@@ -1329,10 +1478,11 @@ export function ProductionPlansPage() {
           "schedule-job",
           isEditing ? "schedule-job--editing" : "",
           isOrderChanged ? "schedule-job--changed" : "",
-          isCavitySelected ? "schedule-job--cavity-selected" : "",
+          isCavityGrouped ? "schedule-job--cavity-grouped" : "",
           draggedJob?.recordKey === recordKey ? "schedule-job--dragging" : "",
           isDropTarget ? `schedule-job--drop-${dropPreview.position}` : "",
         ].filter(Boolean).join(" ")}
+        style={rowStyle}
         draggable={!isEditing && Boolean(item.id)}
         onDragEnter={(event) => {
           if (!draggedJob || draggedJob.orderKey !== orderKey) return;
@@ -1402,18 +1552,8 @@ export function ProductionPlansPage() {
           <>
             <div className="schedule-job__main">
               <div className="schedule-job__model-line">
-                {planType === "injection" ? (
-                  <input
-                    aria-label={cavityCopy.row}
-                    checked={isCavitySelected}
-                    className="cavity-row-check"
-                    onChange={(event) => toggleCavitySelection(orderKey, recordKey, event.target.checked)}
-                    onClick={(event) => event.stopPropagation()}
-                    title={cavityCopy.group}
-                    type="checkbox"
-                  />
-                ) : null}
                 <strong>{item.model_name || item.part_spec || copy.unsetModel}</strong>
+                {isCavityGrouped ? <small className="cavity-group-chip">{cavityCopy.linked}</small> : null}
                 {isOrderChanged ? <small>{copy.orderChanged}</small> : null}
               </div>
               <span>{item.part_no || "-"}</span>
@@ -1421,8 +1561,8 @@ export function ProductionPlansPage() {
             <div className="schedule-job__meta">
               <span>
                 {copy.lot} {item.lot_no || "-"}
-                {planType === "injection" ? ` · ${copy.cavity} ${getCavityGroupLabel(item)}` : ""}
               </span>
+              {planType === "injection" ? renderCavityInlineEditor(recordKey, item, groupRecords) : null}
               <strong>{formatQuantity(item.planned_quantity, language)}</strong>
             </div>
             <button
@@ -1457,6 +1597,7 @@ export function ProductionPlansPage() {
               const orderedRecords = getOrderedRecords(group.records, orderKey);
               const changedRecordKeys = getChangedRecordKeys(group.records, orderKey);
               const hasOrderChanges = changedRecordKeys.size > 0;
+              const cavityColorMap = planType === "injection" ? buildCavityGroupColorMap(orderedRecords) : new Map<string, string>();
 
               return (
                 <article
@@ -1471,10 +1612,10 @@ export function ProductionPlansPage() {
                     </div>
                     <strong>{formatQuantity(group.totalQty, language)}</strong>
                   </div>
-                  {planType === "injection" ? renderCavityGroupTools(orderKey, orderedRecords) : null}
+                  {renderPlanTrack(orderedRecords, group.totalQty, planType, cavityColorMap)}
                   <ol className="schedule-job-list" aria-label={`${group.machineName} ${copy.sequence}`}>
                     {orderedRecords.map((row, index) => (
-                      renderScheduleJob(row, planType, index, orderKey, changedRecordKeys, group.records)
+                      renderScheduleJob(row, planType, index, orderKey, changedRecordKeys, group.records, cavityColorMap)
                     ))}
                   </ol>
                   {hasOrderChanges ? (
