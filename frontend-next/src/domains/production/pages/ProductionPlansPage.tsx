@@ -6,6 +6,7 @@ import {
   getProductionPlanChangeLogs,
   getProductionPlanItems,
   updateProductionPartCavity,
+  updateProductionPartCavityGroup,
   updateProductionPlanItem,
   uploadProductionPlanFile,
   type PlanType,
@@ -98,6 +99,23 @@ type DropPreview = {
 };
 
 const processTypes: PlanType[] = ["injection", "machining"];
+const cavityPatternOptions = ["1x1", "1x2", "2x2"] as const;
+const cavityUiCopy = {
+  ko: {
+    group: "캐비티 묶음",
+    select: "Part No. 선택",
+    apply: "적용",
+    clear: "선택 해제",
+    row: "캐비티 묶음 행 선택",
+  },
+  zh: {
+    group: "型腔组合",
+    select: "选择 Part No.",
+    apply: "应用",
+    clear: "取消选择",
+    row: "选择型腔组合行",
+  },
+} satisfies Record<AppLanguage, { group: string; select: string; apply: string; clear: string; row: string }>;
 
 const pageCopy = {
   ko: {
@@ -327,6 +345,39 @@ function getMachineSortNumber(machineName: string) {
   return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
 }
 
+function parseCavityPattern(value: string | null | undefined, fallbackCavity = 1, fallbackParts = 1) {
+  const text = String(value ?? "").trim().toLowerCase().replace(/\s+/g, "").replace("*", "x").replace("×", "x");
+  const match = text.match(/^(\d+)x(\d+)$/);
+  if (match) {
+    return {
+      pattern: `${Math.max(1, Number(match[1]) || 1)}x${Math.max(1, Number(match[2]) || 1)}`,
+      partsPerShot: Math.max(1, Number(match[1]) || 1),
+      cavity: Math.max(1, Number(match[2]) || 1),
+    };
+  }
+  const cavity = Math.max(1, Number(fallbackCavity) || 1);
+  const partsPerShot = Math.max(1, Number(fallbackParts) || 1);
+  return { pattern: `${partsPerShot}x${cavity}`, partsPerShot, cavity };
+}
+
+function getPlanCavityPattern(record: ProductionPlanRecord | undefined) {
+  if (!record) return "1x1";
+  return parseCavityPattern(
+    record.cavity_pattern ?? null,
+    Number(record.cavity ?? 1),
+    Number(record.parts_per_shot ?? 1),
+  ).pattern;
+}
+
+function formatCavityPattern(value: string | null | undefined) {
+  return parseCavityPattern(value).pattern.replace("x", " x ");
+}
+
+function getCavityGroupLabel(record: ProductionPlanRecord) {
+  const parsed = parseCavityPattern(record.cavity_pattern ?? null, Number(record.cavity ?? 1), Number(record.parts_per_shot ?? 1));
+  return `${parsed.pattern.replace("x", " x ")}${parsed.partsPerShot > 1 ? " group" : ""}`;
+}
+
 function buildMachineGroups(records: ProductionPlanRecord[], unsetMachineLabel: string, planType: PlanType) {
   const groupMap = new Map<string, MachinePlanGroup>();
 
@@ -540,6 +591,7 @@ export function ProductionPlansPage() {
   const lastAnimatedOrderRef = useRef("");
   const [language] = useStoredLanguage();
   const copy = pageCopy[language];
+  const cavityCopy = cavityUiCopy[language];
   const [selectedDate, setSelectedDate] = useState(getSeoulDateString());
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [injectionFile, setInjectionFile] = useState<File | null>(null);
@@ -552,6 +604,8 @@ export function ProductionPlansPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
   const [pendingOrders, setPendingOrders] = useState<Record<string, string[]>>({});
+  const [cavitySelections, setCavitySelections] = useState<Record<string, string[]>>({});
+  const [cavityDrafts, setCavityDrafts] = useState<Record<string, string>>({});
   const [draggedJob, setDraggedJob] = useState<DraggedJob | null>(null);
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   const [editDraft, setEditDraft] = useState<PlanEditDraft>({
@@ -560,7 +614,7 @@ export function ProductionPlansPage() {
     model_name: "",
     lot_no: "",
     planned_quantity: "",
-    cavity: "1",
+    cavity: "1x1",
   });
 
   const datesQuery = useQuery({
@@ -592,6 +646,8 @@ export function ProductionPlansPage() {
 
   useEffect(() => {
     setPendingOrders({});
+    setCavitySelections({});
+    setCavityDrafts({});
     setDraggedJob(null);
     setDropPreview(null);
     setEditingRowId(null);
@@ -726,7 +782,7 @@ export function ProductionPlansPage() {
       if (variables.planType === "injection") {
         const partNo = (variables.updates.part_no || updatedPlan?.part_no || "").trim();
         if (partNo) {
-          await updateProductionPartCavity(partNo, Number(variables.updates.cavity) || 1);
+          await updateProductionPartCavity(partNo, variables.updates.cavity || "1x1");
         }
       }
 
@@ -738,6 +794,25 @@ export function ProductionPlansPage() {
         queryClient.invalidateQueries({ queryKey: ["production"] }),
         queryClient.invalidateQueries({ queryKey: ["production-plan-summary"] }),
         queryClient.invalidateQueries({ queryKey: ["production", "plan-change-logs"] }),
+        queryClient.invalidateQueries({ queryKey: ["production-mes-report-stats"] }),
+      ]);
+    },
+  });
+
+  const cavityGroupMutation = useMutation({
+    mutationFn: async (variables: { orderKey: string; partNos: string[]; cavityPattern: string }) => {
+      return updateProductionPartCavityGroup(variables.partNos, variables.cavityPattern);
+    },
+    onSuccess: async (_data, variables) => {
+      setCavitySelections((current) => {
+        const next = { ...current };
+        delete next[variables.orderKey];
+        return next;
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["production"] }),
+        queryClient.invalidateQueries({ queryKey: ["production-plan-summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["production", "plan-items"] }),
         queryClient.invalidateQueries({ queryKey: ["production-mes-report-stats"] }),
       ]);
     },
@@ -818,7 +893,7 @@ export function ProductionPlansPage() {
       model_name: row.model_name || row.part_spec || "",
       lot_no: row.lot_no || "",
       planned_quantity: String(row.planned_quantity ?? 0),
-      cavity: String(row.cavity ?? 1),
+      cavity: getPlanCavityPattern(row),
     });
   }
 
@@ -980,6 +1055,93 @@ export function ProductionPlansPage() {
     reorderMutation.mutate({ orderKey, planType, records: getOrderedRecords(records, orderKey) });
   }
 
+  function getSelectedCavityKeys(orderKey: string) {
+    return new Set(cavitySelections[orderKey] ?? []);
+  }
+
+  function toggleCavitySelection(orderKey: string, recordKey: string, checked: boolean) {
+    setCavitySelections((current) => {
+      const selected = new Set(current[orderKey] ?? []);
+      if (checked) {
+        selected.add(recordKey);
+      } else {
+        selected.delete(recordKey);
+      }
+      return {
+        ...current,
+        [orderKey]: [...selected],
+      };
+    });
+  }
+
+  function getSelectedCavityRecords(orderKey: string, records: ProductionPlanRecord[]) {
+    const selected = getSelectedCavityKeys(orderKey);
+    return records.filter((record, index) => selected.has(getRecordKey(record, index)));
+  }
+
+  function getPartNoList(records: ProductionPlanRecord[]) {
+    return [...new Set(records.map((record) => (record.part_no || "").trim().toUpperCase()).filter(Boolean))];
+  }
+
+  function applyCavityGroup(orderKey: string, records: ProductionPlanRecord[]) {
+    const cavityPattern = cavityDrafts[orderKey] ?? "2x2";
+    const selectedPartNos = getPartNoList(getSelectedCavityRecords(orderKey, records));
+    if (!selectedPartNos.length) return;
+    cavityGroupMutation.mutate({ orderKey, partNos: selectedPartNos, cavityPattern });
+  }
+
+  function renderCavityPatternSelect(value: string, onChange: (value: string) => void) {
+    return (
+      <select className="table-input cavity-pattern-select" onChange={(event) => onChange(event.target.value)} value={value}>
+        {cavityPatternOptions.map((pattern) => (
+          <option key={pattern} value={pattern}>
+            {formatCavityPattern(pattern)}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  function renderCavityGroupTools(orderKey: string, records: ProductionPlanRecord[]) {
+    const selectedRows = getSelectedCavityRecords(orderKey, records);
+    const selectedPartNos = getPartNoList(selectedRows);
+    const cavityPattern = cavityDrafts[orderKey] ?? "2x2";
+    const parsed = parseCavityPattern(cavityPattern);
+    const canApply = selectedPartNos.length > 0 && (parsed.partsPerShot === 1 || selectedPartNos.length >= parsed.partsPerShot);
+
+    return (
+      <div className="cavity-group-tools">
+        <div>
+          <span>{cavityCopy.group}</span>
+          <strong>{selectedPartNos.length ? selectedPartNos.join(" + ") : cavityCopy.select}</strong>
+        </div>
+        {renderCavityPatternSelect(cavityPattern, (value) => {
+          setCavityDrafts((current) => ({ ...current, [orderKey]: value }));
+        })}
+        <button
+          className="button button--mini button--primary"
+          disabled={!canApply || cavityGroupMutation.isPending}
+          onClick={() => applyCavityGroup(orderKey, records)}
+          type="button"
+        >
+          {cavityCopy.apply}
+        </button>
+        <button
+          className="button button--mini button--ghost"
+          disabled={!selectedPartNos.length || cavityGroupMutation.isPending}
+          onClick={() => setCavitySelections((current) => {
+            const next = { ...current };
+            delete next[orderKey];
+            return next;
+          })}
+          type="button"
+        >
+          {cavityCopy.clear}
+        </button>
+      </div>
+    );
+  }
+
   function getPlanSegmentColor(index: number, planType: PlanType) {
     const injectionColors = ["#008ec3", "#00a65a", "#55b8dd", "#f7b924", "#4d8fb5", "#67c587"];
     const machiningColors = ["#0f9f7a", "#56b991", "#81c9b0", "#f7b924", "#008ec3", "#93b7c9"];
@@ -1129,6 +1291,15 @@ export function ProductionPlansPage() {
     );
   }
 
+  function renderCavityEditField() {
+    return (
+      <label className="schedule-edit-field">
+        <span>{copy.cavity}</span>
+        {renderCavityPatternSelect(editDraft.cavity, (value) => updateEditDraft("cavity", value))}
+      </label>
+    );
+  }
+
   function renderScheduleJob(
     item: ProductionPlanRecord,
     planType: PlanType,
@@ -1141,6 +1312,7 @@ export function ProductionPlansPage() {
     const recordKey = getRecordKey(item, index);
     const isOrderChanged = changedRecordKeys.has(recordKey);
     const isDropTarget = dropPreview?.orderKey === orderKey && dropPreview.recordKey === recordKey;
+    const isCavitySelected = planType === "injection" && getSelectedCavityKeys(orderKey).has(recordKey);
 
     return (
       <li
@@ -1148,6 +1320,7 @@ export function ProductionPlansPage() {
           "schedule-job",
           isEditing ? "schedule-job--editing" : "",
           isOrderChanged ? "schedule-job--changed" : "",
+          isCavitySelected ? "schedule-job--cavity-selected" : "",
           draggedJob?.recordKey === recordKey ? "schedule-job--dragging" : "",
           isDropTarget ? `schedule-job--drop-${dropPreview.position}` : "",
         ].filter(Boolean).join(" ")}
@@ -1197,7 +1370,7 @@ export function ProductionPlansPage() {
             {renderEditField(copy.model, "model_name")}
             {renderEditField(copy.lot, "lot_no")}
             {renderEditField(copy.qty, "planned_quantity", { inputMode: "numeric" })}
-            {planType === "injection" ? renderEditField(copy.cavity, "cavity", { inputMode: "numeric", min: "1" }) : null}
+            {planType === "injection" ? renderCavityEditField() : null}
             <div className="plan-row-actions">
               <button
                 className="button button--mini button--primary"
@@ -1220,6 +1393,17 @@ export function ProductionPlansPage() {
           <>
             <div className="schedule-job__main">
               <div className="schedule-job__model-line">
+                {planType === "injection" ? (
+                  <input
+                    aria-label={cavityCopy.row}
+                    checked={isCavitySelected}
+                    className="cavity-row-check"
+                    onChange={(event) => toggleCavitySelection(orderKey, recordKey, event.target.checked)}
+                    onClick={(event) => event.stopPropagation()}
+                    title={cavityCopy.group}
+                    type="checkbox"
+                  />
+                ) : null}
                 <strong>{item.model_name || item.part_spec || copy.unsetModel}</strong>
                 {isOrderChanged ? <small>{copy.orderChanged}</small> : null}
               </div>
@@ -1228,7 +1412,7 @@ export function ProductionPlansPage() {
             <div className="schedule-job__meta">
               <span>
                 {copy.lot} {item.lot_no || "-"}
-                {planType === "injection" ? ` · ${copy.cavity} ${item.cavity ?? 1}` : ""}
+                {planType === "injection" ? ` · ${copy.cavity} ${getCavityGroupLabel(item)}` : ""}
               </span>
               <strong>{formatQuantity(item.planned_quantity, language)}</strong>
             </div>
@@ -1278,6 +1462,7 @@ export function ProductionPlansPage() {
                     </div>
                     <strong>{formatQuantity(group.totalQty, language)}</strong>
                   </div>
+                  {planType === "injection" ? renderCavityGroupTools(orderKey, orderedRecords) : null}
                   <ol className="schedule-job-list" aria-label={`${group.machineName} ${copy.sequence}`}>
                     {orderedRecords.map((row, index) => (
                       renderScheduleJob(row, planType, index, orderKey, changedRecordKeys, group.records)

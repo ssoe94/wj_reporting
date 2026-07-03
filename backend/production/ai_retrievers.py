@@ -14,6 +14,7 @@ from .machining_reconciliation import build_machining_provision_payload
 from .mes_progress import format_equipment_label
 from .models import ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
 from .counter_utils import calculate_cumulative_counter_delta
+from .cavity import average_group_shot_yield, build_cavity_plan_groups, get_cavity_meta_map
 
 
 MACHINE_TONNAGE = {
@@ -81,16 +82,13 @@ def sum_positive_monitoring_delta(machine_name: str, field_name: str, start_dt: 
     return calculate_cumulative_counter_delta(values, baseline=baseline)
 
 
-def cavity_map_for_plans(plans: list[ProductionPlan]) -> dict[str, int]:
+def cavity_map_for_plans(plans: list[ProductionPlan]) -> dict[str, dict[str, Any]]:
     part_nos = {
         (plan.part_no or "").strip().upper()
         for plan in plans
         if plan.part_no
     }
-    return {
-        (row["part_no"] or "").strip().upper(): int(row["cavity"] or 1)
-        for row in ProductionPartCavity.objects.filter(part_no__in=part_nos).values("part_no", "cavity")
-    }
+    return get_cavity_meta_map(ProductionPartCavity, part_nos)
 
 
 def get_injection_summary(target_date: Any) -> dict[str, Any]:
@@ -136,48 +134,54 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
         pending_count = 0
         parts = []
 
-        for index, plan in enumerate(machine_plans, start=1):
-            part_planned_qty = safe_int(plan.planned_quantity)
-            if part_planned_qty <= 0:
-                continue
-            part_no = (plan.part_no or "").strip().upper()
-            cavity = max(1, int(cavity_map.get(part_no, 1) or 1))
-            required_shots = part_planned_qty / cavity
-            allocated_shots = max(0.0, min(float(remaining_shots), required_shots))
-            estimated_qty = min(part_planned_qty, int(round(allocated_shots * cavity)))
-            part_progress = safe_rate(estimated_qty, part_planned_qty)
-            status = "completed" if part_progress >= 99.9 else "in_progress" if part_progress > 0 else "pending"
+        sequence = 1
+        for plan_group in build_cavity_plan_groups(machine_plans, cavity_map):
+            allocated_shots = max(0.0, min(float(remaining_shots), float(plan_group["required_shots"] or 0)))
             remaining_shots = max(0.0, float(remaining_shots) - allocated_shots)
-            planned_qty += part_planned_qty
-            capped_actual_qty += estimated_qty
-            completed_count += 1 if status == "completed" else 0
-            in_progress_count += 1 if status == "in_progress" else 0
-            pending_count += 1 if status == "pending" else 0
-            part_payload = {
-                "sequence": index,
-                "machine": machine_label(machine_number),
-                "machine_name": machine_name or machine_label(machine_number),
-                "machine_number": machine_number,
-                "part_no": part_no or "-",
-                "model_name": plan.model_name or plan.part_spec or "-",
-                "lot_no": plan.lot_no or "-",
-                "product_family_code": plan.product_family_code,
-                "product_family_name": plan.product_family_name,
-                "is_finished_product": bool(plan.is_finished_product),
-                "planned_qty": part_planned_qty,
-                "estimated_qty": estimated_qty,
-                "gap_qty": estimated_qty - part_planned_qty,
-                "progress_rate": part_progress,
-                "cavity": cavity,
-                "status": status,
-            }
-            parts.append(part_payload)
-            part_rows.append(part_payload)
 
-        avg_cavity = (
-            sum(max(1, int(cavity_map.get((plan.part_no or "").strip().upper(), 1) or 1)) * safe_int(plan.planned_quantity) for plan in machine_plans)
-            / planned_qty
-        ) if planned_qty > 0 else 1
+            for member in plan_group["members"]:
+                plan = member["plan"]
+                part_planned_qty = safe_int(plan.planned_quantity)
+                if part_planned_qty <= 0:
+                    continue
+                part_no = (plan.part_no or "").strip().upper()
+                cavity = max(1, int(member["cavity"] or 1))
+                meta = member.get("meta") or {}
+                estimated_qty = min(part_planned_qty, int(round(allocated_shots * cavity)))
+                part_progress = safe_rate(estimated_qty, part_planned_qty)
+                status = "completed" if part_progress >= 99.9 else "in_progress" if part_progress > 0 else "pending"
+                planned_qty += part_planned_qty
+                capped_actual_qty += estimated_qty
+                completed_count += 1 if status == "completed" else 0
+                in_progress_count += 1 if status == "in_progress" else 0
+                pending_count += 1 if status == "pending" else 0
+                part_payload = {
+                    "sequence": sequence,
+                    "machine": machine_label(machine_number),
+                    "machine_name": machine_name or machine_label(machine_number),
+                    "machine_number": machine_number,
+                    "part_no": part_no or "-",
+                    "model_name": plan.model_name or plan.part_spec or "-",
+                    "lot_no": plan.lot_no or "-",
+                    "product_family_code": plan.product_family_code,
+                    "product_family_name": plan.product_family_name,
+                    "is_finished_product": bool(plan.is_finished_product),
+                    "planned_qty": part_planned_qty,
+                    "estimated_qty": estimated_qty,
+                    "gap_qty": estimated_qty - part_planned_qty,
+                    "progress_rate": part_progress,
+                    "cavity": cavity,
+                    "cavity_pattern": meta.get("cavity_pattern"),
+                    "parts_per_shot": meta.get("parts_per_shot", 1),
+                    "cavity_group": meta.get("cavity_group"),
+                    "total_cavity": meta.get("total_cavity", cavity),
+                    "status": status,
+                }
+                sequence += 1
+                parts.append(part_payload)
+                part_rows.append(part_payload)
+
+        avg_cavity = average_group_shot_yield(machine_plans, cavity_map) if planned_qty > 0 else 1
         extra_qty = int(round(remaining_shots * avg_cavity)) if remaining_shots > 0 else 0
         actual_qty = capped_actual_qty + extra_qty
         machine_progress = safe_rate(actual_qty, planned_qty)

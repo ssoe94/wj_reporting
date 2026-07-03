@@ -20,6 +20,8 @@ export type RealtimeProgressSegment = {
   isFinishedProduct: boolean;
   plannedQty: number;
   cavity: number;
+  shotGroupKey?: string;
+  parallelPartCount?: number;
   requiredShots: number;
   allocatedShots: number;
   estimatedQty: number;
@@ -170,10 +172,89 @@ function getRecordCavity(record: ProductionPlanRecord | undefined) {
   return Math.max(1, Number(record?.cavity ?? 1) || 1);
 }
 
+function getRecordPartsPerShot(record: ProductionPlanRecord | undefined) {
+  const pattern = String(record?.cavity_pattern ?? "").trim().toLowerCase().replace(/\s+/g, "").replace("*", "x").replace("×", "x");
+  const match = pattern.match(/^(\d+)x(\d+)$/);
+  if (match) return Math.max(1, Number(match[1]) || 1);
+  return Math.max(1, Number(record?.parts_per_shot ?? 1) || 1);
+}
+
+function getRecordCavityGroup(record: ProductionPlanRecord | undefined) {
+  return String(record?.cavity_group ?? "").trim().toUpperCase();
+}
+
 function getRecordRequiredShots(record: ProductionPlanRecord | undefined) {
   const plannedQty = getRecordPlannedQty(record);
   const cavity = getRecordCavity(record);
   return plannedQty > 0 ? Math.ceil(plannedQty / cavity) : 0;
+}
+
+type PlanAllocationMember = {
+  record: ProductionPlanRecord;
+  index: number;
+  cavity: number;
+  requiredShots: number;
+  plannedQty: number;
+};
+
+type PlanAllocationGroup = {
+  key: string;
+  members: PlanAllocationMember[];
+  requiredShots: number;
+  totalCavity: number;
+};
+
+function buildPlanAllocationGroups(records: ProductionPlanRecord[]) {
+  const consumed = new Set<number>();
+  const groups: PlanAllocationGroup[] = [];
+
+  records.forEach((record, index) => {
+    if (consumed.has(index)) return;
+
+    const groupKey = getRecordCavityGroup(record);
+    const partsPerShot = getRecordPartsPerShot(record);
+    let memberIndexes = [index];
+    if (groupKey && partsPerShot > 1) {
+      memberIndexes = records
+        .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+        .filter(({ candidate, candidateIndex }) => (
+          !consumed.has(candidateIndex)
+          && getRecordCavityGroup(candidate) === groupKey
+        ))
+        .map(({ candidateIndex }) => candidateIndex);
+      if (memberIndexes.length <= 1) memberIndexes = [index];
+    }
+
+    const members = memberIndexes.map((memberIndex) => {
+      const memberRecord = records[memberIndex];
+      const cavity = getRecordCavity(memberRecord);
+      const plannedQty = getRecordPlannedQty(memberRecord);
+      consumed.add(memberIndex);
+      return {
+        record: memberRecord,
+        index: memberIndex,
+        cavity,
+        plannedQty,
+        requiredShots: plannedQty > 0 ? Math.ceil(plannedQty / cavity) : 0,
+      };
+    });
+
+    groups.push({
+      key: groupKey || getRecordIdentity(record) || `group-${index}`,
+      members,
+      requiredShots: Math.max(0, ...members.map((member) => member.requiredShots)),
+      totalCavity: members.reduce((sum, member) => sum + member.cavity, 0),
+    });
+  });
+
+  return groups;
+}
+
+function getAverageShotYield(records: ProductionPlanRecord[]) {
+  const groups = buildPlanAllocationGroups(records);
+  const weightedShots = groups.reduce((sum, group) => sum + group.requiredShots, 0);
+  if (weightedShots <= 0) return 1;
+  return groups.reduce((sum, group) => sum + (group.requiredShots * Math.max(1, group.totalCavity)), 0) / weightedShots;
 }
 
 function hasCoreSuffixPartNoChange(leftPartNo: string, rightPartNo: string) {
@@ -200,6 +281,9 @@ function hasSamePartPrefixExceptSuffix(left: ProductionPlanRecord | undefined, r
 function canRolloverWithoutTransition(left: ProductionPlanRecord | undefined, right: ProductionPlanRecord | undefined) {
   if (!left || !right) return false;
   if (getRecordCavity(left) !== getRecordCavity(right)) return false;
+  const leftGroup = getRecordCavityGroup(left);
+  const rightGroup = getRecordCavityGroup(right);
+  if (leftGroup && leftGroup === rightGroup && getRecordPartsPerShot(left) > 1) return true;
 
   return hasSamePartPrefixExceptSuffix(left, right);
 }
@@ -412,46 +496,54 @@ export function buildRealtimeProgressSummary(
     const plan = planMap.get(key);
     const shots = shotMap.get(key);
     const plannedQty = plan?.plannedQty ?? 0;
-    const avgCavity = plannedQty > 0 ? (plan?.cavityWeightedQty ?? plannedQty) / plannedQty : 1;
     const shotCount = shots?.shotCount ?? 0;
     let remainingShots = shotCount;
     const orderedRecords = getOrderedPlanRecords(plan?.records ?? []);
+    const allocationGroups = buildPlanAllocationGroups(orderedRecords);
+    const avgCavity = plannedQty > 0 ? getAverageShotYield(orderedRecords) : 1;
     const transitionShotAllocations = allocateShotsByTransitionSignals(orderedRecords, shotCount, key, transitionAnalysis);
-    const segments = orderedRecords.map((record, index) => {
-      const segmentPlannedQty = Number(record.planned_quantity ?? 0);
-      const cavity = Math.max(1, Number(record.cavity ?? 1) || 1);
-      const requiredShots = segmentPlannedQty > 0 ? Math.ceil(segmentPlannedQty / cavity) : 0;
+    const segments = allocationGroups.flatMap((group, groupIndex) => {
+      const isLastGroup = groupIndex === allocationGroups.length - 1;
       const allocatedShots = transitionShotAllocations
-        ? Math.max(0, transitionShotAllocations[index] ?? 0)
-        : index === orderedRecords.length - 1
+        ? Math.max(0, ...group.members.map((member) => transitionShotAllocations[member.index] ?? 0))
+        : isLastGroup
           ? Math.max(0, remainingShots)
-          : Math.max(0, Math.min(remainingShots, requiredShots));
-      const estimatedQty = Math.round(allocatedShots * cavity);
-      const progressRate = segmentPlannedQty > 0 ? (estimatedQty / segmentPlannedQty) * 100 : 0;
-      const status: RealtimeProgressSegmentStatus = progressRate >= 99.9
-        ? "completed"
-        : progressRate > 0
-          ? "in_progress"
-          : "pending";
+          : Math.max(0, Math.min(remainingShots, group.requiredShots));
+      remainingShots = Math.max(0, remainingShots - allocatedShots);
 
-      remainingShots -= allocatedShots;
-      return {
-        key: `${record.id ?? index}-${record.part_no ?? record.model_name ?? "part"}`,
-        sequence: index + 1,
-        partNo: record.part_no || record.model_name || record.part_spec || "-",
-        modelName: record.model_name || record.part_spec || "-",
-        lotNo: record.lot_no || "-",
-        productFamilyCode: record.product_family_code || null,
-        productFamilyName: record.product_family_name || null,
-        isFinishedProduct: Boolean(record.is_finished_product),
-        plannedQty: segmentPlannedQty,
-        cavity,
-        requiredShots,
-        allocatedShots,
-        estimatedQty,
-        progressRate,
-        status,
-      };
+      return group.members.map((member) => {
+        const record = member.record;
+        const segmentPlannedQty = Number(record.planned_quantity ?? 0);
+        const cavity = member.cavity;
+        const requiredShots = member.requiredShots;
+        const estimatedQty = Math.round(allocatedShots * cavity);
+        const progressRate = segmentPlannedQty > 0 ? (estimatedQty / segmentPlannedQty) * 100 : 0;
+        const status: RealtimeProgressSegmentStatus = progressRate >= 99.9
+          ? "completed"
+          : progressRate > 0
+            ? "in_progress"
+            : "pending";
+
+        return {
+          key: `${record.id ?? member.index}-${record.part_no ?? record.model_name ?? "part"}`,
+          sequence: member.index + 1,
+          partNo: record.part_no || record.model_name || record.part_spec || "-",
+          modelName: record.model_name || record.part_spec || "-",
+          lotNo: record.lot_no || "-",
+          productFamilyCode: record.product_family_code || null,
+          productFamilyName: record.product_family_name || null,
+          isFinishedProduct: Boolean(record.is_finished_product),
+          plannedQty: segmentPlannedQty,
+          cavity,
+          shotGroupKey: group.members.length > 1 ? group.key : undefined,
+          parallelPartCount: group.members.length > 1 ? group.members.length : undefined,
+          requiredShots,
+          allocatedShots,
+          estimatedQty,
+          progressRate,
+          status,
+        };
+      });
     });
     const cappedEstimatedQty = segments.reduce((sum, segment) => sum + segment.estimatedQty, 0);
     const extraQty = remainingShots > 0 ? Math.round(remainingShots * avgCavity) : 0;
@@ -531,7 +623,6 @@ function buildStatusBackedProgressSummary(
     const statusEstimatedQty = Number(statusRow.total_actual ?? 0);
     const shotCount = shots?.shotCount ?? 0;
     const useMesShotActual = Boolean(shots);
-    const avgCavity = plannedQty > 0 ? (plan?.cavityWeightedQty ?? plannedQty) / plannedQty : 1;
     const sourceRecords = orderedRecords.length
       ? orderedRecords
       : (statusRow.parts ?? []).map((part) => ({
@@ -541,6 +632,8 @@ function buildStatusBackedProgressSummary(
         planned_quantity: part.planned_quantity,
         cavity: 1,
       } as ProductionPlanRecord));
+    const allocationGroups = buildPlanAllocationGroups(sourceRecords);
+    const avgCavity = plannedQty > 0 ? getAverageShotYield(sourceRecords) : 1;
     const transitionShotAllocations = useMesShotActual
       ? allocateShotsByTransitionSignals(sourceRecords, shotCount, key, transitionAnalysis)
       : null;
@@ -549,54 +642,66 @@ function buildStatusBackedProgressSummary(
       : allocateQuantitiesByTransitionSignals(sourceRecords, statusEstimatedQty, key, transitionAnalysis);
     let remainingShots = Math.max(0, shotCount);
     let remainingActualQty = Math.max(0, statusEstimatedQty);
-    const segments = sourceRecords.map((record, index) => {
-      const segmentPlannedQty = Number(record.planned_quantity ?? 0);
-      const cavity = Math.max(1, Number(record.cavity ?? 1) || 1);
-      const isLastSegment = index === sourceRecords.length - 1;
-      const requiredShots = segmentPlannedQty > 0 ? Math.ceil(segmentPlannedQty / cavity) : 0;
+    const segments = allocationGroups.flatMap((group, groupIndex) => {
+      const isLastGroup = groupIndex === allocationGroups.length - 1;
       const allocatedShots = useMesShotActual
         ? transitionShotAllocations
-          ? Math.max(0, transitionShotAllocations[index] ?? 0)
-          : isLastSegment
+          ? Math.max(0, ...group.members.map((member) => transitionShotAllocations[member.index] ?? 0))
+          : isLastGroup
             ? Math.max(0, remainingShots)
-            : Math.max(0, Math.min(remainingShots, requiredShots))
+            : Math.max(0, Math.min(remainingShots, group.requiredShots))
         : 0;
-      const segmentActualQty = useMesShotActual
-        ? Math.round(allocatedShots * cavity)
+      const groupActualQty = useMesShotActual
+        ? group.members.reduce((sum, member) => sum + Math.round(allocatedShots * member.cavity), 0)
         : transitionQtyAllocations
-          ? Math.max(0, transitionQtyAllocations[index] ?? 0)
-          : isLastSegment
+          ? group.members.reduce((sum, member) => sum + Math.max(0, transitionQtyAllocations[member.index] ?? 0), 0)
+          : isLastGroup
             ? Math.max(0, remainingActualQty)
-            : Math.max(0, Math.min(remainingActualQty, segmentPlannedQty));
-      const displayAllocatedShots = useMesShotActual
-        ? allocatedShots
-        : segmentActualQty > 0 ? segmentActualQty / cavity : 0;
-      const progressRate = segmentPlannedQty > 0 ? (segmentActualQty / segmentPlannedQty) * 100 : 0;
-      const status: RealtimeProgressSegmentStatus = progressRate >= 99.9
-        ? "completed"
-        : progressRate > 0
-          ? "in_progress"
-          : "pending";
+            : Math.max(0, Math.min(remainingActualQty, group.members.reduce((sum, member) => sum + member.plannedQty, 0)));
       remainingShots = Math.max(0, remainingShots - allocatedShots);
-      remainingActualQty = Math.max(0, remainingActualQty - segmentActualQty);
+      remainingActualQty = Math.max(0, remainingActualQty - groupActualQty);
 
-      return {
-        key: `${record.id ?? index}-${record.part_no ?? record.model_name ?? "part"}`,
-        sequence: index + 1,
-        partNo: record.part_no || record.model_name || record.part_spec || "-",
-        modelName: record.model_name || record.part_spec || "-",
-        lotNo: record.lot_no || "-",
-        productFamilyCode: record.product_family_code || null,
-        productFamilyName: record.product_family_name || null,
-        isFinishedProduct: Boolean(record.is_finished_product),
-        plannedQty: segmentPlannedQty,
-        cavity,
-        requiredShots,
-        allocatedShots: displayAllocatedShots,
-        estimatedQty: segmentActualQty,
-        progressRate,
-        status,
-      };
+      return group.members.map((member) => {
+        const record = member.record;
+        const segmentPlannedQty = Number(record.planned_quantity ?? 0);
+        const cavity = member.cavity;
+        const segmentActualQty = useMesShotActual
+          ? Math.round(allocatedShots * cavity)
+          : transitionQtyAllocations
+            ? Math.max(0, transitionQtyAllocations[member.index] ?? 0)
+            : group.members.length > 1 && group.totalCavity > 0
+              ? Math.round(groupActualQty * (cavity / group.totalCavity))
+              : Math.min(groupActualQty, segmentPlannedQty);
+        const displayAllocatedShots = useMesShotActual
+          ? allocatedShots
+          : segmentActualQty > 0 ? segmentActualQty / cavity : 0;
+        const progressRate = segmentPlannedQty > 0 ? (segmentActualQty / segmentPlannedQty) * 100 : 0;
+        const status: RealtimeProgressSegmentStatus = progressRate >= 99.9
+          ? "completed"
+          : progressRate > 0
+            ? "in_progress"
+            : "pending";
+
+        return {
+          key: `${record.id ?? member.index}-${record.part_no ?? record.model_name ?? "part"}`,
+          sequence: member.index + 1,
+          partNo: record.part_no || record.model_name || record.part_spec || "-",
+          modelName: record.model_name || record.part_spec || "-",
+          lotNo: record.lot_no || "-",
+          productFamilyCode: record.product_family_code || null,
+          productFamilyName: record.product_family_name || null,
+          isFinishedProduct: Boolean(record.is_finished_product),
+          plannedQty: segmentPlannedQty,
+          cavity,
+          shotGroupKey: group.members.length > 1 ? group.key : undefined,
+          parallelPartCount: group.members.length > 1 ? group.members.length : undefined,
+          requiredShots: member.requiredShots,
+          allocatedShots: displayAllocatedShots,
+          estimatedQty: segmentActualQty,
+          progressRate,
+          status,
+        };
+      });
     });
     const estimatedQty = useMesShotActual
       ? segments.reduce((sum, segment) => sum + segment.estimatedQty, 0)

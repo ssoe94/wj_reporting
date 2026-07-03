@@ -13,6 +13,7 @@ from django.utils import timezone
 from injection.models import InjectionMonitoringRecord
 
 from .models import ProductionPartCavity, ProductionPlan
+from .cavity import build_cavity_plan_groups, get_cavity_meta_map
 
 
 DEFAULT_MODEL = "mlx-community/gemma-4-e2b-it-8bit"
@@ -127,10 +128,7 @@ def build_injection_plan_context(business_date: str) -> dict[str, Any]:
         )
     )
     part_nos = sorted({(row.get("part_no") or "").strip().upper() for row in plans if row.get("part_no")})
-    cavity_map = {
-        (row["part_no"] or "").strip().upper(): int(row["cavity"] or 1)
-        for row in ProductionPartCavity.objects.filter(part_no__in=part_nos).values("part_no", "cavity")
-    }
+    cavity_map = get_cavity_meta_map(ProductionPartCavity, part_nos)
 
     plans_by_machine: dict[int, list[dict[str, Any]]] = {}
     for row in plans:
@@ -139,7 +137,12 @@ def build_injection_plan_context(business_date: str) -> dict[str, Any]:
             continue
         row["planned_quantity"] = int(round(float(row.get("planned_quantity") or 0)))
         row["part_no"] = (row.get("part_no") or "").strip().upper()
-        row["cavity"] = max(1, int(cavity_map.get(row["part_no"], 1) or 1))
+        meta = cavity_map.get(row["part_no"], {})
+        row["cavity"] = max(1, int(meta.get("cavity", 1) or 1))
+        row["cavity_pattern"] = meta.get("cavity_pattern")
+        row["parts_per_shot"] = meta.get("parts_per_shot", 1)
+        row["cavity_group"] = meta.get("cavity_group")
+        row["total_cavity"] = meta.get("total_cavity", row["cavity"])
         plans_by_machine.setdefault(machine_number, []).append(row)
 
     machines = []
@@ -151,29 +154,37 @@ def build_injection_plan_context(business_date: str) -> dict[str, Any]:
         machine_plans = plans_by_machine.get(machine_number, [])
         parts = []
 
-        for index, plan in enumerate(machine_plans, start=1):
-            planned_qty = int(plan.get("planned_quantity") or 0)
-            cavity = max(1, int(plan.get("cavity") or 1))
-            required_shots = planned_qty / cavity if planned_qty > 0 else 0
-            allocated_shots = max(0, min(remaining_shots, required_shots))
-            estimated_qty = min(planned_qty, int(round(allocated_shots * cavity)))
-            progress_rate = (estimated_qty / planned_qty * 100) if planned_qty > 0 else 0
-            status = "completed" if progress_rate >= 99.9 else "in_progress" if progress_rate > 0 else "pending"
+        sequence = 1
+        for plan_group in build_cavity_plan_groups(machine_plans, cavity_map):
+            allocated_shots = max(0, min(remaining_shots, float(plan_group["required_shots"] or 0)))
             remaining_shots -= allocated_shots
-            parts.append({
-                "sequence": index,
-                "part_no": plan.get("part_no") or "-",
-                "model_name": plan.get("model_name") or plan.get("part_spec") or "-",
-                "part_spec": plan.get("part_spec") or "",
-                "product_family_code": plan.get("product_family_code"),
-                "product_family_name": plan.get("product_family_name"),
-                "product_stage": "finished_product" if plan.get("is_finished_product") else "semi_finished_product",
-                "planned_qty": planned_qty,
-                "cavity": cavity,
-                "estimated_qty": estimated_qty,
-                "progress_rate": round(progress_rate, 1),
-                "status": status,
-            })
+            for member in plan_group["members"]:
+                plan = member["plan"]
+                meta = member.get("meta") or {}
+                planned_qty = int(plan.get("planned_quantity") or 0)
+                cavity = max(1, int(member.get("cavity") or plan.get("cavity") or 1))
+                estimated_qty = min(planned_qty, int(round(allocated_shots * cavity)))
+                progress_rate = (estimated_qty / planned_qty * 100) if planned_qty > 0 else 0
+                status = "completed" if progress_rate >= 99.9 else "in_progress" if progress_rate > 0 else "pending"
+                parts.append({
+                    "sequence": sequence,
+                    "part_no": plan.get("part_no") or "-",
+                    "model_name": plan.get("model_name") or plan.get("part_spec") or "-",
+                    "part_spec": plan.get("part_spec") or "",
+                    "product_family_code": plan.get("product_family_code"),
+                    "product_family_name": plan.get("product_family_name"),
+                    "product_stage": "finished_product" if plan.get("is_finished_product") else "semi_finished_product",
+                    "planned_qty": planned_qty,
+                    "cavity": cavity,
+                    "cavity_pattern": meta.get("cavity_pattern"),
+                    "parts_per_shot": meta.get("parts_per_shot", 1),
+                    "cavity_group": meta.get("cavity_group"),
+                    "total_cavity": meta.get("total_cavity", cavity),
+                    "estimated_qty": estimated_qty,
+                    "progress_rate": round(progress_rate, 1),
+                    "status": status,
+                })
+                sequence += 1
 
         current_part = next((part for part in parts if part["status"] == "in_progress"), None)
         if current_part is None and recent_shots > 0:

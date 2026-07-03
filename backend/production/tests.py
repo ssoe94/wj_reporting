@@ -13,7 +13,7 @@ from injection.models import InjectionMonitoringRecord
 from .mes_progress import get_business_date, is_machining_progress_report, normalize_mes_part_no
 from .counter_utils import calculate_cumulative_counter_delta
 from .ai_context import build_context_pack
-from .ai_retrievers import get_daily_production_context, get_injection_summary
+from .ai_retrievers import get_daily_production_context, get_injection_summary, machine_monitoring_name
 from .models import MachiningManualReport, ProductionExecution, ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
 
 
@@ -637,6 +637,77 @@ class InjectionAllocationContractTests(DjangoTestCase):
         self.assertEqual(summary_row['parts'][0]['status'], 'completed')
         self.assertEqual(summary_row['parts'][1]['estimated_qty'], 20)
         self.assertEqual(summary_row['parts'][1]['status'], 'in_progress')
+
+    def test_grouped_cavity_parts_share_the_same_shots(self):
+        target_date = datetime(2026, 7, 3).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 7, 3, 8, 0))
+
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='injection',
+            machine_name='650T-10',
+            part_no='AAN30078443',
+            model_name='65UQ79',
+            planned_quantity=2520,
+            sequence=1,
+        )
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='injection',
+            machine_name='650T-10',
+            part_no='AAN30078444',
+            model_name='65UQ79',
+            planned_quantity=2520,
+            sequence=2,
+        )
+        ProductionPartCavity.objects.update_or_create(
+            part_no='AAN30078443',
+            defaults={
+                'cavity': 2,
+                'cavity_pattern': '2x2',
+                'parts_per_shot': 2,
+                'cavity_group': 'AAN30078443+AAN30078444',
+            },
+        )
+        ProductionPartCavity.objects.update_or_create(
+            part_no='AAN30078444',
+            defaults={
+                'cavity': 2,
+                'cavity_pattern': '2x2',
+                'parts_per_shot': 2,
+                'cavity_group': 'AAN30078443+AAN30078444',
+            },
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(10),
+            device_code='inj-10',
+            timestamp=start - timedelta(minutes=1),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(10),
+            device_code='inj-10',
+            timestamp=start + timedelta(minutes=10),
+            capacity=110,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(10),
+            device_code='inj-10',
+            timestamp=start + timedelta(minutes=20),
+            capacity=120,
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machine = response.json()['injection'][0]
+        self.assertEqual(machine['total_planned'], 5040)
+        self.assertEqual(machine['total_actual'], 40)
+        self.assertEqual(machine['parts'][0]['actual_quantity'], 20)
+        self.assertEqual(machine['parts'][1]['actual_quantity'], 20)
 
     def test_status_api_does_not_count_first_cumulative_value_without_baseline(self):
         target_date = datetime(2026, 5, 18).date()

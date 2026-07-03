@@ -1644,9 +1644,14 @@ function getProgressSegmentForShot(row: RealtimeProgressRow | undefined, shotCur
   if (!orderedSegments.length) return undefined;
 
   let cursor = 0;
+  const consumedGroups = new Set<string>();
   for (const segment of orderedSegments) {
-    const allocatedShots = Math.max(0, Number(segment.allocatedShots ?? 0) || 0);
-    if (allocatedShots > 0 && shotCursor < cursor + allocatedShots) return segment;
+    const groupKey = segment.shotGroupKey || segment.key;
+    if (consumedGroups.has(groupKey)) continue;
+    consumedGroups.add(groupKey);
+    const groupSegments = orderedSegments.filter((candidate) => (candidate.shotGroupKey || candidate.key) === groupKey);
+    const allocatedShots = Math.max(0, ...groupSegments.map((candidate) => Number(candidate.allocatedShots ?? 0) || 0));
+    if (allocatedShots > 0 && shotCursor < cursor + allocatedShots) return groupSegments[0] ?? segment;
     cursor += allocatedShots;
   }
 

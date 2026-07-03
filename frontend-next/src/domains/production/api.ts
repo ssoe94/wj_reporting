@@ -85,6 +85,10 @@ export type ProductionPlanRecord = {
   part_no?: string | null;
   planned_quantity: number;
   cavity?: number;
+  cavity_pattern?: string | null;
+  parts_per_shot?: number;
+  cavity_group?: string | null;
+  total_cavity?: number;
   sequence?: number | null;
   created_at?: string;
   updated_at?: string;
@@ -565,7 +569,20 @@ export type ProductionPlanUpdatePayload = Partial<
 
 export type ProductionPartCavityResponse = {
   part_no: string;
+  part_nos?: string[];
   cavity: number;
+  cavity_pattern?: string | null;
+  parts_per_shot?: number;
+  cavity_group?: string | null;
+  total_cavity?: number;
+  parts?: Array<{
+    part_no: string;
+    cavity: number;
+    cavity_pattern?: string | null;
+    parts_per_shot?: number;
+    cavity_group?: string | null;
+    total_cavity?: number;
+  }>;
 };
 
 export async function updateProductionPlanItem(
@@ -582,14 +599,37 @@ export async function updateProductionPlanItem(
   return response.data;
 }
 
-export async function updateProductionPartCavity(partNo: string, cavity: number) {
+export async function updateProductionPartCavity(partNo: string, cavityPattern: string | number) {
   if (shouldUseMockProductionApi()) {
-    return { part_no: partNo.trim().toUpperCase(), cavity: Math.max(1, Math.round(Number(cavity) || 1)) };
+    const cavity = parseCavityPattern(cavityPattern).cavity;
+    return { part_no: partNo.trim().toUpperCase(), cavity, cavity_pattern: String(cavityPattern || `1x${cavity}`) };
   }
 
   const response = await http.post<ProductionPartCavityResponse>("/production/part-cavity/", {
     part_no: partNo,
-    cavity,
+    cavity_pattern: cavityPattern,
+  });
+  return response.data;
+}
+
+export async function updateProductionPartCavityGroup(partNos: string[], cavityPattern: string) {
+  const normalizedPartNos = [...new Set(partNos.map((partNo) => partNo.trim().toUpperCase()).filter(Boolean))];
+  if (shouldUseMockProductionApi()) {
+    const parsed = parseCavityPattern(cavityPattern);
+    return {
+      part_no: normalizedPartNos[0] ?? "",
+      part_nos: normalizedPartNos,
+      cavity: parsed.cavity,
+      cavity_pattern: parsed.pattern,
+      parts_per_shot: parsed.partsPerShot,
+      cavity_group: parsed.partsPerShot > 1 ? normalizedPartNos.join("+") : normalizedPartNos[0],
+      total_cavity: parsed.cavity * parsed.partsPerShot,
+    };
+  }
+
+  const response = await http.post<ProductionPartCavityResponse>("/production/part-cavity/", {
+    part_nos: normalizedPartNos,
+    cavity_pattern: cavityPattern,
   });
   return response.data;
 }
@@ -628,17 +668,44 @@ export async function cancelAiJob(jobId: number) {
 function mergeCavityFromSummary(records: ProductionPlanRecord[], summaryRecords: ProductionPlanRecord[]) {
   if (!summaryRecords.length) return records;
 
-  const cavityMap = new Map<string, number>();
+  const cavityMap = new Map<string, Pick<ProductionPlanRecord, "cavity" | "cavity_pattern" | "parts_per_shot" | "cavity_group" | "total_cavity">>();
   summaryRecords.forEach((record) => {
     const partNo = (record.part_no || "").trim().toUpperCase();
-    if (partNo) cavityMap.set(partNo, Math.max(1, Number(record.cavity) || 1));
+    if (partNo) {
+      cavityMap.set(partNo, {
+        cavity: Math.max(1, Number(record.cavity) || 1),
+        cavity_pattern: record.cavity_pattern ?? null,
+        parts_per_shot: Math.max(1, Number(record.parts_per_shot) || 1),
+        cavity_group: record.cavity_group ?? null,
+        total_cavity: Math.max(1, Number(record.total_cavity) || Math.max(1, Number(record.cavity) || 1)),
+      });
+    }
   });
 
   return records.map((record) => {
     const partNo = (record.part_no || "").trim().toUpperCase();
+    const meta = cavityMap.get(partNo);
     return {
       ...record,
-      cavity: cavityMap.get(partNo) ?? record.cavity ?? 1,
+      cavity: meta?.cavity ?? record.cavity ?? 1,
+      cavity_pattern: meta?.cavity_pattern ?? record.cavity_pattern ?? null,
+      parts_per_shot: meta?.parts_per_shot ?? record.parts_per_shot ?? 1,
+      cavity_group: meta?.cavity_group ?? record.cavity_group ?? null,
+      total_cavity: meta?.total_cavity ?? record.total_cavity ?? record.cavity ?? 1,
     };
   });
+}
+
+function parseCavityPattern(value: string | number | null | undefined) {
+  const text = String(value ?? "").trim().toLowerCase().replace(/\s+/g, "").replace("*", "x").replace("×", "x");
+  const match = text.match(/^(\d+)x(\d+)$/);
+  if (match) {
+    return {
+      pattern: `${Math.max(1, Number(match[1]) || 1)}x${Math.max(1, Number(match[2]) || 1)}`,
+      partsPerShot: Math.max(1, Number(match[1]) || 1),
+      cavity: Math.max(1, Number(match[2]) || 1),
+    };
+  }
+  const cavity = Math.max(1, Math.round(Number(value) || 1));
+  return { pattern: `1x${cavity}`, partsPerShot: 1, cavity };
 }

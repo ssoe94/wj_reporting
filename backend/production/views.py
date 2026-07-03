@@ -24,6 +24,14 @@ from .ai_answer import build_ai_briefing
 from .ai_gateway import answer_from_intent, build_injection_plan_context, request_local_llm, request_question_intent
 from .ai_retrievers import get_daily_production_context
 from .counter_utils import calculate_cumulative_counter_delta
+from .cavity import (
+    attach_cavity_meta,
+    default_cavity_meta,
+    get_cavity_meta_map,
+    normalize_cavity_pattern,
+    normalize_part_no as normalize_cavity_part_no,
+    serialize_cavity_meta,
+)
 from .machining_reconciliation import (
     build_machining_provision_payload,
     build_manual_report_payload,
@@ -84,10 +92,7 @@ class ProductionPlanSummaryView(APIView):
             for part_no in plan_data_qs.values_list('part_no', flat=True)
             if part_no
         }
-        cavity_map = {
-            (row['part_no'] or '').strip().upper(): row['cavity']
-            for row in ProductionPartCavity.objects.filter(part_no__in=part_nos).values('part_no', 'cavity')
-        }
+        cavity_map = get_cavity_meta_map(ProductionPartCavity, part_nos)
         
         if not plan_data_qs.exists():
             return Response({
@@ -124,12 +129,10 @@ class ProductionPlanSummaryView(APIView):
         ))
         for record in records_injection:
             record['planned_quantity'] = int(round(record.get('planned_quantity') or 0))
-            part_no = (record.get('part_no') or '').strip().upper()
-            record['cavity'] = int(cavity_map.get(part_no, 1) or 1)
+            attach_cavity_meta(record, cavity_map)
         for record in records_machining:
             record['planned_quantity'] = int(round(record.get('planned_quantity') or 0))
-            part_no = (record.get('part_no') or '').strip().upper()
-            record['cavity'] = int(cavity_map.get(part_no, 1) or 1)
+            attach_cavity_meta(record, cavity_map)
 
         # 2. 'machine_summary'
         machine_summary_injection = list(plan_data_qs.filter(plan_type='injection').values('machine_name')
@@ -681,27 +684,56 @@ class ProductionPartCavityView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        part_no = (request.query_params.get('part_no') or '').strip().upper()
+        part_no = normalize_cavity_part_no(request.query_params.get('part_no'))
         if not part_no:
             return Response({"error": "part_no is required."}, status=status.HTTP_400_BAD_REQUEST)
-        cavity = ProductionPartCavity.objects.filter(part_no=part_no).values_list('cavity', flat=True).first() or 1
-        return Response({"part_no": part_no, "cavity": int(cavity)})
+        obj = ProductionPartCavity.objects.filter(part_no=part_no).first()
+        meta = serialize_cavity_meta(obj, part_no) if obj else default_cavity_meta(part_no)
+        return Response({"part_no": part_no, **meta})
 
     def post(self, request, *args, **kwargs):
-        part_no = (request.data.get('part_no') or '').strip().upper()
-        cavity = request.data.get('cavity')
-        if not part_no:
+        raw_part_nos = request.data.get('part_nos')
+        if isinstance(raw_part_nos, list):
+            part_nos = [normalize_cavity_part_no(value) for value in raw_part_nos]
+        else:
+            part_nos = [normalize_cavity_part_no(request.data.get('part_no'))]
+        part_nos = sorted({part_no for part_no in part_nos if part_no})
+        if not part_nos:
             return Response({"error": "part_no is required."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            cavity_val = int(cavity)
-        except (TypeError, ValueError):
-            return Response({"error": "cavity must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
-        cavity_val = max(1, cavity_val)
-        obj, _ = ProductionPartCavity.objects.update_or_create(
-            part_no=part_no,
-            defaults={'cavity': cavity_val},
+
+        pattern, parts_per_shot, cavity_val = normalize_cavity_pattern(
+            request.data.get('cavity_pattern'),
+            request.data.get('cavity'),
+            request.data.get('parts_per_shot'),
         )
-        return Response({"part_no": obj.part_no, "cavity": obj.cavity})
+        if parts_per_shot > 1 and len(part_nos) < parts_per_shot:
+            return Response(
+                {"error": "This cavity pattern requires grouped part_nos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        requested_group = normalize_cavity_part_no(request.data.get('cavity_group'))
+        shared_group = requested_group or '+'.join(part_nos) if parts_per_shot > 1 and len(part_nos) > 1 else ''
+        objects = []
+        for part_no in part_nos:
+            obj, _ = ProductionPartCavity.objects.update_or_create(
+                part_no=part_no,
+                defaults={
+                    'cavity': cavity_val,
+                    'cavity_pattern': pattern,
+                    'parts_per_shot': parts_per_shot,
+                    'cavity_group': shared_group or part_no,
+                },
+            )
+            objects.append({"part_no": obj.part_no, **serialize_cavity_meta(obj, obj.part_no)})
+
+        first = objects[0]
+        return Response({
+            "part_no": first["part_no"],
+            "part_nos": part_nos,
+            "parts": objects,
+            **{key: first[key] for key in ["cavity", "cavity_pattern", "parts_per_shot", "cavity_group", "total_cavity"]},
+        })
 
 
 class ProductionConsoleView(APIView):
@@ -746,10 +778,7 @@ class ProductionConsoleView(APIView):
         }
 
         part_nos = sorted({(row.get('part_no') or '').strip().upper() for row in plans if row.get('part_no')})
-        cavity_map = {
-            row['part_no']: int(row['cavity'] or 1)
-            for row in ProductionPartCavity.objects.filter(part_no__in=part_nos).values('part_no', 'cavity')
-        }
+        cavity_map = get_cavity_meta_map(ProductionPartCavity, part_nos)
 
         latest_partspec_map = {}
         if part_nos:
@@ -808,7 +837,7 @@ class ProductionConsoleView(APIView):
                 has_started=bool(execution and execution.start_datetime),
             )
 
-            rows.append({
+            row_payload = {
                 'key': self._key_str(target_date, plan_type, machine_name, part_no, lot_no, sequence),
                 'execution_id': execution.id if execution else None,
                 'plan_date': target_date.isoformat(),
@@ -831,12 +860,13 @@ class ProductionConsoleView(APIView):
                 'note': execution.note if execution else '',
                 'status': status_value,
                 'progress': round((actual_qty / planned_quantity) * 100, 1) if planned_quantity > 0 else 0,
-                'cavity': cavity_map.get(part_no, 1),
                 'baseline_ct': int(spec.cycle_time_sec) if spec and spec.cycle_time_sec is not None else None,
                 'target_cycle_time': int(setup.target_cycle_time) if setup else None,
                 'standard_cycle_time': int(setup.standard_cycle_time) if setup and setup.standard_cycle_time is not None else None,
                 'mean_cycle_time': int(setup.mean_cycle_time) if setup and setup.mean_cycle_time is not None else None,
-            })
+            }
+            attach_cavity_meta(row_payload, cavity_map)
+            rows.append(row_payload)
 
             total_planned += planned_quantity
             total_actual += actual_qty

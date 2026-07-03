@@ -77,16 +77,19 @@ class ProductionPlanChangeLog(models.Model):
 
 
 class ProductionPartCavity(models.Model):
-    """Store cavity counts per part no for injection production."""
+    """Store per-part cavity rules for injection production."""
     part_no = models.CharField(max_length=100, unique=True, db_index=True)
     cavity = models.PositiveSmallIntegerField(default=1)
+    cavity_pattern = models.CharField(max_length=20, default='1x1')
+    parts_per_shot = models.PositiveSmallIntegerField(default=1)
+    cavity_group = models.CharField(max_length=255, blank=True, default='', db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['part_no']
 
     def __str__(self):
-        return f"{self.part_no} - {self.cavity}"
+        return f"{self.part_no} - {self.cavity_pattern or self.cavity}"
 
 
 class ProductionPlanPart(models.Model):
