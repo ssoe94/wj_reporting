@@ -1083,8 +1083,17 @@ export function ProductionPlansPage() {
     return [...new Set(records.map((record) => (record.part_no || "").trim().toUpperCase()).filter(Boolean))];
   }
 
+  function getCavityDraftPattern(orderKey: string, records: ProductionPlanRecord[]) {
+    if (cavityDrafts[orderKey]) return cavityDrafts[orderKey];
+
+    const selectedPatterns = [
+      ...new Set(getSelectedCavityRecords(orderKey, records).map((record) => getPlanCavityPattern(record))),
+    ];
+    return selectedPatterns.length === 1 ? selectedPatterns[0] : "1x1";
+  }
+
   function applyCavityGroup(orderKey: string, records: ProductionPlanRecord[]) {
-    const cavityPattern = cavityDrafts[orderKey] ?? "2x2";
+    const cavityPattern = getCavityDraftPattern(orderKey, records);
     const selectedPartNos = getPartNoList(getSelectedCavityRecords(orderKey, records));
     if (!selectedPartNos.length) return;
     cavityGroupMutation.mutate({ orderKey, partNos: selectedPartNos, cavityPattern });
@@ -1105,7 +1114,7 @@ export function ProductionPlansPage() {
   function renderCavityGroupTools(orderKey: string, records: ProductionPlanRecord[]) {
     const selectedRows = getSelectedCavityRecords(orderKey, records);
     const selectedPartNos = getPartNoList(selectedRows);
-    const cavityPattern = cavityDrafts[orderKey] ?? "2x2";
+    const cavityPattern = getCavityDraftPattern(orderKey, records);
     const parsed = parseCavityPattern(cavityPattern);
     const canApply = selectedPartNos.length > 0 && (parsed.partsPerShot === 1 || selectedPartNos.length >= parsed.partsPerShot);
 

@@ -593,8 +593,8 @@ class InjectionAllocationContractTests(DjangoTestCase):
             planned_quantity=40,
             sequence=2,
         )
-        ProductionPartCavity.objects.create(part_no='PART-A', cavity=2)
-        ProductionPartCavity.objects.create(part_no='PART-B', cavity=4)
+        ProductionPartCavity.objects.create(part_no='PART-A', cavity=2, cavity_pattern='1x2')
+        ProductionPartCavity.objects.create(part_no='PART-B', cavity=4, cavity_pattern='1x4')
         InjectionMonitoringRecord.objects.create(
             machine_name='1호기',
             device_code='inj-1',
@@ -637,6 +637,44 @@ class InjectionAllocationContractTests(DjangoTestCase):
         self.assertEqual(summary_row['parts'][0]['status'], 'completed')
         self.assertEqual(summary_row['parts'][1]['estimated_qty'], 20)
         self.assertEqual(summary_row['parts'][1]['status'], 'in_progress')
+
+    def test_default_cavity_pattern_keeps_part_as_one_by_one(self):
+        target_date = datetime(2026, 5, 19).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 5, 19, 8, 0))
+
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type='injection',
+            machine_name='850T-1',
+            part_no='PART-DEFAULT',
+            model_name='Model Default',
+            planned_quantity=20,
+            sequence=1,
+        )
+        ProductionPartCavity.objects.create(part_no='PART-DEFAULT', cavity=4)
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start - timedelta(minutes=1),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start + timedelta(minutes=10),
+            capacity=110,
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machine = response.json()['injection'][0]
+        self.assertEqual(machine['total_actual'], 10)
+        self.assertEqual(machine['parts'][0]['actual_quantity'], 10)
+        self.assertEqual(machine['parts'][0]['progress'], 50.0)
 
     def test_grouped_cavity_parts_share_the_same_shots(self):
         target_date = datetime(2026, 7, 3).date()

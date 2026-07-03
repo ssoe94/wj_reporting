@@ -49,12 +49,6 @@ def serialize_cavity_meta(row: dict[str, Any] | Any, part_no: Any = None) -> dic
     key = normalize_part_no(part_no if part_no is not None else getter("part_no", ""))
     raw_pattern = getter("cavity_pattern", None)
     raw_cavity = getter("cavity", 1)
-    try:
-        numeric_cavity = max(1, int(raw_cavity or 1))
-    except (TypeError, ValueError):
-        numeric_cavity = 1
-    if str(raw_pattern or "").strip().lower().replace(" ", "") == DEFAULT_CAVITY_PATTERN and numeric_cavity != 1:
-        raw_pattern = None
     pattern, parts_per_shot, cavity = normalize_cavity_pattern(
         raw_pattern,
         raw_cavity,
