@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FC, FormEvent } from 'react';
 import { toast } from 'react-toastify';
 import { AxiosError } from 'axios';
@@ -11,14 +11,21 @@ type PlanType = 'injection' | 'machining';
 
 interface UploadCardProps {
   planType: PlanType;
-  onUploadSuccess: () => void;
+  onUploadSuccess: (result?: any) => void;
   className?: string;
   canEdit?: boolean;
+  targetDate?: string;
 }
 
-const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className, canEdit = true }) => {
+const getLocalDateString = () => {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+};
+
+const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className, canEdit = true, targetDate: selectedTargetDate }) => {
   const { t } = useLang();
-  const [targetDate, setTargetDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [targetDate, setTargetDate] = useState(() => selectedTargetDate || getLocalDateString());
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -27,6 +34,12 @@ const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className,
   const descriptionText = planType === 'injection' ? t('plan_form_description_injection') : t('plan_form_description_machining');
   const fileHintText = planType === 'injection' ? t('plan_form_file_hint_injection') : t('plan_form_file_hint_machining');
   const title = planType === 'injection' ? t('plan_toggle_injection') : t('plan_toggle_machining');
+
+  useEffect(() => {
+    if (selectedTargetDate) {
+      setTargetDate(selectedTargetDate);
+    }
+  }, [selectedTargetDate]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -40,9 +53,9 @@ const UploadCard: FC<UploadCardProps> = ({ planType, onUploadSuccess, className,
     }
     try {
       setIsSubmitting(true);
-      await uploadProductionPlanFile(selectedFile, planType, targetDate);
+      const result = await uploadProductionPlanFile(selectedFile, planType, targetDate);
       toast.success(t('plan_upload_success')); // A key that should exist
-      onUploadSuccess(); // Notify parent
+      onUploadSuccess(result); // Notify parent
       setSelectedFile(null); // Clear file input
     } catch (error) {
       const err = error as AxiosError<{ detail?: string, error?: string }>;

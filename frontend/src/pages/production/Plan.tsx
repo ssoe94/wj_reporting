@@ -884,8 +884,14 @@ export default function ProductionPlanPage() {
         setEditItems([]);
     }, [planItemsError, t]);
 
-    const handleUploadSuccess = () => {
-        refetchPlanDates();
+    const handleUploadSuccess = async () => {
+        await refetchPlanDates();
+        await queryClient.invalidateQueries({ queryKey: ['planSummary'] });
+        await queryClient.invalidateQueries({ queryKey: ['planItems'] });
+        await queryClient.invalidateQueries({ queryKey: ['production-console'] });
+        await queryClient.invalidateQueries({ queryKey: ['production-status'] });
+        await queryClient.invalidateQueries({ queryKey: ['production-plan-items-kiosk'] });
+        await queryClient.invalidateQueries({ queryKey: ['productionMesStats'] });
     };
 
     const openEditModal = (type: 'injection' | 'machining') => {
@@ -1094,10 +1100,20 @@ export default function ProductionPlanPage() {
                         />
                     </div>
                     <div className="h-full">
-                        <UploadCard planType="injection" onUploadSuccess={handleUploadSuccess} canEdit={canEditInjection} />
+                        <UploadCard
+                            planType="injection"
+                            targetDate={selectedDate ? dayjs(selectedDate).format('YYYY-MM-DD') : undefined}
+                            onUploadSuccess={handleUploadSuccess}
+                            canEdit={canEditInjection}
+                        />
                     </div>
                     <div className="h-full">
-                        <UploadCard planType="machining" onUploadSuccess={handleUploadSuccess} canEdit={canEditMachining} />
+                        <UploadCard
+                            planType="machining"
+                            targetDate={selectedDate ? dayjs(selectedDate).format('YYYY-MM-DD') : undefined}
+                            onUploadSuccess={handleUploadSuccess}
+                            canEdit={canEditMachining}
+                        />
                     </div>
                 </div>
 
