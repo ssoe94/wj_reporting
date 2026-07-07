@@ -4,6 +4,15 @@
     "/api/**": {
       "dest": "https://wj-reporting-backend.onrender.com/api/$1"
     },
+    "/next/login": "next/index.html",
+    "/next/login/": "next/index.html",
+    "/next/production": "next/index.html",
+    "/next/production/": "next/index.html",
+    "/next/production/plans": "next/index.html",
+    "/next/production/plans/": "next/index.html",
+    "/next/mes/monitoring": "next/index.html",
+    "/next/mes/monitoring/": "next/index.html",
+    "/next/**": "next/index.html",
     "/**": "index.html"
   }
 }
