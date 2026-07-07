@@ -28,6 +28,12 @@ services:
         source: /next/production/
         destination: /next/index.html
       - type: rewrite
+        source: /next/production/plans
+        destination: /next/index.html
+      - type: rewrite
+        source: /next/production/plans/
+        destination: /next/index.html
+      - type: rewrite
         source: /next/mes/monitoring
         destination: /next/index.html
       - type: rewrite
@@ -36,6 +42,29 @@ services:
       - type: redirect
         source: /injection/monitoring
         destination: /mes/monitoring
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # Standalone next-generation frontend.
+  # This service is the source-of-truth UI for the rebuilt production/MES pages.
+  # The legacy wj_reporting static site bundles the same frontend-next build under /next.
+  - type: static
+    name: frontend-next-zjk1
+    rootDir: frontend-next
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: /api
+      - key: VITE_MES_API_BASE_URL
+        value: /api
+      - key: VITE_USE_REMOTE_PRODUCTION_API
+        value: "true"
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://wj-reporting-backend.onrender.com/api/*
       - type: rewrite
         source: /*
         destination: /index.html

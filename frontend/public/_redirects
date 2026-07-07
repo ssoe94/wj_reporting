@@ -1,1 +1,10 @@
 /api/*  https://wj-reporting-backend.onrender.com/api/:splat  200
+/next/login  /next/index.html  200
+/next/login/  /next/index.html  200
+/next/production  /next/index.html  200
+/next/production/  /next/index.html  200
+/next/production/plans  /next/index.html  200
+/next/production/plans/  /next/index.html  200
+/next/mes/monitoring  /next/index.html  200
+/next/mes/monitoring/  /next/index.html  200
+/next/*  /next/index.html  200

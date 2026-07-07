@@ -15,6 +15,8 @@ const nextAppRoutes = new Set([
   "/next/login/",
   "/next/production",
   "/next/production/",
+  "/next/production/plans",
+  "/next/production/plans/",
   "/next/mes/monitoring",
   "/next/mes/monitoring/",
 ]);
