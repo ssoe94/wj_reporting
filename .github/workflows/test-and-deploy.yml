@@ -118,6 +118,17 @@ jobs:
         env:
           RENDER_DEPLOY_HOOK_FRONTEND: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}
       
+      - name: Deploy standalone frontend-next to Render
+        run: |
+          if [ -n "$RENDER_DEPLOY_HOOK_FRONTEND_NEXT" ]; then
+            echo "Deploying standalone frontend-next..."
+            curl -fsS -X POST "$RENDER_DEPLOY_HOOK_FRONTEND_NEXT"
+          else
+            echo "RENDER_DEPLOY_HOOK_FRONTEND_NEXT is not configured; skipping standalone frontend-next deploy."
+          fi
+        env:
+          RENDER_DEPLOY_HOOK_FRONTEND_NEXT: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND_NEXT }}
+
       - name: Wait for frontend deployment
         run: |
           echo "⏳ Waiting for frontend to be ready..."
