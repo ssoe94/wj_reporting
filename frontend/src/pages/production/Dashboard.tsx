@@ -378,12 +378,13 @@ const ProductionDashboardPage: FC = () => {
         setError(errorMessage);
         toast.error(errorMessage);
       } finally {
-        if (!active) return;
-        if (showLoader) {
-          setIsLoading(false);
+        if (active) {
+          if (showLoader) {
+            setIsLoading(false);
+          }
+          initialLoadRef.current = false;
+          setTimeout(() => setStartAnimation(true), 200);
         }
-        initialLoadRef.current = false;
-        setTimeout(() => setStartAnimation(true), 200);
       }
     };
 
