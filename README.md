@@ -82,9 +82,14 @@ This project is configured for **automated deployment** on Render.
 - **User Setup**: Existing users and groups are automatically configured via migrations and signals.
 
 ### Deployment Process
-1. **Push to Main**: `git push origin main` triggers the CI/CD pipeline.
-2. **CI/CD**: GitHub Actions runs tests.
-3. **Deploy**: If tests pass, Render automatically deploys the backend and frontend.
+1. **Push to Main**: tests and deploys the production backend and production frontend.
+2. **Push to Beta**: tests the shared application and deploys only `frontend-next` to the beta site.
+3. **Pull Request**: runs validation without deployment.
+4. **Manual Run**: select `main` or `beta`, then choose `deploy` or `test-only`.
+
+The production and beta frontends share the production backend and database. Follow
+[`docs/BRANCH_AND_DEPLOYMENT_POLICY.md`](docs/BRANCH_AND_DEPLOYMENT_POLICY.md) for branch,
+database, rollout, and rollback rules.
 
 ### Verification
 After deployment, run the smoke test:

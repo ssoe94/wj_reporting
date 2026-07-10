@@ -8,6 +8,8 @@ services:
   # Frontend Static Site
   - type: static
     name: wj_reporting
+    branch: main
+    autoDeployTrigger: off
     rootDir: frontend
     buildCommand: node ../scripts/build-render-static.mjs
     staticPublishPath: dist
@@ -51,6 +53,8 @@ services:
   # The legacy wj_reporting static site bundles the same frontend-next build under /next.
   - type: static
     name: frontend-next-zjk1
+    branch: beta
+    autoDeployTrigger: off
     rootDir: frontend-next
     buildCommand: npm install && npm run build
     staticPublishPath: dist
@@ -72,6 +76,8 @@ services:
   # Backend Web Service
   - type: web
     name: wj_reporting_backend
+    branch: main
+    autoDeployTrigger: off
     env: python
     rootDir: backend
     buildCommand: bash build.sh

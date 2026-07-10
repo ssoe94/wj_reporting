@@ -59,8 +59,8 @@ class AnalyticsProductionMartTests(TestCase):
             planned_quantity=50,
             sequence=1,
         )
-        ProductionPartCavity.objects.create(part_no='PART-A', cavity=2)
-        ProductionPartCavity.objects.create(part_no='PART-B', cavity=4)
+        ProductionPartCavity.objects.create(part_no='PART-A', cavity=2, cavity_pattern='1x2')
+        ProductionPartCavity.objects.create(part_no='PART-B', cavity=4, cavity_pattern='1x4')
         InjectionMonitoringRecord.objects.create(
             machine_name='1호기',
             device_code='inj-1',

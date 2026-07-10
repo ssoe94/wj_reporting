@@ -2,289 +2,175 @@ name: Test and Deploy
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, beta]
   push:
-    branches: [main]
+    branches: [main, beta]
   workflow_dispatch:
+    inputs:
+      action:
+        description: Run validation only or deploy the selected branch
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - test-only
 
-# 동시 배포 방지
+permissions:
+  contents: read
+
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  # 1단계: 테스트 실행
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      
-      - name: Install dependencies
-        run: |
-          # 루트에 package.json이 있으면 설치 (테스트 도구용)
-          if [ -f "package-lock.json" ]; then
-            echo "Installing root dependencies..."
-            npm install
-          fi
-          
-          # 프론트엔드 의존성 설치
-          if [ -f "frontend/package-lock.json" ]; then
-            echo "Installing frontend dependencies..."
-            cd frontend && npm ci
-          elif [ -f "frontend/package.json" ]; then
-            echo "Installing frontend dependencies (no lock file)..."
-            cd frontend && npm install
-          fi
-      
-      - name: Run linter (if available)
-        continue-on-error: true
-        run: |
-          if [ -f "frontend/package.json" ]; then
-            cd frontend
-            npm run lint --if-present || echo "No lint script found"
-          fi
-      
-      - name: Run unit tests (if available)
-        continue-on-error: true
-        run: |
-          if [ -f "frontend/package.json" ]; then
-            cd frontend
-            npm run test:ci --if-present || npm run test --if-present || echo "No test script found"
-          fi
-      
-      - name: Build frontend
-        run: |
-          if [ -f "frontend/package.json" ]; then
-            cd frontend
-            npm run build
-          fi
+env:
+  NODE_VERSION: "22"
+  PYTHON_VERSION: "3.11"
 
-      - name: Setup Python (for backend tests)
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Run backend tests (if available)
-        continue-on-error: true
-        run: |
-          if [ -f "backend/requirements.txt" ]; then
-            cd backend
-            pip install -r requirements.txt
-            python manage.py test --no-input || echo "No backend tests found"
-          fi
-      
-      - name: Test summary
-        run: |
-          echo "✅ Basic validation complete"
-          echo "Note: Some tests may have been skipped if not configured"
-  
-  # 2단계: 배포 (main 브랜치만, 테스트 통과 시)
-  deploy:
-    name: Deploy to Render
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+jobs:
+  test:
+    name: Validate application
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Deploy Backend to Render
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            frontend-next/package-lock.json
+
+      - name: Install frontend dependencies
         run: |
-          echo "🚀 Deploying backend..."
-          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_BACKEND"
+          npm ci --prefix frontend
+          npm ci --prefix frontend-next
+
+      - name: Lint legacy frontend
+        run: npm --prefix frontend run lint
+
+      - name: Build standalone beta frontend
+        run: npm --prefix frontend-next run build
+
+      - name: Build production frontend bundle
+        run: npm --prefix frontend run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run backend tests
+        working-directory: backend
+        run: python manage.py test --no-input
+
+  deploy-main:
+    name: Deploy production from main
+    needs: test
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Validate production deploy hooks
         env:
           RENDER_DEPLOY_HOOK_BACKEND: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
-      
-      - name: Wait for backend deployment
+          RENDER_DEPLOY_HOOK_FRONTEND: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}
         run: |
-          echo "⏳ Waiting for backend to be healthy..."
-          bash scripts/wait-health.sh https://wj-reporting-backend.onrender.com/api/health/ 300
-      
-      - name: Deploy Frontend to Render
-        run: |
-          echo "🚀 Deploying frontend..."
-          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_FRONTEND"
+          if [ -z "$RENDER_DEPLOY_HOOK_BACKEND" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_BACKEND is not configured."
+            exit 1
+          fi
+          if [ -z "$RENDER_DEPLOY_HOOK_FRONTEND" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_FRONTEND is not configured."
+            exit 1
+          fi
+
+      - name: Deploy production backend
+        env:
+          RENDER_DEPLOY_HOOK_BACKEND: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
+        run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_BACKEND"
+
+      - name: Wait for backend health
+        run: bash scripts/wait-health.sh https://wj-reporting-backend.onrender.com/api/health/ 300
+
+      - name: Deploy production frontend
         env:
           RENDER_DEPLOY_HOOK_FRONTEND: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}
-      
-      - name: Deploy standalone frontend-next to Render
-        run: |
-          if [ -n "$RENDER_DEPLOY_HOOK_FRONTEND_NEXT" ]; then
-            echo "Deploying standalone frontend-next..."
-            curl -fsS -X POST "$RENDER_DEPLOY_HOOK_FRONTEND_NEXT"
-          else
-            echo "RENDER_DEPLOY_HOOK_FRONTEND_NEXT is not configured; skipping standalone frontend-next deploy."
-          fi
+        run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_FRONTEND"
+
+  verify-main:
+    name: Verify production deployment
+    needs: deploy-main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Wait for the production commit
+        env:
+          SITE_URL: https://wj-reporting.onrender.com
+          EXPECTED_BRANCH: main
+        run: bash scripts/wait-static-commit.sh "$SITE_URL" "$GITHUB_SHA" "$EXPECTED_BRANCH" 300
+
+      - name: Run production smoke tests
+        run: bash scripts/quick-smoke-test.sh
+
+  deploy-beta:
+    name: Deploy beta frontend from beta
+    needs: test
+    if: >-
+      github.ref == 'refs/heads/beta' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate beta deploy hook
         env:
           RENDER_DEPLOY_HOOK_FRONTEND_NEXT: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND_NEXT }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_FRONTEND_NEXT" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_FRONTEND_NEXT is not configured."
+            exit 1
+          fi
 
-      - name: Wait for frontend deployment
-        run: |
-          echo "⏳ Waiting for frontend to be ready..."
-          sleep 60
-  
-  # 3단계: 배포 후 검증 (smoke test)
-  verify:
-    name: Verify Deployment
-    needs: deploy
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Deploy beta frontend only
+        env:
+          RENDER_DEPLOY_HOOK_FRONTEND_NEXT: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND_NEXT }}
+        run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_FRONTEND_NEXT"
+
+  verify-beta:
+    name: Verify beta deployment
+    needs: deploy-beta
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Test Health Endpoint via Proxy (JSON)
+        uses: actions/checkout@v6
+
+      - name: Wait for the beta commit
+        env:
+          SITE_URL: https://frontend-next-zjk1.onrender.com
+          EXPECTED_BRANCH: beta
+        run: bash scripts/wait-static-commit.sh "$SITE_URL" "$GITHUB_SHA" "$EXPECTED_BRANCH" 300
+
+      - name: Verify beta routes and shared API
         run: |
-          echo "Testing /api/health/ via frontend proxy..."
-          CONTENT_TYPE=$(curl -sI https://wj-reporting.onrender.com/api/health/ | grep -i content-type | awk '{print $2}' | tr -d '\r')
-          echo "Content-Type: $CONTENT_TYPE"
-          
-          if [[ ! "$CONTENT_TYPE" =~ "application/json" ]]; then
-            echo "❌ FAIL: Expected application/json, got $CONTENT_TYPE"
-            echo "Proxy routing may not be working correctly"
+          curl -fsS https://frontend-next-zjk1.onrender.com/production > /dev/null
+          curl -fsS https://frontend-next-zjk1.onrender.com/mes/monitoring > /dev/null
+          CONTENT_TYPE=$(curl -sSI https://frontend-next-zjk1.onrender.com/api/health/ | awk -F': ' 'tolower($1) == "content-type" {print tolower($2)}' | tr -d '\r')
+          if [[ "$CONTENT_TYPE" != *"application/json"* ]]; then
+            echo "::error::Beta /api proxy did not return JSON: $CONTENT_TYPE"
             exit 1
           fi
-          echo "✅ PASS: Proxy routes /api/* to backend correctly"
-      
-      - name: Test Reports Summary via Proxy (JSON)
-        run: |
-          echo "Testing /api/injection/reports/summary/ via proxy..."
-          RESPONSE=$(curl -s -w "\n%{http_code}\n%{content_type}" \
-            "https://wj-reporting.onrender.com/api/injection/reports/summary/?date=2025-10-14")
-          
-          STATUS=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
-          CONTENT_TYPE=$(echo "$RESPONSE" | tail -n 1)
-          BODY=$(echo "$RESPONSE" | head -n -2)
-          
-          echo "Status: $STATUS"
-          echo "Content-Type: $CONTENT_TYPE"
-          
-          # Check if response is HTML (proxy failure)
-          if [[ "$BODY" =~ "<html" ]] || [[ "$BODY" =~ "<!DOCTYPE" ]]; then
-            echo "❌ FAIL: Received HTML instead of JSON"
-            echo "Body preview: ${BODY:0:200}"
-            exit 1
-          fi
-          
-          # Check content type
-          if [[ ! "$CONTENT_TYPE" =~ "application/json" ]]; then
-            echo "❌ FAIL: Expected application/json, got $CONTENT_TYPE"
-            exit 1
-          fi
-          
-          echo "✅ PASS: Reports endpoint returns JSON"
-      
-      - name: Test 404 Returns JSON via Proxy
-        run: |
-          echo "Testing 404 error response via proxy..."
-          RESPONSE=$(curl -s -w "\n%{http_code}\n%{content_type}" \
-            "https://wj-reporting.onrender.com/api/_404_check_nonexistent")
-          
-          STATUS=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
-          CONTENT_TYPE=$(echo "$RESPONSE" | tail -n 1)
-          BODY=$(echo "$RESPONSE" | head -n -2)
-          
-          echo "Status: $STATUS"
-          echo "Content-Type: $CONTENT_TYPE"
-          
-          # Should be 404
-          if [ "$STATUS" != "404" ]; then
-            echo "⚠️  WARNING: Expected 404, got $STATUS"
-          fi
-          
-          # Should be JSON, not HTML
-          if [[ "$BODY" =~ "<html" ]] || [[ "$BODY" =~ "<!DOCTYPE" ]]; then
-            echo "❌ FAIL: 404 returns HTML instead of JSON"
-            echo "Body preview: ${BODY:0:200}"
-            exit 1
-          fi
-          
-          if [[ ! "$CONTENT_TYPE" =~ "application/json" ]]; then
-            echo "❌ FAIL: 404 should return JSON, got $CONTENT_TYPE"
-            exit 1
-          fi
-          
-          echo "✅ PASS: 404 errors return JSON"
-      
-      - name: Test Frontend Loads
-        run: |
-          echo "Testing frontend loads successfully..."
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://wj-reporting.onrender.com)
-          echo "Frontend Status: $STATUS"
-          
-          if [ "$STATUS" != "200" ]; then
-            echo "❌ FAIL: Frontend should return 200"
-            exit 1
-          fi
-          echo "✅ PASS: Frontend loads successfully"
-      
-      - name: Run full verification script
-        run: |
-          echo "🔍 Running comprehensive verification..."
-          bash scripts/quick-smoke-test.sh
-      
-      - name: Summary
-        if: always()
-        run: |
-          echo ""
-          echo "========================================="
-          echo "✅ Deployment Verification Complete"
-          echo "========================================="
-          echo "All critical endpoints validated for:"
-          echo "  ✓ JSON content-type"
-          echo "  ✓ No HTML responses"
-          echo "  ✓ Proper error handling"
-          echo "  ✓ Proxy routing"
-          echo "  ✓ Cache headers"
-          echo "========================================="
-          echo ""
-          echo "🎉 Deployment successful!"
-  
-  # PR용 스모크 테스트 (배포 없이 기존 환경 검증)
-  pr-smoke-test:
-    name: PR Smoke Test
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Test current production endpoints
-        run: |
-          echo "🔍 Testing current production environment..."
-          
-          # Health check
-          curl -fsS https://wj-reporting.onrender.com/api/health/ | grep -q "status" || exit 1
-          echo "✓ Health check passed"
-          
-          # JSON validation
-          CONTENT_TYPE=$(curl -sI https://wj-reporting.onrender.com/api/health/ | grep -i content-type | awk '{print $2}' | tr -d '\r')
-          if [[ "$CONTENT_TYPE" =~ "application/json" ]]; then
-            echo "✓ JSON content-type verified"
-          else
-            echo "✗ Expected JSON, got $CONTENT_TYPE"
-            exit 1
-          fi
-      
-      - name: Summary
-        run: |
-          echo ""
-          echo "========================================="
-          echo "✅ PR Smoke Test Complete"
-          echo "========================================="
-          echo "Production environment is healthy."
-          echo "Ready to merge after review."
-          echo "========================================="

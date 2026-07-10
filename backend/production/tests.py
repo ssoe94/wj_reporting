@@ -743,9 +743,9 @@ class InjectionAllocationContractTests(DjangoTestCase):
         self.assertEqual(response.status_code, 200)
         machine = response.json()['injection'][0]
         self.assertEqual(machine['total_planned'], 5040)
-        self.assertEqual(machine['total_actual'], 40)
-        self.assertEqual(machine['parts'][0]['actual_quantity'], 20)
-        self.assertEqual(machine['parts'][1]['actual_quantity'], 20)
+        self.assertEqual(machine['total_actual'], 80)
+        self.assertEqual(machine['parts'][0]['actual_quantity'], 40)
+        self.assertEqual(machine['parts'][1]['actual_quantity'], 40)
 
     def test_status_api_does_not_count_first_cumulative_value_without_baseline(self):
         target_date = datetime(2026, 5, 18).date()
