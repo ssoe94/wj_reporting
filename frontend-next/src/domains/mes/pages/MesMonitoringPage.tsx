@@ -10,15 +10,19 @@ import {
   requestInjectionSnapshotUpdate,
 } from "@/domains/mes/api";
 import {
+  getInjectionDowntimeConfirmations,
   getProductionMesReportStats,
   getProductionPlanSummary,
   getProductionStatus,
+  resetInjectionDowntimeConfirmation,
+  saveInjectionDowntimeConfirmation,
   type ProductionMesReportStatsResponse,
 } from "@/domains/production/api";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
 import { buildInjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
 import { buildRealtimeProgressSummary, type RealtimeProgressSummary } from "@/domains/production/realtime-progress";
 import { PageHeaderIcon } from "@/shared/components/PageHeader";
+import { useAuth } from "@/domains/auth/auth-context";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
 
 type InjectionMachineRow = {
@@ -519,6 +523,10 @@ function normalizeComparisonMachineKey(value: string | number | null | undefined
   const leadingMatch = text.match(/^(\d+)(?:\D|$)/);
   if (leadingMatch) return leadingMatch[1];
   return text;
+}
+
+function formatLocalizedMachineName(value: string, language: AppLanguage) {
+  return language === "zh" ? value.replace(/호기/g, "号机") : value;
 }
 
 function injectionReceiptStatusLabel(status: InjectionReceiptStatus, copy: Record<string, string>) {
@@ -1814,6 +1822,7 @@ function MesMonitoringSkeleton({ copy }: { copy: Record<string, string> }) {
 
 export function MesMonitoringPage() {
   const [language] = useStoredLanguage();
+  const { hasCapability } = useAuth();
   const [selectedInfoView, setSelectedInfoView] = useState<MesInfoView>("production");
   const [selectedMachineNumber, setSelectedMachineNumber] = useState(1);
   const [snapshotJobId, setSnapshotJobId] = useState<string | null>(null);
@@ -1938,6 +1947,25 @@ export function MesMonitoringPage() {
     queryFn: () => getProductionStatus(planDate),
     enabled: isProductionInfoView && Boolean(planDate),
     refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
+  });
+  const downtimeConfirmationsQuery = useQuery({
+    queryKey: ["production", "injection-downtime-confirmations", planDate],
+    queryFn: () => getInjectionDowntimeConfirmations(planDate),
+    enabled: isProductionInfoView && Boolean(planDate),
+    refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
+    retry: false,
+  });
+  const saveDowntimeConfirmationMutation = useMutation({
+    mutationFn: saveInjectionDowntimeConfirmation,
+    onSuccess: () => queryClient.invalidateQueries({
+      queryKey: ["production", "injection-downtime-confirmations", planDate],
+    }),
+  });
+  const resetDowntimeConfirmationMutation = useMutation({
+    mutationFn: resetInjectionDowntimeConfirmation,
+    onSuccess: () => queryClient.invalidateQueries({
+      queryKey: ["production", "injection-downtime-confirmations", planDate],
+    }),
   });
   const selectedMachine = machineRows.find((row) => row.machineNumber === selectedMachineNumber) ?? machineRows[0];
   const selectedMachineKey = selectedMachine?.machineNumber ?? selectedMachineNumber;
@@ -2463,7 +2491,7 @@ export function MesMonitoringPage() {
                   </div>
                   {selectedMachine && (
                     <strong>
-                      {copy.selectedMachine}: {selectedMachine.name} · {formatTonnage(selectedMachine.tonnage)}
+                      {copy.selectedMachine}: {formatLocalizedMachineName(selectedMachine.name, language)} · {formatTonnage(selectedMachine.tonnage)}
                     </strong>
                   )}
                 </div>
@@ -2532,7 +2560,7 @@ export function MesMonitoringPage() {
                       <div className="mes-trend-card__header">
                         <div>
                           <h4>
-                            {selectedMachine.name} · {copy.trendTitle}
+                            {formatLocalizedMachineName(selectedMachine.name, language)} · {copy.trendTitle}
                           </h4>
                         </div>
                         <div className="mes-trend-card__current">
@@ -2564,8 +2592,14 @@ export function MesMonitoringPage() {
 
           <InjectionTransitionPanel
             analysis={transitionAnalysis}
+            canConfirm={hasCapability("injection.write")}
+            confirmationState={downtimeConfirmationsQuery.isError ? "error" : downtimeConfirmationsQuery.isPending ? "loading" : "ready"}
+            confirmations={downtimeConfirmationsQuery.data?.confirmations}
             copy={copy}
             language={language}
+            mode="review"
+            onResetConfirmation={(eventKey) => resetDowntimeConfirmationMutation.mutateAsync(eventKey)}
+            onSaveConfirmation={(payload) => saveDowntimeConfirmationMutation.mutateAsync(payload)}
           />
 
           <div className="mes-stats-grid">

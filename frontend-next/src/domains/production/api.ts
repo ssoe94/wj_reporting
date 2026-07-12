@@ -163,6 +163,87 @@ export type ProductionPlanChangeLogResponse = {
   logs: ProductionPlanChangeLog[];
 };
 
+export type InjectionDowntimeDetectedType = "mold_change" | "core_change" | "tuning" | "production_stop";
+export type InjectionDowntimeResolution = "confirmed" | "dismissed";
+export type InjectionDowntimeReasonCode =
+  | "mold_change"
+  | "core_change"
+  | "tuning"
+  | "mechanical_failure"
+  | "mold_issue"
+  | "material_wait"
+  | "quality_check"
+  | "planned_stop"
+  | "staffing"
+  | "other"
+  | "not_stop";
+
+export type InjectionDowntimeConfirmation = {
+  id: number;
+  business_date: string;
+  event_key: string;
+  machine_key: string;
+  machine_label: string;
+  detected_type: InjectionDowntimeDetectedType;
+  detected_start: string;
+  detected_end: string;
+  duration_minutes: number;
+  resolution: InjectionDowntimeResolution;
+  reason_code: InjectionDowntimeReasonCode;
+  note: string;
+  evidence: Record<string, unknown>;
+  confirmed_by_name: string | null;
+  confirmed_at: string;
+  updated_at: string;
+};
+
+export type InjectionDowntimeConfirmationResponse = {
+  business_date: string;
+  latest_updated_at: string | null;
+  confirmations: InjectionDowntimeConfirmation[];
+};
+
+export type SaveInjectionDowntimeConfirmationPayload = Omit<
+  InjectionDowntimeConfirmation,
+  "id" | "confirmed_by_name" | "confirmed_at" | "updated_at"
+>;
+
+export type InjectionActivityType =
+  | "production"
+  | "test_shot"
+  | "mold_check"
+  | "machine_check"
+  | "maintenance"
+  | "quality_check"
+  | "other";
+
+export type InjectionActivityConfirmation = {
+  id: number;
+  business_date: string;
+  machine_key: string;
+  machine_label: string;
+  activity_type: InjectionActivityType;
+  part_no: string;
+  model_name: string;
+  shot_count: number;
+  last_shot_at: string | null;
+  note: string;
+  confirmed_by_name: string | null;
+  confirmed_at: string;
+  updated_at: string;
+};
+
+export type InjectionActivityConfirmationResponse = {
+  business_date: string;
+  latest_updated_at: string | null;
+  confirmations: InjectionActivityConfirmation[];
+};
+
+export type SaveInjectionActivityConfirmationPayload = Omit<
+  InjectionActivityConfirmation,
+  "id" | "confirmed_by_name" | "confirmed_at" | "updated_at"
+>;
+
 export type ProductionMesReportStatsResponse = {
   date: string;
   plan_type: PlanType;
@@ -488,6 +569,166 @@ export async function getProductionPlanSummary(date: string) {
 export async function getProductionPlanChangeLogs(date: string) {
   const response = await http.get<ProductionPlanChangeLogResponse>(
     `/production/plan-change-logs/?date=${encodeURIComponent(date)}`,
+  );
+  return response.data;
+}
+
+const MOCK_INJECTION_DOWNTIME_CONFIRMATIONS_KEY = "wj_next_injection_downtime_confirmations";
+
+function readMockInjectionDowntimeConfirmations() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(MOCK_INJECTION_DOWNTIME_CONFIRMATIONS_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed as InjectionDowntimeConfirmation[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeMockInjectionDowntimeConfirmations(confirmations: InjectionDowntimeConfirmation[]) {
+  window.localStorage.setItem(MOCK_INJECTION_DOWNTIME_CONFIRMATIONS_KEY, JSON.stringify(confirmations));
+}
+
+export async function getInjectionDowntimeConfirmations(date: string) {
+  if (shouldUseMockProductionApi()) {
+    const confirmations = readMockInjectionDowntimeConfirmations()
+      .filter((confirmation) => confirmation.business_date === date)
+      .sort((left, right) => new Date(right.detected_start).getTime() - new Date(left.detected_start).getTime());
+    return {
+      business_date: date,
+      latest_updated_at: confirmations[0]?.updated_at ?? null,
+      confirmations,
+    } satisfies InjectionDowntimeConfirmationResponse;
+  }
+
+  const response = await http.get<InjectionDowntimeConfirmationResponse>(
+    `/production/injection-downtime-confirmations/?date=${encodeURIComponent(date)}`,
+  );
+  return {
+    business_date: response.data?.business_date ?? date,
+    latest_updated_at: response.data?.latest_updated_at ?? null,
+    confirmations: asArray(response.data?.confirmations),
+  };
+}
+
+export async function saveInjectionDowntimeConfirmation(payload: SaveInjectionDowntimeConfirmationPayload) {
+  if (shouldUseMockProductionApi()) {
+    const confirmations = readMockInjectionDowntimeConfirmations();
+    const existingIndex = confirmations.findIndex((confirmation) => confirmation.event_key === payload.event_key);
+    const now = new Date().toISOString();
+    const normalized: InjectionDowntimeConfirmation = {
+      ...payload,
+      id: existingIndex >= 0 ? confirmations[existingIndex].id : Date.now(),
+      reason_code: payload.resolution === "dismissed" ? "not_stop" : payload.reason_code,
+      confirmed_by_name: "superuser",
+      confirmed_at: now,
+      updated_at: now,
+    };
+    if (existingIndex >= 0) confirmations[existingIndex] = normalized;
+    else confirmations.push(normalized);
+    writeMockInjectionDowntimeConfirmations(confirmations);
+    return normalized;
+  }
+
+  const response = await http.post<InjectionDowntimeConfirmation>(
+    "/production/injection-downtime-confirmations/",
+    { action: "confirm", ...payload },
+  );
+  return response.data;
+}
+
+export async function resetInjectionDowntimeConfirmation(eventKey: string) {
+  if (shouldUseMockProductionApi()) {
+    const confirmations = readMockInjectionDowntimeConfirmations();
+    const next = confirmations.filter((confirmation) => confirmation.event_key !== eventKey);
+    writeMockInjectionDowntimeConfirmations(next);
+    return { event_key: eventKey, deleted: next.length !== confirmations.length };
+  }
+
+  const response = await http.post<{ event_key: string; deleted: boolean }>(
+    "/production/injection-downtime-confirmations/",
+    { action: "reset", event_key: eventKey },
+  );
+  return response.data;
+}
+
+const MOCK_INJECTION_ACTIVITY_CONFIRMATIONS_KEY = "wj_next_injection_activity_confirmations";
+
+function readMockInjectionActivityConfirmations() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(MOCK_INJECTION_ACTIVITY_CONFIRMATIONS_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed as InjectionActivityConfirmation[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeMockInjectionActivityConfirmations(confirmations: InjectionActivityConfirmation[]) {
+  window.localStorage.setItem(MOCK_INJECTION_ACTIVITY_CONFIRMATIONS_KEY, JSON.stringify(confirmations));
+}
+
+export async function getInjectionActivityConfirmations(date: string) {
+  if (shouldUseMockProductionApi()) {
+    const confirmations = readMockInjectionActivityConfirmations()
+      .filter((confirmation) => confirmation.business_date === date)
+      .sort((left, right) => left.machine_key.localeCompare(right.machine_key, "ko-KR", { numeric: true }));
+    return {
+      business_date: date,
+      latest_updated_at: confirmations.at(-1)?.updated_at ?? null,
+      confirmations,
+    } satisfies InjectionActivityConfirmationResponse;
+  }
+
+  const response = await http.get<InjectionActivityConfirmationResponse>(
+    `/production/injection-activity-confirmations/?date=${encodeURIComponent(date)}`,
+  );
+  return {
+    business_date: response.data?.business_date ?? date,
+    latest_updated_at: response.data?.latest_updated_at ?? null,
+    confirmations: asArray(response.data?.confirmations),
+  };
+}
+
+export async function saveInjectionActivityConfirmation(payload: SaveInjectionActivityConfirmationPayload) {
+  if (shouldUseMockProductionApi()) {
+    const confirmations = readMockInjectionActivityConfirmations();
+    const existingIndex = confirmations.findIndex((confirmation) => (
+      confirmation.business_date === payload.business_date && confirmation.machine_key === payload.machine_key
+    ));
+    const now = new Date().toISOString();
+    const normalized: InjectionActivityConfirmation = {
+      ...payload,
+      part_no: payload.part_no.trim().toUpperCase(),
+      id: existingIndex >= 0 ? confirmations[existingIndex].id : Date.now(),
+      confirmed_by_name: "superuser",
+      confirmed_at: now,
+      updated_at: now,
+    };
+    if (existingIndex >= 0) confirmations[existingIndex] = normalized;
+    else confirmations.push(normalized);
+    writeMockInjectionActivityConfirmations(confirmations);
+    return normalized;
+  }
+
+  const response = await http.post<InjectionActivityConfirmation>(
+    "/production/injection-activity-confirmations/",
+    { action: "confirm", ...payload },
+  );
+  return response.data;
+}
+
+export async function resetInjectionActivityConfirmation(businessDate: string, machineKey: string) {
+  if (shouldUseMockProductionApi()) {
+    const confirmations = readMockInjectionActivityConfirmations();
+    const next = confirmations.filter((confirmation) => !(
+      confirmation.business_date === businessDate && confirmation.machine_key === machineKey
+    ));
+    writeMockInjectionActivityConfirmations(next);
+    return { business_date: businessDate, machine_key: machineKey, deleted: next.length !== confirmations.length };
+  }
+
+  const response = await http.post<{ business_date: string; machine_key: string; deleted: boolean }>(
+    "/production/injection-activity-confirmations/",
+    { action: "reset", business_date: businessDate, machine_key: machineKey },
   );
   return response.data;
 }
