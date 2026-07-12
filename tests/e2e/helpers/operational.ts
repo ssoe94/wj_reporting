@@ -455,6 +455,48 @@ export async function installOperationalApiMocks(page: Page) {
     });
   });
 
+  await page.route('**/api/production/injection-downtime-confirmations/**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const requestedDate = requestUrl.searchParams.get('date') ?? date;
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: { business_date: requestedDate, latest_updated_at: null, confirmations: [] } });
+      return;
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      json: payload.action === 'reset'
+        ? { event_key: payload.event_key, deleted: true }
+        : {
+          id: 1,
+          ...payload,
+          confirmed_by_name: 'superuser',
+          confirmed_at: '2026-05-18T10:00:00+08:00',
+          updated_at: '2026-05-18T10:00:00+08:00',
+        },
+    });
+  });
+
+  await page.route('**/api/production/injection-activity-confirmations/**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const requestedDate = requestUrl.searchParams.get('date') ?? date;
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: { business_date: requestedDate, latest_updated_at: null, confirmations: [] } });
+      return;
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      json: payload.action === 'reset'
+        ? { business_date: payload.business_date, machine_key: payload.machine_key, deleted: true }
+        : {
+          id: 1,
+          ...payload,
+          confirmed_by_name: 'superuser',
+          confirmed_at: '2026-05-18T10:00:00+08:00',
+          updated_at: '2026-05-18T10:00:00+08:00',
+        },
+    });
+  });
+
   await page.route('**/api/production/plan-summary/**', async (route) => {
     const requestUrl = new URL(route.request().url());
     const requestedDate = requestUrl.searchParams.get('date') ?? date;

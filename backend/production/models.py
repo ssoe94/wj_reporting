@@ -2,6 +2,7 @@ import hashlib
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 class ProductionPlan(models.Model):
     """
@@ -157,6 +158,128 @@ class ProductionExecution(models.Model):
 
     def __str__(self):
         return f"{self.plan_date} - {self.machine_name} - {self.part_no or '-'}"
+
+
+class InjectionDowntimeConfirmation(models.Model):
+    """Human confirmation for an automatically detected injection downtime event."""
+
+    DETECTED_TYPE_CHOICES = [
+        ('mold_change', 'Mold change'),
+        ('core_change', 'Core change'),
+        ('tuning', 'Tuning'),
+        ('production_stop', 'Production stop'),
+    ]
+    RESOLUTION_CHOICES = [
+        ('confirmed', 'Confirmed downtime'),
+        ('dismissed', 'Not downtime'),
+    ]
+    REASON_CHOICES = [
+        ('mold_change', 'Mold change'),
+        ('core_change', 'Core change'),
+        ('tuning', 'Tuning'),
+        ('mechanical_failure', 'Machine failure'),
+        ('mold_issue', 'Mold issue'),
+        ('material_wait', 'Material wait'),
+        ('quality_check', 'Quality check'),
+        ('planned_stop', 'Planned stop'),
+        ('staffing', 'Staffing or shift change'),
+        ('other', 'Other'),
+        ('not_stop', 'Not downtime'),
+    ]
+
+    business_date = models.DateField(db_index=True)
+    event_key = models.CharField(max_length=160, unique=True)
+    machine_key = models.CharField(max_length=40, db_index=True)
+    machine_label = models.CharField(max_length=100)
+    detected_type = models.CharField(max_length=30, choices=DETECTED_TYPE_CHOICES)
+    detected_start = models.DateTimeField(db_index=True)
+    detected_end = models.DateTimeField()
+    duration_minutes = models.PositiveIntegerField(default=0)
+    resolution = models.CharField(max_length=20, choices=RESOLUTION_CHOICES, default='confirmed', db_index=True)
+    reason_code = models.CharField(max_length=40, choices=REASON_CHOICES)
+    note = models.TextField(blank=True, default='')
+    evidence = models.JSONField(default=dict, blank=True)
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='injection_downtime_confirmations',
+    )
+    confirmed_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-detected_start', '-id']
+        indexes = [
+            models.Index(fields=['business_date', 'resolution']),
+            models.Index(fields=['business_date', 'machine_key', 'detected_start']),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.event_key = (self.event_key or '').strip()
+        self.machine_key = (self.machine_key or '').strip()
+        self.machine_label = (self.machine_label or '').strip()
+        self.note = (self.note or '').strip()
+        self.duration_minutes = max(0, int(self.duration_minutes or 0))
+        if self.resolution == 'dismissed':
+            self.reason_code = 'not_stop'
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.business_date} {self.machine_label} {self.reason_code}"
+
+
+class InjectionActivityConfirmation(models.Model):
+    """Human classification for MES activity that has no matching production plan."""
+
+    ACTIVITY_TYPE_CHOICES = [
+        ('production', 'Production'),
+        ('test_shot', 'Test shot'),
+        ('mold_check', 'Mold check'),
+        ('machine_check', 'Machine check'),
+        ('maintenance', 'Maintenance'),
+        ('quality_check', 'Quality check'),
+        ('other', 'Other'),
+    ]
+
+    business_date = models.DateField(db_index=True)
+    machine_key = models.CharField(max_length=40, db_index=True)
+    machine_label = models.CharField(max_length=100)
+    activity_type = models.CharField(max_length=30, choices=ACTIVITY_TYPE_CHOICES)
+    part_no = models.CharField(max_length=100, blank=True, default='', db_index=True)
+    model_name = models.CharField(max_length=100, blank=True, default='')
+    shot_count = models.PositiveIntegerField(default=0)
+    last_shot_at = models.DateTimeField(null=True, blank=True)
+    note = models.TextField(blank=True, default='')
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='injection_activity_confirmations',
+    )
+    confirmed_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('business_date', 'machine_key')
+        ordering = ['business_date', 'machine_key']
+        indexes = [
+            models.Index(fields=['business_date', 'activity_type'], name='prod_act_bus_type_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.machine_key = (self.machine_key or '').strip()
+        self.machine_label = (self.machine_label or '').strip()
+        self.part_no = (self.part_no or '').strip().upper()
+        self.model_name = (self.model_name or '').strip()
+        self.note = (self.note or '').strip()
+        self.shot_count = max(0, int(self.shot_count or 0))
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.business_date} {self.machine_label} {self.activity_type}"
 
 
 class ProductionMesReportRecord(models.Model):

@@ -14,7 +14,15 @@ from .mes_progress import get_business_date, is_machining_progress_report, norma
 from .counter_utils import calculate_cumulative_counter_delta
 from .ai_context import build_context_pack
 from .ai_retrievers import get_daily_production_context, get_injection_summary, machine_monitoring_name
-from .models import MachiningManualReport, ProductionExecution, ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
+from .models import (
+    InjectionActivityConfirmation,
+    InjectionDowntimeConfirmation,
+    MachiningManualReport,
+    ProductionExecution,
+    ProductionMesReportRecord,
+    ProductionPartCavity,
+    ProductionPlan,
+)
 
 
 class CumulativeCounterDeltaTests(TestCase):
@@ -58,6 +66,207 @@ class MesProgressParsingTests(TestCase):
         self.assertTrue(is_machining_progress_report({'processCode': 'JG', 'processName': '加工'}))
         self.assertFalse(is_machining_progress_report({'processCode': 'JG', 'processName': '组装'}))
         self.assertFalse(is_machining_progress_report({'processCode': 'ZS', 'processName': '加工'}))
+
+
+class InjectionDowntimeConfirmationApiTests(DjangoTestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.editor = user_model.objects.create_user(
+            username='injection-manager',
+            password='test-password',
+            is_staff=True,
+        )
+        self.viewer = user_model.objects.create_user(
+            username='production-viewer',
+            password='test-password',
+        )
+        self.editor_client = APIClient()
+        self.editor_client.force_authenticate(self.editor)
+        self.viewer_client = APIClient()
+        self.viewer_client.force_authenticate(self.viewer)
+        self.payload = {
+            'business_date': '2026-07-11',
+            'event_key': '2026-07-11:5:29729082:gap',
+            'machine_key': '5',
+            'machine_label': '5호기 - 1400',
+            'detected_type': 'production_stop',
+            'detected_start': '2026-07-11T12:42:00+08:00',
+            'detected_end': '2026-07-11T12:56:00+08:00',
+            'duration_minutes': 999,
+            'resolution': 'confirmed',
+            'reason_code': 'mechanical_failure',
+            'note': '유압 경보 확인',
+            'evidence': {'target_part_no': 'ACQ30844711', 'produced_qty': 291, 'planned_qty': 1185},
+        }
+
+    def test_editor_can_confirm_and_all_authenticated_users_can_read(self):
+        create_response = self.editor_client.post(
+            '/api/production/injection-downtime-confirmations/',
+            self.payload,
+            format='json',
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()['duration_minutes'], 14)
+        self.assertEqual(create_response.json()['confirmed_by_name'], 'injection-manager')
+
+        read_response = self.viewer_client.get(
+            '/api/production/injection-downtime-confirmations/',
+            {'date': '2026-07-11'},
+        )
+
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(len(read_response.json()['confirmations']), 1)
+        self.assertEqual(read_response.json()['confirmations'][0]['reason_code'], 'mechanical_failure')
+
+    def test_editor_can_update_and_reset_a_confirmation(self):
+        self.editor_client.post(
+            '/api/production/injection-downtime-confirmations/',
+            self.payload,
+            format='json',
+        )
+        updated_payload = {**self.payload, 'resolution': 'dismissed', 'reason_code': 'mechanical_failure'}
+
+        update_response = self.editor_client.post(
+            '/api/production/injection-downtime-confirmations/',
+            updated_payload,
+            format='json',
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()['resolution'], 'dismissed')
+        self.assertEqual(update_response.json()['reason_code'], 'not_stop')
+
+        reset_response = self.editor_client.post(
+            '/api/production/injection-downtime-confirmations/',
+            {'action': 'reset', 'event_key': self.payload['event_key']},
+            format='json',
+        )
+
+        self.assertEqual(reset_response.status_code, 200)
+        self.assertTrue(reset_response.json()['deleted'])
+        self.assertFalse(InjectionDowntimeConfirmation.objects.exists())
+
+    def test_viewer_cannot_confirm_and_other_reason_requires_note(self):
+        forbidden_response = self.viewer_client.post(
+            '/api/production/injection-downtime-confirmations/',
+            self.payload,
+            format='json',
+        )
+        invalid_response = self.editor_client.post(
+            '/api/production/injection-downtime-confirmations/',
+            {**self.payload, 'reason_code': 'other', 'note': ''},
+            format='json',
+        )
+
+        self.assertEqual(forbidden_response.status_code, 403)
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertIn('note', invalid_response.json())
+
+    def test_confirmation_must_match_business_date_and_machine(self):
+        invalid_response = self.editor_client.post(
+            '/api/production/injection-downtime-confirmations/',
+            {**self.payload, 'event_key': '2026-07-10:6:29729082:gap'},
+            format='json',
+        )
+
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertIn('event_key', invalid_response.json())
+
+
+class InjectionActivityConfirmationApiTests(DjangoTestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.editor = user_model.objects.create_user(
+            username='activity-manager',
+            password='test-password',
+            is_staff=True,
+        )
+        self.viewer = user_model.objects.create_user(
+            username='activity-viewer',
+            password='test-password',
+        )
+        self.editor_client = APIClient()
+        self.editor_client.force_authenticate(self.editor)
+        self.viewer_client = APIClient()
+        self.viewer_client.force_authenticate(self.viewer)
+        self.payload = {
+            'business_date': '2026-07-11',
+            'machine_key': '3',
+            'machine_label': '3호기 - 1300',
+            'activity_type': 'production',
+            'part_no': ' acq30000001 ',
+            'model_name': 'TEST MODEL',
+            'shot_count': 181,
+            'last_shot_at': '2026-07-11T15:10:00+08:00',
+            'note': '현장 생산품 확인',
+        }
+
+    def test_editor_can_confirm_and_viewer_can_read_activity(self):
+        create_response = self.editor_client.post(
+            '/api/production/injection-activity-confirmations/',
+            self.payload,
+            format='json',
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.json()['part_no'], 'ACQ30000001')
+        self.assertEqual(create_response.json()['confirmed_by_name'], 'activity-manager')
+
+        read_response = self.viewer_client.get(
+            '/api/production/injection-activity-confirmations/',
+            {'date': '2026-07-11'},
+        )
+
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(len(read_response.json()['confirmations']), 1)
+        self.assertEqual(read_response.json()['confirmations'][0]['activity_type'], 'production')
+
+    def test_update_reset_permissions_and_required_fields(self):
+        self.editor_client.post(
+            '/api/production/injection-activity-confirmations/',
+            self.payload,
+            format='json',
+        )
+        update_response = self.editor_client.post(
+            '/api/production/injection-activity-confirmations/',
+            {
+                **self.payload,
+                'activity_type': 'mold_check',
+                'part_no': '',
+                'note': '금형 확인 형합',
+            },
+            format='json',
+        )
+        forbidden_response = self.viewer_client.post(
+            '/api/production/injection-activity-confirmations/',
+            self.payload,
+            format='json',
+        )
+        missing_part_response = self.editor_client.post(
+            '/api/production/injection-activity-confirmations/',
+            {**self.payload, 'part_no': ''},
+            format='json',
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()['activity_type'], 'mold_check')
+        self.assertEqual(forbidden_response.status_code, 403)
+        self.assertEqual(missing_part_response.status_code, 400)
+        self.assertIn('part_no', missing_part_response.json())
+
+        reset_response = self.editor_client.post(
+            '/api/production/injection-activity-confirmations/',
+            {
+                'action': 'reset',
+                'business_date': '2026-07-11',
+                'machine_key': '3',
+            },
+            format='json',
+        )
+        self.assertEqual(reset_response.status_code, 200)
+        self.assertTrue(reset_response.json()['deleted'])
+        self.assertFalse(InjectionActivityConfirmation.objects.exists())
 
 
 class MesProgressSyncCommandTests(DjangoTestCase):

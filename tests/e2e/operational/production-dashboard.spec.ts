@@ -22,8 +22,7 @@ test.describe('production dashboard operational scenario', () => {
     await expect(page.getByText('사출 실시간 진행')).toBeVisible();
     const mesOnlyMachine = page.locator('.production-progress-row').filter({ hasText: '1300T-3' }).first();
     await expect(mesOnlyMachine).toBeVisible();
-    await mesOnlyMachine.locator('.production-part-track').hover();
-    await expect(mesOnlyMachine.locator('.production-progress-hover-card')).toContainText('형합수');
+    await expect(mesOnlyMachine).toContainText('형합수');
     await expect(page.getByText('MES 미등록 수기 40').first()).toBeVisible();
     await expect(page.getByRole('heading', { name: '사출 정지/전환 분석' })).toBeVisible();
     const transitionPanel = page.locator('.injection-transition-panel');

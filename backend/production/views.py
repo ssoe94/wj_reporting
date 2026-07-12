@@ -10,13 +10,27 @@ import pandas as pd
 import pytz
 import re
 
-from .models import ProductionExecution, ProductionMesReportRecord, ProductionPlan, ProductionPlanChangeLog, ProductionPartCavity
+from .models import (
+    InjectionActivityConfirmation,
+    InjectionDowntimeConfirmation,
+    ProductionExecution,
+    ProductionMesReportRecord,
+    ProductionPlan,
+    ProductionPlanChangeLog,
+    ProductionPartCavity,
+)
 from injection.models import CycleTimeSetup, InjectionMonitoringRecord, PartSpec
 from assembly.models import AssemblyReport
 
 from django.db.models import Sum, Q, Max
 from django.db.utils import OperationalError, ProgrammingError, IntegrityError
-from .serializers import ProductionExecutionSerializer, ProductionPlanChangeLogSerializer, ProductionPlanSerializer
+from .serializers import (
+    InjectionActivityConfirmationSerializer,
+    InjectionDowntimeConfirmationSerializer,
+    ProductionExecutionSerializer,
+    ProductionPlanChangeLogSerializer,
+    ProductionPlanSerializer,
+)
 from .permissions import user_can_edit_plan, user_can_view_plan
 from .models import ProductionPlanPart
 from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
@@ -485,6 +499,118 @@ class ProductionPlanChangeLogView(APIView):
             'latest_updated_at': latest_updated_at.isoformat() if latest_updated_at else None,
             'logs': ProductionPlanChangeLogSerializer(logs, many=True).data,
         })
+
+
+class InjectionDowntimeConfirmationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        date_str = request.query_params.get('date')
+        target_date = parse_date(date_str or '')
+        if not target_date:
+            return Response({'detail': 'A valid date is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not user_can_view_plan(request.user, 'injection'):
+            raise PermissionDenied('You do not have permission to view injection downtime confirmations.')
+
+        confirmations = InjectionDowntimeConfirmation.objects.filter(
+            business_date=target_date,
+        ).select_related('confirmed_by')
+        latest_updated_at = confirmations.aggregate(latest=Max('updated_at'))['latest']
+        return Response({
+            'business_date': target_date.isoformat(),
+            'latest_updated_at': latest_updated_at.isoformat() if latest_updated_at else None,
+            'confirmations': InjectionDowntimeConfirmationSerializer(confirmations, many=True).data,
+        })
+
+    def post(self, request, *args, **kwargs):
+        if not user_can_edit_plan(request.user, 'injection'):
+            raise PermissionDenied('Injection edit permission is required.')
+
+        payload = request.data.copy()
+        action = payload.get('action', 'confirm')
+        payload.pop('action', None)
+        event_key = (payload.get('event_key') or '').strip()
+        if not event_key:
+            return Response({'detail': 'event_key is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if action == 'reset':
+            deleted_count, _ = InjectionDowntimeConfirmation.objects.filter(event_key=event_key).delete()
+            return Response({'event_key': event_key, 'deleted': deleted_count > 0})
+        if action != 'confirm':
+            return Response({'detail': 'Unsupported action.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        instance = InjectionDowntimeConfirmation.objects.filter(event_key=event_key).first()
+        serializer = InjectionDowntimeConfirmationSerializer(instance, data=payload)
+        serializer.is_valid(raise_exception=True)
+        confirmation = serializer.save(
+            confirmed_by=request.user,
+            confirmed_at=timezone.now(),
+        )
+        return Response(
+            InjectionDowntimeConfirmationSerializer(confirmation).data,
+            status=status.HTTP_200_OK if instance else status.HTTP_201_CREATED,
+        )
+
+
+class InjectionActivityConfirmationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        target_date = parse_date(request.query_params.get('date') or '')
+        if not target_date:
+            return Response({'detail': 'A valid date is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not user_can_view_plan(request.user, 'injection'):
+            raise PermissionDenied('You do not have permission to view injection activity confirmations.')
+
+        confirmations = InjectionActivityConfirmation.objects.filter(
+            business_date=target_date,
+        ).select_related('confirmed_by')
+        latest_updated_at = confirmations.aggregate(latest=Max('updated_at'))['latest']
+        return Response({
+            'business_date': target_date.isoformat(),
+            'latest_updated_at': latest_updated_at.isoformat() if latest_updated_at else None,
+            'confirmations': InjectionActivityConfirmationSerializer(confirmations, many=True).data,
+        })
+
+    def post(self, request, *args, **kwargs):
+        if not user_can_edit_plan(request.user, 'injection'):
+            raise PermissionDenied('Injection edit permission is required.')
+
+        payload = request.data.copy()
+        action = payload.pop('action', 'confirm')
+        target_date = parse_date(payload.get('business_date') or '')
+        machine_key = (payload.get('machine_key') or '').strip()
+        if not target_date or not machine_key:
+            return Response({'detail': 'business_date and machine_key are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if action == 'reset':
+            deleted_count, _ = InjectionActivityConfirmation.objects.filter(
+                business_date=target_date,
+                machine_key=machine_key,
+            ).delete()
+            return Response({
+                'business_date': target_date.isoformat(),
+                'machine_key': machine_key,
+                'deleted': deleted_count > 0,
+            })
+        if action != 'confirm':
+            return Response({'detail': 'Unsupported action.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        instance = InjectionActivityConfirmation.objects.filter(
+            business_date=target_date,
+            machine_key=machine_key,
+        ).first()
+        serializer = InjectionActivityConfirmationSerializer(instance, data=payload)
+        serializer.is_valid(raise_exception=True)
+        confirmation = serializer.save(
+            confirmed_by=request.user,
+            confirmed_at=timezone.now(),
+        )
+        return Response(
+            InjectionActivityConfirmationSerializer(confirmation).data,
+            status=status.HTTP_200_OK if instance else status.HTTP_201_CREATED,
+        )
+
 
 class ProductionDashboardView(APIView):
     """

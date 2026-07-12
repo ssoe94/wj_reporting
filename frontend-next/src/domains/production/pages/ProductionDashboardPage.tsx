@@ -13,10 +13,16 @@ import {
   createAiJob,
   getAiJob,
   getMachiningProvision,
+  getInjectionActivityConfirmations,
+  getInjectionDowntimeConfirmations,
   getProductionAiBriefing,
   getProductionMesReportStats,
   getProductionPlanSummary,
   getProductionStatus,
+  resetInjectionActivityConfirmation,
+  saveInjectionActivityConfirmation,
+  type InjectionActivityConfirmation,
+  type InjectionActivityType,
   type MachiningProvisionResponse,
   type MachiningProvisionRow,
   type ProductionMesReportStatsResponse,
@@ -25,6 +31,7 @@ import {
   type ProductionStatusResponse,
   type AiJob,
   type AiJobStatus,
+  type SaveInjectionActivityConfirmationPayload,
 } from "@/domains/production/api";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
 import {
@@ -88,6 +95,20 @@ type MachiningProgressPreview = {
 };
 
 type KpiDetailKey = "injection" | "machining" | "machines";
+
+type InjectionActivityConfirmationForm = {
+  activityType: InjectionActivityType | "";
+  partNo: string;
+  modelName: string;
+  note: string;
+};
+
+const EMPTY_INJECTION_ACTIVITY_CONFIRMATION_FORM: InjectionActivityConfirmationForm = {
+  activityType: "",
+  partNo: "",
+  modelName: "",
+  note: "",
+};
 
 type CumulativeTrendPoint = {
   key: string;
@@ -159,6 +180,18 @@ type MachineActivitySelection = {
   layerX: number;
   layerY: number;
   machineNumber?: number;
+};
+
+type MachineActivityHover = {
+  machineNumber: number;
+  machineLabel: string;
+  pct: number;
+  layerX: number;
+  layerY: number;
+  startLabel: string;
+  endLabel: string;
+  shots: number;
+  averageCycleTimeSec: number | null;
 };
 
 type ActivitySelectionSummary = {
@@ -265,6 +298,45 @@ const pageCopy = {
     actualEstimate: "추정 생산",
     shotCount: "형합수",
     running: "가동",
+    paused: "일시중지",
+    unplannedRunning: "무계획 가동",
+    activityReview: "활동 확인",
+    pausedCount: "일시중지",
+    reviewCount: "확인 필요",
+    baselineCycleTime: "기준 C/T",
+    noClampDuration: "무형합",
+    noPlan: "생산 계획 없음",
+    productConfirmationTitle: "생산 제품 확인 필요",
+    productConfirmationBody: "계획 없이 형합이 계속 들어오고 있습니다. 생산 중인 Part No.와 계획을 확인해 반영하세요.",
+    activityConfirmationTitle: "활동 내역 확인 필요",
+    activityConfirmationBody: "계획 없이 형합 이력이 있습니다. 시험 사출, 금형 점검 또는 실제 생산 여부를 MES에서 확인하세요.",
+    productInputAction: "제품/계획 입력",
+    activityCheckAction: "MES 활동 확인",
+    activityConfirmModalTitle: "설비 활동 확정",
+    activityConfirmModalBody: "계획에 없는 형합 이력을 분류해 다음 근무자가 같은 설비 상태를 바로 이해할 수 있게 합니다.",
+    activityType: "활동 구분",
+    activityTypePlaceholder: "활동을 선택하세요",
+    activityProduction: "실제 생산",
+    activityTestShot: "시험 사출",
+    activityMoldCheck: "금형 점검",
+    activityMachineCheck: "설비 점검",
+    activityMaintenance: "보전 작업",
+    activityQualityCheck: "품질 확인",
+    activityOther: "기타",
+    partNoLabel: "Part No.",
+    modelNameLabel: "모델명",
+    activityNotePlaceholder: "판정 근거나 교대 전달 사항을 입력하세요.",
+    activityPartRequired: "실제 생산이면 Part No.를 입력해야 합니다.",
+    activityOtherNoteRequired: "기타 활동의 내용을 비고에 입력해야 합니다.",
+    activitySave: "확정 저장",
+    activitySaving: "저장 중",
+    activitySaveError: "활동 확인 내용을 저장하지 못했습니다. 권한과 입력값을 확인하세요.",
+    activityReset: "확정 해제",
+    activityResetting: "해제 중",
+    activityConfirmed: "확인 완료",
+    activityEdit: "확인 내용 수정",
+    activityConfirmedBy: "확정자",
+    lastClamp: "최근 형합",
     gap: "차이",
     overrun: "초과 생산",
     overrunShort: "초과",
@@ -385,6 +457,45 @@ const pageCopy = {
     actualEstimate: "估算生产",
     shotCount: "合模数",
     running: "运行",
+    paused: "暂时停机",
+    unplannedRunning: "无计划运行",
+    activityReview: "活动待确认",
+    pausedCount: "暂时停机",
+    reviewCount: "待确认",
+    baselineCycleTime: "基准 C/T",
+    noClampDuration: "无合模",
+    noPlan: "无生产计划",
+    productConfirmationTitle: "需确认生产产品",
+    productConfirmationBody: "设备在无计划状态下持续产生合模记录。请确认正在生产的 Part No. 并补充计划。",
+    activityConfirmationTitle: "需确认设备活动",
+    activityConfirmationBody: "设备存在无计划合模记录。请在 MES 中确认是试模、模具检查还是实际生产。",
+    productInputAction: "录入产品/计划",
+    activityCheckAction: "确认 MES 活动",
+    activityConfirmModalTitle: "确认设备活动",
+    activityConfirmModalBody: "对计划外合模记录进行分类，便于下一班人员直接了解设备状态。",
+    activityType: "活动分类",
+    activityTypePlaceholder: "请选择活动",
+    activityProduction: "实际生产",
+    activityTestShot: "试模",
+    activityMoldCheck: "模具检查",
+    activityMachineCheck: "设备检查",
+    activityMaintenance: "维护作业",
+    activityQualityCheck: "品质确认",
+    activityOther: "其他",
+    partNoLabel: "Part No.",
+    modelNameLabel: "型号",
+    activityNotePlaceholder: "请输入判断依据或交班事项。",
+    activityPartRequired: "实际生产必须填写 Part No.。",
+    activityOtherNoteRequired: "其他活动必须在备注中填写内容。",
+    activitySave: "保存确认",
+    activitySaving: "保存中",
+    activitySaveError: "无法保存活动确认。请检查权限和输入内容。",
+    activityReset: "撤销确认",
+    activityResetting: "撤销中",
+    activityConfirmed: "已确认",
+    activityEdit: "修改确认内容",
+    activityConfirmedBy: "确认人",
+    lastClamp: "最近合模",
     gap: "差异",
     overrun: "超计划生产",
     overrunShort: "超出",
@@ -552,6 +663,9 @@ const activitySelectionCopy = {
     noSelection: "선택 구간에 생산 기록 없음",
     dragHint: "드래그로 구간 분석",
     selectionFocus: "구간 분석",
+    rollingCycleTime: "직전 60분 평균 C/T",
+    noCycleTime: "직전 60분 형합 기록 없음",
+    cycleTimeSeconds: "초",
   },
   zh: {
     range: "选择区间",
@@ -565,6 +679,9 @@ const activitySelectionCopy = {
     noSelection: "所选区间无生产记录",
     dragHint: "拖拽分析区间",
     selectionFocus: "区间分析",
+    rollingCycleTime: "前60分钟平均 C/T",
+    noCycleTime: "前60分钟无合模记录",
+    cycleTimeSeconds: "秒",
   },
 } satisfies Record<AppLanguage, Record<string, string>>;
 
@@ -576,7 +693,9 @@ const INJECTION_MACHINE_TOTAL = 17;
 const MACHINE_UTILIZATION_BUCKET_MINUTES = 5;
 const MACHINE_ACTIVITY_DETAIL_RETENTION_DAYS = 7;
 const MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_MINUTES = 6;
-const MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_PCT = (MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_MINUTES / (24 * 60)) * 100;
+const MACHINE_ACTIVITY_CT_COMPARISON_WINDOW_MINUTES = 60;
+const MACHINE_ACTIVITY_CT_CONTINUITY_RATIO = 1.35;
+const MACHINE_ACTIVITY_CT_MAX_BRIDGE_MINUTES = 15;
 const UTILIZATION_CHART_TOP_Y = 4;
 const UTILIZATION_CHART_BOTTOM_Y = 54;
 const ACTIVITY_PART_SEQUENCE_HUES = [154, 170, 188, 206, 224, 42];
@@ -972,6 +1091,12 @@ function formatTimeLabel(value: Date) {
   return `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
 }
 
+function formatOptionalTimeLabel(value: string | null | undefined) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "-" : formatTimeLabel(parsed);
+}
+
 function formatHoursFromMinutes(minutes: number) {
   if (minutes <= 0) return "0h";
   const hours = Math.floor(minutes / 60);
@@ -1169,6 +1294,131 @@ function buildMachiningCumulativeTrend(
   };
 }
 
+function summarizeActivityCycleTime(
+  slots: MachineActivitySlot[],
+  startTime: Date,
+  endTime: Date,
+) {
+  const startMs = startTime.getTime();
+  const endMs = endTime.getTime();
+  if (endMs <= startMs) {
+    return {
+      shots: 0,
+      averageCycleTimeSec: null as number | null,
+      windowMinutes: 0,
+    };
+  }
+
+  let shots = 0;
+  slots.forEach((slot) => {
+    const slotStartMs = slot.slotTime.getTime();
+    const slotEndMs = slot.slotEnd.getTime();
+    const slotDurationMs = slotEndMs - slotStartMs;
+    if (slotDurationMs <= 0 || slot.output <= 0) return;
+
+    const overlapMs = Math.min(slotEndMs, endMs) - Math.max(slotStartMs, startMs);
+    if (overlapMs <= 0) return;
+    shots += slot.output * Math.min(1, overlapMs / slotDurationMs);
+  });
+
+  const elapsedSeconds = (endMs - startMs) / 1000;
+  return {
+    shots,
+    averageCycleTimeSec: shots > 0 ? elapsedSeconds / shots : null,
+    windowMinutes: elapsedSeconds / 60,
+  };
+}
+
+function getCycleTimeBridgeLimit(
+  summary: ReturnType<typeof summarizeActivityCycleTime>,
+  adjacentIntervalMinutes: number,
+  fallbackBridgeMinutes: number,
+) {
+  if (!isReliableCycleTimeSummary(summary)) {
+    return fallbackBridgeMinutes;
+  }
+
+  return Math.min(
+    MACHINE_ACTIVITY_CT_MAX_BRIDGE_MINUTES,
+    Math.max(
+      fallbackBridgeMinutes,
+      ((summary.averageCycleTimeSec ?? 0) * 2.5) / 60 + adjacentIntervalMinutes,
+    ),
+  );
+}
+
+function isReliableCycleTimeSummary(
+  summary: ReturnType<typeof summarizeActivityCycleTime>,
+) {
+  return summary.averageCycleTimeSec !== null && summary.shots >= 3 && summary.windowMinutes >= 10;
+}
+
+function isContinuousCycleTimeGap(
+  slots: MachineActivitySlot[],
+  previousIndex: number,
+  nextIndex: number,
+  gapMinutes: number,
+  fallbackBridgeMinutes: number,
+) {
+  const previousSlot = slots[previousIndex];
+  const nextSlot = slots[nextIndex];
+  if (!previousSlot?.active || !nextSlot?.active || gapMinutes <= 0) return false;
+
+  const availableStart = slots[0]?.slotTime;
+  const availableEnd = slots.at(-1)?.slotEnd;
+  if (!availableStart || !availableEnd) return gapMinutes <= fallbackBridgeMinutes;
+
+  const windowMs = MACHINE_ACTIVITY_CT_COMPARISON_WINDOW_MINUTES * 60 * 1000;
+  const beforeEnd = previousSlot.slotEnd;
+  const beforeStart = new Date(Math.max(availableStart.getTime(), beforeEnd.getTime() - windowMs));
+  const afterStart = nextSlot.slotTime;
+  const afterEnd = new Date(Math.min(availableEnd.getTime(), afterStart.getTime() + windowMs));
+  const before = summarizeActivityCycleTime(slots, beforeStart, beforeEnd);
+  const after = summarizeActivityCycleTime(slots, afterStart, afterEnd);
+  const adjacentIntervalMinutes = Math.max(previousSlot.intervalMinutes, nextSlot.intervalMinutes);
+  const beforeLimit = getCycleTimeBridgeLimit(before, adjacentIntervalMinutes, fallbackBridgeMinutes);
+  const afterLimit = getCycleTimeBridgeLimit(after, adjacentIntervalMinutes, fallbackBridgeMinutes);
+  const beforeReliable = isReliableCycleTimeSummary(before);
+  const afterReliable = isReliableCycleTimeSummary(after);
+
+  if (
+    beforeReliable &&
+    afterReliable &&
+    before.averageCycleTimeSec !== null &&
+    after.averageCycleTimeSec !== null
+  ) {
+    const slowerCycleTime = Math.max(before.averageCycleTimeSec, after.averageCycleTimeSec);
+    const fasterCycleTime = Math.min(before.averageCycleTimeSec, after.averageCycleTimeSec);
+    const cycleTimeRatio = slowerCycleTime / Math.max(0.1, fasterCycleTime);
+    if (cycleTimeRatio > MACHINE_ACTIVITY_CT_CONTINUITY_RATIO) return false;
+  }
+
+  const maxBridgeMinutes = Math.max(beforeLimit, afterLimit);
+  return gapMinutes <= maxBridgeMinutes;
+}
+
+function isExpectedCycleTimeTail(
+  slots: MachineActivitySlot[],
+  previousIndex: number,
+  idleMinutes: number,
+  fallbackBridgeMinutes: number,
+) {
+  const previousSlot = slots[previousIndex];
+  const availableStart = slots[0]?.slotTime;
+  if (!previousSlot?.active || !availableStart || idleMinutes <= 0) return false;
+
+  const windowMs = MACHINE_ACTIVITY_CT_COMPARISON_WINDOW_MINUTES * 60 * 1000;
+  const windowEnd = previousSlot.slotEnd;
+  const windowStart = new Date(Math.max(availableStart.getTime(), windowEnd.getTime() - windowMs));
+  const summary = summarizeActivityCycleTime(slots, windowStart, windowEnd);
+  const bridgeLimit = getCycleTimeBridgeLimit(
+    summary,
+    previousSlot.intervalMinutes,
+    fallbackBridgeMinutes,
+  );
+  return idleMinutes <= bridgeLimit;
+}
+
 function bridgeShortInactiveActivitySlots(
   slots: MachineActivitySlot[],
   maxBridgeMinutes = MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_MINUTES,
@@ -1198,7 +1448,30 @@ function bridgeShortInactiveActivitySlots(
         Math.abs(nextSlot.slotTime.getTime() - bridgedSlots[runEnd - 1].slotEnd.getTime()) < 1000
       : false;
 
-    if (isBoundedByProduction && isTimeContinuous && idleMinutes <= maxBridgeMinutes) {
+    const hasContinuousCycleTime = nextSlot
+      ? isContinuousCycleTimeGap(
+        bridgedSlots,
+        runStart - 1,
+        runEnd,
+        idleMinutes,
+        maxBridgeMinutes,
+      )
+      : isExpectedCycleTimeTail(
+        bridgedSlots,
+        runStart - 1,
+        idleMinutes,
+        maxBridgeMinutes,
+      );
+
+    const isTrailingContinuous = Boolean(
+      previousSlot?.active &&
+      !nextSlot &&
+      Math.abs(bridgedSlots[runStart].slotTime.getTime() - previousSlot.slotEnd.getTime()) < 1000 &&
+      bridgedSlots.slice(runStart + 1, runEnd).every((slot, index) => (
+        Math.abs(slot.slotTime.getTime() - bridgedSlots[runStart + index].slotEnd.getTime()) < 1000
+      )),
+    );
+    if ((isBoundedByProduction && isTimeContinuous || isTrailingContinuous) && hasContinuousCycleTime) {
       for (let index = runStart; index < runEnd; index += 1) {
         bridgedSlots[index].displayActive = true;
       }
@@ -1276,8 +1549,30 @@ function buildMachineActivityRows(
     const displaySlots = applyAdjacentPartFieldsToDisplaySlots(useRollupDensity
       ? rawSlots
       : bridgeShortInactiveActivitySlots(rawSlots));
+    const bridgeableGapBefore = new Set<number>();
 
-    displaySlots.forEach((slot) => {
+    if (!useRollupDensity) {
+      for (let slotIndex = 1; slotIndex < displaySlots.length; slotIndex += 1) {
+        const previousSlot = displaySlots[slotIndex - 1];
+        const currentSlot = displaySlots[slotIndex];
+        const gapMinutes = (currentSlot.slotTime.getTime() - previousSlot.slotEnd.getTime()) / (60 * 1000);
+        if (
+          previousSlot.displayActive &&
+          currentSlot.displayActive &&
+          isContinuousCycleTimeGap(
+            displaySlots,
+            slotIndex - 1,
+            slotIndex,
+            gapMinutes,
+            MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_MINUTES,
+          )
+        ) {
+          bridgeableGapBefore.add(slotIndex);
+        }
+      }
+    }
+
+    displaySlots.forEach((slot, displaySlotIndex) => {
       const startPct = clampPercent(((slot.slotTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100);
       const widthPct = Math.max(0.1, clampPercent(((slot.slotEnd.getTime() - slot.slotTime.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100));
       const displayActive = slot.displayActive;
@@ -1285,17 +1580,19 @@ function buildMachineActivityRows(
         ? (useRollupDensity ? Math.min(1, Math.max(0.22, 0.22 + (slot.output / maxSegmentOutput) * 0.78)) : 0.88)
         : undefined;
       output += slot.output;
-      if (slot.active) activeMinutes += slot.intervalMinutes;
+      if (displayActive) {
+        activeMinutes += Math.max(0, (slot.slotEnd.getTime() - slot.slotTime.getTime()) / (60 * 1000));
+      }
+      if (bridgeableGapBefore.has(displaySlotIndex)) {
+        const previousSlot = displaySlots[displaySlotIndex - 1];
+        activeMinutes += Math.max(0, (slot.slotTime.getTime() - previousSlot.slotEnd.getTime()) / (60 * 1000));
+      }
 
       const previous = segments.at(-1);
       const previousEndPct = previous ? previous.startPct + previous.widthPct : 0;
       const gapPct = startPct - previousEndPct;
       const contiguous = previous && Math.abs(gapPct) < 0.08;
-      const bridgeableDisplayGap = !useRollupDensity &&
-        previous?.active &&
-        displayActive &&
-        gapPct > 0 &&
-        gapPct <= MACHINE_ACTIVITY_DISPLAY_IDLE_BRIDGE_PCT;
+      const bridgeableDisplayGap = bridgeableGapBefore.has(displaySlotIndex);
       const matchingDensity = !useRollupDensity || !displayActive || Math.abs((previous?.density ?? 0) - (density ?? 0)) < 0.03;
       const matchingPartVisual = !displayActive || (
         previous?.partFamily === slot.partFamily &&
@@ -1857,7 +2154,7 @@ function buildProductionBriefContext(
   const machiningPlanQty = Number(machiningProvision?.summary?.total_planned ?? sumPlannedQuantity(planSummary, "machining", businessDate));
   const actualMachiningOutput = Number(machiningProvision?.summary?.effective_actual_qty ?? machiningStats?.summary?.total_mes ?? 0);
   const activeMachineCount = machineOutputs.filter((item) => item.output > 0).length;
-  const runningMachineCount = machineOutputs.filter((item) => item.recentOutput > 0).length;
+  const runningMachineCount = realtimeSummary.rows.filter((row) => row.isRunning).length;
   const sortedActiveMachines = actualMachineOutputs
     .filter((item) => item.output > 0)
     .sort((a, b) => b.output - a.output);
@@ -2444,9 +2741,15 @@ export function ProductionDashboardPage() {
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
   const [activeAiJobId, setActiveAiJobId] = useState<number | null>(null);
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
+  const [selectedActivityRow, setSelectedActivityRow] = useState<RealtimeProgressRow | null>(null);
+  const [activityConfirmationForm, setActivityConfirmationForm] = useState<InjectionActivityConfirmationForm>({
+    ...EMPTY_INJECTION_ACTIVITY_CONFIRMATION_FORM,
+  });
+  const [activityConfirmationError, setActivityConfirmationError] = useState<string | null>(null);
   const [selectedMachiningRow, setSelectedMachiningRow] = useState<MachiningProvisionRow | null>(null);
   const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailKey | null>(null);
   const [activitySelection, setActivitySelection] = useState<MachineActivitySelection | null>(null);
+  const [activityHover, setActivityHover] = useState<MachineActivityHover | null>(null);
   const suppressNextActivityPointerRef = useRef(false);
   const [manualForm, setManualForm] = useState({
     goodQty: "",
@@ -2479,6 +2782,18 @@ export function ProductionDashboardPage() {
     queryKey: ["production-status", businessDate],
     queryFn: () => getProductionStatus(businessDate),
     refetchInterval: liveDataRefetchInterval,
+  });
+  const downtimeConfirmationsQuery = useQuery({
+    queryKey: ["production", "injection-downtime-confirmations", businessDate],
+    queryFn: () => getInjectionDowntimeConfirmations(businessDate),
+    refetchInterval: liveDataRefetchInterval,
+    retry: false,
+  });
+  const activityConfirmationsQuery = useQuery({
+    queryKey: ["production", "injection-activity-confirmations", businessDate],
+    queryFn: () => getInjectionActivityConfirmations(businessDate),
+    refetchInterval: liveDataRefetchInterval,
+    retry: false,
   });
   const machiningStatsQuery = useQuery({
     queryKey: ["production-mes-report-stats", "machining", businessDate],
@@ -2560,6 +2875,26 @@ export function ProductionDashboardPage() {
       setSelectedMachiningRow(null);
     },
   });
+  const saveActivityConfirmationMutation = useMutation({
+    mutationFn: (payload: SaveInjectionActivityConfirmationPayload) => saveInjectionActivityConfirmation(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["production", "injection-activity-confirmations", businessDate] });
+      setSelectedActivityRow(null);
+      setActivityConfirmationError(null);
+    },
+    onError: () => setActivityConfirmationError(copy.activitySaveError),
+  });
+  const resetActivityConfirmationMutation = useMutation({
+    mutationFn: ({ targetDate, machineKey }: { targetDate: string; machineKey: string }) => (
+      resetInjectionActivityConfirmation(targetDate, machineKey)
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["production", "injection-activity-confirmations", businessDate] });
+      setSelectedActivityRow(null);
+      setActivityConfirmationError(null);
+    },
+    onError: () => setActivityConfirmationError(copy.activitySaveError),
+  });
 
   const transitionAnalysis = useMemo(
     () => buildInjectionTransitionAnalysis(
@@ -2590,6 +2925,28 @@ export function ProductionDashboardPage() {
     () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data, businessDate, transitionAnalysis),
     [businessDate, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
   );
+  const activityConfirmationByMachine = useMemo(
+    () => new Map(
+      (activityConfirmationsQuery.data?.confirmations ?? []).map((confirmation) => [confirmation.machine_key, confirmation]),
+    ),
+    [activityConfirmationsQuery.data?.confirmations],
+  );
+  const activityTypeOptions = useMemo<Array<{ value: InjectionActivityType; label: string }>>(() => [
+    { value: "production", label: copy.activityProduction },
+    { value: "test_shot", label: copy.activityTestShot },
+    { value: "mold_check", label: copy.activityMoldCheck },
+    { value: "machine_check", label: copy.activityMachineCheck },
+    { value: "maintenance", label: copy.activityMaintenance },
+    { value: "quality_check", label: copy.activityQualityCheck },
+    { value: "other", label: copy.activityOther },
+  ], [copy]);
+  const unresolvedActivityReviewCount = useMemo(
+    () => realtimeProgress.rows.filter((row) => !row.hasPlan && !activityConfirmationByMachine.has(row.key)).length,
+    [activityConfirmationByMachine, realtimeProgress.rows],
+  );
+  const selectedActivityConfirmation = selectedActivityRow
+    ? activityConfirmationByMachine.get(selectedActivityRow.key)
+    : undefined;
   const machiningProgress = useMemo(
     () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),
     [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
@@ -2626,6 +2983,9 @@ export function ProductionDashboardPage() {
 
   useEffect(() => {
     setActivitySelection(null);
+    setActivityHover(null);
+    setSelectedActivityRow(null);
+    setActivityConfirmationError(null);
   }, [businessDate, language]);
 
   function submitAiQuestion(event: FormEvent<HTMLFormElement>) {
@@ -2798,6 +3158,7 @@ export function ProductionDashboardPage() {
     machineNumber?: number,
   ) {
     if (event.button !== 0) return;
+    setActivityHover(null);
     if (suppressNextActivityPointerRef.current) {
       suppressNextActivityPointerRef.current = false;
       return;
@@ -2813,6 +3174,37 @@ export function ProductionDashboardPage() {
       endPct: pct,
       isDragging: true,
       ...layerPoint,
+    });
+  }
+
+  function updateActivityCycleTimeHover(
+    event: ReactPointerEvent<HTMLElement>,
+    row: MachineActivityRow,
+  ) {
+    if (activitySelection) return;
+    const pct = getActivityPointerPercent(event);
+    const businessStart = getBusinessDayStart(businessDate);
+    const businessEnd = getBusinessDayEnd(businessDate);
+    const businessDurationMs = businessEnd.getTime() - businessStart.getTime();
+    const endTime = new Date(businessStart.getTime() + businessDurationMs * (pct / 100));
+    const startTime = new Date(Math.max(
+      businessStart.getTime(),
+      endTime.getTime() - MACHINE_ACTIVITY_CT_COMPARISON_WINDOW_MINUTES * 60 * 1000,
+    ));
+    const summary = summarizeActivityCycleTime(row.slots, startTime, endTime);
+    const tooltipHalfWidth = 132;
+    const margin = 12;
+
+    setActivityHover({
+      machineNumber: row.machineNumber,
+      machineLabel: row.label,
+      pct,
+      layerX: Math.max(tooltipHalfWidth + margin, Math.min(window.innerWidth - tooltipHalfWidth - margin, event.clientX)),
+      layerY: Math.max(96, event.clientY - 12),
+      startLabel: formatTimeLabel(startTime),
+      endLabel: formatTimeLabel(endTime),
+      shots: summary.shots,
+      averageCycleTimeSec: summary.averageCycleTimeSec,
     });
   }
 
@@ -3145,77 +3537,209 @@ export function ProductionDashboardPage() {
     );
   }
 
+  function getActivityTypeLabel(activityType: InjectionActivityType) {
+    return activityTypeOptions.find((option) => option.value === activityType)?.label ?? activityType;
+  }
+
+  function getActivityConfirmationSummary(confirmation: InjectionActivityConfirmation) {
+    const confirmedAt = new Date(confirmation.confirmed_at);
+    const details = [
+      confirmation.part_no,
+      confirmation.model_name,
+      confirmation.note,
+      confirmation.confirmed_by_name
+        ? `${copy.activityConfirmedBy} ${confirmation.confirmed_by_name}${Number.isNaN(confirmedAt.getTime()) ? "" : ` ${formatTimeLabel(confirmedAt)}`}`
+        : "",
+    ].filter(Boolean);
+    return details.join(" · ") || copy.activityConfirmed;
+  }
+
+  function openActivityConfirmation(row: RealtimeProgressRow) {
+    const confirmation = activityConfirmationByMachine.get(row.key);
+    setSelectedActivityRow(row);
+    setActivityConfirmationForm(confirmation ? {
+      activityType: confirmation.activity_type,
+      partNo: confirmation.part_no,
+      modelName: confirmation.model_name,
+      note: confirmation.note,
+    } : {
+      ...EMPTY_INJECTION_ACTIVITY_CONFIRMATION_FORM,
+      activityType: row.equipmentState === "unplanned_running" ? "production" : "",
+    });
+    setActivityConfirmationError(null);
+  }
+
+  function closeActivityConfirmation() {
+    if (saveActivityConfirmationMutation.isPending || resetActivityConfirmationMutation.isPending) return;
+    setSelectedActivityRow(null);
+    setActivityConfirmationError(null);
+  }
+
+  function handleActivityConfirmationSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedActivityRow) return;
+    const activityType = activityConfirmationForm.activityType;
+    const partNo = activityConfirmationForm.partNo.trim();
+    const note = activityConfirmationForm.note.trim();
+    if (!activityType) {
+      setActivityConfirmationError(copy.activityTypePlaceholder);
+      return;
+    }
+    if (activityType === "production" && !partNo) {
+      setActivityConfirmationError(copy.activityPartRequired);
+      return;
+    }
+    if (activityType === "other" && !note) {
+      setActivityConfirmationError(copy.activityOtherNoteRequired);
+      return;
+    }
+
+    setActivityConfirmationError(null);
+    saveActivityConfirmationMutation.mutate({
+      business_date: businessDate,
+      machine_key: selectedActivityRow.key,
+      machine_label: selectedActivityRow.label,
+      activity_type: activityType,
+      part_no: partNo,
+      model_name: activityConfirmationForm.modelName.trim(),
+      shot_count: selectedActivityRow.shotCount,
+      last_shot_at: selectedActivityRow.lastShotAt,
+      note,
+    });
+  }
+
+  function handleActivityConfirmationReset() {
+    if (!selectedActivityRow) return;
+    resetActivityConfirmationMutation.mutate({
+      targetDate: businessDate,
+      machineKey: selectedActivityRow.key,
+    });
+  }
+
   function renderProgressRow(row: RealtimeProgressRow) {
     const progress = Math.max(0, Math.min(100, row.progressRate));
     const progressText = getProgressText(row.progressRate);
     const currentSegment = row.segments.find((segment) => segment.status === "in_progress");
     const displaySegments = getDisplaySegments(row.segments);
     const displayLabel = getLocalizedMachineLabel(row.label, language);
+    const isReviewRow = !row.hasPlan;
+    const activityConfirmation = isReviewRow ? activityConfirmationByMachine.get(row.key) : undefined;
+    const statusLabel = activityConfirmation
+      ? copy.activityConfirmed
+      : row.equipmentState === "running"
+      ? copy.running
+      : row.equipmentState === "paused"
+        ? copy.paused
+        : row.equipmentState === "unplanned_running"
+          ? copy.unplannedRunning
+          : row.equipmentState === "activity_review"
+            ? copy.activityReview
+            : "-";
+    const statusClass = [
+      "production-progress-status",
+      row.equipmentState === "running" ? "production-progress-status--running" : "",
+      row.equipmentState === "paused" ? "production-progress-status--paused" : "",
+      isReviewRow && !activityConfirmation ? "production-progress-status--review" : "",
+      activityConfirmation ? "production-progress-status--confirmed" : "",
+    ].filter(Boolean).join(" ");
+    const reviewIsRunning = row.equipmentState === "unplanned_running";
+    const reviewTitle = activityConfirmation
+      ? `${copy.activityConfirmed} · ${getActivityTypeLabel(activityConfirmation.activity_type)}`
+      : reviewIsRunning ? copy.productConfirmationTitle : copy.activityConfirmationTitle;
+    const reviewBody = activityConfirmation
+      ? getActivityConfirmationSummary(activityConfirmation)
+      : reviewIsRunning ? copy.productConfirmationBody : copy.activityConfirmationBody;
 
     return (
-      <article className="production-progress-row" key={row.key}>
+      <article className={`production-progress-row${row.equipmentState === "paused" ? " production-progress-row--paused" : ""}${isReviewRow && !activityConfirmation ? " production-progress-row--review" : ""}${activityConfirmation ? " production-progress-row--confirmed" : ""}`} key={row.key}>
         <div className="production-progress-row__head">
           <div className="production-progress-row__identity">
             <div className="production-progress-row__title">
               <strong>{displayLabel}</strong>
-              <button
-                aria-label={`${displayLabel} ${copy.detail}`}
-                className="production-progress-detail-button"
-                onClick={() => setSelectedProgressRow(row)}
-                type="button"
-              >
-                {copy.detail}
-              </button>
+              {row.hasPlan ? (
+                <button
+                  aria-label={`${displayLabel} ${copy.detail}`}
+                  className="production-progress-detail-button"
+                  onClick={() => setSelectedProgressRow(row)}
+                  type="button"
+                >
+                  {copy.detail}
+                </button>
+              ) : null}
             </div>
-            <span>{currentSegment ? `${copy.currentPart} ${currentSegment.partNo}` : copy.partProgress}</span>
-          </div>
-          <div className="production-progress-row__state">
-            <span>{progressText}</span>
-            <em className={row.isRunning ? "production-progress-status production-progress-status--running" : "production-progress-status"}>
-              {row.isRunning ? copy.running : "-"}
-            </em>
-          </div>
-        </div>
-        <div className="production-progress-track-wrap">
-          <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${displayLabel} ${progressText}`}>
-            {displaySegments.length ? displaySegments.map((segment) => renderProgressSegment(segment, row)) : (
-              <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
-                <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
-              </span>
-            )}
-            {row.gapQty > 0 ? (
-              <span
-                className="production-part-overrun"
-                style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
-              >
-                <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
-              </span>
+            <span>
+              {isReviewRow
+                ? `${copy.noPlan} · ${copy.shotCount} ${formatNumber(row.shotCount)}`
+                : currentSegment
+                  ? `${copy.currentPart} ${currentSegment.partNo}`
+                  : copy.partProgress}
+            </span>
+            {row.equipmentState === "paused" ? (
+              <small className="production-progress-row__diagnostic">
+                {copy.noClampDuration} {formatNumber(Math.max(0, Math.round(row.idleMinutes ?? 0)))}m
+                {row.expectedCycleTimeSec !== null ? ` · ${copy.baselineCycleTime} ${row.expectedCycleTimeSec.toFixed(1)}s` : ""}
+              </small>
             ) : null}
           </div>
-          {renderProgressHoverCard({
-            label: displayLabel,
-            progressText,
-            actualLabel: copy.estimatedVsPlan,
-            actualQty: row.estimatedQty,
-            plannedQty: row.plannedQty,
-            gapQty: row.gapQty,
-            completedCount: row.completedCount,
-            inProgressCount: row.inProgressCount,
-            pendingCount: row.pendingCount,
-            currentPart: currentSegment?.partNo,
-            shotCount: row.shotCount,
-            recentShots: row.recentShots,
-            avgCavity: row.avgCavity,
-            showInjectionMetrics: true,
-            segments: row.segments,
-          })}
+          <div className="production-progress-row__state">
+            <span>{isReviewRow ? `${copy.shotCount} ${formatNumber(row.shotCount)}` : progressText}</span>
+            <em className={statusClass}>{statusLabel}</em>
+          </div>
         </div>
-        <div className="production-progress-state-strip">
-          <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {row.completedCount}</span>
-          <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {row.inProgressCount}</span>
-          <span className="production-progress-chip">{copy.pending} {row.pendingCount}</span>
-          {renderOverrunChip(row.gapQty, row.plannedQty)}
-        </div>
+        {isReviewRow ? (
+          <div className={`production-progress-review-callout${activityConfirmation ? " production-progress-review-callout--confirmed" : ""}`}>
+            <div>
+              <strong>{reviewTitle}</strong>
+              <span>{reviewBody}</span>
+            </div>
+            <button className="production-progress-review-action" onClick={() => openActivityConfirmation(row)} type="button">
+              {activityConfirmation ? copy.activityEdit : reviewIsRunning ? copy.productInputAction : copy.activityCheckAction}
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="production-progress-track-wrap">
+              <div className={`production-part-track${row.gapQty > 0 ? " production-part-track--overrun" : ""}`} aria-label={`${displayLabel} ${progressText}`}>
+                {displaySegments.length ? displaySegments.map((segment) => renderProgressSegment(segment, row)) : (
+                  <span className="production-part-segment production-part-segment--pending" style={{ flexBasis: 0, flexGrow: 1 }}>
+                    <span className="production-part-segment__fill" style={{ width: `${progress}%` }} />
+                  </span>
+                )}
+                {row.gapQty > 0 ? (
+                  <span
+                    className="production-part-overrun"
+                    style={{ flexBasis: 0, flexGrow: Math.max(row.gapQty, 1) }}
+                  >
+                    <em>{getOverrunLabel(row.gapQty, row.plannedQty)}</em>
+                  </span>
+                ) : null}
+              </div>
+              {renderProgressHoverCard({
+                label: displayLabel,
+                progressText,
+                actualLabel: copy.estimatedVsPlan,
+                actualQty: row.estimatedQty,
+                plannedQty: row.plannedQty,
+                gapQty: row.gapQty,
+                completedCount: row.completedCount,
+                inProgressCount: row.inProgressCount,
+                pendingCount: row.pendingCount,
+                currentPart: currentSegment?.partNo,
+                shotCount: row.shotCount,
+                recentShots: row.recentShots,
+                avgCavity: row.avgCavity,
+                showInjectionMetrics: true,
+                segments: row.segments,
+              })}
+            </div>
+            <div className="production-progress-state-strip">
+              <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {row.completedCount}</span>
+              <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {row.inProgressCount}</span>
+              <span className="production-progress-chip">{copy.pending} {row.pendingCount}</span>
+              {renderOverrunChip(row.gapQty, row.plannedQty)}
+            </div>
+          </>
+        )}
       </article>
     );
   }
@@ -3689,9 +4213,15 @@ export function ProductionDashboardPage() {
                 <div
                   className="production-machine-activity__track"
                   onPointerDown={(event) => beginActivitySelection("timeline", event, row.machineNumber)}
-                  onPointerMove={(event) => moveActivitySelection("timeline", event, row.machineNumber)}
+                  onPointerMove={(event) => {
+                    updateActivityCycleTimeHover(event, row);
+                    moveActivitySelection("timeline", event, row.machineNumber);
+                  }}
                   onPointerUp={(event) => endActivitySelection("timeline", event, row.machineNumber)}
                   onPointerCancel={(event) => endActivitySelection("timeline", event, row.machineNumber)}
+                  onPointerLeave={() => {
+                    if (!activitySelection?.isDragging) setActivityHover(null);
+                  }}
                 >
                   {row.segments.length ? row.segments.map((segment) => (
                     <i
@@ -3710,12 +4240,34 @@ export function ProductionDashboardPage() {
                   )) : (
                     <i className="production-machine-activity__segment production-machine-activity__segment--empty" style={{ left: "0%", width: "100%" }} />
                   )}
+                  {activityHover?.machineNumber === row.machineNumber && !activitySelection ? (
+                    <span
+                      aria-hidden="true"
+                      className="production-machine-activity__ct-cursor"
+                      style={{ left: `${activityHover.pct}%` }}
+                    />
+                  ) : null}
                   {renderActivitySelectionOverlays("timeline", row.machineNumber)}
                 </div>
               </article>
             );
           })}
         </div>
+        {activityHover && !activitySelection ? (
+          <div
+            className="production-machine-activity__ct-tooltip"
+            role="tooltip"
+            style={{ left: activityHover.layerX, top: activityHover.layerY }}
+          >
+            <span>{getLocalizedMachineLabel(activityHover.machineLabel, language)} · {activityHover.startLabel} ~ {activityHover.endLabel}</span>
+            <strong>
+              {activityHover.averageCycleTimeSec === null
+                ? activityCopy.noCycleTime
+                : `${activityCopy.rollingCycleTime} ${activityHover.averageCycleTimeSec.toFixed(1)}${activityCopy.cycleTimeSeconds}`}
+            </strong>
+            <small>{detailCopy.clampCount} {formatNumber(Math.round(activityHover.shots))}</small>
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -3985,6 +4537,12 @@ export function ProductionDashboardPage() {
                       <span className="production-progress-chip production-progress-chip--completed">{copy.completed} {realtimeProgress.completedCount}</span>
                       <span className="production-progress-chip production-progress-chip--active">{copy.inProgress} {realtimeProgress.inProgressCount}</span>
                       <span className="production-progress-chip">{copy.pending} {realtimeProgress.pendingCount}</span>
+                      {realtimeProgress.pausedCount > 0 ? (
+                        <span className="production-progress-chip production-progress-chip--paused">{copy.pausedCount} {realtimeProgress.pausedCount}</span>
+                      ) : null}
+                      {unresolvedActivityReviewCount > 0 ? (
+                        <span className="production-progress-chip production-progress-chip--review">{copy.reviewCount} {unresolvedActivityReviewCount}</span>
+                      ) : null}
                       {renderOverrunChip(realtimeProgress.estimatedQty - realtimeProgress.plannedQty, realtimeProgress.plannedQty)}
                     </div>
                   </div>
@@ -4034,9 +4592,140 @@ export function ProductionDashboardPage() {
 
           <InjectionTransitionPanel
             analysis={transitionAnalysis}
+            confirmationState={downtimeConfirmationsQuery.isError ? "error" : downtimeConfirmationsQuery.isPending ? "loading" : "ready"}
+            confirmations={downtimeConfirmationsQuery.data?.confirmations}
             copy={copy}
             language={language}
+            mode="dashboard"
           />
+
+          {selectedActivityRow ? (
+            <div className="modal-backdrop" role="presentation" onClick={closeActivityConfirmation}>
+              <section
+                className="modal-card production-activity-confirmation-modal"
+                aria-labelledby="production-activity-confirmation-title"
+                aria-modal="true"
+                role="dialog"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="modal-card__header">
+                  <div>
+                    <p className="panel-card__eyebrow">ACTIVITY REVIEW</p>
+                    <h3 className="panel__title" id="production-activity-confirmation-title">{copy.activityConfirmModalTitle}</h3>
+                    <p>{copy.activityConfirmModalBody}</p>
+                  </div>
+                  <button className="button button--ghost" onClick={closeActivityConfirmation} type="button">
+                    {copy.close}
+                  </button>
+                </div>
+
+                <div className="production-activity-confirmation-context">
+                  <div>
+                    <span>{copy.injectionFacilities}</span>
+                    <strong>{getLocalizedMachineLabel(selectedActivityRow.label, language)}</strong>
+                  </div>
+                  <div>
+                    <span>{copy.shotCount}</span>
+                    <strong>{formatNumber(selectedActivityRow.shotCount)}</strong>
+                  </div>
+                  <div>
+                    <span>{copy.lastClamp}</span>
+                    <strong>{formatOptionalTimeLabel(selectedActivityRow.lastShotAt)}</strong>
+                  </div>
+                </div>
+
+                <form onSubmit={handleActivityConfirmationSubmit}>
+                  <label className="field-group">
+                    <span>{copy.activityType}</span>
+                    <select
+                      aria-label={copy.activityType}
+                      onChange={(event) => {
+                        setActivityConfirmationForm((current) => ({
+                          ...current,
+                          activityType: event.target.value as InjectionActivityType | "",
+                        }));
+                        setActivityConfirmationError(null);
+                      }}
+                      required
+                      value={activityConfirmationForm.activityType}
+                    >
+                      <option disabled value="">{copy.activityTypePlaceholder}</option>
+                      {activityTypeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="production-activity-confirmation-fields">
+                    <label className="field-group">
+                      <span>{copy.partNoLabel}{activityConfirmationForm.activityType === "production" ? " *" : ""}</span>
+                      <input
+                        autoComplete="off"
+                        onChange={(event) => {
+                          setActivityConfirmationForm((current) => ({ ...current, partNo: event.target.value }));
+                          setActivityConfirmationError(null);
+                        }}
+                        required={activityConfirmationForm.activityType === "production"}
+                        value={activityConfirmationForm.partNo}
+                      />
+                    </label>
+                    <label className="field-group">
+                      <span>{copy.modelNameLabel}</span>
+                      <input
+                        autoComplete="off"
+                        onChange={(event) => setActivityConfirmationForm((current) => ({ ...current, modelName: event.target.value }))}
+                        value={activityConfirmationForm.modelName}
+                      />
+                    </label>
+                  </div>
+
+                  <label className="field-group">
+                    <span>{copy.note}{activityConfirmationForm.activityType === "other" ? " *" : ""}</span>
+                    <textarea
+                      onChange={(event) => {
+                        setActivityConfirmationForm((current) => ({ ...current, note: event.target.value }));
+                        setActivityConfirmationError(null);
+                      }}
+                      placeholder={copy.activityNotePlaceholder}
+                      required={activityConfirmationForm.activityType === "other"}
+                      value={activityConfirmationForm.note}
+                    />
+                  </label>
+
+                  {activityConfirmationError ? (
+                    <div className="notice notice--warning">{activityConfirmationError}</div>
+                  ) : null}
+
+                  <div className="production-activity-confirmation-actions">
+                    <div>
+                      {selectedActivityConfirmation ? (
+                        <button
+                          className="button button--ghost"
+                          disabled={saveActivityConfirmationMutation.isPending || resetActivityConfirmationMutation.isPending}
+                          onClick={handleActivityConfirmationReset}
+                          type="button"
+                        >
+                          {resetActivityConfirmationMutation.isPending ? copy.activityResetting : copy.activityReset}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div>
+                      <button className="button button--ghost" onClick={closeActivityConfirmation} type="button">
+                        {copy.close}
+                      </button>
+                      <button
+                        className="button button--primary"
+                        disabled={saveActivityConfirmationMutation.isPending || resetActivityConfirmationMutation.isPending}
+                        type="submit"
+                      >
+                        {saveActivityConfirmationMutation.isPending ? copy.activitySaving : copy.activitySave}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </section>
+            </div>
+          ) : null}
 
           {selectedProgressRow ? (
             <div className="modal-backdrop" role="presentation" onClick={() => setSelectedProgressRow(null)}>
