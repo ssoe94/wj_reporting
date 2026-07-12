@@ -28,6 +28,7 @@ export type InjectionTransitionFlag = {
 
 export type InjectionTransitionEvent = {
   id: string;
+  eventKey: string;
   machineKey: string;
   machineLabel: string;
   type: InjectionTransitionEventType;
@@ -176,6 +177,16 @@ function getBusinessDayStart(businessDate: string) {
 
 function getBusinessDayEnd(businessDate: string) {
   return new Date(getBusinessDayStart(businessDate).getTime() + 24 * 60 * 60 * 1000);
+}
+
+function buildTransitionEventKey(
+  businessDate: string,
+  machineKey: string,
+  startTime: Date,
+  type: InjectionTransitionEventType,
+) {
+  const phase = type === "tuning" ? "restart" : "gap";
+  return `${businessDate}:${machineKey}:${Math.floor(startTime.getTime() / 60_000)}:${phase}`;
 }
 
 function getLatestTime(data?: InjectionProductionMatrix) {
@@ -742,6 +753,7 @@ function buildMachineAnalysis(
       const eventId = `${machineKey}-${gapContext.runIndex}-${gapContext.nextRunIndex}-${gapContext.type}`;
       events.push({
         id: eventId,
+        eventKey: buildTransitionEventKey(businessDate, machineKey, gapContext.gapStartTime, gapContext.type),
         machineKey,
         machineLabel,
         type: gapContext.type,
@@ -765,6 +777,7 @@ function buildMachineAnalysis(
       const eventId = `${machineKey}-${gapContext.runIndex}-${gapContext.nextRunIndex}-production-stop`;
       events.push({
         id: eventId,
+        eventKey: buildTransitionEventKey(businessDate, machineKey, gapContext.gapStartTime, "production_stop"),
         machineKey,
         machineLabel,
         type: "production_stop",
@@ -798,6 +811,7 @@ function buildMachineAnalysis(
     if (tuningMinutes > 0) {
       events.push({
         id: `${machineKey}-${nextRun.startIndex}-tuning`,
+        eventKey: buildTransitionEventKey(businessDate, machineKey, nextRun.startTime, "tuning"),
         machineKey,
         machineLabel,
         type: "tuning",
@@ -840,6 +854,7 @@ function buildMachineAnalysis(
       const eventId = `${machineKey}-${lastRun.endIndex}-ongoing-${type}`;
       events.push({
         id: eventId,
+        eventKey: buildTransitionEventKey(businessDate, machineKey, ongoingStartTime, type),
         machineKey,
         machineLabel,
         type,

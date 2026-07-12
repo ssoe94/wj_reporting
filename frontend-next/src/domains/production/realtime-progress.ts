@@ -8,6 +8,7 @@ import {
 import { type InjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
 
 export type RealtimeProgressSegmentStatus = "completed" | "in_progress" | "pending";
+export type RealtimeEquipmentState = "running" | "paused" | "idle" | "unplanned_running" | "activity_review";
 
 export type RealtimeProgressSegment = {
   key: string;
@@ -42,6 +43,11 @@ export type RealtimeProgressRow = {
   partCount: number;
   avgCavity: number;
   isRunning: boolean;
+  equipmentState: RealtimeEquipmentState;
+  hasPlan: boolean;
+  lastShotAt: string | null;
+  idleMinutes: number | null;
+  expectedCycleTimeSec: number | null;
   completedCount: number;
   inProgressCount: number;
   pendingCount: number;
@@ -54,12 +60,29 @@ export type RealtimeProgressSummary = {
   estimatedQty: number;
   progressRate: number;
   runningCount: number;
+  pausedCount: number;
+  reviewCount: number;
   completedCount: number;
   inProgressCount: number;
   pendingCount: number;
   partCount: number;
   rows: RealtimeProgressRow[];
 };
+
+type MachineShotStats = {
+  shotCount: number;
+  recentShots: number;
+  label: string;
+  lastShotAt: string | null;
+  idleMinutes: number | null;
+  expectedCycleTimeSec: number | null;
+  isRunning: boolean;
+};
+
+const RUNNING_CT_LOOKBACK_MINUTES = 60;
+const RUNNING_IDLE_MIN_MINUTES = 6;
+const RUNNING_IDLE_MAX_MINUTES = 15;
+const RUNNING_CT_TOLERANCE_MULTIPLIER = 2.5;
 
 function getLatestTime(data?: InjectionProductionMatrix) {
   const latestSlot = data?.time_slots?.at(-1);
@@ -100,6 +123,121 @@ function getBusinessDayWindow(businessDate: string | undefined, latestTime: Date
 function numberAt(values: number[] | undefined, index: number) {
   if (!values || index < 0) return 0;
   return Number(values[index] ?? 0);
+}
+
+function getSlotIntervalMinutes(data: InjectionProductionMatrix, index: number) {
+  const explicitInterval = Number(data.time_slots[index]?.interval_minutes ?? 0);
+  if (explicitInterval > 0) return explicitInterval;
+
+  const currentTime = new Date(data.time_slots[index]?.time ?? 0);
+  const nextTime = new Date(data.time_slots[index + 1]?.time ?? 0);
+  if (!Number.isNaN(currentTime.getTime()) && !Number.isNaN(nextTime.getTime())) {
+    const interval = (nextTime.getTime() - currentTime.getTime()) / (60 * 1000);
+    if (interval > 0) return interval;
+  }
+  return 2;
+}
+
+function buildMachineShotStats(
+  data: InjectionProductionMatrix,
+  machine: InjectionProductionMatrix["machines"][number],
+  productionStart: Date | null,
+  productionEnd: Date | null,
+  latestTime: Date | null,
+  recentStart: Date | null,
+): MachineShotStats {
+  const productionRow = getMachineMatrixValues(data, machine.machine_number);
+  const activeSamples: Array<{ time: Date; output: number; intervalMinutes: number }> = [];
+  let shotCount = 0;
+  let recentShots = 0;
+
+  (data.time_slots ?? []).forEach((slot, index) => {
+    const slotTime = new Date(slot.time);
+    const output = numberAt(productionRow, index);
+    if (productionStart && productionEnd && slotTime >= productionStart && slotTime <= productionEnd) {
+      shotCount += output;
+      if (output > 0) {
+        activeSamples.push({
+          time: slotTime,
+          output,
+          intervalMinutes: getSlotIntervalMinutes(data, index),
+        });
+      }
+    }
+    if (recentStart && latestTime && slotTime >= recentStart && slotTime <= latestTime) {
+      recentShots += output;
+    }
+  });
+
+  const lastSample = activeSamples.at(-1);
+  if (!lastSample || !latestTime) {
+    return {
+      shotCount,
+      recentShots,
+      label: machine.display_name || `${machine.machine_number}`,
+      lastShotAt: null,
+      idleMinutes: null,
+      expectedCycleTimeSec: null,
+      isRunning: false,
+    };
+  }
+
+  const lookbackStart = new Date(Math.max(
+    productionStart?.getTime() ?? lastSample.time.getTime(),
+    lastSample.time.getTime() - RUNNING_CT_LOOKBACK_MINUTES * 60 * 1000,
+  ));
+  const baselineSamples = activeSamples.filter((sample) => sample.time >= lookbackStart && sample.time <= lastSample.time);
+  const baselineShots = baselineSamples.reduce((sum, sample) => sum + sample.output, 0);
+  const baselineActiveMinutes = baselineSamples.reduce((sum, sample) => sum + sample.intervalMinutes, 0);
+  const expectedCycleTimeSec = baselineShots >= 3 && baselineActiveMinutes > 0
+    ? (baselineActiveMinutes * 60) / baselineShots
+    : null;
+  const pauseThresholdMinutes = Math.min(
+    RUNNING_IDLE_MAX_MINUTES,
+    Math.max(
+      RUNNING_IDLE_MIN_MINUTES,
+      expectedCycleTimeSec === null
+        ? RUNNING_IDLE_MIN_MINUTES
+        : (expectedCycleTimeSec * RUNNING_CT_TOLERANCE_MULTIPLIER) / 60 + lastSample.intervalMinutes,
+    ),
+  );
+  const idleMinutes = Math.max(0, (latestTime.getTime() - lastSample.time.getTime()) / (60 * 1000));
+
+  return {
+    shotCount,
+    recentShots,
+    label: machine.display_name || `${machine.machine_number}`,
+    lastShotAt: lastSample.time.toISOString(),
+    idleMinutes,
+    expectedCycleTimeSec,
+    isRunning: idleMinutes <= pauseThresholdMinutes,
+  };
+}
+
+function buildUnplannedProgressRow(key: string, shots: MachineShotStats): RealtimeProgressRow {
+  return {
+    key,
+    label: shots.label || key,
+    plannedQty: 0,
+    shotCount: shots.shotCount,
+    recentShots: shots.recentShots,
+    recentCycleTimeSec: shots.recentShots > 0 ? 3600 / shots.recentShots : null,
+    estimatedQty: 0,
+    progressRate: 0,
+    gapQty: 0,
+    partCount: 0,
+    avgCavity: 1,
+    isRunning: shots.isRunning,
+    equipmentState: shots.isRunning ? "unplanned_running" : "activity_review",
+    hasPlan: false,
+    lastShotAt: shots.lastShotAt,
+    idleMinutes: shots.idleMinutes,
+    expectedCycleTimeSec: shots.expectedCycleTimeSec,
+    completedCount: 0,
+    inProgressCount: 0,
+    pendingCount: 0,
+    segments: [],
+  };
 }
 
 function getMachineMatrixValues(data: InjectionProductionMatrix, machineNumber: number) {
@@ -467,24 +605,18 @@ export function buildRealtimeProgressSummary(
     planMap.set(key, current);
   }
 
-  const shotMap = new Map<string, { shotCount: number; recentShots: number; label: string }>();
+  const shotMap = new Map<string, MachineShotStats>();
   if (mesData) {
     for (const machine of mesData.machines ?? []) {
       const key = String(machine.machine_number);
-      let shotCount = 0;
-      let recentShots = 0;
-      const productionRow = getMachineMatrixValues(mesData, machine.machine_number);
-      (mesData.time_slots ?? []).forEach((slot, index) => {
-        const slotTime = new Date(slot.time);
-        const output = numberAt(productionRow, index);
-        if (productionWindow.start && productionWindow.end && slotTime >= productionWindow.start && slotTime <= productionWindow.end) {
-          shotCount += output;
-        }
-        if (recentStart && latestTime && slotTime >= recentStart && slotTime <= latestTime) {
-          recentShots += output;
-        }
-      });
-      shotMap.set(key, { shotCount, recentShots, label: machine.display_name || `${machine.machine_number}호기` });
+      shotMap.set(key, buildMachineShotStats(
+        mesData,
+        machine,
+        productionWindow.start,
+        productionWindow.end,
+        latestTime,
+        recentStart,
+      ));
     }
   }
 
@@ -492,9 +624,16 @@ export function buildRealtimeProgressSummary(
     return buildStatusBackedProgressSummary(productionStatus.injection, planMap, shotMap, transitionAnalysis);
   }
 
-  const rows = [...planMap.keys()].map((key) => {
+  const rowKeys = new Set([
+    ...planMap.keys(),
+    ...[...shotMap.entries()]
+      .filter(([, shots]) => shots.shotCount > 0)
+      .map(([key]) => key),
+  ]);
+  const rows = [...rowKeys].map((key): RealtimeProgressRow => {
     const plan = planMap.get(key);
     const shots = shotMap.get(key);
+    if (!plan && shots?.shotCount) return buildUnplannedProgressRow(key, shots);
     const plannedQty = plan?.plannedQty ?? 0;
     const shotCount = shots?.shotCount ?? 0;
     let remainingShots = shotCount;
@@ -566,7 +705,16 @@ export function buildRealtimeProgressSummary(
       gapQty: estimatedQty - plannedQty,
       partCount: segments.length,
       avgCavity,
-      isRunning: (shots?.recentShots ?? 0) > 0,
+      isRunning: shots?.isRunning ?? false,
+      equipmentState: shots?.isRunning
+        ? "running"
+        : shotCount > 0 && inProgressCount > 0
+          ? "paused"
+          : "idle",
+      hasPlan: true,
+      lastShotAt: shots?.lastShotAt ?? null,
+      idleMinutes: shots?.idleMinutes ?? null,
+      expectedCycleTimeSec: shots?.expectedCycleTimeSec ?? null,
       completedCount,
       inProgressCount,
       pendingCount,
@@ -594,6 +742,8 @@ export function buildRealtimeProgressSummary(
     estimatedQty,
     progressRate: plannedQty > 0 ? (estimatedQty / plannedQty) * 100 : 0,
     runningCount: rows.filter((row) => row.isRunning).length,
+    pausedCount: rows.filter((row) => row.equipmentState === "paused").length,
+    reviewCount: rows.filter((row) => !row.hasPlan).length,
     completedCount,
     inProgressCount,
     pendingCount,
@@ -610,10 +760,10 @@ function buildStatusBackedProgressSummary(
     cavityWeightedQty: number;
     records: ProductionPlanRecord[];
   }>,
-  shotMap: Map<string, { shotCount: number; recentShots: number; label: string }>,
+  shotMap: Map<string, MachineShotStats>,
   transitionAnalysis?: InjectionTransitionAnalysis,
 ): RealtimeProgressSummary {
-  const rows = statusRows.map((statusRow) => {
+  const plannedRows = statusRows.map((statusRow): RealtimeProgressRow => {
     const machineNumber = getMachineNumberFromName(statusRow.machine_name);
     const key = machineNumber ?? (statusRow.machine_name || "unknown");
     const plan = planMap.get(key);
@@ -710,6 +860,7 @@ function buildStatusBackedProgressSummary(
     const inProgressCount = segments.filter((segment) => segment.status === "in_progress").length;
     const pendingCount = segments.filter((segment) => segment.status === "pending").length;
     const recentShots = shots?.recentShots ?? 0;
+    const hasPlan = Boolean(plan) || plannedQty > 0;
 
     return {
       key,
@@ -723,13 +874,33 @@ function buildStatusBackedProgressSummary(
       gapQty: estimatedQty - plannedQty,
       partCount: segments.length,
       avgCavity,
-      isRunning: recentShots > 0,
+      isRunning: shots?.isRunning ?? false,
+      equipmentState: hasPlan
+        ? shots?.isRunning
+          ? "running"
+          : shotCount > 0 && inProgressCount > 0
+            ? "paused"
+            : "idle"
+        : shots?.isRunning
+          ? "unplanned_running"
+          : "activity_review",
+      hasPlan,
+      lastShotAt: shots?.lastShotAt ?? null,
+      idleMinutes: shots?.idleMinutes ?? null,
+      expectedCycleTimeSec: shots?.expectedCycleTimeSec ?? null,
       completedCount,
       inProgressCount,
       pendingCount,
       segments,
     };
-  }).sort((left, right) => {
+  });
+  const statusKeys = new Set(statusRows.map((statusRow) => (
+    getMachineNumberFromName(statusRow.machine_name) ?? (statusRow.machine_name || "unknown")
+  )));
+  const unplannedRows = [...shotMap.entries()]
+    .filter(([key, shots]) => shots.shotCount > 0 && !statusKeys.has(key))
+    .map(([key, shots]) => buildUnplannedProgressRow(key, shots));
+  const rows = [...plannedRows, ...unplannedRows].sort((left, right) => {
     const leftNumber = Number(getMachineNumberFromName(left.label) ?? left.key);
     const rightNumber = Number(getMachineNumberFromName(right.label) ?? right.key);
     if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
@@ -751,6 +922,8 @@ function buildStatusBackedProgressSummary(
     estimatedQty,
     progressRate: plannedQty > 0 ? (estimatedQty / plannedQty) * 100 : 0,
     runningCount: rows.filter((row) => row.isRunning).length,
+    pausedCount: rows.filter((row) => row.equipmentState === "paused").length,
+    reviewCount: rows.filter((row) => !row.hasPlan).length,
     completedCount,
     inProgressCount,
     pendingCount,
