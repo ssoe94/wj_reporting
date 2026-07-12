@@ -16,12 +16,12 @@ test.describe('production dashboard operational scenario', () => {
     await page.locator('input[type="date"]').fill('2026-05-18');
 
     const injectionKpi = page.getByRole('button', { name: /사출 계획 및 실행율/ });
-    await expect(injectionKpi.locator('.stat-card__hint')).toContainText('무계획 형합 18회(2대)');
+    await expect(injectionKpi.locator('.stat-card__hint')).toContainText('계획 7대 완료 100.6% - 무계획가동 18회/2대');
     await injectionKpi.click();
 
     const injectionDetail = page.locator('.production-kpi-detail--injection');
     await expect(injectionDetail).toContainText('계획 실적 / 계획');
-    await expect(injectionDetail).toContainText('무계획 형합 18회 · 2대');
+    await expect(injectionDetail).toContainText('무계획가동 18회 · 2대');
     const unplannedMachine = injectionDetail.locator('.production-kpi-rank__card').filter({ hasText: '850T-8' });
     await expect(unplannedMachine).toContainText('무계획');
     await expect(unplannedMachine).toContainText('형합수');
@@ -43,7 +43,7 @@ test.describe('production dashboard operational scenario', () => {
     await expect(page.getByRole('heading', { name: '생산 대시보드' })).toBeVisible();
     const injectionKpi = page.getByRole('button', { name: /사출 계획 및 실행율/ });
     await expect(injectionKpi.locator('.stat-card__value')).toContainText('/');
-    await expect(injectionKpi.locator('.stat-card__hint')).toContainText('무계획 형합 18회(2대)');
+    await expect(injectionKpi.locator('.stat-card__hint')).toContainText('계획 7대 완료 100.6% - 무계획가동 18회/2대');
     await expect(page.getByText('기준일 2026-05-18 사출 완료율은 95%입니다.')).toBeVisible();
     await expect(page.getByRole('heading', { name: '실시간 프로그레스' })).toBeVisible();
     await expect(page.getByText('사출 실시간 진행')).toBeVisible();
@@ -53,7 +53,7 @@ test.describe('production dashboard operational scenario', () => {
     await injectionKpi.click();
     const injectionDetail = page.locator('.production-kpi-detail--injection');
     await expect(injectionDetail).toContainText('계획 실적 / 계획');
-    await expect(injectionDetail).toContainText('무계획 형합 18회 · 2대');
+    await expect(injectionDetail).toContainText('무계획가동 18회 · 2대');
     const unplannedMachine = injectionDetail.locator('.production-kpi-rank__card').filter({ hasText: '850T-8' });
     await expect(unplannedMachine).toContainText('무계획');
     await expect(unplannedMachine).toContainText('형합수');

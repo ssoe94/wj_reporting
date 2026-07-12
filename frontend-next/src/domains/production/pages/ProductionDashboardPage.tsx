@@ -56,6 +56,7 @@ type ProductionBriefContext = {
   machiningPlanQty: number;
   actualInjectionOutput: number;
   actualMachiningOutput: number;
+  plannedInjectionMachineCount: number;
   unplannedInjectionShots: number;
   unplannedInjectionMachineCount: number;
   planGap: number;
@@ -301,7 +302,7 @@ const pageCopy = {
     shotCount: "형합수",
     shotUnit: "회",
     machineUnit: "대",
-    unplannedShotSummary: "무계획 형합",
+    unplannedShotSummary: "무계획가동",
     running: "가동",
     paused: "일시중지",
     unplannedRunning: "무계획 가동",
@@ -463,7 +464,7 @@ const pageCopy = {
     shotCount: "合模数",
     shotUnit: "次",
     machineUnit: "台",
-    unplannedShotSummary: "无计划合模",
+    unplannedShotSummary: "无计划运行",
     running: "运行",
     paused: "暂时停机",
     unplannedRunning: "无计划运行",
@@ -592,7 +593,7 @@ const kpiDetailCopy = {
     elapsedRate: "시간 기준",
     compactSummary: "요약",
     plannedActualPlan: "계획 실적 / 계획",
-    unplannedShotSummary: "무계획 형합",
+    unplannedShotSummary: "무계획가동",
     outsidePlanMes: "계획 외 MES 실적",
     unplannedBadge: "무계획",
     confirmationNeeded: "활동 확인 필요",
@@ -636,7 +637,7 @@ const kpiDetailCopy = {
     elapsedRate: "时间基准",
     compactSummary: "摘要",
     plannedActualPlan: "计划内实绩 / 计划",
-    unplannedShotSummary: "无计划合模",
+    unplannedShotSummary: "无计划运行",
     outsidePlanMes: "计划外 MES 实绩",
     unplannedBadge: "无计划",
     confirmationNeeded: "需确认活动",
@@ -2195,6 +2196,7 @@ function buildProductionBriefContext(
     machiningPlanQty,
     actualInjectionOutput,
     actualMachiningOutput,
+    plannedInjectionMachineCount: realtimeSummary.rows.filter((row) => row.hasPlan).length,
     unplannedInjectionShots: realtimeSummary.unplannedShotCount,
     unplannedInjectionMachineCount: realtimeSummary.unplannedMachineCount,
     planGap: actualInjectionOutput - injectionPlanQty,
@@ -4366,7 +4368,7 @@ export function ProductionDashboardPage() {
               <span className="stat-card__hint">{copy.productionDateHint}</span>
             </label>
             <StatCard
-              hint={`${copy.completedRate} ${Math.round(injectionCompletionRate)}% · ${copy.timeRate} ${Math.round(productionElapsedRate)}% · ${copy.unplannedShotSummary} ${formatNumber(briefContext.unplannedInjectionShots)}${copy.shotUnit}(${briefContext.unplannedInjectionMachineCount}${copy.machineUnit})`}
+              hint={`${copy.planned} ${briefContext.plannedInjectionMachineCount}${copy.machineUnit} ${copy.completedRate} ${injectionCompletionRate.toFixed(1)}% - ${copy.unplannedShotSummary} ${formatNumber(briefContext.unplannedInjectionShots)}${copy.shotUnit}/${briefContext.unplannedInjectionMachineCount}${copy.machineUnit}`}
               hintTone={injectionRateTone}
               isActive={activeKpiDetail === "injection"}
               onClick={() => toggleKpiDetail("injection")}
