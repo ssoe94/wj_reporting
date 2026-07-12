@@ -61,6 +61,33 @@ export type RealtimeProgressSummary = {
   rows: RealtimeProgressRow[];
 };
 
+type MachineShotStats = {
+  shotCount: number;
+  recentShots: number;
+  label: string;
+};
+
+function buildUnplannedProgressRow(key: string, shots: MachineShotStats): RealtimeProgressRow {
+  return {
+    key,
+    label: shots.label || key,
+    plannedQty: 0,
+    shotCount: shots.shotCount,
+    recentShots: shots.recentShots,
+    recentCycleTimeSec: shots.recentShots > 0 ? 3600 / shots.recentShots : null,
+    estimatedQty: 0,
+    progressRate: 0,
+    gapQty: 0,
+    partCount: 0,
+    avgCavity: 1,
+    isRunning: shots.recentShots > 0,
+    completedCount: 0,
+    inProgressCount: 0,
+    pendingCount: 0,
+    segments: [],
+  };
+}
+
 function getLatestTime(data?: InjectionProductionMatrix) {
   const latestSlot = data?.time_slots?.at(-1);
   return latestSlot ? new Date(latestSlot.time) : null;
@@ -467,7 +494,7 @@ export function buildRealtimeProgressSummary(
     planMap.set(key, current);
   }
 
-  const shotMap = new Map<string, { shotCount: number; recentShots: number; label: string }>();
+  const shotMap = new Map<string, MachineShotStats>();
   if (mesData) {
     for (const machine of mesData.machines ?? []) {
       const key = String(machine.machine_number);
@@ -492,9 +519,16 @@ export function buildRealtimeProgressSummary(
     return buildStatusBackedProgressSummary(productionStatus.injection, planMap, shotMap, transitionAnalysis);
   }
 
-  const rows = [...planMap.keys()].map((key) => {
+  const rowKeys = new Set([
+    ...planMap.keys(),
+    ...[...shotMap.entries()]
+      .filter(([, shots]) => shots.shotCount > 0)
+      .map(([key]) => key),
+  ]);
+  const rows = [...rowKeys].map((key): RealtimeProgressRow => {
     const plan = planMap.get(key);
     const shots = shotMap.get(key);
+    if (!plan && shots?.shotCount) return buildUnplannedProgressRow(key, shots);
     const plannedQty = plan?.plannedQty ?? 0;
     const shotCount = shots?.shotCount ?? 0;
     let remainingShots = shotCount;
@@ -610,10 +644,10 @@ function buildStatusBackedProgressSummary(
     cavityWeightedQty: number;
     records: ProductionPlanRecord[];
   }>,
-  shotMap: Map<string, { shotCount: number; recentShots: number; label: string }>,
+  shotMap: Map<string, MachineShotStats>,
   transitionAnalysis?: InjectionTransitionAnalysis,
 ): RealtimeProgressSummary {
-  const rows = statusRows.map((statusRow) => {
+  const plannedRows = statusRows.map((statusRow): RealtimeProgressRow => {
     const machineNumber = getMachineNumberFromName(statusRow.machine_name);
     const key = machineNumber ?? (statusRow.machine_name || "unknown");
     const plan = planMap.get(key);
@@ -729,7 +763,14 @@ function buildStatusBackedProgressSummary(
       pendingCount,
       segments,
     };
-  }).sort((left, right) => {
+  });
+  const statusKeys = new Set(statusRows.map((statusRow) => (
+    getMachineNumberFromName(statusRow.machine_name) ?? (statusRow.machine_name || "unknown")
+  )));
+  const unplannedRows = [...shotMap.entries()]
+    .filter(([key, shots]) => shots.shotCount > 0 && !statusKeys.has(key))
+    .map(([key, shots]) => buildUnplannedProgressRow(key, shots));
+  const rows = [...plannedRows, ...unplannedRows].sort((left, right) => {
     const leftNumber = Number(getMachineNumberFromName(left.label) ?? left.key);
     const rightNumber = Number(getMachineNumberFromName(right.label) ?? right.key);
     if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {

@@ -570,7 +570,10 @@ class MESResourceService:
                     continue
                 target_index = bucket_index.get(rollup.bucket_start.astimezone(cst))
                 if machine_num in machine_numbers and target_index is not None:
-                    rollup_matrix[str(machine_num)][target_index] = round(float(rollup.shot_count or 0), 3)
+                    machine_key = str(machine_num)
+                    raw_bucket_value = float(rollup_matrix[machine_key][target_index] or 0)
+                    if raw_bucket_value <= 0:
+                        rollup_matrix[machine_key][target_index] = round(float(rollup.shot_count or 0), 3)
 
         return rollup_slots, rollup_matrix, has_rollup_source
 
