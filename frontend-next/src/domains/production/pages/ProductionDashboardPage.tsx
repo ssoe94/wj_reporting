@@ -56,6 +56,8 @@ type ProductionBriefContext = {
   machiningPlanQty: number;
   actualInjectionOutput: number;
   actualMachiningOutput: number;
+  unplannedInjectionShots: number;
+  unplannedInjectionMachineCount: number;
   planGap: number;
   machiningPlanGap: number;
   activeMachineCount: number;
@@ -297,6 +299,9 @@ const pageCopy = {
     planned: "계획",
     actualEstimate: "추정 생산",
     shotCount: "형합수",
+    shotUnit: "회",
+    machineUnit: "대",
+    unplannedShotSummary: "무계획 형합",
     running: "가동",
     paused: "일시중지",
     unplannedRunning: "무계획 가동",
@@ -456,6 +461,9 @@ const pageCopy = {
     planned: "计划",
     actualEstimate: "估算生产",
     shotCount: "合模数",
+    shotUnit: "次",
+    machineUnit: "台",
+    unplannedShotSummary: "无计划合模",
     running: "运行",
     paused: "暂时停机",
     unplannedRunning: "无计划运行",
@@ -583,6 +591,11 @@ const kpiDetailCopy = {
     completionRate: "완료율",
     elapsedRate: "시간 기준",
     compactSummary: "요약",
+    plannedActualPlan: "계획 실적 / 계획",
+    unplannedShotSummary: "무계획 형합",
+    outsidePlanMes: "계획 외 MES 실적",
+    unplannedBadge: "무계획",
+    confirmationNeeded: "활동 확인 필요",
     updatedAt: "업데이트",
     inProgressNow: "진행 중",
     paceGap: "시간목표 대비",
@@ -622,6 +635,11 @@ const kpiDetailCopy = {
     completionRate: "完成率",
     elapsedRate: "时间基准",
     compactSummary: "摘要",
+    plannedActualPlan: "计划内实绩 / 计划",
+    unplannedShotSummary: "无计划合模",
+    outsidePlanMes: "计划外 MES 实绩",
+    unplannedBadge: "无计划",
+    confirmationNeeded: "需确认活动",
     updatedAt: "更新",
     inProgressNow: "进行中",
     paceGap: "较时间目标",
@@ -1168,22 +1186,34 @@ function buildInjectionCumulativeTrend(
   businessDate: string,
   plannedQty: number,
   actualQty: number,
+  progressRows: RealtimeProgressRow[],
   mesData?: InjectionProductionMatrix,
 ): CumulativeTrendSummary {
   const businessStart = getBusinessDayStart(businessDate);
   const businessEnd = getBusinessDayEnd(businessDate);
   const referenceEnd = getBusinessDayReferenceEnd(businessDate, mesData);
   const points: CumulativeTrendPoint[] = [getTrendPoint("start", businessStart, 0, plannedQty, businessStart, businessEnd)];
+  const plannedProgressByMachine = new Map<string, RealtimeProgressRow>();
+  progressRows.forEach((row) => {
+    if (!row.hasPlan) return;
+    const machineKey = String(getMachineNumberFromName(row.label) ?? row.key);
+    plannedProgressByMachine.set(machineKey, row);
+  });
   let cumulativeQty = 0;
 
   mesData?.time_slots?.forEach((slot, index) => {
     const slotTime = new Date(slot.time);
-    if (slotTime <= businessStart || slotTime > referenceEnd || slotTime > businessEnd) return;
+    if (slotTime < businessStart || slotTime > referenceEnd || slotTime > businessEnd) return;
     cumulativeQty += (mesData.machines ?? []).reduce((sum, machine) => {
+      const progressRow = plannedProgressByMachine.get(String(machine.machine_number));
+      if (!progressRow) return sum;
       const row = getMachineMatrixValues(mesData, mesData.actual_production_matrix, machine.machine_number);
-      return sum + numberAt(row, index);
+      const shotYield = progressRow.shotCount > 0
+        ? progressRow.estimatedQty / progressRow.shotCount
+        : Math.max(1, progressRow.avgCavity);
+      return sum + numberAt(row, index) * shotYield;
     }, 0);
-    points.push(getTrendPoint(`slot-${index}`, slotTime, cumulativeQty, plannedQty, businessStart, businessEnd));
+    points.push(getTrendPoint(`slot-${index}`, slotTime, Math.round(cumulativeQty), plannedQty, businessStart, businessEnd));
   });
 
   if (points.length === 1 && referenceEnd > businessStart) {
@@ -2147,7 +2177,7 @@ function buildProductionBriefContext(
   }) ?? [];
   const realtimeSummary = buildRealtimeProgressSummary(planSummary, mesData, productionStatus, businessDate, transitionAnalysis);
   const actualMachineOutputs = realtimeSummary.rows
-    .filter((row) => row.estimatedQty > 0)
+    .filter((row) => row.hasPlan && row.estimatedQty > 0)
     .map((row) => ({ machine: getLocalizedMachineLabel(row.label, language), output: row.estimatedQty }));
   const injectionPlanQty = realtimeSummary.plannedQty || sumPlannedQuantity(planSummary, "injection", businessDate);
   const actualInjectionOutput = realtimeSummary.estimatedQty;
@@ -2165,6 +2195,8 @@ function buildProductionBriefContext(
     machiningPlanQty,
     actualInjectionOutput,
     actualMachiningOutput,
+    unplannedInjectionShots: realtimeSummary.unplannedShotCount,
+    unplannedInjectionMachineCount: realtimeSummary.unplannedMachineCount,
     planGap: actualInjectionOutput - injectionPlanQty,
     machiningPlanGap: actualMachiningOutput - machiningPlanQty,
     activeMachineCount,
@@ -2617,14 +2649,17 @@ function answerDashboardIntent(intent: DashboardAiIntent, realtimeProgress: Real
     const pending = segments.filter((segment) => segment.status === "pending").length;
     const runningRows = realtimeProgress.rows.filter((row) => row.isRunning);
     const topRows = [...realtimeProgress.rows]
-      .filter((row) => row.estimatedQty > 0)
+      .filter((row) => row.hasPlan && row.estimatedQty > 0)
       .sort((a, b) => b.estimatedQty - a.estimatedQty)
       .slice(0, 4)
       .map((row) => `${getLocalizedMachineLabel(row.label, language)} ${formatNumber(row.estimatedQty)}개`)
       .join(", ") || "-";
+    const unplannedText = isChinese
+      ? `另有 ${realtimeProgress.unplannedMachineCount} 台无计划设备产生 ${formatNumber(realtimeProgress.unplannedShotCount)} 次合模。`
+      : `별도로 무계획 설비 ${realtimeProgress.unplannedMachineCount}대에서 형합 ${formatNumber(realtimeProgress.unplannedShotCount)}회가 확인됩니다.`;
     return isChinese
-      ? `今天注塑进度约 ${Math.round(progressRate)}%，推定实绩 ${formatNumber(estimatedQty)} / 计划 ${formatNumber(plannedQty)} 个。最近60分钟运行设备 ${runningRows.length}台，状态为完成 ${completed}、进行中 ${inProgress}、待开始 ${pending}。主要生产设备: ${topRows}。`
-      : `오늘 사출 생산 진도는 약 ${Math.round(progressRate)}%입니다. 추정 실적은 ${formatNumber(estimatedQty)} / 계획 ${formatNumber(plannedQty)}개이고, 최근 60분 기준 가동 사출기는 ${runningRows.length}대입니다. 작업 상태는 완료 ${completed}건, 진행중 ${inProgress}건, 대기 ${pending}건이며, 상위 생산 설비는 ${topRows}입니다.`;
+      ? `今天注塑进度约 ${Math.round(progressRate)}%，计划内推定实绩 ${formatNumber(estimatedQty)} / 计划 ${formatNumber(plannedQty)} 个。${unplannedText} 最近60分钟运行设备 ${runningRows.length}台，状态为完成 ${completed}、进行中 ${inProgress}、待开始 ${pending}。主要生产设备: ${topRows}。`
+      : `오늘 사출 생산 진도는 약 ${Math.round(progressRate)}%입니다. 계획 생산 추정 실적은 ${formatNumber(estimatedQty)} / 계획 ${formatNumber(plannedQty)}개입니다. ${unplannedText} 최근 60분 기준 가동 사출기는 ${runningRows.length}대입니다. 작업 상태는 완료 ${completed}건, 진행중 ${inProgress}건, 대기 ${pending}건이며, 상위 생산 설비는 ${topRows}입니다.`;
   }
 
   return null;
@@ -2652,17 +2687,20 @@ function buildRuleBasedBrief(context: ProductionBriefContext, language: AppLangu
   const lowText = context.lowOutputMachines.length
     ? context.lowOutputMachines.map((item) => `${item.machine} ${formatNumber(item.output)}${unit}`).join(", ")
     : (language === "ko" ? "확인 대상 없음" : "暂无需确认设备");
+  const unplannedText = language === "ko"
+    ? `계획이 없던 ${context.unplannedInjectionMachineCount}대에서는 형합 ${formatNumber(context.unplannedInjectionShots)}회가 별도로 확인됩니다.`
+    : `另有 ${context.unplannedInjectionMachineCount} 台无计划设备产生 ${formatNumber(context.unplannedInjectionShots)} 次合模。`;
 
   if (language === "zh") {
     return [
-      `${context.businessDate} 基准日注塑实绩为 ${formatNumber(context.actualInjectionOutput)}${unit}，对比注塑计划 ${formatNumber(context.injectionPlanQty)}${unit}，进度约 ${planRate}%。加工实绩为 ${formatNumber(context.actualMachiningOutput)}${unit}，计划为 ${formatNumber(context.machiningPlanQty)}${unit}。`,
+      `${context.businessDate} 基准日计划内注塑推定实绩为 ${formatNumber(context.actualInjectionOutput)}${unit}，对比注塑计划 ${formatNumber(context.injectionPlanQty)}${unit}，进度约 ${planRate}%。${unplannedText} 加工实绩为 ${formatNumber(context.actualMachiningOutput)}${unit}，计划为 ${formatNumber(context.machiningPlanQty)}${unit}。`,
       `基准日 ${context.activeMachineCount}/${context.totalMachines} 台设备有生产实绩，区间最后 60 分钟运行设备为 ${context.runningMachineCount} 台。当前为${gapText}。`,
       `主要生产设备为 ${topText}。低实绩设备为 ${lowText}，如计划存在缺口，建议优先确认停机记录与作业安排。`,
     ].join("\n\n");
   }
 
   return [
-    `${context.businessDate} 기준일의 사출 실적은 ${formatNumber(context.actualInjectionOutput)}${unit}이며, 사출 계획 ${formatNumber(context.injectionPlanQty)}${unit} 대비 진행률은 약 ${planRate}%입니다. 가공 실적은 ${formatNumber(context.actualMachiningOutput)}${unit}, 가공 계획은 ${formatNumber(context.machiningPlanQty)}${unit}입니다.`,
+    `${context.businessDate} 기준일의 계획 생산 추정 실적은 ${formatNumber(context.actualInjectionOutput)}${unit}이며, 사출 계획 ${formatNumber(context.injectionPlanQty)}${unit} 대비 진행률은 약 ${planRate}%입니다. ${unplannedText} 가공 실적은 ${formatNumber(context.actualMachiningOutput)}${unit}, 가공 계획은 ${formatNumber(context.machiningPlanQty)}${unit}입니다.`,
     `기준일에 ${context.activeMachineCount}/${context.totalMachines}대가 생산 실적을 남겼고, 선택 구간 마지막 60분 기준 가동 설비는 ${context.runningMachineCount}대입니다. ${gapText} 상태입니다.`,
     `상위 생산 설비는 ${topText}입니다. 낮은 실적 설비는 ${lowText}이며, 계획 대비 부족 상태라면 해당 설비의 정지 이력과 작업 배정을 먼저 확인하는 것이 좋습니다.`,
   ].join("\n\n");
@@ -3024,9 +3062,10 @@ export function ProductionDashboardPage() {
       businessDate,
       briefContext.injectionPlanQty,
       briefContext.actualInjectionOutput,
+      realtimeProgress.rows,
       mesQuery.data,
     ),
-    [briefContext.actualInjectionOutput, briefContext.injectionPlanQty, businessDate, mesQuery.data],
+    [briefContext.actualInjectionOutput, briefContext.injectionPlanQty, businessDate, mesQuery.data, realtimeProgress.rows],
   );
   const machiningTrend = useMemo(
     () => buildMachiningCumulativeTrend(
@@ -3922,6 +3961,8 @@ export function ProductionDashboardPage() {
       completedCount: number;
       inProgressCount: number;
       pendingCount: number;
+      hasPlan?: boolean;
+      shotCount?: number;
     }>;
   }) {
     const currentPoint = options.trend.latestPoint;
@@ -3942,6 +3983,10 @@ export function ProductionDashboardPage() {
 
       return right.actualQty - left.actualQty;
     });
+    const unplannedRows = options.detailKey === "injection"
+      ? sortedRows.filter((row) => row.hasPlan === false && Number(row.shotCount ?? 0) > 0)
+      : [];
+    const unplannedShotCount = unplannedRows.reduce((sum, row) => sum + Number(row.shotCount ?? 0), 0);
 
     return (
       <section className={`panel production-kpi-detail production-kpi-detail--${options.detailKey}`}>
@@ -3960,10 +4005,15 @@ export function ProductionDashboardPage() {
           <div className="production-kpi-chart production-kpi-chart--compact" aria-label={`${options.title} ${detailCopy.cumulativeTrend}`}>
             <div className="production-kpi-chart__summary">
               <div>
-                <span>{detailCopy.compactSummary}</span>
+                <span>{options.detailKey === "injection" ? detailCopy.plannedActualPlan : detailCopy.compactSummary}</span>
                 <strong>{formatNumber(currentPoint.actualQty)} / {formatNumber(options.trend.plannedQty)}</strong>
               </div>
               <div className="production-kpi-chart__summary-stats">
+                {options.detailKey === "injection" ? (
+                  <span className="production-kpi-chart__unplanned-stat">
+                    {detailCopy.unplannedShotSummary} {formatNumber(unplannedShotCount)}{copy.shotUnit} · {unplannedRows.length}{copy.machineUnit}
+                  </span>
+                ) : null}
                 <span>{detailCopy.completionRate} {Math.round(markerProgressRate)}%</span>
                 <span>{detailCopy.elapsedRate} {Math.round(options.trend.elapsedRate)}%</span>
                 <span className={targetGap >= 0 ? "production-progress-gap--up" : "production-progress-gap--down"}>
@@ -4009,6 +4059,7 @@ export function ProductionDashboardPage() {
           {sortedRows.length ? (
             <div className="production-kpi-rank__grid">
               {sortedRows.map((row) => {
+                const isUnplanned = options.detailKey === "injection" && row.hasPlan === false;
                 const rowExpectedQty = Math.round(row.plannedQty * (options.trend.elapsedRate / 100));
                 const rowPaceQtyGap = row.actualQty - rowExpectedQty;
                 const rowPaceRateGap = row.plannedQty > 0
@@ -4016,6 +4067,25 @@ export function ProductionDashboardPage() {
                   : (row.actualQty > 0 ? 100 : 0);
                 const rowGapClass = rowPaceQtyGap >= 0 ? "production-kpi-rank__delta production-kpi-rank__delta--up" : "production-kpi-rank__delta production-kpi-rank__delta--down";
                 const displayLabel = getLocalizedMachineLabel(row.label, language);
+                if (isUnplanned) {
+                  return (
+                    <article className="production-kpi-rank__card production-kpi-rank__card--unplanned" key={row.key}>
+                      <div className="production-kpi-rank__card-head">
+                        <strong>{displayLabel}</strong>
+                        <span>{detailCopy.unplannedBadge}</span>
+                      </div>
+                      <div className="production-kpi-rank__card-meta">
+                        <em>{detailCopy.outsidePlanMes}</em>
+                        <span>{detailCopy.confirmationNeeded}</span>
+                      </div>
+                      <div className="production-kpi-rank__unplanned-total">
+                        <span>{copy.shotCount}</span>
+                        <strong>{formatNumber(row.shotCount ?? 0)}{copy.shotUnit}</strong>
+                      </div>
+                      <p>{detailCopy.unplannedShotSummary} · {formatNumber(row.shotCount ?? 0)}{copy.shotUnit}</p>
+                    </article>
+                  );
+                }
                 return (
                   <article className="production-kpi-rank__card" key={row.key}>
                     <div className="production-kpi-rank__card-head">
@@ -4296,7 +4366,7 @@ export function ProductionDashboardPage() {
               <span className="stat-card__hint">{copy.productionDateHint}</span>
             </label>
             <StatCard
-              hint={`${copy.completedRate} ${Math.round(injectionCompletionRate)}% · ${copy.timeRate} ${Math.round(productionElapsedRate)}%`}
+              hint={`${copy.completedRate} ${Math.round(injectionCompletionRate)}% · ${copy.timeRate} ${Math.round(productionElapsedRate)}% · ${copy.unplannedShotSummary} ${formatNumber(briefContext.unplannedInjectionShots)}${copy.shotUnit}(${briefContext.unplannedInjectionMachineCount}${copy.machineUnit})`}
               hintTone={injectionRateTone}
               isActive={activeKpiDetail === "injection"}
               onClick={() => toggleKpiDetail("injection")}
@@ -4334,6 +4404,8 @@ export function ProductionDashboardPage() {
               completedCount: row.completedCount,
               inProgressCount: row.inProgressCount,
               pendingCount: row.pendingCount,
+              hasPlan: row.hasPlan,
+              shotCount: row.shotCount,
             })),
           }) : null}
 

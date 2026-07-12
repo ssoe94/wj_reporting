@@ -323,6 +323,8 @@ export async function installOperationalApiMocks(page: Page) {
     0, 0, 0, 0, 0,
   ]);
   const machineSevenCumulative = toCumulative(machineSevenActual);
+  const machineEightActual = Array.from({ length: slotCount }, (_, index) => (index < 12 ? 1 : 0));
+  const machineEightCumulative = toCumulative(machineEightActual);
   const machineSixteenActual = Array.from({ length: slotCount }, (_, index) => {
     if (index < 72) return 20;
     if (index === 72) return 12;
@@ -348,6 +350,8 @@ export async function installOperationalApiMocks(page: Page) {
                   ? machineSixCumulative
                   : machineName === '7호기'
                     ? machineSevenCumulative
+                    : machineName === '8호기'
+                      ? machineEightCumulative
                     : machineName === '16호기'
                       ? machineSixteenCumulative
                       : zeroSeries,
@@ -370,6 +374,8 @@ export async function installOperationalApiMocks(page: Page) {
                   ? machineSixActual
                   : machineName === '7호기'
                     ? machineSevenActual
+                    : machineName === '8호기'
+                      ? machineEightActual
                     : machineName === '16호기'
                       ? machineSixteenActual
                       : zeroSeries,

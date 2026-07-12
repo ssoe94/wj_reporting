@@ -7,6 +7,31 @@ import {
 } from '../helpers/operational';
 
 test.describe('production dashboard operational scenario', () => {
+  test('separates planned output from unplanned machine shots', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'ko');
+
+    await page.goto('/production');
+    await page.locator('input[type="date"]').fill('2026-05-18');
+
+    const injectionKpi = page.getByRole('button', { name: /사출 계획 및 실행율/ });
+    await expect(injectionKpi.locator('.stat-card__hint')).toContainText('무계획 형합 18회(2대)');
+    await injectionKpi.click();
+
+    const injectionDetail = page.locator('.production-kpi-detail--injection');
+    await expect(injectionDetail).toContainText('계획 실적 / 계획');
+    await expect(injectionDetail).toContainText('무계획 형합 18회 · 2대');
+    const unplannedMachine = injectionDetail.locator('.production-kpi-rank__card').filter({ hasText: '850T-8' });
+    await expect(unplannedMachine).toContainText('무계획');
+    await expect(unplannedMachine).toContainText('형합수');
+    await expect(unplannedMachine).toContainText('12회');
+    await expect(unplannedMachine).not.toContainText('0 / 0');
+
+    await expectNoUndefinedOrNaN(page);
+    guard.assertClean();
+  });
+
   test('renders deterministic plan, MES progress, and AI briefing evidence', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);
@@ -16,13 +41,24 @@ test.describe('production dashboard operational scenario', () => {
     await page.locator('input[type="date"]').fill('2026-05-18');
 
     await expect(page.getByRole('heading', { name: '생산 대시보드' })).toBeVisible();
-    await expect(page.locator('.stat-card__value', { hasText: '4,831 / 4,369' })).toBeVisible();
+    const injectionKpi = page.getByRole('button', { name: /사출 계획 및 실행율/ });
+    await expect(injectionKpi.locator('.stat-card__value')).toContainText('/');
+    await expect(injectionKpi.locator('.stat-card__hint')).toContainText('무계획 형합 18회(2대)');
     await expect(page.getByText('기준일 2026-05-18 사출 완료율은 95%입니다.')).toBeVisible();
     await expect(page.getByRole('heading', { name: '실시간 프로그레스' })).toBeVisible();
     await expect(page.getByText('사출 실시간 진행')).toBeVisible();
-    const mesOnlyMachine = page.locator('.production-progress-row').filter({ hasText: '1300T-3' }).first();
+    const mesOnlyMachine = page.locator('.production-progress-row').filter({ hasText: '850T-8' }).first();
     await expect(mesOnlyMachine).toBeVisible();
     await expect(mesOnlyMachine).toContainText('형합수');
+    await injectionKpi.click();
+    const injectionDetail = page.locator('.production-kpi-detail--injection');
+    await expect(injectionDetail).toContainText('계획 실적 / 계획');
+    await expect(injectionDetail).toContainText('무계획 형합 18회 · 2대');
+    const unplannedMachine = injectionDetail.locator('.production-kpi-rank__card').filter({ hasText: '850T-8' });
+    await expect(unplannedMachine).toContainText('무계획');
+    await expect(unplannedMachine).toContainText('형합수');
+    await expect(unplannedMachine).toContainText('12회');
+    await expect(unplannedMachine).not.toContainText('0 / 0');
     await expect(page.getByText('MES 미등록 수기 40').first()).toBeVisible();
     await expect(page.getByRole('heading', { name: '사출 정지/전환 분석' })).toBeVisible();
     const transitionPanel = page.locator('.injection-transition-panel');

@@ -844,6 +844,12 @@ select {
   white-space: nowrap;
 }
 
+.production-kpi-chart__summary-stats .production-kpi-chart__unplanned-stat {
+  border-color: rgba(209, 128, 24, 0.24);
+  background: rgba(255, 247, 230, 0.92);
+  color: #9a5c0a;
+}
+
 .production-kpi-chart__plot {
   position: relative;
   height: 86px;
@@ -1073,6 +1079,19 @@ select {
   background: #ffffff;
 }
 
+.production-kpi-rank__card--unplanned {
+  border-color: rgba(209, 128, 24, 0.24);
+  background: rgba(255, 251, 243, 0.92);
+}
+
+.production-kpi-rank__card--unplanned .production-kpi-rank__card-head > span {
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: rgba(209, 128, 24, 0.12);
+  color: #9a5c0a;
+  font-size: 0.68rem;
+}
+
 .production-kpi-rank__card-head {
   display: flex;
   gap: 8px;
@@ -1133,6 +1152,28 @@ select {
   font-size: 0.68rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.production-kpi-rank__unplanned-total {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid rgba(209, 128, 24, 0.15);
+  border-bottom: 1px solid rgba(209, 128, 24, 0.15);
+  padding: 5px 2px;
+}
+
+.production-kpi-rank__unplanned-total span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 760;
+}
+
+.production-kpi-rank__unplanned-total strong {
+  color: #8a5208;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .production-kpi-rank__row {

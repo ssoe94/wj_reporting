@@ -58,6 +58,8 @@ export type RealtimeProgressSummary = {
   plannedQty: number;
   shotCount: number;
   estimatedQty: number;
+  unplannedShotCount: number;
+  unplannedMachineCount: number;
   progressRate: number;
   runningCount: number;
   pausedCount: number;
@@ -729,9 +731,12 @@ export function buildRealtimeProgressSummary(
     return left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" });
   });
 
-  const plannedQty = rows.reduce((sum, row) => sum + row.plannedQty, 0);
-  const estimatedQty = rows.reduce((sum, row) => sum + row.estimatedQty, 0);
+  const plannedRows = rows.filter((row) => row.hasPlan);
+  const unplannedRows = rows.filter((row) => !row.hasPlan && row.shotCount > 0);
+  const plannedQty = plannedRows.reduce((sum, row) => sum + row.plannedQty, 0);
+  const estimatedQty = plannedRows.reduce((sum, row) => sum + row.estimatedQty, 0);
   const shotCount = rows.reduce((sum, row) => sum + row.shotCount, 0);
+  const unplannedShotCount = unplannedRows.reduce((sum, row) => sum + row.shotCount, 0);
   const completedCount = rows.reduce((sum, row) => sum + row.completedCount, 0);
   const inProgressCount = rows.reduce((sum, row) => sum + row.inProgressCount, 0);
   const pendingCount = rows.reduce((sum, row) => sum + row.pendingCount, 0);
@@ -740,6 +745,8 @@ export function buildRealtimeProgressSummary(
     plannedQty,
     shotCount,
     estimatedQty,
+    unplannedShotCount,
+    unplannedMachineCount: unplannedRows.length,
     progressRate: plannedQty > 0 ? (estimatedQty / plannedQty) * 100 : 0,
     runningCount: rows.filter((row) => row.isRunning).length,
     pausedCount: rows.filter((row) => row.equipmentState === "paused").length,
@@ -763,7 +770,26 @@ function buildStatusBackedProgressSummary(
   shotMap: Map<string, MachineShotStats>,
   transitionAnalysis?: InjectionTransitionAnalysis,
 ): RealtimeProgressSummary {
-  const plannedRows = statusRows.map((statusRow): RealtimeProgressRow => {
+  const providedStatusKeys = new Set(statusRows.map((statusRow) => (
+    getMachineNumberFromName(statusRow.machine_name) ?? (statusRow.machine_name || "unknown")
+  )));
+  const planOnlyStatusRows = [...planMap.entries()]
+    .filter(([key]) => !providedStatusKeys.has(key))
+    .map(([, plan]): ProductionStatusMachine => ({
+      machine_name: plan.label,
+      total_planned: plan.plannedQty,
+      total_actual: 0,
+      progress: 0,
+      parts: plan.records.map((record) => ({
+        part_no: record.part_no ?? null,
+        model_name: record.model_name ?? record.part_spec ?? null,
+        planned_quantity: Number(record.planned_quantity ?? 0),
+        actual_quantity: 0,
+        progress: 0,
+      })),
+    }));
+  const mergedStatusRows = [...statusRows, ...planOnlyStatusRows];
+  const plannedRows = mergedStatusRows.map((statusRow): RealtimeProgressRow => {
     const machineNumber = getMachineNumberFromName(statusRow.machine_name);
     const key = machineNumber ?? (statusRow.machine_name || "unknown");
     const plan = planMap.get(key);
@@ -894,7 +920,7 @@ function buildStatusBackedProgressSummary(
       segments,
     };
   });
-  const statusKeys = new Set(statusRows.map((statusRow) => (
+  const statusKeys = new Set(mergedStatusRows.map((statusRow) => (
     getMachineNumberFromName(statusRow.machine_name) ?? (statusRow.machine_name || "unknown")
   )));
   const unplannedRows = [...shotMap.entries()]
@@ -909,9 +935,12 @@ function buildStatusBackedProgressSummary(
     return left.label.localeCompare(right.label, "ko-KR", { numeric: true, sensitivity: "base" });
   });
 
-  const plannedQty = rows.reduce((sum, row) => sum + row.plannedQty, 0);
-  const estimatedQty = rows.reduce((sum, row) => sum + row.estimatedQty, 0);
+  const plannedRowsForSummary = rows.filter((row) => row.hasPlan);
+  const unplannedRowsForSummary = rows.filter((row) => !row.hasPlan && row.shotCount > 0);
+  const plannedQty = plannedRowsForSummary.reduce((sum, row) => sum + row.plannedQty, 0);
+  const estimatedQty = plannedRowsForSummary.reduce((sum, row) => sum + row.estimatedQty, 0);
   const shotCount = rows.reduce((sum, row) => sum + row.shotCount, 0);
+  const unplannedShotCount = unplannedRowsForSummary.reduce((sum, row) => sum + row.shotCount, 0);
   const completedCount = rows.reduce((sum, row) => sum + row.completedCount, 0);
   const inProgressCount = rows.reduce((sum, row) => sum + row.inProgressCount, 0);
   const pendingCount = rows.reduce((sum, row) => sum + row.pendingCount, 0);
@@ -920,6 +949,8 @@ function buildStatusBackedProgressSummary(
     plannedQty,
     shotCount,
     estimatedQty,
+    unplannedShotCount,
+    unplannedMachineCount: unplannedRowsForSummary.length,
     progressRate: plannedQty > 0 ? (estimatedQty / plannedQty) * 100 : 0,
     runningCount: rows.filter((row) => row.isRunning).length,
     pausedCount: rows.filter((row) => row.equipmentState === "paused").length,
