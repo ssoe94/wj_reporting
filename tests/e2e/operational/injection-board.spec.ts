@@ -52,6 +52,41 @@ test.describe('injection office board', () => {
     guard.assertClean();
   });
 
+  test('fits the full board without clipped card content on a 1280 by 720 field display', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'zh');
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    await page.goto('/production/injection-board');
+    await expect(page.locator('.injection-board-card')).toHaveCount(17);
+
+    const layout = await page.locator('.injection-board').evaluate((board) => {
+      const cards = Array.from(board.querySelectorAll<HTMLElement>('.injection-board-card, .injection-board-summary'));
+      return {
+        boardWidth: board.clientWidth,
+        boardHeight: board.clientHeight,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        overflowingCards: cards
+          .filter((card) => card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1)
+          .map((card) => card.getAttribute('data-machine') || card.className),
+        wrappedBadges: cards
+          .map((card) => card.querySelector<HTMLElement>('.injection-board-card__header em'))
+          .filter((badge): badge is HTMLElement => Boolean(badge))
+          .filter((badge) => badge.scrollHeight > badge.clientHeight + 1)
+          .length,
+      };
+    });
+
+    expect(layout.boardWidth).toBe(layout.viewportWidth);
+    expect(layout.boardHeight).toBe(layout.viewportHeight);
+    expect(layout.overflowingCards).toEqual([]);
+    expect(layout.wrappedBadges).toBe(0);
+    await expectNoUndefinedOrNaN(page);
+    guard.assertClean();
+  });
+
   test('opens from the visible launcher below the production KPI cards', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);

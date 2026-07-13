@@ -5,6 +5,7 @@ const skipWebServer = process.env.PLAYWRIGHT_SKIP_WEB_SERVER === '1';
 
 export default defineConfig({
   testDir: '.',
+  testIgnore: '**/._*',
   timeout: 30 * 1000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

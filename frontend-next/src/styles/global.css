@@ -7970,6 +7970,8 @@ select {
   --board-bg: #eef3f6;
   --board-ink: #102a3d;
   --board-muted: #647786;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   width: 100vw;
@@ -8590,6 +8592,366 @@ select {
   color: #46606f;
   font-size: 0.9rem;
   font-weight: 800;
+}
+
+/* Keep the 5 x 4 operations board legible on older 720p/900p field displays. */
+@media (max-width: 1700px), (max-height: 950px) {
+  .injection-board {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .injection-board__topbar {
+    gap: 14px;
+    min-height: 64px;
+    padding: 7px 10px;
+  }
+
+  .injection-board__title {
+    gap: 10px;
+  }
+
+  .injection-board__title > span {
+    width: 44px;
+    height: 42px;
+    border-left-width: 4px;
+  }
+
+  .injection-board__title > span svg {
+    width: 25px;
+    height: 25px;
+  }
+
+  .injection-board__title h1 {
+    font-size: 1.55rem;
+    white-space: nowrap;
+  }
+
+  .injection-board__meta {
+    gap: 5px;
+  }
+
+  .injection-board__meta > div:not(.injection-board__language) {
+    min-width: 76px;
+    padding: 4px 7px;
+  }
+
+  .injection-board__meta span {
+    font-size: 0.56rem;
+  }
+
+  .injection-board__meta strong {
+    font-size: 0.7rem;
+  }
+
+  .injection-board__refresh-badge {
+    padding: 5px 7px;
+    font-size: 0.58rem !important;
+  }
+
+  .injection-board__language {
+    height: 29px;
+  }
+
+  .injection-board__language button {
+    min-width: 39px;
+    padding: 0 6px;
+    font-size: 0.62rem;
+  }
+
+  .injection-board__action {
+    width: 30px;
+    height: 30px;
+    font-size: 1rem;
+  }
+
+  .injection-board__grid {
+    gap: 5px;
+    padding: 5px;
+  }
+
+  .injection-board-summary {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    gap: 5px;
+    padding: 8px 9px;
+    border-left-width: 6px;
+  }
+
+  .injection-board-summary header,
+  .injection-board-summary header > div {
+    gap: 6px;
+  }
+
+  .injection-board-summary header > div > span {
+    width: 23px;
+    height: 23px;
+    font-size: 0.61rem;
+  }
+
+  .injection-board-summary header > div > strong {
+    font-size: 1rem;
+  }
+
+  .injection-board-summary header > em {
+    max-width: 44%;
+    overflow: hidden;
+    padding: 4px 6px;
+    font-size: 0.59rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .injection-board-summary__hero {
+    gap: 6px;
+  }
+
+  .injection-board-summary__hero > strong {
+    font-size: 2.05rem;
+    white-space: nowrap;
+  }
+
+  .injection-board-summary__hero > span {
+    overflow: hidden;
+    font-size: 0.66rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .injection-board-summary__metrics {
+    gap: 4px;
+  }
+
+  .injection-board-summary__metrics > span {
+    gap: 2px;
+    overflow: hidden;
+    padding: 4px 5px;
+    font-size: 0.57rem;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .injection-board-summary__metrics strong {
+    font-size: 0.78rem;
+  }
+
+  .injection-board-summary footer {
+    gap: 5px;
+    min-height: 19px;
+    padding-top: 4px;
+    font-size: 0.59rem;
+  }
+
+  .injection-board-summary footer strong {
+    font-size: 0.68rem;
+  }
+
+  .injection-board-card {
+    grid-template-rows: auto auto minmax(0, 1fr) 5px auto;
+    gap: 4px;
+    padding: 7px 8px;
+    border-left-width: 6px;
+  }
+
+  .injection-board-card__header,
+  .injection-board-card__header > div {
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .injection-board-card__header > div {
+    flex: 1 1 auto;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .injection-board-card__header strong {
+    flex: 0 0 auto;
+    font-size: 1.15rem;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .injection-board-card__header span {
+    overflow: hidden;
+    font-size: 0.7rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .injection-board-card__header em {
+    max-width: 48%;
+    flex: 0 1 auto;
+    overflow: hidden;
+    padding: 3px 5px;
+    font-size: 0.64rem;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .injection-board-card__part {
+    gap: 5px;
+    min-height: 19px;
+    padding-bottom: 3px;
+  }
+
+  .injection-board-card__part strong,
+  .injection-board-card__part span,
+  .injection-board-card__part em {
+    font-size: 0.75rem;
+    line-height: 1.15;
+  }
+
+  .injection-board-card__metrics {
+    gap: 5px;
+    align-content: stretch;
+  }
+
+  .injection-board-card__metrics > div {
+    align-content: center;
+    overflow: hidden;
+    padding: 3px 5px;
+  }
+
+  .injection-board-card__metrics span,
+  .injection-board-card__progress-head span,
+  .injection-board-card footer span {
+    font-size: 0.58rem;
+    line-height: 1.1;
+  }
+
+  .injection-board-card__metrics strong {
+    margin-top: 1px;
+    font-size: 1.32rem;
+    line-height: 0.95;
+    white-space: nowrap;
+  }
+
+  .injection-board-card__metrics small {
+    margin-top: 2px;
+    font-size: 0.59rem;
+    line-height: 1.05;
+  }
+
+  .injection-board-card__track {
+    height: 5px;
+  }
+
+  .injection-board-card footer {
+    min-height: 17px;
+    padding-top: 3px;
+  }
+
+  .injection-board-card footer strong {
+    font-size: 0.65rem;
+    white-space: nowrap;
+  }
+
+  .injection-board__stale-banner,
+  .injection-board__error {
+    right: 8px;
+    top: 68px;
+    padding: 6px 9px;
+    font-size: 0.65rem;
+  }
+
+  .injection-board__error {
+    top: 102px;
+  }
+
+  .injection-board__loading {
+    inset: 64px 0 0;
+  }
+}
+
+@media (max-width: 1240px) {
+  .injection-board__topbar {
+    gap: 8px;
+    padding-inline: 7px;
+  }
+
+  .injection-board__title h1 {
+    font-size: 1.35rem;
+  }
+
+  .injection-board__meta > div:not(.injection-board__language) {
+    min-width: 66px;
+    padding-inline: 5px;
+  }
+
+  .injection-board__refresh-badge {
+    display: none;
+  }
+
+  .injection-board-summary header > div > strong {
+    font-size: 0.92rem;
+  }
+
+  .injection-board-card__header strong {
+    font-size: 1.08rem;
+  }
+}
+
+@media (max-height: 760px) {
+  .injection-board__topbar {
+    min-height: 56px;
+    padding-block: 5px;
+  }
+
+  .injection-board__title > span {
+    width: 40px;
+    height: 38px;
+  }
+
+  .injection-board__title > span svg {
+    width: 23px;
+    height: 23px;
+  }
+
+  .injection-board__grid {
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .injection-board-summary {
+    gap: 4px;
+    padding: 6px 7px;
+  }
+
+  .injection-board-summary__hero > strong {
+    font-size: 1.85rem;
+  }
+
+  .injection-board-summary__metrics > span {
+    padding: 3px 4px;
+  }
+
+  .injection-board-card {
+    gap: 3px;
+    padding: 5px 7px;
+  }
+
+  .injection-board-card__part {
+    min-height: 17px;
+    padding-bottom: 2px;
+  }
+
+  .injection-board-card__metrics > div {
+    padding-block: 2px;
+  }
+
+  .injection-board-card__metrics strong {
+    font-size: 1.2rem;
+  }
+
+  .injection-board-card footer {
+    min-height: 15px;
+    padding-top: 2px;
+  }
+
+  .injection-board__loading {
+    inset: 56px 0 0;
+  }
 }
 
 @media (min-width: 2500px) and (min-height: 1350px) {
