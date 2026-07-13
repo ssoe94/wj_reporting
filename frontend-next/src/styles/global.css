@@ -8545,6 +8545,8 @@ select {
   font-size: 0.82rem;
 }
 
+.injection-board-card--running .injection-board-card__track { background: #ccebdc; }
+.injection-board-card--running .injection-board-card__track > span { background: #008f4f; }
 .injection-board-card--warning .injection-board-card__track > span { background: #dca21d; }
 .injection-board-card--stopped .injection-board-card__track > span { background: #d6533b; }
 .injection-board-card--completed .injection-board-card__track > span { background: #178d9e; }
