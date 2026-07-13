@@ -8458,12 +8458,16 @@ select {
 .injection-board-card--unplanned .injection-board-card__header em { background: #086fb5; color: #ffffff; }
 
 .injection-board-card__part {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
+  overflow: hidden;
   padding-bottom: 6px;
   border-bottom: 1px solid #e2e8eb;
+  white-space: nowrap;
 }
 
-.injection-board-card__part span,
 .injection-board-card__metrics span,
 .injection-board-card__progress-head span,
 .injection-board-card footer span {
@@ -8472,24 +8476,25 @@ select {
   font-weight: 800;
 }
 
-.injection-board-card__part strong {
-  display: block;
+.injection-board-card__part strong,
+.injection-board-card__part span,
+.injection-board-card__part em {
+  min-width: 0;
   overflow: hidden;
-  margin-top: 2px;
   font-size: 1.03rem;
+  font-style: normal;
+  font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.injection-board-card__part small {
-  display: block;
-  overflow: hidden;
-  margin-top: 3px;
+.injection-board-card__part span {
   color: #536d7c;
-  font-size: 0.82rem;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.injection-board-card__part em {
+  flex: 0 0 auto;
+  color: #9b6a16;
 }
 
 .injection-board-card__metrics {
@@ -8619,8 +8624,9 @@ select {
   .injection-board-card__metrics span,
   .injection-board-card__progress-head span,
   .injection-board-card footer span { font-size: 0.8rem; }
-  .injection-board-card__part strong { font-size: 1.28rem; }
-  .injection-board-card__part small { font-size: 1.02rem; }
+  .injection-board-card__part strong,
+  .injection-board-card__part span,
+  .injection-board-card__part em { font-size: 1.28rem; }
   .injection-board-card__metrics > div { padding: 10px 12px; }
   .injection-board-card__metrics strong { font-size: 2.2rem; }
   .injection-board-card__metrics small { font-size: 0.92rem; }

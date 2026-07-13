@@ -24,6 +24,7 @@ type BoardMachine = {
   currentCycleTimeSec: number | null;
   activePart: string;
   activeModel: string;
+  activeFamily: string;
 };
 
 const boardCopy = {
@@ -75,6 +76,7 @@ const boardCopy = {
     part: "생산 Part",
     model: "모델",
     noPart: "Part 확인 대기",
+    noPlan: "계획 없음",
     lastShot: "최근 형합",
     noShot: "형합 없음",
     remainingShots: "잔여 형합",
@@ -130,6 +132,7 @@ const boardCopy = {
     part: "生产Part",
     model: "型号",
     noPart: "等待确认Part",
+    noPlan: "无计划",
     lastShot: "最近合模",
     noShot: "无合模",
     remainingShots: "剩余模次",
@@ -141,6 +144,14 @@ const boardCopy = {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.max(0, value));
+}
+
+function formatProductFamily(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toUpperCase().replaceAll("/", "");
+  if (normalized === "BC") return "B/C";
+  if (normalized === "CA") return "C/A";
+  if (normalized === "GP") return "G/P";
+  return String(value ?? "").trim();
 }
 
 function formatTime(value: Date | string | null | undefined) {
@@ -177,19 +188,22 @@ function getLatestMesTime(data: InjectionProductionMatrix | undefined) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function getActiveProduct(row: RealtimeProgressRow | undefined, fallback: string) {
-  if (!row?.segments.length) return { part: fallback, model: "-" };
+function getActiveProduct(row: RealtimeProgressRow | undefined, fallback: string, noPlan: string) {
+  if (!row?.segments.length) {
+    return { part: row?.isRunning ? fallback : noPlan, model: "", family: "" };
+  }
   const activeSegment = row.segments.find((segment) => segment.status === "in_progress")
     ?? row.segments.find((segment) => segment.status === "pending")
     ?? row.segments.at(-1);
-  if (!activeSegment) return { part: fallback, model: "-" };
+  if (!activeSegment) return { part: fallback, model: "", family: "" };
 
   const paired = activeSegment.shotGroupKey
     ? row.segments.filter((segment) => segment.shotGroupKey === activeSegment.shotGroupKey)
     : [activeSegment];
   return {
     part: paired.map((segment) => segment.partNo).filter(Boolean).join(" + ") || fallback,
-    model: [...new Set(paired.map((segment) => segment.modelName).filter((value) => value && value !== "-"))].join(" + ") || "-",
+    model: [...new Set(paired.map((segment) => segment.modelName).filter((value) => value && value !== "-"))].join(" + "),
+    family: [...new Set(paired.map((segment) => formatProductFamily(segment.productFamilyCode)).filter(Boolean))].join(" + "),
   };
 }
 
@@ -225,6 +239,7 @@ function buildBoardMachines(
   elapsedRate: number,
   isStale: boolean,
   noPartText: string,
+  noPlanText: string,
 ) {
   const rowsByMachine = new Map<number, RealtimeProgressRow>();
   summary.rows.forEach((row) => {
@@ -238,7 +253,7 @@ function buildBoardMachines(
     const row = rowsByMachine.get(machineNumber);
     const mesMachine = mesMachines.get(machineNumber);
     const currentCycleTimeSec = row?.expectedCycleTimeSec ?? null;
-    const activeProduct = getActiveProduct(row, noPartText);
+    const activeProduct = getActiveProduct(row, noPartText, noPlanText);
     return {
       machineNumber,
       tonnage: getTonnage(mesMachine?.tonnage || row?.label || mesMachine?.display_name),
@@ -247,6 +262,7 @@ function buildBoardMachines(
       currentCycleTimeSec,
       activePart: activeProduct.part,
       activeModel: activeProduct.model,
+      activeFamily: activeProduct.family,
     };
   });
 }
@@ -273,9 +289,13 @@ function MachineBoardCard({ machine, language }: { machine: BoardMachine; langua
         <em>{getStatusLabel(machine.tone, copy)}</em>
       </header>
 
-      <div className="injection-board-card__part">
-        <strong title={machine.activePart}>{machine.activePart}</strong>
-        <small title={machine.activeModel}>{machine.activeModel}</small>
+      <div
+        className="injection-board-card__part"
+        title={[machine.activePart, machine.activeModel, machine.activeFamily].filter(Boolean).join(" · ")}
+      >
+        <strong>{machine.activePart}</strong>
+        {machine.activeModel ? <span>{machine.activeModel}</span> : null}
+        {machine.activeFamily ? <em>{machine.activeFamily}</em> : null}
       </div>
 
       <div className="injection-board-card__metrics">
@@ -333,9 +353,9 @@ export function InjectionBoardPage() {
     ? Math.max(0, Math.min(100, ((latestMesTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100))
     : 0;
   const machines = useMemo(
-    () => buildBoardMachines(summary, mesQuery.data, elapsedRate, isStale, copy.noPart)
+    () => buildBoardMachines(summary, mesQuery.data, elapsedRate, isStale, copy.noPart, copy.noPlan)
       .sort((left, right) => getBoardOrder(left) - getBoardOrder(right) || left.machineNumber - right.machineNumber),
-    [copy.noPart, elapsedRate, isStale, mesQuery.data, summary],
+    [copy.noPart, copy.noPlan, elapsedRate, isStale, mesQuery.data, summary],
   );
   const plannedRunningCount = machines.filter((machine) => machine.row?.hasPlan && machine.row.isRunning).length;
   const unplannedRunningCount = machines.filter((machine) => !machine.row?.hasPlan && machine.row?.isRunning).length;
