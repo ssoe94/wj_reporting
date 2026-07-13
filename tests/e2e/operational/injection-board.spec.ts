@@ -19,6 +19,28 @@ test.describe('injection office board', () => {
     guard.assertClean();
   });
 
+  test('returns a direct board bookmark to the board after login', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await installOperationalApiMocks(page);
+    await page.route('**/api/token/', async (route) => {
+      await route.fulfill({ json: { access: 'board-access-token', refresh: 'board-refresh-token' } });
+    });
+
+    await page.goto('/production/injection-board/index.html');
+    await expect(page).toHaveURL(/\/login\?/);
+    expect(new URL(page.url()).searchParams.get('returnTo')).toBe('/production/injection-board/index.html');
+
+    await page.reload();
+    await page.locator('input[autocomplete="username"]').fill('board-user');
+    await page.locator('input[autocomplete="current-password"]').fill('board-password');
+    await page.locator('form').getByRole('button').click();
+
+    await expect(page).toHaveURL(/\/production\/injection-board\/index\.html$/);
+    await expect(page.locator('.injection-board__grid')).toBeVisible();
+    await expect(page.locator('.injection-board-card')).toHaveCount(17);
+    guard.assertClean();
+  });
+
   test('renders three summaries and machines 1 through 17 in one 4K screen', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);

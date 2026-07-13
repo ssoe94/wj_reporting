@@ -15,7 +15,9 @@ export function RequireAuth({ children }: RequireAuthProps) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    const returnTo = `${location.pathname}${location.search}${location.hash}`;
+    const loginSearch = new URLSearchParams({ returnTo });
+    return <Navigate to={`/login?${loginSearch.toString()}`} replace state={{ from: returnTo }} />;
   }
 
   return <>{children}</>;

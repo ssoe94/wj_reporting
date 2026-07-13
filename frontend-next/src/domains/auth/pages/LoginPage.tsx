@@ -12,6 +12,19 @@ type LocationState = {
   from?: string;
 };
 
+function getSafeRedirectTarget(candidate?: string | null) {
+  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) {
+    return "/production";
+  }
+
+  const target = new URL(candidate, window.location.origin);
+  if (target.origin !== window.location.origin || target.pathname === "/login") {
+    return "/production";
+  }
+
+  return `${target.pathname}${target.search}${target.hash}`;
+}
+
 const loginCopy = {
   ko: {
     title: "로그인",
@@ -61,7 +74,8 @@ export function LoginPage() {
   const copy = loginCopy[language];
 
   const state = location.state as LocationState | null;
-  const redirectTo = state?.from || "/production";
+  const queryReturnTo = new URLSearchParams(location.search).get("returnTo");
+  const redirectTo = getSafeRedirectTarget(queryReturnTo || state?.from);
 
   if (isAuthenticated) {
     return <Navigate to={redirectTo} replace />;
