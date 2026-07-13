@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Factory } from "lucide-react";
 import { getInjectionProductionMatrix, type InjectionProductionMatrix } from "@/domains/mes/api";
 import { getProductionPlanSummary, getProductionStatus } from "@/domains/production/api";
 import {
@@ -391,7 +392,7 @@ export function InjectionBoardPage() {
     <main className="injection-board">
       <header className="injection-board__topbar">
         <div className="injection-board__title">
-          <span>{copy.eyebrow}</span>
+          <span aria-hidden="true"><Factory /></span>
           <div>
             <h1>{copy.title}</h1>
           </div>
