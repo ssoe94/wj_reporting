@@ -4439,20 +4439,6 @@ export function ProductionDashboardPage() {
             />
           </div>
 
-          <div className="production-dashboard__board-launcher">
-            <span>{copy.openInjectionBoardHint}</span>
-            <button
-              className="button button--ghost"
-              onClick={() => {
-                const boardUrl = new URL(`${import.meta.env.BASE_URL}production/injection-board`, window.location.origin);
-                window.open(boardUrl.toString(), "wj-injection-board", "popup=yes,width=1920,height=1080");
-              }}
-              type="button"
-            >
-              {copy.openInjectionBoard}
-            </button>
-          </div>
-
           {activeKpiDetail === "injection" ? renderCumulativeKpiDetail({
             detailKey: "injection",
             title: detailCopy.injectionTitle,
@@ -4734,6 +4720,20 @@ export function ProductionDashboardPage() {
             language={language}
             mode="dashboard"
           />
+
+          <div className="production-dashboard__board-launcher">
+            <span>{copy.openInjectionBoardHint}</span>
+            <button
+              className="button button--ghost"
+              onClick={() => {
+                const boardUrl = new URL(`${import.meta.env.BASE_URL}production/injection-board`, window.location.origin);
+                window.open(boardUrl.toString(), "wj-injection-board", "popup=yes,width=1920,height=1080");
+              }}
+              type="button"
+            >
+              {copy.openInjectionBoard}
+            </button>
+          </div>
 
           {selectedActivityRow ? (
             <div className="modal-backdrop" role="presentation" onClick={closeActivityConfirmation}>
