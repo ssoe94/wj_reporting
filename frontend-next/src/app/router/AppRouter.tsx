@@ -98,6 +98,14 @@ export function AppRouter() {
         }
       />
       <Route
+        path="/production/injection-board/index.html"
+        element={
+          <RequireAuth>
+            <InjectionBoardPage />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/"
         element={
           <RequireAuth>

@@ -7,6 +7,18 @@ import {
 } from '../helpers/operational';
 
 test.describe('injection office board', () => {
+  test('renders from the nested static index entry used by production', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'ko');
+
+    await page.goto('/production/injection-board/index.html');
+    await expect(page.locator('.injection-board__grid')).toBeVisible();
+    await expect(page.locator('.injection-board-card')).toHaveCount(17);
+
+    guard.assertClean();
+  });
+
   test('renders three summaries and machines 1 through 17 in one 4K screen', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);
