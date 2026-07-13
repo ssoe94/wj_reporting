@@ -844,10 +844,30 @@ select {
   white-space: nowrap;
 }
 
-.production-kpi-chart__summary-stats .production-kpi-chart__unplanned-stat {
-  border-color: rgba(209, 128, 24, 0.24);
-  background: rgba(255, 247, 230, 0.92);
+.production-unplanned-detail__summary {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
   color: #9a5c0a;
+  font-variant-numeric: tabular-nums;
+}
+
+.production-unplanned-detail__summary strong {
+  font-size: 1.2rem;
+  font-weight: 880;
+}
+
+.production-unplanned-detail__summary span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
+.production-unplanned-detail__description {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
 }
 
 .production-kpi-chart__plot {

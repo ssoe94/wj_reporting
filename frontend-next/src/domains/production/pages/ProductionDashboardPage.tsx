@@ -97,7 +97,7 @@ type MachiningProgressPreview = {
   }>;
 };
 
-type KpiDetailKey = "injection" | "machining" | "machines";
+type KpiDetailKey = "injection" | "unplanned" | "machining" | "machines";
 
 type InjectionActivityConfirmationForm = {
   activityType: InjectionActivityType | "";
@@ -303,6 +303,8 @@ const pageCopy = {
     shotUnit: "회",
     machineUnit: "대",
     unplannedShotSummary: "무계획가동",
+    noUnplannedOperation: "무계획가동 없음",
+    moreMachines: "외",
     running: "가동",
     paused: "일시중지",
     unplannedRunning: "무계획 가동",
@@ -465,6 +467,8 @@ const pageCopy = {
     shotUnit: "次",
     machineUnit: "台",
     unplannedShotSummary: "无计划运行",
+    noUnplannedOperation: "无计划运行记录",
+    moreMachines: "另有",
     running: "运行",
     paused: "暂时停机",
     unplannedRunning: "无计划运行",
@@ -597,6 +601,8 @@ const kpiDetailCopy = {
     outsidePlanMes: "계획 외 MES 실적",
     unplannedBadge: "무계획",
     confirmationNeeded: "활동 확인 필요",
+    unplannedTitle: "무계획가동 상세",
+    unplannedDescription: "생산계획 없이 형합이 기록된 설비입니다. 실제 생산, 시험 사출 또는 점검 여부를 확인하세요.",
     updatedAt: "업데이트",
     inProgressNow: "진행 중",
     paceGap: "시간목표 대비",
@@ -641,6 +647,8 @@ const kpiDetailCopy = {
     outsidePlanMes: "计划外 MES 实绩",
     unplannedBadge: "无计划",
     confirmationNeeded: "需确认活动",
+    unplannedTitle: "无计划运行详情",
+    unplannedDescription: "以下设备在没有生产计划时记录了合模。请确认是实际生产、试模还是检查作业。",
     updatedAt: "更新",
     inProgressNow: "进行中",
     paceGap: "较时间目标",
@@ -1096,6 +1104,13 @@ function getLocalizedMachineLabel(value: string | null | undefined, language: Ap
   const label = String(value ?? "").trim();
   if (language !== "zh") return label;
   return label.replace(/호기/g, "号机");
+}
+
+function getCompactMachineLabel(value: string | null | undefined, language: AppLanguage) {
+  const machineNumber = Number(getMachineNumberFromName(value));
+  return Number.isFinite(machineNumber) && machineNumber > 0
+    ? getMachineFallbackLabel(machineNumber, language)
+    : getLocalizedMachineLabel(value, language);
 }
 
 function clampPercent(value: number) {
@@ -3044,6 +3059,15 @@ export function ProductionDashboardPage() {
     : 0;
   const productionElapsedRate = getProductionElapsedRate(businessDate, mesQuery.data);
   const injectionRateTone = getRateTone(injectionCompletionRate, productionElapsedRate);
+  const unplannedProgressRows = realtimeProgress.rows.filter((row) => !row.hasPlan && row.shotCount > 0);
+  const unplannedPreview = unplannedProgressRows
+    .slice(0, 2)
+    .map((row) => `${getCompactMachineLabel(row.label, language)} ${formatNumber(row.shotCount)}${copy.shotUnit}`)
+    .join(" · ");
+  const unplannedRemainingCount = Math.max(0, unplannedProgressRows.length - 2);
+  const unplannedKpiHint = unplannedProgressRows.length
+    ? `${unplannedPreview}${unplannedRemainingCount > 0 ? ` · ${copy.moreMachines} ${unplannedRemainingCount}${copy.machineUnit}` : ""}`
+    : copy.noUnplannedOperation;
   const machiningSummaryMesQty = Number(machiningProvisionQuery.data?.summary.mes_qty ?? machiningStatsQuery.data?.summary.total_mes ?? machiningProgress.actualQty);
   const machiningSummaryManualOpenQty = Number(machiningProvisionQuery.data?.summary.manual_open_qty ?? 0);
   const machiningSummaryEffectiveQty = Number(machiningProvisionQuery.data?.summary.effective_actual_qty ?? machiningProgress.actualQty);
@@ -3948,6 +3972,50 @@ export function ProductionDashboardPage() {
       .join(" ");
   }
 
+  function renderUnplannedKpiDetail() {
+    return (
+      <section className="panel production-kpi-detail production-kpi-detail--unplanned">
+        <div className="production-kpi-detail__header">
+          <div>
+            <p className="panel-card__eyebrow">MES ACTIVITY</p>
+            <h3 className="panel__title">{detailCopy.unplannedTitle}</h3>
+          </div>
+          <div className="production-unplanned-detail__summary">
+            <strong>{formatNumber(briefContext.unplannedInjectionShots)}{copy.shotUnit}</strong>
+            <span>{briefContext.unplannedInjectionMachineCount}{copy.machineUnit}</span>
+          </div>
+        </div>
+        <p className="production-unplanned-detail__description">{detailCopy.unplannedDescription}</p>
+        {unplannedProgressRows.length ? (
+          <div className="production-kpi-rank__grid">
+            {unplannedProgressRows.map((row) => {
+              const displayLabel = getLocalizedMachineLabel(row.label, language);
+              return (
+                <article className="production-kpi-rank__card production-kpi-rank__card--unplanned" key={row.key}>
+                  <div className="production-kpi-rank__card-head">
+                    <strong>{displayLabel}</strong>
+                    <span>{detailCopy.unplannedBadge}</span>
+                  </div>
+                  <div className="production-kpi-rank__card-meta">
+                    <em>{detailCopy.outsidePlanMes}</em>
+                    <span>{detailCopy.confirmationNeeded}</span>
+                  </div>
+                  <div className="production-kpi-rank__unplanned-total">
+                    <span>{copy.shotCount}</span>
+                    <strong>{formatNumber(row.shotCount)}{copy.shotUnit}</strong>
+                  </div>
+                  <p>{detailCopy.unplannedShotSummary} · {formatNumber(row.shotCount)}{copy.shotUnit}</p>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="notice notice--neutral">{copy.noUnplannedOperation}</div>
+        )}
+      </section>
+    );
+  }
+
   function renderCumulativeKpiDetail(options: {
     detailKey: "injection" | "machining";
     title: string;
@@ -3963,8 +4031,6 @@ export function ProductionDashboardPage() {
       completedCount: number;
       inProgressCount: number;
       pendingCount: number;
-      hasPlan?: boolean;
-      shotCount?: number;
     }>;
   }) {
     const currentPoint = options.trend.latestPoint;
@@ -3985,11 +4051,6 @@ export function ProductionDashboardPage() {
 
       return right.actualQty - left.actualQty;
     });
-    const unplannedRows = options.detailKey === "injection"
-      ? sortedRows.filter((row) => row.hasPlan === false && Number(row.shotCount ?? 0) > 0)
-      : [];
-    const unplannedShotCount = unplannedRows.reduce((sum, row) => sum + Number(row.shotCount ?? 0), 0);
-
     return (
       <section className={`panel production-kpi-detail production-kpi-detail--${options.detailKey}`}>
         <div className="production-kpi-detail__header">
@@ -4011,11 +4072,6 @@ export function ProductionDashboardPage() {
                 <strong>{formatNumber(currentPoint.actualQty)} / {formatNumber(options.trend.plannedQty)}</strong>
               </div>
               <div className="production-kpi-chart__summary-stats">
-                {options.detailKey === "injection" ? (
-                  <span className="production-kpi-chart__unplanned-stat">
-                    {detailCopy.unplannedShotSummary} {formatNumber(unplannedShotCount)}{copy.shotUnit} · {unplannedRows.length}{copy.machineUnit}
-                  </span>
-                ) : null}
                 <span>{detailCopy.completionRate} {Math.round(markerProgressRate)}%</span>
                 <span>{detailCopy.elapsedRate} {Math.round(options.trend.elapsedRate)}%</span>
                 <span className={targetGap >= 0 ? "production-progress-gap--up" : "production-progress-gap--down"}>
@@ -4061,7 +4117,6 @@ export function ProductionDashboardPage() {
           {sortedRows.length ? (
             <div className="production-kpi-rank__grid">
               {sortedRows.map((row) => {
-                const isUnplanned = options.detailKey === "injection" && row.hasPlan === false;
                 const rowExpectedQty = Math.round(row.plannedQty * (options.trend.elapsedRate / 100));
                 const rowPaceQtyGap = row.actualQty - rowExpectedQty;
                 const rowPaceRateGap = row.plannedQty > 0
@@ -4069,25 +4124,6 @@ export function ProductionDashboardPage() {
                   : (row.actualQty > 0 ? 100 : 0);
                 const rowGapClass = rowPaceQtyGap >= 0 ? "production-kpi-rank__delta production-kpi-rank__delta--up" : "production-kpi-rank__delta production-kpi-rank__delta--down";
                 const displayLabel = getLocalizedMachineLabel(row.label, language);
-                if (isUnplanned) {
-                  return (
-                    <article className="production-kpi-rank__card production-kpi-rank__card--unplanned" key={row.key}>
-                      <div className="production-kpi-rank__card-head">
-                        <strong>{displayLabel}</strong>
-                        <span>{detailCopy.unplannedBadge}</span>
-                      </div>
-                      <div className="production-kpi-rank__card-meta">
-                        <em>{detailCopy.outsidePlanMes}</em>
-                        <span>{detailCopy.confirmationNeeded}</span>
-                      </div>
-                      <div className="production-kpi-rank__unplanned-total">
-                        <span>{copy.shotCount}</span>
-                        <strong>{formatNumber(row.shotCount ?? 0)}{copy.shotUnit}</strong>
-                      </div>
-                      <p>{detailCopy.unplannedShotSummary} · {formatNumber(row.shotCount ?? 0)}{copy.shotUnit}</p>
-                    </article>
-                  );
-                }
                 return (
                   <article className="production-kpi-rank__card" key={row.key}>
                     <div className="production-kpi-rank__card-head">
@@ -4368,12 +4404,20 @@ export function ProductionDashboardPage() {
               <span className="stat-card__hint">{copy.productionDateHint}</span>
             </label>
             <StatCard
-              hint={`${copy.planned} ${briefContext.plannedInjectionMachineCount}${copy.machineUnit} ${copy.completedRate} ${injectionCompletionRate.toFixed(1)}% - ${copy.unplannedShotSummary} ${formatNumber(briefContext.unplannedInjectionShots)}${copy.shotUnit}/${briefContext.unplannedInjectionMachineCount}${copy.machineUnit}`}
+              hint={`${copy.planned} ${briefContext.plannedInjectionMachineCount}${copy.machineUnit} ${copy.completedRate} ${injectionCompletionRate.toFixed(1)}%`}
               hintTone={injectionRateTone}
               isActive={activeKpiDetail === "injection"}
               onClick={() => toggleKpiDetail("injection")}
               title={copy.injectionActualPlan}
               value={`${formatNumber(briefContext.actualInjectionOutput)} / ${formatNumber(briefContext.injectionPlanQty)}`}
+            />
+            <StatCard
+              hint={unplannedKpiHint}
+              hintTone={briefContext.unplannedInjectionShots > 0 ? "negative" : "neutral"}
+              isActive={activeKpiDetail === "unplanned"}
+              onClick={() => toggleKpiDetail("unplanned")}
+              title={copy.unplannedShotSummary}
+              value={`${formatNumber(briefContext.unplannedInjectionShots)}${copy.shotUnit} / ${briefContext.unplannedInjectionMachineCount}${copy.machineUnit}`}
             />
             <StatCard
               hint={`${copy.completedRate} ${Math.round(machiningCompletionRate)}%`}
@@ -4396,7 +4440,7 @@ export function ProductionDashboardPage() {
             title: detailCopy.injectionTitle,
             trend: injectionTrend,
             rowLabel: detailCopy.byMachine,
-            rows: realtimeProgress.rows.map((row) => ({
+            rows: realtimeProgress.rows.filter((row) => row.hasPlan).map((row) => ({
               key: row.key,
               label: row.label,
               actualQty: row.estimatedQty,
@@ -4406,10 +4450,10 @@ export function ProductionDashboardPage() {
               completedCount: row.completedCount,
               inProgressCount: row.inProgressCount,
               pendingCount: row.pendingCount,
-              hasPlan: row.hasPlan,
-              shotCount: row.shotCount,
             })),
           }) : null}
+
+          {activeKpiDetail === "unplanned" ? renderUnplannedKpiDetail() : null}
 
           {activeKpiDetail === "machining" ? renderCumulativeKpiDetail({
             detailKey: "machining",
