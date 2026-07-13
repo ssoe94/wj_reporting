@@ -46,13 +46,13 @@ const boardCopy = {
     planProgress: "계획 생산 진도",
     actionRequired: "즉시 확인 필요",
     totalMachines: "전체 설비",
-    planOperating: "계획설비 가동",
     managementRequired: "관리 필요",
     timeProgress: "시간 기준",
     progressGap: "진도 차이",
     noIssue: "이상 없음",
     running: "가동 중",
     plannedRunning: "정상 가동",
+    plannedEquipment: "계획 설비",
     plannedMachines: "가동 계획",
     unplannedRunning: "계획 외 가동",
     warning: "진도 확인",
@@ -102,13 +102,13 @@ const boardCopy = {
     planProgress: "计划生产进度",
     actionRequired: "需要立即确认",
     totalMachines: "全部设备",
-    planOperating: "计划设备运行",
     managementRequired: "需要管理",
     timeProgress: "时间进度",
     progressGap: "进度差异",
     noIssue: "无异常",
     running: "运行中",
     plannedRunning: "按计划运行",
+    plannedEquipment: "计划设备",
     plannedMachines: "运行计划",
     unplannedRunning: "计划外运行",
     warning: "进度待确认",
@@ -352,10 +352,11 @@ export function InjectionBoardPage() {
   );
   const plannedRunningCount = machines.filter((machine) => machine.row?.hasPlan && machine.row.isRunning).length;
   const unplannedRunningCount = machines.filter((machine) => !machine.row?.hasPlan && machine.row?.isRunning).length;
+  const totalRunningCount = plannedRunningCount + unplannedRunningCount;
+  const idleMachineCount = Math.max(0, MACHINE_COUNT - totalRunningCount);
   const stoppedCount = machines.filter((machine) => machine.tone === "stopped").length;
   const warningCount = machines.filter((machine) => machine.tone === "warning").length;
   const plannedMachineCount = machines.filter((machine) => machine.row?.hasPlan).length;
-  const completedMachineCount = machines.filter((machine) => machine.row?.hasPlan && machine.row.progressRate >= 99.9).length;
   const stoppedMachineLabels = machines
     .filter((machine) => machine.tone === "stopped")
     .map((machine) => `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`)
@@ -429,12 +430,12 @@ export function InjectionBoardPage() {
             <em>{copy.totalMachines} {MACHINE_COUNT}{copy.machines}</em>
           </header>
           <div className="injection-board-summary__hero">
-            <strong>{plannedRunningCount} / {plannedMachineCount}</strong><span>{copy.planOperating}</span>
+            <strong>{totalRunningCount} / {MACHINE_COUNT}</strong><span>{copy.running}</span>
           </div>
           <div className="injection-board-summary__metrics">
-            <span>{copy.plannedRunning}<strong>{plannedRunningCount}{copy.machines}</strong></span>
-            <span>{copy.stopped}<strong>{stoppedCount}{copy.machines}</strong></span>
-            <span>{copy.completed}<strong>{completedMachineCount}{copy.machines}</strong></span>
+            <span>{copy.plannedEquipment}<strong>{plannedRunningCount} / {plannedMachineCount}{copy.machines}</strong></span>
+            <span>{copy.unplannedRunning}<strong>{unplannedRunningCount}{copy.machines}</strong></span>
+            <span>{copy.idle}<strong>{idleMachineCount}{copy.machines}</strong></span>
           </div>
           <footer><span>{copy.stoppedMachines}</span><strong>{stoppedMachineLabels || copy.noIssue}</strong></footer>
         </article>
