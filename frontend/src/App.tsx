@@ -63,8 +63,12 @@ function HomeRedirect() {
   return <Navigate to={parseFieldTerminalUser(user?.username) ? "/field" : "/analysis"} replace />;
 }
 
-function NextStaticRedirect({ view }: { view: 'production' | 'mes-monitoring' }) {
+function NextStaticRedirect({ view }: { view: 'production' | 'mes-monitoring' | 'injection-board' }) {
   useEffect(() => {
+    if (view === 'injection-board') {
+      window.location.replace('/next/production/injection-board/index.html');
+      return;
+    }
     const params = new URLSearchParams({ view });
     window.location.replace(`/next/index.html?${params.toString()}`);
   }, [view]);
@@ -590,6 +594,8 @@ function AppContent() {
             <Route path="/" element={<PrivateRoute><PageTransition><HomeRedirect /></PageTransition></PrivateRoute>} />
             <Route path="/next/production" element={<PrivateRoute><NextStaticRedirect view="production" /></PrivateRoute>} />
             <Route path="/next/production/" element={<PrivateRoute><NextStaticRedirect view="production" /></PrivateRoute>} />
+            <Route path="/next/production/injection-board" element={<PrivateRoute><NextStaticRedirect view="injection-board" /></PrivateRoute>} />
+            <Route path="/next/production/injection-board/" element={<PrivateRoute><NextStaticRedirect view="injection-board" /></PrivateRoute>} />
             <Route path="/next/mes/monitoring" element={<PrivateRoute><NextStaticRedirect view="mes-monitoring" /></PrivateRoute>} />
             <Route path="/next/mes/monitoring/" element={<PrivateRoute><NextStaticRedirect view="mes-monitoring" /></PrivateRoute>} />
             <Route path="/field" element={<PrivateRoute><PageTransition><FieldLauncherPage /></PageTransition></PrivateRoute>} />

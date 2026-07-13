@@ -36,6 +36,12 @@ services:
         source: /next/production/plans/
         destination: /next/index.html
       - type: rewrite
+        source: /next/production/injection-board
+        destination: /next/production/injection-board/index.html
+      - type: rewrite
+        source: /next/production/injection-board/
+        destination: /next/production/injection-board/index.html
+      - type: rewrite
         source: /next/mes/monitoring
         destination: /next/index.html
       - type: rewrite
