@@ -51,12 +51,12 @@ const boardCopy = {
     progressGap: "진도 차이",
     noIssue: "이상 없음",
     running: "가동 중",
-    plannedRunning: "계획가동",
+    plannedRunning: "정상 가동",
     plannedMachines: "가동 계획",
-    unplannedRunning: "무계획가동",
-    warning: "진도주의",
-    stopped: "계획정지",
-    completed: "계획완료",
+    unplannedRunning: "계획 외 가동",
+    warning: "진도 확인",
+    stopped: "계획 설비 정지",
+    completed: "생산 완료",
     stoppedMachines: "정지 설비",
     completedMachines: "완료 설비",
     idle: "비가동",
@@ -109,10 +109,10 @@ const boardCopy = {
     running: "运行中",
     plannedRunning: "按计划运行",
     plannedMachines: "运行计划",
-    unplannedRunning: "无计划运行",
-    warning: "进度注意",
-    stopped: "计划停机",
-    completed: "计划完成",
+    unplannedRunning: "计划外运行",
+    warning: "进度待确认",
+    stopped: "计划设备停机",
+    completed: "生产完成",
     stoppedMachines: "停机设备",
     completedMachines: "完成设备",
     idle: "未运行",
@@ -267,13 +267,6 @@ function buildBoardMachines(
   });
 }
 
-function getBoardOrder(machine: BoardMachine) {
-  if (machine.row?.isRunning && machine.row.hasPlan) return 0;
-  if (machine.row?.isRunning && !machine.row.hasPlan) return 1;
-  if (machine.row?.hasPlan && !machine.row.isRunning) return 2;
-  return 3;
-}
-
 function MachineBoardCard({ machine, language }: { machine: BoardMachine; language: AppLanguage }) {
   const copy = boardCopy[language];
   const row = machine.row;
@@ -353,8 +346,7 @@ export function InjectionBoardPage() {
     ? Math.max(0, Math.min(100, ((latestMesTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100))
     : 0;
   const machines = useMemo(
-    () => buildBoardMachines(summary, mesQuery.data, elapsedRate, isStale, copy.noPart, copy.noPlan)
-      .sort((left, right) => getBoardOrder(left) - getBoardOrder(right) || left.machineNumber - right.machineNumber),
+    () => buildBoardMachines(summary, mesQuery.data, elapsedRate, isStale, copy.noPart, copy.noPlan),
     [copy.noPart, copy.noPlan, elapsedRate, isStale, mesQuery.data, summary],
   );
   const plannedRunningCount = machines.filter((machine) => machine.row?.hasPlan && machine.row.isRunning).length;
