@@ -305,6 +305,8 @@ const pageCopy = {
     unplannedShotSummary: "무계획가동",
     noUnplannedOperation: "무계획가동 없음",
     moreMachines: "외",
+    openInjectionBoard: "사출 현황판 열기",
+    openInjectionBoardHint: "사무실 모니터용 20블록 실시간 현황판",
     running: "가동",
     paused: "일시중지",
     unplannedRunning: "무계획 가동",
@@ -469,6 +471,8 @@ const pageCopy = {
     unplannedShotSummary: "无计划运行",
     noUnplannedOperation: "无计划运行记录",
     moreMachines: "另有",
+    openInjectionBoard: "打开注塑看板",
+    openInjectionBoardHint: "办公室显示器用20格实时看板",
     running: "运行",
     paused: "暂时停机",
     unplannedRunning: "无计划运行",
@@ -4433,6 +4437,20 @@ export function ProductionDashboardPage() {
               title={copy.activeMachines}
               value={`${briefContext.activeMachineCount}/${briefContext.totalMachines}`}
             />
+          </div>
+
+          <div className="production-dashboard__board-launcher">
+            <span>{copy.openInjectionBoardHint}</span>
+            <button
+              className="button button--ghost"
+              onClick={() => {
+                const boardUrl = new URL(`${import.meta.env.BASE_URL}production/injection-board`, window.location.origin);
+                window.open(boardUrl.toString(), "wj-injection-board", "popup=yes,width=1920,height=1080");
+              }}
+              type="button"
+            >
+              {copy.openInjectionBoard}
+            </button>
           </div>
 
           {activeKpiDetail === "injection" ? renderCumulativeKpiDetail({

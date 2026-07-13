@@ -7,6 +7,7 @@ import { RequireCapabilities } from "@/domains/auth/RequireCapabilities";
 import { LoginPage } from "@/domains/auth/pages/LoginPage";
 import { InventoryPage } from "@/domains/inventory/pages/InventoryPage";
 import { MesMonitoringPage } from "@/domains/mes/pages/MesMonitoringPage";
+import { InjectionBoardPage } from "@/domains/production/pages/InjectionBoardPage";
 import { ProductionDashboardPage } from "@/domains/production/pages/ProductionDashboardPage";
 import { ProductionPlansPage } from "@/domains/production/pages/ProductionPlansPage";
 
@@ -88,6 +89,14 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/production/injection-board"
+        element={
+          <RequireAuth>
+            <InjectionBoardPage />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/"
         element={
