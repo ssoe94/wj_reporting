@@ -48,7 +48,7 @@ import {
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatCard } from "@/shared/components/StatCard";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
-import { getShanghaiDateString } from "@/shared/utils/date";
+import { getShanghaiBusinessDateString } from "@/shared/utils/date";
 
 type ProductionBriefContext = {
   businessDate: string;
@@ -925,7 +925,7 @@ function addBusinessDateDays(businessDate: string, days: number) {
 }
 
 function getBusinessDateAgeDays(businessDate: string) {
-  const todayStart = getBusinessDayStart(getShanghaiDateString());
+  const todayStart = getBusinessDayStart(getShanghaiBusinessDateString());
   const targetStart = getBusinessDayStart(businessDate);
   return Math.floor((todayStart.getTime() - targetStart.getTime()) / (24 * 60 * 60 * 1000));
 }
@@ -1072,7 +1072,7 @@ function getProductionElapsedRate(businessDate: string, mesData?: InjectionProdu
   const start = getBusinessDayStart(businessDate);
   const end = getBusinessDayEnd(businessDate);
   const latestTime = getLatestTime(mesData);
-  const fallbackTime = businessDate === getShanghaiDateString() ? new Date() : end;
+  const fallbackTime = businessDate === getShanghaiBusinessDateString() ? new Date() : end;
   const referenceTime = latestTime ?? fallbackTime;
   const clampedTime = new Date(Math.min(Math.max(referenceTime.getTime(), start.getTime()), end.getTime()));
   return ((clampedTime.getTime() - start.getTime()) / (end.getTime() - start.getTime())) * 100;
@@ -2793,7 +2793,7 @@ function ProductionDashboardSkeleton({ copy }: { copy: Record<string, string> })
 export function ProductionDashboardPage() {
   const queryClient = useQueryClient();
   const [language] = useStoredLanguage();
-  const currentDate = getShanghaiDateString();
+  const currentDate = getShanghaiBusinessDateString();
   const [businessDate, setBusinessDate] = useState(currentDate);
   const [isAiAskOpen, setIsAiAskOpen] = useState(false);
   const [aiQuestion, setAiQuestion] = useState("");

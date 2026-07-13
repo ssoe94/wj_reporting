@@ -7,6 +7,28 @@ import {
 } from '../helpers/operational';
 
 test.describe('injection office board', () => {
+  test('keeps the previous business date until the 08:00 cutoff', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await page.clock.setFixedTime(new Date('2026-05-19T07:59:00+08:00'));
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'ko');
+
+    await page.goto('/production/injection-board');
+    await expect(page.locator('.injection-board__meta > div').first()).toContainText('2026-05-18');
+    guard.assertClean();
+  });
+
+  test('uses the new business date from 08:00', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await page.clock.setFixedTime(new Date('2026-05-19T08:00:00+08:00'));
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'ko');
+
+    await page.goto('/production/injection-board');
+    await expect(page.locator('.injection-board__meta > div').first()).toContainText('2026-05-19');
+    guard.assertClean();
+  });
+
   test('renders from the nested static index entry used by production', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);
@@ -61,7 +83,7 @@ test.describe('injection office board', () => {
       await expect(page.locator(`.injection-board-card[data-machine="${machineNumber}"]`)).toBeVisible();
     }
     await expect(page.locator('.injection-board-card').first()).toContainText('현재 C/T');
-    await expect(page.locator('.injection-board-card').first()).toContainText('계획대비');
+    await expect(page.locator('.injection-board-card').first()).toContainText('달성률');
     await expect(page.locator('.injection-board-card').first()).toContainText('MODEL-A');
     await expect(page.locator('.injection-board-card').first()).not.toContainText('필요 C/T');
 
@@ -71,6 +93,34 @@ test.describe('injection office board', () => {
     expect((finalCardBox?.y ?? 0) + (finalCardBox?.height ?? 0)).toBeLessThanOrEqual(2160);
 
     await expectNoUndefinedOrNaN(page);
+    guard.assertClean();
+  });
+
+  test('shows the previous business-day summary in a smaller floating layer and closes on one click', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await page.clock.setFixedTime(new Date('2026-05-19T07:30:00+08:00'));
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'ko');
+    await page.setViewportSize({ width: 1920, height: 1080 });
+
+    await page.goto('/production/injection-board');
+    await page.getByRole('button', { name: '전일 생산 요약' }).click();
+
+    const history = page.locator('.injection-board-history');
+    const panel = page.locator('.injection-board-history__panel');
+    await expect(history).toBeVisible();
+    await expect(panel).toContainText('전일 사출 생산 요약');
+    await expect(panel).toContainText('2026-05-17');
+    await expect(panel.locator('.injection-board-history-card')).toHaveCount(17);
+
+    const panelBox = await panel.boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(panelBox?.width ?? 0).toBeLessThan(1920);
+    expect(panelBox?.height ?? 0).toBeLessThan(1080);
+
+    await panel.click({ position: { x: 12, y: 12 } });
+    await expect(history).toBeHidden();
+    await expect(page.locator('.injection-board__grid')).toBeVisible();
     guard.assertClean();
   });
 
@@ -116,6 +166,7 @@ test.describe('injection office board', () => {
 
     await page.goto('/production');
     const launcher = page.getByRole('button', { name: '사출 현황판 열기' });
+    await launcher.scrollIntoViewIfNeeded();
     await expect(launcher).toBeInViewport();
     const popupPromise = page.waitForEvent('popup');
     await launcher.click();

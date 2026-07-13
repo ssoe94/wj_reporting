@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Factory } from "lucide-react";
-import { getInjectionProductionMatrix, type InjectionProductionMatrix } from "@/domains/mes/api";
+import { Factory, History } from "lucide-react";
+import {
+  getInjectionProductionMatrix,
+  getInjectionProductionMatrixForDate,
+  type InjectionProductionMatrix,
+} from "@/domains/mes/api";
 import { getProductionPlanSummary, getProductionStatus } from "@/domains/production/api";
 import {
   buildRealtimeProgressSummary,
@@ -9,7 +13,7 @@ import {
   type RealtimeProgressSummary,
 } from "@/domains/production/realtime-progress";
 import { setStoredLanguage, type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
-import { getShanghaiDateString } from "@/shared/utils/date";
+import { addIsoDateDays, getShanghaiBusinessDateString } from "@/shared/utils/date";
 
 const BOARD_REFRESH_INTERVAL_MS = 60_000;
 const STALE_DATA_THRESHOLD_MS = 5 * 60_000;
@@ -37,6 +41,21 @@ const boardCopy = {
     refreshed: "화면 갱신",
     dataTime: "MES 기준",
     autoRefresh: "1분 자동 갱신",
+    previousSummary: "전일 생산 요약",
+    previousSummaryTitle: "전일 사출 생산 요약",
+    previousSummaryHint: "화면을 누르면 실시간 현황판으로 돌아갑니다.",
+    previousPlanResult: "계획 생산 실적",
+    operatedEquipment: "가동 설비",
+    outsidePlanResult: "계획 외 가동",
+    plannedMachinesLabel: "계획 설비",
+    actual: "실적",
+    plan: "계획",
+    machineSummary: "설비별 생산 결과",
+    productionRecorded: "생산 실적",
+    shortfall: "계획 미달",
+    noProduction: "생산 없음",
+    previousLoading: "전일 생산 이력을 불러오는 중입니다.",
+    previousError: "전일 생산 이력을 불러오지 못했습니다.",
     fullscreen: "전체 화면",
     exitFullscreen: "전체 화면 종료",
     close: "닫기",
@@ -93,6 +112,21 @@ const boardCopy = {
     refreshed: "页面更新",
     dataTime: "MES基准",
     autoRefresh: "每分钟自动更新",
+    previousSummary: "前日生产摘要",
+    previousSummaryTitle: "前日注塑生产摘要",
+    previousSummaryHint: "点击画面即可返回实时看板。",
+    previousPlanResult: "计划生产实绩",
+    operatedEquipment: "运行设备",
+    outsidePlanResult: "计划外运行",
+    plannedMachinesLabel: "计划设备",
+    actual: "实绩",
+    plan: "计划",
+    machineSummary: "设备生产结果",
+    productionRecorded: "有生产实绩",
+    shortfall: "未达计划",
+    noProduction: "无生产",
+    previousLoading: "正在读取前日生产记录。",
+    previousError: "无法读取前日生产记录。",
     fullscreen: "全屏",
     exitFullscreen: "退出全屏",
     close: "关闭",
@@ -315,11 +349,158 @@ function MachineBoardCard({ machine, language }: { machine: BoardMachine; langua
   );
 }
 
+function useReloadOnNewBuild() {
+  useEffect(() => {
+    let active = true;
+    let loadedCommit: string | null = null;
+
+    async function checkBuild() {
+      try {
+        const response = await fetch(`${import.meta.env.BASE_URL}build-info.json?t=${Date.now()}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const build = await response.json() as { commit?: string };
+        const commit = String(build.commit ?? "").trim();
+        if (!active || !commit || commit === "local") return;
+        if (loadedCommit && loadedCommit !== commit) {
+          window.location.reload();
+          return;
+        }
+        loadedCommit = commit;
+      } catch {
+        // A transient network failure should not interrupt the operations board.
+      }
+    }
+
+    void checkBuild();
+    const timer = window.setInterval(checkBuild, BOARD_REFRESH_INTERVAL_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+}
+
+type PreviousDaySummaryProps = {
+  businessDate: string;
+  language: AppLanguage;
+  summary: RealtimeProgressSummary;
+  isLoading: boolean;
+  isError: boolean;
+  onClose: () => void;
+};
+
+function PreviousDaySummary({
+  businessDate,
+  language,
+  summary,
+  isLoading,
+  isError,
+  onClose,
+}: PreviousDaySummaryProps) {
+  const copy = boardCopy[language];
+  const rowsByMachine = new Map<number, RealtimeProgressRow>();
+  summary.rows.forEach((row) => {
+    const machineNumber = getMachineNumber(row.label) || Number(row.key);
+    if (Number.isFinite(machineNumber)) rowsByMachine.set(machineNumber, row);
+  });
+  const machineRows = Array.from({ length: MACHINE_COUNT }, (_, index) => ({
+    machineNumber: index + 1,
+    row: rowsByMachine.get(index + 1),
+  }));
+  const plannedMachines = machineRows.filter(({ row }) => row?.hasPlan).length;
+  const operatedMachines = machineRows.filter(({ row }) => Number(row?.shotCount ?? 0) > 0).length;
+  const outsidePlanMachines = machineRows.filter(({ row }) => !row?.hasPlan && Number(row?.shotCount ?? 0) > 0);
+  const outsidePlanShots = outsidePlanMachines.reduce((total, { row }) => total + Number(row?.shotCount ?? 0), 0);
+  const completionRate = summary.plannedQty > 0 ? (summary.estimatedQty / summary.plannedQty) * 100 : 0;
+
+  return (
+    <div
+      aria-label={copy.previousSummaryTitle}
+      className="injection-board-history"
+      onClick={onClose}
+      role="button"
+      tabIndex={0}
+    >
+      <section aria-modal="true" className="injection-board-history__panel" role="dialog">
+        <header className="injection-board-history__header">
+          <div>
+            <History aria-hidden="true" />
+            <span>{copy.previousSummaryTitle}</span>
+            <strong>{businessDate}</strong>
+          </div>
+          <p>{copy.previousSummaryHint}</p>
+        </header>
+
+        {isLoading ? <div className="injection-board-history__state">{copy.previousLoading}</div> : null}
+        {isError ? <div className="injection-board-history__state injection-board-history__state--error">{copy.previousError}</div> : null}
+
+        {!isLoading && !isError ? (
+          <>
+            <div className="injection-board-history__kpis">
+              <article>
+                <span>{copy.previousPlanResult}</span>
+                <strong>{completionRate.toFixed(1)}%</strong>
+                <small>{copy.actual} {formatNumber(summary.estimatedQty)} / {copy.plan} {formatNumber(summary.plannedQty)}</small>
+              </article>
+              <article>
+                <span>{copy.operatedEquipment}</span>
+                <strong>{operatedMachines} / {MACHINE_COUNT}{copy.machines}</strong>
+                <small>{copy.plannedMachinesLabel} {plannedMachines}{copy.machines}</small>
+              </article>
+              <article>
+                <span>{copy.outsidePlanResult}</span>
+                <strong>{outsidePlanShots}{copy.shots} / {outsidePlanMachines.length}{copy.machines}</strong>
+                <small>{outsidePlanMachines.map(({ machineNumber }) => `${machineNumber}${language === "ko" ? "호기" : "号机"}`).join(", ") || copy.noIssue}</small>
+              </article>
+            </div>
+
+            <div className="injection-board-history__section-title">{copy.machineSummary}</div>
+            <div className="injection-board-history__machines">
+              {machineRows.map(({ machineNumber, row }) => {
+                const hasOutput = Number(row?.shotCount ?? 0) > 0;
+                const product = getActiveProduct(row, copy.noPart, copy.noPlan);
+                const resultTone = row?.hasPlan
+                  ? row.progressRate >= 99.9 ? "complete" : "shortfall"
+                  : hasOutput ? "outside" : "idle";
+                const resultLabel = row?.hasPlan
+                  ? row.progressRate >= 99.9 ? copy.completed : copy.shortfall
+                  : hasOutput ? copy.outsidePlanResult : copy.noProduction;
+                return (
+                  <article
+                    className={`injection-board-history-card injection-board-history-card--${resultTone}`}
+                    data-machine={machineNumber}
+                    key={machineNumber}
+                  >
+                    <header>
+                      <strong>{machineNumber}{language === "ko" ? "호기" : "号机"}</strong>
+                      <em>{resultLabel}</em>
+                    </header>
+                    <div className="injection-board-history-card__part" title={product.part}>{product.part}</div>
+                    <div className="injection-board-history-card__result">
+                      <strong>{row?.hasPlan ? `${row.progressRate.toFixed(1)}%` : hasOutput ? `${formatNumber(row?.shotCount ?? 0)}${copy.shots}` : "-"}</strong>
+                      <span>{row?.hasPlan ? `${formatNumber(row.estimatedQty)} / ${formatNumber(row.plannedQty)}` : hasOutput ? copy.productionRecorded : copy.noPlan}</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 export function InjectionBoardPage() {
   const [language, setLanguage] = useStoredLanguage();
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+  const [businessDate, setBusinessDate] = useState(() => getShanghaiBusinessDateString());
+  const [isPreviousSummaryOpen, setIsPreviousSummaryOpen] = useState(false);
   const copy = boardCopy[language];
-  const businessDate = getShanghaiDateString();
+  const previousBusinessDate = addIsoDateDays(businessDate, -1);
+  useReloadOnNewBuild();
   const planQuery = useQuery({
     queryKey: ["production-plan-summary", businessDate, "injection-board"],
     queryFn: () => getProductionPlanSummary(businessDate),
@@ -335,9 +516,36 @@ export function InjectionBoardPage() {
     queryFn: getInjectionProductionMatrix,
     refetchInterval: BOARD_REFRESH_INTERVAL_MS,
   });
+  const previousPlanQuery = useQuery({
+    queryKey: ["production-plan-summary", previousBusinessDate, "injection-board-history"],
+    queryFn: () => getProductionPlanSummary(previousBusinessDate),
+    enabled: isPreviousSummaryOpen,
+    staleTime: 5 * 60_000,
+  });
+  const previousStatusQuery = useQuery({
+    queryKey: ["production-status", previousBusinessDate, "injection-board-history"],
+    queryFn: () => getProductionStatus(previousBusinessDate),
+    enabled: isPreviousSummaryOpen,
+    staleTime: 5 * 60_000,
+  });
+  const previousMesQuery = useQuery({
+    queryKey: ["mes", "injection-board-history", previousBusinessDate],
+    queryFn: () => getInjectionProductionMatrixForDate(previousBusinessDate),
+    enabled: isPreviousSummaryOpen,
+    staleTime: 5 * 60_000,
+  });
   const summary = useMemo(
     () => buildRealtimeProgressSummary(planQuery.data, mesQuery.data, statusQuery.data, businessDate),
     [businessDate, mesQuery.data, planQuery.data, statusQuery.data],
+  );
+  const previousSummary = useMemo(
+    () => buildRealtimeProgressSummary(
+      previousPlanQuery.data,
+      previousMesQuery.data,
+      previousStatusQuery.data,
+      previousBusinessDate,
+    ),
+    [previousBusinessDate, previousMesQuery.data, previousPlanQuery.data, previousStatusQuery.data],
   );
   const latestMesTime = getLatestMesTime(mesQuery.data);
   const isStale = Boolean(latestMesTime && Date.now() - latestMesTime.getTime() > STALE_DATA_THRESHOLD_MS);
@@ -376,6 +584,26 @@ export function InjectionBoardPage() {
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
+  useEffect(() => {
+    const syncBusinessDate = () => {
+      const nextBusinessDate = getShanghaiBusinessDateString();
+      setBusinessDate((current) => current === nextBusinessDate ? current : nextBusinessDate);
+    };
+    const timer = window.setInterval(syncBusinessDate, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isPreviousSummaryOpen) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" || event.key === "Enter" || event.key === " ") {
+        setIsPreviousSummaryOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isPreviousSummaryOpen]);
+
   function changeLanguage(nextLanguage: AppLanguage) {
     setLanguage(nextLanguage);
     setStoredLanguage(nextLanguage);
@@ -402,6 +630,14 @@ export function InjectionBoardPage() {
           <div><span>{copy.productionDate}</span><strong>{businessDate}</strong></div>
           <div><span>{copy.dataTime}</span><strong>{formatTime(latestMesTime)}</strong></div>
           <div><span>{copy.refreshed}</span><strong>{refreshedAt ? formatTime(new Date(refreshedAt)) : "-"}</strong></div>
+          <button
+            className="injection-board__history-button"
+            onClick={() => setIsPreviousSummaryOpen(true)}
+            type="button"
+          >
+            <History aria-hidden="true" />
+            {copy.previousSummary}
+          </button>
           <span className="injection-board__refresh-badge">{copy.autoRefresh}</span>
           <div className="injection-board__language" aria-label="Language">
             <button className={language === "ko" ? "is-active" : ""} onClick={() => changeLanguage("ko")} type="button">KOR</button>
@@ -482,6 +718,16 @@ export function InjectionBoardPage() {
       </section>
 
       {isLoading ? <div className="injection-board__loading">{copy.loading}</div> : null}
+      {isPreviousSummaryOpen ? (
+        <PreviousDaySummary
+          businessDate={previousBusinessDate}
+          isError={previousPlanQuery.isError || previousStatusQuery.isError || previousMesQuery.isError}
+          isLoading={previousPlanQuery.isPending || previousStatusQuery.isPending || previousMesQuery.isPending}
+          language={language}
+          onClose={() => setIsPreviousSummaryOpen(false)}
+          summary={previousSummary}
+        />
+      ) : null}
     </main>
   );
 }

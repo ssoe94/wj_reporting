@@ -8,7 +8,7 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { LoadingBlock } from "@/shared/components/LoadingBlock";
 import { StatCard } from "@/shared/components/StatCard";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
-import { getShanghaiDateString } from "@/shared/utils/date";
+import { getShanghaiBusinessDateString } from "@/shared/utils/date";
 
 const pageCopy = {
   ko: {
@@ -109,7 +109,7 @@ function sortEquipmentByRisk(rows: AnalyticsEquipmentProgress[]) {
 export function AnalysisPage() {
   const [language] = useStoredLanguage();
   const copy = pageCopy[language];
-  const businessDate = getShanghaiDateString();
+  const businessDate = getShanghaiBusinessDateString();
   const analyticsQuery = useQuery({
     queryKey: ["analysis", "production-progress", businessDate, language],
     queryFn: () => getAnalyticsProductionProgress(businessDate, language),
