@@ -1,10 +1,14 @@
 import { http } from "@/shared/api/http";
 
 export type RawMaterialOverviewParams = {
-  warehouseCodes?: string[];
   lookbackDays: number;
   leadTimeDays: number;
   reviewPeriodDays: number;
+};
+
+export type RawMaterialWarningDetail = {
+  code: string;
+  params: Record<string, unknown>;
 };
 
 export type RawMaterialWarehouseOption = {
@@ -109,6 +113,7 @@ export type RawMaterialOverviewMeta = {
   reviewPeriodDays: number;
   partial: boolean;
   warnings: string[];
+  warningDetails: RawMaterialWarningDetail[];
   recommendationsAvailable: boolean;
   dataMode: string;
   inventoryCaptureType: string;
@@ -118,6 +123,8 @@ export type RawMaterialOverviewMeta = {
   comparisonStartAt: string;
   comparisonEndAt: string;
   comparisonHours: number;
+  changeLogStatus: string;
+  movementAvailable: boolean;
 };
 
 export type RawMaterialSyncStatus = {
@@ -199,6 +206,33 @@ function asBooleanWithDefault(value: unknown, fallback: boolean): boolean {
   return asBoolean(value);
 }
 
+const KG_UNIT_ALIASES = new Set([
+  "un001",
+  "kg",
+  "千克",
+  "公斤",
+  "킬로그램",
+]);
+
+function normalizeRawMaterialUnit(value: unknown, fallback = "-"): string {
+  const raw = asString(value, fallback);
+  const compact = raw.replaceAll(/\s+/g, "").toLocaleLowerCase();
+  return KG_UNIT_ALIASES.has(compact) ? "kg" : raw;
+}
+
+function normalizeWarningDetail(value: unknown): RawMaterialWarningDetail | null {
+  const row = asRecord(value);
+  const code = asString(pick(row, "code", "warning_code", "warningCode"))
+    .toLocaleLowerCase()
+    .replaceAll("-", "_")
+    .replaceAll(" ", "_");
+  if (!code) return null;
+  return {
+    code,
+    params: { ...asRecord(pick(row, "params", "parameters", "context")) },
+  };
+}
+
 function normalizeRisk(value: unknown): RawMaterialRisk {
   const risk = asString(value).toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
   if (["critical", "danger", "stockout", "shortage", "high", "urgent"].includes(risk)) return "critical";
@@ -228,7 +262,7 @@ function normalizeSummary(value: unknown): RawMaterialUnitSummary {
   const previousCurrent = asNullableNumber(pick(row, "previous_current", "previousCurrent"));
   const comparisonCurrent = asNullableNumber(pick(row, "comparison_current", "comparisonCurrent"));
   return {
-    unit: asString(pick(row, "unit", "unit_name", "unitName"), "-"),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
     current,
     previousCurrent,
     comparisonCurrent: comparisonCurrent ?? (previousCurrent !== null ? current : null),
@@ -248,10 +282,41 @@ function normalizeSummary(value: unknown): RawMaterialUnitSummary {
   };
 }
 
+function mergeNullableNumber(left: number | null, right: number | null) {
+  if (left === null && right === null) return null;
+  return (left ?? 0) + (right ?? 0);
+}
+
+function mergeUnitSummaries(rows: RawMaterialUnitSummary[]) {
+  const byUnit = new Map<string, RawMaterialUnitSummary>();
+  rows.forEach((row) => {
+    const current = byUnit.get(row.unit);
+    if (!current) {
+      byUnit.set(row.unit, { ...row });
+      return;
+    }
+    current.current += row.current;
+    current.previousCurrent = mergeNullableNumber(current.previousCurrent, row.previousCurrent);
+    current.comparisonCurrent = mergeNullableNumber(current.comparisonCurrent, row.comparisonCurrent);
+    current.change24h = mergeNullableNumber(current.change24h, row.change24h);
+    current.usable += row.usable;
+    current.restricted += row.restricted;
+    current.unclassified += row.unclassified;
+    current.inbound += row.inbound;
+    current.outbound += row.outbound;
+    current.consumption += row.consumption;
+    current.transferOut += row.transferOut;
+    current.adjustment += row.adjustment;
+    current.recommendedOrder += row.recommendedOrder;
+    current.recommendationUnavailableCount += row.recommendationUnavailableCount;
+  });
+  return Array.from(byUnit.values());
+}
+
 function normalizeTrendValue(value: unknown): RawMaterialTrendValue {
   const row = asRecord(value);
   return {
-    unit: asString(pick(row, "unit", "unit_name", "unitName"), "-"),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
     inbound: asNumber(pick(row, "inbound", "inbound_quantity", "inboundQuantity")),
     outbound: asNumber(pick(row, "outbound", "outbound_quantity", "outboundQuantity")),
     consumption: asNumber(pick(row, "consumption", "consumption_quantity", "consumptionQuantity", "used")),
@@ -260,6 +325,25 @@ function normalizeTrendValue(value: unknown): RawMaterialTrendValue {
     netChange: asNumber(pick(row, "net_change", "netChange", "change")),
     estimatedClosingStock: asNumber(pick(row, "estimated_closing_stock", "estimatedClosingStock", "closing_stock")),
   };
+}
+
+function mergeTrendValues(rows: RawMaterialTrendValue[]) {
+  const byUnit = new Map<string, RawMaterialTrendValue>();
+  rows.forEach((row) => {
+    const current = byUnit.get(row.unit);
+    if (!current) {
+      byUnit.set(row.unit, { ...row });
+      return;
+    }
+    current.inbound += row.inbound;
+    current.outbound += row.outbound;
+    current.consumption += row.consumption;
+    current.transferOut += row.transferOut;
+    current.adjustment += row.adjustment;
+    current.netChange += row.netChange;
+    current.estimatedClosingStock += row.estimatedClosingStock;
+  });
+  return Array.from(byUnit.values());
 }
 
 function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
@@ -281,7 +365,7 @@ function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
     specification: asString(pick(row, "specification", "spec", "material_spec")),
     warehouseCode: asJoinedString(pick(row, "warehouse_code", "warehouseCode", "warehouse_codes", "warehouseCodes")),
     warehouseName: asJoinedString(pick(row, "warehouse_name", "warehouseName", "warehouse", "warehouse_names", "warehouseNames")),
-    unit: asString(pick(row, "unit", "unit_name", "unitName"), "-"),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
     currentQuantity,
     previousQuantity,
     comparisonCurrentQuantity: comparisonCurrentQuantity
@@ -328,7 +412,7 @@ function normalizeTransaction(value: unknown, index: number): RawMaterialTransac
     warehouseCode: asString(pick(row, "warehouse_code", "warehouseCode")),
     warehouseName: asString(pick(row, "warehouse_name", "warehouseName", "warehouse")),
     quantity: asNumber(pick(row, "quantity", "change_quantity", "changeQuantity", "amount")),
-    unit: asString(pick(row, "unit", "unit_name", "unitName"), "-"),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
     batchNo: asString(pick(row, "batch_no", "batchNo", "batch")),
     documentNo: asString(pick(row, "document_no", "documentNo", "order_no", "orderNo", "related_order_no")),
     operatorName: asString(pick(row, "operator_name", "operatorName", "operator")),
@@ -358,13 +442,13 @@ function normalizeRawMaterialOverview(payload: unknown): RawMaterialOverview {
   const selectedWarehouses = asArray(pick(root, "selected_warehouses", "selectedWarehouses", "warehouse_codes"))
     .map(normalizeSelectedWarehouse)
     .filter(Boolean);
-  const quantities = asArray(quantitiesSource).map(normalizeSummary);
+  const quantities = mergeUnitSummaries(asArray(quantitiesSource).map(normalizeSummary));
   const trend = asArray(pick(root, "trend", "daily_trend", "dailyTrend")).map((value) => {
     const row = asRecord(value);
     const nestedValues = asArray(pick(row, "values", "quantities", "by_unit", "byUnit"));
-    const values = nestedValues.length
+    const values = mergeTrendValues(nestedValues.length
       ? nestedValues.map(normalizeTrendValue)
-      : [normalizeTrendValue(row)];
+      : [normalizeTrendValue(row)]);
     return {
       date: asString(pick(row, "date", "day", "business_date", "businessDate")),
       values,
@@ -373,8 +457,24 @@ function normalizeRawMaterialOverview(payload: unknown): RawMaterialOverview {
   const materials = asArray(pick(root, "materials", "items", "rows")).map(normalizeMaterial);
   const recentTransactions = asArray(pick(root, "recent_transactions", "recentTransactions", "transactions", "change_logs"))
     .map(normalizeTransaction);
-  const explicitUnits = asArray(pick(root, "units", "unit_options", "unitOptions")).map((unit) => asString(unit)).filter(Boolean);
+  const explicitUnits = asArray(pick(root, "units", "unit_options", "unitOptions"))
+    .map((unit) => normalizeRawMaterialUnit(unit))
+    .filter((unit) => unit !== "-");
   const inferredUnits = [...quantities.map((row) => row.unit), ...materials.map((row) => row.unit)].filter((unit) => unit && unit !== "-");
+  const warningDetails = asArray(pick(meta, "warning_details", "warningDetails"))
+    .map(normalizeWarningDetail)
+    .filter((row): row is RawMaterialWarningDetail => row !== null);
+  const sources = asRecord(pick(meta, "sources", "source_status", "sourceStatus"));
+  const changeLogSource = asRecord(pick(
+    sources,
+    "inventory_change_log",
+    "inventoryChangeLog",
+    "movement",
+    "movements",
+  ));
+  const changeLogStatus = asString(pick(changeLogSource, "status", "state")).toLocaleLowerCase();
+  const movementAvailable = ["ok", "stored", "partial", "live"].includes(changeLogStatus)
+    || (!changeLogStatus && recentTransactions.length > 0);
 
   return {
     status: asString(pick(root, "status", "state"), "ok"),
@@ -408,6 +508,7 @@ function normalizeRawMaterialOverview(payload: unknown): RawMaterialOverview {
       reviewPeriodDays: asNumber(pick(meta, "review_period_days", "reviewPeriodDays")),
       partial: asBoolean(pick(meta, "partial", "is_partial", "isPartial")),
       warnings: asArray(pick(meta, "warnings", "warning_messages", "warningMessages")).map((warning) => asString(warning)).filter(Boolean),
+      warningDetails,
       recommendationsAvailable: asBooleanWithDefault(
         pick(meta, "recommendations_available", "recommendationsAvailable"),
         true,
@@ -422,6 +523,8 @@ function normalizeRawMaterialOverview(payload: unknown): RawMaterialOverview {
       comparisonStartAt: asString(pick(meta, "comparison_start_at", "comparisonStartAt")),
       comparisonEndAt: asString(pick(meta, "comparison_end_at", "comparisonEndAt")),
       comparisonHours: asNumber(pick(meta, "comparison_hours", "comparisonHours"), 24),
+      changeLogStatus: changeLogStatus || "unknown",
+      movementAvailable,
     },
     warehouseOptions,
     selectedWarehouses,
@@ -446,7 +549,6 @@ export async function getWarehouses() {
 export async function getRawMaterialOverview(params: RawMaterialOverviewParams): Promise<RawMaterialOverview> {
   const response = await http.get("/inventory/raw-materials/overview/", {
     params: {
-      warehouse_codes: (params.warehouseCodes ?? []).join(","),
       lookback_days: params.lookbackDays,
       lead_time_days: params.leadTimeDays,
       review_period_days: params.reviewPeriodDays,

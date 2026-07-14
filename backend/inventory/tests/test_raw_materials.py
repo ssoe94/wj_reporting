@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
@@ -8,9 +9,15 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIClient
 
 from inventory.mes import _safe_exception_message
+from inventory.models import RawMaterialSyncState
+from inventory.services.raw_material_sync import (
+    claim_raw_material_sync,
+    execute_claimed_raw_material_sync,
+)
 from inventory.services.raw_materials import (
     PAGE_SIZE,
     _fetch_pages,
+    _unit,
     build_raw_material_overview,
     with_zero_stock_markers,
 )
@@ -32,6 +39,7 @@ def inventory_row(
     warehouse_id=17000000000000003,
     amount="10.10",
     unit="kg",
+    unit_name=None,
     qc_status=1,
 ):
     return {
@@ -45,7 +53,11 @@ def inventory_row(
         },
         "amount": {
             "amount": amount,
-            "unit": {"code": unit} if unit is not None else None,
+            "unit": (
+                {"code": unit, **({"name": unit_name} if unit_name else {})}
+                if unit is not None
+                else None
+            ),
         },
         "qcStatus": {"code": qc_status, "message": "quality status"},
         "storageLocationDetail": {
@@ -58,7 +70,16 @@ def inventory_row(
     }
 
 
-def change_row(action, quantity, *, direction, row_id, created_at=NOW, unit="kg"):
+def change_row(
+    action,
+    quantity,
+    *,
+    direction,
+    row_id,
+    created_at=NOW,
+    unit="kg",
+    unit_name=None,
+):
     return {
         "id": row_id,
         "createdAt": int(created_at.timestamp() * 1000),
@@ -66,11 +87,19 @@ def change_row(action, quantity, *, direction, row_id, created_at=NOW, unit="kg"
         "amount": {
             "amount": {
                 "amount": quantity,
-                "unit": {"code": unit} if unit is not None else None,
+                "unit": (
+                    {"code": unit, **({"name": unit_name} if unit_name else {})}
+                    if unit is not None
+                    else None
+                ),
             },
             "afterAmount": {
                 "amount": "10.1",
-                "unit": {"code": unit} if unit is not None else None,
+                "unit": (
+                    {"code": unit, **({"name": unit_name} if unit_name else {})}
+                    if unit is not None
+                    else None
+                ),
             },
             "direction": direction,
         },
@@ -88,6 +117,11 @@ class RawMaterialServiceTests(SimpleTestCase):
     def setUp(self):
         cache.clear()
 
+    def test_all_supported_raw_material_unit_aliases_are_canonical_kg(self):
+        for alias in ("UN001", "kg", "KG", "千克", "公斤", "킬로그램"):
+            with self.subTest(alias=alias):
+                self.assertEqual(_unit({"unit": {"name": alias}}), "kg")
+
     def test_depleted_raw_material_is_carried_as_an_explicit_zero_marker(self):
         rows = with_zero_stock_markers([], [inventory_row(amount="10")])
 
@@ -98,6 +132,147 @@ class RawMaterialServiceTests(SimpleTestCase):
             rows[0]["storageLocationDetail"]["warehouse"]["name"],
             "原材料仓库",
         )
+
+    def test_depleted_explicit_non_kg_row_is_not_carried_forward(self):
+        rows = with_zero_stock_markers([], [inventory_row(amount="10", unit="g")])
+
+        self.assertEqual(rows, [])
+
+    def test_code_less_depleted_raw_warehouse_gets_a_zero_marker(self):
+        rows = with_zero_stock_markers(
+            [],
+            [inventory_row(amount="10", warehouse_code="")],
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["amount"]["amount"], "0")
+        self.assertTrue(rows[0]["syntheticZero"])
+
+    def test_raw_warehouse_code_appearing_later_does_not_create_a_false_zero(self):
+        rows = with_zero_stock_markers(
+            [inventory_row(amount="5", warehouse_code="RAW")],
+            [inventory_row(amount="10", warehouse_code="")],
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertNotIn("syntheticZero", rows[0])
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    @patch("inventory.services.raw_materials.call_inventory_list")
+    def test_only_exact_raw_material_warehouse_is_exposed_and_selected(
+        self, inventory_call, change_call
+    ):
+        inventory_call.return_value = {
+            "data": {
+                "list": [
+                    inventory_row(),
+                    inventory_row(
+                        row_id=17000000000000008,
+                        warehouse_code="PRODUCT",
+                        warehouse_name="成品仓库",
+                        warehouse_id=17000000000000009,
+                        amount="99",
+                    ),
+                ],
+                "total": 2,
+            }
+        }
+        change_call.return_value = {"list": [], "total": 0}
+
+        result = build_raw_material_overview(now=NOW)
+
+        self.assertEqual(
+            [row["name"] for row in result["warehouse_options"]],
+            ["原材料仓库"],
+        )
+        self.assertEqual(
+            [row["code"] for row in result["selected_warehouses"]],
+            ["RAW"],
+        )
+        self.assertEqual(result["summary"]["quantities"][0]["current"], 10.1)
+
+    @override_settings(
+        MES_RAW_MATERIAL_WAREHOUSE_CODES="RAW",
+        MES_RAW_MATERIAL_WAREHOUSE_IDS="17000000000000003",
+    )
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_configured_id_backfills_an_existing_staging_warehouse(self, change_call):
+        change_call.return_value = {"data": {"list": [], "total": 0}}
+
+        result = build_raw_material_overview(
+            now=NOW,
+            inventory_rows_override=[inventory_row(warehouse_id=None)],
+        )
+
+        self.assertEqual(result["selected_warehouses"][0]["id"], "17000000000000003")
+        self.assertEqual(
+            change_call.call_args.kwargs["warehouseIds"],
+            [17000000000000003],
+        )
+
+    @override_settings(
+        MES_RAW_MATERIAL_WAREHOUSE_CODES="RAW",
+        MES_RAW_MATERIAL_WAREHOUSE_IDS="17000000000000003",
+    )
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_code_less_exact_warehouse_merges_into_configured_scope(self, change_call):
+        change_call.return_value = {"data": {"list": [], "total": 0}}
+
+        result = build_raw_material_overview(
+            now=NOW,
+            inventory_rows_override=[
+                inventory_row(warehouse_code="", warehouse_id=None)
+            ],
+        )
+
+        self.assertEqual(
+            result["warehouse_options"],
+            [
+                {
+                    "id": "17000000000000003",
+                    "code": "RAW",
+                    "name": "原材料仓库",
+                    "is_raw_material_candidate": True,
+                }
+            ],
+        )
+        self.assertEqual(len(result["selected_warehouses"]), 1)
+        self.assertEqual(
+            change_call.call_args.kwargs["warehouseIds"],
+            [17000000000000003],
+        )
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    @patch("inventory.services.raw_materials.call_inventory_list")
+    def test_mes_unit_code_and_names_are_normalized_to_kg(
+        self, inventory_call, change_call
+    ):
+        inventory_call.return_value = {
+            "data": {
+                "list": [inventory_row(unit="UN001", unit_name="千克")],
+                "total": 1,
+            }
+        }
+        change_call.return_value = {
+            "list": [
+                change_row(
+                    "out",
+                    "2.5",
+                    direction=False,
+                    row_id=17000000000000004,
+                    unit="UN001",
+                    unit_name="KG",
+                )
+            ],
+            "total": 1,
+        }
+
+        result = build_raw_material_overview(now=NOW)
+
+        self.assertEqual(result["units"], ["kg"])
+        self.assertEqual(result["materials"][0]["unit"], "kg")
+        self.assertEqual(result["materials"][0]["consumption_quantity"], 2.5)
+        self.assertEqual(result["recent_transactions"][0]["unit"], "kg")
 
     @override_settings(
         MES_RAW_MATERIAL_WAREHOUSE_CODES="RAW",
@@ -375,6 +550,10 @@ class RawMaterialServiceTests(SimpleTestCase):
         self.assertTrue(
             any("invalid timestamp" in warning for warning in result["meta"]["warnings"])
         )
+        self.assertIn(
+            {"code": "change_timestamp_invalid", "params": {"count": 1}},
+            result["meta"]["warning_details"],
+        )
 
     @patch("inventory.services.raw_materials.call_inventory_change_log")
     @patch("inventory.services.raw_materials.call_inventory_list")
@@ -465,7 +644,7 @@ class RawMaterialServiceTests(SimpleTestCase):
 
     @patch("inventory.services.raw_materials.call_inventory_change_log")
     @patch("inventory.services.raw_materials.call_inventory_list")
-    def test_missing_units_are_isolated_per_material_instead_of_summed(
+    def test_missing_units_use_the_raw_warehouse_kg_default(
         self, inventory_call, change_call
     ):
         inventory_call.return_value = {
@@ -488,39 +667,90 @@ class RawMaterialServiceTests(SimpleTestCase):
 
         result = build_raw_material_overview(now=NOW)
 
-        self.assertEqual(result["status"], "partial")
-        self.assertEqual(len(result["summary"]["quantities"]), 2)
+        self.assertEqual(result["units"], ["kg"])
+        self.assertEqual(result["summary"]["quantities"][0]["current"], 5)
         self.assertEqual(
-            {row["unit"] for row in result["summary"]["quantities"]},
-            {"UNKNOWN:17000000000000002", "UNKNOWN:17000000000000010"},
-        )
-        self.assertTrue(
-            all(not row["recommendation_available"] for row in result["materials"])
+            result["meta"]["warning_details"],
+            [
+                {
+                    "code": "unit_assumed_kg",
+                    "params": {
+                        "count": 2,
+                        "source_counts": {"inventory_detail": 2},
+                    },
+                }
+            ],
         )
 
     @patch("inventory.services.raw_materials.call_inventory_change_log")
     @patch("inventory.services.raw_materials.call_inventory_list")
-    def test_same_material_with_different_main_units_is_not_mixed(
+    def test_explicit_non_kg_is_excluded_without_downgrading_complete_sources(
         self, inventory_call, change_call
     ):
+        kg_row = inventory_row(amount="2", unit="kg")
+        kg_updated_at = datetime(2026, 7, 13, 9, 0, tzinfo=TZ)
+        kg_row["updatedAt"] = int(kg_updated_at.timestamp() * 1000)
         inventory_call.return_value = {
             "data": {
                 "list": [
-                    inventory_row(amount="2", unit="kg"),
+                    kg_row,
                     inventory_row(
-                        row_id=17000000000000011, amount="300", unit="g"
+                        row_id=17000000000000011,
+                        amount="300",
+                        unit="UN001",
+                        unit_name="g",
                     ),
                 ],
                 "total": 2,
             }
         }
-        change_call.return_value = {"list": [], "total": 0}
+        change_call.return_value = {
+            "list": [
+                change_row(
+                    "out",
+                    "25",
+                    direction=False,
+                    row_id=17000000000000012,
+                    unit="L",
+                )
+            ],
+            "total": 1,
+        }
 
         result = build_raw_material_overview(now=NOW)
 
         quantities = {row["unit"]: row["current"] for row in result["summary"]["quantities"]}
-        self.assertEqual(quantities, {"g": 300.0, "kg": 2.0})
-        self.assertEqual(len(result["materials"]), 2)
+        self.assertEqual(quantities, {"kg": 2.0})
+        self.assertEqual(len(result["materials"]), 1)
+        self.assertIn(
+            {
+                "code": "unexpected_unit",
+                "params": {
+                    "count": 2,
+                    "units": ["L", "g"],
+                    "source_counts": {
+                        "inventory_change_log": 1,
+                        "inventory_detail": 1,
+                    },
+                },
+            },
+            result["meta"]["warning_details"],
+        )
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["summary"]["inventory_record_count"], 1)
+        self.assertEqual(
+            result["meta"]["inventory_source_latest_at"],
+            kg_updated_at.isoformat(),
+        )
+        self.assertTrue(result["materials"][0]["recommendation_available"])
+        self.assertTrue(result["meta"]["recommendations_available"])
+        # The raw-material sync promotes only complete MES sources. Safely
+        # excluded business-unit anomalies must not make that gate fail.
+        self.assertEqual(result["meta"]["sources"]["inventory_detail"]["status"], "ok")
+        self.assertEqual(
+            result["meta"]["sources"]["inventory_change_log"]["status"],
+            "ok",
+        )
 
     @patch("inventory.services.raw_materials.call_inventory_change_log")
     @patch("inventory.services.raw_materials.call_inventory_list")
@@ -547,6 +777,51 @@ class RawMaterialServiceTests(SimpleTestCase):
         self.assertTrue(material["recommendation_available"])
 
 
+class RawMaterialSyncPromotionRegressionTests(TestCase):
+    @patch("inventory.services.raw_material_sync.build_raw_material_overview")
+    @patch("inventory.services.raw_material_sync.load_pending_inventory_dataset")
+    @patch("inventory.services.raw_material_sync.call_command")
+    def test_partial_report_with_complete_sources_is_promoted(
+        self, call_command, load_pending, build_overview
+    ):
+        _claimed, claimed_state = claim_raw_material_sync("manual")
+        load_pending.return_value = SimpleNamespace(
+            rows=[inventory_row(amount="2")],
+            warehouse_codes=("RAW",),
+            warehouse_ids=("17000000000000003",),
+            source_latest_at=None,
+            snapshot_date=date(2026, 7, 14),
+        )
+        build_overview.return_value = {
+            "status": "partial",
+            "meta": {
+                "sources": {
+                    "inventory_detail": {"status": "ok"},
+                    "inventory_change_log": {"status": "ok"},
+                },
+                "change_log_source_latest_at": None,
+                "warning_details": [
+                    {
+                        "code": "unexpected_unit",
+                        "params": {"count": 1, "units": ["L"]},
+                    }
+                ],
+            },
+            "summary": {"material_count": 1},
+            "selected_warehouses": [
+                {"code": "RAW", "id": "17000000000000003"}
+            ],
+        }
+
+        result = execute_claimed_raw_material_sync(
+            trigger="manual",
+            claimed_started_at=claimed_state["started_at"],
+        )
+
+        self.assertEqual(result["status"], RawMaterialSyncState.STATUS_COMPLETED)
+        call_command.assert_called_once()
+
+
 class RawMaterialOverviewViewTests(TestCase):
     def setUp(self):
         cache.clear()
@@ -571,17 +846,17 @@ class RawMaterialOverviewViewTests(TestCase):
         warehouse_id = "17000000000000003"
         save_mes_dataset(
             "inventory",
-            [inventory_row(amount="10")],
+            [inventory_row(amount="10", unit="UN001")],
             snapshot_date=date(2026, 7, 13),
         )
         save_mes_dataset(
             "inventory",
-            [inventory_row(amount="14")],
+            [inventory_row(amount="14", unit="UN001", unit_name="千克")],
             snapshot_date=date(2026, 7, 14),
         )
         save_mes_dataset(
             "inventory",
-            [inventory_row(amount="20")],
+            [inventory_row(amount="20", unit="KG")],
             snapshot_date=date(2026, 7, 14),
             capture_type="manual",
         )
@@ -630,7 +905,7 @@ class RawMaterialOverviewViewTests(TestCase):
         self.assertIn("lookback_days", response.json()["error"])
 
     @patch("inventory.raw_material_views.build_raw_material_overview")
-    def test_parses_repeated_and_comma_separated_warehouse_codes(self, build):
+    def test_ignores_arbitrary_warehouse_query_parameters(self, build):
         build.return_value = {
             "status": "ok",
             "meta": {},
@@ -653,25 +928,10 @@ class RawMaterialOverviewViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(cached_response.status_code, 200)
-        self.assertEqual(
-            build.call_args.kwargs["warehouse_codes"], ["RAW", "RAW2", "RAW3"]
-        )
+        self.assertNotIn("warehouse_codes", build.call_args.kwargs)
         self.assertEqual(build.call_args.kwargs["lookback_days"], 7)
         self.assertTrue(build.call_args.kwargs["prefer_stored"])
         self.assertNotIn("force_refresh", build.call_args.kwargs)
         self.assertEqual(build.call_count, 1)
         self.assertIn("no-store", response["Cache-Control"])
         self.assertEqual(response["Pragma"], "no-cache")
-
-    @patch("inventory.raw_material_views.build_raw_material_overview")
-    def test_rejects_oversized_warehouse_code_before_calling_service(self, build):
-        self.client.force_authenticate(self.user)
-
-        response = self.client.get(
-            "/api/inventory/raw-materials/overview/",
-            {"warehouse_code": "R" * 101},
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("warehouse code", response.json()["error"])
-        build.assert_not_called()

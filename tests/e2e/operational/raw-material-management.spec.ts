@@ -30,26 +30,29 @@ const rawMaterialOverview = {
       inventory_detail: { status: 'ok', cached: false, record_count: 3 },
       inventory_change_log: { status: 'ok', cached: false, record_count: 5 },
     },
-    warnings: [],
+    warning_details: [
+      { code: 'unexpected_unit', params: { count: 1, units: ['L'] } },
+    ],
+    warnings: [
+      'Skipped 1 raw-material record(s) with explicit non-kg unit(s): L',
+    ],
   },
   warehouse_options: [
     { id: 'warehouse-rm-01', code: 'RM-01', name: '원재료 창고', is_raw_material_candidate: true },
-    { id: 'warehouse-chem-01', code: 'CHEM-01', name: '부자재 창고', is_raw_material_candidate: true },
   ],
   selected_warehouses: [
     { id: 'warehouse-rm-01', code: 'RM-01', name: '원재료 창고', is_raw_material_candidate: true },
-    { id: 'warehouse-chem-01', code: 'CHEM-01', name: '부자재 창고', is_raw_material_candidate: true },
   ],
-  units: ['kg', 'L'],
+  units: ['UN001'],
   summary: {
-    material_count: 3,
-    inventory_record_count: 3,
+    material_count: 2,
+    inventory_record_count: 2,
     reorder_count: 1,
     critical_count: 1,
     watch_count: 0,
     quantities: [
       {
-        unit: 'kg',
+        unit: 'UN001',
         current: 5830,
         previous_current: 6030,
         change_24h: -200,
@@ -64,58 +67,37 @@ const rawMaterialOverview = {
         recommended_order: 1500,
         recommendation_unavailable_count: 0,
       },
-      {
-        unit: 'L',
-        current: 420,
-        previous_current: 405,
-        change_24h: 15,
-        usable: 400,
-        restricted: 20,
-        unclassified: 0,
-        inbound: 180,
-        outbound: 135,
-        consumption: 120,
-        transfer_out: 15,
-        adjustment: -15,
-        recommended_order: 0,
-        recommendation_unavailable_count: 1,
-      },
     ],
   },
   trend: [
     {
       date: '2026-07-10',
       values: [
-        { unit: 'kg', inbound: 800, outbound: 920, consumption: 860, transfer_out: 60, adjustment: -60, net_change: -120, estimated_closing_stock: 6370 },
-        { unit: 'L', inbound: 60, outbound: 45, consumption: 40, transfer_out: 5, adjustment: -5, net_change: 15, estimated_closing_stock: 390 },
+        { unit: 'UN001', inbound: 800, outbound: 920, consumption: 860, transfer_out: 60, adjustment: -60, net_change: -120, estimated_closing_stock: 6370 },
       ],
     },
     {
       date: '2026-07-11',
       values: [
-        { unit: 'kg', inbound: 0, outbound: 680, consumption: 640, transfer_out: 40, adjustment: -40, net_change: -680, estimated_closing_stock: 5690 },
-        { unit: 'L', inbound: 0, outbound: 30, consumption: 28, transfer_out: 2, adjustment: -2, net_change: -30, estimated_closing_stock: 360 },
+        { unit: 'UN001', inbound: 0, outbound: 680, consumption: 640, transfer_out: 40, adjustment: -40, net_change: -680, estimated_closing_stock: 5690 },
       ],
     },
     {
       date: '2026-07-12',
       values: [
-        { unit: 'kg', inbound: 1000, outbound: 740, consumption: 700, transfer_out: 40, adjustment: -40, net_change: 260, estimated_closing_stock: 5950 },
-        { unit: 'L', inbound: 120, outbound: 25, consumption: 22, transfer_out: 3, adjustment: -3, net_change: 95, estimated_closing_stock: 455 },
+        { unit: 'UN001', inbound: 1000, outbound: 740, consumption: 700, transfer_out: 40, adjustment: -40, net_change: 260, estimated_closing_stock: 5950 },
       ],
     },
     {
       date: '2026-07-13',
       values: [
-        { unit: 'kg', inbound: 0, outbound: 420, consumption: 400, transfer_out: 20, adjustment: -20, net_change: -420, estimated_closing_stock: 5530 },
-        { unit: 'L', inbound: 0, outbound: 20, consumption: 18, transfer_out: 2, adjustment: -2, net_change: -20, estimated_closing_stock: 435 },
+        { unit: 'UN001', inbound: 0, outbound: 420, consumption: 400, transfer_out: 20, adjustment: -20, net_change: -420, estimated_closing_stock: 5530 },
       ],
     },
     {
       date: '2026-07-14',
       values: [
-        { unit: 'kg', inbound: 600, outbound: 300, consumption: 280, transfer_out: 20, adjustment: -20, net_change: 300, estimated_closing_stock: 5830 },
-        { unit: 'L', inbound: 0, outbound: 15, consumption: 12, transfer_out: 3, adjustment: -3, net_change: -15, estimated_closing_stock: 420 },
+        { unit: 'UN001', inbound: 600, outbound: 300, consumption: 280, transfer_out: 20, adjustment: -20, net_change: 300, estimated_closing_stock: 5830 },
       ],
     },
   ],
@@ -126,7 +108,7 @@ const rawMaterialOverview = {
       specification: '난연 / Black',
       warehouse_code: 'RM-01',
       warehouse_name: '원재료 창고',
-      unit: 'kg',
+      unit: 'UN001',
       current_quantity: 4850,
       previous_quantity: 5000,
       quantity_change_24h: -150,
@@ -153,7 +135,7 @@ const rawMaterialOverview = {
       specification: 'V-0 / Gray',
       warehouse_code: 'RM-01',
       warehouse_name: '원재료 창고',
-      unit: 'kg',
+      unit: 'KG',
       current_quantity: 980,
       previous_quantity: 1030,
       quantity_change_24h: -50,
@@ -174,35 +156,6 @@ const rawMaterialOverview = {
       days_of_cover: 9.46,
       risk: 'critical',
     },
-    {
-      material_code: 'RA-550',
-      material_name: '이형제 RA-550',
-      specification: '20 L / CAN',
-      warehouse_code: 'CHEM-01',
-      warehouse_name: '부자재 창고',
-      unit: 'L',
-      current_quantity: 420,
-      previous_quantity: 405,
-      quantity_change_24h: 15,
-      usable_quantity: 400,
-      previous_usable_quantity: 390,
-      usable_change_24h: 10,
-      restricted_quantity: 20,
-      unclassified_quantity: 0,
-      inbound_quantity: 180,
-      outbound_quantity: 135,
-      consumption_quantity: 120,
-      transfer_out_quantity: 15,
-      avg_daily_consumption: 6,
-      safety_stock: 100,
-      reorder_point: 142,
-      target_stock: 240,
-      recommended_order: 0,
-      days_of_cover: 66.67,
-      risk: 'healthy',
-      recommendation_available: false,
-      recommendation_status: 'insufficient_data',
-    },
   ],
   recent_transactions: [
     {
@@ -212,7 +165,7 @@ const rawMaterialOverview = {
       action_label: '생산 출고(추정 소요)',
       direction: 'out',
       quantity: 300,
-      unit: 'kg',
+      unit: 'UN001',
       after_quantity: 980,
       material_id: 'material-pcabs-fr3010-gy',
       material_code: 'PCABS-FR3010-GY',
@@ -233,7 +186,7 @@ const rawMaterialOverview = {
       action_label: '이동 출고',
       direction: 'out',
       quantity: 20,
-      unit: 'kg',
+      unit: 'KG',
       material_code: 'ABS-HF380-BK',
       material_name: 'ABS HF380 Black',
       warehouse_name: '원재료 창고',
@@ -249,7 +202,7 @@ const rawMaterialOverview = {
       action_label: '구매 입고',
       direction: 'in',
       quantity: 600,
-      unit: 'kg',
+      unit: '千克',
       after_quantity: 4850,
       material_id: 'material-abs-hf380-bk',
       material_code: 'ABS-HF380-BK',
@@ -262,31 +215,11 @@ const rawMaterialOverview = {
       supplier_name: 'LG화학',
       is_consumption: false,
     },
-    {
-      id: 'tx-260713-01',
-      created_at: '2026-07-13T16:30:00+08:00',
-      action_code: 'amount_adjust',
-      action_label: '재고 조정',
-      direction: 'out',
-      quantity: 3,
-      unit: 'L',
-      after_quantity: 420,
-      material_id: 'material-ra-550',
-      material_code: 'RA-550',
-      material_name: '이형제 RA-550',
-      specification: '20 L / CAN',
-      warehouse_name: '부자재 창고',
-      storage_location: 'C-01-02',
-      batch_no: 'LOT-260701-05',
-      operator: '박자재',
-      supplier_name: '한국케미칼',
-      is_consumption: false,
-    },
   ],
 };
 
 test.describe('raw material management operational scenario', () => {
-  test('shows unit-separated stock, movement trends, ordering risk, and transaction evidence', async ({ page }) => {
+  test('shows a fixed raw-material kg dashboard with localized warnings and manual sync', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installDevSession(page, 'ko');
     let overviewRequests = 0;
@@ -334,6 +267,17 @@ test.describe('raw material management operational scenario', () => {
     await expect(page.getByRole('heading', { name: '24시간 재고 변화', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: '원재료 재고 현황', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: '최근 입출고 기록', exact: true })).toBeVisible();
+    await expect(page.getByText('원재료창고', { exact: true })).toBeVisible();
+    await expect(page.getByText('kg', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('매일 08:00 자동 업데이트', { exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: '수량 단위' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '원재료 후보 자동 선택' })).toHaveCount(0);
+    await expect(page.getByText('고급 분석 조건', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('UN001', { exact: true })).toHaveCount(0);
+    await expect(page.locator('.raw-table-panel .raw-material-search')).toBeVisible();
+    await expect(page.getByRole('searchbox', { name: '원재료 검색' })).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText('kg가 아닌 재고(L)는 합계와 분석에서 제외했습니다 (1건).');
+    await expect(page.getByText(/Skipped 1 raw-material record/)).toHaveCount(0);
 
     await expect(page.getByText('ABS HF380 Black', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('PC/ABS FR3010 Gray', { exact: true }).first()).toBeVisible();
@@ -346,16 +290,16 @@ test.describe('raw material management operational scenario', () => {
     await expect(tables.first()).toContainText('1,500');
     await expect(tables.last()).toContainText('300');
     await expect(page.locator('.raw-material-page svg')).not.toHaveCount(0);
-    await page.getByLabel('수량 단위').selectOption('L');
-    await expect(page.getByText('이형제 RA-550', { exact: true }).first()).toBeVisible();
-    await expect(tables.last()).toContainText('재고 조정');
-    await expect(tables.last()).toContainText('−3 L');
-    await expect(page.getByText('사용 이력이나 완료 영업일 데이터가 부족해 발주 권고를 산정할 수 없습니다.').first()).toBeVisible();
 
     await page.getByRole('button', { name: '수동 MES 업데이트' }).click();
     await expect(page.getByText('MES 데이터를 한 번만 수집해 새 보고서를 만드는 중입니다. 완료되면 화면이 자동으로 갱신됩니다.')).toBeVisible();
     await expect(page.getByText('수동 MES 업데이트가 완료되어 저장된 보고서를 갱신했습니다.')).toBeVisible({ timeout: 6_000 });
     await expect.poll(() => overviewRequests).toBeGreaterThan(1);
+
+    await page.getByRole('button', { name: '中文' }).click();
+    await expect(page.getByRole('heading', { name: '原材料管理', exact: true })).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText('非 kg 库存（L）已从合计和分析中排除（1 条）。');
+    await expect(page.getByRole('combobox', { name: '数量单位' })).toHaveCount(0);
 
     expect(overviewRequests).toBeGreaterThan(0);
     expect(syncStatusRequests).toBeGreaterThan(1);

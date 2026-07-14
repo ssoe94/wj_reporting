@@ -21,8 +21,6 @@ from inventory.services.raw_material_sync import (
 )
 
 
-MAX_WAREHOUSE_SELECTION = 50
-MAX_WAREHOUSE_CODE_LENGTH = 100
 # The key includes the durable sync generation, so a new daily/manual sync
 # invalidates immediately while identical reports are computed at most daily.
 OVERVIEW_CACHE_SECONDS = 25 * 60 * 60
@@ -41,26 +39,7 @@ def _overview_cache_key(parameters: dict) -> str:
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    return f"raw-materials:stored-overview:v1:{digest}"
-
-
-def _warehouse_codes(query_params) -> list[str]:
-    values: list[str] = []
-    for key in ("warehouse_code", "warehouse_codes"):
-        for raw in query_params.getlist(key):
-            for code in raw.split(","):
-                code = code.strip()
-                if len(code) > MAX_WAREHOUSE_CODE_LENGTH:
-                    raise ValueError(
-                        f"warehouse code must not exceed {MAX_WAREHOUSE_CODE_LENGTH} characters."
-                    )
-                if code and code not in values:
-                    values.append(code)
-                    if len(values) > MAX_WAREHOUSE_SELECTION:
-                        raise ValueError(
-                            f"at most {MAX_WAREHOUSE_SELECTION} warehouses may be selected."
-                        )
-    return values
+    return f"raw-materials:stored-overview:v2:{digest}"
 
 
 def _bounded_int(query_params, key: str, default: int, minimum: int, maximum: int) -> int:
@@ -83,7 +62,6 @@ class RawMaterialOverviewView(APIView):
 
     def get(self, request):
         try:
-            warehouse_codes = _warehouse_codes(request.query_params)
             lookback_days = _bounded_int(request.query_params, "lookback_days", 30, 7, 30)
             lead_time_days = _bounded_int(request.query_params, "lead_time_days", 14, 1, 180)
             review_period_days = _bounded_int(
@@ -95,7 +73,6 @@ class RawMaterialOverviewView(APIView):
             )
 
         parameters = {
-            "warehouse_codes": sorted(warehouse_codes),
             "lookback_days": lookback_days,
             "lead_time_days": lead_time_days,
             "review_period_days": review_period_days,
@@ -104,7 +81,6 @@ class RawMaterialOverviewView(APIView):
         payload = cache.get(cache_key)
         if not isinstance(payload, dict):
             payload = build_raw_material_overview(
-                warehouse_codes=warehouse_codes,
                 lookback_days=lookback_days,
                 lead_time_days=lead_time_days,
                 review_period_days=review_period_days,

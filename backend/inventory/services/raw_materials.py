@@ -1,7 +1,7 @@
 """MES-backed raw-material inventory overview.
 
-The service keeps quantities separated by the MES main unit.  Live syncs can
-persist a bounded, normalized MES dataset, while normal dashboard reads can
+The service enforces the raw-material warehouse's canonical kg unit. Live syncs
+can persist a bounded, normalized MES dataset, while normal dashboard reads can
 rebuild the overview from the last successful dataset without holding an HTTP
 request open during upstream pagination.
 """
@@ -14,6 +14,7 @@ import json
 import math
 import os
 import re
+import unicodedata
 from collections import defaultdict
 from datetime import datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
@@ -43,6 +44,15 @@ MAX_PAGES = 500
 DEFAULT_CACHE_SECONDS = 60
 BUSINESS_DAY_START_HOUR = 8
 SERVICE_LEVEL_Z = Decimal("1.65")
+RAW_MATERIAL_WAREHOUSE_NAME = "原材料仓库"
+CANONICAL_RAW_MATERIAL_UNIT = "kg"
+KG_UNIT_ALIASES = {
+    "kg",
+    "un001",
+    "千克",
+    "公斤",
+    "킬로그램",
+}
 USABLE_QC_STATUSES = {1, 2}  # 合格, 让步合格
 RESTRICTED_QC_STATUSES = {3, 4, 5}  # 待检, 不合格, 暂控
 INBOUND_ACTIONS = {"in", "receive"}
@@ -92,25 +102,41 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _normalised_label(value: Any) -> str:
+    return unicodedata.normalize("NFKC", _text(value)).strip()
+
+
 def _unit(amount: Any) -> str:
     if not isinstance(amount, dict):
         return ""
     info = amount.get("unit")
     if isinstance(info, dict):
-        return _text(info.get("code") or info.get("name"))
-    return _text(info)
+        candidates = [info.get("name"), info.get("code")]
+    else:
+        candidates = [info]
+    labels = [_normalised_label(value) for value in candidates]
+    labels = [value for value in labels if value]
+    if not labels:
+        return ""
+    # A human-readable MES unit name is authoritative when present. This keeps
+    # an explicit non-kg name from being silently relabelled by a stale code.
+    if labels[0].casefold() in KG_UNIT_ALIASES:
+        return CANONICAL_RAW_MATERIAL_UNIT
+    return labels[0]
 
 
-def _unknown_unit(material: dict[str, Any], row_id: Any) -> str:
-    """Return a non-mergeable display key when MES omits the main unit."""
-    identity = _text(
-        material.get("id")
-        or material.get("code")
-        or material.get("name")
-        or row_id
-        or "unidentified"
-    )
-    return f"UNKNOWN:{identity}"
+def _append_warning(
+    warnings: list[str],
+    warning_details: list[dict[str, Any]],
+    code: str,
+    message: str,
+    **params: Any,
+) -> None:
+    """Keep legacy text while exposing a stable, localisable warning contract."""
+    warnings.append(message)
+    detail = {"code": code, "params": params}
+    if detail not in warning_details:
+        warning_details.append(detail)
 
 
 def _qc_status_code(row: dict[str, Any]) -> int | None:
@@ -339,32 +365,22 @@ def _latest_source_iso(rows: Iterable[dict[str, Any]], *keys: str) -> str | None
 def _strong_raw_material_candidate(code: str, name: str, configured: set[str]) -> bool:
     if code in configured:
         return True
-    compact_code = re.sub(r"[\s_-]+", "", code).casefold()
-    compact_name = re.sub(r"[\s_-]+", "", name).casefold()
-    if any(token in compact_name for token in ("原材料", "原料", "원재료", "원료")):
-        return True
-    return compact_code in {
-        "rawmaterial",
-        "rawmaterials",
-        "rawmaterialwarehouse",
-        "rawmaterialswarehouse",
-    } or compact_name in {
-        "rawmaterial",
-        "rawmaterials",
-        "rawmaterialwarehouse",
-        "rawmaterialswarehouse",
-    }
+    return _normalised_label(name) == RAW_MATERIAL_WAREHOUSE_NAME
 
 
 def _warehouse_from_inventory(row: dict[str, Any]) -> dict[str, str]:
     detail = row.get("storageLocationDetail") or {}
     warehouse = detail.get("warehouse") if isinstance(detail, dict) else {}
     warehouse = warehouse if isinstance(warehouse, dict) else {}
-    return {
+    result = {
         "id": _text(warehouse.get("id") or row.get("warehouseId")).strip(),
         "code": _text(warehouse.get("code") or row.get("warehouseCode")).strip(),
         "name": _text(warehouse.get("name") or row.get("warehouseName")).strip(),
     }
+    if _normalised_label(result["name"]) == RAW_MATERIAL_WAREHOUSE_NAME:
+        result["name"] = RAW_MATERIAL_WAREHOUSE_NAME
+        result["code"] = result["code"] or RAW_MATERIAL_WAREHOUSE_NAME
+    return result
 
 
 def _discover_warehouses(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -374,31 +390,64 @@ def _discover_warehouses(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         warehouse = _warehouse_from_inventory(row)
         code = warehouse["code"]
-        if not code:
+        if not code and warehouse["id"] in configured_ids:
+            code = RAW_MATERIAL_WAREHOUSE_NAME
+            warehouse = {**warehouse, "code": code}
+        elif not code:
+            continue
+        if not (
+            _strong_raw_material_candidate(code, warehouse["name"], configured)
+            or warehouse["id"] in configured_ids
+        ):
             continue
         current = options.get(code)
         if current is None or (not current["id"] and warehouse["id"]):
             options[code] = {
                 **warehouse,
-                "is_raw_material_candidate": _strong_raw_material_candidate(
-                    code, warehouse["name"], configured
-                ),
+                "is_raw_material_candidate": True,
             }
     configured_id = (
         next(iter(configured_ids))
-        if len(configured) == 1 and len(configured_ids) == 1
+        if len(configured_ids) == 1
         else ""
     )
+    if len(configured) == 1:
+        configured_code = next(iter(configured))
+        if configured_code != RAW_MATERIAL_WAREHOUSE_NAME:
+            canonical_option = options.pop(RAW_MATERIAL_WAREHOUSE_NAME, None)
+            if canonical_option is not None:
+                current = options.get(configured_code)
+                if current is None:
+                    options[configured_code] = {
+                        **canonical_option,
+                        "code": configured_code,
+                    }
+                elif not current["id"] and canonical_option["id"]:
+                    current["id"] = canonical_option["id"]
     for code in configured:
-        options.setdefault(
-            code,
-            {
+        current = options.get(code)
+        if current is not None:
+            if not current["id"] and configured_id:
+                current["id"] = configured_id
+            current["is_raw_material_candidate"] = True
+        else:
+            options[code] = {
                 "id": configured_id,
                 "code": code,
-                "name": code,
+                "name": RAW_MATERIAL_WAREHOUSE_NAME,
                 "is_raw_material_candidate": True,
-            },
-        )
+            }
+    if configured_id:
+        for option in options.values():
+            if not option["id"]:
+                option["id"] = configured_id
+        if not options and not configured:
+            options[RAW_MATERIAL_WAREHOUSE_NAME] = {
+                "id": configured_id,
+                "code": RAW_MATERIAL_WAREHOUSE_NAME,
+                "name": RAW_MATERIAL_WAREHOUSE_NAME,
+                "is_raw_material_candidate": True,
+            }
     return sorted(options.values(), key=lambda row: (row["name"], row["code"]))
 
 
@@ -414,31 +463,49 @@ def with_zero_stock_markers(
     """
     current = [row for row in current_rows if isinstance(row, dict)]
     previous = [row for row in previous_rows if isinstance(row, dict)]
-    candidate_codes = {
-        option["code"]
-        for option in _discover_warehouses(current + previous)
-        if option["is_raw_material_candidate"]
-    }
+    configured_codes = _configured_codes()
+    configured_ids = _configured_ids()
+    candidate_codes = (
+        {RAW_MATERIAL_WAREHOUSE_NAME}
+        if _discover_warehouses(current + previous)
+        else set()
+    )
 
     def identity(row: dict[str, Any]) -> tuple[str, str, str]:
         material = row.get("material") or {}
         material = material if isinstance(material, dict) else {}
         amount = row.get("amount") or {}
         amount = amount if isinstance(amount, dict) else {}
-        unit = _unit(amount) or _unknown_unit(material, row.get("id"))
+        unit = _unit(amount) or CANONICAL_RAW_MATERIAL_UNIT
         material_identity, _unit_key = _material_key(
             material,
             unit,
             fallback=row.get("id"),
         )
-        return _warehouse_from_inventory(row)["code"], material_identity, unit
+        warehouse = _warehouse_from_inventory(row)
+        warehouse_identity = (
+            RAW_MATERIAL_WAREHOUSE_NAME
+            if (
+                _strong_raw_material_candidate(
+                    warehouse["code"], warehouse["name"], configured_codes
+                )
+                or warehouse["id"] in configured_ids
+            )
+            else warehouse["code"]
+        )
+        return warehouse_identity, material_identity, unit
 
     present = {identity(row) for row in current}
     marker_keys: set[tuple[str, str, str]] = set()
     result = list(current)
     for row in previous:
         key = identity(row)
-        if key[0] not in candidate_codes or key in present or key in marker_keys:
+        if (
+            key[2] != CANONICAL_RAW_MATERIAL_UNIT
+            or key[0] not in candidate_codes
+            or key in present
+            or key in marker_keys
+        ):
             continue
         marker = copy.deepcopy(row)
         amount = marker.get("amount") or {}
@@ -472,6 +539,7 @@ def _base_response(
     lead_time_days: int,
     review_period_days: int,
     warnings: list[str],
+    warning_details: list[dict[str, Any]],
     sources: dict[str, Any],
 ) -> dict[str, Any]:
     business_today = _business_date(now)
@@ -518,6 +586,7 @@ def _base_response(
             ],
             "sources": sources,
             "warnings": warnings,
+            "warning_details": warning_details,
         },
         "warehouse_options": [],
         "selected_warehouses": [],
@@ -608,6 +677,7 @@ def build_raw_material_overview(
     now = now or datetime.now(tz=SHANGHAI)
     now = now.astimezone(SHANGHAI)
     warnings: list[str] = []
+    warning_details: list[dict[str, Any]] = []
     global_recommendation_issues: set[str] = set()
     sources: dict[str, Any] = {
         "inventory_detail": {"status": "error", "cached": False, "record_count": 0},
@@ -619,6 +689,7 @@ def build_raw_material_overview(
         lead_time_days=lead_time_days,
         review_period_days=review_period_days,
         warnings=warnings,
+        warning_details=warning_details,
         sources=sources,
     )
 
@@ -649,14 +720,24 @@ def build_raw_material_overview(
                 )
                 response["meta"]["snapshot_synced_at"] = stored.refreshed_at.isoformat()
             except Exception:
-                warnings.append("Daily inventory was loaded but could not be saved for dashboard reads.")
+                _append_warning(
+                    warnings,
+                    warning_details,
+                    "inventory_store_failed",
+                    "Daily inventory was loaded but could not be saved for dashboard reads.",
+                )
                 response["status"] = "partial"
     elif prefer_stored:
         stored_inventory = None
         try:
             stored_inventory = load_inventory_dataset()
         except Exception:
-            warnings.append("Stored MES inventory could not be read.")
+            _append_warning(
+                warnings,
+                warning_details,
+                "stored_inventory_read_failed",
+                "Stored MES inventory could not be read.",
+            )
         if stored_inventory is not None:
             inventory_rows = stored_inventory.rows
             refreshed_at = stored_inventory.refreshed_at.isoformat()
@@ -674,7 +755,12 @@ def build_raw_material_overview(
                 inventory_rows, staging_latest = load_staging_inventory_rows()
             except Exception:
                 inventory_rows, staging_latest = [], None
-                warnings.append("Stored staging inventory could not be read.")
+                _append_warning(
+                    warnings,
+                    warning_details,
+                    "staging_inventory_read_failed",
+                    "Stored staging inventory could not be read.",
+                )
             if inventory_rows:
                 latest_text = (
                     staging_latest.isoformat()
@@ -684,8 +770,11 @@ def build_raw_material_overview(
                 response["meta"]["data_mode"] = "staging"
                 response["meta"]["snapshot_synced_at"] = latest_text
                 response["status"] = "partial"
-                warnings.append(
-                    "Showing the last stored inventory snapshot; movement history requires a raw-material MES sync."
+                _append_warning(
+                    warnings,
+                    warning_details,
+                    "stored_inventory_fallback",
+                    "Showing the last stored inventory snapshot; movement history requires a raw-material MES sync.",
                 )
                 global_recommendation_issues.add("inventory_change_log_not_synced")
                 sources["inventory_detail"] = {
@@ -698,7 +787,12 @@ def build_raw_material_overview(
                 response["status"] = "sync_required"
                 response["meta"]["data_mode"] = "none"
                 response["meta"]["sync_required"] = True
-                warnings.append("No stored raw-material MES dataset is available. Start MES sync.")
+                _append_warning(
+                    warnings,
+                    warning_details,
+                    "stored_inventory_missing",
+                    "No stored raw-material MES dataset is available. Start MES sync.",
+                )
                 inventory_rows = []
                 sources["inventory_detail"] = {
                     "status": "missing",
@@ -714,7 +808,14 @@ def build_raw_material_overview(
                 filters=inventory_filters,
                 force_refresh=force_refresh,
             )
-            warnings.extend(page_warnings)
+            for page_warning in page_warnings:
+                _append_warning(
+                    warnings,
+                    warning_details,
+                    "inventory_pagination_incomplete",
+                    page_warning,
+                    source="inventory_detail",
+                )
             if page_warnings:
                 response["status"] = "partial"
                 global_recommendation_issues.add("inventory_pagination_incomplete")
@@ -736,11 +837,21 @@ def build_raw_material_overview(
                     )
                     response["meta"]["snapshot_synced_at"] = stored.refreshed_at.isoformat()
                 except Exception:
-                    warnings.append("Live inventory was loaded but could not be saved for fast dashboard reads.")
+                    _append_warning(
+                        warnings,
+                        warning_details,
+                        "inventory_store_failed",
+                        "Live inventory was loaded but could not be saved for fast dashboard reads.",
+                    )
                     response["status"] = "partial"
         except Exception as exc:  # upstream failure must keep the response contract intact
             inventory_rows = []
-            warnings.append(f"MES inventory detail unavailable: {_safe_upstream_error(exc)}")
+            _append_warning(
+                warnings,
+                warning_details,
+                "inventory_unavailable",
+                f"MES inventory detail unavailable: {_safe_upstream_error(exc)}",
+            )
             response["status"] = "partial"
             global_recommendation_issues.add("inventory_detail_unavailable")
 
@@ -750,7 +861,13 @@ def build_raw_material_overview(
     if requested:
         unknown = [code for code in requested if code not in option_by_code]
         if unknown:
-            warnings.append("Unknown warehouse code(s): " + ", ".join(unknown))
+            _append_warning(
+                warnings,
+                warning_details,
+                "warehouse_unknown",
+                "Unknown warehouse code(s): " + ", ".join(unknown),
+                codes=unknown,
+            )
         selected = [option_by_code[code] for code in requested if code in option_by_code]
     else:
         selected = [row for row in options if row["is_raw_material_candidate"]]
@@ -761,32 +878,65 @@ def build_raw_material_overview(
         # asks the user to select explicitly and never guesses a generic warehouse.
         if sources["inventory_detail"]["status"] in {"ok", "stored", "staging"}:
             response["status"] = "selection_required"
+            _append_warning(
+                warnings,
+                warning_details,
+                "raw_material_warehouse_not_found",
+                f"The target raw-material warehouse ({RAW_MATERIAL_WAREHOUSE_NAME}) was not found.",
+                warehouse_name=RAW_MATERIAL_WAREHOUSE_NAME,
+            )
         response["meta"]["sync_required"] = response["status"] == "sync_required"
         return response
 
     selected_codes = {row["code"] for row in selected}
     selected_names = {row["name"] for row in selected if row["name"]}
-    selected_ids = [row["id"] for row in selected if row["id"]]
-    if len(selected_ids) != len(selected):
-        warnings.append("One or more selected warehouses have no MES ID; transaction coverage may be incomplete.")
+    missing_selected_id_count = sum(not row["id"] for row in selected)
+    selected_ids = list(dict.fromkeys(row["id"] for row in selected if row["id"]))
+    if missing_selected_id_count:
+        _append_warning(
+            warnings,
+            warning_details,
+            "warehouse_id_missing",
+            "One or more selected warehouses have no MES ID; transaction coverage may be incomplete.",
+            count=missing_selected_id_count,
+        )
         response["status"] = "partial"
         global_recommendation_issues.add("warehouse_id_missing")
     invalid_selected_ids = [value for value in selected_ids if not value.isdigit()]
     if invalid_selected_ids:
-        warnings.append(
-            "One or more selected warehouses have a non-numeric MES ID; those warehouses were excluded from transaction retrieval."
+        _append_warning(
+            warnings,
+            warning_details,
+            "warehouse_id_invalid",
+            "One or more selected warehouses have a non-numeric MES ID; those warehouses were excluded from transaction retrieval.",
+            count=len(invalid_selected_ids),
         )
         response["status"] = "partial"
         global_recommendation_issues.add("warehouse_id_invalid")
         selected_ids = [value for value in selected_ids if value.isdigit()]
 
-    selected_inventory = [
-        row for row in inventory_rows if _warehouse_from_inventory(row)["code"] in selected_codes
-    ]
+    selected_id_set = set(selected_ids)
+    selected_inventory = []
+    for row in inventory_rows:
+        warehouse = _warehouse_from_inventory(row)
+        if (
+            warehouse["code"] in selected_codes
+            or (
+                _normalised_label(warehouse["name"])
+                == RAW_MATERIAL_WAREHOUSE_NAME
+                and RAW_MATERIAL_WAREHOUSE_NAME in selected_names
+            )
+            or warehouse["id"] in selected_id_set
+        ):
+            selected_inventory.append(row)
     materials: dict[tuple[str, str], dict[str, Any]] = {}
     unknown_qc_statuses: set[str] = set()
-    missing_unit_record_count = 0
+    missing_unit_counts: dict[str, int] = defaultdict(int)
+    unexpected_units_by_source: dict[str, dict[str, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
     invalid_inventory_quantity_count = 0
+    included_inventory_rows: list[dict[str, Any]] = []
     for row in selected_inventory:
         material = row.get("material") or {}
         material = material if isinstance(material, dict) else {}
@@ -795,13 +945,14 @@ def build_raw_material_overview(
         unit = _unit(amount)
         unit_missing = not unit
         if unit_missing:
-            missing_unit_record_count += 1
-            unit = _unknown_unit(material, row.get("id"))
+            missing_unit_counts["inventory_detail"] += 1
+            unit = CANONICAL_RAW_MATERIAL_UNIT
+        elif unit != CANONICAL_RAW_MATERIAL_UNIT:
+            unexpected_units_by_source["inventory_detail"][unit] += 1
+            continue
         warehouse = _warehouse_from_inventory(row)
         key = _material_key(material, unit, fallback=row.get("id"))
         entry = materials.setdefault(key, _material_seed(material, unit, warehouse))
-        if unit_missing:
-            entry["recommendation_issues"].add("main_unit_missing")
         current_amount = _optional_decimal(amount.get("amount"))
         if current_amount is None:
             invalid_inventory_quantity_count += 1
@@ -811,6 +962,7 @@ def build_raw_material_overview(
                 _iso_from_ms(row.get("updatedAt") or row.get("createdAt")),
             )
             continue
+        included_inventory_rows.append(row)
         entry["current"] += current_amount
         qc_status = _qc_status_code(row)
         if qc_status in USABLE_QC_STATUSES:
@@ -835,7 +987,12 @@ def build_raw_material_overview(
         try:
             inventory_history = load_inventory_history(limit=2)
         except Exception:
-            warnings.append("Stored inventory history could not be read; the 24-hour comparison is unavailable.")
+            _append_warning(
+                warnings,
+                warning_details,
+                "inventory_history_read_failed",
+                "Stored inventory history could not be read; the 24-hour comparison is unavailable.",
+            )
     if len(inventory_history) >= 2:
         current_snapshot, previous_snapshot = inventory_history[:2]
         current_date = current_snapshot.snapshot_date
@@ -868,7 +1025,15 @@ def build_raw_material_overview(
             ):
                 for row in snapshot.rows:
                     warehouse = _warehouse_from_inventory(row)
-                    if warehouse["code"] not in selected_codes:
+                    if not (
+                        warehouse["code"] in selected_codes
+                        or (
+                            _normalised_label(warehouse["name"])
+                            == RAW_MATERIAL_WAREHOUSE_NAME
+                            and RAW_MATERIAL_WAREHOUSE_NAME in selected_names
+                        )
+                        or warehouse["id"] in selected_id_set
+                    ):
                         continue
                     material = row.get("material") or {}
                     material = material if isinstance(material, dict) else {}
@@ -877,7 +1042,13 @@ def build_raw_material_overview(
                     quantity = _optional_decimal(amount.get("amount"))
                     if quantity is None:
                         continue
-                    unit = _unit(amount) or _unknown_unit(material, row.get("id"))
+                    unit = _unit(amount)
+                    if not unit:
+                        missing_unit_counts["inventory_history"] += 1
+                        unit = CANONICAL_RAW_MATERIAL_UNIT
+                    elif unit != CANONICAL_RAW_MATERIAL_UNIT:
+                        unexpected_units_by_source["inventory_history"][unit] += 1
+                        continue
                     key = _material_key(material, unit, fallback=row.get("id"))
                     entry = materials.setdefault(
                         key, _material_seed(material, unit, warehouse)
@@ -898,20 +1069,30 @@ def build_raw_material_overview(
                     entry["comparison_current"] = Decimal("0")
                     entry["comparison_usable"] = Decimal("0")
         else:
-            warnings.append(
+            _append_warning(
+                warnings,
+                warning_details,
+                "comparison_snapshots_nonconsecutive",
                 "The two latest stored inventory snapshots are not consecutive 08:00 business days; "
-                "an exact 24-hour comparison was not calculated."
+                "an exact 24-hour comparison was not calculated.",
             )
     elif prefer_stored or persist:
-        warnings.append(
-            "The 24-hour comparison will be available after two consecutive 08:00 inventory snapshots."
+        _append_warning(
+            warnings,
+            warning_details,
+            "comparison_snapshots_missing",
+            "The 24-hour comparison will be available after two consecutive 08:00 inventory snapshots.",
         )
 
     if unknown_qc_statuses:
-        warnings.append(
+        _append_warning(
+            warnings,
+            warning_details,
+            "quality_status_unclassified",
             "MES inventory contains missing or unrecognised quality status code(s); "
             "those quantities were excluded from order-available stock: "
-            + ", ".join(sorted(unknown_qc_statuses))
+            + ", ".join(sorted(unknown_qc_statuses)),
+            statuses=sorted(unknown_qc_statuses),
         )
         response["status"] = "partial"
     business_today = _business_date(now)
@@ -937,8 +1118,11 @@ def build_raw_material_overview(
             "cached": False,
             "record_count": 0,
         }
-        warnings.append(
-            "MES inventory change log was not requested because no selected warehouse had a MES ID."
+        _append_warning(
+            warnings,
+            warning_details,
+            "movement_skipped_warehouse_id_missing",
+            "MES inventory change log was not requested because no selected warehouse had a MES ID.",
         )
         global_recommendation_issues.add("warehouse_id_missing")
     elif prefer_stored:
@@ -956,7 +1140,12 @@ def build_raw_material_overview(
                 ),
             )
         except Exception:
-            warnings.append("Stored MES inventory movements could not be read.")
+            _append_warning(
+                warnings,
+                warning_details,
+                "stored_movement_read_failed",
+                "Stored MES inventory movements could not be read.",
+            )
         if stored_change is None:
             change_rows = []
             sources["inventory_change_log"] = {
@@ -964,9 +1153,12 @@ def build_raw_material_overview(
                 "cached": False,
                 "record_count": 0,
             }
-            warnings.append(
+            _append_warning(
+                warnings,
+                warning_details,
+                "stored_movement_missing",
                 "No stored MES movement dataset covers the selected warehouse and analysis period. "
-                "Run the daily or manual MES update."
+                "Run the daily or manual MES update.",
             )
             response["status"] = "partial"
             global_recommendation_issues.add("inventory_change_log_not_synced")
@@ -994,7 +1186,14 @@ def build_raw_material_overview(
                 },
                 force_refresh=force_refresh,
             )
-            warnings.extend(page_warnings)
+            for page_warning in page_warnings:
+                _append_warning(
+                    warnings,
+                    warning_details,
+                    "movement_pagination_incomplete",
+                    page_warning,
+                    source="inventory_change_log",
+                )
             if page_warnings:
                 response["status"] = "partial"
                 global_recommendation_issues.add("change_log_pagination_incomplete")
@@ -1024,8 +1223,11 @@ def build_raw_material_overview(
                     if not current_synced or refreshed_at > current_synced:
                         response["meta"]["snapshot_synced_at"] = refreshed_at
                 except Exception:
-                    warnings.append(
-                        "MES movements were loaded but could not be saved for dashboard reads."
+                    _append_warning(
+                        warnings,
+                        warning_details,
+                        "movement_store_failed",
+                        "MES movements were loaded but could not be saved for dashboard reads.",
                     )
                     response["status"] = "partial"
         except Exception as exc:
@@ -1035,8 +1237,11 @@ def build_raw_material_overview(
                 "cached": False,
                 "record_count": 0,
             }
-            warnings.append(
-                f"MES inventory change log unavailable: {_safe_upstream_error(exc)}"
+            _append_warning(
+                warnings,
+                warning_details,
+                "movement_unavailable",
+                f"MES inventory change log unavailable: {_safe_upstream_error(exc)}",
             )
             response["status"] = "partial"
             global_recommendation_issues.add("inventory_change_log_unavailable")
@@ -1105,8 +1310,11 @@ def build_raw_material_overview(
         unit = _unit(changed) or _unit(after)
         unit_missing = not unit
         if unit_missing:
-            missing_unit_record_count += 1
-            unit = _unknown_unit(material, row.get("id"))
+            missing_unit_counts["inventory_change_log"] += 1
+            unit = CANONICAL_RAW_MATERIAL_UNIT
+        elif unit != CANONICAL_RAW_MATERIAL_UNIT:
+            unexpected_units_by_source["inventory_change_log"][unit] += 1
+            continue
         direction_in = _direction_is_in(amount_info.get("direction"), action_code)
         action_label = action_label or ACTION_LABELS.get(action_code, action_code)
         created_at = _iso_from_ms(row.get("createdAt"))
@@ -1129,8 +1337,6 @@ def build_raw_material_overview(
         entry = materials.setdefault(
             key, _material_seed(transaction_material, unit, warehouse)
         )
-        if unit_missing:
-            entry["recommendation_issues"].add("main_unit_missing")
         entry["warehouse_codes"].add(warehouse_code)
         entry["warehouse_names"].add(warehouse_name)
         entry["last_updated"] = _later_iso(entry["last_updated"], created_at)
@@ -1202,55 +1408,116 @@ def build_raw_material_overview(
             )
 
     if unknown_actions:
-        warnings.append(
+        _append_warning(
+            warnings,
+            warning_details,
+            "action_unclassified",
             "Unclassified MES action(s) were excluded from consumption/recommendations: "
-            + ", ".join(sorted(unknown_actions))
+            + ", ".join(sorted(unknown_actions)),
+            actions=sorted(unknown_actions),
         )
         response["status"] = "partial"
     if direction_conflicts:
-        warnings.append(
+        _append_warning(
+            warnings,
+            warning_details,
+            "action_direction_conflict",
             "MES action/direction conflict detected; physical in/out followed the direction flag: "
-            + ", ".join(sorted(direction_conflicts))
+            + ", ".join(sorted(direction_conflicts)),
+            actions=sorted(direction_conflicts),
         )
         response["status"] = "partial"
     if invalid_timestamp_count:
-        warnings.append(
-            f"Skipped {invalid_timestamp_count} MES change log row(s) with a missing or invalid timestamp."
+        _append_warning(
+            warnings,
+            warning_details,
+            "change_timestamp_invalid",
+            f"Skipped {invalid_timestamp_count} MES change log row(s) with a missing or invalid timestamp.",
+            count=invalid_timestamp_count,
         )
         response["status"] = "partial"
         global_recommendation_issues.add("change_timestamp_invalid")
     if invalid_inventory_quantity_count:
-        warnings.append(
-            f"Skipped {invalid_inventory_quantity_count} MES inventory record(s) with a missing, invalid, or non-finite quantity."
+        _append_warning(
+            warnings,
+            warning_details,
+            "inventory_quantity_invalid",
+            f"Skipped {invalid_inventory_quantity_count} MES inventory record(s) with a missing, invalid, or non-finite quantity.",
+            count=invalid_inventory_quantity_count,
         )
         response["status"] = "partial"
     if invalid_change_quantity_count:
-        warnings.append(
-            f"Skipped {invalid_change_quantity_count} MES change log row(s) with a missing, invalid, or non-finite quantity."
+        _append_warning(
+            warnings,
+            warning_details,
+            "change_quantity_invalid",
+            f"Skipped {invalid_change_quantity_count} MES change log row(s) with a missing, invalid, or non-finite quantity.",
+            count=invalid_change_quantity_count,
         )
         response["status"] = "partial"
         global_recommendation_issues.add("change_quantity_invalid")
     if outside_range_timestamp_count:
-        warnings.append(
-            f"Skipped {outside_range_timestamp_count} MES change log row(s) outside the requested timestamp range."
+        _append_warning(
+            warnings,
+            warning_details,
+            "change_timestamp_outside_range",
+            f"Skipped {outside_range_timestamp_count} MES change log row(s) outside the requested timestamp range.",
+            count=outside_range_timestamp_count,
         )
         response["status"] = "partial"
         global_recommendation_issues.add("change_timestamp_outside_range")
     if unattributed_warehouse_count:
-        warnings.append(
-            f"Skipped {unattributed_warehouse_count} MES change log row(s) without an attributable warehouse."
+        _append_warning(
+            warnings,
+            warning_details,
+            "change_warehouse_unattributed",
+            f"Skipped {unattributed_warehouse_count} MES change log row(s) without an attributable warehouse.",
+            count=unattributed_warehouse_count,
         )
         response["status"] = "partial"
         global_recommendation_issues.add("change_warehouse_unattributed")
+    missing_unit_record_count = sum(missing_unit_counts.values())
     if missing_unit_record_count:
-        warnings.append(
+        _append_warning(
+            warnings,
+            warning_details,
+            "unit_assumed_kg",
             f"MES returned {missing_unit_record_count} inventory/change record(s) without a main unit; "
-            "each affected material was isolated under an UNKNOWN unit and excluded from reliable recommendations."
+            "kg was assumed according to the raw-material warehouse unit policy.",
+            count=missing_unit_record_count,
+            source_counts=dict(sorted(missing_unit_counts.items())),
+        )
+    unexpected_source_counts = {
+        source: sum(unit_counts.values())
+        for source, unit_counts in unexpected_units_by_source.items()
+    }
+    unexpected_unit_record_count = sum(unexpected_source_counts.values())
+    if unexpected_unit_record_count:
+        units = sorted(
+            {
+                unit
+                for unit_counts in unexpected_units_by_source.values()
+                for unit in unit_counts
+            }
+        )
+        _append_warning(
+            warnings,
+            warning_details,
+            "unexpected_unit",
+            f"Skipped {unexpected_unit_record_count} raw-material record(s) with explicit non-kg unit(s): "
+            + ", ".join(units),
+            count=unexpected_unit_record_count,
+            units=units,
+            source_counts=dict(sorted(unexpected_source_counts.items())),
         )
         response["status"] = "partial"
-    if invalid_inventory_quantity_count and sources["inventory_detail"]["status"] == "ok":
+    if invalid_inventory_quantity_count and sources["inventory_detail"]["status"] in {
+        "ok",
+        "stored",
+        "staging",
+    }:
         sources["inventory_detail"]["status"] = "partial"
-    if response["status"] == "partial" and sources["inventory_change_log"]["status"] == "ok":
+    if response["status"] == "partial" and sources["inventory_change_log"]["status"] in {"ok", "stored"}:
         if (
             invalid_timestamp_count
             or invalid_change_quantity_count
@@ -1489,7 +1756,7 @@ def build_raw_material_overview(
     response["units"] = units
     response["summary"] = {
         "material_count": len(material_rows),
-        "inventory_record_count": len(selected_inventory),
+        "inventory_record_count": len(included_inventory_rows),
         "reorder_count": sum(
             row["recommendation_available"] and row["recommended_order"] > 0
             for row in material_rows
@@ -1508,7 +1775,7 @@ def build_raw_material_overview(
         value
         for value in (
             _iso_from_ms(row.get("updatedAt") or row.get("createdAt"))
-            for row in selected_inventory
+            for row in included_inventory_rows
         )
         if value
     ]
