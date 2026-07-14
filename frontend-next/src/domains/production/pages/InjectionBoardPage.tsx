@@ -111,14 +111,14 @@ const boardCopy = {
     plannedStops: "계획정지",
     ctWarnings: "C/T 주의",
     rateWarnings: "진도주의",
-    unplanned: "무계획",
+    unplanned: "계획없음",
     currentCt: "현재 C/T",
-    recentCt: "최근 60분 실효 C/T",
+    recentCt: "최근 60분 기준",
     progress: "달성률",
     part: "생산 Part",
     model: "모델",
     noPart: "Part 확인 대기",
-    noPlan: "계획 없음",
+    noPlan: "계획없음",
     lastShot: "최근 형합",
     noShot: "형합 없음",
     remainingShots: "잔여 형합",
@@ -190,7 +190,7 @@ const boardCopy = {
     rateWarnings: "进度注意",
     unplanned: "无计划",
     currentCt: "当前周期",
-    recentCt: "最近60分钟有效周期",
+    recentCt: "最近60分钟基准",
     progress: "完成率",
     part: "生产Part",
     model: "型号",
@@ -513,6 +513,7 @@ function MachineBoardCard({ machine, language }: { machine: BoardMachine; langua
         <div>
           <span>{copy.currentCt}</span>
           <strong>{machine.currentCycleTimeSec === null ? "-" : `${machine.currentCycleTimeSec.toFixed(1)}s`}</strong>
+          <small>{copy.recentCt}</small>
         </div>
         <div>
           <span>{copy.progress}</span>

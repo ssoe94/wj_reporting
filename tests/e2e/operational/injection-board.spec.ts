@@ -86,9 +86,29 @@ test.describe('injection office board', () => {
       await expect(page.locator(`.injection-board-card[data-machine="${machineNumber}"]`)).toBeVisible();
     }
     await expect(page.locator('.injection-board-card').first()).toContainText('현재 C/T');
+    await expect(page.locator('.injection-board-card').first()).toContainText('최근 60분 기준');
     await expect(page.locator('.injection-board-card').first()).toContainText('달성률');
     await expect(page.locator('.injection-board-card').first()).toContainText('MODEL-B');
     await expect(page.locator('.injection-board-card').first()).not.toContainText('필요 C/T');
+    await expect(page.getByText('계획없음', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('무계획', { exact: true })).toHaveCount(0);
+
+    const typography = await page.locator('.injection-board').evaluate((board) => {
+      const summaryMetric = board.querySelector<HTMLElement>('.injection-board-summary__metrics > span');
+      const machineMetrics = Array.from(board.querySelectorAll<HTMLElement>('.injection-board-card__metrics > div'));
+      const machineValues = machineMetrics.map((metric) => metric.querySelector<HTMLElement>('strong'));
+      const detail = board.querySelector<HTMLElement>('.injection-board-card__metrics small');
+      return {
+        summaryAlignment: summaryMetric ? window.getComputedStyle(summaryMetric).textAlign : '',
+        machineAlignments: machineMetrics.map((metric) => window.getComputedStyle(metric).textAlign),
+        machineValueSizes: machineValues.map((value) => value ? window.getComputedStyle(value).fontSize : ''),
+        detailWeight: detail ? Number(window.getComputedStyle(detail).fontWeight) : 0,
+      };
+    });
+    expect(typography.summaryAlignment).toBe('center');
+    expect(new Set(typography.machineAlignments)).toEqual(new Set(['center']));
+    expect(new Set(typography.machineValueSizes).size).toBe(1);
+    expect(typography.detailWeight).toBeGreaterThanOrEqual(700);
 
     const finalCard = page.locator('.injection-board-card[data-machine="17"]');
     const finalCardBox = await finalCard.boundingBox();

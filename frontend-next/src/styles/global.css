@@ -8196,7 +8196,7 @@ select {
 
 .injection-board-summary header > div > strong {
   overflow: hidden;
-  font-size: 1.35rem;
+  font-size: 1.45rem;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8233,12 +8233,15 @@ select {
   display: flex;
   align-items: baseline;
   align-self: center;
+  justify-content: center;
   gap: 9px;
+  text-align: center;
 }
 
 .injection-board-summary__hero > strong {
-  font-size: 3rem;
+  font-size: 3.25rem;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .injection-board-summary__hero > span {
@@ -8255,20 +8258,25 @@ select {
 
 .injection-board-summary__metrics > span {
   display: grid;
+  align-content: center;
+  justify-items: center;
   gap: 3px;
   min-width: 0;
   padding: 7px 8px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.13);
   color: rgba(255, 255, 255, 0.82);
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 800;
+  text-align: center;
 }
 
 .injection-board-summary__metrics strong {
   overflow: hidden;
   color: #ffffff;
-  font-size: 1.02rem;
+  font-size: 1.2rem;
+  line-height: 1.1;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8547,23 +8555,31 @@ select {
 
 .injection-board-card__metrics > div {
   display: grid;
+  align-content: center;
+  justify-items: center;
   min-width: 0;
   padding: 6px 8px;
   border: 1px solid #dfe6ea;
   background: rgba(255, 255, 255, 0.72);
+  text-align: center;
 }
 
 .injection-board-card__metrics strong {
+  width: 100%;
   margin-top: 2px;
-  font-size: 1.8rem;
+  font-size: 2rem;
   line-height: 1;
+  text-align: center;
 }
 
 .injection-board-card__metrics small {
   overflow: hidden;
   margin-top: 3px;
-  color: #788993;
-  font-size: 0.74rem;
+  color: #526873;
+  font-size: 0.84rem;
+  font-weight: 900;
+  line-height: 1.1;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -9108,7 +9124,7 @@ select {
   }
 
   .injection-board-summary header > div > strong {
-    font-size: 1rem;
+    font-size: 1.08rem;
   }
 
   .injection-board-summary header > em {
@@ -9125,13 +9141,13 @@ select {
   }
 
   .injection-board-summary__hero > strong {
-    font-size: 2.05rem;
+    font-size: 2.25rem;
     white-space: nowrap;
   }
 
   .injection-board-summary__hero > span {
     overflow: hidden;
-    font-size: 0.66rem;
+    font-size: 0.7rem;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -9144,13 +9160,13 @@ select {
     gap: 2px;
     overflow: hidden;
     padding: 4px 5px;
-    font-size: 0.57rem;
+    font-size: 0.64rem;
     line-height: 1.1;
     white-space: nowrap;
   }
 
   .injection-board-summary__metrics strong {
-    font-size: 0.78rem;
+    font-size: 0.92rem;
   }
 
   .injection-board-summary footer {
@@ -9241,14 +9257,14 @@ select {
 
   .injection-board-card__metrics strong {
     margin-top: 1px;
-    font-size: 1.32rem;
+    font-size: 1.42rem;
     line-height: 0.95;
     white-space: nowrap;
   }
 
   .injection-board-card__metrics small {
     margin-top: 2px;
-    font-size: 0.59rem;
+    font-size: 0.64rem;
     line-height: 1.05;
   }
 
@@ -9338,7 +9354,7 @@ select {
   }
 
   .injection-board-summary__hero > strong {
-    font-size: 1.85rem;
+    font-size: 2rem;
   }
 
   .injection-board-summary__metrics > span {
@@ -9360,7 +9376,7 @@ select {
   }
 
   .injection-board-card__metrics strong {
-    font-size: 1.2rem;
+    font-size: 1.32rem;
   }
 
   .injection-board-card footer {
@@ -9387,12 +9403,12 @@ select {
   .injection-board__grid { gap: 12px; padding: 12px; }
   .injection-board-summary { padding: 18px 20px; }
   .injection-board-summary header > div > span { width: 38px; height: 38px; font-size: 0.9rem; }
-  .injection-board-summary header > div > strong { font-size: 1.8rem; }
+  .injection-board-summary header > div > strong { font-size: 1.95rem; }
   .injection-board-summary header > em { font-size: 0.95rem; }
-  .injection-board-summary__hero > strong { font-size: 4rem; }
+  .injection-board-summary__hero > strong { font-size: 4.35rem; }
   .injection-board-summary__hero > span { font-size: 1.15rem; }
-  .injection-board-summary__metrics > span { padding: 10px 12px; font-size: 0.95rem; }
-  .injection-board-summary__metrics strong { font-size: 1.35rem; }
+  .injection-board-summary__metrics > span { padding: 10px 12px; font-size: 1.02rem; }
+  .injection-board-summary__metrics strong { font-size: 1.55rem; }
   .injection-board-summary footer { font-size: 1rem; }
   .injection-board-summary footer strong { font-size: 1.15rem; }
   .injection-board-summary__split > span,
@@ -9416,8 +9432,8 @@ select {
   .injection-board-card__part span,
   .injection-board-card__part em { font-size: 1.28rem; }
   .injection-board-card__metrics > div { padding: 10px 12px; }
-  .injection-board-card__metrics strong { font-size: 2.2rem; }
-  .injection-board-card__metrics small { font-size: 0.92rem; }
+  .injection-board-card__metrics strong { font-size: 2.35rem; }
+  .injection-board-card__metrics small { font-size: 1rem; }
   .injection-board-card__progress-head strong,
   .injection-board-card footer strong { font-size: 1.02rem; }
 }
