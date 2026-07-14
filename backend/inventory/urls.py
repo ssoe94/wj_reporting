@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .raw_material_views import RawMaterialOverviewView
 
 
 def finished_goods_transactions_view(request, *args, **kwargs):
@@ -24,6 +25,7 @@ urlpatterns = [
     path('email/schedule/', views.schedule_email_report, name='schedule_email_report'),
     path('email/status/', views.email_status, name='email_status'),
     path('warehouses/', views.WarehouseListView.as_view(), name='warehouse_list'),
+    path('raw-materials/overview/', RawMaterialOverviewView.as_view(), name='raw_material_overview'),
     path('finished-goods/transactions/', finished_goods_transactions_view, name='finished_goods_transactions'),
     
     # 통합 품목 관리 API

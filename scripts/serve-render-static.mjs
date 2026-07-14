@@ -9,6 +9,18 @@ const root = resolve(process.env.WJ_STATIC_ROOT || join(repoRoot, "frontend", "d
 const port = Number(process.env.WJ_STATIC_PORT || 5184);
 const host = process.env.WJ_STATIC_HOST || "127.0.0.1";
 const apiProxyOrigin = process.env.WJ_STATIC_API_PROXY?.replace(/\/$/, "");
+const mockAuth = process.env.WJ_STATIC_MOCK_AUTH !== "false";
+const proxyAuthPassthrough = process.env.WJ_STATIC_API_PROXY_AUTH === "passthrough";
+
+if (!mockAuth && !apiProxyOrigin) {
+  throw new Error("WJ_STATIC_API_PROXY is required when WJ_STATIC_MOCK_AUTH=false");
+}
+
+if (!mockAuth && !proxyAuthPassthrough) {
+  throw new Error(
+    "WJ_STATIC_API_PROXY_AUTH=passthrough is required when WJ_STATIC_MOCK_AUTH=false",
+  );
+}
 
 const nextAppRoutes = new Set([
   "/next/login",
@@ -19,6 +31,8 @@ const nextAppRoutes = new Set([
   "/next/production/plans/",
   "/next/mes/monitoring",
   "/next/mes/monitoring/",
+  "/next/inventory/raw-materials",
+  "/next/inventory/raw-materials/",
 ]);
 
 function json(res, body) {
@@ -183,7 +197,7 @@ async function proxyApi(url, req, res) {
   const target = `${apiProxyOrigin}${url.pathname}${url.search}`;
   const headers = { ...req.headers };
   delete headers.host;
-  if (process.env.WJ_STATIC_API_PROXY_AUTH !== "passthrough") {
+  if (!proxyAuthPassthrough) {
     delete headers.authorization;
   }
 
@@ -211,7 +225,7 @@ const server = createServer((req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || `${host}:${port}`}`);
 
   if (url.pathname.startsWith("/api/")) {
-    if (apiProxyOrigin && !shouldMockApi(url)) {
+    if (apiProxyOrigin && (!mockAuth || !shouldMockApi(url))) {
       proxyApi(url, req, res).catch((error) => {
         res.writeHead(502, { "content-type": "application/json; charset=utf-8" });
         res.end(JSON.stringify({ error: error instanceof Error ? error.message : "API proxy failed" }));

@@ -60,17 +60,22 @@ class InventoryRefreshView(APIView):
 
 class MESTokenTestView(APIView):
     """MES API 토큰 테스트용 디버깅 엔드포인트"""
-    permission_classes = []  # 인증 없이 접근 가능하도록 변경
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        from inventory.mes import get_access_token, call_inventory_list
+        from inventory.mes import (
+            _safe_exception_message,
+            call_inventory_list,
+            get_access_token,
+        )
         import os
         from decouple import config
         
         try:
             # 환경 변수 확인
+            configured_base = os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn')
             env_info = {
-                'MES_API_BASE': os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn'),
+                'MES_API_BASE': _safe_exception_message(RuntimeError(configured_base)),
                 'MES_APP_KEY_exists': bool(os.getenv('MES_APP_KEY') or config('MES_APP_KEY', default='')),
                 'MES_APP_SECRET_exists': bool(os.getenv('MES_APP_SECRET') or config('MES_APP_SECRET', default='')),
                 'MES_ACCESS_TOKEN_exists': bool(os.getenv('MES_ACCESS_TOKEN') or config('MES_ACCESS_TOKEN', default='')),
@@ -86,7 +91,7 @@ class MESTokenTestView(APIView):
                 }
             except Exception as token_error:
                 token_info = {
-                    'token_error': str(token_error)
+                    'token_error': _safe_exception_message(token_error)
                 }
             
             # 실제 API 호출 테스트
@@ -101,7 +106,7 @@ class MESTokenTestView(APIView):
             except Exception as api_error:
                 api_test = {
                     'api_call_success': False,
-                    'api_error': str(api_error)
+                    'api_error': _safe_exception_message(api_error)
                 }
             
             return Response({
@@ -112,7 +117,7 @@ class MESTokenTestView(APIView):
             
         except Exception as e:
             return Response({
-                'error': str(e)
+                'error': _safe_exception_message(e)
             }, status=500)
 
 
@@ -661,7 +666,7 @@ def create_snapshot(request):
         return Response({
             'success': False,
             'error': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -1335,4 +1340,4 @@ def migrate_legacy_data(request):
         return Response({
             'success': False,
             'error': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -39,7 +39,13 @@ if (existsSync(nextPublishDir)) {
 cpSync(nextDistDir, nextPublishDir, { recursive: true });
 
 const nextIndex = join(nextPublishDir, "index.html");
-for (const route of ["login", "production", "production/injection-board", "mes/monitoring"]) {
+for (const route of [
+  "login",
+  "production",
+  "production/injection-board",
+  "mes/monitoring",
+  "inventory/raw-materials",
+]) {
   const routeDir = join(nextPublishDir, route);
   mkdirSync(routeDir, { recursive: true });
   copyFileSync(nextIndex, join(routeDir, "index.html"));
