@@ -9749,6 +9749,29 @@ select {
   line-height: 0;
 }
 
+.raw-freshness > .raw-mode-badge,
+.raw-freshness > .raw-schedule-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.raw-freshness > .raw-mode-badge {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.raw-freshness > .raw-schedule-badge {
+  background: rgba(0, 156, 73, 0.09);
+  color: #087b42;
+}
+
 .raw-filter-grid {
   display: grid;
   align-items: end;
@@ -9855,6 +9878,7 @@ select {
 .raw-trend-panel,
 .raw-risk-panel,
 .raw-order-panel,
+.raw-daily-comparison-panel,
 .raw-table-panel {
   min-width: 0;
   background: rgba(255, 255, 255, 0.92);
@@ -10202,6 +10226,161 @@ select {
   margin-top: 11px;
 }
 
+.raw-daily-comparison-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  background:
+    radial-gradient(circle at 98% 0%, rgba(0, 142, 195, 0.08), transparent 30%),
+    rgba(255, 255, 255, 0.96);
+}
+
+.raw-comparison-window {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 3px;
+  text-align: right;
+}
+
+.raw-comparison-window span {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.raw-comparison-window strong {
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.raw-comparison-window i {
+  margin: 0 7px;
+  color: var(--accent);
+  font-style: normal;
+}
+
+.raw-comparison-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.raw-comparison-summary article {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid rgba(98, 119, 137, 0.12);
+  border-radius: 9px;
+  background: #f8fbfc;
+}
+
+.raw-comparison-summary span,
+.raw-comparison-summary small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.raw-comparison-summary strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 1.05rem;
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+}
+
+.raw-comparison-summary article.is-up strong { color: #087b42; }
+.raw-comparison-summary article.is-down strong { color: #b72942; }
+
+.raw-daily-comparison-list {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid rgba(98, 119, 137, 0.11);
+}
+
+.raw-daily-comparison-row {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  grid-template-columns: minmax(170px, 0.75fr) minmax(300px, 1.8fr) minmax(112px, 0.45fr);
+  padding: 10px 2px;
+  border-bottom: 1px solid rgba(98, 119, 137, 0.1);
+}
+
+.raw-daily-comparison-row:last-child { border-bottom: 0; }
+
+.raw-daily-comparison-material {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.raw-daily-comparison-material strong,
+.raw-daily-comparison-material span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.raw-daily-comparison-material strong { color: var(--text); font-size: 0.75rem; }
+.raw-daily-comparison-material span { color: var(--muted); font-size: 0.64rem; }
+
+.raw-daily-comparison-bars {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.raw-daily-comparison-bars > div {
+  display: grid;
+  align-items: center;
+  gap: 7px;
+  grid-template-columns: 62px minmax(80px, 1fr) 72px;
+}
+
+.raw-daily-comparison-bars span,
+.raw-daily-comparison-bars strong {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.raw-daily-comparison-bars strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.raw-daily-comparison-bars i {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eaf0f3;
+}
+
+.raw-daily-comparison-bars b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.raw-comparison-bar--previous { background: #9aaab5; }
+.raw-comparison-bar--current { background: var(--accent); }
+
+.raw-daily-comparison-delta {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.raw-daily-comparison-delta span,
+.raw-daily-comparison-delta small { color: var(--muted); font-size: 0.62rem; }
+.raw-daily-comparison-delta strong { color: var(--text); font-size: 0.74rem; }
+.raw-daily-comparison-delta--up strong { color: #087b42; }
+.raw-daily-comparison-delta--down strong { color: #b72942; }
+
 .raw-health-grid {
   display: grid;
   gap: 12px;
@@ -10329,6 +10508,7 @@ select {
 .raw-flow-dot--out { background: var(--raw-orange); }
 .raw-quality-dot--unknown { background: var(--raw-slate); }
 .raw-flow-dot--use { background: #8166c9; }
+.raw-flow-dot--transfer { background: #f1a43a; }
 
 .raw-risk-visual {
   display: grid;
@@ -10458,10 +10638,12 @@ select {
 .raw-chart-bar--in { fill: #38ae75; }
 .raw-chart-bar--out { fill: #f1b64f; }
 .raw-chart-bar--use { fill: #8166c9; }
+.raw-chart-bar--transfer { fill: #f1a43a; }
 .raw-chart-area { fill: rgba(0, 142, 195, 0.09); }
 .raw-chart-line { fill: none; stroke: var(--accent); stroke-width: 2.4; }
 .raw-chart-dot { fill: #fff; stroke: var(--accent); stroke-width: 2; }
 .raw-legend--use { background: #8166c9; }
+.raw-legend--transfer { background: #f1a43a; }
 
 .raw-order-axis-legend {
   display: flex;
@@ -10680,6 +10862,8 @@ select {
   .raw-filter-grid--core .raw-filter-field--warehouse,
   .raw-filter-grid--core .raw-filter-field--search { grid-column: 1 / -1; }
   .raw-health-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .raw-daily-comparison-row { grid-template-columns: minmax(150px, 0.65fr) minmax(260px, 1.35fr); }
+  .raw-daily-comparison-delta { grid-column: 1 / -1; grid-row: 2; grid-template-columns: 1fr auto auto; text-align: left; }
   .raw-flow-totals { justify-content: flex-start; }
   .raw-priority-row {
     grid-template-columns: 28px minmax(0, 1fr) auto;
@@ -10696,6 +10880,13 @@ select {
   .raw-advanced-filters summary { align-items: flex-start; }
   .raw-advanced-filters summary strong { display: none; }
   .raw-freshness-state { align-self: flex-start; }
+  .raw-mode-badge,
+  .raw-schedule-badge { align-self: flex-start; }
+  .raw-comparison-window { text-align: left; }
+  .raw-comparison-summary { grid-template-columns: 1fr; }
+  .raw-daily-comparison-row { align-items: stretch; grid-template-columns: 1fr; gap: 8px; }
+  .raw-daily-comparison-delta { grid-column: auto; grid-row: auto; }
+  .raw-daily-comparison-bars > div { grid-template-columns: 62px minmax(70px, 1fr) 64px; }
   .raw-health-metrics { grid-template-columns: 1fr 1fr; }
   .raw-health-metrics article { min-height: 82px; padding: 10px; }
   .raw-risk-list { grid-template-columns: 1fr; }

@@ -15,7 +15,6 @@ import csv
 from io import StringIO
 
 
-import threading
 import time
 from django.core.cache import cache
 from rest_framework import status
@@ -39,13 +38,40 @@ class InventoryRefreshView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # 백그라운드에서 실행
-        def run_fetch():
-            call_command('fetch_inventory')
-        
-        thread = threading.Thread(target=run_fetch)
-        thread.start()
-        
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Only staff users may start a manual MES update."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        # The legacy manual refresh shares the same durable lock and full report
+        # pipeline as the raw-material page, preventing duplicate MES scans.
+        from inventory.services.raw_material_sync import (
+            claim_raw_material_sync,
+            fail_claimed_raw_material_sync,
+            launch_claimed_raw_material_sync,
+        )
+
+        claimed, sync_state = claim_raw_material_sync("manual")
+        if not claimed:
+            return Response(
+                {"status": "running", "message": sync_state["message"]},
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            launch_claimed_raw_material_sync(
+                trigger="manual",
+                claimed_started_at=sync_state["started_at"],
+            )
+        except Exception as exc:
+            fail_claimed_raw_material_sync(
+                f"MES update worker could not start: {exc.__class__.__name__}",
+                claimed_started_at=sync_state["started_at"],
+            )
+            return Response(
+                {"status": "error"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         return Response({'status': 'started'})
     
     def get(self, request):

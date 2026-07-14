@@ -1,17 +1,47 @@
-"""HTTP endpoint for the live raw-material overview."""
+"""HTTP endpoints for the stored raw-material report and controlled MES sync."""
 
 from __future__ import annotations
 
+import hashlib
+import json
+
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from inventory.models import RawMaterialSyncState
 from inventory.services.raw_materials import build_raw_material_overview
+from inventory.services.raw_material_sync import (
+    claim_raw_material_sync,
+    fail_claimed_raw_material_sync,
+    get_raw_material_sync_status,
+    launch_claimed_raw_material_sync,
+)
 
 
 MAX_WAREHOUSE_SELECTION = 50
 MAX_WAREHOUSE_CODE_LENGTH = 100
+# The key includes the durable sync generation, so a new daily/manual sync
+# invalidates immediately while identical reports are computed at most daily.
+OVERVIEW_CACHE_SECONDS = 25 * 60 * 60
+
+
+def _overview_cache_key(parameters: dict) -> str:
+    sync_updated_at = (
+        RawMaterialSyncState.objects.filter(pk=RawMaterialSyncState.SINGLETON_PK)
+        .values_list("updated_at", flat=True)
+        .first()
+    )
+    payload = {
+        **parameters,
+        "sync_updated_at": sync_updated_at.isoformat() if sync_updated_at else None,
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return f"raw-materials:stored-overview:v1:{digest}"
 
 
 def _warehouse_codes(query_params) -> list[str]:
@@ -46,39 +76,77 @@ def _bounded_int(query_params, key: str, default: int, minimum: int, maximum: in
     return value
 
 
-def _truthy(value) -> bool:
-    return str(value or "").strip().casefold() in {"1", "true", "yes", "on"}
-
-
 class RawMaterialOverviewView(APIView):
-    """Return current stock, usage trend, and transparent reorder guidance."""
+    """Return the latest saved report without contacting MES in the request."""
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         try:
             warehouse_codes = _warehouse_codes(request.query_params)
-            lookback_days = _bounded_int(request.query_params, "lookback_days", 30, 7, 90)
+            lookback_days = _bounded_int(request.query_params, "lookback_days", 30, 7, 30)
             lead_time_days = _bounded_int(request.query_params, "lead_time_days", 14, 1, 180)
             review_period_days = _bounded_int(
-                request.query_params, "review_period_days", 7, 0, 90
+                request.query_params, "review_period_days", 14, 0, 90
             )
         except ValueError as exc:
             return Response(
                 {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        payload = build_raw_material_overview(
-            warehouse_codes=warehouse_codes,
-            lookback_days=lookback_days,
-            lead_time_days=lead_time_days,
-            review_period_days=review_period_days,
-            force_refresh=_truthy(request.query_params.get("refresh")),
-        )
+        parameters = {
+            "warehouse_codes": sorted(warehouse_codes),
+            "lookback_days": lookback_days,
+            "lead_time_days": lead_time_days,
+            "review_period_days": review_period_days,
+        }
+        cache_key = _overview_cache_key(parameters)
+        payload = cache.get(cache_key)
+        if not isinstance(payload, dict):
+            payload = build_raw_material_overview(
+                warehouse_codes=warehouse_codes,
+                lookback_days=lookback_days,
+                lead_time_days=lead_time_days,
+                review_period_days=review_period_days,
+                prefer_stored=True,
+            )
+            cache.set(cache_key, payload, OVERVIEW_CACHE_SECONDS)
         response = Response(payload)
         response["Cache-Control"] = "private, no-store"
         response["Pragma"] = "no-cache"
         return response
 
 
-__all__ = ["RawMaterialOverviewView"]
+class RawMaterialSyncView(APIView):
+    """Start one exceptional background sync or return its durable status."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(get_raw_material_sync_status())
+
+    def post(self, request):
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Only staff users may start a manual MES update."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        claimed, sync_state = claim_raw_material_sync("manual")
+        if not claimed:
+            return Response(sync_state, status=status.HTTP_409_CONFLICT)
+
+        try:
+            launch_claimed_raw_material_sync(
+                trigger="manual",
+                claimed_started_at=sync_state["started_at"],
+            )
+        except Exception as exc:
+            failed = fail_claimed_raw_material_sync(
+                f"MES update worker could not start: {exc.__class__.__name__}",
+                claimed_started_at=sync_state["started_at"],
+            )
+            return Response(failed, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response(sync_state, status=status.HTTP_202_ACCEPTED)
+
+
+__all__ = ["RawMaterialOverviewView", "RawMaterialSyncView"]
