@@ -136,6 +136,7 @@ function useNavItems() {
           { to: "/sales/inventory", label: t('nav_inventory_analysis'), icon: PackageSearch },
           { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
           { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
+          { to: "/sales/raw-materials", label: t('nav_raw_material_management'), icon: Boxes },
         ],
       },
       {
@@ -219,6 +220,7 @@ function useNavItems() {
       { to: "/sales/inventory", label: t('nav_inventory_analysis'), icon: PackageSearch },
       { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
       { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
+      { to: "/sales/raw-materials", label: t('nav_raw_material_management'), icon: Boxes },
     ],
   });
   navItems.push({
@@ -312,6 +314,7 @@ function AppContent() {
   else if (pathname.startsWith('/injection/dashboard')) breadcrumbLabel = t('nav_injection_dashboard');
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
   else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_dashboard');
+  else if (pathname.startsWith('/sales/raw-materials')) breadcrumbLabel = t('nav_raw_material_management');
   else if (pathname.startsWith('/sales')) breadcrumbLabel = t('nav_sales');
   else if (pathname.startsWith('/eco2')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/eco')) breadcrumbLabel = t('nav_eco_management');
@@ -630,6 +633,7 @@ function AppContent() {
             {/* Inventory status */}
             <Route path="/sales/daily-report" element={<PrivateRoute><PageTransition><DailyReportPage /></PageTransition></PrivateRoute>} />
             <Route path="/sales/inventory-status" element={<PrivateRoute><PageTransition><InventoryStatusPage /></PageTransition></PrivateRoute>} />
+            <Route path="/sales/raw-materials" element={<PrivateRoute><PageTransition><EmbeddedNextPage page="raw-materials" /></PageTransition></PrivateRoute>} />
 
             {/* Admin routes */}
             <Route path="/admin/user-management" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} />

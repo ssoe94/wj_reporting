@@ -1,10 +1,25 @@
-import os, time
+import os
+import re
+import time
+
 import requests
 from django.core.cache import cache
 from decouple import config
 
-MES_BASE_URL = os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn')
 MES_ROUTE_BASE = '/api/openapi/domain/web/v1/route'
+
+
+def _normalise_mes_base_url(value: str) -> str:
+    """Accept either the Blacklake origin or the Swagger ``host`` value."""
+    value = (value or 'https://v3-ali.blacklake.cn').strip().rstrip('/')
+    if value.endswith(MES_ROUTE_BASE):
+        value = value[:-len(MES_ROUTE_BASE)].rstrip('/')
+    return value
+
+
+MES_BASE_URL = _normalise_mes_base_url(
+    os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn')
+)
 
 # 앱 토큰 엔드포인트 (기존)
 APP_TOKEN_ENDPOINT = '/api/openapi/domain/api/v1/access_token/_get_access_token'
@@ -24,6 +39,28 @@ INVENTORY_ENDPOINT = f'{MES_ROUTE_BASE}/inventory/open/v1/material_inventory/_li
 INVENTORY_CHANGE_LOG_ENDPOINT = f'{MES_ROUTE_BASE}/inventory/open/v1/material_inventory/_list_change_log'
 
 
+def _safe_exception_message(exc: Exception) -> str:
+    """Remove credentials from request errors before logging or re-raising them."""
+    message = str(exc)
+    patterns = (
+        (r"(?i)(access_token=)[^&\s]+", r"\1[redacted]"),
+        (
+            r"(?i)(['\"]?(?:app_?secret|app_?key|user_?code|access_?token)['\"]?\s*[:=]\s*['\"]?)[^,'\"}\s&]+",
+            r"\1[redacted]",
+        ),
+        (r"(?i)(authorization\s*[:=]\s*bearer\s+)[^,\s]+", r"\1[redacted]"),
+    )
+    for pattern, replacement in patterns:
+        message = re.sub(pattern, replacement, message)
+
+    # Some exception types include a fully-rendered request body.  Remove any
+    # configured credential even when it is not labelled in that representation.
+    for secret in (APP_KEY, APP_SECRET, ACCESS_TOKEN_ENV, USER_CODE):
+        if secret and len(secret) >= 4:
+            message = message.replace(secret, "[redacted]")
+    return message
+
+
 def fetch_app_token() -> str:
     """1단계: 앱 액세스 토큰 가져오기"""
     url = f"{MES_BASE_URL}{APP_TOKEN_ENDPOINT}"
@@ -35,13 +72,21 @@ def fetch_app_token() -> str:
     
     result = resp.json()
     if result.get('code') != 200:
-        raise Exception(f"App token error: {result.get('message', 'Unknown error')}")
+        error_msg = _safe_exception_message(
+            RuntimeError(result.get('message', 'Unknown error'))
+        )
+        raise RuntimeError(f"App token error: {error_msg}")
     
     data = result.get('data', {})
     token = data.get('appAccessToken')
-    expires_in = data.get('expiresIn', 3600)
+    if not token:
+        raise RuntimeError("App token error: response did not include appAccessToken")
+    try:
+        expires_in = int(data.get('expiresIn', 3600))
+    except (TypeError, ValueError):
+        expires_in = 3600
     
-    cache.set(APP_TOKEN_CACHE_KEY, token, timeout=expires_in - 60)
+    cache.set(APP_TOKEN_CACHE_KEY, token, timeout=max(expires_in - 60, 1))
     cache.set(TOKEN_EXPIRES_KEY, int(time.time()) + expires_in)
     return token
 
@@ -53,15 +98,21 @@ def fetch_user_token(app_token: str) -> str:
         return app_token
     
     url = f"{MES_BASE_URL}{USER_TOKEN_ENDPOINT}?access_token={app_token}"
-    resp = requests.post(url, json={
-        'code': USER_CODE,
-        'grantType': 'authorization_code'
-    }, timeout=30)
-    resp.raise_for_status()
+    try:
+        resp = requests.post(url, json={
+            'code': USER_CODE,
+            'grantType': 'authorization_code'
+        }, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(_safe_exception_message(exc)) from None
     
     result = resp.json()
     if result.get('code') != 200:
-        raise Exception(f"User token error: {result.get('message', 'Unknown error')}")
+        error_msg = _safe_exception_message(
+            RuntimeError(result.get('message', 'Unknown error'))
+        )
+        raise RuntimeError(f"User token error: {error_msg}")
     
     data = result.get('data', {})
     user_token = data.get('userAccessToken')
@@ -124,17 +175,20 @@ def call_inventory_list(page:int=1, size:int=200, **filters):
                 
             # MES API에서 에러 응답 확인
             if response_data.get('code') != 200:
-                error_msg = response_data.get('message', 'Unknown MES API error')
+                error_msg = _safe_exception_message(
+                    RuntimeError(response_data.get('message', 'Unknown MES API error'))
+                )
                 print(f'MES inventory list: API error for page {page}: {error_msg}')
-                raise Exception(f'MES API error: {error_msg}')
+                raise RuntimeError(f'MES API error: {error_msg}')
                 
             return response_data
         except Exception as e:
+            safe_error = _safe_exception_message(e)
             if attempt == 2:  # 마지막 시도
-                print(f'MES inventory list error (page {page}):', resp.status_code if 'resp' in locals() else 'No response', str(e))
-                raise
+                print(f'MES inventory list error (page {page}):', resp.status_code if 'resp' in locals() else 'No response', safe_error)
+                raise RuntimeError(safe_error) from None
             else:
-                print(f'Retry {attempt + 1}/3 for page {page}: {str(e)}')
+                print(f'Retry {attempt + 1}/3 for page {page}: {safe_error}')
                 time.sleep(2)  # 2초 대기 후 재시도
 
 
@@ -166,19 +220,22 @@ def call_inventory_change_log(page: int = 1, size: int = 200, **filters):
                 return {}
 
             if response_data.get('code') != 200:
-                error_msg = response_data.get('message', 'Unknown MES API error')
+                error_msg = _safe_exception_message(
+                    RuntimeError(response_data.get('message', 'Unknown MES API error'))
+                )
                 print(f'MES inventory change log error (page {page}): {error_msg}')
-                raise Exception(f'MES API error: {error_msg}')
+                raise RuntimeError(f'MES API error: {error_msg}')
 
             return response_data.get('data') or response_data
         except Exception as e:
+            safe_error = _safe_exception_message(e)
             if attempt == 2:
                 print(
                     f'MES inventory change log error (page {page}):',
                     resp.status_code if 'resp' in locals() else 'No response',
-                    str(e),
+                    safe_error,
                 )
-                raise
-            print(f'Retry {attempt + 1}/3 for change log page {page}: {str(e)}')
+                raise RuntimeError(safe_error) from None
+            print(f'Retry {attempt + 1}/3 for change log page {page}: {safe_error}')
             time.sleep(2)
     return {}
