@@ -1,4 +1,5 @@
 import { type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getInjectionProductionMatrix,
@@ -10,6 +11,7 @@ import {
   askProductionAi,
   cancelAiJob,
   createMachiningManualReport,
+  createProductionPlanItem,
   createAiJob,
   getAiJob,
   getMachiningProvision,
@@ -21,6 +23,7 @@ import {
   getProductionStatus,
   resetInjectionActivityConfirmation,
   saveInjectionActivityConfirmation,
+  updateProductionPartCavity,
   type InjectionActivityConfirmation,
   type InjectionActivityType,
   type MachiningProvisionResponse,
@@ -103,6 +106,9 @@ type InjectionActivityConfirmationForm = {
   activityType: InjectionActivityType | "";
   partNo: string;
   modelName: string;
+  plannedQuantity: string;
+  lotNo: string;
+  cavity: string;
   note: string;
 };
 
@@ -110,6 +116,9 @@ const EMPTY_INJECTION_ACTIVITY_CONFIRMATION_FORM: InjectionActivityConfirmationF
   activityType: "",
   partNo: "",
   modelName: "",
+  plannedQuantity: "",
+  lotNo: "",
+  cavity: "1",
   note: "",
 };
 
@@ -321,6 +330,22 @@ const pageCopy = {
     activityConfirmationTitle: "활동 내역 확인 필요",
     activityConfirmationBody: "계획 없이 형합 이력이 있습니다. 시험 사출, 금형 점검 또는 실제 생산 여부를 MES에서 확인하세요.",
     productInputAction: "제품/계획 입력",
+    quickPlanEyebrow: "QUICK PLAN",
+    quickPlanModalTitle: "생산 제품·계획 등록",
+    quickPlanModalBody: "현재 화면을 유지한 채 생산 제품과 당일 계획을 등록합니다. 저장 즉시 실시간 진행률에 반영됩니다.",
+    quickPlanDate: "기준일",
+    plannedQuantityLabel: "계획 수량",
+    plannedQuantityPlaceholder: "예: 1,200",
+    lotNoLabel: "Lot No. (선택)",
+    cavityCountLabel: "개별 캐비티",
+    cavityCountHint: "1회 형합 시 이 Part의 생산 수량",
+    planNoteLabel: "비고 (선택)",
+    quickPlanRequired: "Part No., 모델명, 계획 수량을 모두 입력하세요.",
+    quickPlanQuantityRequired: "계획 수량은 1개 이상이어야 합니다.",
+    quickPlanCavityRequired: "개별 캐비티는 1개 이상이어야 합니다.",
+    quickPlanSave: "계획 등록",
+    quickPlanSaving: "등록 중",
+    quickPlanSaveError: "생산 계획을 등록하지 못했습니다. 중복 계획, 권한 또는 입력값을 확인하세요.",
     activityCheckAction: "MES 활동 확인",
     activityConfirmModalTitle: "설비 활동 확정",
     activityConfirmModalBody: "계획에 없는 형합 이력을 분류해 다음 근무자가 같은 설비 상태를 바로 이해할 수 있게 합니다.",
@@ -487,6 +512,22 @@ const pageCopy = {
     activityConfirmationTitle: "需确认设备活动",
     activityConfirmationBody: "设备存在无计划合模记录。请在 MES 中确认是试模、模具检查还是实际生产。",
     productInputAction: "录入产品/计划",
+    quickPlanEyebrow: "QUICK PLAN",
+    quickPlanModalTitle: "登记产品与生产计划",
+    quickPlanModalBody: "保持当前画面并登记产品及当日计划，保存后立即反映到实时进度。",
+    quickPlanDate: "基准日",
+    plannedQuantityLabel: "计划数量",
+    plannedQuantityPlaceholder: "例如 1,200",
+    lotNoLabel: "Lot No.（选填）",
+    cavityCountLabel: "单件型腔数",
+    cavityCountHint: "每次合模该 Part 的生产数量",
+    planNoteLabel: "备注（选填）",
+    quickPlanRequired: "请填写 Part No.、型号和计划数量。",
+    quickPlanQuantityRequired: "计划数量必须大于 0。",
+    quickPlanCavityRequired: "单件型腔数必须大于 0。",
+    quickPlanSave: "登记计划",
+    quickPlanSaving: "登记中",
+    quickPlanSaveError: "无法登记生产计划。请检查重复计划、权限或输入内容。",
     activityCheckAction: "确认 MES 活动",
     activityConfirmModalTitle: "确认设备活动",
     activityConfirmModalBody: "对计划外合模记录进行分类，便于下一班人员直接了解设备状态。",
@@ -1098,6 +1139,17 @@ function getMachineNumberFromName(value: string | null | undefined) {
   if (machineLabelMatch) return machineLabelMatch[1];
   const leadingMatch = text.match(/^(\d+)\D/);
   return leadingMatch ? leadingMatch[1] : null;
+}
+
+function getQuickPlanMachineName(row: RealtimeProgressRow, mesData?: InjectionProductionMatrix) {
+  const machineNumber = Number(row.key || getMachineNumberFromName(row.label));
+  const machine = Number.isFinite(machineNumber)
+    ? mesData?.machines?.find((item) => item.machine_number === machineNumber)
+    : undefined;
+  const tonnage = String(machine?.tonnage ?? "").trim().replace(/T$/i, "");
+
+  if (machine && tonnage) return `${tonnage}T-${machine.machine_number}`;
+  return machine?.display_name || row.label;
 }
 
 function getMachineFallbackLabel(machineNumber: number, language: AppLanguage) {
@@ -2805,6 +2857,7 @@ export function ProductionDashboardPage() {
     ...EMPTY_INJECTION_ACTIVITY_CONFIRMATION_FORM,
   });
   const [activityConfirmationError, setActivityConfirmationError] = useState<string | null>(null);
+  const [activityModalViewportStyle, setActivityModalViewportStyle] = useState<CSSProperties>();
   const [selectedMachiningRow, setSelectedMachiningRow] = useState<MachiningProvisionRow | null>(null);
   const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailKey | null>(null);
   const [activitySelection, setActivitySelection] = useState<MachineActivitySelection | null>(null);
@@ -2943,6 +2996,54 @@ export function ProductionDashboardPage() {
     },
     onError: () => setActivityConfirmationError(copy.activitySaveError),
   });
+  const createQuickPlanMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedActivityRow) throw new Error("machine is required");
+
+      const partNo = activityConfirmationForm.partNo.trim().toUpperCase();
+      const modelName = activityConfirmationForm.modelName.trim();
+      const plannedQuantity = Math.max(1, Math.round(Number(activityConfirmationForm.plannedQuantity) || 0));
+      const cavity = Math.max(1, Math.round(Number(activityConfirmationForm.cavity) || 0));
+
+      if (cavity > 1) {
+        await updateProductionPartCavity(partNo, `1x${cavity}`);
+      }
+
+      const plan = await createProductionPlanItem({
+        plan_date: businessDate,
+        plan_type: "injection",
+        machine_name: getQuickPlanMachineName(selectedActivityRow, mesQuery.data),
+        part_no: partNo,
+        model_name: modelName,
+        lot_no: activityConfirmationForm.lotNo.trim() || null,
+        planned_quantity: plannedQuantity,
+      });
+
+      await saveInjectionActivityConfirmation({
+        business_date: businessDate,
+        machine_key: selectedActivityRow.key,
+        machine_label: selectedActivityRow.label,
+        activity_type: "production",
+        part_no: partNo,
+        model_name: modelName,
+        shot_count: selectedActivityRow.shotCount,
+        last_shot_at: selectedActivityRow.lastShotAt,
+        note: activityConfirmationForm.note.trim(),
+      }).catch(() => undefined);
+
+      return plan;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["production-plan-summary", businessDate] });
+      queryClient.invalidateQueries({ queryKey: ["production", "plan-items", businessDate, "injection"] });
+      queryClient.invalidateQueries({ queryKey: ["production-status", businessDate] });
+      queryClient.invalidateQueries({ queryKey: ["production", "injection-activity-confirmations", businessDate] });
+      queryClient.invalidateQueries({ queryKey: ["production", "ai-briefing", businessDate] });
+      setSelectedActivityRow(null);
+      setActivityConfirmationError(null);
+    },
+    onError: () => setActivityConfirmationError(copy.quickPlanSaveError),
+  });
   const resetActivityConfirmationMutation = useMutation({
     mutationFn: ({ targetDate, machineKey }: { targetDate: string; machineKey: string }) => (
       resetInjectionActivityConfirmation(targetDate, machineKey)
@@ -2954,6 +3055,82 @@ export function ProductionDashboardPage() {
     },
     onError: () => setActivityConfirmationError(copy.activitySaveError),
   });
+
+  useEffect(() => {
+    if (!selectedActivityRow) return undefined;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const parentWindow = window.parent === window ? null : window.parent;
+    let parentBody: HTMLElement | null = null;
+    let previousParentOverflow = "";
+
+    const syncVisibleViewport = () => {
+      try {
+        if (!parentWindow || !window.frameElement) {
+          setActivityModalViewportStyle(undefined);
+          return;
+        }
+
+        const frameRect = window.frameElement.getBoundingClientRect();
+        const visibleTop = Math.max(0, -frameRect.top);
+        const visibleBottom = Math.min(frameRect.height, parentWindow.innerHeight - frameRect.top);
+        const visibleHeight = Math.max(320, visibleBottom - visibleTop);
+        setActivityModalViewportStyle({
+          position: "absolute",
+          inset: "auto 0 auto 0",
+          top: visibleTop,
+          height: visibleHeight,
+          "--modal-viewport-height": `${visibleHeight}px`,
+        } as CSSProperties);
+      } catch {
+        setActivityModalViewportStyle(undefined);
+      }
+    };
+
+    syncVisibleViewport();
+
+    try {
+      if (parentWindow) {
+        parentBody = parentWindow.document.body;
+        previousParentOverflow = parentBody.style.overflow;
+        parentBody.style.overflow = "hidden";
+        parentWindow.addEventListener("resize", syncVisibleViewport);
+        parentWindow.addEventListener("scroll", syncVisibleViewport, { passive: true });
+      }
+    } catch {
+      parentBody = null;
+    }
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      if (parentBody) parentBody.style.overflow = previousParentOverflow;
+      parentWindow?.removeEventListener("resize", syncVisibleViewport);
+      parentWindow?.removeEventListener("scroll", syncVisibleViewport);
+      setActivityModalViewportStyle(undefined);
+    };
+  }, [selectedActivityRow]);
+
+  useEffect(() => {
+    if (!selectedActivityRow) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (
+        saveActivityConfirmationMutation.isPending ||
+        createQuickPlanMutation.isPending ||
+        resetActivityConfirmationMutation.isPending
+      ) return;
+      setSelectedActivityRow(null);
+      setActivityConfirmationError(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    createQuickPlanMutation.isPending,
+    resetActivityConfirmationMutation.isPending,
+    saveActivityConfirmationMutation.isPending,
+    selectedActivityRow,
+  ]);
 
   const transitionAnalysis = useMemo(
     () => buildInjectionTransitionAnalysis(
@@ -3006,6 +3183,9 @@ export function ProductionDashboardPage() {
   const selectedActivityConfirmation = selectedActivityRow
     ? activityConfirmationByMachine.get(selectedActivityRow.key)
     : undefined;
+  const selectedActivityIsQuickPlan = Boolean(
+    selectedActivityRow && !selectedActivityRow.hasPlan && selectedActivityRow.equipmentState === "unplanned_running",
+  );
   const machiningProgress = useMemo(
     () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),
     [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
@@ -3627,6 +3807,7 @@ export function ProductionDashboardPage() {
     const confirmation = activityConfirmationByMachine.get(row.key);
     setSelectedActivityRow(row);
     setActivityConfirmationForm(confirmation ? {
+      ...EMPTY_INJECTION_ACTIVITY_CONFIRMATION_FORM,
       activityType: confirmation.activity_type,
       partNo: confirmation.part_no,
       modelName: confirmation.model_name,
@@ -3639,7 +3820,11 @@ export function ProductionDashboardPage() {
   }
 
   function closeActivityConfirmation() {
-    if (saveActivityConfirmationMutation.isPending || resetActivityConfirmationMutation.isPending) return;
+    if (
+      saveActivityConfirmationMutation.isPending ||
+      createQuickPlanMutation.isPending ||
+      resetActivityConfirmationMutation.isPending
+    ) return;
     setSelectedActivityRow(null);
     setActivityConfirmationError(null);
   }
@@ -3649,7 +3834,26 @@ export function ProductionDashboardPage() {
     if (!selectedActivityRow) return;
     const activityType = activityConfirmationForm.activityType;
     const partNo = activityConfirmationForm.partNo.trim();
+    const modelName = activityConfirmationForm.modelName.trim();
     const note = activityConfirmationForm.note.trim();
+    if (selectedActivityIsQuickPlan) {
+      if (!partNo || !modelName || !activityConfirmationForm.plannedQuantity.trim()) {
+        setActivityConfirmationError(copy.quickPlanRequired);
+        return;
+      }
+      if (!Number.isFinite(Number(activityConfirmationForm.plannedQuantity)) || Number(activityConfirmationForm.plannedQuantity) <= 0) {
+        setActivityConfirmationError(copy.quickPlanQuantityRequired);
+        return;
+      }
+      if (!Number.isFinite(Number(activityConfirmationForm.cavity)) || Number(activityConfirmationForm.cavity) < 1) {
+        setActivityConfirmationError(copy.quickPlanCavityRequired);
+        return;
+      }
+
+      setActivityConfirmationError(null);
+      createQuickPlanMutation.mutate();
+      return;
+    }
     if (!activityType) {
       setActivityConfirmationError(copy.activityTypePlaceholder);
       return;
@@ -3670,7 +3874,7 @@ export function ProductionDashboardPage() {
       machine_label: selectedActivityRow.label,
       activity_type: activityType,
       part_no: partNo,
-      model_name: activityConfirmationForm.modelName.trim(),
+      model_name: modelName,
       shot_count: selectedActivityRow.shotCount,
       last_shot_at: selectedActivityRow.lastShotAt,
       note,
@@ -4739,10 +4943,15 @@ export function ProductionDashboardPage() {
             </button>
           </div>
 
-          {selectedActivityRow ? (
-            <div className="modal-backdrop" role="presentation" onClick={closeActivityConfirmation}>
+          {selectedActivityRow ? createPortal(
+            <div
+              className="modal-backdrop production-activity-modal-backdrop"
+              role="presentation"
+              style={activityModalViewportStyle}
+              onClick={closeActivityConfirmation}
+            >
               <section
-                className="modal-card production-activity-confirmation-modal"
+                className={`modal-card production-activity-confirmation-modal${selectedActivityIsQuickPlan ? " production-quick-plan-modal" : ""}`}
                 aria-labelledby="production-activity-confirmation-title"
                 aria-modal="true"
                 role="dialog"
@@ -4750,20 +4959,28 @@ export function ProductionDashboardPage() {
               >
                 <div className="modal-card__header">
                   <div>
-                    <p className="panel-card__eyebrow">ACTIVITY REVIEW</p>
-                    <h3 className="panel__title" id="production-activity-confirmation-title">{copy.activityConfirmModalTitle}</h3>
-                    <p>{copy.activityConfirmModalBody}</p>
+                    <p className="panel-card__eyebrow">{selectedActivityIsQuickPlan ? copy.quickPlanEyebrow : "ACTIVITY REVIEW"}</p>
+                    <h3 className="panel__title" id="production-activity-confirmation-title">
+                      {selectedActivityIsQuickPlan ? copy.quickPlanModalTitle : copy.activityConfirmModalTitle}
+                    </h3>
+                    <p>{selectedActivityIsQuickPlan ? copy.quickPlanModalBody : copy.activityConfirmModalBody}</p>
                   </div>
                   <button className="button button--ghost" onClick={closeActivityConfirmation} type="button">
                     {copy.close}
                   </button>
                 </div>
 
-                <div className="production-activity-confirmation-context">
+                <div className={`production-activity-confirmation-context${selectedActivityIsQuickPlan ? " production-activity-confirmation-context--quick" : ""}`}>
                   <div>
                     <span>{copy.injectionFacilities}</span>
                     <strong>{getLocalizedMachineLabel(selectedActivityRow.label, language)}</strong>
                   </div>
+                  {selectedActivityIsQuickPlan ? (
+                    <div>
+                      <span>{copy.quickPlanDate}</span>
+                      <strong>{businessDate}</strong>
+                    </div>
+                  ) : null}
                   <div>
                     <span>{copy.shotCount}</span>
                     <strong>{formatNumber(selectedActivityRow.shotCount)}</strong>
@@ -4775,52 +4992,110 @@ export function ProductionDashboardPage() {
                 </div>
 
                 <form onSubmit={handleActivityConfirmationSubmit}>
-                  <label className="field-group">
-                    <span>{copy.activityType}</span>
-                    <select
-                      aria-label={copy.activityType}
-                      onChange={(event) => {
-                        setActivityConfirmationForm((current) => ({
-                          ...current,
-                          activityType: event.target.value as InjectionActivityType | "",
-                        }));
-                        setActivityConfirmationError(null);
-                      }}
-                      required
-                      value={activityConfirmationForm.activityType}
-                    >
-                      <option disabled value="">{copy.activityTypePlaceholder}</option>
-                      {activityTypeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
+                  {!selectedActivityIsQuickPlan ? (
+                    <label className="field-group">
+                      <span>{copy.activityType}</span>
+                      <select
+                        aria-label={copy.activityType}
+                        onChange={(event) => {
+                          setActivityConfirmationForm((current) => ({
+                            ...current,
+                            activityType: event.target.value as InjectionActivityType | "",
+                          }));
+                          setActivityConfirmationError(null);
+                        }}
+                        required
+                        value={activityConfirmationForm.activityType}
+                      >
+                        <option disabled value="">{copy.activityTypePlaceholder}</option>
+                        {activityTypeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
 
                   <div className="production-activity-confirmation-fields">
                     <label className="field-group">
-                      <span>{copy.partNoLabel}{activityConfirmationForm.activityType === "production" ? " *" : ""}</span>
+                      <span>{copy.partNoLabel}{selectedActivityIsQuickPlan || activityConfirmationForm.activityType === "production" ? " *" : ""}</span>
                       <input
                         autoComplete="off"
                         onChange={(event) => {
                           setActivityConfirmationForm((current) => ({ ...current, partNo: event.target.value }));
                           setActivityConfirmationError(null);
                         }}
-                        required={activityConfirmationForm.activityType === "production"}
+                        required={selectedActivityIsQuickPlan || activityConfirmationForm.activityType === "production"}
                         value={activityConfirmationForm.partNo}
                       />
                     </label>
                     <label className="field-group">
-                      <span>{copy.modelNameLabel}</span>
+                      <span>{copy.modelNameLabel}{selectedActivityIsQuickPlan ? " *" : ""}</span>
                       <input
                         autoComplete="off"
-                        onChange={(event) => setActivityConfirmationForm((current) => ({ ...current, modelName: event.target.value }))}
+                        onChange={(event) => {
+                          setActivityConfirmationForm((current) => ({ ...current, modelName: event.target.value }));
+                          setActivityConfirmationError(null);
+                        }}
+                        required={selectedActivityIsQuickPlan}
                         value={activityConfirmationForm.modelName}
                       />
                     </label>
                   </div>
 
+                  {selectedActivityIsQuickPlan ? (
+                    <>
+                      <div className="production-activity-confirmation-fields">
+                        <label className="field-group">
+                          <span>{copy.plannedQuantityLabel} *</span>
+                          <input
+                            inputMode="numeric"
+                            min="1"
+                            onChange={(event) => {
+                              setActivityConfirmationForm((current) => ({ ...current, plannedQuantity: event.target.value }));
+                              setActivityConfirmationError(null);
+                            }}
+                            placeholder={copy.plannedQuantityPlaceholder}
+                            required
+                            step="1"
+                            type="number"
+                            value={activityConfirmationForm.plannedQuantity}
+                          />
+                        </label>
+                        <label className="field-group">
+                          <span>{copy.lotNoLabel}</span>
+                          <input
+                            autoComplete="off"
+                            onChange={(event) => setActivityConfirmationForm((current) => ({ ...current, lotNo: event.target.value }))}
+                            value={activityConfirmationForm.lotNo}
+                          />
+                        </label>
+                      </div>
+
+                      <label className="field-group production-quick-plan-cavity-field">
+                        <span>{copy.cavityCountLabel} *</span>
+                        <div className="production-quick-plan-cavity-input">
+                          <strong>1 ×</strong>
+                          <input
+                            aria-describedby="production-quick-plan-cavity-hint"
+                            inputMode="numeric"
+                            min="1"
+                            onChange={(event) => {
+                              setActivityConfirmationForm((current) => ({ ...current, cavity: event.target.value }));
+                              setActivityConfirmationError(null);
+                            }}
+                            required
+                            step="1"
+                            type="number"
+                            value={activityConfirmationForm.cavity}
+                          />
+                        </div>
+                        <small id="production-quick-plan-cavity-hint">{copy.cavityCountHint}</small>
+                      </label>
+                    </>
+                  ) : null}
+
                   <label className="field-group">
-                    <span>{copy.note}{activityConfirmationForm.activityType === "other" ? " *" : ""}</span>
+                    <span>{selectedActivityIsQuickPlan ? copy.planNoteLabel : copy.note}{activityConfirmationForm.activityType === "other" ? " *" : ""}</span>
                     <textarea
                       onChange={(event) => {
                         setActivityConfirmationForm((current) => ({ ...current, note: event.target.value }));
@@ -4838,10 +5113,10 @@ export function ProductionDashboardPage() {
 
                   <div className="production-activity-confirmation-actions">
                     <div>
-                      {selectedActivityConfirmation ? (
+                      {selectedActivityConfirmation && !selectedActivityIsQuickPlan ? (
                         <button
                           className="button button--ghost"
-                          disabled={saveActivityConfirmationMutation.isPending || resetActivityConfirmationMutation.isPending}
+                          disabled={saveActivityConfirmationMutation.isPending || createQuickPlanMutation.isPending || resetActivityConfirmationMutation.isPending}
                           onClick={handleActivityConfirmationReset}
                           type="button"
                         >
@@ -4855,17 +5130,19 @@ export function ProductionDashboardPage() {
                       </button>
                       <button
                         className="button button--primary"
-                        disabled={saveActivityConfirmationMutation.isPending || resetActivityConfirmationMutation.isPending}
+                        disabled={saveActivityConfirmationMutation.isPending || createQuickPlanMutation.isPending || resetActivityConfirmationMutation.isPending}
                         type="submit"
                       >
-                        {saveActivityConfirmationMutation.isPending ? copy.activitySaving : copy.activitySave}
+                        {selectedActivityIsQuickPlan
+                          ? createQuickPlanMutation.isPending ? copy.quickPlanSaving : copy.quickPlanSave
+                          : saveActivityConfirmationMutation.isPending ? copy.activitySaving : copy.activitySave}
                       </button>
                     </div>
                   </div>
                 </form>
               </section>
             </div>
-          ) : null}
+          , document.body) : null}
 
           {selectedProgressRow ? (
             <div className="modal-backdrop" role="presentation" onClick={() => setSelectedProgressRow(null)}>

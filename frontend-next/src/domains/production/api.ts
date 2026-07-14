@@ -808,6 +808,17 @@ export type ProductionPlanUpdatePayload = Partial<
   >
 >;
 
+export type CreateProductionPlanPayload = {
+  plan_date: string;
+  plan_type: PlanType;
+  machine_name: string;
+  part_no: string;
+  model_name?: string | null;
+  lot_no?: string | null;
+  planned_quantity: number;
+  sequence?: number;
+};
+
 export type ProductionPartCavityResponse = {
   part_no: string;
   part_nos?: string[];
@@ -837,6 +848,29 @@ export async function updateProductionPlanItem(
   }
 
   const response = await http.patch<ProductionPlanRecord>(`/production/plans/${id}/`, updates);
+  return response.data;
+}
+
+export async function createProductionPlanItem(payload: CreateProductionPlanPayload) {
+  const normalizedPayload = {
+    ...payload,
+    machine_name: payload.machine_name.trim(),
+    part_no: payload.part_no.trim().toUpperCase(),
+    model_name: payload.model_name?.trim() || null,
+    lot_no: payload.lot_no?.trim() || null,
+    planned_quantity: Math.max(1, Math.round(Number(payload.planned_quantity) || 0)),
+  };
+
+  if (shouldUseMockProductionApi()) {
+    return {
+      id: Date.now(),
+      ...normalizedPayload,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } satisfies ProductionPlanRecord & { plan_date: string; plan_type: PlanType };
+  }
+
+  const response = await http.post<ProductionPlanRecord>("/production/plans/", normalizedPayload);
   return response.data;
 }
 

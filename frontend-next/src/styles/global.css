@@ -3326,10 +3326,18 @@ select {
   width: min(1080px, 100%);
 }
 
-.production-activity-confirmation-modal {
+.modal-card.production-activity-confirmation-modal {
   width: min(680px, 100%);
   border-radius: 8px;
   background: #ffffff;
+}
+
+.production-activity-modal-backdrop {
+  z-index: 80;
+}
+
+.modal-card.production-quick-plan-modal {
+  width: min(760px, 100%);
 }
 
 .production-activity-confirmation-modal .modal-card__header p:not(.panel-card__eyebrow) {
@@ -3365,6 +3373,10 @@ select {
 
 .production-activity-confirmation-context > div:first-child {
   border-left: 0;
+}
+
+.production-activity-confirmation-context--quick {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .production-activity-confirmation-context span,
@@ -3414,6 +3426,29 @@ select {
   resize: vertical;
 }
 
+.production-quick-plan-cavity-field {
+  width: calc(50% - 6px);
+}
+
+.production-quick-plan-cavity-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.production-quick-plan-cavity-input strong {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.production-quick-plan-cavity-field small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
 .production-activity-confirmation-modal input:focus,
 .production-activity-confirmation-modal select:focus,
 .production-activity-confirmation-modal textarea:focus {
@@ -3441,8 +3476,13 @@ select {
 
 @media (max-width: 700px) {
   .production-activity-confirmation-context,
+  .production-activity-confirmation-context--quick,
   .production-activity-confirmation-fields {
     grid-template-columns: 1fr;
+  }
+
+  .production-quick-plan-cavity-field {
+    width: 100%;
   }
 
   .production-activity-confirmation-context > div {
@@ -4853,7 +4893,7 @@ select {
 
 .modal-card {
   width: min(620px, 100%);
-  max-height: calc(100vh - 48px);
+  max-height: calc(var(--modal-viewport-height, 100vh) - 48px);
   overflow: auto;
   padding: 16px;
   border: 1px solid rgba(0, 142, 195, 0.18);

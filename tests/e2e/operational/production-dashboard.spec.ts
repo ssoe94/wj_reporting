@@ -7,6 +7,76 @@ import {
 } from '../helpers/operational';
 
 test.describe('production dashboard operational scenario', () => {
+  test('opens the unplanned production form in the visible viewport and creates a complete plan', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await installOperationalApiMocks(page, { unplannedRunning: true });
+    await installDevSession(page, 'ko');
+    const planRequests: Array<Record<string, unknown>> = [];
+    const cavityRequests: Array<Record<string, unknown>> = [];
+
+    page.on('request', (request) => {
+      if (request.method() !== 'POST') return;
+      if (request.url().includes('/api/production/plans/')) {
+        planRequests.push(request.postDataJSON() as Record<string, unknown>);
+      }
+      if (request.url().includes('/api/production/part-cavity/')) {
+        cavityRequests.push(request.postDataJSON() as Record<string, unknown>);
+      }
+    });
+
+    await page.route('**/production-modal-host', async (route) => {
+      await route.fulfill({
+        contentType: 'text/html; charset=utf-8',
+        body: `<!doctype html>
+          <html>
+            <head><style>html,body{margin:0}.host-spacer{height:420px}iframe{display:block;width:100%;height:3400px;border:0}</style></head>
+            <body><div class="host-spacer"></div><iframe id="production-app" src="/production"></iframe></body>
+          </html>`,
+      });
+    });
+    await page.goto('/production-modal-host');
+    const app = page.frameLocator('#production-app');
+    await app.locator('input[type="date"]').fill('2026-05-18');
+
+    const unplannedMachine = app.locator('.production-progress-row').filter({ hasText: '850T-8' }).first();
+    await unplannedMachine.getByRole('button', { name: '제품/계획 입력' }).click();
+
+    const dialog = app.getByRole('dialog', { name: '생산 제품·계획 등록' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('850T-8');
+    await expect(dialog).toContainText('2026-05-18');
+
+    const dialogBox = await dialog.boundingBox();
+    const viewport = page.viewportSize();
+    expect(dialogBox).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    expect(Math.abs((dialogBox!.y + dialogBox!.height / 2) - viewport!.height / 2)).toBeLessThan(80);
+
+    await dialog.getByLabel(/Part No/).fill('NEWPART0001');
+    await dialog.getByLabel(/모델명/).fill('MODEL-NEW');
+    await dialog.getByLabel(/계획 수량/).fill('1200');
+    await dialog.getByLabel(/Lot No/).fill('LOT-01');
+    await dialog.getByLabel(/개별 캐비티/).fill('2');
+    await dialog.getByLabel(/비고/).fill('현장 확인 후 등록');
+    await dialog.getByRole('button', { name: '계획 등록' }).click();
+
+    await expect(dialog).toBeHidden();
+    expect(planRequests).toHaveLength(1);
+    expect(planRequests[0]).toMatchObject({
+      plan_date: '2026-05-18',
+      plan_type: 'injection',
+      machine_name: '850T-8',
+      part_no: 'NEWPART0001',
+      model_name: 'MODEL-NEW',
+      lot_no: 'LOT-01',
+      planned_quantity: 1200,
+    });
+    expect(cavityRequests).toEqual([expect.objectContaining({ part_no: 'NEWPART0001', cavity_pattern: '1x2' })]);
+
+    await expectNoUndefinedOrNaN(page);
+    guard.assertClean();
+  });
+
   test('separates planned output from unplanned machine shots', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);

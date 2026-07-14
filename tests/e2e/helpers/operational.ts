@@ -68,7 +68,7 @@ export async function expectNoUndefinedOrNaN(page: Page) {
   expect(bodyText).not.toMatch(/\bNaN\b/i);
 }
 
-export async function installOperationalApiMocks(page: Page) {
+export async function installOperationalApiMocks(page: Page, options: { unplannedRunning?: boolean } = {}) {
   const date = '2026-05-18';
   const planRecord = {
     id: 1,
@@ -324,7 +324,10 @@ export async function installOperationalApiMocks(page: Page) {
     0, 0, 0, 0, 0,
   ]);
   const machineSevenCumulative = toCumulative(machineSevenActual);
-  const machineEightActual = Array.from({ length: slotCount }, (_, index) => (index < 12 ? 1 : 0));
+  const machineEightActual = Array.from(
+    { length: slotCount },
+    (_, index) => (options.unplannedRunning || index < 12 ? 1 : 0),
+  );
   const machineEightCumulative = toCumulative(machineEightActual);
   const machineSixteenActual = Array.from({ length: slotCount }, (_, index) => {
     if (index < 72) return 20;
@@ -426,6 +429,19 @@ export async function installOperationalApiMocks(page: Page) {
   });
 
   await page.route('**/api/production/plans/**', async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        json: {
+          id: 99,
+          ...payload,
+          created_at: '2026-05-18T10:00:00+08:00',
+          updated_at: '2026-05-18T10:00:00+08:00',
+        },
+      });
+      return;
+    }
+
     if (route.request().method() === 'PATCH') {
       const updates = route.request().postDataJSON() as Partial<typeof planRecord>;
       await route.fulfill({
