@@ -1,12 +1,14 @@
-"""Live MES-backed raw-material inventory overview.
+"""MES-backed raw-material inventory overview.
 
-The service intentionally keeps quantities separated by MES main unit.  It does
-not persist MES payloads; short-lived cache entries only protect the upstream
-API from duplicate dashboard requests.
+The service keeps quantities separated by the MES main unit.  Live syncs can
+persist a bounded, normalized MES dataset, while normal dashboard reads can
+rebuild the overview from the last successful dataset without holding an HTTP
+request open during upstream pagination.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -26,6 +28,13 @@ from inventory.mes import (
     call_inventory_change_log,
     call_inventory_list,
 )
+from inventory.services.raw_material_storage import (
+    load_change_dataset,
+    load_inventory_dataset,
+    load_inventory_history,
+    load_staging_inventory_rows,
+    save_mes_dataset,
+)
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -37,7 +46,9 @@ SERVICE_LEVEL_Z = Decimal("1.65")
 USABLE_QC_STATUSES = {1, 2}  # 合格, 让步合格
 RESTRICTED_QC_STATUSES = {3, 4, 5}  # 待检, 不合格, 暂控
 INBOUND_ACTIONS = {"in", "receive"}
-CONSUMPTION_ACTIONS = {"out", "issue"}
+CONSUMPTION_ACTIONS = {"out"}
+TRANSFER_OUT_ACTIONS = {"issue"}
+OUTBOUND_ACTIONS = CONSUMPTION_ACTIONS | TRANSFER_OUT_ACTIONS
 ADJUSTMENT_ACTIONS = {"amount_adjust", "attr_adjust"}
 RISK_ORDER = {
     "critical": 0,
@@ -184,11 +195,27 @@ def _fetch_pages(
     seen_pages: set[tuple[Any, ...]] = set()
     seen_record_ids: set[str] = set()
     received_count = 0
+    authoritative_total: int | None = None
     page = 1
     while page <= MAX_PAGES:
         response = fetcher(page=page, size=PAGE_SIZE, **filters)
         page_rows, total = _page_payload(response)
+        if total is not None and total > 0:
+            if authoritative_total is None:
+                authoritative_total = total
+            elif authoritative_total != total:
+                warnings.append(
+                    f"MES {cache_kind} total changed during pagination; the dataset is incomplete."
+                )
+                break
         if not page_rows:
+            if (
+                authoritative_total is not None
+                and received_count < authoritative_total
+            ):
+                warnings.append(
+                    f"MES {cache_kind} pagination ended before its declared total; the dataset is incomplete."
+                )
             break
 
         page_fingerprint = hashlib.sha256(
@@ -224,9 +251,22 @@ def _fetch_pages(
 
         # Some MES deployments report total as 0/missing even when rows exist.
         # Only a positive total is authoritative; otherwise page until short/empty.
-        if total is not None and total > 0 and received_count >= total:
-            break
+        if authoritative_total is not None:
+            if received_count > authoritative_total:
+                warnings.append(
+                    f"MES {cache_kind} returned more rows than its declared total; the dataset is incomplete."
+                )
+                break
+            if received_count == authoritative_total:
+                break
         if len(page_rows) < PAGE_SIZE:
+            if (
+                authoritative_total is not None
+                and received_count < authoritative_total
+            ):
+                warnings.append(
+                    f"MES {cache_kind} returned a short page before its declared total; the dataset is incomplete."
+                )
             break
         page += 1
     else:
@@ -252,6 +292,48 @@ def _configured_codes() -> set[str]:
     else:
         values = []
     return {_text(value).strip() for value in values if _text(value).strip()}
+
+
+def _configured_ids() -> set[str]:
+    configured = getattr(settings, "MES_RAW_MATERIAL_WAREHOUSE_IDS", None)
+    if configured is None:
+        configured = getattr(settings, "RAW_MATERIAL_WAREHOUSE_IDS", None)
+    if configured is None:
+        configured = os.getenv("MES_RAW_MATERIAL_WAREHOUSE_IDS", "")
+    if isinstance(configured, str):
+        values = re.split(r"[,;\n]", configured)
+    elif isinstance(configured, Iterable):
+        values = configured
+    else:
+        values = []
+    return {_text(value).strip() for value in values if _text(value).strip()}
+
+
+def _inventory_request_filters(requested_codes: list[str]) -> dict[str, Any]:
+    """Use a known raw-material scope to avoid an expensive all-warehouse scan."""
+    if requested_codes:
+        return {"warehouseCodes": requested_codes}
+    configured_ids = sorted(_configured_ids())
+    if configured_ids:
+        return {
+            "warehouseIds": [
+                int(value) if value.isdigit() else value for value in configured_ids
+            ]
+        }
+    configured_codes = sorted(_configured_codes())
+    return {"warehouseCodes": configured_codes} if configured_codes else {}
+
+
+def _latest_source_iso(rows: Iterable[dict[str, Any]], *keys: str) -> str | None:
+    values = [
+        value
+        for value in (
+            _iso_from_ms(next((row.get(key) for key in keys if row.get(key)), None))
+            for row in rows
+        )
+        if value
+    ]
+    return max(values) if values else None
 
 
 def _strong_raw_material_candidate(code: str, name: str, configured: set[str]) -> bool:
@@ -287,6 +369,7 @@ def _warehouse_from_inventory(row: dict[str, Any]) -> dict[str, str]:
 
 def _discover_warehouses(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     configured = _configured_codes()
+    configured_ids = _configured_ids()
     options: dict[str, dict[str, Any]] = {}
     for row in rows:
         warehouse = _warehouse_from_inventory(row)
@@ -301,7 +384,73 @@ def _discover_warehouses(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     code, warehouse["name"], configured
                 ),
             }
+    configured_id = (
+        next(iter(configured_ids))
+        if len(configured) == 1 and len(configured_ids) == 1
+        else ""
+    )
+    for code in configured:
+        options.setdefault(
+            code,
+            {
+                "id": configured_id,
+                "code": code,
+                "name": code,
+                "is_raw_material_candidate": True,
+            },
+        )
     return sorted(options.values(), key=lambda row: (row["name"], row["code"]))
+
+
+def with_zero_stock_markers(
+    current_rows: Iterable[dict[str, Any]],
+    previous_rows: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Carry a zero marker when a previously stocked raw material disappears.
+
+    BlackLake inventory detail omits zero-balance rows.  Without a marker, an
+    entirely depleted raw-material warehouse would disappear from selection and
+    the dashboard could keep showing the prior positive snapshot.
+    """
+    current = [row for row in current_rows if isinstance(row, dict)]
+    previous = [row for row in previous_rows if isinstance(row, dict)]
+    candidate_codes = {
+        option["code"]
+        for option in _discover_warehouses(current + previous)
+        if option["is_raw_material_candidate"]
+    }
+
+    def identity(row: dict[str, Any]) -> tuple[str, str, str]:
+        material = row.get("material") or {}
+        material = material if isinstance(material, dict) else {}
+        amount = row.get("amount") or {}
+        amount = amount if isinstance(amount, dict) else {}
+        unit = _unit(amount) or _unknown_unit(material, row.get("id"))
+        material_identity, _unit_key = _material_key(
+            material,
+            unit,
+            fallback=row.get("id"),
+        )
+        return _warehouse_from_inventory(row)["code"], material_identity, unit
+
+    present = {identity(row) for row in current}
+    marker_keys: set[tuple[str, str, str]] = set()
+    result = list(current)
+    for row in previous:
+        key = identity(row)
+        if key[0] not in candidate_codes or key in present or key in marker_keys:
+            continue
+        marker = copy.deepcopy(row)
+        amount = marker.get("amount") or {}
+        amount = amount if isinstance(amount, dict) else {}
+        marker["amount"] = {**amount, "amount": "0"}
+        marker["id"] = "zero:" + hashlib.sha256(
+            "|".join(key).encode("utf-8")
+        ).hexdigest()[:24]
+        marker["syntheticZero"] = True
+        result.append(marker)
+        marker_keys.add(key)
+    return result
 
 
 def _empty_summary(inventory_record_count: int = 0) -> dict[str, Any]:
@@ -333,6 +482,14 @@ def _base_response(
         "status": "ok",
         "meta": {
             "generated_at": now.isoformat(),
+            "data_mode": "live",
+            "inventory_capture_type": None,
+            "snapshot_synced_at": None,
+            "sync_required": False,
+            "comparison_available": False,
+            "comparison_start_at": None,
+            "comparison_end_at": None,
+            "comparison_hours": 24,
             "source_latest_at": None,
             "inventory_source_latest_at": None,
             "change_log_source_latest_at": None,
@@ -350,13 +507,14 @@ def _base_response(
             "recommendation_issues": [],
             "assumptions": [
                 "Average daily consumption uses the selected number of completed WJ business days and includes zero-consumption days; the active 08:00 business day is shown in the trend but excluded from reorder statistics.",
-                "Consumption includes only MES actions out and issue; amount/attribute adjustments are separate.",
-                "MES issue means transfer-out and is used as a warehouse-consumption proxy; transfers between selected raw-material warehouses can overstate demand and should be reviewed operationally.",
+                "Estimated consumption includes only MES action out. It is an outbound-demand proxy because this API response does not identify whether each outbound was for production.",
+                "MES issue is reported separately as transfer-out and is not included in consumption speed or reorder statistics.",
                 "Safety stock = 1.65 × daily usage standard deviation × square root of lead time (approximately 95% service level under a normal-demand assumption).",
                 "Recommended order = max(target stock - order-available stock, 0), where only MES quality status 1 (accepted) and 2 (concession accepted) are order-available.",
                 "Recommendations are planning references only; open purchase orders, supplier lead-time differences, minimum order quantities, pack sizes, and shelf life are not available in these MES endpoints.",
                 "Closing stock history is estimated backwards from current MES inventory using the fetched transaction net changes.",
                 "Displayed current stock includes every MES quality status; pending, rejected, temporary-control, and unknown-status quantities are excluded from order-available stock.",
+                "When MES omits a previously stocked raw material because its balance reached zero, the stored dataset carries an explicitly flagged zero marker so depletion remains visible.",
             ],
             "sources": sources,
             "warnings": warnings,
@@ -382,11 +540,16 @@ def _material_seed(
         "unit": unit,
         "current": Decimal("0"),
         "usable_current": Decimal("0"),
+        "previous_current": None,
+        "previous_usable": None,
+        "comparison_current": None,
+        "comparison_usable": None,
         "restricted_current": Decimal("0"),
         "unclassified_current": Decimal("0"),
         "inbound": Decimal("0"),
         "outbound": Decimal("0"),
         "consumption": Decimal("0"),
+        "transfer_out": Decimal("0"),
         "adjustment": Decimal("0"),
         "daily_consumption": defaultdict(Decimal),
         "warehouse_codes": set(filter(None, [warehouse.get("code")])),
@@ -435,6 +598,11 @@ def build_raw_material_overview(
     review_period_days: int = 7,
     now: datetime | None = None,
     force_refresh: bool = False,
+    prefer_stored: bool = False,
+    persist: bool = False,
+    persist_inventory: bool = True,
+    inventory_rows_override: Iterable[dict[str, Any]] | None = None,
+    change_rows_output: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the response contract consumed by the raw-material dashboard."""
     now = now or datetime.now(tz=SHANGHAI)
@@ -454,36 +622,131 @@ def build_raw_material_overview(
         sources=sources,
     )
 
-    try:
-        inventory_rows, inventory_cached, page_warnings = _fetch_pages(
-            call_inventory_list,
-            cache_kind="inventory-detail",
-            force_refresh=force_refresh,
-        )
-        warnings.extend(page_warnings)
-        if page_warnings:
-            response["status"] = "partial"
-            global_recommendation_issues.add("inventory_pagination_incomplete")
+    requested: list[str] = []
+    for value in warehouse_codes or []:
+        code = _text(value).strip()
+        if code and code not in requested:
+            requested.append(code)
+
+    if inventory_rows_override is not None:
+        inventory_rows = [row for row in inventory_rows_override if isinstance(row, dict)]
+        response["meta"]["data_mode"] = "daily_sync"
         sources["inventory_detail"] = {
-            "status": "partial" if page_warnings else "ok",
-            "cached": inventory_cached,
+            "status": "ok",
+            "cached": False,
             "record_count": len(inventory_rows),
         }
-    except Exception as exc:  # upstream failure must keep the response contract intact
-        inventory_rows = []
-        warnings.append(f"MES inventory detail unavailable: {_safe_upstream_error(exc)}")
-        response["status"] = "partial"
-        global_recommendation_issues.add("inventory_detail_unavailable")
+        if persist and persist_inventory and inventory_rows:
+            latest = _latest_source_iso(inventory_rows, "updatedAt", "createdAt")
+            try:
+                stored = save_mes_dataset(
+                    kind="inventory",
+                    rows=inventory_rows,
+                    warehouse_codes=requested or sorted(_configured_codes()),
+                    warehouse_ids=sorted(_configured_ids()),
+                    snapshot_date=_business_date(now),
+                    source_latest_at=datetime.fromisoformat(latest) if latest else None,
+                )
+                response["meta"]["snapshot_synced_at"] = stored.refreshed_at.isoformat()
+            except Exception:
+                warnings.append("Daily inventory was loaded but could not be saved for dashboard reads.")
+                response["status"] = "partial"
+    elif prefer_stored:
+        stored_inventory = None
+        try:
+            stored_inventory = load_inventory_dataset()
+        except Exception:
+            warnings.append("Stored MES inventory could not be read.")
+        if stored_inventory is not None:
+            inventory_rows = stored_inventory.rows
+            refreshed_at = stored_inventory.refreshed_at.isoformat()
+            response["meta"]["data_mode"] = "stored"
+            response["meta"]["inventory_capture_type"] = stored_inventory.capture_type
+            response["meta"]["snapshot_synced_at"] = refreshed_at
+            sources["inventory_detail"] = {
+                "status": "stored",
+                "cached": False,
+                "record_count": len(inventory_rows),
+                "refreshed_at": refreshed_at,
+            }
+        else:
+            try:
+                inventory_rows, staging_latest = load_staging_inventory_rows()
+            except Exception:
+                inventory_rows, staging_latest = [], None
+                warnings.append("Stored staging inventory could not be read.")
+            if inventory_rows:
+                latest_text = (
+                    staging_latest.isoformat()
+                    if isinstance(staging_latest, datetime)
+                    else _text(staging_latest) or None
+                )
+                response["meta"]["data_mode"] = "staging"
+                response["meta"]["snapshot_synced_at"] = latest_text
+                response["status"] = "partial"
+                warnings.append(
+                    "Showing the last stored inventory snapshot; movement history requires a raw-material MES sync."
+                )
+                global_recommendation_issues.add("inventory_change_log_not_synced")
+                sources["inventory_detail"] = {
+                    "status": "staging",
+                    "cached": False,
+                    "record_count": len(inventory_rows),
+                    "refreshed_at": latest_text,
+                }
+            else:
+                response["status"] = "sync_required"
+                response["meta"]["data_mode"] = "none"
+                response["meta"]["sync_required"] = True
+                warnings.append("No stored raw-material MES dataset is available. Start MES sync.")
+                inventory_rows = []
+                sources["inventory_detail"] = {
+                    "status": "missing",
+                    "cached": False,
+                    "record_count": 0,
+                }
+    else:
+        inventory_filters = _inventory_request_filters(requested)
+        try:
+            inventory_rows, inventory_cached, page_warnings = _fetch_pages(
+                call_inventory_list,
+                cache_kind="inventory-detail",
+                filters=inventory_filters,
+                force_refresh=force_refresh,
+            )
+            warnings.extend(page_warnings)
+            if page_warnings:
+                response["status"] = "partial"
+                global_recommendation_issues.add("inventory_pagination_incomplete")
+            sources["inventory_detail"] = {
+                "status": "partial" if page_warnings else "ok",
+                "cached": inventory_cached,
+                "record_count": len(inventory_rows),
+            }
+            if persist and persist_inventory and inventory_rows and not page_warnings:
+                latest = _latest_source_iso(inventory_rows, "updatedAt", "createdAt")
+                try:
+                    stored = save_mes_dataset(
+                        kind="inventory",
+                        rows=inventory_rows,
+                        warehouse_codes=requested or sorted(_configured_codes()),
+                        warehouse_ids=sorted(_configured_ids()),
+                        snapshot_date=_business_date(now),
+                        source_latest_at=datetime.fromisoformat(latest) if latest else None,
+                    )
+                    response["meta"]["snapshot_synced_at"] = stored.refreshed_at.isoformat()
+                except Exception:
+                    warnings.append("Live inventory was loaded but could not be saved for fast dashboard reads.")
+                    response["status"] = "partial"
+        except Exception as exc:  # upstream failure must keep the response contract intact
+            inventory_rows = []
+            warnings.append(f"MES inventory detail unavailable: {_safe_upstream_error(exc)}")
+            response["status"] = "partial"
+            global_recommendation_issues.add("inventory_detail_unavailable")
 
     options = _discover_warehouses(inventory_rows)
     response["warehouse_options"] = options
     option_by_code = {row["code"]: row for row in options}
-    requested = []
-    for code in warehouse_codes or []:
-        code = _text(code).strip()
-        if code and code not in requested:
-            requested.append(code)
-
     if requested:
         unknown = [code for code in requested if code not in option_by_code]
         if unknown:
@@ -496,8 +759,9 @@ def build_raw_material_overview(
     if not selected:
         # A failed inventory source is partial; a successful but ambiguous discovery
         # asks the user to select explicitly and never guesses a generic warehouse.
-        if sources["inventory_detail"]["status"] == "ok":
+        if sources["inventory_detail"]["status"] in {"ok", "stored", "staging"}:
             response["status"] = "selection_required"
+        response["meta"]["sync_required"] = response["status"] == "sync_required"
         return response
 
     selected_codes = {row["code"] for row in selected}
@@ -563,6 +827,86 @@ def build_raw_material_overview(
             entry["last_updated"], _iso_from_ms(row.get("updatedAt") or row.get("createdAt"))
         )
 
+    # The daily report compares two durable 08:00 snapshots.  It never infers
+    # this value from movement rows because those rows may be batch/location
+    # scoped rather than the warehouse-wide stock balance.
+    inventory_history = []
+    if prefer_stored or persist:
+        try:
+            inventory_history = load_inventory_history(limit=2)
+        except Exception:
+            warnings.append("Stored inventory history could not be read; the 24-hour comparison is unavailable.")
+    if len(inventory_history) >= 2:
+        current_snapshot, previous_snapshot = inventory_history[:2]
+        current_date = current_snapshot.snapshot_date
+        previous_date = previous_snapshot.snapshot_date
+        if (
+            current_date is not None
+            and previous_date is not None
+            and current_date - previous_date == timedelta(days=1)
+        ):
+            comparison_start = datetime.combine(
+                previous_date,
+                time(hour=BUSINESS_DAY_START_HOUR),
+                tzinfo=SHANGHAI,
+            )
+            comparison_end = datetime.combine(
+                current_date,
+                time(hour=BUSINESS_DAY_START_HOUR),
+                tzinfo=SHANGHAI,
+            )
+            response["meta"]["comparison_available"] = True
+            response["meta"]["comparison_start_at"] = comparison_start.isoformat()
+            response["meta"]["comparison_end_at"] = comparison_end.isoformat()
+            for snapshot, quantity_field, usable_field in (
+                (
+                    current_snapshot,
+                    "comparison_current",
+                    "comparison_usable",
+                ),
+                (previous_snapshot, "previous_current", "previous_usable"),
+            ):
+                for row in snapshot.rows:
+                    warehouse = _warehouse_from_inventory(row)
+                    if warehouse["code"] not in selected_codes:
+                        continue
+                    material = row.get("material") or {}
+                    material = material if isinstance(material, dict) else {}
+                    amount = row.get("amount") or {}
+                    amount = amount if isinstance(amount, dict) else {}
+                    quantity = _optional_decimal(amount.get("amount"))
+                    if quantity is None:
+                        continue
+                    unit = _unit(amount) or _unknown_unit(material, row.get("id"))
+                    key = _material_key(material, unit, fallback=row.get("id"))
+                    entry = materials.setdefault(
+                        key, _material_seed(material, unit, warehouse)
+                    )
+                    if entry[quantity_field] is None:
+                        entry[quantity_field] = Decimal("0")
+                        entry[usable_field] = Decimal("0")
+                    entry[quantity_field] += quantity
+                    if _qc_status_code(row) in USABLE_QC_STATUSES:
+                        entry[usable_field] += quantity
+                    entry["warehouse_codes"].add(warehouse["code"])
+                    entry["warehouse_names"].add(warehouse["name"])
+            for entry in materials.values():
+                if entry["previous_current"] is None:
+                    entry["previous_current"] = Decimal("0")
+                    entry["previous_usable"] = Decimal("0")
+                if entry["comparison_current"] is None:
+                    entry["comparison_current"] = Decimal("0")
+                    entry["comparison_usable"] = Decimal("0")
+        else:
+            warnings.append(
+                "The two latest stored inventory snapshots are not consecutive 08:00 business days; "
+                "an exact 24-hour comparison was not calculated."
+            )
+    elif prefer_stored or persist:
+        warnings.append(
+            "The 24-hour comparison will be available after two consecutive 08:00 inventory snapshots."
+        )
+
     if unknown_qc_statuses:
         warnings.append(
             "MES inventory contains missing or unrecognised quality status code(s); "
@@ -597,6 +941,47 @@ def build_raw_material_overview(
             "MES inventory change log was not requested because no selected warehouse had a MES ID."
         )
         global_recommendation_issues.add("warehouse_id_missing")
+    elif prefer_stored:
+        stored_change = None
+        try:
+            stored_change = load_change_dataset(
+                sorted(selected_codes),
+                sorted(selected_ids),
+                lookback_days,
+                snapshot_date=(
+                    stored_inventory.snapshot_date if stored_inventory else None
+                ),
+                capture_type=(
+                    stored_inventory.capture_type if stored_inventory else None
+                ),
+            )
+        except Exception:
+            warnings.append("Stored MES inventory movements could not be read.")
+        if stored_change is None:
+            change_rows = []
+            sources["inventory_change_log"] = {
+                "status": "missing",
+                "cached": False,
+                "record_count": 0,
+            }
+            warnings.append(
+                "No stored MES movement dataset covers the selected warehouse and analysis period. "
+                "Run the daily or manual MES update."
+            )
+            response["status"] = "partial"
+            global_recommendation_issues.add("inventory_change_log_not_synced")
+        else:
+            change_rows = stored_change.rows
+            refreshed_at = stored_change.refreshed_at.isoformat()
+            sources["inventory_change_log"] = {
+                "status": "stored",
+                "cached": False,
+                "record_count": len(change_rows),
+                "refreshed_at": refreshed_at,
+            }
+            current_synced = response["meta"].get("snapshot_synced_at")
+            if not current_synced or refreshed_at > current_synced:
+                response["meta"]["snapshot_synced_at"] = refreshed_at
     else:
         try:
             change_rows, changes_cached, page_warnings = _fetch_pages(
@@ -618,6 +1003,31 @@ def build_raw_material_overview(
                 "cached": changes_cached,
                 "record_count": len(change_rows),
             }
+            if persist and not page_warnings:
+                latest = _latest_source_iso(change_rows, "createdAt")
+                try:
+                    stored = save_mes_dataset(
+                        kind="change",
+                        rows=change_rows,
+                        warehouse_codes=sorted(selected_codes),
+                        warehouse_ids=sorted(selected_ids),
+                        lookback_days=lookback_days,
+                        range_start=start_dt,
+                        range_end=now,
+                        source_latest_at=(
+                            datetime.fromisoformat(latest) if latest else None
+                        ),
+                        snapshot_date=_business_date(now),
+                    )
+                    refreshed_at = stored.refreshed_at.isoformat()
+                    current_synced = response["meta"].get("snapshot_synced_at")
+                    if not current_synced or refreshed_at > current_synced:
+                        response["meta"]["snapshot_synced_at"] = refreshed_at
+                except Exception:
+                    warnings.append(
+                        "MES movements were loaded but could not be saved for dashboard reads."
+                    )
+                    response["status"] = "partial"
         except Exception as exc:
             change_rows = []
             sources["inventory_change_log"] = {
@@ -631,6 +1041,10 @@ def build_raw_material_overview(
             response["status"] = "partial"
             global_recommendation_issues.add("inventory_change_log_unavailable")
 
+    if change_rows_output is not None:
+        change_rows_output.clear()
+        change_rows_output.extend(change_rows)
+
     warehouse_code_by_name = {row["name"]: row["code"] for row in selected if row["name"]}
     trend_values: dict[str, dict[str, dict[str, Decimal]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(Decimal))
@@ -642,7 +1056,6 @@ def build_raw_material_overview(
     invalid_change_quantity_count = 0
     outside_range_timestamp_count = 0
     unattributed_warehouse_count = 0
-    transfer_out_seen = False
 
     for row in change_rows:
         warehouse_raw = row.get("warehouse")
@@ -669,8 +1082,23 @@ def build_raw_material_overview(
         changed = changed if isinstance(changed, dict) else {}
         after = amount_info.get("afterAmount") or {}
         after = after if isinstance(after, dict) else {}
+        action_info = row.get("action") or {}
+        if isinstance(action_info, dict):
+            action_code = _text(
+                action_info.get("action") or action_info.get("code")
+            ).casefold()
+            action_label = _text(
+                action_info.get("desc") or action_info.get("message")
+            )
+        else:
+            action_code = _text(action_info).casefold()
+            action_label = ""
         parsed_quantity = _optional_decimal(changed.get("amount"))
         if parsed_quantity is None:
+            if action_code == "attr_adjust":
+                # Attribute-only changes have no stock quantity in this API and
+                # must not make consumption/reorder statistics look incomplete.
+                continue
             invalid_change_quantity_count += 1
             continue
         quantity = abs(parsed_quantity)
@@ -679,13 +1107,6 @@ def build_raw_material_overview(
         if unit_missing:
             missing_unit_record_count += 1
             unit = _unknown_unit(material, row.get("id"))
-        action_info = row.get("action") or {}
-        if isinstance(action_info, dict):
-            action_code = _text(action_info.get("action") or action_info.get("code")).casefold()
-            action_label = _text(action_info.get("desc") or action_info.get("message"))
-        else:
-            action_code = _text(action_info).casefold()
-            action_label = ""
         direction_in = _direction_is_in(amount_info.get("direction"), action_code)
         action_label = action_label or ACTION_LABELS.get(action_code, action_code)
         created_at = _iso_from_ms(row.get("createdAt"))
@@ -724,16 +1145,18 @@ def build_raw_material_overview(
             if in_trend_window:
                 entry["inbound"] += quantity
                 day_metrics["inbound"] += quantity
-            if action_code in CONSUMPTION_ACTIONS:
+            if action_code in OUTBOUND_ACTIONS:
                 direction_conflicts.add(action_code)
                 entry["recommendation_issues"].add("action_direction_conflict")
         else:
             if in_trend_window:
                 entry["outbound"] += quantity
                 day_metrics["outbound"] += quantity
-            if action_code in CONSUMPTION_ACTIONS:
-                if action_code == "issue":
-                    transfer_out_seen = True
+            if action_code in TRANSFER_OUT_ACTIONS:
+                if in_trend_window:
+                    entry["transfer_out"] += quantity
+                    day_metrics["transfer_out"] += quantity
+            elif action_code in CONSUMPTION_ACTIONS:
                 if in_trend_window:
                     entry["consumption"] += quantity
                     day_metrics["consumption"] += quantity
@@ -743,7 +1166,7 @@ def build_raw_material_overview(
                 direction_conflicts.add(action_code)
                 entry["recommendation_issues"].add("action_direction_conflict")
 
-        if action_code not in INBOUND_ACTIONS | CONSUMPTION_ACTIONS | ADJUSTMENT_ACTIONS:
+        if action_code not in INBOUND_ACTIONS | OUTBOUND_ACTIONS | ADJUSTMENT_ACTIONS:
             unknown_actions.add(action_code or "(empty)")
             entry["recommendation_issues"].add("action_unclassified")
 
@@ -772,6 +1195,8 @@ def build_raw_material_overview(
                     "operator": _text(row.get("operator")),
                     "supplier_name": _text(biz_attr.get("supplierName")),
                     "is_consumption": action_code in CONSUMPTION_ACTIONS
+                    and not direction_in,
+                    "is_transfer_out": action_code in TRANSFER_OUT_ACTIONS
                     and not direction_in,
                 }
             )
@@ -823,11 +1248,6 @@ def build_raw_material_overview(
             "each affected material was isolated under an UNKNOWN unit and excluded from reliable recommendations."
         )
         response["status"] = "partial"
-    if transfer_out_seen and len(selected) > 1:
-        warnings.append(
-            "MES transfer-out (issue) records are included as usage while multiple raw-material warehouses are selected; review internal transfers before ordering."
-        )
-
     if invalid_inventory_quantity_count and sources["inventory_detail"]["status"] == "ok":
         sources["inventory_detail"]["status"] = "partial"
     if response["status"] == "partial" and sources["inventory_change_log"]["status"] == "ok":
@@ -838,6 +1258,15 @@ def build_raw_material_overview(
             or unattributed_warehouse_count
         ):
             sources["inventory_change_log"]["status"] = "partial"
+
+    if response["meta"]["comparison_available"]:
+        for entry in materials.values():
+            if entry["previous_current"] is None:
+                entry["previous_current"] = Decimal("0")
+                entry["previous_usable"] = Decimal("0")
+            if entry["comparison_current"] is None:
+                entry["comparison_current"] = Decimal("0")
+                entry["comparison_usable"] = Decimal("0")
 
     dates = [(start_date + timedelta(days=offset)).isoformat() for offset in range(lookback_days)]
     statistics_dates = [
@@ -883,11 +1312,48 @@ def build_raw_material_overview(
                 "unit": entry["unit"],
                 "current_quantity": _number(entry["current"]),
                 "usable_quantity": _number(entry["usable_current"]),
+                "previous_quantity": (
+                    _number(entry["previous_current"])
+                    if entry["previous_current"] is not None
+                    else None
+                ),
+                "comparison_current_quantity": (
+                    _number(entry["comparison_current"])
+                    if entry["comparison_current"] is not None
+                    else None
+                ),
+                "quantity_change_24h": (
+                    _number(entry["comparison_current"] - entry["previous_current"])
+                    if (
+                        entry["comparison_current"] is not None
+                        and entry["previous_current"] is not None
+                    )
+                    else None
+                ),
+                "previous_usable_quantity": (
+                    _number(entry["previous_usable"])
+                    if entry["previous_usable"] is not None
+                    else None
+                ),
+                "comparison_current_usable_quantity": (
+                    _number(entry["comparison_usable"])
+                    if entry["comparison_usable"] is not None
+                    else None
+                ),
+                "usable_change_24h": (
+                    _number(entry["comparison_usable"] - entry["previous_usable"])
+                    if (
+                        entry["comparison_usable"] is not None
+                        and entry["previous_usable"] is not None
+                    )
+                    else None
+                ),
                 "restricted_quantity": _number(entry["restricted_current"]),
                 "unclassified_quantity": _number(entry["unclassified_current"]),
                 "inbound_quantity": _number(entry["inbound"]),
                 "outbound_quantity": _number(entry["outbound"]),
                 "consumption_quantity": _number(entry["consumption"]),
+                "transfer_out_quantity": _number(entry["transfer_out"]),
                 "adjustment_quantity": _number(entry["adjustment"]),
                 "avg_daily_consumption": _number(average),
                 "usage_stddev": _number(stddev),
@@ -926,11 +1392,46 @@ def build_raw_material_overview(
                 "unit": unit,
                 "current": _number(sum((entry["current"] for entry in entries), Decimal("0"))),
                 "usable": _number(sum((entry["usable_current"] for entry in entries), Decimal("0"))),
+                "previous_current": (
+                    _number(
+                        sum(
+                            (entry["previous_current"] for entry in entries),
+                            Decimal("0"),
+                        )
+                    )
+                    if response["meta"]["comparison_available"]
+                    else None
+                ),
+                "comparison_current": (
+                    _number(
+                        sum(
+                            (entry["comparison_current"] for entry in entries),
+                            Decimal("0"),
+                        )
+                    )
+                    if response["meta"]["comparison_available"]
+                    else None
+                ),
+                "change_24h": (
+                    _number(
+                        sum(
+                            (
+                                entry["comparison_current"]
+                                - entry["previous_current"]
+                                for entry in entries
+                            ),
+                            Decimal("0"),
+                        )
+                    )
+                    if response["meta"]["comparison_available"]
+                    else None
+                ),
                 "restricted": _number(sum((entry["restricted_current"] for entry in entries), Decimal("0"))),
                 "unclassified": _number(sum((entry["unclassified_current"] for entry in entries), Decimal("0"))),
                 "inbound": _number(sum((entry["inbound"] for entry in entries), Decimal("0"))),
                 "outbound": _number(sum((entry["outbound"] for entry in entries), Decimal("0"))),
                 "consumption": _number(sum((entry["consumption"] for entry in entries), Decimal("0"))),
+                "transfer_out": _number(sum((entry["transfer_out"] for entry in entries), Decimal("0"))),
                 "adjustment": _number(sum((entry["adjustment"] for entry in entries), Decimal("0"))),
                 "recommended_order": sum(row["recommended_order"] for row in matching_material_rows),
                 "recommendation_unavailable_count": sum(
@@ -967,6 +1468,7 @@ def build_raw_material_overview(
                     "inbound": _number(metrics["inbound"]),
                     "outbound": _number(metrics["outbound"]),
                     "consumption": _number(metrics["consumption"]),
+                    "transfer_out": _number(metrics["transfer_out"]),
                     "adjustment": _number(metrics["adjustment"]),
                     "net_change": _number(net),
                     "estimated_closing_stock": _number(closing_by_date[day][unit]),
@@ -1025,4 +1527,4 @@ def build_raw_material_overview(
     return response
 
 
-__all__ = ["build_raw_material_overview"]
+__all__ = ["build_raw_material_overview", "with_zero_stock_markers"]

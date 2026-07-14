@@ -5,7 +5,6 @@ export type RawMaterialOverviewParams = {
   lookbackDays: number;
   leadTimeDays: number;
   reviewPeriodDays: number;
-  refresh?: boolean;
 };
 
 export type RawMaterialWarehouseOption = {
@@ -16,12 +15,16 @@ export type RawMaterialWarehouseOption = {
 export type RawMaterialUnitSummary = {
   unit: string;
   current: number;
+  previousCurrent: number | null;
+  comparisonCurrent: number | null;
+  change24h: number | null;
   usable: number;
   restricted: number;
   unclassified: number;
   inbound: number;
   outbound: number;
   consumption: number;
+  transferOut: number;
   adjustment: number;
   recommendedOrder: number;
   recommendationUnavailableCount: number;
@@ -32,6 +35,7 @@ export type RawMaterialTrendValue = {
   inbound: number;
   outbound: number;
   consumption: number;
+  transferOut: number;
   adjustment: number;
   netChange: number;
   estimatedClosingStock: number;
@@ -53,12 +57,18 @@ export type RawMaterialRow = {
   warehouseName: string;
   unit: string;
   currentQuantity: number;
+  previousQuantity: number | null;
+  comparisonCurrentQuantity: number | null;
+  quantityChange24h: number | null;
   usableQuantity: number;
+  previousUsableQuantity: number | null;
+  usableChange24h: number | null;
   restrictedQuantity: number;
   unclassifiedQuantity: number;
   inboundQuantity: number;
   outboundQuantity: number;
   consumptionQuantity: number;
+  transferOutQuantity: number;
   averageDailyConsumption: number;
   safetyStock: number;
   reorderPoint: number;
@@ -86,6 +96,7 @@ export type RawMaterialTransaction = {
   documentNo: string;
   operatorName: string;
   note: string;
+  isTransferOut: boolean;
 };
 
 export type RawMaterialOverviewMeta = {
@@ -99,6 +110,23 @@ export type RawMaterialOverviewMeta = {
   partial: boolean;
   warnings: string[];
   recommendationsAvailable: boolean;
+  dataMode: string;
+  inventoryCaptureType: string;
+  snapshotSyncedAt: string;
+  syncRequired: boolean;
+  comparisonAvailable: boolean;
+  comparisonStartAt: string;
+  comparisonEndAt: string;
+  comparisonHours: number;
+};
+
+export type RawMaterialSyncStatus = {
+  status: string;
+  trigger: string;
+  message: string;
+  startedAt: string;
+  finishedAt: string;
+  updatedAt: string;
 };
 
 export type RawMaterialOverview = {
@@ -197,15 +225,21 @@ function normalizeWarehouseOption(value: unknown): RawMaterialWarehouseOption | 
 function normalizeSummary(value: unknown): RawMaterialUnitSummary {
   const row = asRecord(value);
   const current = asNumber(pick(row, "current", "current_quantity", "currentQuantity", "stock"));
+  const previousCurrent = asNullableNumber(pick(row, "previous_current", "previousCurrent"));
+  const comparisonCurrent = asNullableNumber(pick(row, "comparison_current", "comparisonCurrent"));
   return {
     unit: asString(pick(row, "unit", "unit_name", "unitName"), "-"),
     current,
+    previousCurrent,
+    comparisonCurrent: comparisonCurrent ?? (previousCurrent !== null ? current : null),
+    change24h: asNullableNumber(pick(row, "change_24h", "change24h")),
     usable: asNumber(pick(row, "usable", "usable_quantity", "usableQuantity", "available"), current),
     restricted: asNumber(pick(row, "restricted", "restricted_quantity", "restrictedQuantity")),
     unclassified: asNumber(pick(row, "unclassified", "unclassified_quantity", "unclassifiedQuantity")),
     inbound: asNumber(pick(row, "inbound", "inbound_quantity", "inboundQuantity")),
     outbound: asNumber(pick(row, "outbound", "outbound_quantity", "outboundQuantity")),
     consumption: asNumber(pick(row, "consumption", "consumption_quantity", "consumptionQuantity", "used")),
+    transferOut: asNumber(pick(row, "transfer_out", "transferOut", "transfer_out_quantity", "transferOutQuantity")),
     adjustment: asNumber(pick(row, "adjustment", "adjustment_quantity", "adjustmentQuantity")),
     recommendedOrder: asNumber(pick(row, "recommended_order", "recommendedOrder", "recommended_order_quantity")),
     recommendationUnavailableCount: asNumber(
@@ -221,6 +255,7 @@ function normalizeTrendValue(value: unknown): RawMaterialTrendValue {
     inbound: asNumber(pick(row, "inbound", "inbound_quantity", "inboundQuantity")),
     outbound: asNumber(pick(row, "outbound", "outbound_quantity", "outboundQuantity")),
     consumption: asNumber(pick(row, "consumption", "consumption_quantity", "consumptionQuantity", "used")),
+    transferOut: asNumber(pick(row, "transfer_out", "transferOut", "transfer_out_quantity", "transferOutQuantity")),
     adjustment: asNumber(pick(row, "adjustment", "adjustment_quantity", "adjustmentQuantity")),
     netChange: asNumber(pick(row, "net_change", "netChange", "change")),
     estimatedClosingStock: asNumber(pick(row, "estimated_closing_stock", "estimatedClosingStock", "closing_stock")),
@@ -230,6 +265,10 @@ function normalizeTrendValue(value: unknown): RawMaterialTrendValue {
 function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
   const row = asRecord(value);
   const currentQuantity = asNumber(pick(row, "current_quantity", "currentQuantity", "current", "quantity"));
+  const previousQuantity = asNullableNumber(pick(row, "previous_quantity", "previousQuantity"));
+  const comparisonCurrentQuantity = asNullableNumber(
+    pick(row, "comparison_current_quantity", "comparisonCurrentQuantity"),
+  );
   const usableQuantity = asNumber(pick(row, "usable_quantity", "usableQuantity", "available_quantity", "availableQuantity"), currentQuantity);
   const averageDailyConsumption = asNumber(pick(row, "avg_daily_consumption", "average_daily_consumption", "averageDailyConsumption"));
   const rawCover = pick(row, "days_of_cover", "daysOfCover", "coverage_days");
@@ -244,12 +283,19 @@ function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
     warehouseName: asJoinedString(pick(row, "warehouse_name", "warehouseName", "warehouse", "warehouse_names", "warehouseNames")),
     unit: asString(pick(row, "unit", "unit_name", "unitName"), "-"),
     currentQuantity,
+    previousQuantity,
+    comparisonCurrentQuantity: comparisonCurrentQuantity
+      ?? (previousQuantity !== null ? currentQuantity : null),
+    quantityChange24h: asNullableNumber(pick(row, "quantity_change_24h", "quantityChange24h")),
     usableQuantity,
+    previousUsableQuantity: asNullableNumber(pick(row, "previous_usable_quantity", "previousUsableQuantity")),
+    usableChange24h: asNullableNumber(pick(row, "usable_change_24h", "usableChange24h")),
     restrictedQuantity: asNumber(pick(row, "restricted_quantity", "restrictedQuantity")),
     unclassifiedQuantity: asNumber(pick(row, "unclassified_quantity", "unclassifiedQuantity")),
     inboundQuantity: asNumber(pick(row, "inbound_quantity", "inboundQuantity", "inbound")),
     outboundQuantity: asNumber(pick(row, "outbound_quantity", "outboundQuantity", "outbound")),
     consumptionQuantity: asNumber(pick(row, "consumption_quantity", "consumptionQuantity", "consumption", "used")),
+    transferOutQuantity: asNumber(pick(row, "transfer_out_quantity", "transferOutQuantity", "transfer_out", "transferOut")),
     averageDailyConsumption,
     safetyStock: asNumber(pick(row, "safety_stock", "safetyStock")),
     reorderPoint: asNumber(pick(row, "reorder_point", "reorderPoint")),
@@ -287,6 +333,7 @@ function normalizeTransaction(value: unknown, index: number): RawMaterialTransac
     documentNo: asString(pick(row, "document_no", "documentNo", "order_no", "orderNo", "related_order_no")),
     operatorName: asString(pick(row, "operator_name", "operatorName", "operator")),
     note: asString(pick(row, "note", "remark", "reason")),
+    isTransferOut: asBoolean(pick(row, "is_transfer_out", "isTransferOut")),
   };
 }
 
@@ -365,6 +412,16 @@ function normalizeRawMaterialOverview(payload: unknown): RawMaterialOverview {
         pick(meta, "recommendations_available", "recommendationsAvailable"),
         true,
       ),
+      dataMode: asString(pick(meta, "data_mode", "dataMode"), "stored"),
+      inventoryCaptureType: asString(
+        pick(meta, "inventory_capture_type", "inventoryCaptureType"),
+      ),
+      snapshotSyncedAt: asString(pick(meta, "snapshot_synced_at", "snapshotSyncedAt")),
+      syncRequired: asBoolean(pick(meta, "sync_required", "syncRequired")),
+      comparisonAvailable: asBoolean(pick(meta, "comparison_available", "comparisonAvailable")),
+      comparisonStartAt: asString(pick(meta, "comparison_start_at", "comparisonStartAt")),
+      comparisonEndAt: asString(pick(meta, "comparison_end_at", "comparisonEndAt")),
+      comparisonHours: asNumber(pick(meta, "comparison_hours", "comparisonHours"), 24),
     },
     warehouseOptions,
     selectedWarehouses,
@@ -393,8 +450,41 @@ export async function getRawMaterialOverview(params: RawMaterialOverviewParams):
       lookback_days: params.lookbackDays,
       lead_time_days: params.leadTimeDays,
       review_period_days: params.reviewPeriodDays,
-      refresh: Boolean(params.refresh),
     },
   });
   return normalizeRawMaterialOverview(response.data);
+}
+
+function asNullableNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = asNumber(value, Number.NaN);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeSyncStatus(value: unknown): RawMaterialSyncStatus {
+  const row = asRecord(value);
+  return {
+    status: asString(pick(row, "status", "state"), "unknown"),
+    trigger: asString(pick(row, "trigger")),
+    message: asString(pick(row, "message", "detail")),
+    startedAt: asString(pick(row, "started_at", "startedAt")),
+    finishedAt: asString(pick(row, "finished_at", "finishedAt")),
+    updatedAt: asString(pick(row, "updated_at", "updatedAt")),
+  };
+}
+
+export async function getRawMaterialSyncStatus(): Promise<RawMaterialSyncStatus> {
+  const response = await http.get("/inventory/raw-materials/sync/");
+  return normalizeSyncStatus(response.data);
+}
+
+export async function startRawMaterialSync(): Promise<RawMaterialSyncStatus> {
+  try {
+    const response = await http.post("/inventory/raw-materials/sync/");
+    return normalizeSyncStatus(response.data);
+  } catch (error) {
+    const response = asRecord(asRecord(error).response);
+    if (asNumber(response.status) === 409) return normalizeSyncStatus(response.data);
+    throw error;
+  }
 }

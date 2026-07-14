@@ -1,14 +1,20 @@
-from datetime import datetime
+from datetime import date, datetime
 from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIClient
 
 from inventory.mes import _safe_exception_message
-from inventory.services.raw_materials import PAGE_SIZE, _fetch_pages, build_raw_material_overview
+from inventory.services.raw_materials import (
+    PAGE_SIZE,
+    _fetch_pages,
+    build_raw_material_overview,
+    with_zero_stock_markers,
+)
+from inventory.services.raw_material_storage import save_mes_dataset
 
 
 TZ = ZoneInfo("Asia/Shanghai")
@@ -82,6 +88,38 @@ class RawMaterialServiceTests(SimpleTestCase):
     def setUp(self):
         cache.clear()
 
+    def test_depleted_raw_material_is_carried_as_an_explicit_zero_marker(self):
+        rows = with_zero_stock_markers([], [inventory_row(amount="10")])
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["amount"]["amount"], "0")
+        self.assertTrue(rows[0]["syntheticZero"])
+        self.assertEqual(
+            rows[0]["storageLocationDetail"]["warehouse"]["name"],
+            "原材料仓库",
+        )
+
+    @override_settings(
+        MES_RAW_MATERIAL_WAREHOUSE_CODES="RAW",
+        MES_RAW_MATERIAL_WAREHOUSE_IDS="17000000000000003",
+    )
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_configured_empty_raw_warehouse_still_fetches_movements(self, change_call):
+        change_call.return_value = {"data": {"list": [], "total": 0}}
+
+        result = build_raw_material_overview(
+            now=NOW,
+            inventory_rows_override=[],
+        )
+
+        self.assertEqual(result["selected_warehouses"][0]["code"], "RAW")
+        self.assertEqual(result["selected_warehouses"][0]["id"], "17000000000000003")
+        change_call.assert_called_once()
+        self.assertEqual(
+            change_call.call_args.kwargs["warehouseIds"],
+            [17000000000000003],
+        )
+
     def test_pagination_continues_when_mes_total_is_zero(self):
         page_one = [{"id": index} for index in range(PAGE_SIZE)]
         fetcher = Mock(
@@ -116,6 +154,25 @@ class RawMaterialServiceTests(SimpleTestCase):
         self.assertEqual(len(rows), PAGE_SIZE + 1)
         self.assertFalse(cached)
         self.assertTrue(any("overlapping" in warning for warning in warnings))
+
+    def test_pagination_marks_short_page_before_declared_total_incomplete(self):
+        page_one = [{"id": index} for index in range(PAGE_SIZE)]
+        fetcher = Mock(
+            side_effect=[
+                {"data": {"list": page_one, "total": PAGE_SIZE + 50}},
+                {"data": {"list": [{"id": PAGE_SIZE}], "total": PAGE_SIZE + 50}},
+            ]
+        )
+
+        rows, cached, warnings = _fetch_pages(
+            fetcher,
+            cache_kind="short-total-test",
+            filters={"sample": True},
+        )
+
+        self.assertEqual(len(rows), PAGE_SIZE + 1)
+        self.assertFalse(cached)
+        self.assertTrue(any("short page" in warning for warning in warnings))
 
     def test_force_refresh_bypasses_a_successful_cached_page_set(self):
         first = Mock(return_value={"data": {"list": [{"id": 1}], "total": 1}})
@@ -467,7 +524,7 @@ class RawMaterialServiceTests(SimpleTestCase):
 
     @patch("inventory.services.raw_materials.call_inventory_change_log")
     @patch("inventory.services.raw_materials.call_inventory_list")
-    def test_transfer_issue_is_usage_proxy_but_receive_is_not(
+    def test_transfer_issue_is_separate_from_consumption_and_receive_is_inbound(
         self, inventory_call, change_call
     ):
         inventory_call.return_value = {"data": {"list": [inventory_row()], "total": 1}}
@@ -485,12 +542,14 @@ class RawMaterialServiceTests(SimpleTestCase):
         material = result["materials"][0]
         self.assertEqual(material["outbound_quantity"], 3)
         self.assertEqual(material["inbound_quantity"], 3)
-        self.assertEqual(material["consumption_quantity"], 3)
+        self.assertEqual(material["consumption_quantity"], 0)
+        self.assertEqual(material["transfer_out_quantity"], 3)
         self.assertTrue(material["recommendation_available"])
 
 
 class RawMaterialOverviewViewTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.client = APIClient()
         self.user = get_user_model().objects.create_user(
             username="raw-material-viewer", password="unused"
@@ -504,10 +563,68 @@ class RawMaterialOverviewViewTests(TestCase):
         response = self.client.get("/api/inventory/mes-test/")
         self.assertEqual(response.status_code, 401)
 
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    @patch("inventory.services.raw_materials.call_inventory_list")
+    def test_overview_reads_saved_snapshots_without_contacting_mes(
+        self, inventory_call, change_call
+    ):
+        warehouse_id = "17000000000000003"
+        save_mes_dataset(
+            "inventory",
+            [inventory_row(amount="10")],
+            snapshot_date=date(2026, 7, 13),
+        )
+        save_mes_dataset(
+            "inventory",
+            [inventory_row(amount="14")],
+            snapshot_date=date(2026, 7, 14),
+        )
+        save_mes_dataset(
+            "inventory",
+            [inventory_row(amount="20")],
+            snapshot_date=date(2026, 7, 14),
+            capture_type="manual",
+        )
+        save_mes_dataset(
+            "change",
+            [],
+            warehouse_codes=("RAW",),
+            warehouse_ids=(warehouse_id,),
+            lookback_days=30,
+            range_start=datetime(2026, 6, 14, 8, 0, tzinfo=TZ),
+            range_end=datetime(2026, 7, 14, 12, 0, tzinfo=TZ),
+        )
+        save_mes_dataset(
+            "change",
+            [],
+            warehouse_codes=("RAW",),
+            warehouse_ids=(warehouse_id,),
+            lookback_days=30,
+            range_start=datetime(2026, 6, 14, 8, 0, tzinfo=TZ),
+            range_end=datetime(2026, 7, 14, 13, 0, tzinfo=TZ),
+            capture_type="manual",
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get("/api/inventory/raw-materials/overview/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["meta"]["data_mode"], "stored")
+        self.assertTrue(payload["meta"]["comparison_available"])
+        self.assertEqual(payload["materials"][0]["current_quantity"], 20)
+        self.assertEqual(
+            payload["materials"][0]["comparison_current_quantity"], 14
+        )
+        self.assertEqual(payload["materials"][0]["previous_quantity"], 10)
+        self.assertEqual(payload["materials"][0]["quantity_change_24h"], 4)
+        inventory_call.assert_not_called()
+        change_call.assert_not_called()
+
     def test_rejects_out_of_range_lookback(self):
         self.client.force_authenticate(self.user)
         response = self.client.get(
-            "/api/inventory/raw-materials/overview/", {"lookback_days": "91"}
+            "/api/inventory/raw-materials/overview/", {"lookback_days": "31"}
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("lookback_days", response.json()["error"])
@@ -530,13 +647,19 @@ class RawMaterialOverviewViewTests(TestCase):
         response = self.client.get(
             "/api/inventory/raw-materials/overview/?warehouse_code=RAW,RAW2&warehouse_codes=RAW3&lookback_days=7&refresh=true"
         )
+        cached_response = self.client.get(
+            "/api/inventory/raw-materials/overview/?warehouse_code=RAW,RAW2&warehouse_codes=RAW3&lookback_days=7&refresh=true"
+        )
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(cached_response.status_code, 200)
         self.assertEqual(
             build.call_args.kwargs["warehouse_codes"], ["RAW", "RAW2", "RAW3"]
         )
         self.assertEqual(build.call_args.kwargs["lookback_days"], 7)
-        self.assertTrue(build.call_args.kwargs["force_refresh"])
+        self.assertTrue(build.call_args.kwargs["prefer_stored"])
+        self.assertNotIn("force_refresh", build.call_args.kwargs)
+        self.assertEqual(build.call_count, 1)
         self.assertIn("no-store", response["Cache-Control"])
         self.assertEqual(response["Pragma"], "no-cache")
 

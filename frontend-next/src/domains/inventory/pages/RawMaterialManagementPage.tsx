@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getRawMaterialOverview,
+  getRawMaterialSyncStatus,
+  startRawMaterialSync,
   type RawMaterialOverview,
   type RawMaterialRisk,
   type RawMaterialRow,
@@ -16,9 +18,9 @@ const pageCopy = {
   ko: {
     eyebrow: "Inventory",
     title: "원재료 관리",
-    description: "실물 재고와 QC 가용 상태, 사용 흐름, 발주 시점을 한 화면에서 검토합니다.",
-    loading: "원재료 재고와 입출고 기록을 불러오는 중입니다.",
-    fetchError: "원재료 데이터를 불러오지 못했습니다. 권한 또는 MES 연결 상태를 확인해주세요.",
+    description: "매일 08:00 저장한 MES 재고로 24시간 변화와 최근 소요 흐름을 한 화면에서 검토합니다.",
+    loading: "저장된 원재료 재고 보고서를 불러오는 중입니다.",
+    fetchError: "저장된 원재료 보고서를 불러오지 못했습니다. 권한 또는 동기화 상태를 확인해주세요.",
     partial: "일부 MES 데이터를 불러오지 못해 현재 확인 가능한 범위만 표시합니다.",
     selectionRequired: "원재료창고를 선택해 주세요.",
     selectionHint: "MES 명세에는 원재료창고 code/id가 없어 자동으로 확정하지 않았습니다. 위 창고 목록에서 실제 원재료창고를 선택하면 현재고와 입출고를 계산합니다.",
@@ -40,10 +42,19 @@ const pageCopy = {
     searchPlaceholder: "코드, 원재료명, 규격 검색",
     riskFilter: "재고 위험",
     allRisks: "전체 위험",
-    refresh: "MES 새로고침",
-    refreshing: "동기화 중",
-    sourceLatest: "현재고 명세 최신",
-    changeLatest: "입출고 기록 최신",
+    refresh: "수동 MES 업데이트",
+    refreshing: "MES 업데이트 중",
+    syncFailed: "수동 MES 업데이트를 시작하지 못했습니다. 잠시 후 다시 시도해주세요.",
+    syncRunning: "MES 데이터를 한 번만 수집해 새 보고서를 만드는 중입니다. 완료되면 화면이 자동으로 갱신됩니다.",
+    syncComplete: "수동 MES 업데이트가 완료되어 저장된 보고서를 갱신했습니다.",
+    syncQueued: "이미 실행 중인 MES 업데이트를 이어서 확인합니다.",
+    syncRequired: "저장된 08:00 재고가 없습니다. 수동 MES 업데이트를 한 번 실행해 최초 보고서를 만들어주세요.",
+    manualHint: "예외적으로 최신 수치가 필요할 때만 사용하세요. 중복 업데이트는 실행되지 않습니다.",
+    sourceLatest: "저장 재고 기준",
+    changeLatest: "변동 기록 기준",
+    scheduled: "매일 08:00 자동 업데이트",
+    storedMode: "저장 보고서",
+    manualMode: "수동 갱신 현재고",
     generatedAt: "화면 산출",
     noTimestamp: "확인 불가",
     fresh: "최신",
@@ -58,13 +69,14 @@ const pageCopy = {
     usableRate: "가용 비율",
     inbound: "입고",
     outbound: "출고",
-    consumption: "사용량",
+    consumption: "추정 소요(출고)",
+    transferOut: "이동 출고",
     adjustment: "조정",
     recommended: "권고 발주",
     materialCount: "원재료 수",
     periodSuffix: "기간 합계",
     healthEyebrow: "STOCK HEALTH",
-    healthTitle: "현재 재고 건전성",
+    healthTitle: "저장 현재고 건전성",
     healthHint: "선택 단위의 실물 현재고를 QC 가용·제한·미분류 상태로 나눠 봅니다.",
     qcComposition: "QC 상태 구성",
     healthRisk: "발주 위험 분포",
@@ -76,10 +88,10 @@ const pageCopy = {
     unknown: "데이터 확인",
     noRisk: "분류할 원재료가 없습니다.",
     flowEyebrow: "USAGE & MOVEMENT",
-    flowTitle: "사용·입출고 추이",
-    flowHint: "입고·출고·사용량은 같은 축과 같은 단위로 비교합니다. 추정 마감재고는 별도 축에 분리했습니다.",
-    dailyMovement: "일별 입출고·사용량",
-    dailyMovementHint: "세 값은 모두 0 기준의 동일한 수량 축을 사용합니다.",
+    flowTitle: "추정 소요·변동 추이",
+    flowHint: "생산 출고(out)만 추정 소요로 보며, 창고 간 이동 출고(issue)는 별도로 구분합니다.",
+    dailyMovement: "일별 입고·추정 소요·이동 출고",
+    dailyMovementHint: "세 값은 모두 0 기준의 동일한 수량 축을 사용하며 이동 출고는 소요에서 제외합니다.",
     closing: "추정 마감재고",
     closingHint: "현재고에서 MES 변동 기록을 역산한 참고 추이입니다.",
     noTrend: "표시할 일별 재고 흐름이 없습니다.",
@@ -99,7 +111,18 @@ const pageCopy = {
     sufficient: "여유",
     inventoryEyebrow: "MATERIAL DETAIL",
     inventoryTitle: "원재료 재고 현황",
-    inventoryHint: "한 단위 안에서 현재고, QC 가용 상태, 기간 사용량과 발주 기준을 비교합니다. 열 제목을 눌러 정렬할 수 있습니다.",
+    inventoryHint: "원료명·번호별 저장 현재고와 08:00 일일 24시간 변화, 기간 추정 소요를 비교합니다. 열 제목을 눌러 정렬할 수 있습니다.",
+    change24h: "24시간 변화",
+    comparisonEyebrow: "DAILY SNAPSHOT",
+    comparisonTitle: "24시간 재고 변화",
+    comparisonHint: "전일 08:00과 당일 08:00 저장 재고를 동일 원료·단위로 비교합니다.",
+    comparisonWindow: "비교 구간",
+    comparisonUnavailable: "전일 08:00 저장 재고가 없어 24시간 비교를 아직 만들 수 없습니다.",
+    currentSnapshot: "당일 08:00",
+    previousSnapshot: "전일 08:00",
+    increase: "증가",
+    decrease: "감소",
+    noChange: "변화 없음",
     material: "원재료",
     specification: "규격",
     warehouse: "창고",
@@ -121,7 +144,7 @@ const pageCopy = {
     document: "문서 / 작업자",
     noMovements: "선택한 조건에 맞는 입출고 기록이 없습니다.",
     in: "입고",
-    out: "출고",
+    out: "출고(추정 소요)",
     receive: "이동 입고",
     issue: "이동 출고",
     amountAdjust: "수량 조정",
@@ -131,9 +154,9 @@ const pageCopy = {
   zh: {
     eyebrow: "Inventory",
     title: "原材料管理",
-    description: "在一个页面中评估实物库存、QC 可用状态、消耗趋势和订货时点。",
-    loading: "正在读取原材料库存和出入库记录。",
-    fetchError: "无法读取原材料数据。请确认权限或 MES 连接状态。",
+    description: "基于每日 08:00 保存的 MES 库存，查看 24 小时变化与近期消耗趋势。",
+    loading: "正在读取已保存的原材料库存报告。",
+    fetchError: "无法读取已保存的原材料报告。请确认权限或同步状态。",
     partial: "部分 MES 数据读取失败，当前仅显示可确认范围。",
     selectionRequired: "请选择原材料仓库。",
     selectionHint: "MES 规范未提供原材料仓库的 code/id，因此系统不会随意推测。请选择实际原材料仓库后再计算库存和出入库。",
@@ -155,10 +178,19 @@ const pageCopy = {
     searchPlaceholder: "搜索编码、名称、规格",
     riskFilter: "库存风险",
     allRisks: "全部风险",
-    refresh: "刷新 MES",
-    refreshing: "同步中",
-    sourceLatest: "当前库存明细最新",
-    changeLatest: "出入库记录最新",
+    refresh: "手动更新 MES",
+    refreshing: "MES 更新中",
+    syncFailed: "无法启动手动 MES 更新，请稍后重试。",
+    syncRunning: "正在单次采集 MES 数据并生成新报告，完成后页面会自动刷新。",
+    syncComplete: "手动 MES 更新已完成，保存的报告已刷新。",
+    syncQueued: "MES 更新已在运行，将继续查看其状态。",
+    syncRequired: "尚无保存的 08:00 库存，请手动更新一次 MES 以生成首份报告。",
+    manualHint: "仅在例外需要最新数值时使用；不会重复运行更新。",
+    sourceLatest: "保存库存基准",
+    changeLatest: "变动记录基准",
+    scheduled: "每天 08:00 自动更新",
+    storedMode: "保存报告",
+    manualMode: "手动更新当前库存",
     generatedAt: "页面计算",
     noTimestamp: "无法确认",
     fresh: "最新",
@@ -173,13 +205,14 @@ const pageCopy = {
     usableRate: "可用比例",
     inbound: "入库",
     outbound: "出库",
-    consumption: "消耗量",
+    consumption: "估算消耗（出库）",
+    transferOut: "调拨出库",
     adjustment: "调整",
     recommended: "建议订货",
     materialCount: "原材料数",
     periodSuffix: "期间合计",
     healthEyebrow: "STOCK HEALTH",
-    healthTitle: "当前库存健康度",
+    healthTitle: "已保存当前库存健康度",
     healthHint: "按 QC 可用、受限和未分类状态拆分所选单位的实物库存。",
     qcComposition: "QC 状态构成",
     healthRisk: "订货风险分布",
@@ -191,10 +224,10 @@ const pageCopy = {
     unknown: "确认数据",
     noRisk: "暂无可分类的原材料。",
     flowEyebrow: "USAGE & MOVEMENT",
-    flowTitle: "消耗与出入库趋势",
-    flowHint: "入库、出库和消耗量使用同一单位与同一坐标轴；估算期末库存使用独立图表。",
-    dailyMovement: "每日出入库与消耗量",
-    dailyMovementHint: "三个指标均使用以 0 为起点的同一数量轴。",
+    flowTitle: "估算消耗与变动趋势",
+    flowHint: "仅将生产出库（out）视为估算消耗，仓库调拨出库（issue）单独显示。",
+    dailyMovement: "每日入库、估算消耗与调拨出库",
+    dailyMovementHint: "三个指标使用相同的零起点数量轴，调拨出库不计入消耗。",
     closing: "估算期末库存",
     closingHint: "由当前库存和 MES 变动记录倒推的参考趋势。",
     noTrend: "暂无每日库存趋势。",
@@ -214,7 +247,18 @@ const pageCopy = {
     sufficient: "充足",
     inventoryEyebrow: "MATERIAL DETAIL",
     inventoryTitle: "原材料库存明细",
-    inventoryHint: "在同一单位内比较当前库存、QC 可用状态、期间消耗和订货基准。点击列标题可排序。",
+    inventoryHint: "按原料名称或编码比较已保存当前库存、08:00 日报的 24 小时变化和期间估算消耗。点击列标题可排序。",
+    change24h: "24 小时变化",
+    comparisonEyebrow: "DAILY SNAPSHOT",
+    comparisonTitle: "24 小时库存变化",
+    comparisonHint: "按相同原料与单位比较昨日 08:00 和今日 08:00 的保存库存。",
+    comparisonWindow: "比较区间",
+    comparisonUnavailable: "缺少昨日 08:00 保存库存，暂时无法生成 24 小时比较。",
+    currentSnapshot: "今日 08:00",
+    previousSnapshot: "昨日 08:00",
+    increase: "增加",
+    decrease: "减少",
+    noChange: "无变化",
     material: "原材料",
     specification: "规格",
     warehouse: "仓库",
@@ -236,7 +280,7 @@ const pageCopy = {
     document: "单据 / 操作人",
     noMovements: "没有符合所选条件的出入库记录。",
     in: "入库",
-    out: "出库",
+    out: "出库（估算消耗）",
     receive: "调拨入库",
     issue: "调拨出库",
     amountAdjust: "数量调整",
@@ -249,9 +293,11 @@ type SortKey =
   | "material"
   | "warehouse"
   | "current"
+  | "change24h"
   | "usable"
   | "inbound"
   | "outbound"
+  | "transferOut"
   | "consumption"
   | "average"
   | "cover"
@@ -301,8 +347,8 @@ function freshness(value: string) {
   const timestamp = new Date(value).getTime();
   if (!value || Number.isNaN(timestamp)) return "unknown" as const;
   const elapsedHours = Math.max(0, Date.now() - timestamp) / 3_600_000;
-  if (elapsedHours <= 1) return "fresh" as const;
-  if (elapsedHours <= 24) return "delayed" as const;
+  if (elapsedHours <= 24) return "fresh" as const;
+  if (elapsedHours <= 36) return "delayed" as const;
   return "stale" as const;
 }
 
@@ -332,6 +378,7 @@ function effectiveRisk(row: RawMaterialRow, leadTimeDays: number, reviewPeriodDa
 function actionInfo(row: RawMaterialTransaction, copy: Copy) {
   const action = row.transactionType.toLowerCase().replaceAll("-", "_");
   const explicitDirection = row.direction.toLowerCase();
+  if (row.isTransferOut || action === "issue") return { label: row.actionLabel || copy.issue, direction: "out" };
   if (action === "amount_adjust") return { label: row.actionLabel || copy.amountAdjust, direction: "adjust" };
   if (action === "attr_adjust") return { label: row.actionLabel || copy.attrAdjust, direction: "adjust" };
   if (["in", "inbound"].includes(explicitDirection) || ["in", "inbound", "receive"].includes(action)) {
@@ -380,7 +427,7 @@ function StockTrendCharts({
   const flowPlotHeight = flowHeight - flowTop - flowBottom;
   const flowMax = Math.max(
     1,
-    ...rows.flatMap(({ value }) => [Math.abs(value.inbound), Math.abs(value.outbound), Math.abs(value.consumption)]),
+    ...rows.flatMap(({ value }) => [Math.abs(value.inbound), Math.abs(value.consumption), Math.abs(value.transferOut)]),
   );
   const yFlow = (value: number) => flowTop + flowPlotHeight - (Math.max(0, value) / flowMax) * flowPlotHeight;
   const groupWidth = Math.max(6, Math.min(30, plotWidth / Math.max(rows.length, 1) * 0.68));
@@ -425,8 +472,8 @@ function StockTrendCharts({
             const center = x(index);
             const values = [
               { key: "in", amount: value.inbound, label: copy.inbound },
-              { key: "out", amount: value.outbound, label: copy.outbound },
               { key: "use", amount: value.consumption, label: copy.consumption },
+              { key: "transfer", amount: value.transferOut, label: copy.transferOut },
             ];
             return (
               <g key={`${date}-${index}`}>
@@ -456,8 +503,8 @@ function StockTrendCharts({
         </svg>
         <div className="raw-chart-legend">
           <span><i className="raw-legend--in" />{copy.inbound}</span>
-          <span><i className="raw-legend--out" />{copy.outbound}</span>
           <span><i className="raw-legend--use" />{copy.consumption}</span>
+          <span><i className="raw-legend--transfer" />{copy.transferOut}</span>
         </div>
       </section>
 
@@ -499,6 +546,62 @@ function StockTrendCharts({
           ))}
         </svg>
       </section>
+    </div>
+  );
+}
+
+function DailyInventoryComparison({
+  rows,
+  unit,
+  language,
+  copy,
+}: {
+  rows: RawMaterialRow[];
+  unit: string;
+  language: AppLanguage;
+  copy: Copy;
+}) {
+  const comparable = rows
+    .filter((row) => row.previousQuantity !== null && row.comparisonCurrentQuantity !== null && row.quantityChange24h !== null)
+    .sort((a, b) => Math.max(b.comparisonCurrentQuantity ?? 0, b.previousQuantity ?? 0) - Math.max(a.comparisonCurrentQuantity ?? 0, a.previousQuantity ?? 0))
+    .slice(0, 8);
+  if (!comparable.length) return <div className="raw-empty">{copy.comparisonUnavailable}</div>;
+
+  const scale = Math.max(1, ...comparable.flatMap((row) => [row.comparisonCurrentQuantity ?? 0, row.previousQuantity ?? 0]));
+  return (
+    <div className="raw-daily-comparison-list">
+      {comparable.map((row) => {
+        const previous = row.previousQuantity ?? 0;
+        const comparisonCurrent = row.comparisonCurrentQuantity ?? 0;
+        const change = row.quantityChange24h ?? 0;
+        const direction = change > 0 ? "up" : change < 0 ? "down" : "flat";
+        const directionLabel = change > 0 ? copy.increase : change < 0 ? copy.decrease : copy.noChange;
+        return (
+          <article className="raw-daily-comparison-row" key={`${row.materialId}-${row.warehouseCode}-${row.unit}`}>
+            <div className="raw-daily-comparison-material" title={`${row.materialName} · ${row.materialCode}`}>
+              <strong>{row.materialName}</strong>
+              <span>{row.materialCode}</span>
+            </div>
+            <div className="raw-daily-comparison-bars">
+              <div>
+                <span>{copy.previousSnapshot}</span>
+                <i><b className="raw-comparison-bar--previous" style={{ width: `${previous > 0 ? Math.max(1, previous / scale * 100) : 0}%` }} /></i>
+                <strong>{quantity(previous, language)}</strong>
+              </div>
+              <div>
+                <span>{copy.currentSnapshot}</span>
+                <i><b className="raw-comparison-bar--current" style={{ width: `${comparisonCurrent > 0 ? Math.max(1, comparisonCurrent / scale * 100) : 0}%` }} /></i>
+                <strong>{quantity(comparisonCurrent, language)}</strong>
+              </div>
+            </div>
+            <div className={`raw-daily-comparison-delta raw-daily-comparison-delta--${direction}`}>
+              <span>{copy.change24h}</span>
+              <strong>{change > 0 ? "+" : ""}{quantity(change, language)} {unit}</strong>
+              <small>{directionLabel}</small>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -578,6 +681,20 @@ function coverStatus(row: RawMaterialRow, lead: number, review: number, copy: Co
   return copy.notCalculated;
 }
 
+function isSyncActive(status: string) {
+  return ["accepted", "queued", "pending", "starting", "started", "running", "in_progress"].includes(
+    status.toLowerCase(),
+  );
+}
+
+function isSyncComplete(status: string) {
+  return ["complete", "completed", "success", "succeeded"].includes(status.toLowerCase());
+}
+
+function isSyncFailed(status: string) {
+  return ["error", "failed", "failure", "cooldown"].includes(status.toLowerCase());
+}
+
 export function RawMaterialManagementPage() {
   const [language] = useStoredLanguage();
   const copy = pageCopy[language];
@@ -591,6 +708,7 @@ export function RawMaterialManagementPage() {
   const [risk, setRisk] = useState<RawMaterialRisk | "all">("all");
   const [sort, setSort] = useState<SortState>({ key: "risk", direction: "asc" });
   const [pageIndex, setPageIndex] = useState(0);
+  const handledSyncRef = useRef("");
 
   const queryKey = ["inventory", "raw-material-overview", [...warehouses].sort().join(","), lookback, lead, review] as const;
   const params = {
@@ -600,11 +718,26 @@ export function RawMaterialManagementPage() {
     reviewPeriodDays: review,
   };
   const overviewQuery = useQuery({ queryKey, queryFn: () => getRawMaterialOverview(params) });
-  const refreshMutation = useMutation({
-    mutationFn: () => getRawMaterialOverview({ ...params, refresh: true }),
-    onSuccess: (response) => queryClient.setQueryData(queryKey, response),
+  const syncQuery = useQuery({
+    queryKey: ["inventory", "raw-material-sync"],
+    queryFn: getRawMaterialSyncStatus,
+    retry: false,
+    refetchInterval: (query) => (isSyncActive(query.state.data?.status ?? "") ? 2_000 : false),
   });
+  const refreshMutation = useMutation({
+    mutationFn: startRawMaterialSync,
+    onSuccess: (response) => queryClient.setQueryData(["inventory", "raw-material-sync"], response),
+  });
+  const syncStatus = syncQuery.data ?? refreshMutation.data;
+  const syncRunning = Boolean(syncStatus && isSyncActive(syncStatus.status));
   const data: RawMaterialOverview | undefined = overviewQuery.data;
+  useEffect(() => {
+    if (!syncStatus || !isSyncComplete(syncStatus.status)) return;
+    const completedKey = syncStatus.finishedAt || syncStatus.updatedAt;
+    if (!completedKey || handledSyncRef.current === completedKey) return;
+    handledSyncRef.current = completedKey;
+    void queryClient.invalidateQueries({ queryKey: ["inventory", "raw-material-overview"] });
+  }, [queryClient, syncStatus]);
   useEffect(() => {
     if (data?.units.length && !data.units.includes(unit)) setUnit(data.units[0]);
   }, [data?.units, unit]);
@@ -623,9 +756,11 @@ export function RawMaterialManagementPage() {
       if (key === "material") return `${row.materialCode} ${row.materialName}`;
       if (key === "warehouse") return row.warehouseName;
       if (key === "current") return row.currentQuantity;
+      if (key === "change24h") return row.quantityChange24h ?? Number.MIN_SAFE_INTEGER;
       if (key === "usable") return row.usableQuantity;
       if (key === "inbound") return row.inboundQuantity;
       if (key === "outbound") return row.outboundQuantity;
+      if (key === "transferOut") return row.transferOutQuantity;
       if (key === "consumption") return row.consumptionQuantity;
       if (key === "average") return row.averageDailyConsumption;
       if (key === "cover") return row.daysOfCover ?? Number.MAX_SAFE_INTEGER;
@@ -671,6 +806,9 @@ export function RawMaterialManagementPage() {
 
   const summary = data?.summary.quantities.find((row) => row.unit === unit);
   const currentQuantity = summary?.current ?? 0;
+  const previousCurrentQuantity = summary?.previousCurrent ?? null;
+  const comparisonCurrentQuantity = summary?.comparisonCurrent ?? null;
+  const currentChange24h = summary?.change24h ?? null;
   const usableQuantity = summary?.usable ?? 0;
   const restrictedQuantity = summary?.restricted ?? 0;
   const unclassifiedQuantity = summary?.unclassified ?? 0;
@@ -715,7 +853,8 @@ export function RawMaterialManagementPage() {
   const isSelectionRequired = data?.status.toLowerCase() === "selection_required";
   const isPartial = Boolean(data && (data.meta.partial || data.status.toLowerCase() === "partial"));
   const showWarnings = Boolean(data?.meta.warnings.length && !isPartial);
-  const inventorySourceLatestAt = data?.meta.inventorySourceLatestAt
+  const inventorySourceLatestAt = data?.meta.snapshotSyncedAt
+    || data?.meta.inventorySourceLatestAt
     || data?.meta.sourceLatestAt
     || "";
   const sourceFreshness = freshness(inventorySourceLatestAt);
@@ -728,7 +867,7 @@ export function RawMaterialManagementPage() {
         : copy.noTimestamp;
 
   return (
-    <section aria-busy={overviewQuery.isFetching || refreshMutation.isPending} className="page raw-material-page" data-testid="raw-material-page">
+    <section aria-busy={overviewQuery.isFetching || refreshMutation.isPending || syncRunning} className="page raw-material-page" data-testid="raw-material-page">
       <PageHeader eyebrow={copy.eyebrow} icon="inventory" title={copy.title} description={copy.description} />
 
       <section aria-label={copy.filters} className="panel raw-filter-panel">
@@ -738,6 +877,10 @@ export function RawMaterialManagementPage() {
             <h2 className="panel__title">{copy.filters}</h2>
           </div>
           <div className="raw-freshness">
+            <span className="raw-mode-badge">
+              {data?.meta.inventoryCaptureType === "manual" ? copy.manualMode : copy.storedMode}
+            </span>
+            <span className="raw-schedule-badge">{copy.scheduled}</span>
             <span>
               {copy.sourceLatest}
               <strong>{dateTime(inventorySourceLatestAt, language, copy.noTimestamp)}</strong>
@@ -755,11 +898,12 @@ export function RawMaterialManagementPage() {
               aria-label={copy.refresh}
               className="button button--primary raw-refresh"
               data-testid="raw-material-refresh"
-              disabled={refreshMutation.isPending || overviewQuery.isLoading}
+              disabled={refreshMutation.isPending || syncRunning || overviewQuery.isLoading}
               onClick={() => refreshMutation.mutate()}
+              title={copy.manualHint}
               type="button"
             >
-              <span aria-hidden="true">↻</span>{refreshMutation.isPending ? copy.refreshing : copy.refresh}
+              <span aria-hidden="true">↻</span>{refreshMutation.isPending || syncRunning ? copy.refreshing : copy.refresh}
             </button>
           </div>
         </div>
@@ -810,8 +954,8 @@ export function RawMaterialManagementPage() {
             <label className="raw-filter-field">
               <span>{copy.period}</span>
               <select onChange={(event) => setLookback(Number(event.target.value))} value={lookback}>
-                {([7, 14, 30, 60, 90] as const).map((days) => (
-                  <option key={days} value={days}>{copy[`days${days}` as "days7" | "days14" | "days30" | "days60" | "days90"]}</option>
+                {([7, 14, 30] as const).map((days) => (
+                  <option key={days} value={days}>{copy[`days${days}` as "days7" | "days14" | "days30"]}</option>
                 ))}
               </select>
             </label>
@@ -840,7 +984,18 @@ export function RawMaterialManagementPage() {
 
       {overviewQuery.isLoading && !data ? <LoadingBlock label={copy.loading} /> : null}
       {overviewQuery.isError && !data ? <div className="notice notice--warning" role="alert">{copy.fetchError}</div> : null}
-      {(overviewQuery.isError && data) || refreshMutation.isError ? <div className="notice notice--warning" role="alert">{copy.fetchError}</div> : null}
+      {overviewQuery.isError && data ? <div className="notice notice--warning" role="alert">{copy.fetchError}</div> : null}
+      {refreshMutation.isError ? <div className="notice notice--warning" role="alert">{copy.syncFailed}</div> : null}
+      {syncRunning ? <div className="notice notice--neutral" role="status">{copy.syncRunning}</div> : null}
+      {refreshMutation.submittedAt > 0 && syncStatus && isSyncComplete(syncStatus.status) ? (
+        <div className="notice notice--success" role="status">{copy.syncComplete}</div>
+      ) : null}
+      {refreshMutation.submittedAt > 0 && syncStatus && isSyncFailed(syncStatus.status) ? (
+        <div className="notice notice--warning" role="alert">
+          {copy.syncFailed}{syncStatus.message ? ` ${syncStatus.message}` : ""}
+        </div>
+      ) : null}
+      {data?.meta.syncRequired ? <div className="notice notice--warning" role="status">{copy.syncRequired}</div> : null}
       {isSelectionRequired ? (
         <div className="notice notice--neutral raw-selection-notice" role="status">
           <strong>{copy.selectionRequired}</strong><span>{copy.selectionHint}</span>
@@ -864,6 +1019,38 @@ export function RawMaterialManagementPage() {
             <div><span>{copy.unit}</span><strong>{unit || "-"}</strong></div>
             <p>{lookback} {copy.days} · {copy.periodSuffix}</p>
           </div>
+
+          <section className="panel raw-daily-comparison-panel">
+            <div className="raw-panel-header">
+              <div>
+                <p className="panel-card__eyebrow">{copy.comparisonEyebrow}</p>
+                <h2 className="panel__title">{copy.comparisonTitle}</h2>
+                <p className="raw-panel-hint">{copy.comparisonHint}</p>
+              </div>
+              <div className="raw-comparison-window">
+                <span>{copy.comparisonWindow}</span>
+                <strong>
+                  {dateTime(data.meta.comparisonStartAt, language, copy.noTimestamp)}
+                  <i aria-hidden="true">→</i>
+                  {dateTime(data.meta.comparisonEndAt, language, copy.noTimestamp)}
+                </strong>
+              </div>
+            </div>
+            {data.meta.comparisonAvailable && previousCurrentQuantity !== null && comparisonCurrentQuantity !== null && currentChange24h !== null ? (
+              <>
+                <div className="raw-comparison-summary">
+                  <article><span>{copy.previousSnapshot}</span><strong>{quantity(previousCurrentQuantity, language)}</strong><small>{unit || "-"}</small></article>
+                  <article><span>{copy.currentSnapshot}</span><strong>{quantity(comparisonCurrentQuantity, language)}</strong><small>{unit || "-"}</small></article>
+                  <article className={currentChange24h > 0 ? "is-up" : currentChange24h < 0 ? "is-down" : "is-flat"}>
+                    <span>{copy.change24h}</span>
+                    <strong>{currentChange24h > 0 ? "+" : ""}{quantity(currentChange24h, language)}</strong>
+                    <small>{currentChange24h > 0 ? copy.increase : currentChange24h < 0 ? copy.decrease : copy.noChange}</small>
+                  </article>
+                </div>
+                <DailyInventoryComparison copy={copy} language={language} rows={unitRows} unit={unit} />
+              </>
+            ) : <div className="raw-empty">{copy.comparisonUnavailable}</div>}
+          </section>
 
           <div className="raw-health-grid">
             <section className="panel raw-health-panel">
@@ -937,8 +1124,8 @@ export function RawMaterialManagementPage() {
               </div>
               <div className="raw-flow-totals" aria-label={`${lookback} ${copy.days} ${copy.periodSuffix}`}>
                 <span><i className="raw-flow-dot--in" />{copy.inbound}<strong>{quantity(summary?.inbound ?? 0, language)}</strong></span>
-                <span><i className="raw-flow-dot--out" />{copy.outbound}<strong>{quantity(summary?.outbound ?? 0, language)}</strong></span>
                 <span><i className="raw-flow-dot--use" />{copy.consumption}<strong>{quantity(summary?.consumption ?? 0, language)}</strong></span>
+                <span><i className="raw-flow-dot--transfer" />{copy.transferOut}<strong>{quantity(summary?.transferOut ?? 0, language)}</strong></span>
                 <span>{copy.adjustment}<strong>{quantity(summary?.adjustment ?? 0, language)}</strong></span>
               </div>
             </div>
@@ -1020,10 +1207,11 @@ export function RawMaterialManagementPage() {
                         <th aria-sort={sortDirection("warehouse")}>{sortable(copy.warehouse, "warehouse")}</th>
                         <th aria-sort={sortDirection("risk")}>{sortable(copy.risk, "risk")}</th>
                         <th aria-sort={sortDirection("current")}>{sortable(copy.current, "current")}</th>
+                        <th aria-sort={sortDirection("change24h")}>{sortable(copy.change24h, "change24h")}</th>
                         <th aria-sort={sortDirection("usable")}>{sortable(copy.usable, "usable")}</th>
                         <th aria-sort={sortDirection("inbound")}>{sortable(copy.inbound, "inbound")}</th>
-                        <th aria-sort={sortDirection("outbound")}>{sortable(copy.outbound, "outbound")}</th>
                         <th aria-sort={sortDirection("consumption")}>{sortable(copy.consumption, "consumption")}</th>
+                        <th aria-sort={sortDirection("transferOut")}>{sortable(copy.transferOut, "transferOut")}</th>
                         <th aria-sort={sortDirection("average")}>{sortable(copy.avgDaily, "average")}</th>
                         <th aria-sort={sortDirection("reorder")}>{sortable(copy.reorderPoint, "reorder")}</th>
                         <th aria-sort={sortDirection("recommended")}>{sortable(copy.recommended, "recommended")}</th>
@@ -1044,10 +1232,13 @@ export function RawMaterialManagementPage() {
                                 : copy.notCalculated}</span>
                             </td>
                             <td>{quantity(row.currentQuantity, language)} <small>{row.unit}</small></td>
+                            <td className={row.quantityChange24h === null ? "" : row.quantityChange24h > 0 ? "raw-number--in" : row.quantityChange24h < 0 ? "raw-number--out" : ""}>
+                              {row.quantityChange24h === null ? copy.notCalculated : `${row.quantityChange24h > 0 ? "+" : ""}${quantity(row.quantityChange24h, language)}`}
+                            </td>
                             <td><strong>{quantity(row.usableQuantity, language)}</strong><span>{copy.restricted} {quantity(row.restrictedQuantity, language)} · {copy.unclassified} {quantity(row.unclassifiedQuantity, language)}</span></td>
                             <td className="raw-number--in">+{quantity(Math.abs(row.inboundQuantity), language)}</td>
-                            <td className="raw-number--out">−{quantity(Math.abs(row.outboundQuantity), language)}</td>
                             <td>{quantity(row.consumptionQuantity, language)}</td>
+                            <td className="raw-number--out">{quantity(row.transferOutQuantity, language)}</td>
                             <td>{quantity(row.averageDailyConsumption, language)}</td>
                             <td><strong>{rowRecommendationAvailable ? quantity(row.reorderPoint, language) : copy.notCalculated}</strong><span>{copy.targetStock} {rowRecommendationAvailable ? quantity(row.targetStock, language) : copy.notCalculated}</span></td>
                             <td><strong>{rowRecommendationAvailable ? quantity(row.recommendedOrder, language) : copy.notCalculated}</strong></td>
