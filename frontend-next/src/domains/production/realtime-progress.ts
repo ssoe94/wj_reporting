@@ -127,6 +127,11 @@ function numberAt(values: number[] | undefined, index: number) {
   return Number(values[index] ?? 0);
 }
 
+function normalizeShotTotal(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.round(value));
+}
+
 function getSlotIntervalMinutes(data: InjectionProductionMatrix, index: number) {
   const explicitInterval = Number(data.time_slots[index]?.interval_minutes ?? 0);
   if (explicitInterval > 0) return explicitInterval;
@@ -171,11 +176,16 @@ function buildMachineShotStats(
     }
   });
 
+  // Machine 3 is stored with a 0.5 monitoring correction. Keep the fractional
+  // slot values for C/T analysis, but expose completed physical shots as units.
+  const normalizedShotCount = normalizeShotTotal(shotCount);
+  const normalizedRecentShots = normalizeShotTotal(recentShots);
+
   const lastSample = activeSamples.at(-1);
   if (!lastSample || !latestTime) {
     return {
-      shotCount,
-      recentShots,
+      shotCount: normalizedShotCount,
+      recentShots: normalizedRecentShots,
       label: machine.display_name || `${machine.machine_number}`,
       lastShotAt: null,
       idleMinutes: null,
@@ -206,8 +216,8 @@ function buildMachineShotStats(
   const idleMinutes = Math.max(0, (latestTime.getTime() - lastSample.time.getTime()) / (60 * 1000));
 
   return {
-    shotCount,
-    recentShots,
+    shotCount: normalizedShotCount,
+    recentShots: normalizedRecentShots,
     label: machine.display_name || `${machine.machine_number}`,
     lastShotAt: lastSample.time.toISOString(),
     idleMinutes,

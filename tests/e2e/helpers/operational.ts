@@ -291,6 +291,7 @@ export async function installOperationalApiMocks(page: Page) {
   });
   const machineTwoCumulative = toCumulative(machineTwoActual);
   const machineThreeActual = Array.from({ length: slotCount }, (_, index) => {
+    if (index === 0) return 4.5;
     if (index < 4) return 5;
     if (index < 10) return 0;
     if (index === 10) return 30;

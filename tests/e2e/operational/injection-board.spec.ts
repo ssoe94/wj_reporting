@@ -65,6 +65,7 @@ test.describe('injection office board', () => {
 
   test('renders three summaries and machines 1 through 17 in one 4K screen', async ({ page }) => {
     const guard = installPageIssueGuard(page);
+    await page.clock.setFixedTime(new Date('2026-05-18T10:10:00+08:00'));
     await installOperationalApiMocks(page);
     await installDevSession(page, 'ko');
     await page.setViewportSize({ width: 3840, height: 2160 });
@@ -79,12 +80,14 @@ test.describe('injection office board', () => {
     const boardItems = page.locator('.injection-board__grid > article');
     await expect(boardItems).toHaveCount(20);
     await expect(page.locator('.injection-board-card')).toHaveCount(17);
+    await expect(page.locator('.injection-board-card__timeline')).toHaveCount(17);
+    await expect(page.locator('.injection-board-card__timeline > span')).not.toHaveCount(0);
     for (let machineNumber = 1; machineNumber <= 17; machineNumber += 1) {
       await expect(page.locator(`.injection-board-card[data-machine="${machineNumber}"]`)).toBeVisible();
     }
     await expect(page.locator('.injection-board-card').first()).toContainText('현재 C/T');
     await expect(page.locator('.injection-board-card').first()).toContainText('달성률');
-    await expect(page.locator('.injection-board-card').first()).toContainText('MODEL-A');
+    await expect(page.locator('.injection-board-card').first()).toContainText('MODEL-B');
     await expect(page.locator('.injection-board-card').first()).not.toContainText('필요 C/T');
 
     const finalCard = page.locator('.injection-board-card[data-machine="17"]');
@@ -98,25 +101,46 @@ test.describe('injection office board', () => {
 
   test('shows the previous business-day summary in a smaller floating layer and closes on one click', async ({ page }) => {
     const guard = installPageIssueGuard(page);
-    await page.clock.setFixedTime(new Date('2026-05-19T07:30:00+08:00'));
+    await page.clock.setFixedTime(new Date('2026-05-19T09:00:00+08:00'));
     await installOperationalApiMocks(page);
     await installDevSession(page, 'ko');
     await page.setViewportSize({ width: 1920, height: 1080 });
 
     await page.goto('/production/injection-board');
+    const cacheKey = 'injection-board:previous-summary:2026-05-18';
+    await expect.poll(() => page.evaluate((key) => Boolean(window.localStorage.getItem(key)), cacheKey)).toBe(true);
+    const cached = await page.evaluate((key) => JSON.parse(window.localStorage.getItem(key) ?? '{}'), cacheKey);
+    expect(cached.businessDate).toBe('2026-05-18');
+    expect(cached.expiresAt).toBe(new Date('2026-05-20T08:00:00+08:00').getTime());
+    expect(Object.keys(cached.timelines)).toHaveLength(17);
+
     await page.getByRole('button', { name: '전일 생산 요약' }).click();
 
     const history = page.locator('.injection-board-history');
     const panel = page.locator('.injection-board-history__panel');
     await expect(history).toBeVisible();
     await expect(panel).toContainText('전일 사출 생산 요약');
-    await expect(panel).toContainText('2026-05-17');
+    await expect(panel).toContainText('2026-05-18');
+    await expect(panel.locator('.injection-board-history__kpi')).toHaveCount(4);
+    await expect(panel).toContainText('계획 달성률');
+    await expect(panel).toContainText('총 생산수량');
     await expect(panel.locator('.injection-board-history-card')).toHaveCount(17);
+    await expect(panel.locator('.injection-board-history-card__timeline')).toHaveCount(17);
+    await expect(panel.locator('.injection-board-history-card__timeline > span')).not.toHaveCount(0);
+    const shotLabels = await panel.locator('.injection-board-history-card__shots strong').allTextContents();
+    expect(shotLabels.every((label) => /^\d[\d,]*회$/.test(label))).toBe(true);
+    await expect(panel.locator('.injection-board-history__kpi--outside strong')).not.toContainText('.5');
 
     const panelBox = await panel.boundingBox();
     expect(panelBox).not.toBeNull();
     expect(panelBox?.width ?? 0).toBeLessThan(1920);
     expect(panelBox?.height ?? 0).toBeLessThan(1080);
+    const overflowingHistoryCards = await panel.locator('.injection-board-history-card').evaluateAll((cards) => (
+      cards
+        .filter((card) => card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1)
+        .map((card) => card.getAttribute('data-machine'))
+    ));
+    expect(overflowingHistoryCards).toEqual([]);
 
     await panel.click({ position: { x: 12, y: 12 } });
     await expect(history).toBeHidden();
