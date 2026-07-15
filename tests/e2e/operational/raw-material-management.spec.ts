@@ -309,6 +309,7 @@ test.describe('raw material management operational scenario', () => {
     let overviewRequests = 0;
     let detailRequests = 0;
     let syncStarted = false;
+    let syncPostRequests = 0;
     let syncStatusRequests = 0;
 
     await page.route(/\/api\/inventory\/raw-materials\/overview\/(?:\?.*)?$/, async (route) => {
@@ -326,6 +327,20 @@ test.describe('raw material management operational scenario', () => {
     });
     await page.route(/\/api\/inventory\/raw-materials\/sync\/(?:\?.*)?$/, async (route) => {
       if (route.request().method() === 'POST') {
+        syncPostRequests += 1;
+        if (syncPostRequests > 1) {
+          await route.fulfill({
+            status: 200,
+            json: {
+              status: 'cooldown',
+              trigger: 'manual',
+              message: '서버 부하 방지를 위해 잠시 후 다시 시도해주세요.',
+              finished_at: '2026-07-14T10:40:02+08:00',
+              updated_at: '2026-07-14T10:40:03+08:00',
+            },
+          });
+          return;
+        }
         syncStarted = true;
         await route.fulfill({
           status: 202,
@@ -429,6 +444,9 @@ test.describe('raw material management operational scenario', () => {
     await chineseGroupedRow.locator('td').nth(2).click();
     await expect(page.getByRole('region', { name: 'ABS HA641 18388 当前库存明细' })).toContainText('未采集');
     await expect.poll(() => detailRequests).toBeGreaterThan(1);
+    await page.getByRole('button', { name: '手动更新 MES' }).click();
+    await expect(page.getByText('刚完成一次 MES 更新。为避免增加服务器负载，请稍后重试。', { exact: true })).toBeVisible();
+    await expect(page.getByText('手动 MES 更新失败。', { exact: true })).toHaveCount(0);
 
     expect(overviewRequests).toBeGreaterThan(0);
     expect(syncStatusRequests).toBeGreaterThan(1);

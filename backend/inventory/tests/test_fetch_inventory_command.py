@@ -1,4 +1,5 @@
 import datetime
+from decimal import Decimal
 from io import StringIO
 from unittest.mock import call, patch
 from zoneinfo import ZoneInfo
@@ -117,6 +118,54 @@ class FetchInventoryCommandTests(TestCase):
             progress,
             {"current": 101, "total": 101, "status": "completed"},
         )
+
+    @patch("inventory.management.commands.fetch_inventory.call_inventory_list")
+    def test_json_number_quantity_is_normalised_before_decimal_validation(
+        self,
+        inventory_call,
+    ):
+        row = mes_inventory_row(0)
+        row["amount"]["amount"] = 12.34
+        inventory_call.return_value = {"data": {"list": [row], "total": 1}}
+
+        call_command("fetch_inventory", stdout=StringIO(), stderr=StringIO())
+
+        imported = StagingInventory.objects.get(material_code="RM-000")
+        self.assertEqual(imported.quantity, Decimal("12.3400"))
+        dataset = RawMaterialMESDataset.objects.get(kind="inventory")
+        self.assertEqual(dataset.payload[0]["amount"]["amount"], 12.34)
+
+    @patch("inventory.management.commands.fetch_inventory.call_inventory_list")
+    def test_quantity_is_rounded_half_up_to_staging_precision(
+        self,
+        inventory_call,
+    ):
+        row = mes_inventory_row(0)
+        row["amount"]["amount"] = 12.34567
+        inventory_call.return_value = {"data": {"list": [row], "total": 1}}
+
+        call_command("fetch_inventory", stdout=StringIO(), stderr=StringIO())
+
+        imported = StagingInventory.objects.get(material_code="RM-000")
+        self.assertEqual(imported.quantity, Decimal("12.3457"))
+
+    @patch("inventory.management.commands.fetch_inventory.call_inventory_list")
+    def test_non_finite_quantity_preserves_last_good_inventory(
+        self,
+        inventory_call,
+    ):
+        row = mes_inventory_row(0)
+        row["amount"]["amount"] = "NaN"
+        inventory_call.return_value = {"data": {"list": [row], "total": 1}}
+
+        with self.assertRaises(CommandError):
+            call_command("fetch_inventory", stdout=StringIO(), stderr=StringIO())
+
+        self.assertEqual(
+            list(StagingInventory.objects.values_list("material_code", flat=True)),
+            ["OLD-RM"],
+        )
+        self.assertEqual(RawMaterialMESDataset.objects.count(), 0)
 
     @patch("inventory.management.commands.fetch_inventory.call_inventory_list")
     def test_later_page_failure_preserves_last_good_staging_rows(

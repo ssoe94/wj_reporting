@@ -61,7 +61,9 @@ const pageCopy = {
     allRisks: "전체 위험",
     refresh: "수동 MES 업데이트",
     refreshing: "MES 업데이트 중",
-    syncFailed: "수동 MES 업데이트를 시작하지 못했습니다. 잠시 후 다시 시도해주세요.",
+    syncStartFailed: "수동 MES 업데이트를 시작하지 못했습니다. 잠시 후 다시 시도해주세요.",
+    syncFailed: "수동 MES 업데이트에 실패했습니다.",
+    syncCooldown: "최근 MES 업데이트가 끝난 직후입니다. 서버 부하 방지를 위해 잠시 후 다시 시도해주세요.",
     syncRunning: "MES 데이터를 한 번만 수집해 새 보고서를 만드는 중입니다. 완료되면 화면이 자동으로 갱신됩니다.",
     syncComplete: "수동 MES 업데이트가 완료되어 저장된 보고서를 갱신했습니다.",
     syncQueued: "이미 실행 중인 MES 업데이트를 이어서 확인합니다.",
@@ -242,7 +244,9 @@ const pageCopy = {
     allRisks: "全部风险",
     refresh: "手动更新 MES",
     refreshing: "MES 更新中",
-    syncFailed: "无法启动手动 MES 更新，请稍后重试。",
+    syncStartFailed: "无法启动手动 MES 更新，请稍后重试。",
+    syncFailed: "手动 MES 更新失败。",
+    syncCooldown: "刚完成一次 MES 更新。为避免增加服务器负载，请稍后重试。",
     syncRunning: "正在单次采集 MES 数据并生成新报告，完成后页面会自动刷新。",
     syncComplete: "手动 MES 更新已完成，保存的报告已刷新。",
     syncQueued: "MES 更新已在运行，将继续查看其状态。",
@@ -1083,7 +1087,11 @@ function isSyncComplete(status: string) {
 }
 
 function isSyncFailed(status: string) {
-  return ["error", "failed", "failure", "cooldown"].includes(status.toLowerCase());
+  return ["error", "failed", "failure"].includes(status.toLowerCase());
+}
+
+function isSyncCooldown(status: string) {
+  return status.toLowerCase() === "cooldown";
 }
 
 export function RawMaterialManagementPage() {
@@ -1334,10 +1342,13 @@ export function RawMaterialManagementPage() {
       {overviewQuery.isLoading && !data ? <LoadingBlock label={copy.loading} /> : null}
       {overviewQuery.isError && !data ? <div className="notice notice--warning" role="alert">{copy.fetchError}</div> : null}
       {overviewQuery.isError && data ? <div className="notice notice--warning" role="alert">{copy.fetchError}</div> : null}
-      {refreshMutation.isError ? <div className="notice notice--warning" role="alert">{copy.syncFailed}</div> : null}
+      {refreshMutation.isError ? <div className="notice notice--warning" role="alert">{copy.syncStartFailed}</div> : null}
       {syncRunning ? <div className="notice notice--neutral" role="status">{copy.syncRunning}</div> : null}
       {refreshMutation.submittedAt > 0 && syncStatus && isSyncComplete(syncStatus.status) ? (
         <div className="notice notice--success" role="status">{copy.syncComplete}</div>
+      ) : null}
+      {refreshMutation.submittedAt > 0 && syncStatus && isSyncCooldown(syncStatus.status) ? (
+        <div className="notice notice--warning" role="alert">{copy.syncCooldown}</div>
       ) : null}
       {refreshMutation.submittedAt > 0 && syncStatus && isSyncFailed(syncStatus.status) ? (
         <div className="notice notice--warning" role="alert">

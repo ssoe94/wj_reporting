@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import json
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 from django.core.cache import cache
@@ -20,6 +21,8 @@ PROGRESS_CACHE_KEY = "inventory_fetch_progress"
 PROGRESS_CACHE_TTL = 600
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 BUSINESS_DAY_START_HOUR = 8
+QUANTITY_QUANTUM = Decimal("0.0001")
+MAX_QUANTITY_ABS = Decimal("10000000000000000")
 
 
 class Command(BaseCommand):
@@ -289,7 +292,7 @@ class Command(BaseCommand):
                 storage_status=str(storage_status.get("code", "")),
                 qc_status=str(qc_status.get("code", "")),
                 work_order_code=work_orders[0].get("code", ""),
-                quantity=amount.get("amount", 0),
+                quantity=cls._normalise_quantity(amount.get("amount", 0)),
                 unit=unit.get("code", ""),
                 updated_at=updated_at,
             )
@@ -312,6 +315,31 @@ class Command(BaseCommand):
             ) from None
 
         return staging_object
+
+    @staticmethod
+    def _normalise_quantity(value):
+        """Convert MES JSON numbers without carrying binary float noise."""
+        if value is None or isinstance(value, bool):
+            raise ValueError("quantity must be a finite number")
+        text = str(value).strip()
+        if not text:
+            raise ValueError("quantity must be a finite number")
+        try:
+            quantity = Decimal(text)
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError("quantity must be a finite number") from None
+        if not quantity.is_finite():
+            raise ValueError("quantity must be a finite number")
+        try:
+            quantity = quantity.quantize(
+                QUANTITY_QUANTUM,
+                rounding=ROUND_HALF_UP,
+            )
+        except InvalidOperation:
+            raise ValueError("quantity exceeds the supported precision") from None
+        if quantity.copy_abs() >= MAX_QUANTITY_ABS:
+            raise ValueError("quantity exceeds the supported precision")
+        return quantity
 
     @staticmethod
     def _optional_mapping(container, key):
