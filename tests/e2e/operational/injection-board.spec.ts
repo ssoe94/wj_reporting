@@ -6,7 +6,99 @@ import {
   installPageIssueGuard,
 } from '../helpers/operational';
 
+function createSessionJwt(expiresAt: number, tokenKind: 'access' | 'refresh') {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ exp: expiresAt, token_kind: tokenKind })}.test-signature`;
+}
+
+async function installStoredSession(page: import('@playwright/test').Page, access: string, refresh: string) {
+  await page.addInitScript(({ access, refresh }) => {
+    if (!window.localStorage.getItem('wj_next_access_token') && !window.localStorage.getItem('access_token')) {
+      window.localStorage.setItem('wj_next_access_token', access);
+      window.localStorage.setItem('access_token', access);
+    }
+    if (!window.localStorage.getItem('wj_next_refresh_token') && !window.localStorage.getItem('refresh_token')) {
+      window.localStorage.setItem('wj_next_refresh_token', refresh);
+      window.localStorage.setItem('refresh_token', refresh);
+    }
+  }, { access, refresh });
+}
+
 test.describe('injection office board', () => {
+  test('restores an expired session after a deployment-style reload', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await installOperationalApiMocks(page);
+
+    const now = Math.floor(Date.now() / 1000);
+    const expiredAccess = createSessionJwt(now - 60, 'access');
+    const renewedAccess = createSessionJwt(now + 30 * 60, 'access');
+    const originalRefresh = createSessionJwt(now + 7 * 24 * 60 * 60, 'refresh');
+    const rotatedRefresh = createSessionJwt(now + 7 * 24 * 60 * 60 + 1, 'refresh');
+    let refreshRequests = 0;
+
+    await installStoredSession(page, expiredAccess, originalRefresh);
+    await page.route('**/api/token/refresh/', async (route) => {
+      refreshRequests += 1;
+      expect(route.request().postDataJSON()).toEqual({ refresh: originalRefresh });
+      await route.fulfill({ json: { access: renewedAccess, refresh: rotatedRefresh } });
+    });
+
+    await page.goto('/production/injection-board/index.html');
+    await expect(page.locator('.injection-board__grid')).toBeVisible();
+    await expect(page).toHaveURL(/\/production\/injection-board\/index\.html$/);
+    expect(refreshRequests).toBe(1);
+    expect(await page.evaluate(() => window.localStorage.getItem('wj_next_refresh_token'))).toBe(rotatedRefresh);
+    expect(await page.evaluate(() => window.localStorage.getItem('refresh_token'))).toBe(rotatedRefresh);
+
+    await page.reload();
+    await expect(page.locator('.injection-board__grid')).toBeVisible();
+    await expect(page).toHaveURL(/\/production\/injection-board\/index\.html$/);
+    expect(refreshRequests).toBe(1);
+    guard.assertClean();
+  });
+
+  test('shares one rotated refresh across simultaneous board API 401 responses', async ({ page }) => {
+    await installOperationalApiMocks(page);
+
+    const now = Math.floor(Date.now() / 1000);
+    const originalAccess = createSessionJwt(now + 30 * 60, 'access');
+    const renewedAccess = createSessionJwt(now + 60 * 60, 'access');
+    const originalRefresh = createSessionJwt(now + 7 * 24 * 60 * 60, 'refresh');
+    const rotatedRefresh = createSessionJwt(now + 7 * 24 * 60 * 60 + 1, 'refresh');
+    let refreshRequests = 0;
+    let requestsWithOriginalAccess = 0;
+
+    await installStoredSession(page, originalAccess, originalRefresh);
+    await page.route('**/api/token/refresh/', async (route) => {
+      refreshRequests += 1;
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      await route.fulfill({ json: { access: renewedAccess, refresh: rotatedRefresh } });
+    });
+
+    for (const pattern of [
+      '**/api/production/plan-summary/**',
+      '**/api/production/status/**',
+      '**/api/injection/production-matrix/**',
+    ]) {
+      await page.route(pattern, async (route) => {
+        if (route.request().headers().authorization === `Bearer ${originalAccess}`) {
+          requestsWithOriginalAccess += 1;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          await route.fulfill({ status: 401, json: { detail: 'expired access' } });
+          return;
+        }
+        await route.fallback();
+      });
+    }
+
+    await page.goto('/production/injection-board');
+    await expect(page.locator('.injection-board__grid')).toBeVisible();
+    await expect.poll(() => requestsWithOriginalAccess).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => refreshRequests).toBe(1);
+    expect(await page.evaluate(() => window.localStorage.getItem('wj_next_access_token'))).toBe(renewedAccess);
+    expect(await page.evaluate(() => window.localStorage.getItem('wj_next_refresh_token'))).toBe(rotatedRefresh);
+  });
+
   test('keeps the previous business date until the 08:00 cutoff', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await page.clock.setFixedTime(new Date('2026-05-19T07:59:00+08:00'));

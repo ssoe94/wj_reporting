@@ -41,9 +41,17 @@ def inventory_row(
     unit="kg",
     unit_name=None,
     qc_status=1,
+    batch_no=None,
+    batch_attr_no=None,
+    supplier_batch_no=None,
+    inbound_at=None,
+    storage_location=None,
+    qr_code=None,
+    inbound_order_code=None,
 ):
-    return {
+    row = {
         "id": row_id,
+        "createdAt": int(NOW.timestamp() * 1000),
         "updatedAt": int(NOW.timestamp() * 1000),
         "material": {
             "id": material_id,
@@ -65,9 +73,30 @@ def inventory_row(
                 "id": warehouse_id,
                 "code": warehouse_code,
                 "name": warehouse_name,
-            }
+            },
+            "location": (
+                {"code": storage_location, "name": storage_location}
+                if storage_location
+                else None
+            ),
         },
     }
+    biz_key = {}
+    if batch_no:
+        biz_key["batchNo"] = batch_no
+    if supplier_batch_no:
+        biz_key["supplierBatchNo"] = supplier_batch_no
+    if inbound_at:
+        biz_key["inboundTime"] = int(inbound_at.timestamp() * 1000)
+    if biz_key:
+        row["bizKeyAttr"] = biz_key
+    if batch_attr_no:
+        row["batchNoAttr"] = {"batchNo": batch_attr_no}
+    if qr_code:
+        row["qrCode"] = qr_code
+    if inbound_order_code:
+        row["inboundOrderSimpleInfos"] = [{"code": inbound_order_code}]
+    return row
 
 
 def change_row(
@@ -79,6 +108,9 @@ def change_row(
     created_at=NOW,
     unit="kg",
     unit_name=None,
+    material_id=17000000000000002,
+    material_code="RM-001",
+    material_name="Resin",
 ):
     return {
         "id": row_id,
@@ -103,7 +135,11 @@ def change_row(
             },
             "direction": direction,
         },
-        "material": {"id": 17000000000000002, "code": "RM-001", "name": "Resin"},
+        "material": {
+            "id": material_id,
+            "code": material_code,
+            "name": material_name,
+        },
         "specification": "25kg",
         "warehouse": "原材料仓库",
         "storageLocation": "A-01",
@@ -430,6 +466,184 @@ class RawMaterialServiceTests(SimpleTestCase):
         self.assertTrue(material["recommendation_available"])
         sent_filters = change_call.call_args.kwargs
         self.assertEqual(sent_filters["warehouseIds"], [17000000000000003])
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_groups_different_material_ids_by_code_and_exposes_stock_details(
+        self, change_call
+    ):
+        change_call.return_value = {"data": {"list": [], "total": 0}}
+        first_inbound = datetime(2026, 7, 10, 9, 0, tzinfo=TZ)
+        last_inbound = datetime(2026, 7, 12, 14, 30, tzinfo=TZ)
+
+        result = build_raw_material_overview(
+            now=NOW,
+            include_stock_details=True,
+            inventory_rows_override=[
+                inventory_row(
+                    row_id=1001,
+                    material_id=501,
+                    material_code="ABS HA641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="90",
+                    qc_status=1,
+                    batch_no="LOT-A",
+                    inbound_at=first_inbound,
+                    storage_location="A-01",
+                    qr_code="QR-A",
+                    inbound_order_code="IN-1001",
+                ),
+                inventory_row(
+                    row_id=1002,
+                    material_id=502,
+                    material_code=" abs ha641 18388 ",
+                    material_name="ABS HA641 18388",
+                    amount="125",
+                    qc_status=2,
+                    batch_attr_no="LOT-B",
+                    storage_location="A-02",
+                ),
+                inventory_row(
+                    row_id=1003,
+                    material_id=503,
+                    material_code="ABS HA641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="75",
+                    qc_status=4,
+                    batch_no="LOT-C",
+                    inbound_at=last_inbound,
+                    storage_location="A-03",
+                ),
+            ],
+        )
+
+        self.assertEqual(result["summary"]["material_count"], 1)
+        self.assertEqual(result["summary"]["inventory_record_count"], 3)
+        material = result["materials"][0]
+        self.assertEqual(material["current_quantity"], 290)
+        self.assertEqual(material["usable_quantity"], 215)
+        self.assertEqual(material["restricted_quantity"], 75)
+        self.assertEqual(material["material_ids"], ["501", "502", "503"])
+        self.assertEqual(material["stock_detail_count"], 3)
+        self.assertEqual(
+            sum(detail["quantity"] for detail in material["stock_details"]),
+            material["current_quantity"],
+        )
+        self.assertEqual(
+            [detail["batch_no"] for detail in material["stock_details"]],
+            ["LOT-A", "LOT-C", "LOT-B"],
+        )
+        self.assertEqual(
+            material["stock_details"][0]["inbound_at"],
+            first_inbound.isoformat(),
+        )
+        missing_date_detail = next(
+            detail
+            for detail in material["stock_details"]
+            if detail["batch_no"] == "LOT-B"
+        )
+        self.assertIsNone(missing_date_detail["inbound_at"])
+        self.assertEqual(material["stock_details"][0]["inbound_order_numbers"], ["IN-1001"])
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_movements_with_different_material_ids_roll_up_by_code(self, change_call):
+        change_call.return_value = {
+            "data": {
+                "list": [
+                    change_row(
+                        "receive",
+                        "40",
+                        direction=True,
+                        row_id=2001,
+                        material_id=501,
+                        material_code="",
+                        material_name="ABS HA641 18388",
+                    ),
+                    change_row(
+                        "out",
+                        "15",
+                        direction=False,
+                        row_id=2002,
+                        material_id=9002,
+                        material_code="abs ha641 18388",
+                        material_name="ABS HA641 18388",
+                    ),
+                ],
+                "total": 2,
+            }
+        }
+
+        result = build_raw_material_overview(
+            now=NOW,
+            inventory_rows_override=[
+                inventory_row(
+                    row_id=1001,
+                    material_id=501,
+                    material_code="ABS HA641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="90",
+                ),
+                inventory_row(
+                    row_id=1002,
+                    material_id=502,
+                    material_code="ABS HA641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="125",
+                ),
+            ],
+        )
+
+        self.assertEqual(len(result["materials"]), 1)
+        material = result["materials"][0]
+        self.assertEqual(material["current_quantity"], 215)
+        self.assertEqual(material["inbound_quantity"], 40)
+        self.assertEqual(material["outbound_quantity"], 15)
+        self.assertEqual(material["consumption_quantity"], 15)
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_code_less_materials_keep_distinct_id_fallbacks(self, change_call):
+        change_call.return_value = {"data": {"list": [], "total": 0}}
+
+        result = build_raw_material_overview(
+            now=NOW,
+            inventory_rows_override=[
+                inventory_row(
+                    row_id=3001,
+                    material_id=7001,
+                    material_code="",
+                    material_name="Uncoded resin",
+                    amount="10",
+                ),
+                inventory_row(
+                    row_id=3002,
+                    material_id=7002,
+                    material_code="",
+                    material_name="Uncoded resin",
+                    amount="20",
+                ),
+            ],
+        )
+
+        self.assertEqual(len(result["materials"]), 2)
+        self.assertEqual(
+            sorted(row["current_quantity"] for row in result["materials"]),
+            [10, 20],
+        )
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_synthetic_zero_marker_is_not_exposed_as_current_stock_detail(
+        self, change_call
+    ):
+        change_call.return_value = {"data": {"list": [], "total": 0}}
+        marker = with_zero_stock_markers([], [inventory_row(amount="10")])[0]
+
+        result = build_raw_material_overview(
+            now=NOW,
+            inventory_rows_override=[marker],
+        )
+
+        self.assertEqual(result["materials"][0]["current_quantity"], 0)
+        self.assertEqual(result["materials"][0]["stock_detail_count"], 0)
+        self.assertEqual(result["materials"][0]["stock_details"], [])
 
     @patch("inventory.services.raw_materials.call_inventory_change_log")
     @patch("inventory.services.raw_materials.call_inventory_list")
@@ -895,6 +1109,228 @@ class RawMaterialOverviewViewTests(TestCase):
         self.assertEqual(payload["materials"][0]["quantity_change_24h"], 4)
         inventory_call.assert_not_called()
         change_call.assert_not_called()
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    @patch("inventory.services.raw_materials.call_inventory_list")
+    def test_daily_comparison_groups_by_code_when_material_ids_change(
+        self, inventory_call, change_call
+    ):
+        warehouse_id = "17000000000000003"
+        save_mes_dataset(
+            "inventory",
+            [
+                inventory_row(
+                    row_id=4101,
+                    material_id=5101,
+                    material_code="ABS HA641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="100",
+                )
+            ],
+            snapshot_date=date(2026, 7, 13),
+        )
+        save_mes_dataset(
+            "inventory",
+            [
+                inventory_row(
+                    row_id=4102,
+                    material_id=5102,
+                    material_code="ABS HA641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="60",
+                ),
+                inventory_row(
+                    row_id=4103,
+                    material_id=5103,
+                    material_code="abs ha641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="70",
+                ),
+            ],
+            snapshot_date=date(2026, 7, 14),
+        )
+        save_mes_dataset(
+            "change",
+            [],
+            warehouse_codes=("RAW",),
+            warehouse_ids=(warehouse_id,),
+            lookback_days=30,
+            range_start=datetime(2026, 6, 14, 8, 0, tzinfo=TZ),
+            range_end=datetime(2026, 7, 14, 12, 0, tzinfo=TZ),
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get("/api/inventory/raw-materials/overview/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["materials"]), 1)
+        material = payload["materials"][0]
+        self.assertEqual(material["current_quantity"], 130)
+        self.assertEqual(material["comparison_current_quantity"], 130)
+        self.assertEqual(material["previous_quantity"], 100)
+        self.assertEqual(material["quantity_change_24h"], 30)
+        self.assertEqual(material["stock_detail_count"], 2)
+        inventory_call.assert_not_called()
+        change_call.assert_not_called()
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    @patch("inventory.services.raw_materials.call_inventory_list")
+    def test_daily_comparison_maps_code_less_snapshot_row_by_material_id(
+        self, inventory_call, change_call
+    ):
+        warehouse_id = "17000000000000003"
+        save_mes_dataset(
+            "inventory",
+            [
+                inventory_row(
+                    row_id=4201,
+                    material_id=5201,
+                    material_code="",
+                    material_name="ABS HA641 18388",
+                    amount="100",
+                )
+            ],
+            snapshot_date=date(2026, 7, 13),
+        )
+        save_mes_dataset(
+            "inventory",
+            [
+                inventory_row(
+                    row_id=4202,
+                    material_id=5201,
+                    material_code="ABS HA641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="130",
+                )
+            ],
+            snapshot_date=date(2026, 7, 14),
+        )
+        save_mes_dataset(
+            "change",
+            [],
+            warehouse_codes=("RAW",),
+            warehouse_ids=(warehouse_id,),
+            lookback_days=30,
+            range_start=datetime(2026, 6, 14, 8, 0, tzinfo=TZ),
+            range_end=datetime(2026, 7, 14, 12, 0, tzinfo=TZ),
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get("/api/inventory/raw-materials/overview/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["materials"]), 1)
+        material = payload["materials"][0]
+        self.assertEqual(material["comparison_current_quantity"], 130)
+        self.assertEqual(material["previous_quantity"], 100)
+        self.assertEqual(material["quantity_change_24h"], 30)
+        inventory_call.assert_not_called()
+        change_call.assert_not_called()
+
+    def test_stock_details_are_lazy_paginated_and_use_mes_inbound_time(self):
+        first_inbound = datetime(2026, 7, 10, 9, 0, tzinfo=TZ)
+        last_inbound = datetime(2026, 7, 12, 14, 30, tzinfo=TZ)
+        save_mes_dataset(
+            "inventory",
+            [
+                inventory_row(
+                    row_id=1001,
+                    material_id=501,
+                    material_code="ABS HA641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="90",
+                    batch_no="LOT-A",
+                    inbound_at=first_inbound,
+                ),
+                inventory_row(
+                    row_id=1002,
+                    material_id=502,
+                    material_code="abs ha641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="125",
+                    batch_no="LOT-B",
+                ),
+                inventory_row(
+                    row_id=1003,
+                    material_id=503,
+                    material_code="ABS HA641 18388",
+                    material_name="ABS HA641 18388",
+                    amount="75",
+                    batch_no="LOT-C",
+                    inbound_at=last_inbound,
+                ),
+                inventory_row(
+                    row_id=1004,
+                    material_id=504,
+                    material_code="OTHER-001",
+                    material_name="Other",
+                    amount="999",
+                    batch_no="OTHER",
+                ),
+            ],
+            snapshot_date=date(2026, 7, 14),
+        )
+        self.client.force_authenticate(self.user)
+
+        overview_response = self.client.get("/api/inventory/raw-materials/overview/")
+        self.assertEqual(overview_response.status_code, 200)
+        grouped = next(
+            row
+            for row in overview_response.json()["materials"]
+            if row["material_code"] == "ABS HA641 18388"
+        )
+        self.assertEqual(grouped["stock_detail_count"], 3)
+        self.assertEqual(grouped["stock_details"], [])
+
+        first_page = self.client.get(
+            "/api/inventory/raw-materials/details/",
+            {
+                "group_key": grouped["group_key"],
+                "unit": "kg",
+                "page": 1,
+                "page_size": 2,
+            },
+        )
+        self.assertEqual(first_page.status_code, 200)
+        first_payload = first_page.json()
+        self.assertEqual(first_payload["stock_detail_count"], 3)
+        self.assertEqual(first_payload["total_quantity"], 290)
+        self.assertEqual(first_payload["total_pages"], 2)
+        self.assertEqual(
+            [row["batch_no"] for row in first_payload["stock_details"]],
+            ["LOT-A", "LOT-C"],
+        )
+        self.assertEqual(
+            first_payload["stock_details"][0]["inbound_at"],
+            first_inbound.isoformat(),
+        )
+
+        second_page = self.client.get(
+            "/api/inventory/raw-materials/details/",
+            {
+                "group_key": grouped["group_key"],
+                "unit": "kg",
+                "page": 2,
+                "page_size": 2,
+            },
+        )
+        self.assertEqual(second_page.status_code, 200)
+        second_payload = second_page.json()
+        self.assertEqual(
+            [row["batch_no"] for row in second_payload["stock_details"]],
+            ["LOT-B"],
+        )
+        self.assertIsNone(second_payload["stock_details"][0]["inbound_at"])
+
+    def test_stock_details_endpoint_requires_authentication_and_group_key(self):
+        response = self.client.get("/api/inventory/raw-materials/details/")
+        self.assertEqual(response.status_code, 401)
+        self.client.force_authenticate(self.user)
+        response = self.client.get("/api/inventory/raw-materials/details/")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("group_key", response.json()["error"])
 
     def test_rejects_out_of_range_lookback(self):
         self.client.force_authenticate(self.user)

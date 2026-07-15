@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Factory, History } from "lucide-react";
+import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
 import {
   getInjectionProductionMatrix,
   getInjectionProductionMatrixForDate,
@@ -553,7 +554,7 @@ function useReloadOnNewBuild() {
         const commit = String(build.commit ?? "").trim();
         if (!active || !commit || commit === "local") return;
         if (loadedCommit && loadedCommit !== commit) {
-          window.location.reload();
+          await reloadAfterAuthRefreshSettles();
           return;
         }
         loadedCommit = commit;

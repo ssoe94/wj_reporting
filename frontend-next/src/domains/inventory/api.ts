@@ -52,8 +52,45 @@ export type RawMaterialTrendPoint = {
 
 export type RawMaterialRisk = "critical" | "warning" | "healthy" | "no_usage" | "unknown";
 
-export type RawMaterialRow = {
+export type RawMaterialStockDetail = {
+  inventoryId: string;
   materialId: string;
+  quantity: number;
+  unit: string;
+  batchNo: string;
+  supplierBatchNo: string;
+  inboundAt: string;
+  qcStatusCode: number | null;
+  qcStatusLabel: string;
+  storageLocation: string;
+  warehouseName: string;
+  qrCode: string;
+  inboundOrderNumbers: string[];
+  updatedAt: string;
+};
+
+export type RawMaterialStockDetails = {
+  groupKey: string;
+  unit: string;
+  stockDetailCount: number;
+  totalQuantity: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  stockDetails: RawMaterialStockDetail[];
+};
+
+export type RawMaterialStockDetailsParams = {
+  groupKey: string;
+  unit: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type RawMaterialRow = {
+  groupKey: string;
+  materialId: string;
+  materialIds: string[];
   materialCode: string;
   materialName: string;
   specification: string;
@@ -82,6 +119,7 @@ export type RawMaterialRow = {
   risk: RawMaterialRisk;
   recommendationAvailable: boolean;
   recommendationStatus: string;
+  stockDetailCount: number;
 };
 
 export type RawMaterialTransaction = {
@@ -346,6 +384,34 @@ function mergeTrendValues(rows: RawMaterialTrendValue[]) {
   return Array.from(byUnit.values());
 }
 
+function normalizeStockDetail(value: unknown, index: number): RawMaterialStockDetail {
+  const row = asRecord(value);
+  const inventoryId = asString(
+    pick(row, "inventory_id", "inventoryId", "id"),
+    `stock-detail-${index + 1}`,
+  );
+  return {
+    inventoryId,
+    materialId: asString(pick(row, "material_id", "materialId")),
+    quantity: asNumber(pick(row, "quantity", "current_quantity", "currentQuantity", "amount")),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
+    batchNo: asString(pick(row, "batch_no", "batchNo", "batch")),
+    supplierBatchNo: asString(pick(row, "supplier_batch_no", "supplierBatchNo")),
+    // Only the MES 入厂日期 field is accepted. Inventory-row createdAt is not
+    // a trustworthy receipt-date fallback.
+    inboundAt: asString(pick(row, "inbound_at", "inboundAt", "inbound_time", "inboundTime")),
+    qcStatusCode: asNullableNumber(pick(row, "qc_status_code", "qcStatusCode")),
+    qcStatusLabel: asString(pick(row, "qc_status_label", "qcStatusLabel")),
+    storageLocation: asString(pick(row, "storage_location", "storageLocation")),
+    warehouseName: asString(pick(row, "warehouse_name", "warehouseName")),
+    qrCode: asString(pick(row, "qr_code", "qrCode")),
+    inboundOrderNumbers: asArray(
+      pick(row, "inbound_order_numbers", "inboundOrderNumbers"),
+    ).map((item) => asString(item)).filter(Boolean),
+    updatedAt: asString(pick(row, "updated_at", "updatedAt")),
+  };
+}
+
 function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
   const row = asRecord(value);
   const currentQuantity = asNumber(pick(row, "current_quantity", "currentQuantity", "current", "quantity"));
@@ -358,8 +424,18 @@ function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
   const rawCover = pick(row, "days_of_cover", "daysOfCover", "coverage_days");
   const parsedCover = rawCover === null || rawCover === undefined || rawCover === "" ? null : asNumber(rawCover, Number.NaN);
   const materialCode = asString(pick(row, "material_code", "materialCode", "code"), `material-${index + 1}`);
+  const legacyStockDetails = asArray(
+    pick(row, "stock_details", "stockDetails", "inventory_details", "inventoryDetails"),
+  );
   return {
+    groupKey: asString(
+      pick(row, "group_key", "groupKey"),
+      `code:${materialCode.toLocaleLowerCase()}`,
+    ),
     materialId: asString(pick(row, "material_id", "materialId", "id"), materialCode),
+    materialIds: asArray(pick(row, "material_ids", "materialIds"))
+      .map((item) => asString(item))
+      .filter(Boolean),
     materialCode,
     materialName: asString(pick(row, "material_name", "materialName", "name"), materialCode),
     specification: asString(pick(row, "specification", "spec", "material_spec")),
@@ -394,6 +470,37 @@ function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
     recommendationStatus: asString(
       pick(row, "recommendation_status", "recommendationStatus"),
     ),
+    stockDetailCount: asNumber(
+      pick(row, "stock_detail_count", "stockDetailCount", "detail_count", "detailCount"),
+      legacyStockDetails.length,
+    ),
+  };
+}
+
+function normalizeRawMaterialStockDetails(payload: unknown): RawMaterialStockDetails {
+  const root = asRecord(payload);
+  const stockDetails = asArray(
+    pick(root, "stock_details", "stockDetails", "details", "items", "rows"),
+  ).map(normalizeStockDetail);
+  const stockDetailCount = asNumber(
+    pick(root, "stock_detail_count", "stockDetailCount", "detail_count", "detailCount", "count", "total"),
+    stockDetails.length,
+  );
+  return {
+    groupKey: asString(pick(root, "group_key", "groupKey")),
+    unit: normalizeRawMaterialUnit(pick(root, "unit", "unit_name", "unitName")),
+    stockDetailCount,
+    totalQuantity: asNumber(
+      pick(root, "total_quantity", "totalQuantity", "quantity", "current_quantity", "currentQuantity"),
+      stockDetails.reduce((total, detail) => total + detail.quantity, 0),
+    ),
+    page: Math.max(1, asNumber(pick(root, "page", "page_number", "pageNumber"), 1)),
+    pageSize: Math.max(
+      1,
+      asNumber(pick(root, "page_size", "pageSize", "limit"), Math.max(stockDetails.length, 1)),
+    ),
+    totalPages: Math.max(1, asNumber(pick(root, "total_pages", "totalPages"), 1)),
+    stockDetails,
   };
 }
 
@@ -555,6 +662,20 @@ export async function getRawMaterialOverview(params: RawMaterialOverviewParams):
     },
   });
   return normalizeRawMaterialOverview(response.data);
+}
+
+export async function getRawMaterialStockDetails(
+  params: RawMaterialStockDetailsParams,
+): Promise<RawMaterialStockDetails> {
+  const response = await http.get("/inventory/raw-materials/details/", {
+    params: {
+      group_key: params.groupKey,
+      unit: params.unit,
+      page: params.page ?? 1,
+      page_size: params.pageSize ?? 100,
+    },
+  });
+  return normalizeRawMaterialStockDetails(response.data);
 }
 
 function asNullableNumber(value: unknown): number | null {

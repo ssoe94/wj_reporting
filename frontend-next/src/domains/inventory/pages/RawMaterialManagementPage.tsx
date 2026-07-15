@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowRight,
   ArrowUp,
   CalendarClock,
+  ChevronDown,
+  ChevronRight,
   Clock3,
   RefreshCw,
   Search,
@@ -13,11 +15,13 @@ import {
 } from "lucide-react";
 import {
   getRawMaterialOverview,
+  getRawMaterialStockDetails,
   getRawMaterialSyncStatus,
   startRawMaterialSync,
   type RawMaterialOverview,
   type RawMaterialRisk,
   type RawMaterialRow,
+  type RawMaterialStockDetail,
   type RawMaterialTransaction,
   type RawMaterialTrendPoint,
   type RawMaterialWarningDetail,
@@ -129,7 +133,7 @@ const pageCopy = {
     sufficient: "여유",
     inventoryEyebrow: "원재료 상세",
     inventoryTitle: "원재료 재고 현황",
-    inventoryHint: "원료명·번호별 저장 현재고와 08:00 일일 24시간 변화, 기간 추정 소요를 비교합니다. 열 제목을 눌러 정렬할 수 있습니다.",
+    inventoryHint: "같은 원료 코드는 한 행으로 합산합니다. 행을 누르면 배치·개별 수량·입고일을 확인할 수 있고, 열 제목으로 정렬할 수 있습니다.",
     change24h: "24시간 변화",
     comparisonEyebrow: "일일 재고 비교",
     comparisonTitle: "24시간 재고 변화",
@@ -152,6 +156,29 @@ const pageCopy = {
     noMaterials: "선택한 조건에 맞는 원재료가 없습니다.",
     noUsageCover: "사용 이력 없음",
     rows: "건",
+    stockDetails: "현재고 상세",
+    stockDetailsHint: "MES 재고 명세 원본을 배치·위치별로 표시합니다.",
+    stockDetailTotal: "상세 합계",
+    openStockDetails: "재고 상세 펼치기",
+    closeStockDetails: "재고 상세 접기",
+    inboundDate: "입고일(입장일)",
+    batchAndId: "배치 / 식별코드",
+    qcStatus: "QC 상태",
+    storageLocation: "보관 위치",
+    inboundDocument: "입고 문서",
+    supplierBatch: "공급자 배치",
+    qrCode: "식별코드",
+    qcAccepted: "합격",
+    qcConcession: "양보 합격",
+    qcPending: "검사 대기",
+    qcRejected: "불합격",
+    qcTemporary: "임시 제한",
+    qcUnknown: "미분류",
+    stockDetailsLoading: "재고 상세를 불러오는 중입니다.",
+    stockDetailsError: "재고 상세를 불러오지 못했습니다.",
+    stockDetailsRetry: "다시 시도",
+    noStockDetails: "표시할 재고 상세가 없습니다.",
+    stockDetailsTruncated: "전체 {total}건 중 첫 {shown}건을 표시합니다.",
     movementsEyebrow: "최근 재고 변동",
     movementsTitle: "최근 입출고 기록",
     movementsHint: "MES 재고 변동 기록을 최신 순서로 표시합니다.",
@@ -287,7 +314,7 @@ const pageCopy = {
     sufficient: "充足",
     inventoryEyebrow: "原材料明细",
     inventoryTitle: "原材料库存明细",
-    inventoryHint: "按原料名称或编码比较已保存当前库存、08:00 日报的 24 小时变化和期间估算消耗。点击列标题可排序。",
+    inventoryHint: "相同物料编号合并为一行。点击行可查看批次、单笔数量和入厂日期，点击列标题可排序。",
     change24h: "24 小时变化",
     comparisonEyebrow: "每日库存对比",
     comparisonTitle: "24 小时库存变化",
@@ -310,6 +337,29 @@ const pageCopy = {
     noMaterials: "没有符合所选条件的原材料。",
     noUsageCover: "无消耗记录",
     rows: "条",
+    stockDetails: "当前库存明细",
+    stockDetailsHint: "按批次与库位显示 MES 库存明细原始记录。",
+    stockDetailTotal: "明细合计",
+    openStockDetails: "展开库存明细",
+    closeStockDetails: "收起库存明细",
+    inboundDate: "入库日（入厂日期）",
+    batchAndId: "批次 / 标识码",
+    qcStatus: "QC 状态",
+    storageLocation: "库位",
+    inboundDocument: "入库单",
+    supplierBatch: "供应商批次",
+    qrCode: "标识码",
+    qcAccepted: "合格",
+    qcConcession: "让步合格",
+    qcPending: "待检",
+    qcRejected: "不合格",
+    qcTemporary: "暂控",
+    qcUnknown: "未分类",
+    stockDetailsLoading: "正在读取库存明细。",
+    stockDetailsError: "无法读取库存明细。",
+    stockDetailsRetry: "重试",
+    noStockDetails: "没有可显示的库存明细。",
+    stockDetailsTruncated: "共 {total} 条，当前显示前 {shown} 条。",
     movementsEyebrow: "最近库存变动",
     movementsTitle: "最近出入库记录",
     movementsHint: "按最新时间显示 MES 库存变动记录。",
@@ -540,6 +590,148 @@ function dateTime(value: string, language: AppLanguage, fallback: string) {
     minute: "2-digit",
     hour12: false,
   }).format(parsed);
+}
+
+function dateOnly(value: string, language: AppLanguage, fallback: string) {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  return new Intl.DateTimeFormat(language === "ko" ? "ko-KR" : "zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
+}
+
+function stockQcInfo(detail: RawMaterialStockDetail, copy: Copy) {
+  if (detail.qcStatusCode === 1) return { label: copy.qcAccepted, tone: "usable" };
+  if (detail.qcStatusCode === 2) return { label: copy.qcConcession, tone: "usable" };
+  if (detail.qcStatusCode === 3) return { label: copy.qcPending, tone: "pending" };
+  if (detail.qcStatusCode === 4) return { label: copy.qcRejected, tone: "restricted" };
+  if (detail.qcStatusCode === 5) return { label: copy.qcTemporary, tone: "restricted" };
+  return { label: copy.qcUnknown, tone: "unknown" };
+}
+
+function RawMaterialStockDetailPanel({
+  copy,
+  detailId,
+  language,
+  row,
+  snapshotVersion,
+}: {
+  copy: Copy;
+  detailId: string;
+  language: AppLanguage;
+  row: RawMaterialRow;
+  snapshotVersion: string;
+}) {
+  const detailsQuery = useQuery({
+    queryKey: [
+      "inventory",
+      "raw-material-stock-details",
+      row.groupKey,
+      row.unit,
+      snapshotVersion,
+    ],
+    queryFn: () => getRawMaterialStockDetails({
+      groupKey: row.groupKey,
+      unit: row.unit,
+      page: 1,
+      pageSize: 100,
+    }),
+    retry: 1,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const details = detailsQuery.data?.stockDetails ?? [];
+  const totalQuantity = detailsQuery.data?.totalQuantity ?? row.currentQuantity;
+  const truncatedMessage = copy.stockDetailsTruncated
+    .replace("{total}", quantity(detailsQuery.data?.stockDetailCount ?? row.stockDetailCount, language))
+    .replace("{shown}", quantity(details.length, language));
+
+  return (
+    <tr className="raw-inventory-detail-row">
+      <td colSpan={11}>
+        <div
+          aria-label={`${row.materialName} ${copy.stockDetails}`}
+          className="raw-stock-detail-panel"
+          id={detailId}
+          role="region"
+        >
+          <div className="raw-stock-detail-header">
+            <div>
+              <strong>{copy.stockDetails}</strong>
+              <span>{copy.stockDetailsHint}</span>
+            </div>
+            <span>{copy.stockDetailTotal} <strong>{quantity(totalQuantity, language)} {row.unit}</strong></span>
+          </div>
+          {detailsQuery.isPending ? (
+            <div aria-live="polite" className="raw-stock-detail-state" role="status">
+              <RefreshCw aria-hidden="true" className="raw-spin" size={15} />
+              <span>{copy.stockDetailsLoading}</span>
+            </div>
+          ) : detailsQuery.isError ? (
+            <div className="raw-stock-detail-state raw-stock-detail-state--error" role="alert">
+              <span>{copy.stockDetailsError}</span>
+              <button
+                className="button button--ghost"
+                onClick={() => { void detailsQuery.refetch(); }}
+                type="button"
+              >
+                {copy.stockDetailsRetry}
+              </button>
+            </div>
+          ) : details.length ? (
+            <>
+              {detailsQuery.data && detailsQuery.data.totalPages > 1 ? (
+                <p className="raw-stock-detail-truncated" role="status">{truncatedMessage}</p>
+              ) : null}
+              <div className="raw-stock-detail-table" role="table">
+                <div className="raw-stock-detail-grid raw-stock-detail-grid--head" role="row">
+                  <span role="columnheader">{copy.inboundDate}</span>
+                  <span role="columnheader">{copy.batchAndId}</span>
+                  <span role="columnheader">{copy.current}</span>
+                  <span role="columnheader">{copy.qcStatus}</span>
+                  <span role="columnheader">{copy.storageLocation}</span>
+                  <span role="columnheader">{copy.inboundDocument}</span>
+                </div>
+                <div role="rowgroup">
+                  {details.map((detail) => {
+                    const qc = stockQcInfo(detail, copy);
+                    const detailMeta = [
+                      detail.supplierBatchNo ? `${copy.supplierBatch} ${detail.supplierBatchNo}` : "",
+                      detail.qrCode ? `${copy.qrCode} ${detail.qrCode}` : "",
+                    ].filter(Boolean).join(" · ");
+                    return (
+                      <div className="raw-stock-detail-grid" key={detail.inventoryId} role="row">
+                        <span data-label={copy.inboundDate} role="cell" className={detail.inboundAt ? "" : "raw-stock-detail--missing"}>
+                          {dateOnly(detail.inboundAt, language, copy.notCollected)}
+                        </span>
+                        <span data-label={copy.batchAndId} role="cell">
+                          <strong>{detail.batchNo || "-"}</strong>
+                          {detailMeta ? <small>{detailMeta}</small> : null}
+                        </span>
+                        <span data-label={copy.current} role="cell">
+                          <strong>{quantity(detail.quantity, language)}</strong> <small>{row.unit}</small>
+                        </span>
+                        <span data-label={copy.qcStatus} role="cell">
+                          <span className={`raw-stock-qc raw-stock-qc--${qc.tone}`}>{qc.label}</span>
+                        </span>
+                        <span data-label={copy.storageLocation} role="cell">{detail.storageLocation || copy.notCollected}</span>
+                        <span data-label={copy.inboundDocument} role="cell">{detail.inboundOrderNumbers.join(", ") || copy.notCollected}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="raw-stock-detail-state" role="status">{copy.noStockDetails}</div>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
 }
 
 function freshness(value: string) {
@@ -906,6 +1098,9 @@ export function RawMaterialManagementPage() {
   const [risk, setRisk] = useState<RawMaterialRisk | "all">("all");
   const [sort, setSort] = useState<SortState>({ key: "risk", direction: "asc" });
   const [pageIndex, setPageIndex] = useState(0);
+  const [expandedStockRows, setExpandedStockRows] = useState<Set<string>>(
+    () => new Set(),
+  );
   const handledSyncRef = useRef("");
 
   const queryKey = ["inventory", "raw-material-overview", "raw-material-warehouse", lookback, lead, review] as const;
@@ -928,12 +1123,16 @@ export function RawMaterialManagementPage() {
   const syncStatus = syncQuery.data ?? refreshMutation.data;
   const syncRunning = Boolean(syncStatus && isSyncActive(syncStatus.status));
   const data: RawMaterialOverview | undefined = overviewQuery.data;
+  const detailSnapshotVersion = data?.meta.snapshotSyncedAt
+    || data?.meta.inventorySourceLatestAt
+    || "current";
   useEffect(() => {
     if (!syncStatus || !isSyncComplete(syncStatus.status)) return;
     const completedKey = syncStatus.finishedAt || syncStatus.updatedAt;
     if (!completedKey || handledSyncRef.current === completedKey) return;
     handledSyncRef.current = completedKey;
     void queryClient.invalidateQueries({ queryKey: ["inventory", "raw-material-overview"] });
+    void queryClient.invalidateQueries({ queryKey: ["inventory", "raw-material-stock-details"] });
   }, [queryClient, syncStatus]);
   const unitRows = useMemo(
     () => (data?.materials ?? []).filter((row) => row.unit === RAW_MATERIAL_UNIT),
@@ -997,6 +1196,15 @@ export function RawMaterialManagementPage() {
   const pageRows = filteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
   useEffect(() => { setPageIndex(0); }, [search, risk, sort]);
   useEffect(() => { setPageIndex((current) => Math.min(current, pageCount - 1)); }, [pageCount]);
+
+  const toggleStockRow = (rowKey: string) => {
+    setExpandedStockRows((current) => {
+      const next = new Set(current);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
+      return next;
+    });
+  };
 
   const summary = data?.summary.quantities.find((row) => row.unit === unit);
   const currentQuantity = summary?.current ?? 0;
@@ -1413,27 +1621,67 @@ export function RawMaterialManagementPage() {
                       {pageRows.map((row, index) => {
                         const rowRisk = recommendationsAvailable ? effectiveRisk(row, lead, review) : "unknown";
                         const rowRecommendationAvailable = recommendationsAvailable && row.recommendationAvailable;
+                        const rowKey = `${row.groupKey}:${row.unit}`;
+                        const hasStockDetails = row.stockDetailCount > 0;
+                        const stockDetailsExpanded = hasStockDetails && expandedStockRows.has(rowKey);
+                        const stockDetailId = `raw-stock-detail-${pageIndex}-${index}`;
                         return (
-                          <tr key={`${row.materialId}-${row.warehouseCode}-${row.unit}-${index}`}>
-                            <td><strong>{row.materialName}</strong><span>{row.materialCode} · {row.specification || "-"}</span></td>
-                            <td>
-                              <span className={`raw-risk-chip raw-risk-chip--${rowRisk}`}>{riskLabel(rowRisk, copy)}</span>
-                              <span>{rowRecommendationAvailable
-                                ? row.daysOfCover === null ? copy.noUsageCover : `${quantity(row.daysOfCover, language)} ${copy.days}`
-                                : copy.notCalculated}</span>
-                            </td>
-                            <td>{quantity(row.currentQuantity, language)} <small>{unit}</small></td>
-                            <td className={row.quantityChange24h === null ? "" : row.quantityChange24h > 0 ? "raw-number--in" : row.quantityChange24h < 0 ? "raw-number--out" : ""}>
-                              {row.quantityChange24h === null ? copy.notCalculated : `${row.quantityChange24h > 0 ? "+" : ""}${quantity(row.quantityChange24h, language)}`}
-                            </td>
-                            <td><strong>{quantity(row.usableQuantity, language)}</strong><span>{copy.restricted} {quantity(row.restrictedQuantity, language)} · {copy.unclassified} {quantity(row.unclassifiedQuantity, language)}</span></td>
-                            <td className={movementAvailable ? "raw-number--in" : ""}>{movementAvailable ? `+${quantity(Math.abs(row.inboundQuantity), language)}` : copy.notCollected}</td>
-                            <td>{movementAvailable ? quantity(row.consumptionQuantity, language) : copy.notCollected}</td>
-                            <td className={movementAvailable ? "raw-number--out" : ""}>{movementAvailable ? quantity(row.transferOutQuantity, language) : copy.notCollected}</td>
-                            <td>{movementAvailable ? quantity(row.averageDailyConsumption, language) : copy.notCollected}</td>
-                            <td><strong>{rowRecommendationAvailable ? quantity(row.reorderPoint, language) : movementAvailable ? copy.notCalculated : copy.notCollected}</strong><span>{copy.targetStock} {rowRecommendationAvailable ? quantity(row.targetStock, language) : movementAvailable ? copy.notCalculated : copy.notCollected}</span></td>
-                            <td><strong>{rowRecommendationAvailable ? quantity(row.recommendedOrder, language) : movementAvailable ? copy.notCalculated : copy.notCollected}</strong></td>
-                          </tr>
+                          <Fragment key={rowKey}>
+                            <tr
+                              className={`raw-inventory-summary-row${hasStockDetails ? " raw-inventory-summary-row--expandable" : ""}${stockDetailsExpanded ? " is-expanded" : ""}`}
+                              onClick={hasStockDetails ? () => toggleStockRow(rowKey) : undefined}
+                            >
+                              <td>
+                                <button
+                                  aria-controls={hasStockDetails ? stockDetailId : undefined}
+                                  aria-expanded={hasStockDetails ? stockDetailsExpanded : undefined}
+                                  aria-label={`${row.materialName} · ${stockDetailsExpanded ? copy.closeStockDetails : copy.openStockDetails}`}
+                                  className="raw-material-toggle"
+                                  disabled={!hasStockDetails}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (hasStockDetails) toggleStockRow(rowKey);
+                                  }}
+                                  type="button"
+                                >
+                                  <span className="raw-material-toggle__icon" aria-hidden="true">
+                                    {stockDetailsExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                                  </span>
+                                  <span className="raw-material-toggle__label">
+                                    <strong>{row.materialName}</strong>
+                                    <span>{row.materialCode} · {row.specification || "-"}</span>
+                                  </span>
+                                  <span className="raw-stock-detail-count">{row.stockDetailCount} {copy.rows}</span>
+                                </button>
+                              </td>
+                              <td>
+                                <span className={`raw-risk-chip raw-risk-chip--${rowRisk}`}>{riskLabel(rowRisk, copy)}</span>
+                                <span>{rowRecommendationAvailable
+                                  ? row.daysOfCover === null ? copy.noUsageCover : `${quantity(row.daysOfCover, language)} ${copy.days}`
+                                  : copy.notCalculated}</span>
+                              </td>
+                              <td>{quantity(row.currentQuantity, language)} <small>{unit}</small></td>
+                              <td className={row.quantityChange24h === null ? "" : row.quantityChange24h > 0 ? "raw-number--in" : row.quantityChange24h < 0 ? "raw-number--out" : ""}>
+                                {row.quantityChange24h === null ? copy.notCalculated : `${row.quantityChange24h > 0 ? "+" : ""}${quantity(row.quantityChange24h, language)}`}
+                              </td>
+                              <td><strong>{quantity(row.usableQuantity, language)}</strong><span>{copy.restricted} {quantity(row.restrictedQuantity, language)} · {copy.unclassified} {quantity(row.unclassifiedQuantity, language)}</span></td>
+                              <td className={movementAvailable ? "raw-number--in" : ""}>{movementAvailable ? `+${quantity(Math.abs(row.inboundQuantity), language)}` : copy.notCollected}</td>
+                              <td>{movementAvailable ? quantity(row.consumptionQuantity, language) : copy.notCollected}</td>
+                              <td className={movementAvailable ? "raw-number--out" : ""}>{movementAvailable ? quantity(row.transferOutQuantity, language) : copy.notCollected}</td>
+                              <td>{movementAvailable ? quantity(row.averageDailyConsumption, language) : copy.notCollected}</td>
+                              <td><strong>{rowRecommendationAvailable ? quantity(row.reorderPoint, language) : movementAvailable ? copy.notCalculated : copy.notCollected}</strong><span>{copy.targetStock} {rowRecommendationAvailable ? quantity(row.targetStock, language) : movementAvailable ? copy.notCalculated : copy.notCollected}</span></td>
+                              <td><strong>{rowRecommendationAvailable ? quantity(row.recommendedOrder, language) : movementAvailable ? copy.notCalculated : copy.notCollected}</strong></td>
+                            </tr>
+                            {stockDetailsExpanded ? (
+                              <RawMaterialStockDetailPanel
+                                copy={copy}
+                                detailId={stockDetailId}
+                                language={language}
+                                row={row}
+                                snapshotVersion={detailSnapshotVersion}
+                              />
+                            ) : null}
+                          </Fragment>
                         );
                       })}
                     </tbody>

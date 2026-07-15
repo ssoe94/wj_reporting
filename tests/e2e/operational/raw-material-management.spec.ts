@@ -27,7 +27,7 @@ const rawMaterialOverview = {
     assumptions: ['최근 출고량을 사용량으로 간주합니다.'],
     recommendations_available: true,
     sources: {
-      inventory_detail: { status: 'ok', cached: false, record_count: 3 },
+      inventory_detail: { status: 'ok', cached: false, record_count: 6 },
       inventory_change_log: { status: 'ok', cached: false, record_count: 5 },
     },
     warning_details: [
@@ -45,19 +45,19 @@ const rawMaterialOverview = {
   ],
   units: ['UN001'],
   summary: {
-    material_count: 2,
-    inventory_record_count: 2,
+    material_count: 3,
+    inventory_record_count: 5,
     reorder_count: 1,
     critical_count: 1,
     watch_count: 0,
     quantities: [
       {
         unit: 'UN001',
-        current: 5830,
-        previous_current: 6030,
+        current: 6120,
+        previous_current: 6320,
         change_24h: -200,
-        usable: 5400,
-        restricted: 430,
+        usable: 5615,
+        restricted: 505,
         unclassified: 0,
         inbound: 2400,
         outbound: 3060,
@@ -73,35 +73,67 @@ const rawMaterialOverview = {
     {
       date: '2026-07-10',
       values: [
-        { unit: 'UN001', inbound: 800, outbound: 920, consumption: 860, transfer_out: 60, adjustment: -60, net_change: -120, estimated_closing_stock: 6370 },
+        { unit: 'UN001', inbound: 800, outbound: 920, consumption: 860, transfer_out: 60, adjustment: -60, net_change: -120, estimated_closing_stock: 6660 },
       ],
     },
     {
       date: '2026-07-11',
       values: [
-        { unit: 'UN001', inbound: 0, outbound: 680, consumption: 640, transfer_out: 40, adjustment: -40, net_change: -680, estimated_closing_stock: 5690 },
+        { unit: 'UN001', inbound: 0, outbound: 680, consumption: 640, transfer_out: 40, adjustment: -40, net_change: -680, estimated_closing_stock: 5980 },
       ],
     },
     {
       date: '2026-07-12',
       values: [
-        { unit: 'UN001', inbound: 1000, outbound: 740, consumption: 700, transfer_out: 40, adjustment: -40, net_change: 260, estimated_closing_stock: 5950 },
+        { unit: 'UN001', inbound: 1000, outbound: 740, consumption: 700, transfer_out: 40, adjustment: -40, net_change: 260, estimated_closing_stock: 6240 },
       ],
     },
     {
       date: '2026-07-13',
       values: [
-        { unit: 'UN001', inbound: 0, outbound: 420, consumption: 400, transfer_out: 20, adjustment: -20, net_change: -420, estimated_closing_stock: 5530 },
+        { unit: 'UN001', inbound: 0, outbound: 420, consumption: 400, transfer_out: 20, adjustment: -20, net_change: -420, estimated_closing_stock: 5820 },
       ],
     },
     {
       date: '2026-07-14',
       values: [
-        { unit: 'UN001', inbound: 600, outbound: 300, consumption: 280, transfer_out: 20, adjustment: -20, net_change: 300, estimated_closing_stock: 5830 },
+        { unit: 'UN001', inbound: 600, outbound: 300, consumption: 280, transfer_out: 20, adjustment: -20, net_change: 300, estimated_closing_stock: 6120 },
       ],
     },
   ],
   materials: [
+    {
+      group_key: 'code:abs ha641 18388',
+      material_id: 'material-abs-ha641-01',
+      material_ids: ['material-abs-ha641-01', 'material-abs-ha641-02', 'material-abs-ha641-03'],
+      material_code: 'ABS HA641 18388',
+      material_name: 'ABS HA641 18388',
+      specification: 'Natural',
+      warehouse_code: 'RM-01',
+      warehouse_name: '원재료 창고',
+      unit: 'kg',
+      current_quantity: 290,
+      previous_quantity: 290,
+      quantity_change_24h: 0,
+      usable_quantity: 215,
+      previous_usable_quantity: 215,
+      usable_change_24h: 0,
+      restricted_quantity: 75,
+      unclassified_quantity: 0,
+      inbound_quantity: 0,
+      outbound_quantity: 0,
+      consumption_quantity: 0,
+      transfer_out_quantity: 0,
+      avg_daily_consumption: 0,
+      safety_stock: 0,
+      reorder_point: 0,
+      target_stock: 0,
+      recommended_order: 0,
+      days_of_cover: null,
+      risk: 'no_usage',
+      recommendation_available: true,
+      stock_detail_count: 3,
+    },
     {
       material_code: 'ABS-HF380-BK',
       material_name: 'ABS HF380 Black',
@@ -218,17 +250,79 @@ const rawMaterialOverview = {
   ],
 };
 
+const rawMaterialDetails = {
+  group_key: 'code:abs ha641 18388',
+  unit: 'kg',
+  stock_detail_count: 3,
+  total_quantity: 290,
+  page: 1,
+  page_size: 100,
+  total_pages: 1,
+  stock_details: [
+    {
+      inventory_id: 'inventory-ha641-a',
+      material_id: 'material-abs-ha641-01',
+      quantity: 90,
+      unit: 'kg',
+      batch_no: 'LOT-A',
+      supplier_batch_no: 'SUP-A',
+      inbound_at: '2026-07-10T09:00:00+08:00',
+      qc_status_code: 1,
+      qc_status_label: '合格',
+      storage_location: 'A-01',
+      qr_code: 'QR-A',
+      inbound_order_numbers: ['IN-1001'],
+    },
+    {
+      inventory_id: 'inventory-ha641-c',
+      material_id: 'material-abs-ha641-03',
+      quantity: 75,
+      unit: 'kg',
+      batch_no: 'LOT-C',
+      inbound_at: '2026-07-12T14:30:00+08:00',
+      qc_status_code: 4,
+      qc_status_label: '不合格',
+      storage_location: 'A-03',
+      inbound_order_numbers: ['IN-1003'],
+    },
+    {
+      inventory_id: 'inventory-ha641-b',
+      material_id: 'material-abs-ha641-02',
+      quantity: 125,
+      unit: 'kg',
+      batch_no: 'LOT-B',
+      supplier_batch_no: '',
+      inbound_at: null,
+      qc_status_code: 2,
+      qc_status_label: '让步合格',
+      storage_location: 'A-02',
+      qr_code: 'QR-B',
+      inbound_order_numbers: [],
+    },
+  ],
+};
+
 test.describe('raw material management operational scenario', () => {
   test('shows a fixed raw-material kg dashboard with localized warnings and manual sync', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installDevSession(page, 'ko');
     let overviewRequests = 0;
+    let detailRequests = 0;
     let syncStarted = false;
     let syncStatusRequests = 0;
 
     await page.route(/\/api\/inventory\/raw-materials\/overview\/(?:\?.*)?$/, async (route) => {
       overviewRequests += 1;
       await route.fulfill({ json: rawMaterialOverview });
+    });
+    await page.route(/\/api\/inventory\/raw-materials\/details\/(?:\?.*)?$/, async (route) => {
+      detailRequests += 1;
+      const requestUrl = new URL(route.request().url());
+      expect(requestUrl.searchParams.get('group_key')).toBe('code:abs ha641 18388');
+      expect(requestUrl.searchParams.get('unit')).toBe('kg');
+      expect(requestUrl.searchParams.get('page')).toBe('1');
+      expect(requestUrl.searchParams.get('page_size')).toBe('100');
+      await route.fulfill({ json: rawMaterialDetails });
     });
     await page.route(/\/api\/inventory\/raw-materials\/sync\/(?:\?.*)?$/, async (route) => {
       if (route.request().method() === 'POST') {
@@ -285,10 +379,41 @@ test.describe('raw material management operational scenario', () => {
     await expect(page.getByText('생산 출고(추정 소요)', { exact: true })).toBeVisible();
     await expect(page.getByText('이동 출고', { exact: true }).first()).toBeVisible();
 
-    const tables = page.getByRole('table');
+    const materialSearch = page.getByRole('searchbox', { name: '원재료 검색' });
+    await materialSearch.fill('LOT-A');
+    await expect(page.getByText('선택한 조건에 맞는 원재료가 없습니다.', { exact: true })).toBeVisible();
+    expect(detailRequests).toBe(0);
+    await materialSearch.clear();
+
+    const inventoryTable = page.locator('.raw-inventory-table');
+    const groupedRow = inventoryTable.locator('tbody tr.raw-inventory-summary-row').filter({ hasText: 'ABS HA641 18388' });
+    await expect(groupedRow).toHaveCount(1);
+    await expect(groupedRow).toContainText('290');
+    expect(detailRequests).toBe(0);
+    const detailToggle = groupedRow.getByRole('button', { name: /ABS HA641 18388 · 재고 상세 펼치기/ });
+    await expect(detailToggle).toHaveAttribute('aria-expanded', 'false');
+    await groupedRow.locator('td').nth(2).click();
+    await expect(groupedRow.getByRole('button', { name: /ABS HA641 18388 · 재고 상세 접기/ })).toHaveAttribute('aria-expanded', 'true');
+    const detailPanel = page.getByRole('region', { name: 'ABS HA641 18388 현재고 상세' });
+    await expect(detailPanel).toBeVisible();
+    await expect.poll(() => detailRequests).toBe(1);
+    await expect(detailPanel).toContainText('상세 합계 290 kg');
+    await expect(detailPanel).toContainText('LOT-A');
+    await expect(detailPanel).toContainText('LOT-B');
+    await expect(detailPanel).toContainText('LOT-C');
+    await expect(detailPanel).toContainText(/2026.*07.*10/);
+    await expect(detailPanel).toContainText('미수집');
+    await groupedRow.locator('td').nth(2).click();
+    await expect(detailPanel).toHaveCount(0);
+    await groupedRow.locator('td').nth(2).click();
+    await expect(page.getByRole('region', { name: 'ABS HA641 18388 현재고 상세' })).toBeVisible();
+    expect(detailRequests).toBe(1);
+    await groupedRow.locator('td').nth(2).click();
+
+    const tables = page.locator('table.raw-table');
     await expect(tables).toHaveCount(2);
-    await expect(tables.first()).toContainText('1,500');
-    await expect(tables.last()).toContainText('300');
+    await expect(inventoryTable).toContainText('1,500');
+    await expect(page.locator('.raw-movement-table')).toContainText('300');
     await expect(page.locator('.raw-material-page svg')).not.toHaveCount(0);
 
     await page.getByRole('button', { name: '수동 MES 업데이트' }).click();
@@ -300,6 +425,10 @@ test.describe('raw material management operational scenario', () => {
     await expect(page.getByRole('heading', { name: '原材料管理', exact: true })).toBeVisible();
     await expect(page.getByRole('alert')).toContainText('非 kg 库存（L）已从合计和分析中排除（1 条）。');
     await expect(page.getByRole('combobox', { name: '数量单位' })).toHaveCount(0);
+    const chineseGroupedRow = page.locator('.raw-inventory-table tbody tr.raw-inventory-summary-row').filter({ hasText: 'ABS HA641 18388' });
+    await chineseGroupedRow.locator('td').nth(2).click();
+    await expect(page.getByRole('region', { name: 'ABS HA641 18388 当前库存明细' })).toContainText('未采集');
+    await expect.poll(() => detailRequests).toBeGreaterThan(1);
 
     expect(overviewRequests).toBeGreaterThan(0);
     expect(syncStatusRequests).toBeGreaterThan(1);

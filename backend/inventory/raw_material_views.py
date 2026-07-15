@@ -12,7 +12,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from inventory.models import RawMaterialSyncState
-from inventory.services.raw_materials import build_raw_material_overview
+from inventory.services.raw_materials import (
+    CANONICAL_RAW_MATERIAL_UNIT,
+    build_raw_material_overview,
+    build_raw_material_stock_detail_page,
+)
 from inventory.services.raw_material_sync import (
     claim_raw_material_sync,
     fail_claimed_raw_material_sync,
@@ -39,7 +43,23 @@ def _overview_cache_key(parameters: dict) -> str:
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    return f"raw-materials:stored-overview:v2:{digest}"
+    return f"raw-materials:stored-overview:v4:{digest}"
+
+
+def _stock_detail_cache_key(parameters: dict) -> str:
+    sync_updated_at = (
+        RawMaterialSyncState.objects.filter(pk=RawMaterialSyncState.SINGLETON_PK)
+        .values_list("updated_at", flat=True)
+        .first()
+    )
+    payload = {
+        **parameters,
+        "sync_updated_at": sync_updated_at.isoformat() if sync_updated_at else None,
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return f"raw-materials:stored-stock-details:v1:{digest}"
 
 
 def _bounded_int(query_params, key: str, default: int, minimum: int, maximum: int) -> int:
@@ -93,6 +113,52 @@ class RawMaterialOverviewView(APIView):
         return response
 
 
+class RawMaterialStockDetailView(APIView):
+    """Return one bounded detail page from the latest saved inventory."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        group_key = str(request.query_params.get("group_key") or "").strip()
+        unit = str(
+            request.query_params.get("unit") or CANONICAL_RAW_MATERIAL_UNIT
+        ).strip()
+        if not group_key or len(group_key) > 300:
+            return Response(
+                {"error": "group_key is required and must be at most 300 characters."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if unit.casefold() != CANONICAL_RAW_MATERIAL_UNIT:
+            return Response(
+                {"error": "unit must be kg."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            page = _bounded_int(request.query_params, "page", 1, 1, 100_000)
+            page_size = _bounded_int(
+                request.query_params, "page_size", 100, 1, 200
+            )
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        parameters = {
+            "group_key": group_key,
+            "unit": CANONICAL_RAW_MATERIAL_UNIT,
+            "page": page,
+            "page_size": page_size,
+        }
+        cache_key = _stock_detail_cache_key(parameters)
+        payload = cache.get(cache_key)
+        if not isinstance(payload, dict):
+            payload = build_raw_material_stock_detail_page(**parameters)
+            cache.set(cache_key, payload, OVERVIEW_CACHE_SECONDS)
+        response = Response(payload)
+        response["Cache-Control"] = "private, no-store"
+        response["Pragma"] = "no-cache"
+        return response
+
+
 class RawMaterialSyncView(APIView):
     """Start one exceptional background sync or return its durable status."""
 
@@ -125,4 +191,8 @@ class RawMaterialSyncView(APIView):
         return Response(sync_state, status=status.HTTP_202_ACCEPTED)
 
 
-__all__ = ["RawMaterialOverviewView", "RawMaterialSyncView"]
+__all__ = [
+    "RawMaterialOverviewView",
+    "RawMaterialStockDetailView",
+    "RawMaterialSyncView",
+]

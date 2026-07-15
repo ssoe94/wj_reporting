@@ -1,6 +1,10 @@
 from django.urls import path
 from . import views
-from .raw_material_views import RawMaterialOverviewView, RawMaterialSyncView
+from .raw_material_views import (
+    RawMaterialOverviewView,
+    RawMaterialStockDetailView,
+    RawMaterialSyncView,
+)
 
 
 def finished_goods_transactions_view(request, *args, **kwargs):
@@ -26,6 +30,7 @@ urlpatterns = [
     path('email/status/', views.email_status, name='email_status'),
     path('warehouses/', views.WarehouseListView.as_view(), name='warehouse_list'),
     path('raw-materials/overview/', RawMaterialOverviewView.as_view(), name='raw_material_overview'),
+    path('raw-materials/details/', RawMaterialStockDetailView.as_view(), name='raw_material_stock_details'),
     path('raw-materials/sync/', RawMaterialSyncView.as_view(), name='raw_material_sync'),
     path('finished-goods/transactions/', finished_goods_transactions_view, name='finished_goods_transactions'),
     

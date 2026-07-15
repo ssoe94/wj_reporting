@@ -599,13 +599,18 @@ def _base_response(
 
 
 def _material_seed(
-    material: dict[str, Any], unit: str, warehouse: dict[str, str]
+    material: dict[str, Any],
+    unit: str,
+    warehouse: dict[str, str],
+    group_key: str,
 ) -> dict[str, Any]:
     return {
+        "group_key": group_key,
         "material_id": _text(material.get("id")),
-        "material_code": _text(material.get("code")),
-        "material_name": _text(material.get("name")),
-        "specification": _text(material.get("specification")),
+        "material_ids": set(filter(None, [_text(material.get("id"))])),
+        "material_code": _normalised_label(material.get("code")),
+        "material_name": _normalised_label(material.get("name")),
+        "specification": _normalised_label(material.get("specification")),
         "unit": unit,
         "current": Decimal("0"),
         "usable_current": Decimal("0"),
@@ -625,20 +630,269 @@ def _material_seed(
         "warehouse_names": set(filter(None, [warehouse.get("name")])),
         "last_updated": None,
         "recommendation_issues": set(),
+        "stock_detail_count": 0,
+        "stock_details": [],
     }
 
 
 def _material_key(
-    material: dict[str, Any], unit: str, *, fallback: Any = None
+    material: dict[str, Any],
+    unit: str,
+    *,
+    fallback: Any = None,
+    material_id_aliases: dict[tuple[str, str], tuple[str, str]] | None = None,
 ) -> tuple[str, str]:
-    identity = _text(
-        material.get("id")
-        or material.get("code")
-        or material.get("name")
-        or fallback
-        or "unidentified"
-    )
+    code = _normalised_label(material.get("code"))
+    material_id = _normalised_label(material.get("id"))
+    name = _normalised_label(material.get("name"))
+    fallback_value = _normalised_label(fallback)
+    if code:
+        identity = f"code:{code.casefold()}"
+        key = (identity, unit)
+        if material_id and material_id_aliases is not None:
+            material_id_aliases.setdefault((material_id.casefold(), unit), key)
+        return key
+    if material_id and material_id_aliases is not None:
+        alias = material_id_aliases.get((material_id.casefold(), unit))
+        if alias is not None:
+            return alias
+    if material_id:
+        identity = f"id:{material_id}"
+    elif name:
+        identity = f"name:{name.casefold()}"
+    else:
+        identity = f"fallback:{fallback_value or 'unidentified'}"
     return identity, unit
+
+
+def _register_material_alias(
+    material: dict[str, Any],
+    unit: str,
+    material_id_aliases: dict[tuple[str, str], tuple[str, str]],
+) -> None:
+    """Relate code-less MES rows to a code-bearing row for the same material id."""
+    code = _normalised_label(material.get("code"))
+    material_id = _normalised_label(material.get("id"))
+    if code and material_id:
+        material_id_aliases.setdefault(
+            (material_id.casefold(), unit),
+            (f"code:{code.casefold()}", unit),
+        )
+
+
+def _merge_material_metadata(entry: dict[str, Any], material: dict[str, Any]) -> None:
+    """Keep a representative label while retaining every MES material id."""
+    material_id = _text(material.get("id")).strip()
+    if material_id:
+        entry["material_ids"].add(material_id)
+        if not entry["material_id"]:
+            entry["material_id"] = material_id
+    for target, source in (
+        ("material_code", "code"),
+        ("material_name", "name"),
+        ("specification", "specification"),
+    ):
+        value = _normalised_label(material.get(source))
+        if value and not entry[target]:
+            entry[target] = value
+
+
+def _document_codes(value: Any) -> list[str]:
+    rows = value if isinstance(value, list) else []
+    result: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        code = _text(row.get("code")).strip()
+        if code and code not in result:
+            result.append(code)
+    return result
+
+
+def _inventory_stock_detail(
+    row: dict[str, Any],
+    material: dict[str, Any],
+    unit: str,
+    warehouse: dict[str, str],
+    quantity: Decimal,
+) -> dict[str, Any]:
+    """Return the bounded current-stock detail exposed by the dashboard API."""
+    biz_key = row.get("bizKeyAttr") or {}
+    biz_key = biz_key if isinstance(biz_key, dict) else {}
+    batch_attr = row.get("batchNoAttr") or {}
+    batch_attr = batch_attr if isinstance(batch_attr, dict) else {}
+    location_detail = row.get("storageLocationDetail") or {}
+    location_detail = location_detail if isinstance(location_detail, dict) else {}
+    location = location_detail.get("location") or {}
+    location = location if isinstance(location, dict) else {}
+    area = location_detail.get("area") or {}
+    area = area if isinstance(area, dict) else {}
+    location_parts: list[str] = []
+    for item in (area, location):
+        label = _text(item.get("name") or item.get("code")).strip()
+        if label and label not in location_parts:
+            location_parts.append(label)
+    if not location_parts:
+        fallback_location = _text(row.get("storageLocation")).strip()
+        if fallback_location:
+            location_parts.append(fallback_location)
+
+    qc_status = row.get("qcStatus") or {}
+    qc_status = qc_status if isinstance(qc_status, dict) else {}
+    return {
+        "inventory_id": _text(row.get("id")),
+        "material_id": _text(material.get("id")),
+        "quantity": _number(quantity),
+        "unit": unit,
+        "batch_no": _text(
+            biz_key.get("batchNo")
+            or batch_attr.get("batchNo")
+            or row.get("batchNo")
+        ).strip(),
+        "supplier_batch_no": _text(
+            biz_key.get("supplierBatchNo")
+            or batch_attr.get("supplierBatch")
+        ).strip(),
+        "inbound_at": _iso_from_ms(biz_key.get("inboundTime")),
+        "qc_status_code": _qc_status_code(row),
+        "qc_status_label": _text(
+            qc_status.get("message")
+            or qc_status.get("name")
+            or qc_status.get("desc")
+        ).strip(),
+        "storage_location": " / ".join(location_parts),
+        "warehouse_name": warehouse.get("name", ""),
+        "qr_code": _text(row.get("qrCode")).strip(),
+        "inbound_order_numbers": _document_codes(
+            row.get("inboundOrderSimpleInfos")
+        ),
+        "updated_at": _iso_from_ms(row.get("updatedAt")),
+    }
+
+
+def build_raw_material_stock_detail_page(
+    *,
+    group_key: str,
+    unit: str = CANONICAL_RAW_MATERIAL_UNIT,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict[str, Any]:
+    """Read one grouped stock-detail page from the saved MES inventory only."""
+    target_group_key = _normalised_label(group_key)
+    target_unit = _unit({"unit": unit}) or _normalised_label(unit)
+    if target_unit != CANONICAL_RAW_MATERIAL_UNIT:
+        return {
+            "group_key": target_group_key,
+            "unit": target_unit,
+            "stock_detail_count": 0,
+            "total_quantity": 0.0,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": 0,
+            "stock_details": [],
+        }
+
+    stored_inventory = load_inventory_dataset()
+    if stored_inventory is not None:
+        inventory_rows = stored_inventory.rows
+        snapshot_synced_at = stored_inventory.refreshed_at.isoformat()
+    else:
+        inventory_rows, staging_latest = load_staging_inventory_rows()
+        snapshot_synced_at = (
+            staging_latest.isoformat()
+            if isinstance(staging_latest, datetime)
+            else None
+        )
+
+    options = _discover_warehouses(inventory_rows)
+    selected = [row for row in options if row["is_raw_material_candidate"]]
+    selected_codes = {row["code"] for row in selected}
+    selected_names = {row["name"] for row in selected if row["name"]}
+    selected_ids = {row["id"] for row in selected if row["id"]}
+
+    selected_inventory: list[dict[str, Any]] = []
+    selected_inventory_ids: set[str] = set()
+    for row in inventory_rows:
+        warehouse = _warehouse_from_inventory(row)
+        if not (
+            warehouse["code"] in selected_codes
+            or (
+                _normalised_label(warehouse["name"])
+                == RAW_MATERIAL_WAREHOUSE_NAME
+                and RAW_MATERIAL_WAREHOUSE_NAME in selected_names
+            )
+            or warehouse["id"] in selected_ids
+        ):
+            continue
+        row_id = _text(row.get("id")).strip()
+        if row_id and row_id in selected_inventory_ids:
+            continue
+        if row_id:
+            selected_inventory_ids.add(row_id)
+        selected_inventory.append(row)
+
+    material_id_aliases: dict[tuple[str, str], tuple[str, str]] = {}
+    for row in selected_inventory:
+        material = row.get("material") or {}
+        material = material if isinstance(material, dict) else {}
+        amount = row.get("amount") or {}
+        amount = amount if isinstance(amount, dict) else {}
+        row_unit = _unit(amount) or CANONICAL_RAW_MATERIAL_UNIT
+        if row_unit == CANONICAL_RAW_MATERIAL_UNIT:
+            _register_material_alias(material, row_unit, material_id_aliases)
+
+    details: list[dict[str, Any]] = []
+    total_quantity = Decimal("0")
+    for row in selected_inventory:
+        if row.get("syntheticZero"):
+            continue
+        material = row.get("material") or {}
+        material = material if isinstance(material, dict) else {}
+        amount = row.get("amount") or {}
+        amount = amount if isinstance(amount, dict) else {}
+        row_unit = _unit(amount) or CANONICAL_RAW_MATERIAL_UNIT
+        if row_unit != target_unit:
+            continue
+        key = _material_key(
+            material,
+            row_unit,
+            fallback=row.get("id"),
+            material_id_aliases=material_id_aliases,
+        )
+        if key[0] != target_group_key:
+            continue
+        quantity = _optional_decimal(amount.get("amount"))
+        if quantity is None:
+            continue
+        warehouse = _warehouse_from_inventory(row)
+        total_quantity += quantity
+        details.append(
+            _inventory_stock_detail(row, material, row_unit, warehouse, quantity)
+        )
+
+    details.sort(
+        key=lambda detail: (
+            detail["inbound_at"] is None,
+            detail["inbound_at"] or "",
+            detail["batch_no"],
+            detail["inventory_id"],
+        )
+    )
+    count = len(details)
+    total_pages = math.ceil(count / page_size) if count else 0
+    start = (page - 1) * page_size
+    end = start + page_size
+    return {
+        "group_key": target_group_key,
+        "unit": target_unit,
+        "stock_detail_count": count,
+        "total_quantity": _number(total_quantity),
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "snapshot_synced_at": snapshot_synced_at,
+        "stock_details": details[start:end],
+    }
 
 
 def _later_iso(current: str | None, candidate: str | None) -> str | None:
@@ -672,6 +926,7 @@ def build_raw_material_overview(
     persist_inventory: bool = True,
     inventory_rows_override: Iterable[dict[str, Any]] | None = None,
     change_rows_output: list[dict[str, Any]] | None = None,
+    include_stock_details: bool = False,
 ) -> dict[str, Any]:
     """Build the response contract consumed by the raw-material dashboard."""
     now = now or datetime.now(tz=SHANGHAI)
@@ -917,6 +1172,7 @@ def build_raw_material_overview(
 
     selected_id_set = set(selected_ids)
     selected_inventory = []
+    selected_inventory_ids: set[str] = set()
     for row in inventory_rows:
         warehouse = _warehouse_from_inventory(row)
         if (
@@ -928,8 +1184,22 @@ def build_raw_material_overview(
             )
             or warehouse["id"] in selected_id_set
         ):
+            row_id = _text(row.get("id")).strip()
+            if row_id and row_id in selected_inventory_ids:
+                continue
+            if row_id:
+                selected_inventory_ids.add(row_id)
             selected_inventory.append(row)
     materials: dict[tuple[str, str], dict[str, Any]] = {}
+    material_id_aliases: dict[tuple[str, str], tuple[str, str]] = {}
+    for row in selected_inventory:
+        material = row.get("material") or {}
+        material = material if isinstance(material, dict) else {}
+        amount = row.get("amount") or {}
+        amount = amount if isinstance(amount, dict) else {}
+        alias_unit = _unit(amount) or CANONICAL_RAW_MATERIAL_UNIT
+        if alias_unit == CANONICAL_RAW_MATERIAL_UNIT:
+            _register_material_alias(material, alias_unit, material_id_aliases)
     unknown_qc_statuses: set[str] = set()
     missing_unit_counts: dict[str, int] = defaultdict(int)
     unexpected_units_by_source: dict[str, dict[str, int]] = defaultdict(
@@ -951,8 +1221,16 @@ def build_raw_material_overview(
             unexpected_units_by_source["inventory_detail"][unit] += 1
             continue
         warehouse = _warehouse_from_inventory(row)
-        key = _material_key(material, unit, fallback=row.get("id"))
-        entry = materials.setdefault(key, _material_seed(material, unit, warehouse))
+        key = _material_key(
+            material,
+            unit,
+            fallback=row.get("id"),
+            material_id_aliases=material_id_aliases,
+        )
+        entry = materials.setdefault(
+            key, _material_seed(material, unit, warehouse, key[0])
+        )
+        _merge_material_metadata(entry, material)
         current_amount = _optional_decimal(amount.get("amount"))
         if current_amount is None:
             invalid_inventory_quantity_count += 1
@@ -964,6 +1242,18 @@ def build_raw_material_overview(
             continue
         included_inventory_rows.append(row)
         entry["current"] += current_amount
+        if not row.get("syntheticZero"):
+            entry["stock_detail_count"] += 1
+            if include_stock_details:
+                entry["stock_details"].append(
+                    _inventory_stock_detail(
+                        row,
+                        material,
+                        unit,
+                        warehouse,
+                        current_amount,
+                    )
+                )
         qc_status = _qc_status_code(row)
         if qc_status in USABLE_QC_STATUSES:
             entry["usable_current"] += current_amount
@@ -1015,6 +1305,30 @@ def build_raw_material_overview(
             response["meta"]["comparison_available"] = True
             response["meta"]["comparison_start_at"] = comparison_start.isoformat()
             response["meta"]["comparison_end_at"] = comparison_end.isoformat()
+            # Build aliases before aggregation so a code-less row that appears
+            # earlier in either snapshot still joins its code-bearing material.
+            for snapshot in (current_snapshot, previous_snapshot):
+                for row in snapshot.rows:
+                    warehouse = _warehouse_from_inventory(row)
+                    if not (
+                        warehouse["code"] in selected_codes
+                        or (
+                            _normalised_label(warehouse["name"])
+                            == RAW_MATERIAL_WAREHOUSE_NAME
+                            and RAW_MATERIAL_WAREHOUSE_NAME in selected_names
+                        )
+                        or warehouse["id"] in selected_id_set
+                    ):
+                        continue
+                    material = row.get("material") or {}
+                    material = material if isinstance(material, dict) else {}
+                    amount = row.get("amount") or {}
+                    amount = amount if isinstance(amount, dict) else {}
+                    alias_unit = _unit(amount) or CANONICAL_RAW_MATERIAL_UNIT
+                    if alias_unit == CANONICAL_RAW_MATERIAL_UNIT:
+                        _register_material_alias(
+                            material, alias_unit, material_id_aliases
+                        )
             for snapshot, quantity_field, usable_field in (
                 (
                     current_snapshot,
@@ -1049,10 +1363,16 @@ def build_raw_material_overview(
                     elif unit != CANONICAL_RAW_MATERIAL_UNIT:
                         unexpected_units_by_source["inventory_history"][unit] += 1
                         continue
-                    key = _material_key(material, unit, fallback=row.get("id"))
-                    entry = materials.setdefault(
-                        key, _material_seed(material, unit, warehouse)
+                    key = _material_key(
+                        material,
+                        unit,
+                        fallback=row.get("id"),
+                        material_id_aliases=material_id_aliases,
                     )
+                    entry = materials.setdefault(
+                        key, _material_seed(material, unit, warehouse, key[0])
+                    )
+                    _merge_material_metadata(entry, material)
                     if entry[quantity_field] is None:
                         entry[quantity_field] = Decimal("0")
                         entry[usable_field] = Decimal("0")
@@ -1250,6 +1570,22 @@ def build_raw_material_overview(
         change_rows_output.clear()
         change_rows_output.extend(change_rows)
 
+    # Movement payloads occasionally omit material.code while retaining the
+    # MES material id. Register all code-bearing rows first so order does not
+    # determine whether those records split away from the current-stock group.
+    for row in change_rows:
+        material = row.get("material") or {}
+        material = material if isinstance(material, dict) else {}
+        amount_info = row.get("amount") or {}
+        amount_info = amount_info if isinstance(amount_info, dict) else {}
+        changed = amount_info.get("amount") or {}
+        changed = changed if isinstance(changed, dict) else {}
+        after = amount_info.get("afterAmount") or {}
+        after = after if isinstance(after, dict) else {}
+        alias_unit = _unit(changed) or _unit(after) or CANONICAL_RAW_MATERIAL_UNIT
+        if alias_unit == CANONICAL_RAW_MATERIAL_UNIT:
+            _register_material_alias(material, alias_unit, material_id_aliases)
+
     warehouse_code_by_name = {row["name"]: row["code"] for row in selected if row["name"]}
     trend_values: dict[str, dict[str, dict[str, Decimal]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(Decimal))
@@ -1331,12 +1667,18 @@ def build_raw_material_overview(
         in_statistics_window = statistics_start <= day_date <= statistics_end
 
         warehouse = {"code": warehouse_code, "name": warehouse_name}
-        key = _material_key(material, unit, fallback=row.get("id"))
+        key = _material_key(
+            material,
+            unit,
+            fallback=row.get("id"),
+            material_id_aliases=material_id_aliases,
+        )
         transaction_material = dict(material)
         transaction_material.setdefault("specification", row.get("specification"))
         entry = materials.setdefault(
-            key, _material_seed(transaction_material, unit, warehouse)
+            key, _material_seed(transaction_material, unit, warehouse, key[0])
         )
+        _merge_material_metadata(entry, transaction_material)
         entry["warehouse_codes"].add(warehouse_code)
         entry["warehouse_names"].add(warehouse_name)
         entry["last_updated"] = _later_iso(entry["last_updated"], created_at)
@@ -1572,7 +1914,9 @@ def build_raw_material_overview(
             risk = "unknown"
         material_rows.append(
             {
+                "group_key": entry["group_key"],
                 "material_id": entry["material_id"],
+                "material_ids": sorted(entry["material_ids"]),
                 "material_code": entry["material_code"],
                 "material_name": entry["material_name"],
                 "specification": entry["specification"],
@@ -1638,6 +1982,16 @@ def build_raw_material_overview(
                 "warehouse_codes": sorted(filter(None, entry["warehouse_codes"])),
                 "warehouse_names": sorted(filter(None, entry["warehouse_names"])),
                 "last_updated": entry["last_updated"],
+                "stock_detail_count": entry["stock_detail_count"],
+                "stock_details": sorted(
+                    entry["stock_details"],
+                    key=lambda detail: (
+                        detail["inbound_at"] is None,
+                        detail["inbound_at"] or "",
+                        detail["batch_no"],
+                        detail["inventory_id"],
+                    ),
+                ),
             }
         )
     material_rows.sort(
@@ -1794,4 +2148,9 @@ def build_raw_material_overview(
     return response
 
 
-__all__ = ["build_raw_material_overview", "with_zero_stock_markers"]
+__all__ = [
+    "CANONICAL_RAW_MATERIAL_UNIT",
+    "build_raw_material_overview",
+    "build_raw_material_stock_detail_page",
+    "with_zero_stock_markers",
+]
