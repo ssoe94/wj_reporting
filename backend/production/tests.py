@@ -956,6 +956,129 @@ class InjectionAllocationContractTests(DjangoTestCase):
         self.assertEqual(machine['parts'][0]['actual_quantity'], 40)
         self.assertEqual(machine['parts'][1]['actual_quantity'], 40)
 
+    def test_repeated_grouped_cavity_occurrences_allocate_shots_in_sequence(self):
+        target_date = datetime(2026, 7, 4).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 7, 4, 8, 0))
+
+        for sequence, (part_no, lot_no) in enumerate([
+            ('PAIR-A', 'A1'),
+            ('PAIR-B', 'B1'),
+            ('PAIR-A', 'A2'),
+            ('PAIR-B', 'B2'),
+        ], start=1):
+            ProductionPlan.objects.create(
+                plan_date=target_date,
+                plan_type='injection',
+                machine_name='850T-1',
+                part_no=part_no,
+                lot_no=lot_no,
+                model_name='Repeated Pair',
+                planned_quantity=100,
+                sequence=sequence,
+            )
+
+        for part_no in ['PAIR-A', 'PAIR-B']:
+            ProductionPartCavity.objects.create(
+                part_no=part_no,
+                cavity=2,
+                cavity_pattern='2x2',
+                parts_per_shot=2,
+                cavity_group='PAIR-A+PAIR-B',
+            )
+
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start - timedelta(minutes=1),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start + timedelta(minutes=10),
+            capacity=160,
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machine = response.json()['injection'][0]
+        self.assertEqual(machine['total_planned'], 400)
+        self.assertEqual(machine['total_actual'], 240)
+        self.assertEqual(
+            [part['actual_quantity'] for part in machine['parts']],
+            [100, 100, 20, 20],
+        )
+        self.assertEqual(
+            [part['progress'] for part in machine['parts']],
+            [100.0, 100.0, 20.0, 20.0],
+        )
+
+        summary = get_injection_summary(target_date)
+        summary_row = summary['machine_rows'][0]
+        self.assertEqual(summary_row['planned_qty'], 400)
+        self.assertEqual(summary_row['actual_qty'], 240)
+        self.assertEqual(
+            [part['estimated_qty'] for part in summary_row['parts']],
+            [100, 100, 20, 20],
+        )
+        self.assertEqual(
+            [part['status'] for part in summary_row['parts']],
+            ['completed', 'completed', 'in_progress', 'in_progress'],
+        )
+
+    def test_grouped_cavity_does_not_pair_later_lot_when_parallel_part_is_missing(self):
+        target_date = datetime(2026, 7, 5).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 7, 5, 8, 0))
+
+        for sequence, lot_no in enumerate(['A1', 'A2'], start=1):
+            ProductionPlan.objects.create(
+                plan_date=target_date,
+                plan_type='injection',
+                machine_name='850T-1',
+                part_no='PAIR-A',
+                lot_no=lot_no,
+                model_name='Incomplete Pair',
+                planned_quantity=100,
+                sequence=sequence,
+            )
+
+        ProductionPartCavity.objects.create(
+            part_no='PAIR-A',
+            cavity=2,
+            cavity_pattern='2x2',
+            parts_per_shot=2,
+            cavity_group='PAIR-A+PAIR-B',
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start - timedelta(minutes=1),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start + timedelta(minutes=10),
+            capacity=110,
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machine = response.json()['injection'][0]
+        self.assertEqual(machine['total_actual'], 20)
+        self.assertEqual(
+            [part['actual_quantity'] for part in machine['parts']],
+            [20, 0],
+        )
+
     def test_status_api_does_not_count_first_cumulative_value_without_baseline(self):
         target_date = datetime(2026, 5, 18).date()
         tz = pytz.timezone('Asia/Shanghai')

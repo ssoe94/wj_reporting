@@ -365,14 +365,51 @@ function buildPlanAllocationGroups(records: ProductionPlanRecord[]) {
     const partsPerShot = getRecordPartsPerShot(record);
     let memberIndexes = [index];
     if (groupKey && partsPerShot > 1) {
-      memberIndexes = records
+      const candidateIndexes = records
         .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
         .filter(({ candidate, candidateIndex }) => (
-          !consumed.has(candidateIndex)
+          candidateIndex >= index
+          && !consumed.has(candidateIndex)
           && getRecordCavityGroup(candidate) === groupKey
+          && getRecordPartsPerShot(candidate) === partsPerShot
         ))
         .map(({ candidateIndex }) => candidateIndex);
-      if (memberIndexes.length <= 1) memberIndexes = [index];
+
+      // A cavity group may repeat later for another LOT. Keep each physical
+      // parts-per-shot occurrence separate so later plan rows do not receive
+      // the same shots as the active occurrence.
+      const selectedIndexes = [index];
+      const selectedParts = new Set([normalizeComparableCode(record.part_no)]);
+      const expectedParts = groupKey
+        .split("+")
+        .map((value) => normalizeComparableCode(value))
+        .filter(Boolean);
+
+      expectedParts.forEach((expectedPart) => {
+        if (selectedIndexes.length >= partsPerShot || selectedParts.has(expectedPart)) return;
+        const matchIndex = candidateIndexes.find((candidateIndex) => (
+          !selectedIndexes.includes(candidateIndex)
+          && normalizeComparableCode(records[candidateIndex]?.part_no) === expectedPart
+        ));
+        if (matchIndex !== undefined) {
+          selectedIndexes.push(matchIndex);
+          selectedParts.add(expectedPart);
+        }
+      });
+
+      candidateIndexes.forEach((candidateIndex) => {
+        if (selectedIndexes.length >= partsPerShot) return;
+        const candidatePart = normalizeComparableCode(records[candidateIndex]?.part_no);
+        if (selectedIndexes.includes(candidateIndex) || selectedParts.has(candidatePart)) return;
+        selectedIndexes.push(candidateIndex);
+        selectedParts.add(candidatePart);
+      });
+
+      // If a declared parallel part is missing, keep the anchor independent.
+      // A same-part row here is a later LOT, not a simultaneous cavity member.
+      memberIndexes = selectedIndexes.length === partsPerShot
+        ? selectedIndexes.sort((left, right) => left - right)
+        : [index];
     }
 
     const members = memberIndexes.map((memberIndex) => {
@@ -516,6 +553,9 @@ function allocateQuantitiesByTransitionSignals(
   if (!transitionAnalysis || records.length === 0) return null;
   const allocations = Array.from({ length: records.length }, () => 0);
   const transitions = getEquipmentTransitionEvents(transitionAnalysis, machineKey);
+  if (transitions.length === 0 || buildPlanAllocationGroups(records).some((group) => group.members.length > 1)) {
+    return null;
+  }
   let activeIndex = 0;
   let remainingQty = Math.max(0, totalQty);
 
@@ -553,6 +593,9 @@ function allocateShotsByTransitionSignals(
   if (!transitionAnalysis || records.length === 0) return null;
   const allocations = Array.from({ length: records.length }, () => 0);
   const transitions = getEquipmentTransitionEvents(transitionAnalysis, machineKey);
+  if (transitions.length === 0 || buildPlanAllocationGroups(records).some((group) => group.members.length > 1)) {
+    return null;
+  }
   let activeIndex = 0;
   let remainingShots = Math.max(0, totalShots);
 
