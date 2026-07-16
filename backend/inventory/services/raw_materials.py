@@ -77,6 +77,19 @@ ACTION_LABELS = {
     "attr_adjust": "속성 조정",
 }
 
+MATERIAL_FAMILY_ORDER = ("pp", "abs", "pc_abs", "pc", "other")
+MATERIAL_FAMILY_PATTERNS = (
+    (
+        "pc_abs",
+        re.compile(r"^(?:PC[\s/+_-]*ABS|ABS[\s/+_-]*PC)"),
+    ),
+    # Keep live PP grades such as ``PPAPIT30BK01`` while excluding distinct
+    # engineering resins (PPS/PPE/PPO and separator/digit based PPA grades).
+    ("pp", re.compile(r"^PP(?!(?:S|E|O)|A(?:$|[\s/+_\d-]))")),
+    ("abs", re.compile(r"^(?:MABS|ABS)")),
+    ("pc", re.compile(r"^PC")),
+)
+
 
 def _optional_decimal(value: Any) -> Decimal | None:
     if value in (None, ""):
@@ -104,6 +117,27 @@ def _text(value: Any) -> str:
 
 def _normalised_label(value: Any) -> str:
     return unicodedata.normalize("NFKC", _text(value)).strip()
+
+
+def _material_family_from_label(value: Any) -> str:
+    label = _normalised_label(value).upper()
+    for family, pattern in MATERIAL_FAMILY_PATTERNS:
+        if pattern.search(label):
+            return family
+    return "other"
+
+
+def _material_family(material_code: Any, material_name: Any) -> str:
+    """Use the MES name first and keep conflicting explicit families uncertain."""
+    name_family = _material_family_from_label(material_name)
+    code_family = _material_family_from_label(material_code)
+    if (
+        name_family != "other"
+        and code_family != "other"
+        and name_family != code_family
+    ):
+        return "other"
+    return name_family if name_family != "other" else code_family
 
 
 def _unit(amount: Any) -> str:
@@ -529,6 +563,7 @@ def _empty_summary(inventory_record_count: int = 0) -> dict[str, Any]:
         "critical_count": 0,
         "watch_count": 0,
         "quantities": [],
+        "material_composition": [],
     }
 
 
@@ -1883,7 +1918,24 @@ def build_raw_material_overview(
         for offset in range(lookback_days)
     ]
     material_rows: list[dict[str, Any]] = []
+    material_composition: dict[tuple[str, str], dict[str, Any]] = {}
     for entry in materials.values():
+        material_family = _material_family(
+            entry["material_code"],
+            entry["material_name"],
+        )
+        if entry["current"] > 0:
+            composition = material_composition.setdefault(
+                (entry["unit"], material_family),
+                {
+                    "family": material_family,
+                    "unit": entry["unit"],
+                    "current": Decimal("0"),
+                    "material_count": 0,
+                },
+            )
+            composition["current"] += entry["current"]
+            composition["material_count"] += 1
         recommendation_issues = sorted(
             global_recommendation_issues | entry["recommendation_issues"]
         )
@@ -1919,6 +1971,7 @@ def build_raw_material_overview(
                 "material_ids": sorted(entry["material_ids"]),
                 "material_code": entry["material_code"],
                 "material_name": entry["material_name"],
+                "material_family": material_family,
                 "specification": entry["specification"],
                 "unit": entry["unit"],
                 "current_quantity": _number(entry["current"]),
@@ -2061,6 +2114,26 @@ def build_raw_material_overview(
             }
         )
 
+    material_family_rank = {
+        family: index for index, family in enumerate(MATERIAL_FAMILY_ORDER)
+    }
+    material_composition_rows = [
+        {
+            "family": row["family"],
+            "unit": row["unit"],
+            "current": _number(row["current"]),
+            "material_count": row["material_count"],
+        }
+        for row in sorted(
+            material_composition.values(),
+            key=lambda row: (
+                row["unit"],
+                -row["current"],
+                material_family_rank.get(row["family"], len(MATERIAL_FAMILY_ORDER)),
+            ),
+        )
+    ]
+
     current_by_unit = {
         unit: sum(
             (entry["current"] for entry in materials.values() if entry["unit"] == unit),
@@ -2121,6 +2194,7 @@ def build_raw_material_overview(
         "critical_count": sum(row["risk"] == "critical" for row in material_rows),
         "watch_count": sum(row["risk"] == "watch" for row in material_rows),
         "quantities": quantity_rows,
+        "material_composition": material_composition_rows,
     }
     response["trend"] = trend
     response["materials"] = material_rows

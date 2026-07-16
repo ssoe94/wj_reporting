@@ -12,12 +12,14 @@ import {
   Search,
   Warehouse,
   Weight,
+  X,
 } from "lucide-react";
 import {
   getRawMaterialOverview,
   getRawMaterialStockDetails,
   getRawMaterialSyncStatus,
   startRawMaterialSync,
+  type RawMaterialFamilyComposition,
   type RawMaterialOverview,
   type RawMaterialRisk,
   type RawMaterialRow,
@@ -57,8 +59,6 @@ const pageCopy = {
     unit: "수량 단위",
     search: "원재료 검색",
     searchPlaceholder: "코드, 원재료명, 규격 검색",
-    riskFilter: "재고 위험",
-    allRisks: "전체 위험",
     refresh: "수동 MES 업데이트",
     refreshing: "MES 업데이트 중",
     syncStartFailed: "수동 MES 업데이트를 시작하지 못했습니다. 잠시 후 다시 시도해주세요.",
@@ -99,18 +99,30 @@ const pageCopy = {
     recommended: "권고 발주",
     materialCount: "원재료 수",
     periodSuffix: "기간 합계",
-    healthEyebrow: "현재고 상태",
-    healthTitle: "저장 현재고 건전성",
-    healthHint: "선택 단위의 실물 현재고를 QC 가용·제한·미분류 상태로 나눠 봅니다.",
+    compositionEyebrow: "현재고 구성",
+    compositionTitle: "수지군별 현재고 구성",
+    compositionHint: "수량이 있는 kg 현재고만 MES 원재료명과 번호를 기준으로 분류합니다.",
+    compositionTotal: "보유 현재고",
+    compositionMaterialCount: "종 원료",
+    compositionNoData: "구성할 현재고가 없습니다.",
+    compositionAction: "상세 보기",
+    compositionDialogEyebrow: "수지군 상세",
+    compositionDialogHint: "동일 수지군으로 분류된 원재료의 현재고와 최근 소요를 확인합니다.",
+    compositionDialogClose: "상세 닫기",
+    compositionDialogEmpty: "현재고가 있는 원재료가 없습니다.",
+    compositionDialogPositiveOnly: "현재고가 있는 원재료만 표시합니다.",
+    compositionShare: "구성 비율",
+    familyPp: "PP",
+    familyAbs: "ABS",
+    familyPcAbs: "PC-ABS",
+    familyPc: "PC",
+    familyOther: "기타·미분류",
     qcComposition: "QC 상태 구성",
-    healthRisk: "발주 위험 분포",
-    riskHint: "리드타임과 재주문점을 기준으로 분류한 원재료 수입니다. 막대나 항목을 선택하면 상세 목록이 필터링됩니다.",
     critical: "긴급",
     warning: "주의",
     healthy: "정상",
     noUsage: "사용 이력 없음",
     unknown: "데이터 확인",
-    noRisk: "분류할 원재료가 없습니다.",
     flowEyebrow: "사용 및 변동",
     flowTitle: "추정 소요·변동 추이",
     flowHint: "생산 출고(out)만 추정 소요로 보며, 창고 간 이동 출고(issue)는 별도로 구분합니다.",
@@ -197,7 +209,6 @@ const pageCopy = {
     amountAdjust: "수량 조정",
     attrAdjust: "속성 조정",
     unknownAction: "기타",
-    riskEyebrow: "발주 위험",
     kpiCurrent: "현재고",
     kpiUsable: "가용재고",
     kpiChange: "24시간 증감",
@@ -240,8 +251,6 @@ const pageCopy = {
     unit: "数量单位",
     search: "搜索原材料",
     searchPlaceholder: "搜索编码、名称、规格",
-    riskFilter: "库存风险",
-    allRisks: "全部风险",
     refresh: "手动更新 MES",
     refreshing: "MES 更新中",
     syncStartFailed: "无法启动手动 MES 更新，请稍后重试。",
@@ -282,18 +291,30 @@ const pageCopy = {
     recommended: "建议订货",
     materialCount: "原材料数",
     periodSuffix: "期间合计",
-    healthEyebrow: "当前库存状态",
-    healthTitle: "已保存当前库存健康度",
-    healthHint: "按 QC 可用、受限和未分类状态拆分所选单位的实物库存。",
+    compositionEyebrow: "当前库存构成",
+    compositionTitle: "按树脂类别查看当前库存",
+    compositionHint: "仅统计数量大于 0 的 kg 当前库存，并按 MES 物料名称和编号分类。",
+    compositionTotal: "在库库存",
+    compositionMaterialCount: "种原料",
+    compositionNoData: "暂无可显示的库存构成。",
+    compositionAction: "查看明细",
+    compositionDialogEyebrow: "树脂类别明细",
+    compositionDialogHint: "查看归入同一树脂类别的原材料当前库存与近期消耗。",
+    compositionDialogClose: "关闭明细",
+    compositionDialogEmpty: "没有当前库存大于 0 的原材料。",
+    compositionDialogPositiveOnly: "仅显示当前库存大于 0 的原材料。",
+    compositionShare: "构成比例",
+    familyPp: "PP",
+    familyAbs: "ABS",
+    familyPcAbs: "PC-ABS",
+    familyPc: "PC",
+    familyOther: "其他/未分类",
     qcComposition: "QC 状态构成",
-    healthRisk: "订货风险分布",
-    riskHint: "根据提前期和再订货点统计原材料数量。选择条形或项目可筛选明细。",
     critical: "紧急",
     warning: "注意",
     healthy: "正常",
     noUsage: "无消耗记录",
     unknown: "确认数据",
-    noRisk: "暂无可分类的原材料。",
     flowEyebrow: "消耗与变动",
     flowTitle: "估算消耗与变动趋势",
     flowHint: "仅将生产出库（out）视为估算消耗，仓库调拨出库（issue）单独显示。",
@@ -380,7 +401,6 @@ const pageCopy = {
     amountAdjust: "数量调整",
     attrAdjust: "属性调整",
     unknownAction: "其他",
-    riskEyebrow: "订货风险",
     kpiCurrent: "当前库存",
     kpiUsable: "可用库存",
     kpiChange: "24 小时增减",
@@ -561,12 +581,16 @@ function localizedExternalMessage(message: string, language: AppLanguage) {
 }
 
 const RISK_ORDER: RawMaterialRisk[] = ["critical", "warning", "healthy", "no_usage", "unknown"];
-const RISK_COLORS: Record<RawMaterialRisk, string> = {
-  critical: "#d9485f",
-  warning: "#f0a21a",
-  healthy: "#009c49",
-  no_usage: "#7b8d9b",
-  unknown: "#b7c3cc",
+
+const MATERIAL_FAMILY_ORDER = ["abs", "pc_abs", "pp", "pc", "other"] as const;
+type MaterialFamilyKey = (typeof MATERIAL_FAMILY_ORDER)[number];
+
+const MATERIAL_FAMILY_COLORS: Record<string, string> = {
+  pp: "#718c43",
+  abs: "#008ec3",
+  pc_abs: "#596cc8",
+  pc: "#c05f86",
+  other: "#8b9aa5",
 };
 
 function quantity(value: number, language: AppLanguage) {
@@ -1001,62 +1025,253 @@ function DailyInventoryComparison({
   );
 }
 
-function RiskStack({
-  rows,
-  lead,
-  review,
-  selected,
-  onSelect,
-  recommendationsAvailable,
+function materialFamilyLabel(family: string, copy: Copy) {
+  if (family === "pp") return copy.familyPp;
+  if (family === "abs") return copy.familyAbs;
+  if (family === "pc_abs") return copy.familyPcAbs;
+  if (family === "pc") return copy.familyPc;
+  return copy.familyOther;
+}
+
+function normalizeMaterialFamily(family: string): MaterialFamilyKey {
+  return MATERIAL_FAMILY_ORDER.includes(family as MaterialFamilyKey)
+    ? family as MaterialFamilyKey
+    : "other";
+}
+
+function MaterialComposition({
   copy,
+  language,
+  materials,
+  movementAvailable,
+  rows,
+  unit,
 }: {
-  rows: RawMaterialRow[];
-  lead: number;
-  review: number;
-  selected: RawMaterialRisk | "all";
-  onSelect: (risk: RawMaterialRisk | "all") => void;
-  recommendationsAvailable: boolean;
   copy: Copy;
+  language: AppLanguage;
+  materials: RawMaterialRow[];
+  movementAvailable: boolean;
+  rows: RawMaterialFamilyComposition[];
+  unit: string;
 }) {
-  const counts = RISK_ORDER.map((risk) => ({
-    risk,
-    count: rows.filter((row) => (
-      recommendationsAvailable ? effectiveRisk(row, lead, review) : "unknown"
-    ) === risk).length,
-  }));
-  const total = counts.reduce((sum, item) => sum + item.count, 0);
-  const summary = counts.map((item) => `${riskLabel(item.risk, copy)} ${item.count}`).join(", ");
+  const [selectedFamily, setSelectedFamily] = useState<MaterialFamilyKey | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const familyRows = MATERIAL_FAMILY_ORDER.map((family) => rows
+    .filter((row) => row.unit === unit && normalizeMaterialFamily(row.family) === family)
+    .reduce<RawMaterialFamilyComposition>((result, row) => ({
+      family,
+      unit,
+      current: result.current + Math.max(0, row.current),
+      materialCount: result.materialCount + Math.max(0, row.materialCount),
+    }), { family, unit, current: 0, materialCount: 0 }));
+  const displayRows = familyRows.filter((row) => row.materialCount > 0 && row.current > 0);
+  const total = displayRows.reduce((sum, row) => sum + row.current, 0);
+  const materialCount = displayRows.reduce((sum, row) => sum + row.materialCount, 0);
+  const share = (value: number) => (total > 0 ? (value / total) * 100 : 0);
+  const description = displayRows.map((row) => (
+    `${materialFamilyLabel(row.family, copy)} ${quantity(row.current, language)} ${unit} ${percent(share(row.current), language)}%`
+  )).join(", ");
+  const selectedSummary = selectedFamily
+    ? familyRows.find((row) => row.family === selectedFamily) ?? null
+    : null;
+  const selectedMaterials = selectedFamily
+    ? materials
+      .filter((row) => (
+        row.unit === unit
+        && normalizeMaterialFamily(row.materialFamily) === selectedFamily
+        && row.currentQuantity > 0
+      ))
+      .sort((a, b) => (
+        b.currentQuantity - a.currentQuantity
+        || a.materialName.localeCompare(b.materialName, language === "ko" ? "ko" : "zh")
+        || a.materialCode.localeCompare(b.materialCode)
+      ))
+    : [];
+  const selectedUsable = selectedMaterials.reduce((sum, row) => sum + row.usableQuantity, 0);
+  const selectedRestricted = selectedMaterials.reduce((sum, row) => sum + row.restrictedQuantity, 0);
+  const selectedConsumption = selectedMaterials.reduce((sum, row) => sum + row.consumptionQuantity, 0);
+  const selectedLabel = selectedFamily ? materialFamilyLabel(selectedFamily, copy) : "";
+
+  const closeLayer = () => setSelectedFamily(null);
+
+  useEffect(() => {
+    if (!selectedFamily) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeLayer();
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        closeButtonRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      window.setTimeout(() => triggerButtonRef.current?.focus(), 0);
+    };
+  }, [selectedFamily]);
 
   return (
-    <div className="raw-risk-visual">
-      {total ? (
-        <div aria-label={`${copy.healthRisk}: ${summary}`} className="raw-risk-stack" role="group">
-          {counts.filter((item) => item.count > 0).map((item) => (
-            <button
-              aria-label={`${riskLabel(item.risk, copy)} ${item.count}`}
-              aria-pressed={selected === item.risk}
-              className={`raw-risk-segment raw-risk-segment--${item.risk}`}
-              key={item.risk}
-              onClick={() => onSelect(item.risk)}
-              style={{ width: `${(item.count / total) * 100}%` }}
-              title={`${riskLabel(item.risk, copy)} ${item.count}`}
-              type="button"
-            />
-          ))}
+    <div className="raw-family-overview">
+      <div className="raw-family-total">
+        <div>
+          <span>{copy.compositionTotal}</span>
+          <strong>{quantity(total, language)} <small>{unit}</small></strong>
         </div>
-      ) : <div className="raw-empty">{copy.noRisk}</div>}
-      <div className="raw-risk-list">
-        <button aria-pressed={selected === "all"} className={selected === "all" ? "is-active" : ""} onClick={() => onSelect("all")} type="button">
-          <span>{copy.allRisks}</span><strong>{total}</strong>
-        </button>
-        {counts.map((item) => (
-          <button aria-pressed={selected === item.risk} className={selected === item.risk ? "is-active" : ""} key={item.risk} onClick={() => onSelect(item.risk)} type="button">
-            <i style={{ backgroundColor: RISK_COLORS[item.risk] }} />
-            <span>{riskLabel(item.risk, copy)}</span>
-            <strong>{item.count}</strong>
-          </button>
+        <span>{materialCount}{language === "ko" ? "" : " "}{copy.compositionMaterialCount}</span>
+      </div>
+      <div
+        aria-label={total > 0 ? `${copy.compositionTitle}: ${description}` : copy.compositionNoData}
+        className="raw-family-stack"
+        role="img"
+      >
+        {displayRows.map((row) => (
+          <span
+            className="raw-family-segment"
+            key={`${row.family}-${row.unit}`}
+            style={{
+              backgroundColor: MATERIAL_FAMILY_COLORS[row.family] ?? MATERIAL_FAMILY_COLORS.other,
+              width: `${share(row.current)}%`,
+            }}
+            title={`${materialFamilyLabel(row.family, copy)} ${quantity(row.current, language)} ${unit} · ${percent(share(row.current), language)}%`}
+          />
         ))}
       </div>
+      <div className="raw-family-list" role="list">
+        {familyRows.map((row) => {
+          const familyShare = share(row.current);
+          const color = MATERIAL_FAMILY_COLORS[row.family] ?? MATERIAL_FAMILY_COLORS.other;
+          return (
+            <article className="raw-family-item" key={`${row.family}-${row.unit}-detail`} role="listitem">
+              <button
+                aria-controls="raw-family-detail-dialog"
+                aria-expanded={selectedFamily === row.family}
+                aria-haspopup="dialog"
+                aria-label={`${materialFamilyLabel(row.family, copy)} · ${quantity(row.current, language)} ${unit} · ${percent(familyShare, language)}% · ${row.materialCount}${language === "ko" ? "" : " "}${copy.compositionMaterialCount} · ${copy.compositionAction}`}
+                className="raw-family-card"
+                data-testid={`raw-family-card-${row.family}`}
+                onClick={(event) => {
+                  triggerButtonRef.current = event.currentTarget;
+                  setSelectedFamily(row.family as MaterialFamilyKey);
+                }}
+                type="button"
+              >
+                <span className="raw-family-card__topline">
+                  <i aria-hidden="true" className="raw-family-swatch" style={{ backgroundColor: color }} />
+                  <strong>{materialFamilyLabel(row.family, copy)}</strong>
+                  <ChevronRight aria-hidden="true" size={15} />
+                </span>
+                <span className="raw-family-value">
+                  <strong>{quantity(row.current, language)} <small>{unit}</small></strong>
+                  <span>{percent(familyShare, language)}%</span>
+                </span>
+                <span aria-hidden="true" className="raw-family-meter">
+                  <b style={{ backgroundColor: color, width: `${familyShare}%` }} />
+                </span>
+                <span className="raw-family-card__footer">
+                  <span>{row.materialCount}{language === "ko" ? "" : " "}{copy.compositionMaterialCount}</span>
+                  <span>{copy.compositionAction}</span>
+                </span>
+              </button>
+            </article>
+          );
+        })}
+      </div>
+      {selectedFamily && selectedSummary ? (
+        <div
+          className="raw-family-layer"
+          data-testid="raw-family-detail"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) closeLayer();
+          }}
+          role="presentation"
+        >
+          <section
+            aria-labelledby="raw-family-detail-title"
+            aria-modal="true"
+            className="raw-family-dialog"
+            id="raw-family-detail-dialog"
+            role="dialog"
+          >
+            <header className="raw-family-dialog__header">
+              <div>
+                <p className="panel-card__eyebrow">{copy.compositionDialogEyebrow}</p>
+                <h2 id="raw-family-detail-title">{selectedLabel} {language === "ko" ? "원료 상세" : "原材料明细"}</h2>
+                <p>{copy.compositionDialogHint}</p>
+              </div>
+              <button
+                aria-label={copy.compositionDialogClose}
+                className="raw-family-dialog__close"
+                onClick={closeLayer}
+                ref={closeButtonRef}
+                type="button"
+              >
+                <X aria-hidden="true" size={20} />
+              </button>
+            </header>
+            <div className="raw-family-dialog__metrics">
+              <article>
+                <span>{copy.current}</span>
+                <strong>{quantity(selectedSummary.current, language)} <small>{unit}</small></strong>
+                <small>{selectedSummary.materialCount}{language === "ko" ? "" : " "}{copy.compositionMaterialCount}</small>
+              </article>
+              <article>
+                <span>{copy.usable}</span>
+                <strong>{quantity(selectedUsable, language)} <small>{unit}</small></strong>
+                <small>{copy.compositionShare} {percent(share(selectedSummary.current), language)}%</small>
+              </article>
+              <article>
+                <span>{copy.restricted}</span>
+                <strong>{quantity(selectedRestricted, language)} <small>{unit}</small></strong>
+                <small>{copy.qcComposition}</small>
+              </article>
+              <article>
+                <span>{copy.kpiConsumption}</span>
+                <strong>{movementAvailable ? `${quantity(selectedConsumption, language)} ${unit}` : copy.notCollected}</strong>
+                <small>{movementAvailable ? copy.compositionDialogPositiveOnly : copy.movementUnavailableShort}</small>
+              </article>
+            </div>
+            {selectedMaterials.length ? (
+              <div className="raw-family-dialog__table-wrap">
+                <table className="raw-family-dialog__table">
+                  <thead>
+                    <tr>
+                      <th>{copy.material}</th>
+                      <th>{copy.current}</th>
+                      <th>{copy.compositionShare}</th>
+                      <th>{copy.usable}</th>
+                      <th>{copy.restricted}</th>
+                      <th>{copy.consumption}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedMaterials.map((row) => (
+                      <tr data-testid="raw-family-detail-row" key={`${row.groupKey}:${row.unit}`}>
+                        <td>
+                          <strong>{row.materialName}</strong>
+                          <span>{row.materialCode} · {row.specification || "-"}</span>
+                        </td>
+                        <td><strong>{quantity(row.currentQuantity, language)}</strong> <small>{unit}</small></td>
+                        <td>{percent(selectedSummary.current > 0 ? (row.currentQuantity / selectedSummary.current) * 100 : 0, language)}%</td>
+                        <td>{quantity(row.usableQuantity, language)}</td>
+                        <td>{quantity(row.restrictedQuantity, language)}</td>
+                        <td>{movementAvailable ? quantity(row.consumptionQuantity, language) : copy.notCollected}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <div className="raw-empty">{copy.compositionDialogEmpty}</div>}
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1103,7 +1318,6 @@ export function RawMaterialManagementPage() {
   const review = RAW_MATERIAL_REVIEW_PERIOD_DAYS;
   const unit = RAW_MATERIAL_UNIT;
   const [search, setSearch] = useState("");
-  const [risk, setRisk] = useState<RawMaterialRisk | "all">("all");
   const [sort, setSort] = useState<SortState>({ key: "risk", direction: "asc" });
   const [pageIndex, setPageIndex] = useState(0);
   const [expandedStockRows, setExpandedStockRows] = useState<Set<string>>(
@@ -1172,8 +1386,7 @@ export function RawMaterialManagementPage() {
     return unitRows
       .filter((row) => {
         const matchesTerm = !term || `${row.materialCode} ${row.materialName} ${row.specification}`.toLocaleLowerCase().includes(term);
-        const rowRisk = recommendationsAvailable ? effectiveRisk(row, lead, review) : "unknown";
-        return matchesTerm && (risk === "all" || rowRisk === risk);
+        return matchesTerm;
       })
       .sort((a, b) => {
         if (
@@ -1189,7 +1402,7 @@ export function RawMaterialManagementPage() {
           : String(av).localeCompare(String(bv), language === "ko" ? "ko" : "zh");
         return (result || b.recommendedOrder - a.recommendedOrder) * (sort.direction === "asc" ? 1 : -1);
       });
-  }, [unitRows, search, risk, sort, lead, review, language, recommendationsAvailable]);
+  }, [unitRows, search, sort, lead, review, language, recommendationsAvailable]);
 
   const transactions = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
@@ -1202,7 +1415,7 @@ export function RawMaterialManagementPage() {
   const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = filteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-  useEffect(() => { setPageIndex(0); }, [search, risk, sort]);
+  useEffect(() => { setPageIndex(0); }, [search, sort]);
   useEffect(() => { setPageIndex((current) => Math.min(current, pageCount - 1)); }, [pageCount]);
 
   const toggleStockRow = (rowKey: string) => {
@@ -1220,9 +1433,6 @@ export function RawMaterialManagementPage() {
   const comparisonCurrentQuantity = summary?.comparisonCurrent ?? null;
   const currentChange24h = summary?.change24h ?? null;
   const usableQuantity = summary?.usable ?? 0;
-  const restrictedQuantity = summary?.restricted ?? 0;
-  const unclassifiedQuantity = summary?.unclassified ?? 0;
-  const compositionBase = Math.max(1, currentQuantity, usableQuantity + restrictedQuantity + unclassifiedQuantity);
   const availabilityRate = currentQuantity > 0 ? Math.max(0, Math.min(100, (usableQuantity / currentQuantity) * 100)) : 0;
   const priorityRows = (recommendationsAvailable ? [...unitRows] : [])
     .filter((row) => row.recommendationAvailable && (
@@ -1412,68 +1622,24 @@ export function RawMaterialManagementPage() {
             />
           </div>
 
-          <div className="raw-health-grid">
-            <section className="panel raw-health-panel">
-              <div className="raw-panel-header">
-                <div>
-                  <p className="panel-card__eyebrow">{copy.healthEyebrow}</p>
-                  <h2 className="panel__title">{copy.healthTitle}</h2>
-                  <p className="raw-panel-hint">{copy.healthHint}</p>
-                </div>
-                <span className="raw-estimate-badge">{unit || "-"}</span>
+          <section className="panel raw-composition-panel">
+            <div className="raw-panel-header">
+              <div>
+                <p className="panel-card__eyebrow">{copy.compositionEyebrow}</p>
+                <h2 className="panel__title">{copy.compositionTitle}</h2>
+                <p className="raw-panel-hint">{copy.compositionHint} {copy.compositionDialogPositiveOnly}</p>
               </div>
-              <div className="raw-health-metrics">
-                <article className="raw-health-primary">
-                  <span>{copy.current}</span>
-                  <strong>{quantity(currentQuantity, language)}</strong>
-                  <small>{unit || "-"}</small>
-                </article>
-                <article>
-                  <span>{copy.usable}</span>
-                  <strong>{quantity(usableQuantity, language)}</strong>
-                  <small>{copy.usableRate} {percent(availabilityRate, language)}%</small>
-                </article>
-                <article>
-                  <span>{copy.restricted}</span>
-                  <strong>{quantity(restrictedQuantity, language)}</strong>
-                  <small>{unit || "-"}</small>
-                </article>
-                <article>
-                  <span>{copy.unclassified}</span>
-                  <strong>{quantity(unclassifiedQuantity, language)}</strong>
-                  <small>{unit || "-"}</small>
-                </article>
-              </div>
-              <div className="raw-quality-composition">
-                <div className="raw-quality-heading"><span>{copy.qcComposition}</span><strong>{percent(availabilityRate, language)}% {copy.usable}</strong></div>
-                <div aria-label={`${copy.qcComposition}: ${copy.usable} ${quantity(usableQuantity, language)}, ${copy.restricted} ${quantity(restrictedQuantity, language)}, ${copy.unclassified} ${quantity(unclassifiedQuantity, language)}`} className="raw-quality-bar" role="img">
-                  <span className="raw-quality-bar--usable" style={{ width: `${Math.max(0, usableQuantity / compositionBase * 100)}%` }} title={`${copy.usable} ${quantity(usableQuantity, language)} ${unit}`} />
-                  <span className="raw-quality-bar--restricted" style={{ width: `${Math.max(0, restrictedQuantity / compositionBase * 100)}%` }} title={`${copy.restricted} ${quantity(restrictedQuantity, language)} ${unit}`} />
-                  <span className="raw-quality-bar--unknown" style={{ width: `${Math.max(0, unclassifiedQuantity / compositionBase * 100)}%` }} title={`${copy.unclassified} ${quantity(unclassifiedQuantity, language)} ${unit}`} />
-                </div>
-                <div className="raw-quality-legend">
-                  <span><i className="raw-quality-dot--usable" />{copy.usable}</span>
-                  <span><i className="raw-quality-dot--restricted" />{copy.restricted}</span>
-                  <span><i className="raw-quality-dot--unknown" />{copy.unclassified}</span>
-                </div>
-              </div>
-            </section>
-
-            <section className="panel raw-risk-panel">
-              <p className="panel-card__eyebrow">{copy.riskEyebrow}</p>
-              <h2 className="panel__title">{copy.healthRisk}</h2>
-              <p className="raw-panel-hint">{copy.riskHint}</p>
-              <RiskStack
-                copy={copy}
-                lead={lead}
-                onSelect={setRisk}
-                recommendationsAvailable={recommendationsAvailable}
-                review={review}
-                rows={unitRows}
-                selected={risk}
-              />
-            </section>
-          </div>
+              <span className="raw-estimate-badge">{unit || "-"}</span>
+            </div>
+            <MaterialComposition
+              copy={copy}
+              language={language}
+              materials={unitRows}
+              movementAvailable={movementAvailable}
+              rows={data.summary.materialComposition}
+              unit={unit}
+            />
+          </section>
 
           <section className="panel raw-trend-panel">
             <div className="raw-panel-header">

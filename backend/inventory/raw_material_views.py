@@ -43,7 +43,7 @@ def _overview_cache_key(parameters: dict) -> str:
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    return f"raw-materials:stored-overview:v4:{digest}"
+    return f"raw-materials:stored-overview:v5:{digest}"
 
 
 def _stock_detail_cache_key(parameters: dict) -> str:

@@ -45,8 +45,8 @@ const rawMaterialOverview = {
   ],
   units: ['UN001'],
   summary: {
-    material_count: 3,
-    inventory_record_count: 5,
+    material_count: 6,
+    inventory_record_count: 8,
     reorder_count: 1,
     critical_count: 1,
     watch_count: 0,
@@ -67,6 +67,13 @@ const rawMaterialOverview = {
         recommended_order: 1500,
         recommendation_unavailable_count: 0,
       },
+    ],
+    material_composition: [
+      { family: 'abs', unit: 'UN001', current: 3940, material_count: 2 },
+      { family: 'pp', unit: 'UN001', current: 1000, material_count: 1 },
+      { family: 'pc_abs', unit: 'UN001', current: 980, material_count: 1 },
+      { family: 'pc', unit: 'UN001', current: 100, material_count: 1 },
+      { family: 'other', unit: 'UN001', current: 100, material_count: 1 },
     ],
   },
   trend: [
@@ -108,6 +115,7 @@ const rawMaterialOverview = {
       material_ids: ['material-abs-ha641-01', 'material-abs-ha641-02', 'material-abs-ha641-03'],
       material_code: 'ABS HA641 18388',
       material_name: 'ABS HA641 18388',
+      material_family: 'abs',
       specification: 'Natural',
       warehouse_code: 'RM-01',
       warehouse_name: '원재료 창고',
@@ -137,15 +145,16 @@ const rawMaterialOverview = {
     {
       material_code: 'ABS-HF380-BK',
       material_name: 'ABS HF380 Black',
+      material_family: 'abs',
       specification: '난연 / Black',
       warehouse_code: 'RM-01',
       warehouse_name: '원재료 창고',
       unit: 'UN001',
-      current_quantity: 4850,
-      previous_quantity: 5000,
+      current_quantity: 3650,
+      previous_quantity: 3800,
       quantity_change_24h: -150,
-      usable_quantity: 4700,
-      previous_usable_quantity: 4800,
+      usable_quantity: 3500,
+      previous_usable_quantity: 3600,
       usable_change_24h: -100,
       restricted_quantity: 150,
       unclassified_quantity: 0,
@@ -158,12 +167,100 @@ const rawMaterialOverview = {
       reorder_point: 1767,
       target_stock: 3000,
       recommended_order: 0,
-      days_of_cover: 58,
+      days_of_cover: 43.21,
       risk: 'healthy',
+    },
+    {
+      material_code: 'PP-GF40-LGK1400M',
+      material_name: 'PP-GF40 LGK-1400M',
+      material_family: 'pp',
+      specification: 'GF40 / Black',
+      warehouse_code: 'RM-01',
+      warehouse_name: '원재료 창고',
+      unit: 'UN001',
+      current_quantity: 1000,
+      previous_quantity: 1000,
+      quantity_change_24h: 0,
+      usable_quantity: 1000,
+      previous_usable_quantity: 1000,
+      usable_change_24h: 0,
+      restricted_quantity: 0,
+      unclassified_quantity: 0,
+      inbound_quantity: 0,
+      outbound_quantity: 0,
+      consumption_quantity: 0,
+      transfer_out_quantity: 0,
+      avg_daily_consumption: 0,
+      safety_stock: 0,
+      reorder_point: 0,
+      target_stock: 0,
+      recommended_order: 0,
+      days_of_cover: null,
+      risk: 'no_usage',
+      recommendation_available: true,
+    },
+    {
+      material_code: 'PC1201',
+      material_name: 'PC1201 Clear',
+      material_family: 'pc',
+      specification: 'Transparent',
+      warehouse_code: 'RM-01',
+      warehouse_name: '원재료 창고',
+      unit: 'KG',
+      current_quantity: 100,
+      previous_quantity: 100,
+      quantity_change_24h: 0,
+      usable_quantity: 100,
+      previous_usable_quantity: 100,
+      usable_change_24h: 0,
+      restricted_quantity: 0,
+      unclassified_quantity: 0,
+      inbound_quantity: 0,
+      outbound_quantity: 0,
+      consumption_quantity: 0,
+      transfer_out_quantity: 0,
+      avg_daily_consumption: 0,
+      safety_stock: 0,
+      reorder_point: 0,
+      target_stock: 0,
+      recommended_order: 0,
+      days_of_cover: null,
+      risk: 'no_usage',
+      recommendation_available: true,
+    },
+    {
+      material_code: 'POM-F20',
+      material_name: 'POM F20',
+      material_family: 'other',
+      specification: 'Natural',
+      warehouse_code: 'RM-01',
+      warehouse_name: '원재료 창고',
+      unit: 'kg',
+      current_quantity: 100,
+      previous_quantity: 100,
+      quantity_change_24h: 0,
+      usable_quantity: 100,
+      previous_usable_quantity: 100,
+      usable_change_24h: 0,
+      restricted_quantity: 0,
+      unclassified_quantity: 0,
+      inbound_quantity: 0,
+      outbound_quantity: 0,
+      consumption_quantity: 0,
+      transfer_out_quantity: 0,
+      avg_daily_consumption: 0,
+      safety_stock: 0,
+      reorder_point: 0,
+      target_stock: 0,
+      recommended_order: 0,
+      days_of_cover: null,
+      risk: 'no_usage',
+      recommendation_available: true,
     },
     {
       material_code: 'PCABS-FR3010-GY',
       material_name: 'PC/ABS FR3010 Gray',
+      material_family: 'pc_abs',
       specification: 'V-0 / Gray',
       warehouse_code: 'RM-01',
       warehouse_name: '원재료 창고',
@@ -376,6 +473,48 @@ test.describe('raw material management operational scenario', () => {
     await expect(page.getByRole('heading', { name: '24시간 재고 변화', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: '원재료 재고 현황', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: '최근 입출고 기록', exact: true })).toBeVisible();
+    const compositionPanel = page.locator('.raw-composition-panel');
+    await expect(compositionPanel.getByRole('heading', { name: '수지군별 현재고 구성', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '저장 현재고 건전성', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: '발주 위험 분포', exact: true })).toHaveCount(0);
+    await expect(compositionPanel.getByRole('listitem')).toHaveCount(5);
+    const familyCards = compositionPanel.locator('.raw-family-card');
+    await expect(familyCards).toHaveCount(5);
+    await expect(familyCards).toHaveText([/ABS/, /PC-ABS/, /PP/, /PC/, /기타·미분류/]);
+    const familyCardPositions = await familyCards.evaluateAll((cards) => cards.map((card) => {
+      const rect = card.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top };
+    }));
+    expect(Math.max(...familyCardPositions.map(({ top }) => top)) - Math.min(...familyCardPositions.map(({ top }) => top))).toBeLessThanOrEqual(2);
+    familyCardPositions.slice(1).forEach((position, index) => {
+      expect(position.left).toBeGreaterThanOrEqual(familyCardPositions[index].right - 1);
+    });
+    await expect(compositionPanel.getByText('6,120 kg', { exact: true })).toBeVisible();
+    await expect(compositionPanel.getByText('3,940 kg', { exact: true })).toBeVisible();
+    await expect(compositionPanel.getByRole('img', { name: /ABS 3,940 kg 64.4%.*PC-ABS 980 kg 16%.*PP 1,000 kg 16.3%/ })).toBeVisible();
+
+    const absFamilyCard = page.getByTestId('raw-family-card-abs');
+    await expect(absFamilyCard).toHaveAttribute('aria-expanded', 'false');
+    await absFamilyCard.click();
+    const familyDialog = page.getByRole('dialog', { name: 'ABS 원료 상세' });
+    await expect(familyDialog).toBeVisible();
+    await expect(absFamilyCard).toHaveAttribute('aria-expanded', 'true');
+    await expect(familyDialog.getByText('3,940 kg', { exact: true })).toBeVisible();
+    await expect(familyDialog.getByText('2종 원료', { exact: true })).toBeVisible();
+    await expect(familyDialog.getByTestId('raw-family-detail-row')).toHaveCount(2);
+    await expect(familyDialog.getByText('ABS HF380 Black', { exact: true })).toBeVisible();
+    await expect(familyDialog.getByText('ABS HA641 18388', { exact: true }).first()).toBeVisible();
+    await expect(familyDialog.getByText('PP-GF40 LGK-1400M', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: '상세 닫기', exact: true }).click();
+    await expect(familyDialog).toHaveCount(0);
+    await expect(absFamilyCard).toBeFocused();
+
+    const pcAbsFamilyCard = page.getByTestId('raw-family-card-pc_abs');
+    await pcAbsFamilyCard.click();
+    await expect(page.getByRole('dialog', { name: 'PC-ABS 원료 상세' })).toContainText('PC/ABS FR3010 Gray');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(pcAbsFamilyCard).toBeFocused();
     await expect(page.getByText('원재료창고', { exact: true })).toBeVisible();
     await expect(page.getByText('kg', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('매일 08:00 자동 업데이트', { exact: true })).toBeVisible();
@@ -438,6 +577,15 @@ test.describe('raw material management operational scenario', () => {
 
     await page.getByRole('button', { name: '中文' }).click();
     await expect(page.getByRole('heading', { name: '原材料管理', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '按树脂类别查看当前库存', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '订货风险分布', exact: true })).toHaveCount(0);
+    await expect(page.getByText('其他/未分类', { exact: true })).toBeVisible();
+    await page.getByTestId('raw-family-card-pc_abs').click();
+    const chineseFamilyDialog = page.getByRole('dialog', { name: 'PC-ABS 原材料明细' });
+    await expect(chineseFamilyDialog).toBeVisible();
+    await expect(chineseFamilyDialog).toContainText('查看归入同一树脂类别的原材料当前库存与近期消耗。');
+    await page.getByRole('button', { name: '关闭明细', exact: true }).click();
+    await expect(chineseFamilyDialog).toHaveCount(0);
     await expect(page.getByRole('alert')).toContainText('非 kg 库存（L）已从合计和分析中排除（1 条）。');
     await expect(page.getByRole('combobox', { name: '数量单位' })).toHaveCount(0);
     const chineseGroupedRow = page.locator('.raw-inventory-table tbody tr.raw-inventory-summary-row').filter({ hasText: 'ABS HA641 18388' });

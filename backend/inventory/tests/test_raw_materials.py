@@ -17,6 +17,7 @@ from inventory.services.raw_material_sync import (
 from inventory.services.raw_materials import (
     PAGE_SIZE,
     _fetch_pages,
+    _material_family,
     _unit,
     build_raw_material_overview,
     with_zero_stock_markers,
@@ -157,6 +158,149 @@ class RawMaterialServiceTests(SimpleTestCase):
         for alias in ("UN001", "kg", "KG", "千克", "公斤", "킬로그램"):
             with self.subTest(alias=alias):
                 self.assertEqual(_unit({"unit": {"name": alias}}), "kg")
+
+    def test_material_family_classifier_handles_live_name_prefixes(self):
+        examples = (
+            ("PCABS HAC8250NH-GF20", "", "pc_abs"),
+            ("PC-ABS FR3010", "", "pc_abs"),
+            ("", "ＰＣ／ＡＢＳ 난연", "pc_abs"),
+            ("ABS HA641", "", "abs"),
+            ("", "MABS XG", "abs"),
+            ("PP-GF40", "", "pp"),
+            ("", "PPAPIT30BK01", "pp"),
+            ("PPS-GF40", "", "other"),
+            ("PPE-123", "", "other"),
+            ("PPO-456", "", "other"),
+            ("PPA-GF30", "", "other"),
+            ("PPA66", "", "other"),
+            ("", "PC1201 투명", "pc"),
+            ("PC1201", "ABS HA641", "other"),
+            ("RM-001", "General resin", "other"),
+        )
+
+        for material_code, material_name, expected in examples:
+            with self.subTest(material_code=material_code, material_name=material_name):
+                self.assertEqual(
+                    _material_family(material_code, material_name),
+                    expected,
+                )
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_material_composition_reconciles_to_current_inventory(self, change_call):
+        change_call.return_value = {"data": {"list": [], "total": 0}}
+        rows = [
+            inventory_row(
+                row_id=17000000000000101,
+                material_id=17000000000000201,
+                material_code="PCABS HAC8250NH-GF20",
+                material_name="PC/ABS GF20",
+                amount="40",
+            ),
+            inventory_row(
+                row_id=17000000000000102,
+                material_id=17000000000000202,
+                material_code="ABS HA641",
+                material_name="ABS HA641",
+                amount="30",
+            ),
+            inventory_row(
+                row_id=17000000000000103,
+                material_id=17000000000000203,
+                material_code="PP-GF40",
+                material_name="PP TRILEN",
+                amount="20",
+            ),
+            inventory_row(
+                row_id=17000000000000104,
+                material_id=17000000000000204,
+                material_code="PC1201",
+                material_name="PC1201 resin",
+                amount="10",
+            ),
+            inventory_row(
+                row_id=17000000000000105,
+                material_id=17000000000000205,
+                material_code="POM F20",
+                material_name="POM resin",
+                amount="5",
+            ),
+        ]
+
+        result = build_raw_material_overview(
+            now=NOW,
+            inventory_rows_override=rows,
+        )
+
+        composition = result["summary"]["material_composition"]
+        self.assertEqual(
+            composition,
+            [
+                {"family": "pc_abs", "unit": "kg", "current": 40.0, "material_count": 1},
+                {"family": "abs", "unit": "kg", "current": 30.0, "material_count": 1},
+                {"family": "pp", "unit": "kg", "current": 20.0, "material_count": 1},
+                {"family": "pc", "unit": "kg", "current": 10.0, "material_count": 1},
+                {"family": "other", "unit": "kg", "current": 5.0, "material_count": 1},
+            ],
+        )
+        self.assertEqual(
+            sum(row["current"] for row in composition),
+            result["summary"]["quantities"][0]["current"],
+        )
+        self.assertEqual(
+            {row["material_code"]: row["material_family"] for row in result["materials"]},
+            {
+                "ABS HA641": "abs",
+                "PCABS HAC8250NH-GF20": "pc_abs",
+                "PP-GF40": "pp",
+                "PC1201": "pc",
+                "POM F20": "other",
+            },
+        )
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_material_composition_only_counts_positive_on_hand_stock(self, change_call):
+        change_call.return_value = {"data": {"list": [], "total": 0}}
+        rows = [
+            inventory_row(
+                row_id=17000000000000301,
+                material_id=17000000000000401,
+                material_code="ABS POSITIVE",
+                material_name="ABS POSITIVE",
+                amount="10.25",
+            ),
+            inventory_row(
+                row_id=17000000000000302,
+                material_id=17000000000000402,
+                material_code="PP EMPTY",
+                material_name="PP EMPTY",
+                amount="0",
+            ),
+            inventory_row(
+                row_id=17000000000000303,
+                material_id=17000000000000403,
+                material_code="PC NEGATIVE",
+                material_name="PC NEGATIVE",
+                amount="-0.25",
+            ),
+        ]
+
+        result = build_raw_material_overview(
+            now=NOW,
+            inventory_rows_override=rows,
+        )
+
+        self.assertEqual(
+            result["summary"]["material_composition"],
+            [
+                {
+                    "family": "abs",
+                    "unit": "kg",
+                    "current": 10.25,
+                    "material_count": 1,
+                }
+            ],
+        )
+        self.assertEqual(result["summary"]["quantities"][0]["current"], 10.0)
 
     def test_depleted_raw_material_is_carried_as_an_explicit_zero_marker(self):
         rows = with_zero_stock_markers([], [inventory_row(amount="10")])
@@ -1107,6 +1251,18 @@ class RawMaterialOverviewViewTests(TestCase):
         )
         self.assertEqual(payload["materials"][0]["previous_quantity"], 10)
         self.assertEqual(payload["materials"][0]["quantity_change_24h"], 4)
+        self.assertEqual(payload["materials"][0]["material_family"], "other")
+        self.assertEqual(
+            payload["summary"]["material_composition"],
+            [
+                {
+                    "family": "other",
+                    "unit": "kg",
+                    "current": 20.0,
+                    "material_count": 1,
+                }
+            ],
+        )
         inventory_call.assert_not_called()
         change_call.assert_not_called()
 

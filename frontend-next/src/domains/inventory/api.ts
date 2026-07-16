@@ -34,6 +34,13 @@ export type RawMaterialUnitSummary = {
   recommendationUnavailableCount: number;
 };
 
+export type RawMaterialFamilyComposition = {
+  family: string;
+  unit: string;
+  current: number;
+  materialCount: number;
+};
+
 export type RawMaterialTrendValue = {
   unit: string;
   inbound: number;
@@ -93,6 +100,7 @@ export type RawMaterialRow = {
   materialIds: string[];
   materialCode: string;
   materialName: string;
+  materialFamily: string;
   specification: string;
   warehouseCode: string;
   warehouseName: string;
@@ -182,6 +190,7 @@ export type RawMaterialOverview = {
   units: string[];
   summary: {
     quantities: RawMaterialUnitSummary[];
+    materialComposition: RawMaterialFamilyComposition[];
   };
   trend: RawMaterialTrendPoint[];
   materials: RawMaterialRow[];
@@ -320,6 +329,16 @@ function normalizeSummary(value: unknown): RawMaterialUnitSummary {
   };
 }
 
+function normalizeMaterialComposition(value: unknown): RawMaterialFamilyComposition {
+  const row = asRecord(value);
+  return {
+    family: asString(pick(row, "family", "material_family", "materialFamily"), "other"),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
+    current: asNumber(pick(row, "current", "current_quantity", "currentQuantity")),
+    materialCount: asNumber(pick(row, "material_count", "materialCount", "count")),
+  };
+}
+
 function mergeNullableNumber(left: number | null, right: number | null) {
   if (left === null && right === null) return null;
   return (left ?? 0) + (right ?? 0);
@@ -438,6 +457,10 @@ function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
       .filter(Boolean),
     materialCode,
     materialName: asString(pick(row, "material_name", "materialName", "name"), materialCode),
+    materialFamily: asString(
+      pick(row, "material_family", "materialFamily", "family"),
+      "other",
+    ),
     specification: asString(pick(row, "specification", "spec", "material_spec")),
     warehouseCode: asJoinedString(pick(row, "warehouse_code", "warehouseCode", "warehouse_codes", "warehouseCodes")),
     warehouseName: asJoinedString(pick(row, "warehouse_name", "warehouseName", "warehouse", "warehouse_names", "warehouseNames")),
@@ -550,6 +573,9 @@ function normalizeRawMaterialOverview(payload: unknown): RawMaterialOverview {
     .map(normalizeSelectedWarehouse)
     .filter(Boolean);
   const quantities = mergeUnitSummaries(asArray(quantitiesSource).map(normalizeSummary));
+  const materialComposition = asArray(
+    pick(summary, "material_composition", "materialComposition"),
+  ).map(normalizeMaterialComposition);
   const trend = asArray(pick(root, "trend", "daily_trend", "dailyTrend")).map((value) => {
     const row = asRecord(value);
     const nestedValues = asArray(pick(row, "values", "quantities", "by_unit", "byUnit"));
@@ -636,7 +662,7 @@ function normalizeRawMaterialOverview(payload: unknown): RawMaterialOverview {
     warehouseOptions,
     selectedWarehouses,
     units: Array.from(new Set([...explicitUnits, ...inferredUnits])),
-    summary: { quantities },
+    summary: { quantities, materialComposition },
     trend,
     materials,
     recentTransactions,
