@@ -133,6 +133,31 @@ test.describe('injection office board', () => {
     guard.assertClean();
   });
 
+  test('distinguishes ongoing overproduction from a completed stopped machine', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await page.clock.setFixedTime(new Date('2026-05-18T10:40:00+08:00'));
+    await installOperationalApiMocks(page, { completedStopped: true });
+    const accessExpiresAt = Math.floor(new Date('2026-05-19T10:40:00+08:00').getTime() / 1000);
+    const refreshExpiresAt = Math.floor(new Date('2026-05-25T10:40:00+08:00').getTime() / 1000);
+    await installStoredSession(
+      page,
+      createSessionJwt(accessExpiresAt, 'access'),
+      createSessionJwt(refreshExpiresAt, 'refresh'),
+    );
+
+    await page.goto('/production/injection-board');
+
+    const runningOverPlanCard = page.locator('.injection-board-card[data-machine="1"]');
+    await expect(runningOverPlanCard).toHaveClass(/injection-board-card--overproducing/);
+    await expect(runningOverPlanCard.locator('.injection-board-card__header em')).toHaveText('초과 생산 중');
+
+    const stoppedAtPlanCard = page.locator('.injection-board-card[data-machine="6"]');
+    await expect(stoppedAtPlanCard).toHaveClass(/injection-board-card--completed/);
+    await expect(stoppedAtPlanCard.locator('.injection-board-card__header em')).toHaveText('생산 완료');
+
+    guard.assertClean();
+  });
+
   test('returns a direct board bookmark to the board after login', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);
@@ -175,6 +200,18 @@ test.describe('injection office board', () => {
     await expect(page.locator('.injection-board-card__timeline')).toHaveCount(17);
     await expect(page.locator('.injection-board-card__timeline > span')).not.toHaveCount(0);
     const firstTimeline = page.locator('.injection-board-card__timeline').first();
+    const firstTimelineModels = await firstTimeline.locator('> span[data-model]').evaluateAll((segments) => (
+      segments.map((segment) => ({
+        model: segment.getAttribute('data-model'),
+        color: (segment as HTMLElement).style.backgroundColor,
+      }))
+    ));
+    expect(new Set(firstTimelineModels.map(({ model }) => model))).toEqual(new Set(['MODEL-A', 'MODEL-B']));
+    expect(new Set(firstTimelineModels.map(({ color }) => color)).size).toBe(2);
+    await firstTimeline.locator('> span[data-model="MODEL-B"]').first().hover();
+    await expect(page.getByRole('tooltip')).toContainText('PART-B');
+    await expect(page.getByRole('tooltip')).toContainText('MODEL-B');
+    await expect(page.getByRole('tooltip')).toContainText('B/C');
     const firstTimelineBox = await firstTimeline.boundingBox();
     expect(firstTimelineBox).not.toBeNull();
     expect(firstTimelineBox?.height ?? 0).toBeGreaterThanOrEqual(14);
@@ -232,7 +269,7 @@ test.describe('injection office board', () => {
     await expect.poll(() => page.evaluate((key) => Boolean(window.localStorage.getItem(key)), cacheKey)).toBe(true);
     const cached = await page.evaluate((key) => JSON.parse(window.localStorage.getItem(key) ?? '{}'), cacheKey);
     expect(cached.businessDate).toBe('2026-05-18');
-    expect(cached.version).toBe(2);
+    expect(cached.version).toBe(3);
     expect(cached.expiresAt).toBe(new Date('2026-05-20T08:00:00+08:00').getTime());
     expect(Object.keys(cached.timelines)).toHaveLength(17);
     expect(cached.timelines['1'][0]).toMatchObject({
@@ -263,12 +300,28 @@ test.describe('injection office board', () => {
     await expect(page.getByRole('tooltip')).toContainText('08:00–08:08');
     const shotLabels = await panel.locator('.injection-board-history-card__shots strong').allTextContents();
     expect(shotLabels.every((label) => /^\d[\d,]*회$/.test(label))).toBe(true);
-    const metricPositions = await panel.locator('.injection-board-history-card').first()
-      .locator('.injection-board-history-card__metrics > div')
+    const firstHistoryCard = panel.locator('.injection-board-history-card[data-machine="1"]');
+    const firstProductTicker = firstHistoryCard.locator('.injection-board-history-card__products');
+    await expect(firstProductTicker).toHaveAttribute('aria-label', /Part No\. PART-A, 모델 MODEL-A, 구분 B\/C/);
+    await expect(firstProductTicker).toHaveAttribute('aria-label', /Part No\. PART-B, 모델 MODEL-B, 구분 B\/C/);
+    await expect(firstProductTicker.locator('.injection-board-history-card__product-item')).toHaveCount(3);
+    await page.clock.runFor(4_000);
+    await expect(firstProductTicker.locator('.injection-board-history-card__product-track')).toHaveAttribute('style', /translateY\(-33\.333/);
+
+    const metricPositions = await firstHistoryCard.locator('.injection-board-history-card__metrics > div')
       .evaluateAll((metrics) => metrics.map((metric) => metric.getBoundingClientRect().top));
     expect(metricPositions).toHaveLength(3);
     expect(metricPositions[0]).toBeLessThan(metricPositions[1]);
     expect(metricPositions[1]).toBeLessThan(metricPositions[2]);
+    const metricTypography = await firstHistoryCard.locator('.injection-board-history-card__metrics > div')
+      .evaluateAll((metrics) => metrics.map((metric) => ({
+        titleSize: window.getComputedStyle(metric.querySelector('span') as HTMLElement).fontSize,
+        valueSize: window.getComputedStyle(metric.querySelector('strong') as HTMLElement).fontSize,
+      })));
+    expect(new Set(metricTypography.map(({ titleSize }) => titleSize))).toHaveProperty('size', 1);
+    expect(new Set(metricTypography.map(({ valueSize }) => valueSize))).toHaveProperty('size', 1);
+    await expect(firstHistoryCard.locator('.injection-board-history-card__production-actual--met')).toBeVisible();
+    await expect(panel.locator('.injection-board-history-card[data-machine="4"] .injection-board-history-card__production-actual--shortfall')).toBeVisible();
     await expect(panel.locator('.injection-board-history__kpi--outside strong')).not.toContainText('.5');
 
     const panelBox = await panel.boundingBox();

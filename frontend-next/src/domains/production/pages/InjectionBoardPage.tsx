@@ -21,7 +21,17 @@ const BOARD_REFRESH_INTERVAL_MS = 60_000;
 const STALE_DATA_THRESHOLD_MS = 5 * 60_000;
 const MACHINE_COUNT = 17;
 const PREVIOUS_SUMMARY_CACHE_PREFIX = "injection-board:previous-summary:";
-const PREVIOUS_SUMMARY_CACHE_VERSION = 2;
+const PREVIOUS_SUMMARY_CACHE_VERSION = 3;
+const BOARD_MODEL_COLORS = [
+  "#109858",
+  "#2563eb",
+  "#d97706",
+  "#7c3aed",
+  "#db2777",
+  "#0891b2",
+  "#65a30d",
+  "#dc2626",
+] as const;
 
 type PreviousSummaryCache = {
   version: number;
@@ -38,9 +48,14 @@ type BoardTimelineSegment = {
   widthPct: number;
   startMs: number;
   endMs: number;
+  productKey?: string;
+  partNo?: string;
+  model?: string;
+  classification?: string;
+  color?: string;
 };
 
-type BoardTone = "running" | "warning" | "stopped" | "completed" | "unplanned" | "idle" | "stale";
+type BoardTone = "running" | "warning" | "stopped" | "overproducing" | "completed" | "unplanned" | "idle" | "stale";
 
 type BoardMachine = {
   machineNumber: number;
@@ -74,6 +89,8 @@ const boardCopy = {
     plannedMachinesLabel: "계획 설비",
     actualShots: "실제 형합수",
     productionQuantity: "생산수량",
+    partNo: "Part No.",
+    classification: "구분",
     quantityPending: "수량 환산 대기",
     pieces: "개",
     actual: "실적",
@@ -104,6 +121,7 @@ const boardCopy = {
     unplannedRunning: "계획 외 가동",
     warning: "진도 확인",
     stopped: "계획 설비 정지",
+    overproducing: "초과 생산 중",
     completed: "생산 완료",
     stoppedMachines: "정지 설비",
     completedMachines: "완료 설비",
@@ -155,6 +173,8 @@ const boardCopy = {
     plannedMachinesLabel: "计划设备",
     actualShots: "实际模次",
     productionQuantity: "生产数量",
+    partNo: "Part No.",
+    classification: "区分",
     quantityPending: "数量待换算",
     pieces: "件",
     actual: "实绩",
@@ -185,6 +205,7 @@ const boardCopy = {
     unplannedRunning: "计划外运行",
     warning: "进度待确认",
     stopped: "计划设备停机",
+    overproducing: "超额生产中",
     completed: "生产完成",
     stoppedMachines: "停机设备",
     completedMachines: "完成设备",
@@ -352,35 +373,156 @@ function getTimelineSlotMinutes(data: InjectionProductionMatrix, index: number) 
   return Number.isFinite(inferred) && inferred > 0 ? inferred : 2;
 }
 
+type TimelineProductWindow = {
+  startShot: number;
+  endShot: number;
+  productKey: string;
+  partNo: string;
+  model: string;
+  classification: string;
+  color: string;
+};
+
+function getStableColorIndex(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash) % BOARD_MODEL_COLORS.length;
+}
+
+function buildTimelineProductWindows(row: RealtimeProgressRow | undefined): TimelineProductWindow[] {
+  if (!row?.segments.length) return [];
+  const grouped = new Map<string, {
+    allocatedShots: number;
+    partNos: Set<string>;
+    models: Set<string>;
+    classifications: Set<string>;
+  }>();
+
+  row.segments.forEach((segment) => {
+    const groupKey = segment.shotGroupKey || segment.key;
+    const current = grouped.get(groupKey) ?? {
+      allocatedShots: 0,
+      partNos: new Set<string>(),
+      models: new Set<string>(),
+      classifications: new Set<string>(),
+    };
+    current.allocatedShots = Math.max(current.allocatedShots, Number(segment.allocatedShots) || 0);
+    if (segment.partNo && segment.partNo !== "-") current.partNos.add(segment.partNo);
+    if (segment.modelName && segment.modelName !== "-") current.models.add(segment.modelName);
+    const classification = formatProductFamily(segment.productFamilyCode) || segment.productFamilyName || "";
+    if (classification) current.classifications.add(classification);
+    grouped.set(groupKey, current);
+  });
+
+  const colorByModel = new Map<string, number>();
+  const usedColorIndexes = new Set<number>();
+  let cumulativeShots = 0;
+  return [...grouped.entries()].flatMap(([groupKey, group]) => {
+    if (group.allocatedShots <= 0) return [];
+    const partNo = [...group.partNos].join(" + ") || "-";
+    const model = [...group.models].join(" + ") || "-";
+    const classification = [...group.classifications].join(" + ") || "-";
+    const colorKey = model !== "-" ? model : partNo;
+    let colorIndex = colorByModel.get(colorKey);
+    if (colorIndex === undefined) {
+      colorIndex = getStableColorIndex(colorKey);
+      let attempts = 0;
+      while (usedColorIndexes.has(colorIndex) && attempts < BOARD_MODEL_COLORS.length) {
+        colorIndex = (colorIndex + 1) % BOARD_MODEL_COLORS.length;
+        attempts += 1;
+      }
+      colorByModel.set(colorKey, colorIndex);
+      usedColorIndexes.add(colorIndex);
+    }
+    const startShot = cumulativeShots;
+    cumulativeShots += group.allocatedShots;
+    return [{
+      startShot,
+      endShot: cumulativeShots,
+      productKey: groupKey,
+      partNo,
+      model,
+      classification,
+      color: BOARD_MODEL_COLORS[colorIndex],
+    }];
+  });
+}
+
 function buildMachineTimeline(
   businessDate: string,
   data: InjectionProductionMatrix | undefined,
   machineNumber: number,
-  expectedCycleTimeSec: number | null | undefined,
+  row: RealtimeProgressRow | undefined,
 ) {
   if (!data?.time_slots?.length) return [];
   const businessStart = new Date(`${businessDate}T08:00:00+08:00`);
   const businessEnd = new Date(businessStart.getTime() + 24 * 60 * 60 * 1000);
   const values = getMachineProductionValues(data, machineNumber);
-  const intervals: Array<{ startMs: number; endMs: number }> = [];
+  const productWindows = buildTimelineProductWindows(row);
+  const intervals: Array<{
+    startMs: number;
+    endMs: number;
+    productKey?: string;
+    partNo?: string;
+    model?: string;
+    classification?: string;
+    color?: string;
+  }> = [];
+  let cumulativeShots = 0;
 
   data.time_slots.forEach((slot, index) => {
-    if (Number(values[index] ?? 0) <= 0) return;
+    const slotShots = Number(values[index] ?? 0);
+    if (slotShots <= 0) return;
     const slotStart = new Date(slot.time);
     if (Number.isNaN(slotStart.getTime()) || slotStart < businessStart || slotStart >= businessEnd) return;
     const slotMinutes = getTimelineSlotMinutes(data, index);
-    intervals.push({
-      startMs: slotStart.getTime(),
-      endMs: Math.min(businessEnd.getTime(), slotStart.getTime() + slotMinutes * 60_000),
-    });
+    const slotStartMs = slotStart.getTime();
+    const slotEndMs = Math.min(businessEnd.getTime(), slotStartMs + slotMinutes * 60_000);
+    const slotDurationMs = slotEndMs - slotStartMs;
+    const slotShotEnd = cumulativeShots + slotShots;
+
+    if (!productWindows.length) {
+      intervals.push({ startMs: slotStartMs, endMs: slotEndMs });
+      cumulativeShots = slotShotEnd;
+      return;
+    }
+
+    let shotCursor = cumulativeShots;
+    while (shotCursor < slotShotEnd) {
+      const product = productWindows.find((candidate) => shotCursor < candidate.endShot)
+        ?? productWindows.at(-1);
+      if (!product) break;
+      const boundary = product.endShot > shotCursor
+        ? Math.min(slotShotEnd, product.endShot)
+        : slotShotEnd;
+      const startRatio = (shotCursor - cumulativeShots) / slotShots;
+      const endRatio = (boundary - cumulativeShots) / slotShots;
+      intervals.push({
+        startMs: slotStartMs + slotDurationMs * startRatio,
+        endMs: slotStartMs + slotDurationMs * endRatio,
+        productKey: product.productKey,
+        partNo: product.partNo,
+        model: product.model,
+        classification: product.classification,
+        color: product.color,
+      });
+      shotCursor = boundary;
+    }
+    cumulativeShots = slotShotEnd;
   });
 
   if (!intervals.length) return [];
-  const bridgeMinutes = Math.min(15, Math.max(4, ((expectedCycleTimeSec ?? 120) * 3) / 60));
-  const merged: Array<{ startMs: number; endMs: number }> = [];
+  const bridgeMinutes = Math.min(15, Math.max(4, ((row?.expectedCycleTimeSec ?? 120) * 3) / 60));
+  const merged: typeof intervals = [];
   intervals.forEach((interval) => {
     const previous = merged.at(-1);
-    if (previous && interval.startMs - previous.endMs <= bridgeMinutes * 60_000) {
+    if (
+      previous
+      && previous.productKey === interval.productKey
+      && interval.startMs - previous.endMs <= bridgeMinutes * 60_000
+    ) {
       previous.endMs = Math.max(previous.endMs, interval.endMs);
       return;
     }
@@ -391,7 +533,7 @@ function buildMachineTimeline(
   return merged.map((interval) => {
     const startPct = Math.max(0, Math.min(100, ((interval.startMs - businessStart.getTime()) / durationMs) * 100));
     const widthPct = Math.max(0.25, Math.min(100 - startPct, ((interval.endMs - interval.startMs) / durationMs) * 100));
-    return { startPct, widthPct, startMs: interval.startMs, endMs: interval.endMs };
+    return { ...interval, startPct, widthPct };
   });
 }
 
@@ -411,7 +553,7 @@ function buildBoardTimelines(
       businessDate,
       data,
       machineNumber,
-      rowsByMachine.get(machineNumber)?.expectedCycleTimeSec,
+      rowsByMachine.get(machineNumber),
     )];
   }));
 }
@@ -443,7 +585,7 @@ function getTone(
   if (isStale) return "stale";
   if (!row) return "idle";
   if (!row.hasPlan) return row.isRunning ? "unplanned" : "idle";
-  if (row.progressRate >= 99.9) return "completed";
+  if (row.progressRate >= 99.9) return row.isRunning ? "overproducing" : "completed";
   if (!row.isRunning) return "stopped";
   if (row.progressRate + 5 < elapsedRate) return "warning";
   return "running";
@@ -454,6 +596,7 @@ function getStatusLabel(tone: BoardTone, copy: typeof boardCopy.ko) {
     running: copy.plannedRunning,
     warning: copy.warning,
     stopped: copy.stopped,
+    overproducing: copy.overproducing,
     completed: copy.completed,
     unplanned: copy.unplannedRunning,
     idle: copy.idle,
@@ -496,10 +639,116 @@ function buildBoardMachines(
         businessDate,
         mesData,
         machineNumber,
-        row?.expectedCycleTimeSec,
+        row,
       ),
     };
   });
+}
+
+type HistoryProduct = {
+  partNo: string;
+  model: string;
+  classification: string;
+};
+
+function getHistoryProducts(row: RealtimeProgressRow | undefined, fallback: string, noPlan: string): HistoryProduct[] {
+  const segments = row?.segments ?? [];
+  const producedSegments = segments.filter((segment) => (
+    Number(segment.estimatedQty) > 0 || Number(segment.allocatedShots) > 0
+  ));
+  const visibleSegments = producedSegments.length ? producedSegments : segments;
+  const uniqueProducts = new Map<string, { partNo: string; model: string; classification: string }>();
+
+  visibleSegments.forEach((segment) => {
+    const partNo = segment.partNo || "-";
+    const model = segment.modelName && segment.modelName !== "-" ? segment.modelName : "-";
+    const classification = formatProductFamily(segment.productFamilyCode)
+      || segment.productFamilyName
+      || "-";
+    const key = `${partNo}\u0000${model}\u0000${classification}`;
+    if (!uniqueProducts.has(key)) {
+      uniqueProducts.set(key, { partNo, model, classification });
+    }
+  });
+
+  if (uniqueProducts.size) return [...uniqueProducts.values()];
+  return [{
+    partNo: row?.isRunning ? fallback : noPlan,
+    model: "-",
+    classification: "-",
+  }];
+}
+
+function HistoryProductTicker({
+  classificationLabel,
+  modelLabel,
+  partNoLabel,
+  products,
+}: {
+  classificationLabel: string;
+  modelLabel: string;
+  partNoLabel: string;
+  products: HistoryProduct[];
+}) {
+  const [position, setPosition] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
+  const accessibleLabel = products
+    .map((product) => `${partNoLabel} ${product.partNo}, ${modelLabel} ${product.model}, ${classificationLabel} ${product.classification}`)
+    .join(" / ");
+  const tickerProducts = products.length > 1 ? [...products, products[0]] : products;
+
+  useEffect(() => {
+    setPosition(0);
+    setIsTransitioning(false);
+    const frame = window.requestAnimationFrame(() => setIsTransitioning(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [accessibleLabel]);
+
+  useEffect(() => {
+    if (products.length <= 1 || isPaused) return undefined;
+    const timer = window.setInterval(() => {
+      setIsTransitioning(true);
+      setPosition((current) => current + 1);
+    }, 3_500);
+    return () => window.clearInterval(timer);
+  }, [isPaused, products.length]);
+
+  function handleTransitionEnd() {
+    if (position < products.length) return;
+    setIsTransitioning(false);
+    setPosition(0);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => setIsTransitioning(true));
+    });
+  }
+
+  return (
+    <div
+      aria-label={accessibleLabel}
+      className={`injection-board-history-card__products${products.length > 1 ? " is-rolling" : ""}`}
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      title={accessibleLabel}
+    >
+      <div
+        aria-hidden="true"
+        className={`injection-board-history-card__product-track${isTransitioning ? " is-transitioning" : ""}`}
+        onTransitionEnd={handleTransitionEnd}
+        style={{ transform: `translateY(-${position * (100 / tickerProducts.length)}%)` }}
+      >
+        {tickerProducts.map((product, index) => (
+          <div className="injection-board-history-card__product-item" key={`${product.partNo}-${product.model}-${product.classification}-${index}`}>
+            <b>{partNoLabel}</b> {product.partNo}
+            <i>·</i>
+            <b>{modelLabel}</b> {product.model}
+            <i>·</i>
+            <b>{classificationLabel}</b> {product.classification}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 type TimelineTooltip = {
@@ -508,6 +757,7 @@ type TimelineTooltip = {
   cursorPct: number;
   time: string;
   detail: string;
+  product?: string;
 };
 
 function ProductionTimeline({
@@ -539,6 +789,9 @@ function ProductionTimeline({
     const detail = activeSegment
       ? `${copy.timelineRecord} ${formatTime(new Date(activeSegment.startMs))}–${formatTime(new Date(activeSegment.endMs))}`
       : copy.timelineNoRecord;
+    const product = activeSegment?.model
+      ? `${copy.partNo} ${activeSegment.partNo || "-"} · ${copy.model} ${activeSegment.model} · ${copy.classification} ${activeSegment.classification || "-"}`
+      : undefined;
     const horizontalMargin = 128;
     setTooltip({
       left: Math.max(horizontalMargin, Math.min(window.innerWidth - horizontalMargin, clientX)),
@@ -546,6 +799,7 @@ function ProductionTimeline({
       cursorPct: ratio * 100,
       time: formatTime(new Date(pointMs)),
       detail,
+      product,
     });
   }
 
@@ -570,11 +824,18 @@ function ProductionTimeline({
           return (
             <span
               aria-hidden="true"
+              data-classification={segment.classification}
               data-end-ms={segment.endMs}
+              data-model={segment.model}
+              data-part-no={segment.partNo}
               data-start-ms={segment.startMs}
               key={`${machineNumber}-timeline-${index}`}
-              style={{ left: `${segment.startPct}%`, width: `${segment.widthPct}%` }}
-              title={`${machineLabel} ${copy.timelineRecord} ${rangeLabel}`}
+              style={{
+                left: `${segment.startPct}%`,
+                width: `${segment.widthPct}%`,
+                backgroundColor: segment.color,
+              }}
+              title={`${machineLabel} ${copy.timelineRecord} ${rangeLabel}${segment.model ? ` · ${segment.partNo} · ${segment.model} · ${segment.classification}` : ""}`}
             />
           );
         })}
@@ -595,6 +856,7 @@ function ProductionTimeline({
         >
           <strong>{tooltip.time}</strong>
           <span>{tooltip.detail}</span>
+          {tooltip.product ? <span className="injection-board-timeline-tooltip__product">{tooltip.product}</span> : null}
         </div>,
         document.body,
       ) : null}
@@ -780,7 +1042,10 @@ function PreviousDaySummary({
             <div className="injection-board-history__machines">
               {machineRows.map(({ machineNumber, row }) => {
                 const hasOutput = Number(row?.shotCount ?? 0) > 0;
-                const product = getActiveProduct(row, copy.noPart, copy.noPlan);
+                const products = getHistoryProducts(row, copy.noPart, copy.noPlan);
+                const productionMet = Boolean(
+                  row?.hasPlan && Number(row.estimatedQty) >= Number(row.plannedQty),
+                );
                 const resultTone = row?.hasPlan
                   ? row.progressRate >= 99.9 ? "complete" : "shortfall"
                   : hasOutput ? "outside" : "idle";
@@ -797,7 +1062,12 @@ function PreviousDaySummary({
                       <strong>{machineNumber}{language === "ko" ? "호기" : "号机"}</strong>
                       <em>{resultLabel}</em>
                     </header>
-                    <div className="injection-board-history-card__part" title={product.part}>{product.part}</div>
+                    <HistoryProductTicker
+                      classificationLabel={copy.classification}
+                      modelLabel={copy.model}
+                      partNoLabel={copy.partNo}
+                      products={products}
+                    />
                     <ProductionTimeline
                       businessDate={businessDate}
                       className="injection-board-history-card__timeline"
@@ -818,7 +1088,7 @@ function PreviousDaySummary({
                         <span>{copy.productionQuantity}</span>
                         <strong>
                           {row?.hasPlan
-                            ? `${formatNumber(row.estimatedQty)} / ${formatNumber(row.plannedQty)}`
+                            ? <><b className={`injection-board-history-card__production-actual injection-board-history-card__production-actual--${productionMet ? "met" : "shortfall"}`}>{formatNumber(row.estimatedQty)}</b>{` / ${formatNumber(row.plannedQty)}`}</>
                             : hasOutput ? copy.quantityPending : copy.noPlan}
                         </strong>
                       </div>
