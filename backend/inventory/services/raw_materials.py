@@ -29,6 +29,7 @@ from inventory.mes import (
     call_inventory_change_log,
     call_inventory_list,
 )
+from inventory.services.raw_material_reference import lookup_raw_material_reference
 from inventory.services.raw_material_storage import (
     load_change_dataset,
     load_inventory_dataset,
@@ -56,9 +57,16 @@ KG_UNIT_ALIASES = {
 USABLE_QC_STATUSES = {1, 2}  # 合格, 让步合格
 RESTRICTED_QC_STATUSES = {3, 4, 5}  # 待检, 不合格, 暂控
 INBOUND_ACTIONS = {"in", "receive"}
-CONSUMPTION_ACTIONS = {"out"}
+EXTERNAL_PRODUCTION_SUPPLY_ACTIONS = {"out"}
 TRANSFER_OUT_ACTIONS = {"issue"}
-OUTBOUND_ACTIONS = CONSUMPTION_ACTIONS | TRANSFER_OUT_ACTIONS
+INTERNAL_INJECTION_SUPPLY_ACTIONS = TRANSFER_OUT_ACTIONS
+PRODUCTION_OUTBOUND_ACTIONS = (
+    EXTERNAL_PRODUCTION_SUPPLY_ACTIONS | INTERNAL_INJECTION_SUPPLY_ACTIONS
+)
+# Retain the legacy ``consumption`` contract for external MES out records.
+# Reorder planning uses the explicitly named production-usage metrics below.
+CONSUMPTION_ACTIONS = EXTERNAL_PRODUCTION_SUPPLY_ACTIONS
+OUTBOUND_ACTIONS = PRODUCTION_OUTBOUND_ACTIONS
 ADJUSTMENT_ACTIONS = {"amount_adjust", "attr_adjust"}
 RISK_ORDER = {
     "critical": 0,
@@ -70,14 +78,14 @@ RISK_ORDER = {
 
 ACTION_LABELS = {
     "in": "입고",
-    "out": "출고",
+    "out": "협력사 생산 공급(出库)",
     "receive": "이동 입고",
-    "issue": "이동 출고",
+    "issue": "사내 사출 생산 공급(转移出库)",
     "amount_adjust": "수량 조정",
     "attr_adjust": "속성 조정",
 }
 
-MATERIAL_FAMILY_ORDER = ("pp", "abs", "pc_abs", "pc", "other")
+MATERIAL_FAMILY_ORDER = ("pp", "abs", "pc_abs", "pc", "hips", "pbt", "other")
 MATERIAL_FAMILY_PATTERNS = (
     (
         "pc_abs",
@@ -88,6 +96,8 @@ MATERIAL_FAMILY_PATTERNS = (
     ("pp", re.compile(r"^PP(?!(?:S|E|O)|A(?:$|[\s/+_\d-]))")),
     ("abs", re.compile(r"^(?:MABS|ABS)")),
     ("pc", re.compile(r"^PC")),
+    ("hips", re.compile(r"^HIPS")),
+    ("pbt", re.compile(r"^PBT")),
 )
 
 
@@ -129,6 +139,12 @@ def _material_family_from_label(value: Any) -> str:
 
 def _material_family(material_code: Any, material_name: Any) -> str:
     """Use the MES name first and keep conflicting explicit families uncertain."""
+    reference = lookup_raw_material_reference(
+        material_name=_normalised_label(material_name),
+        material_code=_normalised_label(material_code),
+    )
+    if reference.get("family"):
+        return reference["family"]
     name_family = _material_family_from_label(material_name)
     code_family = _material_family_from_label(material_code)
     if (
@@ -138,6 +154,14 @@ def _material_family(material_code: Any, material_name: Any) -> str:
     ):
         return "other"
     return name_family if name_family != "other" else code_family
+
+
+def _material_reference(material_code: Any, material_name: Any) -> dict[str, str]:
+    """Return the workbook-backed manufacturer/color profile when available."""
+    return lookup_raw_material_reference(
+        material_name=_normalised_label(material_name),
+        material_code=_normalised_label(material_code),
+    )
 
 
 def _unit(amount: Any) -> str:
@@ -609,9 +633,9 @@ def _base_response(
             "recommendations_complete": False,
             "recommendation_issues": [],
             "assumptions": [
-                "Average daily consumption uses the selected number of completed WJ business days and includes zero-consumption days; the active 08:00 business day is shown in the trend but excluded from reorder statistics.",
-                "Estimated consumption includes only MES action out. It is an outbound-demand proxy because this API response does not identify whether each outbound was for production.",
-                "MES issue is reported separately as transfer-out and is not included in consumption speed or reorder statistics.",
+                "Average daily estimated production usage uses the selected number of completed WJ business days and includes zero-usage days; the active 08:00 business day is shown in the trend but excluded from reorder statistics.",
+                "Estimated production usage includes MES out (external-partner production supply) and issue (internal injection-production supply); neither action is treated as a sale.",
+                "MES issue remains exposed separately as internal injection supply while also contributing to production outbound, estimated production usage, and reorder statistics.",
                 "Safety stock = 1.65 × daily usage standard deviation × square root of lead time (approximately 95% service level under a normal-demand assumption).",
                 "Recommended order = max(target stock - order-available stock, 0), where only MES quality status 1 (accepted) and 2 (concession accepted) are order-available.",
                 "Recommendations are planning references only; open purchase orders, supplier lead-time differences, minimum order quantities, pack sizes, and shelf life are not available in these MES endpoints.",
@@ -639,6 +663,10 @@ def _material_seed(
     warehouse: dict[str, str],
     group_key: str,
 ) -> dict[str, Any]:
+    reference = _material_reference(material.get("code"), material.get("name"))
+    material_family = reference.get("family") or _material_family(
+        material.get("code"), material.get("name")
+    )
     return {
         "group_key": group_key,
         "material_id": _text(material.get("id")),
@@ -646,6 +674,9 @@ def _material_seed(
         "material_code": _normalised_label(material.get("code")),
         "material_name": _normalised_label(material.get("name")),
         "specification": _normalised_label(material.get("specification")),
+        "manufacturer": reference.get("manufacturer", ""),
+        "color": reference.get("color", ""),
+        "material_family": material_family,
         "unit": unit,
         "current": Decimal("0"),
         "usable_current": Decimal("0"),
@@ -658,9 +689,12 @@ def _material_seed(
         "inbound": Decimal("0"),
         "outbound": Decimal("0"),
         "consumption": Decimal("0"),
+        "external_production_supply": Decimal("0"),
         "transfer_out": Decimal("0"),
+        "production_outbound": Decimal("0"),
         "adjustment": Decimal("0"),
         "daily_consumption": defaultdict(Decimal),
+        "daily_production_usage": defaultdict(Decimal),
         "warehouse_codes": set(filter(None, [warehouse.get("code")])),
         "warehouse_names": set(filter(None, [warehouse.get("name")])),
         "last_updated": None,
@@ -730,6 +764,17 @@ def _merge_material_metadata(entry: dict[str, Any], material: dict[str, Any]) ->
         value = _normalised_label(material.get(source))
         if value and not entry[target]:
             entry[target] = value
+    reference = _material_reference(material.get("code"), material.get("name"))
+    if not reference:
+        reference = _material_reference(entry["material_code"], entry["material_name"])
+    if reference:
+        entry["manufacturer"] = reference.get("manufacturer", "")
+        entry["color"] = reference.get("color", "")
+        entry["material_family"] = reference.get("family", entry["material_family"])
+    else:
+        entry["material_family"] = _material_family(
+            entry["material_code"], entry["material_name"]
+        )
 
 
 def _document_codes(value: Any) -> list[str]:
@@ -1625,6 +1670,13 @@ def build_raw_material_overview(
     trend_values: dict[str, dict[str, dict[str, Decimal]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(Decimal))
     )
+    family_trend_values: dict[
+        str, dict[str, dict[str, dict[str, Decimal]]]
+    ] = defaultdict(
+        lambda: defaultdict(
+            lambda: defaultdict(lambda: defaultdict(Decimal))
+        )
+    )
     recent: list[dict[str, Any]] = []
     unknown_actions: set[str] = set()
     direction_conflicts: set[str] = set()
@@ -1687,7 +1739,7 @@ def build_raw_material_overview(
             unexpected_units_by_source["inventory_change_log"][unit] += 1
             continue
         direction_in = _direction_is_in(amount_info.get("direction"), action_code)
-        action_label = action_label or ACTION_LABELS.get(action_code, action_code)
+        action_label = ACTION_LABELS.get(action_code) or action_label or action_code
         created_at = _iso_from_ms(row.get("createdAt"))
         if not created_at:
             invalid_timestamp_count += 1
@@ -1719,15 +1771,19 @@ def build_raw_material_overview(
         entry["last_updated"] = _later_iso(entry["last_updated"], created_at)
 
         day_metrics = trend_values[day][unit]
+        material_family = entry["material_family"]
+        family_metrics = family_trend_values[day][unit][material_family]
         if action_code in ADJUSTMENT_ACTIONS:
             signed = quantity if direction_in else -quantity
             if in_trend_window:
                 entry["adjustment"] += signed
                 day_metrics["adjustment"] += signed
+                family_metrics["adjustment"] += signed
         elif direction_in:
             if in_trend_window:
                 entry["inbound"] += quantity
                 day_metrics["inbound"] += quantity
+                family_metrics["inbound"] += quantity
             if action_code in OUTBOUND_ACTIONS:
                 direction_conflicts.add(action_code)
                 entry["recommendation_issues"].add("action_direction_conflict")
@@ -1735,17 +1791,32 @@ def build_raw_material_overview(
             if in_trend_window:
                 entry["outbound"] += quantity
                 day_metrics["outbound"] += quantity
+                family_metrics["outbound"] += quantity
+            if action_code in PRODUCTION_OUTBOUND_ACTIONS:
+                if in_trend_window:
+                    entry["production_outbound"] += quantity
+                    day_metrics["production_outbound"] += quantity
+                    family_metrics["production_outbound"] += quantity
+                if in_statistics_window:
+                    entry["daily_production_usage"][day] += quantity
+            if action_code in CONSUMPTION_ACTIONS:
+                if in_trend_window:
+                    entry["consumption"] += quantity
+                    day_metrics["consumption"] += quantity
+                    family_metrics["consumption"] += quantity
+                if in_statistics_window:
+                    entry["daily_consumption"][day] += quantity
+            if action_code in EXTERNAL_PRODUCTION_SUPPLY_ACTIONS:
+                if in_trend_window:
+                    entry["external_production_supply"] += quantity
+                    day_metrics["external_production_supply"] += quantity
+                    family_metrics["external_production_supply"] += quantity
             if action_code in TRANSFER_OUT_ACTIONS:
                 if in_trend_window:
                     entry["transfer_out"] += quantity
                     day_metrics["transfer_out"] += quantity
-            elif action_code in CONSUMPTION_ACTIONS:
-                if in_trend_window:
-                    entry["consumption"] += quantity
-                    day_metrics["consumption"] += quantity
-                if in_statistics_window:
-                    entry["daily_consumption"][day] += quantity
-            elif action_code in INBOUND_ACTIONS:
+                    family_metrics["transfer_out"] += quantity
+            if action_code in INBOUND_ACTIONS:
                 direction_conflicts.add(action_code)
                 entry["recommendation_issues"].add("action_direction_conflict")
 
@@ -1769,6 +1840,9 @@ def build_raw_material_overview(
                     "material_id": _text(material.get("id")),
                     "material_code": _text(material.get("code")),
                     "material_name": _text(material.get("name")),
+                    "material_family": entry["material_family"],
+                    "manufacturer": entry["manufacturer"],
+                    "color": entry["color"],
                     "specification": _text(
                         row.get("specification") or material.get("specification")
                     ),
@@ -1780,6 +1854,12 @@ def build_raw_material_overview(
                     "is_consumption": action_code in CONSUMPTION_ACTIONS
                     and not direction_in,
                     "is_transfer_out": action_code in TRANSFER_OUT_ACTIONS
+                    and not direction_in,
+                    "is_external_production_supply": action_code
+                    in EXTERNAL_PRODUCTION_SUPPLY_ACTIONS
+                    and not direction_in,
+                    "is_internal_injection_supply": action_code
+                    in INTERNAL_INJECTION_SUPPLY_ACTIONS
                     and not direction_in,
                 }
             )
@@ -1920,10 +2000,7 @@ def build_raw_material_overview(
     material_rows: list[dict[str, Any]] = []
     material_composition: dict[tuple[str, str], dict[str, Any]] = {}
     for entry in materials.values():
-        material_family = _material_family(
-            entry["material_code"],
-            entry["material_name"],
-        )
+        material_family = entry["material_family"]
         if entry["current"] > 0:
             composition = material_composition.setdefault(
                 (entry["unit"], material_family),
@@ -1949,16 +2026,37 @@ def build_raw_material_overview(
             lookback_days
         )
         stddev = variance.sqrt() if variance else Decimal("0")
-        safety = SERVICE_LEVEL_Z * stddev * Decimal(lead_time_days).sqrt()
-        reorder_point = average * Decimal(lead_time_days) + safety
-        target = average * Decimal(lead_time_days + review_period_days) + safety
+        production_daily = [
+            entry["daily_production_usage"].get(day, Decimal("0"))
+            for day in statistics_dates
+        ]
+        production_average = sum(production_daily, Decimal("0")) / Decimal(
+            lookback_days
+        )
+        production_variance = sum(
+            ((value - production_average) ** 2 for value in production_daily),
+            Decimal("0"),
+        ) / Decimal(lookback_days)
+        production_stddev = (
+            production_variance.sqrt() if production_variance else Decimal("0")
+        )
+        safety = (
+            SERVICE_LEVEL_Z
+            * production_stddev
+            * Decimal(lead_time_days).sqrt()
+        )
+        reorder_point = production_average * Decimal(lead_time_days) + safety
+        target = (
+            production_average * Decimal(lead_time_days + review_period_days)
+            + safety
+        )
         calculated_recommended = max(target - entry["usable_current"], Decimal("0"))
         recommended = calculated_recommended if recommendation_available else Decimal("0")
-        if average <= 0:
+        if production_average <= 0:
             risk = "critical" if entry["usable_current"] < 0 else "no_usage"
             cover = None
         else:
-            cover = entry["usable_current"] / average
+            cover = entry["usable_current"] / production_average
             risk = "critical" if entry["usable_current"] <= reorder_point else (
                 "watch" if entry["usable_current"] < target else "healthy"
             )
@@ -1972,6 +2070,8 @@ def build_raw_material_overview(
                 "material_code": entry["material_code"],
                 "material_name": entry["material_name"],
                 "material_family": material_family,
+                "manufacturer": entry["manufacturer"],
+                "color": entry["color"],
                 "specification": entry["specification"],
                 "unit": entry["unit"],
                 "current_quantity": _number(entry["current"]),
@@ -2018,9 +2118,25 @@ def build_raw_material_overview(
                 "outbound_quantity": _number(entry["outbound"]),
                 "consumption_quantity": _number(entry["consumption"]),
                 "transfer_out_quantity": _number(entry["transfer_out"]),
+                "external_production_supply_quantity": _number(
+                    entry["external_production_supply"]
+                ),
+                "internal_injection_supply_quantity": _number(
+                    entry["transfer_out"]
+                ),
+                "production_outbound_quantity": _number(
+                    entry["production_outbound"]
+                ),
+                "estimated_production_usage_quantity": _number(
+                    entry["production_outbound"]
+                ),
                 "adjustment_quantity": _number(entry["adjustment"]),
                 "avg_daily_consumption": _number(average),
+                "avg_daily_estimated_production_usage": _number(
+                    production_average
+                ),
                 "usage_stddev": _number(stddev),
+                "production_usage_stddev": _number(production_stddev),
                 "safety_stock": _number(safety),
                 "reorder_point": _number(reorder_point),
                 "target_stock": _number(target),
@@ -2106,6 +2222,27 @@ def build_raw_material_overview(
                 "outbound": _number(sum((entry["outbound"] for entry in entries), Decimal("0"))),
                 "consumption": _number(sum((entry["consumption"] for entry in entries), Decimal("0"))),
                 "transfer_out": _number(sum((entry["transfer_out"] for entry in entries), Decimal("0"))),
+                "external_production_supply": _number(
+                    sum(
+                        (entry["external_production_supply"] for entry in entries),
+                        Decimal("0"),
+                    )
+                ),
+                "internal_injection_supply": _number(
+                    sum((entry["transfer_out"] for entry in entries), Decimal("0"))
+                ),
+                "production_outbound": _number(
+                    sum(
+                        (entry["production_outbound"] for entry in entries),
+                        Decimal("0"),
+                    )
+                ),
+                "estimated_production_usage": _number(
+                    sum(
+                        (entry["production_outbound"] for entry in entries),
+                        Decimal("0"),
+                    )
+                ),
                 "adjustment": _number(sum((entry["adjustment"] for entry in entries), Decimal("0"))),
                 "recommended_order": sum(row["recommended_order"] for row in matching_material_rows),
                 "recommendation_unavailable_count": sum(
@@ -2151,8 +2288,22 @@ def build_raw_material_overview(
             running[unit] -= net
 
     trend = []
+    families_by_unit = {
+        unit: sorted(
+            {
+                entry["material_family"]
+                for entry in materials.values()
+                if entry["unit"] == unit
+            },
+            key=lambda family: material_family_rank.get(
+                family, len(MATERIAL_FAMILY_ORDER)
+            ),
+        )
+        for unit in units
+    }
     for day in dates:
         values = []
+        family_values = []
         for unit in units:
             metrics = trend_values[day][unit]
             net = metrics["inbound"] - metrics["outbound"] + metrics["adjustment"]
@@ -2163,12 +2314,57 @@ def build_raw_material_overview(
                     "outbound": _number(metrics["outbound"]),
                     "consumption": _number(metrics["consumption"]),
                     "transfer_out": _number(metrics["transfer_out"]),
+                    "external_production_supply": _number(
+                        metrics["external_production_supply"]
+                    ),
+                    "internal_injection_supply": _number(
+                        metrics["transfer_out"]
+                    ),
+                    "production_outbound": _number(
+                        metrics["production_outbound"]
+                    ),
+                    "estimated_production_usage": _number(
+                        metrics["production_outbound"]
+                    ),
                     "adjustment": _number(metrics["adjustment"]),
                     "net_change": _number(net),
                     "estimated_closing_stock": _number(closing_by_date[day][unit]),
                 }
             )
-        trend.append({"date": day, "values": values})
+            for family in families_by_unit[unit]:
+                family_metrics = family_trend_values[day][unit][family]
+                family_net = (
+                    family_metrics["inbound"]
+                    - family_metrics["outbound"]
+                    + family_metrics["adjustment"]
+                )
+                family_values.append(
+                    {
+                        "family": family,
+                        "unit": unit,
+                        "inbound": _number(family_metrics["inbound"]),
+                        "outbound": _number(family_metrics["outbound"]),
+                        "consumption": _number(family_metrics["consumption"]),
+                        "transfer_out": _number(family_metrics["transfer_out"]),
+                        "external_production_supply": _number(
+                            family_metrics["external_production_supply"]
+                        ),
+                        "internal_injection_supply": _number(
+                            family_metrics["transfer_out"]
+                        ),
+                        "production_outbound": _number(
+                            family_metrics["production_outbound"]
+                        ),
+                        "estimated_production_usage": _number(
+                            family_metrics["production_outbound"]
+                        ),
+                        "adjustment": _number(family_metrics["adjustment"]),
+                        "net_change": _number(family_net),
+                    }
+                )
+        trend.append(
+            {"date": day, "values": values, "family_values": family_values}
+        )
 
     recent.sort(key=lambda row: row["created_at"] or "", reverse=True)
     recommendations_available = any(

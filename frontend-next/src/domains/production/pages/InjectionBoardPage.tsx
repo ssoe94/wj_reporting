@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Factory, History } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
@@ -20,8 +21,10 @@ const BOARD_REFRESH_INTERVAL_MS = 60_000;
 const STALE_DATA_THRESHOLD_MS = 5 * 60_000;
 const MACHINE_COUNT = 17;
 const PREVIOUS_SUMMARY_CACHE_PREFIX = "injection-board:previous-summary:";
+const PREVIOUS_SUMMARY_CACHE_VERSION = 2;
 
 type PreviousSummaryCache = {
+  version: number;
   businessDate: string;
   expiresAt: number;
   summary: RealtimeProgressSummary;
@@ -33,6 +36,8 @@ type PreviousBoardSnapshot = Pick<PreviousSummaryCache, "summary" | "timelines">
 type BoardTimelineSegment = {
   startPct: number;
   widthPct: number;
+  startMs: number;
+  endMs: number;
 };
 
 type BoardTone = "running" | "warning" | "stopped" | "completed" | "unplanned" | "idle" | "stale";
@@ -122,6 +127,10 @@ const boardCopy = {
     noPlan: "계획없음",
     lastShot: "최근 형합",
     noShot: "형합 없음",
+    timeline: "24시간 생산 기록",
+    timelineHint: "그래프 위치에 마우스를 올리면 해당 시각을 확인할 수 있습니다.",
+    timelineRecord: "생산 기록 구간",
+    timelineNoRecord: "생산 기록 없음",
     remainingShots: "잔여 형합",
     loading: "사출 현황을 불러오는 중입니다.",
     error: "현황 데이터를 불러오지 못했습니다. 1분 후 다시 시도합니다.",
@@ -199,6 +208,10 @@ const boardCopy = {
     noPlan: "无计划",
     lastShot: "最近合模",
     noShot: "无合模",
+    timeline: "24小时生产记录",
+    timelineHint: "将鼠标移到图表位置即可查看对应时间。",
+    timelineRecord: "生产记录区间",
+    timelineNoRecord: "无生产记录",
     remainingShots: "剩余模次",
     loading: "正在读取注塑运行状态。",
     error: "无法读取看板数据，将在1分钟后重试。",
@@ -226,7 +239,8 @@ function readPreviousSummaryCache(businessDate: string): PreviousBoardSnapshot |
     if (!rawValue) return null;
     const cached = JSON.parse(rawValue) as PreviousSummaryCache;
     if (
-      cached.businessDate !== businessDate
+      cached.version !== PREVIOUS_SUMMARY_CACHE_VERSION
+      || cached.businessDate !== businessDate
       || cached.expiresAt <= Date.now()
       || !Array.isArray(cached.summary?.rows)
       || !cached.timelines
@@ -248,6 +262,7 @@ function writePreviousSummaryCache(
 ) {
   if (typeof window === "undefined") return;
   const cached: PreviousSummaryCache = {
+    version: PREVIOUS_SUMMARY_CACHE_VERSION,
     businessDate,
     expiresAt: getPreviousSummaryCacheExpiry(activeBusinessDate),
     ...snapshot,
@@ -376,7 +391,7 @@ function buildMachineTimeline(
   return merged.map((interval) => {
     const startPct = Math.max(0, Math.min(100, ((interval.startMs - businessStart.getTime()) / durationMs) * 100));
     const widthPct = Math.max(0.25, Math.min(100 - startPct, ((interval.endMs - interval.startMs) / durationMs) * 100));
-    return { startPct, widthPct };
+    return { startPct, widthPct, startMs: interval.startMs, endMs: interval.endMs };
   });
 }
 
@@ -487,7 +502,115 @@ function buildBoardMachines(
   });
 }
 
-function MachineBoardCard({ machine, language }: { machine: BoardMachine; language: AppLanguage }) {
+type TimelineTooltip = {
+  left: number;
+  top: number;
+  cursorPct: number;
+  time: string;
+  detail: string;
+};
+
+function ProductionTimeline({
+  businessDate,
+  className,
+  language,
+  machineNumber,
+  segments,
+}: {
+  businessDate: string;
+  className: string;
+  language: AppLanguage;
+  machineNumber: number;
+  segments: BoardTimelineSegment[];
+}) {
+  const copy = boardCopy[language];
+  const tooltipId = useId();
+  const [tooltip, setTooltip] = useState<TimelineTooltip | null>(null);
+  const businessStartMs = new Date(`${businessDate}T08:00:00+08:00`).getTime();
+  const durationMs = 24 * 60 * 60 * 1000;
+  const machineLabel = `${machineNumber}${language === "ko" ? "호기" : "号机"}`;
+
+  function showTooltip(clientX: number, track: HTMLDivElement) {
+    const bounds = track.getBoundingClientRect();
+    if (bounds.width <= 0) return;
+    const ratio = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+    const pointMs = businessStartMs + ratio * durationMs;
+    const activeSegment = segments.find((segment) => pointMs >= segment.startMs && pointMs < segment.endMs);
+    const detail = activeSegment
+      ? `${copy.timelineRecord} ${formatTime(new Date(activeSegment.startMs))}–${formatTime(new Date(activeSegment.endMs))}`
+      : copy.timelineNoRecord;
+    const horizontalMargin = 128;
+    setTooltip({
+      left: Math.max(horizontalMargin, Math.min(window.innerWidth - horizontalMargin, clientX)),
+      top: Math.max(48, bounds.top - 8),
+      cursorPct: ratio * 100,
+      time: formatTime(new Date(pointMs)),
+      detail,
+    });
+  }
+
+  return (
+    <>
+      <div
+        aria-describedby={tooltip ? tooltipId : undefined}
+        aria-label={`${machineLabel} ${copy.timeline}. ${copy.timelineHint}`}
+        className={`${className} injection-board-timeline`}
+        onBlur={() => setTooltip(null)}
+        onFocus={(event) => {
+          const bounds = event.currentTarget.getBoundingClientRect();
+          showTooltip(bounds.left + bounds.width / 2, event.currentTarget);
+        }}
+        onPointerLeave={() => setTooltip(null)}
+        onPointerMove={(event) => showTooltip(event.clientX, event.currentTarget)}
+        role="group"
+        tabIndex={0}
+      >
+        {segments.map((segment, index) => {
+          const rangeLabel = `${formatTime(new Date(segment.startMs))}–${formatTime(new Date(segment.endMs))}`;
+          return (
+            <span
+              aria-hidden="true"
+              data-end-ms={segment.endMs}
+              data-start-ms={segment.startMs}
+              key={`${machineNumber}-timeline-${index}`}
+              style={{ left: `${segment.startPct}%`, width: `${segment.widthPct}%` }}
+              title={`${machineLabel} ${copy.timelineRecord} ${rangeLabel}`}
+            />
+          );
+        })}
+        {tooltip ? (
+          <i
+            aria-hidden="true"
+            className="injection-board-timeline__cursor"
+            style={{ left: `${tooltip.cursorPct}%` }}
+          />
+        ) : null}
+      </div>
+      {tooltip && typeof document !== "undefined" ? createPortal(
+        <div
+          className="injection-board-timeline-tooltip"
+          id={tooltipId}
+          role="tooltip"
+          style={{ left: tooltip.left, top: tooltip.top }}
+        >
+          <strong>{tooltip.time}</strong>
+          <span>{tooltip.detail}</span>
+        </div>,
+        document.body,
+      ) : null}
+    </>
+  );
+}
+
+function MachineBoardCard({
+  businessDate,
+  machine,
+  language,
+}: {
+  businessDate: string;
+  machine: BoardMachine;
+  language: AppLanguage;
+}) {
   const copy = boardCopy[language];
   const row = machine.row;
 
@@ -523,14 +646,13 @@ function MachineBoardCard({ machine, language }: { machine: BoardMachine; langua
         </div>
       </div>
 
-      <div className="injection-board-card__track injection-board-card__timeline" aria-hidden="true">
-        {machine.timelineSegments.map((segment, index) => (
-          <span
-            key={`${machine.machineNumber}-${index}`}
-            style={{ left: `${segment.startPct}%`, width: `${segment.widthPct}%` }}
-          />
-        ))}
-      </div>
+      <ProductionTimeline
+        businessDate={businessDate}
+        className="injection-board-card__track injection-board-card__timeline"
+        language={language}
+        machineNumber={machine.machineNumber}
+        segments={machine.timelineSegments}
+      />
       <footer>
         <span>{copy.lastShot}</span>
         <strong>{row?.lastShotAt ? formatTime(row.lastShotAt) : copy.noShot}</strong>
@@ -676,16 +798,15 @@ function PreviousDaySummary({
                       <em>{resultLabel}</em>
                     </header>
                     <div className="injection-board-history-card__part" title={product.part}>{product.part}</div>
-                    <div className="injection-board-history-card__timeline" aria-hidden="true">
-                      {(timelines[String(machineNumber)] ?? []).map((segment, index) => (
-                        <span
-                          key={`${machineNumber}-history-${index}`}
-                          style={{ left: `${segment.startPct}%`, width: `${segment.widthPct}%` }}
-                        />
-                      ))}
-                    </div>
+                    <ProductionTimeline
+                      businessDate={businessDate}
+                      className="injection-board-history-card__timeline"
+                      language={language}
+                      machineNumber={machineNumber}
+                      segments={timelines[String(machineNumber)] ?? []}
+                    />
                     <div className="injection-board-history-card__metrics">
-                      <div>
+                      <div className="injection-board-history-card__completion">
                         <span>{copy.completion}</span>
                         <strong>{row?.hasPlan ? `${row.progressRate.toFixed(1)}%` : "-"}</strong>
                       </div>
@@ -693,7 +814,7 @@ function PreviousDaySummary({
                         <span>{copy.actualShots}</span>
                         <strong>{hasOutput ? `${formatNumber(row?.shotCount ?? 0)}${copy.shots}` : `0${copy.shots}`}</strong>
                       </div>
-                      <div>
+                      <div className="injection-board-history-card__production">
                         <span>{copy.productionQuantity}</span>
                         <strong>
                           {row?.hasPlan
@@ -967,7 +1088,14 @@ export function InjectionBoardPage() {
           </footer>
         </article>
 
-        {machines.map((machine) => <MachineBoardCard key={machine.machineNumber} language={language} machine={machine} />)}
+        {machines.map((machine) => (
+          <MachineBoardCard
+            businessDate={businessDate}
+            key={machine.machineNumber}
+            language={language}
+            machine={machine}
+          />
+        ))}
       </section>
 
       {isLoading ? <div className="injection-board__loading">{copy.loading}</div> : null}

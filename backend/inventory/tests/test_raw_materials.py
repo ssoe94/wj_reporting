@@ -14,6 +14,10 @@ from inventory.services.raw_material_sync import (
     claim_raw_material_sync,
     execute_claimed_raw_material_sync,
 )
+from inventory.services.raw_material_reference import (
+    RAW_MATERIAL_REFERENCE_ROWS,
+    lookup_raw_material_reference,
+)
 from inventory.services.raw_materials import (
     PAGE_SIZE,
     _fetch_pages,
@@ -174,6 +178,10 @@ class RawMaterialServiceTests(SimpleTestCase):
             ("PPA-GF30", "", "other"),
             ("PPA66", "", "other"),
             ("", "PC1201 투명", "pc"),
+            ("HIPS TEST", "", "hips"),
+            ("PBT TEST", "", "pbt"),
+            ("", "YGP1000L E5899G", "pc"),
+            ("", "LUPOX XGP2300G KA02Y（PBT)", "pbt"),
             ("PC1201", "ABS HA641", "other"),
             ("RM-001", "General resin", "other"),
         )
@@ -184,6 +192,61 @@ class RawMaterialServiceTests(SimpleTestCase):
                     _material_family(material_code, material_name),
                     expected,
                 )
+
+    def test_workbook_reference_has_73_unique_full_model_profiles(self):
+        self.assertEqual(len(RAW_MATERIAL_REFERENCE_ROWS), 73)
+
+        reference = lookup_raw_material_reference(
+            material_name="  ＰＣ／ＡＢＳ GN5001RFC K2229  ",
+        )
+
+        self.assertEqual(reference["manufacturer"], "LG甬兴")
+        self.assertEqual(reference["color"], "Purple Gray")
+        self.assertEqual(reference["family"], "pc_abs")
+        self.assertEqual(
+            lookup_raw_material_reference(
+                material_name="PP TRILEN9500G40 9377A (Umber Brown)"
+            )["color"],
+            "Umber Brown",
+        )
+        self.assertEqual(
+            lookup_raw_material_reference(
+                material_name="PC ABS RK9120GR VO( GF20 FR)"
+            )["manufacturer"],
+            "泰英",
+        )
+        # Two crushed ABS references share this parenthetical-free base, so a
+        # partial grade must remain unmatched instead of guessing a color.
+        self.assertEqual(
+            lookup_raw_material_reference(material_name="ABS 粉碎粒子"),
+            {},
+        )
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    def test_workbook_reference_enriches_material_and_resolves_pbt_family(
+        self, change_call
+    ):
+        change_call.return_value = {"data": {"list": [], "total": 0}}
+
+        result = build_raw_material_overview(
+            now=NOW,
+            inventory_rows_override=[
+                inventory_row(
+                    material_code="RM-PBT-001",
+                    material_name="LUPOX XGP2300G KA02Y (PBT)",
+                    amount="25",
+                )
+            ],
+        )
+
+        material = result["materials"][0]
+        self.assertEqual(material["material_family"], "pbt")
+        self.assertEqual(material["manufacturer"], "LG甬兴")
+        self.assertEqual(material["color"], "Black")
+        self.assertEqual(
+            result["summary"]["material_composition"][0]["family"],
+            "pbt",
+        )
 
     @patch("inventory.services.raw_materials.call_inventory_change_log")
     def test_material_composition_reconciles_to_current_inventory(self, change_call):
@@ -1112,27 +1175,150 @@ class RawMaterialServiceTests(SimpleTestCase):
 
     @patch("inventory.services.raw_materials.call_inventory_change_log")
     @patch("inventory.services.raw_materials.call_inventory_list")
-    def test_transfer_issue_is_separate_from_consumption_and_receive_is_inbound(
+    def test_production_outbound_combines_partner_and_internal_injection_supply(
         self, inventory_call, change_call
     ):
-        inventory_call.return_value = {"data": {"list": [inventory_row()], "total": 1}}
+        inventory_call.return_value = {
+            "data": {
+                "list": [
+                    inventory_row(
+                        material_code="ABS HF350U 18388",
+                        material_name="ABS HF350U 18388",
+                    )
+                ],
+                "total": 1,
+            }
+        }
         completed_day = datetime(2026, 7, 13, 12, 0, tzinfo=TZ)
         change_call.return_value = {
             "list": [
-                change_row("issue", "3", direction=False, row_id=12, created_at=completed_day),
-                change_row("receive", "3", direction=True, row_id=13, created_at=completed_day),
+                change_row(
+                    "issue",
+                    "3",
+                    direction=False,
+                    row_id=12,
+                    created_at=completed_day,
+                    material_code="ABS HF350U 18388",
+                    material_name="ABS HF350U 18388",
+                ),
+                change_row(
+                    "out",
+                    "5",
+                    direction=False,
+                    row_id=13,
+                    created_at=completed_day,
+                    material_code="ABS HF350U 18388",
+                    material_name="ABS HF350U 18388",
+                ),
+                change_row(
+                    "receive",
+                    "3",
+                    direction=True,
+                    row_id=14,
+                    created_at=completed_day,
+                    material_code="ABS HF350U 18388",
+                    material_name="ABS HF350U 18388",
+                ),
             ],
-            "total": 2,
+            "total": 3,
         }
 
         result = build_raw_material_overview(lookback_days=7, now=NOW)
 
         material = result["materials"][0]
-        self.assertEqual(material["outbound_quantity"], 3)
+        self.assertEqual(material["outbound_quantity"], 8)
         self.assertEqual(material["inbound_quantity"], 3)
-        self.assertEqual(material["consumption_quantity"], 0)
+        self.assertEqual(material["consumption_quantity"], 5)
         self.assertEqual(material["transfer_out_quantity"], 3)
+        self.assertEqual(material["external_production_supply_quantity"], 5)
+        self.assertEqual(material["internal_injection_supply_quantity"], 3)
+        self.assertEqual(material["production_outbound_quantity"], 8)
+        self.assertEqual(material["estimated_production_usage_quantity"], 8)
+        self.assertAlmostEqual(material["avg_daily_consumption"], 5 / 7)
+        self.assertAlmostEqual(
+            material["avg_daily_estimated_production_usage"],
+            8 / 7,
+        )
         self.assertTrue(material["recommendation_available"])
+
+        summary = result["summary"]["quantities"][0]
+        self.assertEqual(summary["external_production_supply"], 5)
+        self.assertEqual(summary["internal_injection_supply"], 3)
+        self.assertEqual(summary["production_outbound"], 8)
+        self.assertEqual(summary["estimated_production_usage"], 8)
+
+        completed_trend = next(
+            row for row in result["trend"] if row["date"] == "2026-07-13"
+        )
+        self.assertEqual(completed_trend["values"][0]["production_outbound"], 8)
+        family_value = next(
+            row
+            for row in completed_trend["family_values"]
+            if row["family"] == "abs"
+        )
+        self.assertEqual(family_value["external_production_supply"], 5)
+        self.assertEqual(family_value["internal_injection_supply"], 3)
+        self.assertEqual(family_value["production_outbound"], 8)
+        self.assertEqual(family_value["estimated_production_usage"], 8)
+
+        zero_day = next(
+            row for row in result["trend"] if row["date"] == "2026-07-08"
+        )
+        self.assertEqual(zero_day["family_values"][0]["family"], "abs")
+        self.assertEqual(zero_day["family_values"][0]["production_outbound"], 0)
+        action_labels = {
+            row["action_code"]: row["action_label"]
+            for row in result["recent_transactions"]
+        }
+        self.assertEqual(action_labels["out"], "협력사 생산 공급(出库)")
+        self.assertEqual(
+            action_labels["issue"],
+            "사내 사출 생산 공급(转移出库)",
+        )
+        self.assertTrue(
+            all(
+                row["material_family"] == "abs"
+                and row["manufacturer"] == "LGC"
+                and row["color"] == "White"
+                for row in result["recent_transactions"]
+            )
+        )
+
+    @patch("inventory.services.raw_materials.call_inventory_change_log")
+    @patch("inventory.services.raw_materials.call_inventory_list")
+    def test_internal_injection_supply_contributes_to_reorder_planning(
+        self, inventory_call, change_call
+    ):
+        inventory_call.return_value = {
+            "data": {"list": [inventory_row(amount="0")], "total": 1}
+        }
+        change_call.return_value = {
+            "list": [
+                change_row(
+                    "issue",
+                    "7",
+                    direction=False,
+                    row_id=21,
+                    created_at=datetime(2026, 7, 13, 12, 0, tzinfo=TZ),
+                )
+            ],
+            "total": 1,
+        }
+
+        result = build_raw_material_overview(
+            lookback_days=7,
+            lead_time_days=1,
+            review_period_days=0,
+            now=NOW,
+        )
+
+        material = result["materials"][0]
+        self.assertEqual(material["consumption_quantity"], 0)
+        self.assertEqual(material["avg_daily_consumption"], 0)
+        self.assertEqual(material["production_outbound_quantity"], 7)
+        self.assertEqual(material["avg_daily_estimated_production_usage"], 1)
+        self.assertGreater(material["reorder_point"], 0)
+        self.assertGreater(material["recommended_order"], 0)
 
 
 class RawMaterialSyncPromotionRegressionTests(TestCase):

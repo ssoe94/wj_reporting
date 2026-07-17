@@ -29,6 +29,10 @@ export type RawMaterialUnitSummary = {
   outbound: number;
   consumption: number;
   transferOut: number;
+  externalProductionSupply: number;
+  internalInjectionSupply: number;
+  productionOutbound: number;
+  estimatedProductionUsage: number;
   adjustment: number;
   recommendedOrder: number;
   recommendationUnavailableCount: number;
@@ -47,14 +51,23 @@ export type RawMaterialTrendValue = {
   outbound: number;
   consumption: number;
   transferOut: number;
+  externalProductionSupply: number;
+  internalInjectionSupply: number;
+  productionOutbound: number;
+  estimatedProductionUsage: number;
   adjustment: number;
   netChange: number;
   estimatedClosingStock: number;
 };
 
+export type RawMaterialFamilyTrendValue = RawMaterialTrendValue & {
+  family: string;
+};
+
 export type RawMaterialTrendPoint = {
   date: string;
   values: RawMaterialTrendValue[];
+  familyValues: RawMaterialFamilyTrendValue[];
 };
 
 export type RawMaterialRisk = "critical" | "warning" | "healthy" | "no_usage" | "unknown";
@@ -101,6 +114,8 @@ export type RawMaterialRow = {
   materialCode: string;
   materialName: string;
   materialFamily: string;
+  manufacturer: string;
+  color: string;
   specification: string;
   warehouseCode: string;
   warehouseName: string;
@@ -118,7 +133,12 @@ export type RawMaterialRow = {
   outboundQuantity: number;
   consumptionQuantity: number;
   transferOutQuantity: number;
+  externalProductionSupplyQuantity: number;
+  internalInjectionSupplyQuantity: number;
+  productionOutboundQuantity: number;
+  estimatedProductionUsage: number;
   averageDailyConsumption: number;
+  averageDailyEstimatedProductionUsage: number;
   safetyStock: number;
   reorderPoint: number;
   targetStock: number;
@@ -138,6 +158,9 @@ export type RawMaterialTransaction = {
   direction: string;
   materialCode: string;
   materialName: string;
+  materialFamily: string;
+  manufacturer: string;
+  color: string;
   warehouseCode: string;
   warehouseName: string;
   quantity: number;
@@ -308,6 +331,20 @@ function normalizeSummary(value: unknown): RawMaterialUnitSummary {
   const current = asNumber(pick(row, "current", "current_quantity", "currentQuantity", "stock"));
   const previousCurrent = asNullableNumber(pick(row, "previous_current", "previousCurrent"));
   const comparisonCurrent = asNullableNumber(pick(row, "comparison_current", "comparisonCurrent"));
+  const consumption = asNumber(pick(row, "consumption", "consumption_quantity", "consumptionQuantity", "used"));
+  const transferOut = asNumber(pick(row, "transfer_out", "transferOut", "transfer_out_quantity", "transferOutQuantity"));
+  const externalProductionSupply = asNumber(
+    pick(row, "external_production_supply", "externalProductionSupply"),
+    consumption,
+  );
+  const internalInjectionSupply = asNumber(
+    pick(row, "internal_injection_supply", "internalInjectionSupply"),
+    transferOut,
+  );
+  const productionOutbound = asNumber(
+    pick(row, "production_outbound", "productionOutbound"),
+    externalProductionSupply + internalInjectionSupply,
+  );
   return {
     unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
     current,
@@ -319,8 +356,15 @@ function normalizeSummary(value: unknown): RawMaterialUnitSummary {
     unclassified: asNumber(pick(row, "unclassified", "unclassified_quantity", "unclassifiedQuantity")),
     inbound: asNumber(pick(row, "inbound", "inbound_quantity", "inboundQuantity")),
     outbound: asNumber(pick(row, "outbound", "outbound_quantity", "outboundQuantity")),
-    consumption: asNumber(pick(row, "consumption", "consumption_quantity", "consumptionQuantity", "used")),
-    transferOut: asNumber(pick(row, "transfer_out", "transferOut", "transfer_out_quantity", "transferOutQuantity")),
+    consumption,
+    transferOut,
+    externalProductionSupply,
+    internalInjectionSupply,
+    productionOutbound,
+    estimatedProductionUsage: asNumber(
+      pick(row, "estimated_production_usage", "estimatedProductionUsage"),
+      productionOutbound,
+    ),
     adjustment: asNumber(pick(row, "adjustment", "adjustment_quantity", "adjustmentQuantity")),
     recommendedOrder: asNumber(pick(row, "recommended_order", "recommendedOrder", "recommended_order_quantity")),
     recommendationUnavailableCount: asNumber(
@@ -363,6 +407,10 @@ function mergeUnitSummaries(rows: RawMaterialUnitSummary[]) {
     current.outbound += row.outbound;
     current.consumption += row.consumption;
     current.transferOut += row.transferOut;
+    current.externalProductionSupply += row.externalProductionSupply;
+    current.internalInjectionSupply += row.internalInjectionSupply;
+    current.productionOutbound += row.productionOutbound;
+    current.estimatedProductionUsage += row.estimatedProductionUsage;
     current.adjustment += row.adjustment;
     current.recommendedOrder += row.recommendedOrder;
     current.recommendationUnavailableCount += row.recommendationUnavailableCount;
@@ -372,15 +420,44 @@ function mergeUnitSummaries(rows: RawMaterialUnitSummary[]) {
 
 function normalizeTrendValue(value: unknown): RawMaterialTrendValue {
   const row = asRecord(value);
+  const consumption = asNumber(pick(row, "consumption", "consumption_quantity", "consumptionQuantity", "used"));
+  const transferOut = asNumber(pick(row, "transfer_out", "transferOut", "transfer_out_quantity", "transferOutQuantity"));
+  const externalProductionSupply = asNumber(
+    pick(row, "external_production_supply", "externalProductionSupply"),
+    consumption,
+  );
+  const internalInjectionSupply = asNumber(
+    pick(row, "internal_injection_supply", "internalInjectionSupply"),
+    transferOut,
+  );
+  const productionOutbound = asNumber(
+    pick(row, "production_outbound", "productionOutbound"),
+    externalProductionSupply + internalInjectionSupply,
+  );
   return {
     unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
     inbound: asNumber(pick(row, "inbound", "inbound_quantity", "inboundQuantity")),
     outbound: asNumber(pick(row, "outbound", "outbound_quantity", "outboundQuantity")),
-    consumption: asNumber(pick(row, "consumption", "consumption_quantity", "consumptionQuantity", "used")),
-    transferOut: asNumber(pick(row, "transfer_out", "transferOut", "transfer_out_quantity", "transferOutQuantity")),
+    consumption,
+    transferOut,
+    externalProductionSupply,
+    internalInjectionSupply,
+    productionOutbound,
+    estimatedProductionUsage: asNumber(
+      pick(row, "estimated_production_usage", "estimatedProductionUsage"),
+      productionOutbound,
+    ),
     adjustment: asNumber(pick(row, "adjustment", "adjustment_quantity", "adjustmentQuantity")),
     netChange: asNumber(pick(row, "net_change", "netChange", "change")),
     estimatedClosingStock: asNumber(pick(row, "estimated_closing_stock", "estimatedClosingStock", "closing_stock")),
+  };
+}
+
+function normalizeFamilyTrendValue(value: unknown): RawMaterialFamilyTrendValue {
+  const row = asRecord(value);
+  return {
+    ...normalizeTrendValue(row),
+    family: asString(pick(row, "family", "material_family", "materialFamily"), "other"),
   };
 }
 
@@ -396,11 +473,39 @@ function mergeTrendValues(rows: RawMaterialTrendValue[]) {
     current.outbound += row.outbound;
     current.consumption += row.consumption;
     current.transferOut += row.transferOut;
+    current.externalProductionSupply += row.externalProductionSupply;
+    current.internalInjectionSupply += row.internalInjectionSupply;
+    current.productionOutbound += row.productionOutbound;
+    current.estimatedProductionUsage += row.estimatedProductionUsage;
     current.adjustment += row.adjustment;
     current.netChange += row.netChange;
     current.estimatedClosingStock += row.estimatedClosingStock;
   });
   return Array.from(byUnit.values());
+}
+
+function mergeFamilyTrendValues(rows: RawMaterialFamilyTrendValue[]) {
+  const byFamilyAndUnit = new Map<string, RawMaterialFamilyTrendValue>();
+  rows.forEach((row) => {
+    const key = `${row.family}:${row.unit}`;
+    const current = byFamilyAndUnit.get(key);
+    if (!current) {
+      byFamilyAndUnit.set(key, { ...row });
+      return;
+    }
+    current.inbound += row.inbound;
+    current.outbound += row.outbound;
+    current.consumption += row.consumption;
+    current.transferOut += row.transferOut;
+    current.externalProductionSupply += row.externalProductionSupply;
+    current.internalInjectionSupply += row.internalInjectionSupply;
+    current.productionOutbound += row.productionOutbound;
+    current.estimatedProductionUsage += row.estimatedProductionUsage;
+    current.adjustment += row.adjustment;
+    current.netChange += row.netChange;
+    current.estimatedClosingStock += row.estimatedClosingStock;
+  });
+  return Array.from(byFamilyAndUnit.values());
 }
 
 function normalizeStockDetail(value: unknown, index: number): RawMaterialStockDetail {
@@ -433,6 +538,8 @@ function normalizeStockDetail(value: unknown, index: number): RawMaterialStockDe
 
 function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
   const row = asRecord(value);
+  const quantitySummary = asRecord(pick(row, "quantity_summary", "quantitySummary"));
+  const metric = (...keys: string[]) => pick(quantitySummary, ...keys) ?? pick(row, ...keys);
   const currentQuantity = asNumber(pick(row, "current_quantity", "currentQuantity", "current", "quantity"));
   const previousQuantity = asNullableNumber(pick(row, "previous_quantity", "previousQuantity"));
   const comparisonCurrentQuantity = asNullableNumber(
@@ -440,9 +547,33 @@ function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
   );
   const usableQuantity = asNumber(pick(row, "usable_quantity", "usableQuantity", "available_quantity", "availableQuantity"), currentQuantity);
   const averageDailyConsumption = asNumber(pick(row, "avg_daily_consumption", "average_daily_consumption", "averageDailyConsumption"));
+  const averageDailyEstimatedProductionUsage = asNumber(
+    metric("avg_daily_estimated_production_usage", "averageDailyEstimatedProductionUsage"),
+    averageDailyConsumption,
+  );
   const rawCover = pick(row, "days_of_cover", "daysOfCover", "coverage_days");
   const parsedCover = rawCover === null || rawCover === undefined || rawCover === "" ? null : asNumber(rawCover, Number.NaN);
   const materialCode = asString(pick(row, "material_code", "materialCode", "code"), `material-${index + 1}`);
+  const colorValue = pick(row, "color", "color_label", "colorLabel", "color_name", "colorName");
+  const colorRecord = asRecord(colorValue);
+  const color = asString(
+    pick(colorRecord, "label", "name", "raw", "value"),
+    asString(colorValue),
+  );
+  const consumptionQuantity = asNumber(metric("consumption_quantity", "consumptionQuantity", "consumption", "used"));
+  const transferOutQuantity = asNumber(metric("transfer_out_quantity", "transferOutQuantity", "transfer_out", "transferOut"));
+  const externalProductionSupplyQuantity = asNumber(
+    metric("external_production_supply_quantity", "externalProductionSupplyQuantity", "external_production_supply", "externalProductionSupply"),
+    consumptionQuantity,
+  );
+  const internalInjectionSupplyQuantity = asNumber(
+    metric("internal_injection_supply_quantity", "internalInjectionSupplyQuantity", "internal_injection_supply", "internalInjectionSupply"),
+    transferOutQuantity,
+  );
+  const productionOutboundQuantity = asNumber(
+    metric("production_outbound_quantity", "productionOutboundQuantity", "production_outbound", "productionOutbound"),
+    externalProductionSupplyQuantity + internalInjectionSupplyQuantity,
+  );
   const legacyStockDetails = asArray(
     pick(row, "stock_details", "stockDetails", "inventory_details", "inventoryDetails"),
   );
@@ -461,6 +592,8 @@ function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
       pick(row, "material_family", "materialFamily", "family"),
       "other",
     ),
+    manufacturer: asString(pick(row, "manufacturer", "maker", "supplier_manufacturer", "supplierManufacturer")),
+    color,
     specification: asString(pick(row, "specification", "spec", "material_spec")),
     warehouseCode: asJoinedString(pick(row, "warehouse_code", "warehouseCode", "warehouse_codes", "warehouseCodes")),
     warehouseName: asJoinedString(pick(row, "warehouse_name", "warehouseName", "warehouse", "warehouse_names", "warehouseNames")),
@@ -475,16 +608,24 @@ function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
     usableChange24h: asNullableNumber(pick(row, "usable_change_24h", "usableChange24h")),
     restrictedQuantity: asNumber(pick(row, "restricted_quantity", "restrictedQuantity")),
     unclassifiedQuantity: asNumber(pick(row, "unclassified_quantity", "unclassifiedQuantity")),
-    inboundQuantity: asNumber(pick(row, "inbound_quantity", "inboundQuantity", "inbound")),
-    outboundQuantity: asNumber(pick(row, "outbound_quantity", "outboundQuantity", "outbound")),
-    consumptionQuantity: asNumber(pick(row, "consumption_quantity", "consumptionQuantity", "consumption", "used")),
-    transferOutQuantity: asNumber(pick(row, "transfer_out_quantity", "transferOutQuantity", "transfer_out", "transferOut")),
+    inboundQuantity: asNumber(metric("inbound_quantity", "inboundQuantity", "inbound")),
+    outboundQuantity: asNumber(metric("outbound_quantity", "outboundQuantity", "outbound")),
+    consumptionQuantity,
+    transferOutQuantity,
+    externalProductionSupplyQuantity,
+    internalInjectionSupplyQuantity,
+    productionOutboundQuantity,
+    estimatedProductionUsage: asNumber(
+      metric("estimated_production_usage_quantity", "estimatedProductionUsageQuantity", "estimated_production_usage", "estimatedProductionUsage"),
+      productionOutboundQuantity,
+    ),
     averageDailyConsumption,
+    averageDailyEstimatedProductionUsage,
     safetyStock: asNumber(pick(row, "safety_stock", "safetyStock")),
     reorderPoint: asNumber(pick(row, "reorder_point", "reorderPoint")),
     targetStock: asNumber(pick(row, "target_stock", "targetStock")),
     recommendedOrder: asNumber(pick(row, "recommended_order", "recommendedOrder", "recommended_order_quantity")),
-    daysOfCover: Number.isFinite(parsedCover) ? parsedCover : averageDailyConsumption > 0 ? usableQuantity / averageDailyConsumption : null,
+    daysOfCover: Number.isFinite(parsedCover) ? parsedCover : averageDailyEstimatedProductionUsage > 0 ? usableQuantity / averageDailyEstimatedProductionUsage : null,
     risk: normalizeRisk(pick(row, "risk", "risk_level", "riskLevel", "status")),
     recommendationAvailable: asBooleanWithDefault(
       pick(row, "recommendation_available", "recommendationAvailable"),
@@ -531,6 +672,8 @@ function normalizeTransaction(value: unknown, index: number): RawMaterialTransac
   const row = asRecord(value);
   const materialCode = asString(pick(row, "material_code", "materialCode", "code"));
   const occurredAt = asString(pick(row, "occurred_at", "occurredAt", "operation_time", "operationTime", "created_at", "createdAt", "date"));
+  const colorValue = pick(row, "color", "color_label", "colorLabel", "color_name", "colorName");
+  const colorRecord = asRecord(colorValue);
   return {
     id: asString(pick(row, "id", "transaction_id", "transactionId", "change_id"), `${occurredAt}-${materialCode}-${index}`),
     occurredAt,
@@ -539,6 +682,9 @@ function normalizeTransaction(value: unknown, index: number): RawMaterialTransac
     direction: asString(pick(row, "direction", "change_direction", "changeDirection")),
     materialCode,
     materialName: asString(pick(row, "material_name", "materialName", "name"), materialCode || "-"),
+    materialFamily: asString(pick(row, "material_family", "materialFamily", "family")),
+    manufacturer: asString(pick(row, "manufacturer", "maker")),
+    color: asString(pick(colorRecord, "label", "name", "raw", "value"), asString(colorValue)),
     warehouseCode: asString(pick(row, "warehouse_code", "warehouseCode")),
     warehouseName: asString(pick(row, "warehouse_name", "warehouseName", "warehouse")),
     quantity: asNumber(pick(row, "quantity", "change_quantity", "changeQuantity", "amount")),
@@ -579,12 +725,17 @@ function normalizeRawMaterialOverview(payload: unknown): RawMaterialOverview {
   const trend = asArray(pick(root, "trend", "daily_trend", "dailyTrend")).map((value) => {
     const row = asRecord(value);
     const nestedValues = asArray(pick(row, "values", "quantities", "by_unit", "byUnit"));
+    const familyValues = mergeFamilyTrendValues(
+      asArray(pick(row, "family_values", "familyValues", "by_family", "byFamily"))
+        .map(normalizeFamilyTrendValue),
+    );
     const values = mergeTrendValues(nestedValues.length
       ? nestedValues.map(normalizeTrendValue)
       : [normalizeTrendValue(row)]);
     return {
       date: asString(pick(row, "date", "day", "business_date", "businessDate")),
       values,
+      familyValues,
     };
   });
   const materials = asArray(pick(root, "materials", "items", "rows")).map(normalizeMaterial);

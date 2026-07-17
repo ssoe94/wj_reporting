@@ -95,8 +95,8 @@ test.describe('injection office board', () => {
     await expect(page.locator('.injection-board__grid')).toBeVisible();
     await expect.poll(() => requestsWithOriginalAccess).toBeGreaterThanOrEqual(2);
     await expect.poll(() => refreshRequests).toBe(1);
-    expect(await page.evaluate(() => window.localStorage.getItem('wj_next_access_token'))).toBe(renewedAccess);
-    expect(await page.evaluate(() => window.localStorage.getItem('wj_next_refresh_token'))).toBe(rotatedRefresh);
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem('wj_next_access_token'))).toBe(renewedAccess);
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem('wj_next_refresh_token'))).toBe(rotatedRefresh);
   });
 
   test('keeps the previous business date until the 08:00 cutoff', async ({ page }) => {
@@ -174,6 +174,15 @@ test.describe('injection office board', () => {
     await expect(page.locator('.injection-board-card')).toHaveCount(17);
     await expect(page.locator('.injection-board-card__timeline')).toHaveCount(17);
     await expect(page.locator('.injection-board-card__timeline > span')).not.toHaveCount(0);
+    const firstTimeline = page.locator('.injection-board-card__timeline').first();
+    const firstTimelineBox = await firstTimeline.boundingBox();
+    expect(firstTimelineBox).not.toBeNull();
+    expect(firstTimelineBox?.height ?? 0).toBeGreaterThanOrEqual(14);
+    await page.mouse.move(
+      (firstTimelineBox?.x ?? 0) + (firstTimelineBox?.width ?? 0) / 2,
+      (firstTimelineBox?.y ?? 0) + (firstTimelineBox?.height ?? 0) / 2,
+    );
+    await expect(page.getByRole('tooltip')).toContainText('20:00');
     for (let machineNumber = 1; machineNumber <= 17; machineNumber += 1) {
       await expect(page.locator(`.injection-board-card[data-machine="${machineNumber}"]`)).toBeVisible();
     }
@@ -223,8 +232,13 @@ test.describe('injection office board', () => {
     await expect.poll(() => page.evaluate((key) => Boolean(window.localStorage.getItem(key)), cacheKey)).toBe(true);
     const cached = await page.evaluate((key) => JSON.parse(window.localStorage.getItem(key) ?? '{}'), cacheKey);
     expect(cached.businessDate).toBe('2026-05-18');
+    expect(cached.version).toBe(2);
     expect(cached.expiresAt).toBe(new Date('2026-05-20T08:00:00+08:00').getTime());
     expect(Object.keys(cached.timelines)).toHaveLength(17);
+    expect(cached.timelines['1'][0]).toMatchObject({
+      startMs: new Date('2026-05-18T08:00:00+08:00').getTime(),
+      endMs: new Date('2026-05-18T08:08:00+08:00').getTime(),
+    });
 
     await page.getByRole('button', { name: '전일 생산 요약' }).click();
 
@@ -239,8 +253,22 @@ test.describe('injection office board', () => {
     await expect(panel.locator('.injection-board-history-card')).toHaveCount(17);
     await expect(panel.locator('.injection-board-history-card__timeline')).toHaveCount(17);
     await expect(panel.locator('.injection-board-history-card__timeline > span')).not.toHaveCount(0);
+    const historyKpiBox = await panel.locator('.injection-board-history__kpi').first().boundingBox();
+    const historyTimeline = panel.locator('.injection-board-history-card__timeline').first();
+    const historyTimelineBox = await historyTimeline.boundingBox();
+    expect(historyKpiBox?.height ?? 0).toBeGreaterThanOrEqual(100);
+    expect(historyTimelineBox?.height ?? 0).toBeGreaterThanOrEqual(12);
+    const firstHistorySegment = historyTimeline.locator('> span').first();
+    await firstHistorySegment.hover();
+    await expect(page.getByRole('tooltip')).toContainText('08:00–08:08');
     const shotLabels = await panel.locator('.injection-board-history-card__shots strong').allTextContents();
     expect(shotLabels.every((label) => /^\d[\d,]*회$/.test(label))).toBe(true);
+    const metricPositions = await panel.locator('.injection-board-history-card').first()
+      .locator('.injection-board-history-card__metrics > div')
+      .evaluateAll((metrics) => metrics.map((metric) => metric.getBoundingClientRect().top));
+    expect(metricPositions).toHaveLength(3);
+    expect(metricPositions[0]).toBeLessThan(metricPositions[1]);
+    expect(metricPositions[1]).toBeLessThan(metricPositions[2]);
     await expect(panel.locator('.injection-board-history__kpi--outside strong')).not.toContainText('.5');
 
     const panelBox = await panel.boundingBox();
@@ -291,6 +319,18 @@ test.describe('injection office board', () => {
     expect(layout.boardHeight).toBe(layout.viewportHeight);
     expect(layout.overflowingCards).toEqual([]);
     expect(layout.wrappedBadges).toBe(0);
+
+    await page.locator('.injection-board__history-button').click();
+    const compactHistoryPanel = page.locator('.injection-board-history__panel');
+    await expect(compactHistoryPanel).toBeVisible();
+    const compactHistoryLayout = await compactHistoryPanel.evaluate((panel) => ({
+      panelOverflow: panel.scrollWidth > panel.clientWidth + 1 || panel.scrollHeight > panel.clientHeight + 1,
+      overflowingCards: Array.from(panel.querySelectorAll<HTMLElement>('.injection-board-history-card'))
+        .filter((card) => card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1)
+        .map((card) => card.dataset.machine),
+    }));
+    expect(compactHistoryLayout.panelOverflow).toBe(false);
+    expect(compactHistoryLayout.overflowingCards).toEqual([]);
     await expectNoUndefinedOrNaN(page);
     guard.assertClean();
   });

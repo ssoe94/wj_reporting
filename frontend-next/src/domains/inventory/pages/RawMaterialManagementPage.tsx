@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -30,7 +31,6 @@ import {
 } from "@/domains/inventory/api";
 import { LoadingBlock } from "@/shared/components/LoadingBlock";
 import { PageHeader } from "@/shared/components/PageHeader";
-import { StatCard } from "@/shared/components/StatCard";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
 
 const pageCopy = {
@@ -93,8 +93,12 @@ const pageCopy = {
     usableRate: "가용 비율",
     inbound: "입고",
     outbound: "출고",
-    consumption: "추정 소요(출고)",
-    transferOut: "이동 출고",
+    consumption: "협력사 생산 공급(出库)",
+    transferOut: "사내 사출 생산 공급(转移出库)",
+    productionOutbound: "생산용 출고 합계",
+    estimatedProductionUsage: "추정 소요",
+    estimatedProductionUsageHint: "협력사 생산 공급과 사내 사출 생산 공급을 합산한 생산용 출고 기준입니다.",
+    dailyAverage: "일평균",
     adjustment: "조정",
     recommended: "권고 발주",
     materialCount: "원재료 수",
@@ -107,7 +111,7 @@ const pageCopy = {
     compositionNoData: "구성할 현재고가 없습니다.",
     compositionAction: "상세 보기",
     compositionDialogEyebrow: "수지군 상세",
-    compositionDialogHint: "동일 수지군으로 분류된 원재료의 현재고와 최근 소요를 확인합니다.",
+    compositionDialogHint: "동일 수지군으로 분류된 원재료의 제조사·색상과 현재고를 확인합니다.",
     compositionDialogClose: "상세 닫기",
     compositionDialogEmpty: "현재고가 있는 원재료가 없습니다.",
     compositionDialogPositiveOnly: "현재고가 있는 원재료만 표시합니다.",
@@ -116,18 +120,28 @@ const pageCopy = {
     familyAbs: "ABS",
     familyPcAbs: "PC-ABS",
     familyPc: "PC",
+    familyHips: "HIPS",
+    familyPbt: "PBT",
     familyOther: "기타·미분류",
+    manufacturer: "제조사",
+    color: "색상",
+    colorComposition: "색상별 현재고 구성",
+    colorCount: "색상 수",
+    unknownColor: "색상 미확인",
     qcComposition: "QC 상태 구성",
     critical: "긴급",
     warning: "주의",
     healthy: "정상",
     noUsage: "사용 이력 없음",
     unknown: "데이터 확인",
-    flowEyebrow: "사용 및 변동",
-    flowTitle: "추정 소요·변동 추이",
-    flowHint: "생산 출고(out)만 추정 소요로 보며, 창고 간 이동 출고(issue)는 별도로 구분합니다.",
-    dailyMovement: "일별 입고·추정 소요·이동 출고",
-    dailyMovementHint: "세 값은 모두 0 기준의 동일한 수량 축을 사용하며 이동 출고는 소요에서 제외합니다.",
+    flowEyebrow: "재고 변동",
+    flowTitle: "수지군별 입출고 변동 추이",
+    flowHint: "모든 출고는 생산 공급입니다. 出库는 협력사 생산 공급, 转移出库는 사내 사출 생산 공급으로 구분합니다.",
+    dailyMovement: "일별 생산 관련 입출고",
+    dailyMovementHint: "입고·협력사 생산 공급·사내 사출 생산 공급·조정을 동일한 수량 축으로 비교합니다.",
+    movementFamilyFilter: "수지군",
+    movementPeriodFilter: "조회 기간",
+    allFamilies: "전체 수지",
     closing: "추정 마감재고",
     closingHint: "현재고에서 MES 변동 기록을 역산한 참고 추이입니다.",
     noTrend: "표시할 일별 재고 흐름이 없습니다.",
@@ -203,9 +217,9 @@ const pageCopy = {
     document: "문서 / 작업자",
     noMovements: "선택한 조건에 맞는 입출고 기록이 없습니다.",
     in: "입고",
-    out: "출고(추정 소요)",
+    out: "협력사 생산 공급(出库)",
     receive: "이동 입고",
-    issue: "이동 출고",
+    issue: "사내 사출 생산 공급(转移出库)",
     amountAdjust: "수량 조정",
     attrAdjust: "속성 조정",
     unknownAction: "기타",
@@ -285,8 +299,12 @@ const pageCopy = {
     usableRate: "可用比例",
     inbound: "入库",
     outbound: "出库",
-    consumption: "估算消耗（出库）",
-    transferOut: "调拨出库",
+    consumption: "外协生产供料（出库）",
+    transferOut: "内部注塑生产供料（转移出库）",
+    productionOutbound: "生产供料合计",
+    estimatedProductionUsage: "估算用量",
+    estimatedProductionUsageHint: "以外协生产供料与内部注塑生产供料的合计为生产用出库基准。",
+    dailyAverage: "日均",
     adjustment: "调整",
     recommended: "建议订货",
     materialCount: "原材料数",
@@ -299,7 +317,7 @@ const pageCopy = {
     compositionNoData: "暂无可显示的库存构成。",
     compositionAction: "查看明细",
     compositionDialogEyebrow: "树脂类别明细",
-    compositionDialogHint: "查看归入同一树脂类别的原材料当前库存与近期消耗。",
+    compositionDialogHint: "查看归入同一树脂类别的原材料厂家、颜色与当前库存。",
     compositionDialogClose: "关闭明细",
     compositionDialogEmpty: "没有当前库存大于 0 的原材料。",
     compositionDialogPositiveOnly: "仅显示当前库存大于 0 的原材料。",
@@ -308,18 +326,28 @@ const pageCopy = {
     familyAbs: "ABS",
     familyPcAbs: "PC-ABS",
     familyPc: "PC",
+    familyHips: "HIPS",
+    familyPbt: "PBT",
     familyOther: "其他/未分类",
+    manufacturer: "厂家",
+    color: "颜色",
+    colorComposition: "按颜色查看当前库存",
+    colorCount: "颜色数",
+    unknownColor: "颜色未确认",
     qcComposition: "QC 状态构成",
     critical: "紧急",
     warning: "注意",
     healthy: "正常",
     noUsage: "无消耗记录",
     unknown: "确认数据",
-    flowEyebrow: "消耗与变动",
-    flowTitle: "估算消耗与变动趋势",
-    flowHint: "仅将生产出库（out）视为估算消耗，仓库调拨出库（issue）单独显示。",
-    dailyMovement: "每日入库、估算消耗与调拨出库",
-    dailyMovementHint: "三个指标使用相同的零起点数量轴，调拨出库不计入消耗。",
+    flowEyebrow: "库存变动",
+    flowTitle: "按树脂类别查看出入库趋势",
+    flowHint: "所有出库均用于生产。出库用于外协生产供料，转移出库用于内部注塑生产供料。",
+    dailyMovement: "每日生产相关出入库",
+    dailyMovementHint: "在同一数量轴上比较入库、外协生产供料、内部注塑生产供料和调整。",
+    movementFamilyFilter: "树脂类别",
+    movementPeriodFilter: "查询期间",
+    allFamilies: "全部树脂",
     closing: "估算期末库存",
     closingHint: "由当前库存和 MES 变动记录倒推的参考趋势。",
     noTrend: "暂无每日库存趋势。",
@@ -395,9 +423,9 @@ const pageCopy = {
     document: "单据 / 操作人",
     noMovements: "没有符合所选条件的出入库记录。",
     in: "入库",
-    out: "出库（估算消耗）",
+    out: "外协生产供料（出库）",
     receive: "调拨入库",
-    issue: "调拨出库",
+    issue: "内部注塑生产供料（转移出库）",
     amountAdjust: "数量调整",
     attrAdjust: "属性调整",
     unknownAction: "其他",
@@ -438,7 +466,8 @@ type SortState = { key: SortKey; direction: "asc" | "desc" };
 type Copy = Record<string, string>;
 
 const RAW_MATERIAL_UNIT = "kg";
-const RAW_MATERIAL_LOOKBACK_DAYS = 30;
+const RAW_MATERIAL_DEFAULT_LOOKBACK_DAYS = 30;
+const RAW_MATERIAL_LOOKBACK_OPTIONS = [7, 14, 30, 60, 90] as const;
 const RAW_MATERIAL_LEAD_TIME_DAYS = 14;
 const RAW_MATERIAL_REVIEW_PERIOD_DAYS = 14;
 
@@ -582,14 +611,17 @@ function localizedExternalMessage(message: string, language: AppLanguage) {
 
 const RISK_ORDER: RawMaterialRisk[] = ["critical", "warning", "healthy", "no_usage", "unknown"];
 
-const MATERIAL_FAMILY_ORDER = ["abs", "pc_abs", "pp", "pc", "other"] as const;
+const MATERIAL_FAMILY_ORDER = ["abs", "pc_abs", "pp", "pc", "hips", "pbt", "other"] as const;
 type MaterialFamilyKey = (typeof MATERIAL_FAMILY_ORDER)[number];
+type TrendFamilyKey = MaterialFamilyKey | "all";
 
 const MATERIAL_FAMILY_COLORS: Record<string, string> = {
   pp: "#718c43",
   abs: "#008ec3",
   pc_abs: "#596cc8",
   pc: "#c05f86",
+  hips: "#c17f3f",
+  pbt: "#6f62a7",
   other: "#8b9aa5",
 };
 
@@ -782,7 +814,7 @@ function riskLabel(risk: RawMaterialRisk, copy: Copy) {
 function effectiveRisk(row: RawMaterialRow, leadTimeDays: number, reviewPeriodDays: number): RawMaterialRisk {
   if (!row.recommendationAvailable) return "unknown";
   if (row.risk !== "unknown") return row.risk;
-  if (row.averageDailyConsumption <= 0) return "no_usage";
+  if (row.averageDailyEstimatedProductionUsage <= 0) return "no_usage";
   if (
     row.usableQuantity <= row.safetyStock
     || (row.daysOfCover !== null && row.daysOfCover <= leadTimeDays)
@@ -797,14 +829,14 @@ function effectiveRisk(row: RawMaterialRow, leadTimeDays: number, reviewPeriodDa
 function actionInfo(row: RawMaterialTransaction, copy: Copy) {
   const action = row.transactionType.toLowerCase().replaceAll("-", "_");
   const explicitDirection = row.direction.toLowerCase();
-  if (row.isTransferOut || action === "issue") return { label: row.actionLabel || copy.issue, direction: "out" };
+  if (row.isTransferOut || action === "issue") return { label: copy.issue, direction: "out" };
   if (action === "amount_adjust") return { label: row.actionLabel || copy.amountAdjust, direction: "adjust" };
   if (action === "attr_adjust") return { label: row.actionLabel || copy.attrAdjust, direction: "adjust" };
   if (["in", "inbound"].includes(explicitDirection) || ["in", "inbound", "receive"].includes(action)) {
     return { label: row.actionLabel || (action === "receive" ? copy.receive : copy.in), direction: "in" };
   }
   if (["out", "outbound"].includes(explicitDirection) || ["out", "outbound", "issue"].includes(action)) {
-    return { label: row.actionLabel || (action === "issue" ? copy.issue : copy.out), direction: "out" };
+    return { label: action === "issue" ? copy.issue : copy.out, direction: "out" };
   }
   return { label: row.actionLabel || row.transactionType || copy.unknownAction, direction: "adjust" };
 }
@@ -816,22 +848,71 @@ function quantityDirection(row: RawMaterialTransaction, fallback: string): "in" 
   return fallback === "in" || fallback === "out" ? fallback : "adjust";
 }
 
-function StockTrendCharts({
+type MovementTrendRow = {
+  date: string;
+  inbound: number;
+  externalProductionSupply: number;
+  internalInjectionSupply: number;
+  productionOutbound: number;
+  estimatedProductionUsage: number;
+  adjustment: number;
+};
+
+function movementTrendRows(
+  points: RawMaterialTrendPoint[],
+  unit: string,
+  family: TrendFamilyKey,
+  lookback: number,
+): MovementTrendRow[] {
+  const selectedPoints = points.slice(-lookback);
+  const hasFamilyValues = points.some((point) => point.familyValues.length > 0);
+  if (family !== "all" && !hasFamilyValues) return [];
+
+  return selectedPoints.map((point) => {
+    const values = family === "all"
+      ? point.values.filter((value) => value.unit === unit)
+      : point.familyValues.filter((value) => (
+        value.unit === unit && normalizeMaterialFamily(value.family) === family
+      ));
+    return values.reduce<MovementTrendRow>((result, value) => ({
+      ...result,
+      inbound: result.inbound + value.inbound,
+      externalProductionSupply: result.externalProductionSupply + value.externalProductionSupply,
+      internalInjectionSupply: result.internalInjectionSupply + value.internalInjectionSupply,
+      productionOutbound: result.productionOutbound + value.productionOutbound,
+      estimatedProductionUsage: result.estimatedProductionUsage + value.estimatedProductionUsage,
+      adjustment: result.adjustment + value.adjustment,
+    }), {
+      date: point.date,
+      inbound: 0,
+      externalProductionSupply: 0,
+      internalInjectionSupply: 0,
+      productionOutbound: 0,
+      estimatedProductionUsage: 0,
+      adjustment: 0,
+    });
+  });
+}
+
+function MovementTrendChart({
   points,
   unit,
   language,
   copy,
+  family,
+  lookback,
 }: {
   points: RawMaterialTrendPoint[];
   unit: string;
   language: AppLanguage;
   copy: Copy;
+  family: TrendFamilyKey;
+  lookback: number;
 }) {
-  const rows = points.flatMap((point) => {
-    const value = point.values.find((item) => item.unit === unit);
-    return value ? [{ date: point.date, value }] : [];
-  });
-  if (!rows.length) return <div className="raw-empty">{copy.noTrend}</div>;
+  const rows = movementTrendRows(points, unit, family, lookback);
+  if (!rows.length || !rows.some((row) => (
+    row.inbound || row.externalProductionSupply || row.internalInjectionSupply || row.adjustment
+  ))) return <div className="raw-empty">{copy.noTrend}</div>;
 
   const width = 920;
   const left = 58;
@@ -846,22 +927,17 @@ function StockTrendCharts({
   const flowPlotHeight = flowHeight - flowTop - flowBottom;
   const flowMax = Math.max(
     1,
-    ...rows.flatMap(({ value }) => [Math.abs(value.inbound), Math.abs(value.consumption), Math.abs(value.transferOut)]),
+    ...rows.flatMap((row) => [
+      Math.abs(row.inbound),
+      Math.abs(row.externalProductionSupply),
+      Math.abs(row.internalInjectionSupply),
+      Math.abs(row.adjustment),
+    ]),
   );
   const yFlow = (value: number) => flowTop + flowPlotHeight - (Math.max(0, value) / flowMax) * flowPlotHeight;
   const groupWidth = Math.max(6, Math.min(30, plotWidth / Math.max(rows.length, 1) * 0.68));
-  const barWidth = Math.max(2, groupWidth / 3 - 1);
-
-  const stockHeight = 174;
-  const stockTop = 18;
-  const stockBottom = 36;
-  const stockPlotHeight = stockHeight - stockTop - stockBottom;
-  const stockMax = Math.max(1, ...rows.map(({ value }) => Math.max(0, value.estimatedClosingStock)));
-  const yStock = (value: number) => stockTop + stockPlotHeight - (Math.max(0, value) / stockMax) * stockPlotHeight;
-  const stockLine = rows
-    .map(({ value }, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${yStock(value.estimatedClosingStock).toFixed(1)}`)
-    .join(" ");
-  const stockArea = `${stockLine} L${x(rows.length - 1).toFixed(1)},${(stockTop + stockPlotHeight).toFixed(1)} L${x(0).toFixed(1)},${(stockTop + stockPlotHeight).toFixed(1)} Z`;
+  const barWidth = Math.max(2, groupWidth / 4 - 1);
+  const familyLabel = family === "all" ? copy.allFamilies : materialFamilyLabel(family, copy);
 
   return (
     <div className="raw-trend-charts">
@@ -873,7 +949,7 @@ function StockTrendCharts({
           </div>
           <strong>{unit}</strong>
         </div>
-        <svg aria-label={`${copy.dailyMovement} (${unit})`} role="img" viewBox={`0 0 ${width} ${flowHeight}`}>
+        <svg aria-label={`${copy.dailyMovement} · ${familyLabel} · ${lookback} ${copy.days} (${unit})`} role="img" viewBox={`0 0 ${width} ${flowHeight}`}>
           <title>{copy.dailyMovement}</title>
           <desc>{copy.dailyMovementHint}</desc>
           {[0, 0.5, 1].map((ratio) => {
@@ -887,15 +963,16 @@ function StockTrendCharts({
               </g>
             );
           })}
-          {rows.map(({ date, value }, index) => {
+          {rows.map((row, index) => {
             const center = x(index);
             const values = [
-              { key: "in", amount: value.inbound, label: copy.inbound },
-              { key: "use", amount: value.consumption, label: copy.consumption },
-              { key: "transfer", amount: value.transferOut, label: copy.transferOut },
+              { key: "in", amount: row.inbound, label: copy.inbound },
+              { key: "external", amount: row.externalProductionSupply, label: copy.consumption },
+              { key: "internal", amount: row.internalInjectionSupply, label: copy.transferOut },
+              { key: "adjustment", amount: row.adjustment, label: copy.adjustment },
             ];
             return (
-              <g key={`${date}-${index}`}>
+              <g key={`${row.date}-${index}`}>
                 {values.map((item, itemIndex) => {
                   const y = yFlow(Math.abs(item.amount));
                   return (
@@ -907,13 +984,13 @@ function StockTrendCharts({
                       x={center - groupWidth / 2 + itemIndex * (barWidth + 1)}
                       y={y}
                     >
-                      <title>{`${date} ${item.label} ${quantity(Math.abs(item.amount), language)} ${unit}`}</title>
+                      <title>{`${row.date} ${item.label} ${item.amount > 0 && item.key === "adjustment" ? "+" : item.amount < 0 ? "−" : ""}${quantity(Math.abs(item.amount), language)} ${unit}`}</title>
                     </rect>
                   );
                 })}
                 {index % labelEvery === 0 || index === rows.length - 1 ? (
                   <text className="raw-chart-axis" x={center} y={flowHeight - 14} textAnchor="middle">
-                    {date.slice(5)}
+                    {row.date.slice(5)}
                   </text>
                 ) : null}
               </g>
@@ -922,48 +999,10 @@ function StockTrendCharts({
         </svg>
         <div className="raw-chart-legend">
           <span><i className="raw-legend--in" />{copy.inbound}</span>
-          <span><i className="raw-legend--use" />{copy.consumption}</span>
-          <span><i className="raw-legend--transfer" />{copy.transferOut}</span>
+          <span><i className="raw-legend--external" />{copy.consumption}</span>
+          <span><i className="raw-legend--internal" />{copy.transferOut}</span>
+          <span><i className="raw-legend--adjustment" />{copy.adjustment}</span>
         </div>
-      </section>
-
-      <section className="raw-plot" aria-labelledby="raw-closing-stock-title">
-        <div className="raw-plot-header">
-          <div>
-            <h3 id="raw-closing-stock-title">{copy.closing}</h3>
-            <p>{copy.closingHint}</p>
-          </div>
-          <strong>{unit}</strong>
-        </div>
-        <svg aria-label={`${copy.closing} (${unit})`} role="img" viewBox={`0 0 ${width} ${stockHeight}`}>
-          <title>{copy.closing}</title>
-          <desc>{copy.closingHint}</desc>
-          {[0, 0.5, 1].map((ratio) => {
-            const y = stockTop + stockPlotHeight * ratio;
-            return (
-              <g key={ratio}>
-                <line className="raw-chart-grid" x1={left} x2={width - right} y1={y} y2={y} />
-                <text className="raw-chart-axis" x={left - 8} y={y + 4} textAnchor="end">
-                  {quantity(stockMax * (1 - ratio), language)}
-                </text>
-              </g>
-            );
-          })}
-          <path className="raw-chart-area" d={stockArea} />
-          <path className="raw-chart-line" d={stockLine} />
-          {rows.map(({ date, value }, index) => (
-            <g key={`${date}-stock`}>
-              <circle className="raw-chart-dot" cx={x(index)} cy={yStock(value.estimatedClosingStock)} r="3">
-                <title>{`${date} ${copy.closing} ${quantity(value.estimatedClosingStock, language)} ${unit}`}</title>
-              </circle>
-              {index % labelEvery === 0 || index === rows.length - 1 ? (
-                <text className="raw-chart-axis" x={x(index)} y={stockHeight - 10} textAnchor="middle">
-                  {date.slice(5)}
-                </text>
-              ) : null}
-            </g>
-          ))}
-        </svg>
       </section>
     </div>
   );
@@ -1030,6 +1069,8 @@ function materialFamilyLabel(family: string, copy: Copy) {
   if (family === "abs") return copy.familyAbs;
   if (family === "pc_abs") return copy.familyPcAbs;
   if (family === "pc") return copy.familyPc;
+  if (family === "hips") return copy.familyHips;
+  if (family === "pbt") return copy.familyPbt;
   return copy.familyOther;
 }
 
@@ -1039,22 +1080,39 @@ function normalizeMaterialFamily(family: string): MaterialFamilyKey {
     : "other";
 }
 
+function materialColorTone(color: string) {
+  const normalized = color.toLocaleLowerCase().replaceAll(/[\s_\-/]+/g, "");
+  if (/black|bk|黑|검정/.test(normalized)) return "#27323a";
+  if (/white|wh|白|흰|백색/.test(normalized)) return "#f7f8f6";
+  if (/gray|grey|gy|灰|회색/.test(normalized)) return "#89939b";
+  if (/brown|br|棕|咖啡|갈색/.test(normalized)) return "#8a5a3b";
+  if (/blue|bl|蓝|파랑|청색/.test(normalized)) return "#3c78bf";
+  if (/yellow|yl|黄|노랑/.test(normalized)) return "#e7bd36";
+  if (/purple|violet|紫|보라/.test(normalized)) return "#8658a7";
+  if (/red|rd|红|빨강/.test(normalized)) return "#c94f58";
+  if (/green|gn|绿|녹색/.test(normalized)) return "#4e9567";
+  if (/orange|橙|주황/.test(normalized)) return "#df8b3b";
+  if (/transparent|clear|透明|투명/.test(normalized)) return "#d9eef3";
+  if (/natural|nature|本色|原色|내추럴/.test(normalized)) return "#d9cfb3";
+  if (/mixed|mix|混|혼합/.test(normalized)) return "#8f79a9";
+  return "#a3afb7";
+}
+
 function MaterialComposition({
   copy,
   language,
   materials,
-  movementAvailable,
   rows,
   unit,
 }: {
   copy: Copy;
   language: AppLanguage;
   materials: RawMaterialRow[];
-  movementAvailable: boolean;
   rows: RawMaterialFamilyComposition[];
   unit: string;
 }) {
   const [selectedFamily, setSelectedFamily] = useState<MaterialFamilyKey | null>(null);
+  const [layerViewportStyle, setLayerViewportStyle] = useState<CSSProperties>();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
   const familyRows = MATERIAL_FAMILY_ORDER.map((family) => rows
@@ -1090,7 +1148,15 @@ function MaterialComposition({
     : [];
   const selectedUsable = selectedMaterials.reduce((sum, row) => sum + row.usableQuantity, 0);
   const selectedRestricted = selectedMaterials.reduce((sum, row) => sum + row.restrictedQuantity, 0);
-  const selectedConsumption = selectedMaterials.reduce((sum, row) => sum + row.consumptionQuantity, 0);
+  const selectedColors = Array.from(selectedMaterials.reduce((groups, row) => {
+    const label = row.color || copy.unknownColor;
+    const current = groups.get(label) ?? { label, current: 0, materialCount: 0 };
+    current.current += row.currentQuantity;
+    current.materialCount += 1;
+    groups.set(label, current);
+    return groups;
+  }, new Map<string, { label: string; current: number; materialCount: number }>()).values())
+    .sort((a, b) => b.current - a.current || a.label.localeCompare(b.label));
   const selectedLabel = selectedFamily ? materialFamilyLabel(selectedFamily, copy) : "";
 
   const closeLayer = () => setSelectedFamily(null);
@@ -1099,6 +1165,44 @@ function MaterialComposition({
     if (!selectedFamily) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const parentWindow = window.parent === window ? null : window.parent;
+    let parentBody: HTMLElement | null = null;
+    let previousParentOverflow = "";
+
+    const syncVisibleViewport = () => {
+      try {
+        if (!parentWindow || !window.frameElement) {
+          setLayerViewportStyle(undefined);
+          return;
+        }
+        const frameRect = window.frameElement.getBoundingClientRect();
+        const visibleTop = Math.max(0, -frameRect.top);
+        const visibleBottom = Math.max(visibleTop, Math.min(frameRect.height, parentWindow.innerHeight - frameRect.top));
+        const visibleHeight = Math.max(320, visibleBottom - visibleTop);
+        setLayerViewportStyle({
+          position: "absolute",
+          inset: "auto 0 auto 0",
+          top: visibleTop,
+          height: visibleHeight,
+          "--modal-viewport-height": `${visibleHeight}px`,
+        } as CSSProperties);
+      } catch {
+        setLayerViewportStyle(undefined);
+      }
+    };
+
+    syncVisibleViewport();
+    try {
+      if (parentWindow) {
+        parentBody = parentWindow.document.body;
+        previousParentOverflow = parentBody.style.overflow;
+        parentBody.style.overflow = "hidden";
+        parentWindow.addEventListener("resize", syncVisibleViewport);
+        parentWindow.addEventListener("scroll", syncVisibleViewport, { passive: true });
+      }
+    } catch {
+      parentBody = null;
+    }
     const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -1114,6 +1218,10 @@ function MaterialComposition({
       window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
+      if (parentBody) parentBody.style.overflow = previousParentOverflow;
+      parentWindow?.removeEventListener("resize", syncVisibleViewport);
+      parentWindow?.removeEventListener("scroll", syncVisibleViewport);
+      setLayerViewportStyle(undefined);
       window.setTimeout(() => triggerButtonRef.current?.focus(), 0);
     };
   }, [selectedFamily]);
@@ -1145,7 +1253,7 @@ function MaterialComposition({
         ))}
       </div>
       <div className="raw-family-list" role="list">
-        {familyRows.map((row) => {
+        {displayRows.map((row) => {
           const familyShare = share(row.current);
           const color = MATERIAL_FAMILY_COLORS[row.family] ?? MATERIAL_FAMILY_COLORS.other;
           return (
@@ -1184,7 +1292,7 @@ function MaterialComposition({
           );
         })}
       </div>
-      {selectedFamily && selectedSummary ? (
+      {selectedFamily && selectedSummary ? createPortal(
         <div
           className="raw-family-layer"
           data-testid="raw-family-detail"
@@ -1192,6 +1300,7 @@ function MaterialComposition({
             if (event.currentTarget === event.target) closeLayer();
           }}
           role="presentation"
+          style={layerViewportStyle}
         >
           <section
             aria-labelledby="raw-family-detail-title"
@@ -1233,22 +1342,50 @@ function MaterialComposition({
                 <small>{copy.qcComposition}</small>
               </article>
               <article>
-                <span>{copy.kpiConsumption}</span>
-                <strong>{movementAvailable ? `${quantity(selectedConsumption, language)} ${unit}` : copy.notCollected}</strong>
-                <small>{movementAvailable ? copy.compositionDialogPositiveOnly : copy.movementUnavailableShort}</small>
+                <span>{copy.colorCount}</span>
+                <strong>{selectedColors.length}</strong>
+                <small>{copy.colorComposition}</small>
               </article>
             </div>
             {selectedMaterials.length ? (
               <div className="raw-family-dialog__table-wrap">
+                <section className="raw-color-composition" aria-labelledby="raw-color-composition-title">
+                  <div className="raw-color-composition__header">
+                    <h3 id="raw-color-composition-title">{copy.colorComposition}</h3>
+                    <span>{selectedColors.length} {copy.colorCount}</span>
+                  </div>
+                  <div className="raw-color-stack" role="img" aria-label={selectedColors.map((row) => `${row.label} ${quantity(row.current, language)} ${unit}`).join(", ")}>
+                    {selectedColors.map((row) => (
+                      <span
+                        key={`${selectedFamily}-${row.label}-segment`}
+                        style={{
+                          backgroundColor: materialColorTone(row.label),
+                          width: `${selectedSummary.current > 0 ? (row.current / selectedSummary.current) * 100 : 0}%`,
+                        }}
+                        title={`${row.label} · ${quantity(row.current, language)} ${unit}`}
+                      />
+                    ))}
+                  </div>
+                  <div className="raw-color-list" role="list">
+                    {selectedColors.map((row) => (
+                      <span key={`${selectedFamily}-${row.label}`} role="listitem">
+                        <i aria-hidden="true" style={{ backgroundColor: materialColorTone(row.label) }} />
+                        <strong>{row.label}</strong>
+                        <small>{quantity(row.current, language)} {unit} · {row.materialCount}{copy.compositionMaterialCount}</small>
+                      </span>
+                    ))}
+                  </div>
+                </section>
                 <table className="raw-family-dialog__table">
                   <thead>
                     <tr>
                       <th>{copy.material}</th>
+                      <th>{copy.manufacturer}</th>
+                      <th>{copy.color}</th>
                       <th>{copy.current}</th>
                       <th>{copy.compositionShare}</th>
                       <th>{copy.usable}</th>
                       <th>{copy.restricted}</th>
-                      <th>{copy.consumption}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1258,11 +1395,17 @@ function MaterialComposition({
                           <strong>{row.materialName}</strong>
                           <span>{row.materialCode} · {row.specification || "-"}</span>
                         </td>
+                        <td>{row.manufacturer || copy.notCollected}</td>
+                        <td>
+                          <span className="raw-material-color">
+                            <i aria-hidden="true" style={{ backgroundColor: materialColorTone(row.color) }} />
+                            {row.color || copy.unknownColor}
+                          </span>
+                        </td>
                         <td><strong>{quantity(row.currentQuantity, language)}</strong> <small>{unit}</small></td>
                         <td>{percent(selectedSummary.current > 0 ? (row.currentQuantity / selectedSummary.current) * 100 : 0, language)}%</td>
                         <td>{quantity(row.usableQuantity, language)}</td>
                         <td>{quantity(row.restrictedQuantity, language)}</td>
-                        <td>{movementAvailable ? quantity(row.consumptionQuantity, language) : copy.notCollected}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1270,7 +1413,8 @@ function MaterialComposition({
               </div>
             ) : <div className="raw-empty">{copy.compositionDialogEmpty}</div>}
           </section>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
@@ -1313,10 +1457,11 @@ export function RawMaterialManagementPage() {
   const [language] = useStoredLanguage();
   const copy = pageCopy[language];
   const queryClient = useQueryClient();
-  const lookback = RAW_MATERIAL_LOOKBACK_DAYS;
   const lead = RAW_MATERIAL_LEAD_TIME_DAYS;
   const review = RAW_MATERIAL_REVIEW_PERIOD_DAYS;
   const unit = RAW_MATERIAL_UNIT;
+  const [lookback, setLookback] = useState<number>(RAW_MATERIAL_DEFAULT_LOOKBACK_DAYS);
+  const [trendFamily, setTrendFamily] = useState<TrendFamilyKey>("all");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortState>({ key: "risk", direction: "asc" });
   const [pageIndex, setPageIndex] = useState(0);
@@ -1375,9 +1520,9 @@ export function RawMaterialManagementPage() {
       if (key === "usable") return row.usableQuantity;
       if (key === "inbound") return row.inboundQuantity;
       if (key === "outbound") return row.outboundQuantity;
-      if (key === "transferOut") return row.transferOutQuantity;
-      if (key === "consumption") return row.consumptionQuantity;
-      if (key === "average") return row.averageDailyConsumption;
+      if (key === "transferOut") return row.internalInjectionSupplyQuantity;
+      if (key === "consumption") return row.externalProductionSupplyQuantity;
+      if (key === "average") return row.averageDailyEstimatedProductionUsage;
       if (key === "cover") return row.daysOfCover ?? Number.MAX_SAFE_INTEGER;
       if (key === "reorder") return row.reorderPoint;
       if (key === "recommended") return row.recommendationAvailable ? row.recommendedOrder : Number.MAX_SAFE_INTEGER;
@@ -1385,7 +1530,7 @@ export function RawMaterialManagementPage() {
     };
     return unitRows
       .filter((row) => {
-        const matchesTerm = !term || `${row.materialCode} ${row.materialName} ${row.specification}`.toLocaleLowerCase().includes(term);
+        const matchesTerm = !term || `${row.materialCode} ${row.materialName} ${row.specification} ${row.manufacturer} ${row.color}`.toLocaleLowerCase().includes(term);
         return matchesTerm;
       })
       .sort((a, b) => {
@@ -1408,7 +1553,7 @@ export function RawMaterialManagementPage() {
     const term = search.trim().toLocaleLowerCase();
     return (data?.recentTransactions ?? []).filter((row) => (
       row.unit === RAW_MATERIAL_UNIT
-      && (!term || `${row.materialCode} ${row.materialName} ${row.batchNo} ${row.documentNo}`.toLocaleLowerCase().includes(term))
+      && (!term || `${row.materialCode} ${row.materialName} ${row.manufacturer} ${row.color} ${row.batchNo} ${row.documentNo}`.toLocaleLowerCase().includes(term))
     ));
   }, [data?.recentTransactions, search]);
 
@@ -1428,12 +1573,9 @@ export function RawMaterialManagementPage() {
   };
 
   const summary = data?.summary.quantities.find((row) => row.unit === unit);
-  const currentQuantity = summary?.current ?? 0;
   const previousCurrentQuantity = summary?.previousCurrent ?? null;
   const comparisonCurrentQuantity = summary?.comparisonCurrent ?? null;
   const currentChange24h = summary?.change24h ?? null;
-  const usableQuantity = summary?.usable ?? 0;
-  const availabilityRate = currentQuantity > 0 ? Math.max(0, Math.min(100, (usableQuantity / currentQuantity) * 100)) : 0;
   const priorityRows = (recommendationsAvailable ? [...unitRows] : [])
     .filter((row) => row.recommendationAvailable && (
       row.recommendedOrder > 0 || ["critical", "warning"].includes(effectiveRisk(row, lead, review))
@@ -1493,15 +1635,34 @@ export function RawMaterialManagementPage() {
     && comparisonCurrentQuantity !== null
     && currentChange24h !== null,
   );
-  const periodConsumption = summary?.consumption ?? 0;
-  const averageDailyConsumption = lookback > 0 ? periodConsumption / lookback : 0;
-  const criticalCount = recommendationsAvailable
-    ? unitRows.filter((row) => effectiveRisk(row, lead, review) === "critical").length
-    : 0;
-  const warningCount = recommendationsAvailable
-    ? unitRows.filter((row) => effectiveRisk(row, lead, review) === "warning").length
-    : 0;
-  const riskMaterialCount = criticalCount + warningCount;
+  const trendRows = movementTrendRows(data?.trend ?? [], unit, trendFamily, lookback);
+  const trendTotals = trendRows.reduce((result, row) => ({
+    inbound: result.inbound + row.inbound,
+    externalProductionSupply: result.externalProductionSupply + row.externalProductionSupply,
+    internalInjectionSupply: result.internalInjectionSupply + row.internalInjectionSupply,
+    productionOutbound: result.productionOutbound + row.productionOutbound,
+    estimatedProductionUsage: result.estimatedProductionUsage + row.estimatedProductionUsage,
+    adjustment: result.adjustment + row.adjustment,
+  }), {
+    inbound: 0,
+    externalProductionSupply: 0,
+    internalInjectionSupply: 0,
+    productionOutbound: 0,
+    estimatedProductionUsage: 0,
+    adjustment: 0,
+  });
+  const estimatedProductionUsage = trendRows.length
+    ? trendTotals.estimatedProductionUsage
+    : trendFamily === "all" ? summary?.estimatedProductionUsage ?? 0 : 0;
+  const displayedTrendTotals = trendRows.length || trendFamily !== "all" ? trendTotals : {
+    inbound: summary?.inbound ?? 0,
+    externalProductionSupply: summary?.externalProductionSupply ?? 0,
+    internalInjectionSupply: summary?.internalInjectionSupply ?? 0,
+    productionOutbound: summary?.productionOutbound ?? 0,
+    estimatedProductionUsage: summary?.estimatedProductionUsage ?? 0,
+    adjustment: summary?.adjustment ?? 0,
+  };
+  const averageEstimatedProductionUsage = lookback > 0 ? estimatedProductionUsage / lookback : 0;
 
   return (
     <section aria-busy={overviewQuery.isFetching || refreshMutation.isPending || syncRunning} className="page raw-material-page" data-testid="raw-material-page">
@@ -1585,43 +1746,6 @@ export function RawMaterialManagementPage() {
 
       {data && !isSelectionRequired ? (
         <>
-          <div className="stats-grid raw-kpi-grid" aria-label={copy.statusToolbar}>
-            <StatCard
-              hint={copy.kpiCurrentHint}
-              title={copy.kpiCurrent}
-              value={`${quantity(currentQuantity, language)} ${unit}`}
-            />
-            <StatCard
-              hint={`${copy.kpiUsableHint} ${percent(availabilityRate, language)}%`}
-              hintTone={availabilityRate >= 90 ? "positive" : availabilityRate > 0 ? "neutral" : "negative"}
-              title={copy.kpiUsable}
-              value={`${quantity(usableQuantity, language)} ${unit}`}
-            />
-            <StatCard
-              hint={copy.kpiChangeHint}
-              hintTone={comparisonAvailable && currentChange24h !== null && currentChange24h < 0 ? "negative" : "neutral"}
-              title={copy.kpiChange}
-              value={comparisonAvailable && currentChange24h !== null
-                ? `${currentChange24h > 0 ? "+" : ""}${quantity(currentChange24h, language)} ${unit}`
-                : copy.comparisonPending}
-            />
-            <StatCard
-              hint={movementAvailable
-                ? `${copy.kpiDailyAverage} ${quantity(averageDailyConsumption, language)} ${unit}`
-                : copy.movementUnavailableShort}
-              title={copy.kpiConsumption}
-              value={movementAvailable ? `${quantity(periodConsumption, language)} ${unit}` : copy.notCollected}
-            />
-            <StatCard
-              hint={recommendationsAvailable
-                ? `${copy.critical} ${criticalCount} · ${copy.warning} ${warningCount}`
-                : copy.movementUnavailableShort}
-              hintTone={riskMaterialCount > 0 ? "negative" : "neutral"}
-              title={copy.kpiRisk}
-              value={recommendationsAvailable ? `${riskMaterialCount} ${copy.rows}` : copy.notCollected}
-            />
-          </div>
-
           <section className="panel raw-composition-panel">
             <div className="raw-panel-header">
               <div>
@@ -1635,7 +1759,6 @@ export function RawMaterialManagementPage() {
               copy={copy}
               language={language}
               materials={unitRows}
-              movementAvailable={movementAvailable}
               rows={data.summary.materialComposition}
               unit={unit}
             />
@@ -1648,17 +1771,68 @@ export function RawMaterialManagementPage() {
                 <h2 className="panel__title">{copy.flowTitle}</h2>
                 <p className="raw-panel-hint">{copy.flowHint}</p>
               </div>
-              {movementAvailable ? (
-                <div className="raw-flow-totals" aria-label={`${lookback} ${copy.days} ${copy.periodSuffix}`}>
-                  <span><i className="raw-flow-dot--in" />{copy.inbound}<strong>{quantity(summary?.inbound ?? 0, language)} {unit}</strong></span>
-                  <span><i className="raw-flow-dot--use" />{copy.consumption}<strong>{quantity(summary?.consumption ?? 0, language)} {unit}</strong></span>
-                  <span><i className="raw-flow-dot--transfer" />{copy.transferOut}<strong>{quantity(summary?.transferOut ?? 0, language)} {unit}</strong></span>
-                  <span>{copy.adjustment}<strong>{quantity(summary?.adjustment ?? 0, language)} {unit}</strong></span>
+            </div>
+            <div className="raw-trend-controls">
+              <fieldset className="raw-filter-field raw-trend-filter" data-testid="raw-trend-family-filter">
+                <legend>{copy.movementFamilyFilter}</legend>
+                <div className="raw-chip-group">
+                  <button
+                    aria-pressed={trendFamily === "all"}
+                    className={trendFamily === "all" ? "is-active" : ""}
+                    onClick={() => setTrendFamily("all")}
+                    type="button"
+                  >
+                    {copy.allFamilies}
+                  </button>
+                  {MATERIAL_FAMILY_ORDER.map((family) => (
+                    <button
+                      aria-pressed={trendFamily === family}
+                      className={trendFamily === family ? "is-active" : ""}
+                      key={`trend-family-${family}`}
+                      onClick={() => setTrendFamily(family)}
+                      type="button"
+                    >
+                      <i aria-hidden="true" style={{ backgroundColor: MATERIAL_FAMILY_COLORS[family] }} />
+                      {materialFamilyLabel(family, copy)}
+                    </button>
+                  ))}
                 </div>
-              ) : null}
+              </fieldset>
+              <fieldset className="raw-filter-field raw-trend-filter raw-trend-filter--period" data-testid="raw-trend-period-filter">
+                <legend>{copy.movementPeriodFilter}</legend>
+                <div className="raw-chip-group">
+                  {RAW_MATERIAL_LOOKBACK_OPTIONS.map((days) => (
+                    <button
+                      aria-pressed={lookback === days}
+                      className={lookback === days ? "is-active" : ""}
+                      key={`trend-period-${days}`}
+                      onClick={() => setLookback(days)}
+                      type="button"
+                    >
+                      {days} {copy.days}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
             </div>
             {movementAvailable
-              ? <StockTrendCharts copy={copy} language={language} points={data.trend} unit={unit} />
+              ? <>
+                <div className="raw-movement-summary">
+                  <article className="raw-estimated-usage-summary">
+                    <span>{copy.estimatedProductionUsage}</span>
+                    <strong>{quantity(estimatedProductionUsage, language)} <small>{unit}</small></strong>
+                    <p>{copy.estimatedProductionUsageHint}</p>
+                    <small>{copy.dailyAverage} {quantity(averageEstimatedProductionUsage, language)} {unit}</small>
+                  </article>
+                  <div className="raw-flow-totals" aria-label={`${lookback} ${copy.days} ${copy.periodSuffix}`}>
+                    <span><i className="raw-flow-dot--in" />{copy.inbound}<strong>{quantity(displayedTrendTotals.inbound, language)} {unit}</strong></span>
+                    <span><i className="raw-flow-dot--external" />{copy.consumption}<strong>{quantity(displayedTrendTotals.externalProductionSupply, language)} {unit}</strong></span>
+                    <span><i className="raw-flow-dot--internal" />{copy.transferOut}<strong>{quantity(displayedTrendTotals.internalInjectionSupply, language)} {unit}</strong></span>
+                    <span><i className="raw-flow-dot--adjustment" />{copy.adjustment}<strong>{displayedTrendTotals.adjustment > 0 ? "+" : ""}{quantity(displayedTrendTotals.adjustment, language)} {unit}</strong></span>
+                  </div>
+                </div>
+                <MovementTrendChart copy={copy} family={trendFamily} language={language} lookback={lookback} points={data.trend} unit={unit} />
+              </>
               : <div className="notice notice--neutral raw-movement-unavailable" role="status">{copy.movementUnavailable}</div>}
           </section>
 
@@ -1826,7 +2000,7 @@ export function RawMaterialManagementPage() {
                                   </span>
                                   <span className="raw-material-toggle__label">
                                     <strong>{row.materialName}</strong>
-                                    <span>{row.materialCode} · {row.specification || "-"}</span>
+                                    <span>{[row.materialCode, row.specification, row.manufacturer, row.color].filter(Boolean).join(" · ") || "-"}</span>
                                   </span>
                                   <span className="raw-stock-detail-count">{row.stockDetailCount} {copy.rows}</span>
                                 </button>
@@ -1843,9 +2017,9 @@ export function RawMaterialManagementPage() {
                               </td>
                               <td><strong>{quantity(row.usableQuantity, language)}</strong><span>{copy.restricted} {quantity(row.restrictedQuantity, language)} · {copy.unclassified} {quantity(row.unclassifiedQuantity, language)}</span></td>
                               <td className={movementAvailable ? "raw-number--in" : ""}>{movementAvailable ? `+${quantity(Math.abs(row.inboundQuantity), language)}` : copy.notCollected}</td>
-                              <td>{movementAvailable ? quantity(row.consumptionQuantity, language) : copy.notCollected}</td>
-                              <td className={movementAvailable ? "raw-number--out" : ""}>{movementAvailable ? quantity(row.transferOutQuantity, language) : copy.notCollected}</td>
-                              <td>{movementAvailable ? quantity(row.averageDailyConsumption, language) : copy.notCollected}</td>
+                              <td>{movementAvailable ? quantity(row.externalProductionSupplyQuantity, language) : copy.notCollected}</td>
+                              <td className={movementAvailable ? "raw-number--out" : ""}>{movementAvailable ? quantity(row.internalInjectionSupplyQuantity, language) : copy.notCollected}</td>
+                              <td>{movementAvailable ? quantity(row.averageDailyEstimatedProductionUsage, language) : copy.notCollected}</td>
                               <td><strong>{rowRecommendationAvailable ? quantity(row.reorderPoint, language) : movementAvailable ? copy.notCalculated : copy.notCollected}</strong><span>{copy.targetStock} {rowRecommendationAvailable ? quantity(row.targetStock, language) : movementAvailable ? copy.notCalculated : copy.notCollected}</span></td>
                               <td><strong>{rowRecommendationAvailable ? quantity(row.recommendedOrder, language) : movementAvailable ? copy.notCalculated : copy.notCollected}</strong></td>
                             </tr>
@@ -1896,7 +2070,14 @@ export function RawMaterialManagementPage() {
                         <tr key={`${row.id}-${index}`}>
                           <td>{dateTime(row.occurredAt, language, "-")}</td>
                           <td><span className={`raw-action raw-action--${action.direction}`}>{action.label}</span></td>
-                          <td><strong>{row.materialName} · {row.materialCode}</strong></td>
+                          <td>
+                            <strong>{row.materialName} · {row.materialCode}</strong>
+                            <span>{[
+                              row.materialFamily ? materialFamilyLabel(normalizeMaterialFamily(row.materialFamily), copy) : "",
+                              row.manufacturer,
+                              row.color,
+                            ].filter(Boolean).join(" · ")}</span>
+                          </td>
                           <td className={`raw-number--${action.direction}`}>{movementDirection === "in" ? "+" : movementDirection === "out" ? "−" : ""}{quantity(Math.abs(row.quantity), language)} <small>{unit}</small></td>
                           <td>{row.batchNo || "-"}</td>
                           <td><strong>{row.documentNo || "-"}</strong><span>{row.operatorName || ""}</span></td>
