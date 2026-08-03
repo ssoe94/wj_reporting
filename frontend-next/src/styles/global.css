@@ -2613,6 +2613,58 @@ select {
   white-space: pre-wrap;
 }
 
+.production-ai-chat-message p.production-ai-chat-message__typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.production-ai-chat-typing-dots {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 26px;
+}
+
+.production-ai-chat-typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #008ec3;
+  opacity: 0.28;
+  animation: production-ai-chat-dot 1.2s ease-in-out infinite;
+}
+
+.production-ai-chat-typing-dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.production-ai-chat-typing-dots i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes production-ai-chat-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .production-ai-chat-typing-dots i {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 .production-ai-chat-message .notice {
   border-radius: 8px;
   padding: 8px 9px;

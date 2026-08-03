@@ -364,14 +364,14 @@ const pageCopy = {
     aiRequestRejectedTitle: "질문 확인 필요",
     aiQwenTitle: "로컬 Qwen 설명",
     aiQwenAnswerTitle: "로컬 Qwen 답변",
-    aiQwenQueued: "대기 중",
-    aiQwenRunning: "분석 중",
+    aiQwenQueued: "답변 준비 중",
+    aiQwenRunning: "답변 작성 중",
     aiQwenReady: "설명 완료",
     aiQwenFallbackReady: "초안 검토 필요",
     aiQwenDelayed: "Worker 응답 지연",
     aiQwenFailed: "설명 실패",
-    aiQwenPendingHint: "검증된 계산 결과는 먼저 표시했습니다. 로컬 Qwen이 같은 사실을 읽기 쉽게 설명하고 있습니다.",
-    aiQwenQueuedHint: "질문을 로컬 Qwen에 전달했습니다. 분석이 완료되면 여기에 답변을 표시합니다.",
+    aiQwenPendingHint: "검증된 데이터를 바탕으로 답변을 정리하고 있습니다",
+    aiQwenQueuedHint: "생산 데이터를 확인해 답변을 작성하고 있습니다",
     aiQwenDelayedHint: "로컬 Worker 응답이 지연되고 있습니다. 위 계산 결과는 그대로 유효합니다.",
     aiQwenQueuedDelayedHint: "로컬 Worker 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
     aiQwenFailedHint: "로컬 Qwen 설명을 가져오지 못했습니다. 위 계산 결과는 그대로 유효합니다.",
@@ -590,14 +590,14 @@ const pageCopy = {
     aiRequestRejectedTitle: "请确认问题内容",
     aiQwenTitle: "本地 Qwen 说明",
     aiQwenAnswerTitle: "本地 Qwen 回答",
-    aiQwenQueued: "等待中",
-    aiQwenRunning: "分析中",
+    aiQwenQueued: "准备回答中",
+    aiQwenRunning: "正在撰写回答",
     aiQwenReady: "说明完成",
     aiQwenFallbackReady: "需要审核草稿",
     aiQwenDelayed: "Worker 响应延迟",
     aiQwenFailed: "说明失败",
-    aiQwenPendingHint: "已先显示经过验证的计算结果。本地 Qwen 正在将相同事实整理为易读说明。",
-    aiQwenQueuedHint: "问题已发送给本地 Qwen。分析完成后将在此显示回答。",
+    aiQwenPendingHint: "正在根据已验证的数据整理回答",
+    aiQwenQueuedHint: "正在查看生产数据并撰写回答",
     aiQwenDelayedHint: "本地 Worker 响应延迟。上方计算结果仍然有效。",
     aiQwenQueuedDelayedHint: "本地 Worker 响应延迟。请稍后重试。",
     aiQwenFailedHint: "无法获取本地 Qwen 说明。上方计算结果仍然有效。",
@@ -3237,6 +3237,12 @@ export function ProductionDashboardPage() {
       setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
     },
   });
+  const aiQuestionIsGenerating = aiQuestionMutation.isPending || (
+    aiQuestionJobId !== null
+    && !aiQuestionPollingTimedOut
+    && !aiQuestionJobFailed
+    && !aiQuestionJobCompleted
+  );
 
   useEffect(() => {
     const previousScope = previousAiChatScopeRef.current;
@@ -5676,12 +5682,29 @@ export function ProductionDashboardPage() {
                 <article className={`production-ai-chat-message production-ai-chat-message--assistant production-ai-chat-message--${aiQuestionJobTone}`}>
                   <div className="production-ai-chat-message__header">
                     <strong>{aiQuestionIsQueuedOnly ? copy.aiQwenAnswerTitle : copy.aiQwenTitle}</strong>
-                    <span role="status">{aiQuestionMutation.isPending ? copy.aiQwenQueued : aiQuestionJobStatusLabel}</span>
+                    <span aria-live="polite" role="status">
+                      {aiQuestionMutation.isPending ? copy.aiQwenQueued : aiQuestionJobStatusLabel}
+                    </span>
                   </div>
-                  <p>{aiQuestionMutation.isPending ? copy.aiQwenQueuedHint : aiQuestionJobHint}</p>
-                  <div className="production-ai-chat-message__meta">
-                    <span>{copy.aiSource}: {copy.aiSourceQueued}</span>
-                  </div>
+                  {aiQuestionIsGenerating ? (
+                    <p
+                      className="production-ai-chat-message__typing"
+                    >
+                      <span>{aiQuestionMutation.isPending ? copy.aiQwenQueuedHint : aiQuestionJobHint}</span>
+                      <span aria-hidden="true" className="production-ai-chat-typing-dots">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    </p>
+                  ) : (
+                    <p>{aiQuestionMutation.isPending ? copy.aiQwenQueuedHint : aiQuestionJobHint}</p>
+                  )}
+                  {!aiQuestionIsGenerating ? (
+                    <div className="production-ai-chat-message__meta">
+                      <span>{copy.aiSource}: {copy.aiSourceQueued}</span>
+                    </div>
+                  ) : null}
                 </article>
               ) : null}
             </div>
