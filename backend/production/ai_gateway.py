@@ -226,9 +226,50 @@ def normalize_product_family(value: Any) -> str | None:
     return None
 
 
+def extract_machine_numbers(question: str) -> list[int]:
+    """Extract explicitly mentioned injection machine numbers in user order."""
+    text = str(question or "")
+    positions: dict[int, int] = {}
+
+    def add(raw_value: str, position: int) -> None:
+        try:
+            number = int(raw_value)
+        except (TypeError, ValueError):
+            return
+        if 1 <= number <= 17:
+            positions[number] = min(position, positions.get(number, position))
+
+    for match in re.finditer(r"\d{3,4}\s*[Tt]\s*-\s*(\d{1,2})(?!\d)", text):
+        add(match.group(1), match.start(1))
+    for match in re.finditer(r"(?<!\d)(\d{1,2})\s*(?:호기|号机|번\s*(?:사출기|기계))", text):
+        add(match.group(1), match.start(1))
+
+    grouped_suffix_pattern = (
+        r"((?:\d{1,2}\s*(?:(?:[,/&·])|(?:와|과|및|and))\s*)+\d{1,2})"
+        r"\s*(?:호기|号机|번\s*(?:사출기|기계))"
+    )
+    for match in re.finditer(grouped_suffix_pattern, text, flags=re.IGNORECASE):
+        for number_match in re.finditer(r"\d{1,2}", match.group(1)):
+            add(number_match.group(0), match.start(1) + number_match.start())
+
+    for match in re.finditer(r"(?:machines?|사출기)\s*[:#-]?\s*([^?.!]{1,40})", text, flags=re.IGNORECASE):
+        clause = match.group(1)
+        for number_match in re.finditer(r"(?<!\d)\d{1,2}(?!\d)", clause):
+            add(number_match.group(0), match.start(1) + number_match.start())
+
+    return sorted(positions, key=positions.get)
+
+
 def normalize_intent(raw: dict[str, Any]) -> dict[str, Any]:
     intent = str(raw.get("intent") or "unknown").strip()
-    if intent not in {"injection_cycle_time", "production_output", "production_status", "production_summary", "unknown"}:
+    if intent not in {
+        "injection_cycle_time",
+        "injection_shot_projection",
+        "production_output",
+        "production_status",
+        "production_summary",
+        "unknown",
+    }:
         intent = "unknown"
     filters = raw.get("filters") if isinstance(raw.get("filters"), dict) else {}
     sort = raw.get("sort") if raw.get("sort") in {"ct_desc", "ct_asc", "output_desc", "output_asc", None} else None
@@ -236,6 +277,17 @@ def normalize_intent(raw: dict[str, Any]) -> dict[str, Any]:
         limit = int(raw.get("limit") or 6)
     except (TypeError, ValueError):
         limit = 6
+
+    machine_numbers = []
+    raw_machine_numbers = filters.get("machine_numbers")
+    if isinstance(raw_machine_numbers, list):
+        for value in raw_machine_numbers:
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= number <= 17 and number not in machine_numbers:
+                machine_numbers.append(number)
 
     return {
         "intent": intent,
@@ -245,6 +297,7 @@ def normalize_intent(raw: dict[str, Any]) -> dict[str, Any]:
             "product_family": normalize_product_family(filters.get("product_family")),
             "target_text": str(filters.get("target_text") or "").strip() or None,
             "machine": str(filters.get("machine") or "").strip() or None,
+            "machine_numbers": machine_numbers,
         },
         "sort": sort,
         "limit": max(1, min(limit, 20)),
@@ -253,6 +306,29 @@ def normalize_intent(raw: dict[str, Any]) -> dict[str, Any]:
 
 def heuristic_intent_from_question(question: str) -> dict[str, Any]:
     normalized = question.lower()
+    diagnostic_tokens = [
+        # Korean
+        "왜", "원인", "이유", "개선", "비교", "변화", "우선", "문제", "낮",
+        # Chinese
+        "为什么", "为何", "原因", "理由", "改善", "改进", "比较", "对比", "变化", "变动",
+        "优先", "问题", "较低", "低", "下降",
+    ]
+    diagnostic_english = re.search(
+        r"\b(?:why|causes?|reasons?|improve|improvement|compare|comparison|changes?|priority|"
+        r"prioritize|problems?|low|lower|decline)\b",
+        normalized,
+    )
+    if any(token in normalized for token in diagnostic_tokens) or diagnostic_english:
+        # Diagnostic/causal questions need the full verified context. Returning
+        # unknown routes them to context_grounded instead of a metric rewrite.
+        return normalize_intent({"intent": "unknown"})
+
+    mentions_shots = any(token in normalized for token in [
+        "형합", "합모", "shot", "shots", "쇼트", "合模", "模次",
+    ])
+    mentions_projection = any(token in normalized for token in [
+        "예상", "예측", "추세", "종료", "끝날", "forecast", "project", "trend", "预计", "预测", "趋势", "结束",
+    ])
     mentions_ct = any(token in normalized for token in ["c/t", "ct", "cycle", "사이클", "싸이클", "시간", "节拍", "周期"])
     mentions_output = any(token in normalized for token in ["생산량", "실적", "몇개", "몇 개", "output", "production", "产量", "实绩"])
     mentions_status_count = any(token in normalized for token in ["몇대", "몇 대", "수는", "수량", "몇台", "几台", "多少台"])
@@ -273,6 +349,17 @@ def heuristic_intent_from_question(question: str) -> dict[str, Any]:
         for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9./_-]{2,}", question)
         if len(token) >= 4 and token.lower() not in {"back", "cover", "cycle", "output", "production"}
     ]
+
+    if mentions_shots and mentions_projection:
+        return normalize_intent({
+            "intent": "injection_shot_projection",
+            "metric": "projected_total_shots",
+            "filters": {
+                "machine_numbers": extract_machine_numbers(question),
+            },
+            "sort": None,
+            "limit": 17,
+        })
 
     if mentions_ct:
         return normalize_intent({
