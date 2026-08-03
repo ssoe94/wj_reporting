@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import os
 import re
-import json
 from datetime import datetime, time, timedelta
 from typing import Any
 
 import pytz
-import requests
 from django.utils import timezone
 
 from injection.models import InjectionMonitoringRecord
@@ -16,8 +13,6 @@ from .models import ProductionPartCavity, ProductionPlan
 from .cavity import build_cavity_plan_groups, get_cavity_meta_map
 
 
-DEFAULT_MODEL = "mlx-community/gemma-4-e2b-it-8bit"
-DEFAULT_LLM_BASE_URL = "http://127.0.0.1:8080/v1"
 MACHINE_TONNAGE = {
     1: "850T",
     2: "850T",
@@ -218,32 +213,6 @@ def build_injection_plan_context(business_date: str) -> dict[str, Any]:
     }
 
 
-def local_llm_settings() -> tuple[str, str]:
-    base_url = os.getenv("LOCAL_LLM_BASE_URL", DEFAULT_LLM_BASE_URL).rstrip("/")
-    model = os.getenv("LOCAL_LLM_MODEL", DEFAULT_MODEL)
-    return base_url, model
-
-
-def extract_json_object(text: str) -> dict[str, Any]:
-    if not text:
-        return {}
-    stripped = text.strip()
-    try:
-        data = json.loads(stripped)
-        return data if isinstance(data, dict) else {}
-    except json.JSONDecodeError:
-        pass
-
-    match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
-    if not match:
-        return {}
-    try:
-        data = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
 def normalize_product_family(value: Any) -> str | None:
     if value is None:
         return None
@@ -346,56 +315,6 @@ def heuristic_intent_from_question(question: str) -> dict[str, Any]:
             "limit": 8,
         })
     return normalize_intent({"intent": "unknown"})
-
-
-def request_question_intent(question: str, business_date: str, language: str) -> dict[str, Any]:
-    base_url, model = local_llm_settings()
-    system_prompt = (
-        "You convert Korean/Chinese manufacturing questions into JSON only. "
-        "Do not answer the question. Do not calculate. Return one JSON object with this schema: "
-        '{"intent":"injection_cycle_time|production_output|production_status|production_summary|unknown",'
-        '"metric":"recent_60m_avg_ct_sec|estimated_qty|day_shots|running_count|progress_rate|null",'
-        '"filters":{"running_only":true/false,"product_family":"BC|CA|GP|null","target_text":"part/model/machine text or null","machine":"machine text or null"},'
-        '"sort":"ct_desc|ct_asc|output_desc|output_asc|null","limit":number}. '
-        "Glossary: B/C, back cover, 백커버=BC. C/A, cabinet=CA. G/P, guide panel=GP. "
-        "C/T, ct, cycle time, 节拍, 周期 mean injection_cycle_time. 생산량, 실적, 产量 mean production_output. "
-        f"Default business_date is {business_date}. JSON only."
-    )
-    examples = (
-        'Q: 지금 백커버 만드는 기계 중 제일 느린 거 뭐야?\n'
-        'A: {"intent":"injection_cycle_time","metric":"recent_60m_avg_ct_sec","filters":{"running_only":true,"product_family":"BC","target_text":null,"machine":null},"sort":"ct_desc","limit":1}\n'
-        'Q: 现在生产B/C的注塑机哪台节拍最慢？\n'
-        'A: {"intent":"injection_cycle_time","metric":"recent_60m_avg_ct_sec","filters":{"running_only":true,"product_family":"BC","target_text":null,"machine":null},"sort":"ct_desc","limit":1}\n'
-        'Q: 24g411 오늘 얼마나 나왔어?\n'
-        'A: {"intent":"production_output","metric":"estimated_qty","filters":{"running_only":false,"product_family":null,"target_text":"24G411","machine":null},"sort":"output_desc","limit":8}\n'
-        'Q: 오늘 생산중인 사출기의 수는?\n'
-        'A: {"intent":"production_status","metric":"running_count","filters":{"running_only":true,"product_family":null,"target_text":null,"machine":null},"sort":null,"limit":17}\n'
-        'Q: 오늘 생산 진도 어때?\n'
-        'A: {"intent":"production_summary","metric":"progress_rate","filters":{"running_only":false,"product_family":null,"target_text":null,"machine":null},"sort":null,"limit":8}'
-    )
-
-    try:
-        response = requests.post(
-            f"{base_url}/chat/completions",
-            json={
-                "model": model,
-                "temperature": 0,
-                "max_tokens": 220,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"{examples}\n\nQ: {question}\nA:"},
-                ],
-            },
-            timeout=float(os.getenv("LOCAL_LLM_INTENT_TIMEOUT_SECONDS", "18")),
-        )
-        response.raise_for_status()
-        content = response.json().get("choices", [{}])[0].get("message", {}).get("content") or ""
-        parsed = normalize_intent(extract_json_object(str(content)))
-        if parsed["intent"] != "unknown":
-            return parsed
-    except Exception:
-        pass
-    return heuristic_intent_from_question(question)
 
 
 def part_matches_target(part: dict[str, Any], target_text: str | None) -> bool:
@@ -636,51 +555,3 @@ def answer_rule_based(question: str, context: dict[str, Any], language: str) -> 
         f"최근 60분 기준 대상 사출기 {len(rows)}대의 평균 C/T는 약 {average_ct:.1f}초입니다. "
         f"주요 설비별 C/T는 {sample}입니다."
     )
-
-
-def request_local_llm(question: str, context: dict[str, Any], language: str) -> str:
-    base_url = os.getenv("LOCAL_LLM_BASE_URL", DEFAULT_LLM_BASE_URL).rstrip("/")
-    model = os.getenv("LOCAL_LLM_MODEL", DEFAULT_MODEL)
-    is_korean = language != "zh"
-    compact_context = {
-        **context,
-        "machines": [
-            {
-                "machine": machine["machine"],
-                "recent_60m_shots": machine["recent_60m_shots"],
-                "recent_60m_avg_ct_sec": machine["recent_60m_avg_ct_sec"],
-                "is_running": machine["is_running"],
-                "current_part": machine["current_part"],
-            }
-            for machine in context["machines"]
-            if machine["is_running"] or machine.get("current_part")
-        ],
-    }
-
-    response = requests.post(
-        f"{base_url}/chat/completions",
-        json={
-            "model": model,
-            "temperature": 0.1,
-            "max_tokens": 500,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "당신은 제조 생산관리 분석 보조자입니다. 제공된 계산 결과만 근거로 한국어로 짧게 답하세요. "
-                        "C/T는 recent_60m_avg_ct_sec를 사용하고, 모르면 모른다고 말하세요."
-                        if is_korean else
-                        "你是制造生产管理分析助手。仅基于提供的计算结果，用中文简洁回答。C/T 使用 recent_60m_avg_ct_sec，不知道就说明不知道。"
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"질문/问题: {question}\n\n데이터/Data:\n{json.dumps(compact_context, ensure_ascii=False)}",
-                },
-            ],
-        },
-        timeout=45,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return str(data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()

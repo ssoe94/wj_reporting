@@ -6,11 +6,13 @@ from .models import (
     DailyInventorySnapshot,
     DailyReportSummary,
     FinishedGoodsTransactionSnapshot,
+    RawMaterialSyncState,
 )
 import logging
 from django.db.models import Count, Sum
 
 from inventory.services.finished_goods import capture_finished_goods_transactions
+from inventory.services.raw_material_sync import run_raw_material_sync
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +24,14 @@ def daily_inventory_automation():
         
         # 1. MES 데이터 갱신
         logger.info("MES 데이터 갱신 시작")
-        call_command('fetch_inventory')
-        logger.info("MES 데이터 갱신 완료")
+        started, sync_state = run_raw_material_sync(trigger="daily")
+        if not started:
+            raise RuntimeError(
+                "다른 원료 MES 업데이트가 실행 중이므로 오늘 스냅샷을 생성하지 않습니다."
+            )
+        elif sync_state["status"] != RawMaterialSyncState.STATUS_COMPLETED:
+            raise RuntimeError(sync_state["message"])
+        logger.info("MES 재고 및 원료 변동 데이터 갱신 완료")
         
         # 2. 일일 스냅샷 생성
         logger.info("일일 스냅샷 생성 시작")

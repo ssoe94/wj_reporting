@@ -94,7 +94,7 @@ class ProductionPlanProcessor:
             raise ProductionPlanProcessingError("시트를 읽는 중 오류가 발생했습니다.") from exc
 
         df = df.rename(columns=self.schema.rename_map)
-        df = df[df.get("lot_no").notna() & df.get("lot_no").astype(str).str.strip().ne("")].copy()
+        df = self._filter_identified_rows(df)
         df = self._filter_machine_rows(df)
         if df.empty:
             raise ProductionPlanProcessingError("유효한 계획 행을 찾을 수 없습니다.")
@@ -106,6 +106,10 @@ class ProductionPlanProcessor:
 
         records = self._build_records(df, day_columns, day_map)
         plan_long = self._build_plan_long(df, day_columns, day_map)
+        if not plan_long:
+            raise ProductionPlanProcessingError(
+                "양수 생산 계획 수량이 있는 유효한 계획 행을 찾을 수 없습니다."
+            )
         machine_summary = self._summarize(plan_long, keys=["date", "machine"])
         model_summary = self._summarize(plan_long, keys=["date", "model"])
         daily_totals = self._summarize(plan_long, keys=["date"])
@@ -344,6 +348,22 @@ class ProductionPlanProcessor:
         if pd.isna(parsed):
             return None
         return parsed.date().isoformat()
+
+    def _filter_identified_rows(self, df: pd.DataFrame) -> pd.DataFrame:
+        # Injection plans can identify model-only or trial orders without a LOT
+        # number. Machining keeps its existing LOT requirement.
+        identifier_columns = (
+            ("lot_no", "model", "fg_part_no", "sg_part_no", "part_spec")
+            if self.plan_type == "injection"
+            else ("lot_no",)
+        )
+        mask = pd.Series(False, index=df.index, dtype=bool)
+        for column in identifier_columns:
+            if column not in df.columns:
+                continue
+            values = df[column]
+            mask |= values.notna() & values.astype(str).str.strip().ne("")
+        return df[mask].copy()
 
     def _filter_machine_rows(self, df: pd.DataFrame) -> pd.DataFrame:
         if "machine" not in df.columns:

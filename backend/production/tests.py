@@ -12,7 +12,7 @@ from injection.models import InjectionMonitoringRecord
 
 from .mes_progress import get_business_date, is_machining_progress_report, normalize_mes_part_no
 from .counter_utils import calculate_cumulative_counter_delta
-from .ai_context import build_context_pack
+from .ai_context import build_context_pack, build_top_risks
 from .ai_retrievers import get_daily_production_context, get_injection_summary, machine_monitoring_name
 from .models import (
     InjectionActivityConfirmation,
@@ -45,6 +45,51 @@ class CumulativeCounterDeltaTests(TestCase):
         result = calculate_cumulative_counter_delta([104820, 104822, 104821, 104825], baseline=None)
 
         self.assertEqual(result, 6)
+
+
+class AiTimeAdjustedRiskTests(TestCase):
+    def test_top_risks_use_time_adjusted_gap_and_five_point_threshold(self):
+        context = {
+            'injection': {
+                'machine_rows': [
+                    {
+                        'machine': '850T-1',
+                        'gap_qty': -900,
+                        'gap_to_time_qty': -100,
+                        'gap_to_time_rate_pp': -10,
+                        'parts': [{'part_no': 'PART-A', 'status': 'in_progress'}],
+                    },
+                    {
+                        'machine': '850T-2',
+                        'gap_qty': -850,
+                        'gap_to_time_qty': -50,
+                        'gap_to_time_rate_pp': -5,
+                        'parts': [{'part_no': 'PART-B', 'status': 'in_progress'}],
+                    },
+                ],
+            },
+            'machining': {
+                'time_progress_rate': 20,
+                'rows': [
+                    {
+                        'equipment_label': 'D라인',
+                        'part_no': 'PART-M',
+                        'planned_qty': 1000,
+                        'actual_qty': 100,
+                        'gap_to_time_qty': -100,
+                    },
+                ],
+            },
+        }
+
+        risks = build_top_risks(context)
+        labels = [risk.label for risk in risks]
+
+        self.assertIn('850T-1', labels)
+        self.assertIn('D라인', labels)
+        self.assertNotIn('850T-2', labels)
+        injection_risk = next(risk for risk in risks if risk.label == '850T-1')
+        self.assertEqual(injection_risk.gap_qty, -100)
 
 
 class MesProgressParsingTests(TestCase):
@@ -324,14 +369,13 @@ class MesProgressSyncCommandTests(DjangoTestCase):
 
 
 class ProductionMesReportStatsApiTests(DjangoTestCase):
-    def test_ai_briefing_api_allows_read_only_access_without_auth(self):
+    def test_ai_briefing_api_requires_authentication(self):
         response = APIClient().get('/api/production/ai/briefing/', {
             'date': '2026-05-18',
             'language': 'ko',
         })
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('answer', response.json())
+        self.assertEqual(response.status_code, 401)
 
     def test_stats_api_matches_machining_rows_by_part_no_without_auth(self):
         target_date = datetime(2026, 5, 18).date()
@@ -700,6 +744,12 @@ class ProductionConsoleContractTests(DjangoTestCase):
 
 
 class AiBriefingContractTests(DjangoTestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(
+            get_user_model().objects.create_user(username='ai-briefing-user', password='test-pass'),
+        )
+
     def test_ai_briefing_response_contains_deterministic_evidence_contract(self):
         target_date = datetime(2026, 5, 18).date()
         ProductionPlan.objects.create(
@@ -723,7 +773,7 @@ class AiBriefingContractTests(DjangoTestCase):
             sequence=1,
         )
 
-        response = APIClient().get('/api/production/ai/briefing/', {
+        response = self.client.get('/api/production/ai/briefing/', {
             'date': target_date.isoformat(),
             'language': 'ko',
         })
@@ -735,6 +785,9 @@ class AiBriefingContractTests(DjangoTestCase):
         self.assertIn('top_risks', payload)
         self.assertIn('used_data', payload)
         self.assertIn('calculation_basis', payload)
+        self.assertIn('data_freshness', payload)
+        self.assertIn('warnings', payload)
+        self.assertIn('retrieval_trace', payload)
         self.assertIn('context_pack', payload)
         self.assertIn('cache', payload)
 
@@ -763,12 +816,11 @@ class AiBriefingContractTests(DjangoTestCase):
             sequence=1,
         )
 
-        client = APIClient()
-        ko_response = client.get('/api/production/ai/briefing/', {
+        ko_response = self.client.get('/api/production/ai/briefing/', {
             'date': target_date.isoformat(),
             'language': 'ko',
         })
-        zh_response = client.get('/api/production/ai/briefing/', {
+        zh_response = self.client.get('/api/production/ai/briefing/', {
             'date': target_date.isoformat(),
             'language': 'zh',
         })
@@ -776,6 +828,35 @@ class AiBriefingContractTests(DjangoTestCase):
         self.assertEqual(ko_response.status_code, 200)
         self.assertEqual(zh_response.status_code, 200)
         self.assertEqual(ko_response.json()['facts'], zh_response.json()['facts'])
+
+
+class ProductionAiAskContractTests(DjangoTestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(
+            get_user_model().objects.create_user(username='ai-ask-user', password='test-pass'),
+        )
+
+    def test_unknown_question_returns_immediate_deterministic_response(self):
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '이번 주에 무엇을 개선하면 좋을까?',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['source'], 'deterministic_unhandled')
+        self.assertIn('검증된 생산 지표', response.json()['answer'])
+
+    def test_supported_question_uses_calculated_intent(self):
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '오늘 생산 진도 어때?',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['source'], 'intent_calculated')
 
 
 class InjectionAllocationContractTests(DjangoTestCase):
@@ -955,6 +1036,129 @@ class InjectionAllocationContractTests(DjangoTestCase):
         self.assertEqual(machine['total_actual'], 80)
         self.assertEqual(machine['parts'][0]['actual_quantity'], 40)
         self.assertEqual(machine['parts'][1]['actual_quantity'], 40)
+
+    def test_repeated_grouped_cavity_occurrences_allocate_shots_in_sequence(self):
+        target_date = datetime(2026, 7, 4).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 7, 4, 8, 0))
+
+        for sequence, (part_no, lot_no) in enumerate([
+            ('PAIR-A', 'A1'),
+            ('PAIR-B', 'B1'),
+            ('PAIR-A', 'A2'),
+            ('PAIR-B', 'B2'),
+        ], start=1):
+            ProductionPlan.objects.create(
+                plan_date=target_date,
+                plan_type='injection',
+                machine_name='850T-1',
+                part_no=part_no,
+                lot_no=lot_no,
+                model_name='Repeated Pair',
+                planned_quantity=100,
+                sequence=sequence,
+            )
+
+        for part_no in ['PAIR-A', 'PAIR-B']:
+            ProductionPartCavity.objects.create(
+                part_no=part_no,
+                cavity=2,
+                cavity_pattern='2x2',
+                parts_per_shot=2,
+                cavity_group='PAIR-A+PAIR-B',
+            )
+
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start - timedelta(minutes=1),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start + timedelta(minutes=10),
+            capacity=160,
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machine = response.json()['injection'][0]
+        self.assertEqual(machine['total_planned'], 400)
+        self.assertEqual(machine['total_actual'], 240)
+        self.assertEqual(
+            [part['actual_quantity'] for part in machine['parts']],
+            [100, 100, 20, 20],
+        )
+        self.assertEqual(
+            [part['progress'] for part in machine['parts']],
+            [100.0, 100.0, 20.0, 20.0],
+        )
+
+        summary = get_injection_summary(target_date)
+        summary_row = summary['machine_rows'][0]
+        self.assertEqual(summary_row['planned_qty'], 400)
+        self.assertEqual(summary_row['actual_qty'], 240)
+        self.assertEqual(
+            [part['estimated_qty'] for part in summary_row['parts']],
+            [100, 100, 20, 20],
+        )
+        self.assertEqual(
+            [part['status'] for part in summary_row['parts']],
+            ['completed', 'completed', 'in_progress', 'in_progress'],
+        )
+
+    def test_grouped_cavity_does_not_pair_later_lot_when_parallel_part_is_missing(self):
+        target_date = datetime(2026, 7, 5).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 7, 5, 8, 0))
+
+        for sequence, lot_no in enumerate(['A1', 'A2'], start=1):
+            ProductionPlan.objects.create(
+                plan_date=target_date,
+                plan_type='injection',
+                machine_name='850T-1',
+                part_no='PAIR-A',
+                lot_no=lot_no,
+                model_name='Incomplete Pair',
+                planned_quantity=100,
+                sequence=sequence,
+            )
+
+        ProductionPartCavity.objects.create(
+            part_no='PAIR-A',
+            cavity=2,
+            cavity_pattern='2x2',
+            parts_per_shot=2,
+            cavity_group='PAIR-A+PAIR-B',
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start - timedelta(minutes=1),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name=machine_monitoring_name(1),
+            device_code='inj-1',
+            timestamp=start + timedelta(minutes=10),
+            capacity=110,
+        )
+
+        response = APIClient().get('/api/production/status/', {
+            'date': target_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        machine = response.json()['injection'][0]
+        self.assertEqual(machine['total_actual'], 20)
+        self.assertEqual(
+            [part['actual_quantity'] for part in machine['parts']],
+            [20, 0],
+        )
 
     def test_status_api_does_not_count_first_cumulative_value_without_baseline(self):
         target_date = datetime(2026, 5, 18).date()

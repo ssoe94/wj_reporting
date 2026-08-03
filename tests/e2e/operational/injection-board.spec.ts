@@ -6,7 +6,99 @@ import {
   installPageIssueGuard,
 } from '../helpers/operational';
 
+function createSessionJwt(expiresAt: number, tokenKind: 'access' | 'refresh') {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ exp: expiresAt, token_kind: tokenKind })}.test-signature`;
+}
+
+async function installStoredSession(page: import('@playwright/test').Page, access: string, refresh: string) {
+  await page.addInitScript(({ access, refresh }) => {
+    if (!window.localStorage.getItem('wj_next_access_token') && !window.localStorage.getItem('access_token')) {
+      window.localStorage.setItem('wj_next_access_token', access);
+      window.localStorage.setItem('access_token', access);
+    }
+    if (!window.localStorage.getItem('wj_next_refresh_token') && !window.localStorage.getItem('refresh_token')) {
+      window.localStorage.setItem('wj_next_refresh_token', refresh);
+      window.localStorage.setItem('refresh_token', refresh);
+    }
+  }, { access, refresh });
+}
+
 test.describe('injection office board', () => {
+  test('restores an expired session after a deployment-style reload', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await installOperationalApiMocks(page);
+
+    const now = Math.floor(Date.now() / 1000);
+    const expiredAccess = createSessionJwt(now - 60, 'access');
+    const renewedAccess = createSessionJwt(now + 30 * 60, 'access');
+    const originalRefresh = createSessionJwt(now + 7 * 24 * 60 * 60, 'refresh');
+    const rotatedRefresh = createSessionJwt(now + 7 * 24 * 60 * 60 + 1, 'refresh');
+    let refreshRequests = 0;
+
+    await installStoredSession(page, expiredAccess, originalRefresh);
+    await page.route('**/api/token/refresh/', async (route) => {
+      refreshRequests += 1;
+      expect(route.request().postDataJSON()).toEqual({ refresh: originalRefresh });
+      await route.fulfill({ json: { access: renewedAccess, refresh: rotatedRefresh } });
+    });
+
+    await page.goto('/production/injection-board/index.html');
+    await expect(page.locator('.injection-board__grid')).toBeVisible();
+    await expect(page).toHaveURL(/\/production\/injection-board\/index\.html$/);
+    expect(refreshRequests).toBe(1);
+    expect(await page.evaluate(() => window.localStorage.getItem('wj_next_refresh_token'))).toBe(rotatedRefresh);
+    expect(await page.evaluate(() => window.localStorage.getItem('refresh_token'))).toBe(rotatedRefresh);
+
+    await page.reload();
+    await expect(page.locator('.injection-board__grid')).toBeVisible();
+    await expect(page).toHaveURL(/\/production\/injection-board\/index\.html$/);
+    expect(refreshRequests).toBe(1);
+    guard.assertClean();
+  });
+
+  test('shares one rotated refresh across simultaneous board API 401 responses', async ({ page }) => {
+    await installOperationalApiMocks(page);
+
+    const now = Math.floor(Date.now() / 1000);
+    const originalAccess = createSessionJwt(now + 30 * 60, 'access');
+    const renewedAccess = createSessionJwt(now + 60 * 60, 'access');
+    const originalRefresh = createSessionJwt(now + 7 * 24 * 60 * 60, 'refresh');
+    const rotatedRefresh = createSessionJwt(now + 7 * 24 * 60 * 60 + 1, 'refresh');
+    let refreshRequests = 0;
+    let requestsWithOriginalAccess = 0;
+
+    await installStoredSession(page, originalAccess, originalRefresh);
+    await page.route('**/api/token/refresh/', async (route) => {
+      refreshRequests += 1;
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      await route.fulfill({ json: { access: renewedAccess, refresh: rotatedRefresh } });
+    });
+
+    for (const pattern of [
+      '**/api/production/plan-summary/**',
+      '**/api/production/status/**',
+      '**/api/injection/production-matrix/**',
+    ]) {
+      await page.route(pattern, async (route) => {
+        if (route.request().headers().authorization === `Bearer ${originalAccess}`) {
+          requestsWithOriginalAccess += 1;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          await route.fulfill({ status: 401, json: { detail: 'expired access' } });
+          return;
+        }
+        await route.fallback();
+      });
+    }
+
+    await page.goto('/production/injection-board');
+    await expect(page.locator('.injection-board__grid')).toBeVisible();
+    await expect.poll(() => requestsWithOriginalAccess).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => refreshRequests).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem('wj_next_access_token'))).toBe(renewedAccess);
+    await expect.poll(() => page.evaluate(() => window.localStorage.getItem('wj_next_refresh_token'))).toBe(rotatedRefresh);
+  });
+
   test('keeps the previous business date until the 08:00 cutoff', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await page.clock.setFixedTime(new Date('2026-05-19T07:59:00+08:00'));
@@ -37,6 +129,31 @@ test.describe('injection office board', () => {
     await page.goto('/production/injection-board/index.html');
     await expect(page.locator('.injection-board__grid')).toBeVisible();
     await expect(page.locator('.injection-board-card')).toHaveCount(17);
+
+    guard.assertClean();
+  });
+
+  test('distinguishes ongoing overproduction from a completed stopped machine', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await page.clock.setFixedTime(new Date('2026-05-18T10:40:00+08:00'));
+    await installOperationalApiMocks(page, { completedStopped: true });
+    const accessExpiresAt = Math.floor(new Date('2026-05-19T10:40:00+08:00').getTime() / 1000);
+    const refreshExpiresAt = Math.floor(new Date('2026-05-25T10:40:00+08:00').getTime() / 1000);
+    await installStoredSession(
+      page,
+      createSessionJwt(accessExpiresAt, 'access'),
+      createSessionJwt(refreshExpiresAt, 'refresh'),
+    );
+
+    await page.goto('/production/injection-board');
+
+    const runningOverPlanCard = page.locator('.injection-board-card[data-machine="1"]');
+    await expect(runningOverPlanCard).toHaveClass(/injection-board-card--overproducing/);
+    await expect(runningOverPlanCard.locator('.injection-board-card__header em')).toHaveText('초과 생산 중');
+
+    const stoppedAtPlanCard = page.locator('.injection-board-card[data-machine="6"]');
+    await expect(stoppedAtPlanCard).toHaveClass(/injection-board-card--completed/);
+    await expect(stoppedAtPlanCard.locator('.injection-board-card__header em')).toHaveText('생산 완료');
 
     guard.assertClean();
   });
@@ -82,6 +199,27 @@ test.describe('injection office board', () => {
     await expect(page.locator('.injection-board-card')).toHaveCount(17);
     await expect(page.locator('.injection-board-card__timeline')).toHaveCount(17);
     await expect(page.locator('.injection-board-card__timeline > span')).not.toHaveCount(0);
+    const firstTimeline = page.locator('.injection-board-card__timeline').first();
+    const firstTimelineModels = await firstTimeline.locator('> span[data-model]').evaluateAll((segments) => (
+      segments.map((segment) => ({
+        model: segment.getAttribute('data-model'),
+        color: (segment as HTMLElement).style.backgroundColor,
+      }))
+    ));
+    expect(new Set(firstTimelineModels.map(({ model }) => model))).toEqual(new Set(['MODEL-A', 'MODEL-B']));
+    expect(new Set(firstTimelineModels.map(({ color }) => color)).size).toBe(2);
+    await firstTimeline.locator('> span[data-model="MODEL-B"]').first().hover();
+    await expect(page.getByRole('tooltip')).toContainText('PART-B');
+    await expect(page.getByRole('tooltip')).toContainText('MODEL-B');
+    await expect(page.getByRole('tooltip')).toContainText('B/C');
+    const firstTimelineBox = await firstTimeline.boundingBox();
+    expect(firstTimelineBox).not.toBeNull();
+    expect(firstTimelineBox?.height ?? 0).toBeGreaterThanOrEqual(14);
+    await page.mouse.move(
+      (firstTimelineBox?.x ?? 0) + (firstTimelineBox?.width ?? 0) / 2,
+      (firstTimelineBox?.y ?? 0) + (firstTimelineBox?.height ?? 0) / 2,
+    );
+    await expect(page.getByRole('tooltip')).toContainText('20:00');
     for (let machineNumber = 1; machineNumber <= 17; machineNumber += 1) {
       await expect(page.locator(`.injection-board-card[data-machine="${machineNumber}"]`)).toBeVisible();
     }
@@ -131,8 +269,13 @@ test.describe('injection office board', () => {
     await expect.poll(() => page.evaluate((key) => Boolean(window.localStorage.getItem(key)), cacheKey)).toBe(true);
     const cached = await page.evaluate((key) => JSON.parse(window.localStorage.getItem(key) ?? '{}'), cacheKey);
     expect(cached.businessDate).toBe('2026-05-18');
+    expect(cached.version).toBe(3);
     expect(cached.expiresAt).toBe(new Date('2026-05-20T08:00:00+08:00').getTime());
     expect(Object.keys(cached.timelines)).toHaveLength(17);
+    expect(cached.timelines['1'][0]).toMatchObject({
+      startMs: new Date('2026-05-18T08:00:00+08:00').getTime(),
+      endMs: new Date('2026-05-18T08:08:00+08:00').getTime(),
+    });
 
     await page.getByRole('button', { name: '전일 생산 요약' }).click();
 
@@ -147,8 +290,38 @@ test.describe('injection office board', () => {
     await expect(panel.locator('.injection-board-history-card')).toHaveCount(17);
     await expect(panel.locator('.injection-board-history-card__timeline')).toHaveCount(17);
     await expect(panel.locator('.injection-board-history-card__timeline > span')).not.toHaveCount(0);
+    const historyKpiBox = await panel.locator('.injection-board-history__kpi').first().boundingBox();
+    const historyTimeline = panel.locator('.injection-board-history-card__timeline').first();
+    const historyTimelineBox = await historyTimeline.boundingBox();
+    expect(historyKpiBox?.height ?? 0).toBeGreaterThanOrEqual(100);
+    expect(historyTimelineBox?.height ?? 0).toBeGreaterThanOrEqual(12);
+    const firstHistorySegment = historyTimeline.locator('> span').first();
+    await firstHistorySegment.hover();
+    await expect(page.getByRole('tooltip')).toContainText('08:00–08:08');
     const shotLabels = await panel.locator('.injection-board-history-card__shots strong').allTextContents();
     expect(shotLabels.every((label) => /^\d[\d,]*회$/.test(label))).toBe(true);
+    const firstHistoryCard = panel.locator('.injection-board-history-card[data-machine="1"]');
+    const firstProductTicker = firstHistoryCard.locator('.injection-board-history-card__products');
+    await expect(firstProductTicker).toHaveAttribute('aria-label', /Part No\. PART-A, 모델 MODEL-A, 구분 B\/C/);
+    await expect(firstProductTicker).toHaveAttribute('aria-label', /Part No\. PART-B, 모델 MODEL-B, 구분 B\/C/);
+    await expect(firstProductTicker.locator('.injection-board-history-card__product-item')).toHaveCount(3);
+    await page.clock.runFor(4_000);
+    await expect(firstProductTicker.locator('.injection-board-history-card__product-track')).toHaveAttribute('style', /translateY\(-33\.333/);
+
+    const metricPositions = await firstHistoryCard.locator('.injection-board-history-card__metrics > div')
+      .evaluateAll((metrics) => metrics.map((metric) => metric.getBoundingClientRect().top));
+    expect(metricPositions).toHaveLength(3);
+    expect(metricPositions[0]).toBeLessThan(metricPositions[1]);
+    expect(metricPositions[1]).toBeLessThan(metricPositions[2]);
+    const metricTypography = await firstHistoryCard.locator('.injection-board-history-card__metrics > div')
+      .evaluateAll((metrics) => metrics.map((metric) => ({
+        titleSize: window.getComputedStyle(metric.querySelector('span') as HTMLElement).fontSize,
+        valueSize: window.getComputedStyle(metric.querySelector('strong') as HTMLElement).fontSize,
+      })));
+    expect(new Set(metricTypography.map(({ titleSize }) => titleSize))).toHaveProperty('size', 1);
+    expect(new Set(metricTypography.map(({ valueSize }) => valueSize))).toHaveProperty('size', 1);
+    await expect(firstHistoryCard.locator('.injection-board-history-card__production-actual--met')).toBeVisible();
+    await expect(panel.locator('.injection-board-history-card[data-machine="4"] .injection-board-history-card__production-actual--shortfall')).toBeVisible();
     await expect(panel.locator('.injection-board-history__kpi--outside strong')).not.toContainText('.5');
 
     const panelBox = await panel.boundingBox();
@@ -199,6 +372,18 @@ test.describe('injection office board', () => {
     expect(layout.boardHeight).toBe(layout.viewportHeight);
     expect(layout.overflowingCards).toEqual([]);
     expect(layout.wrappedBadges).toBe(0);
+
+    await page.locator('.injection-board__history-button').click();
+    const compactHistoryPanel = page.locator('.injection-board-history__panel');
+    await expect(compactHistoryPanel).toBeVisible();
+    const compactHistoryLayout = await compactHistoryPanel.evaluate((panel) => ({
+      panelOverflow: panel.scrollWidth > panel.clientWidth + 1 || panel.scrollHeight > panel.clientHeight + 1,
+      overflowingCards: Array.from(panel.querySelectorAll<HTMLElement>('.injection-board-history-card'))
+        .filter((card) => card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1)
+        .map((card) => card.dataset.machine),
+    }));
+    expect(compactHistoryLayout.panelOverflow).toBe(false);
+    expect(compactHistoryLayout.overflowingCards).toEqual([]);
     await expectNoUndefinedOrNaN(page);
     guard.assertClean();
   });

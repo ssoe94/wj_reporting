@@ -35,9 +35,6 @@ Current implementation state:
 - Do not generate or execute free-form SQL from LLM output.
 - Do not touch production secrets, `.env` files, credentials, or deployment settings.
 - Do not modify database migrations unless explicitly requested.
-- Do not deploy.
-- Do not auto-merge.
-- Do not commit directly to `main`.
 - Do not revert unrelated user changes.
 - Prefer small, reviewable changes.
 - If production DB access, credentials, migrations, or deployment changes appear necessary, stop and summarize instead of guessing.

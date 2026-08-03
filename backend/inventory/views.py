@@ -15,7 +15,6 @@ import csv
 from io import StringIO
 
 
-import threading
 import time
 from django.core.cache import cache
 from rest_framework import status
@@ -39,13 +38,40 @@ class InventoryRefreshView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # 백그라운드에서 실행
-        def run_fetch():
-            call_command('fetch_inventory')
-        
-        thread = threading.Thread(target=run_fetch)
-        thread.start()
-        
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Only staff users may start a manual MES update."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        # The legacy manual refresh shares the same durable lock and full report
+        # pipeline as the raw-material page, preventing duplicate MES scans.
+        from inventory.services.raw_material_sync import (
+            claim_raw_material_sync,
+            fail_claimed_raw_material_sync,
+            launch_claimed_raw_material_sync,
+        )
+
+        claimed, sync_state = claim_raw_material_sync("manual")
+        if not claimed:
+            return Response(
+                {"status": "running", "message": sync_state["message"]},
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            launch_claimed_raw_material_sync(
+                trigger="manual",
+                claimed_started_at=sync_state["started_at"],
+            )
+        except Exception as exc:
+            fail_claimed_raw_material_sync(
+                f"MES update worker could not start: {exc.__class__.__name__}",
+                claimed_started_at=sync_state["started_at"],
+            )
+            return Response(
+                {"status": "error"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         return Response({'status': 'started'})
     
     def get(self, request):
@@ -60,17 +86,22 @@ class InventoryRefreshView(APIView):
 
 class MESTokenTestView(APIView):
     """MES API 토큰 테스트용 디버깅 엔드포인트"""
-    permission_classes = []  # 인증 없이 접근 가능하도록 변경
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        from inventory.mes import get_access_token, call_inventory_list
+        from inventory.mes import (
+            _safe_exception_message,
+            call_inventory_list,
+            get_access_token,
+        )
         import os
         from decouple import config
         
         try:
             # 환경 변수 확인
+            configured_base = os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn')
             env_info = {
-                'MES_API_BASE': os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn'),
+                'MES_API_BASE': _safe_exception_message(RuntimeError(configured_base)),
                 'MES_APP_KEY_exists': bool(os.getenv('MES_APP_KEY') or config('MES_APP_KEY', default='')),
                 'MES_APP_SECRET_exists': bool(os.getenv('MES_APP_SECRET') or config('MES_APP_SECRET', default='')),
                 'MES_ACCESS_TOKEN_exists': bool(os.getenv('MES_ACCESS_TOKEN') or config('MES_ACCESS_TOKEN', default='')),
@@ -86,7 +117,7 @@ class MESTokenTestView(APIView):
                 }
             except Exception as token_error:
                 token_info = {
-                    'token_error': str(token_error)
+                    'token_error': _safe_exception_message(token_error)
                 }
             
             # 실제 API 호출 테스트
@@ -101,7 +132,7 @@ class MESTokenTestView(APIView):
             except Exception as api_error:
                 api_test = {
                     'api_call_success': False,
-                    'api_error': str(api_error)
+                    'api_error': _safe_exception_message(api_error)
                 }
             
             return Response({
@@ -112,7 +143,7 @@ class MESTokenTestView(APIView):
             
         except Exception as e:
             return Response({
-                'error': str(e)
+                'error': _safe_exception_message(e)
             }, status=500)
 
 
@@ -661,7 +692,7 @@ def create_snapshot(request):
         return Response({
             'success': False,
             'error': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -1335,4 +1366,4 @@ def migrate_legacy_data(request):
         return Response({
             'success': False,
             'error': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

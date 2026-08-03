@@ -68,7 +68,10 @@ export async function expectNoUndefinedOrNaN(page: Page) {
   expect(bodyText).not.toMatch(/\bNaN\b/i);
 }
 
-export async function installOperationalApiMocks(page: Page, options: { unplannedRunning?: boolean } = {}) {
+export async function installOperationalApiMocks(
+  page: Page,
+  options: { unplannedRunning?: boolean; completedStopped?: boolean } = {},
+) {
   const date = '2026-05-18';
   const planRecord = {
     id: 1,
@@ -311,6 +314,11 @@ export async function installOperationalApiMocks(page: Page, options: { unplanne
   });
   const machineFiveCumulative = toCumulative(machineFiveActual);
   const machineSixActual = Array.from({ length: slotCount }, (_, index) => {
+    if (options.completedStopped) {
+      if (index < 75) return 25;
+      if (index === 75) return 45;
+      return 0;
+    }
     if (index < 78) return 25;
     if (index === 78) return 24;
     return 0;

@@ -99,6 +99,111 @@ class StagingInventory(models.Model):
         return f"{self.material_code} {self.quantity}{self.unit} @{self.warehouse_code}"
 
 
+class RawMaterialMESDataset(models.Model):
+    """Last successful MES payload for a deterministic raw-material scope."""
+
+    KIND_INVENTORY = "inventory"
+    KIND_INVENTORY_PENDING = "inventory_pending"
+    KIND_CHANGE = "change"
+    KIND_CHOICES = [
+        (KIND_INVENTORY, "Inventory detail"),
+        (KIND_INVENTORY_PENDING, "Pending inventory detail"),
+        (KIND_CHANGE, "Inventory change log"),
+    ]
+    CAPTURE_DAILY = "daily"
+    CAPTURE_MANUAL = "manual"
+    CAPTURE_CHOICES = [
+        (CAPTURE_DAILY, "Daily 08:00"),
+        (CAPTURE_MANUAL, "Manual"),
+    ]
+
+    kind = models.CharField(max_length=24, choices=KIND_CHOICES)
+    capture_type = models.CharField(
+        max_length=16,
+        choices=CAPTURE_CHOICES,
+        default=CAPTURE_DAILY,
+    )
+    scope_key = models.CharField(max_length=64)
+    warehouse_codes = models.JSONField(default=list, blank=True)
+    warehouse_ids = models.JSONField(default=list, blank=True)
+    lookback_days = models.PositiveIntegerField(default=0)
+    snapshot_date = models.DateField(null=True, blank=True, db_index=True)
+    range_start = models.DateTimeField(null=True, blank=True)
+    range_end = models.DateTimeField(null=True, blank=True)
+    payload = models.JSONField(default=list)
+    record_count = models.PositiveIntegerField(default=0)
+    source_latest_at = models.DateTimeField(null=True, blank=True)
+    refreshed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kind", "scope_key"],
+                name="raw_mes_kind_scope_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["kind", "refreshed_at"],
+                name="raw_mes_kind_refresh_idx",
+            ),
+            models.Index(
+                fields=["kind", "lookback_days", "refreshed_at"],
+                name="raw_mes_kind_lookback_idx",
+            ),
+            models.Index(
+                fields=["kind", "snapshot_date", "refreshed_at"],
+                name="raw_mes_kind_snapshot_idx",
+            ),
+        ]
+        ordering = ["-refreshed_at", "-id"]
+
+    def __str__(self):
+        return f"{self.kind}:{self.scope_key[:12]} ({self.record_count})"
+
+
+class RawMaterialSyncState(models.Model):
+    """Singleton coordination row for daily and exceptional manual MES syncs."""
+
+    SINGLETON_PK = 1
+
+    STATUS_IDLE = "idle"
+    STATUS_RUNNING = "running"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_IDLE, "Idle"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    TRIGGER_MANUAL = "manual"
+    TRIGGER_DAILY = "daily"
+    TRIGGER_CHOICES = [
+        (TRIGGER_MANUAL, "Manual"),
+        (TRIGGER_DAILY, "Daily"),
+    ]
+
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_IDLE)
+    trigger = models.CharField(
+        max_length=16,
+        choices=TRIGGER_CHOICES,
+        default=TRIGGER_MANUAL,
+    )
+    message = models.TextField(blank=True, default="")
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Raw-material MES sync state"
+        verbose_name_plural = "Raw-material MES sync state"
+
+    def __str__(self):
+        return f"raw-material-sync:{self.status} ({self.trigger})"
+
+
 class FactInventory(models.Model):
     id = models.AutoField(primary_key=True)
     composite_key = models.CharField(max_length=220, unique=True, default='')

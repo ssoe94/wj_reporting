@@ -5,12 +5,19 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import axios from "axios";
 import { deriveCapabilities } from "@/domains/auth/capabilities";
 import { fetchCurrentUser, requestLogin } from "@/domains/auth/auth-api";
+import {
+  AuthRefreshError,
+  isAccessTokenExpired,
+  refreshAccessToken,
+} from "@/domains/auth/auth-refresh";
 import { getDevCurrentUser, isDevSessionToken } from "@/domains/auth/dev-session";
 import {
   clearTokens,
   getAccessToken,
+  getRefreshToken,
   setAccessToken,
   setRefreshToken,
 } from "@/domains/auth/auth-storage";
@@ -28,14 +35,31 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function isTokenExpired(token: string) {
-  try {
-    const [, payload] = token.split(".");
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = JSON.parse(window.atob(normalized));
-    return typeof decoded.exp !== "number" || decoded.exp * 1000 < Date.now();
-  } catch {
-    return true;
+function isDefinitiveAuthFailure(error: unknown) {
+  if (error instanceof AuthRefreshError) {
+    return error.isDefinitive;
+  }
+
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+
+  return error.response?.status === 401 || error.response?.status === 403;
+}
+
+function clearRejectedSessionIfCurrent(error: unknown) {
+  // The refresh helper already clears only when the rejected refresh token is
+  // still current. Clearing again here could erase a newer pair from another tab.
+  if (error instanceof AuthRefreshError || !axios.isAxiosError(error)) {
+    return;
+  }
+
+  const authorization = error.config?.headers?.Authorization;
+  const rejectedAccess = typeof authorization === "string" && authorization.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : null;
+  if (!rejectedAccess || getAccessToken() === rejectedAccess) {
+    clearTokens();
   }
 }
 
@@ -48,48 +72,70 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let isActive = true;
+    let retryTimer: number | undefined;
+
     async function initialize() {
       const token = getAccessToken();
-      if (!token) {
-        clearTokens();
+      const refresh = getRefreshToken();
+      if (!token && !refresh) {
+        if (!isActive) return;
+        setUser(null);
         setIsLoading(false);
         return;
       }
 
       if (isDevSessionToken(token)) {
+        if (!isActive) return;
         setUser(getDevCurrentUser());
         setIsLoading(false);
         return;
       }
 
-      if (isTokenExpired(token)) {
-        clearTokens();
-        setIsLoading(false);
-        return;
-      }
-
       try {
+        if (!token || isAccessTokenExpired(token)) {
+          await refreshAccessToken(token);
+        }
         const currentUser = await fetchCurrentUser();
+        if (!isActive) return;
         setUser(currentUser);
-      } catch {
+        setIsLoading(false);
+      } catch (error) {
+        if (!isActive) return;
         if (isDevSessionToken(getAccessToken())) {
           setUser(getDevCurrentUser());
-        } else {
-          clearTokens();
+          setIsLoading(false);
+        } else if (
+          isDefinitiveAuthFailure(error) ||
+          (!getAccessToken() && !getRefreshToken())
+        ) {
+          clearRejectedSessionIfCurrent(error);
           setUser(null);
+          setIsLoading(false);
+        } else {
+          // Render may briefly return a network/5xx response while a service is
+          // deploying. Keep the stored session and retry without sending the board
+          // to the login page.
+          setIsLoading(true);
+          retryTimer = window.setTimeout(() => void initialize(), 5_000);
         }
-      } finally {
-        setIsLoading(false);
       }
     }
 
     void initialize();
+
+    return () => {
+      isActive = false;
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+    };
   }, []);
 
   async function login(username: string, password: string) {
     const tokens = await requestLogin({ username, password });
-    setAccessToken(tokens.access);
     setRefreshToken(tokens.refresh);
+    setAccessToken(tokens.access);
     const currentUser = await fetchCurrentUser();
     setUser(currentUser);
   }

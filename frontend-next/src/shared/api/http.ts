@@ -1,10 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
-import {
-  clearTokens,
-  getAccessToken,
-  getRefreshToken,
-  setAccessToken,
-} from "@/domains/auth/auth-storage";
+import { refreshAccessToken } from "@/domains/auth/auth-refresh";
+import { getAccessToken } from "@/domains/auth/auth-storage";
 import { isDevSessionToken } from "@/domains/auth/dev-session";
 
 const API_BASE_URL = import.meta.env.PROD
@@ -49,37 +45,21 @@ http.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    const access = getAccessToken();
-    if (isDevSessionToken(access)) {
-      return Promise.reject(error);
-    }
-
-    const refresh = getRefreshToken();
-    if (!refresh) {
-      clearTokens();
-      return Promise.reject(error);
-    }
-
-    if (isDevSessionToken(refresh)) {
+    const authorization = request.headers.Authorization;
+    const failedAccess = typeof authorization === "string" && authorization.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : getAccessToken();
+    if (isDevSessionToken(failedAccess)) {
       return Promise.reject(error);
     }
 
     request._retry = true;
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/token/refresh/`, { refresh });
-      const access = response.data?.access as string | undefined;
-
-      if (!access) {
-        clearTokens();
-        return Promise.reject(error);
-      }
-
-      setAccessToken(access);
-      request.headers.Authorization = `Bearer ${access}`;
+      const refreshedAccess = await refreshAccessToken(failedAccess);
+      request.headers.Authorization = `Bearer ${refreshedAccess}`;
       return http(request);
     } catch (refreshError) {
-      clearTokens();
       return Promise.reject(refreshError);
     }
   },

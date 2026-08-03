@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLang } from '../i18n';
 
 type EmbeddedNextPageProps = {
-  page: 'production' | 'mes-monitoring';
+  page: 'production' | 'mes-monitoring' | 'raw-materials';
 };
 
 const NEXT_APP_BASE_PATH = '/next';
@@ -12,11 +12,13 @@ const embedCopy = {
   ko: {
     production: '생산현황 대시보드',
     mesMonitoring: '사출 모니터링',
+    rawMaterials: '원재료관리',
     loading: '화면을 불러오는 중입니다.',
   },
   zh: {
     production: '生产现状仪表板',
     mesMonitoring: '注塑监控',
+    rawMaterials: '原材料管理',
     loading: '正在加载页面。',
   },
 } as const;
@@ -31,8 +33,12 @@ export default function EmbeddedNextPage({ page }: EmbeddedNextPageProps) {
   const frameId = useMemo(() => createFrameId(page), [page]);
   const [frameHeight, setFrameHeight] = useState(MIN_FRAME_HEIGHT);
   const copy = embedCopy[lang];
-  const title = page === 'production' ? copy.production : copy.mesMonitoring;
-  const view = page === 'production' ? 'production' : 'mes-monitoring';
+  const title = page === 'production'
+    ? copy.production
+    : page === 'mes-monitoring'
+      ? copy.mesMonitoring
+      : copy.rawMaterials;
+  const view = page;
   const src = `${NEXT_APP_BASE_PATH}/index.html?view=${encodeURIComponent(view)}&embed=1&frameId=${encodeURIComponent(frameId)}`;
 
   useEffect(() => {

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -10,9 +12,14 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from job_handlers import production_daily_analysis, production_machine_analysis
-from llm_client import LocalLlmClient
-from render_client import RenderClient
+try:
+    from .job_handlers import production_daily_analysis, production_machine_analysis
+    from .llm_client import LocalLlmClient
+    from .render_client import RenderClient
+except ImportError:
+    from job_handlers import production_daily_analysis, production_machine_analysis
+    from llm_client import LocalLlmClient
+    from render_client import RenderClient
 
 
 HANDLERS = {
@@ -25,20 +32,41 @@ def truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def normalize_result(result: dict[str, Any], fallback: dict[str, Any], model_name: str) -> dict[str, Any]:
-    normalized = dict(result or {})
-    normalized.setdefault("title", fallback.get("title") or "Local AI Analysis")
-    normalized.setdefault("severity", fallback.get("severity") or "normal")
-    if normalized["severity"] not in {"normal", "warning", "critical"}:
-        normalized["severity"] = fallback.get("severity") or "warning"
-    normalized.setdefault("summary", fallback.get("summary") or "")
-    if not isinstance(normalized.get("summary"), str):
-        normalized["summary"] = str(normalized.get("summary") or "")
-    for key in ["top_issues", "used_data", "calculation_basis"]:
-        if not isinstance(normalized.get(key), list):
-            normalized[key] = fallback.get(key) if isinstance(fallback.get(key), list) else []
-    normalized.setdefault("model_name", model_name)
-    normalized.setdefault("generated_at", datetime.now(timezone.utc).isoformat())
+NUMBER_TOKEN = re.compile(r"(?<![A-Za-z])\d+(?:[.,]\d+)?")
+
+
+def summary_numbers_are_grounded(summary: str, grounding: dict[str, Any]) -> bool:
+    allowed_text = json.dumps(grounding, ensure_ascii=False, default=str)
+    allowed_tokens = set(NUMBER_TOKEN.findall(allowed_text))
+    return set(NUMBER_TOKEN.findall(summary)).issubset(allowed_tokens)
+
+
+def normalize_result(
+    result: dict[str, Any],
+    fallback: dict[str, Any],
+    model_name: str,
+    grounding: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Accept prose from the LLM while keeping every fact and issue deterministic."""
+    candidate = dict(result or {})
+    title = candidate.get("title")
+    summary = candidate.get("summary")
+    if not isinstance(title, str) or not title.strip():
+        title = fallback.get("title") or "Local AI Analysis"
+    if not isinstance(summary, str) or not summary.strip():
+        raise ValueError("LLM response did not contain a summary string.")
+    summary = summary.strip()[:2000]
+    if not summary_numbers_are_grounded(f"{title} {summary}", grounding or fallback):
+        raise ValueError("LLM prose introduced an unverified number.")
+
+    normalized = dict(fallback)
+    normalized.update({
+        "title": title.strip()[:200],
+        "summary": summary,
+        "model_name": model_name,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source": "local_llm_rewrite",
+    })
     return normalized
 
 
@@ -64,24 +92,20 @@ def handle_job(
                 "input_payload": llm_payload,
                 "required_output_schema": {
                     "title": "string",
-                    "severity": "normal | warning | critical",
                     "summary": "string",
-                    "top_issues": "array",
-                    "used_data": "array",
-                    "calculation_basis": "array",
-                    "model_name": "string",
-                    "generated_at": "ISO datetime",
                 },
             })
-            return normalize_result(result, deterministic, model_name), handler.PROMPT_VERSION
+            return normalize_result(result, deterministic, model_name, llm_payload), handler.PROMPT_VERSION
         except Exception as exc:
             if not fallback_to_deterministic:
                 raise
             deterministic["llm_fallback"] = True
             deterministic["llm_error"] = str(exc)[:500]
             deterministic["model_name"] = "deterministic-local-worker"
+            deterministic["source"] = "deterministic_fallback"
             return deterministic, handler.PROMPT_VERSION
 
+    deterministic["source"] = "deterministic"
     return deterministic, handler.PROMPT_VERSION
 
 
@@ -92,7 +116,13 @@ def run_once(
     llm: LocalLlmClient | None,
     model_name: str,
     fallback_to_deterministic: bool,
+    enqueue_periodic: bool,
 ) -> int:
+    if enqueue_periodic:
+        try:
+            client.enqueue_periodic_jobs()
+        except Exception as exc:
+            print(f"failed to ensure periodic ai jobs: {exc}", file=sys.stderr)
     jobs = client.claim_jobs(worker_name, limit=1, job_types=list(HANDLERS.keys()))
     if not jobs:
         return 0
@@ -130,9 +160,14 @@ def main() -> int:
     worker_token = os.getenv("AI_WORKER_TOKEN", "")
     worker_name = os.getenv("WORKER_NAME", "mac-studio-local-ai")
     poll_interval = max(1, int(os.getenv("POLL_INTERVAL_SECONDS", "5") or 5))
+    periodic_check_interval = max(60, int(os.getenv("PERIODIC_ENQUEUE_CHECK_SECONDS", "60") or 60))
     use_llm = truthy(os.getenv("AI_WORKER_USE_LLM"))
     fallback_to_deterministic = truthy(os.getenv("AI_WORKER_FALLBACK_TO_DETERMINISTIC", "true"))
-    local_model = os.getenv("LOCAL_LLM_MODEL", "qwen3:8b")
+    enqueue_periodic = truthy(os.getenv("AI_WORKER_ENQUEUE_PERIODIC", "true"))
+    local_model = os.getenv(
+        "LOCAL_LLM_MODEL",
+        "/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit",
+    )
     llm_timeout = max(5, int(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "45") or 45))
 
     if not worker_token:
@@ -159,8 +194,26 @@ def main() -> int:
         print(result)
         return 0
 
+    next_periodic_check = 0.0
     while True:
-        run_once(client, worker_name, use_llm, llm, local_model, fallback_to_deterministic)
+        monotonic_now = time.monotonic()
+        should_enqueue_periodic = enqueue_periodic and monotonic_now >= next_periodic_check
+        try:
+            run_once(
+                client,
+                worker_name,
+                use_llm,
+                llm,
+                local_model,
+                fallback_to_deterministic,
+                should_enqueue_periodic,
+            )
+        except Exception as exc:
+            print(f"worker polling failed: {exc}", file=sys.stderr)
+            if args.once:
+                return 1
+        if should_enqueue_periodic:
+            next_periodic_check = monotonic_now + periodic_check_interval
         if args.once:
             return 0
         time.sleep(poll_interval)

@@ -8,8 +8,7 @@ This command:
 4. Designed to run as a Render cron job at 8 AM CST daily
 """
 
-from django.core.management.base import BaseCommand
-from django.core.management import call_command
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from django.db import transaction
 from datetime import datetime, timedelta
@@ -17,6 +16,9 @@ from inventory.models import DailyInventorySnapshot, DailyReportSummary, Staging
 from django.db.models import Count, Sum
 from collections import defaultdict
 import logging
+
+from inventory.models import RawMaterialSyncState
+from inventory.services.raw_material_sync import run_raw_material_sync
 
 logger = logging.getLogger(__name__)
 
@@ -149,11 +151,30 @@ class Command(BaseCommand):
             if not options['skip_fetch']:
                 self.stdout.write("Step 1: Fetching latest inventory data from MES...")
                 try:
-                    call_command('fetch_inventory')
-                    self.stdout.write(self.style.SUCCESS("Successfully fetched inventory data"))
+                    started, sync_state = run_raw_material_sync(trigger="daily")
+                    if not started:
+                        raise CommandError(
+                            "Another raw-material MES update is already running; "
+                            "today's snapshot was not created from stale inventory."
+                        )
+                    elif sync_state["status"] != RawMaterialSyncState.STATUS_COMPLETED:
+                        raise RuntimeError(sync_state["message"])
+                    else:
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                "Successfully fetched inventory and raw-material movement data"
+                            )
+                        )
                 except Exception as e:
                     self.stdout.write(self.style.WARNING(f"WARNING: Failed to fetch inventory data: {str(e)}"))
-                    self.stdout.write(self.style.WARNING("WARNING: Continuing with existing inventory data..."))
+                    self.stdout.write(
+                        self.style.ERROR(
+                            "Today's snapshot was not created because the MES update did not complete."
+                        )
+                    )
+                    raise CommandError(
+                        "Daily MES update failed; snapshot creation aborted."
+                    ) from None
             else:
                 self.stdout.write("Step 1: Skipping inventory fetch (using existing data)")
 

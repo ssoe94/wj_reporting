@@ -1,5 +1,825 @@
 import { http } from "@/shared/api/http";
 
+export type RawMaterialOverviewParams = {
+  lookbackDays: number;
+  leadTimeDays: number;
+  reviewPeriodDays: number;
+};
+
+export type RawMaterialWarningDetail = {
+  code: string;
+  params: Record<string, unknown>;
+};
+
+export type RawMaterialWarehouseOption = {
+  code: string;
+  name: string;
+};
+
+export type RawMaterialUnitSummary = {
+  unit: string;
+  current: number;
+  previousCurrent: number | null;
+  comparisonCurrent: number | null;
+  change24h: number | null;
+  usable: number;
+  restricted: number;
+  unclassified: number;
+  inbound: number;
+  outbound: number;
+  consumption: number;
+  transferOut: number;
+  externalProductionSupply: number;
+  internalInjectionSupply: number;
+  productionOutbound: number;
+  estimatedProductionUsage: number;
+  adjustment: number;
+  recommendedOrder: number;
+  recommendationUnavailableCount: number;
+};
+
+export type RawMaterialFamilyComposition = {
+  family: string;
+  unit: string;
+  current: number;
+  materialCount: number;
+};
+
+export type RawMaterialTrendValue = {
+  unit: string;
+  inbound: number;
+  outbound: number;
+  consumption: number;
+  transferOut: number;
+  externalProductionSupply: number;
+  internalInjectionSupply: number;
+  productionOutbound: number;
+  estimatedProductionUsage: number;
+  adjustment: number;
+  netChange: number;
+  estimatedClosingStock: number;
+};
+
+export type RawMaterialFamilyTrendValue = RawMaterialTrendValue & {
+  family: string;
+};
+
+export type RawMaterialTrendPoint = {
+  date: string;
+  values: RawMaterialTrendValue[];
+  familyValues: RawMaterialFamilyTrendValue[];
+};
+
+export type RawMaterialRisk = "critical" | "warning" | "healthy" | "no_usage" | "unknown";
+
+export type RawMaterialStockDetail = {
+  inventoryId: string;
+  materialId: string;
+  quantity: number;
+  unit: string;
+  batchNo: string;
+  supplierBatchNo: string;
+  inboundAt: string;
+  qcStatusCode: number | null;
+  qcStatusLabel: string;
+  storageLocation: string;
+  warehouseName: string;
+  qrCode: string;
+  inboundOrderNumbers: string[];
+  updatedAt: string;
+};
+
+export type RawMaterialStockDetails = {
+  groupKey: string;
+  unit: string;
+  stockDetailCount: number;
+  totalQuantity: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  stockDetails: RawMaterialStockDetail[];
+};
+
+export type RawMaterialStockDetailsParams = {
+  groupKey: string;
+  unit: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type RawMaterialRow = {
+  groupKey: string;
+  materialId: string;
+  materialIds: string[];
+  materialCode: string;
+  materialName: string;
+  materialFamily: string;
+  manufacturer: string;
+  color: string;
+  specification: string;
+  warehouseCode: string;
+  warehouseName: string;
+  unit: string;
+  currentQuantity: number;
+  previousQuantity: number | null;
+  comparisonCurrentQuantity: number | null;
+  quantityChange24h: number | null;
+  usableQuantity: number;
+  previousUsableQuantity: number | null;
+  usableChange24h: number | null;
+  restrictedQuantity: number;
+  unclassifiedQuantity: number;
+  inboundQuantity: number;
+  outboundQuantity: number;
+  consumptionQuantity: number;
+  transferOutQuantity: number;
+  externalProductionSupplyQuantity: number;
+  internalInjectionSupplyQuantity: number;
+  productionOutboundQuantity: number;
+  estimatedProductionUsage: number;
+  averageDailyConsumption: number;
+  averageDailyEstimatedProductionUsage: number;
+  safetyStock: number;
+  reorderPoint: number;
+  targetStock: number;
+  recommendedOrder: number;
+  daysOfCover: number | null;
+  risk: RawMaterialRisk;
+  recommendationAvailable: boolean;
+  recommendationStatus: string;
+  stockDetailCount: number;
+};
+
+export type RawMaterialTransaction = {
+  id: string;
+  occurredAt: string;
+  transactionType: string;
+  actionLabel: string;
+  direction: string;
+  materialCode: string;
+  materialName: string;
+  materialFamily: string;
+  manufacturer: string;
+  color: string;
+  warehouseCode: string;
+  warehouseName: string;
+  quantity: number;
+  unit: string;
+  batchNo: string;
+  documentNo: string;
+  operatorName: string;
+  note: string;
+  isTransferOut: boolean;
+};
+
+export type RawMaterialOverviewMeta = {
+  generatedAt: string;
+  sourceLatestAt: string;
+  inventorySourceLatestAt: string;
+  changeLogSourceLatestAt: string;
+  lookbackDays: number;
+  leadTimeDays: number;
+  reviewPeriodDays: number;
+  partial: boolean;
+  warnings: string[];
+  warningDetails: RawMaterialWarningDetail[];
+  recommendationsAvailable: boolean;
+  dataMode: string;
+  inventoryCaptureType: string;
+  snapshotSyncedAt: string;
+  syncRequired: boolean;
+  comparisonAvailable: boolean;
+  comparisonStartAt: string;
+  comparisonEndAt: string;
+  comparisonHours: number;
+  changeLogStatus: string;
+  movementAvailable: boolean;
+};
+
+export type RawMaterialSyncStatus = {
+  status: string;
+  trigger: string;
+  message: string;
+  startedAt: string;
+  finishedAt: string;
+  updatedAt: string;
+};
+
+export type RawMaterialOverview = {
+  status: string;
+  meta: RawMaterialOverviewMeta;
+  warehouseOptions: RawMaterialWarehouseOption[];
+  selectedWarehouses: string[];
+  units: string[];
+  summary: {
+    quantities: RawMaterialUnitSummary[];
+    materialComposition: RawMaterialFamilyComposition[];
+  };
+  trend: RawMaterialTrendPoint[];
+  materials: RawMaterialRow[];
+  recentTransactions: RawMaterialTransaction[];
+};
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): UnknownRecord {
+  return isRecord(value) ? value : {};
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function pick(record: UnknownRecord, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (record[key] !== undefined && record[key] !== null) return record[key];
+  }
+  return undefined;
+}
+
+function asString(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return fallback;
+}
+
+function asJoinedString(value: unknown, fallback = ""): string {
+  if (Array.isArray(value)) {
+    const items = value.map((item) => asString(item)).filter(Boolean);
+    return items.length ? items.join(", ") : fallback;
+  }
+  return asString(value, fallback);
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replaceAll(",", ""));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function asBoolean(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") return ["true", "1", "yes", "partial"].includes(value.toLowerCase());
+  return false;
+}
+
+function asBooleanWithDefault(value: unknown, fallback: boolean): boolean {
+  if (value === undefined || value === null || value === "") return fallback;
+  return asBoolean(value);
+}
+
+const KG_UNIT_ALIASES = new Set([
+  "un001",
+  "kg",
+  "千克",
+  "公斤",
+  "킬로그램",
+]);
+
+function normalizeRawMaterialUnit(value: unknown, fallback = "-"): string {
+  const raw = asString(value, fallback);
+  const compact = raw.replaceAll(/\s+/g, "").toLocaleLowerCase();
+  return KG_UNIT_ALIASES.has(compact) ? "kg" : raw;
+}
+
+function normalizeWarningDetail(value: unknown): RawMaterialWarningDetail | null {
+  const row = asRecord(value);
+  const code = asString(pick(row, "code", "warning_code", "warningCode"))
+    .toLocaleLowerCase()
+    .replaceAll("-", "_")
+    .replaceAll(" ", "_");
+  if (!code) return null;
+  return {
+    code,
+    params: { ...asRecord(pick(row, "params", "parameters", "context")) },
+  };
+}
+
+function normalizeRisk(value: unknown): RawMaterialRisk {
+  const risk = asString(value).toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
+  if (["critical", "danger", "stockout", "shortage", "high", "urgent"].includes(risk)) return "critical";
+  if (["warning", "warn", "watch", "low", "medium", "attention"].includes(risk)) return "warning";
+  if (["healthy", "normal", "safe", "ok", "low_risk"].includes(risk)) return "healthy";
+  if (["no_usage", "no_consumption", "slow_moving", "inactive", "excess"].includes(risk)) return "no_usage";
+  return "unknown";
+}
+
+function normalizeWarehouseOption(value: unknown): RawMaterialWarehouseOption | null {
+  if (typeof value === "string" || typeof value === "number") {
+    const code = asString(value);
+    return code ? { code, name: code } : null;
+  }
+  const row = asRecord(value);
+  const code = asString(pick(row, "code", "warehouse_code", "warehouseCode", "id", "warehouse_id"));
+  if (!code) return null;
+  return {
+    code,
+    name: asString(pick(row, "name", "warehouse_name", "warehouseName", "label"), code),
+  };
+}
+
+function normalizeSummary(value: unknown): RawMaterialUnitSummary {
+  const row = asRecord(value);
+  const current = asNumber(pick(row, "current", "current_quantity", "currentQuantity", "stock"));
+  const previousCurrent = asNullableNumber(pick(row, "previous_current", "previousCurrent"));
+  const comparisonCurrent = asNullableNumber(pick(row, "comparison_current", "comparisonCurrent"));
+  const consumption = asNumber(pick(row, "consumption", "consumption_quantity", "consumptionQuantity", "used"));
+  const transferOut = asNumber(pick(row, "transfer_out", "transferOut", "transfer_out_quantity", "transferOutQuantity"));
+  const externalProductionSupply = asNumber(
+    pick(row, "external_production_supply", "externalProductionSupply"),
+    consumption,
+  );
+  const internalInjectionSupply = asNumber(
+    pick(row, "internal_injection_supply", "internalInjectionSupply"),
+    transferOut,
+  );
+  const productionOutbound = asNumber(
+    pick(row, "production_outbound", "productionOutbound"),
+    externalProductionSupply + internalInjectionSupply,
+  );
+  return {
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
+    current,
+    previousCurrent,
+    comparisonCurrent: comparisonCurrent ?? (previousCurrent !== null ? current : null),
+    change24h: asNullableNumber(pick(row, "change_24h", "change24h")),
+    usable: asNumber(pick(row, "usable", "usable_quantity", "usableQuantity", "available"), current),
+    restricted: asNumber(pick(row, "restricted", "restricted_quantity", "restrictedQuantity")),
+    unclassified: asNumber(pick(row, "unclassified", "unclassified_quantity", "unclassifiedQuantity")),
+    inbound: asNumber(pick(row, "inbound", "inbound_quantity", "inboundQuantity")),
+    outbound: asNumber(pick(row, "outbound", "outbound_quantity", "outboundQuantity")),
+    consumption,
+    transferOut,
+    externalProductionSupply,
+    internalInjectionSupply,
+    productionOutbound,
+    estimatedProductionUsage: asNumber(
+      pick(row, "estimated_production_usage", "estimatedProductionUsage"),
+      productionOutbound,
+    ),
+    adjustment: asNumber(pick(row, "adjustment", "adjustment_quantity", "adjustmentQuantity")),
+    recommendedOrder: asNumber(pick(row, "recommended_order", "recommendedOrder", "recommended_order_quantity")),
+    recommendationUnavailableCount: asNumber(
+      pick(row, "recommendation_unavailable_count", "recommendationUnavailableCount"),
+    ),
+  };
+}
+
+function normalizeMaterialComposition(value: unknown): RawMaterialFamilyComposition {
+  const row = asRecord(value);
+  return {
+    family: asString(pick(row, "family", "material_family", "materialFamily"), "other"),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
+    current: asNumber(pick(row, "current", "current_quantity", "currentQuantity")),
+    materialCount: asNumber(pick(row, "material_count", "materialCount", "count")),
+  };
+}
+
+function mergeNullableNumber(left: number | null, right: number | null) {
+  if (left === null && right === null) return null;
+  return (left ?? 0) + (right ?? 0);
+}
+
+function mergeUnitSummaries(rows: RawMaterialUnitSummary[]) {
+  const byUnit = new Map<string, RawMaterialUnitSummary>();
+  rows.forEach((row) => {
+    const current = byUnit.get(row.unit);
+    if (!current) {
+      byUnit.set(row.unit, { ...row });
+      return;
+    }
+    current.current += row.current;
+    current.previousCurrent = mergeNullableNumber(current.previousCurrent, row.previousCurrent);
+    current.comparisonCurrent = mergeNullableNumber(current.comparisonCurrent, row.comparisonCurrent);
+    current.change24h = mergeNullableNumber(current.change24h, row.change24h);
+    current.usable += row.usable;
+    current.restricted += row.restricted;
+    current.unclassified += row.unclassified;
+    current.inbound += row.inbound;
+    current.outbound += row.outbound;
+    current.consumption += row.consumption;
+    current.transferOut += row.transferOut;
+    current.externalProductionSupply += row.externalProductionSupply;
+    current.internalInjectionSupply += row.internalInjectionSupply;
+    current.productionOutbound += row.productionOutbound;
+    current.estimatedProductionUsage += row.estimatedProductionUsage;
+    current.adjustment += row.adjustment;
+    current.recommendedOrder += row.recommendedOrder;
+    current.recommendationUnavailableCount += row.recommendationUnavailableCount;
+  });
+  return Array.from(byUnit.values());
+}
+
+function normalizeTrendValue(value: unknown): RawMaterialTrendValue {
+  const row = asRecord(value);
+  const consumption = asNumber(pick(row, "consumption", "consumption_quantity", "consumptionQuantity", "used"));
+  const transferOut = asNumber(pick(row, "transfer_out", "transferOut", "transfer_out_quantity", "transferOutQuantity"));
+  const externalProductionSupply = asNumber(
+    pick(row, "external_production_supply", "externalProductionSupply"),
+    consumption,
+  );
+  const internalInjectionSupply = asNumber(
+    pick(row, "internal_injection_supply", "internalInjectionSupply"),
+    transferOut,
+  );
+  const productionOutbound = asNumber(
+    pick(row, "production_outbound", "productionOutbound"),
+    externalProductionSupply + internalInjectionSupply,
+  );
+  return {
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
+    inbound: asNumber(pick(row, "inbound", "inbound_quantity", "inboundQuantity")),
+    outbound: asNumber(pick(row, "outbound", "outbound_quantity", "outboundQuantity")),
+    consumption,
+    transferOut,
+    externalProductionSupply,
+    internalInjectionSupply,
+    productionOutbound,
+    estimatedProductionUsage: asNumber(
+      pick(row, "estimated_production_usage", "estimatedProductionUsage"),
+      productionOutbound,
+    ),
+    adjustment: asNumber(pick(row, "adjustment", "adjustment_quantity", "adjustmentQuantity")),
+    netChange: asNumber(pick(row, "net_change", "netChange", "change")),
+    estimatedClosingStock: asNumber(pick(row, "estimated_closing_stock", "estimatedClosingStock", "closing_stock")),
+  };
+}
+
+function normalizeFamilyTrendValue(value: unknown): RawMaterialFamilyTrendValue {
+  const row = asRecord(value);
+  return {
+    ...normalizeTrendValue(row),
+    family: asString(pick(row, "family", "material_family", "materialFamily"), "other"),
+  };
+}
+
+function mergeTrendValues(rows: RawMaterialTrendValue[]) {
+  const byUnit = new Map<string, RawMaterialTrendValue>();
+  rows.forEach((row) => {
+    const current = byUnit.get(row.unit);
+    if (!current) {
+      byUnit.set(row.unit, { ...row });
+      return;
+    }
+    current.inbound += row.inbound;
+    current.outbound += row.outbound;
+    current.consumption += row.consumption;
+    current.transferOut += row.transferOut;
+    current.externalProductionSupply += row.externalProductionSupply;
+    current.internalInjectionSupply += row.internalInjectionSupply;
+    current.productionOutbound += row.productionOutbound;
+    current.estimatedProductionUsage += row.estimatedProductionUsage;
+    current.adjustment += row.adjustment;
+    current.netChange += row.netChange;
+    current.estimatedClosingStock += row.estimatedClosingStock;
+  });
+  return Array.from(byUnit.values());
+}
+
+function mergeFamilyTrendValues(rows: RawMaterialFamilyTrendValue[]) {
+  const byFamilyAndUnit = new Map<string, RawMaterialFamilyTrendValue>();
+  rows.forEach((row) => {
+    const key = `${row.family}:${row.unit}`;
+    const current = byFamilyAndUnit.get(key);
+    if (!current) {
+      byFamilyAndUnit.set(key, { ...row });
+      return;
+    }
+    current.inbound += row.inbound;
+    current.outbound += row.outbound;
+    current.consumption += row.consumption;
+    current.transferOut += row.transferOut;
+    current.externalProductionSupply += row.externalProductionSupply;
+    current.internalInjectionSupply += row.internalInjectionSupply;
+    current.productionOutbound += row.productionOutbound;
+    current.estimatedProductionUsage += row.estimatedProductionUsage;
+    current.adjustment += row.adjustment;
+    current.netChange += row.netChange;
+    current.estimatedClosingStock += row.estimatedClosingStock;
+  });
+  return Array.from(byFamilyAndUnit.values());
+}
+
+function normalizeStockDetail(value: unknown, index: number): RawMaterialStockDetail {
+  const row = asRecord(value);
+  const inventoryId = asString(
+    pick(row, "inventory_id", "inventoryId", "id"),
+    `stock-detail-${index + 1}`,
+  );
+  return {
+    inventoryId,
+    materialId: asString(pick(row, "material_id", "materialId")),
+    quantity: asNumber(pick(row, "quantity", "current_quantity", "currentQuantity", "amount")),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
+    batchNo: asString(pick(row, "batch_no", "batchNo", "batch")),
+    supplierBatchNo: asString(pick(row, "supplier_batch_no", "supplierBatchNo")),
+    // Only the MES 入厂日期 field is accepted. Inventory-row createdAt is not
+    // a trustworthy receipt-date fallback.
+    inboundAt: asString(pick(row, "inbound_at", "inboundAt", "inbound_time", "inboundTime")),
+    qcStatusCode: asNullableNumber(pick(row, "qc_status_code", "qcStatusCode")),
+    qcStatusLabel: asString(pick(row, "qc_status_label", "qcStatusLabel")),
+    storageLocation: asString(pick(row, "storage_location", "storageLocation")),
+    warehouseName: asString(pick(row, "warehouse_name", "warehouseName")),
+    qrCode: asString(pick(row, "qr_code", "qrCode")),
+    inboundOrderNumbers: asArray(
+      pick(row, "inbound_order_numbers", "inboundOrderNumbers"),
+    ).map((item) => asString(item)).filter(Boolean),
+    updatedAt: asString(pick(row, "updated_at", "updatedAt")),
+  };
+}
+
+function normalizeMaterial(value: unknown, index: number): RawMaterialRow {
+  const row = asRecord(value);
+  const quantitySummary = asRecord(pick(row, "quantity_summary", "quantitySummary"));
+  const metric = (...keys: string[]) => pick(quantitySummary, ...keys) ?? pick(row, ...keys);
+  const currentQuantity = asNumber(pick(row, "current_quantity", "currentQuantity", "current", "quantity"));
+  const previousQuantity = asNullableNumber(pick(row, "previous_quantity", "previousQuantity"));
+  const comparisonCurrentQuantity = asNullableNumber(
+    pick(row, "comparison_current_quantity", "comparisonCurrentQuantity"),
+  );
+  const usableQuantity = asNumber(pick(row, "usable_quantity", "usableQuantity", "available_quantity", "availableQuantity"), currentQuantity);
+  const averageDailyConsumption = asNumber(pick(row, "avg_daily_consumption", "average_daily_consumption", "averageDailyConsumption"));
+  const averageDailyEstimatedProductionUsage = asNumber(
+    metric("avg_daily_estimated_production_usage", "averageDailyEstimatedProductionUsage"),
+    averageDailyConsumption,
+  );
+  const rawCover = pick(row, "days_of_cover", "daysOfCover", "coverage_days");
+  const parsedCover = rawCover === null || rawCover === undefined || rawCover === "" ? null : asNumber(rawCover, Number.NaN);
+  const materialCode = asString(pick(row, "material_code", "materialCode", "code"), `material-${index + 1}`);
+  const colorValue = pick(row, "color", "color_label", "colorLabel", "color_name", "colorName");
+  const colorRecord = asRecord(colorValue);
+  const color = asString(
+    pick(colorRecord, "label", "name", "raw", "value"),
+    asString(colorValue),
+  );
+  const consumptionQuantity = asNumber(metric("consumption_quantity", "consumptionQuantity", "consumption", "used"));
+  const transferOutQuantity = asNumber(metric("transfer_out_quantity", "transferOutQuantity", "transfer_out", "transferOut"));
+  const externalProductionSupplyQuantity = asNumber(
+    metric("external_production_supply_quantity", "externalProductionSupplyQuantity", "external_production_supply", "externalProductionSupply"),
+    consumptionQuantity,
+  );
+  const internalInjectionSupplyQuantity = asNumber(
+    metric("internal_injection_supply_quantity", "internalInjectionSupplyQuantity", "internal_injection_supply", "internalInjectionSupply"),
+    transferOutQuantity,
+  );
+  const productionOutboundQuantity = asNumber(
+    metric("production_outbound_quantity", "productionOutboundQuantity", "production_outbound", "productionOutbound"),
+    externalProductionSupplyQuantity + internalInjectionSupplyQuantity,
+  );
+  const legacyStockDetails = asArray(
+    pick(row, "stock_details", "stockDetails", "inventory_details", "inventoryDetails"),
+  );
+  return {
+    groupKey: asString(
+      pick(row, "group_key", "groupKey"),
+      `code:${materialCode.toLocaleLowerCase()}`,
+    ),
+    materialId: asString(pick(row, "material_id", "materialId", "id"), materialCode),
+    materialIds: asArray(pick(row, "material_ids", "materialIds"))
+      .map((item) => asString(item))
+      .filter(Boolean),
+    materialCode,
+    materialName: asString(pick(row, "material_name", "materialName", "name"), materialCode),
+    materialFamily: asString(
+      pick(row, "material_family", "materialFamily", "family"),
+      "other",
+    ),
+    manufacturer: asString(pick(row, "manufacturer", "maker", "supplier_manufacturer", "supplierManufacturer")),
+    color,
+    specification: asString(pick(row, "specification", "spec", "material_spec")),
+    warehouseCode: asJoinedString(pick(row, "warehouse_code", "warehouseCode", "warehouse_codes", "warehouseCodes")),
+    warehouseName: asJoinedString(pick(row, "warehouse_name", "warehouseName", "warehouse", "warehouse_names", "warehouseNames")),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
+    currentQuantity,
+    previousQuantity,
+    comparisonCurrentQuantity: comparisonCurrentQuantity
+      ?? (previousQuantity !== null ? currentQuantity : null),
+    quantityChange24h: asNullableNumber(pick(row, "quantity_change_24h", "quantityChange24h")),
+    usableQuantity,
+    previousUsableQuantity: asNullableNumber(pick(row, "previous_usable_quantity", "previousUsableQuantity")),
+    usableChange24h: asNullableNumber(pick(row, "usable_change_24h", "usableChange24h")),
+    restrictedQuantity: asNumber(pick(row, "restricted_quantity", "restrictedQuantity")),
+    unclassifiedQuantity: asNumber(pick(row, "unclassified_quantity", "unclassifiedQuantity")),
+    inboundQuantity: asNumber(metric("inbound_quantity", "inboundQuantity", "inbound")),
+    outboundQuantity: asNumber(metric("outbound_quantity", "outboundQuantity", "outbound")),
+    consumptionQuantity,
+    transferOutQuantity,
+    externalProductionSupplyQuantity,
+    internalInjectionSupplyQuantity,
+    productionOutboundQuantity,
+    estimatedProductionUsage: asNumber(
+      metric("estimated_production_usage_quantity", "estimatedProductionUsageQuantity", "estimated_production_usage", "estimatedProductionUsage"),
+      productionOutboundQuantity,
+    ),
+    averageDailyConsumption,
+    averageDailyEstimatedProductionUsage,
+    safetyStock: asNumber(pick(row, "safety_stock", "safetyStock")),
+    reorderPoint: asNumber(pick(row, "reorder_point", "reorderPoint")),
+    targetStock: asNumber(pick(row, "target_stock", "targetStock")),
+    recommendedOrder: asNumber(pick(row, "recommended_order", "recommendedOrder", "recommended_order_quantity")),
+    daysOfCover: Number.isFinite(parsedCover) ? parsedCover : averageDailyEstimatedProductionUsage > 0 ? usableQuantity / averageDailyEstimatedProductionUsage : null,
+    risk: normalizeRisk(pick(row, "risk", "risk_level", "riskLevel", "status")),
+    recommendationAvailable: asBooleanWithDefault(
+      pick(row, "recommendation_available", "recommendationAvailable"),
+      true,
+    ),
+    recommendationStatus: asString(
+      pick(row, "recommendation_status", "recommendationStatus"),
+    ),
+    stockDetailCount: asNumber(
+      pick(row, "stock_detail_count", "stockDetailCount", "detail_count", "detailCount"),
+      legacyStockDetails.length,
+    ),
+  };
+}
+
+function normalizeRawMaterialStockDetails(payload: unknown): RawMaterialStockDetails {
+  const root = asRecord(payload);
+  const stockDetails = asArray(
+    pick(root, "stock_details", "stockDetails", "details", "items", "rows"),
+  ).map(normalizeStockDetail);
+  const stockDetailCount = asNumber(
+    pick(root, "stock_detail_count", "stockDetailCount", "detail_count", "detailCount", "count", "total"),
+    stockDetails.length,
+  );
+  return {
+    groupKey: asString(pick(root, "group_key", "groupKey")),
+    unit: normalizeRawMaterialUnit(pick(root, "unit", "unit_name", "unitName")),
+    stockDetailCount,
+    totalQuantity: asNumber(
+      pick(root, "total_quantity", "totalQuantity", "quantity", "current_quantity", "currentQuantity"),
+      stockDetails.reduce((total, detail) => total + detail.quantity, 0),
+    ),
+    page: Math.max(1, asNumber(pick(root, "page", "page_number", "pageNumber"), 1)),
+    pageSize: Math.max(
+      1,
+      asNumber(pick(root, "page_size", "pageSize", "limit"), Math.max(stockDetails.length, 1)),
+    ),
+    totalPages: Math.max(1, asNumber(pick(root, "total_pages", "totalPages"), 1)),
+    stockDetails,
+  };
+}
+
+function normalizeTransaction(value: unknown, index: number): RawMaterialTransaction {
+  const row = asRecord(value);
+  const materialCode = asString(pick(row, "material_code", "materialCode", "code"));
+  const occurredAt = asString(pick(row, "occurred_at", "occurredAt", "operation_time", "operationTime", "created_at", "createdAt", "date"));
+  const colorValue = pick(row, "color", "color_label", "colorLabel", "color_name", "colorName");
+  const colorRecord = asRecord(colorValue);
+  return {
+    id: asString(pick(row, "id", "transaction_id", "transactionId", "change_id"), `${occurredAt}-${materialCode}-${index}`),
+    occurredAt,
+    transactionType: asString(pick(row, "action_code", "actionCode", "transaction_type", "transactionType", "action", "type"), "unknown"),
+    actionLabel: asString(pick(row, "action_label", "actionLabel")),
+    direction: asString(pick(row, "direction", "change_direction", "changeDirection")),
+    materialCode,
+    materialName: asString(pick(row, "material_name", "materialName", "name"), materialCode || "-"),
+    materialFamily: asString(pick(row, "material_family", "materialFamily", "family")),
+    manufacturer: asString(pick(row, "manufacturer", "maker")),
+    color: asString(pick(colorRecord, "label", "name", "raw", "value"), asString(colorValue)),
+    warehouseCode: asString(pick(row, "warehouse_code", "warehouseCode")),
+    warehouseName: asString(pick(row, "warehouse_name", "warehouseName", "warehouse")),
+    quantity: asNumber(pick(row, "quantity", "change_quantity", "changeQuantity", "amount")),
+    unit: normalizeRawMaterialUnit(pick(row, "unit", "unit_name", "unitName")),
+    batchNo: asString(pick(row, "batch_no", "batchNo", "batch")),
+    documentNo: asString(pick(row, "document_no", "documentNo", "order_no", "orderNo", "related_order_no")),
+    operatorName: asString(pick(row, "operator_name", "operatorName", "operator")),
+    note: asString(pick(row, "note", "remark", "reason")),
+    isTransferOut: asBoolean(pick(row, "is_transfer_out", "isTransferOut")),
+  };
+}
+
+function normalizeSelectedWarehouse(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return asString(value);
+  const row = asRecord(value);
+  return asString(pick(row, "code", "warehouse_code", "warehouseCode", "id"));
+}
+
+function normalizeRawMaterialOverview(payload: unknown): RawMaterialOverview {
+  const root = asRecord(payload);
+  const meta = asRecord(pick(root, "meta", "metadata"));
+  const summarySource = pick(root, "summary", "totals");
+  const summary = asRecord(summarySource);
+  const quantitiesSource = Array.isArray(summarySource)
+    ? summarySource
+    : pick(summary, "quantities", "by_unit", "byUnit", "units");
+
+  const warehouseOptions = asArray(pick(root, "warehouse_options", "warehouseOptions", "warehouses"))
+    .map(normalizeWarehouseOption)
+    .filter((row): row is RawMaterialWarehouseOption => row !== null);
+  const selectedWarehouses = asArray(pick(root, "selected_warehouses", "selectedWarehouses", "warehouse_codes"))
+    .map(normalizeSelectedWarehouse)
+    .filter(Boolean);
+  const quantities = mergeUnitSummaries(asArray(quantitiesSource).map(normalizeSummary));
+  const materialComposition = asArray(
+    pick(summary, "material_composition", "materialComposition"),
+  ).map(normalizeMaterialComposition);
+  const trend = asArray(pick(root, "trend", "daily_trend", "dailyTrend")).map((value) => {
+    const row = asRecord(value);
+    const nestedValues = asArray(pick(row, "values", "quantities", "by_unit", "byUnit"));
+    const familyValues = mergeFamilyTrendValues(
+      asArray(pick(row, "family_values", "familyValues", "by_family", "byFamily"))
+        .map(normalizeFamilyTrendValue),
+    );
+    const values = mergeTrendValues(nestedValues.length
+      ? nestedValues.map(normalizeTrendValue)
+      : [normalizeTrendValue(row)]);
+    return {
+      date: asString(pick(row, "date", "day", "business_date", "businessDate")),
+      values,
+      familyValues,
+    };
+  });
+  const materials = asArray(pick(root, "materials", "items", "rows")).map(normalizeMaterial);
+  const recentTransactions = asArray(pick(root, "recent_transactions", "recentTransactions", "transactions", "change_logs"))
+    .map(normalizeTransaction);
+  const explicitUnits = asArray(pick(root, "units", "unit_options", "unitOptions"))
+    .map((unit) => normalizeRawMaterialUnit(unit))
+    .filter((unit) => unit !== "-");
+  const inferredUnits = [...quantities.map((row) => row.unit), ...materials.map((row) => row.unit)].filter((unit) => unit && unit !== "-");
+  const warningDetails = asArray(pick(meta, "warning_details", "warningDetails"))
+    .map(normalizeWarningDetail)
+    .filter((row): row is RawMaterialWarningDetail => row !== null);
+  const sources = asRecord(pick(meta, "sources", "source_status", "sourceStatus"));
+  const changeLogSource = asRecord(pick(
+    sources,
+    "inventory_change_log",
+    "inventoryChangeLog",
+    "movement",
+    "movements",
+  ));
+  const changeLogStatus = asString(pick(changeLogSource, "status", "state")).toLocaleLowerCase();
+  const movementAvailable = ["ok", "stored", "partial", "live"].includes(changeLogStatus)
+    || (!changeLogStatus && recentTransactions.length > 0);
+
+  return {
+    status: asString(pick(root, "status", "state"), "ok"),
+    meta: {
+      generatedAt: asString(pick(meta, "generated_at", "generatedAt", "refreshed_at", "refreshedAt")),
+      sourceLatestAt: asString(pick(
+        meta,
+        "inventory_source_latest_at",
+        "inventorySourceLatestAt",
+        "source_latest_at",
+        "sourceLatestAt",
+        "last_updated_at",
+        "lastUpdatedAt",
+      )),
+      inventorySourceLatestAt: asString(pick(
+        meta,
+        "inventory_source_latest_at",
+        "inventorySourceLatestAt",
+        "source_latest_at",
+        "sourceLatestAt",
+        "last_updated_at",
+        "lastUpdatedAt",
+      )),
+      changeLogSourceLatestAt: asString(pick(
+        meta,
+        "change_log_source_latest_at",
+        "changeLogSourceLatestAt",
+      )),
+      lookbackDays: asNumber(pick(meta, "lookback_days", "lookbackDays")),
+      leadTimeDays: asNumber(pick(meta, "lead_time_days", "leadTimeDays")),
+      reviewPeriodDays: asNumber(pick(meta, "review_period_days", "reviewPeriodDays")),
+      partial: asBoolean(pick(meta, "partial", "is_partial", "isPartial")),
+      warnings: asArray(pick(meta, "warnings", "warning_messages", "warningMessages")).map((warning) => asString(warning)).filter(Boolean),
+      warningDetails,
+      recommendationsAvailable: asBooleanWithDefault(
+        pick(meta, "recommendations_available", "recommendationsAvailable"),
+        true,
+      ),
+      dataMode: asString(pick(meta, "data_mode", "dataMode"), "stored"),
+      inventoryCaptureType: asString(
+        pick(meta, "inventory_capture_type", "inventoryCaptureType"),
+      ),
+      snapshotSyncedAt: asString(pick(meta, "snapshot_synced_at", "snapshotSyncedAt")),
+      syncRequired: asBoolean(pick(meta, "sync_required", "syncRequired")),
+      comparisonAvailable: asBoolean(pick(meta, "comparison_available", "comparisonAvailable")),
+      comparisonStartAt: asString(pick(meta, "comparison_start_at", "comparisonStartAt")),
+      comparisonEndAt: asString(pick(meta, "comparison_end_at", "comparisonEndAt")),
+      comparisonHours: asNumber(pick(meta, "comparison_hours", "comparisonHours"), 24),
+      changeLogStatus: changeLogStatus || "unknown",
+      movementAvailable,
+    },
+    warehouseOptions,
+    selectedWarehouses,
+    units: Array.from(new Set([...explicitUnits, ...inferredUnits])),
+    summary: { quantities, materialComposition },
+    trend,
+    materials,
+    recentTransactions,
+  };
+}
+
 export async function getInventoryLastUpdate() {
   const response = await http.get("/inventory/last-update/");
   return response.data;
@@ -8,4 +828,63 @@ export async function getInventoryLastUpdate() {
 export async function getWarehouses() {
   const response = await http.get("/inventory/warehouses/");
   return response.data;
+}
+
+export async function getRawMaterialOverview(params: RawMaterialOverviewParams): Promise<RawMaterialOverview> {
+  const response = await http.get("/inventory/raw-materials/overview/", {
+    params: {
+      lookback_days: params.lookbackDays,
+      lead_time_days: params.leadTimeDays,
+      review_period_days: params.reviewPeriodDays,
+    },
+  });
+  return normalizeRawMaterialOverview(response.data);
+}
+
+export async function getRawMaterialStockDetails(
+  params: RawMaterialStockDetailsParams,
+): Promise<RawMaterialStockDetails> {
+  const response = await http.get("/inventory/raw-materials/details/", {
+    params: {
+      group_key: params.groupKey,
+      unit: params.unit,
+      page: params.page ?? 1,
+      page_size: params.pageSize ?? 100,
+    },
+  });
+  return normalizeRawMaterialStockDetails(response.data);
+}
+
+function asNullableNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = asNumber(value, Number.NaN);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeSyncStatus(value: unknown): RawMaterialSyncStatus {
+  const row = asRecord(value);
+  return {
+    status: asString(pick(row, "status", "state"), "unknown"),
+    trigger: asString(pick(row, "trigger")),
+    message: asString(pick(row, "message", "detail")),
+    startedAt: asString(pick(row, "started_at", "startedAt")),
+    finishedAt: asString(pick(row, "finished_at", "finishedAt")),
+    updatedAt: asString(pick(row, "updated_at", "updatedAt")),
+  };
+}
+
+export async function getRawMaterialSyncStatus(): Promise<RawMaterialSyncStatus> {
+  const response = await http.get("/inventory/raw-materials/sync/");
+  return normalizeSyncStatus(response.data);
+}
+
+export async function startRawMaterialSync(): Promise<RawMaterialSyncStatus> {
+  try {
+    const response = await http.post("/inventory/raw-materials/sync/");
+    return normalizeSyncStatus(response.data);
+  } catch (error) {
+    const response = asRecord(asRecord(error).response);
+    if (asNumber(response.status) === 409) return normalizeSyncStatus(response.data);
+    throw error;
+  }
 }

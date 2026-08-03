@@ -106,6 +106,151 @@ test.describe('production dashboard operational scenario', () => {
     guard.assertClean();
   });
 
+  test('allocates repeated cavity groups to later plans only after the earlier group is complete', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'ko');
+
+    const date = '2026-05-18';
+    const cavityGroup = 'CAVITY-A+CAVITY-B';
+    const planRecords = [
+      { id: 101, sequence: 1, part_no: 'CAVITY-A', model_name: 'MODEL-A', lot_no: 'A1' },
+      { id: 102, sequence: 2, part_no: 'CAVITY-B', model_name: 'MODEL-B', lot_no: 'B1' },
+      { id: 103, sequence: 3, part_no: 'CAVITY-A', model_name: 'MODEL-A', lot_no: 'A2' },
+      { id: 104, sequence: 4, part_no: 'CAVITY-B', model_name: 'MODEL-B', lot_no: 'B2' },
+    ].map((record) => ({
+      ...record,
+      machine_name: '850T-1',
+      planned_quantity: 100,
+      cavity: 2,
+      cavity_pattern: '2x2',
+      parts_per_shot: 2,
+      cavity_group: cavityGroup,
+      total_cavity: 4,
+    }));
+
+    await page.unroute('**/api/production/plan-summary/**');
+    await page.route('**/api/production/plan-summary/**', async (route) => {
+      const requestedDate = new URL(route.request().url()).searchParams.get('date') ?? date;
+      const isTargetDate = requestedDate === date;
+      await route.fulfill({
+        json: {
+          plan_date: requestedDate,
+          latest_updated_at: '2026-05-18T08:00:00+08:00',
+          injection: {
+            records: isTargetDate ? planRecords : [],
+            machine_summary: isTargetDate
+              ? [{ machine_name: '850T-1', plan_qty: 400, plan_date: requestedDate }]
+              : [],
+            model_summary: isTargetDate
+              ? [
+                { model_name: 'MODEL-A', plan_qty: 200, plan_date: requestedDate },
+                { model_name: 'MODEL-B', plan_qty: 200, plan_date: requestedDate },
+              ]
+              : [],
+            daily_totals: [{ date: requestedDate, plan_qty: isTargetDate ? 400 : 0 }],
+          },
+          machining: {
+            records: [],
+            machine_summary: [],
+            model_summary: [],
+            daily_totals: [{ date: requestedDate, plan_qty: 0 }],
+          },
+        },
+      });
+    });
+
+    await page.unroute('**/api/production/status/**');
+    await page.route('**/api/production/status/**', async (route) => {
+      await route.fulfill({
+        json: {
+          injection: [{
+            machine_name: '850T-1',
+            total_planned: 400,
+            total_actual: 240,
+            progress: 60,
+            parts: [
+              {
+                part_no: 'CAVITY-A',
+                model_name: 'MODEL-A',
+                planned_quantity: 200,
+                actual_quantity: 120,
+                progress: 60,
+              },
+              {
+                part_no: 'CAVITY-B',
+                model_name: 'MODEL-B',
+                planned_quantity: 200,
+                actual_quantity: 120,
+                progress: 60,
+              },
+            ],
+          }],
+          machining: [],
+        },
+      });
+    });
+
+    await page.unroute('**/api/injection/production-matrix/**');
+    await page.route('**/api/injection/production-matrix/**', async (route) => {
+      await route.fulfill({
+        json: {
+          timestamp: '2026-05-18T10:00:00+08:00',
+          interval_type: '2min',
+          columns: 1,
+          time_slots: [{
+            hour_offset: 0,
+            time: '2026-05-18T10:00:00+08:00',
+            label: '10:00',
+            interval_minutes: 2,
+          }],
+          machines: [{
+            machine_number: 1,
+            machine_name: '1호기',
+            tonnage: '850T',
+            display_name: '850T-1',
+          }],
+          cumulative_production_matrix: { '1호기': [60] },
+          actual_production_matrix: { '1호기': [60] },
+          oil_temperature_matrix: { '1호기': [35] },
+          power_kwh_matrix: { '1호기': [1] },
+          power_usage_matrix: { '1호기': [1] },
+          mes_source: true,
+        },
+      });
+    });
+
+    await page.goto('/production');
+    await page.locator('input[type="date"]').fill(date);
+
+    const machineRow = page.locator('.production-progress-row').filter({ hasText: '850T-1' }).first();
+    await expect(machineRow).toBeVisible();
+    const graph = machineRow.locator('.production-part-track');
+    await expect(graph.locator('.production-part-segment')).toHaveCount(4);
+    await expect(graph.locator('.production-part-segment--completed')).toHaveCount(2);
+    await expect(graph.locator('.production-part-segment--in_progress')).toHaveCount(2);
+    await expect(graph.locator('.production-part-segment--pending')).toHaveCount(0);
+
+    await machineRow.getByRole('button', { name: /850T-1 상세/ }).click();
+    const detailDialog = page.getByRole('dialog');
+    await expect(detailDialog.getByRole('heading', { name: '850T-1' })).toBeVisible();
+    await expect(detailDialog.locator('.production-progress-modal__summary')).toContainText('60');
+
+    const rows = detailDialog.locator('.production-progress-modal__row');
+    await expect(rows).toHaveCount(4);
+    const expectedQuantities = ['100 / 100', '100 / 100', '20 / 100', '20 / 100'];
+    for (let index = 0; index < expectedQuantities.length; index += 1) {
+      await expect(rows.nth(index).locator(':scope > span').first()).toHaveText(String(index + 1));
+      await expect(rows.nth(index)).toContainText(expectedQuantities[index]);
+    }
+    await expect(detailDialog.locator('.production-progress-chip--completed')).toHaveCount(2);
+    await expect(detailDialog.locator('.production-progress-chip--active')).toHaveCount(2);
+    await expect(detailDialog.locator('.production-progress-chip--pending')).toHaveCount(0);
+
+    await expectNoUndefinedOrNaN(page);
+    guard.assertClean();
+  });
+
   test('renders deterministic plan, MES progress, and AI briefing evidence', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);

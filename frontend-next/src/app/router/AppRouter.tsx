@@ -6,6 +6,7 @@ import { RequireAuth } from "@/domains/auth/RequireAuth";
 import { RequireCapabilities } from "@/domains/auth/RequireCapabilities";
 import { LoginPage } from "@/domains/auth/pages/LoginPage";
 import { InventoryPage } from "@/domains/inventory/pages/InventoryPage";
+import { RawMaterialManagementPage } from "@/domains/inventory/pages/RawMaterialManagementPage";
 import { MesMonitoringPage } from "@/domains/mes/pages/MesMonitoringPage";
 import { InjectionBoardPage } from "@/domains/production/pages/InjectionBoardPage";
 import { ProductionDashboardPage } from "@/domains/production/pages/ProductionDashboardPage";
@@ -82,6 +83,10 @@ function QueryViewPage() {
     return <MesMonitoringPage />;
   }
 
+  if (view === "raw-materials") {
+    return <RawMaterialManagementPage />;
+  }
+
   return <Navigate to="/production" replace />;
 }
 
@@ -146,6 +151,10 @@ export function AppRouter() {
               <InventoryPage />
             </RequireCapabilities>
           }
+        />
+        <Route
+          path="inventory/raw-materials"
+          element={<RawMaterialManagementPage />}
         />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

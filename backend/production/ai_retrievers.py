@@ -108,6 +108,7 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
         .get("latest")
     )
     reference_time = reference_time_for_business_day(target_date, latest_mes_time)
+    time_progress_rate = elapsed_rate(target_date, reference_time)
     recent_start = max(range_start, reference_time - timedelta(minutes=60))
 
     def sort_key(plan: ProductionPlan) -> tuple[int, int, int]:
@@ -185,6 +186,7 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
         extra_qty = int(round(remaining_shots * avg_cavity)) if remaining_shots > 0 else 0
         actual_qty = capped_actual_qty + extra_qty
         machine_progress = safe_rate(actual_qty, planned_qty)
+        expected_qty_by_time = safe_int(planned_qty * time_progress_rate / 100)
         machine_rows.append({
             "machine": machine_label(machine_number),
             "machine_name": machine_name or machine_label(machine_number),
@@ -192,6 +194,9 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
             "planned_qty": planned_qty,
             "actual_qty": actual_qty,
             "gap_qty": actual_qty - planned_qty,
+            "expected_qty_by_time": expected_qty_by_time,
+            "gap_to_time_qty": actual_qty - expected_qty_by_time,
+            "gap_to_time_rate_pp": round(machine_progress - time_progress_rate, 1),
             "progress_rate": machine_progress,
             "shot_count": shot_count,
             "recent_60m_shots": recent_shots,
@@ -213,7 +218,7 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
         "range_end": range_end,
         "reference_time": reference_time,
         "latest_mes_time": latest_mes_time,
-        "time_progress_rate": elapsed_rate(target_date, reference_time),
+        "time_progress_rate": time_progress_rate,
         "planned_qty": total_planned,
         "actual_qty": total_actual,
         "progress_rate": safe_rate(total_actual, total_planned),
@@ -291,6 +296,13 @@ def get_machining_summary(target_date: Any) -> dict[str, Any]:
 def get_daily_production_context(target_date: Any) -> dict[str, Any]:
     injection = get_injection_summary(target_date)
     machining = get_machining_summary(target_date)
+    time_progress_rate = float(injection.get("time_progress_rate") or 0)
+    machining["time_progress_rate"] = time_progress_rate
+    for row in machining.get("rows", []):
+        expected_qty_by_time = safe_int(row.get("planned_qty", 0) * time_progress_rate / 100)
+        row["expected_qty_by_time"] = expected_qty_by_time
+        row["gap_to_time_qty"] = safe_int(row.get("actual_qty")) - expected_qty_by_time
+        row["gap_to_time_rate_pp"] = round(float(row.get("progress_rate") or 0) - time_progress_rate, 1)
     return {
         "business_date": target_date,
         "range_start": injection["range_start"],

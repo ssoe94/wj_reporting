@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from django.utils import timezone
 
-from .ai_metrics import progress_status
+from .ai_metrics import SHANGHAI_TZ, progress_status, safe_rate
 from .ai_types import AiContextPack, AiDataFreshness, AiProcessSummary, AiRiskItem, AiUsedData
 
 
@@ -35,8 +36,9 @@ def build_top_risks(context: dict[str, Any], limit: int = 5) -> list[AiRiskItem]
     risks: list[AiRiskItem] = []
 
     for row in context["injection"].get("machine_rows", []):
-        gap_qty = int(row.get("gap_qty") or 0)
-        if gap_qty >= 0:
+        gap_to_time_rate_pp = float(row.get("gap_to_time_rate_pp") or 0)
+        gap_qty = int(row.get("gap_to_time_qty") or 0)
+        if gap_to_time_rate_pp >= -5 or gap_qty >= 0:
             continue
         current_parts = [
             part for part in row.get("parts", [])
@@ -52,15 +54,21 @@ def build_top_risks(context: dict[str, Any], limit: int = 5) -> list[AiRiskItem]
         ))
 
     line_gaps: dict[str, int] = {}
+    line_actuals: dict[str, int] = {}
+    line_plans: dict[str, int] = {}
     line_details: dict[str, str] = {}
     for row in context["machining"].get("rows", []):
         label = row.get("equipment_label") or row.get("equipment_name") or row.get("equipment_key") or "-"
-        line_gaps[label] = line_gaps.get(label, 0) + int(row.get("gap_qty") or 0)
+        line_gaps[label] = line_gaps.get(label, 0) + int(row.get("gap_to_time_qty") or 0)
+        line_actuals[label] = line_actuals.get(label, 0) + int(row.get("actual_qty") or 0)
+        line_plans[label] = line_plans.get(label, 0) + int(row.get("planned_qty") or 0)
         if label not in line_details and row.get("part_no"):
             line_details[label] = row["part_no"]
 
     for label, gap_qty in line_gaps.items():
-        if gap_qty >= 0:
+        time_progress_rate = float(context["machining"].get("time_progress_rate") or 0)
+        gap_to_time_rate_pp = safe_rate(line_actuals.get(label, 0), line_plans.get(label, 0)) - time_progress_rate
+        if gap_to_time_rate_pp >= -5 or gap_qty >= 0:
             continue
         risks.append(AiRiskItem(
             type="line_gap",
@@ -105,6 +113,7 @@ def build_calculation_basis(language: str) -> list[str]:
             "注塑/加工完成率按 actual_qty / planned_qty x 100 计算。",
             "时间基准进度按当前数据时间在 24 小时基准日中经过的比例计算。",
             "生产进度比时间基准低 5%p 以上时标记为延迟。",
+            "优先确认对象的不足数量按当前时间应完成数量计算，而不是按全天计划计算。",
         ]
     return [
         "기준일은 08:00 ~ 익일 08:00 기준입니다.",
@@ -112,6 +121,7 @@ def build_calculation_basis(language: str) -> list[str]:
         "사출/가공 완료율은 actual_qty / planned_qty x 100 기준입니다.",
         "시간 기준 진행률은 현재 데이터 시각이 기준일 24시간 중 얼마나 지났는지로 계산합니다.",
         "생산 진행률이 시간 기준보다 5%p 이상 낮으면 지연으로 표시합니다.",
+        "우선 확인 대상의 부족 수량은 전체 계획이 아니라 현재 시간까지의 기대 생산량 대비 차이입니다.",
     ]
 
 
@@ -120,7 +130,10 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
         context["injection"],
         float(context["injection"].get("time_progress_rate") or 0),
     )
-    machining_summary = build_process_summary(context["machining"], None)
+    machining_summary = build_process_summary(
+        context["machining"],
+        float(context["machining"].get("time_progress_rate") or 0),
+    )
     calculation_basis = build_calculation_basis(language)
     last_plan_updated_at = max(
         filter(None, [
@@ -129,15 +142,27 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
         ]),
         default=None,
     )
+    now = timezone.now()
+    current_business_date = (now.astimezone(SHANGHAI_TZ) - timedelta(hours=8)).date()
+    latest_mes_time = context["injection"].get("latest_mes_time")
+    injection_is_stale = bool(
+        context["business_date"] == current_business_date
+        and (
+            not latest_mes_time
+            or now - latest_mes_time.astimezone(now.tzinfo) > timedelta(minutes=10)
+        )
+    )
     data_freshness = AiDataFreshness(
         last_plan_updated_at=iso_or_none(last_plan_updated_at),
         last_mes_recorded_at=iso_or_none(context["injection"].get("latest_mes_time")),
         last_machining_reported_at=iso_or_none(context["machining"].get("latest_report_time")),
-        is_stale=False,
+        is_stale=injection_is_stale,
     )
     warnings = []
     if not context["injection"].get("latest_mes_time"):
         warnings.append("injection_mes_data_missing")
+    elif injection_is_stale:
+        warnings.append("injection_mes_data_stale")
     if context["injection"].get("planned_qty", 0) <= 0:
         warnings.append("injection_plan_missing")
     if context["machining"].get("planned_qty", 0) > 0 and context["machining"].get("actual_qty", 0) <= 0:
@@ -152,28 +177,42 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
     tables = [
         {
             "name": "injection_machine_progress",
-            "columns": ["machine", "actual_qty", "planned_qty", "gap_qty", "progress_rate", "recent_60m_shots"],
+            "columns": [
+                "machine", "actual_qty", "planned_qty", "expected_qty_by_time",
+                "gap_to_time_qty", "gap_to_time_rate_pp", "progress_rate",
+                "recent_60m_shots", "is_running",
+            ],
             "rows": [
                 {
                     "machine": row.get("machine"),
                     "actual_qty": row.get("actual_qty"),
                     "planned_qty": row.get("planned_qty"),
                     "gap_qty": row.get("gap_qty"),
+                    "expected_qty_by_time": row.get("expected_qty_by_time"),
+                    "gap_to_time_qty": row.get("gap_to_time_qty"),
+                    "gap_to_time_rate_pp": row.get("gap_to_time_rate_pp"),
                     "progress_rate": row.get("progress_rate"),
                     "recent_60m_shots": row.get("recent_60m_shots"),
+                    "is_running": row.get("is_running"),
                 }
                 for row in context["injection"].get("machine_rows", [])
             ],
         },
         {
             "name": "machining_line_progress",
-            "columns": ["equipment_label", "actual_qty", "planned_qty", "gap_qty", "progress_rate"],
+            "columns": [
+                "equipment_label", "actual_qty", "planned_qty", "expected_qty_by_time",
+                "gap_to_time_qty", "gap_to_time_rate_pp", "progress_rate",
+            ],
             "rows": [
                 {
                     "equipment_label": row.get("equipment_label"),
                     "actual_qty": row.get("actual_qty"),
                     "planned_qty": row.get("planned_qty"),
                     "gap_qty": row.get("gap_qty"),
+                    "expected_qty_by_time": row.get("expected_qty_by_time"),
+                    "gap_to_time_qty": row.get("gap_to_time_qty"),
+                    "gap_to_time_rate_pp": row.get("gap_to_time_rate_pp"),
                     "progress_rate": row.get("progress_rate"),
                 }
                 for row in context["machining"].get("rows", [])

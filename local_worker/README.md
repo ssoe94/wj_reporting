@@ -13,7 +13,14 @@ pip install -r requirements.txt
 python worker.py --once
 ```
 
-`AI_WORKER_USE_LLM=false` keeps the worker in dummy-analysis mode. Set it to `true` only when an OpenAI-compatible local LLM endpoint is running at `LOCAL_LLM_BASE_URL`.
+`AI_WORKER_USE_LLM=false` keeps the worker in deterministic-analysis mode. Set it to `true` only when an OpenAI-compatible local LLM endpoint is running at `LOCAL_LLM_BASE_URL`.
+
+With `AI_WORKER_ENQUEUE_PERIODIC=true`, the worker asks the Render backend to ensure one Korean and one Chinese daily-analysis job exist for the current Asia/Shanghai hour. Repeated polling is idempotent within the hour.
+
+For continuous Mac Studio operation, use the Keychain-backed launch agents in
+[`scripts/local_ai`](../scripts/local_ai/README.md). The launch agents keep the
+MLX server and Worker running without putting `AI_WORKER_TOKEN` in a plist or
+repository file.
 
 ## LLM mode
 
@@ -37,11 +44,13 @@ AI_WORKER_USE_LLM=true AI_WORKER_TOKEN=change-me python worker.py --check-llm
 RENDER_API_BASE_URL=http://127.0.0.1:8000/api
 AI_WORKER_TOKEN=change-me
 LOCAL_LLM_BASE_URL=http://127.0.0.1:8080/v1
-LOCAL_LLM_MODEL=qwen3:8b
+LOCAL_LLM_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit
 LOCAL_VLM_MODEL=qwen3-vl:8b
 LOCAL_LLM_TIMEOUT_SECONDS=45
 WORKER_NAME=mac-studio-local-ai
 POLL_INTERVAL_SECONDS=5
 AI_WORKER_USE_LLM=false
 AI_WORKER_FALLBACK_TO_DETERMINISTIC=true
+AI_WORKER_ENQUEUE_PERIODIC=true
+PERIODIC_ENQUEUE_CHECK_SECONDS=60
 ```

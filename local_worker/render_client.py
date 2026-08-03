@@ -25,6 +25,15 @@ class RenderClient:
         response.raise_for_status()
         return response.json().get("jobs", [])
 
+    def enqueue_periodic_jobs(self, languages: list[str] | None = None) -> dict:
+        response = self.session.post(
+            f"{self.api_base_url}/ai/jobs/enqueue-periodic/",
+            json={"languages": languages or ["ko", "zh"]},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def start_job(self, job_id: int) -> dict:
         response = self.session.post(
             f"{self.api_base_url}/ai/jobs/{job_id}/start/",

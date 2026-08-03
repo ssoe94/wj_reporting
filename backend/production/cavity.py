@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from math import ceil
 from typing import Any
 
 
@@ -121,14 +122,70 @@ def build_cavity_plan_groups(plans: list[Any], cavity_map: dict[str, dict[str, A
 
         member_indexes = [index]
         if parts_per_shot > 1 and group_key:
-            member_indexes = [
+            candidate_indexes = [
                 candidate_index
                 for candidate_index, candidate in enumerate(plans)
-                if candidate_index not in consumed
-                and normalize_part_no((cavity_map.get(get_plan_part_no(candidate)) or default_cavity_meta(get_plan_part_no(candidate))).get("cavity_group")) == group_key
+                if candidate_index >= index
+                and candidate_index not in consumed
+                and normalize_part_no(
+                    (cavity_map.get(get_plan_part_no(candidate)) or default_cavity_meta(get_plan_part_no(candidate))).get("cavity_group")
+                ) == group_key
+                and max(
+                    1,
+                    int(
+                        (cavity_map.get(get_plan_part_no(candidate)) or default_cavity_meta(get_plan_part_no(candidate))).get("parts_per_shot")
+                        or 1
+                    ),
+                ) == parts_per_shot
             ]
-            if len(member_indexes) <= 1:
-                member_indexes = [index]
+
+            # The same cavity pair can appear several times in the plan (for
+            # example, A/B LOT-1 followed by A/B LOT-2). Build one occurrence
+            # at a time instead of sharing one shot allocation across every
+            # row with the same cavity_group.
+            selected_indexes = [index]
+            selected_parts = {part_no}
+            expected_parts = [
+                normalize_part_no(value)
+                for value in group_key.split("+")
+                if normalize_part_no(value)
+            ]
+
+            for expected_part in expected_parts:
+                if len(selected_indexes) >= parts_per_shot:
+                    break
+                if expected_part in selected_parts:
+                    continue
+                match_index = next(
+                    (
+                        candidate_index
+                        for candidate_index in candidate_indexes
+                        if candidate_index not in selected_indexes
+                        and get_plan_part_no(plans[candidate_index]) == expected_part
+                    ),
+                    None,
+                )
+                if match_index is not None:
+                    selected_indexes.append(match_index)
+                    selected_parts.add(expected_part)
+
+            for candidate_index in candidate_indexes:
+                if len(selected_indexes) >= parts_per_shot:
+                    break
+                candidate_part = get_plan_part_no(plans[candidate_index])
+                if candidate_index in selected_indexes or candidate_part in selected_parts:
+                    continue
+                selected_indexes.append(candidate_index)
+                selected_parts.add(candidate_part)
+
+            # Fail closed when a declared parallel part is missing. Pairing
+            # the anchor with another LOT of the same part would make the
+            # later LOT progress at the same time as the current one.
+            member_indexes = (
+                sorted(selected_indexes)
+                if len(selected_indexes) == parts_per_shot
+                else [index]
+            )
 
         members = []
         for member_index in member_indexes:
@@ -143,7 +200,7 @@ def build_cavity_plan_groups(plans: list[Any], cavity_map: dict[str, dict[str, A
                 "part_no": member_part_no,
                 "cavity": cavity,
                 "planned_qty": planned_qty,
-                "required_shots": planned_qty / cavity if planned_qty > 0 else 0,
+                "required_shots": ceil(planned_qty / cavity) if planned_qty > 0 else 0,
                 "meta": member_meta,
             })
             consumed.add(member_index)

@@ -49,6 +49,7 @@ def build_briefing_answer(context_pack, top_risks: list, language: str) -> str:
     injection = facts["injection"]
     machining = facts["machining"]
     injection_time_rate = injection.get("time_progress_rate")
+    machining_time_rate = machining.get("time_progress_rate")
     injection_gap_to_time = (
         float(injection.get("progress_rate") or 0) - float(injection_time_rate)
         if injection_time_rate is not None
@@ -66,6 +67,7 @@ def build_briefing_answer(context_pack, top_risks: list, language: str) -> str:
         second = (
             f"加工完成率为 {fmt_rate(machining['progress_rate'])}%"
             f"（{fmt_num(machining['actual_qty'])} / {fmt_num(machining['planned_qty'])}个），"
+            f"时间基准为 {fmt_rate(machining_time_rate)}%，当前为{status_text(machining['status'], language)}状态，"
             f"有实绩的加工线为 {fmt_num(machining['active_equipment_count'])} 条。"
         )
         third = risk_text(top_risks, language)
@@ -81,6 +83,7 @@ def build_briefing_answer(context_pack, top_risks: list, language: str) -> str:
     second = (
         f"가공 완료율은 {fmt_rate(machining['progress_rate'])}%"
         f"({fmt_num(machining['actual_qty'])} / {fmt_num(machining['planned_qty'])}개)이고, "
+        f"시간 기준 {fmt_rate(machining_time_rate)}% 대비 {status_text(machining['status'], language)} 상태이며, "
         f"실적 발생 라인은 {fmt_num(machining['active_equipment_count'])}개입니다."
     )
     third = risk_text(top_risks, language)

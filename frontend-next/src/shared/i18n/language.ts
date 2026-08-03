@@ -63,6 +63,7 @@ export function useStoredLanguage() {
 
   useEffect(() => {
     setStoredLanguage(language);
+    document.documentElement.lang = language === "zh" ? "zh-CN" : "ko";
   }, [language]);
 
   return [language, setLanguage] as const;
