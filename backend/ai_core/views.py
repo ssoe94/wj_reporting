@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status
@@ -12,6 +13,7 @@ from rest_framework.views import APIView
 
 from production.ai_context import build_context_pack
 from production.ai_answer import build_ai_briefing
+from production.ai_metrics import SHANGHAI_TZ
 from production.ai_retrievers import get_daily_production_context
 
 from .models import AiJob
@@ -20,6 +22,7 @@ from .serializers import (
     AiJobCompleteSerializer,
     AiJobCreateSerializer,
     AiJobFailSerializer,
+    AiJobResultSerializer,
     AiJobSerializer,
 )
 
@@ -34,6 +37,17 @@ def ai_job_claim_limit():
 
 def ai_job_timeout_seconds():
     return int(getattr(settings, 'AI_JOB_TIMEOUT_SECONDS', 600) or 600)
+
+
+def visible_jobs_for_user(user):
+    return AiJob.objects.filter(Q(created_by=user) | Q(created_by__isnull=True))
+
+
+def current_business_scope(now=None):
+    local_now = (now or timezone.now()).astimezone(SHANGHAI_TZ)
+    business_date = (local_now - timedelta(hours=8)).date()
+    schedule_slot = local_now.replace(minute=0, second=0, microsecond=0).isoformat()
+    return business_date, schedule_slot
 
 
 class HasWorkerToken(BasePermission):
@@ -116,7 +130,7 @@ class AiJobListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        queryset = AiJob.objects.all()
+        queryset = visible_jobs_for_user(request.user)
         job_type = request.query_params.get('job_type')
         status_filter = request.query_params.get('status')
         if job_type:
@@ -134,8 +148,7 @@ class AiJobListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         job_type = serializer.validated_data['job_type']
         scope = serializer.validated_data.get('scope') or {}
-        supplied_payload = serializer.validated_data.get('input_payload') or {}
-        input_payload = build_job_input_payload(job_type, scope, supplied_payload)
+        input_payload = build_job_input_payload(job_type, scope, {})
         job = AiJob.objects.create(
             job_type=job_type,
             scope=scope,
@@ -162,14 +175,42 @@ class AiJobListCreateView(APIView):
 class AiJobDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get_object(self, pk):
+    def get_object(self, request, pk):
         try:
-            return AiJob.objects.get(pk=pk)
+            return visible_jobs_for_user(request.user).get(pk=pk)
         except AiJob.DoesNotExist:
             raise NotFound('AI job not found.')
 
     def get(self, request, pk, *args, **kwargs):
-        return Response(AiJobSerializer(self.get_object(pk)).data)
+        return Response(AiJobResultSerializer(self.get_object(request, pk)).data)
+
+
+class AiJobLatestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        job_type = request.query_params.get('job_type') or AiJob.JOB_TYPE_PRODUCTION_DAILY
+        if job_type not in [AiJob.JOB_TYPE_PRODUCTION_DAILY, AiJob.JOB_TYPE_PRODUCTION_MACHINE]:
+            raise ValidationError({'job_type': 'Unsupported AI job type.'})
+
+        business_date, _ = current_business_scope()
+        date_str = request.query_params.get('date') or business_date.isoformat()
+        if not parse_date(str(date_str)):
+            raise ValidationError({'date': 'date must use YYYY-MM-DD.'})
+        language = normalize_language(request.query_params.get('language'))
+
+        job = (
+            visible_jobs_for_user(request.user)
+            .filter(
+                job_type=job_type,
+                status=AiJob.STATUS_COMPLETED,
+                scope__date=str(date_str),
+                scope__language=language,
+            )
+            .order_by('-completed_at', '-id')
+            .first()
+        )
+        return Response({'job': AiJobResultSerializer(job).data if job else None})
 
 
 class AiJobCancelView(APIView):
@@ -177,7 +218,7 @@ class AiJobCancelView(APIView):
 
     def post(self, request, pk, *args, **kwargs):
         try:
-            job = AiJob.objects.get(pk=pk)
+            job = AiJob.objects.get(pk=pk, created_by=request.user)
         except AiJob.DoesNotExist:
             raise NotFound('AI job not found.')
 
@@ -188,6 +229,63 @@ class AiJobCancelView(APIView):
         job.completed_at = timezone.now()
         job.save(update_fields=['status', 'completed_at', 'updated_at'])
         return Response(AiJobSerializer(job).data)
+
+
+class AiWorkerPeriodicEnqueueView(APIView):
+    authentication_classes = []
+    permission_classes = [HasWorkerToken]
+
+    def post(self, request, *args, **kwargs):
+        languages = request.data.get('languages') or ['ko', 'zh']
+        if not isinstance(languages, list) or not languages:
+            raise ValidationError({'languages': 'languages must be a non-empty list.'})
+        normalized_languages = []
+        for value in languages:
+            language = normalize_language(value)
+            if language not in normalized_languages:
+                normalized_languages.append(language)
+
+        target_date, schedule_slot = current_business_scope()
+        jobs = []
+        created_count = 0
+        for language in normalized_languages:
+            filters = {
+                'job_type': AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                'scope__date': target_date.isoformat(),
+                'scope__language': language,
+                'scope__schedule_slot': schedule_slot,
+            }
+            existing = AiJob.objects.filter(**filters).order_by('-id').first()
+            if existing:
+                jobs.append(existing)
+                continue
+
+            scope = {
+                'date': target_date.isoformat(),
+                'language': language,
+                'schedule_slot': schedule_slot,
+                'trigger': 'hourly',
+            }
+            input_payload = build_job_input_payload(AiJob.JOB_TYPE_PRODUCTION_DAILY, scope, {})
+            with transaction.atomic():
+                existing = AiJob.objects.filter(**filters).order_by('-id').first()
+                if existing:
+                    jobs.append(existing)
+                    continue
+                job = AiJob.objects.create(
+                    job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                    scope=scope,
+                    input_payload=input_payload,
+                    created_by=None,
+                )
+                jobs.append(job)
+                created_count += 1
+
+        return Response({
+            'schedule_slot': schedule_slot,
+            'created_count': created_count,
+            'jobs': AiJobResultSerializer(jobs, many=True).data,
+        })
 
 
 class AiWorkerClaimView(APIView):

@@ -9,8 +9,10 @@ PROMPT_VERSION = "production-daily-v1"
 
 SYSTEM_PROMPT = """You are a manufacturing production analyst.
 Use only the provided data. Do not invent numbers.
+The backend already selected and calculated all facts and issues.
+Rewrite the draft into a concise, action-oriented production briefing without adding facts.
 Your final answer must be valid JSON only, with no markdown.
-Required keys: title, severity, summary, top_issues, used_data, calculation_basis, model_name, generated_at."""
+Required keys: title, summary."""
 
 
 def _num(value: Any) -> float:
@@ -65,10 +67,11 @@ def _issue_from_risk(risk: dict[str, Any], severity: str) -> dict[str, Any]:
     detail = risk.get("detail") or ""
     return {
         "type": risk.get("type") or "production_risk",
+        "fact_id": f"production.{risk.get('process') or 'unknown'}.{label}.gap_to_time_qty",
         "severity": "high" if severity == "critical" else severity,
         "label": label,
         "evidence": [
-            f"Gap quantity: {gap_qty:,}",
+            f"Gap to time-adjusted expected quantity: {gap_qty:,}",
             f"Detail: {detail or '-'}",
         ],
         "possible_causes": ["Plan/MES mismatch", "Machine stop", "Cycle time delay"],
@@ -83,15 +86,18 @@ def _issue_from_risk(risk: dict[str, Any], severity: str) -> dict[str, Any]:
 def _issue_from_machine_row(row: dict[str, Any]) -> dict[str, Any] | None:
     planned_qty = _num(row.get("planned_qty"))
     actual_qty = _num(row.get("actual_qty"))
-    gap_qty = _num(row.get("gap_qty"))
+    expected_qty = _num(row.get("expected_qty_by_time"))
+    gap_qty = _num(row.get("gap_to_time_qty"))
+    gap_rate_pp = _num(row.get("gap_to_time_rate_pp"))
     recent_shots = _num(row.get("recent_60m_shots"))
-    if planned_qty <= 0 or (gap_qty >= 0 and recent_shots > 0):
+    if planned_qty <= 0 or gap_rate_pp >= -5 or gap_qty >= 0:
         return None
 
     label = row.get("machine") or row.get("machine_name") or "-"
     evidence = [
-        f"Actual / plan: {_fmt_num(actual_qty)} / {_fmt_num(planned_qty)}",
+        f"Actual / time-adjusted expected: {_fmt_num(actual_qty)} / {_fmt_num(expected_qty)}",
         f"Progress: {_fmt_rate(row.get('progress_rate'))}%",
+        f"Gap to time progress: {_fmt_rate(gap_rate_pp)}%p",
     ]
     if gap_qty < 0:
         evidence.append(f"Gap quantity: {int(gap_qty):,}")
@@ -99,7 +105,8 @@ def _issue_from_machine_row(row: dict[str, Any]) -> dict[str, Any] | None:
         evidence.append("Recent 60-minute shot count is 0")
 
     return {
-        "type": "machine_delay" if gap_qty < 0 else "machine_idle",
+        "type": "machine_delay",
+        "fact_id": f"production.injection.{label}.gap_to_time_qty",
         "severity": "high" if gap_qty < 0 and recent_shots <= 0 else "medium",
         "label": label,
         "evidence": evidence,
@@ -150,6 +157,9 @@ def build_dummy_result(job: dict[str, Any], model_name: str = "dummy-local-worke
         "facts": facts,
         "used_data": briefing.get("used_data") or [],
         "calculation_basis": briefing.get("calculation_basis") or [],
+        "data_freshness": briefing.get("data_freshness") or context_pack.get("data_freshness") or {},
+        "warnings": briefing.get("warnings") or context_pack.get("warnings") or [],
+        "retrieval_trace": briefing.get("retrieval_trace") or context_pack.get("retrieval_trace") or [],
         "model_name": model_name,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

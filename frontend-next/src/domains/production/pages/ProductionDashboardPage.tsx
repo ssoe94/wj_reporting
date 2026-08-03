@@ -9,11 +9,9 @@ import {
 } from "@/domains/mes/api";
 import {
   askProductionAi,
-  cancelAiJob,
   createMachiningManualReport,
   createProductionPlanItem,
-  createAiJob,
-  getAiJob,
+  getLatestAiJob,
   getMachiningProvision,
   getInjectionActivityConfirmations,
   getInjectionDowntimeConfirmations,
@@ -32,8 +30,6 @@ import {
   type ProductionPlanRecord,
   type ProductionPlanSummaryResponse,
   type ProductionStatusResponse,
-  type AiJob,
-  type AiJobStatus,
   type SaveInjectionActivityConfirmationPayload,
 } from "@/domains/production/api";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
@@ -264,7 +260,7 @@ const pageCopy = {
   ko: {
     eyebrow: "Production",
     title: "생산 대시보드",
-    description: "생산 계획과 MES 실적을 비교하고, 로컬 LLM으로 일일 생산 브리핑을 작성합니다.",
+    description: "생산 계획과 MES 실적을 비교하고, 검증된 시간별 AI 생산 분석을 제공합니다.",
     loading: "생산 현황을 불러오는 중입니다.",
     productionDate: "기준일",
     productionDateHint: "오전 08:00 ~ 익일 08:00 기준",
@@ -284,23 +280,18 @@ const pageCopy = {
     usedData: "사용한 데이터",
     calculationBasis: "계산 기준",
     deterministicBrief: "계산형 RAG 브리핑",
-    askAi: "AI에게 질문하기",
+    askAi: "생산 데이터 질문",
     closeAi: "질문 닫기",
-    runWorkerAnalysis: "로컬 AI 분석 실행",
-    workerAnalysisRunning: "분석 작업 대기 중",
-    workerJobTitle: "Mac Studio Worker 분석",
-    workerJobStatus: "작업 상태",
-    workerJobWaiting: "Mac Studio Worker가 작업을 가져가면 분석이 시작됩니다.",
-    workerJobCancel: "작업 취소",
-    workerJobResult: "분석 결과",
+    workerJobTitle: "최근 시간별 AI 분석",
+    workerJobResult: "자동 분석 인사이트",
     workerJobIssue: "확인 이슈",
     workerJobNoIssue: "별도 이슈가 없습니다.",
-    workerJobFallback: "로컬 LLM 응답 지연으로 계산 기반 분석을 표시합니다.",
-    askingAi: "AI 답변 중",
-    aiQuestionPlaceholder: "예: 오늘 계획 대비 가장 먼저 확인해야 할 사출기는 어디야?",
-    aiAnswerTitle: "AI 답변",
-    aiSubmit: "질문 보내기",
-    llmError: "로컬 MLX LLM 서버에 연결하지 못했습니다. 현재는 데이터 기반 초안을 표시합니다.",
+    workerJobFallback: "Qwen 분석을 사용할 수 없어 계산 기반 분석을 표시합니다.",
+    askingAi: "계산 중",
+    aiQuestionPlaceholder: "예: 오늘 사출 생산 진도는? / 현재 가동 사출기는 몇 대야? / 최근 60분 C/T가 가장 긴 설비는?",
+    aiQuestionScope: "지원: 생산량 · 진행률 · 가동 설비 · 최근 60분 C/T",
+    aiAnswerTitle: "계산 결과",
+    aiSubmit: "계산하기",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "실시간 프로그레스",
     progressDescription: "사출은 생산 계획과 MES 형합수를 조합해 Cavity 기준 추정 생산량으로 진행률을 계산합니다.",
@@ -446,7 +437,7 @@ const pageCopy = {
   zh: {
     eyebrow: "Production",
     title: "生产看板",
-    description: "对比生产计划与 MES 实绩，并使用本地 LLM 生成每日生产简报。",
+    description: "对比生产计划与 MES 实绩，并提供基于已验证数据的每小时 AI 生产分析。",
     loading: "正在读取生产现况。",
     productionDate: "基准日",
     productionDateHint: "上午 08:00 ~ 次日 08:00 基准",
@@ -466,23 +457,18 @@ const pageCopy = {
     usedData: "使用的数据",
     calculationBasis: "计算基准",
     deterministicBrief: "计算型 RAG 简报",
-    askAi: "向 AI 提问",
+    askAi: "生产数据问答",
     closeAi: "关闭提问",
-    runWorkerAnalysis: "运行本地 AI 分析",
-    workerAnalysisRunning: "分析任务等待中",
-    workerJobTitle: "Mac Studio Worker 分析",
-    workerJobStatus: "任务状态",
-    workerJobWaiting: "Mac Studio Worker 领取任务后将开始分析。",
-    workerJobCancel: "取消任务",
-    workerJobResult: "分析结果",
+    workerJobTitle: "最近每小时 AI 分析",
+    workerJobResult: "自动分析洞察",
     workerJobIssue: "确认事项",
     workerJobNoIssue: "暂无特别事项。",
-    workerJobFallback: "本地 LLM 响应延迟，当前显示基于计算的分析。",
-    askingAi: "AI 回答中",
-    aiQuestionPlaceholder: "例：今天计划对比最需要先确认哪台注塑机？",
-    aiAnswerTitle: "AI 回答",
-    aiSubmit: "发送问题",
-    llmError: "无法连接本地 MLX LLM 服务。当前显示基于数据的草稿。",
+    workerJobFallback: "Qwen 分析不可用，当前显示基于计算的分析。",
+    askingAi: "计算中",
+    aiQuestionPlaceholder: "例：今天注塑生产进度？/ 当前运行注塑机有几台？/ 最近60分钟 C/T 最长的设备？",
+    aiQuestionScope: "支持：产量 · 进度 · 运行设备 · 最近60分钟 C/T",
+    aiAnswerTitle: "计算结果",
+    aiSubmit: "计算",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "实时进度",
     progressDescription: "注塑结合生产计划与 MES 合模数，并按 Cavity 估算生产量计算进度。",
@@ -757,8 +743,6 @@ const activitySelectionCopy = {
   },
 } satisfies Record<AppLanguage, Record<string, string>>;
 
-const LOCAL_LLM_BASE_URL = import.meta.env.VITE_LOCAL_LLM_BASE_URL || "http://127.0.0.1:8080/v1";
-const LOCAL_LLM_MODEL = import.meta.env.VITE_LOCAL_LLM_MODEL || "mlx-community/gemma-4-e2b-it-8bit";
 const LIVE_DATA_REFRESH_INTERVAL_MS = 120_000;
 const AI_BRIEFING_REFRESH_INTERVAL_MS = 5 * 60_000;
 const INJECTION_MACHINE_TOTAL = 17;
@@ -789,32 +773,6 @@ type DashboardAiIntent = {
 
 function formatNumber(value: number) {
   return Math.round(value).toLocaleString();
-}
-
-function isAiJobTerminal(status?: AiJobStatus) {
-  return status === "completed" || status === "failed" || status === "cancelled";
-}
-
-function getAiJobStatusLabel(status: AiJobStatus | undefined, language: AppLanguage) {
-  const labels = {
-    ko: {
-      pending: "대기",
-      claimed: "Worker 배정",
-      running: "분석 중",
-      completed: "완료",
-      failed: "실패",
-      cancelled: "취소",
-    },
-    zh: {
-      pending: "等待",
-      claimed: "已分配",
-      running: "分析中",
-      completed: "完成",
-      failed: "失败",
-      cancelled: "已取消",
-    },
-  } satisfies Record<AppLanguage, Record<AiJobStatus, string>>;
-  return status ? labels[language][status] : "-";
 }
 
 function getStringField(source: Record<string, unknown>, key: string) {
@@ -865,22 +823,6 @@ function normalizeDashboardIntent(raw: Partial<DashboardAiIntent>): DashboardAiI
     sort: raw.sort ?? null,
     limit,
   };
-}
-
-function extractJsonObject(text: string) {
-  try {
-    const parsed = JSON.parse(text.trim());
-    return typeof parsed === "object" && parsed ? parsed : {};
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return {};
-    try {
-      const parsed = JSON.parse(match[0]);
-      return typeof parsed === "object" && parsed ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
 }
 
 function heuristicDashboardIntent(question: string): DashboardAiIntent {
@@ -2583,55 +2525,6 @@ function buildMachiningProgressPreview(
   };
 }
 
-async function requestLocalDashboardIntent(question: string, businessDate: string) {
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 18_000);
-  const systemPrompt = [
-    "You convert Korean/Chinese manufacturing questions into JSON only.",
-    "Do not answer or calculate.",
-    "Schema:",
-    '{"intent":"injection_cycle_time|production_output|production_status|production_summary|unknown","metric":"recent_60m_avg_ct_sec|estimated_qty|running_count|progress_rate|null","filters":{"running_only":true,"product_family":"BC|CA|GP|null","target_text":"part/model/machine text or null","machine":"machine text or null"},"sort":"ct_desc|ct_asc|output_desc|output_asc|null","limit":number}',
-    `Default business_date is ${businessDate}.`,
-    "Glossary: B/C/back cover/백커버=BC, C/A/cabinet=CA, G/P/guide panel=GP. C/T/ct/节拍/周期 means cycle time.",
-  ].join(" ");
-
-  try {
-    const response = await fetch(`${LOCAL_LLM_BASE_URL.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: LOCAL_LLM_MODEL,
-        temperature: 0,
-        max_tokens: 220,
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: [
-              'Q: 오늘 생산중인 사출기의 수는?\nA: {"intent":"production_status","metric":"running_count","filters":{"running_only":true,"product_family":null,"target_text":null,"machine":null},"sort":null,"limit":17}',
-              'Q: 지금 백커버 만드는 기계 중 제일 느린 거 뭐야?\nA: {"intent":"injection_cycle_time","metric":"recent_60m_avg_ct_sec","filters":{"running_only":true,"product_family":"BC","target_text":null,"machine":null},"sort":"ct_desc","limit":1}',
-              'Q: 24g411 오늘 얼마나 나왔어?\nA: {"intent":"production_output","metric":"estimated_qty","filters":{"running_only":false,"product_family":null,"target_text":"24G411","machine":null},"sort":"output_desc","limit":8}',
-              'Q: 오늘 생산 진도 어때?\nA: {"intent":"production_summary","metric":"progress_rate","filters":{"running_only":false,"product_family":null,"target_text":null,"machine":null},"sort":null,"limit":8}',
-              `Q: ${question}\nA:`,
-            ].join("\n"),
-          },
-        ],
-      }),
-    });
-    const data = await response.json();
-    const content = String(data?.choices?.[0]?.message?.content ?? "");
-    const parsed = normalizeDashboardIntent(extractJsonObject(content) as Partial<DashboardAiIntent>);
-    if (parsed.intent !== "unknown") return parsed;
-  } catch {
-    // Fall through to the heuristic parser so local tests do not get blocked by MLX latency.
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
-
-  return heuristicDashboardIntent(question);
-}
-
 function matchesPartTarget(segment: RealtimeProgressSegment | undefined, targetText: string | null | undefined) {
   if (!targetText) return true;
   if (!segment) return false;
@@ -2738,8 +2631,8 @@ function answerDashboardIntent(intent: DashboardAiIntent, realtimeProgress: Real
   return null;
 }
 
-async function answerWithLocalMlxFallback(question: string, businessDate: string, realtimeProgress: RealtimeProgressSummary, language: AppLanguage) {
-  const intent = await requestLocalDashboardIntent(question, businessDate);
+function answerWithDeterministicFallback(question: string, realtimeProgress: RealtimeProgressSummary, language: AppLanguage) {
+  const intent = heuristicDashboardIntent(question);
   const answer = answerDashboardIntent(intent, realtimeProgress, language);
   return answer ?? (language === "ko"
     ? "질문 의도는 해석했지만 현재 대시보드 데이터로 계산 가능한 답을 찾지 못했습니다."
@@ -2850,7 +2743,6 @@ export function ProductionDashboardPage() {
   const [isAiAskOpen, setIsAiAskOpen] = useState(false);
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
-  const [activeAiJobId, setActiveAiJobId] = useState<number | null>(null);
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
   const [selectedActivityRow, setSelectedActivityRow] = useState<RealtimeProgressRow | null>(null);
   const [activityConfirmationForm, setActivityConfirmationForm] = useState<InjectionActivityConfirmationForm>({
@@ -2936,30 +2828,12 @@ export function ProductionDashboardPage() {
     refetchInterval: isCurrentDate && isCoreDashboardDataReady ? AI_BRIEFING_REFRESH_INTERVAL_MS : false,
     retry: 1,
   });
-  const aiJobQuery = useQuery({
-    queryKey: ["ai-job", activeAiJobId],
-    queryFn: () => getAiJob(activeAiJobId ?? 0),
-    enabled: Boolean(activeAiJobId),
-    refetchInterval: (query) => {
-      const job = query.state.data as AiJob | undefined;
-      return job && !isAiJobTerminal(job.status) ? 3_000 : false;
-    },
-  });
-  const createAiJobMutation = useMutation({
-    mutationFn: () => createAiJob({
-      job_type: "production_daily_analysis",
-      scope: { date: businessDate, language },
-    }),
-    onSuccess: (job) => {
-      setActiveAiJobId(job.id);
-      queryClient.setQueryData(["ai-job", job.id], job);
-    },
-  });
-  const cancelAiJobMutation = useMutation({
-    mutationFn: (jobId: number) => cancelAiJob(jobId),
-    onSuccess: (job) => {
-      queryClient.setQueryData(["ai-job", job.id], job);
-    },
+  const latestAiJobQuery = useQuery({
+    queryKey: ["ai-job", "latest", businessDate, language],
+    queryFn: () => getLatestAiJob(businessDate, language),
+    enabled: isCoreDashboardDataReady,
+    refetchInterval: isCurrentDate ? AI_BRIEFING_REFRESH_INTERVAL_MS : false,
+    retry: false,
   });
   const createManualReportMutation = useMutation({
     mutationFn: () => {
@@ -3191,23 +3065,21 @@ export function ProductionDashboardPage() {
     [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
   );
   const ruleBasedBrief = useMemo(() => buildRuleBasedBrief(briefContext, language), [briefContext, language]);
-  const briefingText = aiBriefingQuery.data?.answer || ruleBasedBrief;
-  const activeAiJob = aiJobQuery.data;
-  const activeAiJobResult = activeAiJob?.result_payload ?? {};
-  const activeAiJobSummary = getStringField(activeAiJobResult, "summary");
-  const activeAiJobTopIssues = getTopIssues(activeAiJobResult);
+  const latestAiJob = latestAiJobQuery.data ?? undefined;
+  const latestAiJobResult = latestAiJob?.result_payload ?? {};
+  const latestAiJobSummary = getStringField(latestAiJobResult, "summary");
+  const latestAiJobTopIssues = getTopIssues(latestAiJobResult);
+  const briefingText = latestAiJobSummary
+    ? latestAiJobSummary
+    : aiBriefingQuery.data?.answer || ruleBasedBrief;
   const aiQuestionMutation = useMutation({
     mutationFn: async () => {
       try {
-        const response = await askProductionAi(businessDate, aiQuestion, language);
-        if (response.source !== "timeout_or_llm_error") {
-          return response;
-        }
+        return await askProductionAi(businessDate, aiQuestion, language);
       } catch {
-        // In local development the API may still point to Render, which cannot reach this Mac's MLX server.
+        const answer = answerWithDeterministicFallback(aiQuestion, realtimeProgress, language);
+        return { answer, source: "deterministic_unhandled" as const };
       }
-      const answer = await answerWithLocalMlxFallback(aiQuestion, businessDate, realtimeProgress, language);
-      return { answer, source: "local_llm" as const };
     },
     onSuccess: (payload) => setAiAnswer(payload.answer),
   });
@@ -3215,10 +3087,6 @@ export function ProductionDashboardPage() {
   useEffect(() => {
     setAiAnswer(null);
   }, [language, briefContext.businessDate, briefContext.latestUpdatedAt]);
-
-  useEffect(() => {
-    setActiveAiJobId(null);
-  }, [businessDate, language]);
 
   useEffect(() => {
     setActivitySelection(null);
@@ -4692,14 +4560,6 @@ export function ProductionDashboardPage() {
               <div className="production-brief-panel__actions">
                 <button
                   className="button button--primary"
-                  disabled={createAiJobMutation.isPending || Boolean(activeAiJob && !isAiJobTerminal(activeAiJob.status))}
-                  type="button"
-                  onClick={() => createAiJobMutation.mutate()}
-                >
-                  {createAiJobMutation.isPending ? copy.workerAnalysisRunning : copy.runWorkerAnalysis}
-                </button>
-                <button
-                  className="button button--ghost"
                   type="button"
                   onClick={() => setIsAiAskOpen((isOpen) => !isOpen)}
                 >
@@ -4751,7 +4611,7 @@ export function ProductionDashboardPage() {
                   value={aiQuestion}
                 />
                 <div className="production-ai-ask__actions">
-                  <span>{language === "ko" ? "내부 생산 데이터 계산 + 로컬 MLX LLM" : "内部生产数据计算 + 本地 MLX LLM"}</span>
+                  <span>{copy.aiQuestionScope}</span>
                   <button className="button button--primary" disabled={!aiQuestion.trim() || aiQuestionMutation.isPending} type="submit">
                     {aiQuestionMutation.isPending ? copy.askingAi : copy.aiSubmit}
                   </button>
@@ -4768,65 +4628,38 @@ export function ProductionDashboardPage() {
               </div>
             ) : null}
 
-            {activeAiJob ? (
-              <div className={`production-ai-job production-ai-job--${activeAiJob.status}`}>
+            {latestAiJob ? (
+              <div className="production-ai-job production-ai-job--completed">
                 <div className="production-ai-job__header">
                   <div>
                     <strong>{copy.workerJobTitle}</strong>
                     <span>
-                      {copy.workerJobStatus}: {getAiJobStatusLabel(activeAiJob.status, language)}
-                      {activeAiJob.claimed_by ? ` · ${activeAiJob.claimed_by}` : ""}
+                      {latestAiJob.completed_at ? new Date(latestAiJob.completed_at).toLocaleString(language === "ko" ? "ko-KR" : "zh-CN") : ""}
+                      {latestAiJob.model_name ? ` · ${latestAiJob.model_name}` : ""}
                     </span>
                   </div>
-                  {!isAiJobTerminal(activeAiJob.status) ? (
-                    <button
-                      className="button button--ghost button--mini"
-                      disabled={cancelAiJobMutation.isPending}
-                      onClick={() => cancelAiJobMutation.mutate(activeAiJob.id)}
-                      type="button"
-                    >
-                      {copy.workerJobCancel}
-                    </button>
-                  ) : null}
                 </div>
 
-                {!isAiJobTerminal(activeAiJob.status) ? (
-                  <p className="production-ai-job__message">{copy.workerJobWaiting}</p>
-                ) : null}
-
-                {activeAiJob.status === "completed" ? (
-                  <div className="production-ai-job__result">
-                    <strong>{copy.workerJobResult}</strong>
-                    {activeAiJobResult.llm_fallback ? (
-                      <div className="notice notice--warning">{copy.workerJobFallback}</div>
-                    ) : null}
-                    <p>{activeAiJobSummary || getStringField(activeAiJobResult, "title") || copy.workerJobNoIssue}</p>
-                    <div className="production-ai-job__issues">
-                      {activeAiJobTopIssues.length ? activeAiJobTopIssues.map((issue, index) => (
-                        <div className="production-ai-job__issue" key={`${getStringField(issue, "label")}-${index}`}>
-                          <span>{copy.workerJobIssue}</span>
-                          <strong>{getStringField(issue, "label") || getStringField(issue, "type") || "-"}</strong>
-                          <p>{getIssueText(issue)}</p>
-                        </div>
-                      )) : (
-                        <div className="production-ai-job__issue">
-                          <span>{copy.workerJobIssue}</span>
-                          <strong>{copy.workerJobNoIssue}</strong>
-                        </div>
-                      )}
-                    </div>
+                <div className="production-ai-job__result">
+                  <strong>{copy.workerJobResult}</strong>
+                  {latestAiJobResult.llm_fallback ? (
+                    <div className="notice notice--warning">{copy.workerJobFallback}</div>
+                  ) : null}
+                  <div className="production-ai-job__issues">
+                    {latestAiJobTopIssues.length ? latestAiJobTopIssues.map((issue, index) => (
+                      <div className="production-ai-job__issue" key={`${getStringField(issue, "label")}-${index}`}>
+                        <span>{copy.workerJobIssue}</span>
+                        <strong>{getStringField(issue, "label") || getStringField(issue, "type") || "-"}</strong>
+                        <p>{getIssueText(issue)}</p>
+                      </div>
+                    )) : (
+                      <div className="production-ai-job__issue">
+                        <span>{copy.workerJobIssue}</span>
+                        <strong>{copy.workerJobNoIssue}</strong>
+                      </div>
+                    )}
                   </div>
-                ) : null}
-
-                {activeAiJob.status === "failed" ? (
-                  <div className="notice notice--warning">{activeAiJob.error_message || copy.llmError}</div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {aiQuestionMutation.isError ? (
-              <div className="notice notice--warning">
-                {copy.llmError}
+                </div>
               </div>
             ) : null}
           </section>

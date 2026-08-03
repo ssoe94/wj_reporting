@@ -104,6 +104,9 @@ class AiBriefingPayload:
             "top_risks": [item.to_dict() for item in self.top_risks],
             "used_data": [item.to_dict() for item in self.used_data],
             "calculation_basis": self.calculation_basis,
+            "data_freshness": self.context_pack.data_freshness.to_dict(),
+            "warnings": list(self.context_pack.warnings),
+            "retrieval_trace": list(self.context_pack.retrieval_trace),
             "context_pack": self.context_pack.to_dict(),
             "cache": self.cache.to_dict(),
         }

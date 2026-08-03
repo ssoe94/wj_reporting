@@ -457,7 +457,7 @@ export type ProductionPlanUploadResponse = {
 
 export type ProductionAiAskResponse = {
   answer: string;
-  source: "calculated" | "intent_calculated" | "local_llm" | "timeout_or_llm_error";
+  source: "calculated" | "intent_calculated" | "deterministic_unhandled";
   detail?: string;
   intent?: Record<string, unknown>;
   context?: {
@@ -509,6 +509,14 @@ export type ProductionAiBriefingResponse = {
     filters: Record<string, unknown>;
   }>;
   calculation_basis: string[];
+  data_freshness: {
+    last_plan_updated_at: string | null;
+    last_mes_recorded_at: string | null;
+    last_machining_reported_at: string | null;
+    is_stale: boolean;
+  };
+  warnings: string[];
+  retrieval_trace: string[];
   context_pack?: Record<string, unknown>;
   cache: {
     hit: boolean;
@@ -524,7 +532,7 @@ export type AiJob = {
   job_type: "production_daily_analysis" | "production_machine_analysis";
   status: AiJobStatus;
   scope: Record<string, unknown>;
-  input_payload: Record<string, unknown>;
+  input_payload?: Record<string, unknown>;
   result_payload: Record<string, unknown>;
   error_message: string;
   claimed_by: string;
@@ -533,8 +541,8 @@ export type AiJob = {
   completed_at: string | null;
   model_name: string;
   prompt_version: string;
-  created_by: number | null;
-  created_by_name: string | null;
+  created_by?: number | null;
+  created_by_name?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -933,6 +941,13 @@ export async function createAiJob(payload: CreateAiJobPayload) {
 export async function getAiJob(jobId: number) {
   const response = await http.get<AiJob>(`/ai/jobs/${jobId}/`);
   return response.data;
+}
+
+export async function getLatestAiJob(date: string, language: "ko" | "zh") {
+  const response = await http.get<{ job: AiJob | null }>(
+    `/ai/jobs/latest/?job_type=production_daily_analysis&date=${encodeURIComponent(date)}&language=${encodeURIComponent(language)}`,
+  );
+  return response.data.job;
 }
 
 export async function cancelAiJob(jobId: number) {
