@@ -49,25 +49,46 @@ class LocalLlmClient:
         except (requests.RequestException, ValueError):
             return False
 
-    def structured_analysis(self, system_prompt: str, user_payload: dict[str, Any]) -> dict[str, Any]:
+    def structured_analysis(
+        self,
+        system_prompt: str,
+        user_payload: dict[str, Any],
+        *,
+        enable_thinking: bool = False,
+        thinking_budget: int | None = None,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        request_payload: dict[str, Any] = {
+            "model": self.model,
+            "temperature": 0.1,
+            "max_tokens": 1200,
+            "enable_thinking": enable_thinking,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": json.dumps(user_payload, ensure_ascii=False, default=str),
+                },
+            ],
+        }
+        if enable_thinking and thinking_budget is not None:
+            request_payload["thinking_budget"] = max(1, int(thinking_budget))
         response = requests.post(
             f"{self.base_url}/chat/completions",
-            json={
-                "model": self.model,
-                "temperature": 0.1,
-                "max_tokens": 1200,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {
-                        "role": "user",
-                        "content": json.dumps(user_payload, ensure_ascii=False, default=str),
-                    },
-                ],
-            },
-            timeout=self.timeout,
+            json=request_payload,
+            timeout=(
+                self.timeout
+                if timeout_seconds is None
+                else min(self.timeout, max(1.0, float(timeout_seconds)))
+            ),
         )
         response.raise_for_status()
         data = response.json()
-        message = data.get("choices", [{}])[0].get("message", {})
-        content = message.get("content") or message.get("reasoning") or ""
+        choice = data.get("choices", [{}])[0]
+        if choice.get("finish_reason") in {"length", "max_tokens"}:
+            raise ValueError("LLM response ended before the final answer was completed.")
+        message = choice.get("message", {})
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("LLM response did not contain final answer content.")
         return extract_json_object(content)

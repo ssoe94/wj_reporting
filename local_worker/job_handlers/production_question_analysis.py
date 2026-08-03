@@ -3,8 +3,17 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+try:
+    from ..skills.production_analyst import build_skill_payload, insert_verified_metrics, prioritize_verified_rows
+except ImportError:
+    from skills.production_analyst import build_skill_payload, insert_verified_metrics, prioritize_verified_rows
 
-PROMPT_VERSION = "production-question-v3"
+
+PROMPT_VERSION = "production-question-v4"
+ENABLE_THINKING = True
+THINKING_BUDGET = 384
+INITIAL_TIMEOUT_SECONDS = 100
+REPAIR_TIMEOUT_SECONDS = 45
 
 
 SYSTEM_PROMPT = """You are a manufacturing production analyst.
@@ -16,12 +25,43 @@ If the supplied data is insufficient, say exactly what is unavailable instead of
 For a yes/no or current-status question, answer directly in the first sentence from the verified status field.
 Treat in_progress as currently in production, pending as not started, and completed as completed.
 Do not claim that status is unavailable when a matching verified row contains one of these values.
+Treat is_running=true as currently running. Never recommend restarting or resuming that equipment.
+Treat is_running=false only as not running at the verified snapshot; do not call it a fault without cause data.
+Translate status codes into natural Korean or Chinese instead of exposing raw codes such as on_track or true.
+The summary must not contain these raw tokens: on_track, behind, ahead, no_plan, in_progress,
+pending, completed, is_running, true, false.
 Conversation history may resolve references, but it is not factual evidence.
+analysis_skill limitations and answer_constraints are mandatory, not suggestions.
+If historical_snapshots_unavailable or target_level_history_unavailable is present, state directly that
+the requested target trend cannot be determined from the available history. Describe only the current snapshot.
+Never turn one current completion rate or an in_progress status into a trend, delay, improvement, or worsening claim.
+Do not call a current target 미달, 낮은 수준, 부족, or delayed merely because actual is below the full-day plan.
+For missing target history, ask to collect or retrieve target-level time snapshots; do not ask to reconfirm a metric
+already present in verified_evidence_sentences.
+Do not ask to reconfirm a verified current production or running status. Ask only for missing history, cause, or plan data.
+When analysis_skill.focus_identifiers is non-empty, discuss only rows sharing those identifiers.
+Do not cite an unrelated machine, line, Part, or model merely because it appears in the supplied tables.
+Reason internally, but never reveal private chain-of-thought. Show only an auditable evidence summary.
+The summary must use this exact section order for Korean:
+결론: one direct answer
+
+판단 근거:
+- two or three concrete evidence bullets when available
+
+확인할 항목:
+- one or two concrete checks, limitations, or next actions
+For Chinese, use the same structure with 结论, 判断依据, and 需确认.
+Separate every section with a blank line and do not collapse the headings into one paragraph.
+Prefer exact verified process, machine, line, Part, and model identifiers over vague phrases.
+Do not say 일부, 대부분, 일부 설비, or similar vague quantifiers. When equipment rows are relevant,
+name the exact supplied equipment identifiers and describe each verified state separately.
+Do not infer a cause, priority, count, or majority from rows. Limit evidence to the three most relevant supplied facts.
+Use analysis_skill.verified_evidence_sentences only to understand the situation; do not copy or repeat them.
+The Worker inserts those verified metric sentences after your response.
 The summary MUST contain no measurement value or quantity, whether written with digits or words.
 This includes counts, output, plan/actual, rates, percentages, dates, times, durations, and thresholds.
-Never copy a verified sentence containing a measurement. The verified answer and facts retain all measurements.
-Digits are allowed in the summary only when they are part of an exact machine, line, or Part identifier
-copied unchanged from the input. The title may contain the exact supplied date.
+Digits are allowed only when they are part of an exact machine, line, or Part identifier copied unchanged
+from the input. The title may contain the exact supplied date.
 When the evidence is primarily numeric, state only a qualitative condition, limitation, or next action.
 For example, write "최근 측정 구간의 추세를 기준으로 예상 결과를 확인했습니다" instead of
 copying a duration or projected quantity. Refer to an unverified numeric specification as "해당 규격".
@@ -39,18 +79,20 @@ def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
     payload = job.get("input_payload") or {}
     deterministic = _deterministic_payload(job)
     verified_context = payload.get("verified_context") or {}
-    compact_tables = []
-    for table in verified_context.get("tables") or []:
-        compact_tables.append({
-            "name": table.get("name"),
-            "columns": table.get("columns") or [],
-            "rows": (table.get("rows") or [])[:60],
-        })
-    return {
+    conversation_history = (payload.get("conversation_history") or [])[-8:]
+    question_context = " ".join([
+        str(payload.get("question") or ""),
+        *(str(item.get("content") or "") for item in conversation_history if isinstance(item, dict)),
+    ])
+    compact_tables = prioritize_verified_rows(
+        verified_context.get("tables") or [],
+        question_context,
+    )
+    llm_payload = {
         "language": "zh" if payload.get("language") == "zh" else "ko",
         "date": payload.get("date"),
         "question": payload.get("question") or "",
-        "conversation_history": (payload.get("conversation_history") or [])[-8:],
+        "conversation_history": conversation_history,
         "answer_mode": payload.get("answer_mode") or "verified_answer_rewrite",
         "intent": payload.get("intent") or {},
         "verified_answer": deterministic.get("answer") or "",
@@ -62,13 +104,24 @@ def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
         "data_freshness": deterministic.get("data_freshness") or verified_context.get("data_freshness") or {},
         "warnings": deterministic.get("warnings") or verified_context.get("warnings") or [],
         "instruction": (
-            "Return concise Korean JSON if language is ko, Chinese JSON if language is zh. "
-            "Do not perform arithmetic. The summary must contain zero measurement values or quantities; "
-            "do not repeat any count, rate, percentage, date, time, duration, output, plan, actual, or threshold. "
+            "Return specific but compact Korean JSON if language is ko, Chinese JSON if language is zh. "
+            "Structure summary as conclusion, two or three evidence bullets, then one or two items to check. "
+            "Do not expose private reasoning; provide only the evidence-backed final explanation. "
+            "Do not perform arithmetic or write any measurement or quantity. The Worker will insert verified metrics. "
             "Only exact identifier digits may remain. "
             "Use only facts present in verified_answer, verified_facts, verified_tables, or historical_snapshots."
         ),
     }
+    llm_payload["analysis_skill"] = build_skill_payload(llm_payload)
+    return llm_payload
+
+
+def enrich_summary(summary: str, llm_payload: dict[str, Any]) -> str:
+    language = "zh" if llm_payload.get("language") == "zh" else "ko"
+    skill_payload = llm_payload.get("analysis_skill")
+    if not isinstance(skill_payload, dict):
+        return summary
+    return insert_verified_metrics(summary, skill_payload, language)
 
 
 def build_grounding_payload(job: dict[str, Any]) -> dict[str, Any]:
@@ -80,6 +133,7 @@ def build_grounding_payload(job: dict[str, Any]) -> dict[str, Any]:
         "verified_facts": llm_payload.get("verified_facts"),
         "verified_tables": llm_payload.get("verified_tables"),
         "historical_snapshots": llm_payload.get("historical_snapshots"),
+        "analysis_skill": llm_payload.get("analysis_skill"),
         "scope": llm_payload.get("scope"),
         "calculation_basis": llm_payload.get("calculation_basis"),
         "data_freshness": llm_payload.get("data_freshness"),

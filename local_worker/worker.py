@@ -29,12 +29,30 @@ HANDLERS = {
 }
 
 REPAIR_SYSTEM_PROMPT = """You repair a manufacturing AI explanation that failed numeric grounding.
-Use only the supplied qualitative draft and allowed exact identifiers. Do not add facts.
+Use only the supplied verified qualitative evidence, qualitative draft, and allowed exact identifiers.
+Do not add facts, calculations, causes, priorities, counts, or majority claims.
 Remove every measurement value and quantity, including counts, rates, percentages, dates, times,
 durations, thresholds, plan/actual values, output values, and numeric model sizes.
 Digits may appear only inside a string copied exactly from allowed_exact_identifiers.
 Replace numeric references with qualitative phrases such as current trend, target equipment,
 the relevant specification, or the verified data range.
+Reason internally, but never reveal private chain-of-thought. Return only an auditable final explanation.
+For Korean, summary must use this exact order: 결론, 판단 근거, 확인할 항목.
+For Chinese, use 结论, 判断依据, 需确认. Put each heading on its own section.
+Separate sections with blank lines and do not collapse them into one paragraph.
+Use up to three concrete verified statuses or exact identifiers in 판단 근거/判断依据.
+Avoid vague phrases such as 일부 or 대부분 when exact verified identifiers are available.
+Treat is_running=true as running and never recommend restart or resume for that equipment.
+Treat is_running=false as not running at the snapshot, not as a proven fault.
+Translate status codes and booleans into natural Korean or Chinese instead of exposing raw values.
+Obey verified_qualitative_evidence.analysis_constraints. If target history is unavailable, say the target trend
+cannot be determined and describe only the current snapshot. Do not call the target delayed, low, insufficient,
+improving, or worsening from one snapshot. Ask for target-level time snapshots when history is missing.
+When focus_identifiers is non-empty, do not cite unrelated machines, lines, Parts, or models.
+Do not ask to reconfirm a current production or running status already present in verified evidence.
+The summary must not contain these raw tokens: on_track, behind, ahead, no_plan, in_progress,
+pending, completed, is_running, true, false. Do not use vague quantifiers such as 일부 or 대부분;
+name the exact supplied identifiers instead.
 Return valid JSON only with string keys title and summary. Do not use markdown."""
 
 
@@ -125,6 +143,61 @@ NUMERIC_MACHINE = re.compile(
 NUMERIC_MEASUREMENT = re.compile(
     rf"{NUMBER_TOKEN.pattern}\s*(?:개|회|건|대|퍼센트|프로|%|個|个|件|次|台|百分比)"
 )
+RAW_STATUS_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_])(?:on_track|behind|ahead|no_plan|in_progress|pending|completed|"
+    r"mes_reported|manual_partial|manual_open|manual_matched|needs_review|manual_mismatch|"
+    r"is_running|true|false)(?![A-Za-z0-9_])",
+    re.IGNORECASE,
+)
+VAGUE_QUANTIFIER = re.compile(r"(?:일부|대부분|몇몇|部分设备|部分設備|大部分)")
+UNSUPPORTED_CAUSAL_ASSERTION = re.compile(
+    r"(?:때문에|(?:으)?로\s*인해|영향으로|유발|초래|야기|탓|"
+    r"由于|由於|因为|因為|导致|導致|引发|引發|造成|原因(?:是|在于)|"
+    r"(?:가|이)\s*[^.\n]{0,28}(?:늦어|불안정해|고장나|문제가\s*생겨)|"
+    r"(?:지연|고장|불량|불안정)\s*(?:으)?로\s+|원인(?:은|이|입니다|이다)|"
+    r"(?:원료|자재|인력|공급사|금형\s*온도|설비).{0,18}(?:부족|고장|불안정|문제).{0,8}"
+    r"(?:입니다|이다|상태|로\s*보|이\s*확인)|"
+    r"(?:原料|材料|人员|人員|供应商|供應商|模具温度|模具溫度|设备|設備).{0,18}"
+    r"(?:不足|故障|不稳定|不穩定|问题|問題))"
+)
+UNSUPPORTED_OPERATIONAL_DIRECTIVE = re.compile(
+    r"(?:교체|재시작|중단|폐기|증산|감산|추가\s*발주|인력\s*투입|연락|문의).{0,18}"
+    r"(?:해야|하십시오|권장|필요)|(?:更换|更換|重启|重啟|停产|停產|报废|報廢|增产|增產|减产|減產).{0,18}"
+    r"(?:应该|應該|建议|建議|需要)"
+)
+RISK_ASSERTION = re.compile(
+    r"(?:불안정|고장|불량|부족|과열|막힘|결함|이상|저하|하락|"
+    r"故障|不良|不足|过热|過熱|堵塞|缺陷|异常|異常|下降|降低|不稳定|不穩定)"
+)
+CHECK_OR_INFORMATION_LIMITATION = re.compile(
+    r"(?:확인|점검|검토|조사|여부|가능성|데이터|자료|정보|이력|스냅샷|근거|"
+    r"确认|確認|检查|檢查|审查|審查|调查|調查|是否|可能性|数据|數據|资料|資料|信息|資訊|记录|記錄|依据|依據)"
+)
+DIRECTIVE_MARKER = re.compile(
+    r"(?:해야(?:\s*합니다)?|하십시오|하세요|세요|권장합니다|필요합니다|"
+    r"应该|應該|请|請|建议|建議|需要)"
+)
+SAFE_ANALYSIS_ACTION = re.compile(
+    r"(?:확인|검토|수집|조회|비교|점검|파악|기록|모니터링|추적|확보|요청|조사|분석|측정|"
+    r"确认|確認|审查|審查|收集|查询|查詢|比较|比較|检查|檢查|掌握|记录|記錄|监控|監控|追踪|追蹤|获取|取得|请求|請求|调查|調查|分析|测量|測量)"
+)
+NUMBERED_LIST_MARKER = re.compile(r"(?m)^([ \t]*)\d+[.)]\s+")
+SECTION_HEADING = re.compile(r"(?m)^(결론|판단 근거|확인할 항목|结论|判断依据|需确认)\s*:?\s*$")
+TREND_TERM = re.compile(r"(?:추이|변화|趋势|趨勢|变化|變化)")
+UNAVAILABLE_TREND = re.compile(
+    r"(?:판단할 수 없|확인할 수 없|평가할 수 없|단정할 수 없|알 수 없|"
+    r"(?:비교\s*)?근거가 부족|데이터가 없|이력이 없|"
+    r"无法判断|无法确认|无法评估|缺少.*数据|没有.*记录|無法判斷|缺少.*資料)"
+)
+UNSUPPORTED_TARGET_TREND = re.compile(
+    r"(?:(?:계획|시간)\s*대비[^.\n]{0,30}(?:미달|낮|부족)|낮은\s*수준|"
+    r"(?:지연|악화|개선|정체)(?:된|되는|하는|\s*상태|\s*추이)|"
+    r"低于计划|低於計劃|进度偏低|進度偏低|延迟状态|延遲狀態|恶化趋势|惡化趨勢)"
+)
+REDUNDANT_STATUS_RECHECK = re.compile(
+    r"(?:가동|생산|진행)\s*(?:상태|여부).{0,8}재확인|"
+    r"(?:运行|生产|生產|进度|進度)(?:状态|狀態|与否|與否).{0,8}(?:再次确认|再次確認)"
+)
 
 PROCESS_ALIASES = {
     "injection": ("injection", "사출", "注塑"),
@@ -162,6 +235,7 @@ TRUSTED_PROSE_KEYS = {
     "draft_summary",
     "summary",
     "verified_answer",
+    "verified_evidence_sentences",
 }
 
 
@@ -461,12 +535,17 @@ def _authoritative_claim_clauses(grounding: Any) -> set[str]:
         normalized_key = str(key).strip().lower()
         if normalized_key in {"conversation_history", "question"}:
             continue
-        if normalized_key in TRUSTED_PROSE_KEYS and isinstance(value, str):
-            clauses.update(
-                _canonical_claim_clause(clause.strip())
-                for clause in CLAUSE_SPLIT.split(value)
-                if clause.strip()
+        if normalized_key in TRUSTED_PROSE_KEYS:
+            trusted_values = [value] if isinstance(value, str) else (
+                [item for item in value if isinstance(item, str)]
+                if isinstance(value, list) else []
             )
+            for trusted_value in trusted_values:
+                clauses.update(
+                    _canonical_claim_clause(clause.strip())
+                    for clause in CLAUSE_SPLIT.split(trusted_value)
+                    if clause.strip()
+                )
         elif isinstance(value, (dict, list)):
             clauses.update(_authoritative_claim_clauses(value))
     return clauses
@@ -538,6 +617,157 @@ def _qualitative_text(value: Any, allowed_identifiers: set[str], language: str) 
     return " ".join(text.split())[:2000]
 
 
+def _verified_exact_identifiers(grounding: Any) -> list[str]:
+    identifiers: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: Any) -> None:
+        if not isinstance(value, str):
+            return
+        cleaned = value.strip()
+        folded = cleaned.casefold()
+        if cleaned and cleaned != "-" and len(cleaned) <= 120 and folded not in seen:
+            seen.add(folded)
+            identifiers.append(cleaned)
+
+    def visit(node: Any) -> None:
+        if isinstance(node, list):
+            for item in node:
+                visit(item)
+            return
+        if not isinstance(node, dict):
+            return
+        for key, value in node.items():
+            if key in IDENTIFIER_KEYS:
+                add(value)
+            if key == "machine_number":
+                machine_number = _normalize_number(value)
+                if machine_number is not None and machine_number == machine_number.to_integral_value():
+                    number = str(int(machine_number))
+                    add(f"{number}호기")
+                    add(f"{number}号机")
+                    add(f"{number}號機")
+            if isinstance(value, (dict, list)):
+                visit(value)
+
+    visit(grounding)
+    return identifiers
+
+
+def _prioritized_exact_identifiers(
+    grounding: dict[str, Any],
+    candidate_text: str,
+    question: str,
+    limit: int = 80,
+) -> list[str]:
+    verified = _verified_exact_identifiers(grounding)
+    referenced_text = f"{question} {candidate_text}"
+    referenced = [
+        identifier for identifier in verified
+        if _identifier_spans(referenced_text, identifier.casefold())
+    ]
+    referenced_keys = {identifier.casefold() for identifier in referenced}
+    return (referenced + [
+        identifier for identifier in verified
+        if identifier.casefold() not in referenced_keys
+    ])[:limit]
+
+
+def _verified_qualitative_evidence(
+    grounding: dict[str, Any],
+    allowed_identifiers: list[str],
+    language: str,
+) -> dict[str, Any]:
+    allowed_keys = {identifier.casefold() for identifier in allowed_identifiers}
+    analysis_skill = grounding.get("analysis_skill")
+    focus_keys = {
+        str(identifier).strip().casefold()
+        for identifier in (
+            analysis_skill.get("focus_identifiers") or []
+            if isinstance(analysis_skill, dict)
+            else []
+        )
+        if str(identifier).strip()
+    }
+    process_statuses: list[dict[str, str]] = []
+    facts = grounding.get("verified_facts")
+    if isinstance(facts, dict) and not focus_keys:
+        for process in PROCESS_ALIASES:
+            process_fact = facts.get(process)
+            status = process_fact.get("status") if isinstance(process_fact, dict) else None
+            if isinstance(status, str) and status.strip():
+                process_statuses.append({"process": process, "status": status.strip()})
+
+    row_statuses: list[dict[str, Any]] = []
+    tables = grounding.get("verified_tables")
+    if isinstance(tables, list):
+        for table in tables:
+            if not isinstance(table, dict):
+                continue
+            table_name = str(table.get("name") or "verified_table").strip()
+            process = "injection" if table_name.startswith("injection_") else (
+                "machining" if table_name.startswith("machining_") else "production"
+            )
+            for row in table.get("rows") or []:
+                if not isinstance(row, dict):
+                    continue
+                row_identifier_keys = {
+                    str(row.get(key)).strip().casefold()
+                    for key in IDENTIFIER_KEYS
+                    if isinstance(row.get(key), str) and str(row.get(key)).strip()
+                }
+                if focus_keys and not row_identifier_keys.intersection(focus_keys):
+                    continue
+                evidence_row: dict[str, Any] = {"process": process}
+                for key in IDENTIFIER_KEYS:
+                    value = row.get(key)
+                    if (
+                        isinstance(value, str)
+                        and value.strip().casefold() in allowed_keys
+                    ):
+                        evidence_row[key] = value.strip()
+                status = row.get("status")
+                if isinstance(status, str) and status.strip():
+                    evidence_row["status"] = _qualitative_text(status, set(), language)
+                is_running = row.get("is_running")
+                if isinstance(is_running, bool):
+                    evidence_row["is_running"] = is_running
+                if len(evidence_row) > 1:
+                    row_statuses.append(evidence_row)
+                if len(row_statuses) >= 40:
+                    break
+            if len(row_statuses) >= 40:
+                break
+
+    warnings: list[str] = []
+    for warning in grounding.get("warnings") or []:
+        if not isinstance(warning, str) or not warning.strip():
+            continue
+        cleaned = _qualitative_text(warning, set(allowed_identifiers), language)
+        if cleaned:
+            warnings.append(cleaned)
+        if len(warnings) >= 10:
+            break
+
+    freshness = grounding.get("data_freshness")
+    data_is_stale = freshness.get("is_stale") if isinstance(freshness, dict) else None
+    analysis_constraints = {}
+    if isinstance(analysis_skill, dict):
+        analysis_constraints = {
+            "mode": analysis_skill.get("mode"),
+            "focus_identifiers": analysis_skill.get("focus_identifiers") or [],
+            "limitations": analysis_skill.get("limitations") or [],
+            "answer_constraints": analysis_skill.get("answer_constraints") or {},
+        }
+    return {
+        "process_statuses": process_statuses,
+        "equipment_and_part_statuses": row_statuses,
+        "warnings": warnings,
+        "data_is_stale": data_is_stale if isinstance(data_is_stale, bool) else None,
+        "analysis_constraints": analysis_constraints,
+    }
+
+
 def build_repair_payload(
     job: dict[str, Any],
     candidate: dict[str, Any],
@@ -545,27 +775,108 @@ def build_repair_payload(
 ) -> dict[str, Any]:
     """Build a qualitative-only retry payload without authoritative measurements."""
     language = "zh" if (job.get("input_payload") or {}).get("language") == "zh" else "ko"
-    records = _grounding_records(grounding)
     candidate_text = " ".join([
         str(candidate.get("title") or ""),
         str(candidate.get("summary") or ""),
     ])
-    allowed_identifiers = _matched_identifiers(candidate_text, records)
     question = (job.get("input_payload") or {}).get("question") or ""
+    exact_identifiers = _prioritized_exact_identifiers(
+        grounding,
+        candidate_text,
+        str(question),
+    )
+    analysis_skill = grounding.get("analysis_skill")
+    focus_keys = {
+        str(identifier).strip().casefold()
+        for identifier in (
+            analysis_skill.get("focus_identifiers") or []
+            if isinstance(analysis_skill, dict)
+            else []
+        )
+        if str(identifier).strip()
+    }
+    if focus_keys:
+        exact_identifiers = [
+            identifier for identifier in exact_identifiers
+            if identifier.casefold() in focus_keys
+        ]
+    allowed_identifiers = set(exact_identifiers)
+    limitations = set(
+        analysis_skill.get("limitations") or []
+        if isinstance(analysis_skill, dict)
+        else []
+    )
+    discard_rejected_summary = bool(
+        limitations.intersection({
+            "historical_snapshots_unavailable",
+            "target_level_history_unavailable",
+        })
+    )
     return {
         "language": language,
         "question_topic": _qualitative_text(question, allowed_identifiers, language),
         "qualitative_draft": {
             "title": _qualitative_text(candidate.get("title"), allowed_identifiers, language),
-            "summary": _qualitative_text(candidate.get("summary"), allowed_identifiers, language),
+            "summary": "" if discard_rejected_summary else _qualitative_text(
+                candidate.get("summary"),
+                allowed_identifiers,
+                language,
+            ),
         },
-        "allowed_exact_identifiers": sorted(allowed_identifiers)[:80],
+        "verified_qualitative_evidence": _verified_qualitative_evidence(
+            grounding,
+            exact_identifiers,
+            language,
+        ),
+        "allowed_exact_identifiers": exact_identifiers,
         "instruction": (
-            "한국어 JSON으로 수치 없는 자연스러운 정성 설명만 반환하세요. 검증 수치 표식은 문맥에 맞는 정성 표현으로 바꾸세요."
+            "한국어 JSON으로 결론, 판단 근거, 확인할 항목 순서의 구체적인 정성 설명만 반환하세요. "
+            "검증된 상태와 정확한 설비 식별자를 우선 사용하고 원시 상태코드와 일부/대부분 표현은 쓰지 마세요. "
+            "검증 수치 표식은 문맥에 맞는 정성 표현으로 바꾸세요."
             if language == "ko"
-            else "仅返回自然的中文 JSON 定性说明；将数值占位改为符合语境的定性表达。"
+            else "仅返回按结论、判断依据、需确认顺序组织的具体中文 JSON 定性说明；"
+            "优先使用已验证的状态和准确设备标识符，不得输出原始状态代码或模糊数量词；"
+            "将数值占位改为符合语境的定性表达。"
         ),
     }
+
+
+def summary_is_specific(summary: str, grounding: dict[str, Any]) -> bool:
+    text = str(summary or "")
+    if RAW_STATUS_TOKEN.search(text):
+        return False
+    if VAGUE_QUANTIFIER.search(text) and _verified_exact_identifiers(grounding):
+        return False
+    if UNSUPPORTED_CAUSAL_ASSERTION.search(text) or UNSUPPORTED_OPERATIONAL_DIRECTIVE.search(text):
+        return False
+    if REDUNDANT_STATUS_RECHECK.search(text):
+        return False
+    for clause in CLAUSE_SPLIT.split(text):
+        if RISK_ASSERTION.search(clause) and not CHECK_OR_INFORMATION_LIMITATION.search(clause):
+            return False
+        if DIRECTIVE_MARKER.search(clause) and not SAFE_ANALYSIS_ACTION.search(clause):
+            return False
+    analysis_skill = grounding.get("analysis_skill")
+    if not isinstance(analysis_skill, dict):
+        return True
+    limitations = set(analysis_skill.get("limitations") or [])
+    if limitations.intersection({"historical_snapshots_unavailable", "target_level_history_unavailable"}):
+        if not TREND_TERM.search(text) or not UNAVAILABLE_TREND.search(text):
+            return False
+        if UNSUPPORTED_TARGET_TREND.search(text):
+            return False
+    focus_identifiers = {
+        str(identifier).strip().casefold()
+        for identifier in analysis_skill.get("focus_identifiers") or []
+        if str(identifier).strip()
+    }
+    if focus_identifiers:
+        for identifier in _verified_exact_identifiers(grounding):
+            if identifier.casefold() in focus_identifiers:
+                continue
+            if _identifier_spans(text, identifier.casefold()):
+                return False
+    return True
 
 
 def classify_llm_error(exc: Exception) -> str:
@@ -596,7 +907,8 @@ def normalize_result(
         title = fallback.get("title") or "Local AI Analysis"
     if not isinstance(summary, str) or not summary.strip():
         raise ValueError("LLM response did not contain a summary string.")
-    summary = summary.strip()[:2000]
+    summary = NUMBERED_LIST_MARKER.sub(r"\1- ", summary.strip())
+    summary = SECTION_HEADING.sub(r"\1:", summary)[:2000]
     authoritative_grounding = dict(grounding or {})
     authoritative_grounding["deterministic_answer"] = fallback.get("answer") or ""
     authoritative_grounding["deterministic_summary"] = fallback.get("summary") or ""
@@ -605,6 +917,8 @@ def normalize_result(
         title = fallback.get("title") or "Local AI Analysis"
     if not summary_numbers_are_grounded(summary, authoritative_grounding):
         raise LlmGroundingError("LLM prose introduced an unverified number.", candidate)
+    if authoritative_grounding.get("analysis_skill") and not summary_is_specific(summary, authoritative_grounding):
+        raise LlmGroundingError("LLM prose used a raw status token or vague quantified subject.", candidate)
 
     normalized = dict(fallback)
     normalized.update({
@@ -645,6 +959,15 @@ def handle_job(
                 else llm_payload
             )
             attempts = 1
+            llm_options: dict[str, Any] = {}
+            if getattr(handler, "ENABLE_THINKING", False):
+                llm_options = {
+                    "enable_thinking": True,
+                    "thinking_budget": int(getattr(handler, "THINKING_BUDGET", 384)),
+                }
+            initial_timeout = getattr(handler, "INITIAL_TIMEOUT_SECONDS", None)
+            if initial_timeout is not None:
+                llm_options["timeout_seconds"] = max(1, int(initial_timeout))
             result = llm.structured_analysis(handler.SYSTEM_PROMPT, {
                 "job_type": job_type,
                 "scope": job.get("scope") or {},
@@ -653,7 +976,7 @@ def handle_job(
                     "title": "string",
                     "summary": "string",
                 },
-            })
+            }, **llm_options)
             first_candidate = dict(result or {})
             try:
                 normalized = normalize_result(result, deterministic, model_name, grounding_payload)
@@ -661,6 +984,10 @@ def handle_job(
                 initial_grounding_rejected = True
                 attempts = 2
                 repair_payload = build_repair_payload(job, first_candidate, grounding_payload)
+                repair_options: dict[str, Any] = {}
+                repair_timeout = getattr(handler, "REPAIR_TIMEOUT_SECONDS", None)
+                if repair_timeout is not None:
+                    repair_options["timeout_seconds"] = max(1, int(repair_timeout))
                 result = llm.structured_analysis(REPAIR_SYSTEM_PROMPT, {
                     "job_type": job_type,
                     "input_payload": repair_payload,
@@ -668,9 +995,16 @@ def handle_job(
                         "title": "string",
                         "summary": "string",
                     },
-                })
+                }, **repair_options)
                 normalized = normalize_result(result, deterministic, model_name, grounding_payload)
                 normalized["llm_repaired"] = True
+            if hasattr(handler, "enrich_summary"):
+                enriched_summary = handler.enrich_summary(normalized["summary"], llm_payload)
+                if not summary_numbers_are_grounded(enriched_summary, grounding_payload):
+                    raise LlmGroundingError("Worker metric enrichment failed grounding validation.", result)
+                if RAW_STATUS_TOKEN.search(enriched_summary):
+                    raise LlmGroundingError("Worker metric enrichment exposed a raw status token.", result)
+                normalized["summary"] = enriched_summary[:4000]
             normalized["llm_attempted"] = True
             normalized["llm_attempts"] = attempts
             return normalized, handler.PROMPT_VERSION

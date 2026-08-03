@@ -8,6 +8,7 @@ try:
     from .job_handlers import production_daily_analysis, production_machine_analysis, production_question_analysis
     from .llm_client import LocalLlmClient
     from .render_client import RenderClient
+    from .skills.production_analyst import build_skill_payload, insert_verified_metrics, select_analysis_mode
     from .worker import (
         RunOnceReport,
         build_repair_payload,
@@ -15,6 +16,7 @@ try:
         handler_for_job,
         normalize_result,
         run_once,
+        summary_is_specific,
         summary_numbers_are_grounded,
     )
 except ImportError:
@@ -24,6 +26,7 @@ except ImportError:
     from job_handlers import production_daily_analysis, production_machine_analysis, production_question_analysis
     from llm_client import LocalLlmClient
     from render_client import RenderClient
+    from skills.production_analyst import build_skill_payload, insert_verified_metrics, select_analysis_mode
     from worker import (
         RunOnceReport,
         build_repair_payload,
@@ -31,6 +34,7 @@ except ImportError:
         handler_for_job,
         normalize_result,
         run_once,
+        summary_is_specific,
         summary_numbers_are_grounded,
     )
 
@@ -218,6 +222,110 @@ class GroundingValidationTests(unittest.TestCase):
             ),
         )
 
+    def test_question_summary_rejects_raw_status_codes_and_vague_equipment_subjects(self):
+        grounding = {
+            "verified_tables": [{
+                "rows": [
+                    {"machine": "850T-1", "is_running": True},
+                    {"machine": "650T-10", "is_running": False},
+                ],
+            }],
+        }
+        self.assertFalse(summary_is_specific("850T-1은 is_running=true입니다.", grounding))
+        self.assertFalse(summary_is_specific("일부 설비는 가동 중입니다.", grounding))
+        self.assertTrue(
+            summary_is_specific(
+                "850T-1은 가동 중이고 650T-10은 기준 시점에 가동하지 않았습니다.",
+                grounding,
+            ),
+        )
+        self.assertFalse(summary_is_specific("원료 부족 때문에 가공이 지연됐습니다.", grounding))
+        self.assertFalse(summary_is_specific("금형 온도가 불안정한 상태입니다.", grounding))
+        self.assertFalse(summary_is_specific("공급사를 교체해야 합니다.", grounding))
+        self.assertFalse(summary_is_specific("작업자 교대가 늦어 사출이 지연됐습니다.", grounding))
+        self.assertFalse(summary_is_specific("금형 압력이 불안정합니다.", grounding))
+        self.assertFalse(summary_is_specific("외주업체에 즉시 연락하세요.", grounding))
+        self.assertFalse(summary_is_specific("작업자 숙련도 저하가 생산성 하락을 유발했습니다.", grounding))
+        self.assertFalse(summary_is_specific("금형 압력 이상이 관찰됩니다.", grounding))
+        self.assertFalse(summary_is_specific("작업자 배치를 바꾸세요.", grounding))
+        self.assertTrue(
+            summary_is_specific(
+                "650T-10의 비가동 사유와 생산 계획을 확인해야 합니다.",
+                grounding,
+            ),
+        )
+        self.assertTrue(
+            summary_is_specific(
+                "금형 압력 데이터가 없어 이상 여부를 확인해야 합니다.",
+                grounding,
+            ),
+        )
+
+    def test_target_trend_requires_history_limit_and_rejects_unrelated_identifiers(self):
+        grounding = {
+            "analysis_skill": {
+                "mode": "trend_assessment",
+                "focus_identifiers": ["850T-1", "PART-A", "32인치"],
+                "limitations": ["target_level_history_unavailable"],
+            },
+            "verified_tables": [{
+                "rows": [
+                    {"machine": "850T-1", "part_no": "PART-A", "model_name": "32인치"},
+                    {"machine": "650T-10", "part_no": "PART-B", "model_name": "OTHER"},
+                ],
+            }],
+        }
+        self.assertFalse(summary_is_specific("32인치 모델은 현재 지연 추이입니다.", grounding))
+        self.assertFalse(
+            summary_is_specific(
+                "32인치 모델은 대상 이력이 없어 생산 추이를 판단할 수 없습니다. "
+                "현재 진행률은 계획 대비 낮은 수준입니다.",
+                grounding,
+            ),
+        )
+        self.assertFalse(
+            summary_is_specific(
+                "32인치 모델은 대상 이력이 없어 생산 추이를 판단할 수 없습니다. "
+                "현재 진행률은 계획 대비 적절하거나 미달 상태입니다.",
+                grounding,
+            ),
+        )
+        self.assertFalse(
+            summary_is_specific(
+                "32인치 모델은 대상 이력이 없어 생산 추이를 판단할 수 없습니다. "
+                "현재 시간 대비 미달 상태입니다.",
+                grounding,
+            ),
+        )
+        self.assertFalse(
+            summary_is_specific(
+                "32인치 모델은 대상 이력이 없어 생산 추이를 판단할 수 없습니다. "
+                "850T-1의 가동 상태를 재확인해야 합니다.",
+                grounding,
+            ),
+        )
+        self.assertTrue(
+            summary_is_specific(
+                "32인치 모델은 대상 이력이 없어 생산 추이를 판단할 수 없습니다. "
+                "850T-1의 현재 상태만 확인했습니다.",
+                grounding,
+            ),
+        )
+        self.assertTrue(
+            summary_is_specific(
+                "32인치 모델은 비교 근거가 부족해 생산 추이를 단정할 수 없습니다. "
+                "850T-1의 현재 상태만 확인했습니다.",
+                grounding,
+            ),
+        )
+        self.assertFalse(
+            summary_is_specific(
+                "32인치 모델은 대상 이력이 없어 생산 추이를 판단할 수 없습니다. "
+                "650T-10도 확인해야 합니다.",
+                grounding,
+            ),
+        )
+
 
 class ProductionMachineAnalysisTests(unittest.TestCase):
     def test_deterministic_result_preserves_context_metadata(self):
@@ -248,6 +356,237 @@ class ProductionMachineAnalysisTests(unittest.TestCase):
         self.assertEqual(result["warnings"], ["sample warning"])
         self.assertEqual(result["retrieval_trace"], [{"source": "production_context"}])
         self.assertEqual(result["target_machine"]["machine"], "850T-1")
+
+
+class ProductionAnalystSkillTests(unittest.TestCase):
+    def test_selects_question_mode_without_asking_qwen_to_calculate(self):
+        self.assertEqual(select_analysis_mode("지금 생산이 잘 되고 있나?"), "status_summary")
+        self.assertEqual(select_analysis_mode("어떤 모델의 생산 추이가 정체됐어?"), "trend_assessment")
+        self.assertEqual(select_analysis_mode("무엇을 먼저 확인해야 해?"), "decision_support")
+        self.assertEqual(select_analysis_mode("가공이 왜 늦어지고 있지?"), "decision_support")
+
+    def test_builds_exact_metric_sentences_from_verified_process_facts(self):
+        skill = build_skill_payload({
+            "language": "ko",
+            "question": "지금 생산이 잘 되고 있나?",
+            "verified_facts": {
+                "injection": {
+                    "actual_qty": 5704,
+                    "planned_qty": 15561,
+                    "progress_rate": 36.7,
+                    "time_progress_rate": 41.7,
+                    "status": "on_track",
+                },
+                "machining": {
+                    "actual_qty": 820,
+                    "planned_qty": 4211,
+                    "progress_rate": 19.5,
+                    "time_progress_rate": 41.7,
+                    "status": "behind",
+                },
+            },
+            "verified_tables": [],
+            "historical_snapshots": [],
+        })
+
+        self.assertEqual(skill["mode"], "status_summary")
+        self.assertIn("사출 실적은 5,704개", skill["verified_evidence_sentences"][0])
+        self.assertIn("가공 실적은 820개", skill["verified_evidence_sentences"][1])
+        self.assertEqual(skill["verified_status_findings"]["machining"]["status"], "behind")
+
+    def test_skips_process_metric_sentence_when_time_progress_is_missing(self):
+        skill = build_skill_payload({
+            "language": "ko",
+            "question": "지금 생산이 잘 되고 있나?",
+            "verified_facts": {
+                "injection": {
+                    "actual_qty": 5704,
+                    "planned_qty": 15561,
+                    "progress_rate": 36.7,
+                    "status": "on_track",
+                },
+            },
+            "verified_tables": [],
+            "historical_snapshots": [],
+        })
+
+        self.assertEqual(skill["verified_evidence_sentences"], [])
+
+    def test_target_question_uses_matching_verified_row_and_flags_missing_target_history(self):
+        skill = build_skill_payload({
+            "language": "ko",
+            "question": "32인치 모델 생산 추이가 잘 오르고 있나?",
+            "verified_facts": {},
+            "verified_tables": [{
+                "name": "injection_part_progress",
+                "rows": [{
+                    "machine": "850T-1",
+                    "model_name": "32인치",
+                    "part_no": "PART-A",
+                    "estimated_qty": 820,
+                    "planned_qty": 4211,
+                    "progress_rate": 19.5,
+                    "status": "in_progress",
+                }],
+            }],
+            "historical_snapshots": [{"facts": {"injection": {"progress_rate": 10.0}}}],
+        })
+
+        self.assertEqual(skill["mode"], "trend_assessment")
+        self.assertEqual(skill["matched_targets"], [["32인치"]])
+        self.assertEqual(skill["focus_identifiers"], ["850T-1", "PART-A", "32인치"])
+        self.assertIn("850T-1 / PART-A / 32인치", skill["verified_evidence_sentences"][0])
+        self.assertIn("target_level_history_unavailable", skill["limitations"])
+
+    def test_target_history_must_match_the_requested_identifier(self):
+        base_payload = {
+            "language": "ko",
+            "question": "32인치 모델 생산 추이가 잘 오르고 있나?",
+            "verified_facts": {},
+            "verified_tables": [{
+                "name": "injection_part_progress",
+                "rows": [{
+                    "machine": "850T-1",
+                    "model_name": "32인치",
+                    "part_no": "PART-A",
+                    "estimated_qty": 820,
+                    "planned_qty": 4211,
+                    "progress_rate": 19.5,
+                    "status": "in_progress",
+                }],
+            }],
+        }
+
+        unrelated = build_skill_payload({
+            **base_payload,
+            "historical_snapshots": [{"rows": [{"model_name": "OTHER", "progress_rate": 20.0}]}],
+        })
+        matching = build_skill_payload({
+            **base_payload,
+            "historical_snapshots": [
+                {
+                    "completed_at": "2026-08-03T09:00:00+08:00",
+                    "rows": [{"model_name": "32인치", "progress_rate": 15.0}],
+                },
+                {
+                    "completed_at": "2026-08-03T10:00:00+08:00",
+                    "rows": [{"model_name": "32인치", "progress_rate": 20.0}],
+                },
+            ],
+        })
+        one_point = build_skill_payload({
+            **base_payload,
+            "historical_snapshots": [{
+                "completed_at": "2026-08-03T10:00:00+08:00",
+                "rows": [{"model_name": "32인치", "progress_rate": 20.0}],
+            }],
+        })
+
+        self.assertIn("target_level_history_unavailable", unrelated["limitations"])
+        self.assertIn("target_level_history_unavailable", one_point["limitations"])
+        self.assertNotIn("target_level_history_unavailable", matching["limitations"])
+
+    def test_machine_number_alias_matches_canonical_equipment_identifier(self):
+        skill = build_skill_payload({
+            "language": "ko",
+            "question": "1호기 지금 생산 중인가?",
+            "verified_facts": {},
+            "verified_tables": [{
+                "name": "injection_machine_progress",
+                "rows": [{
+                    "machine": "850T-1",
+                    "actual_qty": 928,
+                    "planned_qty": 1800,
+                    "progress_rate": 51.6,
+                    "is_running": True,
+                }],
+            }],
+            "historical_snapshots": [],
+        })
+
+        self.assertEqual(skill["matched_targets"], [["850T-1"]])
+        self.assertEqual(skill["focus_identifiers"], ["850T-1"])
+        self.assertIn("850T-1 실적은", skill["verified_evidence_sentences"][0])
+
+    def test_follow_up_reference_uses_latest_user_target_and_mode(self):
+        skill = build_skill_payload({
+            "language": "ko",
+            "question": "그 모델은?",
+            "conversation_history": [
+                {"role": "user", "content": "32인치 모델 생산 추이가 잘 오르고 있나?"},
+                {"role": "assistant", "content": "대상 이력이 필요합니다."},
+            ],
+            "verified_facts": {},
+            "verified_tables": [{
+                "name": "injection_part_progress",
+                "rows": [
+                    {
+                        "machine": "850T-1",
+                        "part_no": "PART-A",
+                        "model_name": "32인치",
+                        "estimated_qty": 820,
+                        "planned_qty": 4211,
+                        "progress_rate": 19.5,
+                        "status": "in_progress",
+                    },
+                    {
+                        "machine": "650T-10",
+                        "part_no": "PART-B",
+                        "model_name": "OTHER",
+                        "estimated_qty": 100,
+                        "planned_qty": 500,
+                        "progress_rate": 20.0,
+                        "status": "pending",
+                    },
+                ],
+            }],
+            "historical_snapshots": [],
+        })
+
+        self.assertTrue(skill["resolved_reference_from_history"])
+        self.assertEqual(skill["mode"], "direct_answer")
+        self.assertEqual(skill["matched_targets"], [["32인치"]])
+        self.assertEqual(skill["focus_identifiers"], ["850T-1", "PART-A", "32인치"])
+
+    def test_machining_reconciliation_status_is_translated_in_metric_sentence(self):
+        skill = build_skill_payload({
+            "language": "ko",
+            "question": "D LINE의 PART-D 상태는?",
+            "verified_facts": {},
+            "verified_tables": [{
+                "name": "machining_part_progress",
+                "rows": [{
+                    "equipment_label": "D LINE",
+                    "part_no": "PART-D",
+                    "actual_qty": 100,
+                    "planned_qty": 1047,
+                    "progress_rate": 9.6,
+                    "status": "manual_mismatch",
+                }],
+            }],
+            "historical_snapshots": [],
+        })
+
+        sentence = skill["verified_evidence_sentences"][0]
+        self.assertIn("수기 실적 불일치 확인 필요", sentence)
+        self.assertNotIn("manual_mismatch", sentence)
+
+    def test_metric_insertion_removes_qwen_copy_before_adding_verified_section(self):
+        sentence = "사출 실적은 5,704개이고 계획은 15,561개이며 완료율은 36.7%입니다."
+        summary = (
+            "결론: 사출 현황을 확인했습니다.\n\n"
+            f"판단 근거:\n- {sentence}\n\n"
+            "확인할 항목:\n- 다음 측정값을 비교하세요."
+        )
+
+        enriched = insert_verified_metrics(
+            summary,
+            {"verified_evidence_sentences": [sentence]},
+            "ko",
+        )
+
+        self.assertEqual(enriched.count(sentence), 1)
+        self.assertIn(f"핵심 수치:\n{sentence}", enriched)
 
 
 class ProductionQuestionAnalysisTests(unittest.TestCase):
@@ -288,6 +627,86 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
 
         self.assertEqual(payload["verified_answer"], "1호기 종료 예상 형합수는 2,900회입니다.")
         self.assertEqual(payload["verified_facts"]["projected_total_shots"], 2900)
+        self.assertEqual(payload["analysis_skill"]["name"], "production-analyst")
+
+    def test_exact_skill_metric_sentence_is_allowed_but_numeric_rewrite_is_rejected(self):
+        status_job = {
+            "input_payload": {
+                "source": "production_ai_question",
+                "language": "ko",
+                "question": "지금 생산이 잘 되고 있나?",
+                "verified_context": {
+                    "facts": {
+                        "injection": {
+                            "actual_qty": 5704,
+                            "planned_qty": 15561,
+                            "progress_rate": 36.7,
+                            "time_progress_rate": 41.7,
+                            "status": "on_track",
+                        },
+                    },
+                    "tables": [],
+                },
+            },
+        }
+        payload = production_question_analysis.build_llm_payload(status_job)
+        grounding = production_question_analysis.build_grounding_payload(status_job)
+        exact_sentence = payload["analysis_skill"]["verified_evidence_sentences"][0]
+
+        self.assertTrue(summary_numbers_are_grounded(exact_sentence, grounding))
+        self.assertFalse(
+            summary_numbers_are_grounded(
+                exact_sentence.replace("5,704개", "5,705개"),
+                grounding,
+            ),
+        )
+
+    def test_worker_inserts_verified_metrics_after_qwen_qualitative_answer(self):
+        status_job = {
+            "job_type": "production_daily_analysis",
+            "scope": {"trigger": "question", "language": "ko"},
+            "input_payload": {
+                "source": "production_ai_question",
+                "language": "ko",
+                "question": "지금 생산이 잘 되고 있나?",
+                "deterministic": {"answer": "검증 데이터 설명"},
+                "verified_context": {
+                    "facts": {
+                        "injection": {
+                            "actual_qty": 5704,
+                            "planned_qty": 15561,
+                            "progress_rate": 36.7,
+                            "time_progress_rate": 41.7,
+                            "status": "on_track",
+                        },
+                    },
+                    "tables": [],
+                },
+            },
+        }
+
+        class FakeLlm:
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
+                return {
+                    "title": "생산 판단",
+                    "summary": (
+                        "결론: 사출은 시간 기준과 유사하게 진행 중입니다.\n\n"
+                        "판단 근거:\n- 검증된 공정 상태가 안정 범위입니다.\n\n"
+                        "확인할 항목:\n- 현재 추세 유지 여부를 확인하세요."
+                    ),
+                }
+
+        result, _ = handle_job(
+            status_job,
+            use_llm=True,
+            llm=FakeLlm(),
+            model_name="qwen-test",
+            fallback_to_deterministic=False,
+        )
+
+        self.assertIn("핵심 수치:\n사출 실적은 5,704개", result["summary"])
+        self.assertLess(result["summary"].index("핵심 수치:"), result["summary"].index("판단 근거:"))
+        self.assertEqual(result["llm_attempts"], 1)
 
     def test_question_grounding_excludes_user_authored_numbers(self):
         self.job["input_payload"]["question"] = "999호기는 어때?"
@@ -302,9 +721,120 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
         self.assertNotIn("999", str(grounding))
         self.assertNotIn("888", str(grounding))
 
+    def test_question_target_row_is_kept_before_table_prompt_limit(self):
+        rows = [
+            {
+                "machine": f"MACHINE-{index}",
+                "model_name": f"MODEL-{index}",
+                "planned_qty": 100,
+                "estimated_qty": 10,
+                "status": "pending",
+            }
+            for index in range(60)
+        ]
+        rows.append({
+            "machine": "850T-1",
+            "model_name": "TARGET-MODEL",
+            "planned_qty": 500,
+            "estimated_qty": 250,
+            "status": "in_progress",
+        })
+        self.job["input_payload"]["question"] = "TARGET-MODEL 지금 생산 중인가?"
+        self.job["input_payload"]["verified_context"] = {
+            "tables": [{"name": "injection_part_progress", "rows": rows}],
+        }
+
+        payload = production_question_analysis.build_llm_payload(self.job)
+
+        self.assertEqual(len(payload["verified_tables"][0]["rows"]), 60)
+        self.assertEqual(payload["verified_tables"][0]["rows"][0]["model_name"], "TARGET-MODEL")
+        self.assertEqual(payload["analysis_skill"]["matched_targets"], [["TARGET-MODEL"]])
+
+    def test_repair_payload_excludes_rows_outside_question_focus(self):
+        self.job["input_payload"]["question"] = "32인치 모델 생산 추이가 잘 오르고 있나?"
+        self.job["input_payload"]["verified_context"] = {
+            "tables": [{
+                "name": "injection_part_progress",
+                "rows": [
+                    {
+                        "machine": "850T-1",
+                        "part_no": "PART-A",
+                        "model_name": "32인치",
+                        "status": "in_progress",
+                    },
+                    {
+                        "machine": "650T-10",
+                        "part_no": "PART-B",
+                        "model_name": "OTHER",
+                        "status": "pending",
+                    },
+                ],
+            }],
+            "historical_snapshots": [],
+        }
+        grounding = production_question_analysis.build_grounding_payload(self.job)
+
+        repair_payload = build_repair_payload(
+            self.job,
+            {
+                "title": "32인치 생산 추이",
+                "summary": "850T-1은 계획 대비 적절하거나 미달이고 650T-10도 확인했습니다.",
+            },
+            grounding,
+        )
+
+        serialized = str(repair_payload)
+        self.assertIn("850T-1", serialized)
+        self.assertIn("PART-A", serialized)
+        self.assertNotIn("650T-10", serialized)
+        self.assertNotIn("PART-B", serialized)
+        self.assertNotIn("적절하거나 미달", serialized)
+        self.assertEqual(repair_payload["qualitative_draft"]["summary"], "")
+
+    def test_numbered_reasoning_bullets_are_normalized_before_grounding(self):
+        grounding = {
+            "analysis_skill": {
+                "mode": "trend_assessment",
+                "focus_identifiers": ["850T-1", "PART-A", "32인치"],
+                "limitations": ["target_level_history_unavailable"],
+            },
+            "verified_tables": [{
+                "name": "injection_part_progress",
+                "rows": [{
+                    "machine": "850T-1",
+                    "part_no": "PART-A",
+                    "model_name": "32인치",
+                    "status": "in_progress",
+                    "estimated_qty": 820,
+                    "planned_qty": 4211,
+                    "progress_rate": 19.5,
+                }],
+            }],
+        }
+
+        normalized = normalize_result(
+            {
+                "title": "32인치 생산 현황",
+                "summary": (
+                    "결론\n32인치 생산 추이는 판단할 수 없습니다.\n\n"
+                    "판단 근거\n1. 850T-1에서 PART-A 생산이 진행 중입니다.\n"
+                    "2. 대상별 과거 데이터가 없습니다.\n\n"
+                    "확인할 항목\n- 대상별 시간 스냅샷을 수집해야 합니다."
+                ),
+            },
+            {"title": "생산 현황", "answer": "검증된 답변"},
+            "qwen-test",
+            grounding,
+        )
+
+        self.assertIn("결론:", normalized["summary"])
+        self.assertIn("- 850T-1", normalized["summary"])
+        self.assertIn("- 대상별 과거", normalized["summary"])
+        self.assertNotIn("1. ", normalized["summary"])
+
     def test_question_qwen_rewrites_only_prose_and_preserves_verified_result(self):
         class FakeLlm:
-            def structured_analysis(self, _system_prompt, _payload):
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
                 return {
                     "title": "검증된 생산 추세 설명",
                     "summary": "1호기 종료 예상 형합수는 2,900회입니다.",
@@ -323,7 +853,7 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
         self.assertEqual(result["summary"], "1호기 종료 예상 형합수는 2,900회입니다.")
         self.assertEqual(result["source"], "local_llm_rewrite")
         self.assertEqual(result["llm_attempts"], 1)
-        self.assertEqual(prompt_version, "production-question-v3")
+        self.assertEqual(prompt_version, "production-question-v4")
 
     def test_grounding_rejection_is_repaired_with_qualitative_payload(self):
         class SequencedLlm:
@@ -340,8 +870,8 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
                     },
                 ])
 
-            def structured_analysis(self, system_prompt, payload):
-                self.calls.append((system_prompt, payload))
+            def structured_analysis(self, system_prompt, payload, **kwargs):
+                self.calls.append((system_prompt, payload, kwargs))
                 return next(self.responses)
 
         llm = SequencedLlm()
@@ -354,6 +884,11 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
         )
 
         self.assertEqual(len(llm.calls), 2)
+        self.assertEqual(
+            llm.calls[0][2],
+            {"enable_thinking": True, "thinking_budget": 384, "timeout_seconds": 100},
+        )
+        self.assertEqual(llm.calls[1][2], {"timeout_seconds": 45})
         self.assertNotIn("60", str(llm.calls[1][1]))
         self.assertNotIn("2,900", str(llm.calls[1][1]))
         self.assertEqual(result["source"], "local_llm_rewrite")
@@ -401,7 +936,7 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
         }
 
         class FakeLlm:
-            def structured_analysis(self, _system_prompt, _payload):
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
                 return {
                     "title": "32인치 모델 생산 상태",
                     "summary": "32인치 모델은 현재 생산 진행 중입니다.",
@@ -424,7 +959,7 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
             def __init__(self):
                 self.calls = 0
 
-            def structured_analysis(self, _system_prompt, _payload):
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
                 self.calls += 1
                 return {
                     "title": "생산 추세",
@@ -457,7 +992,7 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
             def __init__(self):
                 self.calls = 0
 
-            def structured_analysis(self, _system_prompt, _payload):
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
                 self.calls += 1
                 if self.calls == 1:
                     return {
@@ -522,6 +1057,58 @@ class LocalLlmReadinessTests(unittest.TestCase):
                 return_value=self.Response(payload),
             ):
                 self.assertFalse(self.client.is_ready())
+
+    def test_question_request_can_enable_bounded_internal_thinking(self):
+        response = self.Response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {
+                    "content": '{"title":"생산 분석","summary":"검증된 답변"}',
+                    "reasoning_content": "internal reasoning must not be returned",
+                },
+            }],
+        })
+        with patch.object(llm_client_module.requests, "post", return_value=response) as post:
+            result = self.client.structured_analysis(
+                "system",
+                {"question": "status"},
+                enable_thinking=True,
+                thinking_budget=384,
+                timeout_seconds=100,
+            )
+
+        request_payload = post.call_args.kwargs["json"]
+        self.assertTrue(request_payload["enable_thinking"])
+        self.assertEqual(request_payload["thinking_budget"], 384)
+        self.assertEqual(post.call_args.kwargs["timeout"], 100)
+        self.assertEqual(result["summary"], "검증된 답변")
+        self.assertNotIn("reasoning", str(result))
+
+    def test_reasoning_content_is_never_used_as_the_final_answer(self):
+        response = self.Response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {
+                    "content": None,
+                    "reasoning_content": '{"title":"hidden","summary":"hidden"}',
+                    "reasoning": '{"title":"hidden","summary":"hidden"}',
+                },
+            }],
+        })
+        with patch.object(llm_client_module.requests, "post", return_value=response):
+            with self.assertRaisesRegex(ValueError, "final answer content"):
+                self.client.structured_analysis("system", {"question": "status"})
+
+    def test_truncated_thinking_response_is_rejected(self):
+        response = self.Response({
+            "choices": [{
+                "finish_reason": "length",
+                "message": {"content": '{"title":"partial"}'},
+            }],
+        })
+        with patch.object(llm_client_module.requests, "post", return_value=response):
+            with self.assertRaisesRegex(ValueError, "before the final answer"):
+                self.client.structured_analysis("system", {"question": "status"})
 
 
 class RenderClientCompatibilityTests(unittest.TestCase):
