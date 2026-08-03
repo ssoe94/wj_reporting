@@ -344,7 +344,7 @@ const pageCopy = {
     workerJobResult: "자동 분석 인사이트",
     workerJobIssue: "확인 이슈",
     workerJobNoIssue: "별도 이슈가 없습니다.",
-    workerJobFallback: "Qwen 분석을 사용할 수 없어 계산 기반 분석을 표시합니다.",
+    workerJobFallback: "Qwen 설명이 데이터 검증을 통과하지 못해 계산 기반 분석을 표시합니다.",
     askingAi: "질문 전송 중",
     aiQuestionPlaceholder: "예: 오늘 사출 생산 진도는? / 최근 60분 C/T가 가장 긴 설비는? / 지금 추이대로 1, 9호기 예상 형합수는?",
     aiQuestionScope: "검증된 생산 데이터 · 시간별 분석 기록 기반",
@@ -367,7 +367,7 @@ const pageCopy = {
     aiQwenQueued: "대기 중",
     aiQwenRunning: "분석 중",
     aiQwenReady: "설명 완료",
-    aiQwenFallbackReady: "계산 폴백 완료",
+    aiQwenFallbackReady: "초안 검토 필요",
     aiQwenDelayed: "Worker 응답 지연",
     aiQwenFailed: "설명 실패",
     aiQwenPendingHint: "검증된 계산 결과는 먼저 표시했습니다. 로컬 Qwen이 같은 사실을 읽기 쉽게 설명하고 있습니다.",
@@ -376,7 +376,10 @@ const pageCopy = {
     aiQwenQueuedDelayedHint: "로컬 Worker 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
     aiQwenFailedHint: "로컬 Qwen 설명을 가져오지 못했습니다. 위 계산 결과는 그대로 유효합니다.",
     aiQwenQueuedFailedHint: "로컬 Qwen 답변을 가져오지 못했습니다. 잠시 후 다시 질문해 주세요.",
-    aiQwenFallbackNotice: "Qwen을 사용할 수 없어 검증된 계산 결과를 그대로 표시합니다.",
+    aiQwenFallbackNotice: "Qwen 응답 처리 중 오류가 발생해 검증된 계산 결과를 표시합니다.",
+    aiQwenGroundingNotice: "Qwen 초안이 데이터 검증을 통과하지 못했습니다. 아래 내용은 품질 확인용이며 수치나 판단을 공식 결과로 사용하지 마세요.",
+    aiQwenReviewTitle: "로컬 Qwen 초안 · 검토용",
+    aiQwenRepairedNotice: "첫 Qwen 응답을 안전한 정성 설명으로 자동 재작성했습니다.",
     aiSubmit: "질문하기",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "실시간 프로그레스",
@@ -567,7 +570,7 @@ const pageCopy = {
     workerJobResult: "自动分析洞察",
     workerJobIssue: "确认事项",
     workerJobNoIssue: "暂无特别事项。",
-    workerJobFallback: "Qwen 分析不可用，当前显示基于计算的分析。",
+    workerJobFallback: "Qwen 说明未通过数据验证，当前显示基于计算的分析。",
     askingAi: "发送中",
     aiQuestionPlaceholder: "例：今天注塑生产进度？/ 最近60分钟 C/T 最长的设备？/ 按当前趋势，1、9号机结束时预计合模数？",
     aiQuestionScope: "基于已验证生产数据与每小时分析记录",
@@ -590,7 +593,7 @@ const pageCopy = {
     aiQwenQueued: "等待中",
     aiQwenRunning: "分析中",
     aiQwenReady: "说明完成",
-    aiQwenFallbackReady: "计算回退完成",
+    aiQwenFallbackReady: "需要审核草稿",
     aiQwenDelayed: "Worker 响应延迟",
     aiQwenFailed: "说明失败",
     aiQwenPendingHint: "已先显示经过验证的计算结果。本地 Qwen 正在将相同事实整理为易读说明。",
@@ -599,7 +602,10 @@ const pageCopy = {
     aiQwenQueuedDelayedHint: "本地 Worker 响应延迟。请稍后重试。",
     aiQwenFailedHint: "无法获取本地 Qwen 说明。上方计算结果仍然有效。",
     aiQwenQueuedFailedHint: "无法获取本地 Qwen 回答。请稍后重新提问。",
-    aiQwenFallbackNotice: "Qwen 不可用，当前保留经过验证的计算结果。",
+    aiQwenFallbackNotice: "处理 Qwen 响应时发生错误，当前显示经过验证的计算结果。",
+    aiQwenGroundingNotice: "Qwen 草稿未通过数据验证。以下内容仅用于质量审核，请勿将其中数值或判断作为正式结果。",
+    aiQwenReviewTitle: "本地 Qwen 草稿 · 仅供审核",
+    aiQwenRepairedNotice: "首个 Qwen 响应已自动改写为安全的定性说明。",
     aiSubmit: "提问",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "实时进度",
@@ -3102,6 +3108,9 @@ export function ProductionDashboardPage() {
   const aiQuestionJobStatus = aiQuestionJob?.status ?? (aiQuestionJobId !== null ? "pending" : null);
   const aiQuestionJobResult = aiQuestionJob?.result_payload ?? {};
   const aiQuestionResultSummary = getStringField(aiQuestionJobResult, "summary");
+  const aiQuestionFallbackCode = getStringField(aiQuestionJobResult, "llm_fallback_code");
+  const aiQuestionInitialGroundingRejected = aiQuestionJobResult.llm_initial_grounding_rejected === true;
+  const aiQuestionWasRepaired = aiQuestionJobResult.llm_repaired === true;
   const aiQuestionExplanation = aiQuestionResultSummary;
   const aiQuestionJobSource = getStringField(aiQuestionJobResult, "source");
   const aiQuestionJobUsedFallback = aiQuestionJobResult.llm_fallback === true
@@ -3267,26 +3276,63 @@ export function ProductionDashboardPage() {
     const activeRequestId = aiActiveRequest.requestId;
     if (aiQuestionJob.status === "completed") {
       const summary = getStringField(aiQuestionJob.result_payload ?? {}, "summary");
-      appendAiChatMessage({
-        id: `${activeRequestId}-qwen`,
-        role: "assistant",
-        content: summary || (aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFailedHint),
-        label: aiQuestionIsQueuedOnly ? copy.aiQwenAnswerTitle : copy.aiQwenTitle,
-        tone: aiQuestionJobUsedFallback || !summary ? "warning" : "default",
-        meta: [
-          `${copy.aiSource}: ${aiQuestionJobUsedQwen
-            ? copy.workerModeQwen
-            : aiQuestionJobUsedFallback
-              ? copy.workerModeFallback
-              : copy.aiSourceVerified}`,
-          `${copy.workerModel}: ${formatAiModelName(aiQuestionJob.model_name || getStringField(aiQuestionJobResult, "model_name"))}`,
-          `${copy.workerAnalysisMode}: ${aiQuestionJobUsedFallback ? copy.workerModeFallback : aiQuestionJobUsedQwen ? copy.workerModeQwen : copy.workerModeUnknown}`,
-        ],
-        notice: aiQuestionJobUsedFallback
-          ? aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFallbackNotice
-          : undefined,
-        includeInHistory: Boolean(summary) && !aiQuestionJobUsedFallback,
-      });
+      const reviewSummary = getStringField(aiQuestionJob.result_payload ?? {}, "llm_review_summary");
+      const showReviewDraft = aiQuestionJobUsedFallback && Boolean(reviewSummary);
+      const modelLabel = formatAiModelName(
+        aiQuestionJob.model_name || getStringField(aiQuestionJobResult, "model_name"),
+      );
+      if (showReviewDraft) {
+        if (aiQuestionIsQueuedOnly) {
+          appendAiChatMessage({
+            id: `${activeRequestId}-verified-fallback`,
+            role: "assistant",
+            content: summary || copy.aiQwenQueuedFailedHint,
+            label: copy.aiAnswerTitle,
+            tone: "warning",
+            meta: [`${copy.aiSource}: ${copy.aiSourceFallback}`],
+            notice: copy.aiQwenFallbackNotice,
+            includeInHistory: false,
+          });
+        }
+        appendAiChatMessage({
+          id: `${activeRequestId}-qwen-review`,
+          role: "assistant",
+          content: reviewSummary,
+          label: copy.aiQwenReviewTitle,
+          tone: "warning",
+          meta: [
+            `${copy.aiSource}: ${copy.workerModeFallback}`,
+            `${copy.workerModel}: ${modelLabel}`,
+          ],
+          notice: aiQuestionFallbackCode === "grounding_rejected" || aiQuestionInitialGroundingRejected
+            ? copy.aiQwenGroundingNotice
+            : copy.aiQwenFallbackNotice,
+          includeInHistory: false,
+        });
+      } else {
+        appendAiChatMessage({
+          id: `${activeRequestId}-qwen`,
+          role: "assistant",
+          content: summary || (aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFailedHint),
+          label: aiQuestionIsQueuedOnly ? copy.aiQwenAnswerTitle : copy.aiQwenTitle,
+          tone: aiQuestionJobUsedFallback || !summary ? "warning" : "default",
+          meta: [
+            `${copy.aiSource}: ${aiQuestionJobUsedQwen
+              ? copy.workerModeQwen
+              : aiQuestionJobUsedFallback
+                ? copy.workerModeFallback
+                : copy.aiSourceVerified}`,
+            `${copy.workerModel}: ${modelLabel}`,
+            `${copy.workerAnalysisMode}: ${aiQuestionJobUsedFallback ? copy.workerModeFallback : aiQuestionJobUsedQwen ? copy.workerModeQwen : copy.workerModeUnknown}`,
+          ],
+          notice: aiQuestionJobUsedFallback
+            ? copy.aiQwenFallbackNotice
+            : aiQuestionWasRepaired
+              ? copy.aiQwenRepairedNotice
+              : undefined,
+          includeInHistory: Boolean(summary) && !aiQuestionJobUsedFallback,
+        });
+      }
       setAiQuestionJobId(null);
       setAiActiveRequest((current) => current?.requestId === activeRequestId ? null : current);
       setAiQuestionPollingTimedOut(false);
@@ -3305,7 +3351,7 @@ export function ProductionDashboardPage() {
       setAiActiveRequest((current) => current?.requestId === activeRequestId ? null : current);
       setAiQuestionPollingTimedOut(false);
     }
-  }, [aiActiveRequest, aiQuestionIsQueuedOnly, aiQuestionJob, aiQuestionJobResult, aiQuestionJobUsedFallback, aiQuestionJobUsedQwen, businessDate, copy, language]);
+  }, [aiActiveRequest, aiQuestionFallbackCode, aiQuestionInitialGroundingRejected, aiQuestionIsQueuedOnly, aiQuestionJob, aiQuestionJobResult, aiQuestionJobUsedFallback, aiQuestionJobUsedQwen, aiQuestionWasRepaired, businessDate, copy, language]);
 
   useEffect(() => {
     const cleanupListeners: Array<() => void> = [];

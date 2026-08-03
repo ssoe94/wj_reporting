@@ -28,6 +28,24 @@ HANDLERS = {
     "production_machine_analysis": production_machine_analysis,
 }
 
+REPAIR_SYSTEM_PROMPT = """You repair a manufacturing AI explanation that failed numeric grounding.
+Use only the supplied qualitative draft and allowed exact identifiers. Do not add facts.
+Remove every measurement value and quantity, including counts, rates, percentages, dates, times,
+durations, thresholds, plan/actual values, output values, and numeric model sizes.
+Digits may appear only inside a string copied exactly from allowed_exact_identifiers.
+Replace numeric references with qualitative phrases such as current trend, target equipment,
+the relevant specification, or the verified data range.
+Return valid JSON only with string keys title and summary. Do not use markdown."""
+
+
+class LlmGroundingError(ValueError):
+    """Raised when otherwise structured LLM prose fails deterministic grounding."""
+
+    def __init__(self, message: str, candidate: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.candidate = dict(candidate or {})
+
+
 @dataclass(frozen=True)
 class GroundingRecord:
     identifiers: tuple[str, ...]
@@ -93,6 +111,19 @@ SPELLED_QUANTITY = re.compile(
     rf"|{CHINESE_SPELLED_NUMBER}{CHINESE_APPROXIMATION}\s*{CHINESE_QUANTITY_UNIT}"
     rf"|(?:百分之|千分之)\s*{CHINESE_SPELLED_NUMBER}"
     r"|一半|半数|半數)"
+)
+NUMERIC_DURATION = re.compile(
+    rf"{NUMBER_TOKEN.pattern}\s*(?:시간|분|초|小時|小时|分鐘|分钟|秒)"
+)
+NUMERIC_SPECIFICATION = re.compile(
+    rf"{NUMBER_TOKEN.pattern}\s*(?:인치|inch|英寸)",
+    re.IGNORECASE,
+)
+NUMERIC_MACHINE = re.compile(
+    rf"{NUMBER_TOKEN.pattern}\s*(?:호기|号机|號機)"
+)
+NUMERIC_MEASUREMENT = re.compile(
+    rf"{NUMBER_TOKEN.pattern}\s*(?:개|회|건|대|퍼센트|프로|%|個|个|件|次|台|百分比)"
 )
 
 PROCESS_ALIASES = {
@@ -468,6 +499,89 @@ def summary_numbers_are_grounded(summary: str, grounding: dict[str, Any]) -> boo
     return True
 
 
+def _replace_unprotected_matches(
+    value: str,
+    pattern: re.Pattern[str],
+    replacement: str,
+    protected_spans: list[tuple[int, int]],
+) -> str:
+    matches = [
+        match
+        for match in pattern.finditer(value)
+        if not any(match.start() >= start and match.end() <= end for start, end in protected_spans)
+    ]
+    for match in reversed(matches):
+        value = f"{value[:match.start()]}{replacement}{value[match.end():]}"
+    return value
+
+
+def _qualitative_text(value: Any, allowed_identifiers: set[str], language: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    replacements = [
+        (NUMERIC_DURATION, "측정 구간" if language == "ko" else "测量区间"),
+        (NUMERIC_SPECIFICATION, "해당 규격" if language == "ko" else "相关规格"),
+        (NUMERIC_MACHINE, "대상 설비" if language == "ko" else "目标设备"),
+        (NUMERIC_MEASUREMENT, "검증 수치" if language == "ko" else "已验证数值"),
+        (DATE_OR_TIME, "기준 시점" if language == "ko" else "基准时间"),
+        (NUMBER_TOKEN, "검증 수치" if language == "ko" else "已验证数值"),
+    ]
+    for pattern, replacement in replacements:
+        protected_spans = sorted(
+            span
+            for identifier in allowed_identifiers
+            for span in _identifier_spans(text, identifier)
+        )
+        text = _replace_unprotected_matches(text, pattern, replacement, protected_spans)
+    text = SPELLED_QUANTITY.sub("관련 수량" if language == "ko" else "相关数量", text)
+    return " ".join(text.split())[:2000]
+
+
+def build_repair_payload(
+    job: dict[str, Any],
+    candidate: dict[str, Any],
+    grounding: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a qualitative-only retry payload without authoritative measurements."""
+    language = "zh" if (job.get("input_payload") or {}).get("language") == "zh" else "ko"
+    records = _grounding_records(grounding)
+    candidate_text = " ".join([
+        str(candidate.get("title") or ""),
+        str(candidate.get("summary") or ""),
+    ])
+    allowed_identifiers = _matched_identifiers(candidate_text, records)
+    question = (job.get("input_payload") or {}).get("question") or ""
+    return {
+        "language": language,
+        "question_topic": _qualitative_text(question, allowed_identifiers, language),
+        "qualitative_draft": {
+            "title": _qualitative_text(candidate.get("title"), allowed_identifiers, language),
+            "summary": _qualitative_text(candidate.get("summary"), allowed_identifiers, language),
+        },
+        "allowed_exact_identifiers": sorted(allowed_identifiers)[:80],
+        "instruction": (
+            "한국어 JSON으로 수치 없는 자연스러운 정성 설명만 반환하세요. 검증 수치 표식은 문맥에 맞는 정성 표현으로 바꾸세요."
+            if language == "ko"
+            else "仅返回自然的中文 JSON 定性说明；将数值占位改为符合语境的定性表达。"
+        ),
+    }
+
+
+def classify_llm_error(exc: Exception) -> str:
+    if isinstance(exc, LlmGroundingError):
+        return "grounding_rejected"
+    name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    if "timeout" in name or "timed out" in message or "timeout" in message:
+        return "timeout"
+    if "http" in name or "connection" in name or "connection" in message:
+        return "model_unavailable"
+    if isinstance(exc, (ValueError, KeyError, TypeError)):
+        return "invalid_response"
+    return "model_error"
+
+
 def normalize_result(
     result: dict[str, Any],
     fallback: dict[str, Any],
@@ -486,11 +600,11 @@ def normalize_result(
     authoritative_grounding = dict(grounding or {})
     authoritative_grounding["deterministic_answer"] = fallback.get("answer") or ""
     authoritative_grounding["deterministic_summary"] = fallback.get("summary") or ""
-    if (
-        not summary_numbers_are_grounded(title, authoritative_grounding)
-        or not summary_numbers_are_grounded(summary, authoritative_grounding)
-    ):
-        raise ValueError("LLM prose introduced an unverified number.")
+    title_was_replaced = not summary_numbers_are_grounded(title, authoritative_grounding)
+    if title_was_replaced:
+        title = fallback.get("title") or "Local AI Analysis"
+    if not summary_numbers_are_grounded(summary, authoritative_grounding):
+        raise LlmGroundingError("LLM prose introduced an unverified number.", candidate)
 
     normalized = dict(fallback)
     normalized.update({
@@ -500,6 +614,8 @@ def normalize_result(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source": "local_llm_rewrite",
     })
+    if title_was_replaced:
+        normalized["llm_title_fallback"] = True
     return normalized
 
 
@@ -517,8 +633,18 @@ def handle_job(
 
     deterministic = handler.build_dummy_result(job, model_name="deterministic-local-worker")
     if use_llm and llm:
+        result: dict[str, Any] = {}
+        first_candidate: dict[str, Any] = {}
+        attempts = 0
+        initial_grounding_rejected = False
         try:
             llm_payload = handler.build_llm_payload(job) if hasattr(handler, "build_llm_payload") else (job.get("input_payload") or {})
+            grounding_payload = (
+                handler.build_grounding_payload(job)
+                if hasattr(handler, "build_grounding_payload")
+                else llm_payload
+            )
+            attempts = 1
             result = llm.structured_analysis(handler.SYSTEM_PROMPT, {
                 "job_type": job_type,
                 "scope": job.get("scope") or {},
@@ -528,19 +654,46 @@ def handle_job(
                     "summary": "string",
                 },
             })
-            grounding_payload = (
-                handler.build_grounding_payload(job)
-                if hasattr(handler, "build_grounding_payload")
-                else llm_payload
-            )
-            return normalize_result(result, deterministic, model_name, grounding_payload), handler.PROMPT_VERSION
+            first_candidate = dict(result or {})
+            try:
+                normalized = normalize_result(result, deterministic, model_name, grounding_payload)
+            except LlmGroundingError:
+                initial_grounding_rejected = True
+                attempts = 2
+                repair_payload = build_repair_payload(job, first_candidate, grounding_payload)
+                result = llm.structured_analysis(REPAIR_SYSTEM_PROMPT, {
+                    "job_type": job_type,
+                    "input_payload": repair_payload,
+                    "required_output_schema": {
+                        "title": "string",
+                        "summary": "string",
+                    },
+                })
+                normalized = normalize_result(result, deterministic, model_name, grounding_payload)
+                normalized["llm_repaired"] = True
+            normalized["llm_attempted"] = True
+            normalized["llm_attempts"] = attempts
+            return normalized, handler.PROMPT_VERSION
         except Exception as exc:
             if not fallback_to_deterministic:
                 raise
+            fallback_code = classify_llm_error(exc)
             deterministic["llm_fallback"] = True
+            deterministic["llm_attempted"] = True
+            deterministic["llm_attempts"] = attempts
+            deterministic["llm_fallback_code"] = fallback_code
+            if initial_grounding_rejected:
+                deterministic["llm_initial_grounding_rejected"] = True
             deterministic["llm_error"] = str(exc)[:500]
-            deterministic["model_name"] = "deterministic-local-worker"
-            deterministic["source"] = "deterministic_fallback"
+            deterministic["model_name"] = model_name
+            deterministic["source"] = "local_llm_guarded_fallback"
+            review_candidate = first_candidate or (result if isinstance(result, dict) else {})
+            review_title = review_candidate.get("title")
+            review_summary = review_candidate.get("summary")
+            if isinstance(review_title, str) and review_title.strip():
+                deterministic["llm_review_title"] = review_title.strip()[:200]
+            if isinstance(review_summary, str) and review_summary.strip():
+                deterministic["llm_review_summary"] = review_summary.strip()[:2000]
             return deterministic, handler.PROMPT_VERSION
 
     deterministic["source"] = "deterministic"
@@ -580,7 +733,10 @@ def run_once(
             client.start_job(job_id)
             result, prompt_version = handle_job(job, use_llm, llm, model_name, fallback_to_deterministic)
             if result.get("llm_fallback") and result.get("llm_error"):
-                report.add(f"ai job {job_id} LLM fallback: {result['llm_error']}")
+                fallback_code = result.get("llm_fallback_code") or "model_error"
+                fallback_message = f"ai job {job_id} LLM fallback [{fallback_code}]: {result['llm_error']}"
+                report.add(fallback_message)
+                print(fallback_message, file=sys.stderr)
             client.complete_job(
                 job_id,
                 result_payload=result,
