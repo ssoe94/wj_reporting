@@ -72,6 +72,9 @@ jobs:
         working-directory: backend
         run: python manage.py test --no-input
 
+      - name: Run local AI worker tests
+        run: python -m unittest local_worker.test_worker
+
   deploy-main:
     name: Deploy production from main
     needs: test
@@ -105,6 +108,22 @@ jobs:
 
       - name: Wait for backend health
         run: bash scripts/wait-health.sh https://wj-reporting-backend.onrender.com/api/health/ 300
+
+      - name: Wait for production AI worker API
+        run: |
+          end=$((SECONDS + 300))
+          while [ "$SECONDS" -lt "$end" ]; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" \
+              https://wj-reporting-backend.onrender.com/api/ai/worker/status/ || true)
+            if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+              echo "Production AI worker API is available (HTTP $code)."
+              exit 0
+            fi
+            echo "Waiting for production AI worker API (HTTP $code)..."
+            sleep 5
+          done
+          echo "::error::Production AI worker API did not become available."
+          exit 1
 
       - name: Deploy production frontend
         env:

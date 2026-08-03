@@ -28,16 +28,17 @@ def clamp_datetime(value: datetime, start: datetime, end: datetime) -> datetime:
 
 def reference_time_for_business_day(target_date: Any, latest_data_time: datetime | None) -> datetime:
     start, end = business_range(target_date)
-    today = timezone.now().astimezone(SHANGHAI_TZ).date()
-    if target_date < today:
+    local_now = timezone.now().astimezone(SHANGHAI_TZ)
+    current_business_date = (local_now - timedelta(hours=8)).date()
+    if target_date < current_business_date:
         return end
-    if target_date > today:
+    if target_date > current_business_date:
         return start
     if latest_data_time:
         if timezone.is_naive(latest_data_time):
             latest_data_time = pytz.UTC.localize(latest_data_time)
         return clamp_datetime(latest_data_time.astimezone(SHANGHAI_TZ), start, end)
-    return clamp_datetime(timezone.now().astimezone(SHANGHAI_TZ), start, end)
+    return clamp_datetime(local_now, start, end)
 
 
 def safe_int(value: Any) -> int:
@@ -61,6 +62,53 @@ def elapsed_rate(target_date: Any, reference_time: datetime | None) -> float:
     if total_seconds <= 0:
         return 0.0
     return round(((reference - start).total_seconds() / total_seconds) * 100, 1)
+
+
+def project_end_of_business_day_shots(
+    observed_shots: int | float,
+    recent_shots: int | float,
+    recent_window_start: datetime | None,
+    reference_time: datetime | None,
+    business_end: datetime | None,
+) -> dict[str, Any]:
+    """Project end-of-day shots from an already retrieved recent trend.
+
+    The function deliberately accepts only verified numeric inputs and times.
+    It does not query data and does not infer a trend when the observation
+    window is missing or empty.
+    """
+    base = {
+        "observed_shots": safe_int(observed_shots),
+        "recent_shots": safe_int(recent_shots),
+        "recent_window_minutes": None,
+        "shots_per_hour": None,
+        "remaining_hours": None,
+        "projected_additional_shots": None,
+        "projected_total_shots": None,
+        "warning": None,
+    }
+    if not recent_window_start or not reference_time or not business_end:
+        base["warning"] = "projection_data_missing"
+        return base
+
+    window_seconds = (reference_time - recent_window_start).total_seconds()
+    if window_seconds <= 0:
+        base["warning"] = "projection_window_missing"
+        return base
+
+    window_hours = window_seconds / 3600
+    remaining_hours = max(0.0, (business_end - reference_time).total_seconds() / 3600)
+    shots_per_hour = float(recent_shots or 0) / window_hours
+    projected_additional = safe_int(shots_per_hour * remaining_hours)
+
+    base.update({
+        "recent_window_minutes": round(window_seconds / 60, 1),
+        "shots_per_hour": round(shots_per_hour, 1),
+        "remaining_hours": round(remaining_hours, 2),
+        "projected_additional_shots": projected_additional,
+        "projected_total_shots": safe_int(observed_shots) + projected_additional,
+    })
+    return base
 
 
 def progress_status(progress_rate: float, time_progress_rate: float | None) -> ProgressStatus:

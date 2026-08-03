@@ -180,7 +180,7 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
             "columns": [
                 "machine", "actual_qty", "planned_qty", "expected_qty_by_time",
                 "gap_to_time_qty", "gap_to_time_rate_pp", "progress_rate",
-                "recent_60m_shots", "is_running",
+                "recent_60m_shots", "recent_60m_avg_ct_sec", "is_running",
             ],
             "rows": [
                 {
@@ -193,9 +193,33 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
                     "gap_to_time_rate_pp": row.get("gap_to_time_rate_pp"),
                     "progress_rate": row.get("progress_rate"),
                     "recent_60m_shots": row.get("recent_60m_shots"),
+                    "recent_60m_avg_ct_sec": row.get("recent_60m_avg_ct_sec"),
                     "is_running": row.get("is_running"),
                 }
                 for row in context["injection"].get("machine_rows", [])
+            ],
+        },
+        {
+            "name": "injection_part_progress",
+            "columns": [
+                "machine", "part_no", "model_name", "product_family_code",
+                "planned_qty", "estimated_qty", "gap_qty", "progress_rate",
+                "cavity", "status",
+            ],
+            "rows": [
+                {
+                    "machine": row.get("machine"),
+                    "part_no": row.get("part_no"),
+                    "model_name": row.get("model_name"),
+                    "product_family_code": row.get("product_family_code"),
+                    "planned_qty": row.get("planned_qty"),
+                    "estimated_qty": row.get("estimated_qty"),
+                    "gap_qty": row.get("gap_qty"),
+                    "progress_rate": row.get("progress_rate"),
+                    "cavity": row.get("cavity"),
+                    "status": row.get("status"),
+                }
+                for row in context["injection"].get("part_rows", [])
             ],
         },
         {
@@ -214,6 +238,33 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
                     "gap_to_time_qty": row.get("gap_to_time_qty"),
                     "gap_to_time_rate_pp": row.get("gap_to_time_rate_pp"),
                     "progress_rate": row.get("progress_rate"),
+                }
+                for row in context["machining"].get("rows", [])
+            ],
+        },
+        {
+            "name": "machining_part_progress",
+            "columns": [
+                "equipment_label", "part_no", "model_name", "actual_qty",
+                "planned_qty", "expected_qty_by_time", "gap_to_time_qty",
+                "gap_to_time_rate_pp", "progress_rate", "mes_qty",
+                "manual_open_qty", "defect_qty", "status",
+            ],
+            "rows": [
+                {
+                    "equipment_label": row.get("equipment_label"),
+                    "part_no": row.get("part_no"),
+                    "model_name": row.get("model_name"),
+                    "actual_qty": row.get("actual_qty"),
+                    "planned_qty": row.get("planned_qty"),
+                    "expected_qty_by_time": row.get("expected_qty_by_time"),
+                    "gap_to_time_qty": row.get("gap_to_time_qty"),
+                    "gap_to_time_rate_pp": row.get("gap_to_time_rate_pp"),
+                    "progress_rate": row.get("progress_rate"),
+                    "mes_qty": row.get("mes_qty"),
+                    "manual_open_qty": row.get("manual_open_qty"),
+                    "defect_qty": row.get("defect_qty"),
+                    "status": row.get("status"),
                 }
                 for row in context["machining"].get("rows", [])
             ],

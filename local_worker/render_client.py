@@ -3,6 +3,9 @@ from __future__ import annotations
 import requests
 
 
+WORKER_VERSION = "production-ai-worker-v2"
+
+
 class RenderClient:
     def __init__(self, api_base_url: str, worker_token: str, timeout: int = 30):
         self.api_base_url = api_base_url.rstrip("/")
@@ -13,8 +16,18 @@ class RenderClient:
             "X-AI-WORKER-TOKEN": worker_token,
         })
 
-    def claim_jobs(self, worker_name: str, limit: int = 1, job_types: list[str] | None = None) -> list[dict]:
-        payload: dict = {"worker_name": worker_name, "limit": limit}
+    def claim_jobs(
+        self,
+        worker_name: str,
+        limit: int = 1,
+        job_types: list[str] | None = None,
+        worker_version: str = WORKER_VERSION,
+    ) -> list[dict]:
+        payload: dict = {
+            "worker_name": worker_name,
+            "worker_version": worker_version,
+            "limit": limit,
+        }
         if job_types:
             payload["job_types"] = job_types
         response = self.session.post(
@@ -29,6 +42,31 @@ class RenderClient:
         response = self.session.post(
             f"{self.api_base_url}/ai/jobs/enqueue-periodic/",
             json={"languages": languages or ["ko", "zh"]},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def send_heartbeat(
+        self,
+        worker_name: str,
+        *,
+        llm_enabled: bool,
+        llm_ready: bool | None,
+        model_name: str = "",
+        worker_version: str = "",
+        last_error: str = "",
+    ) -> dict:
+        response = self.session.post(
+            f"{self.api_base_url}/ai/worker/heartbeat/",
+            json={
+                "worker_name": worker_name,
+                "llm_enabled": llm_enabled,
+                "llm_ready": llm_ready,
+                "model_name": model_name,
+                "worker_version": worker_version,
+                "last_error": last_error[:500],
+            },
             timeout=self.timeout,
         )
         response.raise_for_status()

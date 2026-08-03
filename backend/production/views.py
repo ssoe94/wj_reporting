@@ -2,7 +2,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
+from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.db import transaction
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from datetime import datetime, time, timedelta
@@ -21,9 +24,10 @@ from .models import (
 )
 from injection.models import CycleTimeSetup, InjectionMonitoringRecord, PartSpec
 from assembly.models import AssemblyReport
+from ai_core.models import AiJob
 
 from django.db.models import Sum, Q, Max
-from django.db.utils import OperationalError, ProgrammingError, IntegrityError
+from django.db.utils import DatabaseError, OperationalError, ProgrammingError, IntegrityError
 from .serializers import (
     InjectionActivityConfirmationSerializer,
     InjectionDowntimeConfirmationSerializer,
@@ -34,7 +38,8 @@ from .serializers import (
 from .permissions import user_can_edit_plan, user_can_view_plan
 from .models import ProductionPlanPart
 from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
-from .ai_answer import build_ai_briefing
+from .ai_answer import build_ai_briefing, build_injection_shot_projection
+from .ai_context import build_context_pack, build_used_data
 from .ai_gateway import answer_from_intent, build_injection_plan_context, heuristic_intent_from_question
 from .ai_retrievers import get_daily_production_context
 from .counter_utils import calculate_cumulative_counter_delta
@@ -53,6 +58,15 @@ from .machining_reconciliation import (
     create_manual_report,
 )
 import math
+
+
+class ActiveProductionAiQuestionError(APIException):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    default_detail = {
+        'detail': 'An AI production question is already in progress.',
+        'code': 'ai_question_in_progress',
+    }
+    default_code = 'ai_question_in_progress'
 
 
 def serialize_plan_for_log(plan):
@@ -278,25 +292,354 @@ class ProductionPlanListView(generics.ListCreateAPIView):
 
 class ProductionAiAskView(APIView):
     permission_classes = [IsAuthenticated]
+    question_max_length = 1000
+    active_question_statuses = [
+        AiJob.STATUS_PENDING,
+        AiJob.STATUS_CLAIMED,
+        AiJob.STATUS_RUNNING,
+    ]
+
+    @staticmethod
+    def normalize_conversation_history(raw_history):
+        if not isinstance(raw_history, list):
+            return []
+        normalized = []
+        for item in raw_history:
+            if not isinstance(item, dict):
+                continue
+            role = item.get('role')
+            content = item.get('content')
+            if role not in {'user', 'assistant'} or not isinstance(content, str):
+                continue
+            content = content.strip()[:1000]
+            if not content:
+                continue
+            normalized.append({'role': role, 'content': content})
+        return normalized[-8:]
+
+    @staticmethod
+    def get_historical_snapshots(target_date, language):
+        latest_first = list(
+            AiJob.objects.filter(
+                job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                status=AiJob.STATUS_COMPLETED,
+                created_by__isnull=True,
+                scope__trigger='hourly',
+                scope__date=target_date.isoformat(),
+                scope__language=language,
+            )
+            .order_by('-completed_at', '-id')[:24]
+        )
+        snapshots = []
+        for job in reversed(latest_first):
+            result = job.result_payload if isinstance(job.result_payload, dict) else {}
+            completed_at = job.completed_at or job.updated_at
+            snapshots.append({
+                'job_id': job.id,
+                'completed_at': completed_at.isoformat() if completed_at else None,
+                'facts': result.get('facts') if isinstance(result.get('facts'), dict) else {},
+                'data_freshness': (
+                    result.get('data_freshness')
+                    if isinstance(result.get('data_freshness'), dict) else {}
+                ),
+                'warnings': result.get('warnings') if isinstance(result.get('warnings'), list) else [],
+            })
+        return snapshots
+
+    @staticmethod
+    def build_legacy_deterministic_payload(calculated_answer, intent, context, language):
+        is_zh = language == 'zh'
+        return {
+            'answer': calculated_answer,
+            'facts': {
+                'metric': intent.get('metric'),
+                'intent': intent.get('intent'),
+                'business_date': context['business_date'],
+                'range_start': context['range_start'],
+                'range_end': context['range_end'],
+                'recent_range_start': context['recent_range_start'],
+                'recent_range_end': context['recent_range_end'],
+            },
+            'used_data': [{
+                'name': 'production_injection_context',
+                'row_count': len(context.get('machines') or []),
+                'filters': {
+                    'business_date': context['business_date'],
+                    'intent': intent.get('intent'),
+                },
+            }],
+            'calculation_basis': [
+                (
+                    '生产数字由后端的生产计划、MES 累计计数器和 Cavity 分配逻辑计算。'
+                    if is_zh else
+                    '생산 숫자는 백엔드의 생산계획, MES 누적 카운터 및 Cavity 배분 로직으로 계산합니다.'
+                ),
+                (
+                    '本地 LLM 仅说明已验证的结果，不计算生产数字。'
+                    if is_zh else
+                    '로컬 LLM은 검증된 결과를 설명만 하며 생산 숫자를 계산하지 않습니다.'
+                ),
+            ],
+            'data_freshness': {
+                'last_mes_recorded_at': context['range_end'],
+                'is_stale': None,
+            },
+            'warnings': [],
+            'retrieval_trace': [
+                f"production.plan:date={context['business_date']}",
+                f"injection.monitoring:{context['range_start']}~{context['range_end']}",
+                'production.part_cavity',
+            ],
+        }
+
+    @staticmethod
+    def enqueue_question_job(
+        request,
+        question,
+        target_date,
+        language,
+        intent,
+        deterministic,
+        answer_mode='verified_answer_rewrite',
+        verified_context=None,
+        conversation_history=None,
+    ):
+        input_payload = {
+            'source': 'production_ai_question',
+            'answer_mode': answer_mode,
+            'question': question,
+            'date': target_date.isoformat(),
+            'language': language,
+            'intent': intent,
+            'deterministic': deterministic,
+            'conversation_history': conversation_history or [],
+        }
+        if verified_context is not None:
+            input_payload['verified_context'] = verified_context
+        with transaction.atomic():
+            # Serialize question creation per user so simultaneous requests
+            # cannot both pass the active-job check without a migration.
+            get_user_model().objects.select_for_update().only('pk').get(pk=request.user.pk)
+            ProductionAiAskView.expire_stale_question_jobs(request.user)
+            if ProductionAiAskView.has_active_question_job(request.user):
+                raise ActiveProductionAiQuestionError()
+            return AiJob.objects.create(
+                job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                scope={
+                    'trigger': 'question',
+                    'date': target_date.isoformat(),
+                    'language': language,
+                    'intent': intent.get('intent'),
+                },
+                input_payload=input_payload,
+                created_by=request.user,
+            )
+
+    @classmethod
+    def has_active_question_job(cls, user):
+        return AiJob.objects.filter(
+            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+            created_by=user,
+            scope__trigger='question',
+            status__in=cls.active_question_statuses,
+        ).exists()
+
+    @staticmethod
+    def active_question_timeout_seconds():
+        return max(
+            60,
+            int(getattr(settings, 'AI_QUESTION_ACTIVE_TIMEOUT_SECONDS', 180) or 180),
+        )
+
+    @classmethod
+    def expire_stale_question_jobs(cls, user):
+        now = timezone.now()
+        stale_before = now - timedelta(seconds=cls.active_question_timeout_seconds())
+        return AiJob.objects.filter(
+            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+            created_by=user,
+            scope__trigger='question',
+            status__in=cls.active_question_statuses,
+            updated_at__lt=stale_before,
+        ).update(
+            status=AiJob.STATUS_CANCELLED,
+            completed_at=now,
+            error_message='ai_question_active_timeout',
+            updated_at=now,
+        )
+
+    @staticmethod
+    def add_enqueue_warning(deterministic):
+        warnings = list(deterministic.get('warnings') or [])
+        if 'ai_question_enqueue_failed' not in warnings:
+            warnings.append('ai_question_enqueue_failed')
+        deterministic['warnings'] = warnings
+        return deterministic
 
     def post(self, request, *args, **kwargs):
-        question = (request.data.get('question') or '').strip()
+        raw_question = request.data.get('question')
+        if raw_question is not None and not isinstance(raw_question, str):
+            return Response({
+                'detail': 'question must be a string.',
+                'code': 'invalid_question',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        question = (raw_question or '').strip()
         date_str = request.data.get('date') or timezone.localdate().isoformat()
-        language = request.data.get('language') or 'ko'
+        language = 'zh' if request.data.get('language') == 'zh' else 'ko'
 
         if not question:
             return Response({'detail': 'question is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(question) > self.question_max_length:
+            return Response({
+                'detail': f'question must be {self.question_max_length} characters or fewer.',
+                'code': 'question_too_long',
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         target_date = parse_date(date_str)
         if not target_date:
             return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        self.expire_stale_question_jobs(request.user)
+        if self.has_active_question_job(request.user):
+            return Response(
+                ActiveProductionAiQuestionError.default_detail,
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        conversation_history = self.normalize_conversation_history(request.data.get('history'))
         intent = heuristic_intent_from_question(question)
+        if intent.get('intent') == 'unknown':
+            daily_context = get_daily_production_context(target_date)
+            verified_context = build_context_pack(
+                daily_context,
+                language,
+                question=question,
+            ).to_dict()
+            historical_snapshots = self.get_historical_snapshots(target_date, language)
+            verified_context['historical_snapshots'] = historical_snapshots
+            verified_context.setdefault('retrieval_trace', []).append(
+                'ai_job.hourly_snapshots:'
+                f"date={target_date.isoformat()},language={language},count={len(historical_snapshots)}"
+            )
+            used_data = [item.to_dict() for item in build_used_data(daily_context)]
+            used_data.append({
+                'name': 'AiJob.hourly_authoritative_snapshots',
+                'row_count': len(historical_snapshots),
+                'filters': {
+                    'date': target_date.isoformat(),
+                    'language': language,
+                    'trigger': 'hourly',
+                    'status': AiJob.STATUS_COMPLETED,
+                },
+            })
+            deterministic = {
+                'answer': (
+                    '로컬 AI 답변을 생성하지 못했습니다. 기준일 데이터 범위를 확인해 주세요.'
+                    if language != 'zh' else
+                    '本地 AI 未能生成回答，请确认基准日数据范围。'
+                ),
+                'facts': verified_context.get('facts') or {},
+                'used_data': used_data,
+                'calculation_basis': verified_context.get('calculation_basis') or [],
+                'data_freshness': verified_context.get('data_freshness') or {},
+                'warnings': verified_context.get('warnings') or [],
+                'retrieval_trace': verified_context.get('retrieval_trace') or [],
+            }
+            try:
+                job = self.enqueue_question_job(
+                    request,
+                    question,
+                    target_date,
+                    language,
+                    intent,
+                    deterministic,
+                    answer_mode='context_grounded',
+                    verified_context=verified_context,
+                    conversation_history=conversation_history,
+                )
+            except DatabaseError:
+                return Response({
+                    'detail': 'The local AI question queue is temporarily unavailable.',
+                    'code': 'ai_question_enqueue_failed',
+                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response({
+                'answer': (
+                    '로컬 Qwen이 검증된 생산 데이터를 분석 중입니다.'
+                    if language != 'zh' else
+                    '本地 Qwen 正在分析已验证的生产数据。'
+                ),
+                'source': 'ai_queued',
+                'intent': intent,
+                'context': {
+                    'business_date': verified_context.get('scope', {}).get('business_date'),
+                    'range_start': verified_context.get('scope', {}).get('range_start'),
+                    'range_end': verified_context.get('scope', {}).get('range_end'),
+                    'recent_range_start': None,
+                    'recent_range_end': None,
+                },
+                'job_id': job.id,
+                'job_status': job.status,
+            })
+
+        if intent.get('intent') == 'injection_shot_projection':
+            deterministic = build_injection_shot_projection(
+                target_date,
+                intent.get('filters', {}).get('machine_numbers') or [],
+                language,
+            )
+            try:
+                job = self.enqueue_question_job(
+                    request,
+                    question,
+                    target_date,
+                    language,
+                    intent,
+                    deterministic,
+                    conversation_history=conversation_history,
+                )
+            except DatabaseError:
+                job = None
+                deterministic = self.add_enqueue_warning(deterministic)
+            facts = deterministic.get('facts') or {}
+            return Response({
+                **deterministic,
+                'source': 'intent_calculated',
+                'intent': intent,
+                'context': {
+                    'business_date': facts.get('business_date'),
+                    'range_start': facts.get('range_start'),
+                    'range_end': facts.get('range_end'),
+                    'recent_range_start': None,
+                    'recent_range_end': None,
+                },
+                'job_id': job.id if job else None,
+                'job_status': job.status if job else None,
+            })
+
         context = build_injection_plan_context(target_date.isoformat())
         calculated_answer = answer_from_intent(intent, context, language)
         if calculated_answer:
+            deterministic = self.build_legacy_deterministic_payload(
+                calculated_answer,
+                intent,
+                context,
+                language,
+            )
+            try:
+                job = self.enqueue_question_job(
+                    request,
+                    question,
+                    target_date,
+                    language,
+                    intent,
+                    deterministic,
+                    conversation_history=conversation_history,
+                )
+            except DatabaseError:
+                job = None
+                deterministic = self.add_enqueue_warning(deterministic)
             return Response({
-                'answer': calculated_answer,
+                **deterministic,
                 'source': 'intent_calculated',
                 'intent': intent,
                 'context': {
@@ -306,6 +649,8 @@ class ProductionAiAskView(APIView):
                     'recent_range_start': context['recent_range_start'],
                     'recent_range_end': context['recent_range_end'],
                 },
+                'job_id': job.id if job else None,
+                'job_status': job.status if job else None,
             })
 
         return Response({

@@ -6,10 +6,11 @@ from itertools import groupby
 from typing import Any
 
 from django.db.models import Max, Q
+from django.utils import timezone
 
 from injection.models import InjectionMonitoringRecord
 
-from .ai_metrics import business_range, elapsed_rate, reference_time_for_business_day, safe_int, safe_rate
+from .ai_metrics import SHANGHAI_TZ, business_range, elapsed_rate, reference_time_for_business_day, safe_int, safe_rate
 from .machining_reconciliation import build_machining_provision_payload
 from .mes_progress import format_equipment_label
 from .models import ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
@@ -80,6 +81,119 @@ def sum_positive_monitoring_delta(machine_name: str, field_name: str, start_dt: 
     )
 
     return calculate_cumulative_counter_delta(values, baseline=baseline)
+
+
+def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[int]) -> dict[str, Any]:
+    """Retrieve reset-safe shot trends for explicitly requested machines.
+
+    Unlike the plan progress retriever, this does not require a production plan,
+    so an operator can inspect any of the 17 injection machines.
+    """
+    normalized_numbers = []
+    for value in machine_numbers:
+        try:
+            machine_number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= machine_number <= 17 and machine_number not in normalized_numbers:
+            normalized_numbers.append(machine_number)
+
+    range_start, range_end = business_range(target_date)
+    rows = []
+    machine_names = [machine_monitoring_name(number) for number in normalized_numbers]
+    monitoring_queryset = InjectionMonitoringRecord.objects.filter(
+        machine_name__in=machine_names,
+        timestamp__gte=range_start,
+        timestamp__lt=range_end,
+        capacity__isnull=False,
+    )
+    current_business_date = (
+        timezone.now().astimezone(SHANGHAI_TZ) - timedelta(hours=8)
+    ).date()
+
+    for machine_number in normalized_numbers:
+        monitoring_name = machine_monitoring_name(machine_number)
+        latest_mes_time = (
+            monitoring_queryset
+            .filter(machine_name=monitoring_name)
+            .order_by("-timestamp")
+            .values_list("timestamp", flat=True)
+            .first()
+        )
+        if not latest_mes_time:
+            rows.append({
+                "machine_number": machine_number,
+                "machine": machine_label(machine_number),
+                "machine_name": monitoring_name,
+                "shot_count": 0,
+                "recent_60m_shots": 0,
+                "recent_window_start": None,
+                "reference_time": None,
+                "latest_mes_time": None,
+                "is_stale": True,
+                "warning": "injection_capacity_data_missing",
+            })
+            continue
+
+        reference_time = reference_time_for_business_day(target_date, latest_mes_time)
+        recent_start = max(range_start, reference_time - timedelta(minutes=60))
+        # The delta helper uses an exclusive end. Include a record that lands
+        # exactly on the selected reference timestamp without crossing the
+        # 08:00 business-day boundary.
+        counter_end = min(range_end, reference_time + timedelta(microseconds=1))
+        shot_count = sum_positive_monitoring_delta(
+            monitoring_name,
+            "capacity",
+            range_start,
+            counter_end,
+        )
+        recent_shots = sum_positive_monitoring_delta(
+            monitoring_name,
+            "capacity",
+            recent_start,
+            counter_end,
+        )
+        recent_sample_count = InjectionMonitoringRecord.objects.filter(
+            machine_name=monitoring_name,
+            timestamp__gte=recent_start,
+            timestamp__lt=counter_end,
+            capacity__isnull=False,
+        ).count()
+        recent_has_baseline = InjectionMonitoringRecord.objects.filter(
+            machine_name=monitoring_name,
+            timestamp__lt=recent_start,
+            capacity__isnull=False,
+        ).exists()
+        trend_window_available = recent_sample_count >= (1 if recent_has_baseline else 2)
+        is_stale = bool(
+            target_date == current_business_date
+            and timezone.now() - latest_mes_time.astimezone(timezone.get_current_timezone()) > timedelta(minutes=10)
+        )
+        rows.append({
+            "machine_number": machine_number,
+            "machine": machine_label(machine_number),
+            "machine_name": monitoring_name,
+            "shot_count": shot_count,
+            "recent_60m_shots": recent_shots,
+            "recent_window_start": recent_start if trend_window_available else None,
+            "recent_sample_count": recent_sample_count,
+            "reference_time": reference_time,
+            "latest_mes_time": latest_mes_time,
+            "is_stale": is_stale,
+            "warning": (
+                "injection_recent_trend_window_missing"
+                if not trend_window_available else
+                "injection_capacity_data_stale" if is_stale else None
+            ),
+        })
+
+    return {
+        "business_date": target_date,
+        "range_start": range_start,
+        "range_end": range_end,
+        "rows": rows,
+        "monitoring_row_count": monitoring_queryset.count(),
+    }
 
 
 def cavity_map_for_plans(plans: list[ProductionPlan]) -> dict[str, dict[str, Any]]:

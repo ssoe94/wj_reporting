@@ -1,5 +1,7 @@
 import { type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { isAxiosError } from "axios";
+import { MessageCircle, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getInjectionProductionMatrix,
@@ -9,8 +11,11 @@ import {
 } from "@/domains/mes/api";
 import {
   askProductionAi,
+  cancelAiJob,
   createMachiningManualReport,
   createProductionPlanItem,
+  getAiJob,
+  getAiWorkerStatus,
   getLatestAiJob,
   getMachiningProvision,
   getInjectionActivityConfirmations,
@@ -26,6 +31,8 @@ import {
   type InjectionActivityType,
   type MachiningProvisionResponse,
   type MachiningProvisionRow,
+  type ProductionAiAskResponse,
+  type ProductionAiChatHistoryMessage,
   type ProductionMesReportStatsResponse,
   type ProductionPlanRecord,
   type ProductionPlanSummaryResponse,
@@ -97,6 +104,39 @@ type MachiningProgressPreview = {
 };
 
 type KpiDetailKey = "injection" | "unplanned" | "machining" | "machines";
+
+type ProductionAiChatMessage = ProductionAiChatHistoryMessage & {
+  id: string;
+  label?: string;
+  tone?: "default" | "warning";
+  meta?: string[];
+  notice?: string;
+  includeInHistory?: boolean;
+};
+
+type ProductionAiQuestionRequest = {
+  question: string;
+  history: ProductionAiChatHistoryMessage[];
+  requestId: string;
+  businessDate: string;
+  language: AppLanguage;
+};
+
+type ProductionAiActiveRequest = Pick<
+  ProductionAiQuestionRequest,
+  "requestId" | "businessDate" | "language"
+>;
+
+type ProductionAiApiError = {
+  status: number | null;
+  code: string;
+  detail: string;
+};
+
+type ProductionAiChatViewportStyle = CSSProperties & {
+  "--production-ai-chat-bottom"?: string;
+  "--production-ai-chat-visible-height"?: string;
+};
 
 type InjectionActivityConfirmationForm = {
   activityType: InjectionActivityType | "";
@@ -280,18 +320,64 @@ const pageCopy = {
     usedData: "사용한 데이터",
     calculationBasis: "계산 기준",
     deterministicBrief: "계산형 RAG 브리핑",
-    askAi: "생산 데이터 질문",
-    closeAi: "질문 닫기",
+    askAi: "AI 생산 어시스턴트",
+    closeAi: "AI 어시스턴트 닫기",
+    aiAssistantTitle: "AI 생산 어시스턴트",
+    aiAssistantIntro: "현재 기준일의 검증된 생산 데이터와 저장된 시간별 분석 기록을 찾아 로컬 Qwen이 답합니다.",
+    aiAssistantUser: "나",
+    aiAssistantAi: "생산 어시스턴트",
+    aiInputLabel: "생산 데이터 질문 입력",
+    workerOnline: "Mac Studio Worker 온라인",
+    workerOffline: "Mac Studio Worker 오프라인",
+    workerUnknown: "Worker 상태 확인 불가",
+    workerQwenReady: "Qwen 준비됨",
+    workerQwenUnavailable: "Qwen 연결 안 됨",
+    workerQwenUnknown: "Qwen 상태 확인 불가",
+    workerHeartbeat: "마지막 신호",
+    workerLastAnalysis: "최근 분석 완료",
+    workerModel: "모델",
+    workerAnalysisMode: "최근 분석 방식",
+    workerModeQwen: "Qwen 설명",
+    workerModeFallback: "계산 기반 폴백",
+    workerModeUnknown: "기록 없음",
     workerJobTitle: "최근 시간별 AI 분석",
     workerJobResult: "자동 분석 인사이트",
     workerJobIssue: "확인 이슈",
     workerJobNoIssue: "별도 이슈가 없습니다.",
     workerJobFallback: "Qwen 분석을 사용할 수 없어 계산 기반 분석을 표시합니다.",
-    askingAi: "계산 중",
-    aiQuestionPlaceholder: "예: 오늘 사출 생산 진도는? / 현재 가동 사출기는 몇 대야? / 최근 60분 C/T가 가장 긴 설비는?",
-    aiQuestionScope: "지원: 생산량 · 진행률 · 가동 설비 · 최근 60분 C/T",
+    askingAi: "질문 전송 중",
+    aiQuestionPlaceholder: "예: 오늘 사출 생산 진도는? / 최근 60분 C/T가 가장 긴 설비는? / 지금 추이대로 1, 9호기 예상 형합수는?",
+    aiQuestionScope: "검증된 생산 데이터 · 시간별 분석 기록 기반",
     aiAnswerTitle: "계산 결과",
-    aiSubmit: "계산하기",
+    aiSource: "출처",
+    aiSourceVerified: "검증된 계산형 RAG",
+    aiSourceFallback: "검증 지표 안내",
+    aiSourceQueued: "로컬 Qwen 분석 요청",
+    aiRequestFailedTitle: "질문 전송 실패",
+    aiRequestFailed: "질문을 서버로 전송하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
+    aiQuestionInProgressTitle: "이전 질문 처리 중",
+    aiQuestionInProgress: "이전 질문을 처리하고 있습니다. 잠시 후 다시 시도해 주세요.",
+    aiQueueUnavailableTitle: "로컬 AI 큐 이용 불가",
+    aiQueueUnavailable: "로컬 AI 질문 큐를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+    aiQuestionTooLongTitle: "질문이 너무 깁니다",
+    aiQuestionTooLong: "질문은 1,000자 이하로 줄여서 다시 입력해 주세요.",
+    aiRequestRejectedTitle: "질문 확인 필요",
+    aiQwenTitle: "로컬 Qwen 설명",
+    aiQwenAnswerTitle: "로컬 Qwen 답변",
+    aiQwenQueued: "대기 중",
+    aiQwenRunning: "분석 중",
+    aiQwenReady: "설명 완료",
+    aiQwenFallbackReady: "계산 폴백 완료",
+    aiQwenDelayed: "Worker 응답 지연",
+    aiQwenFailed: "설명 실패",
+    aiQwenPendingHint: "검증된 계산 결과는 먼저 표시했습니다. 로컬 Qwen이 같은 사실을 읽기 쉽게 설명하고 있습니다.",
+    aiQwenQueuedHint: "질문을 로컬 Qwen에 전달했습니다. 분석이 완료되면 여기에 답변을 표시합니다.",
+    aiQwenDelayedHint: "로컬 Worker 응답이 지연되고 있습니다. 위 계산 결과는 그대로 유효합니다.",
+    aiQwenQueuedDelayedHint: "로컬 Worker 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
+    aiQwenFailedHint: "로컬 Qwen 설명을 가져오지 못했습니다. 위 계산 결과는 그대로 유효합니다.",
+    aiQwenQueuedFailedHint: "로컬 Qwen 답변을 가져오지 못했습니다. 잠시 후 다시 질문해 주세요.",
+    aiQwenFallbackNotice: "Qwen을 사용할 수 없어 검증된 계산 결과를 그대로 표시합니다.",
+    aiSubmit: "질문하기",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "실시간 프로그레스",
     progressDescription: "사출은 생산 계획과 MES 형합수를 조합해 Cavity 기준 추정 생산량으로 진행률을 계산합니다.",
@@ -457,18 +543,64 @@ const pageCopy = {
     usedData: "使用的数据",
     calculationBasis: "计算基准",
     deterministicBrief: "计算型 RAG 简报",
-    askAi: "生产数据问答",
-    closeAi: "关闭提问",
+    askAi: "AI 生产助手",
+    closeAi: "关闭 AI 助手",
+    aiAssistantTitle: "AI 生产助手",
+    aiAssistantIntro: "本地 Qwen 会检索当前基准日的已验证生产数据和已保存的每小时分析记录后回答。",
+    aiAssistantUser: "我",
+    aiAssistantAi: "生产助手",
+    aiInputLabel: "输入生产数据问题",
+    workerOnline: "Mac Studio Worker 在线",
+    workerOffline: "Mac Studio Worker 离线",
+    workerUnknown: "无法确认 Worker 状态",
+    workerQwenReady: "Qwen 已就绪",
+    workerQwenUnavailable: "Qwen 未连接",
+    workerQwenUnknown: "无法确认 Qwen 状态",
+    workerHeartbeat: "最后心跳",
+    workerLastAnalysis: "最近分析完成",
+    workerModel: "模型",
+    workerAnalysisMode: "最近分析方式",
+    workerModeQwen: "Qwen 说明",
+    workerModeFallback: "基于计算的回退",
+    workerModeUnknown: "暂无记录",
     workerJobTitle: "最近每小时 AI 分析",
     workerJobResult: "自动分析洞察",
     workerJobIssue: "确认事项",
     workerJobNoIssue: "暂无特别事项。",
     workerJobFallback: "Qwen 分析不可用，当前显示基于计算的分析。",
-    askingAi: "计算中",
-    aiQuestionPlaceholder: "例：今天注塑生产进度？/ 当前运行注塑机有几台？/ 最近60分钟 C/T 最长的设备？",
-    aiQuestionScope: "支持：产量 · 进度 · 运行设备 · 最近60分钟 C/T",
+    askingAi: "发送中",
+    aiQuestionPlaceholder: "例：今天注塑生产进度？/ 最近60分钟 C/T 最长的设备？/ 按当前趋势，1、9号机结束时预计合模数？",
+    aiQuestionScope: "基于已验证生产数据与每小时分析记录",
     aiAnswerTitle: "计算结果",
-    aiSubmit: "计算",
+    aiSource: "来源",
+    aiSourceVerified: "已验证的计算型 RAG",
+    aiSourceFallback: "已验证指标提示",
+    aiSourceQueued: "本地 Qwen 分析请求",
+    aiRequestFailedTitle: "问题发送失败",
+    aiRequestFailed: "无法将问题发送到服务器。请检查连接后重试。",
+    aiQuestionInProgressTitle: "上一问题仍在处理中",
+    aiQuestionInProgress: "上一问题仍在处理中，请稍后重试。",
+    aiQueueUnavailableTitle: "本地 AI 队列暂不可用",
+    aiQueueUnavailable: "本地 AI 问题队列暂时不可用，请稍后重试。",
+    aiQuestionTooLongTitle: "问题内容过长",
+    aiQuestionTooLong: "请将问题缩短至 1,000 个字符以内后重试。",
+    aiRequestRejectedTitle: "请确认问题内容",
+    aiQwenTitle: "本地 Qwen 说明",
+    aiQwenAnswerTitle: "本地 Qwen 回答",
+    aiQwenQueued: "等待中",
+    aiQwenRunning: "分析中",
+    aiQwenReady: "说明完成",
+    aiQwenFallbackReady: "计算回退完成",
+    aiQwenDelayed: "Worker 响应延迟",
+    aiQwenFailed: "说明失败",
+    aiQwenPendingHint: "已先显示经过验证的计算结果。本地 Qwen 正在将相同事实整理为易读说明。",
+    aiQwenQueuedHint: "问题已发送给本地 Qwen。分析完成后将在此显示回答。",
+    aiQwenDelayedHint: "本地 Worker 响应延迟。上方计算结果仍然有效。",
+    aiQwenQueuedDelayedHint: "本地 Worker 响应延迟。请稍后重试。",
+    aiQwenFailedHint: "无法获取本地 Qwen 说明。上方计算结果仍然有效。",
+    aiQwenQueuedFailedHint: "无法获取本地 Qwen 回答。请稍后重新提问。",
+    aiQwenFallbackNotice: "Qwen 不可用，当前保留经过验证的计算结果。",
+    aiSubmit: "提问",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "实时进度",
     progressDescription: "注塑结合生产计划与 MES 合模数，并按 Cavity 估算生产量计算进度。",
@@ -745,6 +877,9 @@ const activitySelectionCopy = {
 
 const LIVE_DATA_REFRESH_INTERVAL_MS = 120_000;
 const AI_BRIEFING_REFRESH_INTERVAL_MS = 5 * 60_000;
+const AI_WORKER_STATUS_REFRESH_INTERVAL_MS = 30_000;
+const AI_QUESTION_JOB_POLL_INTERVAL_MS = 1_500;
+const AI_QUESTION_JOB_POLL_TIMEOUT_MS = 3 * 60_000;
 const INJECTION_MACHINE_TOTAL = 17;
 const MACHINE_UTILIZATION_BUCKET_MINUTES = 5;
 const MACHINE_ACTIVITY_DETAIL_RETENTION_DAYS = 7;
@@ -758,19 +893,6 @@ const ACTIVITY_PART_SEQUENCE_HUES = [154, 170, 188, 206, 224, 42];
 const ACTIVITY_PART_VARIANT_LIGHTNESS = [36, 42, 48, 54];
 const ACTIVITY_PART_SEQUENCE_SATURATION = 54;
 
-type DashboardAiIntent = {
-  intent: "injection_cycle_time" | "production_output" | "production_status" | "production_summary" | "unknown";
-  metric?: string | null;
-  filters: {
-    running_only?: boolean;
-    product_family?: string | null;
-    target_text?: string | null;
-    machine?: string | null;
-  };
-  sort?: "ct_desc" | "ct_asc" | "output_desc" | "output_asc" | null;
-  limit?: number;
-};
-
 function formatNumber(value: number) {
   return Math.round(value).toLocaleString();
 }
@@ -778,6 +900,36 @@ function formatNumber(value: number) {
 function getStringField(source: Record<string, unknown>, key: string) {
   const value = source[key];
   return typeof value === "string" ? value : "";
+}
+
+function getProductionAiApiError(error: unknown): ProductionAiApiError {
+  if (!isAxiosError(error)) {
+    return { status: null, code: "", detail: "" };
+  }
+  const responseData = error.response?.data;
+  const payload = responseData && typeof responseData === "object"
+    ? responseData as Record<string, unknown>
+    : {};
+  const detail = getStringField(payload, "detail")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .trim()
+    .slice(0, 500);
+  return {
+    status: error.response?.status ?? null,
+    code: getStringField(payload, "code").trim().slice(0, 100),
+    detail,
+  };
+}
+
+async function cancelProductionAiJobBestEffort(jobId: number) {
+  try {
+    await cancelAiJob(jobId);
+    return true;
+  } catch (error) {
+    const status = isAxiosError(error) ? error.response?.status : null;
+    if (status === 400 || status === 404) return false;
+    return false;
+  }
 }
 
 function getTopIssues(source: Record<string, unknown>) {
@@ -797,88 +949,29 @@ function getIssueText(issue: Record<string, unknown>) {
   return getStringField(issue, "detail") || getStringField(issue, "summary");
 }
 
-function normalizeProductFamily(value: unknown) {
-  const normalized = String(value ?? "").trim().toLowerCase().replace(/\s+/g, "");
-  if (["bc", "b/c", "backcover", "백커버"].includes(normalized)) return "BC";
-  if (["ca", "c/a", "cabinet", "캐비넷"].includes(normalized)) return "CA";
-  if (["gp", "g/p", "guidepanel", "가이드패널"].includes(normalized)) return "GP";
-  return null;
+function formatAiTimestamp(value: string | null | undefined, language: AppLanguage) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat(language === "ko" ? "ko-KR" : "zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
-function normalizeDashboardIntent(raw: Partial<DashboardAiIntent>): DashboardAiIntent {
-  const validIntent = ["injection_cycle_time", "production_output", "production_status", "production_summary", "unknown"].includes(String(raw.intent))
-    ? raw.intent
-    : "unknown";
-  const filters = raw.filters ?? {};
-  const limit = Math.max(1, Math.min(20, Number(raw.limit ?? 8) || 8));
-  return {
-    intent: validIntent ?? "unknown",
-    metric: raw.metric ?? null,
-    filters: {
-      running_only: Boolean(filters.running_only),
-      product_family: normalizeProductFamily(filters.product_family),
-      target_text: String(filters.target_text ?? "").trim() || null,
-      machine: String(filters.machine ?? "").trim() || null,
-    },
-    sort: raw.sort ?? null,
-    limit,
-  };
-}
-
-function heuristicDashboardIntent(question: string): DashboardAiIntent {
-  const normalized = question.toLowerCase();
-  const runningOnly = ["현재", "지금", "생산중", "가동", "现在", "当前", "运行"].some((token) => normalized.includes(token));
-  const productFamily = normalizeProductFamily(
-    ["back cover", "backcover", "b/c", "bc", "백커버"].some((token) => normalized.includes(token)) ? "BC"
-      : ["cabinet", "c/a", "캐비넷"].some((token) => normalized.includes(token)) ? "CA"
-        : ["guide panel", "g/p", "가이드"].some((token) => normalized.includes(token)) ? "GP"
-          : null,
-  );
-  const targetTokens = question
-    .match(/[A-Za-z0-9][A-Za-z0-9./_-]{2,}/g)
-    ?.filter((token) => token.length >= 4 && !["back", "cover", "cycle", "output", "production"].includes(token.toLowerCase())) ?? [];
-
-  if (["c/t", "ct", "cycle", "사이클", "싸이클", "시간", "节拍", "周期"].some((token) => normalized.includes(token))) {
-    const longest = ["가장 길", "제일 길", "최장", "longest", "最慢", "最长"].some((token) => normalized.includes(token));
-    const shortest = ["가장 짧", "제일 짧", "최단", "shortest", "最快", "最短"].some((token) => normalized.includes(token));
-    return normalizeDashboardIntent({
-      intent: "injection_cycle_time",
-      metric: "recent_60m_avg_ct_sec",
-      filters: { running_only: runningOnly, product_family: productFamily, target_text: targetTokens[0] ?? null },
-      sort: longest ? "ct_desc" : shortest ? "ct_asc" : null,
-      limit: longest || shortest ? 1 : 8,
-    });
-  }
-
-  if (["생산량", "실적", "몇개", "몇 개", "output", "production", "产量", "实绩"].some((token) => normalized.includes(token))) {
-    return normalizeDashboardIntent({
-      intent: "production_output",
-      metric: "estimated_qty",
-      filters: { running_only: runningOnly, product_family: productFamily, target_text: targetTokens[0] ?? null },
-      sort: "output_desc",
-      limit: 8,
-    });
-  }
-
-  if (runningOnly && ["몇대", "몇 대", "수는", "수량", "몇台", "几台", "多少台"].some((token) => normalized.includes(token))) {
-    return normalizeDashboardIntent({
-      intent: "production_status",
-      metric: "running_count",
-      filters: { running_only: true, product_family: productFamily },
-      limit: 17,
-    });
-  }
-
-  if (["진도", "진행", "진척", "상황", "어때", "어떄", "怎么样", "进度", "情况"].some((token) => normalized.includes(token))) {
-    return normalizeDashboardIntent({
-      intent: "production_summary",
-      metric: "progress_rate",
-      filters: { running_only: false, product_family: productFamily },
-      limit: 8,
-    });
-  }
-
-  return normalizeDashboardIntent({ intent: "unknown", filters: {} });
+function formatAiModelName(value: string | null | undefined) {
+  const segments = String(value ?? "")
+    .trim()
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean);
+  return segments.length ? segments[segments.length - 1] : "-";
 }
 
 function getLatestTime(data?: InjectionProductionMatrix) {
@@ -2525,120 +2618,6 @@ function buildMachiningProgressPreview(
   };
 }
 
-function matchesPartTarget(segment: RealtimeProgressSegment | undefined, targetText: string | null | undefined) {
-  if (!targetText) return true;
-  if (!segment) return false;
-  const needle = targetText.toUpperCase();
-  const haystack = `${segment.partNo} ${segment.modelName}`.toUpperCase();
-  return haystack.includes(needle);
-}
-
-function answerDashboardIntent(intent: DashboardAiIntent, realtimeProgress: RealtimeProgressSummary, language: AppLanguage) {
-  const isChinese = language === "zh";
-  const productFamily = intent.filters.product_family;
-  const targetText = intent.filters.target_text;
-
-  if (intent.intent === "production_status") {
-    const runningRows = realtimeProgress.rows.filter((row) => {
-      if (!row.isRunning) return false;
-      const current = row.segments.find((segment) => segment.status === "in_progress");
-      if (productFamily && current?.productFamilyCode !== productFamily) return false;
-      return true;
-    });
-    const labels = runningRows.map((row) => getLocalizedMachineLabel(row.label, language)).join(", ") || "-";
-    return isChinese
-      ? `最近60分钟合模数 기준 현재 생산중인 사출기는 ${runningRows.length}대입니다. 대상 설비: ${labels}.`
-      : `최근 60분 형합수 기준 현재 생산중인 사출기는 ${runningRows.length}대입니다. 대상 설비는 ${labels}입니다.`;
-  }
-
-  if (intent.intent === "injection_cycle_time") {
-    const rows = realtimeProgress.rows
-      .map((row) => ({ row, current: row.segments.find((segment) => segment.status === "in_progress") }))
-      .filter(({ row, current }) => {
-        if (intent.filters.running_only && !row.isRunning) return false;
-        if (productFamily && current?.productFamilyCode !== productFamily) return false;
-        if (!matchesPartTarget(current, targetText)) return false;
-        return row.recentCycleTimeSec !== null;
-      })
-      .map(({ row, current }) => ({
-        machine: getLocalizedMachineLabel(row.label, language),
-        partNo: current?.partNo ?? "-",
-        modelName: current?.modelName ?? "-",
-        family: current?.productFamilyName ?? "-",
-        shots: row.recentShots,
-        ct: row.recentCycleTimeSec ?? 0,
-      }));
-
-    if (intent.sort === "ct_desc") rows.sort((a, b) => b.ct - a.ct);
-    if (intent.sort === "ct_asc") rows.sort((a, b) => a.ct - b.ct);
-    if (!rows.length) return isChinese ? "未找到符合条件的最近60分钟 C/T 数据。" : "조건에 맞는 최근 60분 C/T 데이터를 찾지 못했습니다.";
-    if (intent.limit === 1 || intent.sort === "ct_desc" || intent.sort === "ct_asc") {
-      const top = rows[0];
-      return isChinese
-        ? `最近60分钟 기준 ${top.machine} 的 C/T 约 ${top.ct.toFixed(1)} 秒，当前推定 Part 为 ${top.partNo}（${top.modelName}，${top.family}），60分钟合模数 ${top.shots} 次。`
-        : `최근 60분 기준 ${top.machine}의 평균 C/T는 약 ${top.ct.toFixed(1)}초입니다. 현재 추정 Part는 ${top.partNo} (${top.modelName}, ${top.family})이고, 최근 60분 형합수는 ${formatNumber(top.shots)}회입니다.`;
-    }
-    const averageCt = rows.reduce((sum, row) => sum + row.ct, 0) / rows.length;
-    const details = rows.slice(0, intent.limit ?? 8).map((row) => `${row.machine} ${row.ct.toFixed(1)}초`).join(", ");
-    return `최근 60분 기준 대상 사출기 ${rows.length}대의 평균 C/T는 약 ${averageCt.toFixed(1)}초입니다. 설비별로는 ${details}입니다.`;
-  }
-
-  if (intent.intent === "production_output") {
-    const items = realtimeProgress.rows.flatMap((row) => row.segments
-      .filter((segment) => {
-        if (productFamily && segment.productFamilyCode !== productFamily) return false;
-        if (!matchesPartTarget(segment, targetText)) return false;
-        return true;
-      })
-      .map((segment) => ({
-        machine: getLocalizedMachineLabel(row.label, language),
-        partNo: segment.partNo,
-        estimatedQty: segment.estimatedQty,
-        plannedQty: segment.plannedQty,
-      })));
-    items.sort((a, b) => b.estimatedQty - a.estimatedQty);
-    if (!items.length) return isChinese ? "未找到符合条件的生产计划或 MES 推定实绩。" : "조건에 맞는 생산계획 또는 MES 추정 실적을 찾지 못했습니다.";
-    const totalEstimated = items.reduce((sum, item) => sum + item.estimatedQty, 0);
-    const totalPlanned = items.reduce((sum, item) => sum + item.plannedQty, 0);
-    const details = items.slice(0, intent.limit ?? 8).map((item) => `${item.machine} ${item.partNo} ${formatNumber(item.estimatedQty)}/${formatNumber(item.plannedQty)}개`).join(", ");
-    return `기준일 현재 추정 생산량은 총 ${formatNumber(totalEstimated)}개이고, 계획은 ${formatNumber(totalPlanned)}개입니다. 설비별 주요 내역은 ${details}입니다.`;
-  }
-
-  if (intent.intent === "production_summary") {
-    const segments = realtimeProgress.rows.flatMap((row) => row.segments)
-      .filter((segment) => !productFamily || segment.productFamilyCode === productFamily);
-    const plannedQty = segments.reduce((sum, segment) => sum + segment.plannedQty, 0);
-    const estimatedQty = segments.reduce((sum, segment) => sum + segment.estimatedQty, 0);
-    const progressRate = plannedQty > 0 ? (estimatedQty / plannedQty) * 100 : 0;
-    const completed = segments.filter((segment) => segment.status === "completed").length;
-    const inProgress = segments.filter((segment) => segment.status === "in_progress").length;
-    const pending = segments.filter((segment) => segment.status === "pending").length;
-    const runningRows = realtimeProgress.rows.filter((row) => row.isRunning);
-    const topRows = [...realtimeProgress.rows]
-      .filter((row) => row.hasPlan && row.estimatedQty > 0)
-      .sort((a, b) => b.estimatedQty - a.estimatedQty)
-      .slice(0, 4)
-      .map((row) => `${getLocalizedMachineLabel(row.label, language)} ${formatNumber(row.estimatedQty)}개`)
-      .join(", ") || "-";
-    const unplannedText = isChinese
-      ? `另有 ${realtimeProgress.unplannedMachineCount} 台无计划设备产生 ${formatNumber(realtimeProgress.unplannedShotCount)} 次合模。`
-      : `별도로 무계획 설비 ${realtimeProgress.unplannedMachineCount}대에서 형합 ${formatNumber(realtimeProgress.unplannedShotCount)}회가 확인됩니다.`;
-    return isChinese
-      ? `今天注塑进度约 ${Math.round(progressRate)}%，计划内推定实绩 ${formatNumber(estimatedQty)} / 计划 ${formatNumber(plannedQty)} 个。${unplannedText} 最近60分钟运行设备 ${runningRows.length}台，状态为完成 ${completed}、进行中 ${inProgress}、待开始 ${pending}。主要生产设备: ${topRows}。`
-      : `오늘 사출 생산 진도는 약 ${Math.round(progressRate)}%입니다. 계획 생산 추정 실적은 ${formatNumber(estimatedQty)} / 계획 ${formatNumber(plannedQty)}개입니다. ${unplannedText} 최근 60분 기준 가동 사출기는 ${runningRows.length}대입니다. 작업 상태는 완료 ${completed}건, 진행중 ${inProgress}건, 대기 ${pending}건이며, 상위 생산 설비는 ${topRows}입니다.`;
-  }
-
-  return null;
-}
-
-function answerWithDeterministicFallback(question: string, realtimeProgress: RealtimeProgressSummary, language: AppLanguage) {
-  const intent = heuristicDashboardIntent(question);
-  const answer = answerDashboardIntent(intent, realtimeProgress, language);
-  return answer ?? (language === "ko"
-    ? "질문 의도는 해석했지만 현재 대시보드 데이터로 계산 가능한 답을 찾지 못했습니다."
-    : "已解析问题意图，但当前看板数据无法计算出答案。");
-}
-
 function buildRuleBasedBrief(context: ProductionBriefContext, language: AppLanguage) {
   const planRate = context.injectionPlanQty > 0
     ? Math.round((context.actualInjectionOutput / context.injectionPlanQty) * 100)
@@ -2742,7 +2721,12 @@ export function ProductionDashboardPage() {
   const [businessDate, setBusinessDate] = useState(currentDate);
   const [isAiAskOpen, setIsAiAskOpen] = useState(false);
   const [aiQuestion, setAiQuestion] = useState("");
-  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [aiChatMessages, setAiChatMessages] = useState<ProductionAiChatMessage[]>([]);
+  const [aiAnswerSource, setAiAnswerSource] = useState<ProductionAiAskResponse["source"] | null>(null);
+  const [aiActiveRequest, setAiActiveRequest] = useState<ProductionAiActiveRequest | null>(null);
+  const [aiQuestionJobId, setAiQuestionJobId] = useState<number | null>(null);
+  const [aiQuestionPollingTimedOut, setAiQuestionPollingTimedOut] = useState(false);
+  const [aiChatViewportStyle, setAiChatViewportStyle] = useState<ProductionAiChatViewportStyle>();
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
   const [selectedActivityRow, setSelectedActivityRow] = useState<RealtimeProgressRow | null>(null);
   const [activityConfirmationForm, setActivityConfirmationForm] = useState<InjectionActivityConfirmationForm>({
@@ -2754,6 +2738,11 @@ export function ProductionDashboardPage() {
   const [activeKpiDetail, setActiveKpiDetail] = useState<KpiDetailKey | null>(null);
   const [activitySelection, setActivitySelection] = useState<MachineActivitySelection | null>(null);
   const [activityHover, setActivityHover] = useState<MachineActivityHover | null>(null);
+  const aiQuestionInputRef = useRef<HTMLTextAreaElement>(null);
+  const aiChatBodyRef = useRef<HTMLDivElement>(null);
+  const aiChatDrawerRef = useRef<HTMLElement>(null);
+  const aiChatLauncherRef = useRef<HTMLButtonElement>(null);
+  const previousAiChatScopeRef = useRef({ businessDate: currentDate, language });
   const suppressNextActivityPointerRef = useRef(false);
   const [manualForm, setManualForm] = useState({
     goodQty: "",
@@ -2834,6 +2823,24 @@ export function ProductionDashboardPage() {
     enabled: isCoreDashboardDataReady,
     refetchInterval: isCurrentDate ? AI_BRIEFING_REFRESH_INTERVAL_MS : false,
     retry: false,
+  });
+  const aiWorkerStatusQuery = useQuery({
+    queryKey: ["ai-worker", "status", language],
+    queryFn: () => getAiWorkerStatus(language),
+    refetchInterval: AI_WORKER_STATUS_REFRESH_INTERVAL_MS,
+    retry: 1,
+  });
+  const aiQuestionJobQuery = useQuery({
+    queryKey: ["ai-job", "question", aiQuestionJobId],
+    queryFn: () => getAiJob(aiQuestionJobId as number),
+    enabled: aiQuestionJobId !== null && !aiQuestionPollingTimedOut,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status && ["completed", "failed", "cancelled"].includes(status)
+        ? false
+        : AI_QUESTION_JOB_POLL_INTERVAL_MS;
+    },
+    retry: 1,
   });
   const createManualReportMutation = useMutation({
     mutationFn: () => {
@@ -3069,24 +3076,402 @@ export function ProductionDashboardPage() {
   const latestAiJobResult = latestAiJob?.result_payload ?? {};
   const latestAiJobSummary = getStringField(latestAiJobResult, "summary");
   const latestAiJobTopIssues = getTopIssues(latestAiJobResult);
-  const briefingText = latestAiJobSummary
-    ? latestAiJobSummary
-    : aiBriefingQuery.data?.answer || ruleBasedBrief;
+  const latestAiJobUsedFallback = latestAiJobResult.llm_fallback === true;
+  const briefingText = aiBriefingQuery.data?.answer || ruleBasedBrief;
+  const aiWorkerStatus = aiWorkerStatusQuery.isError ? undefined : aiWorkerStatusQuery.data;
+  const aiWorkerState = aiWorkerStatus?.state ?? "unknown";
+  const aiWorkerStateLabel = aiWorkerState === "online"
+    ? copy.workerOnline
+    : aiWorkerState === "offline"
+      ? copy.workerOffline
+      : copy.workerUnknown;
+  const aiWorkerQwenLabel = aiWorkerStatus?.llm_ready === true
+    ? copy.workerQwenReady
+    : aiWorkerStatus?.llm_ready === false
+      ? copy.workerQwenUnavailable
+      : copy.workerQwenUnknown;
+  const aiWorkerModelName = formatAiModelName(
+    aiWorkerStatus?.model_name || aiWorkerStatus?.last_analysis_model_name,
+  );
+  const aiWorkerLastAnalysisMode = aiWorkerStatus?.last_analysis_completed_at
+    ? aiWorkerStatus.last_analysis_llm_fallback === true
+      ? copy.workerModeFallback
+      : copy.workerModeQwen
+    : copy.workerModeUnknown;
+  const aiQuestionJob = aiQuestionJobQuery.data;
+  const aiQuestionJobStatus = aiQuestionJob?.status ?? (aiQuestionJobId !== null ? "pending" : null);
+  const aiQuestionJobResult = aiQuestionJob?.result_payload ?? {};
+  const aiQuestionResultSummary = getStringField(aiQuestionJobResult, "summary");
+  const aiQuestionExplanation = aiQuestionResultSummary;
+  const aiQuestionJobSource = getStringField(aiQuestionJobResult, "source");
+  const aiQuestionJobUsedFallback = aiQuestionJobResult.llm_fallback === true
+    || Boolean(aiQuestionJobSource && aiQuestionJobSource !== "local_llm_rewrite");
+  const aiQuestionJobUsedQwen = aiQuestionJobSource === "local_llm_rewrite" && !aiQuestionJobUsedFallback;
+  const aiQuestionIsQueuedOnly = aiAnswerSource === "ai_queued";
+  const aiQuestionJobFailed = aiQuestionJobStatus === "failed" || aiQuestionJobStatus === "cancelled";
+  const aiQuestionJobCompleted = aiQuestionJobStatus === "completed";
+  const aiQuestionJobStatusLabel = aiQuestionPollingTimedOut
+    ? copy.aiQwenDelayed
+    : aiQuestionJobFailed
+      ? copy.aiQwenFailed
+      : aiQuestionJobCompleted
+        ? aiQuestionJobUsedFallback
+          ? copy.aiQwenFallbackReady
+          : copy.aiQwenReady
+        : aiQuestionJobStatus === "claimed" || aiQuestionJobStatus === "running"
+          ? copy.aiQwenRunning
+          : copy.aiQwenQueued;
+  const aiQuestionJobTone = aiQuestionPollingTimedOut || aiQuestionJobFailed || aiQuestionJobUsedFallback
+    ? "warning"
+    : aiQuestionJobCompleted
+      ? "ready"
+      : "pending";
+  const aiQuestionJobHint = aiQuestionPollingTimedOut
+    ? aiQuestionIsQueuedOnly ? copy.aiQwenQueuedDelayedHint : copy.aiQwenDelayedHint
+    : aiQuestionJobFailed || (aiQuestionJobCompleted && !aiQuestionExplanation)
+      ? aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFailedHint
+      : aiQuestionIsQueuedOnly ? copy.aiQwenQueuedHint : copy.aiQwenPendingHint;
+
+  function appendAiChatMessage(message: ProductionAiChatMessage) {
+    setAiChatMessages((current) => (
+      current.some((item) => item.id === message.id) ? current : [...current, message]
+    ));
+  }
+
   const aiQuestionMutation = useMutation({
-    mutationFn: async () => {
-      try {
-        return await askProductionAi(businessDate, aiQuestion, language);
-      } catch {
-        const answer = answerWithDeterministicFallback(aiQuestion, realtimeProgress, language);
-        return { answer, source: "deterministic_unhandled" as const };
+    mutationFn: (request: ProductionAiQuestionRequest): Promise<ProductionAiAskResponse> => (
+      askProductionAi(request.businessDate, request.question, request.language, request.history)
+    ),
+    onMutate: (request) => {
+      setAiAnswerSource(null);
+      setAiActiveRequest({
+        requestId: request.requestId,
+        businessDate: request.businessDate,
+        language: request.language,
+      });
+      setAiQuestionJobId(null);
+      setAiQuestionPollingTimedOut(false);
+      appendAiChatMessage({
+        id: `${request.requestId}-user`,
+        role: "user",
+        content: request.question,
+        includeInHistory: true,
+      });
+      setAiQuestion("");
+    },
+    onSuccess: (payload, request) => {
+      const jobId = typeof payload.job_id === "number" ? payload.job_id : null;
+      if (request.businessDate !== businessDate || request.language !== language) {
+        if (jobId !== null) void cancelProductionAiJobBestEffort(jobId);
+        setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
+        return;
+      }
+      setAiAnswerSource(payload.source);
+      if (payload.source !== "ai_queued" || jobId === null) {
+        appendAiChatMessage({
+          id: `${request.requestId}-deterministic`,
+          role: "assistant",
+          content: payload.answer,
+          label: payload.source === "ai_queued" ? copy.aiQwenAnswerTitle : copy.aiAnswerTitle,
+          meta: [
+            `${copy.aiSource}: ${payload.source === "ai_queued"
+              ? copy.aiSourceQueued
+              : payload.source === "deterministic_unhandled"
+                ? copy.aiSourceFallback
+                : copy.aiSourceVerified}`,
+          ],
+          includeInHistory: payload.source !== "ai_queued",
+        });
+      }
+      setAiQuestionJobId(jobId);
+      if (jobId === null) {
+        setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
       }
     },
-    onSuccess: (payload) => setAiAnswer(payload.answer),
+    onError: (error, request) => {
+      if (request.businessDate !== businessDate || request.language !== language) {
+        setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
+        return;
+      }
+      const apiError = getProductionAiApiError(error);
+      const isQuestionInProgress = apiError.code === "ai_question_in_progress" || apiError.status === 429;
+      const isQueueUnavailable = apiError.code === "ai_question_enqueue_failed" || apiError.status === 503;
+      const isQuestionTooLong = apiError.code === "question_too_long";
+      const canShowServerDetail = Boolean(apiError.detail)
+        && apiError.status !== null
+        && apiError.status >= 400
+        && apiError.status < 500;
+      appendAiChatMessage({
+        id: `${request.requestId}-request-error`,
+        role: "assistant",
+        content: isQuestionInProgress
+          ? copy.aiQuestionInProgress
+          : isQueueUnavailable
+            ? copy.aiQueueUnavailable
+            : isQuestionTooLong
+              ? copy.aiQuestionTooLong
+              : canShowServerDetail
+                ? apiError.detail
+                : copy.aiRequestFailed,
+        label: isQuestionInProgress
+          ? copy.aiQuestionInProgressTitle
+          : isQueueUnavailable
+            ? copy.aiQueueUnavailableTitle
+            : isQuestionTooLong
+              ? copy.aiQuestionTooLongTitle
+              : canShowServerDetail
+                ? copy.aiRequestRejectedTitle
+                : copy.aiRequestFailedTitle,
+        tone: "warning",
+        includeInHistory: false,
+      });
+      setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
+    },
   });
 
   useEffect(() => {
-    setAiAnswer(null);
-  }, [language, briefContext.businessDate, briefContext.latestUpdatedAt]);
+    const previousScope = previousAiChatScopeRef.current;
+    const scopeChanged = previousScope.businessDate !== businessDate || previousScope.language !== language;
+    if (!scopeChanged) return;
+    previousAiChatScopeRef.current = { businessDate, language };
+    if (aiQuestionJobId !== null) {
+      void cancelProductionAiJobBestEffort(aiQuestionJobId);
+    }
+    setAiChatMessages([]);
+    setAiAnswerSource(null);
+    setAiActiveRequest(null);
+    setAiQuestionJobId(null);
+    setAiQuestionPollingTimedOut(false);
+  }, [aiQuestionJobId, businessDate, language]);
+
+  useEffect(() => {
+    if (
+      aiQuestionJobId === null
+      || aiQuestionJobStatus === "completed"
+      || aiQuestionJobStatus === "failed"
+      || aiQuestionJobStatus === "cancelled"
+    ) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      setAiQuestionPollingTimedOut(true);
+    }, AI_QUESTION_JOB_POLL_TIMEOUT_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [aiQuestionJobId, aiQuestionJobStatus]);
+
+  useEffect(() => {
+    if (
+      !aiQuestionJob
+      || !aiActiveRequest
+      || aiActiveRequest.businessDate !== businessDate
+      || aiActiveRequest.language !== language
+    ) return;
+    const activeRequestId = aiActiveRequest.requestId;
+    if (aiQuestionJob.status === "completed") {
+      const summary = getStringField(aiQuestionJob.result_payload ?? {}, "summary");
+      appendAiChatMessage({
+        id: `${activeRequestId}-qwen`,
+        role: "assistant",
+        content: summary || (aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFailedHint),
+        label: aiQuestionIsQueuedOnly ? copy.aiQwenAnswerTitle : copy.aiQwenTitle,
+        tone: aiQuestionJobUsedFallback || !summary ? "warning" : "default",
+        meta: [
+          `${copy.aiSource}: ${aiQuestionJobUsedQwen
+            ? copy.workerModeQwen
+            : aiQuestionJobUsedFallback
+              ? copy.workerModeFallback
+              : copy.aiSourceVerified}`,
+          `${copy.workerModel}: ${formatAiModelName(aiQuestionJob.model_name || getStringField(aiQuestionJobResult, "model_name"))}`,
+          `${copy.workerAnalysisMode}: ${aiQuestionJobUsedFallback ? copy.workerModeFallback : aiQuestionJobUsedQwen ? copy.workerModeQwen : copy.workerModeUnknown}`,
+        ],
+        notice: aiQuestionJobUsedFallback
+          ? aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFallbackNotice
+          : undefined,
+        includeInHistory: Boolean(summary) && !aiQuestionJobUsedFallback,
+      });
+      setAiQuestionJobId(null);
+      setAiActiveRequest((current) => current?.requestId === activeRequestId ? null : current);
+      setAiQuestionPollingTimedOut(false);
+      return;
+    }
+    if (aiQuestionJob.status === "failed" || aiQuestionJob.status === "cancelled") {
+      appendAiChatMessage({
+        id: `${activeRequestId}-qwen-error`,
+        role: "assistant",
+        content: aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFailedHint,
+        label: aiQuestionIsQueuedOnly ? copy.aiQwenAnswerTitle : copy.aiQwenTitle,
+        tone: "warning",
+        includeInHistory: false,
+      });
+      setAiQuestionJobId(null);
+      setAiActiveRequest((current) => current?.requestId === activeRequestId ? null : current);
+      setAiQuestionPollingTimedOut(false);
+    }
+  }, [aiActiveRequest, aiQuestionIsQueuedOnly, aiQuestionJob, aiQuestionJobResult, aiQuestionJobUsedFallback, aiQuestionJobUsedQwen, businessDate, copy, language]);
+
+  useEffect(() => {
+    const cleanupListeners: Array<() => void> = [];
+    const listen = (target: EventTarget | null | undefined, eventName: string, listener: () => void) => {
+      if (!target) return;
+      target.addEventListener(eventName, listener as EventListener, { passive: true });
+      cleanupListeners.push(() => target.removeEventListener(eventName, listener as EventListener));
+    };
+    const cleanup = () => cleanupListeners.forEach((removeListener) => removeListener());
+
+    const configureStandaloneViewport = () => {
+      const updateStandaloneViewport = () => {
+        const visualViewport = window.visualViewport;
+        const viewportTop = visualViewport?.offsetTop ?? 0;
+        const viewportHeight = visualViewport?.height ?? window.innerHeight;
+        const viewportBottom = viewportTop + viewportHeight;
+        const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
+        setAiChatViewportStyle({
+          "--production-ai-chat-bottom": `${Math.max(16, layoutHeight - viewportBottom + 16)}px`,
+          "--production-ai-chat-visible-height": `${Math.max(64, viewportHeight)}px`,
+        });
+      };
+
+      updateStandaloneViewport();
+      listen(window, "resize", updateStandaloneViewport);
+      listen(window.visualViewport, "resize", updateStandaloneViewport);
+      listen(window.visualViewport, "scroll", updateStandaloneViewport);
+    };
+
+    if (window.parent === window) {
+      configureStandaloneViewport();
+      return cleanup;
+    }
+
+    try {
+      const parentWindow = window.parent;
+      const parentDocument = parentWindow.document;
+      const frameElement = window.frameElement as HTMLElement | null;
+      if (!frameElement) {
+        configureStandaloneViewport();
+        return cleanup;
+      }
+
+      const getTopOcclusionBottom = (
+        frameRect: DOMRect,
+        viewportTop: number,
+        viewportBottom: number,
+      ) => {
+        const candidates = Array.from(parentDocument.querySelectorAll<HTMLElement>(
+          "header, [role='banner'], .sticky, .fixed, [data-sticky], [style*='position']",
+        ));
+        const coveringRects = candidates.flatMap((element) => {
+          const computedStyle = parentWindow.getComputedStyle(element);
+          if (
+            !["fixed", "sticky"].includes(computedStyle.position)
+            || computedStyle.display === "none"
+            || computedStyle.visibility === "hidden"
+            || Number(computedStyle.opacity) === 0
+          ) return [];
+          const rect = element.getBoundingClientRect();
+          if (
+            rect.width <= 0
+            || rect.height <= 0
+            || rect.bottom <= viewportTop
+            || rect.top >= viewportBottom
+            || rect.right <= frameRect.left
+            || rect.left >= frameRect.right
+          ) return [];
+
+          const overlapLeft = Math.max(rect.left, frameRect.left);
+          const overlapRight = Math.min(rect.right, frameRect.right);
+          const sampleX = Math.min(overlapRight - 1, Math.max(overlapLeft + 1, (overlapLeft + overlapRight) / 2));
+          const sampleY = Math.min(rect.bottom - 1, Math.max(rect.top + 1, (rect.top + rect.bottom) / 2));
+          const stack = parentDocument.elementsFromPoint(sampleX, sampleY);
+          const coveringIndex = stack.findIndex((stackElement) => (
+            stackElement === element || element.contains(stackElement)
+          ));
+          const frameIndex = stack.indexOf(frameElement);
+          if (coveringIndex < 0 || (frameIndex >= 0 && coveringIndex > frameIndex)) return [];
+          return [rect];
+        }).sort((left, right) => left.top - right.top);
+
+        return coveringRects.reduce((occlusionBottom, rect) => (
+          rect.top <= occlusionBottom + 16
+            ? Math.min(viewportBottom, Math.max(occlusionBottom, rect.bottom))
+            : occlusionBottom
+        ), viewportTop);
+      };
+
+      const updateEmbeddedViewport = () => {
+        const frameRect = frameElement.getBoundingClientRect();
+        const frameHeight = Math.max(frameRect.height, frameElement.offsetHeight, window.innerHeight);
+        const parentVisualViewport = parentWindow.visualViewport;
+        const viewportTop = parentVisualViewport?.offsetTop ?? 0;
+        const viewportHeight = parentVisualViewport?.height ?? parentWindow.innerHeight;
+        const viewportBottom = viewportTop + viewportHeight;
+        const intersectionTop = Math.max(viewportTop, frameRect.top);
+        const intersectionBottom = Math.min(viewportBottom, frameRect.bottom);
+        const occlusionBottom = getTopOcclusionBottom(frameRect, viewportTop, viewportBottom);
+        const effectiveTop = Math.max(intersectionTop, occlusionBottom);
+        const visibleTop = Math.max(0, Math.min(frameHeight, effectiveTop - frameRect.top));
+        const visibleBottom = Math.max(
+          visibleTop,
+          Math.min(frameHeight, intersectionBottom - frameRect.top),
+        );
+        const visibleHeight = Math.max(64, visibleBottom - visibleTop);
+        setAiChatViewportStyle({
+          "--production-ai-chat-bottom": `${Math.max(16, frameHeight - visibleBottom + 16)}px`,
+          "--production-ai-chat-visible-height": `${visibleHeight}px`,
+        });
+      };
+
+      updateEmbeddedViewport();
+      listen(parentWindow, "scroll", updateEmbeddedViewport);
+      listen(parentWindow, "resize", updateEmbeddedViewport);
+      listen(parentWindow.visualViewport, "resize", updateEmbeddedViewport);
+      listen(parentWindow.visualViewport, "scroll", updateEmbeddedViewport);
+      listen(window, "resize", updateEmbeddedViewport);
+      listen(window.visualViewport, "resize", updateEmbeddedViewport);
+      listen(window.visualViewport, "scroll", updateEmbeddedViewport);
+    } catch {
+      configureStandaloneViewport();
+    }
+
+    return cleanup;
+  }, []);
+
+  useEffect(() => {
+    if (!isAiAskOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusId = window.requestAnimationFrame(() => aiQuestionInputRef.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsAiAskOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(aiChatDrawerRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ) ?? []);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusId);
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      aiChatLauncherRef.current?.focus();
+    };
+  }, [isAiAskOpen]);
+
+  useEffect(() => {
+    if (!isAiAskOpen) return;
+    aiChatBodyRef.current?.scrollTo({ top: aiChatBodyRef.current.scrollHeight, behavior: "smooth" });
+  }, [aiChatMessages, aiQuestionJobStatus, isAiAskOpen]);
 
   useEffect(() => {
     setActivitySelection(null);
@@ -3097,8 +3482,23 @@ export function ProductionDashboardPage() {
 
   function submitAiQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!aiQuestion.trim() || aiQuestionMutation.isPending) return;
-    aiQuestionMutation.mutate();
+    const question = aiQuestion.trim();
+    if (
+      !question
+      || aiQuestionMutation.isPending
+      || (aiQuestionJobId !== null && !aiQuestionPollingTimedOut)
+    ) return;
+    const history = aiChatMessages
+      .filter((message) => message.includeInHistory !== false)
+      .slice(-8)
+      .map(({ role, content }) => ({ role, content }));
+    aiQuestionMutation.mutate({
+      question,
+      history,
+      requestId: `question-${Date.now().toString(36)}`,
+      businessDate,
+      language,
+    });
   }
 
   const isInitialLoading = !isCoreDashboardDataReady && (planSummaryQuery.isFetching || mesQuery.isFetching || machiningStatsQuery.isFetching);
@@ -4557,15 +4957,35 @@ export function ProductionDashboardPage() {
                 <p className="panel-card__eyebrow">{copy.localBrief}</p>
                 <h3 className="panel__title">{copy.briefTitle}</h3>
               </div>
-              <div className="production-brief-panel__actions">
-                <button
-                  className="button button--primary"
-                  type="button"
-                  onClick={() => setIsAiAskOpen((isOpen) => !isOpen)}
-                >
-                  {isAiAskOpen ? copy.closeAi : copy.askAi}
-                </button>
+            </div>
+
+            <div className="production-ai-worker-status">
+              <div className="production-ai-worker-status__states" role="status">
+                <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--${aiWorkerState}`}>
+                  {aiWorkerStateLabel}
+                </span>
+                <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--qwen-${aiWorkerStatus?.llm_ready === true ? "ready" : aiWorkerStatus?.llm_ready === false ? "unavailable" : "unknown"}`}>
+                  {aiWorkerQwenLabel}
+                </span>
               </div>
+              <dl className="production-ai-worker-status__meta">
+                <div>
+                  <dt>{copy.workerHeartbeat}</dt>
+                  <dd>{formatAiTimestamp(aiWorkerStatus?.last_heartbeat_at, language)}</dd>
+                </div>
+                <div>
+                  <dt>{copy.workerLastAnalysis}</dt>
+                  <dd>{formatAiTimestamp(aiWorkerStatus?.last_analysis_completed_at, language)}</dd>
+                </div>
+                <div>
+                  <dt>{copy.workerModel}</dt>
+                  <dd title={aiWorkerModelName}>{aiWorkerModelName}</dd>
+                </div>
+                <div>
+                  <dt>{copy.workerAnalysisMode}</dt>
+                  <dd>{aiWorkerLastAnalysisMode}</dd>
+                </div>
+              </dl>
             </div>
 
             <div className="production-brief-panel__body">
@@ -4602,49 +5022,26 @@ export function ProductionDashboardPage() {
               </details>
             </div>
 
-            {isAiAskOpen ? (
-              <form className="production-ai-ask" onSubmit={submitAiQuestion}>
-                <textarea
-                  onChange={(event) => setAiQuestion(event.target.value)}
-                  placeholder={copy.aiQuestionPlaceholder}
-                  rows={3}
-                  value={aiQuestion}
-                />
-                <div className="production-ai-ask__actions">
-                  <span>{copy.aiQuestionScope}</span>
-                  <button className="button button--primary" disabled={!aiQuestion.trim() || aiQuestionMutation.isPending} type="submit">
-                    {aiQuestionMutation.isPending ? copy.askingAi : copy.aiSubmit}
-                  </button>
-                </div>
-              </form>
-            ) : null}
-
-            {aiAnswer ? (
-              <div className="production-ai-answer">
-                <strong>{copy.aiAnswerTitle}</strong>
-                {aiAnswer.split("\n\n").map((paragraph, index) => (
-                  <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
-                ))}
-              </div>
-            ) : null}
-
             {latestAiJob ? (
               <div className="production-ai-job production-ai-job--completed">
                 <div className="production-ai-job__header">
                   <div>
                     <strong>{copy.workerJobTitle}</strong>
                     <span>
-                      {latestAiJob.completed_at ? new Date(latestAiJob.completed_at).toLocaleString(language === "ko" ? "ko-KR" : "zh-CN") : ""}
-                      {latestAiJob.model_name ? ` · ${latestAiJob.model_name}` : ""}
+                      {formatAiTimestamp(latestAiJob.completed_at, language)}
+                      {latestAiJob.model_name ? ` · ${formatAiModelName(latestAiJob.model_name)}` : ""}
                     </span>
                   </div>
                 </div>
 
                 <div className="production-ai-job__result">
                   <strong>{copy.workerJobResult}</strong>
-                  {latestAiJobResult.llm_fallback ? (
+                  {latestAiJobUsedFallback ? (
                     <div className="notice notice--warning">{copy.workerJobFallback}</div>
                   ) : null}
+                  {latestAiJobSummary ? latestAiJobSummary.split("\n\n").map((paragraph, index) => (
+                    <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
+                  )) : null}
                   <div className="production-ai-job__issues">
                     {latestAiJobTopIssues.length ? latestAiJobTopIssues.map((issue, index) => (
                       <div className="production-ai-job__issue" key={`${getStringField(issue, "label")}-${index}`}>
@@ -5153,6 +5550,122 @@ export function ProductionDashboardPage() {
           ) : null}
         </>
       ) : null}
+
+      <button
+        aria-expanded={isAiAskOpen}
+        aria-haspopup="dialog"
+        className={`production-ai-chat-launcher production-ai-chat-launcher--${aiWorkerState === "online" && aiWorkerStatus?.llm_ready === true ? "ready" : aiWorkerState === "offline" || aiWorkerStatus?.llm_ready === false ? "warning" : "unknown"}`}
+        onClick={() => setIsAiAskOpen(true)}
+        ref={aiChatLauncherRef}
+        style={aiChatViewportStyle}
+        type="button"
+      >
+        <span aria-hidden="true" />
+        <MessageCircle aria-hidden="true" size={18} strokeWidth={2.2} />
+        {copy.askAi}
+      </button>
+
+      {isAiAskOpen ? createPortal(
+        <div className="production-ai-chat-layer" style={aiChatViewportStyle}>
+          <button
+            aria-label={copy.closeAi}
+            className="production-ai-chat-overlay"
+            onClick={() => setIsAiAskOpen(false)}
+            tabIndex={-1}
+            type="button"
+          />
+          <section
+            aria-label={copy.aiAssistantTitle}
+            aria-modal="true"
+            className="production-ai-chat-drawer"
+            ref={aiChatDrawerRef}
+            role="dialog"
+          >
+            <header className="production-ai-chat-drawer__header">
+              <div>
+                <p className="panel-card__eyebrow">AI ASSISTANT</p>
+                <h3>{copy.aiAssistantTitle}</h3>
+                <div className="production-ai-chat-drawer__states" role="status">
+                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--${aiWorkerState}`}>
+                    {aiWorkerStateLabel}
+                  </span>
+                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--qwen-${aiWorkerStatus?.llm_ready === true ? "ready" : aiWorkerStatus?.llm_ready === false ? "unavailable" : "unknown"}`}>
+                    {aiWorkerQwenLabel}
+                  </span>
+                </div>
+              </div>
+              <button
+                aria-label={copy.closeAi}
+                className="button button--ghost production-ai-chat-drawer__close"
+                onClick={() => setIsAiAskOpen(false)}
+                type="button"
+              >
+                <X aria-hidden="true" size={20} strokeWidth={2.2} />
+              </button>
+            </header>
+
+            <div className="production-ai-chat-drawer__body" ref={aiChatBodyRef}>
+              <p className="production-ai-chat-drawer__intro">{copy.aiAssistantIntro}</p>
+              {aiChatMessages.map((message) => (
+                <article
+                  className={`production-ai-chat-message production-ai-chat-message--${message.role}${message.tone === "warning" ? " production-ai-chat-message--warning" : ""}`}
+                  key={message.id}
+                >
+                  <div className="production-ai-chat-message__header">
+                    <strong>{message.label || (message.role === "user" ? copy.aiAssistantUser : copy.aiAssistantAi)}</strong>
+                  </div>
+                  {message.content.split("\n\n").map((paragraph, index) => (
+                    <p key={`${message.id}-${index}`}>{paragraph}</p>
+                  ))}
+                  {message.notice ? <div className="notice notice--warning">{message.notice}</div> : null}
+                  {message.meta?.length ? (
+                    <div className="production-ai-chat-message__meta">
+                      {message.meta.map((item) => <span key={item}>{item}</span>)}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+
+              {aiQuestionMutation.isPending || aiQuestionJobId !== null ? (
+                <article className={`production-ai-chat-message production-ai-chat-message--assistant production-ai-chat-message--${aiQuestionJobTone}`}>
+                  <div className="production-ai-chat-message__header">
+                    <strong>{aiQuestionIsQueuedOnly ? copy.aiQwenAnswerTitle : copy.aiQwenTitle}</strong>
+                    <span role="status">{aiQuestionMutation.isPending ? copy.aiQwenQueued : aiQuestionJobStatusLabel}</span>
+                  </div>
+                  <p>{aiQuestionMutation.isPending ? copy.aiQwenQueuedHint : aiQuestionJobHint}</p>
+                  <div className="production-ai-chat-message__meta">
+                    <span>{copy.aiSource}: {copy.aiSourceQueued}</span>
+                  </div>
+                </article>
+              ) : null}
+            </div>
+
+            <form className="production-ai-chat-drawer__footer" onSubmit={submitAiQuestion}>
+              <label className="production-ai-chat__visually-hidden" htmlFor="production-ai-chat-question">
+                {copy.aiInputLabel}
+              </label>
+              <textarea
+                id="production-ai-chat-question"
+                onChange={(event) => setAiQuestion(event.target.value)}
+                placeholder={copy.aiQuestionPlaceholder}
+                ref={aiQuestionInputRef}
+                rows={3}
+                value={aiQuestion}
+              />
+              <div>
+                <span>{copy.aiQuestionScope}</span>
+                <button
+                  className="button button--primary"
+                  disabled={!aiQuestion.trim() || aiQuestionMutation.isPending || (aiQuestionJobId !== null && !aiQuestionPollingTimedOut)}
+                  type="submit"
+                >
+                  {aiQuestionMutation.isPending ? copy.askingAi : copy.aiSubmit}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      , document.body) : null}
     </section>
   );
 }

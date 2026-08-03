@@ -4,13 +4,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-PROMPT_VERSION = "production-machine-v1"
+PROMPT_VERSION = "production-machine-v2"
 
 
 SYSTEM_PROMPT = """You are a manufacturing machine analyst.
 Use only the provided data. Do not invent numbers.
 The backend already selected and calculated all facts and issues.
 Rewrite the draft into a concise, action-oriented machine briefing without adding facts.
+The summary MUST contain no measurement value or quantity, whether written with digits or words.
+This includes counts, output, plan/actual, rates, percentages, dates, times, durations, and thresholds.
+Never copy a draft sentence containing a measurement. The deterministic facts already retain all measurements.
+Digits are allowed in the summary only when they are part of the exact machine, line, or Part identifier
+copied unchanged from the input. The title may contain the exact supplied date.
+When the evidence is primarily numeric, state only a qualitative condition, limitation, or next action.
 Your final answer must be valid JSON only, with no markdown.
 Required keys: title, summary."""
 
@@ -27,7 +33,12 @@ def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
         "facts": context_pack.get("facts") or {},
         "warnings": context_pack.get("warnings") or [],
         "calculation_basis": context_pack.get("calculation_basis") or [],
-        "instruction": "Return concise Korean JSON if language is ko, Chinese JSON if language is zh.",
+        "instruction": (
+            "Return concise Korean JSON if language is ko, Chinese JSON if language is zh. "
+            "The summary must contain zero measurement values or quantities; do not repeat any count, "
+            "rate, percentage, date, time, duration, output, plan, actual, or threshold. "
+            "Only exact identifier digits may remain."
+        ),
     }
 
 
