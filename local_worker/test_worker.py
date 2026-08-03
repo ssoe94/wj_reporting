@@ -10,6 +10,7 @@ try:
     from .render_client import RenderClient
     from .worker import (
         RunOnceReport,
+        build_repair_payload,
         handle_job,
         handler_for_job,
         normalize_result,
@@ -25,6 +26,7 @@ except ImportError:
     from render_client import RenderClient
     from worker import (
         RunOnceReport,
+        build_repair_payload,
         handle_job,
         handler_for_job,
         normalize_result,
@@ -72,6 +74,22 @@ class NormalizeResultTests(unittest.TestCase):
                 "qwen-test",
                 self.fallback,
             )
+
+    def test_invalid_numeric_title_is_replaced_without_discarding_safe_summary(self):
+        result = normalize_result(
+            {
+                "title": "1, 9호기 형합 예상치 분석",
+                "summary": "현재 추세를 바탕으로 기준일 종료 예상 결과를 확인했습니다.",
+            },
+            self.fallback,
+            "qwen-test",
+            self.fallback,
+        )
+
+        self.assertEqual(result["title"], "Deterministic analysis")
+        self.assertEqual(result["summary"], "현재 추세를 바탕으로 기준일 종료 예상 결과를 확인했습니다.")
+        self.assertTrue(result["llm_title_fallback"])
+        self.assertEqual(result["source"], "local_llm_rewrite")
 
 
 class ProductionDailyAnalysisTests(unittest.TestCase):
@@ -304,7 +322,162 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
         self.assertEqual(result["facts"]["projected_total_shots"], 2900)
         self.assertEqual(result["summary"], "1호기 종료 예상 형합수는 2,900회입니다.")
         self.assertEqual(result["source"], "local_llm_rewrite")
-        self.assertEqual(prompt_version, "production-question-v2")
+        self.assertEqual(result["llm_attempts"], 1)
+        self.assertEqual(prompt_version, "production-question-v3")
+
+    def test_grounding_rejection_is_repaired_with_qualitative_payload(self):
+        class SequencedLlm:
+            def __init__(self):
+                self.calls = []
+                self.responses = iter([
+                    {
+                        "title": "1호기 생산 추세",
+                        "summary": "1호기의 최근 60분 속도를 기준으로 예상 결과를 확인했습니다.",
+                    },
+                    {
+                        "title": "1호기 생산 추세",
+                        "summary": "1호기의 최근 측정 추세를 기준으로 예상 결과를 확인했습니다.",
+                    },
+                ])
+
+            def structured_analysis(self, system_prompt, payload):
+                self.calls.append((system_prompt, payload))
+                return next(self.responses)
+
+        llm = SequencedLlm()
+        result, _ = handle_job(
+            self.job,
+            use_llm=True,
+            llm=llm,
+            model_name="qwen-test",
+            fallback_to_deterministic=False,
+        )
+
+        self.assertEqual(len(llm.calls), 2)
+        self.assertNotIn("60", str(llm.calls[1][1]))
+        self.assertNotIn("2,900", str(llm.calls[1][1]))
+        self.assertEqual(result["source"], "local_llm_rewrite")
+        self.assertTrue(result["llm_repaired"])
+        self.assertEqual(result["llm_attempts"], 2)
+        self.assertEqual(result["facts"]["projected_total_shots"], 2900)
+
+    def test_unverified_question_number_is_removed_from_repair_payload(self):
+        self.job["input_payload"]["question"] = "오늘 32인치 모델 생산 중인가?"
+        candidate = {
+            "title": "생산 상태",
+            "summary": "32인치 모델의 생산 여부를 확인했습니다.",
+        }
+        grounding = production_question_analysis.build_grounding_payload(self.job)
+
+        repair_payload = build_repair_payload(self.job, candidate, grounding)
+
+        self.assertNotIn("32", str(repair_payload))
+        self.assertIn("해당 규격", str(repair_payload))
+
+    def test_verified_numeric_model_identifier_can_answer_current_status_directly(self):
+        status_job = {
+            "job_type": "production_daily_analysis",
+            "scope": {"trigger": "question", "date": "2026-08-03", "language": "ko"},
+            "input_payload": {
+                "source": "production_ai_question",
+                "answer_mode": "context_grounded",
+                "language": "ko",
+                "date": "2026-08-03",
+                "question": "오늘 32인치 모델 생산 중인가?",
+                "deterministic": {"answer": "데이터 범위를 확인해 주세요.", "facts": {}},
+                "verified_context": {
+                    "tables": [{
+                        "name": "injection_part_progress",
+                        "columns": ["machine", "model_name", "status"],
+                        "rows": [{
+                            "machine": "850T-1",
+                            "model_name": "32인치",
+                            "status": "in_progress",
+                            "planned_qty": 1200,
+                        }],
+                    }],
+                },
+            },
+        }
+
+        class FakeLlm:
+            def structured_analysis(self, _system_prompt, _payload):
+                return {
+                    "title": "32인치 모델 생산 상태",
+                    "summary": "32인치 모델은 현재 생산 진행 중입니다.",
+                }
+
+        result, _ = handle_job(
+            status_job,
+            use_llm=True,
+            llm=FakeLlm(),
+            model_name="qwen-test",
+            fallback_to_deterministic=False,
+        )
+
+        self.assertEqual(result["summary"], "32인치 모델은 현재 생산 진행 중입니다.")
+        self.assertEqual(result["source"], "local_llm_rewrite")
+        self.assertFalse(result.get("llm_fallback", False))
+
+    def test_double_grounding_rejection_preserves_qwen_draft_for_review(self):
+        class RejectedLlm:
+            def __init__(self):
+                self.calls = 0
+
+            def structured_analysis(self, _system_prompt, _payload):
+                self.calls += 1
+                return {
+                    "title": "생산 추세",
+                    "summary": "최근 60분 속도를 기준으로 예상 결과를 확인했습니다.",
+                }
+
+        llm = RejectedLlm()
+        result, _ = handle_job(
+            self.job,
+            use_llm=True,
+            llm=llm,
+            model_name="qwen-test",
+            fallback_to_deterministic=True,
+        )
+
+        self.assertEqual(llm.calls, 2)
+        self.assertTrue(result["llm_fallback"])
+        self.assertEqual(result["llm_fallback_code"], "grounding_rejected")
+        self.assertEqual(result["source"], "local_llm_guarded_fallback")
+        self.assertEqual(result["model_name"], "qwen-test")
+        self.assertEqual(result["llm_attempts"], 2)
+        self.assertEqual(
+            result["llm_review_summary"],
+            "최근 60분 속도를 기준으로 예상 결과를 확인했습니다.",
+        )
+        self.assertEqual(result["answer"], "1호기 종료 예상 형합수는 2,900회입니다.")
+
+    def test_repair_connection_failure_keeps_initial_rejection_but_reports_terminal_error(self):
+        class RepairConnectionFailureLlm:
+            def __init__(self):
+                self.calls = 0
+
+            def structured_analysis(self, _system_prompt, _payload):
+                self.calls += 1
+                if self.calls == 1:
+                    return {
+                        "title": "생산 추세",
+                        "summary": "최근 60분 속도를 기준으로 예상 결과를 확인했습니다.",
+                    }
+                raise ConnectionError("local model connection failed")
+
+        result, _ = handle_job(
+            self.job,
+            use_llm=True,
+            llm=RepairConnectionFailureLlm(),
+            model_name="qwen-test",
+            fallback_to_deterministic=True,
+        )
+
+        self.assertEqual(result["llm_fallback_code"], "model_unavailable")
+        self.assertTrue(result["llm_initial_grounding_rejected"])
+        self.assertEqual(result["llm_attempts"], 2)
+        self.assertIn("최근 60분", result["llm_review_summary"])
 
 
 class LocalLlmReadinessTests(unittest.TestCase):
