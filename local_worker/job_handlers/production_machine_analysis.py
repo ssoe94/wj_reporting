@@ -114,6 +114,7 @@ def _issues(row: dict[str, Any], severity: str) -> list[dict[str, Any]]:
 def build_dummy_result(job: dict[str, Any], model_name: str = "dummy-local-worker") -> dict[str, Any]:
     payload = job.get("input_payload") or {}
     scope = job.get("scope") or {}
+    context_pack = payload.get("context_pack") or {}
     row = payload.get("target_row") or {}
     machine = scope.get("machine") or payload.get("machine") or row.get("machine") or row.get("equipment_label") or "-"
     language = "zh" if payload.get("language") == "zh" else "ko"

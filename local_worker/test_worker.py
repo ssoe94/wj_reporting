@@ -1,8 +1,10 @@
 import unittest
 
 try:
+    from .job_handlers import production_machine_analysis
     from .worker import normalize_result
 except ImportError:
+    from job_handlers import production_machine_analysis
     from worker import normalize_result
 
 
@@ -45,6 +47,37 @@ class NormalizeResultTests(unittest.TestCase):
                 "qwen-test",
                 self.fallback,
             )
+
+
+class ProductionMachineAnalysisTests(unittest.TestCase):
+    def test_deterministic_result_preserves_context_metadata(self):
+        job = {
+            "scope": {"machine": "850T-1"},
+            "input_payload": {
+                "language": "ko",
+                "date": "2026-08-03",
+                "target_row": {
+                    "machine": "850T-1",
+                    "planned_qty": 100,
+                    "actual_qty": 50,
+                    "gap_qty": -50,
+                    "progress_rate": 50,
+                    "recent_60m_shots": 0,
+                },
+                "context_pack": {
+                    "data_freshness": {"status": "fresh"},
+                    "warnings": ["sample warning"],
+                    "retrieval_trace": [{"source": "production_context"}],
+                },
+            },
+        }
+
+        result = production_machine_analysis.build_dummy_result(job)
+
+        self.assertEqual(result["data_freshness"], {"status": "fresh"})
+        self.assertEqual(result["warnings"], ["sample warning"])
+        self.assertEqual(result["retrieval_trace"], [{"source": "production_context"}])
+        self.assertEqual(result["target_machine"]["machine"], "850T-1")
 
 
 if __name__ == "__main__":

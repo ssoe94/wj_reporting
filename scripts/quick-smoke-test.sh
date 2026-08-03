@@ -33,7 +33,7 @@ fi
 # Reports summary
 SUMMARY_RESPONSE=$(curl -s -w "\n%{content_type}" "$FRONTEND_URL/api/injection/reports/summary/?date=2025-10-14")
 SUMMARY_CT=$(echo "$SUMMARY_RESPONSE" | tail -n 1)
-SUMMARY_BODY=$(echo "$SUMMARY_RESPONSE" | head -n -1)
+SUMMARY_BODY="${SUMMARY_RESPONSE%$'\n'*}"
 
 if [[ "$SUMMARY_CT" =~ "application/json" ]] && [[ ! "$SUMMARY_BODY" =~ "<html" ]]; then
     echo -e "  ${GREEN}✓${NC} /api/injection/reports/summary/ returns JSON"
@@ -48,7 +48,8 @@ echo -e "${YELLOW}[2/5] Testing 404 JSON response...${NC}"
 NOT_FOUND_RESPONSE=$(curl -s -w "\n%{http_code}\n%{content_type}" "$FRONTEND_URL/api/_404_check")
 NOT_FOUND_STATUS=$(echo "$NOT_FOUND_RESPONSE" | tail -n 2 | head -n 1)
 NOT_FOUND_CT=$(echo "$NOT_FOUND_RESPONSE" | tail -n 1)
-NOT_FOUND_BODY=$(echo "$NOT_FOUND_RESPONSE" | head -n -2)
+NOT_FOUND_WITHOUT_CT="${NOT_FOUND_RESPONSE%$'\n'*}"
+NOT_FOUND_BODY="${NOT_FOUND_WITHOUT_CT%$'\n'*}"
 
 if [ "$NOT_FOUND_STATUS" = "404" ] && [[ "$NOT_FOUND_CT" =~ "application/json" ]] && [[ ! "$NOT_FOUND_BODY" =~ "<html" ]]; then
     echo -e "  ${GREEN}✓${NC} 404 returns JSON (not HTML)"
