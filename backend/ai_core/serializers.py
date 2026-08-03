@@ -52,24 +52,40 @@ class AiJobSerializer(serializers.ModelSerializer):
         return getattr(user, 'username', None) or getattr(user, 'email', None) or str(user)
 
 
+class AiJobResultSerializer(serializers.ModelSerializer):
+    """Small, read-only payload for dashboard status/result polling."""
+
+    class Meta:
+        model = AiJob
+        fields = [
+            'id',
+            'job_type',
+            'status',
+            'scope',
+            'result_payload',
+            'error_message',
+            'claimed_by',
+            'claimed_at',
+            'started_at',
+            'completed_at',
+            'model_name',
+            'prompt_version',
+            'created_at',
+            'updated_at',
+        ]
+
+
 class AiJobCreateSerializer(serializers.Serializer):
     job_type = serializers.ChoiceField(choices=[
         AiJob.JOB_TYPE_PRODUCTION_DAILY,
         AiJob.JOB_TYPE_PRODUCTION_MACHINE,
     ])
     scope = serializers.JSONField(required=False)
-    input_payload = serializers.JSONField(required=False)
 
     def validate_scope(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError('scope must be an object.')
         return value
-
-    def validate_input_payload(self, value):
-        if not isinstance(value, dict):
-            raise serializers.ValidationError('input_payload must be an object.')
-        return value
-
 
 class AiJobClaimSerializer(serializers.Serializer):
     worker_name = serializers.CharField(max_length=128)

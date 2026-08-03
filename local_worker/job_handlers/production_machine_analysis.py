@@ -9,8 +9,10 @@ PROMPT_VERSION = "production-machine-v1"
 
 SYSTEM_PROMPT = """You are a manufacturing machine analyst.
 Use only the provided data. Do not invent numbers.
+The backend already selected and calculated all facts and issues.
+Rewrite the draft into a concise, action-oriented machine briefing without adding facts.
 Your final answer must be valid JSON only, with no markdown.
-Required keys: title, severity, summary, top_issues, used_data, calculation_basis, model_name, generated_at."""
+Required keys: title, summary."""
 
 
 def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
@@ -134,6 +136,9 @@ def build_dummy_result(job: dict[str, Any], model_name: str = "dummy-local-worke
             "Machine analysis uses backend-calculated production context.",
             "Injection actual quantity is estimated from MES shot count x cavity allocation.",
         ],
+        "data_freshness": context_pack.get("data_freshness") or {},
+        "warnings": context_pack.get("warnings") or [],
+        "retrieval_trace": context_pack.get("retrieval_trace") or [],
         "model_name": model_name,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

@@ -35,7 +35,7 @@ from .permissions import user_can_edit_plan, user_can_view_plan
 from .models import ProductionPlanPart
 from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
 from .ai_answer import build_ai_briefing
-from .ai_gateway import answer_from_intent, build_injection_plan_context, request_local_llm, request_question_intent
+from .ai_gateway import answer_from_intent, build_injection_plan_context, heuristic_intent_from_question
 from .ai_retrievers import get_daily_production_context
 from .counter_utils import calculate_cumulative_counter_delta
 from .cavity import (
@@ -291,7 +291,7 @@ class ProductionAiAskView(APIView):
         if not target_date:
             return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        intent = request_question_intent(question, target_date.isoformat(), language)
+        intent = heuristic_intent_from_question(question)
         context = build_injection_plan_context(target_date.isoformat())
         calculated_answer = answer_from_intent(intent, context, language)
         if calculated_answer:
@@ -308,18 +308,14 @@ class ProductionAiAskView(APIView):
                 },
             })
 
-        try:
-            answer = request_local_llm(question, context, language)
-        except Exception as exc:
-            return Response({
-                'answer': '로컬 LLM 응답 시간이 길어져 중단했습니다. 계산형 질문은 더 빠르게 답할 수 있도록 계속 보강하겠습니다.',
-                'source': 'timeout_or_llm_error',
-                'detail': str(exc),
-            })
-
         return Response({
-            'answer': answer,
-            'source': 'local_llm',
+            'answer': (
+                '현재 질문은 검증된 생산 지표만으로 즉시 계산할 수 없습니다. '
+                '설비, Part, 생산량, 진행률 또는 최근 60분 C/T 기준으로 질문해 주세요.'
+                if language != 'zh' else
+                '当前问题无法仅用已验证的生产指标即时计算。请按设备、Part、产量、进度或最近60分钟 C/T 提问。'
+            ),
+            'source': 'deterministic_unhandled',
             'intent': intent,
             'context': {
                 'business_date': context['business_date'],
@@ -332,7 +328,7 @@ class ProductionAiAskView(APIView):
 
 
 class ProductionAiBriefingView(APIView):
-    permission_classes = []
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         date_str = request.query_params.get('date') or timezone.localdate().isoformat()
