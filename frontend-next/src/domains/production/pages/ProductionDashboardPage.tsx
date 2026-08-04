@@ -1,7 +1,7 @@
 import { type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { isAxiosError } from "axios";
-import { MessageCircle, X } from "lucide-react";
+import { GripVertical, MessageCircle, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getInjectionProductionMatrix,
@@ -20,7 +20,6 @@ import {
   getMachiningProvision,
   getInjectionActivityConfirmations,
   getInjectionDowntimeConfirmations,
-  getProductionAiBriefing,
   getProductionMesReportStats,
   getProductionPlanSummary,
   getProductionStatus,
@@ -141,11 +140,64 @@ type ProductionAiChatViewportStyle = CSSProperties & {
   "--production-ai-chat-visible-height"?: string;
 };
 
+type ProductionAiChatVisibleViewport = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type ProductionAiChatLauncherPosition = {
+  x: number;
+  y: number;
+};
+
+type ProductionAiChatLauncherDrag = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startCenterX: number;
+  startCenterY: number;
+  width: number;
+  height: number;
+  moved: boolean;
+  lastPosition: ProductionAiChatLauncherPosition | null;
+};
+
 const PRODUCTION_AI_MODEL_OPTIONS: Array<{ id: ProductionAiModelId; label: string }> = [
   { id: "qwen35", label: "Qwen 3.5" },
   { id: "gemma4_26b_a4b", label: "Gemma 4" },
 ];
 const GEMMA_READY_WORKER_VERSION = "production-ai-worker-v2-gemma1";
+const AI_CHAT_LAUNCHER_POSITION_KEY = "wj-production-ai-chat-launcher-position-v1";
+const AI_CHAT_LAUNCHER_MARGIN_PX = 8;
+const AI_CHAT_LAUNCHER_DRAG_THRESHOLD_PX = 5;
+
+function clampUnitInterval(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function readAiChatLauncherPosition(): ProductionAiChatLauncherPosition | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = JSON.parse(window.localStorage.getItem(AI_CHAT_LAUNCHER_POSITION_KEY) || "null");
+    if (!value || typeof value !== "object") return null;
+    const x = Number((value as Record<string, unknown>).x);
+    const y = Number((value as Record<string, unknown>).y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: clampUnitInterval(x), y: clampUnitInterval(y) };
+  } catch {
+    return null;
+  }
+}
+
+function persistAiChatLauncherPosition(position: ProductionAiChatLauncherPosition) {
+  try {
+    window.localStorage.setItem(AI_CHAT_LAUNCHER_POSITION_KEY, JSON.stringify(position));
+  } catch {
+    // Storage can be unavailable in private or restricted browser contexts.
+  }
+}
 
 function getProductionAiModelLabel(modelId: ProductionAiModelId) {
   return PRODUCTION_AI_MODEL_OPTIONS.find((option) => option.id === modelId)?.label ?? modelId;
@@ -320,7 +372,7 @@ const pageCopy = {
   ko: {
     eyebrow: "Production",
     title: "생산 대시보드",
-    description: "생산 계획과 MES 실적을 비교하고, 검증된 시간별 AI 생산 분석을 제공합니다.",
+    description: "생산 계획과 MES 실적을 비교하고, Qwen과 Gemma의 생산 브리핑을 제공합니다.",
     loading: "생산 현황을 불러오는 중입니다.",
     productionDate: "기준일",
     productionDateHint: "오전 08:00 ~ 익일 08:00 기준",
@@ -337,10 +389,13 @@ const pageCopy = {
     recentRunning: "최근 60분 가동",
     localBrief: "AI BRIEFING",
     briefTitle: "일일 생산 브리핑",
-    usedData: "사용한 데이터",
-    calculationBasis: "계산 기준",
-    deterministicBrief: "계산형 RAG 브리핑",
+    briefModelSelect: "브리핑 모델 선택",
+    briefModelCompareHint: "동일한 검증 데이터를 요약한 모델별 브리핑을 비교합니다.",
+    briefLoading: "선택한 모델의 최신 생산 브리핑을 불러오는 중입니다.",
+    briefPending: "선택한 모델의 생산 브리핑을 준비하고 있습니다. 잠시 후 자동으로 표시됩니다.",
+    briefFailed: "선택한 모델의 최신 AI 브리핑이 안전 검증을 통과하지 못했습니다. 다음 자동 분석을 기다려 주세요.",
     askAi: "AI 생산 어시스턴트",
+    aiLauncherDragHint: "드래그해서 챗봇 버튼 위치를 옮길 수 있습니다.",
     closeAi: "AI 어시스턴트 닫기",
     aiAssistantTitle: "AI 생산 어시스턴트",
     aiAssistantIntro: "선택한 로컬 모델이 현재 기준일의 검증된 생산 데이터와 저장된 시간별 분석 기록을 바탕으로 답합니다.",
@@ -352,24 +407,16 @@ const pageCopy = {
     workerUnknown: "Worker 상태 확인 불가",
     workerModelReady: "로컬 모델 준비됨",
     workerModelUnavailable: "로컬 모델 연결 안 됨",
-    workerModelUnknown: "로컬 모델 상태 확인 불가",
     workerHeartbeat: "마지막 신호",
     workerLastAnalysis: "최근 분석 완료",
     workerModel: "모델",
-    workerAnalysisMode: "최근 분석 방식",
-    workerModeLocalModel: "로컬 모델 설명",
-    workerModeFallback: "계산 기반 폴백",
-    workerModeUnknown: "기록 없음",
-    workerJobTitle: "최근 시간별 AI 분석",
-    workerJobResult: "자동 분석 인사이트",
-    workerJobIssue: "확인 이슈",
-    workerJobNoIssue: "별도 이슈가 없습니다.",
-    workerJobFallback: "로컬 모델 설명이 데이터 검증을 통과하지 못해 계산 기반 분석을 표시합니다.",
+    workerJobTitle: "선택 모델의 최근 AI 브리핑",
+    workerJobResult: "AI 요약",
     askingAi: "질문 전송 중",
     aiQuestionPlaceholder: "예: 오늘 사출 생산 진도는? / 최근 60분 C/T가 가장 긴 설비는? / 지금 추이대로 1, 9호기 예상 형합수는?",
     aiQuestionScope: "검증된 생산 데이터 · 시간별 분석 기록 기반",
     aiSource: "출처",
-    aiSourceVerified: "검증된 MES·계산형 RAG",
+    aiSourceVerified: "검증된 생산 데이터",
     aiRequestFailedTitle: "질문 전송 실패",
     aiRequestFailed: "질문을 서버로 전송하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
     aiQuestionInProgressTitle: "이전 질문 처리 중",
@@ -536,7 +583,7 @@ const pageCopy = {
   zh: {
     eyebrow: "Production",
     title: "生产看板",
-    description: "对比生产计划与 MES 实绩，并提供基于已验证数据的每小时 AI 生产分析。",
+    description: "对比生产计划与 MES 实绩，并提供 Qwen 与 Gemma 的生产简报。",
     loading: "正在读取生产现况。",
     productionDate: "基准日",
     productionDateHint: "上午 08:00 ~ 次日 08:00 基准",
@@ -553,10 +600,13 @@ const pageCopy = {
     recentRunning: "最近 60 分钟运行",
     localBrief: "AI BRIEFING",
     briefTitle: "每日生产简报",
-    usedData: "使用的数据",
-    calculationBasis: "计算基准",
-    deterministicBrief: "计算型 RAG 简报",
+    briefModelSelect: "选择简报模型",
+    briefModelCompareHint: "比较基于同一份已验证数据生成的模型简报。",
+    briefLoading: "正在加载所选模型的最新生产简报。",
+    briefPending: "所选模型的生产简报正在生成，完成后会自动显示。",
+    briefFailed: "所选模型的最新 AI 简报未通过安全验证，请等待下一次自动分析。",
     askAi: "AI 生产助手",
+    aiLauncherDragHint: "可拖动聊天按钮调整位置。",
     closeAi: "关闭 AI 助手",
     aiAssistantTitle: "AI 生产助手",
     aiAssistantIntro: "所选本地模型会根据当前基准日的已验证生产数据和已保存的每小时分析记录回答。",
@@ -568,24 +618,16 @@ const pageCopy = {
     workerUnknown: "无法确认 Worker 状态",
     workerModelReady: "本地模型已就绪",
     workerModelUnavailable: "本地模型未连接",
-    workerModelUnknown: "无法确认本地模型状态",
     workerHeartbeat: "最后心跳",
     workerLastAnalysis: "最近分析完成",
     workerModel: "模型",
-    workerAnalysisMode: "最近分析方式",
-    workerModeLocalModel: "本地模型说明",
-    workerModeFallback: "基于计算的回退",
-    workerModeUnknown: "暂无记录",
-    workerJobTitle: "最近每小时 AI 分析",
-    workerJobResult: "自动分析洞察",
-    workerJobIssue: "确认事项",
-    workerJobNoIssue: "暂无特别事项。",
-    workerJobFallback: "本地模型说明未通过数据验证，当前显示基于计算的分析。",
+    workerJobTitle: "所选模型的最新 AI 简报",
+    workerJobResult: "AI 摘要",
     askingAi: "发送中",
     aiQuestionPlaceholder: "例：今天注塑生产进度？/ 最近60分钟 C/T 最长的设备？/ 按当前趋势，1、9号机结束时预计合模数？",
     aiQuestionScope: "基于已验证生产数据与每小时分析记录",
     aiSource: "来源",
-    aiSourceVerified: "已验证的 MES·计算型 RAG",
+    aiSourceVerified: "已验证的生产数据",
     aiRequestFailedTitle: "问题发送失败",
     aiRequestFailed: "无法将问题发送到服务器。请检查连接后重试。",
     aiQuestionInProgressTitle: "上一问题仍在处理中",
@@ -882,7 +924,6 @@ const activitySelectionCopy = {
 } satisfies Record<AppLanguage, Record<string, string>>;
 
 const LIVE_DATA_REFRESH_INTERVAL_MS = 120_000;
-const AI_BRIEFING_REFRESH_INTERVAL_MS = 5 * 60_000;
 const AI_WORKER_STATUS_REFRESH_INTERVAL_MS = 30_000;
 const AI_QUESTION_JOB_POLL_INTERVAL_MS = 1_500;
 const AI_QUESTION_JOB_POLL_TIMEOUT_MS = 3 * 60_000;
@@ -936,23 +977,6 @@ async function cancelProductionAiJobBestEffort(jobId: number) {
     if (status === 400 || status === 404) return false;
     return false;
   }
-}
-
-function getTopIssues(source: Record<string, unknown>) {
-  const issues = source.top_issues;
-  return Array.isArray(issues)
-    ? issues
-      .filter((issue): issue is Record<string, unknown> => Boolean(issue) && typeof issue === "object")
-      .slice(0, 5)
-    : [];
-}
-
-function getIssueText(issue: Record<string, unknown>) {
-  const evidence = issue.evidence;
-  if (Array.isArray(evidence)) {
-    return evidence.map((item) => String(item)).filter(Boolean).join(" · ");
-  }
-  return getStringField(issue, "detail") || getStringField(issue, "summary");
 }
 
 function formatAiTimestamp(value: string | null | undefined, language: AppLanguage) {
@@ -2624,39 +2648,6 @@ function buildMachiningProgressPreview(
   };
 }
 
-function buildRuleBasedBrief(context: ProductionBriefContext, language: AppLanguage) {
-  const planRate = context.injectionPlanQty > 0
-    ? Math.round((context.actualInjectionOutput / context.injectionPlanQty) * 100)
-    : 0;
-  const unit = language === "ko" ? "개" : "个";
-  const gapText = context.planGap >= 0
-    ? (language === "ko" ? `계획 대비 ${formatNumber(context.planGap)}${unit} 초과` : `较计划超出 ${formatNumber(context.planGap)}${unit}`)
-    : (language === "ko" ? `계획 대비 ${formatNumber(Math.abs(context.planGap))}${unit} 부족` : `较计划不足 ${formatNumber(Math.abs(context.planGap))}${unit}`);
-  const topText = context.topMachines.length
-    ? context.topMachines.map((item) => `${item.machine} ${formatNumber(item.output)}${unit}`).join(", ")
-    : (language === "ko" ? "생산 실적 없음" : "暂无生产实绩");
-  const lowText = context.lowOutputMachines.length
-    ? context.lowOutputMachines.map((item) => `${item.machine} ${formatNumber(item.output)}${unit}`).join(", ")
-    : (language === "ko" ? "확인 대상 없음" : "暂无需确认设备");
-  const unplannedText = language === "ko"
-    ? `계획이 없던 ${context.unplannedInjectionMachineCount}대에서는 형합 ${formatNumber(context.unplannedInjectionShots)}회가 별도로 확인됩니다.`
-    : `另有 ${context.unplannedInjectionMachineCount} 台无计划设备产生 ${formatNumber(context.unplannedInjectionShots)} 次合模。`;
-
-  if (language === "zh") {
-    return [
-      `${context.businessDate} 基准日计划内注塑推定实绩为 ${formatNumber(context.actualInjectionOutput)}${unit}，对比注塑计划 ${formatNumber(context.injectionPlanQty)}${unit}，进度约 ${planRate}%。${unplannedText} 加工实绩为 ${formatNumber(context.actualMachiningOutput)}${unit}，计划为 ${formatNumber(context.machiningPlanQty)}${unit}。`,
-      `基准日 ${context.activeMachineCount}/${context.totalMachines} 台设备有生产实绩，区间最后 60 分钟运行设备为 ${context.runningMachineCount} 台。当前为${gapText}。`,
-      `主要生产设备为 ${topText}。低实绩设备为 ${lowText}，如计划存在缺口，建议优先确认停机记录与作业安排。`,
-    ].join("\n\n");
-  }
-
-  return [
-    `${context.businessDate} 기준일의 계획 생산 추정 실적은 ${formatNumber(context.actualInjectionOutput)}${unit}이며, 사출 계획 ${formatNumber(context.injectionPlanQty)}${unit} 대비 진행률은 약 ${planRate}%입니다. ${unplannedText} 가공 실적은 ${formatNumber(context.actualMachiningOutput)}${unit}, 가공 계획은 ${formatNumber(context.machiningPlanQty)}${unit}입니다.`,
-    `기준일에 ${context.activeMachineCount}/${context.totalMachines}대가 생산 실적을 남겼고, 선택 구간 마지막 60분 기준 가동 설비는 ${context.runningMachineCount}대입니다. ${gapText} 상태입니다.`,
-    `상위 생산 설비는 ${topText}입니다. 낮은 실적 설비는 ${lowText}이며, 계획 대비 부족 상태라면 해당 설비의 정지 이력과 작업 배정을 먼저 확인하는 것이 좋습니다.`,
-  ].join("\n\n");
-}
-
 function ProductionDashboardSkeleton({ copy }: { copy: Record<string, string> }) {
   return (
     <div className="production-dashboard-skeleton" aria-label={copy.loading} role="status">
@@ -2727,11 +2718,22 @@ export function ProductionDashboardPage() {
   const [businessDate, setBusinessDate] = useState(currentDate);
   const [isAiAskOpen, setIsAiAskOpen] = useState(false);
   const [aiModelId, setAiModelId] = useState<ProductionAiModelId>("qwen35");
+  const [briefingModelId, setBriefingModelId] = useState<ProductionAiModelId>("qwen35");
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiChatMessages, setAiChatMessages] = useState<ProductionAiChatMessage[]>([]);
   const [aiActiveRequest, setAiActiveRequest] = useState<ProductionAiActiveRequest | null>(null);
   const [aiQuestionJobId, setAiQuestionJobId] = useState<number | null>(null);
   const [aiChatViewportStyle, setAiChatViewportStyle] = useState<ProductionAiChatViewportStyle>();
+  const [aiChatVisibleViewport, setAiChatVisibleViewport] = useState<ProductionAiChatVisibleViewport>(() => ({
+    left: 0,
+    top: 0,
+    width: typeof window === "undefined" ? 1024 : window.innerWidth,
+    height: typeof window === "undefined" ? 768 : window.innerHeight,
+  }));
+  const [aiChatLauncherPosition, setAiChatLauncherPosition] = useState<ProductionAiChatLauncherPosition | null>(
+    readAiChatLauncherPosition,
+  );
+  const [isAiChatLauncherDragging, setIsAiChatLauncherDragging] = useState(false);
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
   const [selectedActivityRow, setSelectedActivityRow] = useState<RealtimeProgressRow | null>(null);
   const [activityConfirmationForm, setActivityConfirmationForm] = useState<InjectionActivityConfirmationForm>({
@@ -2747,6 +2749,8 @@ export function ProductionDashboardPage() {
   const aiChatBodyRef = useRef<HTMLDivElement>(null);
   const aiChatDrawerRef = useRef<HTMLElement>(null);
   const aiChatLauncherRef = useRef<HTMLButtonElement>(null);
+  const aiChatLauncherDragRef = useRef<ProductionAiChatLauncherDrag | null>(null);
+  const suppressAiChatLauncherClickRef = useRef(false);
   const previousAiChatScopeRef = useRef({ businessDate: currentDate, language });
   const suppressNextActivityPointerRef = useRef(false);
   const [manualForm, setManualForm] = useState({
@@ -2815,18 +2819,11 @@ export function ProductionDashboardPage() {
     staleTime: 5 * 60_000,
   });
   const isCoreDashboardDataReady = Boolean(planSummaryQuery.data && mesQuery.data && machiningStatsQuery.data);
-  const aiBriefingQuery = useQuery({
-    queryKey: ["production", "ai-briefing", businessDate, language],
-    queryFn: () => getProductionAiBriefing(businessDate, language),
-    enabled: isCoreDashboardDataReady,
-    refetchInterval: isCurrentDate && isCoreDashboardDataReady ? AI_BRIEFING_REFRESH_INTERVAL_MS : false,
-    retry: 1,
-  });
   const latestAiJobQuery = useQuery({
-    queryKey: ["ai-job", "latest", businessDate, language],
-    queryFn: () => getLatestAiJob(businessDate, language),
+    queryKey: ["ai-job", "latest", businessDate, language, briefingModelId],
+    queryFn: () => getLatestAiJob(businessDate, language, briefingModelId),
     enabled: isCoreDashboardDataReady,
-    refetchInterval: isCurrentDate ? AI_BRIEFING_REFRESH_INTERVAL_MS : false,
+    refetchInterval: isCurrentDate ? 30_000 : false,
     retry: false,
   });
   const aiWorkerStatusQuery = useQuery({
@@ -2869,7 +2866,6 @@ export function ProductionDashboardPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["production", "machining-provision"] });
       queryClient.invalidateQueries({ queryKey: ["production-status"] });
-      queryClient.invalidateQueries({ queryKey: ["production", "ai-briefing"] });
       setSelectedMachiningRow(null);
     },
   });
@@ -2924,7 +2920,6 @@ export function ProductionDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ["production", "plan-items", businessDate, "injection"] });
       queryClient.invalidateQueries({ queryKey: ["production-status", businessDate] });
       queryClient.invalidateQueries({ queryKey: ["production", "injection-activity-confirmations", businessDate] });
-      queryClient.invalidateQueries({ queryKey: ["production", "ai-briefing", businessDate] });
       setSelectedActivityRow(null);
       setActivityConfirmationError(null);
     },
@@ -3076,13 +3071,11 @@ export function ProductionDashboardPage() {
     () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),
     [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
   );
-  const ruleBasedBrief = useMemo(() => buildRuleBasedBrief(briefContext, language), [briefContext, language]);
   const latestAiJob = latestAiJobQuery.data ?? undefined;
   const latestAiJobResult = latestAiJob?.result_payload ?? {};
-  const latestAiJobSummary = getStringField(latestAiJobResult, "summary");
-  const latestAiJobTopIssues = getTopIssues(latestAiJobResult);
+  const latestAiJobSummary = getStringField(latestAiJobResult, "summary").trim();
+  const latestAiJobSource = getStringField(latestAiJobResult, "source");
   const latestAiJobUsedFallback = latestAiJobResult.llm_fallback === true;
-  const briefingText = aiBriefingQuery.data?.answer || ruleBasedBrief;
   const aiWorkerStatus = aiWorkerStatusQuery.isError ? undefined : aiWorkerStatusQuery.data;
   const aiWorkerState = aiWorkerStatus?.state ?? "unknown";
   const aiWorkerStateLabel = aiWorkerState === "online"
@@ -3090,29 +3083,41 @@ export function ProductionDashboardPage() {
     : aiWorkerState === "offline"
       ? copy.workerOffline
       : copy.workerUnknown;
-  const aiWorkerModelName = formatAiModelName(
-    aiWorkerStatus?.model_name || aiWorkerStatus?.last_analysis_model_name,
+  const aiWorkerAvailableModelIds = (aiWorkerStatus?.available_model_ids ?? []).filter(
+    (modelId): modelId is ProductionAiModelId => modelId === "qwen35" || modelId === "gemma4_26b_a4b",
   );
-  const aiWorkerModelStatusLabel = aiWorkerStatus?.llm_ready === true
-    ? `${aiWorkerModelName === "-" ? getProductionAiModelLabel("qwen35") : aiWorkerModelName} · ${copy.workerModelReady}`
-    : aiWorkerStatus?.llm_ready === false
-      ? copy.workerModelUnavailable
-      : copy.workerModelUnknown;
-  const aiWorkerLastAnalysisMode = aiWorkerStatus?.last_analysis_completed_at
-    ? aiWorkerStatus.last_analysis_llm_fallback === true
-      ? copy.workerModeFallback
-      : copy.workerModeLocalModel
-    : copy.workerModeUnknown;
-  const aiSelectedModelIsAvailable = aiModelId !== "gemma4_26b_a4b" || (
-    aiWorkerState === "online"
-    && aiWorkerStatus?.worker_version === GEMMA_READY_WORKER_VERSION
+  const workerHasExplicitModelReadiness = Array.isArray(aiWorkerStatus?.available_model_ids)
+    && (aiWorkerAvailableModelIds.length > 0 || aiWorkerStatus?.llm_ready === false);
+  const isAiModelAvailable = (modelId: ProductionAiModelId) => aiWorkerState === "online" && (
+    workerHasExplicitModelReadiness
+      ? aiWorkerAvailableModelIds.includes(modelId)
+      : modelId === "qwen35"
+        ? aiWorkerStatus?.llm_ready === true
+        : aiWorkerStatus?.worker_version === GEMMA_READY_WORKER_VERSION
   );
+  const aiSelectedModelIsAvailable = isAiModelAvailable(aiModelId);
+  const briefingModelIsAvailable = isAiModelAvailable(briefingModelId);
+  const latestAiJobResultModelId = getStringField(latestAiJobResult, "model_id");
+  const latestAiJobActualModelId = latestAiJobResultModelId === "qwen35"
+    || latestAiJobResultModelId === "gemma4_26b_a4b"
+    ? latestAiJobResultModelId
+    : inferProductionAiModelId(latestAiJob?.model_name || "");
+  const latestAiJobUsedLocalLlm = latestAiJobSource === "local_llm_rewrite"
+    && !latestAiJobUsedFallback
+    && latestAiJobActualModelId === briefingModelId;
+  const briefingModelStatusLabel = briefingModelIsAvailable
+    ? `${getProductionAiModelLabel(briefingModelId)} · ${copy.workerModelReady}`
+    : `${getProductionAiModelLabel(briefingModelId)} · ${copy.workerModelUnavailable}`;
   const aiQuestionJob = aiQuestionJobQuery.data;
   const aiQuestionJobStatus = aiQuestionJob?.status ?? (aiQuestionJobId !== null ? "pending" : null);
   const aiQuestionJobResult = aiQuestionJob?.result_payload ?? {};
   const aiQuestionJobSource = getStringField(aiQuestionJobResult, "source");
   const activeAiModelId = aiActiveRequest?.modelId ?? aiModelId;
   const activeAiModelLabel = getProductionAiModelLabel(activeAiModelId);
+  const activeAiModelIsAvailable = isAiModelAvailable(activeAiModelId);
+  const activeAiModelStatusLabel = activeAiModelIsAvailable
+    ? `${activeAiModelLabel} · ${copy.workerModelReady}`
+    : `${activeAiModelLabel} · ${copy.workerModelUnavailable}`;
   const aiQuestionJobModelName = aiQuestionJob?.model_name || getStringField(aiQuestionJobResult, "model_name");
   const aiQuestionJobResultModelId = getStringField(aiQuestionJobResult, "model_id");
   const aiQuestionJobActualModelId = aiQuestionJobResultModelId === "qwen35"
@@ -3415,10 +3420,18 @@ export function ProductionDashboardPage() {
     const configureStandaloneViewport = () => {
       const updateStandaloneViewport = () => {
         const visualViewport = window.visualViewport;
+        const viewportLeft = visualViewport?.offsetLeft ?? 0;
         const viewportTop = visualViewport?.offsetTop ?? 0;
+        const viewportWidth = visualViewport?.width ?? window.innerWidth;
         const viewportHeight = visualViewport?.height ?? window.innerHeight;
         const viewportBottom = viewportTop + viewportHeight;
         const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
+        setAiChatVisibleViewport({
+          left: viewportLeft,
+          top: viewportTop,
+          width: Math.max(64, viewportWidth),
+          height: Math.max(64, viewportHeight),
+        });
         setAiChatViewportStyle({
           "--production-ai-chat-bottom": `${Math.max(16, layoutHeight - viewportBottom + 16)}px`,
           "--production-ai-chat-visible-height": `${Math.max(64, viewportHeight)}px`,
@@ -3493,21 +3506,39 @@ export function ProductionDashboardPage() {
 
       const updateEmbeddedViewport = () => {
         const frameRect = frameElement.getBoundingClientRect();
+        const frameWidth = Math.max(frameRect.width, frameElement.offsetWidth, window.innerWidth);
         const frameHeight = Math.max(frameRect.height, frameElement.offsetHeight, window.innerHeight);
         const parentVisualViewport = parentWindow.visualViewport;
+        const viewportLeft = parentVisualViewport?.offsetLeft ?? 0;
         const viewportTop = parentVisualViewport?.offsetTop ?? 0;
+        const viewportWidth = parentVisualViewport?.width ?? parentWindow.innerWidth;
         const viewportHeight = parentVisualViewport?.height ?? parentWindow.innerHeight;
+        const viewportRight = viewportLeft + viewportWidth;
         const viewportBottom = viewportTop + viewportHeight;
+        const intersectionLeft = Math.max(viewportLeft, frameRect.left);
+        const intersectionRight = Math.min(viewportRight, frameRect.right);
         const intersectionTop = Math.max(viewportTop, frameRect.top);
         const intersectionBottom = Math.min(viewportBottom, frameRect.bottom);
         const occlusionBottom = getTopOcclusionBottom(frameRect, viewportTop, viewportBottom);
         const effectiveTop = Math.max(intersectionTop, occlusionBottom);
         const visibleTop = Math.max(0, Math.min(frameHeight, effectiveTop - frameRect.top));
+        const visibleLeft = Math.max(0, Math.min(frameWidth, intersectionLeft - frameRect.left));
+        const visibleRight = Math.max(
+          visibleLeft,
+          Math.min(frameWidth, intersectionRight - frameRect.left),
+        );
         const visibleBottom = Math.max(
           visibleTop,
           Math.min(frameHeight, intersectionBottom - frameRect.top),
         );
+        const visibleWidth = Math.max(64, visibleRight - visibleLeft);
         const visibleHeight = Math.max(64, visibleBottom - visibleTop);
+        setAiChatVisibleViewport({
+          left: visibleLeft,
+          top: visibleTop,
+          width: visibleWidth,
+          height: visibleHeight,
+        });
         setAiChatViewportStyle({
           "--production-ai-chat-bottom": `${Math.max(16, frameHeight - visibleBottom + 16)}px`,
           "--production-ai-chat-visible-height": `${visibleHeight}px`,
@@ -3528,6 +3559,33 @@ export function ProductionDashboardPage() {
 
     return cleanup;
   }, []);
+
+  useEffect(() => {
+    if (!aiChatLauncherPosition || !aiChatLauncherRef.current) return;
+    const rect = aiChatLauncherRef.current.getBoundingClientRect();
+    const horizontalInset = Math.min(
+      0.5,
+      (rect.width / 2 + AI_CHAT_LAUNCHER_MARGIN_PX) / aiChatVisibleViewport.width,
+    );
+    const verticalInset = Math.min(
+      0.5,
+      (rect.height / 2 + AI_CHAT_LAUNCHER_MARGIN_PX) / aiChatVisibleViewport.height,
+    );
+    const nextPosition = {
+      x: Math.min(1 - horizontalInset, Math.max(horizontalInset, aiChatLauncherPosition.x)),
+      y: Math.min(1 - verticalInset, Math.max(verticalInset, aiChatLauncherPosition.y)),
+    };
+    if (
+      Math.abs(nextPosition.x - aiChatLauncherPosition.x) < 0.0001
+      && Math.abs(nextPosition.y - aiChatLauncherPosition.y) < 0.0001
+    ) return;
+    setAiChatLauncherPosition(nextPosition);
+    persistAiChatLauncherPosition(nextPosition);
+  }, [
+    aiChatLauncherPosition,
+    aiChatVisibleViewport.height,
+    aiChatVisibleViewport.width,
+  ]);
 
   useEffect(() => {
     if (!isAiAskOpen) return undefined;
@@ -3575,6 +3633,82 @@ export function ProductionDashboardPage() {
     setSelectedActivityRow(null);
     setActivityConfirmationError(null);
   }, [businessDate, language]);
+
+  function beginAiChatLauncherDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    aiChatLauncherDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startCenterX: rect.left + rect.width / 2,
+      startCenterY: rect.top + rect.height / 2,
+      width: rect.width,
+      height: rect.height,
+      moved: false,
+      lastPosition: aiChatLauncherPosition,
+    };
+    suppressAiChatLauncherClickRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveAiChatLauncher(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = aiChatLauncherDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.startClientX;
+    const deltaY = event.clientY - drag.startClientY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) < AI_CHAT_LAUNCHER_DRAG_THRESHOLD_PX) return;
+
+    drag.moved = true;
+    setIsAiChatLauncherDragging(true);
+    event.preventDefault();
+
+    const horizontalInset = Math.min(
+      aiChatVisibleViewport.width / 2,
+      drag.width / 2 + AI_CHAT_LAUNCHER_MARGIN_PX,
+    );
+    const verticalInset = Math.min(
+      aiChatVisibleViewport.height / 2,
+      drag.height / 2 + AI_CHAT_LAUNCHER_MARGIN_PX,
+    );
+    const minCenterX = aiChatVisibleViewport.left + horizontalInset;
+    const maxCenterX = aiChatVisibleViewport.left + aiChatVisibleViewport.width - horizontalInset;
+    const minCenterY = aiChatVisibleViewport.top + verticalInset;
+    const maxCenterY = aiChatVisibleViewport.top + aiChatVisibleViewport.height - verticalInset;
+    const centerX = Math.min(maxCenterX, Math.max(minCenterX, drag.startCenterX + deltaX));
+    const centerY = Math.min(maxCenterY, Math.max(minCenterY, drag.startCenterY + deltaY));
+    const nextPosition = {
+      x: clampUnitInterval((centerX - aiChatVisibleViewport.left) / aiChatVisibleViewport.width),
+      y: clampUnitInterval((centerY - aiChatVisibleViewport.top) / aiChatVisibleViewport.height),
+    };
+    drag.lastPosition = nextPosition;
+    setAiChatLauncherPosition(nextPosition);
+  }
+
+  function finishAiChatLauncherDrag(
+    event: ReactPointerEvent<HTMLButtonElement>,
+    suppressClick: boolean,
+  ) {
+    const drag = aiChatLauncherDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    aiChatLauncherDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (drag.moved && drag.lastPosition) {
+      persistAiChatLauncherPosition(drag.lastPosition);
+      suppressAiChatLauncherClickRef.current = suppressClick;
+    }
+    setIsAiChatLauncherDragging(false);
+  }
+
+  function openAiChatFromLauncher() {
+    if (suppressAiChatLauncherClickRef.current) {
+      suppressAiChatLauncherClickRef.current = false;
+      return;
+    }
+    setIsAiAskOpen(true);
+  }
 
   function submitAiQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -4956,6 +5090,17 @@ export function ProductionDashboardPage() {
     );
   }
 
+  const aiChatLauncherStyle: ProductionAiChatViewportStyle = {
+    ...aiChatViewportStyle,
+    ...(aiChatLauncherPosition ? {
+      left: aiChatVisibleViewport.left + aiChatVisibleViewport.width * aiChatLauncherPosition.x,
+      top: aiChatVisibleViewport.top + aiChatVisibleViewport.height * aiChatLauncherPosition.y,
+      right: "auto",
+      bottom: "auto",
+      transform: "translate(-50%, -50%)",
+    } : {}),
+  };
+
   return (
     <section className="page production-dashboard" aria-busy={isLiveDataRefreshing}>
       <PageHeader
@@ -5057,6 +5202,23 @@ export function ProductionDashboardPage() {
                 <p className="panel-card__eyebrow">{copy.localBrief}</p>
                 <h3 className="panel__title">{copy.briefTitle}</h3>
               </div>
+              <fieldset className="production-ai-model-selector production-brief-model-selector">
+                <legend>{copy.briefModelSelect}</legend>
+                <div className="production-ai-model-selector__options">
+                  {PRODUCTION_AI_MODEL_OPTIONS.map((option) => (
+                    <button
+                      aria-pressed={briefingModelId === option.id}
+                      className={briefingModelId === option.id ? "is-active" : ""}
+                      key={option.id}
+                      onClick={() => setBriefingModelId(option.id)}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p>{copy.briefModelCompareHint}</p>
+              </fieldset>
             </div>
 
             <div className="production-ai-worker-status">
@@ -5064,66 +5226,23 @@ export function ProductionDashboardPage() {
                 <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--${aiWorkerState}`}>
                   {aiWorkerStateLabel}
                 </span>
-                <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${aiWorkerStatus?.llm_ready === true ? "ready" : aiWorkerStatus?.llm_ready === false ? "unavailable" : "unknown"}`}>
-                  {aiWorkerModelStatusLabel}
+                <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${briefingModelIsAvailable ? "ready" : "unavailable"}`}>
+                  {briefingModelStatusLabel}
                 </span>
               </div>
-              <dl className="production-ai-worker-status__meta">
-                <div>
-                  <dt>{copy.workerHeartbeat}</dt>
-                  <dd>{formatAiTimestamp(aiWorkerStatus?.last_heartbeat_at, language)}</dd>
-                </div>
-                <div>
-                  <dt>{copy.workerLastAnalysis}</dt>
-                  <dd>{formatAiTimestamp(aiWorkerStatus?.last_analysis_completed_at, language)}</dd>
-                </div>
-                <div>
-                  <dt>{copy.workerModel}</dt>
-                  <dd title={aiWorkerModelName}>{aiWorkerModelName}</dd>
-                </div>
-                <div>
-                  <dt>{copy.workerAnalysisMode}</dt>
-                  <dd>{aiWorkerLastAnalysisMode}</dd>
-                </div>
-              </dl>
             </div>
 
             <div className="production-brief-panel__body">
-              {briefingText.split("\n\n").map((paragraph, index) => (
-                <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
-              ))}
-            </div>
-
-            <div className="production-brief-evidence">
-              <span>{copy.deterministicBrief}</span>
-              <details>
-                <summary>{copy.usedData}</summary>
-                <ul>
-                  {(aiBriefingQuery.data?.used_data ?? []).map((item) => (
-                    <li key={item.name}>
-                      {item.name}: {formatNumber(item.row_count)}
-                    </li>
-                  ))}
-                  {!aiBriefingQuery.data?.used_data?.length ? (
-                    <li>{language === "ko" ? "백엔드 브리핑 연결 실패 시 화면 데이터로 계산한 초안을 표시합니다." : "后端简报连接失败时显示基于页面数据计算的草稿。"}</li>
-                  ) : null}
-                </ul>
-              </details>
-              <details>
-                <summary>{copy.calculationBasis}</summary>
-                <ul>
-                  {(aiBriefingQuery.data?.calculation_basis ?? []).map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                  {!aiBriefingQuery.data?.calculation_basis?.length ? (
-                    <li>{language === "ko" ? "기준일 08:00 ~ 익일 08:00 기준으로 계산합니다." : "按基准日 08:00 ~ 次日 08:00 计算。"}</li>
-                  ) : null}
-                </ul>
-              </details>
-            </div>
-
-            {latestAiJob ? (
-              <div className="production-ai-job production-ai-job--completed">
+              {latestAiJobQuery.isLoading ? (
+                <p>{copy.briefLoading}</p>
+              ) : !briefingModelIsAvailable ? (
+                <div className="notice notice--warning">{copy.aiSelectedModelUnavailable}</div>
+              ) : !latestAiJob ? (
+                <p>{copy.briefPending}</p>
+              ) : !latestAiJobUsedLocalLlm ? (
+                <div className="notice notice--warning">{copy.briefFailed}</div>
+              ) : (
+                <div className="production-ai-job production-ai-job--completed">
                 <div className="production-ai-job__header">
                   <div>
                     <strong>{copy.workerJobTitle}</strong>
@@ -5136,29 +5255,13 @@ export function ProductionDashboardPage() {
 
                 <div className="production-ai-job__result">
                   <strong>{copy.workerJobResult}</strong>
-                  {latestAiJobUsedFallback ? (
-                    <div className="notice notice--warning">{copy.workerJobFallback}</div>
-                  ) : null}
-                  {latestAiJobSummary ? latestAiJobSummary.split("\n\n").map((paragraph, index) => (
+                  {latestAiJobSummary.split("\n\n").map((paragraph, index) => (
                     <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
-                  )) : null}
-                  <div className="production-ai-job__issues">
-                    {latestAiJobTopIssues.length ? latestAiJobTopIssues.map((issue, index) => (
-                      <div className="production-ai-job__issue" key={`${getStringField(issue, "label")}-${index}`}>
-                        <span>{copy.workerJobIssue}</span>
-                        <strong>{getStringField(issue, "label") || getStringField(issue, "type") || "-"}</strong>
-                        <p>{getIssueText(issue)}</p>
-                      </div>
-                    )) : (
-                      <div className="production-ai-job__issue">
-                        <span>{copy.workerJobIssue}</span>
-                        <strong>{copy.workerJobNoIssue}</strong>
-                      </div>
-                    )}
-                  </div>
+                  ))}
                 </div>
               </div>
-            ) : null}
+              )}
+            </div>
           </section>
 
           <section className="panel production-progress-panel">
@@ -5652,17 +5755,25 @@ export function ProductionDashboardPage() {
       ) : null}
 
       <button
+        aria-label={`${copy.askAi}. ${copy.aiLauncherDragHint}`}
         aria-expanded={isAiAskOpen}
         aria-haspopup="dialog"
-        className={`production-ai-chat-launcher production-ai-chat-launcher--${aiWorkerState === "online" && aiWorkerStatus?.llm_ready === true ? "ready" : aiWorkerState === "offline" || aiWorkerStatus?.llm_ready === false ? "warning" : "unknown"}`}
-        onClick={() => setIsAiAskOpen(true)}
+        className={`production-ai-chat-launcher production-ai-chat-launcher--${aiWorkerState === "online" && aiWorkerStatus?.llm_ready === true ? "ready" : aiWorkerState === "offline" || aiWorkerStatus?.llm_ready === false ? "warning" : "unknown"}${isAiChatLauncherDragging ? " is-dragging" : ""}`}
+        onClick={openAiChatFromLauncher}
+        onLostPointerCapture={(event) => finishAiChatLauncherDrag(event, false)}
+        onPointerCancel={(event) => finishAiChatLauncherDrag(event, false)}
+        onPointerDown={beginAiChatLauncherDrag}
+        onPointerMove={moveAiChatLauncher}
+        onPointerUp={(event) => finishAiChatLauncherDrag(event, true)}
         ref={aiChatLauncherRef}
-        style={aiChatViewportStyle}
+        style={aiChatLauncherStyle}
+        title={copy.aiLauncherDragHint}
         type="button"
       >
         <span aria-hidden="true" />
         <MessageCircle aria-hidden="true" size={18} strokeWidth={2.2} />
         {copy.askAi}
+        <GripVertical aria-hidden="true" className="production-ai-chat-launcher__grip" size={14} strokeWidth={2.2} />
       </button>
 
       {isAiAskOpen ? createPortal(
@@ -5689,8 +5800,8 @@ export function ProductionDashboardPage() {
                   <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--${aiWorkerState}`}>
                     {aiWorkerStateLabel}
                   </span>
-                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${aiWorkerStatus?.llm_ready === true ? "ready" : aiWorkerStatus?.llm_ready === false ? "unavailable" : "unknown"}`}>
-                    {aiWorkerModelStatusLabel}
+                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${activeAiModelIsAvailable ? "ready" : "unavailable"}`}>
+                    {activeAiModelStatusLabel}
                   </span>
                 </div>
               </div>

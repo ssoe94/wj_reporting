@@ -548,6 +548,7 @@ export type AiWorkerStatus = {
   llm_ready: boolean | null;
   model_name: string;
   worker_version: string;
+  available_model_ids?: ProductionAiModelId[];
   last_analysis_completed_at: string | null;
   last_analysis_model_name: string;
   last_analysis_llm_fallback: boolean | null;
@@ -975,9 +976,13 @@ export async function getAiJob(jobId: number) {
   return response.data;
 }
 
-export async function getLatestAiJob(date: string, language: "ko" | "zh") {
+export async function getLatestAiJob(
+  date: string,
+  language: "ko" | "zh",
+  modelId: ProductionAiModelId = "qwen35",
+) {
   const response = await http.get<{ job: AiJob | null }>(
-    `/ai/jobs/latest/?job_type=production_daily_analysis&date=${encodeURIComponent(date)}&language=${encodeURIComponent(language)}`,
+    `/ai/jobs/latest/?job_type=production_daily_analysis&date=${encodeURIComponent(date)}&language=${encodeURIComponent(language)}&model_id=${encodeURIComponent(modelId)}`,
   );
   return response.data.job;
 }

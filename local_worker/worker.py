@@ -1074,6 +1074,33 @@ def prune_redundant_numeric_lines(
     return cleaned, pruned
 
 
+def prune_ungrounded_numeric_lines(
+    summary: str,
+    grounding: dict[str, Any],
+) -> tuple[str, bool]:
+    """Drop only model-written lines containing unverified quantities.
+
+    A model can produce a useful grounded conclusion and then add one unsafe
+    numeric bullet. Rejecting the whole answer hides the selected model even
+    though the safe prose is still usable. This keeps headings and grounded
+    lines, while the final whole-summary safety check still rejects unsupported
+    causes, directives, statuses, and identifiers.
+    """
+    kept_lines: list[str] = []
+    pruned = False
+    for line in str(summary or "").splitlines():
+        stripped = line.strip()
+        if not stripped or SECTION_HEADING.fullmatch(stripped.rstrip(":")):
+            kept_lines.append(line)
+            continue
+        if summary_numbers_are_grounded(line, grounding):
+            kept_lines.append(line)
+        else:
+            pruned = True
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(kept_lines)).strip()
+    return cleaned, pruned
+
+
 def naturalize_schema_terms(summary: str) -> tuple[str, bool]:
     is_zh = bool(re.search(r"(?:结论|判断依据|需确认)", summary))
     normalized = summary
@@ -1132,8 +1159,25 @@ def normalize_result(
         fallback.get("answer") or "",
         authoritative_grounding,
     )
+    if not summary_numbers_are_grounded(summary, authoritative_grounding):
+        summary, additional_numeric_lines_pruned = prune_ungrounded_numeric_lines(
+            summary,
+            authoritative_grounding,
+        )
+        numeric_lines_pruned = numeric_lines_pruned or additional_numeric_lines_pruned
     summary, empty_sections_removed = EMPTY_REASONING_SECTION.subn("", summary)
     summary = re.sub(r"\n{3,}", "\n\n", summary).strip()
+    substantive_lines = [
+        line.strip(" \t-*•")
+        for line in summary.splitlines()
+        if line.strip()
+        and not SECTION_HEADING.fullmatch(line.strip().rstrip(":"))
+    ]
+    if not any(substantive_lines):
+        raise LlmGroundingError(
+            "LLM prose introduced an unverified number and had no grounded answer after safety pruning.",
+            candidate,
+        )
     title_was_replaced = not summary_numbers_are_grounded(title, authoritative_grounding)
     if title_was_replaced:
         title = fallback.get("title") or "Local AI Analysis"
@@ -1445,6 +1489,11 @@ def main() -> int:
                     model_name=default_target.model_name if default_target else "",
                     worker_version=reported_worker_version,
                     last_error=last_worker_error,
+                    available_model_ids=[
+                        model_id
+                        for model_id, is_ready in model_readiness.items()
+                        if is_ready
+                    ],
                 )
                 last_worker_error = ""
             except Exception as exc:

@@ -72,6 +72,24 @@ class NormalizeResultTests(unittest.TestCase):
         self.assertEqual(result["facts"], self.fallback["facts"])
         self.assertEqual(result["source"], "local_llm_rewrite")
 
+    def test_ungrounded_numeric_line_is_pruned_without_hiding_safe_model_prose(self):
+        result = normalize_result(
+            {
+                "title": "생산 분석",
+                "summary": (
+                    "현재 생산 상태는 추가 확인이 필요합니다.\n"
+                    "- 검증되지 않은 수량은 999개입니다."
+                ),
+            },
+            self.fallback,
+            "qwen-test",
+            self.fallback,
+        )
+
+        self.assertEqual(result["summary"], "현재 생산 상태는 추가 확인이 필요합니다.")
+        self.assertTrue(result["llm_numeric_lines_pruned"])
+        self.assertEqual(result["source"], "local_llm_rewrite")
+
     def test_llm_cannot_introduce_unverified_number(self):
         with self.assertRaisesRegex(ValueError, "unverified number"):
             normalize_result(
@@ -1414,7 +1432,7 @@ class LocalLlmReadinessTests(unittest.TestCase):
         self.assertEqual(result["summary"], "검증된 답변")
         self.assertNotIn("reasoning", str(result))
 
-    def test_gemma_passes_thinking_flag_to_chat_template(self):
+    def test_gemma_disables_unbounded_thinking_to_preserve_final_json(self):
         client = LocalLlmClient(
             "http://127.0.0.1:8081/v1",
             "/private/models/gemma-4-26b-a4b-it-4bit",
@@ -1438,9 +1456,9 @@ class LocalLlmReadinessTests(unittest.TestCase):
         self.assertEqual(request_payload["messages"][0]["content"], "system")
         self.assertEqual(
             request_payload["chat_template_kwargs"],
-            {"enable_thinking": True},
+            {"enable_thinking": False},
         )
-        self.assertEqual(request_payload["temperature"], 1.0)
+        self.assertEqual(request_payload["temperature"], 0.2)
         self.assertEqual(request_payload["top_k"], 64)
         self.assertEqual(request_payload["top_p"], 0.95)
         self.assertEqual(request_payload["max_tokens"], 1800)
@@ -1515,6 +1533,26 @@ class RenderClientCompatibilityTests(unittest.TestCase):
         request = session.post.call_args
         self.assertEqual(request.kwargs["json"]["worker_version"], worker_module.WORKER_VERSION)
         response.raise_for_status.assert_called_once_with()
+
+    def test_heartbeat_reports_each_ready_model_id(self):
+        response = MagicMock()
+        response.json.return_value = {"state": "online"}
+        session = MagicMock()
+        session.post.return_value = response
+
+        with patch.object(render_client_module.requests, "Session", return_value=session):
+            client = RenderClient("https://backend.example/api", "worker-token")
+            client.send_heartbeat(
+                "mac-studio",
+                llm_enabled=True,
+                llm_ready=True,
+                available_model_ids=["qwen35", "gemma4_26b_a4b"],
+            )
+
+        self.assertEqual(
+            session.post.call_args.kwargs["json"]["available_model_ids"],
+            ["qwen35", "gemma4_26b_a4b"],
+        )
 
 
 class WorkerRunReportingTests(unittest.TestCase):

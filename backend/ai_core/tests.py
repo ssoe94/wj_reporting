@@ -267,10 +267,16 @@ class AiJobApiTests(APITestCase):
         )
 
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(first.data['created_count'], 2)
+        self.assertEqual(first.data['created_count'], 4)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.data['created_count'], 0)
-        self.assertEqual(AiJob.objects.filter(scope__trigger='hourly').count(), 2)
+        hourly_jobs = AiJob.objects.filter(scope__trigger='hourly')
+        self.assertEqual(hourly_jobs.count(), 4)
+        self.assertEqual(
+            {job.scope['model_id'] for job in hourly_jobs},
+            {'qwen35', 'gemma4_26b_a4b'},
+        )
+        self.assertTrue(all(job.input_payload['model_id'] == job.scope['model_id'] for job in hourly_jobs))
 
     def test_latest_job_returns_completed_system_analysis(self):
         system_job = AiJob.objects.create(
@@ -317,6 +323,44 @@ class AiJobApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['job']['id'], system_job.id)
 
+    def test_latest_job_filters_hourly_analysis_by_model(self):
+        qwen_job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+            status=AiJob.STATUS_COMPLETED,
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'hourly',
+                'model_id': 'qwen35',
+            },
+            result_payload={'summary': 'qwen summary', 'model_id': 'qwen35'},
+        )
+        gemma_job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+            status=AiJob.STATUS_COMPLETED,
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'hourly',
+                'model_id': 'gemma4_26b_a4b',
+            },
+            result_payload={'summary': 'gemma summary', 'model_id': 'gemma4_26b_a4b'},
+        )
+
+        qwen_response = self.client.get('/api/ai/jobs/latest/', {
+            'date': '2026-05-15',
+            'language': 'ko',
+            'model_id': 'qwen35',
+        })
+        gemma_response = self.client.get('/api/ai/jobs/latest/', {
+            'date': '2026-05-15',
+            'language': 'ko',
+            'model_id': 'gemma4_26b_a4b',
+        })
+
+        self.assertEqual(qwen_response.data['job']['id'], qwen_job.id)
+        self.assertEqual(gemma_response.data['job']['id'], gemma_job.id)
+
     def test_worker_heartbeat_and_authenticated_status(self):
         self.client.force_authenticate(user=None)
         heartbeat_response = self.client.post(
@@ -327,12 +371,17 @@ class AiJobApiTests(APITestCase):
                 'llm_ready': True,
                 'model_name': '/private/models/Qwen3.5-test',
                 'worker_version': 'test-v1',
+                'available_model_ids': ['qwen35', 'gemma4_26b_a4b'],
             },
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
         )
         self.assertEqual(heartbeat_response.status_code, 200)
         self.assertEqual(heartbeat_response.data['model_name'], 'Qwen3.5-test')
+        self.assertEqual(
+            heartbeat_response.data['available_model_ids'],
+            ['qwen35', 'gemma4_26b_a4b'],
+        )
 
         second_heartbeat = self.client.post(
             '/api/ai/worker/heartbeat/',
@@ -481,7 +530,7 @@ class LocalAiWorkerIntegrationTests(LiveServerTestCase):
             )
 
             enqueue_result = render_client.enqueue_periodic_jobs(['ko'])
-            self.assertEqual(enqueue_result['created_count'], 1)
+            self.assertEqual(enqueue_result['created_count'], 2)
             self.assertEqual(render_client.enqueue_periodic_jobs(['ko'])['created_count'], 0)
 
             jobs = render_client.claim_jobs(

@@ -56,6 +56,7 @@ class RenderClient:
         model_name: str = "",
         worker_version: str = "",
         last_error: str = "",
+        available_model_ids: list[str] | None = None,
     ) -> dict:
         response = self.session.post(
             f"{self.api_base_url}/ai/worker/heartbeat/",
@@ -66,6 +67,7 @@ class RenderClient:
                 "model_name": model_name,
                 "worker_version": worker_version,
                 "last_error": last_error[:500],
+                "available_model_ids": available_model_ids or [],
             },
             timeout=self.timeout,
         )

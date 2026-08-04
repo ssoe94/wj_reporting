@@ -82,17 +82,18 @@ class LocalLlmClient:
             if enable_thinking and thinking_budget is not None:
                 request_payload["thinking_budget"] = max(1, int(thinking_budget))
         elif self.model_family == "gemma4":
-            # MLX-LM forwards these arguments to Gemma's chat template. Always
-            # send the boolean so repair requests can explicitly disable
-            # thinking instead of inheriting the model template's default.
+            # Gemma's unbounded thinking mode can consume the whole completion
+            # budget before emitting the required JSON. The Worker needs a
+            # short auditable answer, so keep thinking disabled for both the
+            # first pass and repair pass.
             request_payload.update({
-                "temperature": 1.0,
+                "temperature": 0.2,
                 "top_k": 64,
                 "top_p": 0.95,
                 "max_tokens": 1800,
             })
             request_payload["chat_template_kwargs"] = {
-                "enable_thinking": bool(enable_thinking),
+                "enable_thinking": False,
             }
         response = requests.post(
             f"{self.base_url}/chat/completions",

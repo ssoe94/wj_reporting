@@ -16,6 +16,10 @@ from production.ai_context import build_context_pack
 from production.ai_answer import build_ai_briefing
 from production.ai_metrics import SHANGHAI_TZ
 from production.ai_retrievers import get_daily_production_context
+from production.ai_types import (
+    DEFAULT_PRODUCTION_AI_MODEL_ID,
+    PRODUCTION_AI_MODEL_IDS,
+)
 
 from .models import AiJob
 from .serializers import (
@@ -175,6 +179,7 @@ def build_job_input_payload(job_type, scope, supplied_payload):
             'source': 'production_ai_briefing',
             'date': target_date.isoformat(),
             'language': language,
+            'model_id': scope.get('model_id') or DEFAULT_PRODUCTION_AI_MODEL_ID,
             'briefing': briefing.to_dict(),
         }
 
@@ -280,8 +285,13 @@ class AiJobLatestView(APIView):
         if not parse_date(str(date_str)):
             raise ValidationError({'date': 'date must use YYYY-MM-DD.'})
         language = normalize_language(request.query_params.get('language'))
+        model_id = str(
+            request.query_params.get('model_id') or DEFAULT_PRODUCTION_AI_MODEL_ID
+        ).strip()
+        if model_id not in PRODUCTION_AI_MODEL_IDS:
+            raise ValidationError({'model_id': 'Unsupported local AI model.'})
 
-        job = (
+        jobs = (
             visible_jobs_for_user(request.user)
             .filter(
                 job_type=job_type,
@@ -290,9 +300,14 @@ class AiJobLatestView(APIView):
                 scope__language=language,
                 scope__trigger='hourly',
             )
-            .order_by('-completed_at', '-id')
-            .first()
         )
+        if model_id == DEFAULT_PRODUCTION_AI_MODEL_ID:
+            jobs = jobs.filter(
+                Q(scope__model_id=model_id) | Q(scope__model_id__isnull=True)
+            )
+        else:
+            jobs = jobs.filter(scope__model_id=model_id)
+        job = jobs.order_by('-completed_at', '-id').first()
         return Response({'job': AiJobResultSerializer(job).data if job else None})
 
 
@@ -312,6 +327,7 @@ class AiWorkerHeartbeatView(APIView):
             'model_name': display_model_name(payload.get('model_name')),
             'worker_version': (payload.get('worker_version') or '')[:64],
             'last_error': (payload.get('last_error') or '')[:500],
+            'available_model_ids': list(payload.get('available_model_ids') or []),
         }
 
         with transaction.atomic():
@@ -411,6 +427,9 @@ class AiWorkerStatusView(APIView):
             'model_name': display_model_name(heartbeat_result.get('model_name')),
             'worker_version': heartbeat_result.get('worker_version', '') if heartbeat else '',
             'last_error': heartbeat_result.get('last_error', '') if heartbeat else '',
+            'available_model_ids': (
+                heartbeat_result.get('available_model_ids', []) if heartbeat else []
+            ),
             'last_analysis_completed_at': latest_analysis.completed_at if latest_analysis else None,
             'last_analysis_model_name': display_model_name(latest_analysis.model_name) if latest_analysis else '',
             'last_analysis_llm_fallback': (
@@ -455,37 +474,40 @@ class AiWorkerPeriodicEnqueueView(APIView):
         jobs = []
         created_count = 0
         for language in normalized_languages:
-            filters = {
-                'job_type': AiJob.JOB_TYPE_PRODUCTION_DAILY,
-                'scope__date': target_date.isoformat(),
-                'scope__language': language,
-                'scope__schedule_slot': schedule_slot,
-            }
-            existing = AiJob.objects.filter(**filters).order_by('-id').first()
-            if existing:
-                jobs.append(existing)
-                continue
-
-            scope = {
-                'date': target_date.isoformat(),
-                'language': language,
-                'schedule_slot': schedule_slot,
-                'trigger': 'hourly',
-            }
-            input_payload = build_job_input_payload(AiJob.JOB_TYPE_PRODUCTION_DAILY, scope, {})
-            with transaction.atomic():
+            for model_id in PRODUCTION_AI_MODEL_IDS:
+                filters = {
+                    'job_type': AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                    'scope__date': target_date.isoformat(),
+                    'scope__language': language,
+                    'scope__model_id': model_id,
+                    'scope__schedule_slot': schedule_slot,
+                }
                 existing = AiJob.objects.filter(**filters).order_by('-id').first()
                 if existing:
                     jobs.append(existing)
                     continue
-                job = AiJob.objects.create(
-                    job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
-                    scope=scope,
-                    input_payload=input_payload,
-                    created_by=None,
-                )
-                jobs.append(job)
-                created_count += 1
+
+                scope = {
+                    'date': target_date.isoformat(),
+                    'language': language,
+                    'model_id': model_id,
+                    'schedule_slot': schedule_slot,
+                    'trigger': 'hourly',
+                }
+                input_payload = build_job_input_payload(AiJob.JOB_TYPE_PRODUCTION_DAILY, scope, {})
+                with transaction.atomic():
+                    existing = AiJob.objects.filter(**filters).order_by('-id').first()
+                    if existing:
+                        jobs.append(existing)
+                        continue
+                    job = AiJob.objects.create(
+                        job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                        scope=scope,
+                        input_payload=input_payload,
+                        created_by=None,
+                    )
+                    jobs.append(job)
+                    created_count += 1
 
         return Response({
             'schedule_slot': schedule_slot,

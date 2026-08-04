@@ -46,6 +46,7 @@ from .ai_answer import (
 from .ai_context import build_context_pack, build_used_data
 from .ai_gateway import answer_from_intent, build_injection_plan_context, heuristic_intent_from_question
 from .ai_retrievers import get_daily_production_context
+from .ai_types import DEFAULT_PRODUCTION_AI_MODEL_ID, PRODUCTION_AI_MODELS
 from .counter_utils import calculate_cumulative_counter_delta
 from .cavity import (
     attach_cavity_meta,
@@ -73,15 +74,6 @@ class ActiveProductionAiQuestionError(APIException):
     default_code = 'ai_question_in_progress'
 
 
-PRODUCTION_AI_MODELS = {
-    'qwen35': {
-        'label': 'Qwen 3.5 35B-A3B',
-    },
-    'gemma4_26b_a4b': {
-        'label': 'Gemma 4 26B-A4B',
-    },
-}
-DEFAULT_PRODUCTION_AI_MODEL_ID = 'qwen35'
 GEMMA_READY_WORKER_VERSION = 'production-ai-worker-v2-gemma1'
 
 
