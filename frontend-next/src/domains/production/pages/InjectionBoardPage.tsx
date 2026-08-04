@@ -20,8 +20,8 @@ import { addIsoDateDays, getShanghaiBusinessDateString } from "@/shared/utils/da
 const BOARD_REFRESH_INTERVAL_MS = 60_000;
 const STALE_DATA_THRESHOLD_MS = 5 * 60_000;
 const MACHINE_COUNT = 17;
-const VISITOR_CYCLE_TIME_MIN_MULTIPLIER = 1.03;
-const VISITOR_CYCLE_TIME_MAX_MULTIPLIER = 1.1;
+const VISITOR_CYCLE_TIME_MIN_MULTIPLIER = 1.1;
+const VISITOR_CYCLE_TIME_MAX_MULTIPLIER = 1.12;
 const PREVIOUS_SUMMARY_CACHE_PREFIX = "injection-board:previous-summary:";
 const PREVIOUS_SUMMARY_CACHE_VERSION = 3;
 const BOARD_MODEL_COLORS = [
