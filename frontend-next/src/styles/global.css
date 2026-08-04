@@ -8516,20 +8516,44 @@ select {
   min-width: 0;
 }
 
-.injection-board__title > span {
+.injection-board__mode-toggle {
   display: grid;
   width: 58px;
   height: 54px;
   flex: 0 0 auto;
   place-items: center;
+  padding: 0;
   border: 1px solid #b8dce8;
   border-left: 5px solid #008fc4;
   border-radius: 4px;
   background: #e8f5f8;
   color: #007aa8;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
-.injection-board__title > span svg {
+.injection-board__mode-toggle:hover {
+  transform: translateY(-1px);
+}
+
+.injection-board__mode-toggle:focus-visible {
+  outline: 3px solid rgba(0, 143, 196, 0.28);
+  outline-offset: 3px;
+}
+
+.injection-board--visitor .injection-board__mode-toggle {
+  border-color: #efb1aa;
+  border-left-color: #cf3829;
+  background: #fff0ed;
+  color: #bd2f22;
+}
+
+.injection-board--visitor .injection-board__mode-toggle:focus-visible {
+  outline-color: rgba(207, 56, 41, 0.3);
+}
+
+.injection-board__mode-toggle svg {
   width: 32px;
   height: 32px;
   stroke-width: 1.8;
@@ -8543,8 +8567,14 @@ select {
 
 .injection-board__title p {
   margin: 5px 0 0;
-  color: var(--board-muted);
+  color: #a92f23;
   font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.injection-board__title p strong {
+  color: #c13023;
+  font-weight: 950;
 }
 
 .injection-board__meta {
@@ -9166,6 +9196,12 @@ select {
   font-size: 1.7rem;
   line-height: 1;
   text-align: center;
+}
+
+.injection-board-card__metrics strong.injection-board-card__ct-range {
+  font-size: 1.18rem;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
 }
 
 .injection-board-card__metrics small {
