@@ -2291,13 +2291,13 @@ select {
 }
 
 .production-ai-worker-status__pill--online,
-.production-ai-worker-status__pill--qwen-ready {
+.production-ai-worker-status__pill--llm-ready {
   background: rgba(0, 156, 73, 0.11);
   color: #087b42;
 }
 
 .production-ai-worker-status__pill--offline,
-.production-ai-worker-status__pill--qwen-unavailable {
+.production-ai-worker-status__pill--llm-unavailable {
   background: rgba(180, 83, 9, 0.10);
   color: var(--warning);
 }
@@ -2690,6 +2690,59 @@ select {
   background: #ffffff;
 }
 
+.production-ai-model-selector {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.production-ai-model-selector legend {
+  margin-bottom: 6px;
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.production-ai-model-selector__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.production-ai-model-selector__options button {
+  min-height: 34px;
+  border: 1px solid rgba(0, 142, 195, 0.18);
+  border-radius: 8px;
+  background: rgba(247, 252, 254, 0.9);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.production-ai-model-selector__options button.is-active {
+  border-color: rgba(0, 142, 195, 0.6);
+  background: rgba(0, 142, 195, 0.11);
+  color: var(--primary-strong);
+  box-shadow: inset 0 0 0 1px rgba(0, 142, 195, 0.08);
+}
+
+.production-ai-model-selector:disabled .production-ai-model-selector__options button {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.production-ai-model-selector p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
 .production-ai-chat-drawer__footer textarea {
   width: 100%;
   min-height: 72px;
@@ -2767,7 +2820,23 @@ select {
   }
 
   .production-ai-chat-drawer__footer textarea {
-    min-height: 62px;
+    min-height: 54px;
+  }
+
+  .production-ai-model-selector {
+    gap: 4px;
+  }
+
+  .production-ai-model-selector legend {
+    margin-bottom: 3px;
+  }
+
+  .production-ai-model-selector__options button {
+    min-height: 30px;
+  }
+
+  .production-ai-model-selector p {
+    display: none;
   }
 
   .production-ai-chat-drawer__footer > div {

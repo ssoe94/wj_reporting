@@ -455,9 +455,13 @@ export type ProductionPlanUploadResponse = {
   model_summary?: ProductionPlanSummaryBucket["model_summary"];
 };
 
+export type ProductionAiModelId = "qwen35" | "gemma4_26b_a4b";
+
 export type ProductionAiAskResponse = {
   answer: string;
   source: "calculated" | "intent_calculated" | "deterministic_unhandled" | "ai_queued";
+  model_id: ProductionAiModelId;
+  model_label: string;
   job_id?: number | null;
   job_status?: AiJobStatus | null;
   detail?: string;
@@ -543,6 +547,7 @@ export type AiWorkerStatus = {
   stale_after_seconds: number;
   llm_ready: boolean | null;
   model_name: string;
+  worker_version: string;
   last_analysis_completed_at: string | null;
   last_analysis_model_name: string;
   last_analysis_llm_fallback: boolean | null;
@@ -943,10 +948,11 @@ export async function askProductionAi(
   question: string,
   language: "ko" | "zh",
   history: ProductionAiChatHistoryMessage[] = [],
+  modelId: ProductionAiModelId = "qwen35",
 ) {
   const response = await http.post<ProductionAiAskResponse>(
     "/production/ai/ask/",
-    { date, question, language, history },
+    { date, question, language, history, model_id: modelId },
     { timeout: 60_000 },
   );
   return response.data;

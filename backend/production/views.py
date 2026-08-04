@@ -73,6 +73,47 @@ class ActiveProductionAiQuestionError(APIException):
     default_code = 'ai_question_in_progress'
 
 
+PRODUCTION_AI_MODELS = {
+    'qwen35': {
+        'label': 'Qwen 3.5 35B-A3B',
+    },
+    'gemma4_26b_a4b': {
+        'label': 'Gemma 4 26B-A4B',
+    },
+}
+DEFAULT_PRODUCTION_AI_MODEL_ID = 'qwen35'
+GEMMA_READY_WORKER_VERSION = 'production-ai-worker-v2-gemma1'
+
+
+def is_production_ai_model_available(model_id, now=None):
+    """Return whether the latest Worker heartbeat can safely serve the model."""
+    if model_id != 'gemma4_26b_a4b':
+        return True
+    try:
+        heartbeat = (
+            AiJob.objects
+            .filter(
+                job_type='worker_heartbeat',
+                status=AiJob.STATUS_COMPLETED,
+            )
+            .order_by('-completed_at', '-id')
+            .first()
+        )
+    except DatabaseError:
+        return False
+    if not heartbeat or not heartbeat.completed_at:
+        return False
+    stale_after_seconds = max(
+        30,
+        int(getattr(settings, 'AI_WORKER_HEARTBEAT_STALE_SECONDS', 300) or 300),
+    )
+    heartbeat_age = ((now or timezone.now()) - heartbeat.completed_at).total_seconds()
+    if heartbeat_age < 0 or heartbeat_age > stale_after_seconds:
+        return False
+    result = heartbeat.result_payload if isinstance(heartbeat.result_payload, dict) else {}
+    return result.get('worker_version') == GEMMA_READY_WORKER_VERSION
+
+
 def serialize_plan_for_log(plan):
     return {
         'machine_name': plan.machine_name,
@@ -304,6 +345,15 @@ class ProductionAiAskView(APIView):
     ]
 
     @staticmethod
+    def normalize_model_id(raw_model_id):
+        if raw_model_id is None:
+            return DEFAULT_PRODUCTION_AI_MODEL_ID
+        if not isinstance(raw_model_id, str):
+            return None
+        model_id = raw_model_id.strip()
+        return model_id if model_id in PRODUCTION_AI_MODELS else None
+
+    @staticmethod
     def normalize_conversation_history(raw_history):
         if not isinstance(raw_history, list):
             return []
@@ -407,6 +457,7 @@ class ProductionAiAskView(APIView):
         answer_mode='verified_answer_rewrite',
         verified_context=None,
         conversation_history=None,
+        model_id=DEFAULT_PRODUCTION_AI_MODEL_ID,
     ):
         input_payload = {
             'source': 'production_ai_question',
@@ -417,6 +468,7 @@ class ProductionAiAskView(APIView):
             'intent': intent,
             'deterministic': deterministic,
             'conversation_history': conversation_history or [],
+            'model_id': model_id,
         }
         if verified_context is not None:
             input_payload['verified_context'] = verified_context
@@ -434,6 +486,7 @@ class ProductionAiAskView(APIView):
                     'date': target_date.isoformat(),
                     'language': language,
                     'intent': intent.get('intent'),
+                    'model_id': model_id,
                 },
                 input_payload=input_payload,
                 created_by=request.user,
@@ -490,18 +543,31 @@ class ProductionAiAskView(APIView):
         question = (raw_question or '').strip()
         date_str = request.data.get('date') or timezone.localdate().isoformat()
         language = 'zh' if request.data.get('language') == 'zh' else 'ko'
+        model_id = self.normalize_model_id(request.data.get('model_id'))
 
         if not question:
             return Response({'detail': 'question is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if model_id is None:
+            return Response({
+                'detail': 'model_id must be one of the supported local AI models.',
+                'code': 'invalid_ai_model',
+                'allowed_model_ids': list(PRODUCTION_AI_MODELS),
+            }, status=status.HTTP_400_BAD_REQUEST)
         if len(question) > self.question_max_length:
             return Response({
                 'detail': f'question must be {self.question_max_length} characters or fewer.',
                 'code': 'question_too_long',
             }, status=status.HTTP_400_BAD_REQUEST)
-
         target_date = parse_date(date_str)
         if not target_date:
             return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not is_production_ai_model_available(model_id):
+            return Response({
+                'detail': 'The selected local AI model is not ready.',
+                'code': 'ai_model_unavailable',
+                'model_id': model_id,
+                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         self.expire_stale_question_jobs(request.user)
         if self.has_active_question_job(request.user):
@@ -576,6 +642,7 @@ class ProductionAiAskView(APIView):
                     answer_mode='context_grounded',
                     verified_context=verified_context,
                     conversation_history=conversation_history,
+                    model_id=model_id,
                 )
             except DatabaseError:
                 return Response({
@@ -584,11 +651,13 @@ class ProductionAiAskView(APIView):
                 }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             return Response({
                 'answer': (
-                    '로컬 Qwen이 검증된 생산 데이터를 분석 중입니다.'
+                    '선택한 로컬 AI 모델이 검증된 생산 데이터를 분석 중입니다.'
                     if language != 'zh' else
-                    '本地 Qwen 正在分析已验证的生产数据。'
+                    '所选本地 AI 模型正在分析已验证的生产数据。'
                 ),
                 'source': 'ai_queued',
+                'model_id': model_id,
+                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
                 'intent': intent,
                 'context': {
                     'business_date': verified_context.get('scope', {}).get('business_date'),
@@ -616,6 +685,7 @@ class ProductionAiAskView(APIView):
                     intent,
                     deterministic,
                     conversation_history=conversation_history,
+                    model_id=model_id,
                 )
             except DatabaseError:
                 job = None
@@ -624,6 +694,8 @@ class ProductionAiAskView(APIView):
             return Response({
                 **deterministic,
                 'source': 'intent_calculated',
+                'model_id': model_id,
+                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
                 'intent': intent,
                 'context': {
                     'business_date': facts.get('business_date'),
@@ -651,6 +723,7 @@ class ProductionAiAskView(APIView):
                     intent,
                     deterministic,
                     conversation_history=conversation_history,
+                    model_id=model_id,
                 )
             except DatabaseError:
                 job = None
@@ -659,6 +732,8 @@ class ProductionAiAskView(APIView):
             return Response({
                 **deterministic,
                 'source': 'intent_calculated',
+                'model_id': model_id,
+                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
                 'intent': intent,
                 'context': {
                     'business_date': facts.get('business_date'),
@@ -689,6 +764,7 @@ class ProductionAiAskView(APIView):
                     intent,
                     deterministic,
                     conversation_history=conversation_history,
+                    model_id=model_id,
                 )
             except DatabaseError:
                 job = None
@@ -696,6 +772,8 @@ class ProductionAiAskView(APIView):
             return Response({
                 **deterministic,
                 'source': 'intent_calculated',
+                'model_id': model_id,
+                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
                 'intent': intent,
                 'context': {
                     'business_date': context['business_date'],
@@ -716,6 +794,8 @@ class ProductionAiAskView(APIView):
                 '当前问题无法仅用已验证的生产指标即时计算。请按设备、Part、产量、进度或最近60分钟 C/T 提问。'
             ),
             'source': 'deterministic_unhandled',
+            'model_id': model_id,
+            'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
             'intent': intent,
             'context': {
                 'business_date': context['business_date'],

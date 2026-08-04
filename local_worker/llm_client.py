@@ -24,10 +24,17 @@ def extract_json_object(text: str) -> dict[str, Any]:
 
 
 class LocalLlmClient:
-    def __init__(self, base_url: str, model: str, timeout: int = 120):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        timeout: int = 120,
+        model_family: str = "qwen",
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
+        self.model_family = model_family
 
     def is_ready(self, timeout: int = 3) -> bool:
         try:
@@ -62,7 +69,6 @@ class LocalLlmClient:
             "model": self.model,
             "temperature": 0.1,
             "max_tokens": 1200,
-            "enable_thinking": enable_thinking,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {
@@ -71,8 +77,23 @@ class LocalLlmClient:
                 },
             ],
         }
-        if enable_thinking and thinking_budget is not None:
-            request_payload["thinking_budget"] = max(1, int(thinking_budget))
+        if self.model_family == "qwen":
+            request_payload["enable_thinking"] = enable_thinking
+            if enable_thinking and thinking_budget is not None:
+                request_payload["thinking_budget"] = max(1, int(thinking_budget))
+        elif self.model_family == "gemma4":
+            # MLX-LM forwards these arguments to Gemma's chat template. Always
+            # send the boolean so repair requests can explicitly disable
+            # thinking instead of inheriting the model template's default.
+            request_payload.update({
+                "temperature": 1.0,
+                "top_k": 64,
+                "top_p": 0.95,
+                "max_tokens": 1800,
+            })
+            request_payload["chat_template_kwargs"] = {
+                "enable_thinking": bool(enable_thinking),
+            }
         response = requests.post(
             f"{self.base_url}/chat/completions",
             json=request_payload,

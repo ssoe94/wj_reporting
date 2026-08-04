@@ -1406,9 +1406,73 @@ class LocalLlmReadinessTests(unittest.TestCase):
         request_payload = post.call_args.kwargs["json"]
         self.assertTrue(request_payload["enable_thinking"])
         self.assertEqual(request_payload["thinking_budget"], 384)
+        self.assertEqual(request_payload["temperature"], 0.1)
+        self.assertEqual(request_payload["max_tokens"], 1200)
+        self.assertNotIn("top_k", request_payload)
+        self.assertNotIn("top_p", request_payload)
         self.assertEqual(post.call_args.kwargs["timeout"], 100)
         self.assertEqual(result["summary"], "검증된 답변")
         self.assertNotIn("reasoning", str(result))
+
+    def test_gemma_passes_thinking_flag_to_chat_template(self):
+        client = LocalLlmClient(
+            "http://127.0.0.1:8081/v1",
+            "/private/models/gemma-4-26b-a4b-it-4bit",
+            model_family="gemma4",
+        )
+        response = self.Response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": '{"title":"생산 분석","summary":"검증된 답변"}'},
+            }],
+        })
+        with patch.object(llm_client_module.requests, "post", return_value=response) as post:
+            result = client.structured_analysis(
+                "system",
+                {"question": "status"},
+                enable_thinking=True,
+                thinking_budget=384,
+            )
+
+        request_payload = post.call_args.kwargs["json"]
+        self.assertEqual(request_payload["messages"][0]["content"], "system")
+        self.assertEqual(
+            request_payload["chat_template_kwargs"],
+            {"enable_thinking": True},
+        )
+        self.assertEqual(request_payload["temperature"], 1.0)
+        self.assertEqual(request_payload["top_k"], 64)
+        self.assertEqual(request_payload["top_p"], 0.95)
+        self.assertEqual(request_payload["max_tokens"], 1800)
+        self.assertNotIn("enable_thinking", request_payload)
+        self.assertNotIn("thinking_budget", request_payload)
+        self.assertEqual(result["summary"], "검증된 답변")
+
+    def test_gemma_explicitly_disables_thinking_for_repair_request(self):
+        client = LocalLlmClient(
+            "http://127.0.0.1:8081/v1",
+            "/private/models/gemma-4-26b-a4b-it-4bit",
+            model_family="gemma4",
+        )
+        response = self.Response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": '{"title":"생산 분석","summary":"검증된 답변"}'},
+            }],
+        })
+        with patch.object(llm_client_module.requests, "post", return_value=response) as post:
+            client.structured_analysis(
+                "repair system",
+                {"question": "repair"},
+                enable_thinking=False,
+            )
+
+        request_payload = post.call_args.kwargs["json"]
+        self.assertEqual(request_payload["messages"][0]["content"], "repair system")
+        self.assertEqual(
+            request_payload["chat_template_kwargs"],
+            {"enable_thinking": False},
+        )
 
     def test_reasoning_content_is_never_used_as_the_final_answer(self):
         response = self.Response({
@@ -1454,6 +1518,22 @@ class RenderClientCompatibilityTests(unittest.TestCase):
 
 
 class WorkerRunReportingTests(unittest.TestCase):
+    def test_heartbeat_only_advertises_gemma_when_ready(self):
+        self.assertEqual(
+            worker_module.heartbeat_worker_version({worker_module.GEMMA_MODEL_ID: True}),
+            worker_module.GEMMA_READY_WORKER_VERSION,
+        )
+        self.assertEqual(
+            worker_module.heartbeat_worker_version({worker_module.GEMMA_MODEL_ID: False}),
+            worker_module.WORKER_VERSION,
+        )
+
+    def test_health_check_requires_explicit_ok_status(self):
+        self.assertTrue(worker_module.health_check_passed({"status": "ok"}))
+        self.assertTrue(worker_module.health_check_passed({"status": "OK"}))
+        self.assertFalse(worker_module.health_check_passed({"status": "ready"}))
+        self.assertFalse(worker_module.health_check_passed({}))
+
     @staticmethod
     def daily_job():
         return {
@@ -1516,6 +1596,130 @@ class WorkerRunReportingTests(unittest.TestCase):
         run_once(client, "worker", False, None, "model", True, False)
 
         self.assertEqual(client.claim_requests[0]["worker_version"], worker_module.WORKER_VERSION)
+
+    def test_selected_gemma_job_routes_to_gemma_client(self):
+        job = self.daily_job()
+        job["scope"]["model_id"] = worker_module.GEMMA_MODEL_ID
+        job["input_payload"]["model_id"] = worker_module.GEMMA_MODEL_ID
+        client = self.Client(job)
+        qwen_llm = object()
+        gemma_llm = object()
+        targets = {
+            worker_module.QWEN_MODEL_ID: worker_module.LocalModelTarget(
+                worker_module.QWEN_MODEL_ID,
+                qwen_llm,
+                "/models/qwen",
+            ),
+            worker_module.GEMMA_MODEL_ID: worker_module.LocalModelTarget(
+                worker_module.GEMMA_MODEL_ID,
+                gemma_llm,
+                "/models/gemma",
+            ),
+        }
+
+        with patch.object(
+            worker_module,
+            "handle_job",
+            return_value=({"model_name": "/models/gemma", "source": "local_llm_rewrite"}, "prompt-v1"),
+        ) as handle:
+            run_once(
+                client,
+                "worker",
+                True,
+                qwen_llm,
+                "/models/qwen",
+                True,
+                False,
+                model_targets=targets,
+            )
+
+        self.assertIs(handle.call_args.args[2], gemma_llm)
+        self.assertEqual(handle.call_args.args[3], "/models/gemma")
+        completed_payload = client.completed[0][1]
+        self.assertEqual(completed_payload["result_payload"]["model_id"], worker_module.GEMMA_MODEL_ID)
+        self.assertEqual(completed_payload["model_name"], "/models/gemma")
+
+    def test_legacy_job_without_model_id_uses_qwen_default(self):
+        job = self.daily_job()
+        client = self.Client(job)
+        qwen_llm = object()
+        gemma_llm = object()
+        targets = {
+            worker_module.QWEN_MODEL_ID: worker_module.LocalModelTarget(
+                worker_module.QWEN_MODEL_ID,
+                qwen_llm,
+                "/models/qwen",
+            ),
+            worker_module.GEMMA_MODEL_ID: worker_module.LocalModelTarget(
+                worker_module.GEMMA_MODEL_ID,
+                gemma_llm,
+                "/models/gemma",
+            ),
+        }
+
+        with patch.object(
+            worker_module,
+            "handle_job",
+            return_value=({"model_name": "/models/qwen", "source": "local_llm_rewrite"}, "prompt-v1"),
+        ) as handle:
+            run_once(
+                client,
+                "worker",
+                True,
+                qwen_llm,
+                "/models/qwen",
+                True,
+                False,
+                model_targets=targets,
+            )
+
+        self.assertIs(handle.call_args.args[2], qwen_llm)
+        self.assertEqual(client.completed[0][1]["result_payload"]["model_id"], worker_module.QWEN_MODEL_ID)
+
+    def test_unknown_model_id_is_failed_without_qwen_fallback(self):
+        job = self.daily_job()
+        job["scope"]["model_id"] = "untrusted-model"
+        client = self.Client(job)
+
+        with patch.object(worker_module, "handle_job") as handle:
+            run_once(client, "worker", True, object(), "/models/qwen", True, False)
+
+        handle.assert_not_called()
+        self.assertFalse(client.completed)
+        self.assertEqual(client.failed[0][0], job["id"])
+        self.assertIn("Unsupported local AI model_id", client.failed[0][1])
+
+    def test_unavailable_selected_model_fails_before_job_handler(self):
+        job = self.daily_job()
+        job["scope"]["model_id"] = worker_module.GEMMA_MODEL_ID
+        client = self.Client(job)
+        gemma_llm = MagicMock()
+        gemma_llm.is_ready.return_value = False
+        targets = {
+            worker_module.GEMMA_MODEL_ID: worker_module.LocalModelTarget(
+                worker_module.GEMMA_MODEL_ID,
+                gemma_llm,
+                "/models/gemma",
+            ),
+        }
+
+        with patch.object(worker_module, "handle_job") as handle:
+            run_once(
+                client,
+                "worker",
+                True,
+                object(),
+                "/models/qwen",
+                True,
+                False,
+                model_targets=targets,
+            )
+
+        gemma_llm.is_ready.assert_called_once_with(timeout=3)
+        handle.assert_not_called()
+        self.assertFalse(client.completed)
+        self.assertEqual(client.failed[0][0], job["id"])
+        self.assertIn("Local AI model is unavailable", client.failed[0][1])
 
     def test_complete_failure_marks_job_failed_and_is_reported(self):
         client = self.Client(self.daily_job(), complete_error=RuntimeError("complete unavailable"))

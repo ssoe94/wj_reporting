@@ -28,6 +28,11 @@ HANDLERS = {
     "production_machine_analysis": production_machine_analysis,
 }
 
+QWEN_MODEL_ID = "qwen35"
+GEMMA_MODEL_ID = "gemma4_26b_a4b"
+SUPPORTED_MODEL_IDS = {QWEN_MODEL_ID, GEMMA_MODEL_ID}
+GEMMA_READY_WORKER_VERSION = "production-ai-worker-v2-gemma1"
+
 REPAIR_SYSTEM_PROMPT = """You repair a manufacturing AI explanation that failed numeric grounding.
 Use only the supplied verified qualitative evidence, qualitative draft, and allowed exact identifiers.
 Do not add facts, calculations, causes, priorities, counts, or majority claims.
@@ -85,6 +90,39 @@ class RunOnceReport:
 
     def summary(self) -> str:
         return "; ".join(self.messages)[:500]
+
+
+@dataclass(frozen=True)
+class LocalModelTarget:
+    model_id: str
+    client: LocalLlmClient | None
+    model_name: str
+
+
+def requested_model_id(job: dict[str, Any], default_model_id: str = QWEN_MODEL_ID) -> str:
+    scope = job.get("scope") if isinstance(job.get("scope"), dict) else {}
+    input_payload = (
+        job.get("input_payload")
+        if isinstance(job.get("input_payload"), dict)
+        else {}
+    )
+    raw_model_id = scope.get("model_id") or input_payload.get("model_id") or default_model_id
+    model_id = str(raw_model_id or "").strip()
+    if model_id not in SUPPORTED_MODEL_IDS:
+        raise ValueError(f"Unsupported local AI model_id: {model_id or '<empty>'}")
+    return model_id
+
+
+def heartbeat_worker_version(model_readiness: dict[str, bool]) -> str:
+    return (
+        GEMMA_READY_WORKER_VERSION
+        if model_readiness.get(GEMMA_MODEL_ID, False)
+        else WORKER_VERSION
+    )
+
+
+def health_check_passed(result: dict[str, Any]) -> bool:
+    return str(result.get("status") or "").strip().lower() == "ok"
 
 
 def handler_for_job(job: dict):
@@ -1236,6 +1274,8 @@ def run_once(
     fallback_to_deterministic: bool,
     enqueue_periodic: bool,
     report: RunOnceReport | None = None,
+    model_targets: dict[str, LocalModelTarget] | None = None,
+    default_model_id: str = QWEN_MODEL_ID,
 ) -> int:
     report = report if report is not None else RunOnceReport()
     if enqueue_periodic:
@@ -1256,9 +1296,32 @@ def run_once(
 
     for job in jobs:
         job_id = int(job["id"])
+        selected_llm = llm
+        selected_model_name = model_name
+        selected_model_id = default_model_id
         try:
+            selected_model_id = requested_model_id(job, default_model_id)
+            if model_targets is not None:
+                target = model_targets.get(selected_model_id)
+                if target is None:
+                    raise ValueError(f"Local AI model is not configured: {selected_model_id}")
+                selected_llm = target.client
+                selected_model_name = target.model_name
+            if use_llm:
+                if selected_llm is None:
+                    raise RuntimeError(f"Local AI model is not configured: {selected_model_id}")
+                readiness_check = getattr(selected_llm, "is_ready", None)
+                if callable(readiness_check) and not readiness_check(timeout=3):
+                    raise RuntimeError(f"Local AI model is unavailable: {selected_model_id}")
             client.start_job(job_id)
-            result, prompt_version = handle_job(job, use_llm, llm, model_name, fallback_to_deterministic)
+            result, prompt_version = handle_job(
+                job,
+                use_llm,
+                selected_llm,
+                selected_model_name,
+                fallback_to_deterministic,
+            )
+            result["model_id"] = selected_model_id
             if result.get("llm_fallback") and result.get("llm_error"):
                 fallback_code = result.get("llm_fallback_code") or "model_error"
                 fallback_message = f"ai job {job_id} LLM fallback [{fallback_code}]: {result['llm_error']}"
@@ -1267,15 +1330,15 @@ def run_once(
             client.complete_job(
                 job_id,
                 result_payload=result,
-                model_name=result.get("model_name") or model_name,
+                model_name=result.get("model_name") or selected_model_name,
                 prompt_version=prompt_version,
             )
-            print(f"completed ai job {job_id}")
+            print(f"completed ai job {job_id} with {selected_model_id}")
         except Exception as exc:
             message = f"ai job {job_id} failed: {exc}"
             report.add(message, failure=True)
             try:
-                client.fail_job(job_id, str(exc), model_name=model_name)
+                client.fail_job(job_id, str(exc), model_name=selected_model_name)
             except Exception as fail_exc:
                 report.add(f"ai job {job_id} fail transition failed: {fail_exc}", failure=True)
             print(message, file=sys.stderr)
@@ -1300,10 +1363,18 @@ def main() -> int:
     use_llm = truthy(os.getenv("AI_WORKER_USE_LLM"))
     fallback_to_deterministic = truthy(os.getenv("AI_WORKER_FALLBACK_TO_DETERMINISTIC", "true"))
     enqueue_periodic = truthy(os.getenv("AI_WORKER_ENQUEUE_PERIODIC", "true"))
-    local_model = os.getenv(
+    qwen_model = os.getenv(
         "LOCAL_LLM_MODEL",
         "/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit",
     )
+    gemma_model = os.getenv(
+        "LOCAL_GEMMA_MODEL",
+        "/Users/macstudio_ted/Developer/local-ai/models/gemma-4-26b-a4b-it-4bit",
+    )
+    default_model_id = os.getenv("LOCAL_LLM_DEFAULT_MODEL_ID", QWEN_MODEL_ID).strip()
+    if default_model_id not in SUPPORTED_MODEL_IDS:
+        print(f"Unsupported LOCAL_LLM_DEFAULT_MODEL_ID: {default_model_id}", file=sys.stderr)
+        return 2
     # Heartbeats share this single-threaded loop with inference. Keep the LLM timeout
     # below the backend's 180-second stale threshold, leaving time for API transitions.
     llm_timeout = min(120, max(5, int(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "45") or 45)))
@@ -1314,39 +1385,65 @@ def main() -> int:
 
     client = RenderClient(api_base_url=api_base_url, worker_token=worker_token)
     llm = None
+    model_targets: dict[str, LocalModelTarget] = {}
     if use_llm:
-        llm = LocalLlmClient(
+        qwen_llm = LocalLlmClient(
             base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8080/v1"),
-            model=local_model,
+            model=qwen_model,
             timeout=llm_timeout,
+            model_family="qwen",
         )
+        gemma_llm = LocalLlmClient(
+            base_url=os.getenv("LOCAL_GEMMA_BASE_URL", "http://127.0.0.1:8081/v1"),
+            model=gemma_model,
+            timeout=llm_timeout,
+            model_family="gemma4",
+        )
+        model_targets = {
+            QWEN_MODEL_ID: LocalModelTarget(QWEN_MODEL_ID, qwen_llm, qwen_model),
+            GEMMA_MODEL_ID: LocalModelTarget(GEMMA_MODEL_ID, gemma_llm, gemma_model),
+        }
+        llm = model_targets[default_model_id].client
 
     if args.check_llm:
         if not llm:
             print("AI_WORKER_USE_LLM=true is required for --check-llm.", file=sys.stderr)
             return 2
-        result = llm.structured_analysis(
-            "Return only a JSON object with status and model_name.",
-            {"task": "health_check", "expected_status": "ok"},
-        )
-        print(result)
+        for model_id, target in model_targets.items():
+            if target.client is None or not target.client.is_ready(timeout=5):
+                print(f"{model_id}: unavailable", file=sys.stderr)
+                return 1
+            result = target.client.structured_analysis(
+                "Return only a JSON object with status set to ok.",
+                {"task": "health_check", "expected_status": "ok"},
+            )
+            if not health_check_passed(result):
+                print(f"{model_id}: invalid health-check response", file=sys.stderr)
+                return 1
+            print(f"{model_id}: ready ({Path(target.model_name).name})")
         return 0
 
     next_periodic_check = 0.0
     next_heartbeat = 0.0
     last_worker_error = ""
+    default_target = model_targets.get(default_model_id)
     while True:
         monotonic_now = time.monotonic()
         should_enqueue_periodic = enqueue_periodic and monotonic_now >= next_periodic_check
         if monotonic_now >= next_heartbeat:
-            llm_ready = llm.is_ready(timeout=3) if llm else False
+            model_readiness = {
+                model_id: bool(target.client and target.client.is_ready(timeout=3))
+                for model_id, target in model_targets.items()
+            }
+            llm_ready = model_readiness.get(default_model_id, False)
+            reported_worker_version = heartbeat_worker_version(model_readiness)
             try:
                 client.send_heartbeat(
                     worker_name,
                     llm_enabled=use_llm,
                     llm_ready=llm_ready,
-                    model_name=local_model if use_llm else "",
-                    worker_version=WORKER_VERSION,
+                    model_name=default_target.model_name if default_target else "",
+                    worker_version=reported_worker_version,
                     last_error=last_worker_error,
                 )
                 last_worker_error = ""
@@ -1360,10 +1457,12 @@ def main() -> int:
                 worker_name,
                 use_llm,
                 llm,
-                local_model,
+                default_target.model_name if default_target else "",
                 fallback_to_deterministic,
                 should_enqueue_periodic,
                 report=run_report,
+                model_targets=model_targets if use_llm else None,
+                default_model_id=default_model_id,
             )
             if run_report.messages:
                 last_worker_error = run_report.summary()

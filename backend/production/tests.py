@@ -902,6 +902,92 @@ class ProductionAiAskContractTests(DjangoTestCase):
         self.user = get_user_model().objects.create_user(username='ai-ask-user', password='test-pass')
         self.client.force_authenticate(self.user)
 
+    def create_gemma_ready_heartbeat(self, completed_at=None):
+        heartbeat = AiJob.objects.create(
+            job_type='worker_heartbeat',
+            status=AiJob.STATUS_COMPLETED,
+            scope={'trigger': 'worker_heartbeat', 'worker_name': 'mac-studio-local-ai'},
+            result_payload={
+                'llm_enabled': True,
+                'llm_ready': True,
+                'model_name': 'Qwen3.5-35B-A3B-4bit',
+                'worker_version': 'production-ai-worker-v2-gemma1',
+            },
+            completed_at=completed_at or timezone.now(),
+        )
+        if completed_at is not None:
+            AiJob.objects.filter(pk=heartbeat.pk).update(completed_at=completed_at)
+            heartbeat.refresh_from_db()
+        return heartbeat
+
+    def test_question_defaults_to_qwen_model(self):
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '오늘 생산 진도 어때?',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['model_id'], 'qwen35')
+        job = AiJob.objects.get(pk=response.json()['job_id'])
+        self.assertEqual(job.scope['model_id'], 'qwen35')
+        self.assertEqual(job.input_payload['model_id'], 'qwen35')
+
+    def test_question_preserves_selected_gemma_model(self):
+        self.create_gemma_ready_heartbeat()
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '오늘 생산량이 왜 낮고 무엇을 우선 개선해야 해?',
+            'model_id': 'gemma4_26b_a4b',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['model_id'], 'gemma4_26b_a4b')
+        self.assertEqual(response.json()['model_label'], 'Gemma 4 26B-A4B')
+        job = AiJob.objects.get(pk=response.json()['job_id'])
+        self.assertEqual(job.scope['model_id'], 'gemma4_26b_a4b')
+        self.assertEqual(job.input_payload['model_id'], 'gemma4_26b_a4b')
+
+    def test_question_rejects_gemma_when_capable_worker_is_not_ready(self):
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '오늘 생산량이 왜 낮아?',
+            'model_id': 'gemma4_26b_a4b',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['code'], 'ai_model_unavailable')
+        self.assertFalse(AiJob.objects.exists())
+
+    def test_question_rejects_gemma_when_capable_worker_heartbeat_is_stale(self):
+        self.create_gemma_ready_heartbeat(timezone.now() - timedelta(minutes=10))
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '오늘 생산량이 왜 낮아?',
+            'model_id': 'gemma4_26b_a4b',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['code'], 'ai_model_unavailable')
+        self.assertEqual(AiJob.objects.filter(job_type='worker_heartbeat').count(), 1)
+
+    def test_question_rejects_unknown_or_non_string_model(self):
+        for model_id in ['../../private/model', 'unknown-model', 123]:
+            with self.subTest(model_id=model_id):
+                response = self.client.post('/api/production/ai/ask/', {
+                    'date': '2026-05-18',
+                    'language': 'ko',
+                    'question': '오늘 생산 진도 어때?',
+                    'model_id': model_id,
+                }, format='json')
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json()['code'], 'invalid_ai_model')
+        self.assertFalse(AiJob.objects.exists())
+
     def test_projection_intent_extracts_requested_machine_numbers(self):
         intent = heuristic_intent_from_question(
             '현재 추세로 1호기와 9호기의 기준일 종료 예상 형합수를 알려줘',

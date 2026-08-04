@@ -30,6 +30,9 @@ fi
 export RENDER_API_BASE_URL="${RENDER_API_BASE_URL:-https://wj-reporting-backend.onrender.com/api}"
 export LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-http://127.0.0.1:8080/v1}"
 export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit}"
+export LOCAL_GEMMA_BASE_URL="${LOCAL_GEMMA_BASE_URL:-http://127.0.0.1:8081/v1}"
+export LOCAL_GEMMA_MODEL="${LOCAL_GEMMA_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/gemma-4-26b-a4b-it-4bit}"
+export LOCAL_LLM_DEFAULT_MODEL_ID="${LOCAL_LLM_DEFAULT_MODEL_ID:-qwen35}"
 export LOCAL_LLM_TIMEOUT_SECONDS="${LOCAL_LLM_TIMEOUT_SECONDS:-120}"
 export WORKER_NAME="${WORKER_NAME:-mac-studio-local-ai}"
 export POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-10}"
@@ -44,10 +47,10 @@ for attempt in $(seq 1 90); do
     exec "$worker_python" "$worker_script"
   fi
   if (( attempt % 15 == 0 )); then
-    echo "Waiting for local Qwen server at $model_health_url ($attempt/90)" >&2
+    echo "Waiting for the default local AI server at $model_health_url ($attempt/90)" >&2
   fi
   /bin/sleep 2
 done
 
-echo "Local Qwen server did not become ready within 180 seconds." >&2
+echo "The default local AI server did not become ready within 180 seconds." >&2
 exit 69
