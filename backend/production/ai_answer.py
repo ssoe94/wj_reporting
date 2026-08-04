@@ -4,7 +4,11 @@ from django.utils import timezone
 
 from .ai_context import build_context_pack, build_top_risks, build_used_data
 from .ai_metrics import project_end_of_business_day_shots, status_severity
-from .ai_retrievers import get_daily_production_context, get_injection_machine_shot_context
+from .ai_retrievers import (
+    get_daily_production_context,
+    get_injection_active_machine_context,
+    get_injection_machine_shot_context,
+)
 from .ai_types import AiBriefCache, AiBriefingPayload
 
 
@@ -250,5 +254,129 @@ def build_injection_shot_projection(
             f"injection.monitoring:{context['range_start'].isoformat()}~{context['range_end'].isoformat()}",
             "injection.capacity_delta:reset_safe",
             "production.metric:linear_recent_shot_projection",
+        ],
+    }
+
+
+def build_injection_active_machine_count(
+    target_date,
+    lookback_minutes: int,
+    language: str = "ko",
+) -> dict:
+    """Build a deterministic count of machines active in a requested MES window."""
+    normalized_language = "zh" if language == "zh" else "ko"
+    context = get_injection_active_machine_context(target_date, lookback_minutes)
+    has_mes_evidence = context["latest_mes_time"] is not None
+    active_machines = context["rows"] if has_mes_evidence else []
+    active_machine_count = len(active_machines) if has_mes_evidence else None
+    window_minutes = int(context["lookback_minutes"])
+    hours = window_minutes / 60
+    duration_label = (
+        f"{int(hours)}시간" if hours.is_integer() else f"{fmt_rate(window_minutes)}분"
+    )
+    if normalized_language == "zh":
+        duration_label = (
+            f"{int(hours)}小时"
+            if hours.is_integer()
+            else f"{fmt_rate(window_minutes)}分钟"
+        )
+
+    machine_labels = ", ".join(row["machine"] for row in active_machines) or "-"
+    window_start = context["window_start"].isoformat()
+    window_end = context["window_end"].isoformat()
+    if normalized_language == "zh" and not has_mes_evidence:
+        answer = "所选基准日没有可用的 MES 合模记录，因此无法确认指定时间区间内运行过的注塑机数量。"
+        calculation_basis = [
+            "没有 MES 合模记录时，不把缺失数据解释为零台运行设备。",
+            "本地 LLM 只说明已验证的结果，不计算设备数量。",
+        ]
+    elif normalized_language == "zh":
+        answer = (
+            f"截至最新 MES 记录的最近 {duration_label}，按累计合模计数增加判断，"
+            f"运行过的注塑机为 {active_machine_count} 台。设备为 {machine_labels}。"
+        )
+        calculation_basis = [
+            "运行设备定义为指定时间窗口内 MES 累计合模计数出现正向增加的注塑机。",
+            "累计计数按正向增量合计，并识别计数器归零。",
+            "时间窗口以所选基准日内最新 MES 记录为结束时点，允许跨越 08:00 业务日边界。",
+            "本地 LLM 只说明已验证的结果，不计算设备数量。",
+        ]
+    elif not has_mes_evidence:
+        answer = (
+            "선택한 기준일에 사용할 수 있는 MES 형합 기록이 없어 지정 시간 구간에 "
+            "가동된 사출기 대수를 확인할 수 없습니다."
+        )
+        calculation_basis = [
+            "MES 형합 기록이 없으면 데이터 부재를 가동 설비 0대로 해석하지 않습니다.",
+            "로컬 LLM은 검증된 결과를 설명만 하며 설비 대수를 계산하지 않습니다.",
+        ]
+    else:
+        answer = (
+            f"최신 MES 기록까지 최근 {duration_label} 동안 누적 형합값이 증가한 사출기는 "
+            f"{active_machine_count}대입니다. 대상 설비는 {machine_labels}입니다."
+        )
+        calculation_basis = [
+            "가동 설비는 지정 시간 구간에 MES 누적 형합값의 양의 증가가 확인된 사출기로 정의합니다.",
+            "누적 카운터는 양의 증가분을 합산하고 카운터 초기화를 반영합니다.",
+            "시간 구간은 선택한 기준일 안의 최신 MES 기록을 종료 시점으로 하며 08:00 업무일 경계를 넘을 수 있습니다.",
+            "로컬 LLM은 검증된 결과를 설명만 하며 설비 대수를 계산하지 않습니다.",
+        ]
+
+    if has_mes_evidence and context["is_stale"]:
+        answer += (
+            " 但 MES 数据处于更新延迟状态，结果可能与当前状态不同。"
+            if normalized_language == "zh"
+            else " 다만 MES 데이터가 갱신 지연 상태이므로 결과가 현재 상태와 다를 수 있습니다."
+        )
+    if context["requested_lookback_minutes"] != window_minutes:
+        answer += (
+            " 查询区间已限制为系统支持的最近 168 小时。"
+            if normalized_language == "zh"
+            else " 조회 구간은 시스템이 지원하는 최근 168시간으로 제한했습니다."
+        )
+
+    warnings = []
+    if context["latest_mes_time"] is None:
+        warnings.append("injection_capacity_data_missing")
+    elif context["is_stale"]:
+        warnings.append("injection_capacity_data_stale")
+    if context["requested_lookback_minutes"] != window_minutes:
+        warnings.append("injection_activity_window_clamped")
+
+    return {
+        "answer": answer,
+        "facts": {
+            "metric": "injection_active_machine_count",
+            "business_date": target_date.isoformat(),
+            "lookback_minutes": window_minutes,
+            "window_start": window_start,
+            "window_end": window_end,
+            "active_machine_count": active_machine_count,
+            "active_machines": active_machines,
+            "activity_definition": "positive_mes_capacity_delta",
+        },
+        "used_data": [{
+            "name": "InjectionMonitoringRecord",
+            "row_count": int(context["monitoring_row_count"]),
+            "filters": {
+                "timestamp_gte": window_start,
+                "timestamp_lte": window_end,
+                "field": "capacity",
+                "machine_numbers": list(range(1, 18)),
+            },
+        }],
+        "calculation_basis": calculation_basis,
+        "data_freshness": {
+            "last_mes_recorded_at": (
+                context["latest_mes_time"].isoformat()
+                if context["latest_mes_time"] else None
+            ),
+            "is_stale": context["is_stale"],
+        },
+        "warnings": warnings,
+        "retrieval_trace": [
+            f"injection.monitoring:{window_start}~{window_end}",
+            "injection.capacity_delta:reset_safe",
+            "production.metric:active_machine_count",
         ],
     }

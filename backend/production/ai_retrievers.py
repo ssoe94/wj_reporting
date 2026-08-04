@@ -83,6 +83,99 @@ def sum_positive_monitoring_delta(machine_name: str, field_name: str, start_dt: 
     return calculate_cumulative_counter_delta(values, baseline=baseline)
 
 
+def get_injection_active_machine_context(target_date: Any, lookback_minutes: int) -> dict[str, Any]:
+    """Return machines whose MES capacity counter increased in the requested window.
+
+    The window ends at the latest capacity sample inside the selected business day.
+    It may cross the 08:00 business-day boundary so questions such as "last 12
+    hours" keep their literal time range. Counter resets are handled by the same
+    positive-delta function used by the production progress retriever.
+    """
+    try:
+        requested_minutes = int(lookback_minutes)
+    except (TypeError, ValueError):
+        requested_minutes = 60
+    # A selected business day anchors the end of the window, but operators may
+    # ask about activity across several business-day boundaries. Bound the
+    # query to seven days to keep the MES scan predictable.
+    window_minutes = max(1, min(requested_minutes, 7 * 24 * 60))
+
+    range_start, range_end = business_range(target_date)
+    machine_names = [machine_monitoring_name(number) for number in range(1, 18)]
+    latest_mes_time = (
+        InjectionMonitoringRecord.objects
+        .filter(
+            machine_name__in=machine_names,
+            timestamp__gte=range_start,
+            timestamp__lt=range_end,
+            capacity__isnull=False,
+        )
+        .aggregate(latest=Max("timestamp"))
+        .get("latest")
+    )
+    reference_time = (
+        latest_mes_time.astimezone(SHANGHAI_TZ)
+        if latest_mes_time
+        else reference_time_for_business_day(target_date, None)
+    )
+    window_start = reference_time - timedelta(minutes=window_minutes)
+    counter_end = reference_time + timedelta(microseconds=1)
+
+    rows = []
+    if latest_mes_time:
+        for machine_number in range(1, 18):
+            monitoring_name = machine_monitoring_name(machine_number)
+            shot_count = sum_positive_monitoring_delta(
+                monitoring_name,
+                "capacity",
+                window_start,
+                counter_end,
+            )
+            if shot_count <= 0:
+                continue
+            rows.append({
+                "machine_number": machine_number,
+                "machine": machine_label(machine_number),
+                "machine_name": monitoring_name,
+                "shot_count": shot_count,
+            })
+
+    current_business_date = (
+        timezone.now().astimezone(SHANGHAI_TZ) - timedelta(hours=8)
+    ).date()
+    is_stale = bool(
+        latest_mes_time is None
+        or (
+            target_date == current_business_date
+            and timezone.now() - latest_mes_time.astimezone(timezone.get_current_timezone())
+            > timedelta(minutes=10)
+        )
+    )
+    monitoring_row_count = (
+        InjectionMonitoringRecord.objects.filter(
+            machine_name__in=machine_names,
+            timestamp__gte=window_start,
+            timestamp__lt=counter_end,
+            capacity__isnull=False,
+        ).count()
+        if latest_mes_time else 0
+    )
+
+    return {
+        "business_date": target_date,
+        "business_range_start": range_start,
+        "business_range_end": range_end,
+        "window_start": window_start,
+        "window_end": reference_time,
+        "lookback_minutes": window_minutes,
+        "requested_lookback_minutes": requested_minutes,
+        "latest_mes_time": latest_mes_time,
+        "is_stale": is_stale,
+        "rows": rows,
+        "monitoring_row_count": monitoring_row_count,
+    }
+
+
 def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[int]) -> dict[str, Any]:
     """Retrieve reset-safe shot trends for explicitly requested machines.
 

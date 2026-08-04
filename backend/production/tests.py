@@ -926,6 +926,266 @@ class ProductionAiAskContractTests(DjangoTestCase):
                     'unknown',
                 )
 
+    def test_active_machine_count_intent_preserves_explicit_window(self):
+        intent = heuristic_intent_from_question('지난 12시간 동안 가동된 사출기의 수는?')
+
+        self.assertEqual(intent['intent'], 'injection_active_machine_count')
+        self.assertEqual(intent['metric'], 'active_machine_count')
+        self.assertEqual(intent['filters']['lookback_minutes'], 720)
+        self.assertTrue(intent['filters']['lookback_explicit'])
+        self.assertEqual(
+            heuristic_intent_from_question('최근 60분 C/T가 가장 긴 사출기는?')['intent'],
+            'injection_cycle_time',
+        )
+        self.assertEqual(
+            heuristic_intent_from_question('현재 가동 중인 사출기는 몇 대야?')['intent'],
+            'production_status',
+        )
+        self.assertEqual(
+            heuristic_intent_from_question(
+                '아니, 지난 12시간 가동된 사출기 대수가 왜 적은지 물었어',
+            )['intent'],
+            'unknown',
+        )
+        self.assertEqual(
+            heuristic_intent_from_question(
+                '아니, 지난 12시간 가동된 사출기 대수가 적은 원인을 물었어',
+            )['intent'],
+            'unknown',
+        )
+        self.assertEqual(
+            heuristic_intent_from_question(
+                '아니, 지난 12시간 가동 사출기 대수가 왜 예상보다 적은지 물었어',
+            )['intent'],
+            'unknown',
+        )
+        self.assertEqual(
+            heuristic_intent_from_question(
+                '아니, 지난 12시간 가동 사출기 대수가 왜 갑자기 줄었는지 물었어',
+            )['intent'],
+            'unknown',
+        )
+        self.assertEqual(
+            heuristic_intent_from_question(
+                '아니, 지난 12시간 가동 사출기 대수가 왜 적은지 설명해줘',
+            )['intent'],
+            'unknown',
+        )
+        self.assertEqual(
+            heuristic_intent_from_question(
+                '아니, 지난 12시간 가동 사출기 대수가 왜 줄었는지 답해줘',
+            )['intent'],
+            'unknown',
+        )
+
+        two_day_intent = heuristic_intent_from_question('지난 48시간 동안 가동된 사출기는 몇 대야?')
+        self.assertEqual(two_day_intent['intent'], 'injection_active_machine_count')
+        self.assertEqual(two_day_intent['filters']['lookback_minutes'], 48 * 60)
+        self.assertEqual(
+            heuristic_intent_from_question('지난 2일 동안 가동된 사출기는 몇 대야?')['filters']['lookback_minutes'],
+            2 * 24 * 60,
+        )
+        self.assertEqual(
+            heuristic_intent_from_question('최근 일주일 동안 가동된 사출기는 몇 대야?')['filters']['lookback_minutes'],
+            7 * 24 * 60,
+        )
+
+        huge_duration_intent = heuristic_intent_from_question(
+            f"지난 {'9' * 400}시간 동안 가동된 사출기는 몇 대야?",
+        )
+        self.assertEqual(huge_duration_intent['intent'], 'injection_active_machine_count')
+        self.assertEqual(huge_duration_intent['filters']['lookback_minutes'], 7 * 24 * 60 + 1)
+
+        for dated_question in [
+            '2026-08-04일에 가동된 사출기는 몇 대야?',
+            '8월4일에 가동된 사출기는 몇 대야?',
+            '아니, 8월 4일 가동된 사출기 대수를 물었어',
+        ]:
+            with self.subTest(dated_question=dated_question):
+                self.assertNotEqual(
+                    heuristic_intent_from_question(dated_question)['intent'],
+                    'injection_active_machine_count',
+                )
+
+    def test_active_machine_count_makes_query_window_clamp_explicit(self):
+        target_date = datetime(2026, 5, 18).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        reference_time = tz.localize(datetime(2026, 5, 18, 10, 0))
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='bounded-window-1',
+            timestamp=reference_time,
+            capacity=100,
+        )
+
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': target_date.isoformat(),
+            'language': 'ko',
+            'question': '지난 999시간 동안 가동된 사출기는 몇 대야?',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['facts']['lookback_minutes'], 7 * 24 * 60)
+        self.assertIn('최근 168시간으로 제한', payload['answer'])
+        self.assertIn('injection_activity_window_clamped', payload['warnings'])
+
+    def test_active_machine_count_does_not_capture_other_current_counts(self):
+        questions = [
+            '현재 불량 수는?',
+            '지금 생산 중인 모델 수는?',
+            '현재 1호기 생산 수량은?',
+            '현재 사출기 생산 수량은?',
+            '지난 12시간 BC 가동 사출기 대수는?',
+            '지난 12시간 가동 설비 수는?',
+        ]
+
+        for question in questions:
+            with self.subTest(question=question):
+                self.assertNotEqual(
+                    heuristic_intent_from_question(question)['intent'],
+                    'injection_active_machine_count',
+                )
+
+    def test_active_machine_count_uses_reset_safe_mes_delta_across_business_boundary(self):
+        target_date = datetime(2026, 5, 18).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        business_start = tz.localize(datetime(2026, 5, 18, 8, 0))
+        reference_time = business_start + timedelta(hours=2)
+        window_start = reference_time - timedelta(hours=12)
+
+        samples = [
+            ('1호기', 'active-1', window_start - timedelta(minutes=1), 100),
+            ('1호기', 'active-1', window_start + timedelta(hours=1), 110),
+            ('1호기', 'active-1', reference_time, 130),
+            ('2호기', 'inactive-2', window_start - timedelta(minutes=1), 50),
+            ('2호기', 'inactive-2', reference_time, 50),
+            ('3호기', 'reset-3', window_start - timedelta(minutes=1), 100),
+            ('3호기', 'reset-3', window_start + timedelta(hours=2), 5),
+            ('3호기', 'reset-3', reference_time, 10),
+            ('4호기', 'outside-4', window_start - timedelta(hours=2), 0),
+            ('4호기', 'outside-4', window_start - timedelta(minutes=1), 20),
+            ('4호기', 'outside-4', window_start + timedelta(hours=1), 20),
+        ]
+        for machine_name, device_code, timestamp, capacity in samples:
+            InjectionMonitoringRecord.objects.create(
+                machine_name=machine_name,
+                device_code=device_code,
+                timestamp=timestamp,
+                capacity=capacity,
+            )
+
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': target_date.isoformat(),
+            'language': 'ko',
+            'question': '지난 12시간 동안 가동된 사출기의 수는?',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['source'], 'intent_calculated')
+        self.assertEqual(payload['facts']['lookback_minutes'], 720)
+        self.assertEqual(payload['facts']['active_machine_count'], 2)
+        self.assertEqual(
+            [row['machine_number'] for row in payload['facts']['active_machines']],
+            [1, 3],
+        )
+        self.assertIn('최근 12시간', payload['answer'])
+        self.assertIn('2대', payload['answer'])
+        self.assertNotIn('C/T', payload['answer'])
+        job = AiJob.objects.get(pk=payload['job_id'])
+        self.assertEqual(job.input_payload['answer_mode'], 'verified_answer_rewrite')
+        self.assertEqual(job.input_payload['deterministic']['facts'], payload['facts'])
+
+    def test_active_machine_count_correction_inherits_prior_explicit_window(self):
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '아니, 가동된 사출기의 댓수를 물었는데 왜 싸이클 타임을 답해?',
+            'history': [{
+                'role': 'user',
+                'content': '지난 12시간 동안 가동된 사출기의 수는?',
+            }],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['intent']['intent'], 'injection_active_machine_count')
+        self.assertEqual(response.json()['intent']['filters']['lookback_minutes'], 720)
+        self.assertNotIn('C/T', response.json()['answer'])
+
+    def test_active_machine_count_distinguishes_missing_mes_from_zero_activity(self):
+        no_data_response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '지난 12시간 동안 가동된 사출기의 수는?',
+        }, format='json')
+
+        self.assertEqual(no_data_response.status_code, 200)
+        no_data_payload = no_data_response.json()
+        self.assertIsNone(no_data_payload['facts']['active_machine_count'])
+        self.assertIn('확인할 수 없습니다', no_data_payload['answer'])
+        self.assertNotIn('0대', no_data_payload['answer'])
+        self.assertIn('injection_capacity_data_missing', no_data_payload['warnings'])
+
+        AiJob.objects.all().delete()
+        target_date = datetime(2026, 5, 19).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 5, 19, 8, 0))
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='zero-activity-1',
+            timestamp=start - timedelta(minutes=1),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='zero-activity-1',
+            timestamp=start + timedelta(hours=1),
+            capacity=100,
+        )
+
+        zero_response = self.client.post('/api/production/ai/ask/', {
+            'date': target_date.isoformat(),
+            'language': 'ko',
+            'question': '지난 12시간 동안 가동된 사출기의 수는?',
+        }, format='json')
+
+        self.assertEqual(zero_response.status_code, 200)
+        zero_payload = zero_response.json()
+        self.assertEqual(zero_payload['facts']['active_machine_count'], 0)
+        self.assertIn('0대', zero_payload['answer'])
+        self.assertNotIn('injection_capacity_data_missing', zero_payload['warnings'])
+
+    def test_active_machine_count_surfaces_stale_mes_in_verified_answer(self):
+        target_date = datetime(2026, 8, 4).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 8, 4, 8, 0))
+        now = start + timedelta(hours=4)
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='stale-active-1',
+            timestamp=start - timedelta(minutes=1),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='stale-active-1',
+            timestamp=start + timedelta(hours=1),
+            capacity=110,
+        )
+
+        with patch('production.ai_retrievers.timezone.now', return_value=now):
+            response = self.client.post('/api/production/ai/ask/', {
+                'date': target_date.isoformat(),
+                'language': 'ko',
+                'question': '지난 12시간 동안 가동된 사출기의 수는?',
+            }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('갱신 지연', response.json()['answer'])
+        self.assertTrue(response.json()['data_freshness']['is_stale'])
+        self.assertIn('injection_capacity_data_stale', response.json()['warnings'])
+
     def test_unknown_question_queues_context_grounded_qwen_job(self):
         completed_base = pytz.UTC.localize(datetime(2026, 5, 18, 1, 0))
         older_snapshot = AiJob.objects.create(

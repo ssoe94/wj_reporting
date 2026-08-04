@@ -17,6 +17,7 @@ try:
         normalize_result,
         run_once,
         summary_is_specific,
+        summary_claims_are_safe,
         summary_numbers_are_grounded,
     )
 except ImportError:
@@ -35,6 +36,7 @@ except ImportError:
         normalize_result,
         run_once,
         summary_is_specific,
+        summary_claims_are_safe,
         summary_numbers_are_grounded,
     )
 
@@ -204,6 +206,36 @@ class GroundingValidationTests(unittest.TestCase):
         }
         self.assertTrue(summary_numbers_are_grounded("850T-1 설비 상태를 확인해야 합니다.", grounding))
 
+    def test_korean_modifier_suffix_is_not_misread_as_one_unit(self):
+        self.assertTrue(
+            summary_numbers_are_grounded(
+                "요청한 시간 구간의 설비 상태를 확인했습니다.",
+                self.grounding,
+            ),
+        )
+
+    def test_attached_korean_spelled_quantity_is_rejected(self):
+        for summary in [
+            "사출기는두 대입니다.",
+            "총두 대입니다.",
+            "약두 대입니다.",
+            "대략두 대입니다.",
+            "최소두 대입니다.",
+            "최대두 대입니다.",
+            "사출기는모두두대입니다.",
+            "사출기는겨우두대입니다.",
+            "사출기는오직두대입니다.",
+            "사출기는총합두대입니다.",
+            "사출기는대략적으로두대입니다.",
+        ]:
+            with self.subTest(summary=summary):
+                self.assertFalse(
+                    summary_numbers_are_grounded(
+                        summary,
+                        {"verified_answer": "가동된 사출기는 2대입니다."},
+                    ),
+                )
+
     def test_valid_value_with_same_exact_subject_is_accepted(self):
         self.assertTrue(summary_numbers_are_grounded("9호기 예상 형합수는 1,360회입니다.", self.grounding))
 
@@ -218,6 +250,24 @@ class GroundingValidationTests(unittest.TestCase):
         self.assertFalse(
             summary_numbers_are_grounded(
                 "1호기 예상 형합수는 1,360회이고 9호기 예상 형합수는 2,900회입니다.",
+                grounding,
+            ),
+        )
+
+    def test_exact_server_verified_count_sentence_is_accepted_without_subject_identifier(self):
+        grounding = {
+            "verified_answer": "최근 측정 구간에 가동된 사출기는 2대입니다.",
+        }
+
+        self.assertTrue(
+            summary_numbers_are_grounded(
+                "최근 측정 구간에 가동된 사출기는 2대입니다.",
+                grounding,
+            ),
+        )
+        self.assertFalse(
+            summary_numbers_are_grounded(
+                "최근 측정 구간에 가동된 사출기는 3대입니다.",
                 grounding,
             ),
         )
@@ -571,7 +621,7 @@ class ProductionAnalystSkillTests(unittest.TestCase):
         self.assertIn("수기 실적 불일치 확인 필요", sentence)
         self.assertNotIn("manual_mismatch", sentence)
 
-    def test_metric_insertion_removes_qwen_copy_before_adding_verified_section(self):
+    def test_metric_insertion_keeps_exact_verified_sentence_already_used_by_qwen(self):
         sentence = "사출 실적은 5,704개이고 계획은 15,561개이며 완료율은 36.7%입니다."
         summary = (
             "결론: 사출 현황을 확인했습니다.\n\n"
@@ -586,7 +636,7 @@ class ProductionAnalystSkillTests(unittest.TestCase):
         )
 
         self.assertEqual(enriched.count(sentence), 1)
-        self.assertIn(f"핵심 수치:\n{sentence}", enriched)
+        self.assertEqual(enriched, summary)
 
 
 class ProductionQuestionAnalysisTests(unittest.TestCase):
@@ -707,6 +757,282 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
         self.assertIn("핵심 수치:\n사출 실적은 5,704개", result["summary"])
         self.assertLess(result["summary"].index("핵심 수치:"), result["summary"].index("판단 근거:"))
         self.assertEqual(result["llm_attempts"], 1)
+
+    def test_active_machine_count_keeps_first_qwen_answer_and_prunes_duplicate_numbers(self):
+        active_count_job = {
+            "job_type": "production_daily_analysis",
+            "scope": {"trigger": "question", "date": "2026-08-03", "language": "ko"},
+            "input_payload": {
+                "source": "production_ai_question",
+                "answer_mode": "verified_answer_rewrite",
+                "language": "ko",
+                "date": "2026-08-03",
+                "question": "지난 12시간 동안 가동된 사출기의 수는?",
+                "deterministic": {
+                    "answer": (
+                        "최신 MES 기록까지 최근 12시간 동안 누적 형합값이 증가한 사출기는 "
+                        "2대입니다. 대상 설비는 850T-1, 1300T-3입니다."
+                    ),
+                    "facts": {
+                        "metric": "injection_active_machine_count",
+                        "lookback_minutes": 720,
+                        "active_machine_count": 2,
+                        "active_machines": [
+                            {"machine": "850T-1", "machine_number": 1, "shot_count": 30},
+                            {"machine": "1300T-3", "machine_number": 3, "shot_count": 10},
+                        ],
+                    },
+                },
+            },
+        }
+
+        class FakeLlm:
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
+                return {
+                    "title": "가동 사출기 확인",
+                    "summary": (
+                        "결론: 최신 MES 기록까지 최근 12시간 동안 누적 형합값이 증가한\n"
+                        "사출기는 2대입니다. 대상 설비는 850T-1, 1300T-3입니다.\n\n"
+                        "판단 근거:\n"
+                        "- 최신 MES 기록 기준 최근 12시간 동안 가동된 사출기 대수는 2대입니다.\n"
+                        "- shot_count 데이터의 증가 여부를 기준으로 확인했습니다.\n\n"
+                        "확인할 항목:\n- 최신 데이터 수집 시점을 함께 확인하세요."
+                    ),
+                }
+
+        result, _ = handle_job(
+            active_count_job,
+            use_llm=True,
+            llm=FakeLlm(),
+            model_name="qwen-test",
+            fallback_to_deterministic=False,
+        )
+
+        self.assertEqual(result["source"], "local_llm_rewrite")
+        self.assertEqual(result["llm_attempts"], 1)
+        self.assertFalse(result.get("llm_repaired", False))
+        self.assertTrue(result["llm_numeric_lines_pruned"])
+        self.assertIn("결론:\n최신 MES 기록", result["summary"])
+        self.assertEqual(result["summary"].count("최근 12시간"), 1)
+        self.assertIn("2대", result["summary"])
+        self.assertIn("850T-1, 1300T-3", result["summary"])
+        self.assertNotIn("핵심 수치:", result["summary"])
+        self.assertNotIn("shot_count", result["summary"])
+        self.assertIn("형합수 데이터", result["summary"])
+        self.assertTrue(result["llm_schema_terms_normalized"])
+        self.assertIn("\n\n판단 근거:", result["summary"])
+
+    def test_active_machine_count_rejects_qwen_number_change_before_accepting_repair(self):
+        active_count_job = {
+            "job_type": "production_daily_analysis",
+            "scope": {"trigger": "question", "date": "2026-08-03", "language": "ko"},
+            "input_payload": {
+                "source": "production_ai_question",
+                "answer_mode": "verified_answer_rewrite",
+                "language": "ko",
+                "date": "2026-08-03",
+                "question": "지난 12시간 동안 가동된 사출기의 수는?",
+                "deterministic": {
+                    "answer": "최근 12시간 동안 가동된 사출기는 2대입니다.",
+                    "facts": {"active_machine_count": 2, "lookback_minutes": 720},
+                },
+            },
+        }
+
+        class SequencedLlm:
+            def __init__(self):
+                self.calls = 0
+
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return {"title": "가동 현황", "summary": "최근 12시간 동안 가동된 사출기는 3대입니다."}
+                return {"title": "가동 현황", "summary": "최근 12시간 동안 가동된 사출기는 2대입니다."}
+
+        llm = SequencedLlm()
+        result, _ = handle_job(
+            active_count_job,
+            use_llm=True,
+            llm=llm,
+            model_name="qwen-test",
+            fallback_to_deterministic=False,
+        )
+
+        self.assertEqual(llm.calls, 2)
+        self.assertTrue(result["llm_repaired"])
+        self.assertIn("2대", result["summary"])
+        self.assertNotIn("3대", result["summary"])
+
+    def test_verified_answer_does_not_bypass_unsupported_causal_claim_guard(self):
+        class SequencedLlm:
+            def __init__(self):
+                self.calls = 0
+
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return {
+                        "title": "형합 예상",
+                        "summary": (
+                            "1호기 종료 예상 형합수는 2,900회입니다.\n\n"
+                            "금형 온도 문제의 결과 생산이 늦습니다."
+                        ),
+                    }
+                return {
+                    "title": "형합 예상",
+                    "summary": "1호기 종료 예상 형합수는 2,900회입니다.",
+                }
+
+        llm = SequencedLlm()
+        result, _ = handle_job(
+            self.job,
+            use_llm=True,
+            llm=llm,
+            model_name="qwen-test",
+            fallback_to_deterministic=False,
+        )
+
+        self.assertEqual(llm.calls, 2)
+        self.assertTrue(result["llm_repaired"])
+        self.assertNotIn("금형 온도", result["summary"])
+
+        grounding = production_question_analysis.build_grounding_payload(self.job)
+        for unsafe_claim in [
+            "금형 온도 문제로 생산이 늦습니다.",
+            "금형 온도가 생산 속도를 떨어뜨렸습니다.",
+            "작업자 실수로 생산이 늦습니다.",
+            "작업자 실수가 지연을 만들었습니다.",
+            "금형 온도가 낮아서 생산성이 떨어졌습니다.",
+            "작업자 오류가 생산 차질을 만들었습니다.",
+            "작업자 실수가 지연을 일으켰습니다.",
+            "작업자 오류가 생산 차질로 이어졌습니다.",
+            "작업자 오류가 생산 차질을 낳았습니다.",
+            "작업자 실수에서 생산 지연이 비롯됐습니다.",
+        ]:
+            with self.subTest(unsafe_claim=unsafe_claim):
+                self.assertFalse(summary_claims_are_safe(unsafe_claim, grounding))
+
+        self.assertTrue(
+            summary_claims_are_safe(
+                "작업자 오류와 생산 차질의 관련 여부를 확인해야 합니다.",
+                grounding,
+            ),
+        )
+
+    def test_missing_active_machine_data_cannot_be_rephrased_as_no_active_machines(self):
+        missing_job = {
+            "job_type": "production_daily_analysis",
+            "scope": {"trigger": "question", "date": "2026-08-03", "language": "ko"},
+            "input_payload": {
+                "source": "production_ai_question",
+                "answer_mode": "verified_answer_rewrite",
+                "language": "ko",
+                "date": "2026-08-03",
+                "question": "지난 12시간 동안 가동된 사출기의 수는?",
+                "deterministic": {
+                    "answer": "MES 형합 기록이 없어 가동된 사출기 대수를 확인할 수 없습니다.",
+                    "facts": {
+                        "metric": "injection_active_machine_count",
+                        "active_machine_count": None,
+                    },
+                    "warnings": ["injection_capacity_data_missing"],
+                },
+            },
+        }
+
+        class SequencedLlm:
+            def __init__(self):
+                self.calls = 0
+
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return {
+                        "title": "가동 현황",
+                        "summary": (
+                            "MES 형합 기록이 없어 가동된 사출기 대수를 확인할 수 없습니다.\n\n"
+                            "가동된 사출기는 없습니다."
+                        ),
+                    }
+                return {
+                    "title": "가동 현황",
+                    "summary": "MES 형합 기록이 없어 가동된 사출기 대수를 확인할 수 없습니다.",
+                }
+
+        llm = SequencedLlm()
+        result, _ = handle_job(
+            missing_job,
+            use_llm=True,
+            llm=llm,
+            model_name="qwen-test",
+            fallback_to_deterministic=False,
+        )
+
+        self.assertEqual(llm.calls, 2)
+        self.assertTrue(result["llm_repaired"])
+        self.assertIn("확인할 수 없습니다", result["summary"])
+        self.assertNotIn("사출기는 없습니다", result["summary"])
+
+        grounding = production_question_analysis.build_grounding_payload(missing_job)
+        for false_zero_claim in [
+            "가동된 사출기가 한 대도 없습니다.",
+            "현재 가동 설비가 없습니다.",
+            "가동 중인 사출기는 존재하지 않습니다.",
+            "현재 가동 중인 설비가 없습니다.",
+            "가동 중인 장비는 존재하지 않습니다.",
+            "운전 중인 설비가 없습니다.",
+            "가동했던 설비는 한 대도 없습니다.",
+        ]:
+            with self.subTest(false_zero_claim=false_zero_claim):
+                self.assertFalse(summary_claims_are_safe(false_zero_claim, grounding))
+
+    def test_style_only_quality_issue_keeps_first_qwen_answer(self):
+        class OneCallLlm:
+            def __init__(self):
+                self.calls = 0
+
+            def structured_analysis(self, _system_prompt, _payload, **_kwargs):
+                self.calls += 1
+                return {
+                    "title": "생산 설명",
+                    "summary": "일부 설비는 검증된 생산 흐름에 포함되어 있습니다.",
+                }
+
+        llm = OneCallLlm()
+        result, _ = handle_job(
+            self.job,
+            use_llm=True,
+            llm=llm,
+            model_name="qwen-test",
+            fallback_to_deterministic=False,
+        )
+
+        self.assertEqual(llm.calls, 1)
+        self.assertEqual(result["llm_attempts"], 1)
+        self.assertFalse(result.get("llm_repaired", False))
+        self.assertIn("일부 설비", result["summary"])
+        self.assertIn("vague_quantifier", result["llm_quality_warnings"])
+
+    def test_repair_payload_preserves_uppercase_machine_identifier(self):
+        self.job["input_payload"]["verified_context"] = {
+            "tables": [{
+                "name": "injection_machine_progress",
+                "rows": [{"machine": "850T-1", "is_running": True}],
+            }],
+        }
+        grounding = production_question_analysis.build_grounding_payload(self.job)
+
+        repair_payload = build_repair_payload(
+            self.job,
+            {
+                "title": "850T-1 상태",
+                "summary": "850T-1의 최근 60분 상태를 확인했습니다.",
+            },
+            grounding,
+        )
+
+        self.assertIn("850T-1", repair_payload["qualitative_draft"]["summary"])
+        self.assertNotIn("검증 수치T-검증 수치", str(repair_payload))
 
     def test_question_grounding_excludes_user_authored_numbers(self):
         self.job["input_payload"]["question"] = "999호기는 어때?"
@@ -853,7 +1179,7 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
         self.assertEqual(result["summary"], "1호기 종료 예상 형합수는 2,900회입니다.")
         self.assertEqual(result["source"], "local_llm_rewrite")
         self.assertEqual(result["llm_attempts"], 1)
-        self.assertEqual(prompt_version, "production-question-v4")
+        self.assertEqual(prompt_version, "production-question-v7")
 
     def test_grounding_rejection_is_repaired_with_qualitative_payload(self):
         class SequencedLlm:

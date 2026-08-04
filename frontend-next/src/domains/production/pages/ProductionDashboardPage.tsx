@@ -348,11 +348,8 @@ const pageCopy = {
     askingAi: "질문 전송 중",
     aiQuestionPlaceholder: "예: 오늘 사출 생산 진도는? / 최근 60분 C/T가 가장 긴 설비는? / 지금 추이대로 1, 9호기 예상 형합수는?",
     aiQuestionScope: "검증된 생산 데이터 · 시간별 분석 기록 기반",
-    aiAnswerTitle: "계산 결과",
     aiSource: "출처",
-    aiSourceVerified: "검증된 계산형 RAG",
-    aiSourceFallback: "검증 지표 안내",
-    aiSourceQueued: "로컬 Qwen 분석 요청",
+    aiSourceVerified: "검증된 MES·계산형 RAG",
     aiRequestFailedTitle: "질문 전송 실패",
     aiRequestFailed: "질문을 서버로 전송하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
     aiQuestionInProgressTitle: "이전 질문 처리 중",
@@ -362,24 +359,13 @@ const pageCopy = {
     aiQuestionTooLongTitle: "질문이 너무 깁니다",
     aiQuestionTooLong: "질문은 1,000자 이하로 줄여서 다시 입력해 주세요.",
     aiRequestRejectedTitle: "질문 확인 필요",
-    aiQwenTitle: "로컬 Qwen 설명",
     aiQwenAnswerTitle: "로컬 Qwen 답변",
     aiQwenQueued: "답변 준비 중",
     aiQwenRunning: "답변 작성 중",
     aiQwenReady: "설명 완료",
-    aiQwenFallbackReady: "초안 검토 필요",
-    aiQwenDelayed: "Worker 응답 지연",
     aiQwenFailed: "설명 실패",
-    aiQwenPendingHint: "검증된 데이터를 바탕으로 답변을 정리하고 있습니다",
     aiQwenQueuedHint: "생산 데이터를 확인해 답변을 작성하고 있습니다",
-    aiQwenDelayedHint: "로컬 Worker 응답이 지연되고 있습니다. 위 계산 결과는 그대로 유효합니다.",
-    aiQwenQueuedDelayedHint: "로컬 Worker 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
-    aiQwenFailedHint: "로컬 Qwen 설명을 가져오지 못했습니다. 위 계산 결과는 그대로 유효합니다.",
     aiQwenQueuedFailedHint: "로컬 Qwen 답변을 가져오지 못했습니다. 잠시 후 다시 질문해 주세요.",
-    aiQwenFallbackNotice: "Qwen 응답 처리 중 오류가 발생해 검증된 계산 결과를 표시합니다.",
-    aiQwenGroundingNotice: "Qwen 초안이 데이터 검증을 통과하지 못했습니다. 아래 내용은 품질 확인용이며 수치나 판단을 공식 결과로 사용하지 마세요.",
-    aiQwenReviewTitle: "로컬 Qwen 초안 · 검토용",
-    aiQwenRepairedNotice: "첫 Qwen 응답을 안전한 정성 설명으로 자동 재작성했습니다.",
     aiSubmit: "질문하기",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "실시간 프로그레스",
@@ -574,11 +560,8 @@ const pageCopy = {
     askingAi: "发送中",
     aiQuestionPlaceholder: "例：今天注塑生产进度？/ 最近60分钟 C/T 最长的设备？/ 按当前趋势，1、9号机结束时预计合模数？",
     aiQuestionScope: "基于已验证生产数据与每小时分析记录",
-    aiAnswerTitle: "计算结果",
     aiSource: "来源",
-    aiSourceVerified: "已验证的计算型 RAG",
-    aiSourceFallback: "已验证指标提示",
-    aiSourceQueued: "本地 Qwen 分析请求",
+    aiSourceVerified: "已验证的 MES·计算型 RAG",
     aiRequestFailedTitle: "问题发送失败",
     aiRequestFailed: "无法将问题发送到服务器。请检查连接后重试。",
     aiQuestionInProgressTitle: "上一问题仍在处理中",
@@ -588,24 +571,13 @@ const pageCopy = {
     aiQuestionTooLongTitle: "问题内容过长",
     aiQuestionTooLong: "请将问题缩短至 1,000 个字符以内后重试。",
     aiRequestRejectedTitle: "请确认问题内容",
-    aiQwenTitle: "本地 Qwen 说明",
     aiQwenAnswerTitle: "本地 Qwen 回答",
     aiQwenQueued: "准备回答中",
     aiQwenRunning: "正在撰写回答",
     aiQwenReady: "说明完成",
-    aiQwenFallbackReady: "需要审核草稿",
-    aiQwenDelayed: "Worker 响应延迟",
     aiQwenFailed: "说明失败",
-    aiQwenPendingHint: "正在根据已验证的数据整理回答",
     aiQwenQueuedHint: "正在查看生产数据并撰写回答",
-    aiQwenDelayedHint: "本地 Worker 响应延迟。上方计算结果仍然有效。",
-    aiQwenQueuedDelayedHint: "本地 Worker 响应延迟。请稍后重试。",
-    aiQwenFailedHint: "无法获取本地 Qwen 说明。上方计算结果仍然有效。",
     aiQwenQueuedFailedHint: "无法获取本地 Qwen 回答。请稍后重新提问。",
-    aiQwenFallbackNotice: "处理 Qwen 响应时发生错误，当前显示经过验证的计算结果。",
-    aiQwenGroundingNotice: "Qwen 草稿未通过数据验证。以下内容仅用于质量审核，请勿将其中数值或判断作为正式结果。",
-    aiQwenReviewTitle: "本地 Qwen 草稿 · 仅供审核",
-    aiQwenRepairedNotice: "首个 Qwen 响应已自动改写为安全的定性说明。",
     aiSubmit: "提问",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "实时进度",
@@ -2728,10 +2700,8 @@ export function ProductionDashboardPage() {
   const [isAiAskOpen, setIsAiAskOpen] = useState(false);
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiChatMessages, setAiChatMessages] = useState<ProductionAiChatMessage[]>([]);
-  const [aiAnswerSource, setAiAnswerSource] = useState<ProductionAiAskResponse["source"] | null>(null);
   const [aiActiveRequest, setAiActiveRequest] = useState<ProductionAiActiveRequest | null>(null);
   const [aiQuestionJobId, setAiQuestionJobId] = useState<number | null>(null);
-  const [aiQuestionPollingTimedOut, setAiQuestionPollingTimedOut] = useState(false);
   const [aiChatViewportStyle, setAiChatViewportStyle] = useState<ProductionAiChatViewportStyle>();
   const [selectedProgressRow, setSelectedProgressRow] = useState<RealtimeProgressRow | null>(null);
   const [selectedActivityRow, setSelectedActivityRow] = useState<RealtimeProgressRow | null>(null);
@@ -2839,7 +2809,7 @@ export function ProductionDashboardPage() {
   const aiQuestionJobQuery = useQuery({
     queryKey: ["ai-job", "question", aiQuestionJobId],
     queryFn: () => getAiJob(aiQuestionJobId as number),
-    enabled: aiQuestionJobId !== null && !aiQuestionPollingTimedOut,
+    enabled: aiQuestionJobId !== null,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status && ["completed", "failed", "cancelled"].includes(status)
@@ -3107,39 +3077,20 @@ export function ProductionDashboardPage() {
   const aiQuestionJob = aiQuestionJobQuery.data;
   const aiQuestionJobStatus = aiQuestionJob?.status ?? (aiQuestionJobId !== null ? "pending" : null);
   const aiQuestionJobResult = aiQuestionJob?.result_payload ?? {};
-  const aiQuestionResultSummary = getStringField(aiQuestionJobResult, "summary");
-  const aiQuestionFallbackCode = getStringField(aiQuestionJobResult, "llm_fallback_code");
-  const aiQuestionInitialGroundingRejected = aiQuestionJobResult.llm_initial_grounding_rejected === true;
-  const aiQuestionWasRepaired = aiQuestionJobResult.llm_repaired === true;
-  const aiQuestionExplanation = aiQuestionResultSummary;
   const aiQuestionJobSource = getStringField(aiQuestionJobResult, "source");
-  const aiQuestionJobUsedFallback = aiQuestionJobResult.llm_fallback === true
-    || Boolean(aiQuestionJobSource && aiQuestionJobSource !== "local_llm_rewrite");
-  const aiQuestionJobUsedQwen = aiQuestionJobSource === "local_llm_rewrite" && !aiQuestionJobUsedFallback;
-  const aiQuestionIsQueuedOnly = aiAnswerSource === "ai_queued";
+  const aiQuestionJobUsedQwen = aiQuestionJobSource === "local_llm_rewrite"
+    && aiQuestionJobResult.llm_fallback !== true;
   const aiQuestionJobFailed = aiQuestionJobStatus === "failed" || aiQuestionJobStatus === "cancelled";
   const aiQuestionJobCompleted = aiQuestionJobStatus === "completed";
-  const aiQuestionJobStatusLabel = aiQuestionPollingTimedOut
-    ? copy.aiQwenDelayed
-    : aiQuestionJobFailed
-      ? copy.aiQwenFailed
-      : aiQuestionJobCompleted
-        ? aiQuestionJobUsedFallback
-          ? copy.aiQwenFallbackReady
-          : copy.aiQwenReady
-        : aiQuestionJobStatus === "claimed" || aiQuestionJobStatus === "running"
-          ? copy.aiQwenRunning
-          : copy.aiQwenQueued;
-  const aiQuestionJobTone = aiQuestionPollingTimedOut || aiQuestionJobFailed || aiQuestionJobUsedFallback
-    ? "warning"
+  const aiQuestionJobStatusLabel = aiQuestionJobFailed
+    ? copy.aiQwenFailed
     : aiQuestionJobCompleted
-      ? "ready"
-      : "pending";
-  const aiQuestionJobHint = aiQuestionPollingTimedOut
-    ? aiQuestionIsQueuedOnly ? copy.aiQwenQueuedDelayedHint : copy.aiQwenDelayedHint
-    : aiQuestionJobFailed || (aiQuestionJobCompleted && !aiQuestionExplanation)
-      ? aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFailedHint
-      : aiQuestionIsQueuedOnly ? copy.aiQwenQueuedHint : copy.aiQwenPendingHint;
+      ? aiQuestionJobUsedQwen
+        ? copy.aiQwenReady
+        : copy.aiQwenFailed
+      : aiQuestionJobStatus === "claimed" || aiQuestionJobStatus === "running"
+        ? copy.aiQwenRunning
+        : copy.aiQwenQueued;
 
   function appendAiChatMessage(message: ProductionAiChatMessage) {
     setAiChatMessages((current) => (
@@ -3152,14 +3103,12 @@ export function ProductionDashboardPage() {
       askProductionAi(request.businessDate, request.question, request.language, request.history)
     ),
     onMutate: (request) => {
-      setAiAnswerSource(null);
       setAiActiveRequest({
         requestId: request.requestId,
         businessDate: request.businessDate,
         language: request.language,
       });
       setAiQuestionJobId(null);
-      setAiQuestionPollingTimedOut(false);
       appendAiChatMessage({
         id: `${request.requestId}-user`,
         role: "user",
@@ -3175,21 +3124,15 @@ export function ProductionDashboardPage() {
         setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
         return;
       }
-      setAiAnswerSource(payload.source);
-      if (payload.source !== "ai_queued" || jobId === null) {
+      if (jobId === null) {
+        const questionWasUnsupported = payload.source === "deterministic_unhandled";
         appendAiChatMessage({
-          id: `${request.requestId}-deterministic`,
+          id: `${request.requestId}-qwen-unavailable`,
           role: "assistant",
-          content: payload.answer,
-          label: payload.source === "ai_queued" ? copy.aiQwenAnswerTitle : copy.aiAnswerTitle,
-          meta: [
-            `${copy.aiSource}: ${payload.source === "ai_queued"
-              ? copy.aiSourceQueued
-              : payload.source === "deterministic_unhandled"
-                ? copy.aiSourceFallback
-                : copy.aiSourceVerified}`,
-          ],
-          includeInHistory: payload.source !== "ai_queued",
+          content: questionWasUnsupported ? payload.answer : copy.aiQueueUnavailable,
+          label: questionWasUnsupported ? copy.aiRequestRejectedTitle : copy.aiQueueUnavailableTitle,
+          tone: "warning",
+          includeInHistory: false,
         });
       }
       setAiQuestionJobId(jobId);
@@ -3239,7 +3182,6 @@ export function ProductionDashboardPage() {
   });
   const aiQuestionIsGenerating = aiQuestionMutation.isPending || (
     aiQuestionJobId !== null
-    && !aiQuestionPollingTimedOut
     && !aiQuestionJobFailed
     && !aiQuestionJobCompleted
   );
@@ -3253,24 +3195,62 @@ export function ProductionDashboardPage() {
       void cancelProductionAiJobBestEffort(aiQuestionJobId);
     }
     setAiChatMessages([]);
-    setAiAnswerSource(null);
     setAiActiveRequest(null);
     setAiQuestionJobId(null);
-    setAiQuestionPollingTimedOut(false);
   }, [aiQuestionJobId, businessDate, language]);
 
   useEffect(() => {
     if (
       aiQuestionJobId === null
-      || aiQuestionJobStatus === "completed"
-      || aiQuestionJobStatus === "failed"
-      || aiQuestionJobStatus === "cancelled"
+      || !aiActiveRequest
     ) return undefined;
+    const timedOutJobId = aiQuestionJobId;
+    let disposed = false;
+    let retryTimeoutId: number | undefined;
+    const scheduleRetry = (callback: () => void) => {
+      if (disposed) return;
+      retryTimeoutId = window.setTimeout(callback, 30_000);
+    };
+    const resolveTimedOutJob = async () => {
+      if (disposed) return;
+      let latestJob: Awaited<ReturnType<typeof getAiJob>>;
+      try {
+        latestJob = await getAiJob(timedOutJobId);
+      } catch {
+        scheduleRetry(() => void resolveTimedOutJob());
+        return;
+      }
+      if (!["completed", "failed", "cancelled"].includes(latestJob.status)) {
+        try {
+          latestJob = await cancelAiJob(timedOutJobId);
+        } catch {
+          // The job can finish between the status check and cancellation.
+          // Keep polling unless a second read confirms a terminal result.
+          try {
+            latestJob = await getAiJob(timedOutJobId);
+          } catch {
+            scheduleRetry(() => void resolveTimedOutJob());
+            return;
+          }
+        }
+      }
+      if (!["completed", "failed", "cancelled"].includes(latestJob.status)) {
+        scheduleRetry(() => void resolveTimedOutJob());
+        return;
+      }
+      if (!disposed) {
+        queryClient.setQueryData(["ai-job", "question", timedOutJobId], latestJob);
+      }
+    };
     const timeoutId = window.setTimeout(() => {
-      setAiQuestionPollingTimedOut(true);
+      void resolveTimedOutJob();
     }, AI_QUESTION_JOB_POLL_TIMEOUT_MS);
-    return () => window.clearTimeout(timeoutId);
-  }, [aiQuestionJobId, aiQuestionJobStatus]);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timeoutId);
+      if (retryTimeoutId !== undefined) window.clearTimeout(retryTimeoutId);
+    };
+  }, [aiActiveRequest, aiQuestionJobId, queryClient]);
 
   useEffect(() => {
     if (
@@ -3281,83 +3261,49 @@ export function ProductionDashboardPage() {
     ) return;
     const activeRequestId = aiActiveRequest.requestId;
     if (aiQuestionJob.status === "completed") {
-      const summary = getStringField(aiQuestionJob.result_payload ?? {}, "summary");
-      const reviewSummary = getStringField(aiQuestionJob.result_payload ?? {}, "llm_review_summary");
-      const showReviewDraft = aiQuestionJobUsedFallback && Boolean(reviewSummary);
+      const summary = getStringField(aiQuestionJob.result_payload ?? {}, "summary").trim();
       const modelLabel = formatAiModelName(
         aiQuestionJob.model_name || getStringField(aiQuestionJobResult, "model_name"),
       );
-      if (showReviewDraft) {
-        if (aiQuestionIsQueuedOnly) {
-          appendAiChatMessage({
-            id: `${activeRequestId}-verified-fallback`,
-            role: "assistant",
-            content: summary || copy.aiQwenQueuedFailedHint,
-            label: copy.aiAnswerTitle,
-            tone: "warning",
-            meta: [`${copy.aiSource}: ${copy.aiSourceFallback}`],
-            notice: copy.aiQwenFallbackNotice,
-            includeInHistory: false,
-          });
-        }
-        appendAiChatMessage({
-          id: `${activeRequestId}-qwen-review`,
-          role: "assistant",
-          content: reviewSummary,
-          label: copy.aiQwenReviewTitle,
-          tone: "warning",
-          meta: [
-            `${copy.aiSource}: ${copy.workerModeFallback}`,
-            `${copy.workerModel}: ${modelLabel}`,
-          ],
-          notice: aiQuestionFallbackCode === "grounding_rejected" || aiQuestionInitialGroundingRejected
-            ? copy.aiQwenGroundingNotice
-            : copy.aiQwenFallbackNotice,
-          includeInHistory: false,
-        });
-      } else {
+      if (aiQuestionJobUsedQwen && summary) {
         appendAiChatMessage({
           id: `${activeRequestId}-qwen`,
           role: "assistant",
-          content: summary || (aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFailedHint),
-          label: aiQuestionIsQueuedOnly ? copy.aiQwenAnswerTitle : copy.aiQwenTitle,
-          tone: aiQuestionJobUsedFallback || !summary ? "warning" : "default",
+          content: summary,
+          label: copy.aiQwenAnswerTitle,
           meta: [
-            `${copy.aiSource}: ${aiQuestionJobUsedQwen
-              ? copy.workerModeQwen
-              : aiQuestionJobUsedFallback
-                ? copy.workerModeFallback
-                : copy.aiSourceVerified}`,
+            `${copy.aiSource}: ${copy.aiSourceVerified}`,
             `${copy.workerModel}: ${modelLabel}`,
-            `${copy.workerAnalysisMode}: ${aiQuestionJobUsedFallback ? copy.workerModeFallback : aiQuestionJobUsedQwen ? copy.workerModeQwen : copy.workerModeUnknown}`,
           ],
-          notice: aiQuestionJobUsedFallback
-            ? copy.aiQwenFallbackNotice
-            : aiQuestionWasRepaired
-              ? copy.aiQwenRepairedNotice
-              : undefined,
-          includeInHistory: Boolean(summary) && !aiQuestionJobUsedFallback,
+          includeInHistory: true,
+        });
+      } else {
+        appendAiChatMessage({
+          id: `${activeRequestId}-qwen-error`,
+          role: "assistant",
+          content: copy.aiQwenQueuedFailedHint,
+          label: copy.aiQwenAnswerTitle,
+          tone: "warning",
+          includeInHistory: false,
         });
       }
       setAiQuestionJobId(null);
       setAiActiveRequest((current) => current?.requestId === activeRequestId ? null : current);
-      setAiQuestionPollingTimedOut(false);
       return;
     }
     if (aiQuestionJob.status === "failed" || aiQuestionJob.status === "cancelled") {
       appendAiChatMessage({
         id: `${activeRequestId}-qwen-error`,
         role: "assistant",
-        content: aiQuestionIsQueuedOnly ? copy.aiQwenQueuedFailedHint : copy.aiQwenFailedHint,
-        label: aiQuestionIsQueuedOnly ? copy.aiQwenAnswerTitle : copy.aiQwenTitle,
+        content: copy.aiQwenQueuedFailedHint,
+        label: copy.aiQwenAnswerTitle,
         tone: "warning",
         includeInHistory: false,
       });
       setAiQuestionJobId(null);
       setAiActiveRequest((current) => current?.requestId === activeRequestId ? null : current);
-      setAiQuestionPollingTimedOut(false);
     }
-  }, [aiActiveRequest, aiQuestionFallbackCode, aiQuestionInitialGroundingRejected, aiQuestionIsQueuedOnly, aiQuestionJob, aiQuestionJobResult, aiQuestionJobUsedFallback, aiQuestionJobUsedQwen, aiQuestionWasRepaired, businessDate, copy, language]);
+  }, [aiActiveRequest, aiQuestionJob, aiQuestionJobResult, aiQuestionJobUsedQwen, businessDate, copy, language]);
 
   useEffect(() => {
     const cleanupListeners: Array<() => void> = [];
@@ -3538,7 +3484,7 @@ export function ProductionDashboardPage() {
     if (
       !question
       || aiQuestionMutation.isPending
-      || (aiQuestionJobId !== null && !aiQuestionPollingTimedOut)
+      || aiQuestionJobId !== null
     ) return;
     const history = aiChatMessages
       .filter((message) => message.includeInHistory !== false)
@@ -5678,33 +5624,22 @@ export function ProductionDashboardPage() {
                 </article>
               ))}
 
-              {aiQuestionMutation.isPending || aiQuestionJobId !== null ? (
-                <article className={`production-ai-chat-message production-ai-chat-message--assistant production-ai-chat-message--${aiQuestionJobTone}`}>
+              {aiQuestionIsGenerating ? (
+                <article className="production-ai-chat-message production-ai-chat-message--assistant production-ai-chat-message--pending">
                   <div className="production-ai-chat-message__header">
-                    <strong>{aiQuestionIsQueuedOnly ? copy.aiQwenAnswerTitle : copy.aiQwenTitle}</strong>
+                    <strong>{copy.aiQwenAnswerTitle}</strong>
                     <span aria-live="polite" role="status">
                       {aiQuestionMutation.isPending ? copy.aiQwenQueued : aiQuestionJobStatusLabel}
                     </span>
                   </div>
-                  {aiQuestionIsGenerating ? (
-                    <p
-                      className="production-ai-chat-message__typing"
-                    >
-                      <span>{aiQuestionMutation.isPending ? copy.aiQwenQueuedHint : aiQuestionJobHint}</span>
-                      <span aria-hidden="true" className="production-ai-chat-typing-dots">
-                        <i />
-                        <i />
-                        <i />
-                      </span>
-                    </p>
-                  ) : (
-                    <p>{aiQuestionMutation.isPending ? copy.aiQwenQueuedHint : aiQuestionJobHint}</p>
-                  )}
-                  {!aiQuestionIsGenerating ? (
-                    <div className="production-ai-chat-message__meta">
-                      <span>{copy.aiSource}: {copy.aiSourceQueued}</span>
-                    </div>
-                  ) : null}
+                  <p className="production-ai-chat-message__typing">
+                    <span>{copy.aiQwenQueuedHint}</span>
+                    <span aria-hidden="true" className="production-ai-chat-typing-dots">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  </p>
                 </article>
               ) : null}
             </div>
@@ -5725,7 +5660,7 @@ export function ProductionDashboardPage() {
                 <span>{copy.aiQuestionScope}</span>
                 <button
                   className="button button--primary"
-                  disabled={!aiQuestion.trim() || aiQuestionMutation.isPending || (aiQuestionJobId !== null && !aiQuestionPollingTimedOut)}
+                  disabled={!aiQuestion.trim() || aiQuestionMutation.isPending || aiQuestionJobId !== null}
                   type="submit"
                 >
                   {aiQuestionMutation.isPending ? copy.askingAi : copy.aiSubmit}

@@ -44,6 +44,8 @@ Use up to three concrete verified statuses or exact identifiers in 판단 근거
 Avoid vague phrases such as 일부 or 대부분 when exact verified identifiers are available.
 Treat is_running=true as running and never recommend restart or resume for that equipment.
 Treat is_running=false as not running at the snapshot, not as a proven fault.
+For injection_active_machine_count, active means the MES counter increased inside the verified window; it does not
+prove the equipment is currently running. Do not claim current operation without verified is_running=true evidence.
 Translate status codes and booleans into natural Korean or Chinese instead of exposing raw values.
 Obey verified_qualitative_evidence.analysis_constraints. If target history is unavailable, say the target trend
 cannot be determined and describe only the current snapshot. Do not call the target delayed, low, insufficient,
@@ -123,12 +125,24 @@ CHINESE_SPELLED_NUMBER = (
 CHINESE_APPROXIMATION = r"(?:余|餘|多|来|來|上下|左右|以上|以下|以内|以內|不足|超过|超過)?"
 CHINESE_QUANTITY_UNIT = r"(?:个|個|件|次|台|条|條|小時|小时|分鐘|分钟|秒|百分比|号机|號機|%)"
 SPELLED_QUANTITY = re.compile(
+    rf"(?:(?:(?<![가-힣])|(?<=[은는이가을를와과도만]))"
     rf"(?:{KOREAN_SPELLED_NUMBER}{KOREAN_APPROXIMATION}\s*{KOREAN_QUANTITY_UNIT}"
     rf"|(?:백분의|천분의)\s*{KOREAN_SPELLED_NUMBER}"
-    r"|절반|반절"
+    r"|절반|반절)"
     rf"|{CHINESE_SPELLED_NUMBER}{CHINESE_APPROXIMATION}\s*{CHINESE_QUANTITY_UNIT}"
     rf"|(?:百分之|千分之)\s*{CHINESE_SPELLED_NUMBER}"
     r"|一半|半数|半數)"
+)
+ATTACHED_SPELLED_QUANTITY = re.compile(
+    # Standalone ``한`` is excluded here because it is also the Korean
+    # modifier suffix in ordinary prose (for example ``요청한 시간``). Other
+    # spelled numbers can safely be detected even when Qwen omits whitespace
+    # or glues a quantity adverb in front of them (``모두두대``).
+    rf"(?:영|공|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|"
+    rf"{KOREAN_NATIVE_TENS}{KOREAN_NATIVE_ONES}?|한두|두세|서너|너댓|대여섯|"
+    rf"예닐곱|일고여덟|여덟아홉|몇|여러|수(?:십|백|천|만|억|조)|"
+    rf"[일이삼사오육칠팔구십백천만억조]+)"
+    rf"{KOREAN_APPROXIMATION}\s*{KOREAN_QUANTITY_UNIT}"
 )
 NUMERIC_DURATION = re.compile(
     rf"{NUMBER_TOKEN.pattern}\s*(?:시간|분|초|小時|小时|分鐘|分钟|秒)"
@@ -154,7 +168,12 @@ UNSUPPORTED_CAUSAL_ASSERTION = re.compile(
     r"(?:때문에|(?:으)?로\s*인해|영향으로|유발|초래|야기|탓|"
     r"由于|由於|因为|因為|导致|導致|引发|引發|造成|原因(?:是|在于)|"
     r"(?:가|이)\s*[^.\n]{0,28}(?:늦어|불안정해|고장나|문제가\s*생겨)|"
-    r"(?:지연|고장|불량|불안정)\s*(?:으)?로\s+|원인(?:은|이|입니다|이다)|"
+    r"(?:지연|고장|불량|불안정|문제|실수|오류)\s*(?:으)?로\s+|원인(?:은|이|입니다|이다)|"
+    r"(?:원료|자재|인력|공급사|금형(?:\s*온도)?|설비|작업자|압력|문제).{0,28}"
+    r"(?:결과|여파|영향(?:을|으로)?\s*(?:받아|받아서)?|기인).{0,24}"
+    r"(?:늦|지연|저하|하락|불량|중단|부족)|"
+    r"(?:원료|자재|인력|공급사|금형(?:\s*온도)?|설비|작업자|압력|온도|실수|오류)"
+    r".{0,36}(?:늦(?:었|습니다|어)|지연(?:됐|되었|시켰)|떨어뜨렸|늦췄|낮췄|저하시켰)|"
     r"(?:원료|자재|인력|공급사|금형\s*온도|설비).{0,18}(?:부족|고장|불안정|문제).{0,8}"
     r"(?:입니다|이다|상태|로\s*보|이\s*확인)|"
     r"(?:原料|材料|人员|人員|供应商|供應商|模具温度|模具溫度|设备|設備).{0,18}"
@@ -183,6 +202,12 @@ SAFE_ANALYSIS_ACTION = re.compile(
 )
 NUMBERED_LIST_MARKER = re.compile(r"(?m)^([ \t]*)\d+[.)]\s+")
 SECTION_HEADING = re.compile(r"(?m)^(결론|판단 근거|확인할 항목|结论|判断依据|需确认)\s*:?\s*$")
+INLINE_SECTION_HEADING = re.compile(
+    r"(?m)^(결론|판단 근거|확인할 항목|结论|判断依据|需确认)\s*:\s*(?=\S)"
+)
+EMPTY_REASONING_SECTION = re.compile(
+    r"(?m)^(?:판단 근거|判断依据)\s*:\s*\n+(?=\s*(?:확인할 항목|需确认)\s*:)"
+)
 TREND_TERM = re.compile(r"(?:추이|변화|趋势|趨勢|变化|變化)")
 UNAVAILABLE_TREND = re.compile(
     r"(?:판단할 수 없|확인할 수 없|평가할 수 없|단정할 수 없|알 수 없|"
@@ -198,6 +223,37 @@ REDUNDANT_STATUS_RECHECK = re.compile(
     r"(?:가동|생산|진행)\s*(?:상태|여부).{0,8}재확인|"
     r"(?:运行|生产|生產|进度|進度)(?:状态|狀態|与否|與否).{0,8}(?:再次确认|再次確認)"
 )
+MISSING_ACTIVE_MACHINE_ZERO_CLAIM = re.compile(
+    r"(?:(?:가동(?:된|한|했던|\s*중인)?\s*사출기|(?:현재\s*)?가동\s*(?:설비|장비))"
+    r"(?:는|가)?\s*(?:(?:한\s*대|하나)도\s*)?(?:없|존재하지)|"
+    r"사출기(?:는|가)?\s*(?:가동되지\s*않|한\s*대도\s*가동되지)|"
+    r"(?:没有|不存在).{0,16}(?:运行过的|运行的)?注塑机|"
+    r"(?:运行过的|运行的)?注塑机.{0,12}(?:没有|不存在))"
+)
+ACTIVE_MACHINE_SUBJECT = re.compile(
+    r"(?:사출기|(?:가동|운전)(?:된|한|했던|\s*중인)?\s*(?:사출기|설비|장비)|"
+    r"注塑机|运行(?:设备|設備))"
+)
+NEGATIVE_EXISTENCE_CLAIM = re.compile(
+    r"(?:없|존재하지|가동되지\s*않|미가동|没有|不存在|未运行|未开机|未開機)"
+)
+DATA_UNAVAILABLE_LIMITATION = re.compile(
+    r"(?:기록|데이터|자료|정보|근거|확인할\s*수\s*없|판단할\s*수\s*없|"
+    r"记录|記錄|数据|數據|资料|資料|信息|資訊|依据|依據|无法确认|無法確認|无法判断|無法判斷)"
+)
+UNVERIFIED_CAUSE_SOURCE = re.compile(
+    r"(?:원료|자재|인력|공급사|금형|설비|장비|작업자|압력|온도|실수|오류|"
+    r"原料|材料|人员|人員|供应商|供應商|模具|设备|設備|作业员|作業員|压力|壓力|温度|溫度|失误|失誤|错误|錯誤)"
+)
+UNVERIFIED_CAUSE_EFFECT = re.compile(
+    r"(?:지연|차질|생산성|생산\s*속도|불량|중단|저하|하락|늦|"
+    r"延迟|延遲|影响生产|影響生產|生产率|生產率|速度|不良|中断|中斷|下降|降低)"
+)
+RAW_SCHEMA_TERMS = {
+    "shot_count": ("형합수", "合模数"),
+    "active_machine_count": ("가동 사출기 대수", "运行注塑机数量"),
+    "lookback_minutes": ("조회 시간 구간", "查询时间区间"),
+}
 
 PROCESS_ALIASES = {
     "injection": ("injection", "사출", "注塑"),
@@ -371,20 +427,21 @@ def _collect_structured_records(
 
 
 def _identifier_spans(text: str, identifier: str) -> list[tuple[int, int]]:
-    if not identifier:
+    needle = str(identifier or "").casefold()
+    if not needle:
         return []
     folded = text.casefold()
     spans = []
     offset = 0
     while True:
-        start = folded.find(identifier, offset)
+        start = folded.find(needle, offset)
         if start < 0:
             break
-        end = start + len(identifier)
+        end = start + len(needle)
         before = folded[start - 1] if start > 0 else ""
         after = folded[end] if end < len(folded) else ""
-        first = identifier[0]
-        last = identifier[-1]
+        first = needle[0]
+        last = needle[-1]
         left_conflict = bool(before) and (
             (first.isdigit() and before.isdigit())
             or (first.isascii() and first.isalnum() and before.isascii() and before.isalnum())
@@ -562,18 +619,21 @@ def summary_numbers_are_grounded(summary: str, grounding: dict[str, Any]) -> boo
             continue
         if any(match.group(0) not in authoritative_date_times for match in DATE_OR_TIME.finditer(clause)):
             return False
-        if SPELLED_QUANTITY.search(clause):
+        if SPELLED_QUANTITY.search(clause) or ATTACHED_SPELLED_QUANTITY.search(clause):
             return False
         matched = _matched_identifiers(clause, records)
         numbers = _numbers_in_claim(clause, all_identifiers)
         if not numbers:
+            continue
+        canonical_clause = _canonical_claim_clause(clause)
+        if canonical_clause in authoritative_claim_clauses:
             continue
         if not matched:
             return False
         # Numeric prose must preserve a complete deterministic clause. This is
         # intentionally stricter than a value allow-list: it prevents swapping
         # plan/actual fields or values between subjects that share one row.
-        if _canonical_claim_clause(clause) not in authoritative_claim_clauses:
+        if canonical_clause not in authoritative_claim_clauses:
             return False
     return True
 
@@ -613,6 +673,7 @@ def _qualitative_text(value: Any, allowed_identifiers: set[str], language: str) 
             for span in _identifier_spans(text, identifier)
         )
         text = _replace_unprotected_matches(text, pattern, replacement, protected_spans)
+    text = ATTACHED_SPELLED_QUANTITY.sub("관련 수량" if language == "ko" else "相关数量", text)
     text = SPELLED_QUANTITY.sub("관련 수량" if language == "ko" else "相关数量", text)
     return " ".join(text.split())[:2000]
 
@@ -841,17 +902,49 @@ def build_repair_payload(
     }
 
 
-def summary_is_specific(summary: str, grounding: dict[str, Any]) -> bool:
+def _summary_claims_are_safe(
+    summary: str,
+    grounding: dict[str, Any],
+    *,
+    enforce_quality: bool,
+) -> bool:
     text = str(summary or "")
+    verified_facts = grounding.get("verified_facts")
+    missing_active_machine_data = (
+        isinstance(verified_facts, dict)
+        and verified_facts.get("metric") == "injection_active_machine_count"
+        and verified_facts.get("active_machine_count") is None
+    )
+    if missing_active_machine_data:
+        for clause in CLAUSE_SPLIT.split(text):
+            if MISSING_ACTIVE_MACHINE_ZERO_CLAIM.search(clause):
+                return False
+            if (
+                ACTIVE_MACHINE_SUBJECT.search(clause)
+                and NEGATIVE_EXISTENCE_CLAIM.search(clause)
+                and not DATA_UNAVAILABLE_LIMITATION.search(clause)
+            ):
+                return False
     if RAW_STATUS_TOKEN.search(text):
         return False
-    if VAGUE_QUANTIFIER.search(text) and _verified_exact_identifiers(grounding):
+    if enforce_quality and VAGUE_QUANTIFIER.search(text) and _verified_exact_identifiers(grounding):
         return False
     if UNSUPPORTED_CAUSAL_ASSERTION.search(text) or UNSUPPORTED_OPERATIONAL_DIRECTIVE.search(text):
         return False
-    if REDUNDANT_STATUS_RECHECK.search(text):
+    if enforce_quality and REDUNDANT_STATUS_RECHECK.search(text):
         return False
     for clause in CLAUSE_SPLIT.split(text):
+        if (
+            UNVERIFIED_CAUSE_SOURCE.search(clause)
+            and UNVERIFIED_CAUSE_EFFECT.search(clause)
+            and not CHECK_OR_INFORMATION_LIMITATION.search(clause)
+        ):
+            # Question jobs do not carry verified root-cause facts. If a
+            # clause joins an operational cause candidate with an adverse
+            # effect, reject it unless it is explicitly framed as something
+            # to verify. This avoids depending on an open-ended Korean/Chinese
+            # causal-verb allow-list.
+            return False
         if RISK_ASSERTION.search(clause) and not CHECK_OR_INFORMATION_LIMITATION.search(clause):
             return False
         if DIRECTIVE_MARKER.search(clause) and not SAFE_ANALYSIS_ACTION.search(clause):
@@ -877,6 +970,88 @@ def summary_is_specific(summary: str, grounding: dict[str, Any]) -> bool:
             if _identifier_spans(text, identifier.casefold()):
                 return False
     return True
+
+
+def summary_is_specific(summary: str, grounding: dict[str, Any]) -> bool:
+    """Diagnostic quality check retained for tests and observability."""
+    return _summary_claims_are_safe(summary, grounding, enforce_quality=True)
+
+
+def summary_claims_are_safe(summary: str, grounding: dict[str, Any]) -> bool:
+    """Reject factual grounding risks without replacing an answer for style alone."""
+    return _summary_claims_are_safe(summary, grounding, enforce_quality=False)
+
+
+def summary_quality_warnings(summary: str, grounding: dict[str, Any]) -> list[str]:
+    warnings = []
+    text = str(summary or "")
+    if VAGUE_QUANTIFIER.search(text) and _verified_exact_identifiers(grounding):
+        warnings.append("vague_quantifier")
+    if REDUNDANT_STATUS_RECHECK.search(text):
+        warnings.append("redundant_status_recheck")
+    return warnings
+
+
+def prune_redundant_numeric_lines(
+    summary: str,
+    verified_answer: str,
+    grounding: dict[str, Any],
+) -> tuple[str, bool]:
+    """Keep a verbatim verified answer and drop only extra ungrounded numeric lines.
+
+    Qwen sometimes follows the instruction to quote the server answer, then
+    repeats the same count or duration in an evidence bullet with different
+    spacing. The duplicate fails strict clause grounding even though the first
+    Qwen response is otherwise useful. Removing that redundant line preserves
+    the original response without invoking a second, generic rewrite.
+    """
+    verified = str(verified_answer or "").strip()
+    normalized_verified = " ".join(verified.split())
+    if not normalized_verified:
+        return summary, False
+
+    verified_pattern = r"\s+".join(
+        re.escape(token) for token in normalized_verified.split(" ")
+    )
+    verified_match = re.search(verified_pattern, summary)
+    if not verified_match:
+        return summary, False
+
+    # Isolate the authoritative answer on its own line. This preserves it even
+    # when Qwen inserted a visual line wrap in the middle of a sentence.
+    prefix = summary[:verified_match.start()].rstrip(" \t")
+    suffix = summary[verified_match.end():].lstrip(" \t")
+    before = "" if not prefix or prefix.endswith("\n") else "\n"
+    after = "" if not suffix or suffix.startswith("\n") else "\n"
+    summary = f"{prefix}{before}{normalized_verified}{after}{suffix}"
+
+    kept_lines = []
+    pruned = False
+    for line in summary.splitlines():
+        if summary_numbers_are_grounded(line, grounding):
+            kept_lines.append(line)
+        else:
+            pruned = True
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(kept_lines)).strip()
+    return cleaned, pruned
+
+
+def naturalize_schema_terms(summary: str) -> tuple[str, bool]:
+    is_zh = bool(re.search(r"(?:结论|判断依据|需确认)", summary))
+    normalized = summary
+    changed = False
+    for raw_term, replacements in RAW_SCHEMA_TERMS.items():
+        replacement = replacements[1] if is_zh else replacements[0]
+        updated = re.sub(
+            rf"(?<![A-Za-z0-9_]){raw_term}(?![A-Za-z0-9_])",
+            replacement,
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if updated != normalized:
+            changed = True
+            normalized = updated
+    return normalized, changed
 
 
 def classify_llm_error(exc: Exception) -> str:
@@ -908,17 +1083,26 @@ def normalize_result(
     if not isinstance(summary, str) or not summary.strip():
         raise ValueError("LLM response did not contain a summary string.")
     summary = NUMBERED_LIST_MARKER.sub(r"\1- ", summary.strip())
+    summary = INLINE_SECTION_HEADING.sub(r"\1:\n", summary)
     summary = SECTION_HEADING.sub(r"\1:", summary)[:2000]
+    summary, schema_terms_normalized = naturalize_schema_terms(summary)
     authoritative_grounding = dict(grounding or {})
     authoritative_grounding["deterministic_answer"] = fallback.get("answer") or ""
     authoritative_grounding["deterministic_summary"] = fallback.get("summary") or ""
+    summary, numeric_lines_pruned = prune_redundant_numeric_lines(
+        summary,
+        fallback.get("answer") or "",
+        authoritative_grounding,
+    )
+    summary, empty_sections_removed = EMPTY_REASONING_SECTION.subn("", summary)
+    summary = re.sub(r"\n{3,}", "\n\n", summary).strip()
     title_was_replaced = not summary_numbers_are_grounded(title, authoritative_grounding)
     if title_was_replaced:
         title = fallback.get("title") or "Local AI Analysis"
     if not summary_numbers_are_grounded(summary, authoritative_grounding):
         raise LlmGroundingError("LLM prose introduced an unverified number.", candidate)
-    if authoritative_grounding.get("analysis_skill") and not summary_is_specific(summary, authoritative_grounding):
-        raise LlmGroundingError("LLM prose used a raw status token or vague quantified subject.", candidate)
+    if authoritative_grounding.get("analysis_skill") and not summary_claims_are_safe(summary, authoritative_grounding):
+        raise LlmGroundingError("LLM prose introduced an unsupported claim or identifier.", candidate)
 
     normalized = dict(fallback)
     normalized.update({
@@ -930,6 +1114,15 @@ def normalize_result(
     })
     if title_was_replaced:
         normalized["llm_title_fallback"] = True
+    if numeric_lines_pruned:
+        normalized["llm_numeric_lines_pruned"] = True
+    if schema_terms_normalized:
+        normalized["llm_schema_terms_normalized"] = True
+    if empty_sections_removed:
+        normalized["llm_empty_sections_removed"] = True
+    quality_warnings = summary_quality_warnings(summary, authoritative_grounding)
+    if quality_warnings:
+        normalized["llm_quality_warnings"] = quality_warnings
     return normalized
 
 
