@@ -20,6 +20,8 @@ import { addIsoDateDays, getShanghaiBusinessDateString } from "@/shared/utils/da
 const BOARD_REFRESH_INTERVAL_MS = 60_000;
 const STALE_DATA_THRESHOLD_MS = 5 * 60_000;
 const MACHINE_COUNT = 17;
+const VISITOR_CYCLE_TIME_MIN_MULTIPLIER = 1.03;
+const VISITOR_CYCLE_TIME_MAX_MULTIPLIER = 1.1;
 const PREVIOUS_SUMMARY_CACHE_PREFIX = "injection-board:previous-summary:";
 const PREVIOUS_SUMMARY_CACHE_VERSION = 3;
 const BOARD_MODEL_COLORS = [
@@ -138,6 +140,12 @@ const boardCopy = {
     unplanned: "계획없음",
     currentCt: "현재 C/T",
     recentCt: "최근 60분 기준",
+    visitorCt: "C/T 범위",
+    visitorCtHint: "실제값 기준 +3% ~ +10%",
+    visitorMode: "방문객 모드",
+    visitorModeHint: "방문객용 C/T 범위를 표시하고 있습니다. (+3% ~ +10%)",
+    enableVisitorMode: "방문객 모드 켜기",
+    disableVisitorMode: "방문객 모드 끄기",
     progress: "달성률",
     part: "생산 Part",
     model: "모델",
@@ -222,6 +230,12 @@ const boardCopy = {
     unplanned: "无计划",
     currentCt: "当前周期",
     recentCt: "最近60分钟基准",
+    visitorCt: "周期范围",
+    visitorCtHint: "实际值的 +3% ~ +10%",
+    visitorMode: "访客模式",
+    visitorModeHint: "正在显示访客用周期范围。（+3% ~ +10%）",
+    enableVisitorMode: "开启访客模式",
+    disableVisitorMode: "关闭访客模式",
     progress: "完成率",
     part: "生产Part",
     model: "型号",
@@ -866,10 +880,12 @@ function ProductionTimeline({
 
 function MachineBoardCard({
   businessDate,
+  isVisitorMode,
   machine,
   language,
 }: {
   businessDate: string;
+  isVisitorMode: boolean;
   machine: BoardMachine;
   language: AppLanguage;
 }) {
@@ -897,9 +913,15 @@ function MachineBoardCard({
 
       <div className="injection-board-card__metrics">
         <div>
-          <span>{copy.currentCt}</span>
-          <strong>{machine.currentCycleTimeSec === null ? "-" : `${machine.currentCycleTimeSec.toFixed(1)}s`}</strong>
-          <small>{copy.recentCt}</small>
+          <span>{isVisitorMode ? copy.visitorCt : copy.currentCt}</span>
+          <strong className={isVisitorMode ? "injection-board-card__ct-range" : undefined}>
+            {machine.currentCycleTimeSec === null
+              ? "-"
+              : isVisitorMode
+                ? `${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MIN_MULTIPLIER).toFixed(1)}–${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MAX_MULTIPLIER).toFixed(1)}s`
+                : `${machine.currentCycleTimeSec.toFixed(1)}s`}
+          </strong>
+          <small>{isVisitorMode ? copy.visitorCtHint : copy.recentCt}</small>
         </div>
         <div>
           <span>{copy.progress}</span>
@@ -1107,6 +1129,7 @@ function PreviousDaySummary({
 export function InjectionBoardPage() {
   const [language, setLanguage] = useStoredLanguage();
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+  const [isVisitorMode, setIsVisitorMode] = useState(false);
   const [businessDate, setBusinessDate] = useState(() => getShanghaiBusinessDateString());
   const previousBusinessDate = addIsoDateDays(businessDate, -1);
   const [isPreviousSummaryOpen, setIsPreviousSummaryOpen] = useState(false);
@@ -1262,12 +1285,22 @@ export function InjectionBoardPage() {
   }
 
   return (
-    <main className="injection-board">
+    <main className={`injection-board${isVisitorMode ? " injection-board--visitor" : ""}`}>
       <header className="injection-board__topbar">
         <div className="injection-board__title">
-          <span aria-hidden="true"><Factory /></span>
+          <button
+            aria-label={isVisitorMode ? copy.disableVisitorMode : copy.enableVisitorMode}
+            aria-pressed={isVisitorMode}
+            className="injection-board__mode-toggle"
+            onClick={() => setIsVisitorMode((current) => !current)}
+            title={isVisitorMode ? copy.disableVisitorMode : copy.enableVisitorMode}
+            type="button"
+          >
+            <Factory aria-hidden="true" />
+          </button>
           <div>
             <h1>{copy.title}</h1>
+            {isVisitorMode ? <p><strong>{copy.visitorMode}</strong> · {copy.visitorModeHint}</p> : null}
           </div>
         </div>
         <div className="injection-board__meta">
@@ -1361,6 +1394,7 @@ export function InjectionBoardPage() {
         {machines.map((machine) => (
           <MachineBoardCard
             businessDate={businessDate}
+            isVisitorMode={isVisitorMode}
             key={machine.machineNumber}
             language={language}
             machine={machine}
