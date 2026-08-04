@@ -368,6 +368,10 @@ def build_skill_payload(llm_payload: dict[str, Any]) -> dict[str, Any]:
             sentence = _process_sentence(process, facts.get(process), language)
             if sentence:
                 evidence_sentences.append(sentence)
+    if not evidence_sentences and llm_payload.get("answer_mode") == "verified_answer_rewrite":
+        verified_answer = str(llm_payload.get("verified_answer") or "").strip()
+        if verified_answer:
+            evidence_sentences.append(verified_answer[:2000])
 
     limitations = []
     if mode == "trend_assessment" and not snapshots:
@@ -379,6 +383,20 @@ def build_skill_payload(llm_payload: dict[str, Any]) -> dict[str, Any]:
         limitations.append("target_level_history_unavailable")
     if not matches and mode == "direct_answer":
         limitations.append("exact_target_not_matched")
+    verified_rewrite = llm_payload.get("answer_mode") == "verified_answer_rewrite"
+    if language == "ko":
+        evidence_instruction = (
+            "verified_answer는 결론 시작에 원문 그대로 한 번 사용하고, 그 밖의 수치는 반복하지 마세요. "
+            if verified_rewrite else
+            "verified_evidence_sentences는 판단에만 사용하고 수치는 답변에 반복하지 마세요. "
+            "검증 수치 문장은 Worker가 최종 답변에 별도로 삽입합니다. "
+        )
+    else:
+        evidence_instruction = (
+            "请在结论开头完整引用一次 verified_answer，除此之外不得重复数值。"
+            if verified_rewrite else
+            "verified_evidence_sentences 只用于判断，不得在回答中重复数字；Worker 会另行插入已验证的数据句子。"
+        )
 
     return {
         "name": SKILL_NAME,
@@ -407,12 +425,11 @@ def build_skill_payload(llm_payload: dict[str, Any]) -> dict[str, Any]:
         },
         "instructions": (
             "자료에서 질문과 직접 관련된 상태, 변화, 이상 징후를 먼저 고르고 의사결정에 필요한 확인 항목을 제시하세요. "
-            "verified_evidence_sentences는 판단에만 사용하고 수치는 답변에 반복하지 마세요. "
-            "검증 수치 문장은 Worker가 최종 답변에 별도로 삽입합니다. "
+            f"{evidence_instruction}"
             "대상 수준 이력이 없으면 특정 모델의 추이를 단정하지 마세요."
             if language == "ko"
             else "先选择与问题直接相关的状态、变化和异常信号，再给出有助于决策的确认事项。"
-            "verified_evidence_sentences 只用于判断，不得在回答中重复数字；Worker 会另行插入已验证的数据句子。"
+            f"{evidence_instruction}"
             "缺少目标级历史数据时，不得断言特定型号的趋势。"
         ),
     }
@@ -428,6 +445,14 @@ def insert_verified_metrics(summary: str, skill_payload: dict[str, Any], languag
         return str(summary or "").strip()
 
     cleaned = str(summary or "").strip()
+    normalized_cleaned = " ".join(cleaned.split())
+    sentences = [
+        sentence
+        for sentence in sentences
+        if " ".join(sentence.split()) not in normalized_cleaned
+    ]
+    if not sentences:
+        return cleaned
     for sentence in sentences:
         exact_line = re.compile(rf"(?m)^[ \t]*(?:[-*]\s*)?{re.escape(sentence)}[ \t]*$")
         cleaned = exact_line.sub("", cleaned)

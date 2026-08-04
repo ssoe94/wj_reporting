@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, time, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 import pytz
@@ -32,6 +33,12 @@ MACHINE_TONNAGE = {
     16: "1050T",
     17: "1200T",
 }
+
+MAX_ACTIVITY_LOOKBACK_MINUTES = 7 * 24 * 60
+CALENDAR_DATE_PATTERN = re.compile(
+    r"(?:\b\d{4}[-./]\d{1,2}[-./]\d{1,2}\s*일?"
+    r"|\b(?:\d{4}\s*년\s*)?\d{1,2}\s*(?:월|月)\s*\d{1,2}\s*(?:일|日))"
+)
 
 
 def machine_name_from_number(machine_number: int) -> str:
@@ -263,6 +270,7 @@ def extract_machine_numbers(question: str) -> list[int]:
 def normalize_intent(raw: dict[str, Any]) -> dict[str, Any]:
     intent = str(raw.get("intent") or "unknown").strip()
     if intent not in {
+        "injection_active_machine_count",
         "injection_cycle_time",
         "injection_shot_projection",
         "production_output",
@@ -277,6 +285,10 @@ def normalize_intent(raw: dict[str, Any]) -> dict[str, Any]:
         limit = int(raw.get("limit") or 6)
     except (TypeError, ValueError):
         limit = 6
+    try:
+        lookback_minutes = int(filters.get("lookback_minutes") or 60)
+    except (TypeError, ValueError):
+        lookback_minutes = 60
 
     machine_numbers = []
     raw_machine_numbers = filters.get("machine_numbers")
@@ -298,14 +310,133 @@ def normalize_intent(raw: dict[str, Any]) -> dict[str, Any]:
             "target_text": str(filters.get("target_text") or "").strip() or None,
             "machine": str(filters.get("machine") or "").strip() or None,
             "machine_numbers": machine_numbers,
+            # Preserve the requested duration for the retriever so any safety
+            # clamp is explicit in the verified answer instead of silently
+            # changing the user's question here.
+            "lookback_minutes": max(1, lookback_minutes),
+            "lookback_explicit": bool(filters.get("lookback_explicit")),
+            "is_correction": bool(filters.get("is_correction")),
         },
         "sort": sort,
         "limit": max(1, min(limit, 20)),
     }
 
 
+def _parse_duration_minutes(raw_value: str, multiplier: int) -> int:
+    """Parse a user duration without overflowing on adversarially long digits."""
+    try:
+        value = Decimal(raw_value)
+    except (InvalidOperation, TypeError, ValueError):
+        return MAX_ACTIVITY_LOOKBACK_MINUTES + 1
+    if not value.is_finite():
+        return MAX_ACTIVITY_LOOKBACK_MINUTES + 1
+    minutes = value * Decimal(multiplier)
+    if minutes > MAX_ACTIVITY_LOOKBACK_MINUTES:
+        # Preserve only the fact that the request exceeded the supported range;
+        # the retriever will clamp it and the verified answer will say so.
+        return MAX_ACTIVITY_LOOKBACK_MINUTES + 1
+    return max(1, int(minutes.quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
+
+
+def extract_lookback_minutes(question: str) -> tuple[int, bool]:
+    """Extract an explicit recent time window, defaulting to the current 60-minute view."""
+    text = CALENDAR_DATE_PATTERN.sub(" ", str(question or ""))
+    named_durations = (
+        (r"(?:일주일|한\s*주(?:일)?|一(?:周|週|星期)|one\s+week)", 7 * 24 * 60),
+        (r"(?:사흘)", 3 * 24 * 60),
+        (r"(?:이틀)", 2 * 24 * 60),
+        (r"(?:하루|一天|one\s+day)", 24 * 60),
+    )
+    for pattern, minutes in named_durations:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            return minutes, True
+    week_match = re.search(
+        r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:주(?:일)?|周|週|星期|weeks?|wks?)(?![A-Za-z])",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if week_match:
+        return _parse_duration_minutes(week_match.group(1), 7 * 24 * 60), True
+    day_match = re.search(
+        r"(?<!월 )(?<!月 )(?<!\d)(\d+(?:\.\d+)?)\s*(?:일|天|days?)(?![A-Za-z])",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if day_match:
+        return _parse_duration_minutes(day_match.group(1), 24 * 60), True
+    hour_match = re.search(
+        r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:시간|小时|小時|hours?|hrs?)(?![A-Za-z])",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if hour_match:
+        return _parse_duration_minutes(hour_match.group(1), 60), True
+    minute_match = re.search(
+        r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:분|分钟|分鐘|minutes?|mins?)(?![A-Za-z])",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if minute_match:
+        return _parse_duration_minutes(minute_match.group(1), 1), True
+    return 60, False
+
+
 def heuristic_intent_from_question(question: str) -> dict[str, Any]:
     normalized = question.lower()
+    mentions_calendar_date = bool(CALENDAR_DATE_PATTERN.search(question))
+    correction_active_count = (
+        any(token in normalized for token in [
+            "아니", "그게 아니라", "물었", "물어봤", "不是", "问的是",
+        ])
+        and any(token in normalized for token in ["가동", "생산중", "运行"])
+        and any(token in normalized for token in [
+            "몇대", "몇 대", "대수", "댓수", "대 수", "수는", "몇台", "几台",
+        ])
+        and any(token in normalized for token in [
+            "사출기", "사출 기", "호기", "注塑机", "injection machine",
+        ])
+        and not any(token in normalized for token in [
+            "back cover", "backcover", "b/c", "백커버", "cabinet", "c/a", "캐비넷",
+            "guide panel", "g/p", "가이드",
+        ])
+    )
+    if correction_active_count:
+        asks_why = any(token in normalized for token in ["왜", "为什么", "为何", "why"])
+        why_is_about_the_previous_answer = re.search(
+            r"(?:왜|为什么|为何|why).{0,40}(?:답|응답|설명|말(?:했|하|해)|回答|回复|回覆|说明|說明|answer|respond)",
+            normalized,
+            flags=re.IGNORECASE,
+        ) is not None
+        why_describes_a_metric_change = re.search(
+            r"(?:왜|为什么|为何|why).{0,50}(?:적|많|낮|높|줄|늘|감소|증가|변화|차이|"
+            r"지연|늦|부족|과다|악화|개선|급증|급감|정체|下降|上升|减少|減少|增加|"
+            r"变化|變化|差异|差異|延迟|延遲|不足|过多|過多|恶化|惡化|改善|"
+            r"low|high|decreas|increas|chang|delay|shortage|excess)",
+            normalized,
+            flags=re.IGNORECASE,
+        ) is not None
+        correction_asks_for_diagnosis = (
+            any(token in normalized for token in ["원인", "이유", "原因", "理由"])
+            or why_describes_a_metric_change
+            or (asks_why and not why_is_about_the_previous_answer)
+        )
+        if correction_asks_for_diagnosis:
+            return normalize_intent({"intent": "unknown"})
+        lookback_minutes, lookback_explicit = extract_lookback_minutes(question)
+        if mentions_calendar_date and not lookback_explicit:
+            return normalize_intent({"intent": "unknown"})
+        return normalize_intent({
+            "intent": "injection_active_machine_count",
+            "metric": "active_machine_count",
+            "filters": {
+                "running_only": True,
+                "lookback_minutes": lookback_minutes,
+                "lookback_explicit": lookback_explicit,
+                "is_correction": True,
+            },
+            "sort": None,
+            "limit": 17,
+        })
     diagnostic_tokens = [
         # Korean
         "왜", "원인", "이유", "개선", "비교", "변화", "우선", "문제", "낮",
@@ -329,10 +460,18 @@ def heuristic_intent_from_question(question: str) -> dict[str, Any]:
     mentions_projection = any(token in normalized for token in [
         "예상", "예측", "추세", "종료", "끝날", "forecast", "project", "trend", "预计", "预测", "趋势", "结束",
     ])
-    mentions_ct = any(token in normalized for token in ["c/t", "ct", "cycle", "사이클", "싸이클", "시간", "节拍", "周期"])
+    mentions_ct = any(token in normalized for token in ["c/t", "ct", "cycle", "사이클", "싸이클", "节拍", "周期"])
     mentions_output = any(token in normalized for token in ["생산량", "실적", "몇개", "몇 개", "output", "production", "产量", "实绩"])
-    mentions_status_count = any(token in normalized for token in ["몇대", "몇 대", "수는", "수량", "몇台", "几台", "多少台"])
+    mentions_status_count = any(token in normalized for token in [
+        "몇대", "몇 대", "대수", "댓수", "대 수", "수는", "몇台", "几台", "多少台",
+    ])
     mentions_summary = any(token in normalized for token in ["진도", "진행", "진척", "상황", "어때", "어떄", "怎么样", "进度", "情况"])
+    mentions_injection_machine_subject = any(token in normalized for token in [
+        "사출기", "사출 기", "호기", "注塑机", "injection machine",
+    ])
+    mentions_activity = any(token in normalized for token in [
+        "가동", "생산중", "생산 중", "running", "运行",
+    ])
     running_only = any(token in normalized for token in ["현재", "지금", "running", "생산중", "가동", "现在", "当前", "运行"])
     longest = any(token in normalized for token in ["가장 길", "제일 길", "longest", "최장", "最慢", "最长"])
     shortest = any(token in normalized for token in ["가장 짧", "제일 짧", "shortest", "최단", "最快", "最短"])
@@ -361,6 +500,33 @@ def heuristic_intent_from_question(question: str) -> dict[str, Any]:
             "limit": 17,
         })
 
+    if mentions_status_count and mentions_activity and mentions_injection_machine_subject:
+        lookback_minutes, lookback_explicit = extract_lookback_minutes(question)
+        if mentions_calendar_date and not lookback_explicit:
+            return normalize_intent({"intent": "unknown"})
+        if lookback_explicit or any(token in normalized for token in ["지난", "최근", "过去", "最近", "last"]):
+            if product_family:
+                return normalize_intent({"intent": "unknown"})
+            return normalize_intent({
+                "intent": "injection_active_machine_count",
+                "metric": "active_machine_count",
+                "filters": {
+                    "running_only": True,
+                    "product_family": product_family,
+                    "lookback_minutes": lookback_minutes,
+                    "lookback_explicit": lookback_explicit,
+                },
+                "sort": None,
+                "limit": 17,
+            })
+        return normalize_intent({
+            "intent": "production_status",
+            "metric": "running_count",
+            "filters": {"running_only": True, "product_family": product_family},
+            "sort": None,
+            "limit": 17,
+        })
+
     if mentions_ct:
         return normalize_intent({
             "intent": "injection_cycle_time",
@@ -384,14 +550,6 @@ def heuristic_intent_from_question(question: str) -> dict[str, Any]:
             },
             "sort": "output_desc",
             "limit": 8,
-        })
-    if mentions_status_count and running_only:
-        return normalize_intent({
-            "intent": "production_status",
-            "metric": "running_count",
-            "filters": {"running_only": True, "product_family": product_family},
-            "sort": None,
-            "limit": 17,
         })
     if mentions_summary:
         return normalize_intent({

@@ -38,7 +38,11 @@ from .serializers import (
 from .permissions import user_can_edit_plan, user_can_view_plan
 from .models import ProductionPlanPart
 from .mes_progress import equipment_sort_order, format_equipment_label, normalize_equipment_key, normalize_part_no
-from .ai_answer import build_ai_briefing, build_injection_shot_projection
+from .ai_answer import (
+    build_ai_briefing,
+    build_injection_active_machine_count,
+    build_injection_shot_projection,
+)
 from .ai_context import build_context_pack, build_used_data
 from .ai_gateway import answer_from_intent, build_injection_plan_context, heuristic_intent_from_question
 from .ai_retrievers import get_daily_production_context
@@ -508,6 +512,22 @@ class ProductionAiAskView(APIView):
 
         conversation_history = self.normalize_conversation_history(request.data.get('history'))
         intent = heuristic_intent_from_question(question)
+        if (
+            intent.get('intent') == 'injection_active_machine_count'
+            and intent.get('filters', {}).get('is_correction')
+            and not intent.get('filters', {}).get('lookback_explicit')
+        ):
+            for history_item in reversed(conversation_history):
+                if history_item.get('role') != 'user':
+                    continue
+                historical_intent = heuristic_intent_from_question(history_item.get('content') or '')
+                if (
+                    historical_intent.get('intent') == 'injection_active_machine_count'
+                    and historical_intent.get('filters', {}).get('lookback_explicit')
+                ):
+                    intent['filters']['lookback_minutes'] = historical_intent['filters']['lookback_minutes']
+                    intent['filters']['lookback_explicit'] = True
+                    break
         if intent.get('intent') == 'unknown':
             daily_context = get_daily_production_context(target_date)
             verified_context = build_context_pack(
@@ -579,6 +599,41 @@ class ProductionAiAskView(APIView):
                 },
                 'job_id': job.id,
                 'job_status': job.status,
+            })
+
+        if intent.get('intent') == 'injection_active_machine_count':
+            deterministic = build_injection_active_machine_count(
+                target_date,
+                intent.get('filters', {}).get('lookback_minutes') or 60,
+                language,
+            )
+            try:
+                job = self.enqueue_question_job(
+                    request,
+                    question,
+                    target_date,
+                    language,
+                    intent,
+                    deterministic,
+                    conversation_history=conversation_history,
+                )
+            except DatabaseError:
+                job = None
+                deterministic = self.add_enqueue_warning(deterministic)
+            facts = deterministic.get('facts') or {}
+            return Response({
+                **deterministic,
+                'source': 'intent_calculated',
+                'intent': intent,
+                'context': {
+                    'business_date': facts.get('business_date'),
+                    'range_start': facts.get('window_start'),
+                    'range_end': facts.get('window_end'),
+                    'recent_range_start': facts.get('window_start'),
+                    'recent_range_end': facts.get('window_end'),
+                },
+                'job_id': job.id if job else None,
+                'job_status': job.status if job else None,
             })
 
         if intent.get('intent') == 'injection_shot_projection':
