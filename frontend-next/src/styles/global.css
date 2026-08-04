@@ -8565,18 +8565,6 @@ select {
   line-height: 1.1;
 }
 
-.injection-board__title p {
-  margin: 5px 0 0;
-  color: #a92f23;
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.injection-board__title p strong {
-  color: #c13023;
-  font-weight: 950;
-}
-
 .injection-board__meta {
   display: flex;
   align-items: center;
@@ -10101,7 +10089,6 @@ select {
   .injection-board__topbar { min-height: 112px; padding: 18px 26px; }
   .injection-board__title > span { width: 98px; height: 68px; font-size: 0.86rem; }
   .injection-board__title h1 { font-size: 2.7rem; }
-  .injection-board__title p { font-size: 1rem; }
   .injection-board__meta > div:not(.injection-board__language) { min-width: 126px; padding: 8px 14px; }
   .injection-board__meta span { font-size: 0.8rem; }
   .injection-board__meta strong { font-size: 1rem; }
