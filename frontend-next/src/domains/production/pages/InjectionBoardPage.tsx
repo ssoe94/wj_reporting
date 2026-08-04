@@ -141,9 +141,6 @@ const boardCopy = {
     currentCt: "현재 C/T",
     recentCt: "최근 60분 기준",
     visitorCt: "C/T 범위",
-    visitorCtHint: "실제값 기준 +3% ~ +10%",
-    visitorMode: "방문객 모드",
-    visitorModeHint: "방문객용 C/T 범위를 표시하고 있습니다. (+3% ~ +10%)",
     enableVisitorMode: "방문객 모드 켜기",
     disableVisitorMode: "방문객 모드 끄기",
     progress: "달성률",
@@ -231,9 +228,6 @@ const boardCopy = {
     currentCt: "当前周期",
     recentCt: "最近60分钟基准",
     visitorCt: "周期范围",
-    visitorCtHint: "实际值的 +3% ~ +10%",
-    visitorMode: "访客模式",
-    visitorModeHint: "正在显示访客用周期范围。（+3% ~ +10%）",
     enableVisitorMode: "开启访客模式",
     disableVisitorMode: "关闭访客模式",
     progress: "完成率",
@@ -921,7 +915,7 @@ function MachineBoardCard({
                 ? `${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MIN_MULTIPLIER).toFixed(1)}–${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MAX_MULTIPLIER).toFixed(1)}s`
                 : `${machine.currentCycleTimeSec.toFixed(1)}s`}
           </strong>
-          <small>{isVisitorMode ? copy.visitorCtHint : copy.recentCt}</small>
+          {!isVisitorMode ? <small>{copy.recentCt}</small> : null}
         </div>
         <div>
           <span>{copy.progress}</span>
@@ -1298,10 +1292,7 @@ export function InjectionBoardPage() {
           >
             <Factory aria-hidden="true" />
           </button>
-          <div>
-            <h1>{copy.title}</h1>
-            {isVisitorMode ? <p><strong>{copy.visitorMode}</strong> · {copy.visitorModeHint}</p> : null}
-          </div>
+          <h1>{copy.title}</h1>
         </div>
         <div className="injection-board__meta">
           <div><span>{copy.productionDate}</span><strong>{businessDate}</strong></div>
