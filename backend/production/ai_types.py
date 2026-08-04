@@ -8,6 +8,18 @@ ProgressStatus = Literal["ahead", "on_track", "behind", "no_plan"]
 BriefSeverity = Literal["normal", "warning", "critical"]
 
 
+PRODUCTION_AI_MODELS = {
+    "qwen35": {
+        "label": "Qwen 3.5 35B-A3B",
+    },
+    "gemma4_26b_a4b": {
+        "label": "Gemma 4 26B-A4B",
+    },
+}
+PRODUCTION_AI_MODEL_IDS = tuple(PRODUCTION_AI_MODELS)
+DEFAULT_PRODUCTION_AI_MODEL_ID = "qwen35"
+
+
 @dataclass
 class AiUsedData:
     name: str

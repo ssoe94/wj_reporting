@@ -1,8 +1,9 @@
 from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status
@@ -15,6 +16,10 @@ from production.ai_context import build_context_pack
 from production.ai_answer import build_ai_briefing
 from production.ai_metrics import SHANGHAI_TZ
 from production.ai_retrievers import get_daily_production_context
+from production.ai_types import (
+    DEFAULT_PRODUCTION_AI_MODEL_ID,
+    PRODUCTION_AI_MODEL_IDS,
+)
 
 from .models import AiJob
 from .serializers import (
@@ -24,6 +29,22 @@ from .serializers import (
     AiJobFailSerializer,
     AiJobResultSerializer,
     AiJobSerializer,
+    AiWorkerHeartbeatSerializer,
+)
+
+
+AI_WORKER_HEARTBEAT_JOB_TYPE = 'worker_heartbeat'
+SUPPORTED_AI_WORKER_VERSION = 'production-ai-worker-v2'
+MANUAL_AI_JOB_COOLDOWN_SECONDS = 60
+AUTHORITATIVE_PRODUCTION_RESULT_FIELDS = (
+    'answer',
+    'severity',
+    'facts',
+    'used_data',
+    'calculation_basis',
+    'data_freshness',
+    'warnings',
+    'retrieval_trace',
 )
 
 
@@ -40,7 +61,53 @@ def ai_job_timeout_seconds():
 
 
 def visible_jobs_for_user(user):
-    return AiJob.objects.filter(Q(created_by=user) | Q(created_by__isnull=True))
+    return (
+        AiJob.objects
+        .filter(
+            Q(created_by=user)
+            | Q(created_by__isnull=True, scope__trigger='hourly')
+        )
+        .exclude(job_type=AI_WORKER_HEARTBEAT_JOB_TYPE)
+    )
+
+
+def restore_authoritative_production_result(job, worker_result):
+    """Keep verified production fields server-owned; the worker may change prose only."""
+    result = dict(worker_result)
+    scope = job.scope if isinstance(job.scope, dict) else {}
+    if (
+        job.job_type != AiJob.JOB_TYPE_PRODUCTION_DAILY
+        or scope.get('trigger') not in {'hourly', 'question'}
+    ):
+        return result
+
+    input_payload = job.input_payload if isinstance(job.input_payload, dict) else {}
+    source_keys = (
+        ('briefing',)
+        if scope.get('trigger') == 'hourly'
+        else ('deterministic', 'verified_context')
+    )
+    authoritative_sources = [
+        input_payload.get(key)
+        for key in source_keys
+        if isinstance(input_payload.get(key), dict)
+    ]
+    for field in AUTHORITATIVE_PRODUCTION_RESULT_FIELDS:
+        for source in authoritative_sources:
+            if field in source:
+                result[field] = source[field]
+                break
+        else:
+            result.pop(field, None)
+    return result
+
+
+def ai_worker_heartbeat_stale_seconds():
+    return max(30, int(getattr(settings, 'AI_WORKER_HEARTBEAT_STALE_SECONDS', 300) or 300))
+
+
+def display_model_name(value):
+    return str(value or '').replace('\\', '/').rsplit('/', 1)[-1][:128]
 
 
 def current_business_scope(now=None):
@@ -112,6 +179,7 @@ def build_job_input_payload(job_type, scope, supplied_payload):
             'source': 'production_ai_briefing',
             'date': target_date.isoformat(),
             'language': language,
+            'model_id': scope.get('model_id') or DEFAULT_PRODUCTION_AI_MODEL_ID,
             'briefing': briefing.to_dict(),
         }
 
@@ -148,13 +216,32 @@ class AiJobListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         job_type = serializer.validated_data['job_type']
         scope = serializer.validated_data.get('scope') or {}
-        input_payload = build_job_input_payload(job_type, scope, {})
-        job = AiJob.objects.create(
-            job_type=job_type,
-            scope=scope,
-            input_payload=input_payload,
-            created_by=request.user if request.user.is_authenticated else None,
-        )
+        active_statuses = [
+            AiJob.STATUS_PENDING,
+            AiJob.STATUS_CLAIMED,
+            AiJob.STATUS_RUNNING,
+        ]
+        recent_after = timezone.now() - timedelta(seconds=MANUAL_AI_JOB_COOLDOWN_SECONDS)
+        with transaction.atomic():
+            get_user_model().objects.select_for_update().only('pk').get(pk=request.user.pk)
+            manual_jobs = AiJob.objects.filter(
+                created_by=request.user,
+            ).filter(Q(scope__trigger='manual') | Q(scope__trigger__isnull=True))
+            if (
+                manual_jobs.filter(status__in=active_statuses).exists()
+                or manual_jobs.filter(created_at__gte=recent_after).exists()
+            ):
+                return Response({
+                    'detail': 'A manual AI job is already active or was created recently.',
+                    'code': 'manual_ai_job_rate_limited',
+                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            input_payload = build_job_input_payload(job_type, scope, {})
+            job = AiJob.objects.create(
+                job_type=job_type,
+                scope=scope,
+                input_payload=input_payload,
+                created_by=request.user,
+            )
         return Response(AiJobSerializer(job).data, status=status.HTTP_201_CREATED)
 
     def paginate_queryset(self, request, queryset):
@@ -198,19 +285,157 @@ class AiJobLatestView(APIView):
         if not parse_date(str(date_str)):
             raise ValidationError({'date': 'date must use YYYY-MM-DD.'})
         language = normalize_language(request.query_params.get('language'))
+        model_id = str(
+            request.query_params.get('model_id') or DEFAULT_PRODUCTION_AI_MODEL_ID
+        ).strip()
+        if model_id not in PRODUCTION_AI_MODEL_IDS:
+            raise ValidationError({'model_id': 'Unsupported local AI model.'})
 
-        job = (
+        jobs = (
             visible_jobs_for_user(request.user)
             .filter(
                 job_type=job_type,
                 status=AiJob.STATUS_COMPLETED,
                 scope__date=str(date_str),
                 scope__language=language,
+                scope__trigger='hourly',
+            )
+        )
+        if model_id == DEFAULT_PRODUCTION_AI_MODEL_ID:
+            jobs = jobs.filter(
+                Q(scope__model_id=model_id) | Q(scope__model_id__isnull=True)
+            )
+        else:
+            jobs = jobs.filter(scope__model_id=model_id)
+        job = jobs.order_by('-completed_at', '-id').first()
+        return Response({'job': AiJobResultSerializer(job).data if job else None})
+
+
+class AiWorkerHeartbeatView(APIView):
+    authentication_classes = []
+    permission_classes = [HasWorkerToken]
+
+    def post(self, request, *args, **kwargs):
+        serializer = AiWorkerHeartbeatSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        worker_name = payload['worker_name'].strip()
+        now = timezone.now()
+        result_payload = {
+            'llm_enabled': bool(payload.get('llm_enabled')),
+            'llm_ready': payload.get('llm_ready'),
+            'model_name': display_model_name(payload.get('model_name')),
+            'worker_version': (payload.get('worker_version') or '')[:64],
+            'last_error': (payload.get('last_error') or '')[:500],
+            'available_model_ids': list(payload.get('available_model_ids') or []),
+        }
+
+        with transaction.atomic():
+            heartbeat = (
+                AiJob.objects
+                .select_for_update()
+                .filter(
+                    job_type=AI_WORKER_HEARTBEAT_JOB_TYPE,
+                    scope__worker_name=worker_name,
+                )
+                .order_by('-id')
+                .first()
+            )
+            if heartbeat is None:
+                heartbeat = AiJob.objects.create(
+                    job_type=AI_WORKER_HEARTBEAT_JOB_TYPE,
+                    status=AiJob.STATUS_COMPLETED,
+                    scope={'trigger': 'worker_heartbeat', 'worker_name': worker_name},
+                    input_payload={},
+                    result_payload=result_payload,
+                    claimed_by=worker_name,
+                    completed_at=now,
+                    created_by=None,
+                )
+            else:
+                heartbeat.status = AiJob.STATUS_COMPLETED
+                heartbeat.scope = {'trigger': 'worker_heartbeat', 'worker_name': worker_name}
+                heartbeat.result_payload = result_payload
+                heartbeat.claimed_by = worker_name
+                heartbeat.completed_at = now
+                heartbeat.error_message = ''
+                heartbeat.save(update_fields=[
+                    'status',
+                    'scope',
+                    'result_payload',
+                    'claimed_by',
+                    'completed_at',
+                    'error_message',
+                    'updated_at',
+                ])
+
+        return Response({
+            'state': 'online',
+            'online': True,
+            'worker_name': worker_name,
+            'last_heartbeat_at': heartbeat.completed_at,
+            **result_payload,
+        })
+
+
+class AiWorkerStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        language = normalize_language(request.query_params.get('language'))
+        heartbeat = (
+            AiJob.objects
+            .filter(job_type=AI_WORKER_HEARTBEAT_JOB_TYPE)
+            .order_by('-completed_at', '-id')
+            .first()
+        )
+        stale_after_seconds = ai_worker_heartbeat_stale_seconds()
+        heartbeat_time = heartbeat.completed_at if heartbeat else None
+        heartbeat_age_seconds = None
+        if heartbeat_time:
+            heartbeat_age_seconds = max(0, int((timezone.now() - heartbeat_time).total_seconds()))
+        if heartbeat_age_seconds is None:
+            state = 'unknown'
+        elif heartbeat_age_seconds <= stale_after_seconds:
+            state = 'online'
+        else:
+            state = 'offline'
+
+        heartbeat_result = heartbeat.result_payload if heartbeat else {}
+        latest_analysis = (
+            AiJob.objects
+            .filter(
+                job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                status=AiJob.STATUS_COMPLETED,
+                created_by__isnull=True,
+                scope__trigger='hourly',
+                scope__language=language,
             )
             .order_by('-completed_at', '-id')
             .first()
         )
-        return Response({'job': AiJobResultSerializer(job).data if job else None})
+        analysis_result = latest_analysis.result_payload if latest_analysis else {}
+        return Response({
+            'state': state,
+            'online': state == 'online',
+            'worker_name': heartbeat.scope.get('worker_name', '') if heartbeat else '',
+            'last_heartbeat_at': heartbeat_time,
+            'heartbeat_age_seconds': heartbeat_age_seconds,
+            'stale_after_seconds': stale_after_seconds,
+            'llm_enabled': heartbeat_result.get('llm_enabled') if heartbeat else None,
+            'llm_ready': heartbeat_result.get('llm_ready') if heartbeat else None,
+            'model_name': display_model_name(heartbeat_result.get('model_name')),
+            'worker_version': heartbeat_result.get('worker_version', '') if heartbeat else '',
+            'last_error': heartbeat_result.get('last_error', '') if heartbeat else '',
+            'available_model_ids': (
+                heartbeat_result.get('available_model_ids', []) if heartbeat else []
+            ),
+            'last_analysis_completed_at': latest_analysis.completed_at if latest_analysis else None,
+            'last_analysis_model_name': display_model_name(latest_analysis.model_name) if latest_analysis else '',
+            'last_analysis_llm_fallback': (
+                analysis_result.get('llm_fallback') is True if latest_analysis else None
+            ),
+        })
 
 
 class AiJobCancelView(APIView):
@@ -249,37 +474,40 @@ class AiWorkerPeriodicEnqueueView(APIView):
         jobs = []
         created_count = 0
         for language in normalized_languages:
-            filters = {
-                'job_type': AiJob.JOB_TYPE_PRODUCTION_DAILY,
-                'scope__date': target_date.isoformat(),
-                'scope__language': language,
-                'scope__schedule_slot': schedule_slot,
-            }
-            existing = AiJob.objects.filter(**filters).order_by('-id').first()
-            if existing:
-                jobs.append(existing)
-                continue
-
-            scope = {
-                'date': target_date.isoformat(),
-                'language': language,
-                'schedule_slot': schedule_slot,
-                'trigger': 'hourly',
-            }
-            input_payload = build_job_input_payload(AiJob.JOB_TYPE_PRODUCTION_DAILY, scope, {})
-            with transaction.atomic():
+            for model_id in PRODUCTION_AI_MODEL_IDS:
+                filters = {
+                    'job_type': AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                    'scope__date': target_date.isoformat(),
+                    'scope__language': language,
+                    'scope__model_id': model_id,
+                    'scope__schedule_slot': schedule_slot,
+                }
                 existing = AiJob.objects.filter(**filters).order_by('-id').first()
                 if existing:
                     jobs.append(existing)
                     continue
-                job = AiJob.objects.create(
-                    job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
-                    scope=scope,
-                    input_payload=input_payload,
-                    created_by=None,
-                )
-                jobs.append(job)
-                created_count += 1
+
+                scope = {
+                    'date': target_date.isoformat(),
+                    'language': language,
+                    'model_id': model_id,
+                    'schedule_slot': schedule_slot,
+                    'trigger': 'hourly',
+                }
+                input_payload = build_job_input_payload(AiJob.JOB_TYPE_PRODUCTION_DAILY, scope, {})
+                with transaction.atomic():
+                    existing = AiJob.objects.filter(**filters).order_by('-id').first()
+                    if existing:
+                        jobs.append(existing)
+                        continue
+                    job = AiJob.objects.create(
+                        job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                        scope=scope,
+                        input_payload=input_payload,
+                        created_by=None,
+                    )
+                    jobs.append(job)
+                    created_count += 1
 
         return Response({
             'schedule_slot': schedule_slot,
@@ -296,6 +524,13 @@ class AiWorkerClaimView(APIView):
         serializer = AiJobClaimSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         worker_name = serializer.validated_data['worker_name']
+        worker_version = serializer.validated_data['worker_version']
+        if worker_version != SUPPORTED_AI_WORKER_VERSION:
+            return Response({
+                'detail': 'This AI Worker version is not supported.',
+                'code': 'unsupported_worker_version',
+                'supported_worker_version': SUPPORTED_AI_WORKER_VERSION,
+            }, status=status.HTTP_409_CONFLICT)
         limit = min(serializer.validated_data.get('limit') or ai_job_claim_limit(), ai_job_claim_limit())
         job_types = serializer.validated_data.get('job_types') or [
             AiJob.JOB_TYPE_PRODUCTION_DAILY,
@@ -314,7 +549,14 @@ class AiWorkerClaimView(APIView):
                 AiJob.objects
                 .select_for_update()
                 .filter(status=AiJob.STATUS_PENDING, job_type__in=job_types)
-                .order_by('created_at', 'id')[:limit]
+                .annotate(
+                    trigger_priority=Case(
+                        When(scope__trigger='hourly', then=Value(0)),
+                        default=Value(1),
+                        output_field=IntegerField(),
+                    )
+                )
+                .order_by('trigger_priority', 'created_at', 'id')[:limit]
             )
             jobs = list(queryset)
             for job in jobs:
@@ -363,7 +605,10 @@ class AiWorkerJobTransitionView(APIView):
         serializer = AiJobCompleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         job.status = AiJob.STATUS_COMPLETED
-        job.result_payload = serializer.validated_data['result_payload']
+        job.result_payload = restore_authoritative_production_result(
+            job,
+            serializer.validated_data['result_payload'],
+        )
         job.model_name = serializer.validated_data.get('model_name') or ''
         job.prompt_version = serializer.validated_data.get('prompt_version') or ''
         job.error_message = ''

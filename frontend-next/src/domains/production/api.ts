@@ -455,18 +455,29 @@ export type ProductionPlanUploadResponse = {
   model_summary?: ProductionPlanSummaryBucket["model_summary"];
 };
 
+export type ProductionAiModelId = "qwen35" | "gemma4_26b_a4b";
+
 export type ProductionAiAskResponse = {
   answer: string;
-  source: "calculated" | "intent_calculated" | "deterministic_unhandled";
+  source: "calculated" | "intent_calculated" | "deterministic_unhandled" | "ai_queued";
+  model_id: ProductionAiModelId;
+  model_label: string;
+  job_id?: number | null;
+  job_status?: AiJobStatus | null;
   detail?: string;
   intent?: Record<string, unknown>;
   context?: {
     business_date: string;
-    range_start: string;
-    range_end: string;
-    recent_range_start: string;
-    recent_range_end: string;
+    range_start: string | null;
+    range_end: string | null;
+    recent_range_start: string | null;
+    recent_range_end: string | null;
   };
+};
+
+export type ProductionAiChatHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 export type ProductionAiBriefingResponse = {
@@ -527,9 +538,25 @@ export type ProductionAiBriefingResponse = {
 
 export type AiJobStatus = "pending" | "claimed" | "running" | "completed" | "failed" | "cancelled";
 
+export type AiWorkerStatus = {
+  state: "unknown" | "online" | "offline";
+  online: boolean;
+  worker_name: string;
+  last_heartbeat_at: string | null;
+  heartbeat_age_seconds: number | null;
+  stale_after_seconds: number;
+  llm_ready: boolean | null;
+  model_name: string;
+  worker_version: string;
+  available_model_ids?: ProductionAiModelId[];
+  last_analysis_completed_at: string | null;
+  last_analysis_model_name: string;
+  last_analysis_llm_fallback: boolean | null;
+};
+
 export type AiJob = {
   id: number;
-  job_type: "production_daily_analysis" | "production_machine_analysis";
+  job_type: "production_daily_analysis" | "production_machine_analysis" | "production_question_analysis";
   status: AiJobStatus;
   scope: Record<string, unknown>;
   input_payload?: Record<string, unknown>;
@@ -917,10 +944,16 @@ export async function updateProductionPartCavityGroup(partNos: string[], cavityP
   return response.data;
 }
 
-export async function askProductionAi(date: string, question: string, language: "ko" | "zh") {
+export async function askProductionAi(
+  date: string,
+  question: string,
+  language: "ko" | "zh",
+  history: ProductionAiChatHistoryMessage[] = [],
+  modelId: ProductionAiModelId = "qwen35",
+) {
   const response = await http.post<ProductionAiAskResponse>(
     "/production/ai/ask/",
-    { date, question, language },
+    { date, question, language, history, model_id: modelId },
     { timeout: 60_000 },
   );
   return response.data;
@@ -943,11 +976,22 @@ export async function getAiJob(jobId: number) {
   return response.data;
 }
 
-export async function getLatestAiJob(date: string, language: "ko" | "zh") {
+export async function getLatestAiJob(
+  date: string,
+  language: "ko" | "zh",
+  modelId: ProductionAiModelId = "qwen35",
+) {
   const response = await http.get<{ job: AiJob | null }>(
-    `/ai/jobs/latest/?job_type=production_daily_analysis&date=${encodeURIComponent(date)}&language=${encodeURIComponent(language)}`,
+    `/ai/jobs/latest/?job_type=production_daily_analysis&date=${encodeURIComponent(date)}&language=${encodeURIComponent(language)}&model_id=${encodeURIComponent(modelId)}`,
   );
   return response.data.job;
+}
+
+export async function getAiWorkerStatus(language: "ko" | "zh") {
+  const response = await http.get<AiWorkerStatus>(
+    `/ai/worker/status/?language=${encodeURIComponent(language)}`,
+  );
+  return response.data;
 }
 
 export async function cancelAiJob(jobId: number) {
