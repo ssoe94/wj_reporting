@@ -257,7 +257,15 @@ def _field_display_value(field: Mapping[str, Any]) -> Any:
                 value = next(
                     (
                         choice.get(key)
-                        for key in ("name", "label", "message", "value", "code")
+                        for key in (
+                            "choiceValue",
+                            "name",
+                            "label",
+                            "message",
+                            "value",
+                            "choiceCode",
+                            "code",
+                        )
                         if choice.get(key) not in (None, "")
                     ),
                     None,
@@ -273,10 +281,90 @@ def _field_display_value(field: Mapping[str, Any]) -> Any:
 
     value = field.get("fieldValue")
     if isinstance(value, Mapping):
-        for key in ("name", "label", "message", "value", "code"):
+        for key in (
+            "mainProperty",
+            "$primaryValue",
+            "choiceValue",
+            "name",
+            "label",
+            "message",
+            "value",
+            "choiceCode",
+            "code",
+        ):
             if value.get(key) not in (None, ""):
                 return _json_safe(value.get(key))
     return _json_safe(value)
+
+
+def build_choice_value_maps(
+    metadata_payload: Mapping[str, Any],
+) -> dict[str, dict[str, str]]:
+    """Index documented metadata choiceCode values by field code and name."""
+
+    data = _response_data(metadata_payload)
+    if not isinstance(data, Mapping):
+        return {}
+    fields = data.get("fields")
+    if not isinstance(fields, Sequence) or isinstance(
+        fields, (str, bytes, bytearray)
+    ):
+        return {}
+
+    result: dict[str, dict[str, str]] = {}
+    for field in fields:
+        if not isinstance(field, Mapping):
+            continue
+        choices = field.get("choiceValues")
+        if not isinstance(choices, Sequence) or isinstance(
+            choices, (str, bytes, bytearray)
+        ):
+            continue
+        choice_map: dict[str, str] = {}
+        for choice in choices:
+            if not isinstance(choice, Mapping):
+                continue
+            choice_code = _as_identifier(choice.get("choiceCode"))
+            choice_value = choice.get("choiceValue")
+            if choice_code and choice_value not in (None, ""):
+                choice_map[choice_code] = str(choice_value).strip()
+        if not choice_map:
+            continue
+        field_code = _as_identifier(field.get("fieldCode"))
+        field_name = _normalised_name(field.get("fieldName"))
+        if field_code:
+            result[f"code:{field_code}"] = choice_map
+        if field_name:
+            result[f"name:{field_name}"] = choice_map
+    return result
+
+
+def _resolved_field_display_value(
+    field: Mapping[str, Any],
+    choice_value_maps: Mapping[str, Mapping[str, str]] | None,
+) -> Any:
+    displayed = _field_display_value(field)
+    if not choice_value_maps:
+        return displayed
+    field_code = _as_identifier(field.get("fieldCode"))
+    field_name = _normalised_name(field.get("fieldName"))
+    choices = (
+        choice_value_maps.get(f"code:{field_code}") if field_code else None
+    ) or (choice_value_maps.get(f"name:{field_name}") if field_name else None)
+    if not choices:
+        return displayed
+
+    def resolve(value: Any) -> Any:
+        if value in (None, ""):
+            return value
+        identifier = _as_identifier(value)
+        return choices.get(identifier, value) if identifier else value
+
+    if isinstance(displayed, Sequence) and not isinstance(
+        displayed, (str, bytes, bytearray)
+    ):
+        return [resolve(value) for value in displayed]
+    return resolve(displayed)
 
 
 def _record_fields(record: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -296,18 +384,25 @@ def _find_field(
     return None
 
 
-def _field_provenance(field: Mapping[str, Any] | None) -> dict[str, Any] | None:
+def _field_provenance(
+    field: Mapping[str, Any] | None,
+    choice_value_maps: Mapping[str, Mapping[str, str]] | None = None,
+) -> dict[str, Any] | None:
     if field is None:
         return None
     return {
         "field_code": _as_identifier(field.get("fieldCode")),
         "field_name": str(field.get("fieldName") or ""),
         "field_type": _json_safe(field.get("fieldType")),
-        "value": _field_display_value(field),
+        "value": _resolved_field_display_value(field, choice_value_maps),
     }
 
 
-def normalize_mould_record(record: Mapping[str, Any]) -> dict[str, Any]:
+def normalize_mould_record(
+    record: Mapping[str, Any],
+    *,
+    choice_value_maps: Mapping[str, Mapping[str, str]] | None = None,
+) -> dict[str, Any]:
     """Map one custom-object row to the stable WJ board contract."""
 
     source_fields: dict[str, dict[str, Any]] = {}
@@ -315,7 +410,7 @@ def normalize_mould_record(record: Mapping[str, Any]) -> dict[str, Any]:
     warnings: list[str] = []
     for key, names in PARENT_FIELD_NAMES.items():
         field = _find_field(record, names)
-        provenance = _field_provenance(field)
+        provenance = _field_provenance(field, choice_value_maps)
         if provenance is not None:
             source_fields[key] = provenance
             values[key] = provenance["value"]
@@ -1386,7 +1481,16 @@ def _summarize_moulds(
 def build_mould_board(*, quick_search: str = "") -> dict[str, Any]:
     fetched_at = datetime.now(tz=SHANGHAI).isoformat()
     raw_records, warnings = search_mould_records(quick_search=quick_search)
-    moulds = [normalize_mould_record(record) for record in raw_records]
+    metadata_payload: dict[str, Any] = {}
+    try:
+        metadata_payload = fetch_mould_metadata()
+    except MouldServiceError:
+        warnings.append("metadata_unavailable")
+    choice_value_maps = build_choice_value_maps(metadata_payload)
+    moulds = [
+        normalize_mould_record(record, choice_value_maps=choice_value_maps)
+        for record in raw_records
+    ]
     warnings.extend(
         warning for mould in moulds for warning in mould.get("warnings", [])
     )
@@ -1429,11 +1533,7 @@ def build_mould_board(*, quick_search: str = "") -> dict[str, Any]:
     except MouldServiceError:
         warnings.append("resource_enrichment_unavailable")
 
-    child_objects: dict[str, dict[str, str]] = {}
-    try:
-        child_objects = discover_child_objects(fetch_mould_metadata())
-    except MouldServiceError:
-        warnings.append("metadata_unavailable")
+    child_objects = discover_child_objects(metadata_payload)
 
     source_times = [
         row["record_updated_at"] for row in moulds if row.get("record_updated_at")
@@ -1701,8 +1801,17 @@ def build_mould_detail(instance_id: str) -> dict[str, Any]:
 
     fetched_at = datetime.now(tz=SHANGHAI).isoformat()
     raw_record = _fetch_mould_detail_record(instance_id)
-    mould = normalize_mould_record(raw_record)
-    warnings = list(mould.get("warnings", []))
+    warnings: list[str] = []
+    metadata_payload: dict[str, Any] = {}
+    try:
+        metadata_payload = fetch_mould_metadata()
+    except MouldServiceError:
+        warnings.append("metadata_unavailable")
+    mould = normalize_mould_record(
+        raw_record,
+        choice_value_maps=build_choice_value_maps(metadata_payload),
+    )
+    warnings.extend(mould.get("warnings", []))
 
     resource_capability = False
     resource_detail_capability = False
@@ -1839,11 +1948,7 @@ def build_mould_detail(instance_id: str) -> dict[str, Any]:
         resource_detail_provenance["on_way_status_interpretation"] = "ambiguous"
         resource_detail_provenance["on_way_status_source"] = on_way_source
 
-    child_objects: dict[str, dict[str, str]] = {}
-    try:
-        child_objects = discover_child_objects(fetch_mould_metadata())
-    except MouldServiceError:
-        warnings.append("metadata_unavailable")
+    child_objects = discover_child_objects(metadata_payload)
 
     raw_histories: dict[str, list[dict[str, Any]]] = {
         "movement_history": [],

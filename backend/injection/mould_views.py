@@ -149,12 +149,70 @@ def _project_enum(value: Any) -> Any:
     return str(value)
 
 
+def _public_display_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        for key in (
+            "mainProperty",
+            "$primaryValue",
+            "choiceValue",
+            "label",
+            "message",
+            "name",
+        ):
+            candidate = value.get(key)
+            if candidate is None or isinstance(candidate, (str, int, float, bool)):
+                if candidate not in (None, ""):
+                    return candidate
+        return None
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, bytearray)
+    ):
+        displayed = [
+            item
+            for item in (_public_display_value(child) for child in value)
+            if item not in (None, "")
+        ]
+        return ", ".join(str(item) for item in displayed) if displayed else None
+    return None
+
+
 def _project_location(value: Any) -> dict[str, Any]:
-    return _project_fields(value, _LOCATION_FIELDS)
+    projected = _project_fields(value, _LOCATION_FIELDS)
+    for field in (
+        "code",
+        "label",
+        "kind",
+        "parent_code",
+        "parent_label",
+        "zone_code",
+        "zone_label",
+    ):
+        if field in projected:
+            projected[field] = _public_display_value(projected[field])
+    return projected
 
 
 def _project_mould(value: Any) -> dict[str, Any]:
     projected = _project_fields(value, _MOULD_FIELDS)
+    for field in (
+        "instance_id",
+        "mould_code",
+        "asset_code",
+        "name",
+        "drawing_no",
+        "model",
+        "manufacturer",
+        "serial_no",
+        "summary_category",
+        "final_changed_at",
+        "record_updated_at",
+        "position_changed_at",
+        "time_quality",
+    ):
+        if field in projected:
+            projected[field] = _public_display_value(projected[field])
     for field in (
         "status",
         "classification",

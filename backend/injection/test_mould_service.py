@@ -12,6 +12,7 @@ from injection.mould_service import (
     CUSTOM_OBJECT_LIST_ENDPOINT,
     build_mould_board,
     build_mould_detail,
+    build_choice_value_maps,
     discover_child_objects,
     enrich_mould_records,
     normalize_child_record,
@@ -113,6 +114,55 @@ class MouldTransformTests(SimpleTestCase):
             "blacklake.custom_object.updatedAt",
         )
         self.assertIsNone(result["position_changed_at"])
+
+    def test_metadata_choice_codes_and_relation_values_become_display_labels(self):
+        record = custom_record(1, "MOLD-0001", "1734992386288216")
+        for field in record["fields"]:
+            if field["fieldName"] == "当前状态":
+                field.pop("choiceValues", None)
+                field["fieldValue"] = "1734992386287343"
+            elif field["fieldName"] == "模具名称":
+                field["fieldValue"] = {
+                    "id": "internal-related-id",
+                    "orgId": "internal-org-id",
+                    "mainProperty": "DISPLAY-NAME",
+                }
+        metadata = {
+            "data": {
+                "fields": [
+                    {
+                        "fieldCode": "tenant_location",
+                        "fieldName": "当前位置",
+                        "choiceValues": [
+                            {
+                                "choiceCode": "1734992386288216",
+                                "choiceValue": "#1-850T",
+                            }
+                        ],
+                    },
+                    {
+                        "fieldCode": "tenant_status",
+                        "fieldName": "当前状态",
+                        "choiceValues": [
+                            {
+                                "choiceCode": "1734992386287343",
+                                "choiceValue": "使用中",
+                            }
+                        ],
+                    },
+                ]
+            }
+        }
+
+        result = normalize_mould_record(
+            record,
+            choice_value_maps=build_choice_value_maps(metadata),
+        )
+
+        self.assertEqual(result["location_code"], "#1-850T")
+        self.assertEqual(result["location_kind"], "machine")
+        self.assertEqual(result["status"], "使用中")
+        self.assertEqual(result["name"], "DISPLAY-NAME")
 
     def test_resource_enrichment_is_additive_and_never_replaces_custom_location(self):
         mould = normalize_mould_record(custom_record(1, "MOLD-0001", "C9-18"))
@@ -652,6 +702,7 @@ class MouldPublicViewTests(SimpleTestCase):
         "fields",
         "file_id",
         "object_code",
+        "orgid",
         "operator_name",
         "product_photo",
         "provenance",
@@ -721,7 +772,11 @@ class MouldPublicViewTests(SimpleTestCase):
                     "mould_code": "MOLD-0674",
                     "asset_code": "ASSET-0674",
                     "name": "Public mould",
-                    "drawing_no": "DRAW-1",
+                    "drawing_no": {
+                        "id": "internal-related-id",
+                        "orgId": "internal-org-id",
+                        "mainProperty": "DRAW-1",
+                    },
                     "model": "MODEL-1",
                     "status": {
                         "code": "active",
@@ -776,6 +831,7 @@ class MouldPublicViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("no-store", response["Cache-Control"])
         self.assertEqual(response.json()["moulds"][0]["mould_code"], "MOLD-0674")
+        self.assertEqual(response.json()["moulds"][0]["drawing_no"], "DRAW-1")
         self.assertEqual(response.json()["moulds"][0]["location"]["code"], "C9-18")
         self.assertNotIn("device_code", response.json()["machines"][0])
         self.assert_sensitive_keys_absent(response.json())
