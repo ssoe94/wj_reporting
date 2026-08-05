@@ -102,6 +102,7 @@ const COPY = {
     to: "변경 위치",
     content: "내용",
     operator: "작업자",
+    firstRecord: "최초 기록",
     period: "기간",
     quantity: "생산량",
     cumulative: "누적",
@@ -192,6 +193,7 @@ const COPY = {
     to: "新位置",
     content: "内容",
     operator: "操作人",
+    firstRecord: "首次记录",
     period: "期间",
     quantity: "产量",
     cumulative: "累计",
@@ -446,10 +448,10 @@ function DetailContent({ copy, detail, language, tab }: {
       <div className={styles.tableScroller}>
         <table className={styles.historyTable}>
           <thead><tr><th>{copy.occurredAt}</th><th>{copy.from}</th><th>{copy.to}</th><th>{copy.content}</th></tr></thead>
-          <tbody>{fullDetail.movements.map((item) => (
+          <tbody>{fullDetail.movements.map((item, index) => (
             <tr key={item.id}>
               <td>{dateTime(item.occurredAt, language, copy.noTimestamp)}</td>
-              <td>{text(item.fromLocation)}</td>
+              <td>{text(item.fromLocation, index === 0 ? copy.firstRecord : undefined)}</td>
               <td><strong>{text(item.toLocation)}</strong></td>
               <td>{text(item.reason)}</td>
             </tr>
