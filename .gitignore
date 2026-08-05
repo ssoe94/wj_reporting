@@ -45,8 +45,6 @@ celerybeat-schedule*
 node_modules/
 .npm-cache/
 frontend/node_modules/
-frontend-next/node_modules/
-frontend-next/dist/
 *.tsbuildinfo
 
 # Playwright reports

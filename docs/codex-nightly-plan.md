@@ -131,9 +131,9 @@ codex/nightly-ai-rag-p1
 - backend/production/ai_answer.py
 - backend/production/views.py
 - backend/production/urls.py
-- frontend-next/src/domains/production/api.ts
-- frontend-next/src/domains/production/pages/ProductionDashboardPage.tsx
-- frontend-next/src/styles/global.css
+- frontend/src/domains/production/api.ts
+- frontend/src/domains/production/pages/ProductionDashboardPage.tsx
+- frontend/src/styles/operations.css
 
 해야 할 일:
 - 현재 /api/production/ai/briefing/ 구현이 P1 MVP 경계와 맞는지 검토
@@ -163,7 +163,7 @@ codex/nightly-ai-rag-p1
 - `git diff` 확인
 - 불필요한 범위 수정이 있는지 확인
 - `python3 -m py_compile ...` 재실행
-- `frontend-next` 변경이 있으면 `npm run build` 재실행
+- `frontend` 변경이 있으면 `npm run build` 재실행
 - `.env`, deployment, migration 변경이 없는지 확인
 - 숫자 계산을 LLM에 맡기지 않았는지 확인
 

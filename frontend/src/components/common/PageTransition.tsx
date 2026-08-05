@@ -34,7 +34,7 @@ export default function PageTransition({ children, className = '' }: PageTransit
       exit="exit"
       variants={pageVariants}
       transition={pageTransition}
-      className={className}
+      className={`main-page-transition ${className}`.trim()}
     >
       {children}
     </motion.div>

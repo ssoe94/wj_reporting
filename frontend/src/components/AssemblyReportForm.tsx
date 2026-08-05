@@ -404,9 +404,9 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
   };
 
   return (
-    <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="flex flex-col gap-y-6">
+    <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="assembly-record-form flex flex-col gap-y-6">
       {/* 상단: 보고일자 / 라인 / 모델 / Part No. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="assembly-record-form__identity grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
         <div>
           <Label htmlFor="date">{t('report_date')}</Label>
           <Input type="date" value={formData.date} onChange={(e) => handleChange('date', e.target.value)} required className="text-center" />
@@ -418,7 +418,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             value={formData.line_no}
             onChange={(e) => handleChange('line_no', e.target.value)}
             required
-            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
+            className="assembly-form-select block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
           >
             <option value="">{t('line_select')}</option>
             <option value="Line A">Line A</option>
@@ -775,7 +775,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
             id="supply_type"
             value={formData.supply_type}
             onChange={(e) => handleChange('supply_type', e.target.value)}
-            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
+            className="assembly-form-select block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 text-center"
           >
             <option value="JIT">{t('jit_online')}</option>
             <option value="CSK">CSKD</option>
@@ -788,13 +788,13 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
 
       {/* 생산기록 / 불량기록 레이아웃 */}
       <div className={`grid grid-cols-1 gap-6 mt-2 items-stretch ${compact ? 'text-sm' : ''}`}>
-        <Card className={`h-full flex flex-col ${compact ? 'col-span-2' : ''}`}>
+        <Card className={`assembly-record-form__section-card h-full flex flex-col ${compact ? 'col-span-2' : ''}`}>
           <CardHeader className={`font-semibold text-blue-700 ${compact ? 'text-base' : ''}`}>{t('production_record')}</CardHeader>
           <CardContent className="flex-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* 수량/인원 기록 섹션 카드 */}
-              <Card className="border-teal-200 md:order-1">
-                <CardHeader className="py-2 font-medium text-teal-700">{t('qty_personnel_record')}</CardHeader>
+              <Card className="assembly-record-form__group-card md:order-1">
+                <CardHeader className="assembly-record-form__group-title py-2 font-medium">{t('qty_personnel_record')}</CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="flex flex-col">
@@ -814,8 +814,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               </Card>
 
               {/* 시간 기록 섹션 카드 */}
-              <Card className="border-indigo-200 md:order-2">
-                <CardHeader className="py-2 font-medium text-indigo-700">{t('time_record')}</CardHeader>
+              <Card className="assembly-record-form__group-card md:order-2">
+                <CardHeader className="assembly-record-form__group-title py-2 font-medium">{t('time_record')}</CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="flex flex-col">
@@ -837,12 +837,12 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
           </CardContent>
         </Card>
 
-        <Card className={`h-full flex flex-col ${compact ? 'col-span-3' : ''}`}>
+        <Card className={`assembly-record-form__section-card h-full flex flex-col ${compact ? 'col-span-3' : ''}`}>
           <CardHeader className={`font-semibold text-blue-700 ${compact ? 'text-base' : ''}`}>{t('defect_record')}</CardHeader>
           <CardContent className="flex-1 space-y-4">
             {/* 사출불량 (기존 입고불량에서 변경) */}
-            <Card className="border-green-200">
-              <CardHeader className="py-2 font-medium text-green-700">
+            <Card className="assembly-record-form__group-card">
+              <CardHeader className="assembly-record-form__group-title py-2 font-medium">
                 <button
                   type="button"
                   className="w-full flex flex-row items-center justify-between cursor-pointer select-none"
@@ -878,7 +878,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 historyOptions={processingDefectHistory}
                 onSelect={(type) => recordDefectTypeUsage('processing', type)}
                 onDeleteHistory={(type) => deleteDefectType('processing', type)}
-                className="border-amber-200"
+                className="assembly-record-form__group-card"
               />
 
               {/* 외주불량 */}
@@ -889,7 +889,7 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
                 historyOptions={outsourcingDefectHistory}
                 onSelect={(type) => recordDefectTypeUsage('outsourcing', type)}
                 onDeleteHistory={(type) => deleteDefectType('outsourcing', type)}
-                className="border-purple-200"
+                className="assembly-record-form__group-card"
               />
             </div>
           </CardContent>
@@ -897,8 +897,8 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
       </div>
 
       {/* 성과지표 + 비고를 한 카드로 가로 2컬럼 구성 */}
-      <Card>
-        <CardHeader className="font-semibold text-green-700">{t('performance_indicators')}</CardHeader>
+      <Card className="assembly-record-form__section-card">
+        <CardHeader className="font-semibold text-blue-700">{t('performance_indicators')}</CardHeader>
         <CardContent>
           <div className="flex flex-col md:flex-row gap-4">
             {/* 좌: 성과지표 50% */}
@@ -906,22 +906,22 @@ export default function AssemblyReportForm({ onSubmit, isLoading, initialData, c
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>{t('analysis_metric_uph')}</Label>
-                  <Input value={calculatedValues.uph} disabled className="text-center bg-green-50 font-semibold" />
+                  <Input value={calculatedValues.uph} disabled className="assembly-record-form__metric-input text-center font-semibold" />
                   <p className="text-xs text-gray-500 mt-1">{t('production_per_hour')}</p>
                 </div>
                 <div>
                   <Label>{t('analysis_metric_upph')}</Label>
-                  <Input value={calculatedValues.upph} disabled className="text-center bg-green-50 font-semibold" />
+                  <Input value={calculatedValues.upph} disabled className="assembly-record-form__metric-input text-center font-semibold" />
                   <p className="text-xs text-gray-500 mt-1">{t('production_per_person_hour')}</p>
                 </div>
                 <div>
                   <Label>{t('operation_rate_percent')}</Label>
-                  <Input value={calculatedValues.operationRate} disabled className="text-center bg-green-50 font-semibold" />
+                  <Input value={calculatedValues.operationRate} disabled className="assembly-record-form__metric-input text-center font-semibold" />
                   <p className="text-xs text-gray-500 mt-1">{t('operation_time_ratio')}</p>
                 </div>
                 <div>
                   <Label>{t('production_achievement_rate')}</Label>
-                  <Input value={calculatedValues.achievementRate} disabled className="text-center bg-green-50 font-semibold" />
+                  <Input value={calculatedValues.achievementRate} disabled className="assembly-record-form__metric-input text-center font-semibold" />
                   <p className="text-xs text-gray-500 mt-1">{t('production_vs_plan')}</p>
                 </div>
               </div>

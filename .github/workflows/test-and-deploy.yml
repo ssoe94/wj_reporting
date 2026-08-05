@@ -2,9 +2,9 @@ name: Test and Deploy
 
 on:
   pull_request:
-    branches: [main, beta]
+    branches: [main]
   push:
-    branches: [main, beta]
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
@@ -40,20 +40,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            frontend/package-lock.json
-            frontend-next/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        run: |
-          npm ci --prefix frontend
-          npm ci --prefix frontend-next
+        run: npm ci --prefix frontend
 
       - name: Lint legacy frontend
         run: npm --prefix frontend run lint
-
-      - name: Build standalone beta frontend
-        run: npm --prefix frontend-next run build
 
       - name: Build production frontend bundle
         run: npm --prefix frontend run build
@@ -146,50 +139,3 @@ jobs:
 
       - name: Run production smoke tests
         run: bash scripts/quick-smoke-test.sh
-
-  deploy-beta:
-    name: Deploy beta frontend from beta
-    needs: test
-    if: >-
-      github.ref == 'refs/heads/beta' &&
-      (github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy'))
-    runs-on: ubuntu-latest
-    steps:
-      - name: Validate beta deploy hook
-        env:
-          RENDER_DEPLOY_HOOK_FRONTEND_NEXT: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND_NEXT }}
-        run: |
-          if [ -z "$RENDER_DEPLOY_HOOK_FRONTEND_NEXT" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK_FRONTEND_NEXT is not configured."
-            exit 1
-          fi
-
-      - name: Deploy beta frontend only
-        env:
-          RENDER_DEPLOY_HOOK_FRONTEND_NEXT: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND_NEXT }}
-        run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_FRONTEND_NEXT"
-
-  verify-beta:
-    name: Verify beta deployment
-    needs: deploy-beta
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Wait for the beta commit
-        env:
-          SITE_URL: https://frontend-next-zjk1.onrender.com
-          EXPECTED_BRANCH: beta
-        run: bash scripts/wait-static-commit.sh "$SITE_URL" "$GITHUB_SHA" "$EXPECTED_BRANCH" 300
-
-      - name: Verify beta routes and shared API
-        run: |
-          curl -fsS https://frontend-next-zjk1.onrender.com/production > /dev/null
-          curl -fsS https://frontend-next-zjk1.onrender.com/mes/monitoring > /dev/null
-          CONTENT_TYPE=$(curl -sSI https://frontend-next-zjk1.onrender.com/api/health/ | awk -F': ' 'tolower($1) == "content-type" {print tolower($2)}' | tr -d '\r')
-          if [[ "$CONTENT_TYPE" != *"application/json"* ]]; then
-            echo "::error::Beta /api proxy did not return JSON: $CONTENT_TYPE"
-            exit 1
-          fi

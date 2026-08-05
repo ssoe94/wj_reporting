@@ -188,7 +188,7 @@ Primary future APIs:
 ## Implementation Order
 
 1. Add backend fixture tests for business date, Cavity allocation, machining matched/plan-only/MES-only rows, and AI briefing schema.
-2. Replace old Playwright route assumptions with `frontend-next` routes.
+2. Keep Playwright route assumptions aligned with the main `frontend` routes.
 3. Add stable selectors only where user-facing text is not a reliable selector.
 4. Add Playwright network/console guards shared by all operational specs.
 5. Run local Vite dev mode with mocked or test backend data first, then run a smaller smoke suite against deployed URLs.
@@ -196,7 +196,7 @@ Primary future APIs:
 
 ## Commands
 
-Local browser QA starts the `frontend-next` Vite server and uses deterministic Playwright API mocks:
+Local browser QA starts the main `frontend` Vite server and uses deterministic Playwright API mocks:
 
 ```bash
 npm run test:e2e

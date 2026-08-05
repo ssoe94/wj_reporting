@@ -8,14 +8,14 @@ Render 部署服务器保存最近 24 小时的 1 分钟 MES 数据并提供给�
 
 ## 권장 구조 / 推荐结构
 
-1. `frontend-next`는 운영 API인 `https://wj-reporting.onrender.com/api`에서 최신 MES 데이터를 조회한다.
+1. 메인 `frontend`는 운영 API인 `https://wj-reporting.onrender.com/api`에서 최신 MES 데이터를 조회한다.
 2. Render Celery Beat는 1분마다 최신 MES snapshot을 저장한다.
 3. Render는 최근 24시간 1분 데이터를 유지하고, 24시간 초과분은 시간 단위 snapshot만 남긴다.
 4. 로컬 Mac collector는 1분마다 운영 API를 호출해 SQLite에 upsert한다.
 5. 로컬 Mac은 1분 데이터를 60일 보관하고, 60일 초과분은 시간 단위로 압축한다.
 6. 분석 화면은 필요 시 로컬 DB를 읽거나, 추후 Mac Studio의 로컬 API에서 제공한다.
 
-1. `frontend-next` 从生产 API `https://wj-reporting.onrender.com/api` 查询最新 MES 数据。
+1. 主 `frontend` 从生产 API `https://wj-reporting.onrender.com/api` 查询最新 MES 数据。
 2. Render Celery Beat 每 1 分钟保存最新 MES snapshot。
 3. Render 保留最近 24 小时的 1 分钟数据，超过 24 小时只保留小时级 snapshot。
 4. 本地 Mac collector 每 1 分钟调用生产 API 并 upsert 到 SQLite。

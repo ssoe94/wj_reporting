@@ -6,8 +6,8 @@ type LabelProps = LabelHTMLAttributes<HTMLLabelElement>;
 export function Label({ className = "", ...props }: LabelProps) {
   return (
     <label
-      className={cn("block text-gray-700 font-medium mb-1", className)}
+      className={cn("ui-label block mb-1", className)}
       {...props}
     />
   );
-} 
+}

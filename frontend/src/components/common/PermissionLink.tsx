@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ReactNode } from 'react';
+import type { AriaAttributes, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import type { UserPermissions } from '../../contexts/AuthContext';
@@ -15,6 +15,7 @@ interface PermissionLinkProps {
   showTooltip?: boolean;
   reloadDocument?: boolean;
   onClick?: (e: React.MouseEvent) => void;
+  ariaCurrent?: AriaAttributes['aria-current'];
 }
 
 const PermissionLink: React.FC<PermissionLinkProps> = ({
@@ -28,6 +29,7 @@ const PermissionLink: React.FC<PermissionLinkProps> = ({
   showTooltip = true,
   reloadDocument = false,
   onClick,
+  ariaCurrent,
 }) => {
   const { hasPermission, user, canAccessRoute } = useAuth();
 
@@ -87,6 +89,7 @@ const PermissionLink: React.FC<PermissionLinkProps> = ({
 
   return (
     <Link 
+      aria-current={ariaCurrent}
       to={to} 
       className={linkClassName}
       reloadDocument={reloadDocument}

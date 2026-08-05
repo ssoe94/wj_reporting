@@ -83,13 +83,11 @@ This project is configured for **automated deployment** on Render.
 
 ### Deployment Process
 1. **Push to Main**: tests and deploys the production backend and production frontend.
-2. **Push to Beta**: tests the shared application and deploys only `frontend-next` to the beta site.
-3. **Pull Request**: runs validation without deployment.
-4. **Manual Run**: select `main` or `beta`, then choose `deploy` or `test-only`.
+2. **Pull Request**: runs validation without deployment.
+3. **Manual Run**: select `deploy` or `test-only` for `main`.
 
-The production and beta frontends share the production backend and database. Follow
-[`docs/BRANCH_AND_DEPLOYMENT_POLICY.md`](docs/BRANCH_AND_DEPLOYMENT_POLICY.md) for branch,
-database, rollout, and rollback rules.
+The production UI is built from `frontend`. Follow the deployment checklist for
+branch, database, rollout, and rollback safety.
 
 ### Verification
 After deployment, run the smoke test:

@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run build:legacy && node ../scripts/build-next-into-frontend.mjs && node ../scripts/write-build-info.mjs frontend/dist",
-    "build:legacy": "postcss src/index.css -c ./postcss.legacy.config.cjs -o dist/legacy.css",
+    "build": "tsc -b && vite build && npm run build:legacy && node ../scripts/write-build-info.mjs frontend/dist",
+    "build:legacy": "postcss src/legacy.css --config ./config/postcss-legacy -o dist/legacy.css",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -27,7 +27,8 @@
     "react-hook-form": "^7.58.1",
     "react-router-dom": "^7.6.2",
     "react-toastify": "^11.0.5",
-    "recharts": "^2.9.1"
+    "recharts": "^2.9.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",

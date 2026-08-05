@@ -107,7 +107,7 @@ export function DefectTypeInput({
       </CardHeader>
       <CardContent className="space-y-3">
         {/* 테이블 헤더 */}
-        <div className="grid grid-cols-[1fr_100px_40px] gap-2 text-sm font-medium text-gray-600 pb-1 border-b">
+        <div className="grid grid-cols-[1fr_100px_40px] gap-2 pb-1 text-sm font-medium text-gray-600">
           <div>{t('defect_type')}</div>
           <div className="text-center">{t('quantity')}</div>
           <div></div>
@@ -154,7 +154,7 @@ export function DefectTypeInput({
         </div>
 
         {/* 행 추가 버튼 */}
-        <div className="pt-2 border-t">
+        <div className="pt-2">
           <Button
             type="button"
             size="sm"

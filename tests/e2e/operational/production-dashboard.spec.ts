@@ -251,7 +251,7 @@ test.describe('production dashboard operational scenario', () => {
     guard.assertClean();
   });
 
-  test('renders deterministic plan, MES progress, and AI briefing evidence', async ({ page }) => {
+  test('renders plan, MES progress, and the model-only AI briefing state', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);
     await installDevSession(page, 'ko');
@@ -265,7 +265,11 @@ test.describe('production dashboard operational scenario', () => {
     await expect(injectionKpi.locator('.stat-card__hint')).toContainText('계획 7대 완료 100.6%');
     const unplannedKpi = page.getByRole('button', { name: /무계획가동/ });
     await expect(unplannedKpi.locator('.stat-card__value')).toContainText('18회 / 2대');
-    await expect(page.getByText('기준일 2026-05-18 사출 완료율은 95%입니다.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '일일 생산 브리핑' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Qwen 3.5' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Gemma 4' })).toBeVisible();
+    await expect(page.getByText('선택한 모델이 아직 준비되지 않았습니다. Worker와 모델 서버 상태를 확인해 주세요.')).toBeVisible();
+    await expect(page.getByText('기준일 2026-05-18 사출 완료율은 95%입니다.')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: '실시간 프로그레스' })).toBeVisible();
     await expect(page.getByText('사출 실시간 진행')).toBeVisible();
     const mesOnlyMachine = page.locator('.production-progress-row').filter({ hasText: '850T-8' }).first();
@@ -306,10 +310,8 @@ test.describe('production dashboard operational scenario', () => {
     await manualDialog.getByRole('button', { name: '보정 저장' }).click();
     await expect(manualDialog).toBeHidden();
 
-    await page.getByText('사용한 데이터').click();
-    await expect(page.getByText('ProductionPlan: 1')).toBeVisible();
-    await page.getByText('계산 기준').click();
-    await expect(page.getByText('기준일은 08:00 ~ 익일 08:00 기준입니다.')).toBeVisible();
+    await expect(page.getByText('사용한 데이터')).toHaveCount(0);
+    await expect(page.getByText('계산 기준')).toHaveCount(0);
 
     await page.getByRole('button', { name: /850T-1 상세/ }).click();
     const detailDialog = page.getByRole('dialog');

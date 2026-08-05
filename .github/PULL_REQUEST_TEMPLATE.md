@@ -5,14 +5,11 @@
 ## 대상
 
 - [ ] `main` 운영 반영
-- [ ] `beta` 베타 전용
-- [ ] `shared/*` 양쪽 반영
 
 ## 검증
 
 - [ ] `frontend` 린트 통과
 - [ ] `frontend` 빌드 통과
-- [ ] `frontend-next` 빌드 통과
 - [ ] 백엔드 테스트 통과
 - [ ] 한국어/중국어 전환 확인
 - [ ] `/production` 및 `/mes/monitoring` 확인
@@ -27,4 +24,3 @@
 
 - [ ] 대상 Render 서비스와 브랜치 확인
 - [ ] 배포 후 `build-info.json`의 커밋과 브랜치 확인
-- [ ] 운영 변경이면 `main`을 `beta`에 역병합할 계획 확인

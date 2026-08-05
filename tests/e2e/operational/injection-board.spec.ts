@@ -341,6 +341,68 @@ test.describe('injection office board', () => {
     guard.assertClean();
   });
 
+  test('uses the lighter historical matrix and recovers a failed prefetch when the summary is opened', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-05-19T09:00:00+08:00'));
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'ko');
+
+    let historicalRequests = 0;
+    let rejectHistoricalRequest = true;
+    const historicalIntervals: string[] = [];
+    await page.route('**/api/injection/production-matrix/**', async (route) => {
+      const requestUrl = new URL(route.request().url());
+      if (requestUrl.searchParams.get('date') !== '2026-05-18') {
+        await route.fallback();
+        return;
+      }
+
+      historicalRequests += 1;
+      historicalIntervals.push(requestUrl.searchParams.get('interval') ?? '');
+      if (rejectHistoricalRequest) {
+        await route.fulfill({ status: 502, json: { detail: 'temporary historical matrix failure' } });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto('/production/injection-board');
+    await expect.poll(() => historicalRequests).toBe(4);
+    expect(historicalIntervals).toEqual(['10min', '30min', '10min', '30min']);
+
+    rejectHistoricalRequest = false;
+    await page.getByRole('button', { name: '전일 생산 요약' }).click();
+
+    const panel = page.locator('.injection-board-history__panel');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.injection-board-history__state--error')).toHaveCount(0);
+    await expect(panel.locator('.injection-board-history-card')).toHaveCount(17);
+    await expect.poll(() => historicalRequests).toBe(5);
+    expect(historicalIntervals.at(-1)).toBe('10min');
+  });
+
+  test('shows the previous summary when the optional production status request fails', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-05-19T09:00:00+08:00'));
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'ko');
+
+    await page.route('**/api/production/status/**', async (route) => {
+      const requestUrl = new URL(route.request().url());
+      if (requestUrl.searchParams.get('date') === '2026-05-18') {
+        await route.fulfill({ status: 503, json: { detail: 'temporary status failure' } });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto('/production/injection-board');
+    await page.getByRole('button', { name: '전일 생산 요약' }).click();
+
+    const panel = page.locator('.injection-board-history__panel');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.injection-board-history__state--error')).toHaveCount(0);
+    await expect(panel.locator('.injection-board-history-card')).toHaveCount(17);
+  });
+
   test('fits the full board without clipped card content on a 1280 by 720 field display', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);

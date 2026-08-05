@@ -22,19 +22,6 @@ if (!mockAuth && !proxyAuthPassthrough) {
   );
 }
 
-const nextAppRoutes = new Set([
-  "/next/login",
-  "/next/login/",
-  "/next/production",
-  "/next/production/",
-  "/next/production/plans",
-  "/next/production/plans/",
-  "/next/mes/monitoring",
-  "/next/mes/monitoring/",
-  "/next/inventory/raw-materials",
-  "/next/inventory/raw-materials/",
-]);
-
 function json(res, body) {
   res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
@@ -123,6 +110,31 @@ function emptyMesMatrix() {
   };
 }
 
+function emptyPage() {
+  return { count: 0, next: null, previous: null, results: [] };
+}
+
+function emptyReportSummary() {
+  return {
+    total_count: 0,
+    total_plan_qty: 0,
+    total_actual_qty: 0,
+    total_defect_qty: 0,
+    achievement_rate: 0,
+    defect_rate: 0,
+  };
+}
+
+function emptyAssemblyReportSummary() {
+  return {
+    ...emptyReportSummary(),
+    total_injection_defect: 0,
+    total_outsourcing_defect: 0,
+    total_incoming_defect: 0,
+    total_processing_defect: 0,
+  };
+}
+
 function apiResponse(url) {
   const date = url.searchParams.get("date") || url.searchParams.get("business_date") || "2026-07-02";
 
@@ -177,6 +189,36 @@ function apiResponse(url) {
   }
   if (url.pathname.startsWith("/api/injection/update-recent-snapshots")) {
     return { status: "idle", updated: 0 };
+  }
+  if (url.pathname.startsWith("/api/injection/reports/dates")) {
+    return [];
+  }
+  if (url.pathname.startsWith("/api/injection/reports/summary")) {
+    return emptyReportSummary();
+  }
+  if (url.pathname.startsWith("/api/injection/reports")) {
+    return emptyPage();
+  }
+  if (url.pathname.startsWith("/api/injection/parts")) {
+    return emptyPage();
+  }
+  if (url.pathname.startsWith("/api/assembly/reports/dates")) {
+    return [];
+  }
+  if (url.pathname.startsWith("/api/assembly/reports/summary")) {
+    return emptyAssemblyReportSummary();
+  }
+  if (url.pathname.startsWith("/api/assembly/reports/trend-data")) {
+    return [];
+  }
+  if (url.pathname.startsWith("/api/assembly/reports")) {
+    return emptyPage();
+  }
+  if (url.pathname.startsWith("/api/quality/reports")) {
+    return emptyPage();
+  }
+  if (url.pathname.startsWith("/api/quality/suppliers")) {
+    return emptyPage();
   }
 
   return {};
@@ -247,12 +289,6 @@ const server = createServer((req, res) => {
   if (file && existsSync(file) && statSync(file).isFile()) {
     res.writeHead(200, { "content-type": contentType(file) });
     createReadStream(file).pipe(res);
-    return;
-  }
-
-  if (nextAppRoutes.has(url.pathname)) {
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(readFileSync(join(root, "next", "index.html")));
     return;
   }
 

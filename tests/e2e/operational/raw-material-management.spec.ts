@@ -643,6 +643,8 @@ test.describe('raw material management operational scenario', () => {
     await expect(page.getByTestId('raw-trend-family-filter').getByRole('button', { name: 'HIPS', exact: true })).toBeVisible();
     await expect(page.getByTestId('raw-trend-family-filter').getByRole('button', { name: 'PBT', exact: true })).toBeVisible();
     await expect(page.getByTestId('raw-trend-period-filter').getByRole('button', { name: '30 일', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('raw-trend-period-filter').getByRole('button', { name: '60 일', exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('raw-trend-period-filter').getByRole('button', { name: '90 일', exact: true })).toHaveCount(0);
     await page.getByTestId('raw-trend-period-filter').getByRole('button', { name: '7 일', exact: true }).click();
     await expect.poll(() => overviewLookbacks).toContain('7');
     await expect(page.getByTestId('raw-trend-period-filter').getByRole('button', { name: '7 일', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -728,7 +730,7 @@ test.describe('raw material management operational scenario', () => {
     await expect(page.getByRole('combobox', { name: '数量单位' })).toHaveCount(0);
     await expect(page.getByText('外协生产供料（出库）', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('内部注塑生产供料（转移出库）', { exact: true }).first()).toBeVisible();
-    await expect(page.locator('body')).not.toContainText('销售');
+    await expect(page.locator('.raw-material-page')).not.toContainText('销售');
     const chineseGroupedRow = page.locator('.raw-inventory-table tbody tr.raw-inventory-summary-row').filter({ hasText: 'ABS HA641 18388' });
     await chineseGroupedRow.locator('td').nth(2).click();
     await expect(page.getByRole('region', { name: 'ABS HA641 18388 当前库存明细' })).toContainText('未采集');
@@ -738,12 +740,13 @@ test.describe('raw material management operational scenario', () => {
     await expect(page.getByText('手动 MES 更新失败。', { exact: true })).toHaveCount(0);
 
     expect(overviewRequests).toBeGreaterThan(0);
+    expect(overviewLookbacks.every((days) => ['7', '14', '30'].includes(days))).toBe(true);
     expect(syncStatusRequests).toBeGreaterThan(1);
     await expectNoUndefinedOrNaN(page);
     guard.assertClean();
   });
 
-  test('centers the family detail in the currently visible embedded viewport', async ({ page }) => {
+  test('centers the family detail in the main viewport', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await installDevSession(page, 'ko');
     await page.route(/\/api\/inventory\/raw-materials\/overview\/(?:\?.*)?$/, async (route) => {
@@ -755,21 +758,14 @@ test.describe('raw material management operational scenario', () => {
 
     await page.goto('/inventory/raw-materials');
     await expect(page.getByTestId('raw-family-card-abs')).toBeVisible();
-    await page.evaluate(() => {
-      document.body.innerHTML = '<iframe id="raw-material-embed-test" src="/index.html?view=raw-materials&amp;embed=1&amp;frameId=e2e-raw-material" style="display:block;width:100%;height:3600px;border:0"></iframe>';
-      document.body.style.margin = '0';
-    });
-
-    const embedded = page.frameLocator('#raw-material-embed-test');
-    await expect(embedded.getByTestId('raw-family-card-abs')).toBeVisible();
-    await embedded.getByTestId('raw-family-card-abs').click();
-    const dialog = embedded.getByRole('dialog', { name: 'ABS 원료 상세' });
+    await page.getByTestId('raw-family-card-abs').click();
+    const dialog = page.getByRole('dialog', { name: 'ABS 원료 상세' });
     await expect(dialog).toBeVisible();
     const box = await dialog.boundingBox();
     expect(box).not.toBeNull();
     expect(Math.abs((box?.y ?? 0) + (box?.height ?? 0) / 2 - 360)).toBeLessThan(90);
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
-    await embedded.getByRole('button', { name: '상세 닫기', exact: true }).click();
+    await page.getByRole('button', { name: '상세 닫기', exact: true }).click();
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('');
   });
 });

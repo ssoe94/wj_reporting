@@ -76,7 +76,7 @@ Backend calculations should preserve these rules:
 - Do not redesign the whole dashboard during AI/RAG work.
 - The AI briefing card should stay below the top summary cards.
 - Use existing styles where possible.
-- If frontend files are changed, run `npm run build` in `frontend-next`.
+- If frontend files are changed, run `npm run build` in `frontend`.
 - The dashboard should still display a deterministic fallback briefing if the AI briefing endpoint fails.
 
 ## Nightly Work Rules
@@ -102,7 +102,7 @@ Backend calculations should preserve these rules:
 Frontend:
 
 ```bash
-cd frontend-next
+cd frontend
 npm run build
 ```
 

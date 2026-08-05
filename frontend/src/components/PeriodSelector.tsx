@@ -6,46 +6,43 @@ export default function PeriodSelector() {
   const { t } = useLang();
 
   return (
-    <div className="flex flex-col md:flex-row md:items-center gap-4 p-4 bg-white rounded-xl shadow mb-6">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <label htmlFor="startDate" className="text-sm font-medium">{t('start_date')}</label>
+    <section className="period-selector" aria-label={`${t('start_date')} / ${t('end_date')}`}>
+      <div className="period-selector__fields">
+        <label className="period-selector__field" htmlFor="startDate">
+          <span>{t('start_date')}</span>
           <input
             id="startDate"
             type="date"
             value={startDate}
             onChange={e => setStartDate(e.target.value)}
-            className="border rounded px-2 py-1"
           />
-        </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="endDate" className="text-sm font-medium">{t('end_date')}</label>
+        </label>
+        <label className="period-selector__field" htmlFor="endDate">
+          <span>{t('end_date')}</span>
           <input
             id="endDate"
             type="date"
             value={endDate}
             onChange={e => setEndDate(e.target.value)}
-            className="border rounded px-2 py-1"
           />
-        </div>
-        <div className="flex items-center gap-2">
+        </label>
+        <label className="period-selector__check" htmlFor="excludeWeekends">
           <input
             type="checkbox"
             id="excludeWeekends"
             checked={excludeWeekends}
             onChange={e => setExcludeWeekends(e.target.checked)}
-            className="rounded"
           />
-          <label htmlFor="excludeWeekends" className="text-sm">{t('exclude_weekends')}</label>
-        </div>
+          <span>{t('exclude_weekends')}</span>
+        </label>
         <button
           type="button"
           onClick={reset}
-          className="px-3 py-1 bg-blue-100 text-blue-700 rounded border border-blue-300 text-sm hover:bg-blue-200"
+          className="period-selector__reset"
         >
           {t('reset_to_default')}
         </button>
       </div>
-    </div>
+    </section>
   );
-} 
+}

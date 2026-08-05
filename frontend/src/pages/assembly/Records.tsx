@@ -7,14 +7,14 @@ import { useExportAssemblyReports, useAssemblyReportDates } from '../../hooks/us
 import api from '../../lib/api';
 import AssemblyProdCalendar from '../../components/AssemblyProdCalendar';
 import AssemblyDateRecordsTable from '../../components/AssemblyDateRecordsTable';
-import { DownloadCloud } from 'lucide-react';
+import { CalendarSearch, DownloadCloud, FileUp, ListChecks } from 'lucide-react';
 import { useLang } from '../../i18n';
 
 export default function AssemblyRecordsPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const exportMutation = useExportAssemblyReports();
   const { data: reportDates = [], isLoading: isDatesLoading } = useAssemblyReportDates();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const location = useLocation();
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export default function AssemblyRecordsPage() {
     try {
       await exportMutation.mutateAsync({});
       toast.success(t('csv_download_success'));
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('csv_export_fail'));
     }
   };
@@ -79,50 +79,74 @@ export default function AssemblyRecordsPage() {
 
 
   return (
-    <div className="p-6">
-
-      <div className="md:flex gap-6">
-        {/* 왼쪽: 테이블 영역 */}
-        <div className="flex-1 space-y-4 overflow-auto max-h-[65vh]">
-          {selectedDate ? (
-            <>
-              <h3 className="text-lg font-bold">{selectedDate} {t('detailed_record')}</h3>
-              <AssemblyDateRecordsTable date={selectedDate} />
-            </>
-          ) : (
-            <div className="flex items-center justify-center h-48">
-              <p className="text-gray-400 text-lg">
-                {isDatesLoading ? t('loading_dates') : t('select_date_guide')}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* 오른쪽: 캘린더 */}
-        <div className="flex-shrink-0 space-y-4 mt-9 md:mt-11">
-          <AssemblyProdCalendar selected={selectedDate} onSelect={setSelectedDate} availableDates={reportDates} />
-
-          <div className="flex justify-center gap-2">
-            <input
-              id="csvFile"
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={handleCsvUpload}
-            />
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => document.getElementById('csvFile')?.click()}
-            >
-              {t('csv_upload')}
-            </Button>
-            <Button size="sm" className="gap-2" onClick={handleExport} disabled={exportMutation.isPending}>
-              <DownloadCloud className="h-4 w-4" />
-              {exportMutation.isPending ? t('exporting') : t('csv_save')}
-            </Button>
+    <div className="assembly-records-section">
+      <div className="assembly-records-section__heading">
+        <div className="assembly-records-section__intro">
+          <span className="assembly-records-section__icon" aria-hidden="true">
+            <ListChecks />
+          </span>
+          <div>
+            <h2>{lang === 'zh' ? '生产记录查询' : '생산 기록 조회'}</h2>
+            <p>
+              {lang === 'zh'
+                ? '按有记录的日期查看详细生产数据。'
+                : '기록이 있는 날짜를 선택해 상세 생산 내역을 확인합니다.'}
+            </p>
           </div>
         </div>
+
+        <div className="assembly-records-actions">
+          <input
+            id="csvFile"
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={handleCsvUpload}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => document.getElementById('csvFile')?.click()}
+          >
+            <FileUp className="h-4 w-4" />
+            {t('csv_upload')}
+          </Button>
+          <Button size="sm" className="gap-2" onClick={handleExport} disabled={exportMutation.isPending}>
+            <DownloadCloud className="h-4 w-4" />
+            {exportMutation.isPending ? t('exporting') : t('csv_save')}
+          </Button>
+        </div>
+      </div>
+
+      <div className="assembly-records-layout">
+        <section className="assembly-records-panel" aria-live="polite">
+          <div className="assembly-records-panel__header">
+            <div>
+              <span>{lang === 'zh' ? '选择日期' : '선택 기준일'}</span>
+              <h3>{selectedDate || '-'}</h3>
+            </div>
+            {selectedDate ? <strong>{t('detailed_record')}</strong> : null}
+          </div>
+          <div className="assembly-records-panel__body">
+            {selectedDate ? (
+              <AssemblyDateRecordsTable date={selectedDate} />
+            ) : (
+              <div className="assembly-records-empty">
+                <CalendarSearch aria-hidden="true" />
+                <strong>{isDatesLoading ? t('loading_dates') : t('select_date_guide')}</strong>
+                <p>
+                  {lang === 'zh'
+                    ? '选择右侧日历中标记的日期。'
+                    : '오른쪽 달력에서 표시된 날짜를 선택하세요.'}
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside className="assembly-records-sidebar">
+          <AssemblyProdCalendar selected={selectedDate} onSelect={setSelectedDate} availableDates={reportDates} />
+        </aside>
       </div>
     </div>
   );

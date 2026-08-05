@@ -419,7 +419,7 @@ Part No 기반 금형/코어 교체 판정:
 
 검증 체크리스트:
 
-1. 코드 기준은 `frontend-next/src/domains/production/injection-transition-analysis.ts` 한 곳에서 관리한다.
+1. 코드 기준은 `frontend/src/domains/production/injection-transition-analysis.ts` 한 곳에서 관리한다.
 2. `/production`과 `/mes/monitoring`은 같은 `buildInjectionTransitionAnalysis` 결과를 사용한다.
 3. 두 화면 모두 D+1/D+2 생산계획을 함께 조회해 `선행 생산 가능성` 플래그를 판단한다.
 4. E2E mock은 다음 케이스를 포함해야 한다.
@@ -432,7 +432,7 @@ Part No 기반 금형/코어 교체 판정:
    - 계획 대비 105% 이상 및 5개 이상 초과: `초과 생산 확인 필요`
    - 당일 계획 없음 + D+1/D+2 계획 있음 + MES 실적 있음: `선행 생산 가능성`
 5. 기본 검증 명령은 다음 순서로 실행한다.
-   - `cd frontend-next && npm run build`
+   - `cd frontend && npm run build`
    - Render 백엔드 프록시를 바라보는 프론트 서버에서 `npm run test:e2e`
    - `git diff --check`
 6. 검증 후 임시 프론트 서버는 종료하고, 로컬 백엔드 `8000`이 떠 있지 않은지 확인한다.

@@ -27,6 +27,9 @@ export async function installDevSession(page: Page, language: 'ko' | 'zh' = 'ko'
   await page.addInitScript(({ accessToken, refreshToken, language }) => {
     window.localStorage.setItem('wj_next_access_token', accessToken);
     window.localStorage.setItem('wj_next_refresh_token', refreshToken);
+    window.localStorage.setItem('access_token', accessToken);
+    window.localStorage.setItem('refresh_token', refreshToken);
+    window.localStorage.setItem('lang', language);
     window.localStorage.setItem('wj_next_language', language);
     window.localStorage.setItem('wj_next_login_language', language);
   }, { accessToken, refreshToken, language });
@@ -467,11 +470,26 @@ export async function installOperationalApiMocks(
   });
 
   await page.route('**/api/production/part-cavity/**', async (route) => {
-    const payload = route.request().postDataJSON() as { part_no?: string; cavity?: number };
+    const payload = route.request().postDataJSON() as {
+      part_no?: string;
+      part_nos?: string[];
+      cavity?: number;
+      cavity_pattern?: string;
+    };
+    const partNos = [...new Set((payload.part_nos ?? [payload.part_no ?? planRecord.part_no]).map((partNo) => partNo.toUpperCase()))];
+    const patternMatch = String(payload.cavity_pattern ?? '').match(/^(\d+)x(\d+)$/i);
+    const partsPerShot = Math.max(1, Number(patternMatch?.[1] ?? 1));
+    const cavity = Math.max(1, Number(patternMatch?.[2] ?? payload.cavity ?? 1));
+    const cavityGroup = partsPerShot > 1 ? [...partNos].sort().join('+') : partNos[0];
     await route.fulfill({
       json: {
-        part_no: (payload.part_no || planRecord.part_no).toUpperCase(),
-        cavity: Math.max(1, Number(payload.cavity ?? 1)),
+        part_no: partNos[0],
+        part_nos: partNos,
+        cavity,
+        cavity_pattern: `${partsPerShot}x${cavity}`,
+        parts_per_shot: partsPerShot,
+        cavity_group: cavityGroup,
+        total_cavity: partsPerShot * cavity,
       },
     });
   });
@@ -1088,5 +1106,20 @@ export async function installOperationalApiMocks(
         cache: { hit: false, generated_at: '2026-05-18T10:00:00+08:00', expires_at: null },
       },
     });
+  });
+
+  await page.route('**/api/ai/worker/status/**', async (route) => {
+    await route.fulfill({
+      json: {
+        online: false,
+        llm_ready: false,
+        worker_version: '',
+        model_name: '',
+      },
+    });
+  });
+
+  await page.route('**/api/ai/jobs/latest/**', async (route) => {
+    await route.fulfill({ json: { job: null } });
   });
 }

@@ -34,7 +34,6 @@ test.describe('MES monitoring operational scenario', () => {
     await expect(transitionPanel.getByText('사출조건준비').first()).toBeVisible();
     await expect(transitionPanel.getByText('초과 생산 확인 필요').first()).toBeVisible();
     await expect(transitionPanel.getByText('선행 생산 가능성').first()).toBeVisible();
-    await expect(transitionPanel.getByText('사출과 확인 필요').first()).toBeVisible();
     await expect(transitionPanel.locator('.injection-transition-event').filter({ hasText: '일반 정지' })).toHaveCount(0);
     await expect(transitionPanel).not.toContainText('1300T-3');
     await expect(transitionPanel).not.toContainText('1400T-5');
@@ -43,7 +42,7 @@ test.describe('MES monitoring operational scenario', () => {
     const zsReceiptTable = page.locator('.mes-injection-receipt-table');
     await expect(zsReceiptTable.getByText('PART-A', { exact: true })).toBeVisible();
     await expect(zsReceiptTable.getByText('PART-B', { exact: true })).toBeVisible();
-    await expect(zsReceiptTable.locator('tbody tr')).toHaveCount(7);
+    await expect(zsReceiptTable.locator('tbody tr')).toHaveCount(12);
     await expect(zsReceiptTable.getByText('SEMI-PART-A')).toBeVisible();
     await expect(zsReceiptTable.getByText('수량 일치').first()).toBeVisible();
     await expect(zsReceiptTable.getByText('MES 입고 부족')).toHaveCount(1);

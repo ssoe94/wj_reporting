@@ -1,11 +1,11 @@
-﻿import { useState, useEffect } from "react";
+﻿import { lazy, Suspense, useState, useEffect, useRef } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LangProvider } from "./i18n";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useLang } from "./i18n";
 import { Button } from "./components/ui/button";
-import { Menu as MenuIcon, X as XIcon, Home as HomeIcon, ChevronRight } from "lucide-react";
+import { Menu as MenuIcon, X as XIcon, Home as HomeIcon, ChevronDown, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -41,8 +41,8 @@ import InventoryStatusPage from './pages/sales/InventoryStatus';
 import DailyReportPage from './pages/sales/DailyReport';
 import UserApproval from './pages/admin/UserApproval';
 import PasswordChangeModal from './components/PasswordChangeModal';
-import PermissionLink from './components/common/PermissionLink';
 import PageTransition from './components/common/PageTransition';
+import { NavigationTree } from './components/layout/NavigationTree';
 import QualityPage from './pages/quality';
 import DailyAttentionPage from './pages/quality/DailyAttention';
 import AssemblyDashboardPage from './pages/assembly/Dashboard';
@@ -51,10 +51,24 @@ import InjectionSetupPage from './pages/injection/Setup';
 import InjectionMonitoringPage from './pages/injection/MonitoringPage';
 import FieldLauncherPage from './pages/field/Launcher';
 import FieldStationPage from './pages/field/Station';
-import ProductionPlanPage from './pages/production/Plan';
 import ProductionStatsPage from './pages/production/Stats';
-import EmbeddedNextPage from './pages/EmbeddedNextPage';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
+
+const ProductionDashboardPage = lazy(() => import('./domains/production/pages/ProductionDashboardPage').then((module) => ({
+  default: module.ProductionDashboardPage,
+})));
+const ProductionPlansPage = lazy(() => import('./domains/production/pages/ProductionPlansPage').then((module) => ({
+  default: module.ProductionPlansPage,
+})));
+const InjectionBoardPage = lazy(() => import('./domains/production/pages/InjectionBoardPage').then((module) => ({
+  default: module.InjectionBoardPage,
+})));
+const MesMonitoringPage = lazy(() => import('./domains/mes/pages/MesMonitoringPage').then((module) => ({
+  default: module.MesMonitoringPage,
+})));
+const RawMaterialManagementPage = lazy(() => import('./domains/inventory/pages/RawMaterialManagementPage').then((module) => ({
+  default: module.RawMaterialManagementPage,
+})));
 
 const queryClient = new QueryClient();
 
@@ -63,17 +77,13 @@ function HomeRedirect() {
   return <Navigate to={parseFieldTerminalUser(user?.username) ? "/field" : "/analysis"} replace />;
 }
 
-function NextStaticRedirect({ view }: { view: 'production' | 'mes-monitoring' | 'injection-board' }) {
-  useEffect(() => {
-    if (view === 'injection-board') {
-      window.location.replace('/next/production/injection-board/index.html');
-      return;
-    }
-    const params = new URLSearchParams({ view });
-    window.location.replace(`/next/index.html?${params.toString()}`);
-  }, [view]);
-
-  return null;
+function RouteLoading() {
+  return (
+    <div className="flex min-h-64 items-center justify-center" role="status">
+      <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-100 border-b-blue-600" />
+      <span className="sr-only">Loading</span>
+    </div>
+  );
 }
 
 function useNavItems() {
@@ -258,6 +268,10 @@ function AppContent() {
   const { lang, setLang, t } = useLang();
   const { user, logout, isAuthenticated, isLoading } = useAuth();
   const routerLocation = useLocation();
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileNavigationRef = useRef<HTMLElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const userMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const fieldTerminalUser = parseFieldTerminalUser(user?.username);
   const isFieldTerminal = Boolean(fieldTerminalUser);
 
@@ -266,6 +280,47 @@ function AppContent() {
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const navigation = mobileNavigationRef.current;
+    const menuButton = mobileMenuButtonRef.current;
+    const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    document.body.style.overflow = 'hidden';
+    navigation?.querySelector<HTMLElement>('[data-mobile-nav-close]')?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSidebarOpen(false);
+        return;
+      }
+
+      if (event.key !== 'Tab' || !navigation) return;
+      const focusable = Array.from(navigation.querySelectorAll(focusableSelector)) as HTMLElement[];
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      menuButton?.focus();
+    };
+  }, [sidebarOpen]);
 
   // Force password change when a temporary password is in use.
   useEffect(() => {
@@ -305,8 +360,65 @@ function AppContent() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, [userDropdownOpen]);
 
+  useEffect(() => {
+    if (!userDropdownOpen) return;
+
+    const menu = userMenuRef.current;
+    const trigger = userMenuTriggerRef.current;
+    const items = Array.from(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    items[0]?.focus();
+
+    const handleMenuKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setUserDropdownOpen(false);
+        requestAnimationFrame(() => trigger?.focus());
+        return;
+      }
+
+      if (event.key === 'Tab') {
+        const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+        const leavingBackward = event.shiftKey && currentIndex === 0;
+        const leavingForward = !event.shiftKey && currentIndex === items.length - 1;
+        if (!leavingBackward && !leavingForward) {
+          event.preventDefault();
+          const nextItemIndex = currentIndex + (event.shiftKey ? -1 : 1);
+          items[nextItemIndex]?.focus();
+          return;
+        }
+
+        event.preventDefault();
+        const pageFocusable = Array.from(document.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter((element) => !menu?.contains(element));
+        const triggerIndex = trigger ? pageFocusable.indexOf(trigger) : -1;
+        const nextOutside = pageFocusable[triggerIndex + 1] ?? pageFocusable[0];
+
+        setUserDropdownOpen(false);
+        requestAnimationFrame(() => {
+          if (leavingBackward) trigger?.focus();
+          else nextOutside?.focus();
+        });
+        return;
+      }
+
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      event.preventDefault();
+      const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = (currentIndex + step + items.length) % items.length;
+      items[nextIndex]?.focus();
+    };
+
+    menu?.addEventListener('keydown', handleMenuKeyDown);
+    return () => menu?.removeEventListener('keydown', handleMenuKeyDown);
+  }, [userDropdownOpen]);
+
   const navItems = useNavItems();
   const pathname = routerLocation.pathname;
+  const isInjectionBoardRoute = pathname === '/production/injection-board'
+    || pathname === '/production/injection-board/'
+    || pathname === '/production/injection-board/index.html';
   let breadcrumbLabel = t('brand');
   if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
   else if (pathname.startsWith('/assembly')) breadcrumbLabel = t('brand_machining');
@@ -332,45 +444,57 @@ function AppContent() {
 
   // Redirect anonymous users to login.
   if (!isAuthenticated && routerLocation.pathname !== "/login") {
-    return <Navigate to="/login" state={{ from: routerLocation }} replace />;
+    const returnTo = `${routerLocation.pathname}${routerLocation.search}${routerLocation.hash}`;
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="main-app-shell">
       {/* Header */}
-      {isAuthenticated && !isFieldTerminal && (
-        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur shadow-xs md:hidden">
-          <div className="flex items-center justify-between px-4 py-2">
-            <Link to="/" className="flex items-center">
-              <img src="/logo.jpg" alt="logo" className="h-8 w-8 rounded-full" />
+      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
+        <header className="main-mobile-header md:hidden">
+          <div className="main-mobile-header__inner">
+            <Link to="/" className="main-mobile-header__brand main-brand-lockup main-brand-lockup--compact">
+              <span className="main-brand-lockup__mark" aria-hidden="true">
+                <img src="/logo-transparent.png" alt="" />
+              </span>
+              <span className="main-brand-lockup__copy">
+                <strong>WJ DATA CENTER</strong>
+                <small>{t('brand_full')}</small>
+              </span>
             </Link>
-            <div className="flex items-center gap-2">
-              <div className="inline-flex rounded border border-gray-300 bg-white">
+            <div className="main-mobile-header__actions">
+              <div className="main-language-switch" aria-label={lang === 'ko' ? '언어' : '语言'}>
                 <button
+                  aria-pressed={lang === 'ko'}
                   onClick={() => setLang('ko')}
-                  className={`px-2 py-0.5 text-xs font-medium transition-colors ${lang === 'ko'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 hover:bg-gray-50'
-                    }`}
+                  className={`main-language-switch__button${lang === 'ko' ? ' is-active' : ''}`}
                 >
                   KOR
                 </button>
                 <button
+                  aria-pressed={lang === 'zh'}
                   onClick={() => setLang('zh')}
-                  className={`px-2 py-0.5 text-xs font-medium transition-colors ${lang === 'zh'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 hover:bg-gray-50'
-                    }`}
+                  className={`main-language-switch__button${lang === 'zh' ? ' is-active' : ''}`}
                 >
                   中文
                 </button>
               </div>
               {user && (
-                <Button variant="ghost" size="sm" onClick={logout}>
+                <Button className="main-mobile-header__logout" variant="ghost" size="sm" onClick={logout}>
                   {t('logout')}
                 </Button>
               )}
-              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)}>
+              <Button
+                ref={mobileMenuButtonRef}
+                aria-controls="main-mobile-navigation"
+                aria-expanded={sidebarOpen}
+                aria-label={lang === 'ko' ? '메뉴 열기' : '打开菜单'}
+                className="main-mobile-header__menu"
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(true)}
+              >
                 <MenuIcon className="h-6 w-6" />
               </Button>
             </div>
@@ -379,33 +503,37 @@ function AppContent() {
       )}
 
       {/* Breadcrumb */}
-      {isAuthenticated && !isFieldTerminal && (
-        <div className="sticky top-14 md:top-0 z-20 bg-white/80 backdrop-blur border-b border-gray-200 h-20 px-4 flex items-center gap-2 md:ml-56">
-          <Link to="/">
-            <HomeIcon className="w-4 h-4 text-gray-500" />
+      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
+        <div className="main-topbar">
+          <Link aria-label={lang === 'ko' ? '홈' : '首页'} className="main-topbar__home" to="/">
+            <HomeIcon aria-hidden="true" />
           </Link>
-          <ChevronRight className="w-4 h-4 text-gray-400" />
-          <span className="text-sm font-medium text-gray-700">{breadcrumbLabel}</span>
+          <ChevronRight aria-hidden="true" className="main-topbar__separator" />
+          <span className="main-topbar__title">{breadcrumbLabel}</span>
           {user && (
-            <div className="ml-auto relative">
+            <div className="main-user-menu">
               <button
+                ref={userMenuTriggerRef}
+                aria-controls="main-user-menu"
+                aria-expanded={userDropdownOpen}
+                aria-haspopup="menu"
                 onClick={(e) => {
                   e.stopPropagation();
                   setUserDropdownOpen(!userDropdownOpen);
                 }}
-                className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                className="main-user-menu__trigger"
               >
                 {user.username}{user.department ? ` (${user.department})` : ''}
-                <span className={`text-xs transition-transform ${userDropdownOpen ? 'rotate-180' : ''}`}>▼</span>
+                <ChevronDown aria-hidden="true" className={userDropdownOpen ? 'is-open' : ''} />
               </button>
               {userDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[140px]">
+                <div ref={userMenuRef} id="main-user-menu" className="main-user-menu__popover" role="menu">
                   <button
                     onClick={() => {
                       setPasswordModalOpen(true);
                       setUserDropdownOpen(false);
                     }}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    role="menuitem"
                   >
                     {t('password_change')}
                   </button>
@@ -414,7 +542,7 @@ function AppContent() {
                       logout();
                       setUserDropdownOpen(false);
                     }}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    role="menuitem"
                   >
                     {t('logout')}
                   </button>
@@ -426,76 +554,48 @@ function AppContent() {
       )}
 
       {/* Sidebar (Desktop) */}
-      {isAuthenticated && !isFieldTerminal && (
-        <aside className="fixed left-0 top-0 hidden h-screen w-56 overflow-y-auto border-r border-gray-200 bg-white shadow-md md:flex flex-col">
+      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
+        <aside className="main-sidebar main-sidebar--desktop hidden md:flex">
           {/* Top logo/title */}
-          <div className="flex h-20 items-center justify-center border-b border-gray-200 px-4 pt-3 pb-2">
-            <Link to="/" className="flex flex-col items-center gap-1.5">
-              <img src="/logo.jpg" alt="logo" className="h-10 w-10 rounded-full shadow-md" />
-              <span className="text-lg font-extrabold text-gray-700 tracking-tight">{t('brand_full')}</span>
+          <div className="main-sidebar__brand">
+            <Link to="/" className="main-brand-lockup">
+              <span className="main-brand-lockup__mark" aria-hidden="true">
+                <img src="/logo-transparent.png" alt="" />
+              </span>
+              <span className="main-brand-lockup__copy">
+                <strong>WJ DATA CENTER</strong>
+                <small>{t('brand_full')}</small>
+              </span>
             </Link>
           </div>
           {/* Menu */}
-          <nav className="flex-1 py-3 px-2 flex flex-col gap-0.5">
-            {navItems.map((group) => {
-              const GroupIcon = group.icon as any;
-              return (
-                <div key={group.label} className="mb-1.5">
-                  <div className="px-3 py-1.5 flex items-center gap-2 text-base font-semibold text-gray-500 uppercase">
-                    {GroupIcon && <GroupIcon className="w-4 h-4" />} {group.label}
-                  </div>
-                  {group.children.map((child) => {
-                    const ChildIcon = child.icon as any;
-                    // 鞕鸽秬 毵來伂 觳橂Μ
-                    if ((child as any).external) {
-                      return (
-                        <a
-                          key={child.to}
-                          href={child.to}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
-                        >
-                          {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
-                        </a>
-                      );
-                    }
-                    return (
-                      <PermissionLink key={child.to} to={child.to} reloadDocument={(child as any).reloadDocument} className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium">
-                        {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
-                      </PermissionLink>
-                    );
-                  })}
-                </div>
-              );
-            })}
+          <nav aria-label={lang === 'ko' ? '주요 메뉴' : '主菜单'} className="main-navigation">
+            <NavigationTree
+              currentHash={routerLocation.hash}
+              currentPath={pathname}
+              groups={navItems}
+            />
           </nav>
           {/* language selector bottom */}
-          <div className="mt-auto border-t border-gray-200 px-4 py-3 flex flex-col gap-2">
-            <div className="flex justify-center">
-              <div className="inline-flex rounded-lg border border-gray-300 bg-white p-1">
+          <div className="main-sidebar__footer">
+            <div className="main-language-switch" aria-label={lang === 'ko' ? '언어' : '语言'}>
                 <button
+                  aria-pressed={lang === 'ko'}
                   onClick={() => setLang('ko')}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${lang === 'ko'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
-                    }`}
+                  className={`main-language-switch__button${lang === 'ko' ? ' is-active' : ''}`}
                 >
                   KOR
                 </button>
                 <button
+                  aria-pressed={lang === 'zh'}
                   onClick={() => setLang('zh')}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${lang === 'zh'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
-                    }`}
+                  className={`main-language-switch__button${lang === 'zh' ? ' is-active' : ''}`}
                 >
                   中文
                 </button>
-              </div>
             </div>
-            <div className="flex justify-center">
-              <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+            <div className="main-lite-mode">
+              <label>
                 <input
                   type="checkbox"
                   checked={isLiteMode}
@@ -509,98 +609,117 @@ function AppContent() {
       )}
 
       {/* Sidebar (Mobile) */}
-      {isAuthenticated && !isFieldTerminal && (
+      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
         <AnimatePresence>
           {sidebarOpen && (
             <motion.div
+              aria-hidden="true"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/40"
+              className="main-mobile-nav-backdrop"
               onClick={() => setSidebarOpen(false)}
             />
           )}
         </AnimatePresence>
       )}
 
-      {isAuthenticated && !isFieldTerminal && (
+      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
         <AnimatePresence>
           {sidebarOpen && (
             <motion.aside
+              ref={mobileNavigationRef}
+              id="main-mobile-navigation"
+              role="dialog"
+              aria-modal="true"
+              aria-label={lang === 'ko' ? '모바일 주요 메뉴' : '移动主菜单'}
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
-              className="fixed left-0 top-0 z-50 h-screen w-64 bg-white shadow-xl"
+              className="main-sidebar main-sidebar--mobile"
             >
-              <div className="flex items-center justify-between border-b border-gray-200 px-4 pt-4 pb-3">
-                <Link to="/" className="flex flex-col items-center gap-1.5" onClick={() => setSidebarOpen(false)}>
-                  <img src="/logo.jpg" alt="logo" className="h-10 w-10 rounded-full shadow-md" />
-                  <span className="text-lg font-extrabold text-gray-700 tracking-tight">{t('brand_full')}</span>
+              <div className="main-sidebar__brand main-sidebar__brand--mobile">
+                <Link to="/" className="main-brand-lockup" onClick={() => setSidebarOpen(false)}>
+                  <span className="main-brand-lockup__mark" aria-hidden="true">
+                    <img src="/logo-transparent.png" alt="" />
+                  </span>
+                  <span className="main-brand-lockup__copy">
+                    <strong>WJ DATA CENTER</strong>
+                    <small>{t('brand_full')}</small>
+                  </span>
                 </Link>
-                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
+                <Button data-mobile-nav-close aria-label={lang === 'ko' ? '메뉴 닫기' : '关闭菜单'} variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
                   <XIcon className="h-6 w-6" />
                 </Button>
               </div>
-              <nav className="py-3 px-2 flex flex-col gap-0.5">
-                {navItems.map((group) => {
-                  const GroupIcon = group.icon as any;
-                  return (
-                    <div key={group.label} className="mb-1.5">
-                      <div className="px-3 py-1.5 flex items-center gap-2 text-base font-semibold text-gray-500 uppercase">
-                        {GroupIcon && <GroupIcon className="w-4 h-4" />} {group.label}
-                      </div>
-                      {group.children.map((child) => {
-                        const ChildIcon = child.icon as any;
-                        // 鞕鸽秬 毵來伂 觳橂Μ
-                        if ((child as any).external) {
-                          return (
-                            <a
-                              key={child.to}
-                              href={child.to}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
-                              onClick={() => setSidebarOpen(false)}
-                            >
-                              {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
-                            </a>
-                          );
-                        }
-                        return (
-                          <PermissionLink
-                            key={child.to}
-                            to={child.to}
-                            reloadDocument={(child as any).reloadDocument}
-                            className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium"
-                            onClick={() => setSidebarOpen(false)}
-                          >
-                            {ChildIcon && <ChildIcon className="w-4 h-4" />} {child.label}
-                          </PermissionLink>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+              <nav aria-label={lang === 'ko' ? '주요 메뉴' : '主菜单'} className="main-navigation">
+                <NavigationTree
+                  currentHash={routerLocation.hash}
+                  currentPath={pathname}
+                  groups={navItems}
+                  onNavigate={() => setSidebarOpen(false)}
+                />
               </nav>
+              <div className="main-sidebar__footer main-sidebar__footer--mobile">
+                <div className="main-language-switch" aria-label={lang === 'ko' ? '언어' : '语言'}>
+                  <button
+                    aria-pressed={lang === 'ko'}
+                    onClick={() => setLang('ko')}
+                    className={`main-language-switch__button${lang === 'ko' ? ' is-active' : ''}`}
+                  >
+                    KOR
+                  </button>
+                  <button
+                    aria-pressed={lang === 'zh'}
+                    onClick={() => setLang('zh')}
+                    className={`main-language-switch__button${lang === 'zh' ? ' is-active' : ''}`}
+                  >
+                    中文
+                  </button>
+                </div>
+                <div className="main-lite-mode">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={isLiteMode}
+                      onChange={toggleLiteMode}
+                    />
+                    {t('lite_mode')}
+                  </label>
+                </div>
+                {user ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSidebarOpen(false);
+                      logout();
+                    }}
+                  >
+                    {t('logout')}
+                  </Button>
+                ) : null}
+              </div>
             </motion.aside>
           )}
         </AnimatePresence>
       )}
 
       {/* Main content */}
-      <main className={isAuthenticated && !isFieldTerminal ? "md:ml-56" : ""}>
+      <main className={isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute ? "main-workspace" : "main-workspace main-workspace--standalone"}>
         <AnimatePresence mode="wait">
           <Routes location={routerLocation} key={locationKey}>
             {/* Public routes */}
             <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
             {/* Private routes */}
             <Route path="/" element={<PrivateRoute><PageTransition><HomeRedirect /></PageTransition></PrivateRoute>} />
-            <Route path="/next/production" element={<PrivateRoute><NextStaticRedirect view="production" /></PrivateRoute>} />
-            <Route path="/next/production/" element={<PrivateRoute><NextStaticRedirect view="production" /></PrivateRoute>} />
-            <Route path="/next/production/injection-board" element={<PrivateRoute><NextStaticRedirect view="injection-board" /></PrivateRoute>} />
-            <Route path="/next/production/injection-board/" element={<PrivateRoute><NextStaticRedirect view="injection-board" /></PrivateRoute>} />
-            <Route path="/next/mes/monitoring" element={<PrivateRoute><NextStaticRedirect view="mes-monitoring" /></PrivateRoute>} />
-            <Route path="/next/mes/monitoring/" element={<PrivateRoute><NextStaticRedirect view="mes-monitoring" /></PrivateRoute>} />
+            <Route path="/next/login" element={<Navigate to="/login" replace />} />
+            <Route path="/next/production" element={<Navigate to="/production" replace />} />
+            <Route path="/next/production/plans" element={<Navigate to="/production/plan" replace />} />
+            <Route path="/next/production/injection-board" element={<Navigate to="/production/injection-board" replace />} />
+            <Route path="/next/production/injection-board/index.html" element={<Navigate to="/production/injection-board" replace />} />
+            <Route path="/next/mes/monitoring" element={<Navigate to="/mes/monitoring" replace />} />
+            <Route path="/next/inventory/raw-materials" element={<Navigate to="/sales/raw-materials" replace />} />
             <Route path="/field" element={<PrivateRoute><PageTransition><FieldLauncherPage /></PageTransition></PrivateRoute>} />
             <Route path="/field/:stationId" element={<PrivateRoute><PageTransition><FieldStationPage /></PageTransition></PrivateRoute>} />
             <Route path="/models" element={<PrivateRoute><PageTransition><ModelsPage /></PageTransition></PrivateRoute>} />
@@ -613,11 +732,15 @@ function AppContent() {
             <Route path="/injection" element={<PrivateRoute><PageTransition><SummaryPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/setup" element={<PrivateRoute><PageTransition><InjectionSetupPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/monitoring" element={<PrivateRoute><PageTransition><InjectionMonitoringPage /></PageTransition></PrivateRoute>} />
-            <Route path="/mes/monitoring" element={<PrivateRoute><PageTransition><EmbeddedNextPage page="mes-monitoring" /></PageTransition></PrivateRoute>} />
+            <Route path="/mes/monitoring" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><MesMonitoringPage /></Suspense></PageTransition></PrivateRoute>} />
 
             {/* Production */}
-            <Route path="/production" element={<PrivateRoute><PageTransition><EmbeddedNextPage page="production" /></PageTransition></PrivateRoute>} />
-            <Route path="/production/plan" element={<PrivateRoute><PageTransition><ProductionPlanPage /></PageTransition></PrivateRoute>} />
+            <Route path="/production" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><ProductionDashboardPage /></Suspense></PageTransition></PrivateRoute>} />
+            <Route path="/production/plans" element={<Navigate to="/production/plan" replace />} />
+            <Route path="/production/injection-board" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense></PrivateRoute>} />
+            <Route path="/production/injection-board/" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense></PrivateRoute>} />
+            <Route path="/production/injection-board/index.html" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense></PrivateRoute>} />
+            <Route path="/production/plan" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><ProductionPlansPage /></Suspense></PageTransition></PrivateRoute>} />
             <Route path="/production/stats" element={<PrivateRoute><PageTransition><ProductionStatsPage /></PageTransition></PrivateRoute>} />
 
             {/* Assembly single page */}
@@ -633,7 +756,8 @@ function AppContent() {
             {/* Inventory status */}
             <Route path="/sales/daily-report" element={<PrivateRoute><PageTransition><DailyReportPage /></PageTransition></PrivateRoute>} />
             <Route path="/sales/inventory-status" element={<PrivateRoute><PageTransition><InventoryStatusPage /></PageTransition></PrivateRoute>} />
-            <Route path="/sales/raw-materials" element={<PrivateRoute><PageTransition><EmbeddedNextPage page="raw-materials" /></PageTransition></PrivateRoute>} />
+            <Route path="/sales/raw-materials" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><RawMaterialManagementPage /></Suspense></PageTransition></PrivateRoute>} />
+            <Route path="/inventory/raw-materials" element={<Navigate to="/sales/raw-materials" replace />} />
 
             {/* Admin routes */}
             <Route path="/admin/user-management" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} />

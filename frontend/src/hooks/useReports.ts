@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
+import type { AxiosResponse } from 'axios';
 import api from '@/lib/api';
 
 export interface Report {
@@ -32,6 +33,33 @@ interface Paginated<T> {
   results: T[];
 }
 
+const emptyPage = <T,>(): Paginated<T> => ({
+  count: 0,
+  next: null,
+  previous: null,
+  results: [],
+});
+
+const normalizePage = <T,>(value: unknown): Paginated<T> => {
+  if (Array.isArray(value)) {
+    return { ...emptyPage<T>(), count: value.length, results: value as T[] };
+  }
+
+  if (value && typeof value === 'object') {
+    const page = value as Partial<Paginated<T>>;
+    if (Array.isArray(page.results)) {
+      return {
+        count: typeof page.count === 'number' ? page.count : page.results.length,
+        next: typeof page.next === 'string' ? page.next : null,
+        previous: typeof page.previous === 'string' ? page.previous : null,
+        results: page.results,
+      };
+    }
+  }
+
+  return emptyPage<T>();
+};
+
 export function useReports(filters: { date?: string } = {}): UseQueryResult<Paginated<Report>> {
   return useQuery({
     queryKey: ['reports', filters],
@@ -41,7 +69,7 @@ export function useReports(filters: { date?: string } = {}): UseQueryResult<Pagi
         params.append('date', filters.date);
       }
       const response = await api.get<Paginated<Report>>(`/injection/reports/?${params.toString()}`);
-      return response.data;
+      return normalizePage<Report>(response.data);
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -68,8 +96,8 @@ export function useAllReports(): UseQueryResult<Report[]> {
       };
 
       while (url) {
-        const response = await api.get<Paginated<Report>>(url);
-        const page: Paginated<Report> = response.data;
+        const response: AxiosResponse<Paginated<Report>> = await api.get<Paginated<Report>>(url);
+        const page: Paginated<Report> = normalizePage<Report>(response.data);
         all.push(...page.results);
         url = page.next ? rel(page.next) : null;
       }
@@ -84,7 +112,7 @@ export function useReportDates() {
     queryKey: ['report-dates'],
     queryFn: async () => {
       const response = await api.get<string[]>('/injection/reports/dates/');
-      return response.data;
+      return Array.isArray(response.data) ? response.data : [];
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -106,6 +134,16 @@ export function useReportSummary(date?: string): UseQueryResult<Summary> {
       const { data } = await api.get<Summary>(`/injection/reports/summary/`, {
         params: date ? { date } : {},
       });
+      if (!data || typeof data !== 'object') {
+        return {
+          total_count: 0,
+          total_plan_qty: 0,
+          total_actual_qty: 0,
+          total_defect_qty: 0,
+          achievement_rate: 0,
+          defect_rate: 0,
+        };
+      }
       return data;
     },
     staleTime: 1000 * 60 * 5,

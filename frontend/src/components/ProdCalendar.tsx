@@ -13,7 +13,7 @@ interface Props {
 
 export default function ProdCalendar({ onSelect, selected, availableDates }: Props) {
   const { lang } = useLang();
-  const datesWithData = new Set(availableDates);
+  const datesWithData = new Set(Array.isArray(availableDates) ? availableDates : []);
 
   const modifiers = {
     hasData: (d: Date) => datesWithData.has(dayjs(d).format('YYYY-MM-DD')),
@@ -38,4 +38,4 @@ export default function ProdCalendar({ onSelect, selected, availableDates }: Pro
       className="p-2 rounded border shadow-sm max-w-fit"
     />
   );
-} 
+}

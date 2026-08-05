@@ -7,6 +7,33 @@ import type {
   AssemblyReportListResponse
 } from '../types/assembly';
 
+const emptyAssemblyPage = (): AssemblyReportListResponse => ({
+  count: 0,
+  next: null,
+  previous: null,
+  results: [],
+});
+
+const normalizeAssemblyPage = (value: unknown): AssemblyReportListResponse => {
+  if (Array.isArray(value)) {
+    return { ...emptyAssemblyPage(), count: value.length, results: value };
+  }
+
+  if (value && typeof value === 'object') {
+    const page = value as Partial<AssemblyReportListResponse>;
+    if (Array.isArray(page.results)) {
+      return {
+        count: typeof page.count === 'number' ? page.count : page.results.length,
+        next: typeof page.next === 'string' ? page.next : null,
+        previous: typeof page.previous === 'string' ? page.previous : null,
+        results: page.results,
+      };
+    }
+  }
+
+  return emptyAssemblyPage();
+};
+
 export const useAssemblyReports = (filters: AssemblyReportFilters = {}) => {
   return useQuery<AssemblyReportListResponse>({
     queryKey: ['assembly-reports', filters],
@@ -19,7 +46,7 @@ export const useAssemblyReports = (filters: AssemblyReportFilters = {}) => {
       });
 
       const response = await api.get<AssemblyReportListResponse>(`/assembly/reports/?${params}`);
-      return response.data;
+      return normalizeAssemblyPage(response.data);
     },
     staleTime: 60_000,
     gcTime: 5 * 60_000,
@@ -33,7 +60,7 @@ export const useAssemblyReportsTrendData = () => {
     queryKey: ['assembly-reports-trend-data'],
     queryFn: async () => {
       const response = await api.get<AssemblyReport[]>('/assembly/reports/trend-data/');
-      return response.data;
+      return Array.isArray(response.data) ? response.data : [];
     },
     staleTime: 60_000,
     gcTime: 5 * 60_000,
@@ -47,7 +74,7 @@ export const useAssemblyReportDates = () => {
     queryKey: ['assembly-report-dates'],
     queryFn: async () => {
       const response = await api.get('/assembly/reports/dates/');
-      return response.data as string[];
+      return Array.isArray(response.data) ? response.data as string[] : [];
     },
     staleTime: 60_000,
     refetchOnWindowFocus: false,

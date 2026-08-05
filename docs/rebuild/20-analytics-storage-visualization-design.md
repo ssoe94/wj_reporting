@@ -18,9 +18,9 @@
 - [backend/production/ai_context.py](/Users/ssoe94/reporting_v2/wj_reporting/backend/production/ai_context.py:76)
 - [backend/injection/models.py](/Users/ssoe94/reporting_v2/wj_reporting/backend/injection/models.py:473)
 - [backend/inventory/models.py](/Users/ssoe94/reporting_v2/wj_reporting/backend/inventory/models.py:71)
-- [frontend-next/src/domains/analysis/pages/AnalysisPage.tsx](/Users/ssoe94/reporting_v2/wj_reporting/frontend-next/src/domains/analysis/pages/AnalysisPage.tsx:1)
-- [frontend-next/src/domains/production/pages/ProductionDashboardPage.tsx](/Users/ssoe94/reporting_v2/wj_reporting/frontend-next/src/domains/production/pages/ProductionDashboardPage.tsx:964)
-- [frontend-next/src/domains/mes/pages/MesMonitoringPage.tsx](/Users/ssoe94/reporting_v2/wj_reporting/frontend-next/src/domains/mes/pages/MesMonitoringPage.tsx:1077)
+- `frontend/src/pages/analysis/index.tsx`
+- `frontend/src/domains/production/pages/ProductionDashboardPage.tsx`
+- `frontend/src/domains/mes/pages/MesMonitoringPage.tsx`
 
 ## 2. 에이전트 운용 방식
 
@@ -301,7 +301,7 @@ flowchart LR
    - part/lot/sequence별 진행
    - raw report/change log 링크
 
-기존 [frontend-next/src/domains/production/realtime-progress.ts](/Users/ssoe94/reporting_v2/wj_reporting/frontend-next/src/domains/production/realtime-progress.ts:11)의 segmented progress 구조를 유지한다. 제조 현장에서는 단일 percent bar보다 `완료/진행/대기/초과` segment가 더 유용하다.
+기존 `frontend/src/domains/production/realtime-progress.ts`의 segmented progress 구조를 유지한다. 제조 현장에서는 단일 percent bar보다 `완료/진행/대기/초과` segment가 더 유용하다.
 
 ## 10.2 `/mes/monitoring`: 설비 health monitor
 

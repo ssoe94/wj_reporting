@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLang } from '../../i18n';
 import QualityReportForm from './QualityReportForm';
@@ -7,7 +8,19 @@ import { ClipboardList } from 'lucide-react';
 
 export default function QualityPage() {
   const { t } = useLang();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'report' | 'history'>('report');
+
+  useEffect(() => {
+    setActiveTab(location.hash === '#stats' ? 'history' : 'report');
+  }, [location.hash]);
+
+  const selectTab = (tab: 'report' | 'history') => {
+    const hash = tab === 'history' ? 'stats' : 'report';
+    setActiveTab(tab);
+    navigate(`/quality#${hash}`);
+  };
 
   const tabVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -23,7 +36,8 @@ export default function QualityPage() {
         <h1 className="text-2xl font-bold text-gray-900">{t('brand_quality')}</h1>
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-1 ml-2 rounded-lg inline-flex">
           <button
-            onClick={() => setActiveTab('report')}
+            onClick={() => selectTab('report')}
+            aria-selected={activeTab === 'report'}
             className={`px-6 py-2 rounded-md font-medium transition-all duration-200 ${
               activeTab === 'report'
                 ? 'bg-blue-600 text-white shadow-md'
@@ -33,7 +47,8 @@ export default function QualityPage() {
             {t('quality.report_tab')}
           </button>
           <button
-            onClick={() => setActiveTab('history')}
+            onClick={() => selectTab('history')}
+            aria-selected={activeTab === 'history'}
             className={`px-6 py-2 rounded-md font-medium transition-all duration-200 ${
               activeTab === 'history'
                 ? 'bg-indigo-600 text-white shadow-md'

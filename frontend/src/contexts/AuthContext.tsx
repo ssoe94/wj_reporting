@@ -2,6 +2,14 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../lib/api';
 import type { ReactNode } from 'react';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
+import { refreshAccessToken } from '../domains/auth/auth-refresh';
+import { clearTokens, setAccessToken, setRefreshToken } from '../domains/auth/auth-storage';
+import {
+  canUseDevLogin,
+  createDevTokenPair,
+  getDevCurrentUser,
+  isDevSessionToken,
+} from '../domains/auth/dev-session';
 
 export interface UserPermissions {
   // 조회 권한 (기본적으로 모든 사용자에게 부여)
@@ -98,10 +106,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       const storedToken = localStorage.getItem('access_token');
-      if (storedToken && !isTokenExpired(storedToken)) {
-        setToken(storedToken);
-        // 사용자 정보 가져오기
-        const userInfo = await fetchUserInfo();
+      let activeToken = storedToken;
+
+      if (activeToken && isTokenExpired(activeToken)) {
+        try {
+          activeToken = await refreshAccessToken(activeToken);
+        } catch {
+          activeToken = null;
+        }
+      }
+
+      if (activeToken && !isTokenExpired(activeToken)) {
+        setToken(activeToken);
+        const userInfo = import.meta.env.DEV && isDevSessionToken(activeToken)
+          ? getDevCurrentUser() as User
+          : await fetchUserInfo();
         if (userInfo) {
           setUser(userInfo);
         } else {
@@ -117,6 +136,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = async (username: string, password: string): Promise<boolean> => {
+    if (canUseDevLogin({ username, password })) {
+      const { access, refresh } = createDevTokenPair();
+      setAccessToken(access);
+      setRefreshToken(refresh);
+      setToken(access);
+      setUser(getDevCurrentUser() as User);
+      return true;
+    }
+
     try {
       const response = await api.post('/token/', { username, password });
       console.log('Login response:', response);
@@ -133,8 +161,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return false;
       }
 
-      localStorage.setItem('access_token', access);
-      localStorage.setItem('refresh_token', refresh);
+      setAccessToken(access);
+      setRefreshToken(refresh);
       setToken(access);
 
       // 실제 사용자 정보 가져오기
@@ -156,8 +184,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    clearTokens();
     setToken(null);
     setUser(null);
   };

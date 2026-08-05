@@ -4,9 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import AssemblyReportForm from '../../components/AssemblyReportForm';
 import { useCreateAssemblyReport } from '../../hooks/useAssemblyReports';
 import { useLang } from '../../i18n';
+import { ClipboardPlus } from 'lucide-react';
 
 export default function AssemblyNewPage() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const createMutation = useCreateAssemblyReport();
   const navigate = useNavigate();
 
@@ -32,8 +33,19 @@ export default function AssemblyNewPage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+    <div className="assembly-new-section">
+      <div className="assembly-new-section__heading">
+        <span aria-hidden="true"><ClipboardPlus /></span>
+        <div>
+          <h2>{lang === 'zh' ? '新增加工生产记录' : '가공 생산 기록 등록'}</h2>
+          <p>
+            {lang === 'zh'
+              ? '所有输入项使用相同高度，按生产流程依次填写。'
+              : '입력 규격을 맞춰 생산 흐름에 따라 순서대로 기록합니다.'}
+          </p>
+        </div>
+      </div>
+      <div className="assembly-new-section__form">
         <AssemblyReportForm
           onSubmit={handleSubmit}
           isLoading={createMutation.isPending}
@@ -41,4 +53,4 @@ export default function AssemblyNewPage() {
       </div>
     </div>
   );
-} 
+}
