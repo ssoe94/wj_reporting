@@ -1,0 +1,293 @@
+"""Public, read-only endpoints for the BLACKLAKE mould dashboard.
+
+The integration service intentionally keeps a richer normalized payload for
+server-side diagnostics.  These views expose only the fields required by the
+public dashboard so raw BLACKLAKE data, provenance, file identifiers, and
+people identifiers never cross the anonymous API boundary.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from hashlib import sha256
+from typing import Any
+
+from django.core.cache import cache
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .mould_service import (
+    MouldServiceError,
+    build_mould_board,
+    build_mould_detail,
+    unavailable_board_payload,
+    unavailable_detail_payload,
+)
+
+
+_SUMMARY_FIELDS = (
+    "total",
+    "mounted",
+    "stored",
+    "maintenance",
+    "repair",
+    "offsite",
+    "unknown",
+    "conflicts",
+)
+_LOCATION_FIELDS = (
+    "code",
+    "label",
+    "kind",
+    "machine_number",
+    "parent_code",
+    "parent_label",
+    "zone_code",
+    "zone_label",
+    "level",
+    "mould_count",
+    "conflict",
+)
+_MACHINE_FIELDS = (
+    "number",
+    "location_code",
+    "label",
+    "tonnage",
+    "mould_count",
+    "conflict",
+)
+_MOULD_FIELDS = (
+    "instance_id",
+    "mould_code",
+    "asset_code",
+    "name",
+    "drawing_no",
+    "model",
+    "status",
+    "classification",
+    "cavity_count",
+    "manufacturer",
+    "serial_no",
+    "current_output_amount",
+    "current_output_batch_amount",
+    "lifespan_status",
+    "maintenance_status",
+    "repair_status",
+    "summary_category",
+    "location",
+    "final_changed_at",
+    "record_updated_at",
+    "position_changed_at",
+    "time_quality",
+)
+_ENUM_FIELDS = ("code", "label", "message", "name")
+_DATA_FRESHNESS_FIELDS = ("status", "fetched_at", "source_latest_at")
+_MOVEMENT_FIELDS = (
+    "id",
+    "occurred_at",
+    "from_location",
+    "to_location",
+    "reason",
+    "time_quality",
+)
+_PRODUCTION_FIELDS = (
+    "id",
+    "period",
+    "year",
+    "month",
+    "quantity",
+    "cumulative_quantity",
+    "unit",
+    "recorded_at",
+)
+_REPAIR_FIELDS = (
+    "id",
+    "record_code",
+    "requested_at",
+    "started_at",
+    "finished_at",
+    "type",
+    "content",
+    "vendor",
+    "cumulative_output_amount",
+)
+_PUBLIC_BOARD_CACHE_SECONDS = 45
+_PUBLIC_DETAIL_CACHE_SECONDS = 45
+
+
+def _public_cache_key(namespace: str, value: str) -> str:
+    digest = sha256(value.encode("utf-8")).hexdigest()
+    return f"injection:moulds:public:{namespace}:v1:{digest}"
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _project_fields(value: Any, allowed_fields: Sequence[str]) -> dict[str, Any]:
+    source = _mapping(value)
+    return {field: source[field] for field in allowed_fields if field in source}
+
+
+def _project_rows(value: Any, allowed_fields: Sequence[str]) -> list[dict[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return []
+    return [
+        _project_fields(item, allowed_fields)
+        for item in value
+        if isinstance(item, Mapping)
+    ]
+
+
+def _project_enum(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _project_fields(value, _ENUM_FIELDS)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _project_location(value: Any) -> dict[str, Any]:
+    return _project_fields(value, _LOCATION_FIELDS)
+
+
+def _project_mould(value: Any) -> dict[str, Any]:
+    projected = _project_fields(value, _MOULD_FIELDS)
+    for field in (
+        "status",
+        "classification",
+        "manufacturer",
+        "lifespan_status",
+        "maintenance_status",
+        "repair_status",
+    ):
+        if field in projected:
+            projected[field] = _project_enum(projected[field])
+    projected["location"] = _project_location(projected.get("location"))
+    return projected
+
+
+def _project_board_payload(payload: Any) -> dict[str, Any]:
+    source = _mapping(payload)
+    return {
+        "summary": _project_fields(source.get("summary"), _SUMMARY_FIELDS),
+        "locations": _project_rows(source.get("locations"), _LOCATION_FIELDS),
+        "machines": _project_rows(source.get("machines"), _MACHINE_FIELDS),
+        "moulds": [
+            _project_mould(item)
+            for item in source.get("moulds", [])
+            if isinstance(item, Mapping)
+        ] if isinstance(source.get("moulds"), Sequence) else [],
+        "final_changed_at": source.get("final_changed_at"),
+        "data_freshness": _project_fields(
+            source.get("data_freshness"),
+            _DATA_FRESHNESS_FIELDS,
+        ),
+    }
+
+
+def _project_detail_payload(payload: Any) -> dict[str, Any]:
+    source = _mapping(payload)
+    return {
+        "mould": _project_mould(source.get("mould")),
+        "movement_history": _project_rows(
+            source.get("movement_history"),
+            _MOVEMENT_FIELDS,
+        ),
+        "production_history": _project_rows(
+            source.get("production_history"),
+            _PRODUCTION_FIELDS,
+        ),
+        "repair_history": _project_rows(
+            source.get("repair_history"),
+            _REPAIR_FIELDS,
+        ),
+        "final_changed_at": source.get("final_changed_at"),
+        "record_updated_at": source.get("record_updated_at"),
+        "position_changed_at": source.get("position_changed_at"),
+        "time_quality": source.get("time_quality"),
+        "data_freshness": _project_fields(
+            source.get("data_freshness"),
+            _DATA_FRESHNESS_FIELDS,
+        ),
+    }
+
+
+def _no_store_response(payload, *, status_code=status.HTTP_200_OK):
+    response = Response(payload, status=status_code)
+    response["Cache-Control"] = "no-store"
+    response["Pragma"] = "no-cache"
+    return response
+
+
+class MouldBoardView(APIView):
+    """Return the public dashboard projection without exposing MES credentials."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        quick_search = str(request.query_params.get("q") or "").strip()
+        if len(quick_search) > 120:
+            return _no_store_response(
+                {"detail": "q must be at most 120 characters."},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        cache_key = _public_cache_key("board", quick_search.casefold())
+        cached_payload = cache.get(cache_key)
+        if isinstance(cached_payload, Mapping):
+            return _no_store_response(dict(cached_payload))
+        try:
+            payload = build_mould_board(quick_search=quick_search)
+        except MouldServiceError as exc:
+            payload = unavailable_board_payload(str(exc))
+            return _no_store_response(
+                _project_board_payload(payload),
+                status_code=status.HTTP_502_BAD_GATEWAY,
+            )
+        projected_payload = _project_board_payload(payload)
+        cache.set(
+            cache_key,
+            projected_payload,
+            timeout=_PUBLIC_BOARD_CACHE_SECONDS,
+        )
+        return _no_store_response(projected_payload)
+
+
+class MouldDetailView(APIView):
+    """Return the public detail projection for one mould."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, instance_id, *args, **kwargs):
+        instance_id = str(instance_id or "").strip()
+        cache_key = _public_cache_key("detail", instance_id)
+        cached_payload = cache.get(cache_key)
+        if isinstance(cached_payload, Mapping):
+            return _no_store_response(dict(cached_payload))
+        try:
+            payload = build_mould_detail(instance_id)
+        except ValueError as exc:
+            return _no_store_response(
+                {"detail": str(exc)},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        except MouldServiceError as exc:
+            payload = unavailable_detail_payload(instance_id, str(exc))
+            return _no_store_response(
+                _project_detail_payload(payload),
+                status_code=status.HTTP_502_BAD_GATEWAY,
+            )
+        projected_payload = _project_detail_payload(payload)
+        cache.set(
+            cache_key,
+            projected_payload,
+            timeout=_PUBLIC_DETAIL_CACHE_SECONDS,
+        )
+        return _no_store_response(projected_payload)
+
+
+__all__ = ["MouldBoardView", "MouldDetailView"]

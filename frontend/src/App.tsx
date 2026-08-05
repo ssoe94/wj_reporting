@@ -69,8 +69,27 @@ const MesMonitoringPage = lazy(() => import('./domains/mes/pages/MesMonitoringPa
 const RawMaterialManagementPage = lazy(() => import('./domains/inventory/pages/RawMaterialManagementPage').then((module) => ({
   default: module.RawMaterialManagementPage,
 })));
+const MouldManagementPage = lazy(() => import('./domains/moulds/pages/MouldManagementPage').then((module) => ({
+  default: module.MouldManagementPage,
+})));
+const BoardHubPage = lazy(() => import('./domains/boards/pages/BoardHubPage').then((module) => ({
+  default: module.BoardHubPage,
+})));
 
 const queryClient = new QueryClient();
+
+function isPublicRoutePath(pathname: string) {
+  const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  return normalizedPath === '/login'
+    || normalizedPath === '/boards'
+    || normalizedPath === '/boards/injection'
+    || normalizedPath === '/boards/moulds'
+    || normalizedPath === '/production/injection-board'
+    || normalizedPath === '/production/injection-board/index.html'
+    || normalizedPath === '/injection/moulds'
+    || normalizedPath === '/next/production/injection-board'
+    || normalizedPath === '/next/production/injection-board/index.html';
+}
 
 function HomeRedirect() {
   const { user } = useAuth();
@@ -87,7 +106,7 @@ function RouteLoading() {
 }
 
 function useNavItems() {
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const { user, hasPermission } = useAuth();
 
   // Staff users see the full navigation tree.
@@ -98,6 +117,7 @@ function useNavItems() {
         icon: FileChartPie,
         children: [
           { to: "/analysis", label: t('nav_dashboard'), icon: ChartPie },
+          { to: "/boards", label: lang === 'ko' ? '현황판' : '看板中心', icon: Monitor },
         ],
       },
       {
@@ -179,6 +199,7 @@ function useNavItems() {
     icon: FileChartPie,
     children: [
       { to: "/analysis", label: t('nav_dashboard'), icon: ChartPie },
+      { to: "/boards", label: lang === 'ko' ? '현황판' : '看板中心', icon: Monitor },
     ],
   });
 
@@ -418,11 +439,20 @@ function AppContent() {
   const pathname = routerLocation.pathname;
   const isInjectionBoardRoute = pathname === '/production/injection-board'
     || pathname === '/production/injection-board/'
-    || pathname === '/production/injection-board/index.html';
+    || pathname === '/production/injection-board/index.html'
+    || pathname === '/boards/injection'
+    || pathname === '/boards/injection/';
+  const isMouldRoute = pathname === '/injection/moulds'
+    || pathname === '/injection/moulds/'
+    || pathname === '/boards/moulds'
+    || pathname === '/boards/moulds/';
+  const isStandaloneBoardRoute = isInjectionBoardRoute || isMouldRoute;
   let breadcrumbLabel = t('brand');
   if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
   else if (pathname.startsWith('/assembly')) breadcrumbLabel = t('brand_machining');
+  else if (pathname.startsWith('/boards')) breadcrumbLabel = lang === 'ko' ? '현황판' : '看板中心';
   else if (pathname.startsWith('/production')) breadcrumbLabel = t('nav_production');
+  else if (pathname.startsWith('/injection/moulds')) breadcrumbLabel = lang === 'ko' ? '금형 현황' : '模具现状';
   else if (pathname.startsWith('/injection/dashboard')) breadcrumbLabel = t('nav_injection_dashboard');
   else if (pathname.startsWith('/injection')) breadcrumbLabel = t('brand');
   else if (pathname.startsWith('/analysis')) breadcrumbLabel = t('nav_dashboard');
@@ -434,7 +464,7 @@ function AppContent() {
   else if (pathname.startsWith('/models')) breadcrumbLabel = t('nav_model_management');
 
   // Global auth loading state.
-  if (isLoading) {
+  if (isLoading && !isPublicRoutePath(pathname)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -443,7 +473,7 @@ function AppContent() {
   }
 
   // Redirect anonymous users to login.
-  if (!isAuthenticated && routerLocation.pathname !== "/login") {
+  if (!isAuthenticated && !isPublicRoutePath(pathname)) {
     const returnTo = `${routerLocation.pathname}${routerLocation.search}${routerLocation.hash}`;
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }
@@ -451,7 +481,7 @@ function AppContent() {
   return (
     <div className="main-app-shell">
       {/* Header */}
-      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
+      {isAuthenticated && !isFieldTerminal && !isStandaloneBoardRoute && (
         <header className="main-mobile-header md:hidden">
           <div className="main-mobile-header__inner">
             <Link to="/" className="main-mobile-header__brand main-brand-lockup main-brand-lockup--compact">
@@ -503,7 +533,7 @@ function AppContent() {
       )}
 
       {/* Breadcrumb */}
-      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
+      {isAuthenticated && !isFieldTerminal && !isStandaloneBoardRoute && (
         <div className="main-topbar">
           <Link aria-label={lang === 'ko' ? '홈' : '首页'} className="main-topbar__home" to="/">
             <HomeIcon aria-hidden="true" />
@@ -554,7 +584,7 @@ function AppContent() {
       )}
 
       {/* Sidebar (Desktop) */}
-      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
+      {isAuthenticated && !isFieldTerminal && !isStandaloneBoardRoute && (
         <aside className="main-sidebar main-sidebar--desktop hidden md:flex">
           {/* Top logo/title */}
           <div className="main-sidebar__brand">
@@ -609,7 +639,7 @@ function AppContent() {
       )}
 
       {/* Sidebar (Mobile) */}
-      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
+      {isAuthenticated && !isFieldTerminal && !isStandaloneBoardRoute && (
         <AnimatePresence>
           {sidebarOpen && (
             <motion.div
@@ -624,7 +654,7 @@ function AppContent() {
         </AnimatePresence>
       )}
 
-      {isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute && (
+      {isAuthenticated && !isFieldTerminal && !isStandaloneBoardRoute && (
         <AnimatePresence>
           {sidebarOpen && (
             <motion.aside
@@ -706,18 +736,21 @@ function AppContent() {
       )}
 
       {/* Main content */}
-      <main className={isAuthenticated && !isFieldTerminal && !isInjectionBoardRoute ? "main-workspace" : "main-workspace main-workspace--standalone"}>
+      <main className={isAuthenticated && !isFieldTerminal && !isStandaloneBoardRoute ? "main-workspace" : "main-workspace main-workspace--standalone"}>
         <AnimatePresence mode="wait">
           <Routes location={routerLocation} key={locationKey}>
             {/* Public routes */}
             <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
+            <Route path="/boards" element={<Suspense fallback={<RouteLoading />}><BoardHubPage /></Suspense>} />
+            <Route path="/boards/injection" element={<Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense>} />
+            <Route path="/boards/moulds" element={<Suspense fallback={<RouteLoading />}><MouldManagementPage /></Suspense>} />
             {/* Private routes */}
             <Route path="/" element={<PrivateRoute><PageTransition><HomeRedirect /></PageTransition></PrivateRoute>} />
             <Route path="/next/login" element={<Navigate to="/login" replace />} />
             <Route path="/next/production" element={<Navigate to="/production" replace />} />
             <Route path="/next/production/plans" element={<Navigate to="/production/plan" replace />} />
-            <Route path="/next/production/injection-board" element={<Navigate to="/production/injection-board" replace />} />
-            <Route path="/next/production/injection-board/index.html" element={<Navigate to="/production/injection-board" replace />} />
+            <Route path="/next/production/injection-board" element={<Navigate to="/boards/injection" replace />} />
+            <Route path="/next/production/injection-board/index.html" element={<Navigate to="/boards/injection" replace />} />
             <Route path="/next/mes/monitoring" element={<Navigate to="/mes/monitoring" replace />} />
             <Route path="/next/inventory/raw-materials" element={<Navigate to="/sales/raw-materials" replace />} />
             <Route path="/field" element={<PrivateRoute><PageTransition><FieldLauncherPage /></PageTransition></PrivateRoute>} />
@@ -729,6 +762,7 @@ function AppContent() {
 
             {/* Injection page (single) */}
             <Route path="/injection/dashboard" element={<PrivateRoute><PageTransition><InjectionDashboardPage /></PageTransition></PrivateRoute>} />
+            <Route path="/injection/moulds" element={<Suspense fallback={<RouteLoading />}><MouldManagementPage /></Suspense>} />
             <Route path="/injection" element={<PrivateRoute><PageTransition><SummaryPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/setup" element={<PrivateRoute><PageTransition><InjectionSetupPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/monitoring" element={<PrivateRoute><PageTransition><InjectionMonitoringPage /></PageTransition></PrivateRoute>} />
@@ -737,9 +771,9 @@ function AppContent() {
             {/* Production */}
             <Route path="/production" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><ProductionDashboardPage /></Suspense></PageTransition></PrivateRoute>} />
             <Route path="/production/plans" element={<Navigate to="/production/plan" replace />} />
-            <Route path="/production/injection-board" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense></PrivateRoute>} />
-            <Route path="/production/injection-board/" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense></PrivateRoute>} />
-            <Route path="/production/injection-board/index.html" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense></PrivateRoute>} />
+            <Route path="/production/injection-board" element={<Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense>} />
+            <Route path="/production/injection-board/" element={<Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense>} />
+            <Route path="/production/injection-board/index.html" element={<Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense>} />
             <Route path="/production/plan" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><ProductionPlansPage /></Suspense></PageTransition></PrivateRoute>} />
             <Route path="/production/stats" element={<PrivateRoute><PageTransition><ProductionStatsPage /></PageTransition></PrivateRoute>} />
 

@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Factory, History } from "lucide-react";
+import { Factory, History, Maximize2, Minimize2, X } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
 import {
   getInjectionProductionMatrix,
@@ -1288,6 +1288,17 @@ export function InjectionBoardPage() {
     }
   }
 
+  async function leaveBoard() {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    }
+    if (window.opener) {
+      window.close();
+      return;
+    }
+    window.location.assign("/boards");
+  }
+
   return (
     <main className={`injection-board${isVisitorMode ? " injection-board--visitor" : ""}`}>
       <header className="injection-board__topbar">
@@ -1328,9 +1339,11 @@ export function InjectionBoardPage() {
             title={isFullscreen ? copy.exitFullscreen : copy.fullscreen}
             type="button"
           >
-            ⛶
+            {isFullscreen ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
           </button>
-          <button className="injection-board__action" onClick={() => window.close()} title={copy.close} type="button">×</button>
+          <button aria-label={copy.close} className="injection-board__action" onClick={() => void leaveBoard()} title={copy.close} type="button">
+            <X aria-hidden="true" />
+          </button>
         </div>
       </header>
 
