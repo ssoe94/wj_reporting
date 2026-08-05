@@ -62,6 +62,37 @@ test.describe('production plans operational scenario', () => {
     guard.assertClean();
   });
 
+  test('loads a local sample plan without uploading a workbook', async ({ page }) => {
+    const guard = installPageIssueGuard(page);
+    await installOperationalApiMocks(page);
+    await installDevSession(page, 'ko');
+
+    await page.goto('/production/plans');
+    await page.getByRole('button', { name: '샘플 계획 보기' }).click();
+
+    await expect(page.getByText('로컬 샘플 생산계획을 표시했습니다.')).toBeVisible();
+    const sampleMachine = page.locator('[data-order-key="injection:650T-10"]');
+    await expect(sampleMachine).toBeVisible();
+    await expect(sampleMachine).toContainText('65UQ79');
+    await expect(sampleMachine).toContainText('AAN30078444');
+    await expect(sampleMachine).toContainText('Cavity');
+    await expect(sampleMachine).toContainText('2 Part 동시');
+    await expect(sampleMachine).not.toContainText('선택한 Part No.가 동일 사출 사이클에서 함께 생산됩니다.');
+
+    const groupedSampleRow = page.locator('[data-order-key="injection:650T-10"] [data-record-key="id:900004"]');
+    await groupedSampleRow.getByRole('button', { name: '수정' }).click();
+    await expect(groupedSampleRow).toContainText('저장 시 묶인 Part No. 모두 2x2 Cavity로 저장됩니다.');
+    await expect(groupedSampleRow).toContainText('AAN30078443 · 2x2 · 수량 2,520');
+    await expect(groupedSampleRow).toContainText('AAN30078444 · 2x2 · 수량 2,520');
+    await expect(groupedSampleRow).toContainText('동시생산 품목은 계획 수량과 순서를 같은 사출기 내에서 맞춰주세요.');
+    await groupedSampleRow.getByRole('button', { name: '저장' }).click();
+    await expect(groupedSampleRow).not.toHaveClass(/schedule-job--editing/);
+    await expect(sampleMachine.locator('[data-record-key="id:900005"]')).toContainText('2 Part 동시');
+
+    await expectNoUndefinedOrNaN(page);
+    guard.assertClean();
+  });
+
   test('shows grouped cavity details and warns only for a cross-machine group', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);
@@ -108,7 +139,7 @@ test.describe('production plans operational scenario', () => {
     await expect(validGroupRow).toContainText('2 Part 동시');
     await expect(validGroupRow).toContainText('함께 생산 Part No.');
     await expect(validGroupRow).toContainText('PART-B');
-    await expect(validGroupRow).toContainText('동일 사출 사이클에서 함께 생산됩니다.');
+    await expect(validGroupRow).not.toContainText('동일 사출 사이클에서 함께 생산됩니다.');
     await expect(validGroupRow.getByText('같은 사출기 내 Part No.를 선택하세요.')).toHaveCount(0);
     await expect(validGroupRow.getByRole('button', { name: '저장' })).toHaveCount(0);
     await validGroupRow.getByRole('button', { name: '수정' }).click();

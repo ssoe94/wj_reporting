@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Check, Pencil, X } from "lucide-react";
+import { CalendarDays, Check, FileSpreadsheet, Pencil, X } from "lucide-react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { ko, zhCN } from "date-fns/locale";
@@ -90,6 +90,11 @@ type UploadChangeReport = {
   processes: ProcessChangeSummary[];
 };
 
+type LocalSamplePlan = {
+  date: string;
+  plans: PlanSnapshot;
+};
+
 type DraggedJob = {
   orderKey: string;
   recordKey: string;
@@ -112,8 +117,15 @@ type CavityEditState = {
   parts: number;
   cavity: number;
   partNos: string[];
+  impactRows: CavityImpactRow[];
+  hasQuantityMismatch: boolean;
   missingPartners: boolean;
   hasInvalidMachinePartner: boolean;
+};
+
+type CavityImpactRow = {
+  partNo: string;
+  quantity: number;
 };
 
 const cavityGroupColors = ["#008ec3", "#00a65a", "#7c3aed", "#f97316", "#0f766e", "#db2777"];
@@ -199,6 +211,11 @@ const pageCopy = {
     replaceRule: "선택한 파일의 공정만 새 파일 기준으로 교체됩니다.",
     uploadSection: "업로드",
     openUpload: "생산계획 업로드",
+    loadLocalSample: "샘플 계획 보기",
+    localSampleLoaded: "로컬 샘플 생산계획을 표시했습니다. 서버에는 저장되지 않습니다.",
+    cavityAutoApply: "저장 시 묶인 Part No. 모두 {pattern} Cavity로 저장됩니다.",
+    cavityQuantityGuide: "동시생산 품목은 계획 수량과 순서를 같은 사출기 내에서 맞춰주세요.",
+    cavityQuantityMismatch: "수량 확인 필요",
     close: "닫기",
     dashboardSection: "현황",
     machinesSection: "설비",
@@ -296,6 +313,11 @@ const pageCopy = {
     replaceRule: "仅按已选择文件的工序替换现有计划。",
     uploadSection: "上传",
     openUpload: "上传生产计划",
+    loadLocalSample: "查看样例计划",
+    localSampleLoaded: "已显示本地样例生产计划，未保存到服务器。",
+    cavityAutoApply: "保存时，已组合的 Part No. 都会保存为 {pattern} Cavity。",
+    cavityQuantityGuide: "共同生产项目需要在同一注塑机内对齐计划数量和顺序。",
+    cavityQuantityMismatch: "需要确认数量",
     close: "关闭",
     dashboardSection: "现况",
     machinesSection: "设备",
@@ -419,6 +441,122 @@ function getChangeActionLabel(action: ProductionPlanChangeLog["action"], copy: R
   return copy.changeActionDelete;
 }
 
+function buildLocalSamplePlan(date: string): LocalSamplePlan {
+  const updatedAt = `${date}T08:30:00+08:00`;
+  const cavityGroup = "AAN30078443+AAN30078444";
+  return {
+    date,
+    plans: {
+      injection: [
+        {
+          id: 900001,
+          machine_name: "850T-8",
+          model_name: "34GN850P-BC.AEUOMKN",
+          part_no: "ABJ76627101",
+          lot_no: "6G1M05F2",
+          planned_quantity: 237,
+          cavity: 1,
+          cavity_pattern: "1x1",
+          parts_per_shot: 1,
+          total_cavity: 1,
+          sequence: 1,
+          updated_at: updatedAt,
+        },
+        {
+          id: 900002,
+          machine_name: "850T-9",
+          model_name: "24G411B-BB.AAUYJVN",
+          part_no: "ACQ30776301",
+          lot_no: "6I1M04VQ",
+          planned_quantity: 756,
+          cavity: 1,
+          cavity_pattern: "1x1",
+          parts_per_shot: 1,
+          total_cavity: 1,
+          sequence: 1,
+          updated_at: updatedAt,
+        },
+        {
+          id: 900003,
+          machine_name: "850T-9",
+          model_name: "24G411B-BB.AWPYJVN",
+          part_no: "ACQ30776301",
+          lot_no: "6I1M05XJ",
+          planned_quantity: 1164,
+          cavity: 1,
+          cavity_pattern: "1x1",
+          parts_per_shot: 1,
+          total_cavity: 1,
+          sequence: 2,
+          updated_at: updatedAt,
+        },
+        {
+          id: 900004,
+          machine_name: "650T-10",
+          model_name: "65UQ79",
+          part_no: "AAN30078443",
+          lot_no: "6HPXXL0A",
+          planned_quantity: 2520,
+          cavity: 2,
+          cavity_pattern: "2x2",
+          parts_per_shot: 2,
+          cavity_group: cavityGroup,
+          total_cavity: 4,
+          sequence: 1,
+          updated_at: updatedAt,
+        },
+        {
+          id: 900005,
+          machine_name: "650T-10",
+          model_name: "65UQ79",
+          part_no: "AAN30078444",
+          lot_no: "6HPXXL09",
+          planned_quantity: 2520,
+          cavity: 2,
+          cavity_pattern: "2x2",
+          parts_per_shot: 2,
+          cavity_group: cavityGroup,
+          total_cavity: 4,
+          sequence: 2,
+          updated_at: updatedAt,
+        },
+      ],
+      machining: [
+        {
+          id: 901001,
+          machine_name: "가공 1라인",
+          model_name: "24G411B-BB",
+          part_no: "ACQ30776301",
+          lot_no: "M-240805-01",
+          planned_quantity: 1200,
+          sequence: 1,
+          updated_at: updatedAt,
+        },
+        {
+          id: 901002,
+          machine_name: "가공 2라인",
+          model_name: "65UQ79",
+          part_no: "AAN30078443",
+          lot_no: "M-240805-02",
+          planned_quantity: 1800,
+          sequence: 1,
+          updated_at: updatedAt,
+        },
+        {
+          id: 901003,
+          machine_name: "가공 2라인",
+          model_name: "65UQ79",
+          part_no: "AAN30078444",
+          lot_no: "M-240805-03",
+          planned_quantity: 1800,
+          sequence: 2,
+          updated_at: updatedAt,
+        },
+      ],
+    },
+  };
+}
+
 function getMachineSortNumber(machineName: string) {
   const match = machineName.match(/-(\d+)\s*$/);
   return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
@@ -437,6 +575,34 @@ function parseCavityPattern(value: string | null | undefined, fallbackCavity = 1
   const cavity = Math.max(1, Number(fallbackCavity) || 1);
   const partsPerShot = Math.max(1, Number(fallbackParts) || 1);
   return { pattern: `${partsPerShot}x${cavity}`, partsPerShot, cavity };
+}
+
+function applyCavityPatternToPlanRecords(
+  records: ProductionPlanRecord[],
+  partNos: string[],
+  cavityPattern: string,
+) {
+  const normalizedPartNos = [...new Set(partNos.map((partNo) => partNo.trim().toUpperCase()).filter(Boolean))];
+  if (!normalizedPartNos.length) return records;
+
+  const parsed = parseCavityPattern(cavityPattern);
+  const partNoSet = new Set(normalizedPartNos);
+  const cavityGroup = parsed.partsPerShot > 1 ? normalizedPartNos.join("+") : normalizedPartNos[0];
+  const updatedAt = new Date().toISOString();
+
+  return records.map((record) => {
+    const partNo = String(record.part_no ?? "").trim().toUpperCase();
+    if (!partNoSet.has(partNo)) return record;
+    return {
+      ...record,
+      cavity: parsed.cavity,
+      cavity_pattern: parsed.pattern,
+      parts_per_shot: parsed.partsPerShot,
+      cavity_group: cavityGroup,
+      total_cavity: parsed.cavity * parsed.partsPerShot,
+      updated_at: updatedAt,
+    };
+  });
 }
 
 function buildMachineGroups(records: ProductionPlanRecord[], unsetMachineLabel: string, planType: PlanType) {
@@ -671,6 +837,7 @@ export function ProductionPlansPage() {
   const [cavityRowDrafts, setCavityRowDrafts] = useState<Record<string, CavityRowDraft>>({});
   const [draggedJob, setDraggedJob] = useState<DraggedJob | null>(null);
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
+  const [localSamplePlan, setLocalSamplePlan] = useState<LocalSamplePlan | null>(null);
   const [editDraft, setEditDraft] = useState<PlanEditDraft>({
     machine_name: "",
     part_no: "",
@@ -683,19 +850,22 @@ export function ProductionPlansPage() {
     queryKey: ["production", "plan-dates"],
     queryFn: getProductionPlanDates,
   });
+  const isViewingLocalSample = localSamplePlan?.date === selectedDate;
+  const canLoadLocalSample = import.meta.env.DEV;
 
   const dateOptions = useMemo(() => {
     return [
       ...new Set([
         selectedDate,
+        localSamplePlan?.date,
         ...(datesQuery.data?.injection ?? []),
         ...(datesQuery.data?.machining ?? []),
       ]),
     ]
-      .filter(Boolean)
+      .filter((date): date is string => Boolean(date))
       .sort()
       .reverse();
-  }, [datesQuery.data, selectedDate]);
+  }, [datesQuery.data, localSamplePlan?.date, selectedDate]);
 
   const dateOptionSet = useMemo(() => new Set(dateOptions), [dateOptions]);
 
@@ -721,12 +891,16 @@ export function ProductionPlansPage() {
 
   useEffect(() => {
     if (!datesQuery.data) return;
-    const allDates = [...datesQuery.data.injection, ...datesQuery.data.machining].sort().reverse();
+    const allDates = [
+      localSamplePlan?.date,
+      ...datesQuery.data.injection,
+      ...datesQuery.data.machining,
+    ].filter((date): date is string => Boolean(date)).sort().reverse();
     if (!allDates.length) return;
     if (!allDates.includes(selectedDate)) {
       setSelectedDate(allDates[0]);
     }
-  }, [datesQuery.data, selectedDate]);
+  }, [datesQuery.data, localSamplePlan?.date, selectedDate]);
 
   useEffect(() => {
     setPendingOrders({});
@@ -740,19 +914,19 @@ export function ProductionPlansPage() {
   const injectionItemsQuery = useQuery({
     queryKey: ["production", "plan-items", selectedDate, "injection"],
     queryFn: () => getProductionPlanItems(selectedDate, "injection"),
-    enabled: Boolean(selectedDate),
+    enabled: Boolean(selectedDate) && !isViewingLocalSample,
   });
 
   const machiningItemsQuery = useQuery({
     queryKey: ["production", "plan-items", selectedDate, "machining"],
     queryFn: () => getProductionPlanItems(selectedDate, "machining"),
-    enabled: Boolean(selectedDate),
+    enabled: Boolean(selectedDate) && !isViewingLocalSample,
   });
 
   const changeLogsQuery = useQuery({
     queryKey: ["production", "plan-change-logs", selectedDate],
     queryFn: () => getProductionPlanChangeLogs(selectedDate),
-    enabled: Boolean(selectedDate),
+    enabled: Boolean(selectedDate) && !isViewingLocalSample,
     retry: false,
   });
 
@@ -860,13 +1034,29 @@ export function ProductionPlansPage() {
       updates: PlanEditDraft;
       cavityUpdate?: { recordKey: string; partNos: string[]; cavityPattern: string };
     }) => {
-      const updatedPlan = await updateProductionPlanItem(selectedDate, variables.planType, variables.id, {
+      const normalizedUpdate = {
         machine_name: variables.updates.machine_name || null,
         part_no: variables.updates.part_no || null,
         model_name: variables.updates.model_name || null,
         lot_no: variables.updates.lot_no || null,
         planned_quantity: Number(variables.updates.planned_quantity) || 0,
+      };
+
+      if (isViewingLocalSample) {
+        const source = localSamplePlan?.plans[variables.planType].find((record) => record.id === variables.id);
+        if (!source) throw new Error(copy.rowUpdateError);
+        return {
+          ...source,
+          ...normalizedUpdate,
+          id: variables.id,
+          updated_at: new Date().toISOString(),
+        } as ProductionPlanRecord;
+      }
+
+      const updatedPlan = await updateProductionPlanItem(selectedDate, variables.planType, variables.id, {
+        ...normalizedUpdate,
       });
+      if (!updatedPlan) throw new Error(copy.rowUpdateError);
 
       if (variables.cavityUpdate) {
         await updateProductionPartCavityGroup(
@@ -877,7 +1067,7 @@ export function ProductionPlansPage() {
 
       return updatedPlan;
     },
-    onSuccess: async (_data, variables) => {
+    onSuccess: async (updatedPlan, variables) => {
       setEditingRowId(null);
       setRowEditError("");
       if (variables.cavityUpdate) {
@@ -887,6 +1077,41 @@ export function ProductionPlansPage() {
           return next;
         });
       }
+
+      if (isViewingLocalSample) {
+        setLocalSamplePlan((current) => {
+          if (!current || current.date !== selectedDate) return current;
+          const plans = { ...current.plans };
+          plans[variables.planType] = plans[variables.planType].map((record) => (
+            record.id === variables.id ? updatedPlan : record
+          ));
+          if (variables.planType === "injection" && variables.cavityUpdate) {
+            plans.injection = applyCavityPatternToPlanRecords(
+              plans.injection,
+              variables.cavityUpdate.partNos,
+              variables.cavityUpdate.cavityPattern,
+            );
+          }
+          return { ...current, plans };
+        });
+        return;
+      }
+
+      queryClient.setQueryData<ProductionPlanRecord[]>(
+        ["production", "plan-items", selectedDate, variables.planType],
+        (records) => (records ?? []).map((record) => (record.id === variables.id ? updatedPlan : record)),
+      );
+      if (variables.planType === "injection" && variables.cavityUpdate) {
+        queryClient.setQueryData<ProductionPlanRecord[]>(
+          ["production", "plan-items", selectedDate, "injection"],
+          (records) => applyCavityPatternToPlanRecords(
+            records ?? [],
+            variables.cavityUpdate!.partNos,
+            variables.cavityUpdate!.cavityPattern,
+          ),
+        );
+      }
+
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["production"] }),
         queryClient.invalidateQueries({ queryKey: ["production-plan-summary"] }),
@@ -901,6 +1126,7 @@ export function ProductionPlansPage() {
 
   const reorderMutation = useMutation({
     mutationFn: async (variables: { orderKey: string; planType: PlanType; records: ProductionPlanRecord[] }) => {
+      if (isViewingLocalSample) return;
       await Promise.all(
         variables.records.map((record, index) => {
           if (!record.id) return Promise.resolve(null);
@@ -916,6 +1142,25 @@ export function ProductionPlansPage() {
         delete next[variables.orderKey];
         return next;
       });
+
+      if (isViewingLocalSample) {
+        setLocalSamplePlan((current) => {
+          if (!current || current.date !== selectedDate) return current;
+          const orderMap = new Map(variables.records.map((record, index) => [record.id, index + 1]));
+          return {
+            ...current,
+            plans: {
+              ...current.plans,
+              [variables.planType]: current.plans[variables.planType].map((record) => ({
+                ...record,
+                sequence: record.id ? orderMap.get(record.id) ?? record.sequence : record.sequence,
+              })),
+            },
+          };
+        });
+        return;
+      }
+
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["production"] }),
         queryClient.invalidateQueries({ queryKey: ["production-plan-summary"] }),
@@ -925,8 +1170,8 @@ export function ProductionPlansPage() {
     },
   });
 
-  const injectionItems = injectionItemsQuery.data ?? [];
-  const machiningItems = machiningItemsQuery.data ?? [];
+  const injectionItems = isViewingLocalSample ? localSamplePlan?.plans.injection ?? [] : injectionItemsQuery.data ?? [];
+  const machiningItems = isViewingLocalSample ? localSamplePlan?.plans.machining ?? [] : machiningItemsQuery.data ?? [];
   const totalInjectionQty = injectionItems.reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0);
   const totalMachiningQty = machiningItems.reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0);
   const injectionMachineGroups = buildMachineGroups(injectionItems, copy.unsetMachine, "injection");
@@ -947,6 +1192,19 @@ export function ProductionPlansPage() {
     event.preventDefault();
     setUploadStatus(null);
     uploadMutation.mutate();
+  }
+
+  function handleLoadLocalSample() {
+    const sample = buildLocalSamplePlan(getSeoulDateString());
+    setLocalSamplePlan(sample);
+    setSelectedDate(sample.date);
+    setIsDateCalendarOpen(false);
+    setIsUploadModalOpen(false);
+    setInjectionFile(null);
+    setMachiningFile(null);
+    setFileInputKey((value) => value + 1);
+    setUploadChangeReport(null);
+    setUploadStatus({ tone: "success", message: copy.localSampleLoaded });
   }
 
   function handleFileDrop(event: DragEvent<HTMLDivElement>, planType: PlanType) {
@@ -1253,6 +1511,27 @@ export function ProductionPlansPage() {
     });
   }
 
+  function getCavityImpactRows(record: ProductionPlanRecord, records: ProductionPlanRecord[], partNos: string[]) {
+    const originalPartNo = getNormalizedPartNo(record);
+    const editedPartNo = editDraft.part_no.trim().toUpperCase() || originalPartNo;
+    const seen = new Set<string>();
+
+    return partNos.flatMap((partNo) => {
+      const normalizedPartNo = partNo === originalPartNo ? editedPartNo : partNo.trim().toUpperCase();
+      if (!normalizedPartNo || seen.has(normalizedPartNo)) return [];
+      seen.add(normalizedPartNo);
+
+      const sourceRecord = normalizedPartNo === editedPartNo
+        ? record
+        : records.find((candidate) => getNormalizedPartNo(candidate) === normalizedPartNo);
+      const quantity = normalizedPartNo === editedPartNo
+        ? Number(editDraft.planned_quantity) || 0
+        : Number(sourceRecord?.planned_quantity) || 0;
+
+      return [{ partNo: normalizedPartNo, quantity }];
+    });
+  }
+
   function getCavityNumbers(draft: CavityRowDraft) {
     const parts = Math.max(1, Number(draft.parts) || 1);
     const cavity = Math.max(1, Number(draft.cavity) || 1);
@@ -1282,11 +1561,15 @@ export function ProductionPlansPage() {
     const requiredPartners = Math.max(0, parts - 1);
     const options = getCavityPartOptions(record, records);
     const validPartNos = new Set(options.map((option) => option.partNo));
+    const impactRows = getCavityImpactRows(record, records, partNos);
+    const firstQuantity = impactRows[0]?.quantity ?? 0;
     return {
       draft,
       parts,
       cavity,
       partNos,
+      impactRows,
+      hasQuantityMismatch: parts > 1 && impactRows.length > 1 && impactRows.some((row) => row.quantity !== firstQuantity),
       missingPartners: requiredPartners > 0 && draft.partners.length < requiredPartners,
       hasInvalidMachinePartner: draft.partners.some((partNo) => !validPartNos.has(partNo)),
     };
@@ -1315,9 +1598,11 @@ export function ProductionPlansPage() {
 
   function renderCavityInlineEditor(recordKey: string, record: ProductionPlanRecord, records: ProductionPlanRecord[]) {
     const cavityState = getCavityEditState(recordKey, record, records);
-    const { draft, parts, missingPartners, hasInvalidMachinePartner } = cavityState;
+    const { draft, parts, cavity, impactRows, hasQuantityMismatch, missingPartners, hasInvalidMachinePartner } = cavityState;
     const requiredPartners = Math.max(0, parts - 1);
     const options = getCavityPartOptions(record, records);
+    const patternLabel = `${parts}x${cavity}`;
+    const shouldShowImpact = parts > 1 && impactRows.length > 1 && !missingPartners && !hasInvalidMachinePartner;
 
     return (
       <div className="cavity-inline-editor">
@@ -1369,6 +1654,24 @@ export function ProductionPlansPage() {
             ) : null}
           </label>
         ) : null}
+        {shouldShowImpact ? (
+          <div
+            className={`cavity-inline-editor__impact${hasQuantityMismatch ? " cavity-inline-editor__impact--warning" : ""}`}
+            role={hasQuantityMismatch ? "alert" : "note"}
+          >
+            <span>{copy.cavityAutoApply.replace("{pattern}", patternLabel)}</span>
+            <div>
+              {impactRows.map((row) => (
+                <em key={row.partNo}>
+                  {row.partNo} · {patternLabel} · {copy.qty} {formatQuantity(row.quantity, language)}
+                </em>
+              ))}
+            </div>
+            <small>
+              {hasQuantityMismatch ? `${copy.cavityQuantityMismatch} · ${copy.cavityQuantityGuide}` : copy.cavityQuantityGuide}
+            </small>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -1380,22 +1683,25 @@ export function ProductionPlansPage() {
       Number(record.parts_per_shot ?? 1),
     );
     const partners = getCavityGroupPartNos(record, records);
+    const partnerLabel = partners.length ? partners.join(", ") : cavityCopy.needPartner;
 
     return (
       <div className="schedule-job__cavity-summary">
-        <div className="cavity-summary__pattern" aria-label={`${copy.cavity} ${parsed.cavity}`}>
+        <span className="cavity-summary__pattern" aria-label={`${copy.cavity} ${parsed.cavity}`}>
           <span>{copy.cavity}</span>
           <strong>{parsed.cavity}</strong>
-          {parsed.partsPerShot > 1 ? <small>{parsed.partsPerShot} {cavityCopy.partsTogether}</small> : null}
-        </div>
+        </span>
         {parsed.partsPerShot > 1 ? (
-          <div className="cavity-summary__partners">
+          <span className="cavity-summary__parts">{parsed.partsPerShot} {cavityCopy.partsTogether}</span>
+        ) : null}
+        {parsed.partsPerShot > 1 ? (
+          <span
+            className={`cavity-summary__partners${partners.length ? "" : " cavity-summary__partners--warning"}`}
+            title={`${cavityCopy.partner}: ${partnerLabel}`}
+          >
             <span>{cavityCopy.partner}</span>
-            <div>
-              {partners.length ? partners.map((partNo) => <strong key={partNo}>{partNo}</strong>) : <em>{cavityCopy.needPartner}</em>}
-            </div>
-            {partners.length ? <small>{cavityCopy.partnerHint}</small> : null}
-          </div>
+            <strong>{partnerLabel}</strong>
+          </span>
         ) : null}
       </div>
     );
@@ -1968,6 +2274,16 @@ export function ProductionPlansPage() {
             ) : null}
           </div>
           <div className="plan-hero__actions">
+            {canLoadLocalSample ? (
+              <button
+                className="button button--ghost plan-hero__sample"
+                onClick={handleLoadLocalSample}
+                type="button"
+              >
+                <FileSpreadsheet aria-hidden="true" size={15} strokeWidth={1.9} />
+                {copy.loadLocalSample}
+              </button>
+            ) : null}
             <Link className="button button--ghost plan-hero__link" to="/production">
               {copy.goDashboard}
             </Link>
@@ -1991,7 +2307,7 @@ export function ProductionPlansPage() {
         </div>
       ) : null}
 
-      {datesQuery.isLoading || injectionItemsQuery.isLoading || machiningItemsQuery.isLoading ? (
+      {!isViewingLocalSample && (datesQuery.isLoading || injectionItemsQuery.isLoading || machiningItemsQuery.isLoading) ? (
         <LoadingBlock label={language === "ko" ? "생산 계획을 불러오는 중입니다." : "正在加载生产计划。"} />
       ) : null}
 
