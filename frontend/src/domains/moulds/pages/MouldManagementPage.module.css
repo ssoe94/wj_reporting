@@ -2041,11 +2041,15 @@
   }
 
   .hero {
+    position: sticky;
+    z-index: 20;
+    top: 0;
     align-items: stretch;
     flex-direction: column;
     gap: 10px;
     min-height: 0;
     padding: 10px;
+    transition: gap 180ms ease, padding 180ms ease, box-shadow 180ms ease;
   }
 
   .titleGroup {
@@ -2092,10 +2096,51 @@
     grid-column: span 2;
   }
 
+  .languageSwitch button {
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+  }
+
+  .languageSwitch .languageActive {
+    background: #0a82b2;
+    color: #fff;
+    box-shadow: 0 3px 10px rgba(10, 130, 178, 0.22);
+  }
+
   .topAction {
     width: 100%;
     min-width: 0;
     height: 44px;
+  }
+
+  .compactHero {
+    gap: 6px;
+    padding: 6px 8px;
+    box-shadow: 0 8px 20px rgba(31, 61, 80, 0.14);
+  }
+
+  .compactHero .searchField,
+  .compactHero .freshness,
+  .compactHero .autoRefresh {
+    display: none;
+  }
+
+  .compactHero .titleGroup p,
+  .compactHero .titleGroup > div > span {
+    display: none;
+  }
+
+  .compactHero .titleGroup h1 {
+    font-size: 1.05rem;
+  }
+
+  .compactHero .titleLogo,
+  .compactHero .topAction {
+    height: 40px;
+  }
+
+  .compactHero .titleLogo {
+    width: 42px;
   }
 
   .filterStrip {

@@ -180,6 +180,70 @@ final result: passed
 
 ---
 
+# Incremental Design QA — Mobile Language Switch and Collapsing Headers
+
+## Comparison target
+
+- Source visual truth: `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/E998AB3E-0F27-4CCF-B604-8710620BC452/1-사진-1.jpg` (`590 × 1280` px, including iPhone browser chrome).
+- Browser-rendered injection implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-language-injection-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-language-injection-mobile-compact.jpg`.
+- Browser-rendered mould implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-language-mould-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-language-mould-mobile-compact.jpg`.
+- Combined source/default/compact comparison: `/private/tmp/wj-dashboard-hub-deploy/qa-language-switch-comparison.jpg` (`1280 × 920` px).
+- Implementation routes: `http://127.0.0.1:5180/boards/injection` and `http://127.0.0.1:5180/boards/moulds`.
+
+## Normalization and state
+
+- All implementation captures use a `390 × 844` CSS viewport at device pixel ratio 1 and are saved at `390 × 844` pixels.
+- The combined comparison scales the source image to the same 390 px column width as the implementation. Browser chrome remains visible only in the source and is excluded from app-owned fidelity findings.
+- Default state: Korean locale, top of page, populated mould data; injection data in its existing live-loading state.
+- Compact state: board content scrolled more than 56 CSS px, Korean locale, sticky mobile header collapsed.
+
+## Full-view and focused evidence
+
+- Full-view comparison shows that the original one-third control row has been replaced by a half-width language selector plus two quarter-width icon actions. Each language option now has enough horizontal space to read as an intentional segmented control.
+- Focused header comparison shows a filled WJ-blue active language segment, muted inactive segment, and matching 44 px control height across both boards.
+- After scrolling, both mobile headers reduce from approximately 235 px to 104 px while preserving home, board identity, language, refresh, and fullscreen controls. Secondary timestamp, search, and history content is removed only from the compact state.
+- Injection and mould pages both remain exactly 390 px wide with no horizontal overflow. Compact injection language/action widths measure approximately 167/80.5 px; compact mould widths measure approximately 174.5/83.75 px.
+
+## Required fidelity surfaces
+
+- Fonts and typography: KOR and 中文 use the existing UI font stack at 0.72 rem with slightly increased letter spacing; active and inactive labels remain legible without wrapping. Compact titles retain the strongest hierarchy at 1.05 rem.
+- Spacing and layout rhythm: the mobile action row uses a 2:1:1 proportion, 6–7 px gaps, and consistent 44 px touch height. Compact headers use 6 px internal gaps and 6–8 px padding, reducing vertical obstruction without crowding controls.
+- Colors and visual tokens: both boards share the existing `#0a82b2` active fill, white active text, blue-tinted shadow, pale inactive surface, and neutral outlined icon actions.
+- Image quality and asset fidelity: existing WJ logo and installed Lucide icons are reused at their intended rendered sizes; no new raster, custom SVG, CSS drawing, emoji, or placeholder asset was introduced.
+- Copy and content: KOR/中文 labels and all existing Korean/Chinese board copy remain unchanged. Compact mode hides only duplicate secondary context and does not remove a primary action.
+
+## Comparison history
+
+### Pass 1
+
+- [P2] The source showed the language control constrained to one third of the row, making two language options look cramped and visually weaker than neighboring fullscreen/close controls.
+  - Fix: changed the mobile control grid to a 2:1:1 proportion and gave the selected language a clear filled state.
+- [P2] The initial sticky mobile headers occupied roughly 235 px while scrolling, obscuring too much operational content.
+  - Fix: added a 56 px scroll threshold and a compact 104 px two-row header that retains essential controls while hiding secondary metadata/search/history.
+
+### Pass 2
+
+- Post-fix browser evidence shows no actionable P0, P1, or P2 issue. Both default and compact states have complete controls, readable labels, stable 390 px width, and no scroll-trigger oscillation.
+
+## Interaction and runtime checks
+
+- Injection KOR → 中文 → KOR switching passed; the Chinese title became `注塑实时看板` and `aria-pressed="true"` moved to 中文.
+- Mould KOR → 中文 → KOR switching passed; the Chinese title became `模具实时看板` and `aria-pressed="true"` moved to 中文.
+- Injection window scroll activated `is-compact` at 404 px scroll position; mould container scroll activated the compact hero at 520 px.
+- Returning both scroll containers to the top removed the compact state and restored the full header.
+- `npm run build` — passed.
+- `git diff --check` — passed.
+- No visible application error or horizontal overflow was present in the verified states.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual findings remain.
+- P3: compact mode intentionally removes live timestamp details; returning to the top restores the full header immediately.
+
+final result: passed
+
+---
+
 # Incremental Design QA — Mould and Injection Board Headers
 
 ## Comparison target

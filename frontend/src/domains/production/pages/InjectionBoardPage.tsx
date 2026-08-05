@@ -1128,6 +1128,7 @@ export function InjectionBoardPage() {
   const [language, setLanguage] = useStoredLanguage();
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [isVisitorMode, setIsVisitorMode] = useState(false);
+  const [isMobileHeaderCompact, setIsMobileHeaderCompact] = useState(false);
   const [businessDate, setBusinessDate] = useState(() => getShanghaiBusinessDateString());
   const previousBusinessDate = addIsoDateDays(businessDate, -1);
   const [isPreviousSummaryOpen, setIsPreviousSummaryOpen] = useState(false);
@@ -1237,6 +1238,20 @@ export function InjectionBoardPage() {
   }, []);
 
   useEffect(() => {
+    const syncMobileHeader = () => {
+      const shouldCompact = window.innerWidth <= 760 && window.scrollY > 56;
+      setIsMobileHeaderCompact((current) => current === shouldCompact ? current : shouldCompact);
+    };
+    syncMobileHeader();
+    window.addEventListener("scroll", syncMobileHeader, { passive: true });
+    window.addEventListener("resize", syncMobileHeader);
+    return () => {
+      window.removeEventListener("scroll", syncMobileHeader);
+      window.removeEventListener("resize", syncMobileHeader);
+    };
+  }, []);
+
+  useEffect(() => {
     const syncBusinessDate = () => {
       const nextBusinessDate = getShanghaiBusinessDateString();
       setBusinessDate((current) => current === nextBusinessDate ? current : nextBusinessDate);
@@ -1313,7 +1328,7 @@ export function InjectionBoardPage() {
 
   return (
     <main className={`injection-board${isVisitorMode ? " injection-board--visitor" : ""}`}>
-      <header className="injection-board__topbar">
+      <header className={`injection-board__topbar${isMobileHeaderCompact ? " is-compact" : ""}`}>
         <div className="injection-board__title">
           <button
             aria-label={copy.backToBoards}
@@ -1354,8 +1369,8 @@ export function InjectionBoardPage() {
           </button>
           <span className="injection-board__refresh-badge">{copy.autoRefresh}</span>
           <div className="injection-board__language" aria-label="Language">
-            <button className={language === "ko" ? "is-active" : ""} onClick={() => changeLanguage("ko")} type="button">KOR</button>
-            <button className={language === "zh" ? "is-active" : ""} onClick={() => changeLanguage("zh")} type="button">中文</button>
+            <button aria-pressed={language === "ko"} className={language === "ko" ? "is-active" : ""} onClick={() => changeLanguage("ko")} type="button">KOR</button>
+            <button aria-pressed={language === "zh"} className={language === "zh" ? "is-active" : ""} onClick={() => changeLanguage("zh")} type="button">中文</button>
           </div>
           <button
             aria-label={copy.refresh}

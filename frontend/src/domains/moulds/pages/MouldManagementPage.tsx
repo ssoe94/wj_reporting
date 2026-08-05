@@ -511,6 +511,7 @@ export function MouldManagementPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [focusedZone, setFocusedZone] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+  const [isMobileHeaderCompact, setIsMobileHeaderCompact] = useState(false);
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -634,8 +635,15 @@ export function MouldManagementPage() {
   }
 
   return (
-    <section className={`${styles.page} ${focusedZone ? styles.zoneFocusMode : ""}`} data-testid="mould-management-page">
-      <header className={styles.hero}>
+    <section
+      className={`${styles.page} ${focusedZone ? styles.zoneFocusMode : ""}`}
+      data-testid="mould-management-page"
+      onScroll={(event) => {
+        const shouldCompact = window.innerWidth <= 720 && event.currentTarget.scrollTop > 56;
+        setIsMobileHeaderCompact((current) => current === shouldCompact ? current : shouldCompact);
+      }}
+    >
+      <header className={`${styles.hero} ${isMobileHeaderCompact ? styles.compactHero : ""}`}>
         <div className={styles.titleGroup}>
           <button aria-label={copy.backToBoards} className={styles.topAction} onClick={() => navigate("/boards")} title={copy.backToBoards} type="button">
             <Home aria-hidden="true" size={23} />
