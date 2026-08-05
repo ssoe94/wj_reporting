@@ -317,3 +317,70 @@ final result: passed
 - P3: the injection board's three mobile metadata cells are intentionally compact; on devices narrower than 360 px, abbreviating the labels may improve scan speed, but no clipping occurs at the requested 390 px phone viewport.
 
 final result: passed
+
+---
+
+# Incremental Design QA — Mobile Header Information-Preserving Collapse
+
+## Comparison target
+
+- Source visual truth (injection): `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/70B48FF3-70F9-4AC7-A629-9C4A6734791F/1-사진-1.jpg` (`590 × 1280` px).
+- Source visual truth (mould): `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/70B48FF3-70F9-4AC7-A629-9C4A6734791F/2-사진-2.jpg` (`590 × 1280` px).
+- Browser-rendered injection implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-injection-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-injection-compact.jpg`.
+- Browser-rendered mould implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-mould-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-mould-compact.jpg`.
+- Combined comparison input: `/private/tmp/wj-dashboard-hub-deploy/qa-header-v2-comparison.jpg` (`1660 × 930` px).
+- Implementation routes: `http://127.0.0.1:5180/boards/injection` and `http://127.0.0.1:5180/boards/moulds`.
+
+## Normalization and state
+
+- The two source captures include iPhone browser chrome. App-owned implementation captures use a `390 × 844` CSS viewport at device pixel ratio 1 and are saved at `390 × 844` pixels.
+- The comparison board scales every source/implementation image to 390 px width. Browser chrome and live-data timing differences are excluded from app-owned visual findings.
+- Default state: Korean locale at the top of each board. Compact state: more than 56 CSS px scrolled, after the 260 ms collapse transition completed.
+
+## Full-view and focused evidence
+
+- Both leading home buttons are absent. The injection title now begins with its factory mode control; the mould title begins with the existing WJ logo.
+- The injection language switch now uses the same two equal grid columns, active fill, inactive surface, 44 px height, radius, and shadow treatment as the mould switch. At 390 px, its two tracks measure `78.5 px` each; mould measures `82.25 px` each because of its 7 px action-row gaps.
+- Injection collapse preserves all three 48 px operational time cells: 기준일, MES 기준, and 화면 갱신. Its header transitions from 220 px through 136.4 px to 114 px.
+- Mould collapse preserves the full 44 px 최종 변경 시각 row while collapsing the title and search rows. Its header transitions from 220 px through 131 px to 112 px.
+- The compact screenshots show the retained information rows above live content with no horizontal overflow and no hidden primary language/refresh/fullscreen action.
+
+## Required fidelity surfaces
+
+- Fonts and typography: the existing Korean/Chinese font stack, label weights, timestamp hierarchy, and compact control labels are unchanged. Retained time values stay readable without wrapping.
+- Spacing and layout rhythm: both boards collapse to approximately 112–114 px with a consistent information row plus action row. The 260 ms cubic-bezier transition animates title/search/history height, opacity, and translation instead of abruptly toggling display.
+- Colors and visual tokens: both language controls share the WJ blue active fill, white active text, pale inactive background, blue shadow, and neutral outline.
+- Image quality and asset fidelity: the existing mould WJ logo and Lucide factory/refresh/fullscreen icons remain sharp. The removed home icons were not replaced by custom artwork or placeholders.
+- Copy and content: all Korean/Chinese labels remain intact. Compact injection retains 기준일/MES 기준/화면 갱신; compact mould retains 최종 변경 시각.
+
+## Comparison history
+
+### Pass 1
+
+- [P2] Both source headers still led with a home button that the user no longer wanted.
+  - Fix: removed both home controls and their unused navigation handlers/imports.
+- [P2] The injection language wrapper used flex sizing, so its KOR/中文 segments did not fill the available half-width control like the mould switch.
+  - Fix: changed the shared injection language wrapper to a two-column grid.
+- [P2] The previous compact state hid every timestamp and switched layout abruptly with `display: none`.
+  - Fix: retained the requested time rows and animated known heights, opacity, translation, padding, gaps, and borders over 260 ms.
+
+### Pass 2
+
+- Post-fix browser metrics show intermediate heights between default and compact endpoints, proving the collapse is progressive rather than discrete. No actionable P0, P1, or P2 issue remains.
+
+## Interaction and runtime checks
+
+- Injection KOR → 中文 → KOR passed; the Chinese title became `注塑实时看板` and `aria-pressed="true"` moved correctly.
+- Mould KOR → 中文 → KOR passed; the Chinese title became `模具实时看板` and `aria-pressed="true"` moved correctly.
+- Returning the mould scroll container to the top restored the header from 112 px to 220 px and removed compact state. Injection used the same verified threshold/state implementation.
+- Injection document width and mould page width both remained 390 px at the 390 px viewport.
+- At `3840 × 2160`, injection and mould remained 3840 px wide with zero home controls; their headers measured approximately 125 px and 128 px respectively.
+- `npm run build` — passed.
+- `git diff --check` — passed.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual findings remain.
+- P3: the compact header intentionally removes the board title; the retained timestamps and controls provide the requested high-value sticky context with minimal obstruction.
+
+final result: passed

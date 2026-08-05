@@ -9,7 +9,6 @@ import {
   Expand,
   FileText,
   History,
-  Home,
   Info,
   Map as MapIcon,
   MapPin,
@@ -20,7 +19,6 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import {
   getMouldBoard,
   getMouldDetail,
@@ -500,7 +498,6 @@ function DetailContent({ copy, detail, language, tab }: {
 }
 
 export function MouldManagementPage() {
-  const navigate = useNavigate();
   const [language, setLanguage] = useStoredLanguage();
   const copy: Copy = COPY[language];
   const developmentFallback = import.meta.env.DEV && !USE_REMOTE_MOULD_API_IN_DEVELOPMENT;
@@ -645,9 +642,6 @@ export function MouldManagementPage() {
     >
       <header className={`${styles.hero} ${isMobileHeaderCompact ? styles.compactHero : ""}`}>
         <div className={styles.titleGroup}>
-          <button aria-label={copy.backToBoards} className={styles.topAction} onClick={() => navigate("/boards")} title={copy.backToBoards} type="button">
-            <Home aria-hidden="true" size={23} />
-          </button>
           <span className={styles.titleLogo}><img alt="" src="/logo-transparent.png" /></span>
           <div>
             <p>{copy.eyebrow}</p>

@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Factory, History, Home, Maximize2, Minimize2, RefreshCw } from "lucide-react";
+import { Factory, History, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
 import {
   getInjectionProductionMatrix,
@@ -1309,17 +1309,6 @@ export function InjectionBoardPage() {
     }
   }
 
-  async function leaveBoard() {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-    }
-    if (window.opener) {
-      window.close();
-      return;
-    }
-    window.location.assign("/boards");
-  }
-
   function refreshBoard() {
     void planQuery.refetch();
     void statusQuery.refetch();
@@ -1330,15 +1319,6 @@ export function InjectionBoardPage() {
     <main className={`injection-board${isVisitorMode ? " injection-board--visitor" : ""}`}>
       <header className={`injection-board__topbar${isMobileHeaderCompact ? " is-compact" : ""}`}>
         <div className="injection-board__title">
-          <button
-            aria-label={copy.backToBoards}
-            className="injection-board__action injection-board__home"
-            onClick={() => void leaveBoard()}
-            title={copy.backToBoards}
-            type="button"
-          >
-            <Home aria-hidden="true" />
-          </button>
           <button
             aria-label={isVisitorMode ? copy.disableVisitorMode : copy.enableVisitorMode}
             aria-pressed={isVisitorMode}
