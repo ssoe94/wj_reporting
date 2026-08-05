@@ -273,7 +273,65 @@ def _timestamp_iso(value: Any) -> str | None:
     ).astimezone(SHANGHAI).isoformat()
 
 
+def _nested_display_value(value: Any, *, depth: int = 0) -> Any:
+    """Return a safe scalar/list from BLACKLAKE's polymorphic fieldValue."""
+
+    if depth > 4 or value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, (str, int, float)):
+        return _json_safe(value)
+    if isinstance(value, Mapping):
+        for key in (
+            "mainProperty",
+            "$primaryValue",
+            "choiceValue",
+            "displayValue",
+            "fieldValueSingleChoiceValue",
+            "numberValue",
+            "decimalValue",
+            "textValue",
+            "dateValue",
+            "formulaValue",
+            "result",
+            "name",
+            "label",
+            "message",
+            "value",
+            "choiceCode",
+            "code",
+        ):
+            if key not in value:
+                continue
+            displayed = _nested_display_value(value.get(key), depth=depth + 1)
+            if displayed not in (None, "", [], {}):
+                return displayed
+        return None
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, bytearray)
+    ):
+        displayed = [
+            child
+            for item in value
+            if (child := _nested_display_value(item, depth=depth + 1))
+            not in (None, "", [], {})
+        ]
+        if len(displayed) == 1:
+            return displayed[0]
+        return displayed or None
+    return None
+
+
 def _field_display_value(field: Mapping[str, Any]) -> Any:
+    single_choice = field.get("fieldValueSingleChoiceValue")
+    if single_choice not in (None, ""):
+        return _nested_display_value(single_choice)
+
+    multiple_choices = field.get("fieldValueMultipleChoiceValues")
+    if isinstance(multiple_choices, Sequence) and not isinstance(
+        multiple_choices, (str, bytes, bytearray)
+    ) and multiple_choices:
+        return _nested_display_value(multiple_choices)
+
     choices = field.get("choiceValues")
     if isinstance(choices, Sequence) and not isinstance(
         choices, (str, bytes, bytearray)
@@ -306,22 +364,7 @@ def _field_display_value(field: Mapping[str, Any]) -> Any:
         if displayed:
             return displayed
 
-    value = field.get("fieldValue")
-    if isinstance(value, Mapping):
-        for key in (
-            "mainProperty",
-            "$primaryValue",
-            "choiceValue",
-            "name",
-            "label",
-            "message",
-            "value",
-            "choiceCode",
-            "code",
-        ):
-            if value.get(key) not in (None, ""):
-                return _json_safe(value.get(key))
-    return _json_safe(value)
+    return _nested_display_value(field.get("fieldValue"))
 
 
 def build_choice_value_maps(

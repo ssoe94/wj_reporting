@@ -349,7 +349,8 @@ class MouldTransformTests(SimpleTestCase):
                     {
                         "fieldCode": "tenant_destination",
                         "fieldName": "移动处",
-                        "fieldValue": "#1-850T",
+                        "fieldValue": None,
+                        "fieldValueSingleChoiceValue": "#1-850T",
                     },
                     {
                         "fieldCode": "tenant_reason",
@@ -396,10 +397,16 @@ class MouldTransformTests(SimpleTestCase):
                 "createdAt": 1_780_894_440_463,
                 "fields": [
                     {"fieldName": "年度", "fieldValue": "2026"},
-                    {"fieldName": "总计", "fieldValue": "107,733"},
-                    {"fieldName": "5月", "fieldValue": "27,241"},
-                    {"fieldName": "6月", "fieldValue": "35,492"},
-                    {"fieldName": "7月", "fieldValue": "45,000"},
+                    {
+                        "fieldName": "总计",
+                        "fieldValue": {"numberValue": "107,733"},
+                    },
+                    {
+                        "fieldName": "5月",
+                        "fieldValue": {"formulaValue": {"numberValue": "27,241"}},
+                    },
+                    {"fieldName": "6月", "fieldValue": {"numberValue": "35,492"}},
+                    {"fieldName": "7月", "fieldValue": {"numberValue": "45,000"}},
                 ],
             },
         )
