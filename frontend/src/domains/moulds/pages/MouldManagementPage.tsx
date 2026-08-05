@@ -445,14 +445,13 @@ function DetailContent({ copy, detail, language, tab }: {
     return (
       <div className={styles.tableScroller}>
         <table className={styles.historyTable}>
-          <thead><tr><th>{copy.occurredAt}</th><th>{copy.from}</th><th>{copy.to}</th><th>{copy.content}</th><th>{copy.operator}</th></tr></thead>
+          <thead><tr><th>{copy.occurredAt}</th><th>{copy.from}</th><th>{copy.to}</th><th>{copy.content}</th></tr></thead>
           <tbody>{fullDetail.movements.map((item) => (
             <tr key={item.id}>
               <td>{dateTime(item.occurredAt, language, copy.noTimestamp)}</td>
               <td>{text(item.fromLocation)}</td>
               <td><strong>{text(item.toLocation)}</strong></td>
               <td>{text(item.reason)}</td>
-              <td>{text(item.operatorName)}</td>
             </tr>
           ))}</tbody>
         </table>

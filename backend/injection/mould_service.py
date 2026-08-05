@@ -118,6 +118,8 @@ MOVEMENT_DATE_NAMES = (
 )
 MOVEMENT_DESTINATION_NAMES = (
     "目的地",
+    "移动处",
+    "移動處",
     "移动目的地",
     "移動目的地",
     "当前位置",
@@ -130,8 +132,24 @@ MOVEMENT_FIELD_NAMES = {
     "occurred_at": MOVEMENT_DATE_NAMES,
     "from_location": ("原位置", "来源位置", "來源位置", "이전위치", "출발지"),
     "to_location": MOVEMENT_DESTINATION_NAMES,
-    "reason": ("移动原因", "移動原因", "原因", "이동사유", "사유"),
-    "operator_name": ("负责人", "負責人", "所有者", "담당자", "소유자"),
+    "reason": (
+        "移动原因",
+        "移動原因",
+        "移动理由",
+        "移動理由",
+        "原因",
+        "이동사유",
+        "사유",
+    ),
+    "operator_name": (
+        "负责人",
+        "負責人",
+        "所有者",
+        "担当",
+        "담당",
+        "담당자",
+        "소유자",
+    ),
 }
 PRODUCTION_FIELD_NAMES = {
     "period": ("期间", "期間", "统计期间", "기간"),
@@ -139,14 +157,23 @@ PRODUCTION_FIELD_NAMES = {
     "month": ("月份", "月", "월"),
     "quantity": ("生产数量", "生產數量", "产量", "數量", "생산수량"),
     "cumulative_quantity": (
+        "总计",
+        "總計",
+        "合计",
+        "合計",
         "总生产数量",
         "總生產數量",
         "累计生产数量",
         "累計生產數量",
+        "총계",
         "누적생산수량",
     ),
     "unit": ("单位", "單位", "unit", "단위"),
     "recorded_at": ("记录日期", "記錄日期", "日期", "기록일"),
+}
+PRODUCTION_MONTH_FIELD_NAMES = {
+    month: (f"{month}月", f"{month}月份", f"{month}월")
+    for month in range(1, 13)
 }
 REPAIR_FIELD_NAMES = {
     "record_code": ("记录编号", "記錄編號", "维修编号", "수리기록번호"),
@@ -671,6 +698,78 @@ def normalize_history_record(
         }
 
     return base
+
+
+def normalize_history_records(
+    history_key: str, record: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    """Expand one BLACKLAKE child row into dashboard history rows.
+
+    WJ's production child object stores one row per year with ``1月`` through
+    ``12月`` columns.  The public dashboard contract is monthly, so expand only
+    populated month columns and calculate a deterministic year-to-date total.
+    Other child-object rows retain their existing one-row contract.
+    """
+
+    normalized = normalize_history_record(history_key, record)
+    if history_key != "production_history":
+        return [normalized]
+
+    year = normalized.get("year")
+    if not isinstance(year, int):
+        return [normalized]
+
+    monthly_rows: list[dict[str, Any]] = []
+    running_total: int | float = 0
+    for month, names in PRODUCTION_MONTH_FIELD_NAMES.items():
+        quantity = _nullable_number(_named_history_value(normalized, names))
+        if quantity is None:
+            continue
+        running_total += quantity
+        monthly_rows.append(
+            {
+                **normalized,
+                "id": f"{normalized['id']}-{month:02d}",
+                "period": f"{year:04d}-{month:02d}",
+                "month": month,
+                "quantity": quantity,
+                "cumulative_quantity": running_total,
+                "unit": normalized.get("unit") or "Shot",
+            }
+        )
+
+    if monthly_rows:
+        return monthly_rows
+
+    annual_total = normalized.get("cumulative_quantity")
+    if normalized.get("quantity") is None and annual_total is not None:
+        normalized["quantity"] = annual_total
+    if annual_total is not None and not normalized.get("unit"):
+        normalized["unit"] = "Shot"
+    return [normalized]
+
+
+def _infer_movement_sources(
+    records: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Fill the previous destination when WJ's child row omits a source field."""
+
+    result = [dict(record) for record in records]
+    ordered_indexes = sorted(
+        range(len(result)),
+        key=lambda index: str(result[index].get("occurred_at") or ""),
+    )
+    previous_destination: Any = None
+    for index in ordered_indexes:
+        row = result[index]
+        if row.get("from_location") in (None, "") and previous_destination not in (
+            None,
+            "",
+        ):
+            row["from_location"] = previous_destination
+        if row.get("to_location") not in (None, ""):
+            previous_destination = row["to_location"]
+    return result
 
 
 def _response_data(payload: Mapping[str, Any]) -> Any:
@@ -1972,8 +2071,14 @@ def build_mould_detail(instance_id: str) -> dict[str, Any]:
             )
             raw_histories[history_key] = rows
             normalized_histories[history_key] = [
-                normalize_history_record(history_key, row) for row in rows
+                normalized
+                for row in rows
+                for normalized in normalize_history_records(history_key, row)
             ]
+            if history_key == "movement_history":
+                normalized_histories[history_key] = _infer_movement_sources(
+                    normalized_histories[history_key]
+                )
             warnings.extend(f"{history_key}:{warning}" for warning in child_warnings)
         except MouldServiceError:
             warnings.append(f"{history_key}_unavailable")
@@ -2006,6 +2111,17 @@ def build_mould_detail(instance_id: str) -> dict[str, Any]:
     mould["position_changed_at"] = position.get("last_changed_at")
     mould["position_changed_at_source"] = position.get("last_changed_source")
     mould["time_quality"] = position.get("quality")
+
+    if mould.get("current_output_amount") is None:
+        history_totals = [
+            row.get("cumulative_quantity")
+            for row in normalized_histories["production_history"]
+            if isinstance(row.get("cumulative_quantity"), (int, float))
+            and not isinstance(row.get("cumulative_quantity"), bool)
+        ]
+        if history_totals:
+            mould["current_output_amount"] = max(history_totals)
+            warnings.append("current_output_amount_from_production_history")
 
     capabilities = {
         "basic_detail": True,
@@ -2216,6 +2332,7 @@ __all__ = [
     "enrich_mould_records",
     "normalize_child_record",
     "normalize_history_record",
+    "normalize_history_records",
     "normalize_mould_record",
     "normalize_resource_mould",
     "unavailable_board_payload",

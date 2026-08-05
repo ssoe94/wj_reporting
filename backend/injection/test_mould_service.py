@@ -17,6 +17,7 @@ from injection.mould_service import (
     enrich_mould_records,
     normalize_child_record,
     normalize_history_record,
+    normalize_history_records,
     normalize_mould_record,
     normalize_resource_mould,
 )
@@ -347,13 +348,18 @@ class MouldTransformTests(SimpleTestCase):
                     },
                     {
                         "fieldCode": "tenant_destination",
-                        "fieldName": "目的地",
+                        "fieldName": "移动处",
                         "fieldValue": "#1-850T",
                     },
                     {
                         "fieldCode": "tenant_reason",
-                        "fieldName": "移动原因",
+                        "fieldName": "移动理由",
                         "fieldValue": "生产计划",
+                    },
+                    {
+                        "fieldCode": "tenant_owner",
+                        "fieldName": "担当",
+                        "fieldValue": "Operator",
                     },
                 ],
             },
@@ -362,6 +368,7 @@ class MouldTransformTests(SimpleTestCase):
         self.assertEqual(result["id"], "77")
         self.assertEqual(result["to_location"], "#1-850T")
         self.assertEqual(result["reason"], "生产计划")
+        self.assertEqual(result["operator_name"], "Operator")
         self.assertEqual(result["time_quality"], "child_field")
 
     def test_production_child_exposes_custom_cumulative_shots(self):
@@ -379,6 +386,37 @@ class MouldTransformTests(SimpleTestCase):
 
         self.assertEqual(result["quantity"], 1523)
         self.assertEqual(result["cumulative_quantity"], 17294)
+
+    def test_production_child_expands_wj_month_columns(self):
+        result = normalize_history_records(
+            "production_history",
+            {
+                "instanceId": 79,
+                "objectCode": "OUTPUT001__c",
+                "createdAt": 1_780_894_440_463,
+                "fields": [
+                    {"fieldName": "年度", "fieldValue": "2026"},
+                    {"fieldName": "总计", "fieldValue": "107,733"},
+                    {"fieldName": "5月", "fieldValue": "27,241"},
+                    {"fieldName": "6月", "fieldValue": "35,492"},
+                    {"fieldName": "7月", "fieldValue": "45,000"},
+                ],
+            },
+        )
+
+        self.assertEqual(
+            [row["period"] for row in result],
+            ["2026-05", "2026-06", "2026-07"],
+        )
+        self.assertEqual(
+            [row["quantity"] for row in result],
+            [27241, 35492, 45000],
+        )
+        self.assertEqual(
+            [row["cumulative_quantity"] for row in result],
+            [27241, 62733, 107733],
+        )
+        self.assertTrue(all(row["unit"] == "Shot" for row in result))
 
     @patch("injection.mould_service.fetch_resource_mould_records")
     @patch("injection.mould_service.fetch_mould_metadata")
