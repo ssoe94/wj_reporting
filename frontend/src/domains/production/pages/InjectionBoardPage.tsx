@@ -1222,6 +1222,7 @@ export function InjectionBoardPage() {
   const completionRate = summary.plannedQty > 0 ? (summary.estimatedQty / summary.plannedQty) * 100 : 0;
   const isLoading = planQuery.isPending || statusQuery.isPending || mesQuery.isPending;
   const isError = planQuery.isError || statusQuery.isError || mesQuery.isError;
+  const showBlockingLoading = isLoading && !planQuery.data && !statusQuery.data && !mesQuery.data;
   const refreshedAt = Math.max(planQuery.dataUpdatedAt, statusQuery.dataUpdatedAt, mesQuery.dataUpdatedAt);
 
   useEffect(() => {
@@ -1416,7 +1417,7 @@ export function InjectionBoardPage() {
         ))}
       </section>
 
-      {isLoading ? <div className="injection-board__loading">{copy.loading}</div> : null}
+      {showBlockingLoading ? <div className="injection-board__loading">{copy.loading}</div> : null}
       {isPreviousSummaryOpen ? (
         <PreviousDaySummary
           businessDate={previousBusinessDate}

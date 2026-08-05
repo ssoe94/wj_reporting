@@ -2027,6 +2027,328 @@
   }
 }
 
+@media (max-width: 720px) {
+  .page {
+    min-width: 0;
+    height: 100dvh;
+    grid-template-rows: auto auto auto;
+    align-content: start;
+    gap: 8px;
+    padding: 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .hero {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    padding: 10px;
+  }
+
+  .titleGroup {
+    width: 100%;
+    align-items: center;
+  }
+
+  .titleLogo {
+    width: 46px;
+    height: 42px;
+  }
+
+  .titleGroup p {
+    font-size: 0.58rem;
+  }
+
+  .titleGroup h1 {
+    font-size: 1.18rem;
+    line-height: 1.1;
+  }
+
+  .heroActions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .searchField {
+    width: 100%;
+    min-height: 44px;
+    grid-column: 1 / -1;
+  }
+
+  .freshness {
+    display: flex;
+    min-height: 44px;
+    grid-column: 1 / -1;
+  }
+
+  .languageSwitch {
+    min-width: 0;
+    height: 44px;
+    grid-column: span 2;
+  }
+
+  .topAction {
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+  }
+
+  .filterStrip {
+    align-items: stretch;
+    flex-direction: column;
+    min-height: 0;
+    padding: 8px;
+  }
+
+  .filterChips {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .filterChips button {
+    min-width: 0;
+    justify-content: space-between;
+    padding-inline: 10px;
+  }
+
+  .boardStatus,
+  .selectedPeek {
+    width: 100%;
+  }
+
+  .selectedPeek {
+    min-width: 0;
+  }
+
+  .dataState {
+    display: none;
+  }
+
+  .boardGrid {
+    display: block;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .machinePanel {
+    margin-bottom: 10px;
+  }
+
+  .machinePanel,
+  .storagePanel {
+    display: block;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .panelHeader {
+    min-height: 0;
+    padding: 10px;
+  }
+
+  .panelHeader > div > span {
+    font-size: 0.66rem;
+    line-height: 1.35;
+  }
+
+  .machineTable {
+    display: block;
+    overflow: visible;
+  }
+
+  .machineTableHeader {
+    display: none;
+  }
+
+  .machineRows {
+    display: grid;
+    gap: 8px;
+    max-height: none;
+    padding: 8px;
+    overflow: visible;
+    background: #f8fbfd;
+  }
+
+  .machineRow {
+    min-width: 0;
+    min-height: 92px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+    padding: 11px 12px;
+    border: 1px solid #dbe6f0;
+    border-radius: 8px;
+    box-shadow: 0 3px 10px rgba(28, 69, 98, 0.06);
+  }
+
+  .machineRow > strong {
+    font-size: 1rem;
+  }
+
+  .machineRow > span:nth-of-type(1) {
+    justify-self: end;
+    padding: 4px 7px;
+    border-radius: 999px;
+    background: #edf5ff;
+    color: #1d6497;
+    font-size: 0.68rem;
+    font-weight: 850;
+  }
+
+  .machineMould {
+    grid-column: 1 / -1;
+    gap: 3px;
+  }
+
+  .machineMould strong {
+    font-size: 0.84rem;
+    white-space: normal;
+  }
+
+  .machineMould small {
+    font-size: 0.66rem;
+    white-space: normal;
+  }
+
+  .machineRow > span:nth-of-type(3) {
+    align-self: end;
+  }
+
+  .changedAt {
+    justify-items: end;
+    text-align: right;
+  }
+
+  .changedAt strong {
+    font-size: 0.66rem;
+  }
+
+  .changedAt small {
+    font-size: 0.56rem;
+  }
+
+  .selectedMachine {
+    box-shadow: inset 5px 0 0 #1764b0, inset 0 0 0 1px #8db9d4, 0 5px 18px rgba(23, 100, 176, 0.13);
+  }
+
+  .zoneList {
+    display: grid;
+    grid-template-rows: none;
+    gap: 10px;
+    padding: 8px;
+    overflow: visible;
+  }
+
+  .zone {
+    min-height: 0;
+  }
+
+  .zone > header {
+    flex-wrap: wrap;
+    min-height: 0;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .zone > header h3 {
+    font-size: 0.9rem;
+  }
+
+  .zone > header span {
+    margin-left: 0;
+  }
+
+  .zoneFocusButton {
+    width: 100%;
+    min-height: 42px;
+    margin-left: 0;
+  }
+
+  .coordinateRows {
+    grid-template-rows: none;
+    gap: 4px;
+    padding: 8px;
+    overflow: visible;
+  }
+
+  .coordinateCells {
+    grid-template-columns: repeat(var(--coordinate-columns), minmax(0, 1fr));
+    gap: 3px;
+  }
+
+  .page .coordinateCell,
+  .focusedZone .coordinateCell {
+    min-height: 40px;
+    height: 40px;
+    padding-inline: 1px;
+    font-size: 0.58rem;
+  }
+
+  .focusedZone .coordinateRows {
+    grid-template-rows: none;
+    overflow: visible;
+  }
+
+  .focusedZone .coordinateRow,
+  .focusedZone .coordinateCells,
+  .focusedZone .coordinateCell {
+    min-height: 40px;
+  }
+
+  .detailDrawer {
+    position: fixed;
+    inset: 10dvh 8px 8px;
+    width: auto;
+    min-width: 0;
+    border-radius: 12px;
+  }
+
+  .drawerTopbar {
+    min-height: 50px;
+  }
+
+  .detailDrawer .detailPanel {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .detailDrawer .selectedSummary {
+    border-right: 0;
+    border-bottom: 1px solid var(--mould-border);
+  }
+
+  .detailDrawer .summaryFacts,
+  .detailDrawer .detailGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .detailDrawer .detailTabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detailDrawer .detailTabs button {
+    min-height: 44px;
+  }
+
+  .detailDrawer .historyTable {
+    min-width: 560px;
+  }
+
+  .noResults {
+    position: static;
+    width: 100%;
+    margin-top: 2px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .selectedMachine,
   .selectedCell,
