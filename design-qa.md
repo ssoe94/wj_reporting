@@ -177,3 +177,79 @@ for existing bookmarks.
 - Post-fix inspection found no remaining P0, P1, or P2 visual issue. Browser-rendered controls remain enabled and no layout dimensions changed.
 
 final result: passed
+
+---
+
+# Incremental Design QA — Mould and Injection Board Headers
+
+## Comparison target
+
+- Source visual truth (mould mobile): `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/51E14C97-F0C3-46CE-8B37-1B401360B33B/1-사진-1.jpg`.
+- Source visual truth (injection mobile): `/tmp/codex-remote-attachments/019fd084-5c34-7b50-ba25-ff74a5870269/51E14C97-F0C3-46CE-8B37-1B401360B33B/2-사진-2.jpg`.
+- Browser-rendered mobile implementations: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-mobile.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-injection-mobile.jpg`.
+- Browser-rendered 4K implementations: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-4k.jpg` and `/private/tmp/wj-dashboard-hub-deploy/qa-injection-4k.jpg`.
+- Combined source/implementation comparison: `/private/tmp/wj-dashboard-hub-deploy/qa-header-mobile-comparison.jpg`.
+- Implementation routes: `http://127.0.0.1:5177/boards/moulds` and `http://127.0.0.1:5177/boards/injection`.
+
+## Normalization and state
+
+- Both source images are `590 × 1280` px and include iPhone browser chrome.
+- Both mobile implementation screenshots are `390 × 844` px at a `390 × 844` CSS viewport with device pixel ratio 1 and no browser chrome.
+- The `1500 × 900` comparison board scales all four images to the same column width; the source and implementation aspect ratios differ by less than 0.1%, so header height and information density can be judged without geometric distortion.
+- The 4K CSS viewport is `3840 × 2160` at device pixel ratio 1. The in-app browser screenshots are `3840 × 1920` px because the capture surface excludes its 240 px browser-control region.
+- State: Korean locale, live production mould data, default board filters, injection production data after a manual refresh. The 4K injection empty/error state was also checked to ensure the header and board remain usable when upstream data is unavailable.
+
+## Full-view comparison evidence
+
+- The mould header keeps its existing WJ logo, home action, search, language, refresh, fullscreen, and freshness information, while scaling the same hierarchy for 4K instead of leaving controls visually undersized.
+- The injection header now follows the same order as the mould header: board home, product mark, eyebrow/title, operational timestamps, secondary history action, language, refresh, and fullscreen.
+- At `390 × 844`, both boards have a single-column body, `390 px` document width, no horizontal overflow, and touch controls at least `40–44 px` tall.
+- At `3840 × 2160`, both headers span the display without clipping. Mould header height is approximately `128 px`; injection header height is approximately `125 px`, giving the two boards a consistent monitor-scale silhouette.
+
+## Focused-region evidence
+
+- The combined comparison isolates all four mobile headers and the first operational cards in one view. It confirms that the injection board no longer has an unrelated header grammar or a destructive-looking close action, and that both boards use the same white surface, blue outline, compact eyebrow/title, status-card, and control treatment.
+- The 4K captures were inspected separately because the source references provide no 4K state. Search, timestamp, language, refresh, and fullscreen controls have measured bounding boxes within the header even when downsampling makes their text too small to judge in the full 4K image.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing Korean/Chinese system fallbacks are retained. Both headers use the same eyebrow weight/spacing, compact display-title rhythm, muted helper copy, and readable metadata hierarchy; labels do not wrap or truncate at mobile or 4K.
+- Spacing and layout rhythm: both headers use an 8 px outer frame, 9 px radius, 8–10 px internal gaps, aligned icon tiles, bordered metadata cells, and consistent action rows. Mobile content stacks without hiding persistent controls.
+- Colors and visual tokens: both boards use the existing navy/blue WJ palette, pale blue-gray background, white translucent header surface, blue active language state, and neutral outlined actions. Operational summary colors remain unchanged.
+- Image quality and asset fidelity: the existing WJ raster logo is reused in the mould board, and all controls use the installed Lucide icon set. No placeholder, handcrafted SVG, CSS drawing, or emoji asset was added.
+- Copy and content: all business labels and KOR/中文 switching remain intact. The injection header adds explicit board-home and refresh labels while removing the redundant close action from the anonymous direct-link board.
+
+## Comparison history
+
+### Pass 1
+
+- [P2] The source captures showed two different header grammars: mould used home/logo/search/refresh while injection used a standalone factory mark and terminal-like close action.
+  - Fix: added a home action, shared eyebrow/title hierarchy, explicit refresh action, matching outlined control surfaces, and consistent 4K scaling to the injection board; retained each board's domain-specific metadata.
+  - Post-fix evidence: `qa-header-mobile-comparison.jpg` shows both boards using the same title → status → action reading order.
+- [P2] The first injection mobile capture made the refresh action appear permanently unavailable while queries were pending.
+  - Fix: kept the action enabled during background fetches, added `aria-busy`, and limited motion to the refresh icon.
+  - Post-fix evidence: `qa-injection-mobile.jpg` shows the active outlined refresh control and a successful populated-state refresh without horizontal overflow.
+- [P2] The first 4K injection pass mixed 40 px language controls with 68 px home, refresh, and fullscreen controls.
+  - Fix: aligned the 4K language switch and primary icon actions to 68 px, and scaled the history/auto-refresh treatments proportionally.
+  - Post-fix evidence: `qa-injection-4k.jpg` measures the language switch and all three icon actions at 68 px high within a 125 px header.
+
+### Pass 2
+
+- The revised combined mobile comparison and the two 4K captures found no remaining actionable P0, P1, or P2 visual issue.
+
+## Interaction and runtime checks
+
+- Injection KOR → 中文 → KOR language switching passed and updated the title, metadata, action labels, and board copy.
+- Injection manual refresh passed; live data repopulated and `aria-busy` reflected the fetch state.
+- Both home, fullscreen, and refresh controls are present with accessible names; fullscreen itself was not forced during capture because the QA viewport override was required.
+- No uncaught browser runtime error was observed. One expected local-preview upstream request error was rendered through the board's existing error state during the 4K check; a subsequent mobile refresh succeeded with populated production data.
+- `cd frontend && npm run build` — passed.
+- Backend mould service tests — passed, 36 tests.
+- `git diff --check` — passed.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual findings remain.
+- P3: the injection board's three mobile metadata cells are intentionally compact; on devices narrower than 360 px, abbreviating the labels may improve scan speed, but no clipping occurs at the requested 390 px phone viewport.
+
+final result: passed

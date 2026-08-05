@@ -388,6 +388,38 @@ class MouldTransformTests(SimpleTestCase):
         self.assertEqual(result["quantity"], 1523)
         self.assertEqual(result["cumulative_quantity"], 17294)
 
+    def test_repair_child_maps_wj_slash_named_fields(self):
+        result = normalize_history_record(
+            "repair_history",
+            {
+                "instanceId": 80,
+                "objectCode": "REPAIR001__c",
+                "fields": [
+                    {"fieldName": "记录编号", "fieldValue": "MOLD-2-260608003"},
+                    {"fieldName": "委托日期", "fieldValue": 1_780_848_000_000},
+                    {"fieldName": "总生产数量", "fieldValue": "36,987"},
+                    {
+                        "fieldName": "改造/维修处",
+                        "fieldValue": "南京万佳精密注塑有限公司",
+                    },
+                    {
+                        "fieldName": "改造/维修/保养",
+                        "fieldValue": None,
+                        "fieldValueSingleChoiceValue": "维修",
+                    },
+                    {"fieldName": "改造/维修内容", "fieldValue": "模具斜顶断"},
+                    {"fieldName": "制作人", "fieldValue": "Operator"},
+                ],
+            },
+        )
+
+        self.assertEqual(result["record_code"], "MOLD-2-260608003")
+        self.assertEqual(result["cumulative_output_amount"], 36987)
+        self.assertEqual(result["vendor"], "南京万佳精密注塑有限公司")
+        self.assertEqual(result["type"], "维修")
+        self.assertEqual(result["content"], "模具斜顶断")
+        self.assertEqual(result["creator_name"], "Operator")
+
     def test_production_child_expands_wj_month_columns(self):
         result = normalize_history_records(
             "production_history",

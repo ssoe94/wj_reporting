@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Factory, History, Maximize2, Minimize2, X } from "lucide-react";
+import { Factory, History, Home, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
 import {
   getInjectionProductionMatrix,
@@ -106,6 +106,8 @@ const boardCopy = {
     fullscreen: "전체 화면",
     exitFullscreen: "전체 화면 종료",
     close: "닫기",
+    backToBoards: "현황판 목록으로",
+    refresh: "지금 새로고침",
     korean: "한국어",
     chinese: "中文",
     overview: "전체 가동 현황",
@@ -193,6 +195,8 @@ const boardCopy = {
     fullscreen: "全屏",
     exitFullscreen: "退出全屏",
     close: "关闭",
+    backToBoards: "返回看板列表",
+    refresh: "立即刷新",
     korean: "한국어",
     chinese: "中文",
     overview: "设备运行总览",
@@ -1221,6 +1225,7 @@ export function InjectionBoardPage() {
     .join(", ");
   const completionRate = summary.plannedQty > 0 ? (summary.estimatedQty / summary.plannedQty) * 100 : 0;
   const isLoading = planQuery.isPending || statusQuery.isPending || mesQuery.isPending;
+  const isRefreshing = planQuery.isFetching || statusQuery.isFetching || mesQuery.isFetching;
   const isError = planQuery.isError || statusQuery.isError || mesQuery.isError;
   const showBlockingLoading = isLoading && !planQuery.data && !statusQuery.data && !mesQuery.data;
   const refreshedAt = Math.max(planQuery.dataUpdatedAt, statusQuery.dataUpdatedAt, mesQuery.dataUpdatedAt);
@@ -1300,10 +1305,25 @@ export function InjectionBoardPage() {
     window.location.assign("/boards");
   }
 
+  function refreshBoard() {
+    void planQuery.refetch();
+    void statusQuery.refetch();
+    void mesQuery.refetch();
+  }
+
   return (
     <main className={`injection-board${isVisitorMode ? " injection-board--visitor" : ""}`}>
       <header className="injection-board__topbar">
         <div className="injection-board__title">
+          <button
+            aria-label={copy.backToBoards}
+            className="injection-board__action injection-board__home"
+            onClick={() => void leaveBoard()}
+            title={copy.backToBoards}
+            type="button"
+          >
+            <Home aria-hidden="true" />
+          </button>
           <button
             aria-label={isVisitorMode ? copy.disableVisitorMode : copy.enableVisitorMode}
             aria-pressed={isVisitorMode}
@@ -1314,7 +1334,11 @@ export function InjectionBoardPage() {
           >
             <Factory aria-hidden="true" />
           </button>
-          <h1>{copy.title}</h1>
+          <div className="injection-board__heading">
+            <span>{copy.eyebrow}</span>
+            <h1>{copy.title}</h1>
+            <p>{copy.subtitle}</p>
+          </div>
         </div>
         <div className="injection-board__meta">
           <div><span>{copy.productionDate}</span><strong>{businessDate}</strong></div>
@@ -1334,6 +1358,16 @@ export function InjectionBoardPage() {
             <button className={language === "zh" ? "is-active" : ""} onClick={() => changeLanguage("zh")} type="button">中文</button>
           </div>
           <button
+            aria-label={copy.refresh}
+            aria-busy={isRefreshing}
+            className="injection-board__action"
+            onClick={refreshBoard}
+            title={copy.refresh}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" className={isRefreshing ? "is-spinning" : ""} />
+          </button>
+          <button
             aria-label={isFullscreen ? copy.exitFullscreen : copy.fullscreen}
             className="injection-board__action"
             onClick={toggleFullscreen}
@@ -1341,9 +1375,6 @@ export function InjectionBoardPage() {
             type="button"
           >
             {isFullscreen ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
-          </button>
-          <button aria-label={copy.close} className="injection-board__action" onClick={() => void leaveBoard()} title={copy.close} type="button">
-            <X aria-hidden="true" />
           </button>
         </div>
       </header>

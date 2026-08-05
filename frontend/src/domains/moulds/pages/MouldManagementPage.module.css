@@ -2349,6 +2349,89 @@
   }
 }
 
+@media (min-width: 2500px) and (min-height: 1350px) {
+  .hero {
+    min-height: 112px;
+    padding: 18px 26px;
+  }
+
+  .titleGroup {
+    gap: 14px;
+  }
+
+  .titleLogo {
+    width: 78px;
+    height: 68px;
+    padding: 6px;
+  }
+
+  .titleGroup p {
+    font-size: 0.86rem;
+  }
+
+  .titleGroup h1 {
+    font-size: 2.7rem;
+  }
+
+  .titleGroup > div > span {
+    display: block;
+    font-size: 0.92rem;
+  }
+
+  .heroActions {
+    gap: 10px;
+  }
+
+  .topAction {
+    width: 68px;
+    min-width: 68px;
+    height: 68px;
+  }
+
+  .topAction svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .searchField,
+  .freshness {
+    min-height: 68px;
+  }
+
+  .searchField {
+    width: clamp(420px, 24vw, 620px);
+    padding-inline: 18px;
+  }
+
+  .searchField input {
+    font-size: 1.05rem;
+  }
+
+  .freshness small {
+    font-size: 0.8rem;
+  }
+
+  .freshness strong {
+    font-size: 1rem;
+  }
+
+  .autoRefresh {
+    min-height: 42px;
+    padding-inline: 14px;
+    font-size: 0.84rem;
+  }
+
+  .languageSwitch {
+    min-width: 134px;
+    height: 68px;
+  }
+
+  .languageSwitch button {
+    min-width: 62px;
+    font-size: 0.86rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .selectedMachine,
   .selectedCell,

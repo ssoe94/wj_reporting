@@ -8896,7 +8896,9 @@ select {
   min-width: 1180px;
   min-height: 720px;
   overflow: hidden;
-  background: var(--board-bg);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(0, 143, 196, 0.11), transparent 24%),
+    linear-gradient(135deg, #edf3f8 0%, #f8fbfd 48%, #e8f2f5 100%);
   color: var(--board-ink);
 }
 
@@ -8906,28 +8908,32 @@ select {
   justify-content: space-between;
   gap: 28px;
   min-height: 82px;
-  padding: 12px 18px;
-  border-bottom: 1px solid #cbd7df;
-  background: #ffffff;
+  margin: 8px 8px 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(180, 204, 220, 0.9);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 7px 24px rgba(38, 76, 105, 0.08);
+  backdrop-filter: blur(18px);
 }
 
 .injection-board__title {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 9px;
   min-width: 0;
 }
 
 .injection-board__mode-toggle {
   display: grid;
-  width: 58px;
-  height: 54px;
+  width: 54px;
+  height: 48px;
   flex: 0 0 auto;
   place-items: center;
   padding: 0;
   border: 1px solid #b8dce8;
   border-left: 5px solid #008fc4;
-  border-radius: 4px;
+  border-radius: 8px;
   background: #e8f5f8;
   color: #007aa8;
   cursor: pointer;
@@ -8956,15 +8962,36 @@ select {
 }
 
 .injection-board__mode-toggle svg {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   stroke-width: 1.8;
+}
+
+.injection-board__heading {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.injection-board__heading > span {
+  color: #31739e;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
 }
 
 .injection-board__title h1 {
   margin: 0;
-  font-size: 2rem;
-  line-height: 1.1;
+  font-size: clamp(1.22rem, 1.55vw, 1.72rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.injection-board__heading p {
+  margin: 2px 0 0;
+  color: var(--board-muted);
+  font-size: clamp(0.66rem, 0.7vw, 0.78rem);
+  line-height: 1.25;
 }
 
 .injection-board__meta {
@@ -8979,8 +9006,12 @@ select {
   display: grid;
   gap: 2px;
   min-width: 92px;
+  min-height: 48px;
+  align-content: center;
   padding: 6px 10px;
-  border-left: 1px solid #d9e2e7;
+  border: 1px solid #d4e2eb;
+  border-radius: 8px;
+  background: #f8fbfd;
 }
 
 .injection-board__meta span {
@@ -9003,9 +9034,11 @@ select {
 
 .injection-board__language {
   display: flex;
-  height: 32px;
-  border: 1px solid #b8cbd6;
-  border-radius: 6px;
+  height: 48px;
+  padding: 3px;
+  border: 1px solid #cfdeea;
+  border-radius: 8px;
+  background: #f4f8fb;
   overflow: hidden;
 }
 
@@ -9052,18 +9085,38 @@ select {
 }
 
 .injection-board__language button.is-active {
-  background: #0a82b2;
-  color: #ffffff;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #155c91;
+  box-shadow: 0 2px 8px rgba(37, 83, 116, 0.12);
 }
 
 .injection-board__action {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 48px;
+  height: 48px;
   place-items: center;
   border: 1px solid #b8cbd6;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 1.25rem;
+}
+
+.injection-board__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.injection-board__home {
+  flex: 0 0 auto;
+  color: #27658f;
+}
+
+.injection-board__action .is-spinning {
+  animation: injection-board-spin 800ms linear infinite;
+}
+
+@keyframes injection-board-spin {
+  to { transform: rotate(360deg); }
 }
 
 .injection-board__action:hover {
@@ -10023,15 +10076,19 @@ select {
     gap: 10px;
   }
 
-  .injection-board__title > span {
+  .injection-board__mode-toggle {
     width: 44px;
     height: 42px;
     border-left-width: 4px;
   }
 
-  .injection-board__title > span svg {
+  .injection-board__mode-toggle svg {
     width: 25px;
     height: 25px;
+  }
+
+  .injection-board__heading p {
+    display: none;
   }
 
   .injection-board__title h1 {
@@ -10075,6 +10132,11 @@ select {
     width: 30px;
     height: 30px;
     font-size: 1rem;
+  }
+
+  .injection-board__home {
+    width: 42px;
+    height: 42px;
   }
 
   .injection-board__history-button {
@@ -10426,12 +10488,12 @@ select {
     padding-block: 5px;
   }
 
-  .injection-board__title > span {
+  .injection-board__mode-toggle {
     width: 40px;
     height: 38px;
   }
 
-  .injection-board__title > span svg {
+  .injection-board__mode-toggle svg {
     width: 23px;
     height: 23px;
   }
@@ -10506,13 +10568,20 @@ select {
     flex-direction: column;
     gap: 10px;
     min-height: 0;
+    margin: 8px 8px 0;
     padding: 10px;
+    border-radius: 9px;
     box-shadow: 0 10px 24px rgba(31, 61, 80, 0.08);
   }
 
   .injection-board__title {
     width: 100%;
     gap: 10px;
+  }
+
+  .injection-board__title .injection-board__action {
+    width: 44px;
+    height: 44px;
   }
 
   .injection-board__mode-toggle {
@@ -10531,6 +10600,14 @@ select {
     min-width: 0;
     font-size: 1.22rem;
     white-space: normal;
+  }
+
+  .injection-board__heading > span {
+    font-size: 0.58rem;
+  }
+
+  .injection-board__heading p {
+    display: none;
   }
 
   .injection-board__meta {
@@ -10831,14 +10908,20 @@ select {
 
 @media (min-width: 2500px) and (min-height: 1350px) {
   .injection-board__topbar { min-height: 112px; padding: 18px 26px; }
-  .injection-board__title > span { width: 98px; height: 68px; font-size: 0.86rem; }
+  .injection-board__home { width: 68px; height: 68px; }
+  .injection-board__mode-toggle { width: 78px; height: 68px; }
+  .injection-board__mode-toggle svg { width: 38px; height: 38px; }
+  .injection-board__heading > span { font-size: 0.86rem; }
+  .injection-board__heading p { font-size: 0.92rem; }
   .injection-board__title h1 { font-size: 2.7rem; }
   .injection-board__meta > div:not(.injection-board__language) { min-width: 126px; padding: 8px 14px; }
   .injection-board__meta span { font-size: 0.8rem; }
   .injection-board__meta strong { font-size: 1rem; }
-  .injection-board__language { height: 40px; }
+  .injection-board__history-button { height: 48px; padding-inline: 14px; font-size: 0.84rem; }
+  .injection-board__refresh-badge { padding: 10px 14px; font-size: 0.8rem !important; }
+  .injection-board__language { height: 68px; }
   .injection-board__language button { min-width: 62px; font-size: 0.86rem; }
-  .injection-board__action { width: 42px; height: 42px; }
+  .injection-board__action { width: 68px; height: 68px; }
   .injection-board__grid { gap: 12px; padding: 12px; }
   .injection-board-summary { padding: 18px 20px; }
   .injection-board-summary header > div > span { width: 38px; height: 38px; font-size: 0.9rem; }
