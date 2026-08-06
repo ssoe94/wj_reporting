@@ -3097,26 +3097,16 @@
   display: block;
   min-width: 0;
   min-height: 0;
-  padding: 8px;
+  padding: 4px;
   overflow: auto;
   overscroll-behavior: contain;
-  container-type: inline-size;
   animation: zone-focus-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.focusedZone.zoneA .coordinateRows,
-.focusedZone.zoneB .coordinateRows {
-  --focused-cell-width: clamp(140px, calc((100cqw - 10px) / 6), 440px);
-}
-
-.focusedZone.zoneC .coordinateRows {
-  --focused-cell-width: clamp(108px, calc((100cqw - 16px) / 9), 320px);
 }
 
 .focusedZone .coordinateRow {
   display: block;
-  width: max-content;
-  min-width: max-content;
+  width: 100%;
+  min-width: 0;
   min-height: var(--focused-cell-height);
   margin: 0 0 6px;
 }
@@ -3127,21 +3117,20 @@
 
 .focusedZone .coordinateCells {
   display: grid;
-  width: max-content;
+  width: 100%;
   height: auto;
   min-height: var(--focused-cell-height);
-  grid-template-columns: repeat(var(--coordinate-columns), var(--focused-cell-width));
-  gap: 6px;
-  transition: gap 260ms ease;
+  grid-template-columns: repeat(var(--coordinate-columns), minmax(0, 1fr));
+  gap: 2px;
 }
 
 .focusedZone .coordinateCell {
-  width: var(--focused-cell-width);
+  width: 100%;
   height: var(--focused-cell-height);
   min-height: var(--focused-cell-height);
-  padding: 6px 8px;
+  padding: 6px 4px;
   font-size: 0.72rem;
-  transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1), height 280ms cubic-bezier(0.22, 1, 0.36, 1), min-height 280ms cubic-bezier(0.22, 1, 0.36, 1), padding 220ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, color 140ms ease;
+  transition: height 280ms cubic-bezier(0.22, 1, 0.36, 1), min-height 280ms cubic-bezier(0.22, 1, 0.36, 1), padding 220ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, color 140ms ease;
 }
 
 .focusedZone .coordinateCell:disabled {
@@ -3157,17 +3146,8 @@
   .focusedZone .coordinateRows {
     --focused-cell-height: 60px;
     max-height: 68dvh;
-    padding: 7px;
+    padding: 8px;
     overflow: auto;
-  }
-
-  .focusedZone.zoneA .coordinateRows,
-  .focusedZone.zoneB .coordinateRows {
-    --focused-cell-width: 132px;
-  }
-
-  .focusedZone.zoneC .coordinateRows {
-    --focused-cell-width: 108px;
   }
 
   .focusedZone .coordinateRow,
@@ -3176,15 +3156,15 @@
   }
 
   .focusedZone .coordinateCells {
-    grid-template-columns: repeat(var(--coordinate-columns), var(--focused-cell-width));
-    gap: 5px;
+    grid-template-columns: repeat(var(--coordinate-columns), minmax(0, 1fr));
+    gap: 3px;
   }
 
   .focusedZone .coordinateCell {
-    width: var(--focused-cell-width);
+    width: 100%;
     height: var(--focused-cell-height);
     min-height: var(--focused-cell-height);
-    padding: 5px 6px;
+    padding: 5px 2px;
     font-size: 0.66rem;
   }
 }
@@ -3192,13 +3172,13 @@
 @keyframes zone-focus-in {
   from {
     opacity: 0.72;
-    transform: scale(0.985);
+    transform: scaleY(0.86);
     transform-origin: center top;
   }
 
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: scaleY(1);
     transform-origin: center top;
   }
 }

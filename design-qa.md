@@ -564,3 +564,65 @@ final result: passed
 - P3: focused zones deliberately retain small horizontal overflow caused by the roomier focus-state gutters; this makes drag affordance visible without changing the zone's native cell proportions.
 
 final result: passed
+
+---
+
+# Incremental Design QA — Height-Only Zone Focus
+
+## Requested behavior
+
+- Focused cells must keep the exact width produced by the current browser-sized overview layout.
+- Only cell height may increase; focus motion must not scale or stretch the horizontal axis.
+
+## Geometry checks
+
+- At `1722 × 1000`, A/B remain exactly `189.9375 px` wide and C remains exactly `125.953125 px` wide before and after focus. Focused height is `68.875 px` for all three zones.
+- At `3840 × 2160`, C remains exactly `288.328125 px` wide while height increases from `58.484375 px` to `108 px`.
+- At `390 × 844`, A remains exactly `53.828125 px` wide while height increases from `40 px` to `60 px`. C overview width remains `34.875 px`, matching the phone-sized browser grid rather than a desktop or 4K token.
+
+## Motion and interaction checks
+
+- The previous zone-specific fixed width variables, minimum width clamps, max-content rows, and horizontal width transitions were removed.
+- Focused rows now reuse the overview grid's browser-relative columns, horizontal gaps, and horizontal padding.
+- The entry effect uses vertical-only `scaleY` plus opacity; no horizontal transform is applied.
+- Drawing-number truncation, vertical overflow, direct drag behavior where overflow exists, and occupied-cell selection remain operational.
+- Browser console: zero errors across desktop, 4K, and mobile checks.
+- `npm run build` — passed.
+- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould file and zero errors.
+- `git diff --check` — passed.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual or interaction findings remain.
+- P3: phone C-zone cells are intentionally narrow because the user requested the live phone overview width to remain unchanged during focus.
+
+final result: passed
+
+---
+
+# Incremental Design QA — Focused Cell Detail and Hourly Refresh
+
+## Requested behavior
+
+- A normal tap on an occupied cell must open the mould detail dialog even while its zone is expanded.
+- Actual drag movement must still pan the expanded zone without accidentally opening detail.
+- Automatic mould-board refresh should run once per hour and display the matching Korean/Chinese label.
+
+## Interaction checks
+
+- Pointer capture now begins only after movement exceeds the existing 5 px drag threshold. A stationary pointer remains targeted at the occupied-cell button, so its click handler opens detail.
+- Desktop focused A-zone cell `A1-1` opened the `MOLD-0514` dialog successfully.
+- At `390 × 844`, focused A-zone cell `A2-1` opened the `MOLD-0517` dialog and the mobile `关闭详情` action remained visible.
+- The drag suppression path remains limited to gestures that crossed the movement threshold; selected-cell and detail-query behavior are unchanged.
+- Korean displays `1시간 자동 갱신`; Chinese displays `1小时自动刷新`. The old 60-second labels are absent.
+- The board query interval is `3,600,000 ms` (one hour); manual refresh remains available.
+- Browser console: zero errors during Korean, Chinese, desktop, and mobile checks.
+- `npm run build` — passed.
+- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould file and zero errors.
+- `git diff --check` — passed.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual or interaction findings remain.
+
+final result: passed

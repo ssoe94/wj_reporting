@@ -122,7 +122,7 @@ const COPY = {
     dataBasis: "데이터 기준",
     warningTitle: "데이터 확인 사항",
     sourceTime: "조회 기준",
-    autoRefresh: "60초 자동 갱신",
+    autoRefresh: "1시간 자동 갱신",
     fullscreen: "전체 화면",
     exitFullscreen: "전체 화면 종료",
     backToBoards: "현황판 목록으로",
@@ -220,7 +220,7 @@ const COPY = {
     dataBasis: "数据口径",
     warningTitle: "数据注意事项",
     sourceTime: "查询基准",
-    autoRefresh: "60秒自动刷新",
+    autoRefresh: "1小时自动刷新",
     fullscreen: "全屏",
     exitFullscreen: "退出全屏",
     backToBoards: "返回看板中心",
@@ -570,7 +570,7 @@ export function MouldManagementPage() {
     queryFn: getMouldBoard,
     enabled: !developmentFallback,
     retry: 1,
-    refetchInterval: 60_000,
+    refetchInterval: 3_600_000,
   });
   const usingFallback = developmentFallback;
   const board = usingFallback ? FALLBACK_MOULD_BOARD : boardQuery.data;
@@ -677,8 +677,6 @@ export function MouldManagementPage() {
       scrollTop: event.currentTarget.scrollTop,
       moved: false,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setIsZonePanning(true);
   };
 
   const moveZonePan = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -686,7 +684,11 @@ export function MouldManagementPage() {
     if (!drag || drag.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - drag.startX;
     const deltaY = event.clientY - drag.startY;
-    if (Math.abs(deltaX) + Math.abs(deltaY) > 5) drag.moved = true;
+    if (Math.abs(deltaX) + Math.abs(deltaY) > 5 && !drag.moved) {
+      drag.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsZonePanning(true);
+    }
     if (!drag.moved) return;
     event.preventDefault();
     event.currentTarget.scrollLeft = drag.scrollLeft - deltaX;
