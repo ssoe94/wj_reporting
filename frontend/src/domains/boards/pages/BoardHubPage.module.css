@@ -21,18 +21,18 @@
 
 .hero {
   display: grid;
-  min-height: 132px;
+  min-height: 118px;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 18px;
-  padding: 22px 24px;
+  gap: 16px;
+  padding: 20px 22px;
   border-radius: 22px;
 }
 
 .brandMark {
   display: grid;
-  width: 76px;
-  height: 76px;
+  width: 68px;
+  height: 68px;
   place-items: center;
   border: 1px solid rgba(81, 145, 194, 0.16);
   border-radius: 20px;
@@ -42,8 +42,8 @@
 
 .brandMark img {
   display: block;
-  width: 58px;
-  height: 58px;
+  width: 52px;
+  height: 52px;
   object-fit: contain;
 }
 
@@ -62,10 +62,10 @@
 .heroCopy h1 {
   margin: 0;
   color: #16334d;
-  font-size: clamp(2rem, 3vw, 3.15rem);
+  font-size: clamp(1.62rem, 2.1vw, 2.08rem);
   font-weight: 850;
-  letter-spacing: -0.055em;
-  line-height: 1.04;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
 }
 
 .heroCopy span {
