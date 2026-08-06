@@ -180,6 +180,83 @@ final result: passed
 
 ---
 
+# Incremental Design QA — Mould Data Layers and Status Lists
+
+## Comparison target
+
+- Source visual truth: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-f2d99f32-afe6-4f9a-82cf-795f8933b101.png` (`1722 × 1175` px).
+- Browser-rendered detail implementation: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-detail-v3-desktop.png` (`1722 × 1175` px).
+- Browser-rendered status list: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-status-list-v3-desktop.png` and `/private/tmp/wj-dashboard-hub-deploy/qa-mould-status-list-v3-mobile.png`.
+- Browser-rendered focused zone: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-zone-v3-desktop.png`.
+- Final mobile detail: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-detail-v3-mobile-final.png` (`390 × 844` px).
+- 4K detail check: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-detail-v3-4k.png` (`3840 × 2160` px).
+- Final Chinese board check: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-v3-zh-desktop.png`.
+- Implementation route: `http://127.0.0.1:5183/boards/moulds`.
+
+## Normalization and state
+
+- The desktop source and primary implementation were inspected together at the same `1722 × 1175` viewport.
+- Live MES data was used. Loading state, completed history state, focused C-zone, external/unknown status lists, mounted-status list, Korean/Chinese language states, phone detail, and 4K detail were exercised separately.
+- The source's selected mould and production rows differ from the implementation capture because the data is live; the comparison is limited to app-owned layout, state communication, typography, spacing, and interaction behavior.
+
+## Full-view and focused evidence
+
+- The detail layer now uses the full useful viewport width, places the identity and four summary facts in one compact summary band, and gives history data a full-width table with a sticky header and vertical-only scrolling.
+- During the detail request, the tab panel contains only the loading notice. The empty-history message appears only after a successful, settled response with zero rows; the two messages are mutually exclusive.
+- At `390 × 844`, the detail layer begins at the safe-area top, the 48 px close control remains visible, and the underlying sticky board header cannot cover it. The close control was clicked successfully.
+- Focused C-zone cells show the coordinate on the first line and `图纸编号`/drawing number on the second line. Conflict cells retain the red warning treatment and add a compact overflow count.
+- Each non-All summary chip opens a modal table with code, name, drawing number, current location, update time, and status. At phone width the semantic table becomes a two-column card list without horizontal scrolling; row selection opens that mould's detail.
+- Machine labels use the production-board tonnage convention. Korean renders `1호기 - 850T`; Chinese renders `1号机 - 850T` in the machine list, selected detail, and status table.
+
+## Required fidelity surfaces
+
+- Fonts and typography: the existing Korean/Chinese system stack, WJ navy headings, compact uppercase eyebrow treatment, and table hierarchy are retained. Long drawing numbers truncate only inside focused cells, where full values remain available through the existing title/accessible label.
+- Spacing and layout rhythm: overlays use the existing 8–16 px radii and restrained blue-gray borders. Summary facts use equal cards and the history table uses aligned columns rather than the source's narrow split pane.
+- Colors and visual tokens: the existing WJ blue/teal zone system is preserved. Backdrops, table hover states, location pills, and close controls reuse the same pale blue surfaces and navy accents.
+- Image quality and asset fidelity: the existing WJ logo and installed Lucide icons are reused; no placeholder or custom drawn asset was introduced.
+- Copy and content: Korean and Chinese labels switch together. Chinese machine suffixes no longer expose Korean `호기`, and tonnage is sourced from the existing mould-board machine metadata populated from the same MES machine source used by the injection board.
+
+## Comparison history
+
+### Pass 1
+
+- [P1] Mobile detail began below the sticky header, placing the drawer title and close action outside the visible viewport.
+  - Fix: moved detail to a safe-area-aware fixed full-screen layer with a sticky topbar and higher modal stacking context.
+- [P1] Loading and empty-history messages could render simultaneously because the board-level fallback record was passed to the history component before the detail request settled.
+  - Fix: introduced one exclusive detail-content state (`loading`, `error`, or `ready`) and render history only in `ready`.
+- [P2] The source detail split reserved a fixed left column and forced both horizontal and vertical scrolling for history data.
+  - Fix: converted the summary to a horizontal data band and removed the history table's fixed minimum width; long history now uses only the expected vertical content scroll.
+- [P2] Status chips only dimmed the board, so large offsite and unknown groups could not be inspected directly.
+  - Fix: added an accessible status-list dialog with sticky columns on desktop and responsive semantic table cards on mobile.
+- [P2] Focused cells repeated only the coordinate code, leaving operators unable to identify stored moulds without opening each cell.
+  - Fix: added drawing number as the second, higher-density line only in focused-zone mode.
+
+### Pass 2
+
+- [P2] Chinese machine rows still used the Korean suffix and showed tonnage in a separate column.
+  - Fix: localized the suffix to `号机`, combined machine number and tonnage in the production-board format, and reused the same formatter in detail and status-list locations.
+- No actionable P0, P1, or P2 issue remained after the desktop, phone, Chinese, and 4K checks.
+
+## Interaction and runtime checks
+
+- Loading-state assertion passed: loading notice present; empty-history notice absent in the same DOM snapshot.
+- Settled production history rendered real rows after the live detail API completed.
+- External `295` and unknown `64` chips opened their corresponding lists; mounted `7` showed `1号机 - 850T`-style locations.
+- A status-list row opened detail, the mobile close action removed the dialog, Escape prioritizes detail/list closure, and the backdrop closes either layer.
+- Focused C-zone cell `C9-18` rendered its coordinate plus drawing number (`MBN66503201`).
+- `npm run build` — passed.
+- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould files and zero errors.
+- `git diff --check` — passed.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual or interaction findings remain.
+- P3: very long drawing numbers are intentionally ellipsized inside dense focused cells; selecting the cell exposes the complete value in the detail layer.
+
+final result: passed
+
+---
+
 # Incremental Design QA — Mobile Language Switch and Collapsing Headers
 
 ## Comparison target
@@ -382,5 +459,108 @@ final result: passed
 
 - No actionable P0, P1, or P2 visual findings remain.
 - P3: the compact header intentionally removes the board title; the retained timestamps and controls provide the requested high-value sticky context with minimal obstruction.
+
+final result: passed
+
+---
+
+# Incremental Design QA — Machine Table Balance and Equal Zone Zoom
+
+## Comparison target
+
+- Source visual truth: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-c6f8549d-adc2-45ca-b2db-c79aab2205d3.png` (`680 × 873` px).
+- Browser-rendered machine table: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-machine-balanced-crop.png` (`526 × 1005` px), captured from a `1722 × 1175` CSS viewport at density 1.
+- Browser-rendered A/B/C zoom states: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-a-balanced.png`, `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-b-balanced.png`, and `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-c-balanced-desktop-final.png`.
+- Mobile focused-zone evidence: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-b-balanced-mobile-visible.png` at `390 × 844` CSS px and density 1.
+- 4K focused-zone evidence: `/private/tmp/wj-dashboard-hub-deploy/qa-mould-focus-c-balanced-4k-final.png` at `3840 × 2160` CSS px and density 1.
+- Implementation route: `http://127.0.0.1:5183/boards/moulds`.
+
+## State and normalization
+
+- The source is a crop of the machine panel rather than a full board. It was compared with a matching implementation crop for column rhythm and with full-board captures for the machine/storage proportion.
+- Live MES data was used. Korean and Chinese machine labels, default all-zone layout, focused A/B/C layouts, phone horizontal overflow, and 4K scaling were checked.
+- The reference and implementation have different crop heights, so row density was judged by the complete 17-row sequence, not by exact outer-frame pixel matching.
+
+## Full-view and focused evidence
+
+- At `1722 × 1175`, the machine panel measures `526.4 px` and the storage panel `1171.6 px`, giving the machine region a `31%` share. This is approximately 20% narrower than the previous `39%` share.
+- The stale fifth CSS track was removed. The four live columns now allocate `110 px` to equipment, at least `172 px` to mounted mould, `58 px` to status, and `126 px` to final change at the primary desktop width.
+- Final-change timestamps stay on one line and the `레코드 수정 시각` / `记录更新时间` row annotation is absent from machine rows. The timestamp's quality basis remains available as a title attribute.
+- Focused A, B, and C cells measure exactly `118 × 68.875 px` at the desktop QA viewport. Their content count no longer changes cell size.
+- The focused C canvas has `1234 px` scroll height against an `888 px` viewport, while the phone B canvas has `687 px` scroll width against a `339 px` viewport. A visible `드래그하여 이동` / `拖动查看` hint and grab/grabbing cursor communicate the pan interaction.
+- At 4K, all focused zones use the same responsive `220 × 108 px` cell size; the layout scales for a monitor without returning to content-dependent stretching.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing WJ type hierarchy and weights remain. Equipment and mould identifiers stay legible without wrapping; timestamps use one line and no longer compete with explanatory microcopy.
+- Spacing and layout rhythm: the machine/storage split is rebalanced to 31/69, and the four machine columns align with their four data fields. Focused cells use one shared responsive size token across all zones.
+- Colors and visual tokens: machine status pills and the teal/gold/rose zone identities are unchanged. The pan hint uses each zone's existing accent color.
+- Image quality and asset fidelity: the supplied WJ logo and installed Lucide `Move` icon remain the only relevant assets; no placeholder or custom-drawn graphic was added.
+- Copy and content: Korean/Chinese labels remain synchronized. The removed row annotation does not remove the underlying timestamp, and the pan instruction is localized.
+
+## Comparison history
+
+### Pass 1
+
+- [P1] The machine table rendered four data fields into five CSS tracks, compressing the mould column and leaving an unused track.
+  - Fix: replaced the stale five-track definition with a four-track grid and reassigned width toward equipment and mounted mould.
+- [P2] Final-change dates wrapped into two lines and repeated a record-quality annotation on every mounted row.
+  - Fix: reserved a stable timestamp column, enforced single-line rendering, and removed the visible annotation while preserving its title metadata.
+- [P1] Focused cell size depended on row count, making A small and B disproportionately large.
+  - Fix: introduced shared responsive cell-width and cell-height tokens used by every focused zone.
+- [P2] Large focused canvases supported scrollbar movement but did not communicate or implement direct drag panning.
+  - Fix: added pointer-capture panning, movement-threshold click suppression, touch-action handling, grab/grabbing feedback, and a localized drag hint.
+
+### Pass 2
+
+- Desktop cell measurements matched across A/B/C, the phone canvas retained horizontal overflow for panning, and 4K cells scaled consistently. No actionable P0, P1, or P2 issue remained.
+
+## Interaction and runtime checks
+
+- A focused occupied cell still opened the correct mould detail after the pan handlers were added.
+- Focused C exposes vertical overflow; focused B on phone exposes horizontal overflow. Pointer-capture handlers cover both axes and use a 5 px movement threshold. The browser run verified the overflow ranges and post-handler cell selection; a physical touch-drag remains a device spot check.
+- Korean → Chinese switching passed: `1号机 - 850T` and `拖动查看` appeared, while `记录更新时间` did not.
+- `npm run build` — passed.
+- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould files and zero errors.
+- `git diff --check` — passed.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual or interaction findings remain.
+- P3: B-zone naturally leaves more empty canvas than C-zone because it contains only four rows; the consistent cell scale is intentional and preserves spatial comparison.
+
+final result: passed
+
+---
+
+# Incremental Design QA — Native Zone Widths and Unified Focus Height
+
+## Comparison target
+
+- Source visual truth: the existing all-zone mould layout at `http://127.0.0.1:5183/boards/moulds`, where each zone's column count determines its natural cell width.
+- Updated focus states were compared against the corresponding unexpanded A/B/C cells at `1722 × 1000`, `390 × 844`, and `3840 × 2160` CSS px.
+- The requested target keeps each zone's original horizontal rhythm, standardizes only focused-cell height, and adds a restrained expansion transition.
+
+## Geometry checks
+
+- At `1722 × 1000`, original cells measured approximately `190 px` in A/B and `126 px` in C. Focused cells now measure approximately `189 px` in A/B and `125 px` in C.
+- All three focused zones measure `68.875 px` high at the desktop viewport, despite their different row and column counts.
+- At `3840 × 2160`, original A/B and C widths measured approximately `433.5 px` and `288.3 px`; focused A and C measured approximately `432.2 px` and `287.4 px`. Focused height is `108 px` for both.
+- At `390 × 844`, touch usability takes precedence over shrinking back to overview density: focused A/B cells are `132 × 60 px`, C cells are `108 × 60 px`, and horizontal drag canvases remain available (`831/339 px` for A and `1026/328 px` for C scroll/client width).
+
+## Motion and interaction checks
+
+- Focus entry uses a 280 ms decelerating scale/fade and cell width/height transitions; it reads as a gentle expansion rather than a layout jump.
+- `prefers-reduced-motion: reduce` disables the new focus animation and size transitions.
+- Direct drag panning, localized pan guidance, occupied-cell selection, and detail opening remain unchanged.
+- Browser console: zero errors during desktop, mobile, and 4K focus-state switching.
+- `npm run build` — passed.
+- `npm run lint` — passed with 38 pre-existing warnings outside the changed mould files and zero errors.
+- `git diff --check` — passed.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual or interaction findings remain.
+- P3: focused zones deliberately retain small horizontal overflow caused by the roomier focus-state gutters; this makes drag affordance visible without changing the zone's native cell proportions.
 
 final result: passed

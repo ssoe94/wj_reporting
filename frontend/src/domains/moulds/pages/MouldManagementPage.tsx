@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -10,10 +10,12 @@ import {
   FileText,
   History,
   Info,
+  ListFilter,
   Map as MapIcon,
   MapPin,
   Maximize2,
   Minimize2,
+  Move,
   RefreshCw,
   Search,
   Wrench,
@@ -71,11 +73,18 @@ const COPY = {
     focusZone: "존 확대",
     overviewMode: "전체 배치",
     touchHint: "존을 확대하면 터치 셀이 커집니다.",
+    dragZoneHint: "드래그하여 이동",
     storedCount: "보관",
     emptyCell: "빈 위치",
     conflict: "중복 배치",
     noLayout: "표시할 A/B/C 보관 좌표가 없습니다.",
     noMoulds: "검색 또는 필터 조건에 맞는 금형이 없습니다.",
+    statusListTitle: "금형 목록",
+    statusListHint: "상태별 금형을 간단한 정보와 함께 확인합니다.",
+    closeList: "금형 목록 닫기",
+    listCount: "건",
+    mouldCode: "금형 코드",
+    mouldNameLabel: "금형명",
     selectMould: "금형 또는 위치 셀을 선택하면 상세 정보가 표시됩니다.",
     selectedMould: "선택 금형",
     currentLocation: "현재 위치",
@@ -162,11 +171,18 @@ const COPY = {
     focusZone: "放大区域",
     overviewMode: "全部布局",
     touchHint: "放大区域后可使用更大的触控单元格。",
+    dragZoneHint: "拖动查看",
     storedCount: "存放",
     emptyCell: "空位置",
     conflict: "重复占用",
     noLayout: "没有可显示的 A/B/C 存放坐标。",
     noMoulds: "没有符合搜索或筛选条件的模具。",
+    statusListTitle: "模具列表",
+    statusListHint: "查看当前状态下的模具及主要信息。",
+    closeList: "关闭模具列表",
+    listCount: "条",
+    mouldCode: "模具编号",
+    mouldNameLabel: "模具名称",
     selectMould: "选择模具或位置单元格后显示详细信息。",
     selectedMould: "已选模具",
     currentLocation: "当前位置",
@@ -222,6 +238,14 @@ type Copy = { [Key in keyof typeof COPY.ko]: string };
 type ViewFilter = "all" | "machine" | "storage" | "repair" | "offsite" | "unknown";
 type DetailTab = "movement" | "detail" | "production" | "repair";
 type SelectedDetail = MouldDetail | MouldRecord;
+type ZoneDragState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  scrollLeft: number;
+  scrollTop: number;
+  moved: boolean;
+};
 
 type CoordinateCell = {
   location: MouldLocation;
@@ -279,6 +303,16 @@ function finalChangedQualityLabel(value: string, copy: Copy) {
   return value ? copy.recordUpdateQuality : copy.timeUnknownQuality;
 }
 
+function localizedMachineText(value: string, language: "ko" | "zh") {
+  return language === "zh" ? value.replace(/호기/g, "号机") : value.replace(/号机/g, "호기");
+}
+
+function machineDisplayLabel(machineNumber: number, tonnage: string, language: "ko" | "zh") {
+  const suffix = language === "ko" ? "호기" : "号机";
+  const normalizedTonnage = tonnage && !/t$/i.test(tonnage) ? `${tonnage}T` : tonnage;
+  return `${machineNumber}${suffix}${normalizedTonnage ? ` - ${normalizedTonnage}` : ""}`;
+}
+
 function matchesFilter(mould: MouldRecord, filter: ViewFilter) {
   if (filter === "all") return true;
   if (filter === "repair") return ["repair", "maintenance"].includes(mould.summaryCategory);
@@ -297,6 +331,7 @@ function matchesSearch(mould: MouldRecord, search: string) {
     mould.location.code,
     mould.location.label,
     mould.location.machineNumber ? `${mould.location.machineNumber}호기` : "",
+    mould.location.machineNumber ? `${mould.location.machineNumber}号机` : "",
   ].join(" ").toLocaleLowerCase().includes(term);
 }
 
@@ -449,8 +484,8 @@ function DetailContent({ copy, detail, language, tab }: {
           <tbody>{fullDetail.movements.map((item, index) => (
             <tr key={item.id}>
               <td>{dateTime(item.occurredAt, language, copy.noTimestamp)}</td>
-              <td>{text(item.fromLocation, index === 0 ? copy.firstRecord : undefined)}</td>
-              <td><strong>{text(item.toLocation)}</strong></td>
+              <td>{localizedMachineText(text(item.fromLocation, index === 0 ? copy.firstRecord : undefined), language)}</td>
+              <td><strong>{localizedMachineText(text(item.toLocation), language)}</strong></td>
               <td>{text(item.reason)}</td>
             </tr>
           ))}</tbody>
@@ -506,7 +541,10 @@ export function MouldManagementPage() {
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
   const [detailTab, setDetailTab] = useState<DetailTab>("movement");
   const [detailOpen, setDetailOpen] = useState(false);
+  const [statusListOpen, setStatusListOpen] = useState(false);
   const [focusedZone, setFocusedZone] = useState<string | null>(null);
+  const [isZonePanning, setIsZonePanning] = useState(false);
+  const zoneDragRef = useRef<ZoneDragState | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [isMobileHeaderCompact, setIsMobileHeaderCompact] = useState(false);
 
@@ -519,12 +557,13 @@ export function MouldManagementPage() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (focusedZone) setFocusedZone(null);
-      else if (detailOpen) setDetailOpen(false);
+      if (detailOpen) setDetailOpen(false);
+      else if (statusListOpen) setStatusListOpen(false);
+      else if (focusedZone) setFocusedZone(null);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [detailOpen, focusedZone]);
+  }, [detailOpen, focusedZone, statusListOpen]);
 
   const boardQuery = useQuery({
     queryKey: ["injection", "moulds", "board"],
@@ -564,6 +603,9 @@ export function MouldManagementPage() {
     (board?.moulds ?? []).filter((mould) => matchesFilter(mould, filter) && matchesSearch(mould, search))
   ), [board?.moulds, filter, search]);
   const visibleIds = useMemo(() => new Set(visibleMoulds.map((mould) => mould.instanceId)), [visibleMoulds]);
+  const listedMoulds = useMemo(() => (
+    [...visibleMoulds].sort((a, b) => b.finalChangedAt.localeCompare(a.finalChangedAt))
+  ), [visibleMoulds]);
 
   useEffect(() => {
     if (!selectedInstanceId || visibleIds.has(selectedInstanceId)) return;
@@ -600,10 +642,65 @@ export function MouldManagementPage() {
     { key: "production", label: copy.production, icon: BarChart3 },
     { key: "repair", label: copy.repairHistory, icon: Wrench },
   ];
+  const activeFilter = filters.find((item) => item.key === filter);
+  const detailContentState = !usingFallback && detailQuery.isLoading
+    ? "loading"
+    : !usingFallback && detailQuery.isError
+      ? "error"
+      : "ready";
+  const displayLocation = (mould: SelectedDetail) => {
+    if (mould.location.machineNumber) {
+      const machine = board?.machines.find((item) => item.number === mould.location.machineNumber);
+      return machineDisplayLabel(mould.location.machineNumber, machine?.tonnage ?? "", language);
+    }
+    return localizedMachineText(text(mould.location.label || mould.location.code, copy.unknown), language);
+  };
 
   const selectMould = (instanceId: string) => {
     setSelectedInstanceId(instanceId);
+    setStatusListOpen(false);
     setDetailOpen(true);
+  };
+
+  const selectFilter = (nextFilter: ViewFilter) => {
+    setFilter(nextFilter);
+    setStatusListOpen(nextFilter !== "all");
+  };
+
+  const startZonePan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!focusedZone || event.button !== 0) return;
+    zoneDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: event.currentTarget.scrollLeft,
+      scrollTop: event.currentTarget.scrollTop,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsZonePanning(true);
+  };
+
+  const moveZonePan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = zoneDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (Math.abs(deltaX) + Math.abs(deltaY) > 5) drag.moved = true;
+    if (!drag.moved) return;
+    event.preventDefault();
+    event.currentTarget.scrollLeft = drag.scrollLeft - deltaX;
+    event.currentTarget.scrollTop = drag.scrollTop - deltaY;
+  };
+
+  const endZonePan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = zoneDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setIsZonePanning(false);
+    window.setTimeout(() => {
+      if (zoneDragRef.current === drag) zoneDragRef.current = null;
+    }, 0);
   };
 
   const toggleFullscreen = async () => {
@@ -687,7 +784,7 @@ export function MouldManagementPage() {
               aria-pressed={filter === item.key}
               className={filter === item.key ? styles.activeChip : ""}
               key={item.key}
-              onClick={() => setFilter(item.key)}
+              onClick={() => selectFilter(item.key)}
               type="button"
             >
               {item.label}<strong>{item.count}</strong>
@@ -697,7 +794,7 @@ export function MouldManagementPage() {
         <div className={styles.boardStatus}>
           {selectedDetail && visibleIds.has(selectedDetail.instanceId) ? (
             <button className={styles.selectedPeek} onClick={() => setDetailOpen(true)} title={copy.openSelected} type="button">
-              <small>{copy.selectedMould}</small><strong>{selectedDetail.mouldCode}</strong><span>{text(selectedDetail.location.code, copy.unknown)}</span>
+              <small>{copy.selectedMould}</small><strong>{selectedDetail.mouldCode}</strong><span>{displayLocation(selectedDetail)}</span>
             </button>
           ) : null}
           <div className={styles.dataState}>
@@ -717,7 +814,7 @@ export function MouldManagementPage() {
             </div>
             <div className={styles.machineTable}>
               <div className={styles.machineTableHeader} aria-hidden="true">
-                <span>{copy.machine}</span><span>{copy.tonnage}</span><span>{copy.currentMould}</span><span>{copy.status}</span><span>{copy.changed}</span>
+                <span>{copy.machine}</span><span>{copy.currentMould}</span><span>{copy.status}</span><span>{copy.changed}</span>
               </div>
               <div className={styles.machineRows}>
                 {board.machines.map((machine) => {
@@ -726,7 +823,7 @@ export function MouldManagementPage() {
                   const selected = mounted?.instanceId === selectedInstanceId;
                   return (
                     <button
-                      aria-label={mounted ? `${machine.number}호기, ${mounted.mouldCode}` : `${machine.number}호기, ${copy.unassigned}`}
+                      aria-label={mounted ? `${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${mounted.mouldCode}` : `${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.unassigned}`}
                       aria-pressed={selected}
                       className={`${styles.machineRow} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                       disabled={!mounted}
@@ -734,11 +831,10 @@ export function MouldManagementPage() {
                       onClick={() => mounted && selectMould(mounted.instanceId)}
                       type="button"
                     >
-                      <strong>{machine.number}호기</strong>
-                      <span>{text(machine.tonnage)}</span>
+                      <strong>{machineDisplayLabel(machine.number, machine.tonnage, language)}</strong>
                       <span className={styles.machineMould}>{mounted ? <><strong>{mounted.mouldCode}</strong><small>{text(mounted.name)}</small></> : <em>{copy.unassigned}</em>}</span>
                       <span>{mounted ? <i className={`${styles.statusPill} ${styles.mountedPill}`}>{copy.mounted}</i> : <i className={styles.statusPill}>{copy.unknown}</i>}</span>
-                      <span className={styles.changedAt}>{mounted ? <><strong>{dateTime(mounted.finalChangedAt, language, copy.noTimestamp)}</strong><small>{finalChangedQualityLabel(mounted.finalChangedAt, copy)}</small></> : "-"}</span>
+                      <span className={styles.changedAt}>{mounted ? <strong title={finalChangedQualityLabel(mounted.finalChangedAt, copy)}>{dateTime(mounted.finalChangedAt, language, copy.noTimestamp)}</strong> : "-"}</span>
                     </button>
                   );
                 })}
@@ -760,12 +856,21 @@ export function MouldManagementPage() {
                     <header>
                       <h3>{zone.label}</h3>
                       <span>{copy.storedCount}<strong>{occupied}</strong></span>
+                      {focusedZone ? <div className={styles.zonePanHint}><Move aria-hidden="true" size={16} />{copy.dragZoneHint}</div> : null}
                       <button aria-pressed={focusedZone === zone.code} className={styles.zoneFocusButton} onClick={() => setFocusedZone(focusedZone === zone.code ? null : zone.code)} type="button">
                         {focusedZone === zone.code ? <Minimize2 aria-hidden="true" size={18} /> : <Expand aria-hidden="true" size={18} />}
                         {focusedZone === zone.code ? copy.overviewMode : copy.focusZone}
                       </button>
                     </header>
-                    <div className={styles.coordinateRows} style={{ "--coordinate-columns": zone.columns, "--coordinate-rows": zone.rows.length } as CSSProperties}>
+                    <div
+                      aria-label={focusedZone ? `${zone.label} · ${copy.dragZoneHint}` : undefined}
+                      className={`${styles.coordinateRows} ${focusedZone ? styles.pannableZone : ""} ${isZonePanning ? styles.zonePanning : ""}`}
+                      onPointerCancel={endZonePan}
+                      onPointerDown={startZonePan}
+                      onPointerMove={moveZonePan}
+                      onPointerUp={endZonePan}
+                      style={{ "--coordinate-columns": zone.columns, "--coordinate-rows": zone.rows.length } as CSSProperties}
+                    >
                       {zone.rows.map((row) => (
                         <div className={styles.coordinateRow} key={row.key}>
                           <div className={styles.coordinateCells}>
@@ -782,11 +887,23 @@ export function MouldManagementPage() {
                                   className={`${styles.coordinateCell} ${occupant ? styles.occupiedCell : ""} ${selected ? styles.selectedCell : ""} ${conflict ? styles.conflictCell : ""} ${visible ? "" : styles.filteredOut}`}
                                   disabled={!occupant}
                                   key={location.code}
-                                  onClick={() => occupant && selectMould(occupant.instanceId)}
+                                  onClick={() => {
+                                    if (zoneDragRef.current?.moved) {
+                                      zoneDragRef.current.moved = false;
+                                      return;
+                                    }
+                                    if (occupant) selectMould(occupant.instanceId);
+                                  }}
                                   title={occupant ? `${occupant.mouldCode} · ${occupant.name}` : copy.emptyCell}
                                   type="button"
                                 >
-                                  {location.code}
+                                  <span className={styles.coordinateCode}>{location.code}</span>
+                                  {focusedZone && occupant ? (
+                                    <span className={styles.coordinateDrawing}>
+                                      {text(occupant.drawingNo, occupant.assetCode || occupant.mouldCode)}
+                                      {occupants.length > 1 ? <small>+{occupants.length - 1}</small> : null}
+                                    </span>
+                                  ) : null}
                                 </button>
                               );
                             })}
@@ -804,8 +921,44 @@ export function MouldManagementPage() {
 
       {board && !visibleMoulds.length ? <div className={styles.noResults} role="status"><Search aria-hidden="true" size={18} />{copy.noMoulds}</div> : null}
 
+      {statusListOpen && activeFilter ? (
+        <>
+          <button aria-label={copy.closeList} className={styles.overlayBackdrop} onClick={() => setStatusListOpen(false)} type="button" />
+          <section className={styles.statusListPanel} role="dialog" aria-labelledby="mould-status-list-title">
+            <header className={styles.statusListHeader}>
+              <div>
+                <span><ListFilter aria-hidden="true" size={19} />{activeFilter.label}</span>
+                <h2 id="mould-status-list-title">{copy.statusListTitle}</h2>
+                <p>{copy.statusListHint}</p>
+              </div>
+              <strong>{number(listedMoulds.length, language)}<small>{copy.listCount}</small></strong>
+              <button aria-label={copy.closeList} onClick={() => setStatusListOpen(false)} title={copy.closeList} type="button"><X aria-hidden="true" size={22} /></button>
+            </header>
+            <div className={styles.statusListBody}>
+              {listedMoulds.length ? (
+                <table className={styles.statusTable}>
+                  <thead><tr><th>{copy.mouldCode}</th><th>{copy.mouldNameLabel}</th><th>{copy.drawingNo}</th><th>{copy.currentLocation}</th><th>{copy.finalChangedAt}</th><th>{copy.status}</th></tr></thead>
+                  <tbody>{listedMoulds.map((mould) => (
+                    <tr key={mould.instanceId} onClick={() => selectMould(mould.instanceId)} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") selectMould(mould.instanceId); }}>
+                      <td data-label={copy.mouldCode}><strong>{text(mould.mouldCode)}</strong><small>{text(mould.assetCode)}</small></td>
+                      <td data-label={copy.mouldNameLabel}>{text(mould.name)}</td>
+                      <td data-label={copy.drawingNo}>{text(mould.drawingNo)}</td>
+                      <td data-label={copy.currentLocation}><span className={styles.locationPill}>{displayLocation(mould)}</span></td>
+                      <td data-label={copy.finalChangedAt}>{dateTime(mould.finalChangedAt, language, copy.noTimestamp)}</td>
+                      <td data-label={copy.status}>{text(mould.statusLabel, copy.unknown)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              ) : <div className={styles.emptyHistory}><Search aria-hidden="true" size={18} />{copy.noMoulds}</div>}
+            </div>
+          </section>
+        </>
+      ) : null}
+
       {detailOpen ? (
-        <aside className={styles.detailDrawer} role="dialog" aria-labelledby="selected-mould-title">
+        <>
+        <button aria-label={copy.closeDetail} className={`${styles.overlayBackdrop} ${styles.detailBackdrop}`} onClick={() => setDetailOpen(false)} type="button" />
+        <aside className={styles.detailDrawer} role="dialog" aria-modal="true" aria-labelledby="selected-mould-title">
           <div className={styles.drawerTopbar}>
             <span><Boxes aria-hidden="true" size={20} />{copy.selectedMould}</span>
             <button aria-label={copy.closeDetail} onClick={() => setDetailOpen(false)} title={copy.closeDetail} type="button"><X aria-hidden="true" size={22} /></button>
@@ -814,16 +967,18 @@ export function MouldManagementPage() {
             {selectedDetail ? (
               <>
                 <aside className={styles.selectedSummary}>
-                  <p>{copy.selectedMould}</p>
-                  <h2 id="selected-mould-title">{selectedDetail.mouldCode}</h2>
-                  <span className={styles.assetLine}>{text(selectedDetail.assetCode)}</span>
-                  <strong className={styles.mouldName}>{text(selectedDetail.name)}</strong>
-                  <div className={styles.summaryBadges}>
-                    <span>{text(selectedDetail.statusLabel, copy.unknown)}</span>
-                    <span>{text(selectedDetail.location.code, copy.unknown)}</span>
+                  <div className={styles.summaryIdentity}>
+                    <p>{copy.selectedMould}</p>
+                    <h2 id="selected-mould-title">{selectedDetail.mouldCode}</h2>
+                    <span className={styles.assetLine}>{text(selectedDetail.assetCode)}</span>
+                    <strong className={styles.mouldName}>{text(selectedDetail.name)}</strong>
+                    <div className={styles.summaryBadges}>
+                      <span>{text(selectedDetail.statusLabel, copy.unknown)}</span>
+                      <span>{text(selectedDetail.location.code, copy.unknown)}</span>
+                    </div>
                   </div>
                   <dl className={styles.summaryFacts}>
-                    <div><dt>{copy.currentLocation}</dt><dd>{text(selectedDetail.location.label || selectedDetail.location.code)}</dd></div>
+                    <div><dt>{copy.currentLocation}</dt><dd>{displayLocation(selectedDetail)}</dd></div>
                     <div><dt>{copy.finalChangedAt}</dt><dd>{dateTime(selectedDetail.finalChangedAt, language, copy.noTimestamp)}<small>{finalChangedQualityLabel(selectedDetail.finalChangedAt, copy)}</small></dd></div>
                     <div><dt>{copy.lifetimeOutput}</dt><dd>{number(selectedLifetimeProduction, language)} {copy.shots}</dd></div>
                     <div><dt>{copy.outputBatch}</dt><dd>{number(selectedDetail.currentOutputAmount, language)} {copy.times}</dd></div>
@@ -850,16 +1005,17 @@ export function MouldManagementPage() {
                       );
                     })}
                   </div>
-                  {detailQuery.isLoading && !usingFallback ? <div className={styles.inlineNotice}><RefreshCw aria-hidden="true" className={styles.spinning} size={16} />{copy.detailLoading}</div> : null}
-                  {detailQuery.isError && !usingFallback ? <div className={`${styles.inlineNotice} ${styles.inlineWarning}`} role="alert"><AlertTriangle aria-hidden="true" size={16} />{copy.detailError}</div> : null}
                   <div className={styles.detailContent} role="tabpanel">
-                    <DetailContent copy={copy} detail={selectedDetail} language={language} tab={detailTab} />
+                    {detailContentState === "loading" ? <div className={styles.inlineNotice}><RefreshCw aria-hidden="true" className={styles.spinning} size={16} />{copy.detailLoading}</div> : null}
+                    {detailContentState === "error" ? <div className={`${styles.inlineNotice} ${styles.inlineWarning}`} role="alert"><AlertTriangle aria-hidden="true" size={16} />{copy.detailError}</div> : null}
+                    {detailContentState === "ready" ? <DetailContent copy={copy} detail={selectedDetail} language={language} tab={detailTab} /> : null}
                   </div>
                 </div>
               </>
             ) : <div className={styles.emptySelection}><FileText aria-hidden="true" size={22} />{copy.selectMould}</div>}
           </section>
         </aside>
+        </>
       ) : null}
     </section>
   );
