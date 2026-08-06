@@ -1,46 +1,36 @@
-import { useState, useEffect } from 'react';
-import { Clock, CheckCircle, XCircle, AlertCircle, Table, ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import api from '@/lib/api';
+import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { AlertCircle, ArrowLeft, CheckCircle, Clock, Table, XCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
-import SetupDashboard from '@/components/setup/SetupDashboard';
+import { Button } from '@/components/ui/button';
 import CycleTimeTableForm from '@/components/setup/CycleTimeTableForm';
-import SetupHistory from '@/components/setup/SetupHistory';
 import MachineSetupModal from '@/components/setup/MachineSetupModal';
+import SetupDashboard from '@/components/setup/SetupDashboard';
+import SetupHistory from '@/components/setup/SetupHistory';
 import { useLang } from '@/i18n';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useMemo } from 'react';
+import api from '@/lib/api';
 
-export default function InjectionSetupPage() {
+export default function InjectionSetupPanel() {
   const { t } = useLang();
   const [showHistory, setShowHistory] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-
-  // 모달 상태
   const [selectedMachine, setSelectedMachine] = useState<{ id: number; setup: any } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const setupsByMachine = useMemo(() => {
     const map = new Map<number, any>();
-    // 백엔드에서 이미 오늘 날짜로 필터링된 데이터를 보내므로
-    // 프론트엔드에서 날짜 체크 불필요 (시간대 문제 방지)
-    (dashboardData?.recent_setups || []).forEach((s: any) => {
-      if (typeof s.machine_no === 'number') {
-        const prev = map.get(s.machine_no);
-        if (!prev || new Date(s.setup_date).getTime() > new Date(prev.setup_date).getTime()) {
-          map.set(s.machine_no, s);
+    (dashboardData?.recent_setups || []).forEach((setup: any) => {
+      if (typeof setup.machine_no === 'number') {
+        const previous = map.get(setup.machine_no);
+        if (!previous || new Date(setup.setup_date).getTime() > new Date(previous.setup_date).getTime()) {
+          map.set(setup.machine_no, setup);
         }
       }
     });
     return map;
   }, [dashboardData?.recent_setups]);
-
-
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
 
   const loadDashboardData = async () => {
     try {
@@ -54,9 +44,13 @@ export default function InjectionSetupPage() {
     }
   };
 
+  useEffect(() => {
+    void loadDashboardData();
+  }, []);
+
   const handleMachineClick = (machineId: number) => {
     const setup = setupsByMachine.get(machineId);
-    setSelectedMachine({ id: machineId, setup: setup });
+    setSelectedMachine({ id: machineId, setup });
     setIsModalOpen(true);
   };
 
@@ -66,20 +60,20 @@ export default function InjectionSetupPage() {
   };
 
   const handleModalSuccess = () => {
-    loadDashboardData(); // 데이터 새로고침
+    void loadDashboardData();
     setIsModalOpen(false);
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'TESTING':
-        return <Clock className="w-4 h-4 text-blue-600" />;
+        return <Clock className="h-4 w-4 text-blue-600" />;
       case 'APPROVED':
-        return <CheckCircle className="w-4 h-4 text-green-600" />;
+        return <CheckCircle className="h-4 w-4 text-green-600" />;
       case 'REJECTED':
-        return <XCircle className="w-4 h-4 text-red-600" />;
+        return <XCircle className="h-4 w-4 text-red-600" />;
       default:
-        return <AlertCircle className="w-4 h-4 text-yellow-600" />;
+        return <AlertCircle className="h-4 w-4 text-yellow-600" />;
     }
   };
 
@@ -100,46 +94,45 @@ export default function InjectionSetupPage() {
 
   if (isLoading) {
     return (
-      <div className="p-4">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded"></div>
-            ))}
-          </div>
+      <div id="cycle-time" className="space-y-4">
+        <div className="h-8 w-1/4 animate-pulse rounded bg-slate-200" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          {[...Array(4)].map((_, index) => (
+            <div key={index} className="h-32 animate-pulse rounded-2xl bg-slate-200" />
+          ))}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-4 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold text-gray-900">{t('setup.page_title')}</h1>
-          <Button
-            onClick={() => {
-              if (showHistory) {
-                setShowHistory(false);
-                return;
-              }
-              setShowHistory(true);
-              setIsInitialLoad(false);
-            }}
-            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white"
-            variant="primary"
-            size="sm"
-          >
-            {showHistory ? (
-              <ArrowLeft className="w-4 h-4" />
-            ) : (
-              <Table className="w-4 h-4" />
-            )}
-            {showHistory ? t('setup.history_return_button') : t('setup.history_button')}
-          </Button>
+    <div id="cycle-time" className="space-y-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
+            C/T setup
+          </div>
+          <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-900">{t('setup.page_title')}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            사출기별 C/T, 인원, 테스트 기록과 변경 이력을 대시보드 안에서 관리합니다.
+          </p>
         </div>
-
+        <Button
+          onClick={() => {
+            if (showHistory) {
+              setShowHistory(false);
+              return;
+            }
+            setShowHistory(true);
+            setIsInitialLoad(false);
+          }}
+          className="flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600"
+          variant="primary"
+          size="sm"
+        >
+          {showHistory ? <ArrowLeft className="h-4 w-4" /> : <Table className="h-4 w-4" />}
+          {showHistory ? t('setup.history_return_button') : t('setup.history_button')}
+        </Button>
       </div>
 
       <AnimatePresence mode="wait">
@@ -178,13 +171,11 @@ export default function InjectionSetupPage() {
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.3 }}
           >
-
             <SetupHistory />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* 사출기 설정 모달 */}
       <MachineSetupModal
         isOpen={isModalOpen}
         onClose={handleModalClose}

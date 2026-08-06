@@ -5134,8 +5134,8 @@ select {
 
 .plan-hero__meta {
   display: grid;
-  min-width: 138px;
-  gap: 4px;
+  min-width: 190px;
+  gap: 5px;
 }
 
 .plan-hero__meta span {
@@ -5152,7 +5152,21 @@ select {
   white-space: nowrap;
 }
 
+.plan-hero__meta-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.plan-hero__meta-row strong {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .plan-hero__meta .button {
+  flex: 0 0 auto;
   min-height: 26px;
   justify-self: start;
   padding: 0 9px;

@@ -28,7 +28,6 @@ import {
   Factory,
   FileSpreadsheet,
 } from "lucide-react";
-import SummaryPage from "./pages/summary";
 import ModelsPage from './pages/models';
 import Eco2Page from './pages/eco2';
 import AnalysisPage from './pages/analysis';
@@ -47,7 +46,6 @@ import QualityPage from './pages/quality';
 import DailyAttentionPage from './pages/quality/DailyAttention';
 import AssemblyDashboardPage from './pages/assembly/Dashboard';
 import InjectionDashboardPage from './pages/injection/Dashboard';
-import InjectionSetupPage from './pages/injection/Setup';
 import InjectionMonitoringPage from './pages/injection/MonitoringPage';
 import FieldLauncherPage from './pages/field/Launcher';
 import FieldStationPage from './pages/field/Station';
@@ -105,6 +103,12 @@ function RouteLoading() {
   );
 }
 
+function InjectionLegacyRedirect() {
+  const location = useLocation();
+  const targetHash = location.hash === '#new' ? '#new' : '#records';
+  return <Navigate to={`/injection/dashboard${targetHash}`} replace />;
+}
+
 function useNavItems() {
   const { lang, t } = useLang();
   const { user, hasPermission } = useAuth();
@@ -133,10 +137,6 @@ function useNavItems() {
         icon: Monitor,
         children: [
           { to: "/injection/dashboard", label: t('nav_injection_dashboard'), icon: BarChart3 },
-          { to: "/injection#top", label: t('nav_injection_summary'), icon: ChartNoAxesCombined },
-          { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
-          { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
-          { to: "/injection/setup", label: t('setup.page_title'), icon: Monitor },
           { to: "/mes/monitoring", label: t('monitoring.title'), icon: BarChart3 },
         ],
       },
@@ -218,10 +218,6 @@ function useNavItems() {
     icon: Monitor,
     children: [
       { to: "/injection/dashboard", label: t('nav_injection_dashboard'), icon: BarChart3 },
-      { to: "/injection#top", label: t('nav_injection_summary'), icon: ChartNoAxesCombined },
-      { to: "/injection#records", label: t('nav_injection_records'), icon: ClipboardList },
-      { to: "/injection#new", label: t('nav_injection_new'), icon: PlusSquare },
-      { to: "/injection/setup", label: t('setup.page_title'), icon: Monitor },
       { to: "/mes/monitoring", label: t('monitoring.title'), icon: BarChart3 },
     ],
   });
@@ -763,8 +759,8 @@ function AppContent() {
             {/* Injection page (single) */}
             <Route path="/injection/dashboard" element={<PrivateRoute><PageTransition><InjectionDashboardPage /></PageTransition></PrivateRoute>} />
             <Route path="/injection/moulds" element={<Suspense fallback={<RouteLoading />}><MouldManagementPage /></Suspense>} />
-            <Route path="/injection" element={<PrivateRoute><PageTransition><SummaryPage /></PageTransition></PrivateRoute>} />
-            <Route path="/injection/setup" element={<PrivateRoute><PageTransition><InjectionSetupPage /></PageTransition></PrivateRoute>} />
+            <Route path="/injection" element={<PrivateRoute><InjectionLegacyRedirect /></PrivateRoute>} />
+            <Route path="/injection/setup" element={<PrivateRoute><Navigate to="/injection/dashboard#cycle-time" replace /></PrivateRoute>} />
             <Route path="/injection/monitoring" element={<PrivateRoute><PageTransition><InjectionMonitoringPage /></PageTransition></PrivateRoute>} />
             <Route path="/mes/monitoring" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><MesMonitoringPage /></Suspense></PageTransition></PrivateRoute>} />
 

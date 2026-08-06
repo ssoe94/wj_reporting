@@ -2219,10 +2219,12 @@ export function ProductionPlansPage() {
         <div className="plan-hero__controls">
           <div className="plan-hero__meta">
             <span>{copy.lastUpdate}</span>
-            <strong>{latestPlanUpdate ? formatDateTime(latestPlanUpdate, language) : copy.noLastUpdate}</strong>
-            <button className="button button--ghost button--mini" onClick={() => setIsChangeLogOpen(true)} type="button">
-              {copy.changeLog}
-            </button>
+            <div className="plan-hero__meta-row">
+              <strong>{latestPlanUpdate ? formatDateTime(latestPlanUpdate, language) : copy.noLastUpdate}</strong>
+              <button className="button button--ghost button--mini" onClick={() => setIsChangeLogOpen(true)} type="button">
+                {copy.changeLog}
+              </button>
+            </div>
           </div>
           <div className="field plan-hero__date" ref={dateCalendarRef}>
             <span>{copy.planDate}</span>
