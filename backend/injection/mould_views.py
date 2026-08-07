@@ -38,6 +38,7 @@ from .mould_snapshots import (
     release_refresh,
     snapshot_is_stale,
     store_snapshot,
+    usage_shot_count,
 )
 from .models import MouldDataSnapshot, MouldUsageConfirmation
 from .permissions import InjectionPermission
@@ -503,9 +504,11 @@ class MouldUsageConfirmationView(APIView):
                 {"detail": "금형 형합수 정보를 확인할 수 없습니다."},
                 status=status.HTTP_409_CONFLICT,
             )
-        try:
-            shot_count = max(0, int(float(mould.get("current_output_amount"))))
-        except (TypeError, ValueError):
+        shot_count = usage_shot_count(
+            current_output_amount=mould.get("current_output_amount"),
+            production_history=snapshot.payload.get("production_history"),
+        )
+        if shot_count <= 0:
             return Response(
                 {"detail": "금형 형합수가 등록되지 않았습니다."},
                 status=status.HTTP_409_CONFLICT,

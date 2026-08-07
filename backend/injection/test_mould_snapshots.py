@@ -59,6 +59,19 @@ class MouldSnapshotUsageTests(TestCase):
         self.assertEqual(decorated['mould']['pending_milestone'], 200_000)
         self.assertTrue(decorated['mould']['confirmation_required'])
 
+    def test_detail_checkpoint_uses_continuous_history_when_mes_counter_reset(self):
+        payload = detail_payload(shot_count=115_224)
+        payload['production_history'] = [
+            {'period': '2024-12', 'year': 2024, 'month': 12, 'quantity': 276_430},
+            {'period': '2025-01', 'year': 2025, 'month': 1, 'quantity': 6_679},
+            {'period': '2026-07', 'year': 2026, 'month': 7, 'quantity': 142_456},
+        ]
+
+        decorated = decorate_detail_payload(payload)
+
+        self.assertEqual(decorated['mould']['shot_milestone'], 400_000)
+        self.assertEqual(decorated['mould']['pending_milestone'], 400_000)
+
     def test_existing_detail_snapshot_gets_continuous_cross_year_cumulative(self):
         payload = detail_payload()
         payload['production_history'][0]['cumulative_quantity'] = 139_798
@@ -133,6 +146,35 @@ class MouldSnapshotUsageTests(TestCase):
         confirmation = MouldUsageConfirmation.objects.get()
         self.assertEqual(confirmation.confirmed_by, user)
         self.assertEqual(confirmation.shot_count_at_confirmation, 245_000)
+
+    def test_usage_confirmation_uses_continuous_history_after_mes_counter_reset(self):
+        payload = detail_payload(shot_count=115_224)
+        payload['production_history'] = [
+            {'period': '2024-12', 'year': 2024, 'month': 12, 'quantity': 276_430},
+            {'period': '2025-01', 'year': 2025, 'month': 1, 'quantity': 6_679},
+            {'period': '2026-07', 'year': 2026, 'month': 7, 'quantity': 142_456},
+        ]
+        MouldDataSnapshot.objects.create(
+            snapshot_key=detail_snapshot_key('123'),
+            kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id='123',
+            payload=payload,
+        )
+        user = User.objects.create_user('mould-history-editor')
+        user.profile.can_edit_injection = True
+        user.profile.save(update_fields=['can_edit_injection'])
+        client = APIClient()
+        client.force_authenticate(user)
+
+        response = client.post(
+            '/api/injection/moulds/123/usage-confirmations/',
+            {'milestone_shots': 400_000},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        confirmation = MouldUsageConfirmation.objects.get()
+        self.assertEqual(confirmation.shot_count_at_confirmation, 425_565)
 
     def test_usage_confirmation_is_not_public(self):
         MouldDataSnapshot.objects.create(

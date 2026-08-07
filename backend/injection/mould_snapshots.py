@@ -133,10 +133,10 @@ def _usage_state(
     confirmed_milestones: Sequence[int],
     mounted: bool = False,
 ) -> dict[str, Any]:
-    try:
-        shot_count = max(0, int(float(current_output_amount)))
-    except (TypeError, ValueError):
-        shot_count = 0
+    shot_count = usage_shot_count(
+        current_output_amount=current_output_amount,
+        production_history=production_history,
+    )
 
     reached_milestone = (shot_count // SHOT_MILESTONE_SIZE) * SHOT_MILESTONE_SIZE
     confirmed = sorted(
@@ -177,6 +177,27 @@ def _usage_state(
         'confirmed_milestone': confirmed_milestone,
         'confirmation_required': pending_milestone is not None,
     }
+
+
+def usage_shot_count(*, current_output_amount: Any, production_history: Any) -> int:
+    """Use the strongest deterministic shot total available for inspections."""
+
+    try:
+        current_count = max(0, int(float(current_output_amount)))
+    except (TypeError, ValueError):
+        current_count = 0
+
+    history_count: int | float = 0
+    if isinstance(production_history, Sequence) and not isinstance(
+        production_history, (str, bytes, bytearray)
+    ):
+        for row in production_history:
+            if not isinstance(row, Mapping):
+                continue
+            quantity = row.get('quantity')
+            if isinstance(quantity, (int, float)) and not isinstance(quantity, bool):
+                history_count += max(0, quantity)
+    return max(current_count, int(history_count))
 
 
 def decorate_board_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
