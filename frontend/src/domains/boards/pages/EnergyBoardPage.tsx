@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -16,6 +16,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -35,6 +36,8 @@ const REFRESH_INTERVAL_MS = 60_000;
 const STALE_THRESHOLD_MS = 10 * 60_000;
 const HISTORY_HOURS = 193;
 const HOUR_MS = 60 * 60 * 1000;
+const ENERGY_CACHE_KEY = "wj:boards:energy-matrix:v1";
+const ENERGY_CACHE_MAX_AGE_MS = 24 * HOUR_MS;
 
 const COPY = {
   ko: {
@@ -65,12 +68,19 @@ const COPY = {
     dayShift: "주간조",
     nightShift: "야간조",
     machineTitle: "설비별 전력 사용량",
-    machineSubtitle: "금일 사용량 순위 · Shot 효율 함께 표시",
+    machineSubtitle: "1~17호기 순서 · 톤수 및 1,000 Shot당 효율",
+    efficiencyTrendTitle: "1,000 Shot당 전력 추이",
+    efficiencyTrendSubtitle: "08:00부터 익일 08:00까지 · 시간대별 kWh / 1,000 Shot",
     heatmapTitle: "설비 × 시간대 전력 히트맵",
     heatmapSubtitle: "진한 셀일수록 같은 기준일 내 사용량이 큽니다.",
+    usageAmount: "사용 전력량",
     machine: "호기",
     shots: "Shot",
     noEfficiency: "생산 없음",
+    efficient: "효율 우수",
+    normal: "보통",
+    attention: "효율 확인",
+    inactive: "사용 없음",
     noData: "전력 데이터가 없습니다.",
     loading: "전력 사용량을 불러오는 중입니다.",
     error: "전력 현황 데이터를 불러오지 못했습니다. 잠시 후 자동으로 다시 시도합니다.",
@@ -105,12 +115,19 @@ const COPY = {
     dayShift: "白班",
     nightShift: "夜班",
     machineTitle: "设备用电量",
-    machineSubtitle: "今日用电排名 · 同时显示模次能效",
+    machineSubtitle: "按1至17号机排序 · 显示吨位及每千模次能效",
+    efficiencyTrendTitle: "每1,000模次用电趋势",
+    efficiencyTrendSubtitle: "08:00至次日08:00 · 每小时 kWh / 1,000模次",
     heatmapTitle: "设备 × 时段用电热力图",
     heatmapSubtitle: "颜色越深，表示该基准日内用电量越高。",
+    usageAmount: "用电量",
     machine: "号机",
     shots: "模次",
     noEfficiency: "无生产",
+    efficient: "高效",
+    normal: "正常",
+    attention: "需确认",
+    inactive: "无用电",
     noData: "暂无电力数据。",
     loading: "正在读取用电量。",
     error: "无法读取用电看板数据，稍后将自动重试。",
@@ -128,12 +145,58 @@ type HourPoint = {
 
 type MachineEnergyRow = {
   machineNumber: number;
-  label: string;
+  tonnage: string;
   usage: number;
   shots: number;
   efficiency: number | null;
   hourly: Array<number | null>;
 };
+
+type EfficiencyTone = "efficient" | "normal" | "attention" | "untracked" | "inactive";
+
+type EnergyCachePayload = {
+  businessDate: string;
+  savedAt: number;
+  data: InjectionProductionMatrix;
+};
+
+type HeatmapHover = {
+  machineNumber: number;
+  hourIndex: number;
+  value: number | null;
+};
+
+function isEnergyMatrix(value: unknown): value is InjectionProductionMatrix {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<InjectionProductionMatrix>;
+  return Array.isArray(candidate.time_slots) && Array.isArray(candidate.machines);
+}
+
+function readEnergyCache(businessDate: string): EnergyCachePayload | null {
+  try {
+    const raw = window.localStorage.getItem(ENERGY_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as Partial<EnergyCachePayload>;
+    if (
+      cached.businessDate !== businessDate
+      || typeof cached.savedAt !== "number"
+      || Date.now() - cached.savedAt > ENERGY_CACHE_MAX_AGE_MS
+      || !isEnergyMatrix(cached.data)
+    ) return null;
+    return cached as EnergyCachePayload;
+  } catch {
+    return null;
+  }
+}
+
+function writeEnergyCache(businessDate: string, data: InjectionProductionMatrix) {
+  try {
+    const payload: EnergyCachePayload = { businessDate, savedAt: Date.now(), data };
+    window.localStorage.setItem(ENERGY_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // Storage can be unavailable in private mode; the live API remains authoritative.
+  }
+}
 
 function formatPower(value: number | null, maximumFractionDigits = 1) {
   if (value === null || !Number.isFinite(value)) return "-";
@@ -196,6 +259,25 @@ function hourLabel(index: number) {
   return `${String(hour).padStart(2, "0")}:00`;
 }
 
+function formatTonnage(value: string) {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (!normalized) return "-";
+  return normalized.endsWith("T") ? normalized : `${normalized}T`;
+}
+
+function efficiencyTone(
+  efficiency: number | null,
+  overallEfficiency: number | null,
+  usage: number,
+): EfficiencyTone {
+  if (usage <= 0) return "inactive";
+  if (efficiency === null) return "untracked";
+  if (overallEfficiency === null || overallEfficiency <= 0) return "normal";
+  if (efficiency <= overallEfficiency * 0.75) return "efficient";
+  if (efficiency <= overallEfficiency * 1.25) return "normal";
+  return "attention";
+}
+
 function buildEnergyModel(data: InjectionProductionMatrix, businessDate: string) {
   const slotIndexByTime = new Map<number, number>();
   data.time_slots.forEach((slot, index) => {
@@ -206,7 +288,10 @@ function buildEnergyModel(data: InjectionProductionMatrix, businessDate: string)
   const startMs = businessStartMs(businessDate);
   const latestSlotMs = Math.max(...slotIndexByTime.keys(), startMs);
   const elapsedHours = Math.max(0, Math.min(24, Math.floor((latestSlotMs - startMs) / HOUR_MS)));
-  const machineNumbers = data.machines.map((machine) => machine.machine_number);
+  const machines = data.machines
+    .filter((machine) => machine.machine_number >= 1 && machine.machine_number <= 17)
+    .sort((a, b) => a.machine_number - b.machine_number);
+  const machineNumbers = machines.map((machine) => machine.machine_number);
 
   const usageAt = (machineNumber: number, endMs: number) => {
     const slotIndex = slotIndexByTime.get(endMs);
@@ -227,9 +312,19 @@ function buildEnergyModel(data: InjectionProductionMatrix, businessDate: string)
     });
   };
 
+  const dayShots = (date: string) => {
+    const dayStart = businessStartMs(date);
+    return Array.from({ length: 24 }, (_, index) => {
+      const endMs = dayStart + (index + 1) * HOUR_MS;
+      return machineNumbers.reduce((total, machineNumber) => total + shotsAt(machineNumber, endMs), 0);
+    });
+  };
+
   const currentHours = dayHours(businessDate);
   const previousDate = addIsoDateDays(businessDate, -1);
   const previousHours = dayHours(previousDate);
+  const currentShotHours = dayShots(businessDate);
+  const previousShotHours = dayShots(previousDate);
   const completedHours = Math.min(24, elapsedHours);
   const currentTotal = currentHours.slice(0, completedHours).reduce((sum, value) => sum + value, 0);
   const previousSameElapsed = previousHours.slice(0, completedHours).reduce((sum, value) => sum + value, 0);
@@ -248,12 +343,21 @@ function buildEnergyModel(data: InjectionProductionMatrix, businessDate: string)
     current: index < completedHours ? value : null,
     previous: previousHours[index],
   }));
+  const efficiencyTrend = currentHours.map((usage, index) => ({
+    label: hourLabel(index),
+    current: index < completedHours && currentShotHours[index] > 0
+      ? (usage / currentShotHours[index]) * 1000
+      : null,
+    previous: previousShotHours[index] > 0
+      ? (previousHours[index] / previousShotHours[index]) * 1000
+      : null,
+  }));
   const visibleCurrent = hourly.filter((point) => point.current !== null);
   const peak = visibleCurrent.reduce<HourPoint | null>((selected, point) => (
     !selected || Number(point.current) > Number(selected.current) ? point : selected
   ), null);
 
-  const machineRows: MachineEnergyRow[] = data.machines.map((machine) => {
+  const machineRows: MachineEnergyRow[] = machines.map((machine) => {
     const hourlyValues = Array.from({ length: 24 }, (_, index) => {
       if (index >= completedHours) return null;
       const endMs = startMs + (index + 1) * HOUR_MS;
@@ -265,22 +369,23 @@ function buildEnergyModel(data: InjectionProductionMatrix, businessDate: string)
     )).reduce((sum, value) => sum + value, 0);
     return {
       machineNumber: machine.machine_number,
-      label: machine.display_name || `${machine.machine_number}호기`,
+      tonnage: machine.tonnage,
       usage,
       shots,
       efficiency: shots > 0 ? (usage / shots) * 1000 : null,
       hourly: hourlyValues,
     };
-  }).sort((a, b) => b.usage - a.usage || a.machineNumber - b.machineNumber);
+  }).sort((a, b) => a.machineNumber - b.machineNumber);
 
   const totalShots = machineRows.reduce((sum, row) => sum + row.shots, 0);
-  const meteredMachines = data.machines.filter((machine) => (
+  const meteredMachines = machines.filter((machine) => (
     matrixRow(data, data.power_kwh_matrix, machine.machine_number).some((value) => Number(value) > 0)
   )).length;
   const heatMax = Math.max(1, ...machineRows.flatMap((row) => row.hourly.map((value) => value ?? 0)));
 
   return {
     hourly,
+    efficiencyTrend,
     machineRows,
     currentTotal,
     previousSameElapsed,
@@ -303,12 +408,17 @@ function buildEnergyModel(data: InjectionProductionMatrix, businessDate: string)
 export function EnergyBoardPage() {
   const [language, setLanguage] = useStoredLanguage();
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+  const [heatmapHover, setHeatmapHover] = useState<HeatmapHover | null>(null);
   const copy = COPY[language];
   const businessDate = getShanghaiBusinessDateString();
+  const cachedEnergy = useMemo(() => readEnergyCache(businessDate), [businessDate]);
 
   const energyQuery = useQuery({
-    queryKey: ["mes", "energy-board", HISTORY_HOURS],
+    queryKey: ["mes", "energy-board", businessDate, HISTORY_HOURS],
     queryFn: () => getInjectionEnergyMatrix(HISTORY_HOURS),
+    initialData: cachedEnergy?.data,
+    initialDataUpdatedAt: cachedEnergy?.savedAt,
+    staleTime: 0,
     refetchInterval: REFRESH_INTERVAL_MS,
     retry: 2,
   });
@@ -318,6 +428,12 @@ export function EnergyBoardPage() {
     refetchInterval: REFRESH_INTERVAL_MS,
     retry: 2,
   });
+  useEffect(() => {
+    if (
+      energyQuery.data
+      && (!cachedEnergy || energyQuery.dataUpdatedAt > cachedEnergy.savedAt)
+    ) writeEnergyCache(businessDate, energyQuery.data);
+  }, [businessDate, cachedEnergy, energyQuery.data, energyQuery.dataUpdatedAt]);
   const model = useMemo(
     () => energyQuery.data ? buildEnergyModel(energyQuery.data, businessDate) : null,
     [businessDate, energyQuery.data],
@@ -408,10 +524,10 @@ export function EnergyBoardPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={model.hourly} margin={{ top: 12, right: 12, bottom: 0, left: 0 }}>
                     <CartesianGrid stroke="#dce7ee" strokeDasharray="3 5" vertical={false} />
-                    <XAxis dataKey="label" interval={2} tick={{ fill: "#6d8292", fontSize: "clamp(11px, 0.45vw, 17px)" }} tickLine={false} axisLine={{ stroke: "#bdcdd7" }} />
-                    <YAxis tick={{ fill: "#6d8292", fontSize: "clamp(11px, 0.45vw, 17px)" }} tickLine={false} axisLine={false} width={48} />
+                    <XAxis dataKey="label" interval={2} tick={{ fill: "#6d8292", fontSize: "clamp(13px, 0.5vw, 20px)" }} tickLine={false} axisLine={{ stroke: "#bdcdd7" }} />
+                    <YAxis tick={{ fill: "#6d8292", fontSize: "clamp(13px, 0.5vw, 20px)" }} tickLine={false} axisLine={false} width={54} />
                     <Tooltip formatter={(value) => `${formatPower(Number(value))} kWh`} labelFormatter={(label) => `${label} ~`} />
-                    <Legend wrapperStyle={{ fontSize: "clamp(12px, 0.5vw, 18px)" }} />
+                    <Legend wrapperStyle={{ fontSize: "clamp(14px, 0.56vw, 21px)" }} />
                     <Bar dataKey="current" fill="#176f9f" name={copy.current} radius={[5, 5, 0, 0]} maxBarSize={30} />
                     <Line dataKey="previous" dot={false} name={copy.previous} stroke="#d18a24" strokeDasharray="6 5" strokeWidth={2.5} type="monotone" />
                   </ComposedChart>
@@ -419,43 +535,108 @@ export function EnergyBoardPage() {
               </div>
             </article>
 
-            <article className={`${styles.panel} ${styles.shiftPanel}`}>
-              <header><div><h2>{copy.shiftTitle}</h2><p>{copy.shiftSubtitle}</p></div></header>
-              {[
-                { label: copy.dayShift, current: model.currentDayShift, previous: model.previousDayShift },
-                { label: copy.nightShift, current: model.currentNightShift, previous: model.previousNightShift },
-              ].map((shift) => {
-                const max = Math.max(1, shift.current, shift.previous);
-                return (
-                  <div className={styles.shiftRow} key={shift.label}>
-                    <strong>{shift.label}</strong>
-                    <div className={styles.shiftBars}>
-                      <span><i style={{ width: `${(shift.current / max) * 100}%` }} />{copy.current}<b>{formatPower(shift.current)} kWh</b></span>
-                      <span><i className={styles.previousBar} style={{ width: `${(shift.previous / max) * 100}%` }} />{copy.previous}<b>{formatPower(shift.previous)} kWh</b></span>
+            <div className={styles.sideStack}>
+              <article className={`${styles.panel} ${styles.efficiencyTrendPanel}`}>
+                <header><div><h2>{copy.efficiencyTrendTitle}</h2><p>{copy.efficiencyTrendSubtitle}</p></div></header>
+                <div className={styles.efficiencyChart}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={model.efficiencyTrend} margin={{ top: 8, right: 10, bottom: 0, left: 0 }}>
+                      <CartesianGrid stroke="#dce7ee" strokeDasharray="3 5" vertical={false} />
+                      <XAxis dataKey="label" interval={5} tick={{ fill: "#6d8292", fontSize: "clamp(11px, 0.42vw, 17px)" }} tickLine={false} axisLine={{ stroke: "#bdcdd7" }} />
+                      <YAxis tick={{ fill: "#6d8292", fontSize: "clamp(11px, 0.42vw, 17px)" }} tickLine={false} axisLine={false} width={50} />
+                      <Tooltip formatter={(value) => `${formatPower(Number(value), 0)} kWh / 1k`} labelFormatter={(label) => `${label} ~`} />
+                      <Legend wrapperStyle={{ fontSize: "clamp(12px, 0.48vw, 18px)" }} />
+                      <Line connectNulls={false} dataKey="current" dot={{ r: 2 }} name={copy.current} stroke="#176f9f" strokeWidth={3} type="monotone" />
+                      <Line connectNulls={false} dataKey="previous" dot={false} name={copy.previous} stroke="#d18a24" strokeDasharray="6 5" strokeWidth={2} type="monotone" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </article>
+
+              <article className={`${styles.panel} ${styles.shiftPanel}`}>
+                <header><div><h2>{copy.shiftTitle}</h2><p>{copy.shiftSubtitle}</p></div></header>
+                {[
+                  { label: copy.dayShift, current: model.currentDayShift, previous: model.previousDayShift },
+                  { label: copy.nightShift, current: model.currentNightShift, previous: model.previousNightShift },
+                ].map((shift) => {
+                  const max = Math.max(1, shift.current, shift.previous);
+                  return (
+                    <div className={styles.shiftRow} key={shift.label}>
+                      <strong>{shift.label}</strong>
+                      <div className={styles.shiftBars}>
+                        <span><i style={{ width: `${(shift.current / max) * 100}%` }} />{copy.current}<b>{formatPower(shift.current)} kWh</b></span>
+                        <span><i className={styles.previousBar} style={{ width: `${(shift.previous / max) * 100}%` }} />{copy.previous}<b>{formatPower(shift.previous)} kWh</b></span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-              <footer>{copy.sameElapsed}</footer>
-            </article>
+                  );
+                })}
+                <footer>{copy.sameElapsed}</footer>
+              </article>
+            </div>
 
             <article className={`${styles.panel} ${styles.machinePanel}`}>
-              <header><div><h2>{copy.machineTitle}</h2><p>{copy.machineSubtitle}</p></div></header>
-              <div className={styles.machineRanking}>
-                {model.machineRows.map((row, index) => (
-                  <div className={styles.machineRow} key={row.machineNumber}>
-                    <span className={styles.rank}>{index + 1}</span>
-                    <strong>{row.machineNumber}{copy.machine}</strong>
-                    <div className={styles.machineBar}><i style={{ width: `${(row.usage / maxMachineUsage) * 100}%` }} /></div>
-                    <b>{formatPower(row.usage)} kWh</b>
-                    <small>{row.efficiency === null ? copy.noEfficiency : `${formatPower(row.efficiency, 2)} kWh/1k`}</small>
-                  </div>
-                ))}
+              <header>
+                <div><h2>{copy.machineTitle}</h2><p>{copy.machineSubtitle}</p></div>
+                <div className={styles.machineLegend} aria-label={copy.efficiency}>
+                  <span className={styles.legendEfficient}>{copy.efficient}</span>
+                  <span className={styles.legendNormal}>{copy.normal}</span>
+                  <span className={styles.legendAttention}>{copy.attention}</span>
+                  <span className={styles.legendUntracked}>{copy.noEfficiency}</span>
+                </div>
+              </header>
+              <div className={styles.machineCards}>
+                {model.machineRows.map((row) => {
+                  const tone = efficiencyTone(row.efficiency, model.efficiency, row.usage);
+                  const toneClass = {
+                    efficient: styles.machineCardEfficient,
+                    normal: styles.machineCardNormal,
+                    attention: styles.machineCardAttention,
+                    untracked: styles.machineCardUntracked,
+                    inactive: styles.machineCardInactive,
+                  }[tone];
+                  const toneLabel = {
+                    efficient: copy.efficient,
+                    normal: copy.normal,
+                    attention: copy.attention,
+                    untracked: copy.noEfficiency,
+                    inactive: copy.inactive,
+                  }[tone];
+                  const gaugePercent = Math.min(100, (row.usage / maxMachineUsage) * 100);
+                  return (
+                    <div className={`${styles.machineCard} ${toneClass}`} key={row.machineNumber}>
+                      <header>
+                        <strong>{row.machineNumber}{copy.machine} - {formatTonnage(row.tonnage)}</strong>
+                        <span>{formatInteger(row.shots)} {copy.shots}</span>
+                      </header>
+                      <div className={styles.machineCardBody}>
+                        <div className={styles.machineGauge}>
+                          <svg aria-hidden="true" viewBox="0 0 100 62">
+                            <path className={styles.gaugeTrack} d="M 10 54 A 40 40 0 0 1 90 54" pathLength="100" />
+                            <path className={styles.gaugeValue} d="M 10 54 A 40 40 0 0 1 90 54" pathLength="100" strokeDasharray={`${gaugePercent} 100`} />
+                          </svg>
+                          <strong>{formatPower(row.usage, 0)}</strong>
+                          <span>kWh</span>
+                        </div>
+                        <div className={styles.machineEfficiency}>
+                          <span>{copy.efficiency}</span>
+                          <strong>{row.efficiency === null ? "-" : formatPower(row.efficiency, 0)} <small>kWh</small></strong>
+                          <em>{toneLabel}</em>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </article>
 
             <article className={`${styles.panel} ${styles.heatmapPanel}`}>
               <header><div><h2>{copy.heatmapTitle}</h2><p>{copy.heatmapSubtitle}</p></div></header>
+              {heatmapHover ? (
+                <div className={styles.heatmapHover} data-testid="heatmap-hover-overlay">
+                  <span>{heatmapHover.machineNumber}{copy.machine} · {hourLabel(heatmapHover.hourIndex)}~{hourLabel(heatmapHover.hourIndex + 1)}</span>
+                  <strong>{copy.usageAmount} <b>{formatPower(heatmapHover.value)} kWh</b></strong>
+                </div>
+              ) : null}
               <div className={styles.heatmapScroll}>
                 <div className={styles.heatmap}>
                   <div />
@@ -469,6 +650,8 @@ export function EnergyBoardPage() {
                           <span
                             className={value === null ? styles.futureCell : styles.heatCell}
                             key={index}
+                            onMouseEnter={() => setHeatmapHover({ machineNumber: row.machineNumber, hourIndex: index, value })}
+                            onMouseLeave={() => setHeatmapHover(null)}
                             style={value === null ? undefined : { backgroundColor: `rgba(20, 111, 159, ${0.08 + intensity * 0.82})` }}
                             title={`${row.machineNumber}${copy.machine} · ${hourLabel(index)} · ${formatPower(value)} kWh`}
                           />
