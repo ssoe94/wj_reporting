@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   BarChart3,
+  BadgeCheck,
   Boxes,
   Clock3,
   Database,
@@ -24,11 +25,13 @@ import {
 import {
   getMouldBoard,
   getMouldDetail,
+  confirmMouldUsageMilestone,
   type MouldBoard,
   type MouldDetail,
   type MouldLocation,
   type MouldRecord,
 } from "@/domains/moulds/api";
+import { useAuth } from "@/domains/auth/auth-context";
 import { FALLBACK_MOULD_BOARD, getFallbackMouldDetail } from "@/domains/moulds/fallback";
 import { useStoredLanguage } from "@/shared/i18n/language";
 import styles from "./MouldManagementPage.module.css";
@@ -90,7 +93,7 @@ const COPY = {
     currentLocation: "현재 위치",
     currentStatus: "현재 상태",
     lifetimeOutput: "생산 누적",
-    outputBatch: "MES 사용 횟수",
+    outputBatch: "현재 형합수",
     model: "모델",
     cavity: "Cavity",
     assetCode: "자산 코드",
@@ -133,6 +136,19 @@ const COPY = {
     timeUnknownQuality: "시각 근거 미확인",
     shots: "Shot",
     times: "회",
+    lastUsed: "마지막 생산월",
+    lastUsedUnknown: "사용일 미확인",
+    unusedSixMonths: "6개월 이상 미사용",
+    unusedTwelveMonths: "12개월 이상 미사용",
+    usageCheckpoint: "형합수 점검",
+    checkpointRequired: "금형부 확인 필요",
+    checkpointConfirmed: "확인 완료",
+    confirmCheckpoint: "점검 확인",
+    confirmLogin: "로그인·사출 편집 권한 필요",
+    confirmingCheckpoint: "확인 저장 중",
+    confirmError: "확인 저장에 실패했습니다.",
+    usageLegend: "형합수 10만 Shot 단위",
+    inactivityLegend: "6/12개월 미사용",
   },
   zh: {
     eyebrow: "注塑模具管理",
@@ -188,7 +204,7 @@ const COPY = {
     currentLocation: "当前位置",
     currentStatus: "当前状态",
     lifetimeOutput: "累计产量",
-    outputBatch: "MES 使用次数",
+    outputBatch: "当前合模次数",
     model: "型号",
     cavity: "模穴数",
     assetCode: "资产编号",
@@ -231,6 +247,19 @@ const COPY = {
     timeUnknownQuality: "时间依据未确认",
     shots: "Shot",
     times: "次",
+    lastUsed: "最后生产月",
+    lastUsedUnknown: "使用时间未确认",
+    unusedSixMonths: "超过6个月未使用",
+    unusedTwelveMonths: "超过12个月未使用",
+    usageCheckpoint: "合模次数点检",
+    checkpointRequired: "模具部门待确认",
+    checkpointConfirmed: "已确认",
+    confirmCheckpoint: "确认点检",
+    confirmLogin: "需要登录及注塑编辑权限",
+    confirmingCheckpoint: "正在保存确认",
+    confirmError: "保存确认失败。",
+    usageLegend: "每10万 Shot",
+    inactivityLegend: "6/12个月未使用",
   },
 } as const;
 
@@ -257,6 +286,22 @@ type CoordinateRow = {
   label: string;
   cells: CoordinateCell[];
 };
+
+function milestoneLabel(milestone: number, language: "ko" | "zh"): string {
+  const tenThousands = Math.floor(milestone / 10_000);
+  return language === "ko" ? `${tenThousands}만` : `${tenThousands}万`;
+}
+
+function usageVisualClass(mould: MouldRecord): string {
+  if (mould.inactivityTier === "twelve_months") return styles.inactiveTwelveMonths;
+  if (mould.inactivityTier === "six_months") return styles.inactiveSixMonths;
+  if (mould.confirmationRequired) return styles.usageReviewDue;
+  if (mould.shotMilestoneLevel >= 4) return styles.usageLevelFour;
+  if (mould.shotMilestoneLevel >= 3) return styles.usageLevelThree;
+  if (mould.shotMilestoneLevel >= 2) return styles.usageLevelTwo;
+  if (mould.shotMilestoneLevel >= 1) return styles.usageLevelOne;
+  return "";
+}
 
 type ZoneLayout = {
   code: string;
@@ -533,6 +578,8 @@ function DetailContent({ copy, detail, language, tab }: {
 }
 
 export function MouldManagementPage() {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
   const [language, setLanguage] = useStoredLanguage();
   const copy: Copy = COPY[language];
   const developmentFallback = import.meta.env.DEV && !USE_REMOTE_MOULD_API_IN_DEVELOPMENT;
@@ -598,6 +645,18 @@ export function MouldManagementPage() {
       return maximum === null ? item.cumulativeQuantity : Math.max(maximum, item.cumulativeQuantity);
     }, null)
     : null;
+  const canConfirmUsage = auth.hasCapability("injection.write");
+  const confirmUsageMutation = useMutation({
+    mutationFn: ({ instanceId, milestone }: { instanceId: string; milestone: number }) => (
+      confirmMouldUsageMilestone(instanceId, milestone)
+    ),
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["injection", "moulds", "board"] }),
+        queryClient.invalidateQueries({ queryKey: ["injection", "moulds", "detail", variables.instanceId] }),
+      ]);
+    },
+  });
 
   const visibleMoulds = useMemo(() => (
     (board?.moulds ?? []).filter((mould) => matchesFilter(mould, filter) && matchesSearch(mould, search))
@@ -827,14 +886,14 @@ export function MouldManagementPage() {
                     <button
                       aria-label={mounted ? `${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${mounted.mouldCode}` : `${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.unassigned}`}
                       aria-pressed={selected}
-                      className={`${styles.machineRow} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
+                      className={`${styles.machineRow} ${mounted ? usageVisualClass(mounted) : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                       disabled={!mounted}
                       key={machine.number}
                       onClick={() => mounted && selectMould(mounted.instanceId)}
                       type="button"
                     >
                       <strong>{machineDisplayLabel(machine.number, machine.tonnage, language)}</strong>
-                      <span className={styles.machineMould}>{mounted ? <><strong>{mounted.mouldCode}</strong><small>{text(mounted.name)}</small></> : <em>{copy.unassigned}</em>}</span>
+                      <span className={styles.machineMould}>{mounted ? <><strong>{mounted.mouldCode}</strong><small>{text(mounted.name)}</small>{mounted.shotMilestone > 0 ? <i className={`${styles.usageBadge} ${mounted.confirmationRequired ? styles.usageBadgeDue : ""}`}>{milestoneLabel(mounted.shotMilestone, language)}{mounted.confirmationRequired ? " !" : " ✓"}</i> : null}</> : <em>{copy.unassigned}</em>}</span>
                       <span>{mounted ? <i className={`${styles.statusPill} ${styles.mountedPill}`}>{copy.mounted}</i> : <i className={styles.statusPill}>{copy.unknown}</i>}</span>
                       <span className={styles.changedAt}>{mounted ? <strong title={finalChangedQualityLabel(mounted.finalChangedAt, copy)}>{dateTime(mounted.finalChangedAt, language, copy.noTimestamp)}</strong> : "-"}</span>
                     </button>
@@ -847,7 +906,11 @@ export function MouldManagementPage() {
           <section className={styles.storagePanel} aria-labelledby="mould-storage-title">
             <div className={styles.panelHeader}>
               <div><p>{copy.stored}</p><h2 id="mould-storage-title">{copy.storageInventory}</h2><span>{copy.touchHint}</span></div>
-              <span className={styles.coordinateGuide}><MapIcon aria-hidden="true" size={18} />{copy.coordinateGuide}</span>
+              <div className={styles.cellLegend}>
+                <span className={styles.coordinateGuide}><MapIcon aria-hidden="true" size={18} />{copy.coordinateGuide}</span>
+                <span><i className={styles.legendUsage} />{copy.usageLegend}</span>
+                <span><i className={styles.legendInactive} />{copy.inactivityLegend}</span>
+              </div>
             </div>
             <div className={`${styles.zoneList} ${focusedZone ? styles.zoneListFocused : ""}`}>
               {displayedZones.length ? displayedZones.map((zone) => {
@@ -886,7 +949,7 @@ export function MouldManagementPage() {
                                 <button
                                   aria-label={occupant ? `${location.code}, ${occupant.mouldCode}${conflict ? `, ${copy.conflict}` : ""}` : `${location.code}, ${copy.emptyCell}`}
                                   aria-pressed={selected}
-                                  className={`${styles.coordinateCell} ${occupant ? styles.occupiedCell : ""} ${selected ? styles.selectedCell : ""} ${conflict ? styles.conflictCell : ""} ${visible ? "" : styles.filteredOut}`}
+                                  className={`${styles.coordinateCell} ${occupant ? styles.occupiedCell : ""} ${occupant ? usageVisualClass(occupant) : ""} ${selected ? styles.selectedCell : ""} ${conflict ? styles.conflictCell : ""} ${visible ? "" : styles.filteredOut}`}
                                   disabled={!occupant}
                                   key={location.code}
                                   onClick={() => {
@@ -900,6 +963,7 @@ export function MouldManagementPage() {
                                   type="button"
                                 >
                                   <span className={styles.coordinateCode}>{location.code}</span>
+                                  {occupant?.shotMilestone ? <span className={`${styles.cellUsageBadge} ${occupant.confirmationRequired ? styles.cellUsageBadgeDue : ""}`}>{milestoneLabel(occupant.shotMilestone, language)}{occupant.confirmationRequired ? "!" : "✓"}</span> : null}
                                   {focusedZone && occupant ? (
                                     <span className={styles.coordinateDrawing}>
                                       {text(occupant.drawingNo, occupant.assetCode || occupant.mouldCode)}
@@ -974,9 +1038,10 @@ export function MouldManagementPage() {
                     <h2 id="selected-mould-title">{selectedDetail.mouldCode}</h2>
                     <span className={styles.assetLine}>{text(selectedDetail.assetCode)}</span>
                     <strong className={styles.mouldName}>{text(selectedDetail.name)}</strong>
-                    <div className={styles.summaryBadges}>
+                  <div className={styles.summaryBadges}>
                       <span>{text(selectedDetail.statusLabel, copy.unknown)}</span>
                       <span>{text(selectedDetail.location.code, copy.unknown)}</span>
+                      {selectedDetail.shotMilestone > 0 ? <span className={selectedDetail.confirmationRequired ? styles.summaryBadgeDue : styles.summaryBadgeConfirmed}><BadgeCheck aria-hidden="true" size={14} />{milestoneLabel(selectedDetail.shotMilestone, language)} · {selectedDetail.confirmationRequired ? copy.checkpointRequired : copy.checkpointConfirmed}</span> : null}
                     </div>
                   </div>
                   <dl className={styles.summaryFacts}>
@@ -984,7 +1049,23 @@ export function MouldManagementPage() {
                     <div><dt>{copy.finalChangedAt}</dt><dd>{dateTime(selectedDetail.finalChangedAt, language, copy.noTimestamp)}<small>{finalChangedQualityLabel(selectedDetail.finalChangedAt, copy)}</small></dd></div>
                     <div><dt>{copy.lifetimeOutput}</dt><dd>{number(selectedLifetimeProduction, language)} {copy.shots}</dd></div>
                     <div><dt>{copy.outputBatch}</dt><dd>{number(selectedDetail.currentOutputAmount, language)} {copy.times}</dd></div>
+                    <div><dt>{copy.lastUsed}</dt><dd>{selectedDetail.lastUsedAt ? dateTime(selectedDetail.lastUsedAt, language, copy.lastUsedUnknown) : copy.lastUsedUnknown}{selectedDetail.inactivityTier === "twelve_months" ? <small>{copy.unusedTwelveMonths}</small> : selectedDetail.inactivityTier === "six_months" ? <small>{copy.unusedSixMonths}</small> : null}</dd></div>
                   </dl>
+                  {selectedDetail.pendingMilestone ? (
+                    <div className={styles.usageConfirmation}>
+                      <div><BadgeCheck aria-hidden="true" size={18} /><span><small>{copy.usageCheckpoint}</small><strong>{milestoneLabel(selectedDetail.pendingMilestone, language)} Shot · {copy.checkpointRequired}</strong></span></div>
+                      <button
+                        disabled={!canConfirmUsage || confirmUsageMutation.isPending}
+                        onClick={() => confirmUsageMutation.mutate({ instanceId: selectedDetail.instanceId, milestone: selectedDetail.pendingMilestone ?? 0 })}
+                        title={canConfirmUsage ? copy.confirmCheckpoint : copy.confirmLogin}
+                        type="button"
+                      >
+                        {confirmUsageMutation.isPending ? copy.confirmingCheckpoint : copy.confirmCheckpoint}
+                      </button>
+                      {!canConfirmUsage ? <small>{copy.confirmLogin}</small> : null}
+                      {confirmUsageMutation.isError ? <small className={styles.confirmationError}>{copy.confirmError}</small> : null}
+                    </div>
+                  ) : null}
                   {board && (board.warnings.length || board.calculationBasis.length) ? (
                     <details className={styles.dataBasis}>
                       <summary><Info aria-hidden="true" size={16} />{copy.dataBasis}</summary>

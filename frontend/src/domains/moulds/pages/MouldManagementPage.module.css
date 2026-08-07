@@ -1141,6 +1141,210 @@
   }
 }
 
+/* Mould usage, inspection checkpoints and inactivity --------------------- */
+
+.cellLegend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: #668096;
+  font-size: 0.62rem;
+  font-weight: 750;
+}
+
+.cellLegend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.legendUsage,
+.legendInactive {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: #edae49;
+  box-shadow: inset 0 0 0 1px rgba(89, 57, 8, 0.16);
+}
+
+.legendInactive {
+  background: #aab5bf;
+}
+
+.machineRow.usageLevelOne,
+.machineRow.usageLevelTwo,
+.machineRow.usageLevelThree,
+.machineRow.usageLevelFour {
+  box-shadow: inset 3px 0 0 #dfb654;
+}
+
+.machineRow.usageLevelTwo { box-shadow: inset 3px 0 0 #dc9344; }
+.machineRow.usageLevelThree { box-shadow: inset 3px 0 0 #d36d43; }
+.machineRow.usageLevelFour { box-shadow: inset 3px 0 0 #b94d43; }
+
+.machineRow.usageReviewDue {
+  background: linear-gradient(90deg, #fff7e6, #fff 28%);
+  box-shadow: inset 4px 0 0 #e18a22;
+}
+
+.machineRow.inactiveSixMonths,
+.coordinateCell.inactiveSixMonths {
+  filter: saturate(0.42);
+  opacity: 0.72;
+}
+
+.machineRow.inactiveTwelveMonths,
+.coordinateCell.inactiveTwelveMonths {
+  filter: grayscale(0.82);
+  opacity: 0.5;
+}
+
+.usageBadge {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  margin-top: 2px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #edf5ff;
+  color: #27689f;
+  font-size: 0.55rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.usageBadgeDue {
+  background: #fff0d2;
+  color: #a55d00;
+}
+
+.page .coordinateCell {
+  position: relative;
+}
+
+.coordinateCell.usageLevelOne { box-shadow: inset 0 -2px 0 #e5bd58; }
+.coordinateCell.usageLevelTwo { box-shadow: inset 0 -3px 0 #df9342; }
+.coordinateCell.usageLevelThree { box-shadow: inset 0 -3px 0 #d4673f; }
+.coordinateCell.usageLevelFour { box-shadow: inset 0 -3px 0 #b84545; }
+.coordinateCell.usageReviewDue {
+  border-color: #f0a22d;
+  box-shadow: inset 0 0 0 2px rgba(255, 188, 71, 0.88), 0 0 8px rgba(233, 141, 28, 0.32);
+}
+
+.cellUsageBadge {
+  position: absolute;
+  z-index: 2;
+  top: -5px;
+  right: -4px;
+  display: inline-flex;
+  min-width: 20px;
+  min-height: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  border: 1px solid rgba(29, 92, 132, 0.22);
+  border-radius: 999px;
+  background: #edf7ff;
+  color: #185f91;
+  font-size: 0.47rem;
+  line-height: 1;
+  font-weight: 900;
+  text-shadow: none;
+}
+
+.cellUsageBadgeDue {
+  border-color: #e79a2d;
+  background: #fff1cf;
+  color: #9a5700;
+}
+
+.summaryBadges span.summaryBadgeDue,
+.summaryBadges span.summaryBadgeConfirmed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.summaryBadges span.summaryBadgeDue {
+  background: #fff0d7;
+  color: #9b5a05;
+}
+
+.summaryBadges span.summaryBadgeConfirmed {
+  background: #e8f7ef;
+  color: #17714a;
+}
+
+.usageConfirmation {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #ecc788;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #fffaf0, #fff4dc);
+}
+
+.usageConfirmation > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #a05d06;
+}
+
+.usageConfirmation > div span {
+  display: grid;
+  gap: 1px;
+}
+
+.usageConfirmation small {
+  color: #8b7559;
+  font-size: 0.58rem;
+}
+
+.usageConfirmation strong {
+  color: #70440b;
+  font-size: 0.68rem;
+}
+
+.usageConfirmation button {
+  min-height: 34px;
+  border: 1px solid #c97817;
+  border-radius: 7px;
+  background: #d98219;
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.usageConfirmation button:disabled {
+  border-color: #c9cfd4;
+  background: #adb7bf;
+  cursor: not-allowed;
+}
+
+.usageConfirmation .confirmationError {
+  color: #b33b32;
+}
+
+@media (max-width: 720px) {
+  .cellLegend {
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+
+  .cellUsageBadge {
+    top: 2px;
+    right: 2px;
+    min-height: 14px;
+    font-size: 0.5rem;
+  }
+}
+
 /* Full-screen mould board -------------------------------------------------- */
 
 .page {
@@ -2980,7 +3184,7 @@
     display: grid;
     grid-template-columns: 1fr;
     gap: 10px;
-    max-height: 255px;
+    max-height: 310px;
     padding: 12px;
     overflow-y: auto;
   }
@@ -3007,6 +3211,7 @@
   }
 
   .detailDrawer .summaryFacts {
+    order: 2;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
@@ -3014,6 +3219,25 @@
   .detailDrawer .summaryFacts > div {
     min-height: 55px;
     padding: 7px 8px;
+  }
+
+  .detailDrawer .usageConfirmation {
+    order: 1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 8px;
+    margin: 0;
+    padding: 8px;
+  }
+
+  .detailDrawer .usageConfirmation button {
+    min-height: 32px;
+    padding-inline: 10px;
+    white-space: nowrap;
+  }
+
+  .detailDrawer .usageConfirmation > small {
+    grid-column: 1 / -1;
   }
 
   .detailDrawer .detailBody {

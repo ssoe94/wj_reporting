@@ -26,6 +26,8 @@ export type MouldDataFreshness = {
   fetchedAt: string;
   sourceLatestAt: string;
   status: string;
+  snapshotAt: string;
+  stale: boolean;
 };
 
 export type MouldLocation = {
@@ -67,6 +69,15 @@ export type MouldRecord = {
   recordUpdatedAt: string;
   positionChangedAt: string;
   timeQuality: string;
+  lastUsedAt: string;
+  lastUsedSource: string;
+  inactivityMonths: number | null;
+  inactivityTier: "active" | "recent" | "six_months" | "twelve_months" | "unknown";
+  shotMilestone: number;
+  shotMilestoneLevel: number;
+  pendingMilestone: number | null;
+  confirmedMilestone: number;
+  confirmationRequired: boolean;
   warnings: MouldWarning[];
 };
 
@@ -301,6 +312,8 @@ function normalizeDataFreshness(value: unknown, fallbackRecord: UnknownRecord = 
     sourceLatestAt: asEpochAwareDateString(pick(freshness, "source_latest_at", "sourceLatestAt", "latest_at", "latestAt"))
       || asEpochAwareDateString(pick(fallbackRecord, "source_latest_at", "sourceLatestAt", "latest_at", "latestAt")),
     status: asString(pick(freshness, "status", "state", "quality")),
+    snapshotAt: asEpochAwareDateString(pick(freshness, "snapshot_at", "snapshotAt")),
+    stale: asBoolean(pick(freshness, "stale")),
   };
 }
 
@@ -395,6 +408,20 @@ function normalizeMouldRecord(value: unknown): MouldRecord {
       pick(source, "time_quality", "timeQuality"),
       positionChangedAt ? "position_change" : recordUpdatedAt ? "record_update" : "unknown",
     ),
+    lastUsedAt: asEpochAwareDateString(pick(source, "last_used_at", "lastUsedAt")),
+    lastUsedSource: asString(pick(source, "last_used_source", "lastUsedSource")),
+    inactivityMonths: asNullableNumber(pick(source, "inactivity_months", "inactivityMonths")),
+    inactivityTier: (() => {
+      const tier = asString(pick(source, "inactivity_tier", "inactivityTier"), "unknown");
+      return (["active", "recent", "six_months", "twelve_months"] as const).includes(tier as "active" | "recent" | "six_months" | "twelve_months")
+        ? tier as MouldRecord["inactivityTier"]
+        : "unknown";
+    })(),
+    shotMilestone: asNumber(pick(source, "shot_milestone", "shotMilestone"), 0),
+    shotMilestoneLevel: asNumber(pick(source, "shot_milestone_level", "shotMilestoneLevel"), 0),
+    pendingMilestone: asNullableNumber(pick(source, "pending_milestone", "pendingMilestone")),
+    confirmedMilestone: asNumber(pick(source, "confirmed_milestone", "confirmedMilestone"), 0),
+    confirmationRequired: Boolean(pick(source, "confirmation_required", "confirmationRequired")),
     warnings: normalizeWarnings(pick(source, "warnings", "warning_details", "warningDetails")),
   };
 }
@@ -574,4 +601,13 @@ export async function getMouldDetail(instanceId: string): Promise<MouldDetail> {
   if (!normalizedId) throw new Error("Mould instance id is required.");
   const response = await http.get<unknown>(`${MOULD_DETAIL_ENDPOINT}/${encodeURIComponent(normalizedId)}/`, { skipAuth: true });
   return normalizeMouldDetail(response.data);
+}
+
+export async function confirmMouldUsageMilestone(instanceId: string, milestoneShots: number): Promise<void> {
+  const normalizedId = instanceId.trim();
+  if (!normalizedId) throw new Error("Mould instance id is required.");
+  await http.post(
+    `${MOULD_DETAIL_ENDPOINT}/${encodeURIComponent(normalizedId)}/usage-confirmations/`,
+    { milestone_shots: milestoneShots },
+  );
 }

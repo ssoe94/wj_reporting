@@ -518,3 +518,69 @@ class InjectionMonitoringRollup(models.Model):
 
     def __str__(self):
         return f"{self.bucket_start.strftime('%Y-%m-%d %H:%M')} - {self.machine_name} ({self.bucket_minutes}m)"
+
+
+class MouldDataSnapshot(models.Model):
+    """Persistent, public-safe BLACKLAKE mould payload cache."""
+
+    KIND_BOARD = 'board'
+    KIND_DETAIL = 'detail'
+    KIND_CHOICES = [
+        (KIND_BOARD, '금형 현황'),
+        (KIND_DETAIL, '금형 상세'),
+    ]
+
+    snapshot_key = models.CharField('스냅샷 키', max_length=96, unique=True)
+    kind = models.CharField('구분', max_length=16, choices=KIND_CHOICES, db_index=True)
+    instance_id = models.CharField('BLACKLAKE 인스턴스 ID', max_length=32, blank=True, db_index=True)
+    payload = models.JSONField('공개용 스냅샷', default=dict)
+    source_latest_at = models.DateTimeField('원본 최신 시각', null=True, blank=True)
+    refreshed_at = models.DateTimeField('수집 시각', auto_now=True, db_index=True)
+    refresh_started_at = models.DateTimeField('갱신 시작 시각', null=True, blank=True)
+    last_error = models.CharField('최근 갱신 오류', max_length=500, blank=True)
+
+    class Meta:
+        verbose_name = '금형 데이터 스냅샷'
+        verbose_name_plural = '금형 데이터 스냅샷'
+        indexes = [
+            models.Index(fields=['kind', 'refreshed_at'], name='mould_snap_kind_time_idx'),
+        ]
+
+    def __str__(self):
+        return self.snapshot_key
+
+
+class MouldUsageConfirmation(models.Model):
+    """Auditable mould-department acknowledgement for a 100k-shot milestone."""
+
+    mould_instance_id = models.CharField('BLACKLAKE 인스턴스 ID', max_length=32, db_index=True)
+    milestone_shots = models.PositiveIntegerField('확인 형합수')
+    shot_count_at_confirmation = models.PositiveIntegerField('확인 당시 형합수')
+    confirmed_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='mould_usage_confirmations',
+        verbose_name='확인자',
+    )
+    confirmed_at = models.DateTimeField('확인 시각', auto_now_add=True, db_index=True)
+    note = models.CharField('비고', max_length=240, blank=True)
+
+    class Meta:
+        verbose_name = '금형 형합수 확인'
+        verbose_name_plural = '금형 형합수 확인'
+        ordering = ['-milestone_shots', '-confirmed_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['mould_instance_id', 'milestone_shots'],
+                name='uniq_mould_usage_milestone',
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=['mould_instance_id', 'milestone_shots'],
+                name='mould_usage_instance_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.mould_instance_id} - {self.milestone_shots:,} Shot"

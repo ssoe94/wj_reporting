@@ -110,7 +110,16 @@ function statusFor(kind: MouldLocationKind): { code: string; label: string } {
 function makeMould(index: number, location: MouldLocation, code?: string): MouldRecord {
   const mouldCode = code ?? `MOLD-${String(600 + index).padStart(4, "0")}`;
   const status = statusFor(location.kind);
-  const output = 8_600 + index * 137;
+  const output = 42_000 + index * 18_700;
+  const milestone = Math.floor(output / 100_000) * 100_000;
+  const inactivityTier = location.kind === "machine"
+    ? "active"
+    : index % 13 === 0
+      ? "twelve_months"
+      : index % 7 === 0
+        ? "six_months"
+        : "recent";
+  const confirmationRequired = milestone > 0 && index % 3 !== 0;
   return {
     instanceId: `fallback-${mouldCode.toLowerCase()}`,
     mouldCode,
@@ -135,6 +144,19 @@ function makeMould(index: number, location: MouldLocation, code?: string): Mould
     recordUpdatedAt: changedAt(index),
     positionChangedAt: "",
     timeQuality: "record_update",
+    lastUsedAt: inactivityTier === "twelve_months"
+      ? "2025-03-31T23:59:59+08:00"
+      : inactivityTier === "six_months"
+        ? "2025-12-31T23:59:59+08:00"
+        : changedAt(index),
+    lastUsedSource: "fallback",
+    inactivityMonths: inactivityTier === "twelve_months" ? 16 : inactivityTier === "six_months" ? 7 : 0,
+    inactivityTier,
+    shotMilestone: milestone,
+    shotMilestoneLevel: milestone / 100_000,
+    pendingMilestone: confirmationRequired ? milestone : null,
+    confirmedMilestone: confirmationRequired ? Math.max(0, milestone - 100_000) : milestone,
+    confirmationRequired,
     warnings: [],
   };
 }
@@ -162,6 +184,11 @@ const storedMoulds = OCCUPIED_STORAGE_CODES.map((code, index) => {
     cavityCount: 1,
     currentOutputAmount: 1_523,
     currentOutputBatchAmount: null,
+    shotMilestone: 0,
+    shotMilestoneLevel: 0,
+    pendingMilestone: null,
+    confirmedMilestone: 0,
+    confirmationRequired: false,
     finalChangedAt: "2026-08-04T05:26:00+08:00",
     recordUpdatedAt: "2026-08-04T05:26:00+08:00",
   };
@@ -219,6 +246,8 @@ export const FALLBACK_MOULD_BOARD: MouldBoard = {
     fetchedAt: FALLBACK_AS_OF,
     sourceLatestAt: "2026-08-04T05:26:00+08:00",
     status: "fallback",
+    snapshotAt: FALLBACK_AS_OF,
+    stale: false,
   },
   capabilities: {
     movement_history: true,

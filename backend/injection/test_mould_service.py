@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 import requests
 
 from django.core.cache import cache
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
 
 from injection.mould_service import (
@@ -768,7 +768,7 @@ class MouldTransformTests(SimpleTestCase):
         self.assertEqual(post.call_args.kwargs["json"]["objectCode"], "MOLD001__c")
 
 
-class MouldPublicViewTests(SimpleTestCase):
+class MouldPublicViewTests(TestCase):
     sensitive_keys = {
         "authorization",
         "attachments",

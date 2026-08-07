@@ -1,4 +1,4 @@
-"""Public, read-only endpoints for the BLACKLAKE mould dashboard.
+"""Snapshot-first endpoints for the BLACKLAKE mould dashboard.
 
 The integration service intentionally keeps a richer normalized payload for
 server-side diagnostics.  These views expose only the fields required by the
@@ -9,10 +9,12 @@ people identifiers never cross the anonymous API boundary.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from typing import Any
 
 from django.core.cache import cache
+from django.db import close_old_connections, transaction
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -25,6 +27,20 @@ from .mould_service import (
     unavailable_board_payload,
     unavailable_detail_payload,
 )
+from .mould_snapshots import (
+    BOARD_SNAPSHOT_KEY,
+    SHOT_MILESTONE_SIZE,
+    claim_refresh,
+    decorate_board_payload,
+    decorate_detail_payload,
+    detail_snapshot_key,
+    mark_snapshot_freshness,
+    release_refresh,
+    snapshot_is_stale,
+    store_snapshot,
+)
+from .models import MouldDataSnapshot, MouldUsageConfirmation
+from .permissions import InjectionPermission
 
 
 _SUMMARY_FIELDS = (
@@ -81,9 +97,24 @@ _MOULD_FIELDS = (
     "record_updated_at",
     "position_changed_at",
     "time_quality",
+    "last_used_at",
+    "last_used_source",
+    "inactivity_months",
+    "inactivity_tier",
+    "shot_milestone",
+    "shot_milestone_level",
+    "pending_milestone",
+    "confirmed_milestone",
+    "confirmation_required",
 )
 _ENUM_FIELDS = ("code", "label", "message", "name")
-_DATA_FRESHNESS_FIELDS = ("status", "fetched_at", "source_latest_at")
+_DATA_FRESHNESS_FIELDS = (
+    "status",
+    "fetched_at",
+    "source_latest_at",
+    "snapshot_at",
+    "stale",
+)
 _MOVEMENT_FIELDS = (
     "id",
     "occurred_at",
@@ -115,6 +146,10 @@ _REPAIR_FIELDS = (
 )
 _PUBLIC_BOARD_CACHE_SECONDS = 45
 _PUBLIC_DETAIL_CACHE_SECONDS = 45
+_SNAPSHOT_REFRESH_POOL = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="mould-snapshot",
+)
 
 
 def _public_cache_key(namespace: str, value: str) -> str:
@@ -280,6 +315,48 @@ def _no_store_response(payload, *, status_code=status.HTTP_200_OK):
     return response
 
 
+def _refresh_board_snapshot() -> dict[str, Any]:
+    projected = _project_board_payload(build_mould_board())
+    store_snapshot(
+        snapshot_key=BOARD_SNAPSHOT_KEY,
+        kind=MouldDataSnapshot.KIND_BOARD,
+        payload=projected,
+    )
+    return projected
+
+
+def _refresh_detail_snapshot(instance_id: str) -> dict[str, Any]:
+    projected = _project_detail_payload(build_mould_detail(instance_id))
+    store_snapshot(
+        snapshot_key=detail_snapshot_key(instance_id),
+        kind=MouldDataSnapshot.KIND_DETAIL,
+        instance_id=instance_id,
+        payload=projected,
+    )
+    return projected
+
+
+def _run_background_refresh(snapshot_key: str, refresh) -> None:
+    close_old_connections()
+    try:
+        refresh()
+    except Exception as exc:  # Keep serving the last known-good snapshot.
+        release_refresh(snapshot_key, str(exc))
+    finally:
+        close_old_connections()
+
+
+def _schedule_refresh(snapshot_key: str, refresh) -> bool:
+    if not claim_refresh(snapshot_key):
+        return False
+    _SNAPSHOT_REFRESH_POOL.submit(
+        _run_background_refresh,
+        snapshot_key,
+        refresh,
+    )
+    return True
+
+
 class MouldBoardView(APIView):
     """Return the public dashboard projection without exposing MES credentials."""
 
@@ -293,6 +370,24 @@ class MouldBoardView(APIView):
                 {"detail": "q must be at most 120 characters."},
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
+        if not quick_search:
+            snapshot = MouldDataSnapshot.objects.filter(
+                snapshot_key=BOARD_SNAPSHOT_KEY,
+            ).first()
+            if snapshot is not None:
+                refreshing = False
+                if snapshot_is_stale(snapshot):
+                    refreshing = _schedule_refresh(
+                        BOARD_SNAPSHOT_KEY,
+                        _refresh_board_snapshot,
+                    )
+                payload = decorate_board_payload(snapshot.payload)
+                payload = mark_snapshot_freshness(
+                    payload,
+                    snapshot,
+                    refreshing=refreshing or bool(snapshot.refresh_started_at),
+                )
+                return _no_store_response(payload)
         cache_key = _public_cache_key("board", quick_search.casefold())
         cached_payload = cache.get(cache_key)
         if isinstance(cached_payload, Mapping):
@@ -306,6 +401,13 @@ class MouldBoardView(APIView):
                 status_code=status.HTTP_502_BAD_GATEWAY,
             )
         projected_payload = _project_board_payload(payload)
+        if not quick_search:
+            store_snapshot(
+                snapshot_key=BOARD_SNAPSHOT_KEY,
+                kind=MouldDataSnapshot.KIND_BOARD,
+                payload=projected_payload,
+            )
+            projected_payload = decorate_board_payload(projected_payload)
         cache.set(
             cache_key,
             projected_payload,
@@ -322,6 +424,24 @@ class MouldDetailView(APIView):
 
     def get(self, request, instance_id, *args, **kwargs):
         instance_id = str(instance_id or "").strip()
+        snapshot_key = detail_snapshot_key(instance_id)
+        snapshot = MouldDataSnapshot.objects.filter(
+            snapshot_key=snapshot_key,
+        ).first()
+        if snapshot is not None:
+            refreshing = False
+            if snapshot_is_stale(snapshot):
+                refreshing = _schedule_refresh(
+                    snapshot_key,
+                    lambda: _refresh_detail_snapshot(instance_id),
+                )
+            payload = decorate_detail_payload(snapshot.payload)
+            payload = mark_snapshot_freshness(
+                payload,
+                snapshot,
+                refreshing=refreshing or bool(snapshot.refresh_started_at),
+            )
+            return _no_store_response(payload)
         cache_key = _public_cache_key("detail", instance_id)
         cached_payload = cache.get(cache_key)
         if isinstance(cached_payload, Mapping):
@@ -340,6 +460,13 @@ class MouldDetailView(APIView):
                 status_code=status.HTTP_502_BAD_GATEWAY,
             )
         projected_payload = _project_detail_payload(payload)
+        store_snapshot(
+            snapshot_key=snapshot_key,
+            kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id=instance_id,
+            payload=projected_payload,
+        )
+        projected_payload = decorate_detail_payload(projected_payload)
         cache.set(
             cache_key,
             projected_payload,
@@ -348,4 +475,79 @@ class MouldDetailView(APIView):
         return _no_store_response(projected_payload)
 
 
-__all__ = ["MouldBoardView", "MouldDetailView"]
+class MouldUsageConfirmationView(APIView):
+    """Acknowledge a reached 100k-shot checkpoint with an authenticated audit trail."""
+
+    permission_classes = [InjectionPermission]
+
+    def post(self, request, instance_id, *args, **kwargs):
+        instance_id = str(instance_id or "").strip()
+        if not instance_id.isdigit():
+            return Response(
+                {"detail": "Invalid mould instance id."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        snapshot = MouldDataSnapshot.objects.filter(
+            snapshot_key=detail_snapshot_key(instance_id),
+        ).first()
+        if snapshot is None:
+            return Response(
+                {"detail": "금형 상세 스냅샷을 먼저 불러와 주세요."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        mould = snapshot.payload.get("mould")
+        if not isinstance(mould, Mapping):
+            return Response(
+                {"detail": "금형 형합수 정보를 확인할 수 없습니다."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            shot_count = max(0, int(float(mould.get("current_output_amount"))))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "금형 형합수가 등록되지 않았습니다."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        reached = (shot_count // SHOT_MILESTONE_SIZE) * SHOT_MILESTONE_SIZE
+        raw_milestone = request.data.get("milestone_shots", reached)
+        try:
+            milestone = int(raw_milestone)
+        except (TypeError, ValueError):
+            milestone = 0
+        if (
+            milestone < SHOT_MILESTONE_SIZE
+            or milestone % SHOT_MILESTONE_SIZE != 0
+            or milestone > reached
+        ):
+            return Response(
+                {"detail": "현재 도달한 10만 Shot 단위만 확인할 수 있습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            confirmation, created = MouldUsageConfirmation.objects.get_or_create(
+                mould_instance_id=instance_id,
+                milestone_shots=milestone,
+                defaults={
+                    "shot_count_at_confirmation": shot_count,
+                    "confirmed_by": request.user,
+                    "note": str(request.data.get("note") or "").strip()[:240],
+                },
+            )
+        decorated = decorate_detail_payload(snapshot.payload)
+        return Response(
+            {
+                "created": created,
+                "confirmation": {
+                    "milestone_shots": confirmation.milestone_shots,
+                    "shot_count_at_confirmation": confirmation.shot_count_at_confirmation,
+                    "confirmed_at": confirmation.confirmed_at,
+                    "confirmed_by": confirmation.confirmed_by.get_username(),
+                },
+                "mould": decorated.get("mould", {}),
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+__all__ = ["MouldBoardView", "MouldDetailView", "MouldUsageConfirmationView"]
