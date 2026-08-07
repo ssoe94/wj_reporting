@@ -73,6 +73,9 @@ const MouldManagementPage = lazy(() => import('./domains/moulds/pages/MouldManag
 const BoardHubPage = lazy(() => import('./domains/boards/pages/BoardHubPage').then((module) => ({
   default: module.BoardHubPage,
 })));
+const EnergyBoardPage = lazy(() => import('./domains/boards/pages/EnergyBoardPage').then((module) => ({
+  default: module.EnergyBoardPage,
+})));
 
 const queryClient = new QueryClient();
 
@@ -82,6 +85,7 @@ function isPublicRoutePath(pathname: string) {
     || normalizedPath === '/boards'
     || normalizedPath === '/boards/injection'
     || normalizedPath === '/boards/moulds'
+    || normalizedPath === '/boards/energy'
     || normalizedPath === '/production/injection-board'
     || normalizedPath === '/production/injection-board/index.html'
     || normalizedPath === '/injection/moulds'
@@ -442,7 +446,9 @@ function AppContent() {
     || pathname === '/injection/moulds/'
     || pathname === '/boards/moulds'
     || pathname === '/boards/moulds/';
-  const isStandaloneBoardRoute = isInjectionBoardRoute || isMouldRoute;
+  const isEnergyBoardRoute = pathname === '/boards/energy'
+    || pathname === '/boards/energy/';
+  const isStandaloneBoardRoute = isInjectionBoardRoute || isMouldRoute || isEnergyBoardRoute;
   let breadcrumbLabel = t('brand');
   if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
   else if (pathname.startsWith('/assembly')) breadcrumbLabel = t('brand_machining');
@@ -740,6 +746,7 @@ function AppContent() {
             <Route path="/boards" element={<Suspense fallback={<RouteLoading />}><BoardHubPage /></Suspense>} />
             <Route path="/boards/injection" element={<Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense>} />
             <Route path="/boards/moulds" element={<Suspense fallback={<RouteLoading />}><MouldManagementPage /></Suspense>} />
+            <Route path="/boards/energy" element={<Suspense fallback={<RouteLoading />}><EnergyBoardPage /></Suspense>} />
             {/* Private routes */}
             <Route path="/" element={<PrivateRoute><PageTransition><HomeRedirect /></PageTransition></PrivateRoute>} />
             <Route path="/next/login" element={<Navigate to="/login" replace />} />

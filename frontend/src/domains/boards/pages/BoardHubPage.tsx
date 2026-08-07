@@ -1,5 +1,5 @@
 import type { MouseEvent } from "react";
-import { ArrowUpRight, Boxes, Factory, LayoutGrid, LogIn, Radio } from "lucide-react";
+import { ArrowUpRight, Boxes, Factory, LayoutGrid, LogIn, Radio, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,7 +11,7 @@ const COPY = {
     eyebrow: "WJ DISPLAY CENTER",
     title: "현황판",
     description: "운영 현황을 큰 화면에 맞춘 전용 보드로 확인합니다. 카드를 누르면 새 전체 화면 창으로 열립니다.",
-    count: "운영 현황판 2개",
+    count: "운영 현황판 3개",
     publicAccess: "로그인 없이 직접 접속",
     login: "관리 화면 로그인",
     dashboard: "관리 화면으로",
@@ -25,12 +25,15 @@ const COPY = {
     mouldTitle: "금형 실시간 현황판",
     mouldDescription: "금형의 장착 설비와 Blacklake 기준 A/B/C 보관 위치를 터치로 확인합니다.",
     mouldMeta: "장착 설비 · A/B/C 보관 위치",
+    energyTitle: "사출 전력 사용 현황판",
+    energyDescription: "17대 사출기의 시간대별 사용량과 전일·7일 평균, 설비별 에너지 효율을 비교합니다.",
+    energyMeta: "전력 사용량 · 전일/7일 비교 · 1분 갱신",
   },
   zh: {
     eyebrow: "WJ DISPLAY CENTER",
     title: "看板中心",
     description: "通过适配大屏的专用看板查看运营现状。点击卡片即可在新的全屏窗口中打开。",
-    count: "2 个运营看板",
+    count: "3 个运营看板",
     publicAccess: "无需登录即可直接访问",
     login: "登录管理页面",
     dashboard: "返回管理页面",
@@ -44,11 +47,14 @@ const COPY = {
     mouldTitle: "模具实时看板",
     mouldDescription: "通过触控查看模具安装设备及基于 Blacklake 的 A/B/C 存放位置。",
     mouldMeta: "安装设备 · A/B/C 存放位置",
+    energyTitle: "注塑用电现状看板",
+    energyDescription: "比较17台注塑机分时用电、前日与7日平均，以及设备能效。",
+    energyMeta: "用电量 · 前日/7日比较 · 每分钟刷新",
   },
 } as const;
 
 type BoardCard = {
-  key: "injection" | "mould";
+  key: "injection" | "mould" | "energy";
   href: string;
   image: string;
   title: string;
@@ -91,6 +97,15 @@ export function BoardHubPage() {
       description: copy.mouldDescription,
       meta: copy.mouldMeta,
       icon: Boxes,
+    },
+    {
+      key: "energy",
+      href: "/boards/energy",
+      image: "/board-thumbnails/energy-board.svg",
+      title: copy.energyTitle,
+      description: copy.energyDescription,
+      meta: copy.energyMeta,
+      icon: Zap,
     },
   ];
 

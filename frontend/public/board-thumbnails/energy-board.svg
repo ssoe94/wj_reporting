@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">사출 전력 사용 현황판 미리보기</title>
+  <desc id="desc">전력 KPI, 시간대별 사용량, 설비별 순위와 히트맵을 표현한 현황판</desc>
+  <rect width="1600" height="900" fill="#edf4f7"/>
+  <rect x="28" y="28" width="1544" height="112" rx="24" fill="#ffffff" stroke="#c8d9e2"/>
+  <rect x="52" y="52" width="64" height="64" rx="18" fill="#176f9f"/>
+  <path d="M84 62 68 89h14l-5 22 20-31H84l8-18z" fill="#ffffff"/>
+  <text x="138" y="76" fill="#176f9f" font-family="Arial,sans-serif" font-size="16" font-weight="700" letter-spacing="2">INJECTION ENERGY BOARD</text>
+  <text x="138" y="108" fill="#173246" font-family="Arial,sans-serif" font-size="34" font-weight="800">사출 전력 사용 현황판</text>
+  <g font-family="Arial,sans-serif">
+    <g transform="translate(28 160)">
+      <rect width="300" height="128" rx="20" fill="#176f9f"/>
+      <text x="24" y="36" fill="#dbeef7" font-size="15" font-weight="700">금일 누적 사용량</text>
+      <text x="24" y="90" fill="#ffffff" font-size="48" font-weight="800">12,480 kWh</text>
+    </g>
+    <g transform="translate(344 160)">
+      <rect width="290" height="128" rx="20" fill="#ffffff" stroke="#c8d9e2"/>
+      <text x="22" y="36" fill="#657b89" font-size="15" font-weight="700">전일 동시간 대비</text>
+      <text x="22" y="86" fill="#b56d12" font-size="42" font-weight="800">+4.8%</text>
+    </g>
+    <g transform="translate(650 160)">
+      <rect width="290" height="128" rx="20" fill="#ffffff" stroke="#c8d9e2"/>
+      <text x="22" y="36" fill="#657b89" font-size="15" font-weight="700">최근 7일 평균 대비</text>
+      <text x="22" y="86" fill="#173246" font-size="42" font-weight="800">-2.1%</text>
+    </g>
+    <g transform="translate(956 160)">
+      <rect width="290" height="128" rx="20" fill="#ffffff" stroke="#c8d9e2"/>
+      <text x="22" y="36" fill="#657b89" font-size="15" font-weight="700">최대 사용 시간대</text>
+      <text x="22" y="86" fill="#173246" font-size="42" font-weight="800">14:00</text>
+    </g>
+    <g transform="translate(1262 160)">
+      <rect width="310" height="128" rx="20" fill="#ffffff" stroke="#c8d9e2"/>
+      <text x="22" y="36" fill="#657b89" font-size="15" font-weight="700">전력 계측 설비</text>
+      <text x="22" y="86" fill="#173246" font-size="42" font-weight="800">17 / 17</text>
+    </g>
+  </g>
+  <rect x="28" y="308" width="1010" height="300" rx="22" fill="#ffffff" stroke="#c8d9e2"/>
+  <text x="54" y="348" fill="#173246" font-family="Arial,sans-serif" font-size="20" font-weight="800">시간대별 전체 전력 사용량</text>
+  <g fill="#176f9f">
+    <rect x="76" y="507" width="28" height="68" rx="5"/><rect x="119" y="476" width="28" height="99" rx="5"/>
+    <rect x="162" y="458" width="28" height="117" rx="5"/><rect x="205" y="425" width="28" height="150" rx="5"/>
+    <rect x="248" y="442" width="28" height="133" rx="5"/><rect x="291" y="407" width="28" height="168" rx="5"/>
+    <rect x="334" y="378" width="28" height="197" rx="5"/><rect x="377" y="394" width="28" height="181" rx="5"/>
+    <rect x="420" y="363" width="28" height="212" rx="5"/><rect x="463" y="389" width="28" height="186" rx="5"/>
+    <rect x="506" y="418" width="28" height="157" rx="5"/><rect x="549" y="431" width="28" height="144" rx="5"/>
+    <rect x="592" y="446" width="28" height="129" rx="5"/><rect x="635" y="463" width="28" height="112" rx="5"/>
+    <rect x="678" y="476" width="28" height="99" rx="5"/><rect x="721" y="492" width="28" height="83" rx="5"/>
+    <rect x="764" y="509" width="28" height="66" rx="5"/><rect x="807" y="524" width="28" height="51" rx="5"/>
+  </g>
+  <polyline points="90,492 133,464 176,470 219,439 262,425 305,418 348,399 391,412 434,384 477,401 520,426 563,442 606,430 649,478 692,464 735,503 778,493 821,531" fill="none" stroke="#d18a24" stroke-width="6" stroke-dasharray="14 10"/>
+  <rect x="1058" y="308" width="514" height="300" rx="22" fill="#ffffff" stroke="#c8d9e2"/>
+  <text x="1084" y="348" fill="#173246" font-family="Arial,sans-serif" font-size="20" font-weight="800">설비별 전력 사용량</text>
+  <g font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#526d7d">
+    <text x="1090" y="393">6호기</text><rect x="1142" y="378" width="350" height="18" rx="9" fill="#e8f0f4"/><rect x="1142" y="378" width="322" height="18" rx="9" fill="#176f9f"/>
+    <text x="1090" y="433">4호기</text><rect x="1142" y="418" width="350" height="18" rx="9" fill="#e8f0f4"/><rect x="1142" y="418" width="286" height="18" rx="9" fill="#176f9f"/>
+    <text x="1090" y="473">3호기</text><rect x="1142" y="458" width="350" height="18" rx="9" fill="#e8f0f4"/><rect x="1142" y="458" width="247" height="18" rx="9" fill="#176f9f"/>
+    <text x="1090" y="513">7호기</text><rect x="1142" y="498" width="350" height="18" rx="9" fill="#e8f0f4"/><rect x="1142" y="498" width="216" height="18" rx="9" fill="#176f9f"/>
+    <text x="1090" y="553">1호기</text><rect x="1142" y="538" width="350" height="18" rx="9" fill="#e8f0f4"/><rect x="1142" y="538" width="178" height="18" rx="9" fill="#176f9f"/>
+  </g>
+  <rect x="28" y="628" width="1544" height="244" rx="22" fill="#ffffff" stroke="#c8d9e2"/>
+  <text x="54" y="668" fill="#173246" font-family="Arial,sans-serif" font-size="20" font-weight="800">설비 × 시간대 전력 히트맵</text>
+  <g transform="translate(70 700)">
+    <g fill="#176f9f">
+      <rect x="0" y="0" width="54" height="20" rx="4" opacity=".2"/><rect x="60" y="0" width="54" height="20" rx="4" opacity=".35"/><rect x="120" y="0" width="54" height="20" rx="4" opacity=".7"/><rect x="180" y="0" width="54" height="20" rx="4" opacity=".9"/><rect x="240" y="0" width="54" height="20" rx="4" opacity=".65"/><rect x="300" y="0" width="54" height="20" rx="4" opacity=".42"/>
+      <rect x="0" y="30" width="54" height="20" rx="4" opacity=".3"/><rect x="60" y="30" width="54" height="20" rx="4" opacity=".48"/><rect x="120" y="30" width="54" height="20" rx="4" opacity=".8"/><rect x="180" y="30" width="54" height="20" rx="4" opacity=".55"/><rect x="240" y="30" width="54" height="20" rx="4" opacity=".38"/><rect x="300" y="30" width="54" height="20" rx="4" opacity=".24"/>
+      <rect x="0" y="60" width="54" height="20" rx="4" opacity=".16"/><rect x="60" y="60" width="54" height="20" rx="4" opacity=".28"/><rect x="120" y="60" width="54" height="20" rx="4" opacity=".5"/><rect x="180" y="60" width="54" height="20" rx="4" opacity=".72"/><rect x="240" y="60" width="54" height="20" rx="4" opacity=".46"/><rect x="300" y="60" width="54" height="20" rx="4" opacity=".2"/>
+    </g>
+    <g transform="translate(390 0)" fill="#176f9f" opacity=".38">
+      <rect x="0" width="54" height="20" rx="4"/><rect x="60" width="54" height="20" rx="4"/><rect x="120" width="54" height="20" rx="4"/><rect x="180" width="54" height="20" rx="4"/><rect x="240" width="54" height="20" rx="4"/><rect x="300" width="54" height="20" rx="4"/><rect x="360" width="54" height="20" rx="4"/><rect x="420" width="54" height="20" rx="4"/><rect x="480" width="54" height="20" rx="4"/><rect x="540" width="54" height="20" rx="4"/><rect x="600" width="54" height="20" rx="4"/><rect x="660" width="54" height="20" rx="4"/><rect x="720" width="54" height="20" rx="4"/><rect x="780" width="54" height="20" rx="4"/><rect x="840" width="54" height="20" rx="4"/>
+    </g>
+  </g>
+</svg>

@@ -188,6 +188,18 @@ export async function getInjectionUtilizationMatrix(columns = 336) {
   return response.data;
 }
 
+export async function getInjectionEnergyMatrix(columns = 193) {
+  const params = new URLSearchParams({
+    interval: "1hour",
+    columns: String(columns),
+  });
+  const response = await http.get<InjectionProductionMatrix>(
+    mesEndpoint(`/injection/production-matrix/?${params.toString()}`),
+    { skipAuth: true },
+  );
+  return normalizeInjectionProductionMatrix(response.data);
+}
+
 export async function requestInjectionSnapshotUpdate() {
   const response = await http.post<SnapshotUpdateStatus>(
     mesEndpoint("/injection/update-recent-snapshots/"),
