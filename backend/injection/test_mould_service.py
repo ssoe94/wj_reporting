@@ -13,6 +13,7 @@ from injection.mould_service import (
     build_mould_board,
     build_mould_detail,
     build_choice_value_maps,
+    continuous_production_history,
     discover_child_objects,
     enrich_mould_records,
     normalize_child_record,
@@ -456,6 +457,60 @@ class MouldTransformTests(SimpleTestCase):
             [27241, 62733, 107733],
         )
         self.assertTrue(all(row["unit"] == "Shot" for row in result))
+
+    def test_production_history_keeps_running_total_across_year_boundaries(self):
+        result = continuous_production_history(
+            [
+                {
+                    "id": "2024-12",
+                    "period": "2024-12",
+                    "year": 2024,
+                    "month": 12,
+                    "quantity": 12_726,
+                    "cumulative_quantity": 139_798,
+                },
+                {
+                    "id": "2025-01",
+                    "period": "2025-01",
+                    "year": 2025,
+                    "month": 1,
+                    "quantity": 6_679,
+                    "cumulative_quantity": 6_679,
+                },
+                {
+                    "id": "2024-11",
+                    "period": "2024-11",
+                    "year": 2024,
+                    "month": 11,
+                    "quantity": 20_574,
+                    "cumulative_quantity": 127_072,
+                },
+            ]
+        )
+
+        self.assertEqual(
+            [row["period"] for row in result],
+            ["2024-11", "2024-12", "2025-01"],
+        )
+        self.assertEqual(
+            [row["cumulative_quantity"] for row in result],
+            [20_574, 33_300, 39_979],
+        )
+        self.assertEqual(
+            [row["source_cumulative_quantity"] for row in result],
+            [127_072, 139_798, 6_679],
+        )
+        self.assertTrue(
+            all(
+                row["cumulative_basis"] == "monthly_quantity_running_sum"
+                for row in result
+            )
+        )
+        repeated = continuous_production_history(result)
+        self.assertEqual(
+            [row["source_cumulative_quantity"] for row in repeated],
+            [127_072, 139_798, 6_679],
+        )
 
     @patch("injection.mould_service.fetch_resource_mould_records")
     @patch("injection.mould_service.fetch_mould_metadata")

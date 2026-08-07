@@ -116,6 +116,7 @@ const COPY = {
     period: "기간",
     quantity: "생산량",
     cumulative: "누적",
+    cumulativeBasis: "월 생산량을 연도 구분 없이 날짜순으로 합산한 누적값입니다.",
     requestedAt: "요청일",
     repairType: "유형",
     vendor: "처리 부서/업체",
@@ -227,6 +228,7 @@ const COPY = {
     period: "期间",
     quantity: "产量",
     cumulative: "累计",
+    cumulativeBasis: "累计值按月份顺序跨年度连续汇总，不在每年一月归零。",
     requestedAt: "申请日期",
     repairType: "类型",
     vendor: "部门/供应商",
@@ -542,19 +544,22 @@ function DetailContent({ copy, detail, language, tab }: {
   if (tab === "production") {
     if (!fullDetail?.productionHistory.length) return emptyHistory(copy);
     return (
-      <div className={styles.tableScroller}>
-        <table className={styles.historyTable}>
-          <thead><tr><th>{copy.period}</th><th>{copy.quantity}</th><th>{copy.cumulative}</th><th>{copy.sourceTime}</th></tr></thead>
-          <tbody>{fullDetail.productionHistory.map((item) => (
-            <tr key={item.id}>
-              <td><strong>{text(item.period)}</strong></td>
-              <td>{number(item.quantity, language)} {text(item.unit, copy.shots)}</td>
-              <td>{number(item.cumulativeQuantity, language)} {text(item.unit, copy.shots)}</td>
-              <td>{dateTime(item.recordedAt, language, copy.noTimestamp)}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
+      <>
+        <p className={styles.historyBasis}>{copy.cumulativeBasis}</p>
+        <div className={styles.tableScroller}>
+          <table className={styles.historyTable}>
+            <thead><tr><th>{copy.period}</th><th>{copy.quantity}</th><th>{copy.cumulative}</th><th>{copy.sourceTime}</th></tr></thead>
+            <tbody>{fullDetail.productionHistory.map((item) => (
+              <tr key={item.id}>
+                <td><strong>{text(item.period)}</strong></td>
+                <td>{number(item.quantity, language)} {text(item.unit, copy.shots)}</td>
+                <td>{number(item.cumulativeQuantity, language)} {text(item.unit, copy.shots)}</td>
+                <td>{dateTime(item.recordedAt, language, copy.noTimestamp)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </>
     );
   }
 

@@ -822,6 +822,47 @@ def normalize_history_records(
     return [normalized]
 
 
+def continuous_production_history(
+    records: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return production rows with one continuous, auditable running total.
+
+    BLACKLAKE stores WJ production in one child row per year, so each source
+    row's calculated cumulative value starts again in January.  Preserve that
+    source value separately and derive the dashboard cumulative value only by
+    adding the monthly quantities in chronological order.
+    """
+
+    def sort_key(row: Mapping[str, Any]) -> tuple[int, int, str, str]:
+        year = row.get("year")
+        month = row.get("month")
+        return (
+            year if isinstance(year, int) else 9999,
+            month if isinstance(month, int) else 13,
+            str(row.get("period") or ""),
+            str(row.get("id") or ""),
+        )
+
+    result: list[dict[str, Any]] = []
+    running_total: int | float = 0
+    for source in sorted(records, key=sort_key):
+        row = dict(source)
+        source_cumulative = row.get("source_cumulative_quantity")
+        if source_cumulative is None:
+            source_cumulative = row.get("cumulative_quantity")
+        quantity = row.get("quantity")
+        row["source_cumulative_quantity"] = source_cumulative
+        if (
+            isinstance(quantity, (int, float))
+            and not isinstance(quantity, bool)
+        ):
+            running_total += quantity
+            row["cumulative_quantity"] = running_total
+            row["cumulative_basis"] = "monthly_quantity_running_sum"
+        result.append(row)
+    return result
+
+
 def _infer_movement_sources(
     records: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -2152,6 +2193,10 @@ def build_mould_detail(instance_id: str) -> dict[str, Any]:
                 normalized_histories[history_key] = _infer_movement_sources(
                     normalized_histories[history_key]
                 )
+            elif history_key == "production_history":
+                normalized_histories[history_key] = continuous_production_history(
+                    normalized_histories[history_key]
+                )
             warnings.extend(f"{history_key}:{warning}" for warning in child_warnings)
         except MouldServiceError:
             warnings.append(f"{history_key}_unavailable")
@@ -2401,6 +2446,7 @@ __all__ = [
     "MouldServiceError",
     "build_mould_board",
     "build_mould_detail",
+    "continuous_production_history",
     "discover_child_objects",
     "enrich_mould_records",
     "normalize_child_record",

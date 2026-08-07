@@ -130,6 +130,8 @@ _PRODUCTION_FIELDS = (
     "month",
     "quantity",
     "cumulative_quantity",
+    "source_cumulative_quantity",
+    "cumulative_basis",
     "unit",
     "recorded_at",
 )

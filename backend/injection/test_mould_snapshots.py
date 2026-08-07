@@ -59,6 +59,22 @@ class MouldSnapshotUsageTests(TestCase):
         self.assertEqual(decorated['mould']['pending_milestone'], 200_000)
         self.assertTrue(decorated['mould']['confirmation_required'])
 
+    def test_existing_detail_snapshot_gets_continuous_cross_year_cumulative(self):
+        payload = detail_payload()
+        payload['production_history'][0]['cumulative_quantity'] = 139_798
+        payload['production_history'][1]['cumulative_quantity'] = 200
+
+        decorated = decorate_detail_payload(payload)
+
+        self.assertEqual(
+            [row['cumulative_quantity'] for row in decorated['production_history']],
+            [100, 300],
+        )
+        self.assertEqual(
+            [row['source_cumulative_quantity'] for row in decorated['production_history']],
+            [139_798, 200],
+        )
+
     def test_confirmed_checkpoint_is_not_pending(self):
         user = User.objects.create_user('mould-user')
         MouldUsageConfirmation.objects.create(

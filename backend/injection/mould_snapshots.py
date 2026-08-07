@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from .models import MouldDataSnapshot, MouldUsageConfirmation
+from .mould_service import continuous_production_history
 
 
 SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -227,6 +228,11 @@ def decorate_board_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 def decorate_detail_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(dict(payload))
+    production_history = result.get('production_history')
+    if isinstance(production_history, list):
+        result['production_history'] = continuous_production_history(
+            production_history
+        )
     mould = result.get('mould')
     if not isinstance(mould, dict):
         return result

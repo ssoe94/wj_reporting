@@ -3427,3 +3427,91 @@
     transition: none;
   }
 }
+
+/* The detail layer is a reading surface, so keep it larger than the dense board. */
+.detailDrawer .assetLine {
+  font-size: clamp(0.84rem, 0.82vw, 0.94rem);
+}
+
+.detailDrawer .mouldName {
+  font-size: clamp(0.98rem, 0.94vw, 1.08rem);
+}
+
+.detailDrawer .summaryBadges span {
+  font-size: clamp(0.75rem, 0.72vw, 0.84rem);
+}
+
+.detailDrawer .summaryFacts dt,
+.detailDrawer .detailGrid dt {
+  font-size: clamp(0.78rem, 0.75vw, 0.86rem);
+}
+
+.detailDrawer .summaryFacts dd,
+.detailDrawer .detailGrid dd {
+  font-size: clamp(0.88rem, 0.84vw, 0.96rem);
+}
+
+.detailDrawer .summaryFacts dd small {
+  font-size: clamp(0.72rem, 0.69vw, 0.8rem);
+}
+
+.detailDrawer .detailTabs button {
+  font-size: clamp(0.84rem, 0.8vw, 0.92rem);
+}
+
+.detailDrawer .historyTable {
+  font-size: clamp(0.85rem, 0.82vw, 0.94rem);
+}
+
+.detailDrawer .historyTable th {
+  font-size: clamp(0.76rem, 0.73vw, 0.84rem);
+}
+
+.historyBasis {
+  margin: 10px 0 4px;
+  padding: 8px 10px;
+  border: 1px solid #dbe8f1;
+  border-radius: 8px;
+  background: #f3f9fd;
+  color: #55758d;
+  font-size: clamp(0.76rem, 0.73vw, 0.84rem);
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .detailDrawer .assetLine {
+    font-size: 0.8rem;
+  }
+
+  .detailDrawer .mouldName {
+    font-size: 0.96rem;
+  }
+
+  .detailDrawer .summaryFacts dt,
+  .detailDrawer .detailGrid dt {
+    font-size: 0.72rem;
+  }
+
+  .detailDrawer .summaryFacts dd,
+  .detailDrawer .detailGrid dd {
+    font-size: 0.82rem;
+  }
+
+  .detailDrawer .detailTabs button {
+    font-size: 0.72rem;
+  }
+
+  .detailDrawer .historyTable {
+    font-size: 0.78rem;
+  }
+
+  .detailDrawer .historyTable th {
+    font-size: 0.72rem;
+  }
+
+  .historyBasis {
+    margin-top: 8px;
+    font-size: 0.7rem;
+    line-height: 1.45;
+  }
+}

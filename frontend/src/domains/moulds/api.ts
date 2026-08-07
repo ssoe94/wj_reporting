@@ -129,6 +129,8 @@ export type MouldProductionRecord = {
   month: number | null;
   quantity: number | null;
   cumulativeQuantity: number | null;
+  sourceCumulativeQuantity: number | null;
+  cumulativeBasis: string;
   unit: string;
   recordedAt: string;
 };
@@ -536,9 +538,34 @@ function normalizeProduction(value: unknown, index: number): MouldProductionReco
     month: asNullableNumber(pick(source, "month")),
     quantity: asNullableNumber(pick(source, "quantity", "output_quantity", "outputQuantity", "value")),
     cumulativeQuantity: asNullableNumber(pick(source, "cumulative_quantity", "cumulativeQuantity", "total")),
+    sourceCumulativeQuantity: asNullableNumber(pick(source, "source_cumulative_quantity", "sourceCumulativeQuantity")),
+    cumulativeBasis: asString(pick(source, "cumulative_basis", "cumulativeBasis")),
     unit: asString(pick(source, "unit", "param_unit", "paramUnit")),
     recordedAt: asEpochAwareDateString(pick(source, "recorded_at", "recordedAt", "record_time", "recordTime")),
   };
+}
+
+function continuousProductionHistory(value: unknown): MouldProductionRecord[] {
+  const rows = asArray(value).map(normalizeProduction).sort((left, right) => {
+    const leftYear = left.year ?? Number.MAX_SAFE_INTEGER;
+    const rightYear = right.year ?? Number.MAX_SAFE_INTEGER;
+    if (leftYear !== rightYear) return leftYear - rightYear;
+    const leftMonth = left.month ?? 13;
+    const rightMonth = right.month ?? 13;
+    if (leftMonth !== rightMonth) return leftMonth - rightMonth;
+    return left.period.localeCompare(right.period);
+  });
+  let runningTotal = 0;
+  return rows.map((row) => {
+    if (row.quantity === null) return row;
+    runningTotal += row.quantity;
+    return {
+      ...row,
+      sourceCumulativeQuantity: row.sourceCumulativeQuantity ?? row.cumulativeQuantity,
+      cumulativeQuantity: runningTotal,
+      cumulativeBasis: "monthly_quantity_running_sum",
+    };
+  });
 }
 
 function normalizeRepair(value: unknown, index: number): MouldRepairRecord {
@@ -579,7 +606,7 @@ export function normalizeMouldDetail(value: unknown): MouldDetail {
     coverFileId: asString(pick(baseSource, "cover_file_id", "coverFileId")),
     attachments: asArray(attachmentsValue).map(normalizeAttachment),
     movements: asArray(movementsValue).map(normalizeMovement),
-    productionHistory: asArray(productionValue).map(normalizeProduction),
+    productionHistory: continuousProductionHistory(productionValue),
     repairHistory: asArray(repairValue).map(normalizeRepair),
     capabilities: normalizeCapabilities(pick(source, "capabilities") ?? pick(baseSource, "capabilities")),
     dataFreshness: normalizeDataFreshness(pick(source, "data_freshness", "dataFreshness"), source),
