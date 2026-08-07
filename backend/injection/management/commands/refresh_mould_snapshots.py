@@ -1,3 +1,5 @@
+import time
+
 from django.core.management.base import BaseCommand, CommandError
 
 from injection.models import MouldDataSnapshot
@@ -14,6 +16,9 @@ class Command(BaseCommand):
         parser.add_argument('--board-only', action='store_true')
         parser.add_argument('--force-details', action='store_true')
         parser.add_argument('--instance-id', action='append', default=[])
+        parser.add_argument('--retries', type=int, default=3)
+        parser.add_argument('--retry-delay', type=float, default=2.0)
+        parser.add_argument('--detail-delay', type=float, default=0.3)
 
     def handle(self, *args, **options):
         self.stdout.write('Refreshing mould board snapshot...')
@@ -53,11 +58,10 @@ class Command(BaseCommand):
         ]
         candidates.sort(
             key=lambda instance_id: (
+                1 if instance_id in snapshots else 0,
                 snapshots[instance_id].refreshed_at
                 if instance_id in snapshots
-                else snapshots[next(iter(snapshots))].refreshed_at.replace(year=2000)
-                if snapshots
-                else board.get('final_changed_at', '')
+                else instance_id,
             )
         )
         if not options['all_details']:
@@ -66,13 +70,28 @@ class Command(BaseCommand):
         completed = 0
         failed = 0
         for index, instance_id in enumerate(candidates, start=1):
-            try:
-                _refresh_detail_snapshot(instance_id)
+            final_error: Exception | None = None
+            attempts = max(1, options['retries'] + 1)
+            for attempt in range(1, attempts + 1):
+                try:
+                    _refresh_detail_snapshot(instance_id)
+                    final_error = None
+                    break
+                except Exception as exc:
+                    final_error = exc
+                    if attempt < attempts:
+                        time.sleep(max(0, options['retry_delay']) * attempt)
+            if final_error is None:
                 completed += 1
                 self.stdout.write(f'[{index}/{len(candidates)}] {instance_id} saved')
-            except Exception as exc:
+            else:
                 failed += 1
-                self.stderr.write(f'[{index}/{len(candidates)}] {instance_id} failed: {exc}')
+                self.stderr.write(
+                    f'[{index}/{len(candidates)}] {instance_id} failed after '
+                    f'{attempts} attempts: {final_error}'
+                )
+            if index < len(candidates):
+                time.sleep(max(0, options['detail_delay']))
 
         summary = f'Detail snapshots: {completed} saved, {failed} failed.'
         if failed:

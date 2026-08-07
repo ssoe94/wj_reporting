@@ -305,6 +305,18 @@ function usageVisualClass(mould: MouldRecord): string {
   return "";
 }
 
+function inactivityLabel(mould: MouldRecord, copy: Copy): string {
+  if (mould.inactivityTier === "twelve_months") return copy.unusedTwelveMonths;
+  if (mould.inactivityTier === "six_months") return copy.unusedSixMonths;
+  return "";
+}
+
+function inactivityShortLabel(mould: MouldRecord): string {
+  if (mould.inactivityTier === "twelve_months") return "12M+";
+  if (mould.inactivityTier === "six_months") return "6M+";
+  return "";
+}
+
 type ZoneLayout = {
   code: string;
   label: string;
@@ -898,7 +910,7 @@ export function MouldManagementPage() {
                       type="button"
                     >
                       <strong>{machineDisplayLabel(machine.number, machine.tonnage, language)}</strong>
-                      <span className={styles.machineMould}>{mounted ? <><strong>{mounted.mouldCode}</strong><small>{text(mounted.name)}</small>{mounted.shotMilestone > 0 ? <i className={`${styles.usageBadge} ${mounted.confirmationRequired ? styles.usageBadgeDue : ""}`}>{milestoneLabel(mounted.shotMilestone, language)}{mounted.confirmationRequired ? " !" : " ✓"}</i> : null}</> : <em>{copy.unassigned}</em>}</span>
+                      <span className={styles.machineMould}>{mounted ? <><strong>{mounted.mouldCode}</strong><small>{text(mounted.name)}</small>{mounted.shotMilestone > 0 ? <i className={`${styles.usageBadge} ${mounted.confirmationRequired ? styles.usageBadgeDue : ""}`}>{milestoneLabel(mounted.shotMilestone, language)}{mounted.confirmationRequired ? " !" : " ✓"}</i> : null}{inactivityLabel(mounted, copy) ? <i className={`${styles.inactivityBadge} ${mounted.inactivityTier === "twelve_months" ? styles.inactivityBadgeTwelve : ""}`}>{inactivityLabel(mounted, copy)}</i> : null}</> : <em>{copy.unassigned}</em>}</span>
                       <span>{mounted ? <i className={`${styles.statusPill} ${styles.mountedPill}`}>{copy.mounted}</i> : <i className={styles.statusPill}>{copy.unknown}</i>}</span>
                       <span className={styles.changedAt}>{mounted ? <strong title={finalChangedQualityLabel(mounted.finalChangedAt, copy)}>{dateTime(mounted.finalChangedAt, language, copy.noTimestamp)}</strong> : "-"}</span>
                     </button>
@@ -914,7 +926,8 @@ export function MouldManagementPage() {
               <div className={styles.cellLegend}>
                 <span className={styles.coordinateGuide}><MapIcon aria-hidden="true" size={18} />{copy.coordinateGuide}</span>
                 <span><i className={styles.legendUsage} />{copy.usageLegend}</span>
-                <span><i className={styles.legendInactive} />{copy.inactivityLegend}</span>
+                <span><i className={styles.legendInactiveSix} />{copy.unusedSixMonths}</span>
+                <span><i className={styles.legendInactiveTwelve} />{copy.unusedTwelveMonths}</span>
               </div>
             </div>
             <div className={`${styles.zoneList} ${focusedZone ? styles.zoneListFocused : ""}`}>
@@ -952,7 +965,7 @@ export function MouldManagementPage() {
                               const conflict = location.conflict || occupants.length > 1;
                               return (
                                 <button
-                                  aria-label={occupant ? `${location.code}, ${occupant.mouldCode}${conflict ? `, ${copy.conflict}` : ""}` : `${location.code}, ${copy.emptyCell}`}
+                                  aria-label={occupant ? `${location.code}, ${occupant.mouldCode}${inactivityLabel(occupant, copy) ? `, ${inactivityLabel(occupant, copy)}` : ""}${conflict ? `, ${copy.conflict}` : ""}` : `${location.code}, ${copy.emptyCell}`}
                                   aria-pressed={selected}
                                   className={`${styles.coordinateCell} ${occupant ? styles.occupiedCell : ""} ${occupant ? usageVisualClass(occupant) : ""} ${selected ? styles.selectedCell : ""} ${conflict ? styles.conflictCell : ""} ${visible ? "" : styles.filteredOut}`}
                                   disabled={!occupant}
@@ -964,11 +977,12 @@ export function MouldManagementPage() {
                                     }
                                     if (occupant) selectMould(occupant.instanceId);
                                   }}
-                                  title={occupant ? `${occupant.mouldCode} · ${occupant.name}` : copy.emptyCell}
+                                  title={occupant ? `${occupant.mouldCode} · ${occupant.name}${inactivityLabel(occupant, copy) ? ` · ${inactivityLabel(occupant, copy)}` : ""}` : copy.emptyCell}
                                   type="button"
                                 >
                                   <span className={styles.coordinateCode}>{location.code}</span>
                                   {occupant?.shotMilestone ? <span className={`${styles.cellUsageBadge} ${occupant.confirmationRequired ? styles.cellUsageBadgeDue : ""}`}>{milestoneLabel(occupant.shotMilestone, language)}{occupant.confirmationRequired ? "!" : "✓"}</span> : null}
+                                  {occupant && inactivityShortLabel(occupant) ? <span className={`${styles.cellInactivityBadge} ${occupant.inactivityTier === "twelve_months" ? styles.cellInactivityBadgeTwelve : ""}`}>{inactivityShortLabel(occupant)}</span> : null}
                                   {focusedZone && occupant ? (
                                     <span className={styles.coordinateDrawing}>
                                       {text(occupant.drawingNo, occupant.assetCode || occupant.mouldCode)}
@@ -1016,7 +1030,7 @@ export function MouldManagementPage() {
                       <td data-label={copy.drawingNo}>{text(mould.drawingNo)}</td>
                       <td data-label={copy.currentLocation}><span className={styles.locationPill}>{displayLocation(mould)}</span></td>
                       <td data-label={copy.finalChangedAt}>{dateTime(mould.finalChangedAt, language, copy.noTimestamp)}</td>
-                      <td data-label={copy.status}>{text(mould.statusLabel, copy.unknown)}</td>
+                      <td data-label={copy.status}>{text(mould.statusLabel, copy.unknown)}{inactivityLabel(mould, copy) ? <small className={styles.listInactivity}>{inactivityLabel(mould, copy)}</small> : null}</td>
                     </tr>
                   ))}</tbody>
                 </table>

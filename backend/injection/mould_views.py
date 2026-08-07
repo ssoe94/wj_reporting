@@ -86,6 +86,7 @@ _MOULD_FIELDS = (
     "classification",
     "cavity_count",
     "manufacturer",
+    "acquired_at",
     "serial_no",
     "current_output_amount",
     "current_output_batch_amount",
@@ -100,6 +101,8 @@ _MOULD_FIELDS = (
     "time_quality",
     "last_used_at",
     "last_used_source",
+    "inactivity_reference_at",
+    "inactivity_reference_source",
     "inactivity_months",
     "inactivity_tier",
     "shot_milestone",
@@ -107,6 +110,7 @@ _MOULD_FIELDS = (
     "pending_milestone",
     "confirmed_milestone",
     "confirmation_required",
+    "detail_snapshot_available",
 )
 _ENUM_FIELDS = ("code", "label", "message", "name")
 _DATA_FRESHNESS_FIELDS = (

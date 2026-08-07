@@ -45,12 +45,21 @@ class MouldSnapshotUsageTests(TestCase):
                 'period': '2025-11',
                 'year': 2025,
                 'month': 11,
+                'quantity': 120,
                 'recorded_at': '2026-08-07T08:00:00+08:00',
             },
             {'period': '2026', 'year': 2026, 'month': None},
         ])
 
         self.assertEqual(result, datetime(2025, 11, 30, 23, 59, 59, tzinfo=SHANGHAI))
+
+    def test_last_production_ignores_zero_quantity_months(self):
+        result = last_production_at([
+            {'period': '2024-03', 'year': 2024, 'month': 3, 'quantity': 300},
+            {'period': '2026-07', 'year': 2026, 'month': 7, 'quantity': 0},
+        ])
+
+        self.assertEqual(result, datetime(2024, 3, 31, 23, 59, 59, tzinfo=SHANGHAI))
 
     def test_detail_marks_latest_reached_100k_checkpoint_pending(self):
         decorated = decorate_detail_payload(detail_payload())
@@ -71,6 +80,37 @@ class MouldSnapshotUsageTests(TestCase):
 
         self.assertEqual(decorated['mould']['shot_milestone'], 400_000)
         self.assertEqual(decorated['mould']['pending_milestone'], 400_000)
+
+    def test_detail_marks_old_zero_output_mould_from_first_movement(self):
+        payload = detail_payload(shot_count=0)
+        payload['production_history'] = []
+        payload['movement_history'] = [
+            {'occurred_at': '2024-05-10T00:00:00+08:00'},
+        ]
+
+        decorated = decorate_detail_payload(payload)
+
+        self.assertEqual(decorated['mould']['inactivity_tier'], 'twelve_months')
+        self.assertIsNone(decorated['mould']['last_used_at'])
+        self.assertEqual(
+            decorated['mould']['inactivity_reference_source'],
+            'blacklake.movement_history.first',
+        )
+
+    def test_mounted_mould_with_old_production_is_still_marked_inactive(self):
+        payload = detail_payload()
+        payload['mould']['location'] = {
+            'code': '#1-850T',
+            'kind': 'machine',
+            'machine_number': 1,
+        }
+        payload['production_history'] = [
+            {'period': '2024-05', 'year': 2024, 'month': 5, 'quantity': 300},
+        ]
+
+        decorated = decorate_detail_payload(payload)
+
+        self.assertEqual(decorated['mould']['inactivity_tier'], 'twelve_months')
 
     def test_existing_detail_snapshot_gets_continuous_cross_year_cumulative(self):
         payload = detail_payload()

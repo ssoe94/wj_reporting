@@ -150,6 +150,12 @@ function makeMould(index: number, location: MouldLocation, code?: string): Mould
         ? "2025-12-31T23:59:59+08:00"
         : changedAt(index),
     lastUsedSource: "fallback",
+    inactivityReferenceAt: inactivityTier === "twelve_months"
+      ? "2025-03-31T23:59:59+08:00"
+      : inactivityTier === "six_months"
+        ? "2025-12-31T23:59:59+08:00"
+        : changedAt(index),
+    inactivityReferenceSource: "fallback",
     inactivityMonths: inactivityTier === "twelve_months" ? 16 : inactivityTier === "six_months" ? 7 : 0,
     inactivityTier,
     shotMilestone: milestone,
@@ -157,6 +163,7 @@ function makeMould(index: number, location: MouldLocation, code?: string): Mould
     pendingMilestone: confirmationRequired ? milestone : null,
     confirmedMilestone: confirmationRequired ? Math.max(0, milestone - 100_000) : milestone,
     confirmationRequired,
+    detailSnapshotAvailable: true,
     warnings: [],
   };
 }

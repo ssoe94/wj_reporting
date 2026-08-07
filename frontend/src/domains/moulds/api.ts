@@ -71,6 +71,8 @@ export type MouldRecord = {
   timeQuality: string;
   lastUsedAt: string;
   lastUsedSource: string;
+  inactivityReferenceAt: string;
+  inactivityReferenceSource: string;
   inactivityMonths: number | null;
   inactivityTier: "active" | "recent" | "six_months" | "twelve_months" | "unknown";
   shotMilestone: number;
@@ -78,6 +80,7 @@ export type MouldRecord = {
   pendingMilestone: number | null;
   confirmedMilestone: number;
   confirmationRequired: boolean;
+  detailSnapshotAvailable: boolean;
   warnings: MouldWarning[];
 };
 
@@ -412,6 +415,8 @@ function normalizeMouldRecord(value: unknown): MouldRecord {
     ),
     lastUsedAt: asEpochAwareDateString(pick(source, "last_used_at", "lastUsedAt")),
     lastUsedSource: asString(pick(source, "last_used_source", "lastUsedSource")),
+    inactivityReferenceAt: asEpochAwareDateString(pick(source, "inactivity_reference_at", "inactivityReferenceAt")),
+    inactivityReferenceSource: asString(pick(source, "inactivity_reference_source", "inactivityReferenceSource")),
     inactivityMonths: asNullableNumber(pick(source, "inactivity_months", "inactivityMonths")),
     inactivityTier: (() => {
       const tier = asString(pick(source, "inactivity_tier", "inactivityTier"), "unknown");
@@ -424,6 +429,7 @@ function normalizeMouldRecord(value: unknown): MouldRecord {
     pendingMilestone: asNullableNumber(pick(source, "pending_milestone", "pendingMilestone")),
     confirmedMilestone: asNumber(pick(source, "confirmed_milestone", "confirmedMilestone"), 0),
     confirmationRequired: Boolean(pick(source, "confirmation_required", "confirmationRequired")),
+    detailSnapshotAvailable: asBoolean(pick(source, "detail_snapshot_available", "detailSnapshotAvailable")),
     warnings: normalizeWarnings(pick(source, "warnings", "warning_details", "warningDetails")),
   };
 }

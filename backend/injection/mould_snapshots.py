@@ -120,10 +120,37 @@ def last_production_at(production_history: Any) -> datetime | None:
         parsed
         for row in production_history
         if isinstance(row, Mapping)
+        and isinstance(row.get('quantity'), (int, float))
+        and not isinstance(row.get('quantity'), bool)
+        and row.get('quantity') > 0
         for parsed in [_monthly_activity_date(row)]
         if parsed is not None
     ]
     return max(dates) if dates else None
+
+
+def first_known_use_at(payload: Mapping[str, Any]) -> tuple[datetime | None, str | None]:
+    """Find the earliest reliable date for a mould with no production history."""
+
+    candidates: list[tuple[datetime, str]] = []
+    mould = payload.get('mould')
+    if isinstance(mould, Mapping):
+        acquired_at = parse_source_datetime(mould.get('acquired_at'))
+        if acquired_at is not None:
+            candidates.append((acquired_at, 'blacklake.mould.acquired_at'))
+
+    movements = payload.get('movement_history')
+    if isinstance(movements, Sequence) and not isinstance(
+        movements, (str, bytes, bytearray)
+    ):
+        for row in movements:
+            if not isinstance(row, Mapping):
+                continue
+            occurred_at = parse_source_datetime(row.get('occurred_at'))
+            if occurred_at is not None:
+                candidates.append((occurred_at, 'blacklake.movement_history.first'))
+
+    return min(candidates, default=(None, None), key=lambda item: item[0])
 
 
 def _usage_state(
@@ -132,6 +159,8 @@ def _usage_state(
     production_history: Any,
     confirmed_milestones: Sequence[int],
     mounted: bool = False,
+    fallback_activity_at: datetime | None = None,
+    fallback_activity_source: str | None = None,
 ) -> dict[str, Any]:
     shot_count = usage_shot_count(
         current_output_amount=current_output_amount,
@@ -148,7 +177,8 @@ def _usage_state(
         reached_milestone if reached_milestone > confirmed_milestone else None
     )
 
-    activity_at = last_production_at(production_history)
+    production_at = last_production_at(production_history)
+    activity_at = production_at or fallback_activity_at
     inactivity_months: int | None = None
     inactivity_tier = 'active' if mounted else 'unknown'
     if activity_at is not None:
@@ -157,9 +187,7 @@ def _usage_state(
             0,
             (now.year - activity_at.year) * 12 + now.month - activity_at.month,
         )
-        if mounted:
-            inactivity_tier = 'active'
-        elif inactivity_months >= 12:
+        if inactivity_months >= 12:
             inactivity_tier = 'twelve_months'
         elif inactivity_months >= 6:
             inactivity_tier = 'six_months'
@@ -167,8 +195,14 @@ def _usage_state(
             inactivity_tier = 'recent'
 
     return {
-        'last_used_at': activity_at.isoformat() if activity_at else None,
-        'last_used_source': 'blacklake.production_history.month' if activity_at else None,
+        'last_used_at': production_at.isoformat() if production_at else None,
+        'last_used_source': 'blacklake.production_history.month' if production_at else None,
+        'inactivity_reference_at': activity_at.isoformat() if activity_at else None,
+        'inactivity_reference_source': (
+            'blacklake.production_history.month'
+            if production_at
+            else fallback_activity_source
+        ),
         'inactivity_months': inactivity_months,
         'inactivity_tier': inactivity_tier,
         'shot_milestone': reached_milestone,
@@ -229,6 +263,7 @@ def decorate_board_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             continue
         instance_id = str(mould.get('instance_id') or '')
         detail = detail_payloads.get(instance_id)
+        mould['detail_snapshot_available'] = isinstance(detail, Mapping)
         production_history = (
             detail.get('production_history', [])
             if isinstance(detail, Mapping)
@@ -236,12 +271,17 @@ def decorate_board_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         )
         location = mould.get('location')
         mounted = isinstance(location, Mapping) and location.get('kind') == 'machine'
+        fallback_activity_at, fallback_activity_source = (
+            first_known_use_at(detail) if isinstance(detail, Mapping) else (None, None)
+        )
         mould.update(
             _usage_state(
                 current_output_amount=mould.get('current_output_amount'),
                 production_history=production_history,
                 confirmed_milestones=confirmations.get(instance_id, []),
                 mounted=mounted,
+                fallback_activity_at=fallback_activity_at,
+                fallback_activity_source=fallback_activity_source,
             )
         )
     return result
@@ -257,18 +297,22 @@ def decorate_detail_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     mould = result.get('mould')
     if not isinstance(mould, dict):
         return result
+    mould['detail_snapshot_available'] = True
     instance_id = str(mould.get('instance_id') or '')
     confirmed = list(
         MouldUsageConfirmation.objects.filter(mould_instance_id=instance_id)
         .values_list('milestone_shots', flat=True)
     )
     location = mould.get('location')
+    fallback_activity_at, fallback_activity_source = first_known_use_at(result)
     mould.update(
         _usage_state(
             current_output_amount=mould.get('current_output_amount'),
             production_history=result.get('production_history', []),
             confirmed_milestones=confirmed,
             mounted=isinstance(location, Mapping) and location.get('kind') == 'machine',
+            fallback_activity_at=fallback_activity_at,
+            fallback_activity_source=fallback_activity_source,
         )
     )
     return result
