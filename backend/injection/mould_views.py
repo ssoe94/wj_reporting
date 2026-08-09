@@ -41,6 +41,13 @@ from .mould_snapshots import (
     usage_shot_count,
 )
 from .models import MouldDataSnapshot, MouldUsageConfirmation
+from .mould_machine_validations import (
+    VALIDATION_ALGORITHM_VERSION,
+    MouldMachineValidationError,
+    delete_validation_rule,
+    list_validation_rules,
+    save_validation_rule,
+)
 from .permissions import InjectionPermission
 
 
@@ -559,4 +566,53 @@ class MouldUsageConfirmationView(APIView):
         )
 
 
-__all__ = ["MouldBoardView", "MouldDetailView", "MouldUsageConfirmationView"]
+class MouldMachineValidationRuleView(APIView):
+    """Share reusable dashboard judgements while keeping writes permission-bound."""
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [InjectionPermission()]
+
+    def get(self, request, *args, **kwargs):
+        return _no_store_response({
+            "algorithm_version": VALIDATION_ALGORITHM_VERSION,
+            "rules": list_validation_rules(),
+        })
+
+    def post(self, request, *args, **kwargs):
+        action = str(request.data.get("action") or "confirm").strip().lower()
+        try:
+            if action == "reset":
+                rule_key, deleted = delete_validation_rule(request.data, user=request.user)
+                return _no_store_response({
+                    "algorithm_version": VALIDATION_ALGORITHM_VERSION,
+                    "rule_key": rule_key,
+                    "deleted": deleted,
+                })
+            if action != "confirm":
+                return _no_store_response(
+                    {"detail": "Unsupported action."},
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            rule = save_validation_rule(request.data, user=request.user)
+        except MouldMachineValidationError as exc:
+            return _no_store_response(
+                {"detail": str(exc)},
+                status_code=exc.status_code,
+            )
+        return _no_store_response(
+            {
+                "algorithm_version": VALIDATION_ALGORITHM_VERSION,
+                "rule": rule,
+            },
+            status_code=status.HTTP_201_CREATED if rule["revision"] == 1 else status.HTTP_200_OK,
+        )
+
+
+__all__ = [
+    "MouldBoardView",
+    "MouldDetailView",
+    "MouldMachineValidationRuleView",
+    "MouldUsageConfirmationView",
+]

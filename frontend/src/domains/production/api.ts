@@ -24,6 +24,15 @@ export type ProductionStatusPart = {
   planned_quantity: number;
   actual_quantity: number;
   progress: number;
+  sequence?: number;
+  lot_no?: string | null;
+  cavity?: number;
+  cavity_pattern?: string | null;
+  parts_per_shot?: number;
+  cavity_group?: string | null;
+  total_cavity?: number;
+  production_group_id?: string | null;
+  production_group_complete?: boolean;
   mes_qty?: number;
   manual_open_qty?: number;
   matched_manual_qty?: number;
@@ -40,6 +49,9 @@ export type ProductionStatusMachine = {
   total_manual_open?: number;
   total_manual_matched?: number;
   total_defect?: number;
+  shot_count?: number;
+  recent_60m_shots?: number;
+  is_running?: boolean;
   parts: ProductionStatusPart[];
 };
 
