@@ -1021,12 +1021,6 @@ function recommendationLocationText(recommendations: ModelRecommendation[], limi
   return locations.length > limit ? `${visible} +${locations.length - limit}` : visible;
 }
 
-function activeRecommendationProduction(production: MachineProductionLink | undefined): MachineProductionLink | undefined {
-  return production?.basis === "active_estimate" && productionAgeDays(production.date) <= 3
-    ? production
-    : undefined;
-}
-
 async function getLatestMachineProductionLinks() {
   const referenceDate = getShanghaiBusinessDateString();
   const fallbackDates = Array.from({ length: 8 }, (_, index) => {
@@ -1613,7 +1607,7 @@ export function MouldManagementPage() {
     && ["review", "mismatch", "unknown"].includes(verificationAutomaticResult),
   );
   const verificationCandidates = verificationAutomaticResult === "mould_missing"
-    ? modelRecommendations(board, activeRecommendationProduction(verificationProduction))
+    ? modelRecommendations(board, verificationProduction)
     : [];
   const productionResolved = usingFallback || productionLinksQuery.isSuccess || productionLinksQuery.isError;
   const machineOverviewItems = (board?.machines ?? []).map((machine) => {
@@ -1635,7 +1629,7 @@ export function MouldManagementPage() {
       ? text(productionLink.model)
       : "-";
     const recommendations = automaticValidation === "mould_missing"
-      ? modelRecommendations(board, activeRecommendationProduction(productionLink))
+      ? modelRecommendations(board, productionLink)
       : [];
     const machineSearchText = [
       machineDisplayLabel(machine.number, machine.tonnage, language),
