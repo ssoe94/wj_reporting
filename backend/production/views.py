@@ -1210,6 +1210,9 @@ class ProductionStatusView(APIView):
                 'total_planned': int(row.get('planned_qty') or 0),
                 'total_actual': int(row.get('actual_qty') or 0),
                 'progress': float(row.get('progress_rate') or 0),
+                'shot_count': int(row.get('shot_count') or 0),
+                'recent_60m_shots': int(row.get('recent_60m_shots') or 0),
+                'is_running': bool(row.get('is_running')),
                 'parts': [
                     {
                         'part_no': part.get('part_no'),
@@ -1217,6 +1220,16 @@ class ProductionStatusView(APIView):
                         'planned_quantity': int(part.get('planned_qty') or 0),
                         'actual_quantity': int(part.get('estimated_qty') or 0),
                         'progress': float(part.get('progress_rate') or 0),
+                        'sequence': int(part.get('sequence') or 0),
+                        'lot_no': part.get('lot_no'),
+                        'status': part.get('status'),
+                        'cavity': int(part.get('cavity') or 1),
+                        'cavity_pattern': part.get('cavity_pattern'),
+                        'parts_per_shot': int(part.get('parts_per_shot') or 1),
+                        'cavity_group': part.get('cavity_group'),
+                        'total_cavity': int(part.get('total_cavity') or part.get('cavity') or 1),
+                        'production_group_id': part.get('production_group_id'),
+                        'production_group_complete': bool(part.get('production_group_complete', True)),
                     }
                     for part in row.get('parts', [])
                 ],

@@ -91,6 +91,8 @@ const FALLBACK_MACHINES: MouldMachineSlot[] = Array.from({ length: 17 }, (_, ind
     locationCode: `#${number}-${tonnage}`,
     label: `${number}호기`,
     tonnage,
+    mouldCount: 0,
+    conflict: false,
   };
 });
 

@@ -11,7 +11,12 @@ from .views import (
     UpdateRecentSnapshotsStatusView,
     ProductionPlanUploadView
 )
-from .mould_views import MouldBoardView, MouldDetailView, MouldUsageConfirmationView
+from .mould_views import (
+    MouldBoardView,
+    MouldDetailView,
+    MouldMachineValidationRuleView,
+    MouldUsageConfirmationView,
+)
 
 router = DefaultRouter()
 router.register(r'reports', InjectionReportViewSet)
@@ -27,6 +32,11 @@ router.register(r'test-records', CycleTimeTestRecordViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     path('moulds/board/', MouldBoardView.as_view(), name='mould-board'),
+    path(
+        'moulds/machine-validation-rules/',
+        MouldMachineValidationRuleView.as_view(),
+        name='mould-machine-validation-rules',
+    ),
     path('moulds/<str:instance_id>/usage-confirmations/', MouldUsageConfirmationView.as_view(), name='mould-usage-confirmation'),
     path('moulds/<str:instance_id>/', MouldDetailView.as_view(), name='mould-detail'),
     path('inventory/', InventoryView.as_view(), name='inventory'),

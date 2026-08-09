@@ -2,6 +2,7 @@ import { http } from "@/shared/api/http";
 
 const MOULD_BOARD_ENDPOINT = "/injection/moulds/board/";
 const MOULD_DETAIL_ENDPOINT = "/injection/moulds";
+const MOULD_MACHINE_VALIDATION_ENDPOINT = "/injection/moulds/machine-validation-rules/";
 const EXPECTED_MACHINE_COUNT = 17;
 
 type UnknownRecord = Record<string, unknown>;
@@ -90,6 +91,8 @@ export type MouldMachineSlot = {
   locationCode: string;
   label: string;
   tonnage: string;
+  mouldCount: number;
+  conflict: boolean;
 };
 
 export type MouldBoardSummary = {
@@ -113,6 +116,28 @@ export type MouldBoard = {
   capabilities: MouldCapabilities;
   warnings: MouldWarning[];
   calculationBasis: string[];
+};
+
+export type MouldMachineValidationDecision = "match" | "mismatch";
+
+export type MouldMachineValidationRule = {
+  ruleKey: string;
+  lookupKey: string;
+  scope: "model_pair" | "instance_pair";
+  mouldModelKey: string;
+  productionModelKey: string;
+  decision: MouldMachineValidationDecision;
+  confirmedAt: string;
+  revision: number;
+};
+
+export type MouldMachineValidationInput = {
+  mouldInstanceId: string;
+  productionModels: string[];
+  partNos: string[];
+  productionMode: "single" | "multi_cavity";
+  cavityPattern: string;
+  businessDate: string;
 };
 
 export type MouldMovementRecord = {
@@ -443,6 +468,8 @@ function normalizeMachineSlot(value: unknown): MouldMachineSlot {
     locationCode: asString(pick(source, "location_code", "locationCode")),
     label: asString(pick(source, "label", "display_name", "displayName", "machine_name", "machineName"), number ? `${number}호기` : ""),
     tonnage: asString(pick(source, "tonnage", "capacity_label", "capacityLabel")),
+    mouldCount: Math.max(0, asNumber(pick(source, "mould_count", "mouldCount", "mold_count", "moldCount"))),
+    conflict: asBoolean(pick(source, "conflict", "has_conflict", "hasConflict")),
   };
 }
 
@@ -459,6 +486,8 @@ function normalizeMachineSlots(value: unknown): MouldMachineSlot[] {
       locationCode: "",
       label: `${number}호기`,
       tonnage: "",
+      mouldCount: 0,
+      conflict: false,
     };
   });
 }
@@ -643,4 +672,63 @@ export async function confirmMouldUsageMilestone(instanceId: string, milestoneSh
     `${MOULD_DETAIL_ENDPOINT}/${encodeURIComponent(normalizedId)}/usage-confirmations/`,
     { milestone_shots: milestoneShots },
   );
+}
+
+function normalizeMachineValidationRule(value: unknown): MouldMachineValidationRule | null {
+  const source = asRecord(value);
+  const decision = asString(pick(source, "decision"));
+  const scope = asString(pick(source, "scope"));
+  const rule: MouldMachineValidationRule = {
+    ruleKey: asString(pick(source, "rule_key", "ruleKey")),
+    lookupKey: asString(pick(source, "lookup_key", "lookupKey")),
+    scope: scope === "instance_pair" ? "instance_pair" : "model_pair",
+    mouldModelKey: asString(pick(source, "mould_model_key", "mouldModelKey")),
+    productionModelKey: asString(pick(source, "production_model_key", "productionModelKey")),
+    decision: decision === "mismatch" ? "mismatch" : "match",
+    confirmedAt: asEpochAwareDateString(pick(source, "confirmed_at", "confirmedAt")),
+    revision: Math.max(1, asNumber(pick(source, "revision"), 1)),
+  };
+  if (!rule.ruleKey || !rule.lookupKey || !rule.mouldModelKey || !rule.productionModelKey) return null;
+  if (!["match", "mismatch"].includes(decision)) return null;
+  return rule;
+}
+
+export async function getMouldMachineValidationRules(): Promise<MouldMachineValidationRule[]> {
+  const response = await http.get<unknown>(MOULD_MACHINE_VALIDATION_ENDPOINT, { skipAuth: true });
+  const source = unwrapData(response.data);
+  return asArray(pick(source, "rules"))
+    .map(normalizeMachineValidationRule)
+    .filter((rule): rule is MouldMachineValidationRule => Boolean(rule));
+}
+
+function machineValidationPayload(input: MouldMachineValidationInput) {
+  return {
+    mould_instance_id: input.mouldInstanceId,
+    production_models: input.productionModels,
+    part_nos: input.partNos,
+    production_mode: input.productionMode,
+    cavity_pattern: input.cavityPattern,
+    business_date: input.businessDate,
+  };
+}
+
+export async function saveMouldMachineValidationRule(
+  input: MouldMachineValidationInput,
+  decision: MouldMachineValidationDecision,
+): Promise<MouldMachineValidationRule> {
+  const response = await http.post<unknown>(MOULD_MACHINE_VALIDATION_ENDPOINT, {
+    action: "confirm",
+    decision,
+    ...machineValidationPayload(input),
+  });
+  const rule = normalizeMachineValidationRule(pick(unwrapData(response.data), "rule"));
+  if (!rule) throw new Error("Saved mould validation rule is invalid.");
+  return rule;
+}
+
+export async function resetMouldMachineValidationRule(input: MouldMachineValidationInput): Promise<void> {
+  await http.post(MOULD_MACHINE_VALIDATION_ENDPOINT, {
+    action: "reset",
+    ...machineValidationPayload(input),
+  });
 }

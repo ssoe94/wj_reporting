@@ -1747,8 +1747,18 @@ class InjectionAllocationContractTests(DjangoTestCase):
         machine = response.json()['injection'][0]
         self.assertEqual(machine['total_planned'], 5040)
         self.assertEqual(machine['total_actual'], 80)
+        self.assertIn('is_running', machine)
+        self.assertIn('recent_60m_shots', machine)
         self.assertEqual(machine['parts'][0]['actual_quantity'], 40)
         self.assertEqual(machine['parts'][1]['actual_quantity'], 40)
+        self.assertEqual(machine['parts'][0]['status'], 'in_progress')
+        self.assertEqual(machine['parts'][1]['status'], 'in_progress')
+        self.assertEqual(machine['parts'][0]['cavity_pattern'], '2x2')
+        self.assertEqual(machine['parts'][0]['parts_per_shot'], 2)
+        self.assertEqual(machine['parts'][0]['cavity_group'], 'AAN30078443+AAN30078444')
+        self.assertEqual(machine['parts'][0]['production_group_id'], machine['parts'][1]['production_group_id'])
+        self.assertTrue(machine['parts'][0]['production_group_complete'])
+        self.assertTrue(machine['parts'][1]['production_group_complete'])
 
     def test_repeated_grouped_cavity_occurrences_allocate_shots_in_sequence(self):
         target_date = datetime(2026, 7, 4).date()

@@ -343,9 +343,18 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
         parts = []
 
         sequence = 1
-        for plan_group in build_cavity_plan_groups(machine_plans, cavity_map):
+        for group_index, plan_group in enumerate(build_cavity_plan_groups(machine_plans, cavity_map), start=1):
             allocated_shots = max(0.0, min(float(remaining_shots), float(plan_group["required_shots"] or 0)))
             remaining_shots = max(0.0, float(remaining_shots) - allocated_shots)
+            expected_group_size = max(
+                (
+                    max(1, int((member.get("meta") or {}).get("parts_per_shot") or 1))
+                    for member in plan_group["members"]
+                ),
+                default=1,
+            )
+            production_group_id = f'{plan_group["group_key"]}:{group_index}'
+            production_group_complete = len(plan_group["members"]) == expected_group_size
 
             for member in plan_group["members"]:
                 plan = member["plan"]
@@ -383,6 +392,8 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
                     "parts_per_shot": meta.get("parts_per_shot", 1),
                     "cavity_group": meta.get("cavity_group"),
                     "total_cavity": meta.get("total_cavity", cavity),
+                    "production_group_id": production_group_id,
+                    "production_group_complete": production_group_complete,
                     "status": status,
                 }
                 sequence += 1
