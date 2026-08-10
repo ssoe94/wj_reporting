@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  ArrowDownToLine,
   ArrowUpFromLine,
-  Boxes,
+  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -21,7 +20,6 @@ import {
   Gauge,
   GitCompareArrows,
   MapPin,
-  PackageCheck,
   PackageOpen,
   Radio,
   ShieldCheck,
@@ -56,6 +54,10 @@ import { getOverviewBoard } from "@/domains/boards/overview/api";
 import type {
   AttentionItem,
   InjectionEquipmentRow,
+  OutboundPerformanceMetric,
+  OutboundPerformancePeriod,
+  OutboundPriorityItem,
+  OutboundTodayDetailSummary,
   OverviewBoardModel,
   ProductionProcess,
   QualityAttentionItem,
@@ -68,6 +70,7 @@ const QUALITY_PAGE_SIZE = 3;
 const QUALITY_ROTATION_MS = 12_000;
 const MACHINE_PAGE_SIZE = 3;
 const MACHINE_ROTATION_MS = 10_000;
+const OUTBOUND_PRIORITY_ROTATION_MS = 9_000;
 
 const COPY = {
   ko: {
@@ -158,7 +161,29 @@ const COPY = {
     rotationPaused: "전환 일시정지",
     reducedMotion: "수동 전환",
     nextIn: "12초 후 다음",
-    inventory: "재고 · 창고",
+    inventory: "출고 실행 · JIT / CSKD",
+    outboundToday: "오늘 출고단 상세",
+    outboundActualTarget: "실적 / 목표",
+    outboundDetailBasis: "목표=应发(계획) · 실적=实发(누적)",
+    outboundPendingItems: "미출고",
+    outboundRemainingQuantity: "잔량",
+    outboundOverQuantity: "초과",
+    outboundPriorityModel: "우선",
+    outboundNoPending: "미출고 품목 없음",
+    outboundDetailUnavailable: "상세 미수신",
+    previousWeek: "지난주",
+    previousMonth: "지난달",
+    completedPeriod: "현재 누적 기준",
+    outboundOrders: "출고지시",
+    outboundLines: "품목",
+    outboundNoPlan: "계획 없음",
+    outboundConnected: "MES 연동",
+    outboundPartial: "일부 수신",
+    outboundUnavailable: "MES 출고계획 연결 필요",
+    outboundUnavailableDescription: "목표와 실적은 연결 후 표시됩니다. 미수신 값을 0으로 표시하지 않습니다.",
+    outboundMeasurementBasis: "출고단 계획시간 기준 · 목표=应发 · 실적=누적 实发 · EA",
+    outboundExcluded: "집계 제외 {count}행",
+    outboundUnclassified: "미분류 {count}건",
     finishedAndSemifinished: "완제품 · 반제품",
     warehouseComposition: "창고 구성",
     finishedWarehouse: "완제품",
@@ -288,7 +313,29 @@ const COPY = {
     rotationPaused: "切换已暂停",
     reducedMotion: "手动切换",
     nextIn: "12秒后切换",
-    inventory: "库存 · 仓库",
+    inventory: "出库执行 · JIT / CSKD",
+    outboundToday: "今日出库单明细",
+    outboundActualTarget: "实发 / 应发",
+    outboundDetailBasis: "目标=应发 · 实绩=累计实发",
+    outboundPendingItems: "待出库",
+    outboundRemainingQuantity: "剩余",
+    outboundOverQuantity: "超发",
+    outboundPriorityModel: "优先",
+    outboundNoPending: "无待出库物料",
+    outboundDetailUnavailable: "明细未接收",
+    previousWeek: "上周",
+    previousMonth: "上月",
+    completedPeriod: "当前累计口径",
+    outboundOrders: "出库单",
+    outboundLines: "物料行",
+    outboundNoPlan: "无计划",
+    outboundConnected: "MES 已连接",
+    outboundPartial: "部分接收",
+    outboundUnavailable: "需要连接 MES 出库计划",
+    outboundUnavailableDescription: "连接后显示目标和实绩，未接收的数据不会显示为零。",
+    outboundMeasurementBasis: "按出库单计划时间 · 目标=应发 · 实绩=累计实发 · 仅 EA",
+    outboundExcluded: "排除 {count} 行",
+    outboundUnclassified: "未分类 {count} 单",
     finishedAndSemifinished: "成品 · 半成品",
     warehouseComposition: "仓库构成",
     finishedWarehouse: "成品",
@@ -572,7 +619,15 @@ function MachineProductionRow({
   const completionWidth = completion === null ? 0 : Math.max(0, Math.min(100, completion));
   const timePosition = timeProgress === null ? null : Math.max(0, Math.min(100, timeProgress));
   const primaryPart = row.currentParts[0];
-  const modelLabel = primaryPart?.modelName ?? primaryPart?.partName ?? row.currentModels[0] ?? null;
+  const modelLabel = [primaryPart?.modelName, primaryPart?.partName, row.currentModels[0]]
+    .find((value) => value && !["-", "—"].includes(value.trim()))
+    ?.trim() ?? null;
+  const primaryPartNumber = primaryPart?.partNumber?.trim();
+  const partNumberLabel = primaryPartNumber
+    && !["-", "—"].includes(primaryPartNumber)
+    && primaryPartNumber !== modelLabel
+    ? primaryPartNumber
+    : null;
   const planActualLabel = row.hasPlan === false
     ? "—"
     : `${formatInteger(row.actualQuantity, language)} / ${formatInteger(row.plannedQuantity, language)}`;
@@ -595,6 +650,7 @@ function MachineProductionRow({
       <div className={styles.machineProduct}>
         <small>{copy.currentProduct}</small>
         <strong title={modelLabel ?? copy.productUnconfirmed}>{modelLabel ?? copy.productUnconfirmed}</strong>
+        {partNumberLabel ? <span title={partNumberLabel}>{partNumberLabel}</span> : null}
       </div>
       <div className={styles.machineProgress}>
         <div className={styles.machineProgressValue}>
@@ -837,47 +893,194 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
   );
 }
 
+function OutboundTodayLane({
+  code,
+  metric,
+  detail,
+  priorityItem,
+  language,
+}: {
+  code: "JIT" | "CSKD";
+  metric: OutboundPerformanceMetric;
+  detail: OutboundTodayDetailSummary;
+  priorityItem: OutboundPriorityItem | null;
+  language: AppLanguage;
+}) {
+  const copy = COPY[language];
+  const noPlan = metric.targetQuantity === 0;
+  const progressWidth = metric.completionRate === null ? 0 : Math.max(0, Math.min(100, metric.completionRate));
+  const quantityUnit = metric.unit ?? "EA";
+  const priority = priorityItem ?? detail.largestPending;
+  const detailAvailable = detail.pendingLineCount !== null || detail.remainingQuantity !== null;
+  const detailUnit = detail.unit ?? priority?.unit ?? quantityUnit;
+  const priorityDescription = priority
+    ? [priority.materialName, priority.specification]
+        .find((value) => Boolean(value && value !== priority.materialCode)) ?? null
+    : null;
+  const laneTitle = [
+    `${copy.outboundOrders} ${formatInteger(metric.orderCount, language)}`,
+    `${copy.outboundLines} ${formatInteger(metric.lineCount, language)}`,
+    priority?.outboundOrderCode,
+    priority?.materialCode,
+    priorityDescription,
+  ].filter(Boolean).join(" · ");
+  return (
+    <article className={`${styles.outboundLane} ${code === "CSKD" ? styles.cskdLane : ""}`} title={laneTitle}>
+      <b className={styles.outboundCode}>{code}<small>{formatInteger(metric.orderCount, language)} {language === "ko" ? "단" : "单"}</small></b>
+      <div className={styles.outboundLaneValue}>
+        <span>{copy.outboundActualTarget}</span>
+        <strong>{formatInteger(metric.fulfilledQuantity, language)}<small>/ {formatInteger(metric.targetQuantity, language)} {quantityUnit}</small></strong>
+      </div>
+      <div className={styles.outboundLaneMeta}>
+        {detailAvailable ? (
+          <>
+            <span><b>{copy.outboundPendingItems}</b> {formatInteger(detail.pendingLineCount, language)}{language === "ko" ? "품목" : "行"}</span>
+            <span><b>{copy.outboundRemainingQuantity}</b> <strong>{formatInteger(detail.remainingQuantity, language)} {detailUnit}</strong></span>
+            {detail.overLineCount !== null && detail.overLineCount > 0
+              ? <span className={styles.outboundOverMeta}><b>{copy.outboundOverQuantity}</b> {formatInteger(detail.overLineCount, language)} / +{formatInteger(detail.overQuantity, language)}</span>
+              : null}
+          </>
+        ) : <span>{copy.outboundDetailUnavailable}</span>}
+      </div>
+      <div className={`${styles.outboundPriority} ${priority ? "" : styles.outboundPriorityEmpty}`}>
+        {priority ? (
+          <>
+            <span>{copy.outboundPriorityModel} {formatShanghaiTime(priority.planTime)}</span>
+            <strong>{priority.materialCode}</strong>
+            <em>{priorityDescription ?? ""}</em>
+            <b aria-label={copy.outboundActualTarget} title={copy.outboundActualTarget}>{formatInteger(priority.fulfilledQuantity, language)}<small>/ {formatInteger(priority.targetQuantity, language)} {priority.unit ?? detailUnit}</small></b>
+            <i>{copy.outboundRemainingQuantity} {formatInteger(priority.remainingQuantity, language)}</i>
+          </>
+        ) : <span>{detailAvailable && detail.pendingLineCount === 0 ? copy.outboundNoPending : copy.outboundDetailUnavailable}</span>}
+      </div>
+      <em className={styles.outboundRate}>{noPlan ? copy.outboundNoPlan : formatPercent(metric.completionRate)}</em>
+      <div
+        aria-label={`${code} ${copy.completion}`}
+        aria-valuemax={Math.max(100, metric.completionRate ?? 100)}
+        aria-valuemin={0}
+        aria-valuenow={metric.completionRate ?? undefined}
+        aria-valuetext={noPlan ? copy.outboundNoPlan : formatPercent(metric.completionRate)}
+        className={styles.outboundProgress}
+        role="progressbar"
+      >
+        <span style={{ width: `${progressWidth}%` }} />
+      </div>
+    </article>
+  );
+}
+
+function OutboundPeriodComparison({
+  label,
+  period,
+  language,
+}: {
+  label: string;
+  period: OutboundPerformancePeriod;
+  language: AppLanguage;
+}) {
+  const copy = COPY[language];
+  return (
+    <article className={styles.outboundPeriod}>
+      <header><strong>{period.label ?? label}</strong><span>{copy.completedPeriod}</span></header>
+      {(["JIT", "CSKD"] as const).map((code) => {
+        const metric = code === "JIT" ? period.jit : period.cskd;
+        return (
+          <div key={code}>
+            <b>{code}</b>
+            <strong>{metric.targetQuantity === 0 ? copy.outboundNoPlan : formatPercent(metric.completionRate)}</strong>
+            <span>{formatInteger(metric.fulfilledQuantity, language)} / {formatInteger(metric.targetQuantity, language)}</span>
+          </div>
+        );
+      })}
+    </article>
+  );
+}
+
 function InventoryPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
   const copy = COPY[language];
-  const totalWarehouseQuantity = model.inventory.warehouses.reduce((sum, row) => sum + (row.quantity ?? 0), 0);
-  const warehouseRows = model.inventory.warehouses.map((row) => {
-    const label = row.label.includes("半成")
-      ? copy.semifinishedWarehouse
-      : row.label.includes("成品")
-        ? copy.finishedWarehouse
-        : row.label;
-    return {
-      ...row,
-      label,
-      share: totalWarehouseQuantity > 0 && row.quantity !== null ? (row.quantity / totalWarehouseQuantity) * 100 : 0,
-    };
-  });
+  const outbound = model.inventory.outboundPerformance;
+  const reducedMotion = usePrefersReducedMotion();
+  const [priorityIndex, setPriorityIndex] = useState(0);
+  const pendingPriorityItems = useMemo(() => ({
+    jit: outbound.todayPriorityItems.filter((item) => item.category === "JIT" && item.fulfillmentState === "pending"),
+    cskd: outbound.todayPriorityItems.filter((item) => item.category === "CSKD" && item.fulfillmentState === "pending"),
+  }), [outbound.todayPriorityItems]);
+  const priorityPageCount = Math.max(pendingPriorityItems.jit.length, pendingPriorityItems.cskd.length);
+  useEffect(() => {
+    setPriorityIndex(0);
+  }, [outbound.fetchedAt]);
+  useEffect(() => {
+    if (reducedMotion || priorityPageCount <= 1) return undefined;
+    const timer = window.setInterval(() => {
+      setPriorityIndex((current) => (current + 1) % priorityPageCount);
+    }, OUTBOUND_PRIORITY_ROTATION_MS);
+    return () => window.clearInterval(timer);
+  }, [priorityPageCount, reducedMotion]);
+  const isUnavailable = outbound.status === "unavailable";
+  const measurementDetails = outbound.measurementBasis
+    ? Object.values(outbound.measurementBasis).filter((value): value is string => Boolean(value)).join(" · ")
+    : copy.outboundMeasurementBasis;
+  const unclassifiedOrders = outbound.unclassified.orderCount;
+  const excludedLineCount = outbound.excludedLineCount;
+  const exclusionDetails = Object.entries(outbound.exclusionsByReason)
+    .map(([reason, count]) => `${reason}: ${formatInteger(count, language)}`)
+    .join(" · ");
   return (
-    <section className={`${styles.card} ${styles.inventoryCard}`} aria-labelledby="inventory-title">
+    <section className={`${styles.card} ${styles.inventoryCard}`} aria-labelledby="inventory-title" data-testid="outbound-performance-card">
       <header className={styles.inventoryHeading}>
-        <div className={styles.cardTitle}><Boxes aria-hidden="true" /><h2 id="inventory-title">{copy.inventory}</h2></div>
-        <div><span>{copy.finishedAndSemifinished}</span><strong>{formatInteger(model.inventory.finishedAndSemifinishedQuantity, language)}</strong></div>
+        <div className={styles.cardTitle}><ArrowUpFromLine aria-hidden="true" /><h2 id="inventory-title">{copy.inventory}</h2></div>
+        <span className={`${styles.outboundStatus} ${outbound.status === "partial" ? styles.outboundStatusPartial : ""} ${isUnavailable ? styles.outboundStatusUnavailable : ""}`}>
+          {isUnavailable ? copy.disconnected : outbound.status === "partial" ? copy.outboundPartial : copy.outboundConnected}
+        </span>
       </header>
-      <div className={styles.inventoryBody}>
-        <div className={styles.inventoryMeta}>
-          <span><PackageCheck aria-hidden="true" />{formatInteger(model.inventory.skuCount, language)} SKU</span>
-          <span><PackageOpen aria-hidden="true" />{formatInteger(model.inventory.totalCarts, language)} {copy.cartUnit}</span>
-        </div>
-        <div className={styles.warehouseComposition}>
-          <span>{copy.warehouseComposition}</span>
-          {warehouseRows.length > 0 ? warehouseRows.map((row, index) => (
-            <article key={`${row.label}-${index}`}>
-              <div><strong>{row.label}</strong><span>{formatInteger(row.quantity, language)} · {formatDecimal(row.share, 1)}%</span></div>
-              <div><span style={{ width: `${Math.max(0, Math.min(100, row.share))}%` }} /></div>
-            </article>
-          )) : <p className={styles.panelEmpty}>—</p>}
-        </div>
+      <div className={`${styles.outboundContent} ${isUnavailable ? styles.outboundContentUnavailable : ""}`}>
+        {isUnavailable ? (
+          <div className={styles.outboundUnavailable}>
+            <AlertTriangle aria-hidden="true" />
+            <div><strong>{copy.outboundUnavailable}</strong><span>{copy.outboundUnavailableDescription}</span></div>
+          </div>
+        ) : (
+          <>
+          <div className={styles.outboundToday}>
+            <div className={styles.outboundSectionLabel}><strong>{copy.outboundToday}</strong><span>{copy.outboundDetailBasis}</span></div>
+            <OutboundTodayLane
+              code="JIT"
+              detail={outbound.todayDetailSummary.jit}
+              language={language}
+              metric={outbound.periods.today.jit}
+              priorityItem={pendingPriorityItems.jit.length > 0
+                ? pendingPriorityItems.jit[priorityIndex % pendingPriorityItems.jit.length]
+                : null}
+            />
+            <OutboundTodayLane
+              code="CSKD"
+              detail={outbound.todayDetailSummary.cskd}
+              language={language}
+              metric={outbound.periods.today.cskd}
+              priorityItem={pendingPriorityItems.cskd.length > 0
+                ? pendingPriorityItems.cskd[priorityIndex % pendingPriorityItems.cskd.length]
+                : null}
+            />
+          </div>
+          <div className={styles.outboundComparisons}>
+            <OutboundPeriodComparison label={copy.previousWeek} language={language} period={outbound.periods.previousWeek} />
+            <OutboundPeriodComparison label={copy.previousMonth} language={language} period={outbound.periods.previousMonth} />
+          </div>
+          </>
+        )}
       </div>
-      <div className={styles.inventoryFlow}>
-        <article><ArrowDownToLine aria-hidden="true" /><span>{copy.inbound}</span><strong>{formatInteger(model.inventory.shippingInbound, language)}</strong></article>
-        <article><ArrowUpFromLine aria-hidden="true" /><span>{copy.outbound}</span><strong>{formatInteger(model.inventory.shippingOutbound, language)}</strong></article>
-        <article className={styles.orangeMetric}><GitCompareArrows aria-hidden="true" /><span>{copy.shippingNetChange}</span><strong>{formatSignedInteger(model.inventory.shippingNetChange, language)}</strong><small>{formatInteger(model.inventory.shippingRecordCount, language)} {copy.recordUnit}</small></article>
-      </div>
+      <footer className={styles.outboundFooter} title={measurementDetails}>
+        <span>{copy.outboundMeasurementBasis}</span>
+        <div>
+          {unclassifiedOrders !== null && unclassifiedOrders > 0
+            ? <em>{copy.outboundUnclassified.replace("{count}", formatInteger(unclassifiedOrders, language))}</em>
+            : null}
+          {excludedLineCount !== null && excludedLineCount > 0
+            ? <em title={exclusionDetails || undefined}>{copy.outboundExcluded.replace("{count}", formatInteger(excludedLineCount, language))}</em>
+            : null}
+          {outbound.warnings.length > 0 ? <em title={outbound.warnings.join(" · ")}><AlertTriangle aria-hidden="true" />{outbound.warnings.length}</em> : null}
+        </div>
+      </footer>
     </section>
   );
 }
@@ -1005,24 +1208,36 @@ function HeaderPanel({
             <strong>{copy.title}</strong>
           </button>
         </h1>
+        {mode === "demo" ? <div className={styles.demoBadge}><Radio aria-hidden="true" />{copy.demo}</div> : null}
       </div>
-      <div className={styles.headerContextRow}>
-        <p className={styles.businessDate}>{formatBusinessDate(model.businessDate, language)}</p>
-        <div className={`${styles.weatherStrip} ${weather.isStale ? styles.weatherStale : ""}`} title={weather.isStale ? copy.weatherStale : weather.attribution}>
-          <WeatherConditionIcon conditionCode={weather.conditionCode} />
-          <span className={styles.weatherCondition}><strong>{copy.nanjingWeather}</strong>{getWeatherConditionLabel(weather.conditionCode, language)}</span>
-          <strong className={styles.weatherTemperature}>{weatherAvailable ? `${formatDecimal(weather.temperatureC, 1)}°C` : "—"}</strong>
-          <span><Droplets aria-hidden="true" />{copy.humidity} <strong>{weather.relativeHumidityPercent === null ? "—" : `${formatDecimal(weather.relativeHumidityPercent, 0)}%`}</strong></span>
-          <span><Wind aria-hidden="true" />{copy.wind} <strong>{weather.windSpeedMps === null ? "—" : `${formatDecimal(weather.windSpeedMps, 1)} m/s`}</strong></span>
-          {weather.sourceUrl ? <a href={weather.sourceUrl} rel="noreferrer" target="_blank">{weather.source}</a> : <small>{weather.source}</small>}
+      <div className={styles.headerHero}>
+        <div className={styles.brandSummary}>
+          <p className={styles.businessDate}><CalendarDays aria-hidden="true" />{formatBusinessDate(model.businessDate, language)}</p>
+          <div className={styles.headerPaceSummary}>
+            <article className={injectionPace.status === "behind" ? styles.headerPaceAttention : ""}><Factory aria-hidden="true" /><span>{copy.injectionPace}</span><strong>{formatSignedPercentPoints(injectionPace.gap)}</strong></article>
+            <article className={assemblyPace.status === "behind" ? styles.headerPaceAttention : ""}><Workflow aria-hidden="true" /><span>{copy.assemblyPace}</span><strong>{formatSignedPercentPoints(assemblyPace.gap)}</strong></article>
+            <article><Factory aria-hidden="true" /><span>{copy.runningMachines}</span><strong>{formatInteger(model.equipment.injectionOee.runningMachineCount, language)} / {formatInteger(model.equipment.injectionOee.totalEquipmentCount, language)}</strong></article>
+          </div>
         </div>
+        <section className={`${styles.weatherCard} ${weather.isStale ? styles.weatherStale : ""}`} title={weather.isStale ? copy.weatherStale : weather.attribution}>
+          <div className={styles.weatherPrimary}>
+            <div className={styles.weatherIcon}><WeatherConditionIcon conditionCode={weather.conditionCode} /></div>
+            <div className={styles.weatherIdentity}>
+              <span><MapPin aria-hidden="true" />{copy.nanjingWeather}</span>
+              <strong>{getWeatherConditionLabel(weather.conditionCode, language)}</strong>
+            </div>
+            <strong className={styles.weatherTemperature}>{weatherAvailable ? `${formatDecimal(weather.temperatureC, 1)}°C` : "—"}</strong>
+          </div>
+          <div className={styles.weatherMetrics}>
+            <article><Droplets aria-hidden="true" /><span>{copy.humidity}</span><strong>{weather.relativeHumidityPercent === null ? "—" : `${formatDecimal(weather.relativeHumidityPercent, 0)}%`}</strong></article>
+            <article><Wind aria-hidden="true" /><span>{copy.wind}</span><strong>{weather.windSpeedMps === null ? "—" : `${formatDecimal(weather.windSpeedMps, 1)} m/s`}</strong></article>
+          </div>
+          <div className={styles.weatherSource}>
+            {weather.isStale ? <em>{copy.weatherStale}</em> : null}
+            {weather.sourceUrl ? <a href={weather.sourceUrl} rel="noreferrer" target="_blank">{weather.source}</a> : <small>{weather.source}</small>}
+          </div>
+        </section>
       </div>
-      <div className={styles.headerPaceSummary}>
-        <article className={injectionPace.status === "behind" ? styles.headerPaceAttention : ""}><Factory aria-hidden="true" /><span>{copy.injectionPace}</span><strong>{formatSignedPercentPoints(injectionPace.gap)}</strong></article>
-        <article className={assemblyPace.status === "behind" ? styles.headerPaceAttention : ""}><Workflow aria-hidden="true" /><span>{copy.assemblyPace}</span><strong>{formatSignedPercentPoints(assemblyPace.gap)}</strong></article>
-        <article><Factory aria-hidden="true" /><span>{copy.runningMachines}</span><strong>{formatInteger(model.equipment.injectionOee.runningMachineCount, language)} / {formatInteger(model.equipment.injectionOee.totalEquipmentCount, language)}</strong></article>
-      </div>
-      {mode === "demo" ? <div className={styles.demoBadge}><Radio aria-hidden="true" />{copy.demo}</div> : null}
       <div className={styles.statusStrip}>
         <span><Clock3 aria-hidden="true" />{formatShanghaiTime(model.generatedAt)} {copy.generatedAt}</span>
         <span className={model.overallStatus === "normal" ? styles.normalStatus : styles.attentionStatus}><CheckCircle2 aria-hidden="true" />{copy.operatingStatus} <strong>{statusCopy}</strong></span>

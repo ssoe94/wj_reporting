@@ -10,6 +10,8 @@ import type {
   InventoryStatus,
   MouldStatus,
   OeeFactor,
+  OutboundPriorityItem,
+  OutboundTodayDetailSummary,
   OverviewBoardModel,
   OverviewBoardResult,
   OverviewTone,
@@ -384,6 +386,7 @@ function normalizeInventory(value: unknown): InventoryStatus {
   const source = asRecord(value);
   const finishedGoods = asRecord(firstValue(source, ["finished_and_semifinished", "finished_goods", "finished_product"]));
   const shipping = asRecord(source.shipping);
+  const outboundPerformance = normalizeOutboundPerformance(firstValue(source, ["outbound_performance", "outboundPerformance"]));
   const warehouses = Array.isArray(finishedGoods.warehouses)
     ? finishedGoods.warehouses.map((item, index) => {
         const row = asRecord(item);
@@ -404,6 +407,154 @@ function normalizeInventory(value: unknown): InventoryStatus {
     shippingInbound: firstNumber(shipping, ["total_in", "inbound", "in_qty"]),
     shippingOutbound: firstNumber(shipping, ["total_out", "outbound", "out_qty"]),
     warehouses,
+    outboundPerformance,
+  };
+}
+
+function normalizeOutboundMetric(value: unknown) {
+  const source = asRecord(value);
+  return {
+    unit: firstString(source, ["unit", "uom", "quantity_unit"]),
+    orderCount: firstNumber(source, ["order_count", "orders"]),
+    lineCount: firstNumber(source, ["line_count", "item_count", "lines"]),
+    targetQuantity: firstNumber(source, ["target_qty", "planned_qty", "plan_qty"]),
+    fulfilledQuantity: firstNumber(source, ["fulfilled_qty", "actual_qty", "done_qty"]),
+    completionRate: firstNumber(source, ["completion_rate", "fulfillment_rate", "achievement_rate"]),
+  };
+}
+
+function normalizeOutboundPeriod(value: unknown) {
+  const source = asRecord(value);
+  const metrics = asRecord(firstValue(source, ["metrics", "categories"]));
+  return {
+    label: firstString(source, ["label", "period_label"]),
+    startAt: firstString(source, ["start_at", "start_date", "date_from"]),
+    endAt: firstString(source, ["end_at", "end_date", "date_to"]),
+    jit: normalizeOutboundMetric(firstValue(source, ["JIT", "jit"]) ?? firstValue(metrics, ["JIT", "jit"])),
+    cskd: normalizeOutboundMetric(firstValue(source, ["CSKD", "cskd", "CKD", "ckd"])
+      ?? firstValue(metrics, ["CSKD", "cskd", "CKD", "ckd"])),
+  };
+}
+
+function normalizeOutboundPriorityItem(value: unknown): OutboundPriorityItem | null {
+  const source = asRecord(value);
+  const rawCategory = firstString(source, ["category", "order_category"])?.toUpperCase();
+  const category: OutboundPriorityItem["category"] | null = rawCategory === "JIT"
+    ? "JIT"
+    : rawCategory === "CSKD" || rawCategory === "CKD" || rawCategory === "CSD"
+      ? "CSKD"
+      : null;
+  const materialCode = firstString(source, ["material_code", "material_no", "material_number", "code"]);
+  if (!category || !materialCode) return null;
+
+  const rawState = firstString(source, ["fulfillment_state", "state"])?.toLowerCase();
+  const fulfillmentState: OutboundPriorityItem["fulfillmentState"] = rawState === "pending"
+    || rawState === "complete"
+    || rawState === "over"
+    ? rawState
+    : "unknown";
+  return {
+    category,
+    outboundOrderId: firstString(source, ["outbound_order_id", "order_id"]),
+    outboundOrderCode: firstString(source, ["outbound_order_code", "order_code"]) ?? "-",
+    planTime: firstString(source, ["plan_time", "planned_at"]),
+    status: firstString(source, ["status", "biz_status"]),
+    materialId: firstString(source, ["material_id"]),
+    materialCode,
+    materialName: firstString(source, ["material_name", "name"]),
+    specification: firstString(source, ["specification", "material_spec", "spec"]),
+    targetQuantity: firstNumber(source, ["target_qty", "plan_qty", "plan_amount"]),
+    fulfilledQuantity: firstNumber(source, ["fulfilled_qty", "done_qty", "done_amount"]),
+    remainingQuantity: firstNumber(source, ["remaining_qty", "remaining_quantity"]),
+    varianceQuantity: firstNumber(source, ["variance_qty", "variance_quantity"]),
+    completionRate: firstNumber(source, ["completion_rate", "fulfillment_rate"]),
+    unit: firstString(source, ["unit", "uom"]),
+    fulfillmentState,
+  };
+}
+
+function normalizeOutboundTodayDetailSummary(value: unknown): OutboundTodayDetailSummary {
+  const source = asRecord(value);
+  return {
+    pendingLineCount: firstNumber(source, ["pending_line_count", "pending_count"]),
+    completeLineCount: firstNumber(source, ["complete_line_count", "complete_count"]),
+    overLineCount: firstNumber(source, ["over_line_count", "over_count"]),
+    zeroFulfilledLineCount: firstNumber(source, ["zero_fulfilled_line_count", "zero_done_count"]),
+    remainingQuantity: firstNumber(source, ["remaining_qty", "remaining_quantity"]),
+    overQuantity: firstNumber(source, ["over_qty", "over_quantity"]),
+    unit: firstString(source, ["unit", "uom"]),
+    largestPending: normalizeOutboundPriorityItem(firstValue(source, ["largest_pending", "priority_item"])),
+  };
+}
+
+function normalizeOutboundMeasurementBasis(value: unknown): InventoryStatus["outboundPerformance"]["measurementBasis"] {
+  const direct = asString(value);
+  if (direct) {
+    return {
+      cohort: direct,
+      targetQuantity: null,
+      fulfilledQuantity: null,
+      classification: null,
+      eligibleUnit: null,
+      periodPolicy: null,
+    };
+  }
+  const source = asRecord(value);
+  if (Object.keys(source).length === 0) return null;
+  return {
+    cohort: firstString(source, ["cohort"]),
+    targetQuantity: firstString(source, ["target_qty", "target_quantity"]),
+    fulfilledQuantity: firstString(source, ["fulfilled_qty", "fulfilled_quantity"]),
+    classification: firstString(source, ["classification"]),
+    eligibleUnit: firstString(source, ["eligible_unit", "unit_policy"]),
+    periodPolicy: firstString(source, ["period_policy"]),
+  };
+}
+
+function normalizeOutboundPerformance(value: unknown): InventoryStatus["outboundPerformance"] {
+  const source = asRecord(value);
+  const periods = asRecord(source.periods);
+  const todayDetailSummary = asRecord(firstValue(source, ["today_detail_summary", "todayDetailSummary"]));
+  const priorityItemsValue = firstValue(source, ["today_priority_items", "todayPriorityItems"]);
+  const exclusionsByReason = Object.fromEntries(
+    Object.entries(asRecord(source.exclusions_by_reason))
+      .map(([reason, count]) => [reason, asNumber(count)] as const)
+      .filter((entry): entry is readonly [string, number] => entry[1] !== null),
+  );
+  const rawStatus = firstString(source, ["status"])?.toLowerCase();
+  const status: InventoryStatus["outboundPerformance"]["status"] = rawStatus === "ok" || rawStatus === "partial"
+    ? rawStatus
+    : "unavailable";
+  const unclassified = asRecord(source.unclassified);
+  return {
+    status,
+    fetchedAt: firstString(source, ["fetched_at", "updated_at"]),
+    measurementBasis: normalizeOutboundMeasurementBasis(firstValue(source, ["measurement_basis", "calculation_basis"])),
+    periods: {
+      today: normalizeOutboundPeriod(periods.today),
+      previousWeek: normalizeOutboundPeriod(firstValue(periods, ["previous_week", "last_week"])),
+      previousMonth: normalizeOutboundPeriod(firstValue(periods, ["previous_month", "last_month"])),
+    },
+    todayDetailSummary: {
+      jit: normalizeOutboundTodayDetailSummary(firstValue(todayDetailSummary, ["JIT", "jit"])),
+      cskd: normalizeOutboundTodayDetailSummary(firstValue(todayDetailSummary, ["CSKD", "cskd", "CKD", "ckd"])),
+    },
+    todayPriorityItems: Array.isArray(priorityItemsValue)
+      ? priorityItemsValue
+          .map(normalizeOutboundPriorityItem)
+          .filter((item): item is OutboundPriorityItem => item !== null)
+      : [],
+    warnings: asStringArray(source.warnings),
+    acceptedLineCount: firstNumber(source, ["accepted_line_count"]),
+    excludedLineCount: firstNumber(source, ["excluded_line_count"]),
+    ignoredOutsidePeriodLineCount: firstNumber(source, ["ignored_outside_period_line_count"]),
+    exclusionsByReason,
+    unclassified: {
+      orderCount: firstNumber(unclassified, ["order_count", "orders"])
+        ?? firstNumber(source, ["unclassified_order_count"]),
+      lineCount: firstNumber(unclassified, ["line_count", "item_count", "lines"])
+        ?? firstNumber(source, ["unclassified_line_count"]),
+    },
   };
 }
 

@@ -1,0 +1,215 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">WJ 종합 운영 현황판 미리보기</title>
+  <desc id="desc">생산, 설비, 품질, 출고, 에너지와 금형 정보를 3×3 비디오월 구성으로 표현한 종합 현황판</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#edf3f8"/>
+      <stop offset="1" stop-color="#dfe9f2"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2c6ab7"/>
+      <stop offset="1" stop-color="#188b67"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#315a78" flood-opacity=".1"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <g filter="url(#shadow)" font-family="Arial, 'Noto Sans KR', sans-serif">
+    <g transform="translate(16 16)">
+      <rect width="506" height="279" rx="16" fill="#fff" stroke="#c9d8e5"/>
+      <text x="22" y="48" fill="#173b66" font-size="30" font-weight="800">사출 생산</text>
+      <rect x="22" y="70" width="112" height="94" rx="13" fill="#eaf2fa" stroke="#c6d7e7"/>
+      <path d="M46 116h58v26H46zM56 99h38v17H56zM97 107h18v35H97z" fill="#2d64a7"/>
+      <text x="153" y="91" fill="#667b8e" font-size="16" font-weight="700">계획</text>
+      <text x="153" y="126" fill="#173b66" font-size="33" font-weight="800">128,400</text>
+      <text x="153" y="154" fill="#667b8e" font-size="16" font-weight="700">실적 31,920</text>
+      <text x="344" y="92" fill="#667b8e" font-size="15" font-weight="700">완료율</text>
+      <text x="344" y="125" fill="#173b66" font-size="32" font-weight="800">24.9%</text>
+      <rect x="344" y="141" width="135" height="10" rx="5" fill="#e1e8ef"/><rect x="344" y="141" width="61" height="10" rx="5" fill="#2d64a7"/>
+      <line x1="22" y1="188" x2="484" y2="188" stroke="#d7e1ea"/>
+      <text x="24" y="218" fill="#667b8e" font-size="14" font-weight="700">현재 시간 목표</text>
+      <text x="24" y="250" fill="#173b66" font-size="23" font-weight="800">34,282</text>
+      <text x="194" y="218" fill="#667b8e" font-size="14" font-weight="700">종료 전망</text>
+      <text x="194" y="250" fill="#173b66" font-size="23" font-weight="800">93.3%</text>
+      <text x="356" y="218" fill="#667b8e" font-size="14" font-weight="700">시간 대비</text>
+      <text x="356" y="250" fill="#2d64a7" font-size="23" font-weight="800">-1.8%p</text>
+    </g>
+
+    <g transform="translate(538 16)">
+      <rect width="524" height="279" rx="16" fill="#fff" stroke="#c9d8e5"/>
+      <circle cx="70" cy="67" r="32" fill="url(#brand)"/>
+      <path d="M51 69c17-3 25-16 36-26-4 19-11 35-32 43 8-6 13-11 18-18-7 4-14 5-22 1z" fill="#fff"/>
+      <text x="118" y="65" fill="#173b66" font-size="34" font-weight="850">WJ 종합 운영 센터</text>
+      <text x="118" y="92" fill="#657b8d" font-size="15" font-weight="700">난징 · 2026년 8월 10일 월요일</text>
+      <rect x="22" y="115" width="228" height="70" rx="12" fill="#f2f7fb" stroke="#d2dee8"/>
+      <circle cx="57" cy="150" r="21" fill="#f8b948"/><path d="M37 158h52c-3-14-12-20-25-17-4-11-20-7-20 4-5 1-7 6-7 13z" fill="#fff"/>
+      <text x="92" y="141" fill="#667b8e" font-size="14" font-weight="700">난징 현재 날씨</text>
+      <text x="92" y="167" fill="#173b66" font-size="22" font-weight="800">29.4°C · 68%</text>
+      <rect x="266" y="115" width="236" height="70" rx="12" fill="#f2f7fb" stroke="#d2dee8"/>
+      <text x="288" y="141" fill="#667b8e" font-size="14" font-weight="700">운영 상태</text>
+      <circle cx="294" cy="163" r="6" fill="#d68a26"/>
+      <text x="310" y="170" fill="#b56d12" font-size="23" font-weight="800">주의 · 확인 3</text>
+      <rect x="22" y="205" width="480" height="50" rx="11" fill="#fff" stroke="#d2dee8"/>
+      <text x="46" y="236" fill="#657b8d" font-size="15" font-weight="700">12:31 기준</text>
+      <line x1="157" y1="217" x2="157" y2="243" stroke="#d7e1ea"/>
+      <text x="179" y="236" fill="#2d64a7" font-size="15" font-weight="800">가동 감지 13 / 17</text>
+      <line x1="342" y1="217" x2="342" y2="243" stroke="#d7e1ea"/>
+      <text x="365" y="236" fill="#188b67" font-size="15" font-weight="800">품질 이력 4</text>
+    </g>
+
+    <g transform="translate(1078 16)">
+      <rect width="506" height="279" rx="16" fill="#fff" stroke="#c9d8e5"/>
+      <text x="22" y="48" fill="#173b66" font-size="30" font-weight="800">조립 생산</text>
+      <rect x="22" y="70" width="112" height="94" rx="13" fill="#edf7f2" stroke="#c6ded4"/>
+      <path d="M43 133h72v9H43zM51 117h14v16H51zM70 105h16v28H70zM91 112h16v21H91z" fill="#188b67"/>
+      <circle cx="56" cy="148" r="6" fill="#315f88"/><circle cx="102" cy="148" r="6" fill="#315f88"/>
+      <text x="153" y="91" fill="#667b8e" font-size="16" font-weight="700">계획</text>
+      <text x="153" y="126" fill="#173b66" font-size="33" font-weight="800">38,400</text>
+      <text x="153" y="154" fill="#667b8e" font-size="16" font-weight="700">실적 8,160</text>
+      <text x="344" y="92" fill="#667b8e" font-size="15" font-weight="700">완료율</text>
+      <text x="344" y="125" fill="#173b66" font-size="32" font-weight="800">21.3%</text>
+      <rect x="344" y="141" width="135" height="10" rx="5" fill="#e1e8ef"/><rect x="344" y="141" width="52" height="10" rx="5" fill="#188b67"/>
+      <line x1="22" y1="188" x2="484" y2="188" stroke="#d7e1ea"/>
+      <text x="24" y="218" fill="#667b8e" font-size="14" font-weight="700">현재 시간 목표</text>
+      <text x="24" y="250" fill="#173b66" font-size="23" font-weight="800">10,252</text>
+      <text x="194" y="218" fill="#667b8e" font-size="14" font-weight="700">종료 전망</text>
+      <text x="194" y="250" fill="#173b66" font-size="23" font-weight="800">79.8%</text>
+      <text x="356" y="218" fill="#667b8e" font-size="14" font-weight="700">시간 대비</text>
+      <text x="356" y="250" fill="#b56d12" font-size="23" font-weight="800">-5.4%p</text>
+    </g>
+
+    <g transform="translate(16 311)">
+      <rect width="506" height="279" rx="16" fill="#fff" stroke="#c9d8e5"/>
+      <text x="22" y="44" fill="#173b66" font-size="26" font-weight="800">사출 설비 생산 현황</text>
+      <text x="337" y="43" fill="#188b67" font-size="14" font-weight="800">가동 감지 13 / 17</text>
+      <g transform="translate(22 66)">
+        <rect width="462" height="50" rx="10" fill="#f6fafc" stroke="#d1dee7"/>
+        <rect width="5" height="50" rx="3" fill="#26a16f"/>
+        <text x="14" y="31" fill="#173b66" font-size="22" font-weight="800">I-03</text>
+        <text x="92" y="22" fill="#687e90" font-size="12" font-weight="700">현재 생산 제품</text>
+        <text x="92" y="40" fill="#245b9f" font-size="17" font-weight="800">DEMO-M1042</text>
+        <text x="287" y="31" fill="#173b66" font-size="16" font-weight="800">2,530 / 8,400</text>
+      </g>
+      <g transform="translate(22 124)">
+        <rect width="462" height="50" rx="10" fill="#f6fafc" stroke="#d1dee7"/>
+        <rect width="5" height="50" rx="3" fill="#8a9bad"/>
+        <text x="14" y="31" fill="#173b66" font-size="22" font-weight="800">I-07</text>
+        <text x="92" y="22" fill="#687e90" font-size="12" font-weight="700">현재 생산 제품</text>
+        <text x="92" y="40" fill="#173b66" font-size="17" font-weight="800">생산 제품 미확인</text>
+        <text x="287" y="31" fill="#173b66" font-size="16" font-weight="800">1,375 / 7,600</text>
+      </g>
+      <g transform="translate(22 182)">
+        <rect width="462" height="50" rx="10" fill="#f6fafc" stroke="#d1dee7"/>
+        <rect width="5" height="50" rx="3" fill="#26a16f"/>
+        <text x="14" y="31" fill="#173b66" font-size="22" font-weight="800">I-08</text>
+        <text x="92" y="22" fill="#687e90" font-size="12" font-weight="700">현재 생산 제품</text>
+        <text x="92" y="40" fill="#245b9f" font-size="17" font-weight="800">DEMO-M2208</text>
+        <text x="287" y="31" fill="#173b66" font-size="16" font-weight="800">1,725 / 8,100</text>
+      </g>
+      <text x="188" y="260" fill="#667b8e" font-size="13" font-weight="700">1 / 2 · 10초 후 다음</text>
+    </g>
+
+    <g transform="translate(538 311)">
+      <rect width="524" height="279" rx="16" fill="#fff" stroke="#c9d8e5"/>
+      <text x="22" y="44" fill="#173b66" font-size="27" font-weight="800">종합 운영 현황</text>
+      <text x="426" y="44" fill="#c97b17" font-size="24" font-weight="850">▲ 주의</text>
+      <rect x="22" y="66" width="480" height="45" rx="9" fill="#f4f8fb" stroke="#d1dee7"/>
+      <text x="39" y="94" fill="#2d64a7" font-size="14" font-weight="800">사출 진도 -1.8%p</text>
+      <text x="189" y="94" fill="#b56d12" font-size="14" font-weight="800">조립 진도 -5.4%p</text>
+      <text x="352" y="94" fill="#b56d12" font-size="14" font-weight="800">진도 지연 4</text>
+      <g transform="translate(22 129)">
+        <rect width="480" height="42" rx="9" fill="#fff" stroke="#d1dee7"/>
+        <circle cx="23" cy="21" r="13" fill="#d1811d"/><text x="19" y="26" fill="#fff" font-size="14" font-weight="800">1</text>
+        <text x="50" y="27" fill="#173b66" font-size="15" font-weight="750">조립 진도 -5.4%p · M-04 대기 확인</text>
+      </g>
+      <g transform="translate(22 179)">
+        <rect width="480" height="42" rx="9" fill="#fff" stroke="#d1dee7"/>
+        <circle cx="23" cy="21" r="13" fill="#d1811d"/><text x="19" y="26" fill="#fff" font-size="14" font-weight="800">2</text>
+        <text x="50" y="27" fill="#173b66" font-size="15" font-weight="750">I-07 신호 11분 지연 · 현장 교차확인</text>
+      </g>
+      <g transform="translate(22 229)">
+        <rect width="480" height="42" rx="9" fill="#fff" stroke="#d1dee7"/>
+        <circle cx="23" cy="21" r="13" fill="#d1811d"/><text x="19" y="26" fill="#fff" font-size="14" font-weight="800">3</text>
+        <text x="50" y="27" fill="#173b66" font-size="15" font-weight="750">원자재 580kg 부족 · 16:30 입고 확인</text>
+      </g>
+    </g>
+
+    <g transform="translate(1078 311)">
+      <rect width="506" height="279" rx="16" fill="#fff" stroke="#c9d8e5"/>
+      <text x="22" y="44" fill="#173b66" font-size="26" font-weight="800">생산 모델 · 품질 이력</text>
+      <g transform="translate(22 70)">
+        <rect width="462" height="49" rx="9" fill="#f7fafc" stroke="#d1dee7"/>
+        <text x="15" y="31" fill="#173b66" font-size="20" font-weight="800">I-03</text>
+        <text x="84" y="30" fill="#2d64a7" font-size="16" font-weight="800">DEMO-M1042</text>
+        <text x="255" y="30" fill="#173b66" font-size="14" font-weight="700">플래시 / 파팅면 확인</text>
+      </g>
+      <g transform="translate(22 130)">
+        <rect width="462" height="49" rx="9" fill="#f7fafc" stroke="#d1dee7"/>
+        <text x="15" y="31" fill="#173b66" font-size="20" font-weight="800">I-08</text>
+        <text x="84" y="30" fill="#2d64a7" font-size="16" font-weight="800">DEMO-M2208</text>
+        <text x="255" y="30" fill="#173b66" font-size="14" font-weight="700">치수 편차 / 초품 승인</text>
+      </g>
+      <g transform="translate(22 190)">
+        <rect width="462" height="49" rx="9" fill="#f7fafc" stroke="#d1dee7"/>
+        <text x="15" y="31" fill="#173b66" font-size="20" font-weight="800">I-12</text>
+        <text x="84" y="30" fill="#2d64a7" font-size="16" font-weight="800">DEMO-M3310</text>
+        <text x="255" y="30" fill="#173b66" font-size="14" font-weight="700">스크래치 / 취출부 확인</text>
+      </g>
+      <text x="195" y="263" fill="#667b8e" font-size="13" font-weight="700">1 / 2 · 12초 후 다음</text>
+    </g>
+
+    <g transform="translate(16 606)">
+      <rect width="506" height="278" rx="16" fill="#fff" stroke="#c9d8e5"/>
+      <text x="22" y="45" fill="#173b66" font-size="27" font-weight="800">재고 · 출고</text>
+      <text x="363" y="45" fill="#2d64a7" font-size="27" font-weight="850">76,100</text>
+      <rect x="22" y="69" width="148" height="143" rx="12" fill="#f7fafc" stroke="#d1dee7"/>
+      <text x="42" y="103" fill="#687e90" font-size="14" font-weight="700">오늘 JIT</text>
+      <text x="42" y="142" fill="#173b66" font-size="26" font-weight="800">2,840</text>
+      <rect x="42" y="163" width="106" height="9" rx="5" fill="#dfe7ee"/><rect x="42" y="163" width="76" height="9" rx="5" fill="#2d64a7"/>
+      <text x="42" y="193" fill="#188b67" font-size="14" font-weight="800">출고 72%</text>
+      <rect x="184" y="69" width="300" height="143" rx="12" fill="#f7fafc" stroke="#d1dee7"/>
+      <text x="205" y="103" fill="#687e90" font-size="14" font-weight="700">창고 구성</text>
+      <text x="205" y="136" fill="#173b66" font-size="17" font-weight="800">원제품 51,300 · 67.4%</text>
+      <rect x="205" y="150" width="250" height="9" rx="5" fill="#dfe7ee"/><rect x="205" y="150" width="169" height="9" rx="5" fill="#2d64a7"/>
+      <text x="205" y="184" fill="#173b66" font-size="17" font-weight="800">반제품 24,800 · 32.6%</text>
+      <rect x="205" y="198" width="250" height="9" rx="5" fill="#dfe7ee"/><rect x="205" y="198" width="82" height="9" rx="5" fill="#51a084"/>
+      <rect x="22" y="231" width="462" height="32" rx="8" fill="#f7fafc" stroke="#d1dee7"/>
+      <text x="39" y="253" fill="#2d64a7" font-size="14" font-weight="800">입고 2,840</text><text x="196" y="253" fill="#2d64a7" font-size="14" font-weight="800">출고 3,120</text><text x="356" y="253" fill="#b56d12" font-size="14" font-weight="800">순변동 -280</text>
+    </g>
+
+    <g transform="translate(538 606)">
+      <rect width="524" height="278" rx="16" fill="#fff" stroke="#c9d8e5"/>
+      <circle cx="42" cy="39" r="20" fill="#2d64a7"/><path d="M43 22 31 43h10l-3 14 15-23h-10l6-12z" fill="#fff"/>
+      <text x="71" y="47" fill="#173b66" font-size="27" font-weight="800">에너지</text>
+      <text x="22" y="115" fill="#173b66" font-size="39" font-weight="850">18.72</text><text x="142" y="115" fill="#173b66" font-size="16" font-weight="800">MWh</text>
+      <text x="22" y="145" fill="#188b67" font-size="15" font-weight="800">금일 누적 · 1,000샷당 1.34 MWh</text>
+      <line x1="203" y1="77" x2="203" y2="234" stroke="#d5e0e9"/>
+      <line x1="228" y1="225" x2="494" y2="225" stroke="#b6c6d3"/>
+      <g fill="#429267">
+        <rect x="241" y="138" width="33" height="87" rx="5"/><rect x="288" y="155" width="33" height="70" rx="5"/><rect x="335" y="169" width="33" height="56" rx="5"/><rect x="382" y="181" width="33" height="44" rx="5"/><rect x="429" y="194" width="33" height="31" rx="5"/>
+      </g>
+      <polyline points="257,153 304,146 351,163 398,169 445,181" fill="none" stroke="#d18a24" stroke-width="4"/>
+      <text x="240" y="250" fill="#687e90" font-size="12">I-03</text><text x="287" y="250" fill="#687e90" font-size="12">I-08</text><text x="334" y="250" fill="#687e90" font-size="12">I-12</text><text x="381" y="250" fill="#687e90" font-size="12">I-14</text><text x="428" y="250" fill="#687e90" font-size="12">I-07</text>
+    </g>
+
+    <g transform="translate(1078 606)">
+      <rect width="506" height="278" rx="16" fill="#fff" stroke="#c9d8e5"/>
+      <text x="22" y="45" fill="#173b66" font-size="27" font-weight="800">금형 · 보전</text>
+      <text x="409" y="44" fill="#2d64a7" font-size="25" font-weight="850">214</text>
+      <circle cx="119" cy="148" r="67" fill="none" stroke="#e0e7ed" stroke-width="25"/>
+      <circle cx="119" cy="148" r="67" fill="none" stroke="#2d64a7" stroke-width="25" stroke-dasharray="330 421" transform="rotate(-90 119 148)"/>
+      <text x="94" y="154" fill="#173b66" font-size="28" font-weight="850">214</text>
+      <text x="88" y="179" fill="#687e90" font-size="13" font-weight="700">금형 상태</text>
+      <g font-size="15" font-weight="700">
+        <circle cx="222" cy="94" r="5" fill="#2d64a7"/><text x="235" y="100" fill="#173b66">보관</text><text x="420" y="100" fill="#173b66">183</text>
+        <circle cx="222" cy="127" r="5" fill="#429267"/><text x="235" y="133" fill="#173b66">장착 금형</text><text x="420" y="133" fill="#173b66">17</text>
+        <circle cx="222" cy="160" r="5" fill="#d2a32a"/><text x="235" y="166" fill="#173b66">보전</text><text x="420" y="166" fill="#173b66">5</text>
+        <circle cx="222" cy="193" r="5" fill="#d1811d"/><text x="235" y="199" fill="#173b66">수리</text><text x="420" y="199" fill="#173b66">4</text>
+      </g>
+      <rect x="22" y="231" width="462" height="32" rx="8" fill="#f7fafc" stroke="#d1dee7"/>
+      <text x="39" y="253" fill="#2d64a7" font-size="14" font-weight="800">장착 금형 17</text><text x="200" y="253" fill="#b56d12" font-size="14" font-weight="800">확인 필요 4</text><text x="359" y="253" fill="#b56d12" font-size="14" font-weight="800">위치 충돌 1</text>
+    </g>
+  </g>
+</svg>
