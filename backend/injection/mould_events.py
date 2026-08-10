@@ -42,7 +42,7 @@ MACHINE_LOCATION_CODES = frozenset(
 # WJ storage cells currently use either a zone/row/slot label (``C9-18``) or
 # a zone/ordinal label (``A-1``).  Matching is intentionally strict: a value
 # outside these known grammars remains unknown until it is explicitly mapped.
-_STORAGE_LOCATION_RE = re.compile(r"^(?:[ABC]\d+-\d+|[ABC]-\d+)$")
+_STORAGE_LOCATION_RE = re.compile(r"^(?:[ABCS]\d+-\d+|[ABCS]-\d+)$")
 
 _LOCATION_VALUE_KEYS = (
     "code",

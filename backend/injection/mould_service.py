@@ -1856,6 +1856,35 @@ def build_mould_board(*, quick_search: str = "") -> dict[str, Any]:
     }
 
 
+def build_mould_location_snapshot() -> dict[str, Any]:
+    """Fetch the custom mould list only, for a fast current-position refresh."""
+
+    fetched_at = datetime.now(tz=SHANGHAI).isoformat()
+    raw_records, warnings = search_mould_records()
+    moulds = [normalize_mould_record(record) for record in raw_records]
+    source_times = [
+        row["record_updated_at"] for row in moulds if row.get("record_updated_at")
+    ]
+    latest_record_time = max(source_times) if source_times else None
+    summary, summary_warnings = _summarize_moulds(moulds)
+    warnings.extend(summary_warnings)
+    return {
+        "summary": summary,
+        "locations": _location_rows(moulds),
+        "machines": _machine_rows(moulds),
+        "moulds": moulds,
+        "final_changed_at": latest_record_time,
+        "record_updated_at": latest_record_time,
+        "data_freshness": {
+            "status": "live",
+            "fetched_at": fetched_at,
+            "location_refreshed_at": fetched_at,
+            "source_latest_at": latest_record_time,
+        },
+        "warnings": _unique_warnings(warnings),
+    }
+
+
 def _fetch_mould_detail_record(instance_id: str) -> dict[str, Any]:
     payload = _post_blacklake(
         CUSTOM_OBJECT_DETAIL_ENDPOINT,
@@ -2445,6 +2474,7 @@ def unavailable_detail_payload(instance_id: str, message: str) -> dict[str, Any]
 __all__ = [
     "MouldServiceError",
     "build_mould_board",
+    "build_mould_location_snapshot",
     "build_mould_detail",
     "continuous_production_history",
     "discover_child_objects",

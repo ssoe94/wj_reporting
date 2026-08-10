@@ -28,6 +28,7 @@ import {
   getMouldBoard,
   getMouldDetail,
   getMouldMachineValidationRules,
+  refreshMouldLocations,
   confirmMouldUsageMilestone,
   resetMouldMachineValidationRule,
   saveMouldMachineValidationRule,
@@ -60,12 +61,12 @@ const COPY = {
   ko: {
     eyebrow: "사출 금형 관리",
     title: "금형 실시간 현황판",
-    description: "장착 설비와 A/B/C 보관 위치를 한 화면에서 확인합니다.",
+    description: "장착 설비와 A/B/C/S 보관 위치를 한 화면에서 확인합니다.",
     search: "금형 검색",
     searchPlaceholder: "금형 코드, 금형명, 모델, 위치 검색",
     filter: "상태 필터",
     finalChangedAt: "최종 변경 시각",
-    refresh: "새로고침",
+    refresh: "위치 빠른 새로고침",
     loading: "금형 현황을 불러오는 중입니다.",
     loadError: "MES API를 불러오지 못했습니다. API 권한과 서버 연결 상태를 확인해주세요.",
     developmentFallback: "개발 환경에서는 검증용 예시 데이터를 표시합니다.",
@@ -102,7 +103,7 @@ const COPY = {
     modelStale: "최근 생산 오래됨",
     modelAmbiguous: "복수 생산",
     modelLoading: "조회 중",
-    noProductionModel: "생산 데이터 없음",
+    noProductionModel: "정지중 · 생산 없음",
     mouldNotMounted: "MES 시스템 확인 필요",
     machineConflict: "중복 장착",
     fieldConfirmed: "공용 판정 저장됨",
@@ -143,12 +144,14 @@ const COPY = {
     unassigned: "금형 미지정",
     noTimestamp: "시각 미확인",
     storageInventory: "보관 인벤토리",
-    storageHint: "A/B/C 좌표는 MES 위치 마스터를 기준으로 표시합니다.",
+    storageHint: "A/B/C/S 좌표는 MES 위치 마스터를 기준으로 표시합니다.",
     coordinateGuide: "좌표 안내",
     focusZone: "존 확대",
     overviewMode: "전체 배치",
     touchHint: "존을 확대하면 터치 셀이 커집니다.",
     dragZoneHint: "드래그하여 이동",
+    openSZone: "S존 보기",
+    sZoneHint: "별도 보관 위치를 확대해 확인합니다.",
     storedCount: "보관",
     occupiedCells: "사용 좌표",
     mouldRecords: "금형",
@@ -162,7 +165,7 @@ const COPY = {
     conflictNeedsMesFix: "모델 판정보다 MES 위치 중복 정리가 먼저 필요합니다.",
     emptyCell: "빈 위치",
     conflict: "중복 배치",
-    noLayout: "표시할 A/B/C 보관 좌표가 없습니다.",
+    noLayout: "표시할 A/B/C/S 보관 좌표가 없습니다.",
     noMoulds: "검색 또는 필터 조건에 맞는 금형이 없습니다.",
     statusListTitle: "금형 목록",
     statusListHint: "상태별 금형을 간단한 정보와 함께 확인합니다.",
@@ -242,7 +245,7 @@ const COPY = {
     shortRecent: "최근 실적",
     shortStale: "데이터 지연",
     shortAmbiguous: "복수생산",
-    shortNoProduction: "생산 없음",
+    shortNoProduction: "정지중",
     shortMouldMissing: "MES확인",
     shortConflict: "중복등록",
     shortLoading: "조회 중",
@@ -250,12 +253,12 @@ const COPY = {
   zh: {
     eyebrow: "注塑模具管理",
     title: "模具实时看板",
-    description: "在一个屏幕上查看安装设备及 A/B/C 存放位置。",
+    description: "在一个屏幕上查看安装设备及 A/B/C/S 存放位置。",
     search: "搜索模具",
     searchPlaceholder: "搜索模具编号、名称、型号或位置",
     filter: "状态筛选",
     finalChangedAt: "最后变更时间",
-    refresh: "刷新",
+    refresh: "快速刷新位置",
     loading: "正在加载模具现状。",
     loadError: "MES API 暂不可用，请检查 API 权限和服务器连接。",
     developmentFallback: "开发环境当前显示验证用示例数据。",
@@ -292,7 +295,7 @@ const COPY = {
     modelStale: "最近生产过旧",
     modelAmbiguous: "多项生产",
     modelLoading: "查询中",
-    noProductionModel: "无生产数据",
+    noProductionModel: "停机中 · 无生产",
     mouldNotMounted: "需在 MES 系统确认",
     machineConflict: "重复安装",
     fieldConfirmed: "共享判定已保存",
@@ -333,12 +336,14 @@ const COPY = {
     unassigned: "未指定模具",
     noTimestamp: "时间未确认",
     storageInventory: "存放位置",
-    storageHint: "A/B/C 坐标基于 MES 位置主数据。",
+    storageHint: "A/B/C/S 坐标基于 MES 位置主数据。",
     coordinateGuide: "坐标说明",
     focusZone: "放大区域",
     overviewMode: "全部布局",
     touchHint: "放大区域后可使用更大的触控单元格。",
     dragZoneHint: "拖动查看",
+    openSZone: "查看 S 区",
+    sZoneHint: "放大查看独立存放位置。",
     storedCount: "存放",
     occupiedCells: "已用坐标",
     mouldRecords: "模具",
@@ -352,7 +357,7 @@ const COPY = {
     conflictNeedsMesFix: "需先整理 MES 位置重复，再进行型号判定。",
     emptyCell: "空位置",
     conflict: "重复占用",
-    noLayout: "没有可显示的 A/B/C 存放坐标。",
+    noLayout: "没有可显示的 A/B/C/S 存放坐标。",
     noMoulds: "没有符合搜索或筛选条件的模具。",
     statusListTitle: "模具列表",
     statusListHint: "查看当前状态下的模具及主要信息。",
@@ -432,7 +437,7 @@ const COPY = {
     shortRecent: "最近实绩",
     shortStale: "数据延迟",
     shortAmbiguous: "多项生产",
-    shortNoProduction: "无生产",
+    shortNoProduction: "停机中",
     shortMouldMissing: "MES确认",
     shortConflict: "重复登记",
     shortLoading: "查询中",
@@ -448,6 +453,7 @@ type ProductionEvidence = "active_estimate" | "last_output" | "planned_only" | "
 type ProductionMode = "single" | "multi_cavity";
 type MachineProductionLink = {
   date: string;
+  isRunning: boolean;
   model: string;
   partNo: string;
   partNos: string[];
@@ -659,11 +665,31 @@ function buildMachineProductionLinks(machines: ProductionStatusMachine[], date: 
     const machineNumber = productionMachineNumber(machine.machine_name);
     const enrichedMachine = productionMachineWithPlanMetadata(machine, planRecords);
     const selection = selectProductionPart(enrichedMachine);
-    if (!machineNumber || !selection) return;
+    if (!machineNumber) return;
+    if (!selection) {
+      links.set(machineNumber, {
+        date,
+        isRunning: Boolean(machine.is_running),
+        model: "",
+        partNo: "-",
+        partNos: [],
+        parts: [],
+        basis: machine.is_running ? "active_estimate" : "planned_only",
+        mode: "single",
+        cavityPattern: "",
+        cavityGroup: "",
+        productionGroupId: "",
+        actualQuantity: 0,
+        plannedQuantity: 0,
+        candidateCount: 0,
+      });
+      return;
+    }
     const { part, parts, basis, mode, groupId, candidateCount } = selection;
     const partNos = [...new Set(parts.map((item) => text(item.part_no, "")).filter((value) => value && value !== "-"))];
     links.set(machineNumber, {
       date,
+      isRunning: Boolean(machine.is_running),
       model: text(part.model_name, ""),
       partNo: text(part.part_no),
       partNos,
@@ -689,6 +715,7 @@ function buildFallbackMachineProductionLinks(board: MouldBoard | undefined) {
     if (!machineNumber || !mould.model) return;
     links.set(machineNumber, {
       date,
+      isRunning: true,
       model: machineNumber % 4 === 0 ? `${mould.model}X` : `${mould.model}-QA`,
       partNo: `QA-${String(machineNumber).padStart(2, "0")}`,
       partNos: [`QA-${String(machineNumber).padStart(2, "0")}`],
@@ -755,9 +782,9 @@ function productionAgeDays(date: string): number {
 
 function modelValidation(moulds: MouldRecord[], production: MachineProductionLink | undefined): ModelValidation {
   if (moulds.length > 1) return "conflict";
+  if (!production || !production.isRunning) return "no_production";
   const mould = moulds[0];
   if (!mould) return "mould_missing";
-  if (!production) return "no_production";
   if (production.basis === "ambiguous") return "ambiguous";
   if (production.basis === "planned_only") return "planned";
   if (production.basis === "last_output") return "recent_output";
@@ -1087,8 +1114,9 @@ type ZoneLayout = {
 
 const STORAGE_TOPOLOGY = {
   A: { rows: 6, columns: 6 },
-  B: { rows: 4, columns: 6 },
+  B: { rows: 4, columns: 10 },
   C: { rows: 9, columns: 18 },
+  S: { rows: 3, columns: 8 },
 } as const;
 
 function text(value: string | null | undefined, fallback = "-") {
@@ -1157,7 +1185,7 @@ function matchesSearch(mould: MouldRecord, search: string) {
 
 function coordinateParts(location: MouldLocation) {
   const code = location.code.toUpperCase();
-  const match = code.match(/^([ABC])(\d+)?[-_](\d+)$/);
+  const match = code.match(/^([ABCS])(\d+)?[-_](\d+)$/);
   if (!match) return null;
   return {
     zone: match[1] ?? "",
@@ -1250,6 +1278,19 @@ function buildZoneLayouts(board: MouldBoard): ZoneLayout[] {
         })),
       })),
       columns: STORAGE_TOPOLOGY.B.columns,
+    },
+    {
+      code: "S",
+      label: "S존",
+      rows: ascending(STORAGE_TOPOLOGY.S.rows).map((rack) => ({
+        key: `S-rack-${rack}`,
+        label: `S${rack}`,
+        cells: ascending(STORAGE_TOPOLOGY.S.columns).map((slot, column) => ({
+          location: locationFor("S", rack, slot),
+          column,
+        })),
+      })),
+      columns: STORAGE_TOPOLOGY.S.columns,
     },
   ];
 }
@@ -1412,6 +1453,12 @@ export function MouldManagementPage() {
     retry: 1,
     refetchInterval: 3_600_000,
   });
+  const locationRefreshMutation = useMutation({
+    mutationFn: refreshMouldLocations,
+    onSuccess: (freshBoard) => {
+      queryClient.setQueryData(["injection", "moulds", "board"], freshBoard);
+    },
+  });
   const productionLinksQuery = useQuery({
     queryKey: ["production-status", "mould-board-model-links"],
     queryFn: getLatestMachineProductionLinks,
@@ -1562,7 +1609,9 @@ export function MouldManagementPage() {
   ] : [];
 
   const finalChangedAt = board?.finalChangedAt;
-  const displayedZones = focusedZone ? zones.filter((zone) => zone.code === focusedZone) : zones;
+  const displayedZones = focusedZone
+    ? zones.filter((zone) => zone.code === focusedZone)
+    : zones.filter((zone) => zone.code !== "S");
   const detailTabs: Array<{ key: DetailTab; label: string; icon: typeof History }> = [
     { key: "movement", label: copy.movement, icon: History },
     { key: "detail", label: copy.detail, icon: Info },
@@ -1604,6 +1653,7 @@ export function MouldManagementPage() {
   const verificationCanDecide = Boolean(
     verificationMould
     && verificationProduction
+    && verificationProduction.model
     && ["review", "mismatch", "unknown"].includes(verificationAutomaticResult),
   );
   const verificationCandidates = verificationAutomaticResult === "mould_missing"
@@ -1625,7 +1675,7 @@ export function MouldManagementPage() {
     const ruleLookup = machineValidationRuleLookup(mounted, productionLink);
     const rule = ruleLookup ? machineValidationRules.get(ruleLookup.mapKey) : undefined;
     const validation = resolveValidationRule(automaticValidation, rule);
-    const activeProductionModel = productionLink?.basis === "active_estimate" && productionAgeDays(productionLink.date) <= 3
+    const activeProductionModel = productionLink?.isRunning && productionLink.basis === "active_estimate" && productionAgeDays(productionLink.date) <= 3
       ? text(productionLink.model)
       : "-";
     const recommendations = automaticValidation === "mould_missing"
@@ -1792,12 +1842,12 @@ export function MouldManagementPage() {
           <button
             aria-label={copy.refresh}
             className={styles.topAction}
-            disabled={developmentFallback || boardQuery.isFetching || productionLinksQuery.isFetching || machineValidationRulesQuery.isFetching}
-            onClick={() => void Promise.all([boardQuery.refetch(), productionLinksQuery.refetch(), machineValidationRulesQuery.refetch()])}
+            disabled={developmentFallback || locationRefreshMutation.isPending}
+            onClick={() => locationRefreshMutation.mutate()}
             title={copy.refresh}
             type="button"
           >
-            <RefreshCw aria-hidden="true" className={boardQuery.isFetching || productionLinksQuery.isFetching || machineValidationRulesQuery.isFetching ? styles.spinning : ""} size={21} />
+            <RefreshCw aria-hidden="true" className={locationRefreshMutation.isPending ? styles.spinning : ""} size={21} />
           </button>
           <button aria-label={isFullscreen ? copy.exitFullscreen : copy.fullscreen} className={styles.topAction} onClick={() => void toggleFullscreen()} title={isFullscreen ? copy.exitFullscreen : copy.fullscreen} type="button">
             {isFullscreen ? <Minimize2 aria-hidden="true" size={22} /> : <Maximize2 aria-hidden="true" size={22} />}
@@ -1864,7 +1914,7 @@ export function MouldManagementPage() {
                     aria-expanded={verificationMachineNumber === machine.number}
                     aria-haspopup="dialog"
                     aria-label={`${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${copy.productionModel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
-                    className={`${styles.machineGraphicCard} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
+                    className={`${styles.machineGraphicCard} ${productionLink?.isRunning ? styles.machineRunning : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                     key={machine.number}
                     onClick={() => setVerificationMachineNumber(machine.number)}
                     type="button"
@@ -1961,7 +2011,13 @@ export function MouldManagementPage() {
                 const occupied = zoneCells.filter(({ location }) => (mouldsByLocation.get(location.code)?.length ?? location.mouldCount) > 0).length;
                 const mouldRecords = zoneCells.reduce((total, { location }) => total + (mouldsByLocation.get(location.code)?.length ?? location.mouldCount), 0);
                 const zoneConflicts = zoneCells.filter(({ location }) => (mouldsByLocation.get(location.code)?.length ?? location.mouldCount) > 1).length;
-                const zoneStyle = zone.code === "A" ? styles.zoneA : zone.code === "B" ? styles.zoneB : styles.zoneC;
+                const zoneStyle = zone.code === "A"
+                  ? styles.zoneA
+                  : zone.code === "B"
+                    ? styles.zoneB
+                    : zone.code === "S"
+                      ? styles.zoneS
+                      : styles.zoneC;
                 return (
                   <section className={`${styles.zone} ${zoneStyle} ${focusedZone ? styles.focusedZone : ""}`} key={zone.code}>
                     <header>
@@ -2047,6 +2103,12 @@ export function MouldManagementPage() {
                   </section>
                 );
               }) : <div className={styles.emptyState}><MapPin aria-hidden="true" size={20} />{copy.noLayout}</div>}
+              {!focusedZone ? (
+                <button className={styles.sZoneLauncher} onClick={() => setFocusedZone("S")} type="button">
+                  <span><strong>{copy.openSZone}</strong><small>{copy.sZoneHint}</small></span>
+                  <Expand aria-hidden="true" size={18} />
+                </button>
+              ) : null}
             </div>
           </section>
         </div>

@@ -8,6 +8,8 @@ people identifiers never cross the anonymous API boundary.
 
 from __future__ import annotations
 
+import copy
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
@@ -24,6 +26,7 @@ from .mould_service import (
     MouldServiceError,
     build_mould_board,
     build_mould_detail,
+    build_mould_location_snapshot,
     unavailable_board_payload,
     unavailable_detail_payload,
 )
@@ -125,6 +128,7 @@ _DATA_FRESHNESS_FIELDS = (
     "fetched_at",
     "source_latest_at",
     "snapshot_at",
+    "location_refreshed_at",
     "stale",
 )
 _MOVEMENT_FIELDS = (
@@ -339,6 +343,90 @@ def _refresh_board_snapshot() -> dict[str, Any]:
     return projected
 
 
+def _merge_location_snapshot(
+    current_payload: Mapping[str, Any],
+    location_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Replace position-sensitive board fields while preserving slower enrichment."""
+
+    current = copy.deepcopy(dict(current_payload))
+    quick = _project_board_payload(location_payload)
+    current_moulds = current.get("moulds")
+    quick_moulds = quick.get("moulds")
+    current_moulds = current_moulds if isinstance(current_moulds, list) else []
+    quick_moulds = quick_moulds if isinstance(quick_moulds, list) else []
+    quick_by_id = {
+        str(row.get("instance_id") or ""): row
+        for row in quick_moulds
+        if isinstance(row, Mapping) and row.get("instance_id")
+    }
+
+    merged_moulds: list[dict[str, Any]] = []
+    merged_ids: set[str] = set()
+    for value in current_moulds:
+        if not isinstance(value, Mapping):
+            continue
+        mould = copy.deepcopy(dict(value))
+        instance_id = str(mould.get("instance_id") or "")
+        fresh = quick_by_id.get(instance_id)
+        if fresh is not None:
+            mould["location"] = copy.deepcopy(fresh.get("location"))
+            mould["record_updated_at"] = fresh.get("record_updated_at")
+            mould["final_changed_at"] = fresh.get("final_changed_at")
+            category = str(mould.get("summary_category") or "unknown")
+            if category not in {"repair", "maintenance", "offsite"}:
+                mould["summary_category"] = fresh.get("summary_category") or "unknown"
+        if instance_id:
+            merged_ids.add(instance_id)
+        merged_moulds.append(mould)
+
+    for instance_id, fresh in quick_by_id.items():
+        if instance_id not in merged_ids:
+            merged_moulds.append(copy.deepcopy(dict(fresh)))
+
+    categories = Counter(
+        str(row.get("summary_category") or "unknown")
+        for row in merged_moulds
+    )
+    locations = quick.get("locations") if isinstance(quick.get("locations"), list) else []
+    current["moulds"] = merged_moulds
+    current["locations"] = copy.deepcopy(locations)
+    current["machines"] = copy.deepcopy(quick.get("machines") or [])
+    current["summary"] = {
+        "total": len(merged_moulds),
+        "mounted": categories["machine"],
+        "stored": categories["storage"],
+        "maintenance": categories["maintenance"],
+        "repair": categories["repair"],
+        "offsite": categories["offsite"],
+        "unknown": categories["unknown"],
+        "conflicts": sum(
+            1 for row in locations
+            if isinstance(row, Mapping) and bool(row.get("conflict"))
+        ),
+    }
+    current["final_changed_at"] = quick.get("final_changed_at")
+
+    current_freshness = current.get("data_freshness")
+    quick_freshness = quick.get("data_freshness")
+    freshness = dict(current_freshness) if isinstance(current_freshness, Mapping) else {}
+    if isinstance(quick_freshness, Mapping):
+        freshness["location_refreshed_at"] = quick_freshness.get("location_refreshed_at")
+    current["data_freshness"] = freshness
+    return current
+
+
+def _refresh_board_locations(snapshot: MouldDataSnapshot) -> dict[str, Any]:
+    merged = _merge_location_snapshot(snapshot.payload, build_mould_location_snapshot())
+    MouldDataSnapshot.objects.filter(pk=snapshot.pk).update(
+        payload=merged,
+        refresh_started_at=None,
+        last_error="",
+    )
+    snapshot.payload = merged
+    return merged
+
+
 def _refresh_detail_snapshot(instance_id: str) -> dict[str, Any]:
     projected = _project_detail_payload(build_mould_detail(instance_id))
     store_snapshot(
@@ -379,6 +467,7 @@ class MouldBoardView(APIView):
 
     def get(self, request, *args, **kwargs):
         quick_search = str(request.query_params.get("q") or "").strip()
+        refresh_locations = request.query_params.get("refresh") == "locations"
         if len(quick_search) > 120:
             return _no_store_response(
                 {"detail": "q must be at most 120 characters."},
@@ -389,6 +478,17 @@ class MouldBoardView(APIView):
                 snapshot_key=BOARD_SNAPSHOT_KEY,
             ).first()
             if snapshot is not None:
+                if refresh_locations:
+                    refresh_key = "injection:moulds:location-refresh:v1"
+                    if cache.add(refresh_key, True, timeout=15):
+                        try:
+                            _refresh_board_locations(snapshot)
+                        except MouldServiceError as exc:
+                            cache.delete(refresh_key)
+                            return _no_store_response(
+                                {"detail": str(exc)},
+                                status_code=status.HTTP_502_BAD_GATEWAY,
+                            )
                 refreshing = False
                 if snapshot_is_stale(snapshot):
                     refreshing = _schedule_refresh(

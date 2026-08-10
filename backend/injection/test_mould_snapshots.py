@@ -163,6 +163,62 @@ class MouldSnapshotUsageTests(TestCase):
         self.assertEqual(response.json()['data_freshness']['status'], 'snapshot')
         build_board.assert_not_called()
 
+    @patch('injection.mould_views.build_mould_location_snapshot')
+    def test_location_refresh_preserves_slow_enrichment_and_snapshot_age(self, build_locations):
+        snapshot = MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                'summary': {'total': 1, 'stored': 1},
+                'locations': [{'code': 'A1-1', 'kind': 'storage'}],
+                'machines': [],
+                'moulds': [{
+                    'instance_id': '123',
+                    'mould_code': 'MOLD-0123',
+                    'drawing_no': 'SLOW-DETAIL-123',
+                    'current_output_amount': 245_000,
+                    'summary_category': 'storage',
+                    'location': {'code': 'A1-1', 'kind': 'storage'},
+                }],
+                'data_freshness': {'status': 'live'},
+            },
+        )
+        original_refreshed_at = snapshot.refreshed_at
+        build_locations.return_value = {
+            'summary': {'total': 1, 'stored': 1},
+            'locations': [{'code': 'B1-10', 'kind': 'storage', 'mould_count': 1}],
+            'machines': [],
+            'moulds': [{
+                'instance_id': '123',
+                'mould_code': 'MOLD-0123',
+                'current_output_amount': None,
+                'summary_category': 'storage',
+                'record_updated_at': '2026-08-10T10:00:00+08:00',
+                'final_changed_at': '2026-08-10T10:00:00+08:00',
+                'location': {'code': 'B1-10', 'kind': 'storage'},
+            }],
+            'final_changed_at': '2026-08-10T10:00:00+08:00',
+            'data_freshness': {
+                'status': 'live',
+                'location_refreshed_at': '2026-08-10T10:01:00+08:00',
+                'source_latest_at': '2026-08-10T10:00:00+08:00',
+            },
+        }
+
+        response = APIClient().get('/api/injection/moulds/board/?refresh=locations')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['moulds'][0]['location']['code'], 'B1-10')
+        self.assertEqual(payload['moulds'][0]['current_output_amount'], 245_000)
+        self.assertEqual(payload['moulds'][0]['drawing_no'], 'SLOW-DETAIL-123')
+        self.assertEqual(
+            payload['data_freshness']['location_refreshed_at'],
+            '2026-08-10T10:01:00+08:00',
+        )
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.refreshed_at, original_refreshed_at)
+
     def test_usage_confirmation_requires_edit_permission_and_is_audited(self):
         MouldDataSnapshot.objects.create(
             snapshot_key=detail_snapshot_key('123'),

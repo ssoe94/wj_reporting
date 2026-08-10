@@ -25,6 +25,7 @@ export type MouldCapabilities = Record<string, boolean>;
 
 export type MouldDataFreshness = {
   fetchedAt: string;
+  locationRefreshedAt: string;
   sourceLatestAt: string;
   status: string;
   snapshotAt: string;
@@ -339,6 +340,7 @@ function normalizeDataFreshness(value: unknown, fallbackRecord: UnknownRecord = 
   return {
     fetchedAt: asEpochAwareDateString(pick(freshness, "fetched_at", "fetchedAt", "generated_at", "generatedAt"))
       || asEpochAwareDateString(pick(fallbackRecord, "fetched_at", "fetchedAt", "generated_at", "generatedAt")),
+    locationRefreshedAt: asEpochAwareDateString(pick(freshness, "location_refreshed_at", "locationRefreshedAt")),
     sourceLatestAt: asEpochAwareDateString(pick(freshness, "source_latest_at", "sourceLatestAt", "latest_at", "latestAt"))
       || asEpochAwareDateString(pick(fallbackRecord, "source_latest_at", "sourceLatestAt", "latest_at", "latestAt")),
     status: asString(pick(freshness, "status", "state", "quality")),
@@ -655,6 +657,14 @@ export function normalizeMouldDetail(value: unknown): MouldDetail {
 
 export async function getMouldBoard(): Promise<MouldBoard> {
   const response = await http.get<unknown>(MOULD_BOARD_ENDPOINT, { skipAuth: true });
+  return normalizeMouldBoard(response.data);
+}
+
+export async function refreshMouldLocations(): Promise<MouldBoard> {
+  const response = await http.get<unknown>(MOULD_BOARD_ENDPOINT, {
+    params: { refresh: "locations" },
+    skipAuth: true,
+  });
   return normalizeMouldBoard(response.data);
 }
 

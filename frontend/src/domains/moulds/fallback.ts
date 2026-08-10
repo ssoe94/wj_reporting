@@ -253,6 +253,7 @@ export const FALLBACK_MOULD_BOARD: MouldBoard = {
   finalChangedAt: "2026-08-04T05:26:00+08:00",
   dataFreshness: {
     fetchedAt: FALLBACK_AS_OF,
+    locationRefreshedAt: FALLBACK_AS_OF,
     sourceLatestAt: "2026-08-04T05:26:00+08:00",
     status: "fallback",
     snapshotAt: FALLBACK_AS_OF,

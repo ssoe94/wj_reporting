@@ -23,6 +23,7 @@ class MouldLocationClassificationTests(unittest.TestCase):
     def test_storage_classification_uses_known_cell_grammars(self):
         self.assertEqual(classify_location("A1-1"), "storage")
         self.assertEqual(classify_location("C9-18"), "storage")
+        self.assertEqual(classify_location("S3-7"), "storage")
         self.assertEqual(classify_location("A-1"), "storage")
         self.assertEqual(classify_location("a1-1"), "unknown")
         self.assertEqual(classify_location("A1"), "unknown")
