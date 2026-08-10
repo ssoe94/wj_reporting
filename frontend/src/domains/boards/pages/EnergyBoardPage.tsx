@@ -32,8 +32,8 @@ import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
 import { addIsoDateDays, getShanghaiBusinessDateString } from "@/shared/utils/date";
 import styles from "./EnergyBoardPage.module.css";
 
-const REFRESH_INTERVAL_MS = 60_000;
-const STALE_THRESHOLD_MS = 10 * 60_000;
+const REFRESH_INTERVAL_MS = 10 * 60_000;
+const STALE_THRESHOLD_MS = 20 * 60_000;
 const HISTORY_HOURS = 193;
 const HOUR_MS = 60 * 60 * 1000;
 const ENERGY_CACHE_KEY = "wj:boards:energy-matrix:v1";
@@ -46,7 +46,7 @@ const COPY = {
     subtitle: "17대 사출기의 누적 전력계 차이를 기준으로 사용량과 생산 효율을 집계합니다.",
     businessDate: "생산 기준일",
     dataTime: "MES 최신",
-    refreshCycle: "1분 자동 갱신",
+    refreshCycle: "10분 자동 갱신",
     back: "현황판 목록",
     refresh: "새로고침",
     fullscreen: "전체 화면",
@@ -84,7 +84,7 @@ const COPY = {
     noData: "전력 데이터가 없습니다.",
     loading: "전력 사용량을 불러오는 중입니다.",
     error: "전력 현황 데이터를 불러오지 못했습니다. 잠시 후 자동으로 다시 시도합니다.",
-    stale: "MES 데이터가 10분 이상 갱신되지 않았습니다.",
+    stale: "MES 데이터가 20분 이상 갱신되지 않았습니다.",
     partial: "진행 중",
   },
   zh: {
@@ -93,7 +93,7 @@ const COPY = {
     subtitle: "根据17台注塑机累计电表的差值，统计用电量与生产能效。",
     businessDate: "生产基准日",
     dataTime: "MES最新",
-    refreshCycle: "每分钟自动刷新",
+    refreshCycle: "每10分钟自动刷新",
     back: "返回看板中心",
     refresh: "刷新",
     fullscreen: "全屏",
@@ -131,7 +131,7 @@ const COPY = {
     noData: "暂无电力数据。",
     loading: "正在读取用电量。",
     error: "无法读取用电看板数据，稍后将自动重试。",
-    stale: "MES数据已超过10分钟未更新。",
+    stale: "MES数据已超过20分钟未更新。",
     partial: "进行中",
   },
 } satisfies Record<AppLanguage, Record<string, string>>;
@@ -307,16 +307,20 @@ function buildEnergyModel(data: InjectionProductionMatrix, businessDate: string)
   const dayHours = (date: string) => {
     const dayStart = businessStartMs(date);
     return Array.from({ length: 24 }, (_, index) => {
-      const endMs = dayStart + (index + 1) * HOUR_MS;
-      return machineNumbers.reduce((total, machineNumber) => total + usageAt(machineNumber, endMs), 0);
+      // The API timestamp is the start of its hourly bucket. For example,
+      // 07:00 represents the completed 07:00~08:00 usage. Using the next
+      // timestamp would pull the current, still-partial 08:00 bucket into the
+      // previous business day's final hour.
+      const slotStartMs = dayStart + index * HOUR_MS;
+      return machineNumbers.reduce((total, machineNumber) => total + usageAt(machineNumber, slotStartMs), 0);
     });
   };
 
   const dayShots = (date: string) => {
     const dayStart = businessStartMs(date);
     return Array.from({ length: 24 }, (_, index) => {
-      const endMs = dayStart + (index + 1) * HOUR_MS;
-      return machineNumbers.reduce((total, machineNumber) => total + shotsAt(machineNumber, endMs), 0);
+      const slotStartMs = dayStart + index * HOUR_MS;
+      return machineNumbers.reduce((total, machineNumber) => total + shotsAt(machineNumber, slotStartMs), 0);
     });
   };
 
@@ -360,12 +364,12 @@ function buildEnergyModel(data: InjectionProductionMatrix, businessDate: string)
   const machineRows: MachineEnergyRow[] = machines.map((machine) => {
     const hourlyValues = Array.from({ length: 24 }, (_, index) => {
       if (index >= completedHours) return null;
-      const endMs = startMs + (index + 1) * HOUR_MS;
-      return usageAt(machine.machine_number, endMs);
+      const slotStartMs = startMs + index * HOUR_MS;
+      return usageAt(machine.machine_number, slotStartMs);
     });
     const usage = hourlyValues.reduce<number>((sum, value) => sum + (value ?? 0), 0);
     const shots = Array.from({ length: completedHours }, (_, index) => (
-      shotsAt(machine.machine_number, startMs + (index + 1) * HOUR_MS)
+      shotsAt(machine.machine_number, startMs + index * HOUR_MS)
     )).reduce((sum, value) => sum + value, 0);
     return {
       machineNumber: machine.machine_number,
