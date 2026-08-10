@@ -1464,7 +1464,7 @@ export function MouldManagementPage() {
       return maximum === null ? item.cumulativeQuantity : Math.max(maximum, item.cumulativeQuantity);
     }, null)
     : null;
-  const canConfirmUsage = auth.hasCapability("injection.write");
+  const canConfirmUsage = auth.hasCapability("mould.confirm");
   const confirmUsageMutation = useMutation({
     mutationFn: ({ instanceId, milestone }: { instanceId: string; milestone: number }) => (
       confirmMouldUsageMilestone(instanceId, milestone)

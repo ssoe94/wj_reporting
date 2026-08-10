@@ -79,6 +79,7 @@ export function getDevCurrentUser(): CurrentUser {
       can_edit_quality: true,
       can_edit_sales: true,
       can_edit_development: true,
+      can_confirm_moulds: true,
       is_admin: true,
       can_edit_machining: true,
       can_edit_eco: true,

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { api } from '../../lib/api';
-import { Shield, RefreshCcw, User, Users, Key, Edit, Trash2, X } from 'lucide-react';
+import { Shield, RefreshCcw, User, UserPlus, Users, Key, Edit, Trash2, X } from 'lucide-react';
 
 interface SignupRequest {
   id: number;
@@ -26,6 +26,7 @@ interface UserProfile {
   can_edit_quality: boolean;
   can_edit_sales: boolean;
   can_edit_development: boolean;
+  can_confirm_moulds: boolean;
   is_admin: boolean;
 }
 
@@ -40,6 +41,7 @@ function getPermissionSummary(profile: UserProfile) {
   if (profile.can_edit_quality) editable.push('품질');
   if (profile.can_edit_sales) editable.push('영업/재고');
   if (profile.can_edit_development) editable.push('개발/ECO');
+  if (profile.can_confirm_moulds) editable.push('금형 확인·확정');
 
   return editable.length > 0 ? `${editable.join(', ')} 편집 권한` : '조회 전용';
 }
@@ -55,6 +57,8 @@ export default function UserApproval() {
   const [editPermissionsModal, setEditPermissionsModal] = useState<{ open: boolean; user: UserProfile | null }>({ open: false, user: null });
   const [deleteUserModal, setDeleteUserModal] = useState<{ open: boolean; user: UserProfile | null }>({ open: false, user: null });
   const [approvalModal, setApprovalModal] = useState<{ open: boolean; request: SignupRequest | null }>({ open: false, request: null });
+  const [createUserModal, setCreateUserModal] = useState(false);
+  const [createUserForm, setCreateUserForm] = useState({ username: '', password: '', department: '금형', canConfirmMoulds: true });
   const [actionLoading, setActionLoading] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState<string | null>(null);
@@ -184,14 +188,44 @@ export default function UserApproval() {
     }
   };
 
+  const handleCreateUser = async () => {
+    setActionLoading(true);
+    setError(null);
+    try {
+      await api.post('/admin/users/', {
+        username: createUserForm.username.trim(),
+        password: createUserForm.password,
+        department: createUserForm.department.trim(),
+        permissions: { can_confirm_moulds: createUserForm.canConfirmMoulds },
+      });
+      setActionSuccess('사용자가 생성되었습니다');
+      setCreateUserModal(false);
+      setCreateUserForm({ username: '', password: '', department: '금형', canConfirmMoulds: true });
+      setTimeout(() => setActionSuccess(null), 3000);
+      await fetchData();
+    } catch (err: any) {
+      const payload = err?.response?.data;
+      const message = payload?.username?.[0] || payload?.password?.[0] || payload?.detail || '사용자 생성에 실패했습니다';
+      setError(message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">사용자 관리</h1>
-        <Button variant="secondary" onClick={() => fetchData()} disabled={loading}>
-          <RefreshCcw className="mr-2 h-4 w-4" />
-          새로고침
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setCreateUserModal(true)}>
+            <UserPlus className="mr-2 h-4 w-4" />
+            사용자 추가
+          </Button>
+          <Button variant="secondary" onClick={() => fetchData()} disabled={loading}>
+            <RefreshCcw className="mr-2 h-4 w-4" />
+            새로고침
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -366,6 +400,74 @@ export default function UserApproval() {
         </div>
       </div>
 
+      {createUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md mx-4 shadow-2xl">
+            <CardContent className="pt-6">
+              <div className="mb-5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <UserPlus className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-lg font-semibold">사용자 추가</h3>
+                </div>
+                <button onClick={() => setCreateUserModal(false)} className="text-gray-400 hover:text-gray-600" aria-label="닫기">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <label className="block text-sm font-semibold text-gray-700">
+                  사용자명
+                  <input
+                    value={createUserForm.username}
+                    onChange={(event) => setCreateUserForm((current) => ({ ...current, username: event.target.value }))}
+                    className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="사용자명"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-gray-700">
+                  비밀번호
+                  <input
+                    type="password"
+                    value={createUserForm.password}
+                    onChange={(event) => setCreateUserForm((current) => ({ ...current, password: event.target.value }))}
+                    className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="초기 비밀번호"
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-gray-700">
+                  부서
+                  <input
+                    value={createUserForm.department}
+                    onChange={(event) => setCreateUserForm((current) => ({ ...current, department: event.target.value }))}
+                    className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="부서"
+                  />
+                </label>
+                <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                  <input
+                    type="checkbox"
+                    checked={createUserForm.canConfirmMoulds}
+                    onChange={(event) => setCreateUserForm((current) => ({ ...current, canConfirmMoulds: event.target.checked }))}
+                    className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-semibold text-blue-900">금형 확인·확정 권한</span>
+                </label>
+              </div>
+              <div className="mt-6 flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setCreateUserModal(false)} disabled={actionLoading}>취소</Button>
+                <Button
+                  onClick={handleCreateUser}
+                  disabled={actionLoading || !createUserForm.username.trim() || !createUserForm.password}
+                >
+                  {actionLoading ? '생성 중...' : '사용자 생성'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* 승인 모달 (권한 설정 포함) */}
       {approvalModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto pt-10 pb-10">
@@ -405,6 +507,7 @@ export default function UserApproval() {
                         can_edit_quality: false,
                         can_edit_sales: false,
                         can_edit_development: false,
+                        can_confirm_moulds: false,
                         is_admin: false,
                       }}
                       onSelectionChange={(perms) => setApprovalModal(prev => ({ ...prev, permissions: perms }))}
@@ -579,6 +682,7 @@ export default function UserApproval() {
                     can_edit_quality: editPermissionsModal.user.can_edit_quality,
                     can_edit_sales: editPermissionsModal.user.can_edit_sales,
                     can_edit_development: editPermissionsModal.user.can_edit_development,
+                    can_confirm_moulds: editPermissionsModal.user.can_confirm_moulds,
                     is_admin: editPermissionsModal.user.is_admin,
                   }}
                   onSelectionChange={(perms) => (editPermissionsModal as any).currentPermissions = perms}
@@ -711,6 +815,7 @@ function PermissionCheckboxList({
 
       {[
         { id: 'can_edit_injection', label: '사출 편집 권한' },
+        { id: 'can_confirm_moulds', label: '금형 확인·확정 권한' },
         { id: 'can_edit_assembly', label: '가공 편집 권한' },
         { id: 'can_edit_quality', label: '품질 편집 권한' },
         { id: 'can_edit_sales', label: '영업/재고 편집 권한' },

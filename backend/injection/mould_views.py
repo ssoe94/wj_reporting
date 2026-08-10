@@ -48,7 +48,7 @@ from .mould_machine_validations import (
     list_validation_rules,
     save_validation_rule,
 )
-from .permissions import InjectionPermission
+from .permissions import MouldConfirmationPermission
 
 
 _SUMMARY_FIELDS = (
@@ -492,7 +492,7 @@ class MouldDetailView(APIView):
 class MouldUsageConfirmationView(APIView):
     """Acknowledge a reached 100k-shot checkpoint with an authenticated audit trail."""
 
-    permission_classes = [InjectionPermission]
+    permission_classes = [MouldConfirmationPermission]
 
     def post(self, request, instance_id, *args, **kwargs):
         instance_id = str(instance_id or "").strip()
@@ -572,7 +572,7 @@ class MouldMachineValidationRuleView(APIView):
     def get_permissions(self):
         if self.request.method == "GET":
             return [AllowAny()]
-        return [InjectionPermission()]
+        return [MouldConfirmationPermission()]
 
     def get(self, request, *args, **kwargs):
         return _no_store_response({

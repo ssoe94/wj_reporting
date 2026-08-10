@@ -187,7 +187,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'can_view_injection', 'can_view_assembly', 'can_view_quality',
             'can_view_sales', 'can_view_development',
             'can_edit_injection', 'can_edit_assembly', 'can_edit_quality',
-            'can_edit_sales', 'can_edit_development',
+            'can_edit_sales', 'can_edit_development', 'can_confirm_moulds',
             'is_admin', 'created_at', 'updated_at'
         ]
         read_only_fields = ['user', 'username', 'email', 'first_name', 'created_at', 'updated_at']
@@ -242,6 +242,7 @@ class UserSerializer(serializers.ModelSerializer):
                 'can_edit_quality': bool(obj.is_staff),
                 'can_edit_sales': bool(obj.is_staff),
                 'can_edit_development': bool(obj.is_staff),
+                'can_confirm_moulds': bool(obj.is_staff),
                 'can_edit_eco': bool(obj.is_staff),
                 'can_edit_machining': bool(obj.is_staff),
                 'can_edit_inventory': bool(obj.is_staff),
@@ -259,6 +260,7 @@ class UserSerializer(serializers.ModelSerializer):
             'can_edit_quality': bool(profile.can_edit_quality or obj.is_staff),
             'can_edit_sales': bool(profile.can_edit_sales or obj.is_staff),
             'can_edit_development': bool(profile.can_edit_development or obj.is_staff),
+            'can_confirm_moulds': bool(profile.can_confirm_moulds or obj.is_staff),
             # 호환성을 위한 레거시 필드들
             'can_edit_eco': bool(profile.can_edit_development or obj.is_staff),
             'can_edit_machining': bool(profile.can_edit_assembly or obj.is_staff),

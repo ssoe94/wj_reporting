@@ -36,6 +36,20 @@ class InjectionPermission(SectionPermission):
     section_flag = 'can_view_injection'
     edit_flag = 'can_edit_injection'
 
+
+class MouldConfirmationPermission(permissions.BasePermission):
+    """Allow only users assigned to acknowledge or confirm mould decisions."""
+
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        if request.user.is_staff:
+            return True
+        try:
+            return bool(request.user.profile.can_confirm_moulds)
+        except Exception:
+            return False
+
 class AssemblyPermission(SectionPermission):
     section_flag = 'can_view_assembly'
     edit_flag = 'can_edit_assembly'

@@ -6,6 +6,7 @@ from injection.admin_approvals import (
     SignupApprovalRequestsView,
     SignupApprovalApproveView,
     SignupApprovalRejectView,
+    AdminUserCreateView,
 )
 
 router = DefaultRouter()
@@ -18,5 +19,6 @@ urlpatterns = [
     path('approval-requests/<int:pk>/approve/', SignupApprovalApproveView.as_view(), name='admin-approval-approve'),
     path('approval-requests/<int:pk>/reject/', SignupApprovalRejectView.as_view(), name='admin-approval-reject'),
     path('user/reset-password/', ResetPasswordView.as_view(), name='admin-reset-password'),
+    path('users/', AdminUserCreateView.as_view(), name='admin-user-create'),
     path('user/change-password/', ChangePasswordView.as_view(), name='admin-change-password'),
 ]

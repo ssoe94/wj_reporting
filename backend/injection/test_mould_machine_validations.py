@@ -45,8 +45,8 @@ class MouldMachineValidationRuleTests(TestCase):
 
     def editor_client(self):
         user = User.objects.create_user('mould-rule-editor')
-        user.profile.can_edit_injection = True
-        user.profile.save(update_fields=['can_edit_injection'])
+        user.profile.can_confirm_moulds = True
+        user.profile.save(update_fields=['can_confirm_moulds'])
         client = APIClient()
         client.force_authenticate(user)
         return client, user
@@ -71,7 +71,7 @@ class MouldMachineValidationRuleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['rules'], [])
 
-    def test_write_requires_injection_edit_permission(self):
+    def test_write_requires_mould_confirmation_permission(self):
         response = APIClient().post(self.endpoint, self.payload(), format='json')
 
         self.assertIn(response.status_code, (401, 403))
@@ -80,6 +80,17 @@ class MouldMachineValidationRuleTests(TestCase):
                 snapshot_key=VALIDATION_RULES_SNAPSHOT_KEY,
             ).exists()
         )
+
+    def test_injection_editor_cannot_confirm_mould_decision(self):
+        user = User.objects.create_user('injection-only-editor')
+        user.profile.can_edit_injection = True
+        user.profile.save(update_fields=['can_edit_injection'])
+        client = APIClient()
+        client.force_authenticate(user)
+
+        response = client.post(self.endpoint, self.payload(), format='json')
+
+        self.assertEqual(response.status_code, 403)
 
     def test_editor_saves_public_safe_reusable_model_pair_rule(self):
         client, user = self.editor_client()

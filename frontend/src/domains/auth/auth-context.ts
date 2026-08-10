@@ -10,6 +10,8 @@ export function useAuth() {
     switch (capability) {
       case 'injection.write':
         return auth.hasPermission('can_edit_injection');
+      case 'mould.confirm':
+        return auth.hasPermission('can_confirm_moulds');
       case 'inventory.write':
         return auth.hasPermission('can_edit_inventory');
       case 'assembly.write':

@@ -171,8 +171,8 @@ class MouldSnapshotUsageTests(TestCase):
             payload=detail_payload(),
         )
         user = User.objects.create_user('mould-editor')
-        user.profile.can_edit_injection = True
-        user.profile.save(update_fields=['can_edit_injection'])
+        user.profile.can_confirm_moulds = True
+        user.profile.save(update_fields=['can_confirm_moulds'])
         client = APIClient()
         client.force_authenticate(user)
 
@@ -201,8 +201,8 @@ class MouldSnapshotUsageTests(TestCase):
             payload=payload,
         )
         user = User.objects.create_user('mould-history-editor')
-        user.profile.can_edit_injection = True
-        user.profile.save(update_fields=['can_edit_injection'])
+        user.profile.can_confirm_moulds = True
+        user.profile.save(update_fields=['can_confirm_moulds'])
         client = APIClient()
         client.force_authenticate(user)
 

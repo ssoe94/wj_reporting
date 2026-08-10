@@ -25,6 +25,7 @@ export interface UserPermissions {
   can_edit_quality: boolean;
   can_edit_sales: boolean;
   can_edit_development: boolean;
+  can_confirm_moulds: boolean;
 
   // 관리자 권한
   is_admin: boolean;

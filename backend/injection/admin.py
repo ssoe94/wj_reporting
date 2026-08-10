@@ -35,7 +35,7 @@ class UserRegistrationRequestAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['user', 'can_view_injection', 'can_view_assembly', 'can_view_quality', 'can_view_sales', 'can_view_development', 'is_admin', 'updated_at']
+    list_display = ['user', 'can_confirm_moulds', 'can_view_injection', 'can_view_assembly', 'can_view_quality', 'can_view_sales', 'can_view_development', 'is_admin', 'updated_at']
     list_filter = ['can_view_injection', 'can_view_assembly', 'can_view_quality', 'can_view_sales', 'can_view_development', 'is_admin']
     search_fields = ['user__username', 'user__email', 'user__first_name']
     readonly_fields = ['created_at', 'updated_at']
@@ -45,7 +45,7 @@ class UserProfileAdmin(admin.ModelAdmin):
             'fields': ('user',)
         }),
         ('권한', {
-            'fields': ('can_view_injection', 'can_view_assembly', 'can_view_quality', 'can_view_sales', 'can_view_development', 'is_admin')
+            'fields': ('can_view_injection', 'can_view_assembly', 'can_view_quality', 'can_view_sales', 'can_view_development', 'can_confirm_moulds', 'is_admin')
         }),
         ('날짜', {
             'fields': ('created_at', 'updated_at')

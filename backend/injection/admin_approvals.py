@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
@@ -10,7 +12,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from .models import UserRegistrationRequest, UserProfile
-from .serializers import UserRegistrationRequestSerializer
+from .serializers import UserProfileSerializer, UserRegistrationRequestSerializer
 from .permissions import AdminOnlyPermission
 
 import secrets
@@ -101,6 +103,7 @@ class SignupApprovalApproveView(APIView):
         profile.can_edit_quality = bool_flag('can_edit_quality')
         profile.can_edit_sales = bool_flag('can_edit_sales')
         profile.can_edit_development = bool_flag('can_edit_development')
+        profile.can_confirm_moulds = bool_flag('can_confirm_moulds')
         profile.is_admin = is_admin_flag
         profile.is_using_temp_password = True
         profile.password_reset_required = True
@@ -111,6 +114,7 @@ class SignupApprovalApproveView(APIView):
             'can_edit_quality',
             'can_edit_sales',
             'can_edit_development',
+            'can_confirm_moulds',
             'is_admin',
             'is_using_temp_password',
             'password_reset_required',
@@ -148,3 +152,62 @@ class SignupApprovalRejectView(APIView):
         signup_req.save(update_fields=['status', 'approved_by', 'approved_at'])
 
         return Response({'detail': 'Request rejected'})
+
+
+class AdminUserCreateView(APIView):
+    """Create an active user with narrowly selected application permissions."""
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [AdminOnlyPermission]
+
+    @transaction.atomic
+    def post(self, request):
+        username = str(request.data.get('username') or '').strip()
+        password = str(request.data.get('password') or '')
+        department = str(request.data.get('department') or '').strip()
+        permissions = request.data.get('permissions') or {}
+
+        if not username:
+            return Response({'username': ['사용자명을 입력해주세요.']}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(username__iexact=username).exists():
+            return Response({'username': ['이미 사용 중인 사용자명입니다.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        candidate = User(username=username)
+        try:
+            validate_password(password, user=candidate)
+        except DjangoValidationError as exc:
+            return Response({'password': list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            first_name=str(request.data.get('first_name') or username).strip(),
+            email=str(request.data.get('email') or '').strip(),
+            is_active=True,
+            is_staff=False,
+        )
+        profile = UserProfile.get_user_permissions(user)
+        profile.department = department
+        profile.can_confirm_moulds = bool(permissions.get('can_confirm_moulds', False))
+        profile.can_edit_injection = bool(permissions.get('can_edit_injection', False))
+        profile.can_edit_assembly = bool(permissions.get('can_edit_assembly', False))
+        profile.can_edit_quality = bool(permissions.get('can_edit_quality', False))
+        profile.can_edit_sales = bool(permissions.get('can_edit_sales', False))
+        profile.can_edit_development = bool(permissions.get('can_edit_development', False))
+        profile.is_admin = False
+        profile.is_using_temp_password = False
+        profile.password_reset_required = False
+        profile.save(update_fields=[
+            'department',
+            'can_confirm_moulds',
+            'can_edit_injection',
+            'can_edit_assembly',
+            'can_edit_quality',
+            'can_edit_sales',
+            'can_edit_development',
+            'is_admin',
+            'is_using_temp_password',
+            'password_reset_required',
+            'updated_at',
+        ])
+        return Response(UserProfileSerializer(profile).data, status=status.HTTP_201_CREATED)

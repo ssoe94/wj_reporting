@@ -4,6 +4,7 @@ export type AppCapability =
   | "production.write"
   | "injection.read"
   | "injection.write"
+  | "mould.confirm"
   | "assembly.read"
   | "assembly.write"
   | "quality.read"
@@ -26,6 +27,7 @@ export type UserPermissions = {
   can_edit_quality: boolean;
   can_edit_sales: boolean;
   can_edit_development: boolean;
+  can_confirm_moulds: boolean;
   is_admin: boolean;
   can_edit_machining?: boolean;
   can_edit_eco?: boolean;

@@ -958,6 +958,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         profile.can_edit_quality = default_bool('can_edit_quality')
         profile.can_edit_sales = default_bool('can_edit_sales')
         profile.can_edit_development = default_bool('can_edit_development')
+        profile.can_confirm_moulds = default_bool('can_confirm_moulds')
         profile.is_admin = is_admin_flag
 
         # 레거시 호환 필드 매핑 (모델에는 존재하지 않지만 필수 default 처리)
@@ -970,6 +971,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
             'can_edit_quality',
             'can_edit_sales',
             'can_edit_development',
+            'can_confirm_moulds',
             'is_admin',
             'is_using_temp_password',
             'password_reset_required',
@@ -1097,6 +1099,7 @@ class SignupApprovalPortalView(View):
             profile.can_edit_quality = perms.get('can_edit_quality', False)
             profile.can_edit_sales = perms.get('can_edit_sales', False)
             profile.can_edit_development = perms.get('can_edit_development', False)
+            profile.can_confirm_moulds = perms.get('can_confirm_moulds', False)
             profile.is_admin = is_admin_flag
             profile.is_using_temp_password = True
             profile.password_reset_required = True
@@ -1106,6 +1109,7 @@ class SignupApprovalPortalView(View):
                 'can_edit_quality',
                 'can_edit_sales',
                 'can_edit_development',
+                'can_confirm_moulds',
                 'is_admin',
                 'is_using_temp_password',
                 'password_reset_required',

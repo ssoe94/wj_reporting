@@ -320,6 +320,7 @@ class UserRegistrationRequest(models.Model):
     can_edit_quality = models.BooleanField('품질 편집/삭제 권한', default=False)
     can_edit_sales = models.BooleanField('영업/재고 편집/삭제 권한', default=False)
     can_edit_development = models.BooleanField('개발/ECO 편집/삭제 권한', default=False)
+    can_confirm_moulds = models.BooleanField('금형 확인·확정 권한', default=False)
 
     # 관리자 권한
     is_admin = models.BooleanField('관리자 메뉴 접근', default=False)
@@ -354,6 +355,7 @@ class UserProfile(models.Model):
     can_edit_quality = models.BooleanField('품질 편집/삭제 권한', default=False)
     can_edit_sales = models.BooleanField('영업/재고 편집/삭제 권한', default=False)
     can_edit_development = models.BooleanField('개발/ECO 편집/삭제 권한', default=False)
+    can_confirm_moulds = models.BooleanField('금형 확인·확정 권한', default=False)
 
     # 관리자 권한
     is_admin = models.BooleanField('관리자 메뉴 접근', default=False)
