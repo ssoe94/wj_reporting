@@ -323,38 +323,62 @@
 }
 
 .headerCard {
-  display: flex;
-  align-items: center;
-  flex-direction: column;
-  padding-inline: 1.25rem;
-  text-align: center;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 0.38rem;
+  padding: 0.72rem 0.9rem 0.58rem;
+  border-top-color: #a9c9e7;
+  box-shadow: inset 0 0.18rem 0 #1260b6, 0 0.42rem 1.4rem rgba(21, 55, 93, 0.07);
+  text-align: left;
+}
+
+.headerHero {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1.03fr) minmax(0, 0.97fr);
+  align-items: stretch;
+  gap: 0.62rem;
+}
+
+.brandSummary {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.34rem;
 }
 
 .brandRow {
   display: flex;
+  min-width: 0;
   max-width: 100%;
   align-items: center;
-  justify-content: center;
-  gap: 0.65rem;
+  justify-content: flex-start;
+  gap: 0.48rem;
 }
 
 .brandRow h1 {
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
 }
 
 .brandRow > img {
-  width: 3.75rem;
-  height: 3.75rem;
+  width: 3.15rem;
+  height: 3.15rem;
   flex: 0 0 auto;
   object-fit: contain;
 }
 
 .titleButton {
   display: flex;
+  max-width: 100%;
   min-width: 0;
   align-items: center;
-  padding: 0.32rem 0.42rem;
+  padding: 0.24rem 0.28rem;
   border: 1px solid transparent;
   border-radius: 0.45rem;
   background: transparent;
@@ -364,10 +388,12 @@
 }
 
 .titleButton strong {
-  font-size: 2.15rem;
+  overflow: hidden;
+  font-size: 1.68rem;
   font-weight: 850;
   letter-spacing: -0.05em;
   line-height: 1;
+  text-overflow: ellipsis;
 }
 
 .titleButton:hover {
@@ -383,106 +409,206 @@
   outline-offset: max(2px, 0.12vw);
 }
 
-.headerContextRow {
-  display: grid;
-  width: 100%;
-  gap: 0.32rem;
-  margin-top: 0.36rem;
-}
-
 .businessDate {
-  margin: 0;
-  color: #1c3d64;
-  font-size: 0.92rem;
-  font-weight: 750;
-}
-
-.weatherStrip {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  grid-template-columns: 1.35rem minmax(4.7rem, 1fr) auto auto auto auto;
-  align-items: center;
-  gap: 0.38rem;
-  padding: 0.34rem 0.5rem;
-  border: 1px solid #c9dcec;
-  border-radius: 0.5rem;
-  background: linear-gradient(90deg, #eef8ff 0%, #f9fcff 100%);
-  color: #285276;
-  text-align: left;
-}
-
-.weatherStrip > svg {
-  width: 1.28rem;
-  height: 1.28rem;
-  color: #1873bd;
-}
-
-.weatherCondition {
   display: flex;
-  min-width: 0;
-  flex-direction: column;
-  color: #526d86;
-  font-size: 0.56rem;
-  font-weight: 700;
-  line-height: 1.1;
+  width: 100%;
+  min-height: 0;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.34rem;
+  margin: 0;
+  padding: 0.24rem 0.44rem;
+  border: 1px solid #cadeee;
+  border-left: 0.2rem solid var(--blue);
+  border-radius: 0.48rem;
+  background: #edf4fb;
+  color: #244b70;
+  font-size: 0.94rem;
+  font-weight: 800;
+  line-height: 1.15;
   white-space: nowrap;
 }
 
-.weatherCondition strong {
+.businessDate svg {
+  width: 1.42rem;
+  height: 1.42rem;
+  flex: 0 0 auto;
+  color: var(--blue);
+}
+
+.weatherCard {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   overflow: hidden;
-  color: var(--navy);
-  font-size: 0.72rem;
+  border: 1px solid #bcd6ec;
+  border-radius: 0.72rem;
+  background: #edf7ff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.64);
+}
+
+.weatherCard::after {
+  position: absolute;
+  top: -1.8rem;
+  right: 0.24rem;
+  width: 5rem;
+  height: 5rem;
+  border: 0.7rem solid rgba(18, 96, 182, 0.08);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+
+.weatherPrimary {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 2.55rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.48rem 0.56rem 0.26rem;
+}
+
+.weatherIcon {
+  display: flex;
+  width: 2.55rem;
+  height: 2.55rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #c2dbef;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0.28rem 0.72rem rgba(18, 96, 182, 0.13);
+}
+
+.weatherIcon svg {
+  width: 1.62rem;
+  height: 1.62rem;
+  color: #1674bc;
+  stroke-width: 2.25;
+}
+
+.weatherIdentity {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.weatherIdentity span {
+  display: flex;
+  align-items: center;
+  gap: 0.18rem;
+  color: #52718e;
+  font-size: 0.54rem;
+  font-weight: 800;
+}
+
+.weatherIdentity span svg {
+  width: 0.62rem;
+  height: 0.62rem;
+  color: var(--blue);
+}
+
+.weatherIdentity strong {
+  overflow: hidden;
+  color: #173f67;
+  font-size: 0.82rem;
+  font-weight: 850;
+  line-height: 1.05;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .weatherTemperature {
   color: var(--navy);
-  font-size: 1.12rem;
-  line-height: 1;
+  font-size: 1.6rem;
+  font-weight: 850;
+  letter-spacing: -0.055em;
+  line-height: 1.15;
   white-space: nowrap;
 }
 
-.weatherStrip > span:not(.weatherCondition) {
-  display: flex;
+.weatherMetrics {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.28rem;
+  padding: 0 0.56rem 0.3rem;
+}
+
+.weatherMetrics article {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 0.82rem minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.18rem;
-  color: #5a7288;
-  font-size: 0.56rem;
-  font-weight: 700;
+  gap: 0.2rem;
+  padding: 0.25rem 0.3rem;
+  border: 1px solid #d3e3f1;
+  border-radius: 0.38rem;
+  background: rgba(255, 255, 255, 0.9);
+  color: #3e6688;
+}
+
+.weatherMetrics svg {
+  width: 0.76rem;
+  height: 0.76rem;
+  color: #2280be;
+}
+
+.weatherMetrics span {
+  overflow: hidden;
+  font-size: 0.5rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.weatherStrip > span:not(.weatherCondition) svg {
-  width: 0.72rem;
-  height: 0.72rem;
-  color: #2384c6;
+.weatherMetrics strong {
+  color: #173f67;
+  font-size: 0.64rem;
+  white-space: nowrap;
 }
 
-.weatherStrip > span:not(.weatherCondition) strong {
-  color: #204b71;
-  font-size: 0.66rem;
-}
-
-.weatherStrip > a,
-.weatherStrip > small {
+.weatherSource {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.38rem;
+  padding: 0.18rem 0.56rem 0.22rem;
+  border-top: 1px solid rgba(171, 203, 229, 0.66);
   color: #688097;
-  font-size: 0.47rem;
-  font-style: normal;
-  font-weight: 650;
+  font-size: 0.46rem;
+  font-weight: 700;
+}
+
+.weatherSource > a,
+.weatherSource > small {
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
   text-decoration: none;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.weatherStrip > a:hover {
+.weatherSource > a:hover {
   text-decoration: underline;
 }
 
-.weatherStrip > em {
+.weatherSource > em {
   color: var(--orange);
-  font-size: 0.46rem;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 850;
   white-space: nowrap;
 }
 
@@ -494,39 +620,46 @@
 .headerPaceSummary {
   display: grid;
   width: 100%;
+  min-width: 0;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.38rem;
-  margin-top: 0.55rem;
+  align-self: end;
+  gap: 0.28rem;
 }
 
 .headerPaceSummary article {
   display: grid;
   min-width: 0;
-  grid-template-columns: 1.16rem minmax(0, 1fr) auto;
+  grid-template-columns: 0.92rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 0.28rem;
-  padding: 0.4rem 0.46rem;
+  column-gap: 0.24rem;
+  padding: 0.3rem 0.34rem;
   border: 1px solid #cfdeeb;
-  border-radius: 0.44rem;
-  background: #f7fbff;
+  border-radius: 0.46rem;
+  background: #ffffff;
   color: #1c63a8;
 }
 
 .headerPaceSummary svg {
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 0.84rem;
+  height: 0.84rem;
+  grid-row: 1 / 3;
 }
 
 .headerPaceSummary span {
   overflow: hidden;
-  font-size: 0.61rem;
+  color: #59728a;
+  font-size: 0.48rem;
   font-weight: 750;
+  line-height: 1.05;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .headerPaceSummary strong {
-  font-size: 0.76rem;
+  color: currentColor;
+  font-size: 0.72rem;
+  line-height: 1.05;
   white-space: nowrap;
 }
 
@@ -537,10 +670,8 @@
 }
 
 .demoBadge {
-  position: absolute;
-  top: 0.72rem;
-  left: 0.8rem;
   display: flex;
+  margin-left: auto;
   align-items: center;
   gap: 0.3rem;
   padding: 0.26rem 0.46rem;
@@ -561,11 +692,10 @@
   display: grid;
   width: 100%;
   grid-template-columns: 1.05fr 1.2fr 0.9fr 1fr;
-  margin-top: auto;
   overflow: hidden;
   border: max(1px, 0.06vw) solid #cbd9e7;
   border-radius: 0.55rem;
-  background: #ffffff;
+  background: #f8fbfe;
 }
 
 .statusStrip > span {
@@ -573,11 +703,11 @@
   min-width: 0;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  padding: 0.62rem 0.36rem;
+  gap: 0.3rem;
+  padding: 0.43rem 0.3rem;
   color: #304d6d;
-  font-size: 0.79rem;
-  font-weight: 650;
+  font-size: 0.67rem;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -586,14 +716,14 @@
 }
 
 .statusStrip svg {
-  width: 1.08rem;
-  height: 1.08rem;
+  width: 0.92rem;
+  height: 0.92rem;
   flex: 0 0 auto;
 }
 
 .statusStrip strong {
   color: inherit;
-  font-size: 1rem;
+  font-size: 0.84rem;
 }
 
 .statusStrip .normalStatus {
@@ -607,15 +737,17 @@
 .freshness {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.32rem;
-  margin-top: 0.48rem;
+  margin-top: 0;
   color: #647d98;
-  font-size: 0.68rem;
+  font-size: 0.52rem;
+  line-height: 1;
 }
 
 .freshness svg {
-  width: 0.8rem;
-  height: 0.8rem;
+  width: 0.68rem;
+  height: 0.68rem;
 }
 
 .equipmentCard,
@@ -646,6 +778,19 @@
   color: var(--blue);
 }
 
+.equipmentHeading .cardTitle {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.equipmentHeading .cardTitle h2 {
+  overflow: hidden;
+  font-size: 1.58rem;
+  line-height: 1.12;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .equipmentHeading > div:last-child {
   display: grid;
   flex: 0 0 auto;
@@ -654,9 +799,13 @@
 }
 
 .equipmentHeading > div:last-child > span {
+  max-width: 11rem;
+  overflow: hidden;
   color: #57718b;
-  font-size: 0.72rem;
+  font-size: 0.67rem;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .equipmentHeading > div:last-child > strong {
@@ -687,10 +836,10 @@
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: 3.3rem 7.6rem minmax(0, 1fr) 5.2rem;
+  grid-template-columns: 3.05rem minmax(0, 0.92fr) minmax(8.2rem, 1.25fr) 5rem;
   align-items: center;
-  gap: 0.32rem;
-  padding: 0.36rem 0.42rem;
+  gap: 0.28rem;
+  padding: 0.32rem 0.36rem;
   border: 1px solid #cddbe8;
   border-left-width: 0.24rem;
   border-radius: 0.52rem;
@@ -721,8 +870,9 @@
 
 .machineIdentity > strong {
   color: var(--navy);
-  font-size: 1.32rem;
-  line-height: 1;
+  font-size: 1.2rem;
+  line-height: 1.08;
+  white-space: nowrap;
 }
 
 .machineIdentity > span {
@@ -785,14 +935,15 @@
 
 .machineProduct strong {
   color: #1257a5;
-  font-size: 1rem;
-  line-height: 1.12;
+  font-size: 0.88rem;
+  line-height: 1.08;
 }
 
 .machineProduct span {
   color: #405f7d;
-  font-size: 0.7rem;
+  font-size: 0.61rem;
   font-weight: 700;
+  line-height: 1.05;
 }
 
 .machineProduct em {
@@ -810,9 +961,10 @@
 
 .machineProgress {
   display: grid;
+  min-width: 0;
   align-content: center;
   gap: 0.18rem;
-  padding: 0 0.28rem 0 0.48rem;
+  padding: 0 0.18rem 0 0.38rem;
   border-left: 1px solid #d5e0ea;
 }
 
@@ -833,7 +985,7 @@
 .machineProgressValue > strong {
   overflow: hidden;
   color: #234564;
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -883,7 +1035,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.45rem;
+  gap: 0.28rem;
   color: #577087;
   font-size: 0.62rem;
   font-weight: 700;
@@ -962,10 +1114,13 @@
 }
 
 .machineControls > span {
+  overflow: hidden;
   color: #294968;
   font-size: 0.67rem;
   font-weight: 750;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .machineControls button {
@@ -1337,158 +1492,465 @@
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 0.7rem;
-}
-
-.inventoryHeading > div:last-child {
-  display: flex;
-  align-items: baseline;
-  gap: 0.42rem;
-  white-space: nowrap;
-}
-
-.inventoryHeading > div:last-child span {
-  color: #536e88;
-  font-size: 0.68rem;
-  font-weight: 750;
-}
-
-.inventoryHeading > div:last-child strong {
-  color: var(--blue);
-  font-size: 1.52rem;
-}
-
-.inventoryBody {
-  display: grid;
-  min-height: 0;
-  grid-template-columns: 0.68fr 1.32fr;
-  gap: 0.72rem;
-}
-
-.inventoryMeta {
-  display: grid;
-  align-content: center;
   gap: 0.55rem;
 }
 
-.inventoryMeta span {
-  display: flex;
-  align-items: center;
-  gap: 0.42rem;
-  padding: 0.48rem 0.52rem;
-  border: 1px solid #cfdeeb;
-  border-radius: 0.5rem;
-  background: #ffffff;
-  color: #294b6d;
-  font-size: 0.76rem;
-  font-weight: 800;
+.inventoryCard {
+  gap: 0.3rem;
+  padding: 0.72rem 0.9rem 0.55rem;
+}
+
+.inventoryHeading .cardTitle {
+  gap: 0.52rem;
+}
+
+.inventoryHeading .cardTitle > svg {
+  width: 2.05rem;
+  height: 2.05rem;
+  padding: 0.34rem;
+  border-radius: 50%;
+  background: #e9f5ff;
+  color: var(--blue);
+}
+
+.inventoryHeading h2 {
+  font-size: 1.5rem;
   white-space: nowrap;
 }
 
-.inventoryMeta svg {
-  width: 1.36rem;
-  height: 1.36rem;
-  color: #52789e;
+.outboundStatus {
+  flex: 0 0 auto;
+  padding: 0.26rem 0.46rem;
+  border: 1px solid #a8d5c0;
+  border-radius: 99px;
+  background: #ebf8f2;
+  color: #08794a;
+  font-size: 0.58rem;
+  font-weight: 850;
+  white-space: nowrap;
 }
 
-.warehouseComposition {
+.outboundStatusPartial {
+  border-color: #efbd8c;
+  background: #fff5e9;
+  color: #b95508;
+}
+
+.outboundStatusUnavailable {
+  border-color: #c7d4e0;
+  background: #f3f6f9;
+  color: #60768c;
+}
+
+.outboundContent {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1.64fr) minmax(0, 0.76fr);
+  gap: 0.3rem;
+}
+
+.outboundContentUnavailable {
+  display: block;
+}
+
+.outboundToday {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto repeat(2, minmax(0, 1fr));
+  gap: 0.22rem;
+}
+
+.outboundSectionLabel {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.outboundSectionLabel strong {
+  color: #24486b;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.outboundSectionLabel span {
+  overflow: hidden;
+  color: #6d8297;
+  font-size: 0.48rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outboundLane {
   display: grid;
   min-width: 0;
-  align-content: center;
-  gap: 0.43rem;
-  padding: 0.52rem 0.62rem;
-  border: 1px solid #cfdeeb;
-  border-radius: 0.55rem;
-  background: #ffffff;
-}
-
-.warehouseComposition > span {
-  color: #294b6d;
-  font-size: 0.68rem;
-  font-weight: 800;
-}
-
-.warehouseComposition article > div:first-child {
-  display: flex;
+  min-height: 0;
+  grid-template-columns: 2.65rem minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto 0.28rem;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.42rem;
-  color: #496883;
-  font-size: 0.62rem;
+  column-gap: 0.38rem;
+  row-gap: 0.04rem;
+  padding: 0.16rem 0.4rem;
+  border: 1px solid #c9ddec;
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, #eef7ff 0%, #ffffff 62%);
 }
 
-.warehouseComposition article > div:first-child strong {
-  color: #274a6d;
+.cskdLane {
+  border-color: #bfddcf;
+  background: linear-gradient(90deg, #edf9f3 0%, #ffffff 62%);
 }
 
-.warehouseComposition article > div:last-child {
-  height: 0.42rem;
-  margin-top: 0.22rem;
+.outboundCode {
+  display: flex;
+  min-width: 0;
+  grid-row: 1 / 4;
+  align-items: center;
+  align-self: stretch;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.08rem;
+  border-right: 1px solid #c6dceb;
+  color: var(--blue);
+  font-size: 0.9rem;
+  letter-spacing: 0.015em;
+}
+
+.outboundCode small {
+  color: #688198;
+  font-size: 0.4rem;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.cskdLane .outboundCode {
+  border-color: #bfddcf;
+  color: var(--green);
+}
+
+.outboundLaneValue {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.34rem;
+}
+
+.outboundLaneValue > span {
+  flex: 0 0 auto;
+  color: #657d94;
+  font-size: 0.48rem;
+  font-weight: 750;
+}
+
+.outboundLaneValue strong {
+  overflow: hidden;
+  color: #163d64;
+  font-size: 0.9rem;
+  font-weight: 850;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outboundLaneValue small {
+  margin-left: 0.22rem;
+  color: #5f7890;
+  font-size: 0.53rem;
+  font-weight: 750;
+}
+
+.outboundLaneMeta {
+  display: flex;
+  min-width: 0;
+  grid-column: 2 / 4;
+  grid-row: 2;
+  gap: 0.45rem;
+  color: #60778e;
+  font-size: 0.44rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.outboundLaneMeta > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outboundLaneMeta b {
+  color: #49677f;
+  font-weight: 750;
+}
+
+.outboundLaneMeta strong {
+  color: #1f4c72;
+  font-weight: 850;
+}
+
+.outboundLaneMeta .outboundOverMeta,
+.outboundLaneMeta .outboundOverMeta b {
+  color: #bd5808;
+}
+
+.outboundPriority {
+  display: grid;
+  min-width: 0;
+  grid-column: 2 / 4;
+  grid-row: 3;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.2rem;
+  color: #5c738a;
+  font-size: 0.43rem;
+  line-height: 1.05;
+}
+
+.outboundPriority > span {
+  padding: 0.11rem 0.2rem;
+  border-radius: 99px;
+  background: #fff1e3;
+  color: #bf5a08;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.outboundPriority > strong {
+  overflow: hidden;
+  color: #183f64;
+  font-size: 0.49rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outboundPriority > em {
+  overflow: hidden;
+  color: #6d8194;
+  font-style: normal;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outboundPriority > b {
+  color: #173f65;
+  font-size: 0.5rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.outboundPriority > b small {
+  margin-left: 0.1rem;
+  color: #627990;
+  font-size: 0.4rem;
+  font-weight: 750;
+}
+
+.outboundPriority > i {
+  padding: 0.1rem 0.2rem;
+  border-radius: 0.22rem;
+  background: #fff4e8;
+  color: #bc5808;
+  font-style: normal;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.outboundPriorityEmpty {
+  display: flex;
+}
+
+.outboundPriorityEmpty > span {
+  overflow: hidden;
+  background: #eef4f8;
+  color: #61788f;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outboundRate {
+  grid-column: 3;
+  grid-row: 1;
+  color: var(--blue);
+  font-size: 0.88rem;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.cskdLane .outboundRate {
+  color: var(--green);
+}
+
+.outboundProgress {
+  height: 0.3rem;
+  grid-column: 2 / 4;
+  grid-row: 4;
   overflow: hidden;
   border-radius: 99px;
-  background: #e1e8ef;
+  background: #dfe8f0;
 }
 
-.warehouseComposition article > div:last-child span {
+.outboundProgress span {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--blue);
 }
 
-.warehouseComposition article:nth-of-type(2) > div:last-child span {
-  background: #56a985;
+.cskdLane .outboundProgress span {
+  background: var(--green);
 }
 
-.inventoryFlow {
+.outboundComparisons {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  overflow: hidden;
-  border: 1px solid #d1deea;
-  border-radius: 0.52rem;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.outboundPeriod {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  align-content: center;
+  gap: 0.18rem;
+  padding: 0.28rem 0.4rem;
+  border: 1px solid #d1dee9;
+  border-radius: 0.48rem;
   background: #ffffff;
 }
 
-.inventoryFlow article {
+.outboundPeriod header {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.3rem;
+  padding-bottom: 0.08rem;
+  border-bottom: 1px solid #e0e8ef;
+}
+
+.outboundPeriod header strong {
+  color: #284b6d;
+  font-size: 0.62rem;
+  font-weight: 850;
+}
+
+.outboundPeriod header span {
+  color: #788da0;
+  font-size: 0.42rem;
+  font-weight: 650;
+}
+
+.outboundPeriod > div {
   display: grid;
   min-width: 0;
-  grid-template-columns: 1.05rem minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.38rem 0.48rem;
+  grid-template-columns: 2.15rem 2.8rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.2rem;
+  line-height: 1;
+}
+
+.outboundPeriod > div b {
   color: var(--blue);
+  font-size: 0.54rem;
 }
 
-.inventoryFlow article + article {
-  border-left: 1px solid #d7e2ec;
+.outboundPeriod > div:nth-of-type(2) b {
+  color: var(--green);
 }
 
-.inventoryFlow svg {
-  width: 0.95rem;
-  height: 0.95rem;
+.outboundPeriod > div strong {
+  color: #1d466d;
+  font-size: 0.62rem;
+  white-space: nowrap;
 }
 
-.inventoryFlow span,
-.inventoryFlow small {
+.outboundPeriod > div span {
   overflow: hidden;
-  color: #536e88;
-  font-size: 0.59rem;
-  font-weight: 750;
+  color: #6b8196;
+  font-size: 0.45rem;
+  font-weight: 700;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.inventoryFlow strong {
-  font-size: 0.86rem;
+.outboundFooter {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  color: #6b8196;
+  font-size: 0.44rem;
+  font-weight: 650;
+}
+
+.outboundFooter > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.inventoryFlow small {
-  display: none;
+.outboundFooter > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.3rem;
 }
 
-.inventoryFlow .orangeMetric {
-  color: var(--orange);
+.outboundFooter em {
+  display: flex;
+  align-items: center;
+  gap: 0.12rem;
+  color: #b95608;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.outboundFooter svg {
+  width: 0.58rem;
+  height: 0.58rem;
+}
+
+.outboundUnavailable {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.72rem;
+  padding: 0.8rem;
+  border: 1px dashed #c1d0de;
+  border-radius: 0.58rem;
+  background: #f7fafc;
+}
+
+.outboundUnavailable > svg {
+  width: 2.35rem;
+  height: 2.35rem;
+  flex: 0 0 auto;
+  color: #8296aa;
+}
+
+.outboundUnavailable > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.22rem;
+}
+
+.outboundUnavailable strong {
+  color: #375571;
+  font-size: 0.8rem;
+}
+
+.outboundUnavailable span {
+  color: #6c8297;
+  font-size: 0.56rem;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .mouldHeading {

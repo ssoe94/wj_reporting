@@ -11,7 +11,7 @@ const COPY = {
     eyebrow: "WJ DISPLAY CENTER",
     title: "현황판",
     description: "운영 현황을 큰 화면에 맞춘 전용 보드로 확인합니다. 카드를 누르면 새 전체 화면 창으로 열립니다.",
-    count: "운영 현황판 3개",
+    count: "운영 현황판 4개",
     publicAccess: "로그인 없이 직접 접속",
     login: "관리 화면 로그인",
     dashboard: "관리 화면으로",
@@ -19,6 +19,9 @@ const COPY = {
     publicLink: "공개 링크",
     open: "현황판 열기",
     preview: "화면 미리보기",
+    overviewTitle: "WJ 종합 운영 현황판",
+    overviewDescription: "생산·설비·품질·출고·에너지 핵심 지표를 3×3 비디오월에서 한눈에 확인합니다.",
+    overviewMeta: "3×3 비디오월 · 1분 자동 갱신",
     injectionTitle: "사출 실시간 현황판",
     injectionDescription: "17대 사출기의 계획, 생산 진도와 최근 C/T를 한 화면에서 확인합니다.",
     injectionMeta: "17대 사출기 · 1분 자동 갱신",
@@ -33,7 +36,7 @@ const COPY = {
     eyebrow: "WJ DISPLAY CENTER",
     title: "看板中心",
     description: "通过适配大屏的专用看板查看运营现状。点击卡片即可在新的全屏窗口中打开。",
-    count: "3 个运营看板",
+    count: "4 个运营看板",
     publicAccess: "无需登录即可直接访问",
     login: "登录管理页面",
     dashboard: "返回管理页面",
@@ -41,6 +44,9 @@ const COPY = {
     publicLink: "公开链接",
     open: "打开看板",
     preview: "画面预览",
+    overviewTitle: "WJ 综合运营看板",
+    overviewDescription: "通过 3×3 视频墙集中查看生产、设备、质量、出库和能源核心指标。",
+    overviewMeta: "3×3 视频墙 · 每分钟刷新",
     injectionTitle: "注塑实时看板",
     injectionDescription: "在一个屏幕中查看 17 台注塑机的计划、生产进度和最近 C/T。",
     injectionMeta: "17 台注塑机 · 每分钟刷新",
@@ -54,7 +60,7 @@ const COPY = {
 } as const;
 
 type BoardCard = {
-  key: "injection" | "mould" | "energy";
+  key: "overview" | "injection" | "mould" | "energy";
   href: string;
   image: string;
   title: string;
@@ -80,6 +86,15 @@ export function BoardHubPage() {
   const { lang, setLang } = useLang();
   const copy = COPY[lang];
   const boards: BoardCard[] = [
+    {
+      key: "overview",
+      href: "/boards/overview",
+      image: "/board-thumbnails/overview-board.svg",
+      title: copy.overviewTitle,
+      description: copy.overviewDescription,
+      meta: copy.overviewMeta,
+      icon: LayoutGrid,
+    },
     {
       key: "injection",
       href: "/boards/injection",

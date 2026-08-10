@@ -158,6 +158,86 @@ export type InventoryStatus = {
     quantity: number | null;
     carts: number | null;
   }>;
+  outboundPerformance: OutboundPerformanceStatus;
+};
+
+export type OutboundPerformanceMetric = {
+  unit: string | null;
+  orderCount: number | null;
+  lineCount: number | null;
+  targetQuantity: number | null;
+  fulfilledQuantity: number | null;
+  completionRate: number | null;
+};
+
+export type OutboundPriorityItem = {
+  category: "JIT" | "CSKD";
+  outboundOrderId: string | null;
+  outboundOrderCode: string;
+  planTime: string | null;
+  status: string | null;
+  materialId: string | null;
+  materialCode: string;
+  materialName: string | null;
+  specification: string | null;
+  targetQuantity: number | null;
+  fulfilledQuantity: number | null;
+  remainingQuantity: number | null;
+  varianceQuantity: number | null;
+  completionRate: number | null;
+  unit: string | null;
+  fulfillmentState: "pending" | "complete" | "over" | "unknown";
+};
+
+export type OutboundTodayDetailSummary = {
+  pendingLineCount: number | null;
+  completeLineCount: number | null;
+  overLineCount: number | null;
+  zeroFulfilledLineCount: number | null;
+  remainingQuantity: number | null;
+  overQuantity: number | null;
+  unit: string | null;
+  largestPending: OutboundPriorityItem | null;
+};
+
+export type OutboundPerformancePeriod = {
+  label: string | null;
+  startAt: string | null;
+  endAt: string | null;
+  jit: OutboundPerformanceMetric;
+  cskd: OutboundPerformanceMetric;
+};
+
+export type OutboundPerformanceStatus = {
+  status: "ok" | "partial" | "unavailable";
+  fetchedAt: string | null;
+  measurementBasis: {
+    cohort: string | null;
+    targetQuantity: string | null;
+    fulfilledQuantity: string | null;
+    classification: string | null;
+    eligibleUnit: string | null;
+    periodPolicy: string | null;
+  } | null;
+  periods: {
+    today: OutboundPerformancePeriod;
+    previousWeek: OutboundPerformancePeriod;
+    previousMonth: OutboundPerformancePeriod;
+  };
+  todayDetailSummary: {
+    jit: OutboundTodayDetailSummary;
+    cskd: OutboundTodayDetailSummary;
+  };
+  todayPriorityItems: OutboundPriorityItem[];
+  warnings: string[];
+  acceptedLineCount: number | null;
+  excludedLineCount: number | null;
+  ignoredOutsidePeriodLineCount: number | null;
+  exclusionsByReason: Record<string, number>;
+  unclassified: {
+    orderCount: number | null;
+    lineCount: number | null;
+  };
 };
 
 export type EnergyStatus = {

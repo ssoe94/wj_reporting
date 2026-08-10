@@ -48,6 +48,34 @@ def _weather_result():
     return weather, [], source, trace
 
 
+def _outbound_result():
+    payload = {
+        "status": "ok",
+        "fetched_at": "2026-08-10T12:00:00+08:00",
+        "cache_status": "miss",
+        "measurement_basis": {},
+        "periods": {},
+        "accepted_line_count": 0,
+        "excluded_line_count": 0,
+        "deduplicated_line_count": 0,
+        "covered_order_count": 0,
+        "exclusions_by_reason": {},
+        "warnings": [],
+    }
+    source = {
+        "status": "ok",
+        "source_latest_at": payload["fetched_at"],
+        "row_count": 0,
+        "stale": False,
+    }
+    trace = {
+        "source": "BLACKLAKE inventory outbound_order._list items[]",
+        "status": "mocked",
+        "rows_returned": 0,
+    }
+    return payload, [], source, trace
+
+
 def _production_context(target_date, *, resolved=True):
     start = SHANGHAI_TZ.localize(datetime(2026, 8, 10, 8, 0))
     reference = start + timedelta(hours=4)
@@ -158,6 +186,12 @@ class OverviewBoardQualityContractTests(TestCase):
         )
         weather_patcher.start()
         self.addCleanup(weather_patcher.stop)
+        outbound_patcher = patch(
+            "production.overview_board.get_outbound_performance",
+            return_value=_outbound_result(),
+        )
+        outbound_patcher.start()
+        self.addCleanup(outbound_patcher.stop)
 
     def test_quality_feed_uses_exact_full_part_and_90_day_history_only(self):
         QualityReport.objects.create(
@@ -433,7 +467,7 @@ class OverviewBoardQualityContractTests(TestCase):
         # Shots are not silently converted to pieces without a resolved cavity.
         self.assertEqual(unplanned["actual_qty"], 0)
 
-    def test_injection_machine_feed_never_guesses_completed_or_stopped_plan_as_current(self):
+    def test_injection_machine_feed_never_guesses_completed_plan_as_current(self):
         running_unresolved = _production_context(self.target_date, resolved=False)
         with patch(
             "production.overview_board.get_daily_production_context",
@@ -449,7 +483,7 @@ class OverviewBoardQualityContractTests(TestCase):
         self.assertEqual(running["current_part_resolution"]["status"], "unresolved")
         self.assertEqual(running["current_parts"], [])
 
-        stopped_context = _production_context(self.target_date)
+        stopped_context = _production_context(self.target_date, resolved=False)
         stopped_context["injection"]["machine_rows"][0].update({
             "is_running": False,
             "recent_60m_shots": 0,
@@ -468,6 +502,55 @@ class OverviewBoardQualityContractTests(TestCase):
         self.assertEqual(stopped["production_state"], "planned_stopped")
         self.assertEqual(stopped["current_part_resolution"]["status"], "not_applicable")
         self.assertEqual(stopped["current_parts"], [])
+
+    def test_injection_machine_feed_keeps_in_progress_model_without_recent_activity(self):
+        context = _production_context(self.target_date)
+        context["injection"]["machine_rows"][0].update({
+            "is_running": False,
+            "recent_60m_shots": 0,
+            "recent_60m_avg_ct_sec": None,
+        })
+        with patch(
+            "production.overview_board.get_daily_production_context",
+            return_value=context,
+        ), patch(
+            "production.overview_board.get_injection_active_machine_context",
+            return_value=_activity_context(self.target_date, machine_numbers=()),
+        ):
+            snapshot = build_overview_board_snapshot(self.target_date, language="ko")
+
+        stopped = snapshot["equipment"]["injection"][0]
+        self.assertEqual(stopped["production_state"], "planned_stopped")
+        self.assertFalse(stopped["is_running"])
+        self.assertEqual(stopped["current_parts"], [{"part_no": "ABC 123", "model_name": "MODEL-A"}])
+        self.assertEqual(stopped["current_part_resolution"]["status"], "resolved")
+        self.assertEqual(
+            stopped["current_part_resolution"]["method"],
+            "in_progress_plan_sequence_cavity_allocation",
+        )
+
+    def test_injection_machine_feed_uses_in_progress_model_when_part_number_is_missing(self):
+        context = _production_context(self.target_date)
+        part = context["injection"]["machine_rows"][0]["parts"][0]
+        part.update({
+            "part_no": "-",
+            "model_name": "汽车外部行李箱",
+        })
+        with patch(
+            "production.overview_board.get_daily_production_context",
+            return_value=context,
+        ), patch(
+            "production.overview_board.get_injection_active_machine_context",
+            return_value=_activity_context(self.target_date),
+        ):
+            snapshot = build_overview_board_snapshot(self.target_date, language="ko")
+
+        machine = snapshot["equipment"]["injection"][0]
+        self.assertEqual(machine["production_state"], "running_resolved")
+        self.assertEqual(machine["current_parts"], [{"part_no": "-", "model_name": "汽车外部行李箱"}])
+        # Quality matching remains fail-closed without an exact part number.
+        self.assertEqual(snapshot["quality"]["resolved_machine_count"], 0)
+        self.assertIn("quality_current_part_unresolved:3", snapshot["warnings"])
 
     def test_oee_is_calculated_only_when_all_three_factors_are_explicitly_source_backed(self):
         context = _production_context(self.target_date)

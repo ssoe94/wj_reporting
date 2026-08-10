@@ -25,6 +25,7 @@ from django.utils import timezone
 from injection.models import InjectionMonitoringRecord, MouldDataSnapshot
 from injection.mould_snapshots import BOARD_SNAPSHOT_KEY
 from inventory.models import DailyInventorySnapshot, FinishedGoodsTransactionSnapshot
+from inventory.services.outbound_performance import get_outbound_performance
 from quality.models import QualityReport
 
 from .ai_metrics import SHANGHAI_TZ, safe_rate
@@ -462,14 +463,26 @@ def _process_summary(
     }
 
 
-def _resolved_current_parts(machine_row: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return only parts deterministically resolved as in progress.
+def _resolved_current_parts(
+    machine_row: dict[str, Any],
+    *,
+    require_recent_activity: bool = True,
+    require_part_number: bool = True,
+) -> list[dict[str, Any]]:
+    """Return only parts deterministically resolved as the in-progress plan group.
 
-    Recent counter movement proves the machine was active, while the canonical
-    retriever's sequence/cavity allocation resolves which planned part group is
-    in progress.  Completed or pending rows are not guessed as the current part.
+    The canonical retriever's sequence/cavity allocation is the product
+    evidence.  Quality context additionally requires recent counter movement,
+    while the equipment feed may retain the assigned in-progress model when
+    the machine has no activity in the latest window or its plan has a model
+    but no part number.  Completed and pending rows are never promoted to the
+    current product in either mode.  Quality keeps requiring an exact part
+    number because it must never match history by model name alone.
     """
-    if not machine_row.get("is_running") or _safe_int(machine_row.get("recent_60m_shots")) <= 0:
+    if require_recent_activity and (
+        not machine_row.get("is_running")
+        or _safe_int(machine_row.get("recent_60m_shots")) <= 0
+    ):
         return []
 
     resolved: list[dict[str, Any]] = []
@@ -478,13 +491,20 @@ def _resolved_current_parts(machine_row: dict[str, Any]) -> list[dict[str, Any]]
         if part.get("status") != "in_progress":
             continue
         normalized = _normalize_part_no(part.get("part_no"))
-        if not normalized or normalized == "-" or normalized in seen:
+        model_name = str(part.get("model_name") or "").strip()
+        has_part_number = bool(normalized and normalized != "-")
+        if require_part_number and not has_part_number:
             continue
-        seen.add(normalized)
+        if not has_part_number and (not model_name or model_name == "-"):
+            continue
+        dedupe_key = f"part:{normalized}" if has_part_number else f"model:{_normalize_part_no(model_name)}"
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
         resolved.append({
-            "part_no": str(part.get("part_no") or "").strip().upper(),
-            "normalized_part_no": normalized,
-            "model_name": part.get("model_name") or "-",
+            "part_no": str(part.get("part_no") or "-").strip().upper() or "-",
+            "normalized_part_no": normalized if has_part_number else "",
+            "model_name": model_name or "-",
             "sequence": _safe_int(part.get("sequence")),
             "status": "in_progress",
             "production_group_id": part.get("production_group_id"),
@@ -933,6 +953,14 @@ def _build_inventory(
     if shipping_snapshot is None:
         warnings.append("finished_goods_shipping_snapshot_missing")
 
+    (
+        outbound_performance,
+        outbound_warnings,
+        outbound_source,
+        outbound_trace,
+    ) = get_outbound_performance(target_date)
+    warnings.extend(outbound_warnings)
+
     inventory = {
         "snapshot_date": _iso(latest_snapshot_date),
         "snapshot_matches_business_date": snapshot_is_current,
@@ -950,22 +978,50 @@ def _build_inventory(
             "net_change": float(shipping_snapshot.net_change) if shipping_snapshot else 0,
             "record_count": _safe_int(shipping_snapshot.record_count) if shipping_snapshot else 0,
         },
+        "outbound_performance": outbound_performance,
     }
-    source_status = "missing" if latest_snapshot_date is None else "stale" if not snapshot_is_current else "ok"
-    source_latest = max(
+    legacy_source_status = "missing" if latest_snapshot_date is None else "stale" if not snapshot_is_current else "ok"
+    legacy_source_latest = max(
         [value for value in [aggregate.get("latest_at"), shipping_snapshot.scheduled_at if shipping_snapshot else None] if value],
         default=None,
     )
+    outbound_status = str(outbound_source.get("status") or "error")
+    if outbound_status == "error":
+        source_status = "error"
+    elif outbound_status == "partial" or legacy_source_status in {"missing", "stale"}:
+        source_status = "partial"
+    else:
+        source_status = "ok"
+    source_latest = outbound_source.get("source_latest_at") or legacy_source_latest
     source = _source_state(
         status=source_status,
         latest_at=source_latest,
-        row_count=_safe_int(aggregate.get("sku_count")),
+        row_count=(
+            _safe_int(aggregate.get("sku_count"))
+            + _safe_int(outbound_source.get("row_count"))
+        ),
         stale=bool(latest_snapshot_date and not snapshot_is_current),
     )
+    source["components"] = {
+        "inventory_snapshots": legacy_source_status,
+        "outbound_performance": outbound_status,
+    }
     trace = {
-        "source": "inventory.DailyInventorySnapshot + FinishedGoodsTransactionSnapshot",
+        "source": (
+            "inventory.DailyInventorySnapshot + FinishedGoodsTransactionSnapshot "
+            "+ BLACKLAKE outbound_order._list items[]"
+        ),
         "status": source_status,
         "rows_returned": source["row_count"],
+        "components": [
+            {
+                "source": "inventory.DailyInventorySnapshot + FinishedGoodsTransactionSnapshot",
+                "status": legacy_source_status,
+                "rows_returned": _safe_int(aggregate.get("sku_count")),
+                "source_latest_at": _iso(legacy_source_latest),
+            },
+            outbound_trace,
+        ],
     }
     return inventory, warnings, source, trace
 
@@ -1178,6 +1234,13 @@ def _current_part_resolution(
             "reason": None,
             "resolved_part_count": resolved_part_count,
         }
+    if resolved_part_count > 0:
+        return {
+            "status": "resolved",
+            "method": "in_progress_plan_sequence_cavity_allocation",
+            "reason": "assigned_in_progress_plan_segment_without_recent_machine_activity",
+            "resolved_part_count": resolved_part_count,
+        }
     if production_state == "running_without_plan":
         return {
             "status": "unresolved",
@@ -1244,7 +1307,16 @@ def _build_equipment(
         # the dedicated activity query additionally catches machines that have
         # recent counter movement but no production plan.
         is_running = bool(activity_row) or bool(row.get("is_running"))
-        resolved = _resolved_current_parts(row)
+        # A stopped/paused machine can still have a deterministic assigned model: the
+        # canonical sequence/cavity allocation marks that plan segment as
+        # in_progress.  Do not require a shot in the last hour for the equipment
+        # label; the separate machine state continues to show it as stopped.
+        # Quality keeps the stricter recent-activity requirement.
+        resolved = _resolved_current_parts(
+            row,
+            require_recent_activity=False,
+            require_part_number=False,
+        )
         pace = _machine_pace_payload(row, time_progress_rate=injection_time_progress)
         has_plan = pace["planned_qty"] > 0
         production_state, state_reason = _machine_production_state(
@@ -1740,19 +1812,42 @@ def build_overview_board_snapshot(target_date: date, *, language: str = "ko") ->
             range_end=context["range_end"],
         )
     except DatabaseError as exc:
+        (
+            outbound_performance,
+            outbound_fallback_warnings,
+            outbound_fallback_source,
+            outbound_fallback_trace,
+        ) = get_outbound_performance(target_date)
         inventory = {
             "snapshot_date": None,
             "snapshot_matches_business_date": False,
             "finished_and_semifinished": {"sku_count": 0, "total_quantity": 0, "total_carts": 0, "warehouses": []},
             "shipping": {"snapshot_at": None, "slot": None, "total_in": 0, "total_out": 0, "net_change": 0, "record_count": 0},
+            "outbound_performance": outbound_performance,
         }
-        inventory_warnings = ["inventory_snapshot_unavailable"]
+        inventory_warnings = [
+            "inventory_snapshot_unavailable",
+            *outbound_fallback_warnings,
+        ]
         inventory_source = _source_state(status="error", detail=exc.__class__.__name__)
+        inventory_source["components"] = {
+            "inventory_snapshots": "error",
+            "outbound_performance": outbound_fallback_source.get("status") or "error",
+        }
         inventory_trace = {
-            "source": "inventory snapshots",
+            "source": "inventory snapshots + BLACKLAKE outbound_order._list items[]",
             "status": "error",
             "detail": exc.__class__.__name__,
-            "rows_returned": 0,
+            "rows_returned": _safe_int(outbound_fallback_source.get("row_count")),
+            "components": [
+                {
+                    "source": "inventory snapshots",
+                    "status": "error",
+                    "detail": exc.__class__.__name__,
+                    "rows_returned": 0,
+                },
+                outbound_fallback_trace,
+            ],
         }
     warnings.extend(inventory_warnings)
     traces.append(inventory_trace)
