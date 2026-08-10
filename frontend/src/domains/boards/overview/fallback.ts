@@ -1,0 +1,296 @@
+import type { AppLanguage } from "@/shared/i18n/language";
+import type { OverviewBoardModel } from "./types";
+
+const DEMO_ENERGY_HOURLY_KWH = [
+  3_200, 3_050, 2_900, 2_760, 2_680, 2_840, 3_120, 3_480,
+  3_860, 4_180, 4_420, 4_560, 4_340, 4_120, 3_940, 3_780,
+  3_620, 3_760, 4_020, 4_280, 4_510, 4_360, 4_090, 3_820,
+];
+
+function createDemoEnergyTrend() {
+  const history = [...DEMO_ENERGY_HOURLY_KWH, ...DEMO_ENERGY_HOURLY_KWH];
+  const movingAverage = (index: number, window: number) => {
+    const values = history.slice(index - window + 1, index + 1);
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  };
+  return DEMO_ENERGY_HOURLY_KWH.map((usageKwh, index) => {
+    const historyIndex = index + DEMO_ENERGY_HOURLY_KWH.length;
+    const hour = (12 + index) % 24;
+    return {
+      timestamp: null,
+      label: `${String(hour).padStart(2, "0")}:00`,
+      usageKwh,
+      movingAverage8hKwh: movingAverage(historyIndex, 8),
+      movingAverage12hKwh: movingAverage(historyIndex, 12),
+      movingAverage24hKwh: movingAverage(historyIndex, 24),
+      coverageMachineCount: 17,
+      isCurrentBusinessDay: index >= 20,
+    };
+  });
+}
+
+export function createOverviewDemoModel(
+  businessDate: string,
+  language: AppLanguage,
+): OverviewBoardModel {
+  return {
+    schemaVersion: "demo-v1",
+    language,
+    businessDate,
+    generatedAt: new Date().toISOString(),
+    businessWindow: "08:00-08:00",
+    overallStatus: "attention",
+    processes: {
+      injection: {
+        key: "injection",
+        plannedQuantity: 128_400,
+        actualQuantity: 31_920,
+        completionRate: 24.9,
+        timeProgressRate: 26.7,
+        forecastCompletionRate: 93.3,
+        activeEquipmentCount: 17,
+        runningEquipmentCount: 13,
+        totalEquipmentCount: 17,
+        planRowCount: 24,
+        completionVsTimeGap: -1.8,
+        expectedQuantityByTime: 34_282,
+        gapToTimeQuantity: -2_362,
+        paceIndexPercent: 93.3,
+        paceStatus: "on_track",
+        remainingQuantity: 96_480,
+        remainingBusinessMinutes: 1_056,
+        requiredQuantityPerHour: 5_481.8,
+        reportingMix: null,
+      },
+      assembly: {
+        key: "assembly",
+        plannedQuantity: 38_400,
+        actualQuantity: 8_160,
+        completionRate: 21.3,
+        timeProgressRate: 26.7,
+        forecastCompletionRate: 79.8,
+        activeEquipmentCount: 9,
+        runningEquipmentCount: 7,
+        totalEquipmentCount: 9,
+        planRowCount: 12,
+        completionVsTimeGap: -5.4,
+        expectedQuantityByTime: 10_252,
+        gapToTimeQuantity: -2_092,
+        paceIndexPercent: 79.8,
+        paceStatus: "behind",
+        remainingQuantity: 30_240,
+        remainingBusinessMinutes: 1_056,
+        requiredQuantityPerHour: 1_718.2,
+        reportingMix: {
+          effectiveActualQuantity: 8_160,
+          mesConfirmedQuantity: 6_870,
+          manualOpenQuantity: 1_290,
+          matchedManualQuantity: 620,
+          reportedDefectQuantity: 34,
+          manualOpenSharePercent: 15.8,
+          manualOpenRowCount: 3,
+          dataQualityNote: language === "ko"
+            ? "수기 미대사 수량은 MES 확정 전 임시 실적입니다"
+            : "未对账手工数量为 MES 确认前的临时实绩",
+        },
+      },
+    },
+    equipment: {
+      injection: { running: 13, total: 17, trend: [10, 12, 13, 11, 9, 12, 15, 16] },
+      assembly: { running: 7, total: 9, trend: [6, 7, 5, 6, 8, 7] },
+      injectionRows: [
+        { id: "I-03", label: "I-03", machineNumber: 3, isRunning: true, recent60mShots: 382, recent60mAverageCycleTimeSeconds: 9.4, plannedQuantity: 8_400, actualQuantity: 2_530, completionRate: 30.1, timeProgressRate: 26.7, gapToTimeRate: 3.4, currentModels: ["DEMO-M1042"], currentParts: [{ modelName: "DEMO-M1042", partNumber: "DEMO-P1042", partName: null }], hasPlan: true, productionState: "running_resolved", stateReason: null, currentPartResolutionStatus: "resolved", resolvedCurrentPartCount: 1, sourceStatus: "ok", sourceLatestAt: null, activityWindowMinutes: 60 },
+        { id: "I-07", label: "I-07", machineNumber: 7, isRunning: false, recent60mShots: 0, recent60mAverageCycleTimeSeconds: null, plannedQuantity: 7_600, actualQuantity: 1_375, completionRate: 18.1, timeProgressRate: 26.7, gapToTimeRate: -8.6, currentModels: [], currentParts: [], hasPlan: true, productionState: "planned_stopped", stateReason: null, currentPartResolutionStatus: "unresolved", resolvedCurrentPartCount: 0, sourceStatus: "ok", sourceLatestAt: null, activityWindowMinutes: 60 },
+        { id: "I-08", label: "I-08", machineNumber: 8, isRunning: true, recent60mShots: 344, recent60mAverageCycleTimeSeconds: 10.5, plannedQuantity: 8_100, actualQuantity: 1_725, completionRate: 21.3, timeProgressRate: 26.7, gapToTimeRate: -5.4, currentModels: ["DEMO-M2208"], currentParts: [{ modelName: "DEMO-M2208", partNumber: "DEMO-P2208", partName: null }], hasPlan: true, productionState: "running_resolved", stateReason: null, currentPartResolutionStatus: "resolved", resolvedCurrentPartCount: 1, sourceStatus: "ok", sourceLatestAt: null, activityWindowMinutes: 60 },
+        { id: "I-12", label: "I-12", machineNumber: 12, isRunning: true, recent60mShots: 410, recent60mAverageCycleTimeSeconds: 8.8, plannedQuantity: 9_200, actualQuantity: 2_815, completionRate: 30.6, timeProgressRate: 26.7, gapToTimeRate: 3.9, currentModels: ["DEMO-M3310"], currentParts: [{ modelName: "DEMO-M3310", partNumber: "DEMO-P3310", partName: null }], hasPlan: true, productionState: "running_resolved", stateReason: null, currentPartResolutionStatus: "resolved", resolvedCurrentPartCount: 1, sourceStatus: "ok", sourceLatestAt: null, activityWindowMinutes: 60 },
+      ],
+      assemblyRows: [
+        { id: "L-01", label: "L-01", plannedQuantity: 12_800, actualQuantity: 3_420, completionRate: 26.7 },
+        { id: "L-02", label: "L-02", plannedQuantity: 13_200, actualQuantity: 2_910, completionRate: 22.0 },
+        { id: "L-04", label: "L-04", plannedQuantity: 12_400, actualQuantity: 1_830, completionRate: 14.8 },
+      ],
+      injectionOee: {
+        status: "insufficient_verified_factors",
+        oeeRate: null,
+        availableFactorCount: 0,
+        requiredFactorCount: 3,
+        availability: {
+          valuePercent: null,
+          proxyValuePercent: 76.5,
+          status: "proxy_only",
+          source: "recent_60m_shots / 17 injection machines",
+          reason: language === "ko" ? "최근 60분 가동 감지율이며 시간 가용률은 아닙니다" : "近60分钟运行检测率，不等同于时间可用率",
+        },
+        performance: {
+          valuePercent: null,
+          proxyValuePercent: null,
+          status: "unavailable",
+          source: null,
+          reason: language === "ko" ? "이상 Cycle Time 기준 필요" : "需要标准循环时间",
+        },
+        quality: {
+          valuePercent: null,
+          proxyValuePercent: null,
+          status: "unavailable",
+          source: null,
+          reason: language === "ko" ? "동일 업무일 양품 수량 필요" : "需要同一工作日良品数量",
+        },
+        operatingRate: 76.5,
+        scheduledOperatingRate: 81.3,
+        activityWindowMinutes: 60,
+        activityMetricsAvailable: true,
+        activitySourceStale: false,
+        totalEquipmentCount: 17,
+        plannedMachineCount: 16,
+        runningMachineCount: 13,
+        stoppedPlannedMachineCount: 3,
+        behindMachineCount: 4,
+        onTrackMachineCount: 7,
+        aheadMachineCount: 5,
+        unplannedMachineCount: 1,
+        bottleneckMachine: "I-07",
+        calculationBasis: language === "ko"
+          ? "OEE = 가용성 × 성능 × 품질. 검증 가능한 3개 요소가 모두 있어야 계산합니다."
+          : "OEE = 可用率 × 性能率 × 品质率，三个要素均验证后才计算。",
+        trend: [],
+      },
+      alertLabel: language === "ko" ? "I-07 신호 지연" : "I-07 信号延迟",
+    },
+    attention: [
+      {
+        id: "demo-attention-1",
+        rank: 1,
+        category: "assembly",
+        tone: "attention",
+        summary: language === "ko" ? "조립 진도 -5.4%p" : "组装进度 -5.4%p",
+        action: language === "ko" ? "M-04 대기 확인" : "确认 M-04 待机",
+      },
+      {
+        id: "demo-attention-2",
+        rank: 2,
+        category: "signal",
+        tone: "attention",
+        summary: language === "ko" ? "I-07 신호 11분 지연" : "I-07 信号延迟 11 分钟",
+        action: language === "ko" ? "현장 교차확인" : "现场交叉确认",
+      },
+      {
+        id: "demo-attention-3",
+        rank: 3,
+        category: "material",
+        tone: "attention",
+        summary: language === "ko" ? "원자재 580kg 부족" : "原材料短缺 580kg",
+        action: language === "ko" ? "16:30 입고 확인" : "确认 16:30 入库",
+      },
+    ],
+    quality: {
+      scope: "resolved-current-injection-parts",
+      historyWindowDays: 90,
+      disclaimer: language === "ko"
+        ? "현재 불량 발생을 의미하지 않습니다"
+        : "不代表当前正在发生不良",
+      items: [
+        {
+          id: "demo-quality-1",
+          machineLabel: "I-03",
+          modelLabel: "DEMO-M1042",
+          partNumber: "DEMO-P1042",
+          phenomena: language === "ko" ? ["플래시", "파팅면 확인"] : ["飞边", "确认分型面"],
+          reportCount: 3,
+          latestReportDate: "2026-08-02",
+          matchLabel: language === "ko" ? "품번 정확 일치" : "零件号精确匹配",
+        },
+        {
+          id: "demo-quality-2",
+          machineLabel: "I-08",
+          modelLabel: "DEMO-M2208",
+          partNumber: "DEMO-P2208",
+          phenomena: language === "ko" ? ["치수 편차", "초품 승인"] : ["尺寸偏差", "首件批准"],
+          reportCount: 3,
+          latestReportDate: "2026-08-05",
+          matchLabel: language === "ko" ? "품번 정확 일치" : "零件号精确匹配",
+        },
+        {
+          id: "demo-quality-3",
+          machineLabel: "I-12",
+          modelLabel: "DEMO-M3310",
+          partNumber: "DEMO-P3310",
+          phenomena: language === "ko" ? ["스크래치", "취출부 확인"] : ["划伤", "确认取出部"],
+          reportCount: 2,
+          latestReportDate: "2026-08-01",
+          matchLabel: language === "ko" ? "품번 정확 일치" : "零件号精确匹配",
+        },
+        {
+          id: "demo-quality-4",
+          machineLabel: "I-14",
+          modelLabel: "DEMO-M4414",
+          partNumber: "DEMO-P4414",
+          phenomena: language === "ko" ? ["백화", "게이트부 확인"] : ["发白", "确认浇口部"],
+          reportCount: 1,
+          latestReportDate: "2026-07-29",
+          matchLabel: language === "ko" ? "품번 정확 일치" : "零件号精确匹配",
+        },
+      ],
+    },
+    inventory: {
+      skuCount: 38,
+      finishedAndSemifinishedQuantity: 76_100,
+      totalCarts: 128,
+      shippingNetChange: -280,
+      shippingRecordCount: 9,
+      shippingInbound: 2_840,
+      shippingOutbound: 3_120,
+      warehouses: [
+        { label: "成品仓库", skuCount: 24, quantity: 51_300, carts: 82 },
+        { label: "半成品仓库", skuCount: 14, quantity: 24_800, carts: 46 },
+      ],
+    },
+    energy: {
+      usageValue: 18.72,
+      unit: "MWh",
+      meteredMachineCount: 17,
+      machinesWithPositiveUsageCount: 14,
+      totalShots: 58_400,
+      energyPer1000ShotsKwh: 320.5,
+      efficiencyMeteredMachineCount: 14,
+      usageByMachine: [
+        { label: "I-03", value: 2.7 },
+        { label: "I-08", value: 2.4 },
+        { label: "I-12", value: 2.1 },
+        { label: "I-14", value: 1.9 },
+        { label: "I-07", value: 1.7 },
+      ],
+      hourlyTrend: createDemoEnergyTrend(),
+    },
+    weather: {
+      location: "Nanjing",
+      status: "ok",
+      isStale: false,
+      temperatureC: 31.2,
+      relativeHumidityPercent: 68,
+      windSpeedMps: 2.4,
+      conditionCode: "partly_cloudy",
+      validAt: new Date().toISOString(),
+      source: "MET Norway",
+      sourceUrl: "https://api.met.no/weatherapi/locationforecast/2.0/compact",
+      attribution: "Weather data: MET Norway",
+    },
+    moulds: {
+      total: 214,
+      mounted: 17,
+      stored: 183,
+      maintenance: 5,
+      repair: 4,
+      offsite: 5,
+      unknown: 0,
+      confirmationRequired: 4,
+      conflicts: 1,
+    },
+    freshnessLabel: language === "ko" ? "개발 데모 데이터" : "开发演示数据",
+    freshness: {
+      sourceCount: 7,
+      staleSourceCount: 0,
+      unavailableSourceCount: 0,
+    },
+    warnings: ["demo-data"],
+  };
+}

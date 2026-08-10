@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     ProductionConsoleView,
     ProductionDashboardView,
+    ProductionOverviewBoardView,
     ProductionAiBriefingView,
     ProductionAiAskView,
     ProductionExecutionUpsertView,
@@ -28,6 +29,7 @@ urlpatterns = [
     path('ai/briefing/', ProductionAiBriefingView.as_view(), name='production-ai-briefing'),
     path('ai/ask/', ProductionAiAskView.as_view(), name='production-ai-ask'),
     path('dashboard/', ProductionDashboardView.as_view(), name='production-dashboard'),
+    path('overview-board/', ProductionOverviewBoardView.as_view(), name='production-overview-board'),
     path('executions/upsert/', ProductionExecutionUpsertView.as_view(), name='production-execution-upsert'),
     path(
         'injection-downtime-confirmations/',

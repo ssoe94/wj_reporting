@@ -62,6 +62,7 @@ from .machining_reconciliation import (
     confirm_manual_report_match,
     create_manual_report,
 )
+from .overview_board import build_overview_board_snapshot, current_shanghai_business_date
 import math
 
 
@@ -1179,6 +1180,30 @@ class ProductionDashboardView(APIView):
         response_data = merged_df.to_dict('records')
 
         return Response(response_data)
+
+
+class ProductionOverviewBoardView(APIView):
+    """Read-only composite snapshot for the authenticated 3x3 video wall."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        date_str = request.query_params.get('date')
+        try:
+            target_date = parse_date(date_str) if date_str else current_shanghai_business_date()
+        except (TypeError, ValueError):
+            target_date = None
+        if not target_date:
+            return Response(
+                {"detail": "Invalid date format. Use YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        language = 'zh' if request.query_params.get('lang') == 'zh' else 'ko'
+        response = Response(build_overview_board_snapshot(target_date, language=language))
+        response['Cache-Control'] = 'no-store'
+        response['Pragma'] = 'no-cache'
+        return response
 
 
 from itertools import groupby

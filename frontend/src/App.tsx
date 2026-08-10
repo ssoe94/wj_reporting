@@ -76,6 +76,9 @@ const BoardHubPage = lazy(() => import('./domains/boards/pages/BoardHubPage').th
 const EnergyBoardPage = lazy(() => import('./domains/boards/pages/EnergyBoardPage').then((module) => ({
   default: module.EnergyBoardPage,
 })));
+const OverviewBoardPage = lazy(() => import('./domains/boards/pages/OverviewBoardPage').then((module) => ({
+  default: module.OverviewBoardPage,
+})));
 
 const queryClient = new QueryClient();
 
@@ -448,7 +451,9 @@ function AppContent() {
     || pathname === '/boards/moulds/';
   const isEnergyBoardRoute = pathname === '/boards/energy'
     || pathname === '/boards/energy/';
-  const isStandaloneBoardRoute = isInjectionBoardRoute || isMouldRoute || isEnergyBoardRoute;
+  const isOverviewBoardRoute = pathname === '/boards/overview'
+    || pathname === '/boards/overview/';
+  const isStandaloneBoardRoute = isInjectionBoardRoute || isMouldRoute || isEnergyBoardRoute || isOverviewBoardRoute;
   let breadcrumbLabel = t('brand');
   if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
   else if (pathname.startsWith('/assembly')) breadcrumbLabel = t('brand_machining');
@@ -747,6 +752,7 @@ function AppContent() {
             <Route path="/boards/injection" element={<Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense>} />
             <Route path="/boards/moulds" element={<Suspense fallback={<RouteLoading />}><MouldManagementPage /></Suspense>} />
             <Route path="/boards/energy" element={<Suspense fallback={<RouteLoading />}><EnergyBoardPage /></Suspense>} />
+            <Route path="/boards/overview" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><OverviewBoardPage /></Suspense></PrivateRoute>} />
             {/* Private routes */}
             <Route path="/" element={<PrivateRoute><PageTransition><HomeRedirect /></PageTransition></PrivateRoute>} />
             <Route path="/next/login" element={<Navigate to="/login" replace />} />
