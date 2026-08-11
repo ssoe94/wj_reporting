@@ -149,6 +149,11 @@ const COPY = {
     focusZone: "존 확대",
     overviewMode: "전체 배치",
     touchHint: "존을 확대하면 터치 셀이 커집니다.",
+    zoneOverview: "구역 요약",
+    zoneOverviewHint: "A/B/C/S 구역을 선택하면 좌표 배치가 확대됩니다.",
+    emptyCells: "빈 좌표",
+    searchResults: "검색 결과",
+    noCoordinateMatch: "일치 좌표 없음",
     dragZoneHint: "드래그하여 이동",
     openSZone: "S존 보기",
     sZoneHint: "별도 보관 위치를 확대해 확인합니다.",
@@ -341,6 +346,11 @@ const COPY = {
     focusZone: "放大区域",
     overviewMode: "全部布局",
     touchHint: "放大区域后可使用更大的触控单元格。",
+    zoneOverview: "区域概览",
+    zoneOverviewHint: "选择 A/B/C/S 区域后查看放大坐标。",
+    emptyCells: "空坐标",
+    searchResults: "搜索结果",
+    noCoordinateMatch: "无匹配坐标",
     dragZoneHint: "拖动查看",
     openSZone: "查看 S 区",
     sZoneHint: "放大查看独立存放位置。",
@@ -1119,6 +1129,7 @@ const STORAGE_TOPOLOGY = {
   S: { rows: 3, columns: 8 },
 } as const;
 
+
 function text(value: string | null | undefined, fallback = "-") {
   return value?.trim() || fallback;
 }
@@ -1293,6 +1304,10 @@ function buildZoneLayouts(board: MouldBoard): ZoneLayout[] {
       columns: STORAGE_TOPOLOGY.S.columns,
     },
   ];
+}
+
+function localizedZoneLabel(zone: ZoneLayout, language: "ko" | "zh") {
+  return language === "zh" ? `${zone.code}区` : zone.label;
 }
 
 function emptyHistory(copy: Copy) {
@@ -1612,6 +1627,56 @@ export function MouldManagementPage() {
   const displayedZones = focusedZone
     ? zones.filter((zone) => zone.code === focusedZone)
     : zones.filter((zone) => zone.code !== "S");
+  const zoneSummaries = useMemo(() => {
+    const zoneOrder = new Map(["A", "B", "C", "S"].map((code, index) => [code, index]));
+    return zones.map((zone) => {
+      const cells = zone.rows.flatMap((row) => row.cells);
+      let occupied = 0;
+      let mouldRecords = 0;
+      let conflicts = 0;
+      let inactiveSix = 0;
+      let inactiveTwelve = 0;
+      const matchingCoordinates: string[] = [];
+      let matchingMoulds = 0;
+
+      cells.forEach(({ location }) => {
+        const records = mouldsByLocation.get(location.code);
+        const recordCount = records?.length ?? location.mouldCount;
+        const matchingRecords = (records ?? []).filter((mould) => visibleIds.has(mould.instanceId));
+
+        if (recordCount > 0) occupied += 1;
+        mouldRecords += recordCount;
+        if (location.conflict || recordCount > 1) conflicts += 1;
+        if (search.trim() && matchingRecords.length) {
+          matchingCoordinates.push(location.code);
+          matchingMoulds += matchingRecords.length;
+        }
+
+        (records ?? []).forEach((mould) => {
+          if (mould.inactivityTier === "twelve_months") inactiveTwelve += 1;
+          else if (mould.inactivityTier === "six_months") inactiveSix += 1;
+        });
+      });
+
+      return {
+        zone,
+        cells,
+        occupied,
+        capacity: cells.length,
+        mouldRecords,
+        empty: Math.max(0, cells.length - occupied),
+        conflicts,
+        inactiveSix,
+        inactiveTwelve,
+        fillRate: cells.length ? Math.round((occupied / cells.length) * 100) : 0,
+        matchingCoordinates,
+        matchingMoulds,
+      };
+    }).sort((left, right) => (
+      (zoneOrder.get(left.zone.code) ?? 99) - (zoneOrder.get(right.zone.code) ?? 99)
+    ));
+  }, [mouldsByLocation, search, visibleIds, zones]);
+  const searchActive = Boolean(search.trim());
   const detailTabs: Array<{ key: DetailTab; label: string; icon: typeof History }> = [
     { key: "movement", label: copy.movement, icon: History },
     { key: "detail", label: copy.detail, icon: Info },
@@ -2005,8 +2070,104 @@ export function MouldManagementPage() {
                 <span><i className={styles.legendInactiveTwelve} />{copy.unusedTwelveMonths}</span>
               </div>
             </div>
-            <div className={`${styles.zoneList} ${focusedZone ? styles.zoneListFocused : ""}`}>
-              {displayedZones.length ? displayedZones.map((zone) => {
+            <div className={`${styles.zoneList} ${focusedZone ? styles.zoneListFocused : styles.zoneListOverview}`}>
+              {!focusedZone ? (
+                zoneSummaries.length ? (
+                  <div aria-label={copy.zoneOverview} className={styles.zoneOverviewGrid}>
+                    {zoneSummaries.map((summary) => {
+                      const { zone } = summary;
+                      const zoneLabel = localizedZoneLabel(zone, language);
+                      const zoneStyle = zone.code === "A"
+                        ? styles.zoneA
+                        : zone.code === "B"
+                          ? styles.zoneB
+                          : zone.code === "S"
+                            ? styles.zoneS
+                            : styles.zoneC;
+                      const displayedCoordinates = summary.matchingCoordinates.slice(0, 5);
+                      const remainingCoordinates = summary.matchingCoordinates.length - displayedCoordinates.length;
+                      const hasSearchMatch = summary.matchingCoordinates.length > 0;
+                      return (
+                        <button
+                          aria-label={`${zoneLabel}, ${copy.occupiedCells} ${summary.occupied}/${summary.capacity}, ${copy.mouldRecords} ${summary.mouldRecords}, ${searchActive ? `${copy.searchResults} ${summary.matchingMoulds}${copy.listCount}, ` : ""}${copy.focusZone}`}
+                          className={`${styles.zoneSummaryCard} ${zoneStyle} ${searchActive ? styles.zoneSummaryCardSearching : ""} ${hasSearchMatch ? styles.zoneSummaryCardMatched : ""}`}
+                          key={zone.code}
+                          onClick={() => setFocusedZone(zone.code)}
+                          style={{
+                            "--zone-fill-rate": `${summary.fillRate}%`,
+                          } as CSSProperties}
+                          type="button"
+                        >
+                          <span className={styles.zoneSummaryTopline}>
+                            <span className={styles.zoneSummaryIdentity}>
+                              <span className={styles.zoneSummaryMonogram}>{zone.code}</span>
+                              <span>
+                                <strong>{zoneLabel}</strong>
+                                <small>{copy.zoneOverviewHint}</small>
+                              </span>
+                            </span>
+                            <span className={styles.zoneSummaryAction}>
+                              <Expand aria-hidden="true" size={18} />
+                            </span>
+                          </span>
+
+                          <span className={styles.zoneSummaryVisual}>
+                            <span className={styles.zoneSummaryOccupancy}>
+                              <strong>{summary.fillRate}%</strong>
+                              <small>{copy.occupiedCells}</small>
+                              <span aria-hidden="true"><i /></span>
+                            </span>
+                            <span
+                              aria-hidden="true"
+                              className={styles.zonePreviewMap}
+                            >
+                              {summary.cells.map(({ location }) => {
+                                const records = mouldsByLocation.get(location.code);
+                                const recordCount = records?.length ?? location.mouldCount;
+                                const conflict = location.conflict || recordCount > 1;
+                                const inactiveTwelve = records?.some((mould) => mould.inactivityTier === "twelve_months");
+                                const inactiveSix = !inactiveTwelve && records?.some((mould) => mould.inactivityTier === "six_months");
+                                const searchMatch = searchActive && Boolean(records?.some((mould) => visibleIds.has(mould.instanceId)));
+                                return (
+                                  <i
+                                    className={`${styles.zonePreviewCell} ${recordCount ? styles.zonePreviewOccupied : styles.zonePreviewEmpty} ${inactiveSix ? styles.zonePreviewInactiveSix : ""} ${inactiveTwelve ? styles.zonePreviewInactiveTwelve : ""} ${conflict ? styles.zonePreviewConflict : ""} ${searchActive && !searchMatch ? styles.zonePreviewFiltered : ""} ${searchMatch ? styles.zonePreviewMatch : ""}`}
+                                    key={location.code}
+                                  />
+                                );
+                              })}
+                            </span>
+                          </span>
+
+                          <span className={styles.zoneSummaryMetrics}>
+                            <span><small>{copy.occupiedCells}</small><strong>{summary.occupied}/{summary.capacity}</strong></span>
+                            <span><small>{copy.mouldRecords}</small><strong>{summary.mouldRecords}</strong></span>
+                            <span><small>{copy.emptyCells}</small><strong>{summary.empty}</strong></span>
+                            <span><small>{copy.conflictCount}</small><strong>{summary.conflicts}</strong></span>
+                          </span>
+
+                          {searchActive ? (
+                            <span className={`${styles.zoneSearchResult} ${hasSearchMatch ? styles.zoneSearchResultMatched : ""}`}>
+                              <span><Search aria-hidden="true" size={15} /><strong>{copy.searchResults}</strong><b>{summary.matchingMoulds}{copy.listCount}</b></span>
+                              {hasSearchMatch ? (
+                                <span className={styles.zoneSearchCoordinates}>
+                                  {displayedCoordinates.map((coordinate) => <i key={coordinate}>{coordinate}</i>)}
+                                  {remainingCoordinates > 0 ? <i>+{remainingCoordinates}</i> : null}
+                                </span>
+                              ) : <small>{copy.noCoordinateMatch}</small>}
+                            </span>
+                          ) : (
+                            <span className={styles.zoneSummaryAges}>
+                              <span><i className={styles.zoneAgeSix} />{copy.unusedSixMonths}<strong>{summary.inactiveSix}</strong></span>
+                              <span><i className={styles.zoneAgeTwelve} />{copy.unusedTwelveMonths}<strong>{summary.inactiveTwelve}</strong></span>
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : <div className={styles.emptyState}><MapPin aria-hidden="true" size={20} />{copy.noLayout}</div>
+              ) : displayedZones.length ? displayedZones.map((zone) => {
+                const zoneLabel = localizedZoneLabel(zone, language);
                 const zoneCells = zone.rows.flatMap((row) => row.cells);
                 const occupied = zoneCells.filter(({ location }) => (mouldsByLocation.get(location.code)?.length ?? location.mouldCount) > 0).length;
                 const mouldRecords = zoneCells.reduce((total, { location }) => total + (mouldsByLocation.get(location.code)?.length ?? location.mouldCount), 0);
@@ -2021,7 +2182,7 @@ export function MouldManagementPage() {
                 return (
                   <section className={`${styles.zone} ${zoneStyle} ${focusedZone ? styles.focusedZone : ""}`} key={zone.code}>
                     <header>
-                      <h3>{zone.label}</h3>
+                      <h3>{zoneLabel}</h3>
                       <div className={styles.zoneStats}>
                         <span>{copy.occupiedCells}<strong>{occupied}/{zoneCells.length}</strong></span>
                         <span>{copy.mouldRecords}<strong>{mouldRecords}</strong></span>
@@ -2034,7 +2195,7 @@ export function MouldManagementPage() {
                       </button>
                     </header>
                     <div
-                      aria-label={focusedZone ? `${zone.label} · ${copy.dragZoneHint}` : undefined}
+                      aria-label={focusedZone ? `${zoneLabel} · ${copy.dragZoneHint}` : undefined}
                       className={`${styles.coordinateRows} ${focusedZone ? styles.pannableZone : ""} ${isZonePanning ? styles.zonePanning : ""}`}
                       onPointerCancel={endZonePan}
                       onPointerDown={startZonePan}
@@ -2103,12 +2264,6 @@ export function MouldManagementPage() {
                   </section>
                 );
               }) : <div className={styles.emptyState}><MapPin aria-hidden="true" size={20} />{copy.noLayout}</div>}
-              {!focusedZone ? (
-                <button className={styles.sZoneLauncher} onClick={() => setFocusedZone("S")} type="button">
-                  <span><strong>{copy.openSZone}</strong><small>{copy.sZoneHint}</small></span>
-                  <Expand aria-hidden="true" size={18} />
-                </button>
-              ) : null}
             </div>
           </section>
         </div>
