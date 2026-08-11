@@ -1247,13 +1247,13 @@ function EnergyPanel({ model, language }: { model: OverviewBoardModel; language:
           <div className={styles.energyTrendHeading}><strong>{copy.energyTrendTitle}</strong><span>{copy.energyTrendSubtitle}</span></div>
           {hasTrend ? (
             <ResponsiveContainer height="100%" width="100%">
-              <ComposedChart data={chartData} margin={{ top: 2, right: 6, bottom: 0, left: -10 }}>
+              <ComposedChart data={chartData} margin={{ top: 0, right: 4, bottom: -8, left: -12 }}>
                 <CartesianGrid stroke="#dce5ee" strokeDasharray="3 5" vertical={false} />
                 <XAxis axisLine={{ stroke: "#9eb0c7" }} dataKey="label" fontSize="0.56rem" interval={3} tickLine={false} />
-                <YAxis axisLine={false} domain={[0, "auto"]} fontSize="0.56rem" tickLine={false} width={42} />
+                <YAxis axisLine={false} domain={[0, "auto"]} fontSize="0.56rem" tickLine={false} width={38} />
                 <Tooltip formatter={(value, name) => [`${formatDecimal(Number(value), 1)} kWh`, name]} />
-                <Legend align="right" height={24} iconSize={8} verticalAlign="top" wrapperStyle={{ fontSize: "0.56rem" }} />
-                <Bar barSize={8} dataKey="usageKwh" fill="#8db7df" isAnimationActive={false} name={copy.hourlyEnergy} radius={[3, 3, 0, 0]} />
+                <Legend align="right" height={18} iconSize={8} verticalAlign="top" wrapperStyle={{ fontSize: "0.54rem" }} />
+                <Bar barSize={9} dataKey="usageKwh" fill="#8db7df" isAnimationActive={false} name={copy.hourlyEnergy} radius={[3, 3, 0, 0]} />
                 <Line connectNulls={false} dataKey="movingAverage8hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage8h} stroke="#155fb2" strokeWidth={2.4} type="monotone" />
                 <Line connectNulls={false} dataKey="movingAverage12hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage12h} stroke="#657d96" strokeDasharray="6 4" strokeWidth={2.1} type="monotone" />
                 <Line connectNulls={false} dataKey="movingAverage24hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage24h} stroke="#d88718" strokeDasharray="2 4" strokeWidth={2.2} type="monotone" />
