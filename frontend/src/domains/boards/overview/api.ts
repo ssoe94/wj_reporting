@@ -16,6 +16,9 @@ import type {
   OverviewBoardResult,
   OverviewTone,
   ProductionProcess,
+  QualityAiAttentionItem,
+  QualityAiLocalizedText,
+  QualityAiSummary,
   QualityAttentionItem,
   WeatherStatus,
 } from "./types";
@@ -382,6 +385,86 @@ function normalizeNestedQualityItems(value: unknown): QualityAttentionItem[] {
   return rows;
 }
 
+function normalizeQualityAiLocalizedText(value: unknown): QualityAiLocalizedText | null {
+  const source = asRecord(value);
+  const ko = firstString(source, ["ko"]);
+  const zh = firstString(source, ["zh"]);
+  return ko || zh ? { ko, zh } : null;
+}
+
+function normalizeQualityAiRankedLabels(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const source = asRecord(item);
+    return {
+      label: normalizeQualityAiLocalizedText(source.label),
+      count: firstNumber(source, ["count"]),
+    };
+  }).filter((item) => item.label !== null);
+}
+
+function normalizeQualityAiAttentionItems(value: unknown): QualityAiAttentionItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item, index) => {
+    const source = asRecord(item);
+    const checkpoints = asRecord(source.checkpoints);
+    return {
+      sourceKey: firstString(source, ["source_key"]) ?? `quality-ai-${index}`,
+      machineName: firstString(source, ["machine_name"]),
+      machineNumber: firstNumber(source, ["machine_number"]),
+      partPrefix: firstString(source, ["part_prefix"]),
+      partNumbers: asStringArray(source.part_nos),
+      modelNames: asStringArray(source.model_names),
+      matchingReportCount: firstNumber(source, ["matching_report_count"]),
+      latestReportAt: firstString(source, ["latest_report_dt"]),
+      headline: normalizeQualityAiLocalizedText(source.headline),
+      checkpoints: {
+        ko: asStringArray(checkpoints.ko),
+        zh: asStringArray(checkpoints.zh),
+      },
+      problemTypes: normalizeQualityAiRankedLabels(source.problem_types),
+      locations: normalizeQualityAiRankedLabels(source.locations),
+    };
+  });
+}
+
+function normalizeQualityAiSummary(value: unknown): QualityAiSummary | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = asRecord(value);
+  const rawStatus = firstString(source, ["status"])?.toLowerCase();
+  const status: QualityAiSummary["status"] = rawStatus === "ready"
+    || rawStatus === "pending"
+    || rawStatus === "stale"
+    ? rawStatus
+    : "unavailable";
+  const totalsValue = firstValue(source, ["totals"]);
+  const totals = totalsValue && typeof totalsValue === "object" && !Array.isArray(totalsValue)
+    ? asRecord(totalsValue)
+    : null;
+  return {
+    status,
+    businessDate: firstString(source, ["business_date"]),
+    sourcePlanHash: firstString(source, ["source_plan_hash"]),
+    generatedAt: firstString(source, ["generated_at"]),
+    completedAt: firstString(source, ["completed_at"]),
+    modelId: firstString(source, ["model_id"]),
+    modelName: firstString(source, ["model_name"]),
+    schemaVersion: firstString(source, ["schema_version"]),
+    generationSource: firstString(source, ["generation_source"]),
+    llmFallback: asBoolean(firstValue(source, ["llm_fallback"])),
+    llmFallbackCode: firstString(source, ["llm_fallback_code"]),
+    summary: normalizeQualityAiLocalizedText(source.summary),
+    disclaimer: normalizeQualityAiLocalizedText(source.disclaimer),
+    totals: totals ? {
+      planGroupCount: firstNumber(totals, ["plan_group_count"]),
+      matchedReportCount: firstNumber(totals, ["matched_report_count"]),
+      withoutHistoryCount: firstNumber(totals, ["without_history_count"]),
+    } : null,
+    attentionItems: normalizeQualityAiAttentionItems(source.attention_items),
+    reason: firstString(source, ["reason"]),
+  };
+}
+
 function normalizeInventory(value: unknown): InventoryStatus {
   const source = asRecord(value);
   const finishedGoods = asRecord(firstValue(source, ["finished_and_semifinished", "finished_goods", "finished_product"]));
@@ -727,6 +810,7 @@ function normalizeOverviewResponse(
       historyWindowDays: firstNumber(quality, ["history_window_days", "lookback_days"]) ?? 90,
       disclaimer: firstString(quality, ["disclaimer"]),
       items: normalizedQualityItems,
+      aiSummary: normalizeQualityAiSummary(firstValue(quality, ["ai_summary", "aiSummary"])),
     },
     energy: normalizeEnergy(source.energy),
     weather: normalizeWeather(source.weather),

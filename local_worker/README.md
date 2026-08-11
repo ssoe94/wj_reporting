@@ -17,6 +17,16 @@ python worker.py --once
 
 With `AI_WORKER_ENQUEUE_PERIODIC=true`, the worker asks the Render backend to ensure one Korean and one Chinese daily-analysis job exist for the current Asia/Shanghai hour. Repeated polling is idempotent within the hour.
 
+The Worker also claims server-scheduled `quality_image_analysis` jobs whose mode is
+`daily_attention_summary`. These jobs are bilingual, use only the
+`gemma4_26b_a4b` target, and summarize the server-provided all-history quality
+aggregates for the current production plan. If Gemma is unavailable or returns
+an invalid/ungrounded contract, the job completes with a deterministic bilingual
+fallback; the browser never connects to the local model directly.
+All-history report identifiers stay in the server-owned grounding payload. The
+Gemma prompt and result use compact aggregate evidence keys; the Worker validates
+those keys and calculates de-duplicated counts before completion.
+
 For continuous Mac Studio operation, use the Keychain-backed launch agents in
 [`scripts/local_ai`](../scripts/local_ai/README.md). The launch agents keep the
 MLX server and Worker running without putting `AI_WORKER_TOKEN` in a plist or

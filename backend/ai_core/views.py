@@ -22,6 +22,13 @@ from production.ai_types import (
 )
 
 from .models import AiJob
+from .quality_daily import (
+    QUALITY_DAILY_MODE,
+    QUALITY_DAILY_TRIGGER,
+    enqueue_daily_quality_summary,
+    is_daily_quality_summary_job,
+    restore_authoritative_quality_result,
+)
 from .serializers import (
     AiJobClaimSerializer,
     AiJobCompleteSerializer,
@@ -509,10 +516,22 @@ class AiWorkerPeriodicEnqueueView(APIView):
                     jobs.append(job)
                     created_count += 1
 
+        quality_enqueue = enqueue_daily_quality_summary()
+        if quality_enqueue.get('created'):
+            created_count += 1
+        quality_job = quality_enqueue.get('job')
+
         return Response({
             'schedule_slot': schedule_slot,
             'created_count': created_count,
             'jobs': AiJobResultSerializer(jobs, many=True).data,
+            'quality_summary': {
+                key: value
+                for key, value in quality_enqueue.items()
+                if key != 'job'
+            } | {
+                'job': AiJobResultSerializer(quality_job).data if quality_job else None,
+            },
         })
 
 
@@ -535,7 +554,18 @@ class AiWorkerClaimView(APIView):
         job_types = serializer.validated_data.get('job_types') or [
             AiJob.JOB_TYPE_PRODUCTION_DAILY,
             AiJob.JOB_TYPE_PRODUCTION_MACHINE,
+            AiJob.JOB_TYPE_QUALITY_IMAGE,
         ]
+        non_quality_job_types = [
+            job_type for job_type in job_types
+            if job_type != AiJob.JOB_TYPE_QUALITY_IMAGE
+        ]
+        eligible_job_types = Q(job_type__in=non_quality_job_types)
+        if AiJob.JOB_TYPE_QUALITY_IMAGE in job_types:
+            eligible_job_types |= Q(
+                job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+                scope__mode=QUALITY_DAILY_MODE,
+            )
         now = timezone.now()
         stale_before = now - timedelta(seconds=ai_job_timeout_seconds())
 
@@ -548,11 +578,13 @@ class AiWorkerClaimView(APIView):
             queryset = (
                 AiJob.objects
                 .select_for_update()
-                .filter(status=AiJob.STATUS_PENDING, job_type__in=job_types)
+                .filter(status=AiJob.STATUS_PENDING)
+                .filter(eligible_job_types)
                 .annotate(
                     trigger_priority=Case(
-                        When(scope__trigger='hourly', then=Value(0)),
-                        default=Value(1),
+                        When(scope__trigger=QUALITY_DAILY_TRIGGER, then=Value(0)),
+                        When(scope__trigger='hourly', then=Value(1)),
+                        default=Value(2),
                         output_field=IntegerField(),
                     )
                 )
@@ -605,9 +637,11 @@ class AiWorkerJobTransitionView(APIView):
         serializer = AiJobCompleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         job.status = AiJob.STATUS_COMPLETED
-        job.result_payload = restore_authoritative_production_result(
-            job,
-            serializer.validated_data['result_payload'],
+        worker_result = serializer.validated_data['result_payload']
+        job.result_payload = (
+            restore_authoritative_quality_result(job, worker_result)
+            if is_daily_quality_summary_job(job)
+            else restore_authoritative_production_result(job, worker_result)
         )
         job.model_name = serializer.validated_data.get('model_name') or ''
         job.prompt_version = serializer.validated_data.get('prompt_version') or ''

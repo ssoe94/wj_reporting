@@ -1432,7 +1432,9 @@
 }
 
 .qualityHeading .cardTitle {
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .qualityHeading .cardTitle > svg {
@@ -1465,7 +1467,20 @@
 .qualityHeading > span svg {
   width: 0.85rem;
   height: 0.85rem;
+  flex: 0 0 auto;
   color: var(--green);
+}
+
+.qualityDisclaimer {
+  max-width: 52%;
+  overflow: hidden;
+}
+
+.qualityDisclaimer > b {
+  overflow: hidden;
+  font-weight: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qualityViewport {
@@ -1474,110 +1489,373 @@
   overflow: hidden;
 }
 
-.qualityBody {
+.qualityAiViewport {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.28rem;
+}
+
+.qualityAiRibbon {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.34rem;
+  margin: 0;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d1c1e1;
+  border-radius: 0.42rem;
+  background: #f4f0f9;
+  color: #573c75;
+  font-size: 0.65rem;
+  font-weight: 780;
+}
+
+.qualityAiRibbon > svg {
+  width: 0.82rem;
+  height: 0.82rem;
+  flex: 0 0 auto;
+}
+
+.qualityAiRibbon > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qualitySlideStage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.qualitySlideBody {
   position: absolute;
   inset: 0;
   display: grid;
   min-height: 0;
-  align-content: start;
-  grid-auto-rows: minmax(0, 1fr);
-  gap: 0.34rem;
+  grid-template-rows: minmax(0, 1fr);
 }
 
-.qualityRow {
+.qualitySlide {
   display: grid;
+  width: 100%;
+  height: 100%;
   min-width: 0;
-  min-height: 2.72rem;
-  grid-template-columns: 3.55rem 7.15rem minmax(0, 1fr) 4.65rem;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.38rem 0.58rem;
-  border: 1px solid #d1deea;
-  border-radius: 0.46rem;
+  min-height: 0;
+  grid-template-rows: 3rem 3.4rem minmax(0, 1fr) 1rem;
+  gap: 0.28rem;
+  padding: 0.36rem 0.56rem;
+  overflow: hidden;
+  border: 1px solid #cadbe9;
+  border-left: 0.28rem solid var(--blue);
+  border-radius: 0.58rem;
   background: #ffffff;
 }
 
-.qualityMachine {
+.qualityAiSlide {
+  border-left-color: #7651a7;
+  background: #fcfbff;
+}
+
+.qualityHistorySlide {
+  grid-template-rows: 3rem 3.4rem minmax(0, 1fr);
+}
+
+.qualitySlideHeader {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 4.7rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.54rem;
+  padding-bottom: 0.24rem;
+  overflow: hidden;
+  border-bottom: 1px solid #d8e2ec;
+}
+
+.qualitySlideHeader > .qualitySlideStatus:only-child {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+.qualitySlideMachine,
+.qualitySlideModel {
   display: grid;
   min-width: 0;
   align-content: center;
-  gap: 0.08rem;
-  color: var(--navy);
+  gap: 0.1rem;
 }
 
-.qualityMachine > strong {
+.qualitySlideMachine > strong,
+.qualitySlideModel > strong,
+.qualitySlideModel > small {
   overflow: hidden;
-  font-size: 1.02rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qualitySlideMachine > strong {
+  color: var(--navy);
+  font-size: 1.48rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 0.96;
+}
+
+.qualitySlideMachine > small {
+  color: #56718c;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.qualitySlideModel {
+  padding-left: 0.72rem;
+  border-left: 1px solid #d5e0ea;
+}
+
+.qualitySlideModel > span {
+  color: #617990;
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
+.qualitySlideModel > strong {
+  color: #0f55a0;
+  font-size: 1.04rem;
+  font-weight: 880;
+  line-height: 1.05;
+}
+
+.qualitySlideModel > small {
+  color: #536f89;
+  font-size: 0.64rem;
+  font-weight: 720;
+}
+
+.qualitySlideStatus {
+  display: flex;
+  max-width: 11.2rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  overflow: hidden;
+  padding: 0.34rem 0.52rem;
+  border: 1px solid #9db8d2;
+  border-radius: 99px;
+  background: #edf5fc;
+  color: #2a5d91;
+  font-size: 0.66rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qualityAiSlide .qualitySlideStatus {
+  border-color: #b9a2d2;
+  background: #f3eef9;
+  color: #694396;
+}
+
+.qualitySlideStatus[data-state="pending"],
+.qualitySlideStatus[data-state="stale"] {
+  border-color: #e5ae7d;
+  background: #fff5eb;
+  color: var(--orange);
+}
+
+.qualitySlideStatus svg {
+  width: 0.86rem;
+  height: 0.86rem;
+  flex: 0 0 auto;
+}
+
+.qualitySlideNarrative {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.1rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #cfdeeb;
+  border-radius: 0.48rem;
+  background: #eef5fb;
+}
+
+.qualityAiSlide .qualitySlideNarrative {
+  border-color: #d4c7e2;
+  background: #f5f1fa;
+}
+
+.qualitySlideNarrative > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.3rem;
+  overflow: hidden;
+  color: #315f8c;
+  font-size: 0.6rem;
+  font-weight: 850;
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.qualityMachine > small {
-  color: #58718a;
-  font-size: 0.58rem;
-  font-weight: 800;
-  line-height: 1.05;
-  white-space: nowrap;
+.qualitySlideNarrative > span svg {
+  width: 0.86rem;
+  height: 0.86rem;
+  flex: 0 0 auto;
 }
 
-.qualityModel {
-  display: grid;
-  overflow: hidden;
-  padding-left: 0.65rem;
-  border-left: 1px solid #d3deea;
-  color: #1352a0;
-  line-height: 1.2;
-}
-
-.qualityModel b,
-.qualityModel small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.qualityModel b {
-  font-size: 0.8rem;
-  font-weight: 750;
-}
-
-.qualityModel small {
-  margin-top: 0.16rem;
-  color: #607892;
-  font-size: 0.59rem;
-  font-weight: 650;
-}
-
-.qualityRow p {
-  display: flex;
+.qualitySlideNarrative > strong {
+  display: -webkit-box;
   min-width: 0;
-  align-items: center;
-  gap: 0.4rem;
   overflow: hidden;
-  color: #1d3b5c;
-  font-size: 0.8rem;
+  color: #173b5d;
+  font-size: 0.96rem;
+  font-weight: 820;
+  line-height: 1.08;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.qualitySlideDetails {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.qualitySlideDetails > article {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  align-content: center;
+  gap: 0.16rem;
+  padding: 0.32rem 0.46rem;
+  overflow: hidden;
+  border: 1px solid #d2deea;
+  border-radius: 0.48rem;
+  background: #f9fbfd;
+}
+
+.qualitySlideDetails > article > span {
+  color: #5b738b;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.qualitySlideDetails > article > strong {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: #173d61;
+  font-size: 0.9rem;
+  font-weight: 850;
+  line-height: 1.18;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.qualitySlideDetails > article > small {
+  overflow: hidden;
+  color: #61778d;
+  font-size: 0.62rem;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.qualityRow p svg {
-  width: 1.18rem;
-  height: 1.18rem;
-  flex: 0 0 auto;
-  color: #e29a05;
-  fill: #e29a05;
-  stroke: #ffffff;
+.qualitySlideDetails > .qualityAiGrounding {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0.52rem;
 }
 
-.qualityRow > small {
+.qualityAiGrounding > div {
   display: grid;
-  justify-items: end;
-  color: #476581;
-  font-size: 0.62rem;
-  font-weight: 650;
-  line-height: 1.35;
+  min-width: 0;
+  align-content: center;
+  gap: 0.24rem;
+}
+
+.qualityAiGrounding > div + div {
+  padding-left: 0.52rem;
+  border-left: 1px solid #d8cce5;
+}
+
+.qualityAiGrounding > div > span {
+  color: #5b738b;
+  font-size: 0.64rem;
+  font-weight: 850;
+}
+
+.qualityAiGrounding > div > strong {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: #413157;
+  font-size: 0.94rem;
+  font-weight: 870;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.qualitySlideDetails > .qualityAiCheckpoint > span {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  color: #087c4e;
+}
+
+.qualityAiCheckpoint > span svg {
+  width: 0.84rem;
+  height: 0.84rem;
+  flex: 0 0 auto;
+}
+
+.qualitySlideFooter {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  overflow: hidden;
+  color: #62788d;
+  font-size: 0.64rem;
+  font-weight: 720;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.qualitySlideFooter > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qualitySlideEmpty {
+  display: flex;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  color: #59728a;
+  font-size: 0.86rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.qualityHistorySlide > .qualitySlideEmpty:last-child {
+  grid-row: 2 / -1;
+}
+
+.qualityAiSlide > .qualitySlideEmpty:nth-child(2) {
+  grid-row: 2 / 4;
+}
+
+.qualityAiSlide > .qualitySlideEmpty:nth-child(2) + .qualitySlideFooter {
+  grid-row: 4;
 }
 
 .qualityControls {

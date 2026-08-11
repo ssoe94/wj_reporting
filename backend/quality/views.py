@@ -1,8 +1,6 @@
-from collections import Counter, defaultdict
 import logging
-import re
+from zoneinfo import ZoneInfo
 
-from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import viewsets, filters, status
@@ -17,7 +15,7 @@ from django.utils.decorators import method_decorator
 from .models import QualityReport, Supplier
 from .serializers import QualityReportSerializer, SupplierSerializer
 from .cloudinary_utils import get_upload_params
-from production.models import ProductionPlan
+from .daily_attention import build_daily_quality_attention
 
 logger = logging.getLogger(__name__)
 
@@ -82,167 +80,17 @@ class QualityReportViewSet(viewsets.ModelViewSet):
 class DailyQualityAttentionView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @staticmethod
-    def _normalize_part_no(part_no: str | None) -> str:
-        return re.sub(r'\s+', '', (part_no or '').upper())
-
-    @classmethod
-    def _part_prefix(cls, part_no: str | None) -> str:
-        return cls._normalize_part_no(part_no)[:9]
-
-    @staticmethod
-    def _extract_machine_number(machine_name: str | None) -> int | None:
-        if not machine_name:
-            return None
-        match = re.search(r'(\d+)\s*호기', machine_name)
-        if match:
-            return int(match.group(1))
-        match = re.search(r'-(\d+)\s*$', machine_name)
-        if match:
-            return int(match.group(1))
-        return None
-
     def get(self, request, *args, **kwargs):
         date_str = request.query_params.get('date')
-        target_date = parse_date(date_str) if date_str else timezone.localdate()
+        target_date = (
+            parse_date(date_str)
+            if date_str
+            else timezone.now().astimezone(ZoneInfo('Asia/Shanghai')).date()
+        )
         if not target_date:
             return Response({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        plan_rows = list(
-            ProductionPlan.objects.filter(
-                plan_date=target_date,
-                plan_type='injection',
-                planned_quantity__gt=0,
-            )
-            .order_by('machine_name', 'sequence', 'id')
-            .values('machine_name', 'model_name', 'part_no', 'planned_quantity', 'sequence', 'lot_no')
-        )
-
-        prefixes = sorted({
-            prefix
-            for prefix in (self._part_prefix(row.get('part_no')) for row in plan_rows)
-            if prefix
-        })
-
-        report_groups: dict[str, list[QualityReport]] = defaultdict(list)
-        if prefixes:
-            report_filter = Q()
-            for prefix in prefixes:
-                report_filter |= Q(part_no__istartswith=prefix)
-
-            reports = (
-                QualityReport.objects.filter(report_filter)
-                .exclude(part_no='')
-                .order_by('-report_dt', '-id')
-            )
-
-            for report in reports:
-                prefix = self._part_prefix(report.part_no)
-                if prefix:
-                    report_groups[prefix].append(report)
-
-        grouped_plan_rows: dict[tuple[str, str], dict] = {}
-        for row in plan_rows:
-            machine_name = row.get('machine_name') or ''
-            part_no = self._normalize_part_no(row.get('part_no'))
-            prefix = self._part_prefix(part_no)
-            if not machine_name or not prefix:
-                continue
-
-            group_key = (machine_name, prefix)
-            group = grouped_plan_rows.setdefault(
-                group_key,
-                {
-                    'machine_name': machine_name,
-                    'machine_number': self._extract_machine_number(machine_name),
-                    'sequence': row.get('sequence'),
-                    'part_prefix': prefix,
-                    'part_nos': [],
-                    'model_names': [],
-                    'lot_nos': [],
-                    'planned_quantity': 0,
-                    'plan_row_count': 0,
-                },
-            )
-
-            row_sequence = row.get('sequence')
-            current_sequence = group.get('sequence')
-            if row_sequence is not None:
-                group['sequence'] = row_sequence if current_sequence is None else min(current_sequence, row_sequence)
-
-            if part_no and part_no not in group['part_nos']:
-                group['part_nos'].append(part_no)
-
-            model_name = (row.get('model_name') or '').strip()
-            if model_name and model_name not in group['model_names']:
-                group['model_names'].append(model_name)
-
-            lot_no = (row.get('lot_no') or '').strip()
-            if lot_no and lot_no not in group['lot_nos']:
-                group['lot_nos'].append(lot_no)
-
-            group['planned_quantity'] += int(round(row.get('planned_quantity') or 0))
-            group['plan_row_count'] += 1
-
-        items = []
-        without_history = 0
-        total_matching_reports = 0
-
-        for group in grouped_plan_rows.values():
-            prefix = group['part_prefix']
-            matched_reports = report_groups.get(prefix, [])
-            top_phenomena = Counter(
-                (report.phenomenon or '').strip()
-                for report in matched_reports
-                if (report.phenomenon or '').strip()
-            ).most_common(3)
-
-            reports_data = [
-                {
-                    'id': report.id,
-                    'report_dt': report.report_dt.isoformat(),
-                    'section': report.section,
-                    'part_no': report.part_no,
-                    'judgement': report.judgement,
-                    'defect_rate': report.defect_rate,
-                    'phenomenon': report.phenomenon or '',
-                    'disposition': report.disposition or '',
-                    'action_result': report.action_result or '',
-                    'images': [img for img in [report.image1, report.image2, report.image3] if img],
-                }
-                for report in matched_reports
-            ]
-
-            if not matched_reports:
-                without_history += 1
-            total_matching_reports += len(matched_reports)
-
-            items.append({
-                'machine_name': group['machine_name'],
-                'machine_number': group['machine_number'],
-                'sequence': group['sequence'],
-                'part_prefix': prefix,
-                'part_nos': group['part_nos'],
-                'model_names': group['model_names'],
-                'lot_nos': group['lot_nos'],
-                'planned_quantity': int(group['planned_quantity']),
-                'plan_row_count': int(group['plan_row_count']),
-                'matching_report_count': len(matched_reports),
-                'latest_report_dt': reports_data[0]['report_dt'] if reports_data else None,
-                'top_phenomena': [
-                    {'phenomenon': phenomenon, 'count': count}
-                    for phenomenon, count in top_phenomena
-                ],
-                'reports': reports_data,
-            })
-
-        return Response({
-            'date': target_date.isoformat(),
-            'total_plan_count': len(items),
-            'total_matching_reports': total_matching_reports,
-            'without_history_count': without_history,
-            'items': items,
-        })
+        return Response(build_daily_quality_attention(target_date))
 
 
 class SupplierViewSet(viewsets.ModelViewSet):

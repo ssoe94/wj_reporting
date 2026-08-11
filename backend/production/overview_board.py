@@ -22,6 +22,12 @@ from django.db import DatabaseError
 from django.db.models import Count, Max, Sum
 from django.utils import timezone
 
+from ai_core.quality_daily import (
+    QUALITY_ATTENTION_AI_SCHEMA_VERSION,
+    QUALITY_DAILY_DISCLAIMER,
+    QUALITY_DAILY_MODEL_ID,
+    quality_summary_for_overview,
+)
 from injection.models import InjectionMonitoringRecord, MouldDataSnapshot
 from injection.mould_snapshots import BOARD_SNAPSHOT_KEY, decorate_board_payload
 from inventory.models import DailyInventorySnapshot, FinishedGoodsTransactionSnapshot
@@ -1884,6 +1890,31 @@ def build_overview_board_snapshot(target_date: date, *, language: str = "ko") ->
         }
     warnings.extend(quality_warnings)
     traces.append(quality_trace)
+    try:
+        quality["ai_summary"] = quality_summary_for_overview(target_date)
+    except DatabaseError:
+        # Local AI is optional wall context; deterministic quality history must
+        # remain available even when the AI job table cannot be read.
+        quality["ai_summary"] = {
+            "status": "unavailable",
+            "business_date": target_date.isoformat(),
+            "source_plan_hash": None,
+            "generated_at": None,
+            "completed_at": None,
+            "model_id": QUALITY_DAILY_MODEL_ID,
+            "model_name": "",
+            "schema_version": QUALITY_ATTENTION_AI_SCHEMA_VERSION,
+            "summary": None,
+            "disclaimer": dict(QUALITY_DAILY_DISCLAIMER),
+            "totals": None,
+            "match_basis": "part_prefix_9",
+            "history_coverage": "all_history",
+            "attention_items": [],
+            "reason": "ai_job_store_unavailable",
+            "generation_source": None,
+            "llm_fallback": False,
+            "llm_fallback_code": "",
+        }
 
     try:
         energy, energy_warnings, energy_source, energy_trace = _build_energy(

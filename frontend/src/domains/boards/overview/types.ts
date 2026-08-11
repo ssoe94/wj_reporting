@@ -144,6 +144,58 @@ export type QualityAttentionItem = {
   matchLabel: string | null;
 };
 
+export type QualityAiLocalizedText = {
+  ko: string | null;
+  zh: string | null;
+};
+
+export type QualityAiAttentionItem = {
+  sourceKey: string;
+  machineName: string | null;
+  machineNumber: number | null;
+  partPrefix: string | null;
+  partNumbers: string[];
+  modelNames: string[];
+  matchingReportCount: number | null;
+  latestReportAt: string | null;
+  headline: QualityAiLocalizedText | null;
+  checkpoints: {
+    ko: string[];
+    zh: string[];
+  };
+  problemTypes: Array<{
+    label: QualityAiLocalizedText | null;
+    count: number | null;
+  }>;
+  locations: Array<{
+    label: QualityAiLocalizedText | null;
+    count: number | null;
+  }>;
+};
+
+export type QualityAiSummary = {
+  status: "ready" | "pending" | "stale" | "unavailable";
+  businessDate: string | null;
+  sourcePlanHash: string | null;
+  generatedAt: string | null;
+  completedAt: string | null;
+  modelId: string | null;
+  modelName: string | null;
+  schemaVersion: string | null;
+  generationSource: string | null;
+  llmFallback: boolean;
+  llmFallbackCode: string | null;
+  summary: QualityAiLocalizedText | null;
+  disclaimer: QualityAiLocalizedText | null;
+  totals: {
+    planGroupCount: number | null;
+    matchedReportCount: number | null;
+    withoutHistoryCount: number | null;
+  } | null;
+  attentionItems: QualityAiAttentionItem[];
+  reason: string | null;
+};
+
 export type InventoryStatus = {
   skuCount: number | null;
   finishedAndSemifinishedQuantity: number | null;
@@ -306,6 +358,7 @@ export type OverviewBoardModel = {
     historyWindowDays: number;
     disclaimer: string | null;
     items: QualityAttentionItem[];
+    aiSummary: QualityAiSummary | null;
   };
   energy: EnergyStatus;
   weather: WeatherStatus;

@@ -237,6 +237,9 @@ class OverviewBoardQualityContractTests(TestCase):
         self.assertEqual(part["top_phenomena"], [{"phenomenon": "플래시", "report_count": 1}])
         self.assertNotIn("defect_rate", json.dumps(snapshot["quality"], ensure_ascii=False))
         self.assertIn("현재 불량 발생을 의미하지 않습니다", snapshot["quality"]["disclaimer"])
+        self.assertEqual(snapshot["quality"]["ai_summary"]["status"], "unavailable")
+        self.assertEqual(snapshot["quality"]["ai_summary"]["reason"], "no_plan")
+        self.assertEqual(snapshot["quality"]["ai_summary"]["attention_items"], [])
 
     def test_active_machine_without_in_progress_allocation_is_not_guessed(self):
         with patch(

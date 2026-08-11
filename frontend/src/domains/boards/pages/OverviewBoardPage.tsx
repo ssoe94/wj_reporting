@@ -23,6 +23,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Signal,
+  Sparkles,
   TimerReset,
   TrendingDown,
   Workflow,
@@ -64,6 +65,8 @@ import type {
   OutboundTodayDetailSummary,
   OverviewBoardModel,
   ProductionProcess,
+  QualityAiAttentionItem,
+  QualityAiLocalizedText,
   QualityAttentionItem,
 } from "@/domains/boards/overview/types";
 import { useStoredLanguage, type AppLanguage } from "@/shared/i18n/language";
@@ -71,7 +74,8 @@ import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate"
 import { useRetainedValue } from "@/shared/hooks/useRetainedValue";
 import styles from "./OverviewBoardPage.module.css";
 
-const QUALITY_WINDOW_SIZE = 3;
+const QUALITY_WINDOW_SIZE = 1;
+const QUALITY_AI_WINDOW_SIZE = 1;
 const QUALITY_ROTATION_MS = 12_000;
 const MACHINE_WINDOW_SIZE = 3;
 const MACHINE_ROTATION_MS = 10_000;
@@ -107,6 +111,12 @@ const ONE_ROW_ROLL_VARIANTS = {
   enter: (direction: number) => ({ y: direction > 0 ? "calc(33.333% + 0.113rem)" : "calc(-33.333% - 0.113rem)" }),
   center: { y: "0%" },
   exit: (direction: number) => ({ y: direction > 0 ? "calc(-33.333% - 0.113rem)" : "calc(33.333% + 0.113rem)" }),
+};
+
+const FULL_SLIDE_ROLL_VARIANTS = {
+  enter: (direction: number) => ({ y: direction > 0 ? "calc(100% + 0.34rem)" : "calc(-100% - 0.34rem)" }),
+  center: { y: "0%" },
+  exit: (direction: number) => ({ y: direction > 0 ? "calc(-100% - 0.34rem)" : "calc(100% + 0.34rem)" }),
 };
 
 const COPY = {
@@ -191,13 +201,38 @@ const COPY = {
     assemblyPace: "조립 진도",
     quality: "생산 모델 · 품질 이력",
     exactPartMatch: "품번 정확 일치",
-    historicalDisclaimer: "현재 불량 발생을 의미하지 않습니다",
+    historicalDisclaimer: "과거 이력 · 현재 불량 아님",
     noQualityData: "현재 생산 품번과 일치하는 최근 품질 이력이 없습니다.",
+    qualityAiDaily: "Gemma 일일 품질 요약",
+    qualityAiPending: "Gemma 생성 중",
+    qualityAiStale: "Gemma 갱신 대기",
+    qualityAiUnavailable: "Gemma 미수신",
+    qualityAiNoPlan: "Gemma 분석 대상 없음",
+    qualityAiFailed: "Gemma 생성 실패",
+    qualityAiDisconnected: "Gemma 연결 불가",
+    qualityAiRetry: "Gemma 결과 재생성 대기",
+    qualityAiGenerated: "생성",
+    qualityAiSource: "분석",
+    qualityAiProblemTypes: "반복 문제 유형",
+    qualityAiLocations: "주요 발생 위치",
+    qualityAiCheck: "확인 포인트",
+    qualityAiEvidence: "근거 {count}건",
+    qualityAiNoAttention: "특정 주의 항목이 제시되지 않았습니다.",
+    qualityHistorySummary: "전체 이력 요약",
+    qualityHistoryPhenomena: "과거 품질 현상",
+    qualityHistoryEvidence: "이력 근거",
+    qualityModelLabel: "현재 생산 모델",
+    qualityPartLabel: "품번",
+    qualityLatest: "최근",
     recentReports: "최근 {days}일 {count}건",
     previousQualityPage: "이전 품질 이력",
     nextQualityPage: "다음 품질 이력",
+    previousQualityAiPage: "이전 Gemma 품질 주의",
+    nextQualityAiPage: "다음 Gemma 품질 주의",
     pauseRotation: "품질 이력 자동 전환 일시정지",
     resumeRotation: "품질 이력 자동 전환 재생",
+    pauseQualityAiRotation: "Gemma 품질 주의 자동 전환 일시정지",
+    resumeQualityAiRotation: "Gemma 품질 주의 자동 전환 재생",
     inventory: "출고 실행 · JIT / CSKD",
     outboundToday: "오늘 출고단 상세",
     outboundActualTarget: "실적 / 목표",
@@ -347,13 +382,38 @@ const COPY = {
     assemblyPace: "组装进度",
     quality: "生产型号 · 品质记录",
     exactPartMatch: "零件号精确匹配",
-    historicalDisclaimer: "不代表当前正在发生不良",
+    historicalDisclaimer: "历史记录 · 非当前不良",
     noQualityData: "近期没有与当前生产零件号精确匹配的品质记录。",
+    qualityAiDaily: "Gemma 每日品质摘要",
+    qualityAiPending: "Gemma 生成中",
+    qualityAiStale: "Gemma 待更新",
+    qualityAiUnavailable: "Gemma 未接收",
+    qualityAiNoPlan: "Gemma 无分析对象",
+    qualityAiFailed: "Gemma 生成失败",
+    qualityAiDisconnected: "Gemma 无法连接",
+    qualityAiRetry: "Gemma 结果待重新生成",
+    qualityAiGenerated: "生成",
+    qualityAiSource: "分析",
+    qualityAiProblemTypes: "重复问题类型",
+    qualityAiLocations: "主要发生位置",
+    qualityAiCheck: "确认要点",
+    qualityAiEvidence: "依据 {count} 件",
+    qualityAiNoAttention: "未提示特定注意项目。",
+    qualityHistorySummary: "全部历史摘要",
+    qualityHistoryPhenomena: "历史品质现象",
+    qualityHistoryEvidence: "历史依据",
+    qualityModelLabel: "当前生产型号",
+    qualityPartLabel: "零件号",
+    qualityLatest: "最近",
     recentReports: "近 {days} 天 {count} 件",
     previousQualityPage: "上一页品质记录",
     nextQualityPage: "下一页品质记录",
+    previousQualityAiPage: "上一项 Gemma 品质注意",
+    nextQualityAiPage: "下一项 Gemma 品质注意",
     pauseRotation: "暂停品质记录自动切换",
     resumeRotation: "继续品质记录自动切换",
+    pauseQualityAiRotation: "暂停 Gemma 品质注意自动切换",
+    resumeQualityAiRotation: "继续 Gemma 品质注意自动切换",
     inventory: "出库执行 · JIT / CSKD",
     outboundToday: "今日出库单明细",
     outboundActualTarget: "实发 / 应发",
@@ -542,6 +602,34 @@ function replaceCount(template: string, days: number, count: number | null) {
 
 function replaceSingleCount(template: string, count: number) {
   return template.replace("{count}", String(count));
+}
+
+function getQualityAiText(value: QualityAiLocalizedText | null, language: AppLanguage) {
+  return value?.[language]?.trim() || null;
+}
+
+function formatQualityAiRankedLabels(
+  values: QualityAiAttentionItem["problemTypes"] | QualityAiAttentionItem["locations"],
+  language: AppLanguage,
+) {
+  return values
+    .map((item) => {
+      const label = getQualityAiText(item.label, language);
+      if (!label) return null;
+      return item.count === null ? label : `${label} ${formatInteger(item.count, language)}`;
+    })
+    .filter((item): item is string => Boolean(item))
+    .join(" · ");
+}
+
+function formatQualityAiListPreview(values: string[], language: AppLanguage, fallback = "—") {
+  const normalizedValues = values.map((value) => value.trim()).filter(Boolean);
+  if (normalizedValues.length === 0) return fallback;
+  const remainingCount = normalizedValues.length - 1;
+  if (remainingCount === 0) return normalizedValues[0];
+  return language === "ko"
+    ? `${normalizedValues[0]} 외 ${remainingCount}`
+    : `${normalizedValues[0]} 另 ${remainingCount}`;
 }
 
 function formatSignedPercentPoints(value: number | null) {
@@ -954,32 +1042,129 @@ function OperationsPanel({ model, language }: { model: OverviewBoardModel; langu
   );
 }
 
-function QualityRow({
+function QualityHistorySlide({
   item,
   language,
   historyWindowDays,
+  aiStatusLabel,
+  aiStatusState,
 }: {
   item: QualityAttentionItem;
   language: AppLanguage;
   historyWindowDays: number;
+  aiStatusLabel: string;
+  aiStatusState: "pending" | "stale" | "unavailable";
 }) {
   const copy = COPY[language];
   const machineIdentity = getMachineIdentity({ label: item.machineLabel }, language);
+  const phenomena = item.phenomena.length > 0 ? item.phenomena.join(" · ") : "—";
+  const historyLabel = replaceCount(copy.recentReports, historyWindowDays, item.reportCount);
   return (
-    <article className={styles.qualityRow}>
-      <div className={styles.qualityMachine} title={item.machineLabel}>
-        <strong>{machineIdentity.machineLabel}</strong>
-        {machineIdentity.tonnageLabel ? <small>{machineIdentity.tonnageLabel}</small> : null}
+    <article className={`${styles.qualitySlide} ${styles.qualityHistorySlide}`}>
+      <header className={styles.qualitySlideHeader}>
+        <div className={styles.qualitySlideMachine} title={item.machineLabel}>
+          <strong>{machineIdentity.machineLabel}</strong>
+          {machineIdentity.tonnageLabel ? <small>{machineIdentity.tonnageLabel}</small> : null}
+        </div>
+        <div className={styles.qualitySlideModel} title={`${item.modelLabel}${item.partNumber ? ` · ${item.partNumber}` : ""}`}>
+          <span>{copy.qualityModelLabel}</span>
+          <strong>{item.modelLabel}</strong>
+          <small>{copy.qualityPartLabel} {item.partNumber ?? "—"}</small>
+        </div>
+        <span className={styles.qualitySlideStatus} data-state={aiStatusState} role="status">{aiStatusLabel}</span>
+      </header>
+      <div className={styles.qualitySlideNarrative}>
+        <span><Clock3 aria-hidden="true" />{copy.qualityHistorySummary}</span>
+        <strong title={`${historyLabel} · ${phenomena}`}>{historyLabel} · {phenomena}</strong>
       </div>
-      <span className={styles.qualityModel} title={`${item.modelLabel}${item.partNumber ? ` · ${item.partNumber}` : ""}`}>
-        <b>{item.modelLabel}</b>
-        <small>{item.partNumber ? `${item.partNumber} · ` : ""}{copy.exactPartMatch}</small>
-      </span>
-      <p><Clock3 aria-hidden="true" />{item.phenomena.length > 0 ? item.phenomena.join(" / ") : "—"}</p>
-      <small>
-        <span>{replaceCount(copy.recentReports, historyWindowDays, item.reportCount)}</span>
-        <span>{formatShortDate(item.latestReportDate)}</span>
-      </small>
+      <div className={styles.qualitySlideDetails}>
+        <article>
+          <span>{copy.qualityHistoryPhenomena}</span>
+          <strong title={phenomena}>{phenomena}</strong>
+        </article>
+        <article className={styles.qualityHistoryEvidence}>
+          <span>{copy.qualityHistoryEvidence}</span>
+          <strong>{historyLabel}</strong>
+          <small>{copy.qualityLatest} {formatShortDate(item.latestReportDate)} · {copy.exactPartMatch}</small>
+        </article>
+      </div>
+    </article>
+  );
+}
+
+function QualityAiSlide({
+  item,
+  language,
+  generatedAt,
+  sourceLabel,
+  totalEvidenceCount,
+}: {
+  item: QualityAiAttentionItem;
+  language: AppLanguage;
+  generatedAt: string | null;
+  sourceLabel: string;
+  totalEvidenceCount: number | null;
+}) {
+  const copy = COPY[language];
+  const machineLabel = item.machineName
+    ?? (item.machineNumber === null ? "—" : `I-${String(item.machineNumber).padStart(2, "0")}`);
+  const machineIdentity = getMachineIdentity({ label: machineLabel, machineNumber: item.machineNumber }, language);
+  const headline = getQualityAiText(item.headline, language) ?? "—";
+  const modelLabel = formatQualityAiListPreview(item.modelNames, language);
+  const partLabel = formatQualityAiListPreview(item.partNumbers, language, item.partPrefix ?? "—");
+  const modelTitle = item.modelNames.filter(Boolean).join(" · ") || "—";
+  const partTitle = item.partNumbers.filter(Boolean).join(" · ") || item.partPrefix || "—";
+  const problemTypes = formatQualityAiRankedLabels(item.problemTypes, language) || "—";
+  const locations = formatQualityAiRankedLabels(item.locations, language) || "—";
+  const checkpoints = item.checkpoints[language].filter(Boolean);
+  const checkpointLabel = checkpoints.join(" · ") || "—";
+  const evidenceLabel = copy.qualityAiEvidence.replace(
+    "{count}",
+    item.matchingReportCount === null ? "—" : formatInteger(item.matchingReportCount, language),
+  );
+
+  return (
+    <article className={`${styles.qualitySlide} ${styles.qualityAiSlide}`}>
+      <header className={styles.qualitySlideHeader}>
+        <div className={styles.qualitySlideMachine} title={machineLabel}>
+          <strong>{machineIdentity.machineLabel}</strong>
+          {machineIdentity.tonnageLabel ? <small>{machineIdentity.tonnageLabel}</small> : null}
+        </div>
+        <div className={styles.qualitySlideModel} title={`${modelTitle} · ${partTitle}`}>
+          <span>{copy.qualityModelLabel}</span>
+          <strong>{modelLabel}</strong>
+          <small>{copy.qualityPartLabel} {partLabel}</small>
+        </div>
+        <span className={styles.qualitySlideStatus}><Sparkles aria-hidden="true" />{copy.qualityAiDaily}</span>
+      </header>
+      <div className={styles.qualitySlideNarrative}>
+        <span><Sparkles aria-hidden="true" />{copy.qualityHistorySummary}</span>
+        <strong title={headline}>{headline}</strong>
+      </div>
+      <div className={styles.qualitySlideDetails}>
+        <article className={styles.qualityAiGrounding} title={`${copy.qualityAiProblemTypes}: ${problemTypes} · ${copy.qualityAiLocations}: ${locations}`}>
+          <div>
+            <span>{copy.qualityAiProblemTypes}</span>
+            <strong>{problemTypes}</strong>
+          </div>
+          <div>
+            <span>{copy.qualityAiLocations}</span>
+            <strong>{locations}</strong>
+          </div>
+        </article>
+        <article className={styles.qualityAiCheckpoint} title={checkpointLabel}>
+          <span><CheckCircle2 aria-hidden="true" />{copy.qualityAiCheck}</span>
+          <strong>{checkpointLabel}</strong>
+          <small>{evidenceLabel} · {copy.qualityLatest} {formatShortDate(item.latestReportAt)}</small>
+        </article>
+      </div>
+      <footer className={styles.qualitySlideFooter}>
+        <span>{copy.qualityAiGenerated} {formatShortDate(generatedAt)} {formatShanghaiTime(generatedAt)}</span>
+        <span>{copy.qualityAiSource} {sourceLabel}</span>
+        {totalEvidenceCount === null ? null : (
+          <span>{copy.qualityAiEvidence.replace("{count}", formatInteger(totalEvidenceCount, language))}</span>
+        )}
+      </footer>
     </article>
   );
 }
@@ -992,15 +1177,60 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [interactionPaused, setInteractionPaused] = useState(false);
   const qualityItems = useMemo(() => [...model.quality.items], [model.quality.items]);
+  const qualityAi = model.quality.aiSummary;
+  const qualityAiSummaryText = getQualityAiText(qualityAi?.summary ?? null, language);
+  const showQualityAi = qualityAi?.status === "ready"
+    && qualityAi.businessDate === model.businessDate
+    && qualityAi.modelId === "gemma4_26b_a4b"
+    && qualityAi.schemaVersion === "quality-daily-attention-ai.v1"
+    && !qualityAi.llmFallback
+    && Boolean(qualityAi.sourcePlanHash)
+    && Boolean(qualityAiSummaryText);
+  const qualityAiItems = useMemo(
+    () => showQualityAi ? [...(qualityAi?.attentionItems ?? [])] : [],
+    [qualityAi?.attentionItems, showQualityAi],
+  );
   const visibleItems = useMemo(
     () => getCircularWindow(qualityItems, startIndex, QUALITY_WINDOW_SIZE),
     [qualityItems, startIndex],
   );
-  const positionCount = qualityItems.length > QUALITY_WINDOW_SIZE ? qualityItems.length : 1;
+  const visibleQualityAiItems = useMemo(
+    () => getCircularWindow(qualityAiItems, startIndex, QUALITY_AI_WINDOW_SIZE),
+    [qualityAiItems, startIndex],
+  );
+  const activeItemCount = showQualityAi ? qualityAiItems.length : qualityItems.length;
+  const activeWindowSize = showQualityAi ? QUALITY_AI_WINDOW_SIZE : QUALITY_WINDOW_SIZE;
+  const positionCount = activeItemCount > activeWindowSize ? activeItemCount : 1;
   const canRotate = positionCount > 1;
   const autoPaused = reducedMotion || manuallyPaused || interactionPaused || !canRotate;
+  const qualityAiFallbackState = qualityAi?.status === "pending" && qualityAi.businessDate === model.businessDate
+    ? "pending"
+    : qualityAi?.status === "stale"
+      || Boolean(qualityAi?.businessDate && qualityAi.businessDate !== model.businessDate)
+      ? "stale"
+      : "unavailable";
+  const qualityAiFallbackLabel = qualityAiFallbackState === "pending"
+    ? copy.qualityAiPending
+    : qualityAiFallbackState === "stale"
+      ? copy.qualityAiStale
+      : qualityAi?.reason === "no_plan"
+        ? copy.qualityAiNoPlan
+        : qualityAi?.reason === "generation_failed"
+          ? copy.qualityAiFailed
+          : qualityAi?.reason === "ai_job_store_unavailable"
+            ? copy.qualityAiDisconnected
+            : qualityAi?.reason === "llm_fallback"
+              ? copy.qualityAiRetry
+              : copy.qualityAiUnavailable;
 
-  useEffect(() => setStartIndex(0), [model.businessDate, qualityItems.length, language]);
+  useEffect(() => setStartIndex(0), [
+    model.businessDate,
+    qualityItems.length,
+    qualityAiItems.length,
+    qualityAi?.sourcePlanHash,
+    showQualityAi,
+    language,
+  ]);
 
   useEffect(() => {
     if (autoPaused) return;
@@ -1015,6 +1245,8 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
     setRollDirection(step >= 0 ? 1 : -1);
     setStartIndex((current) => (current + step + positionCount) % positionCount);
   };
+  const qualityAiGeneratedAt = qualityAi?.completedAt ?? qualityAi?.generatedAt ?? null;
+  const qualityAiSourceLabel = qualityAi?.modelName ?? "Gemma 4";
 
   return (
     <section
@@ -1029,33 +1261,101 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
     >
       <header className={`${styles.qualityHeading} ${styles.standardPanelHeading}`}>
         <div className={styles.cardTitle}><ShieldCheck aria-hidden="true" /><h2 id="quality-title">{copy.quality}</h2></div>
-        <span><CheckCircle2 aria-hidden="true" />{model.quality.disclaimer ?? copy.historicalDisclaimer}</span>
+        <span className={styles.qualityDisclaimer}>
+          <CheckCircle2 aria-hidden="true" />
+          <b title={copy.historicalDisclaimer}>{copy.historicalDisclaimer}</b>
+        </span>
       </header>
-      <div className={styles.qualityViewport}>
-        <AnimatePresence custom={rollDirection} initial={false} mode="sync">
-          <motion.div
-            animate="center"
-            className={styles.qualityBody}
-            custom={rollDirection}
-            exit={reducedMotion ? undefined : "exit"}
-            initial={reducedMotion ? false : "enter"}
-            key={`${startIndex}-${language}`}
-            transition={{ duration: reducedMotion ? 0 : 0.56, ease: [0.22, 1, 0.36, 1] }}
-            variants={ONE_ROW_ROLL_VARIANTS}
-          >
-            {visibleItems.length > 0
-              ? visibleItems.map((item) => (
-                  <QualityRow historyWindowDays={model.quality.historyWindowDays} item={item} key={item.id} language={language} />
-                ))
-              : <p className={styles.panelEmpty}>{copy.noQualityData}</p>}
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      {showQualityAi ? (
+        <div className={`${styles.qualityViewport} ${styles.qualityAiViewport}`}>
+          <p className={styles.qualityAiRibbon} title={qualityAiSummaryText ?? undefined}>
+            <Sparkles aria-hidden="true" />
+            <span>{qualityAiSummaryText}</span>
+          </p>
+          <div className={styles.qualitySlideStage}>
+            <AnimatePresence custom={rollDirection} initial={false} mode="sync">
+              <motion.div
+                animate="center"
+                className={styles.qualitySlideBody}
+                custom={rollDirection}
+                exit={reducedMotion ? undefined : "exit"}
+                initial={reducedMotion ? false : "enter"}
+                key={`ai-${qualityAi?.sourcePlanHash}-${startIndex}-${language}`}
+                transition={{ duration: reducedMotion ? 0 : 0.58, ease: [0.22, 1, 0.36, 1] }}
+                variants={FULL_SLIDE_ROLL_VARIANTS}
+              >
+                {visibleQualityAiItems.length > 0
+                  ? visibleQualityAiItems.map((item) => (
+                      <QualityAiSlide
+                        generatedAt={qualityAiGeneratedAt}
+                        item={item}
+                        key={item.sourceKey}
+                        language={language}
+                        sourceLabel={qualityAiSourceLabel}
+                        totalEvidenceCount={qualityAi?.totals?.matchedReportCount ?? null}
+                      />
+                    ))
+                  : (
+                      <article className={`${styles.qualitySlide} ${styles.qualityAiSlide}`}>
+                        <header className={styles.qualitySlideHeader}>
+                          <span className={styles.qualitySlideStatus}><Sparkles aria-hidden="true" />{copy.qualityAiDaily}</span>
+                        </header>
+                        <p className={styles.qualitySlideEmpty}>{copy.qualityAiNoAttention}</p>
+                        <footer className={styles.qualitySlideFooter}>
+                          <span>{copy.qualityAiGenerated} {formatShortDate(qualityAiGeneratedAt)} {formatShanghaiTime(qualityAiGeneratedAt)}</span>
+                          <span>{copy.qualityAiSource} {qualityAiSourceLabel}</span>
+                        </footer>
+                      </article>
+                    )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.qualityViewport}>
+          <AnimatePresence custom={rollDirection} initial={false} mode="sync">
+            <motion.div
+              animate="center"
+              className={styles.qualitySlideBody}
+              custom={rollDirection}
+              exit={reducedMotion ? undefined : "exit"}
+              initial={reducedMotion ? false : "enter"}
+              key={`${startIndex}-${language}`}
+              transition={{ duration: reducedMotion ? 0 : 0.58, ease: [0.22, 1, 0.36, 1] }}
+              variants={FULL_SLIDE_ROLL_VARIANTS}
+            >
+              {visibleItems.length > 0
+                ? visibleItems.map((item) => (
+                    <QualityHistorySlide
+                      aiStatusLabel={qualityAiFallbackLabel}
+                      aiStatusState={qualityAiFallbackState}
+                      historyWindowDays={model.quality.historyWindowDays}
+                      item={item}
+                      key={item.id}
+                      language={language}
+                    />
+                  ))
+                : (
+                    <article className={`${styles.qualitySlide} ${styles.qualityHistorySlide}`}>
+                      <header className={styles.qualitySlideHeader}>
+                        <span className={styles.qualitySlideStatus} data-state={qualityAiFallbackState} role="status" title={qualityAi?.reason ?? undefined}>
+                          {qualityAiFallbackLabel}
+                        </span>
+                      </header>
+                      <p className={styles.qualitySlideEmpty}>{copy.noQualityData}</p>
+                    </article>
+                  )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      )}
       <footer className={styles.qualityControls}>
-        <button aria-label={copy.previousQualityPage} disabled={!canRotate} onClick={() => moveWindow(-1)} type="button"><ChevronLeft aria-hidden="true" /></button>
+        <button aria-label={showQualityAi ? copy.previousQualityAiPage : copy.previousQualityPage} disabled={!canRotate} onClick={() => moveWindow(-1)} type="button"><ChevronLeft aria-hidden="true" /></button>
         <span>{startIndex + 1} / {positionCount}</span>
         <button
-          aria-label={manuallyPaused ? copy.resumeRotation : copy.pauseRotation}
+          aria-label={showQualityAi
+            ? manuallyPaused ? copy.resumeQualityAiRotation : copy.pauseQualityAiRotation
+            : manuallyPaused ? copy.resumeRotation : copy.pauseRotation}
           aria-pressed={manuallyPaused}
           disabled={reducedMotion || !canRotate}
           onClick={() => setManuallyPaused((current) => !current)}
@@ -1063,7 +1363,7 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
         >
           {manuallyPaused || reducedMotion ? <CirclePlay aria-hidden="true" /> : <CirclePause aria-hidden="true" />}
         </button>
-        <button aria-label={copy.nextQualityPage} disabled={!canRotate} onClick={() => moveWindow(1)} type="button"><ChevronRight aria-hidden="true" /></button>
+        <button aria-label={showQualityAi ? copy.nextQualityAiPage : copy.nextQualityPage} disabled={!canRotate} onClick={() => moveWindow(1)} type="button"><ChevronRight aria-hidden="true" /></button>
       </footer>
     </section>
   );

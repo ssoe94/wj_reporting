@@ -14,11 +14,21 @@ from typing import Any
 from dotenv import load_dotenv
 
 try:
-    from .job_handlers import production_daily_analysis, production_machine_analysis, production_question_analysis
+    from .job_handlers import (
+        production_daily_analysis,
+        production_machine_analysis,
+        production_question_analysis,
+        quality_daily_attention_summary,
+    )
     from .llm_client import LocalLlmClient
     from .render_client import RenderClient, WORKER_VERSION
 except ImportError:
-    from job_handlers import production_daily_analysis, production_machine_analysis, production_question_analysis
+    from job_handlers import (
+        production_daily_analysis,
+        production_machine_analysis,
+        production_question_analysis,
+        quality_daily_attention_summary,
+    )
     from llm_client import LocalLlmClient
     from render_client import RenderClient, WORKER_VERSION
 
@@ -26,6 +36,7 @@ except ImportError:
 HANDLERS = {
     "production_daily_analysis": production_daily_analysis,
     "production_machine_analysis": production_machine_analysis,
+    "quality_image_analysis": quality_daily_attention_summary,
 }
 
 QWEN_MODEL_ID = "qwen35"
@@ -1220,6 +1231,9 @@ def handle_job(
     if not handler:
         raise ValueError(f"Unsupported job type: {job_type}")
 
+    if hasattr(handler, "validate_job"):
+        handler.validate_job(job)
+
     deterministic = handler.build_dummy_result(job, model_name="deterministic-local-worker")
     if use_llm and llm:
         result: dict[str, Any] = {}
@@ -1243,16 +1257,28 @@ def handle_job(
             initial_timeout = getattr(handler, "INITIAL_TIMEOUT_SECONDS", None)
             if initial_timeout is not None:
                 llm_options["timeout_seconds"] = max(1, int(initial_timeout))
+            required_output_schema = getattr(handler, "REQUIRED_OUTPUT_SCHEMA", {
+                "title": "string",
+                "summary": "string",
+            })
             result = llm.structured_analysis(handler.SYSTEM_PROMPT, {
                 "job_type": job_type,
                 "scope": job.get("scope") or {},
                 "input_payload": llm_payload,
-                "required_output_schema": {
-                    "title": "string",
-                    "summary": "string",
-                },
+                "required_output_schema": required_output_schema,
             }, **llm_options)
             first_candidate = dict(result or {})
+            if hasattr(handler, "normalize_llm_result"):
+                normalized = handler.normalize_llm_result(
+                    result,
+                    deterministic,
+                    model_name,
+                    llm_payload,
+                    grounding_payload,
+                )
+                normalized["llm_attempted"] = True
+                normalized["llm_attempts"] = attempts
+                return normalized, handler.PROMPT_VERSION
             try:
                 normalized = normalize_result(result, deterministic, model_name, grounding_payload)
             except LlmGroundingError:
@@ -1305,7 +1331,17 @@ def handle_job(
                 deterministic["llm_review_summary"] = review_summary.strip()[:2000]
             return deterministic, handler.PROMPT_VERSION
 
-    deterministic["source"] = "deterministic"
+    if getattr(handler, "REQUIRE_LLM_FOR_READY_RESULT", False):
+        deterministic.update({
+            "source": "local_llm_guarded_fallback",
+            "llm_fallback": True,
+            "llm_attempted": False,
+            "llm_attempts": 0,
+            "llm_fallback_code": "llm_disabled",
+            "llm_error": "Local LLM execution was disabled for this Worker run.",
+        })
+    else:
+        deterministic["source"] = "deterministic"
     return deterministic, handler.PROMPT_VERSION
 
 
@@ -1340,31 +1376,59 @@ def run_once(
 
     for job in jobs:
         job_id = int(job["id"])
+        handler = handler_for_job(job)
+        allow_unavailable_fallback = bool(
+            fallback_to_deterministic
+            and handler
+            and getattr(handler, "ALLOW_UNAVAILABLE_MODEL_FALLBACK", False)
+        )
         selected_llm = llm
         selected_model_name = model_name
         selected_model_id = default_model_id
+        model_unavailable_error = ""
         try:
             selected_model_id = requested_model_id(job, default_model_id)
             if model_targets is not None:
                 target = model_targets.get(selected_model_id)
                 if target is None:
-                    raise ValueError(f"Local AI model is not configured: {selected_model_id}")
-                selected_llm = target.client
-                selected_model_name = target.model_name
-            if use_llm:
+                    if not allow_unavailable_fallback:
+                        raise ValueError(f"Local AI model is not configured: {selected_model_id}")
+                    selected_llm = None
+                    selected_model_name = ""
+                    model_unavailable_error = f"Local AI model is not configured: {selected_model_id}"
+                else:
+                    selected_llm = target.client
+                    selected_model_name = target.model_name
+            job_use_llm = use_llm
+            if use_llm and not model_unavailable_error:
                 if selected_llm is None:
-                    raise RuntimeError(f"Local AI model is not configured: {selected_model_id}")
-                readiness_check = getattr(selected_llm, "is_ready", None)
-                if callable(readiness_check) and not readiness_check(timeout=3):
-                    raise RuntimeError(f"Local AI model is unavailable: {selected_model_id}")
+                    model_unavailable_error = f"Local AI model is not configured: {selected_model_id}"
+                else:
+                    readiness_check = getattr(selected_llm, "is_ready", None)
+                    if callable(readiness_check) and not readiness_check(timeout=3):
+                        model_unavailable_error = f"Local AI model is unavailable: {selected_model_id}"
+                if model_unavailable_error:
+                    if not allow_unavailable_fallback:
+                        raise RuntimeError(model_unavailable_error)
+                    job_use_llm = False
             client.start_job(job_id)
             result, prompt_version = handle_job(
                 job,
-                use_llm,
+                job_use_llm,
                 selected_llm,
                 selected_model_name,
                 fallback_to_deterministic,
             )
+            if model_unavailable_error:
+                result.update({
+                    "llm_fallback": True,
+                    "llm_attempted": True,
+                    "llm_attempts": 0,
+                    "llm_fallback_code": "model_unavailable",
+                    "llm_error": model_unavailable_error,
+                    "model_name": selected_model_name,
+                    "source": "local_llm_guarded_fallback",
+                })
             result["model_id"] = selected_model_id
             if result.get("llm_fallback") and result.get("llm_error"):
                 fallback_code = result.get("llm_fallback_code") or "model_error"
