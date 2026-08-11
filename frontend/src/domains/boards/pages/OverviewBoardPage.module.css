@@ -1488,7 +1488,7 @@
   display: grid;
   min-width: 0;
   min-height: 2.72rem;
-  grid-template-columns: 2.8rem 7.6rem minmax(0, 1fr) 4.65rem;
+  grid-template-columns: 3.55rem 7.15rem minmax(0, 1fr) 4.65rem;
   align-items: center;
   gap: 0.55rem;
   padding: 0.38rem 0.58rem;
@@ -1498,8 +1498,27 @@
 }
 
 .qualityMachine {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 0.08rem;
   color: var(--navy);
-  font-size: 1rem;
+}
+
+.qualityMachine > strong {
+  overflow: hidden;
+  font-size: 1.02rem;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qualityMachine > small {
+  color: #58718a;
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1.05;
+  white-space: nowrap;
 }
 
 .qualityModel {
@@ -2500,135 +2519,369 @@
   transform: translateY(0);
 }
 
-/* The brand cell is intentionally distinct: a stronger title with a compact, full-height information block. */
+/* The brand cell is intentionally distinct: an atmospheric command-stage with one continuous information surface. */
 .headerCard {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: 3.35rem minmax(0, 1fr);
   align-content: stretch;
-  gap: 0.3rem;
+  gap: 0.12rem;
+  padding: 0.42rem 0.72rem 0.44rem;
+  overflow: hidden;
+  border-color: #b8cce2;
+  background:
+    radial-gradient(circle at 82% 42%, rgba(210, 236, 255, 0.42), transparent 38%),
+    #fbfdff;
+  box-shadow: 0 0.4rem 1.4rem rgba(21, 55, 93, 0.08);
+}
+
+.brandRow {
+  height: 3.35rem;
+  gap: 0.38rem;
 }
 
 .headerContent {
+  position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
   height: 100%;
-  grid-template-rows: minmax(0, 2.8fr) minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1.5fr) minmax(0, 0.53fr) minmax(0, 0.47fr) auto;
   align-content: stretch;
   align-self: stretch;
-  gap: 0.28rem;
+  gap: 0.2rem;
+  overflow: hidden;
 }
 
 .brandRow > img {
-  width: 3.35rem;
-  height: 3.35rem;
+  width: 3.5rem;
+  height: 3.5rem;
 }
 
 .titleButton strong {
-  font-size: 1.92rem;
+  font-size: 2.02rem;
   font-weight: 880;
+  letter-spacing: -0.055em;
 }
 
 .headerHero {
+  position: relative;
   min-height: 0;
   align-self: stretch;
   align-items: stretch;
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  gap: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.weatherOrbAsset {
+  position: absolute;
+  z-index: 0;
+  top: -16%;
+  right: -2%;
+  width: 69%;
+  height: 158%;
+  object-fit: contain;
+  object-position: right center;
+  opacity: 0.9;
+  transform: translateY(-8px);
+  pointer-events: none;
 }
 
 .brandSummary {
-  grid-template-rows: minmax(0, 1.65fr) minmax(0, 1fr);
-  align-content: stretch;
-  gap: 0.32rem;
+  position: relative;
+  z-index: 2;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: center;
+  gap: 0.12rem;
+  padding: 0.36rem 0.7rem 0.3rem 0.34rem;
 }
 
 .businessDate {
-  height: 100%;
-  padding: 0.38rem 0.42rem;
+  height: auto;
+  justify-content: flex-start;
+  gap: 0.38rem;
+  padding: 0 0 0.28rem;
+  border: 0;
+  border-bottom: 1px solid rgba(166, 191, 216, 0.72);
+  background: transparent;
+  color: #24507d;
+  font-size: 0.94rem;
+  line-height: 1.05;
+  transform: translateY(10px);
+}
+
+.businessDate svg {
+  width: 1.28rem;
+  height: 1.28rem;
+}
+
+.businessTime {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  min-width: 0;
+  align-self: start;
+  justify-items: start;
+  gap: 0.06rem;
+  color: var(--navy);
+  white-space: nowrap;
+  transform: translate(28px, 12px);
+}
+
+.headerCard .businessTime {
+  margin: 0.68rem 0 0 0.72rem;
+}
+
+.businessClock {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  font-family: Inter, "Noto Sans KR", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 2.42rem;
+  font-stretch: condensed;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  letter-spacing: -0.055em;
+  line-height: 0.94;
+  transform: scaleX(0.9) scaleY(1.12);
+  transform-origin: left center;
+}
+
+.businessClock strong,
+.businessClock em {
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+}
+
+.businessClock strong {
+  color: #061e51;
+}
+
+.businessClock em {
+  color: #1687a5;
+  font-style: normal;
+}
+
+.businessTime small {
+  margin-left: 0.16rem;
+  color: #557895;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
 }
 
 .weatherCard {
+  position: relative;
+  z-index: 2;
   height: 100%;
-  grid-template-rows: minmax(0, 1.65fr) minmax(0, 1fr);
-  align-content: stretch;
+  grid-template-rows: minmax(0, 1fr);
+  align-content: center;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-.headerPaceSummary {
+.weatherCard::after {
+  content: none;
+}
+
+.weatherStale {
+  background: transparent;
+}
+
+.headerMetrics {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  min-width: 0;
   min-height: 0;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: stretch;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.headerPaceSummary,
+.weatherMetrics {
+  height: 100%;
   align-self: stretch;
+  gap: 0;
+  padding: 0;
 }
 
 .headerPaceSummary article {
   height: 100%;
-  padding: 0.3rem 0.32rem;
+  padding: 0.2rem 0.28rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.headerPaceSummary article + article,
+.weatherMetrics article + article {
+  border-left: 1px solid #d8e4ee;
+}
+
+.headerPaceSummary .headerPaceAttention {
+  border-color: #d8e4ee;
+  background: transparent;
 }
 
 .headerPaceSummary svg {
-  width: 1.04rem;
-  height: 1.04rem;
+  width: 1.06rem;
+  height: 1.06rem;
 }
 
 .headerPaceSummary span {
-  font-size: 0.61rem;
+  font-size: 0.57rem;
 }
 
 .headerPaceSummary strong {
-  font-size: 0.88rem;
+  font-size: 0.84rem;
+}
+
+.headerPaceSummary article:nth-child(1) svg,
+.headerPaceSummary article:nth-child(1) strong {
+  color: #0d63c7;
+}
+
+.headerPaceSummary article:nth-child(2) svg,
+.headerPaceSummary article:nth-child(2) strong {
+  color: #df6605;
+}
+
+.headerPaceSummary article:nth-child(3) svg,
+.headerPaceSummary article:nth-child(3) strong {
+  color: #168997;
 }
 
 .weatherPrimary {
-  grid-template-columns: 2.45rem minmax(0, 1fr) auto;
-  padding: 0.4rem 0.5rem 0.22rem;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  justify-items: start;
+  gap: 0.08rem;
+  padding: 0.34rem 7.8rem 0.32rem 0.46rem;
+  transform: translate(5px, 5px);
 }
 
-.weatherIcon {
-  width: 2.45rem;
-  height: 2.45rem;
+.weatherIdentity span {
+  color: #46698b;
+  font-size: 0.62rem;
 }
 
-.weatherIcon svg {
-  width: 1.55rem;
-  height: 1.55rem;
+.weatherIdentity strong {
+  color: #16375e;
+  font-size: 1rem;
 }
 
 .weatherTemperature {
-  font-size: 1.55rem;
+  color: #075fc6;
+  font-size: 2.02rem;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
 .weatherMetrics {
-  min-height: 0;
-  padding: 0 0.5rem 0.36rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-left: 1px solid #d8e4ee;
 }
 
 .weatherMetrics article {
+  display: grid;
   height: 100%;
-  padding: 0.28rem 0.32rem;
+  grid-template-columns: 1.42rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  column-gap: 0.24rem;
+  row-gap: 0.02rem;
+  padding: 0.12rem 0.26rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .weatherMetrics svg {
-  width: 0.96rem;
-  height: 0.96rem;
+  box-sizing: content-box;
+  width: 0.98rem;
+  height: 0.98rem;
+  grid-column: 1;
+  grid-row: 1 / 3;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: rgba(224, 244, 255, 0.88);
 }
 
 .weatherMetrics span {
-  font-size: 0.66rem;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  font-size: 0.55rem;
+  line-height: 1;
 }
 
 .weatherMetrics strong {
+  color: #175b9f;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
   font-size: 0.82rem;
+  line-height: 1.05;
+}
+
+.weatherMetrics article:first-child svg {
+  color: #168dca;
+}
+
+.weatherMetrics article:last-child svg {
+  color: #1795aa;
+}
+
+.weatherSource {
+  position: absolute;
+  right: 0.46rem;
+  bottom: 0.28rem;
+  padding: 0;
+  border: 0;
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .statusStrip > span {
-  padding: 0.42rem 0.28rem;
+  padding: 0.3rem 0.26rem;
+  font-size: 0.66rem;
 }
 
 .statusStrip {
   min-height: 0;
   height: 100%;
   align-self: stretch;
+  border-radius: 0.48rem;
+  background: rgba(248, 251, 254, 0.94);
+}
+
+.statusStrip svg {
+  width: 0.92rem;
+  height: 0.92rem;
+}
+
+.statusStrip strong {
+  font-size: 0.84rem;
 }
 
 .freshness {
-  min-height: 0.62rem;
+  min-height: 0.5rem;
   align-self: end;
+  font-size: 0.44rem;
 }
 
 .panelEmpty {

@@ -562,12 +562,15 @@ function normalizeEnergy(value: unknown): EnergyStatus {
   const source = asRecord(value);
   const rawUsage = firstNumber(source, ["usage_kwh", "usage_value", "total_usage"]);
   const rawUnit = firstString(source, ["unit"]) ?? "kWh";
-  const displayAsMwh = rawUnit.toLowerCase() === "kwh";
+  const sourceIsMwh = rawUnit.trim().toLowerCase() === "mwh";
+  const toKwh = (amount: number | null) => (
+    amount === null ? null : sourceIsMwh ? amount * 1_000 : amount
+  );
   const usageByMachine = source.usage_by_machine;
   const hourlyTrend = source.hourly_trend;
   return {
-    usageValue: rawUsage === null ? null : displayAsMwh ? rawUsage / 1_000 : rawUsage,
-    unit: displayAsMwh ? "MWh" : rawUnit,
+    usageValue: toKwh(rawUsage),
+    unit: "kWh",
     meteredMachineCount: firstNumber(source, ["metered_machine_count"]),
     machinesWithPositiveUsageCount: firstNumber(source, ["machines_with_positive_usage_count"]),
     totalShots: firstNumber(source, ["total_shots"]),
@@ -579,7 +582,7 @@ function normalizeEnergy(value: unknown): EnergyStatus {
           const rawValue = firstNumber(point, ["usage_kwh", "value", "usage"]);
           return {
             label: firstString(point, ["machine_name", "label"]) ?? String(index + 1),
-            value: rawValue === null ? null : displayAsMwh ? rawValue / 1_000 : rawValue,
+            value: toKwh(rawValue),
           };
         })
       : [],
@@ -619,6 +622,18 @@ function normalizeMoulds(value: unknown): MouldStatus {
 function normalizeWeather(value: unknown): WeatherStatus {
   const source = asRecord(value);
   const rawStatus = firstString(source, ["status"]);
+  const rawDayPhase = firstString(source, ["day_phase"]);
+  const rawSymbolCode = firstString(source, ["symbol_code"])?.toLowerCase() ?? "";
+  const fallbackDayPhase = (() => {
+    if (rawSymbolCode.endsWith("_night")) return "night" as const;
+    if (rawSymbolCode.endsWith("_day")) return "day" as const;
+    const shanghaiHour = Number(new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Shanghai",
+    }).format(new Date()));
+    return shanghaiHour >= 6 && shanghaiHour < 18 ? "day" as const : "night" as const;
+  })();
   const status: WeatherStatus["status"] = rawStatus === "ok" || rawStatus === "stale" ? rawStatus : "unavailable";
   return {
     location: firstString(source, ["location"]) ?? "Nanjing",
@@ -628,6 +643,7 @@ function normalizeWeather(value: unknown): WeatherStatus {
     relativeHumidityPercent: firstNumber(source, ["relative_humidity_percent"]),
     windSpeedMps: firstNumber(source, ["wind_speed_mps"]),
     conditionCode: firstString(source, ["condition_code"]) ?? "unknown",
+    dayPhase: rawDayPhase === "day" || rawDayPhase === "night" ? rawDayPhase : fallbackDayPhase,
     validAt: firstString(source, ["valid_at"]),
     source: firstString(source, ["source"]) ?? "MET Norway",
     sourceUrl: firstString(source, ["source_url"]),

@@ -7,12 +7,14 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from injection.models import InjectionMonitoringRecord
+from injection.models import InjectionMonitoringRecord, MouldDataSnapshot
+from injection.mould_snapshots import BOARD_SNAPSHOT_KEY
 from quality.models import QualityReport
 
 from .ai_metrics import SHANGHAI_TZ
 from .overview_board import (
     _fetch_nanjing_weather,
+    _weather_day_phase,
     build_overview_board_snapshot,
     current_shanghai_business_date,
 )
@@ -28,6 +30,7 @@ def _weather_result():
         "wind_speed_mps": 2.4,
         "condition_code": "partly_cloudy",
         "symbol_code": "partlycloudy_day",
+        "day_phase": "day",
         "valid_at": "2026-08-10T04:00:00Z",
         "retrieved_at": "2026-08-10T04:00:00+00:00",
         "source": "MET Norway",
@@ -304,6 +307,51 @@ class OverviewBoardQualityContractTests(TestCase):
             snapshot = build_overview_board_snapshot(self.target_date, language="ko")
 
         self.assertEqual(snapshot["energy"]["usage_kwh"], 2.5)
+
+    def test_mould_inspection_due_reuses_board_shot_milestone_decoration(self):
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                "summary": {
+                    "total": 2,
+                    "stored": 2,
+                    "mounted": 0,
+                    "maintenance": 0,
+                    "repair": 0,
+                    "offsite": 0,
+                    "unknown": 0,
+                    "conflicts": 0,
+                },
+                "moulds": [
+                    {
+                        "instance_id": "101",
+                        "mould_code": "MOLD-0101",
+                        "current_output_amount": 150_000,
+                        "summary_category": "storage",
+                        "location": {"kind": "storage", "code": "A1-1"},
+                    },
+                    {
+                        "instance_id": "102",
+                        "mould_code": "MOLD-0102",
+                        "current_output_amount": 99_999,
+                        "summary_category": "storage",
+                        "location": {"kind": "storage", "code": "A1-2"},
+                    },
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+
+        with patch(
+            "production.overview_board.get_daily_production_context",
+            return_value=_production_context(self.target_date),
+        ):
+            snapshot = build_overview_board_snapshot(self.target_date, language="ko")
+
+        self.assertEqual(snapshot["moulds"]["confirmation_required"], 1)
+        self.assertEqual(snapshot["moulds"]["maintenance"], 0)
+        self.assertEqual(snapshot["moulds"]["repair"], 0)
 
     def test_energy_counter_ignores_negative_missing_sentinel(self):
         start = SHANGHAI_TZ.localize(datetime(2026, 8, 10, 8, 0))
@@ -669,6 +717,37 @@ class OverviewBoardQualityContractTests(TestCase):
 
 
 class OverviewBoardWeatherTests(TestCase):
+    def test_symbol_suffix_takes_priority_for_day_and_night_phase(self):
+        midnight_shanghai = datetime.fromisoformat("2026-08-10T16:00:00+00:00")
+        noon_shanghai = datetime.fromisoformat("2026-08-10T04:00:00+00:00")
+
+        self.assertEqual(
+            _weather_day_phase("partlycloudy_day", reference_time=midnight_shanghai),
+            "day",
+        )
+        self.assertEqual(
+            _weather_day_phase("clearsky_night", reference_time=noon_shanghai),
+            "night",
+        )
+
+    def test_phase_falls_back_to_shanghai_local_hour_without_suffix(self):
+        before_day = datetime.fromisoformat("2026-08-09T21:59:00+00:00")
+        day_starts = datetime.fromisoformat("2026-08-09T22:00:00+00:00")
+        night_starts = datetime.fromisoformat("2026-08-10T10:00:00+00:00")
+
+        self.assertEqual(
+            _weather_day_phase("cloudy", reference_time=before_day),
+            "night",
+        )
+        self.assertEqual(
+            _weather_day_phase("cloudy", reference_time=day_starts),
+            "day",
+        )
+        self.assertEqual(
+            _weather_day_phase(None, reference_time=night_starts),
+            "night",
+        )
+
     def test_met_norway_payload_is_normalized_for_nanjing_header(self):
         payload = {
             "properties": {
@@ -718,6 +797,7 @@ class OverviewBoardWeatherTests(TestCase):
         self.assertIn("wj-reporting.onrender.com", request.get_header("User-agent"))
         self.assertIn("lat=32.0603", request.full_url)
         self.assertEqual(weather["condition_code"], "partly_cloudy")
+        self.assertEqual(weather["day_phase"], "day")
         self.assertEqual(weather["temperature_c"], 31.2)
         self.assertEqual(weather["relative_humidity_percent"], 68.0)
         self.assertEqual(weather["wind_speed_mps"], 2.4)

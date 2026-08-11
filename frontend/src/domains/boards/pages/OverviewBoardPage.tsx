@@ -11,11 +11,6 @@ import {
   CirclePause,
   CirclePlay,
   Clock3,
-  Cloud,
-  CloudFog,
-  CloudLightning,
-  CloudRain,
-  CloudSun,
   Droplets,
   Factory,
   Gauge,
@@ -28,8 +23,6 @@ import {
   RefreshCw,
   ShieldCheck,
   Signal,
-  Snowflake,
-  Sun,
   TimerReset,
   TrendingDown,
   Workflow,
@@ -51,6 +44,16 @@ import {
 
 import assemblyConveyorIcon from "@/assets/overview-assembly-conveyor-icon.png";
 import injectionProcessIcon from "@/assets/overview-injection-process-icon.png";
+import weatherOrbClearDay from "@/assets/weather-orb-clear-day.webp";
+import weatherOrbClearNight from "@/assets/weather-orb-clear-night.webp";
+import weatherOrbCloudyDay from "@/assets/weather-orb-cloudy-day.webp";
+import weatherOrbCloudyNight from "@/assets/weather-orb-cloudy-night.webp";
+import weatherOrbRainDay from "@/assets/weather-orb-rain-day.webp";
+import weatherOrbRainNight from "@/assets/weather-orb-rain-night.webp";
+import weatherOrbSnowDay from "@/assets/weather-orb-snow-day.webp";
+import weatherOrbSnowNight from "@/assets/weather-orb-snow-night.webp";
+import weatherOrbThunderDay from "@/assets/weather-orb-thunder-day.webp";
+import weatherOrbThunderNight from "@/assets/weather-orb-thunder-night.webp";
 import { getOverviewBoard } from "@/domains/boards/overview/api";
 import type {
   AttentionItem,
@@ -74,6 +77,25 @@ const MACHINE_WINDOW_SIZE = 3;
 const MACHINE_ROTATION_MS = 10_000;
 const ATTENTION_WINDOW_SIZE = 3;
 const ATTENTION_ROTATION_MS = 10_000;
+
+type WeatherOrbCategory = "clear" | "cloudy" | "rain" | "snow" | "thunder";
+
+const WEATHER_ORB_ASSETS: Record<"day" | "night", Record<WeatherOrbCategory, string>> = {
+  day: {
+    clear: weatherOrbClearDay,
+    cloudy: weatherOrbCloudyDay,
+    rain: weatherOrbRainDay,
+    snow: weatherOrbSnowDay,
+    thunder: weatherOrbThunderDay,
+  },
+  night: {
+    clear: weatherOrbClearNight,
+    cloudy: weatherOrbCloudyNight,
+    rain: weatherOrbRainNight,
+    snow: weatherOrbSnowNight,
+    thunder: weatherOrbThunderNight,
+  },
+};
 const OUTBOUND_PRIORITY_ROTATION_MS = 9_000;
 const MACHINE_TONNAGE_BY_NUMBER: Readonly<Record<number, string>> = {
   1: "850T", 2: "850T", 3: "1300T", 4: "1400T", 5: "1400T", 6: "2500T",
@@ -97,6 +119,7 @@ const COPY = {
     fullscreenUnavailable: "이 브라우저에서는 전체 화면을 지원하지 않습니다.",
     refreshBoard: "새로고침",
     refreshingBoard: "새로고침 중",
+    currentTime: "북경 현재 시각",
     nanjingWeather: "난징",
     weatherClear: "맑음",
     weatherPartlyCloudy: "구름 조금",
@@ -252,6 +275,7 @@ const COPY = {
     fullscreenUnavailable: "此浏览器不支持全屏显示。",
     refreshBoard: "刷新",
     refreshingBoard: "正在刷新",
+    currentTime: "北京时间",
     nanjingWeather: "南京",
     weatherClear: "晴",
     weatherPartlyCloudy: "多云间晴",
@@ -450,23 +474,6 @@ function formatBusinessDate(value: string, language: AppLanguage) {
     : `${year}年 ${month}月 ${day}日 ${weekday}`;
 }
 
-function WeatherConditionIcon({ conditionCode }: { conditionCode: string }) {
-  const Icon = conditionCode === "clear"
-    ? Sun
-    : conditionCode === "partly_cloudy"
-      ? CloudSun
-      : conditionCode === "fog"
-        ? CloudFog
-        : conditionCode === "rain" || conditionCode === "heavy_rain"
-          ? CloudRain
-          : conditionCode === "snow"
-            ? Snowflake
-            : conditionCode === "thunder"
-              ? CloudLightning
-              : Cloud;
-  return <Icon aria-hidden="true" />;
-}
-
 function getWeatherConditionLabel(conditionCode: string, language: AppLanguage) {
   const copy = COPY[language];
   const labels: Record<string, string> = {
@@ -482,6 +489,22 @@ function getWeatherConditionLabel(conditionCode: string, language: AppLanguage) 
   return labels[conditionCode] ?? copy.weatherUnknown;
 }
 
+function getWeatherOrbCategory(conditionCode: string): WeatherOrbCategory {
+  if (conditionCode === "clear") return "clear";
+  if (conditionCode === "rain" || conditionCode === "heavy_rain") return "rain";
+  if (conditionCode === "snow") return "snow";
+  if (conditionCode === "thunder") return "thunder";
+  return "cloudy";
+}
+
+function getWeatherOrbAsset(conditionCode: string, dayPhase: "day" | "night") {
+  const category = getWeatherOrbCategory(conditionCode);
+  return {
+    category,
+    src: WEATHER_ORB_ASSETS[dayPhase][category],
+  };
+}
+
 function formatShanghaiTime(value: string | null) {
   if (!value) return "--:--";
   const date = new Date(value);
@@ -492,6 +515,17 @@ function formatShanghaiTime(value: string | null) {
     minute: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function formatShanghaiSeconds(value: string | null) {
+  if (!value) return ":--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return ":--";
+  const seconds = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Shanghai",
+    second: "2-digit",
+  }).format(date);
+  return `:${seconds.padStart(2, "0")}`;
 }
 
 function formatShortDate(value: string | null) {
@@ -634,7 +668,11 @@ function getMachineStateLabel(row: InjectionEquipmentRow, language: AppLanguage)
   return copy.machineStopped;
 }
 
-function getMachineIdentity(row: InjectionEquipmentRow, language: AppLanguage) {
+type MachineIdentitySource = Pick<InjectionEquipmentRow, "label"> & {
+  machineNumber?: number | null;
+};
+
+function getMachineIdentity(row: MachineIdentitySource, language: AppLanguage) {
   const rawLabel = row.label.trim();
   const tonnageMatch = rawLabel.match(/(\d{2,5})\s*T\b/i);
   const machineNumber = row.machineNumber ?? (() => {
@@ -926,9 +964,13 @@ function QualityRow({
   historyWindowDays: number;
 }) {
   const copy = COPY[language];
+  const machineIdentity = getMachineIdentity({ label: item.machineLabel }, language);
   return (
     <article className={styles.qualityRow}>
-      <strong className={styles.qualityMachine}>{item.machineLabel}</strong>
+      <div className={styles.qualityMachine} title={item.machineLabel}>
+        <strong>{machineIdentity.machineLabel}</strong>
+        {machineIdentity.tonnageLabel ? <small>{machineIdentity.tonnageLabel}</small> : null}
+      </div>
       <span className={styles.qualityModel} title={`${item.modelLabel}${item.partNumber ? ` · ${item.partNumber}` : ""}`}>
         <b>{item.modelLabel}</b>
         <small>{item.partNumber ? `${item.partNumber} · ` : ""}{copy.exactPartMatch}</small>
@@ -1235,7 +1277,7 @@ function EnergyPanel({ model, language }: { model: OverviewBoardModel; language:
       <div className={styles.energyContent}>
         <div className={styles.energyKpi}>
           <span className={styles.energyKpiLabel}>{copy.todayCumulativeEnergy}</span>
-          <strong>{formatDecimal(model.energy.usageValue, 2)}<small>{model.energy.usageValue === null ? "" : model.energy.unit}</small></strong>
+          <strong>{formatDecimal(model.energy.usageValue, 1)}<small>{model.energy.usageValue === null ? "" : model.energy.unit}</small></strong>
           <article><span>{copy.energyPer1000Shots}</span><b>{formatDecimal(model.energy.energyPer1000ShotsKwh, 1)}<small>kWh</small></b></article>
           <article><span>{copy.todayShots}</span><b>{formatInteger(model.energy.totalShots, language)}</b></article>
           <div>
@@ -1343,6 +1385,7 @@ function HeaderPanel({
 }) {
   const copy = COPY[language];
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
+  const [currentTime, setCurrentTime] = useState(() => new Date().toISOString());
   const statusCopy = model.overallStatus === "normal" ? copy.normal : copy.attention;
   const injectionPace = getProcessPace(model.processes.injection);
   const assemblyPace = getProcessPace(model.processes.assembly);
@@ -1357,6 +1400,7 @@ function HeaderPanel({
   const freshnessLabel = model.freshnessLabel ?? (freshnessParts.length > 0 ? freshnessParts.join(" · ") : null);
   const weather = model.weather;
   const weatherAvailable = weather.status !== "unavailable" && weather.temperatureC !== null;
+  const weatherOrb = getWeatherOrbAsset(weather.conditionCode, weather.dayPhase);
   const fullscreenSupported = typeof document.documentElement.requestFullscreen === "function";
   const fullscreenLabel = isFullscreen ? copy.exitFullscreen : copy.enterFullscreen;
 
@@ -1364,6 +1408,13 @@ function HeaderPanel({
     const syncFullscreenState = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", syncFullscreenState);
     return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
+  }, []);
+
+  useEffect(() => {
+    const updateCurrentTime = () => setCurrentTime(new Date().toISOString());
+    updateCurrentTime();
+    const timer = window.setInterval(updateCurrentTime, 1_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const toggleFullscreen = async () => {
@@ -1417,29 +1468,51 @@ function HeaderPanel({
       </div>
       <div className={styles.headerContent}>
         <div className={styles.headerHero}>
+          <AnimatePresence initial={false} mode="sync">
+            <motion.img
+              alt=""
+              animate={{ opacity: 0.9 }}
+              aria-hidden="true"
+              className={styles.weatherOrbAsset}
+              data-weather-art={`${weatherOrb.category}-${weather.dayPhase}`}
+              exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }}
+              key={`${weatherOrb.category}-${weather.dayPhase}`}
+              src={weatherOrb.src}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+            />
+          </AnimatePresence>
           <div className={styles.brandSummary}>
             <p className={styles.businessDate}><CalendarDays aria-hidden="true" />{formatBusinessDate(model.businessDate, language)}</p>
-            <div className={styles.headerPaceSummary}>
-              <article className={injectionPace.status === "behind" ? styles.headerPaceAttention : ""}><Factory aria-hidden="true" /><span>{copy.injectionPace}</span><strong>{formatSignedPercentPoints(injectionPace.gap)}</strong></article>
-              <article className={assemblyPace.status === "behind" ? styles.headerPaceAttention : ""}><Workflow aria-hidden="true" /><span>{copy.assemblyPace}</span><strong>{formatSignedPercentPoints(assemblyPace.gap)}</strong></article>
-              <article><Factory aria-hidden="true" /><span>{copy.runningMachines}</span><strong>{formatInteger(model.equipment.injectionOee.runningMachineCount, language)} / {formatInteger(model.equipment.injectionOee.totalEquipmentCount, language)}</strong></article>
-            </div>
+            <p className={styles.businessTime}>
+              <span className={styles.businessClock}>
+                <strong>{formatShanghaiTime(currentTime)}</strong>
+                <em>{formatShanghaiSeconds(currentTime)}</em>
+              </span>
+              <small>{copy.currentTime}</small>
+            </p>
           </div>
           <section className={`${styles.weatherCard} ${weather.isStale ? styles.weatherStale : ""}`} title={weather.isStale ? copy.weatherStale : weather.attribution}>
             <div className={styles.weatherPrimary}>
-              <div className={styles.weatherIcon}><WeatherConditionIcon conditionCode={weather.conditionCode} /></div>
               <div className={styles.weatherIdentity}>
                 <span><MapPin aria-hidden="true" />{copy.nanjingWeather}</span>
                 <strong>{getWeatherConditionLabel(weather.conditionCode, language)}</strong>
               </div>
               <strong className={styles.weatherTemperature}>{weatherAvailable ? `${formatDecimal(weather.temperatureC, 1)}°C` : "—"}</strong>
             </div>
-            <div className={styles.weatherMetrics}>
-              <article><Droplets aria-hidden="true" /><span>{copy.humidity}</span><strong>{weather.relativeHumidityPercent === null ? "—" : `${formatDecimal(weather.relativeHumidityPercent, 0)}%`}</strong></article>
-              <article><Wind aria-hidden="true" /><span>{copy.wind}</span><strong>{weather.windSpeedMps === null ? "—" : `${formatDecimal(weather.windSpeedMps, 1)} m/s`}</strong></article>
-            </div>
             {weather.isStale ? <div className={styles.weatherSource}><em>{copy.weatherStale}</em></div> : null}
           </section>
+        </div>
+        <div className={styles.headerMetrics}>
+          <div className={styles.headerPaceSummary}>
+            <article className={injectionPace.status === "behind" ? styles.headerPaceAttention : ""}><Factory aria-hidden="true" /><span>{copy.injectionPace}</span><strong>{formatSignedPercentPoints(injectionPace.gap)}</strong></article>
+            <article className={assemblyPace.status === "behind" ? styles.headerPaceAttention : ""}><Workflow aria-hidden="true" /><span>{copy.assemblyPace}</span><strong>{formatSignedPercentPoints(assemblyPace.gap)}</strong></article>
+            <article><Factory aria-hidden="true" /><span>{copy.runningMachines}</span><strong>{formatInteger(model.equipment.injectionOee.runningMachineCount, language)} / {formatInteger(model.equipment.injectionOee.totalEquipmentCount, language)}</strong></article>
+          </div>
+          <div className={styles.weatherMetrics}>
+            <article><Droplets aria-hidden="true" /><span>{copy.humidity}</span><strong>{weather.relativeHumidityPercent === null ? "—" : `${formatDecimal(weather.relativeHumidityPercent, 0)}%`}</strong></article>
+            <article><Wind aria-hidden="true" /><span>{copy.wind}</span><strong>{weather.windSpeedMps === null ? "—" : `${formatDecimal(weather.windSpeedMps, 1)} m/s`}</strong></article>
+          </div>
         </div>
         <div className={styles.statusStrip}>
           <span><Clock3 aria-hidden="true" />{formatShanghaiTime(model.generatedAt)} {copy.generatedAt}</span>

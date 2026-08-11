@@ -23,7 +23,7 @@ from django.db.models import Count, Max, Sum
 from django.utils import timezone
 
 from injection.models import InjectionMonitoringRecord, MouldDataSnapshot
-from injection.mould_snapshots import BOARD_SNAPSHOT_KEY
+from injection.mould_snapshots import BOARD_SNAPSHOT_KEY, decorate_board_payload
 from inventory.models import DailyInventorySnapshot, FinishedGoodsTransactionSnapshot
 from inventory.services.outbound_performance import get_outbound_performance
 from quality.models import QualityReport
@@ -188,6 +188,44 @@ def _weather_condition_code(symbol_code: Any) -> str:
     return "unknown"
 
 
+def _weather_day_phase(symbol_code: Any, *, reference_time: datetime) -> str:
+    """Resolve the weather artwork phase without relying on client time."""
+
+    symbol = str(symbol_code or "").lower()
+    if symbol.endswith("_day"):
+        return "day"
+    if symbol.endswith("_night"):
+        return "night"
+
+    if timezone.is_naive(reference_time):
+        reference_time = timezone.make_aware(reference_time, datetime_timezone.utc)
+    local_hour = reference_time.astimezone(SHANGHAI_TZ).hour
+    return "day" if 6 <= local_hour < 18 else "night"
+
+
+def _weather_reference_time(value: Any, *, fallback: datetime) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return fallback
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, datetime_timezone.utc)
+    return parsed
+
+
+def _with_weather_day_phase(weather: dict[str, Any], *, fallback: datetime) -> dict[str, Any]:
+    if weather.get("day_phase") in {"day", "night"}:
+        return weather
+    reference_time = _weather_reference_time(weather.get("valid_at"), fallback=fallback)
+    return {
+        **weather,
+        "day_phase": _weather_day_phase(
+            weather.get("symbol_code"),
+            reference_time=reference_time,
+        ),
+    }
+
+
 def _weather_cache_seconds(response: Any, *, now: datetime) -> int:
     expires = response.headers.get("Expires") if getattr(response, "headers", None) else None
     if not expires:
@@ -247,6 +285,7 @@ def _fetch_nanjing_weather() -> tuple[dict[str, Any], int]:
         next_six_hours.get("summary") if isinstance(next_six_hours, dict) else None
     ) or {}
     symbol_code = summary.get("symbol_code") if isinstance(summary, dict) else None
+    valid_at = point.get("time")
     weather = {
         "location": "Nanjing",
         "latitude": NANJING_LATITUDE,
@@ -258,7 +297,11 @@ def _fetch_nanjing_weather() -> tuple[dict[str, Any], int]:
         "wind_speed_mps": details.get("wind_speed"),
         "condition_code": _weather_condition_code(symbol_code),
         "symbol_code": symbol_code,
-        "valid_at": point.get("time"),
+        "day_phase": _weather_day_phase(
+            symbol_code,
+            reference_time=_weather_reference_time(valid_at, fallback=now),
+        ),
+        "valid_at": valid_at,
         "retrieved_at": now.isoformat(),
         "source": "MET Norway",
         "source_url": "https://api.met.no/weatherapi/locationforecast/2.0/compact",
@@ -270,7 +313,10 @@ def _fetch_nanjing_weather() -> tuple[dict[str, Any], int]:
 def _build_weather() -> tuple[dict[str, Any], list[str], dict[str, Any], dict[str, Any]]:
     cached = cache.get(WEATHER_FRESH_CACHE_KEY)
     if isinstance(cached, dict):
-        weather = {**cached, "cache_status": "fresh"}
+        weather = {
+            **_with_weather_day_phase(cached, fallback=timezone.now()),
+            "cache_status": "fresh",
+        }
         source = _source_state(status="ok", latest_at=weather.get("valid_at"), row_count=1, stale=False)
         return weather, [], source, {
             "source": "api.met.no Locationforecast 2.0 compact",
@@ -290,7 +336,12 @@ def _build_weather() -> tuple[dict[str, Any], list[str], dict[str, Any], dict[st
     except (HTTPError, URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
         stale = cache.get(WEATHER_STALE_CACHE_KEY)
         if isinstance(stale, dict):
-            weather = {**stale, "status": "stale", "is_stale": True, "cache_status": "stale"}
+            weather = {
+                **_with_weather_day_phase(stale, fallback=timezone.now()),
+                "status": "stale",
+                "is_stale": True,
+                "cache_status": "stale",
+            }
             source = _source_state(status="stale", latest_at=weather.get("valid_at"), row_count=1, stale=True)
             return weather, ["weather_data_stale"], source, {
                 "source": "api.met.no Locationforecast 2.0 compact",
@@ -307,6 +358,10 @@ def _build_weather() -> tuple[dict[str, Any], list[str], dict[str, Any], dict[st
             "wind_speed_mps": None,
             "condition_code": "unknown",
             "symbol_code": None,
+            "day_phase": _weather_day_phase(
+                None,
+                reference_time=timezone.now(),
+            ),
             "valid_at": None,
             "retrieved_at": timezone.now().isoformat(),
             "source": "MET Norway",
@@ -1089,7 +1144,13 @@ def _build_moulds() -> tuple[dict[str, Any], list[str], dict[str, Any], dict[str
             "rows_returned": 0,
         }
 
-    payload = snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    # The mould board stores the public-safe base snapshot, then decorates it at
+    # read time with 100k-shot milestones and their confirmation state.  Reuse
+    # that exact path here so the overview cannot silently report zero while
+    # the dedicated mould board shows inspection-due badges.
+    payload = decorate_board_payload(
+        snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    )
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     mould_rows = payload.get("moulds") if isinstance(payload.get("moulds"), list) else []
     freshness = payload.get("data_freshness") if isinstance(payload.get("data_freshness"), dict) else {}

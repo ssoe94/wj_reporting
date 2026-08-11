@@ -281,6 +281,7 @@ export type WeatherStatus = {
   relativeHumidityPercent: number | null;
   windSpeedMps: number | null;
   conditionCode: string;
+  dayPhase: "day" | "night";
   validAt: string | null;
   source: string;
   sourceUrl: string | null;
