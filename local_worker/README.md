@@ -27,6 +27,17 @@ All-history report identifiers stay in the server-owned grounding payload. The
 Gemma prompt and result use compact aggregate evidence keys; the Worker validates
 those keys and calculates de-duplicated counts before completion.
 
+The same structured call can also write the bilingual daily quality report. The
+backend supplies authoritative `report_metrics` for repeated issues, report-frequency
+trends, and affected production scope. Gemma may only prioritize supplied metric,
+target, and evidence keys. The Worker verifies the plan and evidence fingerprints,
+then replaces free report prose with grounded bilingual templates for
+`executive_summary`, `repeated_issues`, `accelerating_issues`, `affected_targets`,
+`shift_checks`, and `caveats`. It rejects invented keys, numeric prose,
+current-defect claims, root-cause claims, defect-rate claims, and prescriptive
+corrective actions. A deterministic fallback remains retryable and is never
+published as a successful Gemma report.
+
 For continuous Mac Studio operation, use the Keychain-backed launch agents in
 [`scripts/local_ai`](../scripts/local_ai/README.md). The launch agents keep the
 MLX server and Worker running without putting `AI_WORKER_TOKEN` in a plist or

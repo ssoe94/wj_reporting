@@ -240,6 +240,7 @@ class OverviewBoardQualityContractTests(TestCase):
         self.assertEqual(snapshot["quality"]["ai_summary"]["status"], "unavailable")
         self.assertEqual(snapshot["quality"]["ai_summary"]["reason"], "no_plan")
         self.assertEqual(snapshot["quality"]["ai_summary"]["attention_items"], [])
+        self.assertIsNone(snapshot["quality"]["ai_summary"]["source_evidence_hash"])
 
     def test_active_machine_without_in_progress_allocation_is_not_guessed(self):
         with patch(

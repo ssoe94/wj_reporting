@@ -1899,6 +1899,8 @@ def build_overview_board_snapshot(target_date: date, *, language: str = "ko") ->
             "status": "unavailable",
             "business_date": target_date.isoformat(),
             "source_plan_hash": None,
+            "source_evidence_hash": None,
+            "source_evidence_last_changed_at": None,
             "generated_at": None,
             "completed_at": None,
             "model_id": QUALITY_DAILY_MODEL_ID,

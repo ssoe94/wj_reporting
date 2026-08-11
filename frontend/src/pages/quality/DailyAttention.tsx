@@ -1,6 +1,25 @@
 ﻿import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CalendarDays, ChevronDown, ChevronRight, FolderOpen, Printer } from 'lucide-react';
+import {
+  AlertTriangle,
+  BarChart3,
+  BrainCircuit,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  Database,
+  Factory,
+  FolderOpen,
+  Layers3,
+  Printer,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  TrendingUp,
+} from 'lucide-react';
 import dayjs from 'dayjs';
 
 import api from '../../lib/api';
@@ -22,6 +41,8 @@ type HistoricalReport = {
 };
 
 type DailyAttentionItem = {
+  source_key?: string;
+  match_basis?: 'part_prefix_9';
   machine_name: string;
   machine_number: number | null;
   sequence: number | null;
@@ -37,12 +58,183 @@ type DailyAttentionItem = {
   reports: HistoricalReport[];
 };
 
+type LocalizedText = {
+  ko: string;
+  zh: string;
+};
+
+type QualityTrend = {
+  status: 'increase' | 'stable_or_decrease' | 'insufficient_data';
+  reason:
+    | 'count_and_share_increase'
+    | 'increase_rule_not_met'
+    | 'zero_window_denominator'
+    | 'small_window_denominator'
+    | 'small_issue_sample';
+  recent_count: number;
+  previous_count: number;
+  recent_denominator: number;
+  previous_denominator: number;
+  recent_share_pct: number | null;
+  previous_share_pct: number | null;
+  share_change_pp: number | null;
+  count_change: number;
+  denominator_basis: 'unique_matching_reports_in_current_plan_prefixes';
+};
+
+type QualityPlanTarget = {
+  machine_name: string;
+  sequence: number | null;
+  model_name: string;
+  part_no: string;
+  lot_no: string;
+  planned_quantity: number;
+};
+
+type QualityReportMetric = {
+  metric_key: string;
+  canonical_key?: string;
+  label: LocalizedText;
+  classification_basis:
+    | 'canonical_alias_v1'
+    | 'unclassified_recorded_text_hash'
+    | 'missing_recorded_phenomenon'
+    | 'explicit_keyword_v1'
+    | 'unlocated';
+  source_evidence_keys: string[];
+  evidence_count: number;
+  repeat_status: 'repeated' | 'single';
+  latest_report_dt: string | null;
+  all_history_denominator: number;
+  all_history_denominator_basis: 'unique_matching_reports_in_current_plan_prefixes';
+  all_history_share_pct: number | null;
+  trend: QualityTrend;
+  impact_scope: {
+    plan_group_count: number;
+    planned_quantity: number;
+    machine_names: string[];
+    model_names: string[];
+    part_nos: string[];
+    part_prefixes: string[];
+    plan_targets: QualityPlanTarget[];
+    historical_model_names: string[];
+    historical_part_nos: string[];
+  };
+  recorded_text?: string;
+};
+
+type QualityDeterministicReport = {
+  schema_version: 'quality-daily-report.v1';
+  calculated_at: string;
+  as_of_date: string;
+  history_coverage: 'all_history';
+  match_basis: 'part_prefix_9';
+  trend_policy: {
+    window_days: number;
+    recent_start: string;
+    recent_end: string;
+    previous_start: string;
+    previous_end: string;
+    min_window_denominator: number;
+    min_combined_issue_count: number;
+    increase_rule: 'count_and_share_must_both_increase';
+    zero_denominator_policy: 'insufficient_data';
+    small_sample_policy: 'insufficient_data';
+    window_anchor: 'selected_plan_date';
+  };
+  coverage: {
+    plan_group_count: number;
+    distinct_prefix_count: number;
+    matched_report_count: number;
+    without_history_count: number;
+    latest_report_dt: string | null;
+    model_names: string[];
+    part_nos: string[];
+    problem_type_count: number;
+    occurrence_location_count: number;
+  };
+  problem_types: QualityReportMetric[];
+  occurrence_locations: QualityReportMetric[];
+  calculation_basis: Record<string, unknown>;
+};
+
+type QualityNarrativeItem = {
+  metric_key: string;
+  source_evidence_keys: string[];
+  narrative: LocalizedText;
+};
+
+type QualityReportNarrative = {
+  schema_version: 'quality-daily-report-narrative.v1';
+  summary: LocalizedText;
+  executive_summary: LocalizedText;
+  priorities: Array<{
+    priority_rank: number;
+    source_key: string;
+    headline: LocalizedText;
+    checkpoints: { ko: string[]; zh: string[] };
+  }>;
+  repeated_issues: QualityNarrativeItem[];
+  accelerating_issues: QualityNarrativeItem[];
+  affected_targets: Array<{
+    source_key: string;
+    source_evidence_keys: string[];
+    headline: LocalizedText;
+  }>;
+  shift_checks: { ko: string[]; zh: string[] };
+  caveats: { ko: string[]; zh: string[] };
+};
+
+type QualityDailyReport = {
+  schema_version: 'quality-daily-page-report.v1';
+  status: 'ready' | 'pending' | 'stale' | 'unavailable';
+  reason:
+    | null
+    | 'generation_pending'
+    | 'plan_changed'
+    | 'evidence_changed'
+    | 'no_plan'
+    | 'not_generated'
+    | 'generation_failed'
+    | 'llm_fallback'
+    | 'store_unavailable';
+  business_date: string;
+  source_plan_hash: string | null;
+  source_evidence_hash: string | null;
+  source_plan_last_changed_at: string | null;
+  source_evidence_last_changed_at: string | null;
+  generated_at: string | null;
+  completed_at: string | null;
+  model_id: 'gemma4_26b_a4b';
+  model_name: string;
+  ai_schema_version: 'quality-daily-attention-ai.v1';
+  deterministic_schema_version: 'quality-daily-report.v1';
+  disclaimer: LocalizedText;
+  narrative: QualityReportNarrative | null;
+  deterministic: QualityDeterministicReport;
+  generation_source: string | null;
+  llm_fallback: boolean;
+  llm_fallback_code: string;
+  data_policy: Record<string, unknown>;
+};
+
 type DailyAttentionResponse = {
   date: string;
+  source_plan_hash?: string | null;
+  source_plan_last_changed_at?: string | null;
+  source_evidence_hash?: string | null;
+  source_evidence_last_changed_at?: string | null;
   total_plan_count: number;
   total_matching_reports: number;
   without_history_count: number;
   items: DailyAttentionItem[];
+  report?: QualityDailyReport | null;
+};
+
+type MetricDimension = 'problem' | 'location';
+
+type DimensionedMetric = QualityReportMetric & {
+  dimension: MetricDimension;
 };
 
 type PhenomenonGroup = {
@@ -266,6 +458,240 @@ function escapeHtml(value: string): string {
 
 function formatSectionCounts(sectionCounts: Array<{ section: string; count: number }>): string {
   return sectionCounts.map((entry) => `${entry.section} ${entry.count}`).join(' / ');
+}
+
+function localizedText(value: LocalizedText | null | undefined, lang: string): string {
+  if (!value) return '';
+  return lang === 'zh' ? value.zh : value.ko;
+}
+
+function formatMetricNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return value.toLocaleString();
+}
+
+function formatMetricPercent(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return `${value.toFixed(1)}%`;
+}
+
+function formatReportDate(value: string | null | undefined): string {
+  if (!value) return '-';
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD') : '-';
+}
+
+function formatReportDateTime(value: string | null | undefined): string {
+  if (!value) return '-';
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : '-';
+}
+
+function percentageWidth(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '0%';
+  return `${Math.max(0, Math.min(100, value))}%`;
+}
+
+function metricPriority(metric: DimensionedMetric): number {
+  const trendScore = metric.trend.status === 'increase' ? 1_000_000 : 0;
+  const repeatScore = metric.repeat_status === 'repeated' ? 100_000 : 0;
+  return trendScore + repeatScore + metric.evidence_count;
+}
+
+function sortMetrics(metrics: DimensionedMetric[]): DimensionedMetric[] {
+  return [...metrics].sort((a, b) => {
+    const scoreDiff = metricPriority(b) - metricPriority(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return localizedText(a.label, 'ko').localeCompare(localizedText(b.label, 'ko'));
+  });
+}
+
+function ReportStatusBadge({
+  report,
+  lang,
+  narrativeReady,
+}: {
+  report: QualityDailyReport | null;
+  lang: string;
+  narrativeReady: boolean;
+}) {
+  const status = report?.status === 'ready' && !narrativeReady
+    ? 'unavailable'
+    : report?.status ?? 'unavailable';
+  const staleLabel = report?.reason === 'evidence_changed'
+    ? (lang === 'zh' ? '质量依据变更 · 等待更新' : '품질 근거 변경 · 갱신 대기')
+    : (lang === 'zh' ? '计划变更 · 等待更新' : '계획 변경 · 갱신 대기');
+  const config = {
+    ready: {
+      label: lang === 'zh' ? 'AI 分析完成' : 'AI 분석 완료',
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+      Icon: CheckCircle2,
+    },
+    pending: {
+      label: lang === 'zh' ? 'AI 分析生成中' : 'AI 분석 생성 중',
+      className: 'border-blue-200 bg-blue-50 text-blue-700',
+      Icon: Clock3,
+    },
+    stale: {
+      label: staleLabel,
+      className: 'border-amber-200 bg-amber-50 text-amber-700',
+      Icon: CircleAlert,
+    },
+    unavailable: {
+      label: lang === 'zh' ? '仅显示数据分析' : '데이터 분석만 표시',
+      className: 'border-slate-200 bg-slate-50 text-slate-600',
+      Icon: Database,
+    },
+  }[status];
+  const Icon = config.Icon;
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${config.className}`}>
+      <Icon className="h-3.5 w-3.5" />
+      {config.label}
+    </span>
+  );
+}
+
+function MetricBarPanel({
+  title,
+  subtitle,
+  metrics,
+  lang,
+  dimension,
+}: {
+  title: string;
+  subtitle: string;
+  metrics: QualityReportMetric[];
+  lang: string;
+  dimension: MetricDimension;
+}) {
+  const Icon = dimension === 'problem' ? BarChart3 : Target;
+  const accent = dimension === 'problem'
+    ? { icon: 'bg-blue-50 text-blue-700', bar: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700' }
+    : { icon: 'bg-violet-50 text-violet-700', bar: 'bg-violet-500', badge: 'bg-violet-50 text-violet-700' };
+  const visibleMetrics = metrics.slice(0, 6);
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-5 flex items-start gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accent.icon}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="font-semibold text-slate-900">{title}</h3>
+          <p className="mt-0.5 text-xs leading-5 text-slate-500">{subtitle}</p>
+        </div>
+      </div>
+
+      {visibleMetrics.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          {lang === 'zh' ? '无可分析的历史记录' : '분석 가능한 이력이 없습니다.'}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {visibleMetrics.map((metric) => (
+            <div key={`${dimension}-${metric.metric_key}`}>
+              <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium text-slate-800" title={localizedText(metric.label, lang)}>
+                    {localizedText(metric.label, lang) || '-'}
+                  </span>
+                  {metric.repeat_status === 'repeated' && (
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${accent.badge}`}>
+                      {lang === 'zh' ? '反复' : '반복'}
+                    </span>
+                  )}
+                </div>
+                <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                  {formatMetricPercent(metric.all_history_share_pct)}
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={metric.all_history_share_pct ?? 0}>
+                <div className={`h-full rounded-full ${accent.bar}`} style={{ width: percentageWidth(metric.all_history_share_pct) }} />
+              </div>
+              <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                <span>
+                  {lang === 'zh' ? '分析范围历史依据' : '분석 대상 전체 이력 근거'} {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)}
+                </span>
+                <span>{lang === 'zh' ? '最近' : '최근'} {formatReportDate(metric.latest_report_dt)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TrendMetricCard({ metric, lang, narrative }: { metric: DimensionedMetric; lang: string; narrative?: string }) {
+  const isIncrease = metric.trend.status === 'increase';
+  const isInsufficient = metric.trend.status === 'insufficient_data';
+  const dimensionLabel = metric.dimension === 'problem'
+    ? (lang === 'zh' ? '问题类型' : '문제유형')
+    : (lang === 'zh' ? '发生位置' : '발생위치');
+  const statusLabel = isIncrease
+    ? (lang === 'zh' ? '数量与占比同时增加' : '건수·비중 동시 증가')
+    : isInsufficient
+      ? (lang === 'zh' ? '样本不足' : '표본 부족')
+      : (lang === 'zh' ? '未满足增加标准' : '증가 기준 미충족');
+  const badgeClass = isIncrease
+    ? 'bg-rose-50 text-rose-700 ring-rose-200'
+    : isInsufficient
+      ? 'bg-slate-100 text-slate-600 ring-slate-200'
+      : 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{dimensionLabel}</div>
+          <h4 className="mt-1 truncate font-semibold text-slate-900" title={localizedText(metric.label, lang)}>
+            {localizedText(metric.label, lang) || '-'}
+          </h4>
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${badgeClass}`}>
+          {statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {[
+          {
+            key: 'previous',
+            label: lang === 'zh' ? '前 30 天' : '이전 30일',
+            count: metric.trend.previous_count,
+            denominator: metric.trend.previous_denominator,
+            share: metric.trend.previous_share_pct,
+            barClass: 'bg-slate-400',
+          },
+          {
+            key: 'recent',
+            label: lang === 'zh' ? '最近 30 天' : '최근 30일',
+            count: metric.trend.recent_count,
+            denominator: metric.trend.recent_denominator,
+            share: metric.trend.recent_share_pct,
+            barClass: isIncrease ? 'bg-rose-500' : 'bg-blue-500',
+          },
+        ].map((window) => (
+          <div key={window.key}>
+            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+              <span className="text-slate-500">{window.label}</span>
+              <span className="font-semibold tabular-nums text-slate-800">
+                {formatMetricNumber(window.count)} / {formatMetricNumber(window.denominator)} · {formatMetricPercent(window.share)}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div className={`h-full rounded-full ${window.barClass}`} style={{ width: percentageWidth(window.share) }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {narrative && (
+        <p className="mt-4 border-t border-slate-100 pt-3 text-sm leading-6 text-slate-600">{narrative}</p>
+      )}
+    </article>
+  );
 }
 
 function collectPrintableImages(groups: PhenomenonGroup[]): PrintableImage[] {
@@ -605,9 +1031,9 @@ export default function DailyAttentionPage() {
   const [printSelection, setPrintSelection] = useState<PrintSelectionState | null>(null);
 
   const noPhenomenonLabel = lang === 'zh' ? '未填写现象' : '현상 미입력';
-  const expandAllLabel = lang === 'zh' ? '全部 펼치기' : '모두 펼치기';
-  const collapseAllLabel = lang === 'zh' ? '全部 접기' : '모두 접기';
-  const rowsLabel = lang === 'zh' ? '행' : '행';
+  const expandAllLabel = lang === 'zh' ? '全部展开' : '모두 펼치기';
+  const collapseAllLabel = lang === 'zh' ? '全部折叠' : '모두 접기';
+  const rowsLabel = lang === 'zh' ? '行' : '행';
   const printLabel = lang === 'zh' ? 'A4 PDF / 打印' : 'A4 PDF / 인쇄';
   const printPickerTitle = lang === 'zh' ? '选择要打印的照片' : '인쇄할 사진 선택';
   const printPickerDescription = lang === 'zh' ? '勾选后只打印所选照片。' : '체크한 사진만 인쇄 문서에 포함됩니다.';
@@ -617,6 +1043,99 @@ export default function DailyAttentionPage() {
   const closeLabel = lang === 'zh' ? '关闭' : '닫기';
   const selectedCountLabel = lang === 'zh' ? '已选照片' : '선택 사진';
   const noSelectableImagesLabel = lang === 'zh' ? '可选图片不存在，将摘要直接打印。' : '선택할 사진이 없어 요약만 인쇄됩니다.';
+  const analysisCopy = lang === 'zh'
+    ? {
+        eyebrow: 'QUALITY INTELLIGENCE',
+        title: '全历史质量分析报告',
+        scope: '分析范围：与所选生产计划料号前 9 位匹配的全部质量历史',
+        executive: '执行摘要',
+        executiveDescription: '面向交接班的结论优先简报',
+        priorities: '今日优先确认 3 项',
+        prioritiesDescription: '根据历史重复、近期变化与当前计划影响范围排序',
+        plannedTarget: '计划对象',
+        problemTypes: '问题类型',
+        problemTypesDescription: '按原始记录现象独立分类 · 分析对象全部历史内占比',
+        locations: '发生位置',
+        locationsDescription: '按明确位置关键词独立分类 · 分析对象全部历史内占比 · 不与问题类型组合推断',
+        repeatedTrend: '反复问题与近期变化',
+        repeatedTrendDescription: '最近 30 天与此前 30 天使用相同分母口径比较',
+        affectedTargets: '计划对象影响范围',
+        affectedTargetsDescription: '仅显示与历史依据明确匹配的当前计划机台、机种与料号',
+        machine: '机台',
+        modelPart: '机种 / 料号',
+        plannedQty: '计划数量',
+        historicalSignals: '历史关注依据',
+        evidence: '依据',
+        analysisBasis: '依据与解读边界',
+        allHistory: '全部历史',
+        matchBasis: '料号前 9 位匹配',
+        calculatedAt: '数据计算',
+        aiCompletedAt: 'AI 完成',
+        latestEvidence: '最新历史依据',
+        shiftChecks: '交接班确认',
+        caveats: '解读注意',
+        rawTitle: '照片与原始质量记录',
+        rawDescription: '以下保留现有机台、料号、照片及原始记录，可用于追溯分析依据。',
+        noCurrentDefect: '本报告基于历史质量记录与当前生产计划的匹配结果，不表示当前正在发生不良。',
+        noReport: 'AI 报告尚不可用。下方继续显示现有计划与原始历史记录。',
+        noNarrative: 'AI 文字分析尚未完成，当前先显示可审计的数据分析结果。',
+        noMetrics: '没有可展示的分类指标。',
+        noTargets: '当前计划中没有与分类指标明确关联的对象。',
+        trendRule: '仅当数量和占比同时增加时标记为“增加”',
+        sampleRule: '每个比较窗口分母至少 {denominator} 件，合计依据至少 {issues} 件',
+        historySummary: '所选计划共 {plans} 组，{prefixes} 个料号前缀在全历史中匹配到 {matches} 条记录；{without} 组暂无历史匹配。',
+        deterministicPriority: 'AI 文字生成期间，按可审计指标优先级显示。',
+        repeatedLabel: '反复历史项',
+        increaseLabel: '近期增加',
+        fallbackLabel: '数据优先级',
+        more: '等',
+      }
+    : {
+        eyebrow: 'QUALITY INTELLIGENCE',
+        title: '전체 이력 품질 분석 보고서',
+        scope: '분석 범위: 선택한 생산계획 품번 앞 9자리에 매칭되는 품질 전체 이력',
+        executive: 'Executive Summary',
+        executiveDescription: '교대 전 확인을 위한 결론 우선 브리핑',
+        priorities: '오늘 우선확인 3',
+        prioritiesDescription: '과거 반복·최근 변화·현재 계획 영향 범위를 기준으로 정렬',
+        plannedTarget: '계획 대상',
+        problemTypes: '문제유형',
+        problemTypesDescription: '원본 기록 현상을 독립 분류 · 분석 대상 전체 이력 내 비중',
+        locations: '발생위치',
+        locationsDescription: '명시된 위치 키워드를 독립 분류 · 분석 대상 전체 이력 내 비중 · 문제유형과 조합 추정하지 않음',
+        repeatedTrend: '반복 문제 및 최근 변화',
+        repeatedTrendDescription: '최근 30일과 이전 30일을 동일한 분모 기준으로 비교',
+        affectedTargets: '계획 대상 모델·호기 영향',
+        affectedTargetsDescription: '역사 근거와 명시적으로 매칭된 현재 계획의 설비·모델·품번만 표시',
+        machine: '호기',
+        modelPart: '모델 / 품번',
+        plannedQty: '계획수량',
+        historicalSignals: '역사 유의 근거',
+        evidence: '근거',
+        analysisBasis: '분석 근거 및 해석 범위',
+        allHistory: '전체 이력',
+        matchBasis: '품번 앞 9자리 매칭',
+        calculatedAt: '데이터 계산',
+        aiCompletedAt: 'AI 완료',
+        latestEvidence: '최근 역사 근거',
+        shiftChecks: '교대 확인사항',
+        caveats: '해석 유의사항',
+        rawTitle: '사진 및 원본 품질 이력',
+        rawDescription: '아래에는 기존 설비·품번별 사진과 원본 기록을 보존해 분석 근거를 추적할 수 있습니다.',
+        noCurrentDefect: '이 보고서는 과거 품질 이력과 현재 생산계획의 매칭 결과이며, 현재 불량 발생을 의미하지 않습니다.',
+        noReport: 'AI 분석 보고서를 아직 사용할 수 없습니다. 아래 기존 계획 및 원본 이력은 계속 제공합니다.',
+        noNarrative: 'AI 문장 분석이 아직 완료되지 않아 감사 가능한 데이터 분석 결과를 먼저 표시합니다.',
+        noMetrics: '표시할 분류 지표가 없습니다.',
+        noTargets: '현재 계획에서 분류 지표와 명시적으로 연결된 대상이 없습니다.',
+        trendRule: '건수와 비중이 함께 증가한 경우에만 ‘증가’로 표시',
+        sampleRule: '비교 구간별 분모 {denominator}건 이상, 합산 근거 {issues}건 이상',
+        historySummary: '선택 계획 {plans}개 그룹, 품번 접두어 {prefixes}개에 대해 전체 이력 {matches}건이 매칭되었고 {without}개 그룹은 매칭 이력이 없습니다.',
+        deterministicPriority: 'AI 문장 생성 중에는 감사 가능한 지표 우선순위를 표시합니다.',
+        repeatedLabel: '반복 역사 항목',
+        increaseLabel: '최근 증가',
+        fallbackLabel: '데이터 우선순위',
+        more: '외',
+      };
 
   const printLabels: PrintLabels = {
     title: t('quality.daily_attention_title'),
@@ -641,6 +1160,8 @@ export default function DailyAttentionPage() {
       const response = await api.get('/quality/daily-attention/', { params: { date: targetDate } });
       return response.data;
     },
+    refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   const sortedItems = useMemo(() => {
@@ -661,6 +1182,107 @@ export default function DailyAttentionPage() {
     });
     return map;
   }, [sortedItems, noPhenomenonLabel]);
+
+  const report = data?.report ?? null;
+  const deterministic = (
+    data?.date === targetDate &&
+    report?.deterministic?.schema_version === 'quality-daily-report.v1' &&
+    report.deterministic.as_of_date === targetDate
+  ) ? report.deterministic : null;
+  const canUseNarrative = Boolean(
+    report &&
+    deterministic &&
+    report.status === 'ready' &&
+    report.narrative &&
+    !report.llm_fallback &&
+    data?.date === targetDate &&
+    report.business_date === targetDate &&
+    report.source_plan_hash &&
+    report.source_evidence_hash &&
+    data?.source_plan_hash === report.source_plan_hash &&
+    data?.source_evidence_hash === report.source_evidence_hash &&
+    report.schema_version === 'quality-daily-page-report.v1' &&
+    report.model_id === 'gemma4_26b_a4b' &&
+    report.ai_schema_version === 'quality-daily-attention-ai.v1' &&
+    report.deterministic_schema_version === 'quality-daily-report.v1' &&
+    report.narrative.schema_version === 'quality-daily-report-narrative.v1',
+  );
+  const narrative = canUseNarrative ? report?.narrative ?? null : null;
+
+  const allMetrics = useMemo<DimensionedMetric[]>(() => {
+    if (!deterministic) return [];
+    return [
+      ...deterministic.problem_types.map((metric) => ({ ...metric, dimension: 'problem' as const })),
+      ...deterministic.occurrence_locations.map((metric) => ({ ...metric, dimension: 'location' as const })),
+    ];
+  }, [deterministic]);
+
+  const sortedAnalysisMetrics = useMemo(() => sortMetrics(allMetrics), [allMetrics]);
+  const fallbackPriorityMetrics = sortedAnalysisMetrics.slice(0, 3);
+  const narrativePriorities = useMemo(
+    () => [...(narrative?.priorities ?? [])].sort((a, b) => a.priority_rank - b.priority_rank).slice(0, 3),
+    [narrative],
+  );
+  const priorityItemLookup = useMemo(
+    () => new Map(sortedItems.map((item) => [item.source_key ?? `${item.machine_name}|${item.part_prefix}`, item])),
+    [sortedItems],
+  );
+  const trendNarrativeLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    [...(narrative?.repeated_issues ?? []), ...(narrative?.accelerating_issues ?? [])].forEach((item) => {
+      map.set(item.metric_key, localizedText(item.narrative, lang));
+    });
+    return map;
+  }, [narrative, lang]);
+  const trendMetrics = useMemo(() => {
+    const trendRank = (metric: DimensionedMetric) => {
+      if (metric.trend.status === 'increase') return 3;
+      if (metric.trend.status === 'stable_or_decrease') return 2;
+      return 1;
+    };
+    return [...allMetrics]
+      .sort((a, b) => {
+        const rankDiff = trendRank(b) - trendRank(a);
+        if (rankDiff !== 0) return rankDiff;
+        if (b.evidence_count !== a.evidence_count) return b.evidence_count - a.evidence_count;
+        return localizedText(a.label, lang).localeCompare(localizedText(b.label, lang));
+      })
+      .slice(0, 4);
+  }, [allMetrics, lang]);
+
+  const impactedTargets = useMemo(() => {
+    const targetMap = new Map<
+      string,
+      {
+        target: QualityPlanTarget;
+        signals: Array<{ metric: DimensionedMetric; label: string }>;
+      }
+    >();
+
+    sortedAnalysisMetrics.forEach((metric) => {
+      metric.impact_scope.plan_targets.forEach((target) => {
+        const key = [
+          target.machine_name,
+          target.sequence ?? '',
+          target.model_name,
+          target.part_no,
+          target.lot_no,
+          target.planned_quantity,
+        ].join('|');
+        const entry = targetMap.get(key) ?? { target, signals: [] };
+        if (!entry.signals.some((signal) => signal.metric.metric_key === metric.metric_key)) {
+          entry.signals.push({ metric, label: localizedText(metric.label, lang) });
+        }
+        targetMap.set(key, entry);
+      });
+    });
+
+    return Array.from(targetMap.values()).sort((a, b) => {
+      const machineDiff = a.target.machine_name.localeCompare(b.target.machine_name, undefined, { numeric: true });
+      if (machineDiff !== 0) return machineDiff;
+      return (a.target.sequence ?? 999) - (b.target.sequence ?? 999);
+    });
+  }, [sortedAnalysisMetrics, lang]);
 
   const isPhenomenonOpen = (itemKey: string, phenomenon: string) =>
     collapsedGroups[itemKey]?.[phenomenon] !== false;
@@ -786,11 +1408,426 @@ export default function DailyAttentionPage() {
         <div className="rounded-lg border border-gray-200 bg-white px-6 py-12 text-center text-gray-500">{t('loading')}...</div>
       ) : isError ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-6 py-12 text-center text-red-600">{t('error_loading_data')}</div>
-      ) : sortedItems.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-white px-6 py-12 text-center text-gray-500">{t('no_data')}</div>
       ) : (
-        <div className="space-y-4">
-          {sortedItems.map((item) => {
+        <div className="space-y-8">
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-sm">
+            <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-blue-800 px-5 py-6 text-white sm:px-7 lg:px-8">
+              <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-cyan-400/20 blur-3xl" />
+              <div className="absolute bottom-0 right-1/4 h-32 w-32 rounded-full bg-blue-300/10 blur-2xl" />
+              <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                <div className="max-w-4xl">
+                  <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-cyan-200">
+                    <BrainCircuit className="h-4 w-4" />
+                    {analysisCopy.eyebrow}
+                  </div>
+                  <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">{analysisCopy.title}</h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">{analysisCopy.scope}</p>
+                </div>
+                <div className="flex flex-col items-start gap-2 xl:items-end">
+                  <ReportStatusBadge report={report} lang={lang} narrativeReady={canUseNarrative} />
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-blue-100 xl:justify-end">
+                    <span>STATUS <strong className="text-white">{report?.status ?? 'unavailable'}</strong></span>
+                    <span>DATE <strong className="text-white">{report?.business_date ?? targetDate}</strong></span>
+                    {report?.reason && <span>REASON <strong className="text-white">{report.reason}</strong></span>}
+                  </div>
+                </div>
+              </div>
+
+              {report && (
+                <div className={`relative mt-5 grid gap-2 rounded-2xl border border-white/15 bg-white/10 p-3 text-xs text-blue-50 backdrop-blur-sm sm:grid-cols-2 ${canUseNarrative ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
+                  <div className="min-w-0">
+                    <span className="text-blue-200">PLAN HASH</span>
+                    <code className="mt-1 block break-all font-mono text-[11px] text-white">{report.source_plan_hash ?? '-'}</code>
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-blue-200">EVIDENCE HASH</span>
+                    <code className="mt-1 block break-all font-mono text-[11px] text-white">{report.source_evidence_hash ?? '-'}</code>
+                    <div className="mt-0.5 text-[11px] text-blue-200">{formatReportDateTime(report.source_evidence_last_changed_at)}</div>
+                  </div>
+                  <div>
+                    <span className="text-blue-200">PLAN CHANGED</span>
+                    <div className="mt-1 font-semibold text-white">{formatReportDateTime(report.source_plan_last_changed_at)}</div>
+                  </div>
+                  <div>
+                    <span className="text-blue-200">{analysisCopy.calculatedAt}</span>
+                    <div className="mt-1 font-semibold text-white">{formatReportDateTime(deterministic?.calculated_at)}</div>
+                  </div>
+                  {canUseNarrative && (
+                    <div>
+                      <span className="text-blue-200">{analysisCopy.aiCompletedAt}</span>
+                      <div className="mt-1 font-semibold text-white">{formatReportDateTime(report.completed_at ?? report.generated_at)}</div>
+                      <div className="mt-0.5 text-[11px] text-blue-200">{report.model_name || report.model_id}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {!deterministic ? (
+              <div className="m-5 rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center text-sm text-slate-600 sm:m-7">
+                <Database className="mx-auto mb-3 h-7 w-7 text-slate-400" />
+                {analysisCopy.noReport}
+              </div>
+            ) : (
+              <div className="space-y-6 p-5 sm:p-7 lg:p-8">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    {
+                      label: lang === 'zh' ? '计划组' : '계획 그룹',
+                      value: deterministic.coverage.plan_group_count,
+                      sub: `${lang === 'zh' ? '料号前缀' : '품번 접두어'} ${formatMetricNumber(deterministic.coverage.distinct_prefix_count)}`,
+                      icon: Layers3,
+                      color: 'text-blue-700 bg-blue-50',
+                    },
+                    {
+                      label: lang === 'zh' ? '全历史匹配记录' : '전체 이력 매칭',
+                      value: deterministic.coverage.matched_report_count,
+                      sub: `${analysisCopy.latestEvidence} ${formatReportDate(deterministic.coverage.latest_report_dt)}`,
+                      icon: Database,
+                      color: 'text-indigo-700 bg-indigo-50',
+                    },
+                    {
+                      label: lang === 'zh' ? '无历史匹配计划组' : '매칭 이력 없는 계획',
+                      value: deterministic.coverage.without_history_count,
+                      sub: analysisCopy.noCurrentDefect,
+                      icon: ShieldCheck,
+                      color: 'text-emerald-700 bg-emerald-50',
+                    },
+                    {
+                      label: lang === 'zh' ? '分类维度' : '분류 차원',
+                      value: deterministic.coverage.problem_type_count + deterministic.coverage.occurrence_location_count,
+                      sub: `${analysisCopy.problemTypes} ${formatMetricNumber(deterministic.coverage.problem_type_count)} · ${analysisCopy.locations} ${formatMetricNumber(deterministic.coverage.occurrence_location_count)}`,
+                      icon: BarChart3,
+                      color: 'text-violet-700 bg-violet-50',
+                    },
+                  ].map((summary) => {
+                    const Icon = summary.icon;
+                    return (
+                      <article key={summary.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-medium text-slate-500">{summary.label}</div>
+                            <div className="mt-1 text-3xl font-bold tabular-nums text-slate-950">{formatMetricNumber(summary.value)}</div>
+                          </div>
+                          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${summary.color}`}>
+                            <Icon className="h-5 w-5" />
+                          </div>
+                        </div>
+                        <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-500" title={summary.sub}>{summary.sub}</p>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)]">
+                  <section className="relative overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 via-white to-cyan-50 p-6 shadow-sm">
+                    <div className="absolute -right-10 -top-10 h-36 w-36 rounded-full bg-cyan-200/30 blur-2xl" />
+                    <div className="relative">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white shadow-sm">
+                          <Sparkles className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-950">{analysisCopy.executive}</h3>
+                          <p className="text-xs text-slate-500">{analysisCopy.executiveDescription}</p>
+                        </div>
+                      </div>
+
+                      <p className="mt-5 text-[15px] font-medium leading-7 text-slate-800">
+                        {narrative
+                          ? localizedText(narrative.executive_summary, lang)
+                          : analysisCopy.historySummary
+                              .replace('{plans}', formatMetricNumber(deterministic.coverage.plan_group_count))
+                              .replace('{prefixes}', formatMetricNumber(deterministic.coverage.distinct_prefix_count))
+                              .replace('{matches}', formatMetricNumber(deterministic.coverage.matched_report_count))
+                              .replace('{without}', formatMetricNumber(deterministic.coverage.without_history_count))}
+                      </p>
+
+                      {!narrative && (
+                        <div className="mt-4 rounded-xl border border-blue-100 bg-white/80 px-4 py-3 text-sm leading-6 text-blue-800">
+                          {analysisCopy.noNarrative}
+                        </div>
+                      )}
+
+                      {narrative && narrative.shift_checks[lang === 'zh' ? 'zh' : 'ko'].length > 0 && (
+                        <div className="mt-5 border-t border-blue-100 pt-4">
+                          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-blue-700">{analysisCopy.shiftChecks}</div>
+                          <ul className="space-y-2 text-sm leading-6 text-slate-700">
+                            {narrative.shift_checks[lang === 'zh' ? 'zh' : 'ko'].slice(0, 3).map((check, index) => (
+                              <li key={`${check}-${index}`} className="flex gap-2">
+                                <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-blue-600" />
+                                <span>{check}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                    <div className="mb-5 flex items-start gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                        <Target className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-950">{analysisCopy.priorities}</h3>
+                        <p className="text-xs leading-5 text-slate-500">{analysisCopy.prioritiesDescription}</p>
+                      </div>
+                    </div>
+
+                    {(narrativePriorities.length > 0 || fallbackPriorityMetrics.length > 0) ? (
+                      <div className="grid gap-3 lg:grid-cols-3">
+                        {(narrativePriorities.length > 0 ? narrativePriorities : fallbackPriorityMetrics).map((priority, index) => {
+                          const isNarrativePriority = 'source_key' in priority;
+                          const linkedPlanItem = isNarrativePriority ? priorityItemLookup.get(priority.source_key) : null;
+                          const linkedMetric = isNarrativePriority ? null : priority;
+                          const title = isNarrativePriority
+                            ? localizedText(priority.headline, lang)
+                            : localizedText(priority.label, lang);
+                          const checkpoints = isNarrativePriority
+                            ? priority.checkpoints[lang === 'zh' ? 'zh' : 'ko'].slice(0, 3)
+                            : [];
+                          const dimension = isNarrativePriority
+                            ? analysisCopy.plannedTarget
+                            : linkedMetric?.dimension === 'location'
+                              ? analysisCopy.locations
+                              : analysisCopy.problemTypes;
+
+                          return (
+                            <article key={isNarrativePriority ? priority.source_key : priority.metric_key} className="flex min-h-[220px] flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-sm font-bold text-white">{index + 1}</div>
+                                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                                  {dimension}
+                                </span>
+                              </div>
+                              <h4 className="mt-4 text-base font-bold leading-6 text-slate-900">{title || '-'}</h4>
+                              {checkpoints.length > 0 ? (
+                                <ul className="mt-3 space-y-2 text-sm leading-5 text-slate-600">
+                                  {checkpoints.map((checkpoint, checkpointIndex) => (
+                                    <li key={`${checkpoint}-${checkpointIndex}`} className="flex gap-2">
+                                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                                      <span>{checkpoint}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="mt-3 text-sm leading-6 text-slate-600">{analysisCopy.deterministicPriority}</p>
+                              )}
+                              {linkedMetric && (
+                                <div className="mt-auto border-t border-slate-200 pt-3 text-xs text-slate-500">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span>{analysisCopy.evidence}</span>
+                                    <strong className="tabular-nums text-slate-800">
+                                      {formatMetricNumber(linkedMetric.evidence_count)} / {formatMetricNumber(linkedMetric.all_history_denominator)} · {formatMetricPercent(linkedMetric.all_history_share_pct)}
+                                    </strong>
+                                  </div>
+                                  {linkedMetric.impact_scope.machine_names.length > 0 && (
+                                    <div className="mt-2 truncate" title={linkedMetric.impact_scope.machine_names.join(', ')}>
+                                      {analysisCopy.machine}: {linkedMetric.impact_scope.machine_names.join(', ')}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {linkedPlanItem && (
+                                <div className="mt-auto border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500">
+                                  <div className="font-semibold text-slate-800">
+                                    {linkedPlanItem.machine_name} · {linkedPlanItem.part_prefix || '-'}
+                                  </div>
+                                  <div className="mt-1 line-clamp-2" title={[...linkedPlanItem.model_names, ...linkedPlanItem.part_nos].join(', ')}>
+                                    {linkedPlanItem.model_names.join(', ') || '-'} · {linkedPlanItem.part_nos.join(', ') || '-'}
+                                  </div>
+                                </div>
+                              )}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                        {analysisCopy.noMetrics}
+                      </div>
+                    )}
+                  </section>
+                </div>
+
+                <div className="grid gap-5 xl:grid-cols-2">
+                  <MetricBarPanel
+                    title={analysisCopy.problemTypes}
+                    subtitle={analysisCopy.problemTypesDescription}
+                    metrics={[...deterministic.problem_types].sort((a, b) => b.evidence_count - a.evidence_count)}
+                    lang={lang}
+                    dimension="problem"
+                  />
+                  <MetricBarPanel
+                    title={analysisCopy.locations}
+                    subtitle={analysisCopy.locationsDescription}
+                    metrics={[...deterministic.occurrence_locations].sort((a, b) => b.evidence_count - a.evidence_count)}
+                    lang={lang}
+                    dimension="location"
+                  />
+                </div>
+
+                <section>
+                  <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-rose-600" />
+                        <h3 className="text-lg font-bold text-slate-950">{analysisCopy.repeatedTrend}</h3>
+                      </div>
+                      <p className="mt-1 text-sm text-slate-500">{analysisCopy.repeatedTrendDescription}</p>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {formatReportDate(deterministic.trend_policy.previous_start)}–{formatReportDate(deterministic.trend_policy.previous_end)}
+                      <span className="px-2">vs</span>
+                      {formatReportDate(deterministic.trend_policy.recent_start)}–{formatReportDate(deterministic.trend_policy.recent_end)}
+                    </div>
+                  </div>
+                  {trendMetrics.length > 0 ? (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      {trendMetrics.map((metric) => (
+                        <TrendMetricCard
+                          key={`trend-${metric.dimension}-${metric.metric_key}`}
+                          metric={metric}
+                          lang={lang}
+                          narrative={trendNarrativeLookup.get(metric.metric_key)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500">
+                      {analysisCopy.noMetrics}
+                    </div>
+                  )}
+                </section>
+
+                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Factory className="h-5 w-5 text-blue-700" />
+                        <h3 className="font-bold text-slate-950">{analysisCopy.affectedTargets}</h3>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">{analysisCopy.affectedTargetsDescription}</p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold tabular-nums text-slate-700 ring-1 ring-inset ring-slate-200">
+                      {formatMetricNumber(impactedTargets.length)}
+                    </span>
+                  </div>
+                  {impactedTargets.length === 0 ? (
+                    <div className="px-5 py-10 text-center text-sm text-slate-500">{analysisCopy.noTargets}</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-[900px] w-full text-left text-sm">
+                        <thead className="bg-white text-xs uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-5 py-3 font-semibold">{analysisCopy.machine}</th>
+                            <th className="px-5 py-3 font-semibold">{analysisCopy.modelPart}</th>
+                            <th className="px-5 py-3 text-right font-semibold">{analysisCopy.plannedQty}</th>
+                            <th className="px-5 py-3 font-semibold">{analysisCopy.historicalSignals}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {impactedTargets.map(({ target, signals }) => (
+                            <tr key={[target.machine_name, target.sequence, target.model_name, target.part_no, target.lot_no].join('|')} className="align-top hover:bg-slate-50/70">
+                              <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900">
+                                {target.machine_name || '-'}
+                                {target.sequence != null && <span className="ml-2 text-xs font-normal text-slate-400">#{target.sequence}</span>}
+                              </td>
+                              <td className="px-5 py-4">
+                                <div className="font-medium text-slate-900">{target.model_name || '-'}</div>
+                                <div className="mt-1 font-mono text-xs text-slate-500">{target.part_no || '-'}{target.lot_no ? ` · LOT ${target.lot_no}` : ''}</div>
+                              </td>
+                              <td className="px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{formatMetricNumber(target.planned_quantity)}</td>
+                              <td className="px-5 py-4">
+                                <div className="flex flex-wrap gap-2">
+                                  {signals.map(({ metric, label }) => (
+                                    <span key={`${metric.dimension}-${metric.metric_key}`} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700">
+                                      <span className={`h-1.5 w-1.5 rounded-full ${metric.dimension === 'problem' ? 'bg-blue-500' : 'bg-violet-500'}`} />
+                                      {label || '-'}
+                                      <strong className="tabular-nums">{formatMetricNumber(metric.evidence_count)}</strong>
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                      <ShieldCheck className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-slate-950">{analysisCopy.analysisBasis}</h3>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-600">
+                        <span className="rounded-full bg-slate-100 px-3 py-1.5">{analysisCopy.allHistory}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1.5">{analysisCopy.matchBasis}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1.5">{analysisCopy.trendRule}</span>
+                      </div>
+                      <div className="mt-4 grid gap-4 text-sm leading-6 text-slate-600 lg:grid-cols-2">
+                        <div className="space-y-2">
+                          <p className="flex gap-2">
+                            <CircleAlert className="mt-1 h-4 w-4 shrink-0 text-amber-600" />
+                            <span>{analysisCopy.noCurrentDefect}</span>
+                          </p>
+                          <p className="flex gap-2">
+                            <CircleAlert className="mt-1 h-4 w-4 shrink-0 text-amber-600" />
+                            <span>
+                              {analysisCopy.sampleRule
+                                .replace('{denominator}', formatMetricNumber(deterministic.trend_policy.min_window_denominator))
+                                .replace('{issues}', formatMetricNumber(deterministic.trend_policy.min_combined_issue_count))}
+                            </span>
+                          </p>
+                          {localizedText(report?.disclaimer, lang) && (
+                            <p className="flex gap-2">
+                              <Database className="mt-1 h-4 w-4 shrink-0 text-blue-600" />
+                              <span>{localizedText(report?.disclaimer, lang)}</span>
+                            </p>
+                          )}
+                        </div>
+                        {narrative && narrative.caveats[lang === 'zh' ? 'zh' : 'ko'].length > 0 && (
+                          <div>
+                            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{analysisCopy.caveats}</div>
+                            <ul className="space-y-2">
+                              {narrative.caveats[lang === 'zh' ? 'zh' : 'ko'].map((caveat, index) => (
+                                <li key={`${caveat}-${index}`} className="flex gap-2">
+                                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                                  <span>{caveat}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+          </section>
+
+          <div className="flex items-start gap-3 px-1">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
+              <FolderOpen className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-950">{analysisCopy.rawTitle}</h2>
+              <p className="mt-1 text-sm text-slate-500">{analysisCopy.rawDescription}</p>
+            </div>
+          </div>
+
+          {sortedItems.length === 0 ? (
+            <div className="rounded-lg border border-gray-200 bg-white px-6 py-12 text-center text-gray-500">{t('no_data')}</div>
+          ) : (
+            <div className="space-y-4">
+              {sortedItems.map((item) => {
             const itemKey = `${item.machine_name}-${item.sequence}-${item.part_prefix}`;
             const phenomenonGroups = groupedPhenomenaMap[itemKey] ?? [];
 
@@ -927,7 +1964,9 @@ export default function DailyAttentionPage() {
                 </div>
               </section>
             );
-          })}
+              })}
+            </div>
+          )}
         </div>
       )}
 

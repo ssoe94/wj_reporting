@@ -565,6 +565,7 @@ class AiWorkerClaimView(APIView):
             eligible_job_types |= Q(
                 job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
                 scope__mode=QUALITY_DAILY_MODE,
+                scope__trigger=QUALITY_DAILY_TRIGGER,
             )
         now = timezone.now()
         stale_before = now - timedelta(seconds=ai_job_timeout_seconds())

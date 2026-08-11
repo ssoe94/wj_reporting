@@ -16,6 +16,7 @@ from .models import QualityReport, Supplier
 from .serializers import QualityReportSerializer, SupplierSerializer
 from .cloudinary_utils import get_upload_params
 from .daily_attention import build_daily_quality_attention
+from ai_core.quality_daily import quality_daily_report_for_page
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,19 @@ class DailyQualityAttentionView(APIView):
         if not target_date:
             return Response({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(build_daily_quality_attention(target_date))
+        payload = build_daily_quality_attention(target_date)
+        report_metrics = payload.pop('report_metrics', {})
+        payload['report'] = quality_daily_report_for_page(
+            target_date,
+            deterministic_report=report_metrics,
+            source_plan_hash=payload.get('source_plan_hash'),
+            source_plan_last_changed_at=payload.get('source_plan_last_changed_at'),
+            source_evidence_hash=payload.get('source_evidence_hash'),
+            source_evidence_last_changed_at=payload.get(
+                'source_evidence_last_changed_at'
+            ),
+        )
+        return Response(payload)
 
 
 class SupplierViewSet(viewsets.ModelViewSet):
