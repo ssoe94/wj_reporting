@@ -742,9 +742,17 @@ class MESResourceService:
                 continue
             if machine_num not in records_by_machine:
                 continue
-            if record.capacity is not None and baseline_capacity_by_machine[machine_num] is None:
+            if (
+                record.capacity is not None
+                and record.capacity >= 0
+                and baseline_capacity_by_machine[machine_num] is None
+            ):
                 baseline_capacity_by_machine[machine_num] = record
-            if record.power_kwh is not None and baseline_power_by_machine[machine_num] is None:
+            if (
+                record.power_kwh is not None
+                and record.power_kwh >= 0
+                and baseline_power_by_machine[machine_num] is None
+            ):
                 baseline_power_by_machine[machine_num] = record
 
         for machine_num in machine_numbers:
@@ -771,9 +779,17 @@ class MESResourceService:
                 slot_time_iso = slot['time']
                 record = slot_records.get(slot_time_iso)
 
-                cum_val = record.capacity if record and record.capacity is not None else None
+                cum_val = (
+                    record.capacity
+                    if record and record.capacity is not None and record.capacity >= 0
+                    else None
+                )
                 t_val = record.oil_temperature if record and record.oil_temperature is not None else 0.0
-                p_val = record.power_kwh if record and record.power_kwh is not None else None
+                p_val = (
+                    record.power_kwh
+                    if record and record.power_kwh is not None and record.power_kwh >= 0
+                    else None
+                )
 
                 # 鞁滉皠雼?靸濎偘霟夓潃 頇曥爼霅?雸勳爜臧?臧勳潣 彀澊搿?瓿勳偘頃╇媹雼?
                 act_val = (cum_val - prev_confirmed_cum) if (cum_val is not None and prev_confirmed_cum is not None and cum_val >= prev_confirmed_cum) else 0.0

@@ -181,6 +181,14 @@ export function createOverviewDemoModel(
         summary: language === "ko" ? "원자재 580kg 부족" : "原材料短缺 580kg",
         action: language === "ko" ? "16:30 입고 확인" : "确认 16:30 入库",
       },
+      {
+        id: "demo-attention-4",
+        rank: 4,
+        category: "mould",
+        tone: "attention",
+        summary: language === "ko" ? "M-12 누적 샷수 점검 예정" : "M-12 累计模次待点检",
+        action: language === "ko" ? "교대 전 확인" : "换班前确认",
+      },
     ],
     quality: {
       scope: "resolved-current-injection-parts",

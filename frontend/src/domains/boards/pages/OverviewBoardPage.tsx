@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
   ArrowUpFromLine,
@@ -20,8 +21,11 @@ import {
   Gauge,
   GitCompareArrows,
   MapPin,
+  Maximize2,
+  Minimize2,
   PackageOpen,
   Radio,
+  RefreshCw,
   ShieldCheck,
   Signal,
   Snowflake,
@@ -36,12 +40,9 @@ import {
 import {
   Bar,
   CartesianGrid,
-  Cell,
   ComposedChart,
   Legend,
   Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -63,20 +64,39 @@ import type {
   QualityAttentionItem,
 } from "@/domains/boards/overview/types";
 import { useStoredLanguage, type AppLanguage } from "@/shared/i18n/language";
-import { getShanghaiBusinessDateString } from "@/shared/utils/date";
+import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
+import { useRetainedValue } from "@/shared/hooks/useRetainedValue";
 import styles from "./OverviewBoardPage.module.css";
 
-const QUALITY_PAGE_SIZE = 3;
+const QUALITY_WINDOW_SIZE = 3;
 const QUALITY_ROTATION_MS = 12_000;
-const MACHINE_PAGE_SIZE = 3;
+const MACHINE_WINDOW_SIZE = 3;
 const MACHINE_ROTATION_MS = 10_000;
+const ATTENTION_WINDOW_SIZE = 3;
+const ATTENTION_ROTATION_MS = 10_000;
 const OUTBOUND_PRIORITY_ROTATION_MS = 9_000;
+const MACHINE_TONNAGE_BY_NUMBER: Readonly<Record<number, string>> = {
+  1: "850T", 2: "850T", 3: "1300T", 4: "1400T", 5: "1400T", 6: "2500T",
+  7: "1800T", 8: "850T", 9: "850T", 10: "650T", 11: "550T", 12: "550T",
+  13: "450T", 14: "850T", 15: "650T", 16: "1050T", 17: "1200T",
+};
+
+const ONE_ROW_ROLL_VARIANTS = {
+  enter: (direction: number) => ({ y: direction > 0 ? "calc(33.333% + 0.113rem)" : "calc(-33.333% - 0.113rem)" }),
+  center: { y: "0%" },
+  exit: (direction: number) => ({ y: direction > 0 ? "calc(-33.333% - 0.113rem)" : "calc(33.333% + 0.113rem)" }),
+};
 
 const COPY = {
   ko: {
     title: "WJ 통합 운영 센터",
     titleToggle: "중국어로 전환",
     languageChanged: "언어가 한국어에서 중국어로 변경되었습니다.",
+    enterFullscreen: "전체 화면 보기",
+    exitFullscreen: "전체 화면 종료",
+    fullscreenUnavailable: "이 브라우저에서는 전체 화면을 지원하지 않습니다.",
+    refreshBoard: "새로고침",
+    refreshingBoard: "새로고침 중",
     nanjingWeather: "난징",
     weatherClear: "맑음",
     weatherPartlyCloudy: "구름 조금",
@@ -112,7 +132,7 @@ const COPY = {
     behind: "지연",
     noPlan: "계획 없음",
     equipment: "사출 설비 생산 현황",
-    equipmentRotationHint: "설비별 현재 생산 · 10초 롤링",
+    equipmentRotationHint: "설비별 현재 생산",
     machineRunning: "생산 중",
     machineStopped: "정지",
     machineWaiting: "생산 대기",
@@ -129,9 +149,6 @@ const COPY = {
     nextMachinePage: "다음 사출 설비",
     pauseMachineRotation: "사출 설비 자동 전환 일시정지",
     resumeMachineRotation: "사출 설비 자동 전환 재생",
-    machineRotationPaused: "전환 일시정지",
-    machineReducedMotion: "수동 전환",
-    machineNextIn: "10초 후 다음",
     machineCount: "전체 {count}대",
     injection: "사출",
     assembly: "조립",
@@ -158,9 +175,6 @@ const COPY = {
     nextQualityPage: "다음 품질 이력",
     pauseRotation: "품질 이력 자동 전환 일시정지",
     resumeRotation: "품질 이력 자동 전환 재생",
-    rotationPaused: "전환 일시정지",
-    reducedMotion: "수동 전환",
-    nextIn: "12초 후 다음",
     inventory: "출고 실행 · JIT / CSKD",
     outboundToday: "오늘 출고단 상세",
     outboundActualTarget: "실적 / 목표",
@@ -207,7 +221,7 @@ const COPY = {
     movingAverage24h: "24h 평균",
     meteredMachines: "계측 설비",
     noEnergyTrend: "시간대별 전력 데이터 없음",
-    moulds: "금형 · 보전",
+    moulds: "금형 / 유지보수",
     managedMoulds: "금형 관리 수",
     mountedMoulds: "장착 금형",
     storedMoulds: "보관",
@@ -216,6 +230,10 @@ const COPY = {
     offsiteMoulds: "외부",
     mouldStatusMix: "금형 상태 구성",
     confirmationRequired: "확인 필요",
+    mouldHighlights: "특기 사항",
+    shotInspection: "샷수 점검",
+    maintenanceInProgress: "유지보수 중",
+    unknownMoulds: "미확인",
     locationConflict: "위치 충돌",
     dataUnavailable: "통합 현황 데이터를 불러올 수 없습니다.",
     retry: "다시 불러오기",
@@ -229,6 +247,11 @@ const COPY = {
     title: "WJ 综合运营中心",
     titleToggle: "切换为韩语",
     languageChanged: "语言已从中文切换为韩语。",
+    enterFullscreen: "全屏查看",
+    exitFullscreen: "退出全屏",
+    fullscreenUnavailable: "此浏览器不支持全屏显示。",
+    refreshBoard: "刷新",
+    refreshingBoard: "正在刷新",
     nanjingWeather: "南京",
     weatherClear: "晴",
     weatherPartlyCloudy: "多云间晴",
@@ -264,7 +287,7 @@ const COPY = {
     behind: "滞后",
     noPlan: "无计划",
     equipment: "注塑设备生产现状",
-    equipmentRotationHint: "各设备当前生产 · 10秒轮播",
+    equipmentRotationHint: "各设备当前生产",
     machineRunning: "生产中",
     machineStopped: "停机",
     machineWaiting: "等待生产",
@@ -281,9 +304,6 @@ const COPY = {
     nextMachinePage: "下一页注塑设备",
     pauseMachineRotation: "暂停注塑设备自动切换",
     resumeMachineRotation: "继续注塑设备自动切换",
-    machineRotationPaused: "切换已暂停",
-    machineReducedMotion: "手动切换",
-    machineNextIn: "10秒后切换",
     machineCount: "共 {count} 台",
     injection: "注塑",
     assembly: "组装",
@@ -310,9 +330,6 @@ const COPY = {
     nextQualityPage: "下一页品质记录",
     pauseRotation: "暂停品质记录自动切换",
     resumeRotation: "继续品质记录自动切换",
-    rotationPaused: "切换已暂停",
-    reducedMotion: "手动切换",
-    nextIn: "12秒后切换",
     inventory: "出库执行 · JIT / CSKD",
     outboundToday: "今日出库单明细",
     outboundActualTarget: "实发 / 应发",
@@ -359,7 +376,7 @@ const COPY = {
     movingAverage24h: "24h平均",
     meteredMachines: "计量设备",
     noEnergyTrend: "暂无分时用电数据",
-    moulds: "模具 · 保全",
+    moulds: "模具 / 维护",
     managedMoulds: "模具管理数",
     mountedMoulds: "已安装模具",
     storedMoulds: "在库",
@@ -368,6 +385,10 @@ const COPY = {
     offsiteMoulds: "外部",
     mouldStatusMix: "模具状态构成",
     confirmationRequired: "需要确认",
+    mouldHighlights: "重点事项",
+    shotInspection: "模次检查",
+    maintenanceInProgress: "维护中",
+    unknownMoulds: "未确认",
     locationConflict: "位置冲突",
     dataUnavailable: "无法读取综合运营数据。",
     retry: "重新读取",
@@ -391,6 +412,14 @@ function usePrefersReducedMotion() {
   }, []);
 
   return reduced;
+}
+
+function getCircularWindow<T>(items: readonly T[], startIndex: number, windowSize: number): T[] {
+  if (items.length <= windowSize) return [...items];
+  return Array.from(
+    { length: windowSize },
+    (_, offset) => items[(startIndex + offset) % items.length],
+  );
 }
 
 function formatInteger(value: number | null, language: AppLanguage) {
@@ -552,8 +581,11 @@ function ProductionCard({
   const paceTone = pace.status === "behind" ? styles.paceBehind : pace.status === "ahead" ? styles.paceAhead : styles.paceOnTrack;
   return (
     <section className={`${styles.card} ${styles.productionCard}`} aria-labelledby={`${kind}-production-title`}>
-      <header className={styles.productionHeading}>
-        <h2 id={`${kind}-production-title`}>{isInjection ? copy.injectionProduction : copy.assemblyProduction}</h2>
+      <header className={`${styles.productionHeading} ${styles.standardPanelHeading}`}>
+        <div className={styles.cardTitle}>
+          {isInjection ? <Factory aria-hidden="true" /> : <Workflow aria-hidden="true" />}
+          <h2 id={`${kind}-production-title`}>{isInjection ? copy.injectionProduction : copy.assemblyProduction}</h2>
+        </div>
         <span className={`${styles.paceBadge} ${paceTone}`}>{paceLabel(pace.status, language)} · {formatSignedPercentPoints(pace.gap)}</span>
       </header>
       <div className={styles.productionPrimary}>
@@ -602,6 +634,32 @@ function getMachineStateLabel(row: InjectionEquipmentRow, language: AppLanguage)
   return copy.machineStopped;
 }
 
+function getMachineIdentity(row: InjectionEquipmentRow, language: AppLanguage) {
+  const rawLabel = row.label.trim();
+  const tonnageMatch = rawLabel.match(/(\d{2,5})\s*T\b/i);
+  const machineNumber = row.machineNumber ?? (() => {
+    const machineNumberMatch = rawLabel.match(/(?:^|[-#\s])0*(\d{1,2})\s*(?:호기|号机)?$/i)
+      ?? rawLabel.match(/^[IM][-\s]?0*(\d{1,2})$/i);
+    if (!machineNumberMatch) return null;
+    const parsed = Number(machineNumberMatch[1]);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  })();
+  const tonnageLabel = tonnageMatch
+    ? `${tonnageMatch[1]}T`
+    : machineNumber === null
+      ? null
+      : MACHINE_TONNAGE_BY_NUMBER[machineNumber] ?? null;
+
+  return {
+    machineLabel: machineNumber === null
+      ? rawLabel || "—"
+      : language === "ko"
+        ? `${machineNumber}호기`
+        : `${machineNumber}号机`,
+    tonnageLabel,
+  };
+}
+
 function MachineProductionRow({
   row,
   businessTimeProgress,
@@ -639,11 +697,15 @@ function MachineProductionRow({
       ? styles.machinePaceAhead
       : styles.machinePaceOnTrack;
   const progressLabel = `${copy.completion} ${formatPercent(completion)} · ${copy.timeProgress} ${formatPercent(timeProgress)}`;
+  const machineIdentity = getMachineIdentity(row, language);
 
   return (
     <article className={`${styles.machineRow} ${stateTone}`} title={row.stateReason ?? undefined}>
       <div className={styles.machineIdentity}>
-        <strong>{row.label}</strong>
+        <div className={styles.machineIdentityName} title={row.label}>
+          <strong>{machineIdentity.machineLabel}</strong>
+          {machineIdentity.tonnageLabel ? <small>{machineIdentity.tonnageLabel}</small> : null}
+        </div>
         <span><i aria-hidden="true" />{getMachineStateLabel(row, language)}</span>
         {isStale ? <small><AlertTriangle aria-hidden="true" />{copy.machineSourceStale}</small> : null}
       </div>
@@ -677,35 +739,36 @@ function MachineProductionRow({
 function EquipmentPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
   const copy = COPY[language];
   const reducedMotion = usePrefersReducedMotion();
-  const [pageIndex, setPageIndex] = useState(0);
+  const [startIndex, setStartIndex] = useState(0);
+  const [rollDirection, setRollDirection] = useState(1);
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [interactionPaused, setInteractionPaused] = useState(false);
   const rows = useMemo(() => [...model.equipment.injectionRows], [model.equipment.injectionRows]);
-  const pages = useMemo(() => {
-    const result: InjectionEquipmentRow[][] = [];
-    for (let index = 0; index < rows.length; index += MACHINE_PAGE_SIZE) {
-      result.push(rows.slice(index, index + MACHINE_PAGE_SIZE));
-    }
-    return result.length > 0 ? result : [[]];
-  }, [rows]);
-  const pageCount = pages.length;
-  const autoPaused = reducedMotion || manuallyPaused || interactionPaused || pageCount <= 1;
+  const visibleRows = useMemo(
+    () => getCircularWindow(rows, startIndex, MACHINE_WINDOW_SIZE),
+    [rows, startIndex],
+  );
+  const positionCount = rows.length > MACHINE_WINDOW_SIZE ? rows.length : 1;
+  const canRotate = positionCount > 1;
+  const autoPaused = reducedMotion || manuallyPaused || interactionPaused || !canRotate;
   const summary = model.equipment.injectionOee;
   const runningCount = summary.runningMachineCount ?? rows.filter((row) => row.isRunning).length;
   const totalCount = summary.totalEquipmentCount ?? rows.length;
 
-  useEffect(() => setPageIndex(0), [model.businessDate, rows.length, language]);
+  useEffect(() => setStartIndex(0), [model.businessDate, rows.length, language]);
 
   useEffect(() => {
     if (autoPaused) return;
     const timer = window.setInterval(() => {
-      setPageIndex((current) => (current + 1) % pageCount);
+      setRollDirection(1);
+      setStartIndex((current) => (current + 1) % positionCount);
     }, MACHINE_ROTATION_MS);
     return () => window.clearInterval(timer);
-  }, [autoPaused, pageCount]);
+  }, [autoPaused, positionCount]);
 
-  const movePage = (step: number) => {
-    setPageIndex((current) => (current + step + pageCount) % pageCount);
+  const moveWindow = (step: number) => {
+    setRollDirection(step >= 0 ? 1 : -1);
+    setStartIndex((current) => (current + step + positionCount) % positionCount);
   };
 
   return (
@@ -719,38 +782,51 @@ function EquipmentPanel({ model, language }: { model: OverviewBoardModel; langua
       onMouseEnter={() => setInteractionPaused(true)}
       onMouseLeave={() => setInteractionPaused(false)}
     >
-      <header className={styles.equipmentHeading}>
+      <header className={`${styles.equipmentHeading} ${styles.standardPanelHeading}`}>
         <div className={styles.cardTitle}><Factory aria-hidden="true" /><h2 id="equipment-title">{copy.equipment}</h2></div>
         <div>
           <span>{copy.equipmentRotationHint}</span>
           <strong><i aria-hidden="true" />{copy.runningMachines} {formatInteger(runningCount, language)} / {formatInteger(totalCount, language)}</strong>
         </div>
       </header>
-      <div className={styles.machineBody} key={`${pageIndex}-${language}`}>
-        {pages[pageIndex].length > 0
-          ? pages[pageIndex].map((row) => (
-              <MachineProductionRow
-                businessTimeProgress={model.processes.injection.timeProgressRate}
-                key={row.id}
-                language={language}
-                row={row}
-              />
-            ))
-          : <p className={styles.panelEmpty}>—</p>}
+      <div className={styles.machineViewport}>
+        <AnimatePresence custom={rollDirection} initial={false} mode="sync">
+          <motion.div
+            animate="center"
+            className={styles.machineBody}
+            custom={rollDirection}
+            exit={reducedMotion ? undefined : "exit"}
+            initial={reducedMotion ? false : "enter"}
+            key={`${startIndex}-${language}`}
+            transition={{ duration: reducedMotion ? 0 : 0.52, ease: [0.22, 1, 0.36, 1] }}
+            variants={ONE_ROW_ROLL_VARIANTS}
+          >
+            {visibleRows.length > 0
+              ? visibleRows.map((row) => (
+                  <MachineProductionRow
+                    businessTimeProgress={model.processes.injection.timeProgressRate}
+                    key={row.id}
+                    language={language}
+                    row={row}
+                  />
+                ))
+              : <p className={styles.panelEmpty}>—</p>}
+          </motion.div>
+        </AnimatePresence>
       </div>
       <footer className={styles.machineControls}>
-        <button aria-label={copy.previousMachinePage} disabled={pageCount <= 1} onClick={() => movePage(-1)} type="button"><ChevronLeft aria-hidden="true" /></button>
-        <span>{pageIndex + 1} / {pageCount} · {copy.machineCount.replace("{count}", String(rows.length))} · {reducedMotion ? copy.machineReducedMotion : autoPaused ? copy.machineRotationPaused : copy.machineNextIn}</span>
+        <button aria-label={copy.previousMachinePage} disabled={!canRotate} onClick={() => moveWindow(-1)} type="button"><ChevronLeft aria-hidden="true" /></button>
+        <span>{startIndex + 1} / {positionCount} · {copy.machineCount.replace("{count}", String(rows.length))}</span>
         <button
           aria-label={manuallyPaused ? copy.resumeMachineRotation : copy.pauseMachineRotation}
           aria-pressed={manuallyPaused}
-          disabled={reducedMotion || pageCount <= 1}
+          disabled={reducedMotion || !canRotate}
           onClick={() => setManuallyPaused((current) => !current)}
           type="button"
         >
           {manuallyPaused || reducedMotion ? <CirclePlay aria-hidden="true" /> : <CirclePause aria-hidden="true" />}
         </button>
-        <button aria-label={copy.nextMachinePage} disabled={pageCount <= 1} onClick={() => movePage(1)} type="button"><ChevronRight aria-hidden="true" /></button>
+        <button aria-label={copy.nextMachinePage} disabled={!canRotate} onClick={() => moveWindow(1)} type="button"><ChevronRight aria-hidden="true" /></button>
       </footer>
     </section>
   );
@@ -768,30 +844,73 @@ function AttentionIcon({ category }: { category: AttentionItem["category"] }) {
 
 function OperationsPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
   const copy = COPY[language];
-  const visibleItems = model.attention.slice(0, 3);
+  const reducedMotion = usePrefersReducedMotion();
+  const [startIndex, setStartIndex] = useState(0);
+  const [rollDirection, setRollDirection] = useState(1);
+  const [interactionPaused, setInteractionPaused] = useState(false);
+  const attentionItems = useMemo(() => [...model.attention], [model.attention]);
+  const visibleItems = useMemo(
+    () => getCircularWindow(attentionItems, startIndex, ATTENTION_WINDOW_SIZE),
+    [attentionItems, startIndex],
+  );
+  const positionCount = attentionItems.length > ATTENTION_WINDOW_SIZE ? attentionItems.length : 1;
+  const autoPaused = reducedMotion || interactionPaused || positionCount <= 1;
   const injectionPace = getProcessPace(model.processes.injection);
   const assemblyPace = getProcessPace(model.processes.assembly);
+
+  useEffect(() => setStartIndex(0), [model.businessDate, attentionItems.length, language]);
+
+  useEffect(() => {
+    if (autoPaused) return;
+    const timer = window.setInterval(() => {
+      setRollDirection(1);
+      setStartIndex((current) => (current + 1) % positionCount);
+    }, ATTENTION_ROTATION_MS);
+    return () => window.clearInterval(timer);
+  }, [autoPaused, positionCount]);
+
   return (
-    <section className={`${styles.card} ${styles.operationsCard}`} aria-labelledby="operations-title">
-      <div className={styles.operationsHeading}>
-        <h2 id="operations-title">{copy.operations}</h2>
-        <div className={styles.overallAttention}><AlertTriangle aria-hidden="true" /><strong>{copy.attention}</strong></div>
+    <section
+      className={`${styles.card} ${styles.operationsCard}`}
+      aria-labelledby="operations-title"
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setInteractionPaused(false);
+      }}
+      onFocusCapture={() => setInteractionPaused(true)}
+      onMouseEnter={() => setInteractionPaused(true)}
+      onMouseLeave={() => setInteractionPaused(false)}
+    >
+      <div className={`${styles.operationsHeading} ${styles.standardPanelHeading}`}>
+        <div className={styles.cardTitle}><Gauge aria-hidden="true" /><h2 id="operations-title">{copy.operations}</h2></div>
+      </div>
+      <div className={styles.attentionViewport}>
+        <AnimatePresence custom={rollDirection} initial={false} mode="sync">
+          <motion.div
+            animate="center"
+            className={styles.attentionList}
+            custom={rollDirection}
+            exit={reducedMotion ? undefined : "exit"}
+            initial={reducedMotion ? false : "enter"}
+            key={`${startIndex}-${language}`}
+            transition={{ duration: reducedMotion ? 0 : 0.52, ease: [0.22, 1, 0.36, 1] }}
+            variants={ONE_ROW_ROLL_VARIANTS}
+          >
+            {visibleItems.length > 0 ? visibleItems.map((item) => (
+              <article className={styles.attentionRow} key={item.id}>
+                <strong className={styles.attentionRank}>{item.rank}</strong>
+                <span className={styles.attentionIcon}><AttentionIcon category={item.category} /></span>
+                <p><strong>{item.summary}</strong>{item.action ? <span> · {item.action}</span> : null}</p>
+                <small>{copy.attention}</small>
+              </article>
+            )) : <p className={styles.panelEmpty}>{copy.noAttentionData}</p>}
+          </motion.div>
+        </AnimatePresence>
       </div>
       <div className={styles.operationsPulse}>
         <article className={injectionPace.status === "behind" ? styles.pulseAttention : ""}><Factory aria-hidden="true" /><span>{copy.injectionPace}</span><strong>{formatSignedPercentPoints(injectionPace.gap)}</strong></article>
         <article className={assemblyPace.status === "behind" ? styles.pulseAttention : ""}><Workflow aria-hidden="true" /><span>{copy.assemblyPace}</span><strong>{formatSignedPercentPoints(assemblyPace.gap)}</strong></article>
         <article className={styles.pulseAttention}><TrendingDown aria-hidden="true" /><span>{copy.behindMachines}</span><strong>{formatInteger(model.equipment.injectionOee.behindMachineCount, language)}</strong></article>
         <article className={model.equipment.injectionOee.unplannedMachineCount ? styles.pulseAttention : ""}><AlertTriangle aria-hidden="true" /><span>{copy.unplannedActive}</span><strong>{formatInteger(model.equipment.injectionOee.unplannedMachineCount, language)}</strong></article>
-      </div>
-      <div className={styles.attentionList}>
-        {visibleItems.length > 0 ? visibleItems.map((item) => (
-          <article className={styles.attentionRow} key={item.id}>
-            <strong className={styles.attentionRank}>{item.rank}</strong>
-            <span className={styles.attentionIcon}><AttentionIcon category={item.category} /></span>
-            <p><strong>{item.summary}</strong>{item.action ? <span> · {item.action}</span> : null}</p>
-            <small>{copy.attention}</small>
-          </article>
-        )) : <p className={styles.panelEmpty}>{copy.noAttentionData}</p>}
       </div>
     </section>
   );
@@ -826,31 +945,33 @@ function QualityRow({
 function QualityPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
   const copy = COPY[language];
   const reducedMotion = usePrefersReducedMotion();
-  const [pageIndex, setPageIndex] = useState(0);
+  const [startIndex, setStartIndex] = useState(0);
+  const [rollDirection, setRollDirection] = useState(1);
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [interactionPaused, setInteractionPaused] = useState(false);
-  const pages = useMemo(() => {
-    const result: QualityAttentionItem[][] = [];
-    for (let index = 0; index < model.quality.items.length; index += QUALITY_PAGE_SIZE) {
-      result.push(model.quality.items.slice(index, index + QUALITY_PAGE_SIZE));
-    }
-    return result.length > 0 ? result : [[]];
-  }, [model.quality.items]);
-  const pageCount = pages.length;
-  const autoPaused = reducedMotion || manuallyPaused || interactionPaused || pageCount <= 1;
+  const qualityItems = useMemo(() => [...model.quality.items], [model.quality.items]);
+  const visibleItems = useMemo(
+    () => getCircularWindow(qualityItems, startIndex, QUALITY_WINDOW_SIZE),
+    [qualityItems, startIndex],
+  );
+  const positionCount = qualityItems.length > QUALITY_WINDOW_SIZE ? qualityItems.length : 1;
+  const canRotate = positionCount > 1;
+  const autoPaused = reducedMotion || manuallyPaused || interactionPaused || !canRotate;
 
-  useEffect(() => setPageIndex(0), [model.businessDate, model.quality.items.length, language]);
+  useEffect(() => setStartIndex(0), [model.businessDate, qualityItems.length, language]);
 
   useEffect(() => {
     if (autoPaused) return;
     const timer = window.setInterval(() => {
-      setPageIndex((current) => (current + 1) % pageCount);
+      setRollDirection(1);
+      setStartIndex((current) => (current + 1) % positionCount);
     }, QUALITY_ROTATION_MS);
     return () => window.clearInterval(timer);
-  }, [autoPaused, pageCount]);
+  }, [autoPaused, positionCount]);
 
-  const movePage = (step: number) => {
-    setPageIndex((current) => (current + step + pageCount) % pageCount);
+  const moveWindow = (step: number) => {
+    setRollDirection(step >= 0 ? 1 : -1);
+    setStartIndex((current) => (current + step + positionCount) % positionCount);
   };
 
   return (
@@ -864,30 +985,43 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
       onMouseEnter={() => setInteractionPaused(true)}
       onMouseLeave={() => setInteractionPaused(false)}
     >
-      <header className={styles.qualityHeading}>
+      <header className={`${styles.qualityHeading} ${styles.standardPanelHeading}`}>
         <div className={styles.cardTitle}><ShieldCheck aria-hidden="true" /><h2 id="quality-title">{copy.quality}</h2></div>
         <span><CheckCircle2 aria-hidden="true" />{model.quality.disclaimer ?? copy.historicalDisclaimer}</span>
       </header>
-      <div className={styles.qualityBody} key={`${pageIndex}-${language}`}>
-        {pages[pageIndex].length > 0
-          ? pages[pageIndex].map((item) => (
-              <QualityRow historyWindowDays={model.quality.historyWindowDays} item={item} key={item.id} language={language} />
-            ))
-          : <p className={styles.panelEmpty}>{copy.noQualityData}</p>}
+      <div className={styles.qualityViewport}>
+        <AnimatePresence custom={rollDirection} initial={false} mode="sync">
+          <motion.div
+            animate="center"
+            className={styles.qualityBody}
+            custom={rollDirection}
+            exit={reducedMotion ? undefined : "exit"}
+            initial={reducedMotion ? false : "enter"}
+            key={`${startIndex}-${language}`}
+            transition={{ duration: reducedMotion ? 0 : 0.56, ease: [0.22, 1, 0.36, 1] }}
+            variants={ONE_ROW_ROLL_VARIANTS}
+          >
+            {visibleItems.length > 0
+              ? visibleItems.map((item) => (
+                  <QualityRow historyWindowDays={model.quality.historyWindowDays} item={item} key={item.id} language={language} />
+                ))
+              : <p className={styles.panelEmpty}>{copy.noQualityData}</p>}
+          </motion.div>
+        </AnimatePresence>
       </div>
       <footer className={styles.qualityControls}>
-        <button aria-label={copy.previousQualityPage} disabled={pageCount <= 1} onClick={() => movePage(-1)} type="button"><ChevronLeft aria-hidden="true" /></button>
-        <span>{pageIndex + 1} / {pageCount} · {reducedMotion ? copy.reducedMotion : autoPaused ? copy.rotationPaused : copy.nextIn}</span>
+        <button aria-label={copy.previousQualityPage} disabled={!canRotate} onClick={() => moveWindow(-1)} type="button"><ChevronLeft aria-hidden="true" /></button>
+        <span>{startIndex + 1} / {positionCount}</span>
         <button
           aria-label={manuallyPaused ? copy.resumeRotation : copy.pauseRotation}
           aria-pressed={manuallyPaused}
-          disabled={reducedMotion || pageCount <= 1}
+          disabled={reducedMotion || !canRotate}
           onClick={() => setManuallyPaused((current) => !current)}
           type="button"
         >
           {manuallyPaused || reducedMotion ? <CirclePlay aria-hidden="true" /> : <CirclePause aria-hidden="true" />}
         </button>
-        <button aria-label={copy.nextQualityPage} disabled={pageCount <= 1} onClick={() => movePage(1)} type="button"><ChevronRight aria-hidden="true" /></button>
+        <button aria-label={copy.nextQualityPage} disabled={!canRotate} onClick={() => moveWindow(1)} type="button"><ChevronRight aria-hidden="true" /></button>
       </footer>
     </section>
   );
@@ -1027,7 +1161,7 @@ function InventoryPanel({ model, language }: { model: OverviewBoardModel; langua
     .join(" · ");
   return (
     <section className={`${styles.card} ${styles.inventoryCard}`} aria-labelledby="inventory-title" data-testid="outbound-performance-card">
-      <header className={styles.inventoryHeading}>
+      <header className={`${styles.inventoryHeading} ${styles.standardPanelHeading}`}>
         <div className={styles.cardTitle}><ArrowUpFromLine aria-hidden="true" /><h2 id="inventory-title">{copy.inventory}</h2></div>
         <span className={`${styles.outboundStatus} ${outbound.status === "partial" ? styles.outboundStatusPartial : ""} ${isUnavailable ? styles.outboundStatusUnavailable : ""}`}>
           {isUnavailable ? copy.disconnected : outbound.status === "partial" ? copy.outboundPartial : copy.outboundConnected}
@@ -1097,7 +1231,7 @@ function EnergyPanel({ model, language }: { model: OverviewBoardModel; language:
   const machineUnit = language === "ko" ? "대" : "台";
   return (
     <section className={`${styles.card} ${styles.energyCard}`} aria-labelledby="energy-title">
-      <header className={styles.cardTitle}><Zap aria-hidden="true" /><h2 id="energy-title">{copy.energy}</h2></header>
+      <header className={`${styles.cardTitle} ${styles.standardPanelHeading}`}><Zap aria-hidden="true" /><h2 id="energy-title">{copy.energy}</h2></header>
       <div className={styles.energyContent}>
         <div className={styles.energyKpi}>
           <span className={styles.energyKpiLabel}>{copy.todayCumulativeEnergy}</span>
@@ -1134,40 +1268,59 @@ function EnergyPanel({ model, language }: { model: OverviewBoardModel; language:
 
 function MouldPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
   const copy = COPY[language];
+  const maintenanceInProgress = model.moulds.maintenance === null && model.moulds.repair === null
+    ? null
+    : (model.moulds.maintenance ?? 0) + (model.moulds.repair ?? 0);
   const statusRows = [
+    { key: "stored", label: copy.storedMoulds, value: model.moulds.stored, icon: PackageOpen },
+    { key: "mounted", label: copy.mountedMoulds, value: model.moulds.mounted, icon: Gauge },
+    { key: "offsite", label: copy.offsiteMoulds, value: model.moulds.offsite, icon: MapPin },
+  ];
+  const distributionRows = [
     { key: "stored", label: copy.storedMoulds, value: model.moulds.stored, color: "#1765b2" },
     { key: "mounted", label: copy.mountedMoulds, value: model.moulds.mounted, color: "#0a8a57" },
-    { key: "maintenance", label: copy.maintenanceMoulds, value: model.moulds.maintenance, color: "#d99917" },
-    { key: "repair", label: copy.repairMoulds, value: model.moulds.repair, color: "#d96516" },
     { key: "offsite", label: copy.offsiteMoulds, value: model.moulds.offsite, color: "#7b6fa9" },
+    { key: "maintenance", label: copy.maintenanceInProgress, value: maintenanceInProgress, color: "#d88718" },
+    { key: "unknown", label: copy.unknownMoulds, value: model.moulds.unknown, color: "#91a1b2" },
   ].filter((row) => row.value !== null && row.value > 0);
+  const distributionTotal = distributionRows.reduce((sum, row) => sum + (row.value ?? 0), 0);
   return (
     <section className={`${styles.card} ${styles.mouldCard}`} aria-labelledby="mould-title">
-      <header className={styles.mouldHeading}>
+      <header className={`${styles.mouldHeading} ${styles.standardPanelHeading}`}>
         <div className={styles.cardTitle}><Wrench aria-hidden="true" /><h2 id="mould-title">{copy.moulds}</h2></div>
         <span>{copy.managedMoulds} <strong>{formatInteger(model.moulds.total, language)}</strong></span>
       </header>
-      <div className={styles.mouldOverview}>
-        <div className={styles.mouldDonut} aria-label={`${copy.managedMoulds} ${formatInteger(model.moulds.total, language)}`}>
-          <ResponsiveContainer height="100%" width="100%">
-            <PieChart>
-              <Pie data={statusRows} dataKey="value" innerRadius="64%" outerRadius="94%" isAnimationActive={false} stroke="#fbfdff" strokeWidth={2}>
-                {statusRows.map((row) => <Cell fill={row.color} key={row.key} />)}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
-          <div><strong>{formatInteger(model.moulds.total, language)}</strong><span>{copy.mouldStatusMix}</span></div>
+      <div className={styles.mouldSimpleBody}>
+        <div className={styles.mouldStatusSummary}>
+          {statusRows.map((row) => {
+            const Icon = row.icon;
+            return <article key={row.key}><Icon aria-hidden="true" /><span>{row.label}</span><strong>{formatInteger(row.value, language)}</strong></article>;
+          })}
         </div>
-        <div className={styles.mouldLegend}>
-          {statusRows.map((row) => (
-            <article key={row.key}><i style={{ backgroundColor: row.color }} /><span>{row.label}</span><strong>{formatInteger(row.value, language)}</strong><em>{model.moulds.total ? `${formatDecimal(((row.value ?? 0) / model.moulds.total) * 100, 1)}%` : "—"}</em></article>
-          ))}
+        <div className={styles.mouldDistribution}>
+          <div>
+            <span>{copy.mouldStatusMix}</span>
+            <div>
+              {distributionRows.map((row) => <small key={row.key}><i style={{ backgroundColor: row.color }} />{row.label}</small>)}
+            </div>
+          </div>
+          <div aria-label={`${copy.mouldStatusMix} ${distributionRows.map((row) => `${row.label} ${formatInteger(row.value, language)}`).join(", ")}`} className={styles.mouldDistributionBar} role="img">
+            {distributionRows.map((row) => (
+              <i
+                key={row.key}
+                style={{ backgroundColor: row.color, width: distributionTotal > 0 ? `${((row.value ?? 0) / distributionTotal) * 100}%` : "0%" }}
+                title={`${row.label} ${formatInteger(row.value, language)}`}
+              />
+            ))}
+          </div>
         </div>
-      </div>
-      <div className={styles.mouldAlerts}>
-        <article><Gauge aria-hidden="true" /><span>{copy.mountedMoulds}</span><strong>{formatInteger(model.moulds.mounted, language)}</strong></article>
-        <article className={styles.orangeMetric}><AlertTriangle aria-hidden="true" /><span>{copy.confirmationRequired}</span><strong>{formatInteger(model.moulds.confirmationRequired, language)}</strong></article>
-        <article className={styles.orangeMetric}><MapPin aria-hidden="true" /><span>{copy.locationConflict}</span><strong>{formatInteger(model.moulds.conflicts, language)}</strong></article>
+        <div className={styles.mouldHighlights}>
+          <span>{copy.mouldHighlights}</span>
+          <div>
+            <article title={copy.confirmationRequired}><Gauge aria-hidden="true" /><span>{copy.shotInspection}</span><strong>{formatInteger(model.moulds.confirmationRequired, language)}</strong></article>
+            <article title={`${copy.maintenanceMoulds} ${formatInteger(model.moulds.maintenance, language)} · ${copy.repairMoulds} ${formatInteger(model.moulds.repair, language)}`}><Wrench aria-hidden="true" /><span>{copy.maintenanceInProgress}</span><strong>{formatInteger(maintenanceInProgress, language)}</strong></article>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -1177,14 +1330,19 @@ function HeaderPanel({
   model,
   language,
   mode,
+  isRefreshing,
+  onRefresh,
   onToggleLanguage,
 }: {
   model: OverviewBoardModel;
   language: AppLanguage;
   mode: "live" | "demo";
+  isRefreshing: boolean;
+  onRefresh: () => void;
   onToggleLanguage: () => void;
 }) {
   const copy = COPY[language];
+  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const statusCopy = model.overallStatus === "normal" ? copy.normal : copy.attention;
   const injectionPace = getProcessPace(model.processes.injection);
   const assemblyPace = getProcessPace(model.processes.assembly);
@@ -1199,6 +1357,31 @@ function HeaderPanel({
   const freshnessLabel = model.freshnessLabel ?? (freshnessParts.length > 0 ? freshnessParts.join(" · ") : null);
   const weather = model.weather;
   const weatherAvailable = weather.status !== "unavailable" && weather.temperatureC !== null;
+  const fullscreenSupported = typeof document.documentElement.requestFullscreen === "function";
+  const fullscreenLabel = isFullscreen ? copy.exitFullscreen : copy.enterFullscreen;
+
+  useEffect(() => {
+    const syncFullscreenState = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else if (fullscreenSupported) {
+        try {
+          await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+        } catch {
+          await document.documentElement.requestFullscreen();
+        }
+      }
+    } catch {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    }
+  };
+
   return (
     <header className={`${styles.card} ${styles.headerCard}`}>
       <div className={styles.brandRow}>
@@ -1208,43 +1391,64 @@ function HeaderPanel({
             <strong>{copy.title}</strong>
           </button>
         </h1>
+        <div className={styles.headerActions}>
+          <button
+            aria-label={fullscreenSupported ? fullscreenLabel : copy.fullscreenUnavailable}
+            aria-pressed={isFullscreen}
+            disabled={!fullscreenSupported}
+            onClick={() => void toggleFullscreen()}
+            title={fullscreenSupported ? fullscreenLabel : copy.fullscreenUnavailable}
+            type="button"
+          >
+            {isFullscreen ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+          </button>
+          <button
+            aria-busy={isRefreshing}
+            aria-label={isRefreshing ? copy.refreshingBoard : copy.refreshBoard}
+            disabled={isRefreshing}
+            onClick={onRefresh}
+            title={isRefreshing ? copy.refreshingBoard : copy.refreshBoard}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" className={isRefreshing ? styles.refreshingIcon : undefined} />
+          </button>
+        </div>
         {mode === "demo" ? <div className={styles.demoBadge}><Radio aria-hidden="true" />{copy.demo}</div> : null}
       </div>
-      <div className={styles.headerHero}>
-        <div className={styles.brandSummary}>
-          <p className={styles.businessDate}><CalendarDays aria-hidden="true" />{formatBusinessDate(model.businessDate, language)}</p>
-          <div className={styles.headerPaceSummary}>
-            <article className={injectionPace.status === "behind" ? styles.headerPaceAttention : ""}><Factory aria-hidden="true" /><span>{copy.injectionPace}</span><strong>{formatSignedPercentPoints(injectionPace.gap)}</strong></article>
-            <article className={assemblyPace.status === "behind" ? styles.headerPaceAttention : ""}><Workflow aria-hidden="true" /><span>{copy.assemblyPace}</span><strong>{formatSignedPercentPoints(assemblyPace.gap)}</strong></article>
-            <article><Factory aria-hidden="true" /><span>{copy.runningMachines}</span><strong>{formatInteger(model.equipment.injectionOee.runningMachineCount, language)} / {formatInteger(model.equipment.injectionOee.totalEquipmentCount, language)}</strong></article>
-          </div>
-        </div>
-        <section className={`${styles.weatherCard} ${weather.isStale ? styles.weatherStale : ""}`} title={weather.isStale ? copy.weatherStale : weather.attribution}>
-          <div className={styles.weatherPrimary}>
-            <div className={styles.weatherIcon}><WeatherConditionIcon conditionCode={weather.conditionCode} /></div>
-            <div className={styles.weatherIdentity}>
-              <span><MapPin aria-hidden="true" />{copy.nanjingWeather}</span>
-              <strong>{getWeatherConditionLabel(weather.conditionCode, language)}</strong>
+      <div className={styles.headerContent}>
+        <div className={styles.headerHero}>
+          <div className={styles.brandSummary}>
+            <p className={styles.businessDate}><CalendarDays aria-hidden="true" />{formatBusinessDate(model.businessDate, language)}</p>
+            <div className={styles.headerPaceSummary}>
+              <article className={injectionPace.status === "behind" ? styles.headerPaceAttention : ""}><Factory aria-hidden="true" /><span>{copy.injectionPace}</span><strong>{formatSignedPercentPoints(injectionPace.gap)}</strong></article>
+              <article className={assemblyPace.status === "behind" ? styles.headerPaceAttention : ""}><Workflow aria-hidden="true" /><span>{copy.assemblyPace}</span><strong>{formatSignedPercentPoints(assemblyPace.gap)}</strong></article>
+              <article><Factory aria-hidden="true" /><span>{copy.runningMachines}</span><strong>{formatInteger(model.equipment.injectionOee.runningMachineCount, language)} / {formatInteger(model.equipment.injectionOee.totalEquipmentCount, language)}</strong></article>
             </div>
-            <strong className={styles.weatherTemperature}>{weatherAvailable ? `${formatDecimal(weather.temperatureC, 1)}°C` : "—"}</strong>
           </div>
-          <div className={styles.weatherMetrics}>
-            <article><Droplets aria-hidden="true" /><span>{copy.humidity}</span><strong>{weather.relativeHumidityPercent === null ? "—" : `${formatDecimal(weather.relativeHumidityPercent, 0)}%`}</strong></article>
-            <article><Wind aria-hidden="true" /><span>{copy.wind}</span><strong>{weather.windSpeedMps === null ? "—" : `${formatDecimal(weather.windSpeedMps, 1)} m/s`}</strong></article>
-          </div>
-          <div className={styles.weatherSource}>
-            {weather.isStale ? <em>{copy.weatherStale}</em> : null}
-            {weather.sourceUrl ? <a href={weather.sourceUrl} rel="noreferrer" target="_blank">{weather.source}</a> : <small>{weather.source}</small>}
-          </div>
-        </section>
+          <section className={`${styles.weatherCard} ${weather.isStale ? styles.weatherStale : ""}`} title={weather.isStale ? copy.weatherStale : weather.attribution}>
+            <div className={styles.weatherPrimary}>
+              <div className={styles.weatherIcon}><WeatherConditionIcon conditionCode={weather.conditionCode} /></div>
+              <div className={styles.weatherIdentity}>
+                <span><MapPin aria-hidden="true" />{copy.nanjingWeather}</span>
+                <strong>{getWeatherConditionLabel(weather.conditionCode, language)}</strong>
+              </div>
+              <strong className={styles.weatherTemperature}>{weatherAvailable ? `${formatDecimal(weather.temperatureC, 1)}°C` : "—"}</strong>
+            </div>
+            <div className={styles.weatherMetrics}>
+              <article><Droplets aria-hidden="true" /><span>{copy.humidity}</span><strong>{weather.relativeHumidityPercent === null ? "—" : `${formatDecimal(weather.relativeHumidityPercent, 0)}%`}</strong></article>
+              <article><Wind aria-hidden="true" /><span>{copy.wind}</span><strong>{weather.windSpeedMps === null ? "—" : `${formatDecimal(weather.windSpeedMps, 1)} m/s`}</strong></article>
+            </div>
+            {weather.isStale ? <div className={styles.weatherSource}><em>{copy.weatherStale}</em></div> : null}
+          </section>
+        </div>
+        <div className={styles.statusStrip}>
+          <span><Clock3 aria-hidden="true" />{formatShanghaiTime(model.generatedAt)} {copy.generatedAt}</span>
+          <span className={model.overallStatus === "normal" ? styles.normalStatus : styles.attentionStatus}><CheckCircle2 aria-hidden="true" />{copy.operatingStatus} <strong>{statusCopy}</strong></span>
+          <span className={styles.attentionStatus}><AlertTriangle aria-hidden="true" />{copy.checks} <strong>{formatInteger(model.attention.length, language)}</strong></span>
+          <span><ShieldCheck aria-hidden="true" />{copy.qualityHistoryCount} <strong>{formatInteger(model.quality.items.length, language)}</strong></span>
+        </div>
+        {freshnessLabel ? <small className={styles.freshness}><TimerReset aria-hidden="true" />{copy.sourceFreshness} · {freshnessLabel}</small> : null}
       </div>
-      <div className={styles.statusStrip}>
-        <span><Clock3 aria-hidden="true" />{formatShanghaiTime(model.generatedAt)} {copy.generatedAt}</span>
-        <span className={model.overallStatus === "normal" ? styles.normalStatus : styles.attentionStatus}><CheckCircle2 aria-hidden="true" />{copy.operatingStatus} <strong>{statusCopy}</strong></span>
-        <span className={styles.attentionStatus}><AlertTriangle aria-hidden="true" />{copy.checks} <strong>{formatInteger(model.attention.length, language)}</strong></span>
-        <span><ShieldCheck aria-hidden="true" />{copy.qualityHistoryCount} <strong>{formatInteger(model.quality.items.length, language)}</strong></span>
-      </div>
-      {freshnessLabel ? <small className={styles.freshness}><TimerReset aria-hidden="true" />{copy.sourceFreshness} · {freshnessLabel}</small> : null}
     </header>
   );
 }
@@ -1252,13 +1456,15 @@ function HeaderPanel({
 export function OverviewBoardPage() {
   const [language, setLanguage] = useStoredLanguage();
   const [languageAnnouncement, setLanguageAnnouncement] = useState("");
-  const businessDate = useMemo(() => getShanghaiBusinessDateString(), []);
+  const businessDate = useShanghaiBusinessDate();
   const query = useQuery({
     queryKey: ["overview-board", businessDate, language],
     queryFn: () => getOverviewBoard(businessDate, language),
     refetchInterval: 60_000,
     staleTime: 45_000,
+    placeholderData: (previousData) => previousData,
   });
+  const visibleData = useRetainedValue(query.data);
   const copy = COPY[language];
 
   const toggleLanguage = () => {
@@ -1267,7 +1473,7 @@ export function OverviewBoardPage() {
     setLanguage(nextLanguage);
   };
 
-  if (query.isLoading) {
+  if (query.isPending && !visibleData) {
     return (
       <main className={styles.statePage} role="status">
         <img alt="WJ" src="/logo-transparent.png" />
@@ -1277,7 +1483,7 @@ export function OverviewBoardPage() {
     );
   }
 
-  if (query.isError || !query.data) {
+  if (!visibleData) {
     return (
       <main className={styles.statePage} role="alert">
         <AlertTriangle aria-hidden="true" />
@@ -1287,11 +1493,18 @@ export function OverviewBoardPage() {
     );
   }
 
-  const { model, mode } = query.data;
+  const { model, mode } = visibleData;
   return (
     <main className={styles.page} data-mode={mode} data-testid="overview-board-page">
       <ProductionCard kind="injection" language={language} process={model.processes.injection} />
-      <HeaderPanel language={language} mode={mode} model={model} onToggleLanguage={toggleLanguage} />
+      <HeaderPanel
+        isRefreshing={query.isFetching}
+        language={language}
+        mode={mode}
+        model={model}
+        onRefresh={() => void query.refetch()}
+        onToggleLanguage={toggleLanguage}
+      />
       <ProductionCard kind="assembly" language={language} process={model.processes.assembly} />
       <EquipmentPanel language={language} model={model} />
       <OperationsPanel language={language} model={model} />

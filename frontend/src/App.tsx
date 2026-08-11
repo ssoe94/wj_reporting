@@ -89,6 +89,7 @@ function isPublicRoutePath(pathname: string) {
     || normalizedPath === '/boards/injection'
     || normalizedPath === '/boards/moulds'
     || normalizedPath === '/boards/energy'
+    || normalizedPath === '/boards/overview'
     || normalizedPath === '/production/injection-board'
     || normalizedPath === '/production/injection-board/index.html'
     || normalizedPath === '/injection/moulds'
@@ -752,7 +753,7 @@ function AppContent() {
             <Route path="/boards/injection" element={<Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense>} />
             <Route path="/boards/moulds" element={<Suspense fallback={<RouteLoading />}><MouldManagementPage /></Suspense>} />
             <Route path="/boards/energy" element={<Suspense fallback={<RouteLoading />}><EnergyBoardPage /></Suspense>} />
-            <Route path="/boards/overview" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><OverviewBoardPage /></Suspense></PrivateRoute>} />
+            <Route path="/boards/overview" element={<Suspense fallback={<RouteLoading />}><OverviewBoardPage /></Suspense>} />
             {/* Private routes */}
             <Route path="/" element={<PrivateRoute><PageTransition><HomeRedirect /></PageTransition></PrivateRoute>} />
             <Route path="/next/login" element={<Navigate to="/login" replace />} />

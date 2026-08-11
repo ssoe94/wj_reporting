@@ -132,6 +132,7 @@ def _latest_counter_baselines(
         InjectionMonitoringRecord.objects
         .filter(machine_name__in=names, timestamp__lt=before)
         .exclude(**{f"{field}__isnull": True})
+        .filter(**{f"{field}__gte": 0})
         .values("machine_name")
         .annotate(latest=Max("timestamp"))
     )
@@ -145,7 +146,9 @@ def _latest_counter_baselines(
     rows = InjectionMonitoringRecord.objects.filter(
         machine_name__in=list(latest_by_machine),
         timestamp__in=list(latest_by_machine.values()),
-    ).exclude(**{f"{field}__isnull": True}).values("machine_name", "timestamp", field)
+    ).exclude(**{f"{field}__isnull": True}).filter(
+        **{f"{field}__gte": 0},
+    ).values("machine_name", "timestamp", field)
     result: dict[str, float] = {}
     for row in rows:
         machine_name = str(row["machine_name"])
@@ -468,6 +471,7 @@ def _resolved_current_parts(
     *,
     require_recent_activity: bool = True,
     require_part_number: bool = True,
+    allowed_statuses: tuple[str, ...] = ("in_progress",),
 ) -> list[dict[str, Any]]:
     """Return only parts deterministically resolved as the in-progress plan group.
 
@@ -488,7 +492,8 @@ def _resolved_current_parts(
     resolved: list[dict[str, Any]] = []
     seen: set[str] = set()
     for part in machine_row.get("parts") or []:
-        if part.get("status") != "in_progress":
+        part_status = str(part.get("status") or "")
+        if part_status not in allowed_statuses:
             continue
         normalized = _normalize_part_no(part.get("part_no"))
         model_name = str(part.get("model_name") or "").strip()
@@ -506,11 +511,46 @@ def _resolved_current_parts(
             "normalized_part_no": normalized if has_part_number else "",
             "model_name": model_name or "-",
             "sequence": _safe_int(part.get("sequence")),
-            "status": "in_progress",
+            "status": part_status,
             "production_group_id": part.get("production_group_id"),
             "production_group_complete": bool(part.get("production_group_complete", True)),
         })
     return resolved
+
+
+def _equipment_display_parts(machine_row: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
+    """Match the injection board's deterministic product display fallback.
+
+    Prefer the cavity/sequence-allocated in-progress group.  If production has
+    not started and every item is still pending, show only the earliest pending
+    plan group.  This fallback is equipment-display context only: quality
+    matching continues to call ``_resolved_current_parts`` with its strict
+    in-progress + recent-activity requirements.
+    """
+    in_progress = _resolved_current_parts(
+        machine_row,
+        require_recent_activity=False,
+        require_part_number=False,
+    )
+    if in_progress:
+        return in_progress, "in_progress"
+
+    pending = _resolved_current_parts(
+        machine_row,
+        require_recent_activity=False,
+        require_part_number=False,
+        allowed_statuses=("pending",),
+    )
+    if not pending:
+        return [], None
+
+    first = min(pending, key=lambda part: (part.get("sequence") or 999999))
+    group_id = first.get("production_group_id")
+    if group_id:
+        selected = [part for part in pending if part.get("production_group_id") == group_id]
+    else:
+        selected = [first]
+    return selected, "first_pending"
 
 
 def _quality_report_groups(
@@ -705,6 +745,7 @@ def _build_energy(
         InjectionMonitoringRecord.objects
         .filter(timestamp__gte=trend_calculation_start, timestamp__lt=counter_end)
         .filter(power_kwh__isnull=False)
+        .filter(power_kwh__gte=0)
         .order_by("machine_name", "timestamp")
         .values("machine_name", "timestamp", "power_kwh")
     )
@@ -761,6 +802,7 @@ def _build_energy(
             timestamp__gte=range_start,
             timestamp__lt=counter_end,
             capacity__isnull=False,
+            capacity__gte=0,
         )
         .order_by("machine_name", "timestamp")
         .values("machine_name", "capacity")
@@ -1226,7 +1268,15 @@ def _current_part_resolution(
     *,
     production_state: str,
     resolved_part_count: int,
+    display_basis: str | None = None,
 ) -> dict[str, Any]:
+    if display_basis == "first_pending" and resolved_part_count > 0:
+        return {
+            "status": "planned",
+            "method": "first_pending_plan_group_same_as_injection_board",
+            "reason": "no_in_progress_group; showing earliest pending plan group",
+            "resolved_part_count": resolved_part_count,
+        }
     if production_state == "running_resolved":
         return {
             "status": "resolved",
@@ -1312,11 +1362,7 @@ def _build_equipment(
         # in_progress.  Do not require a shot in the last hour for the equipment
         # label; the separate machine state continues to show it as stopped.
         # Quality keeps the stricter recent-activity requirement.
-        resolved = _resolved_current_parts(
-            row,
-            require_recent_activity=False,
-            require_part_number=False,
-        )
+        resolved, display_basis = _equipment_display_parts(row)
         pace = _machine_pace_payload(row, time_progress_rate=injection_time_progress)
         has_plan = pace["planned_qty"] > 0
         production_state, state_reason = _machine_production_state(
@@ -1326,6 +1372,12 @@ def _build_equipment(
             planned_qty=pace["planned_qty"],
             resolved_part_count=len(resolved),
         )
+        if display_basis == "first_pending":
+            state_reason = (
+                "recent_activity_plus_first_pending_plan_group"
+                if is_running
+                else "first_pending_plan_group_without_recent_activity"
+            )
         recent_shots = _safe_int(
             activity_row.get("shot_count") if activity_row else row.get("recent_60m_shots")
         )
@@ -1357,6 +1409,7 @@ def _build_equipment(
             "current_part_resolution": _current_part_resolution(
                 production_state=production_state,
                 resolved_part_count=len(resolved),
+                display_basis=display_basis,
             ),
         })
 

@@ -7,13 +7,13 @@ export function getSeoulDateString() {
   }).format(new Date());
 }
 
-export function getShanghaiDateString() {
+export function getShanghaiDateString(value: Date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date());
+  }).format(value);
 }
 
 export function getShanghaiBusinessDateString(value: Date = new Date(), cutoffHour = 8) {

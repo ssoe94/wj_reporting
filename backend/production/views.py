@@ -1183,9 +1183,9 @@ class ProductionDashboardView(APIView):
 
 
 class ProductionOverviewBoardView(APIView):
-    """Read-only composite snapshot for the authenticated 3x3 video wall."""
+    """Public read-only composite snapshot for the standalone 3x3 video wall."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
         date_str = request.query_params.get('date')

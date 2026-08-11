@@ -29,7 +29,9 @@ import {
   type InjectionProductionMatrix,
 } from "@/domains/mes/api";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
-import { addIsoDateDays, getShanghaiBusinessDateString } from "@/shared/utils/date";
+import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
+import { useRetainedValue } from "@/shared/hooks/useRetainedValue";
+import { addIsoDateDays } from "@/shared/utils/date";
 import styles from "./EnergyBoardPage.module.css";
 
 const REFRESH_INTERVAL_MS = 10 * 60_000;
@@ -414,17 +416,18 @@ export function EnergyBoardPage() {
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [heatmapHover, setHeatmapHover] = useState<HeatmapHover | null>(null);
   const copy = COPY[language];
-  const businessDate = getShanghaiBusinessDateString();
-  const cachedEnergy = useMemo(() => readEnergyCache(businessDate), [businessDate]);
+  const requestedBusinessDate = useShanghaiBusinessDate();
+  const cachedEnergy = useMemo(() => readEnergyCache(requestedBusinessDate), [requestedBusinessDate]);
 
   const energyQuery = useQuery({
-    queryKey: ["mes", "energy-board", businessDate, HISTORY_HOURS],
+    queryKey: ["mes", "energy-board", requestedBusinessDate, HISTORY_HOURS],
     queryFn: () => getInjectionEnergyMatrix(HISTORY_HOURS),
     initialData: cachedEnergy?.data,
     initialDataUpdatedAt: cachedEnergy?.savedAt,
     staleTime: 0,
     refetchInterval: REFRESH_INTERVAL_MS,
     retry: 2,
+    placeholderData: (previousData) => previousData,
   });
   const freshnessQuery = useQuery({
     queryKey: ["mes", "energy-board-freshness"],
@@ -435,12 +438,24 @@ export function EnergyBoardPage() {
   useEffect(() => {
     if (
       energyQuery.data
+      && !energyQuery.isPlaceholderData
       && (!cachedEnergy || energyQuery.dataUpdatedAt > cachedEnergy.savedAt)
-    ) writeEnergyCache(businessDate, energyQuery.data);
-  }, [businessDate, cachedEnergy, energyQuery.data, energyQuery.dataUpdatedAt]);
+    ) writeEnergyCache(requestedBusinessDate, energyQuery.data);
+  }, [cachedEnergy, energyQuery.data, energyQuery.dataUpdatedAt, energyQuery.isPlaceholderData, requestedBusinessDate]);
+  const currentEnergySnapshot = useMemo(() => {
+    if (!energyQuery.data || energyQuery.isPlaceholderData) return undefined;
+    return {
+      businessDate: requestedBusinessDate,
+      data: energyQuery.data,
+    };
+  }, [energyQuery.data, energyQuery.isPlaceholderData, requestedBusinessDate]);
+  const visibleEnergySnapshot = useRetainedValue(currentEnergySnapshot);
+  const businessDate = visibleEnergySnapshot?.businessDate ?? requestedBusinessDate;
   const model = useMemo(
-    () => energyQuery.data ? buildEnergyModel(energyQuery.data, businessDate) : null,
-    [businessDate, energyQuery.data],
+    () => visibleEnergySnapshot
+      ? buildEnergyModel(visibleEnergySnapshot.data, visibleEnergySnapshot.businessDate)
+      : null,
+    [visibleEnergySnapshot],
   );
   const latestTimestamp = freshnessQuery.data?.latest_timestamp ?? null;
   const isStale = latestTimestamp

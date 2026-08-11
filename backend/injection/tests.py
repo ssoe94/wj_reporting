@@ -85,6 +85,28 @@ class InjectionMonitoringDatesApiTests(TestCase):
         self.assertEqual(response.json()['dates'], ['2026-05-19', '2026-05-18'])
 
 
+class InjectionEnergyMatrixTests(TestCase):
+    def test_negative_missing_counter_does_not_create_energy_spike(self):
+        cst = pytz.timezone('Asia/Shanghai')
+        reference = cst.localize(datetime(2026, 8, 11, 10, 0))
+        for hour, value in [(8, 100.0), (9, -1.0), (10, 101.0)]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name='3호기',
+                device_code='1300T-3',
+                timestamp=reference.replace(hour=hour),
+                power_kwh=value,
+            )
+
+        matrix = mes_service.get_production_matrix(
+            interval_type='1hour',
+            columns=3,
+            reference_time=reference,
+        )
+
+        self.assertEqual(matrix['power_usage_matrix']['3'], [0.0, 0.0, 1.0])
+        self.assertEqual(matrix['power_kwh_matrix']['3'], [100.0, 100.0, 101.0])
+
+
 class InjectionMonitoringRollupTests(TestCase):
     def test_detailed_shots_override_stale_rollups_without_losing_rollup_only_data(self):
         cst = pytz.timezone('Asia/Shanghai')

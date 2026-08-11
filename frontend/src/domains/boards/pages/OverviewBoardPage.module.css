@@ -172,7 +172,7 @@
 
 .productionNumbers {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.36rem;
 }
 
 .productionNumbers div {
@@ -188,7 +188,7 @@
 
 .productionNumbers dd {
   color: var(--navy);
-  font-size: 1.88rem;
+  font-size: 1.82rem;
   font-weight: 800;
   line-height: 1;
 }
@@ -324,10 +324,11 @@
 
 .headerCard {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto;
+  align-content: space-between;
   align-items: stretch;
-  gap: 0.38rem;
-  padding: 0.72rem 0.9rem 0.58rem;
+  gap: 0.42rem;
+  padding: 0.58rem 0.9rem 0.54rem;
   border-top-color: #a9c9e7;
   box-shadow: inset 0 0.18rem 0 #1260b6, 0 0.42rem 1.4rem rgba(21, 55, 93, 0.07);
   text-align: left;
@@ -339,24 +340,26 @@
   min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(0, 1.03fr) minmax(0, 0.97fr);
-  align-items: stretch;
-  gap: 0.62rem;
+  align-items: center;
+  gap: 0.52rem;
 }
 
 .brandSummary {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0.34rem;
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 0.42rem;
 }
 
 .brandRow {
+  position: relative;
   display: flex;
   min-width: 0;
   max-width: 100%;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 0.48rem;
 }
 
@@ -367,10 +370,59 @@
 }
 
 .brandRow > img {
-  width: 3.15rem;
-  height: 3.15rem;
+  width: 3.05rem;
+  height: 3.05rem;
   flex: 0 0 auto;
   object-fit: contain;
+}
+
+.headerActions {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.headerActions button {
+  display: inline-flex;
+  width: 2.15rem;
+  height: 2.15rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #c4d7e8;
+  border-radius: 0.5rem;
+  background: #f7fbff;
+  color: #245b8e;
+  box-shadow: 0 0.16rem 0.42rem rgba(18, 96, 182, 0.08);
+  cursor: pointer;
+}
+
+.headerActions button:hover:not(:disabled) {
+  border-color: #87b2d8;
+  background: #eaf4fc;
+  color: var(--blue);
+}
+
+.headerActions button:focus-visible {
+  outline: max(2px, 0.12vw) solid #0c6bcc;
+  outline-offset: max(2px, 0.12vw);
+}
+
+.headerActions button:disabled {
+  cursor: default;
+  opacity: 0.52;
+}
+
+.headerActions svg {
+  width: 1.16rem;
+  height: 1.16rem;
+  stroke-width: 2.2;
+}
+
+.refreshingIcon {
+  animation: headerRefreshSpin 900ms linear infinite;
 }
 
 .titleButton {
@@ -392,7 +444,7 @@
   font-size: 1.68rem;
   font-weight: 850;
   letter-spacing: -0.05em;
-  line-height: 1;
+  line-height: 1.12;
   text-overflow: ellipsis;
 }
 
@@ -418,21 +470,21 @@
   justify-content: center;
   gap: 0.34rem;
   margin: 0;
-  padding: 0.24rem 0.44rem;
+  padding: 0.58rem 0.46rem;
   border: 1px solid #cadeee;
   border-left: 0.2rem solid var(--blue);
   border-radius: 0.48rem;
   background: #edf4fb;
   color: #244b70;
-  font-size: 0.94rem;
+  font-size: 1.04rem;
   font-weight: 800;
   line-height: 1.15;
   white-space: nowrap;
 }
 
 .businessDate svg {
-  width: 1.42rem;
-  height: 1.42rem;
+  width: 1.56rem;
+  height: 1.56rem;
   flex: 0 0 auto;
   color: var(--blue);
 }
@@ -443,7 +495,8 @@
   width: 100%;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto;
+  align-content: center;
   overflow: hidden;
   border: 1px solid #bcd6ec;
   border-radius: 0.72rem;
@@ -468,16 +521,16 @@
   z-index: 1;
   display: grid;
   min-width: 0;
-  grid-template-columns: 2.55rem minmax(0, 1fr) auto;
+  grid-template-columns: 2.8rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.42rem;
-  padding: 0.48rem 0.56rem 0.26rem;
+  padding: 0.52rem 0.58rem 0.34rem;
 }
 
 .weatherIcon {
   display: flex;
-  width: 2.55rem;
-  height: 2.55rem;
+  width: 2.8rem;
+  height: 2.8rem;
   align-items: center;
   justify-content: center;
   border: 1px solid #c2dbef;
@@ -487,8 +540,8 @@
 }
 
 .weatherIcon svg {
-  width: 1.62rem;
-  height: 1.62rem;
+  width: 1.78rem;
+  height: 1.78rem;
   color: #1674bc;
   stroke-width: 2.25;
 }
@@ -504,7 +557,7 @@
   align-items: center;
   gap: 0.18rem;
   color: #52718e;
-  font-size: 0.54rem;
+  font-size: 0.64rem;
   font-weight: 800;
 }
 
@@ -517,7 +570,7 @@
 .weatherIdentity strong {
   overflow: hidden;
   color: #173f67;
-  font-size: 0.82rem;
+  font-size: 0.94rem;
   font-weight: 850;
   line-height: 1.05;
   text-overflow: ellipsis;
@@ -526,7 +579,7 @@
 
 .weatherTemperature {
   color: var(--navy);
-  font-size: 1.6rem;
+  font-size: 1.72rem;
   font-weight: 850;
   letter-spacing: -0.055em;
   line-height: 1.15;
@@ -540,7 +593,7 @@
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.28rem;
-  padding: 0 0.56rem 0.3rem;
+  padding: 0 0.58rem 0.48rem;
 }
 
 .weatherMetrics article {
@@ -549,7 +602,7 @@
   grid-template-columns: 0.82rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.2rem;
-  padding: 0.25rem 0.3rem;
+  padding: 0.34rem 0.36rem;
   border: 1px solid #d3e3f1;
   border-radius: 0.38rem;
   background: rgba(255, 255, 255, 0.9);
@@ -557,14 +610,14 @@
 }
 
 .weatherMetrics svg {
-  width: 0.76rem;
-  height: 0.76rem;
+  width: 0.86rem;
+  height: 0.86rem;
   color: #2280be;
 }
 
 .weatherMetrics span {
   overflow: hidden;
-  font-size: 0.5rem;
+  font-size: 0.61rem;
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -572,7 +625,7 @@
 
 .weatherMetrics strong {
   color: #173f67;
-  font-size: 0.64rem;
+  font-size: 0.74rem;
   white-space: nowrap;
 }
 
@@ -633,7 +686,7 @@
   grid-template-rows: auto auto;
   align-items: center;
   column-gap: 0.24rem;
-  padding: 0.3rem 0.34rem;
+  padding: 0.38rem 0.36rem;
   border: 1px solid #cfdeeb;
   border-radius: 0.46rem;
   background: #ffffff;
@@ -641,15 +694,15 @@
 }
 
 .headerPaceSummary svg {
-  width: 0.84rem;
-  height: 0.84rem;
+  width: 0.94rem;
+  height: 0.94rem;
   grid-row: 1 / 3;
 }
 
 .headerPaceSummary span {
   overflow: hidden;
   color: #59728a;
-  font-size: 0.48rem;
+  font-size: 0.56rem;
   font-weight: 750;
   line-height: 1.05;
   text-overflow: ellipsis;
@@ -658,7 +711,7 @@
 
 .headerPaceSummary strong {
   color: currentColor;
-  font-size: 0.72rem;
+  font-size: 0.82rem;
   line-height: 1.05;
   white-space: nowrap;
 }
@@ -670,6 +723,8 @@
 }
 
 .demoBadge {
+  position: absolute;
+  left: 0;
   display: flex;
   margin-left: auto;
   align-items: center;
@@ -704,9 +759,9 @@
   align-items: center;
   justify-content: center;
   gap: 0.3rem;
-  padding: 0.43rem 0.3rem;
+  padding: 0.48rem 0.3rem;
   color: #304d6d;
-  font-size: 0.67rem;
+  font-size: 0.72rem;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -716,14 +771,14 @@
 }
 
 .statusStrip svg {
-  width: 0.92rem;
-  height: 0.92rem;
+  width: 1rem;
+  height: 1rem;
   flex: 0 0 auto;
 }
 
 .statusStrip strong {
   color: inherit;
-  font-size: 0.84rem;
+  font-size: 0.92rem;
 }
 
 .statusStrip .normalStatus {
@@ -756,6 +811,11 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 0.52rem;
+}
+
+.mouldCard {
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.7rem;
 }
 
 .equipmentCard {
@@ -824,19 +884,27 @@
   box-shadow: 0 0 0 0.2rem #dff5ea;
 }
 
+.machineViewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .machineBody {
+  position: absolute;
+  inset: 0;
   display: grid;
   min-height: 0;
-  grid-template-rows: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: calc((100% - 0.68rem) / 3);
+  align-content: start;
   gap: 0.34rem;
-  animation: machinePageIn 260ms ease-out both;
 }
 
 .machineRow {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: 3.05rem minmax(0, 0.92fr) minmax(8.2rem, 1.25fr) 5rem;
+  grid-template-columns: 4.05rem minmax(0, 0.86fr) minmax(7.4rem, 1.22fr) 5.1rem;
   align-items: center;
   gap: 0.28rem;
   padding: 0.32rem 0.36rem;
@@ -868,10 +936,29 @@
   gap: 0.18rem;
 }
 
-.machineIdentity > strong {
+.machineIdentityName {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.04rem;
+}
+
+.machineIdentityName > strong {
+  overflow: hidden;
   color: var(--navy);
-  font-size: 1.2rem;
-  line-height: 1.08;
+  font-size: 1.12rem;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.machineIdentityName > small {
+  overflow: hidden;
+  color: #58718a;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.05;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -935,7 +1022,7 @@
 
 .machineProduct strong {
   color: #1257a5;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   line-height: 1.08;
 }
 
@@ -1154,22 +1241,36 @@
 
 .operationsCard {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 0.38rem;
-  padding-inline: 1.15rem;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.4rem;
+  padding: 0.92rem 1.05rem 0.8rem;
 }
 
 .operationsHeading {
   display: flex;
+  min-width: 0;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   padding: 0 0.65rem 0.65rem;
   border-bottom: 1px solid #d1ddea;
 }
 
+.operationsHeading .cardTitle {
+  min-width: 0;
+  justify-content: center;
+}
+
+.operationsHeading .cardTitle > svg {
+  width: 2.05rem;
+  height: 2.05rem;
+  color: var(--blue);
+}
+
 .operationsHeading h2 {
-  margin-left: auto;
+  overflow: hidden;
   font-size: 1.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .overallAttention {
@@ -1195,6 +1296,7 @@
 .operationsPulse {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-self: end;
   overflow: hidden;
   border: 1px solid #d2deea;
   border-radius: 0.48rem;
@@ -1237,11 +1339,20 @@
   color: var(--orange);
 }
 
+.attentionViewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .attentionList {
+  position: absolute;
+  inset: 0;
   display: grid;
   min-height: 0;
-  align-content: center;
-  gap: 0.28rem;
+  align-content: start;
+  grid-auto-rows: calc((100% - 0.68rem) / 3);
+  gap: 0.34rem;
 }
 
 .attentionRow {
@@ -1357,12 +1468,20 @@
   color: var(--green);
 }
 
+.qualityViewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .qualityBody {
+  position: absolute;
+  inset: 0;
   display: grid;
   min-height: 0;
-  align-content: center;
-  gap: 0.35rem;
-  animation: qualityPageIn 300ms ease-out both;
+  align-content: start;
+  grid-auto-rows: calc((100% - 0.68rem) / 3);
+  gap: 0.34rem;
 }
 
 .qualityRow {
@@ -1545,7 +1664,7 @@
 .outboundContent {
   display: grid;
   min-height: 0;
-  grid-template-rows: minmax(0, 1.64fr) minmax(0, 0.76fr);
+  grid-template-rows: minmax(0, 1.72fr) minmax(0, 0.76fr);
   gap: 0.3rem;
 }
 
@@ -1570,14 +1689,14 @@
 
 .outboundSectionLabel strong {
   color: #24486b;
-  font-size: 0.68rem;
+  font-size: 0.82rem;
   font-weight: 850;
 }
 
 .outboundSectionLabel span {
   overflow: hidden;
   color: #6d8297;
-  font-size: 0.48rem;
+  font-size: 0.62rem;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1620,7 +1739,7 @@
 
 .outboundCode small {
   color: #688198;
-  font-size: 0.4rem;
+  font-size: 0.54rem;
   font-weight: 750;
   letter-spacing: 0;
 }
@@ -1640,7 +1759,7 @@
 .outboundLaneValue > span {
   flex: 0 0 auto;
   color: #657d94;
-  font-size: 0.48rem;
+  font-size: 0.62rem;
   font-weight: 750;
 }
 
@@ -1657,7 +1776,7 @@
 .outboundLaneValue small {
   margin-left: 0.22rem;
   color: #5f7890;
-  font-size: 0.53rem;
+  font-size: 0.65rem;
   font-weight: 750;
 }
 
@@ -1668,7 +1787,7 @@
   grid-row: 2;
   gap: 0.45rem;
   color: #60778e;
-  font-size: 0.44rem;
+  font-size: 0.58rem;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1702,7 +1821,7 @@
   align-items: center;
   gap: 0.2rem;
   color: #5c738a;
-  font-size: 0.43rem;
+  font-size: 0.56rem;
   line-height: 1.05;
 }
 
@@ -1718,7 +1837,7 @@
 .outboundPriority > strong {
   overflow: hidden;
   color: #183f64;
-  font-size: 0.49rem;
+  font-size: 0.62rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1734,7 +1853,7 @@
 
 .outboundPriority > b {
   color: #173f65;
-  font-size: 0.5rem;
+  font-size: 0.63rem;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -1742,7 +1861,7 @@
 .outboundPriority > b small {
   margin-left: 0.1rem;
   color: #627990;
-  font-size: 0.4rem;
+  font-size: 0.52rem;
   font-weight: 750;
 }
 
@@ -1814,8 +1933,8 @@
   min-width: 0;
   min-height: 0;
   align-content: center;
-  gap: 0.18rem;
-  padding: 0.28rem 0.4rem;
+  gap: 0.22rem;
+  padding: 0.32rem 0.44rem;
   border: 1px solid #d1dee9;
   border-radius: 0.48rem;
   background: #ffffff;
@@ -1833,20 +1952,20 @@
 
 .outboundPeriod header strong {
   color: #284b6d;
-  font-size: 0.62rem;
+  font-size: 0.84rem;
   font-weight: 850;
 }
 
 .outboundPeriod header span {
   color: #788da0;
-  font-size: 0.42rem;
+  font-size: 0.64rem;
   font-weight: 650;
 }
 
 .outboundPeriod > div {
   display: grid;
   min-width: 0;
-  grid-template-columns: 2.15rem 2.8rem minmax(0, 1fr);
+  grid-template-columns: 2.25rem 3.15rem minmax(0, 1fr);
   align-items: baseline;
   gap: 0.2rem;
   line-height: 1;
@@ -1854,7 +1973,7 @@
 
 .outboundPeriod > div b {
   color: var(--blue);
-  font-size: 0.54rem;
+  font-size: 0.74rem;
 }
 
 .outboundPeriod > div:nth-of-type(2) b {
@@ -1863,14 +1982,14 @@
 
 .outboundPeriod > div strong {
   color: #1d466d;
-  font-size: 0.62rem;
+  font-size: 0.8rem;
   white-space: nowrap;
 }
 
 .outboundPeriod > div span {
   overflow: hidden;
   color: #6b8196;
-  font-size: 0.45rem;
+  font-size: 0.64rem;
   font-weight: 700;
   text-align: right;
   text-overflow: ellipsis;
@@ -1884,7 +2003,7 @@
   justify-content: space-between;
   gap: 0.45rem;
   color: #6b8196;
-  font-size: 0.44rem;
+  font-size: 0.58rem;
   font-weight: 650;
 }
 
@@ -1974,131 +2093,177 @@
   font-size: 1.1rem;
 }
 
-.mouldOverview {
+.mouldSimpleBody {
   display: grid;
   min-height: 0;
-  grid-template-columns: 0.78fr 1.22fr;
-  align-items: center;
-  gap: 0.75rem;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0.52rem;
 }
 
-.mouldDonut {
-  position: relative;
-  width: 7.7rem;
-  height: 7.7rem;
-  justify-self: center;
-}
-
-.mouldDonut > div:last-child {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  pointer-events: none;
-}
-
-.mouldDonut strong {
-  color: var(--navy);
-  font-size: 1.55rem;
-  line-height: 1;
-}
-
-.mouldDonut span {
-  width: 4.5rem;
-  margin-top: 0.25rem;
-  color: #637b93;
-  font-size: 0.57rem;
-  font-weight: 750;
-  text-align: center;
-}
-
-.mouldLegend {
-  display: grid;
-  min-width: 0;
-  align-content: center;
-  gap: 0.32rem;
-}
-
-.mouldLegend article {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 0.5rem minmax(0, 1fr) 2rem 2.4rem;
-  align-items: center;
-  gap: 0.38rem;
-  padding-bottom: 0.24rem;
-  border-bottom: 1px solid #e1e8ef;
-  color: #4d6882;
-  font-size: 0.63rem;
-}
-
-.mouldLegend i {
-  width: 0.46rem;
-  height: 0.46rem;
-  border-radius: 50%;
-}
-
-.mouldLegend span {
-  overflow: hidden;
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mouldLegend strong,
-.mouldLegend em {
-  font-style: normal;
-  text-align: right;
-}
-
-.mouldLegend strong {
-  color: #244665;
-}
-
-.mouldAlerts {
+.mouldStatusSummary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid #d1deea;
-  border-radius: 0.5rem;
-  background: #ffffff;
+  border-radius: 0.58rem;
+  background: #f8fbfe;
 }
 
-.mouldAlerts article {
+.mouldStatusSummary article {
   display: grid;
   min-width: 0;
-  grid-template-columns: 1.05rem minmax(0, 1fr) auto;
+  grid-template-columns: 1.35rem minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.32rem;
-  padding: 0.38rem 0.48rem;
+  gap: 0.42rem;
+  padding: 0.58rem 0.7rem;
   color: var(--blue);
 }
 
-.mouldAlerts article + article {
+.mouldStatusSummary article + article {
   border-left: 1px solid #d7e2ec;
 }
 
-.mouldAlerts svg {
-  width: 0.95rem;
-  height: 0.95rem;
+.mouldStatusSummary svg {
+  width: 1.22rem;
+  height: 1.22rem;
 }
 
-.mouldAlerts span {
+.mouldStatusSummary span {
   overflow: hidden;
-  color: #536e88;
-  font-size: 0.59rem;
-  font-weight: 750;
+  color: #4f6982;
+  font-size: 0.77rem;
+  font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mouldAlerts strong {
-  font-size: 0.88rem;
+.mouldStatusSummary strong {
+  color: var(--navy);
+  font-size: 1.38rem;
+  line-height: 1;
 }
 
-.mouldAlerts .orangeMetric {
+.mouldDistribution {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
+}
+
+.mouldDistribution > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.mouldDistribution > div:first-child > span {
+  color: #4b6680;
+  font-size: 0.7rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.mouldDistribution > div:first-child > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.48rem;
+}
+
+.mouldDistribution small {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: #58718a;
+  font-size: 0.55rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.mouldDistribution small i {
+  width: 0.38rem;
+  height: 0.38rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.mouldDistributionBar {
+  display: flex;
+  width: 100%;
+  height: 0.72rem;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e3eaf1;
+  box-shadow: inset 0 0 0 1px rgba(74, 102, 128, 0.1);
+}
+
+.mouldDistributionBar > i {
+  display: block;
+  height: 100%;
+}
+
+.mouldDistributionBar > i + i {
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.82);
+}
+
+.mouldHighlights {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.34rem;
+}
+
+.mouldHighlights > span {
+  color: #4b6680;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.mouldHighlights > div {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.mouldHighlights article {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 2.3rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.72rem;
+  padding: 0.62rem 0.9rem;
+  border: 1px solid #edc48f;
+  border-radius: 0.72rem;
+  background: #fff8ef;
   color: var(--orange);
+}
+
+.mouldHighlights article:last-child {
+  border-color: #b9cce0;
+  background: #f0f6fb;
+  color: var(--blue);
+}
+
+.mouldHighlights svg {
+  width: 2rem;
+  height: 2rem;
+}
+
+.mouldHighlights span {
+  overflow: hidden;
+  color: #314f6d;
+  font-size: 0.9rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mouldHighlights strong {
+  font-size: 2.6rem;
+  line-height: 1.12;
 }
 
 .energyCard {
@@ -2224,6 +2389,167 @@
   white-space: nowrap;
 }
 
+/* Keep the eight operational cards on one shared title rhythm. */
+.productionCard,
+.equipmentCard,
+.operationsCard,
+.qualityCard,
+.inventoryCard,
+.energyCard,
+.mouldCard {
+  padding-top: 0.82rem;
+  padding-right: 1rem;
+  padding-left: 1rem;
+}
+
+.productionCard,
+.inventoryCard {
+  grid-template-rows: 2.5rem minmax(0, 1fr) auto;
+}
+
+.equipmentCard,
+.qualityCard {
+  grid-template-rows: 2.5rem minmax(0, 1fr) 2rem;
+}
+
+.operationsCard {
+  grid-template-rows: 2.5rem minmax(0, 1fr) auto;
+}
+
+.energyCard,
+.mouldCard {
+  grid-template-rows: 2.5rem minmax(0, 1fr);
+}
+
+.card .standardPanelHeading {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  align-items: center;
+  padding: 0 0 0.46rem;
+  border-bottom: 1px solid #d3dfeb;
+}
+
+.card .standardPanelHeading h2 {
+  overflow: hidden;
+  color: var(--navy);
+  font-size: 1.54rem;
+  font-weight: 820;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card .standardPanelHeading .cardTitle,
+.card .standardPanelHeading.cardTitle {
+  min-width: 0;
+  gap: 0.58rem;
+}
+
+.card .standardPanelHeading .cardTitle > svg,
+.card .standardPanelHeading.cardTitle > svg {
+  width: 1.9rem;
+  height: 1.9rem;
+  flex: 0 0 auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--blue);
+  fill: none;
+  stroke-width: 2.25;
+}
+
+.qualityCard .standardPanelHeading .cardTitle > svg {
+  color: var(--green);
+}
+
+.machineControls,
+.qualityControls {
+  height: 2rem;
+  padding-top: 0;
+}
+
+/* The brand cell is intentionally distinct: a stronger title above a bottom-aligned information block. */
+.headerCard {
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+  gap: 0.42rem;
+}
+
+.headerContent {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto auto auto;
+  align-content: start;
+  align-self: start;
+  gap: 0.26rem;
+}
+
+.brandRow > img {
+  width: 3.35rem;
+  height: 3.35rem;
+}
+
+.titleButton strong {
+  font-size: 1.92rem;
+  font-weight: 880;
+}
+
+.headerHero {
+  align-self: start;
+  align-items: stretch;
+}
+
+.brandSummary {
+  align-content: start;
+  gap: 0.32rem;
+}
+
+.businessDate {
+  padding: 0.46rem 0.42rem;
+}
+
+.headerPaceSummary article {
+  padding: 0.3rem 0.32rem;
+}
+
+.weatherPrimary {
+  grid-template-columns: 2.45rem minmax(0, 1fr) auto;
+  padding: 0.4rem 0.5rem 0.22rem;
+}
+
+.weatherIcon {
+  width: 2.45rem;
+  height: 2.45rem;
+}
+
+.weatherIcon svg {
+  width: 1.55rem;
+  height: 1.55rem;
+}
+
+.weatherTemperature {
+  font-size: 1.55rem;
+}
+
+.weatherMetrics {
+  padding: 0 0.5rem 0.36rem;
+}
+
+.weatherMetrics article {
+  padding: 0.28rem 0.32rem;
+}
+
+.statusStrip > span {
+  padding: 0.42rem 0.28rem;
+}
+
+.freshness {
+  min-height: 0.62rem;
+}
+
 .panelEmpty {
   display: flex;
   align-items: center;
@@ -2305,24 +2631,17 @@
   border: 0;
 }
 
-@keyframes qualityPageIn {
-  from { opacity: 0; transform: translateY(0.35rem); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes machinePageIn {
-  from { opacity: 0; transform: translateX(0.28rem); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
 @keyframes stateSpin {
   to { transform: rotate(360deg); }
 }
 
+@keyframes headerRefreshSpin {
+  to { transform: rotate(360deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .machineBody,
-  .qualityBody,
-  .stateSpinner {
+  .stateSpinner,
+  .refreshingIcon {
     animation: none;
   }
 }

@@ -15,7 +15,9 @@ import {
   type RealtimeProgressSummary,
 } from "@/domains/production/realtime-progress";
 import { setStoredLanguage, type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
-import { addIsoDateDays, getShanghaiBusinessDateString } from "@/shared/utils/date";
+import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
+import { useRetainedValue } from "@/shared/hooks/useRetainedValue";
+import { addIsoDateDays } from "@/shared/utils/date";
 
 const BOARD_REFRESH_INTERVAL_MS = 60_000;
 const STALE_DATA_THRESHOLD_MS = 5 * 60_000;
@@ -1129,29 +1131,66 @@ export function InjectionBoardPage() {
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [isVisitorMode, setIsVisitorMode] = useState(false);
   const [isMobileHeaderCompact, setIsMobileHeaderCompact] = useState(false);
-  const [businessDate, setBusinessDate] = useState(() => getShanghaiBusinessDateString());
+  const requestedBusinessDate = useShanghaiBusinessDate();
+  const copy = boardCopy[language];
+  useReloadOnNewBuild();
+  const planQuery = useQuery({
+    queryKey: ["production-plan-summary", requestedBusinessDate, "injection-board"],
+    queryFn: () => getProductionPlanSummary(requestedBusinessDate),
+    refetchInterval: BOARD_REFRESH_INTERVAL_MS,
+    placeholderData: (previousData) => previousData,
+  });
+  const statusQuery = useQuery({
+    queryKey: ["production-status", requestedBusinessDate, "injection-board"],
+    queryFn: () => getProductionStatus(requestedBusinessDate),
+    refetchInterval: BOARD_REFRESH_INTERVAL_MS,
+    placeholderData: (previousData) => previousData,
+  });
+  const mesQuery = useQuery({
+    queryKey: ["mes", "injection-board-matrix", requestedBusinessDate],
+    queryFn: getInjectionProductionMatrix,
+    refetchInterval: BOARD_REFRESH_INTERVAL_MS,
+    placeholderData: (previousData) => previousData,
+  });
+  const currentBoardSnapshot = useMemo(() => {
+    if (
+      !planQuery.data
+      || !statusQuery.data
+      || !mesQuery.data
+      || planQuery.isPlaceholderData
+      || statusQuery.isPlaceholderData
+      || mesQuery.isPlaceholderData
+    ) return undefined;
+    return {
+      businessDate: requestedBusinessDate,
+      planData: planQuery.data,
+      statusData: statusQuery.data,
+      mesData: mesQuery.data,
+      refreshedAt: Math.max(planQuery.dataUpdatedAt, statusQuery.dataUpdatedAt, mesQuery.dataUpdatedAt),
+    };
+  }, [
+    mesQuery.data,
+    mesQuery.dataUpdatedAt,
+    mesQuery.isPlaceholderData,
+    planQuery.data,
+    planQuery.dataUpdatedAt,
+    planQuery.isPlaceholderData,
+    requestedBusinessDate,
+    statusQuery.data,
+    statusQuery.dataUpdatedAt,
+    statusQuery.isPlaceholderData,
+  ]);
+  const visibleBoardSnapshot = useRetainedValue(currentBoardSnapshot);
+  const businessDate = visibleBoardSnapshot?.businessDate ?? requestedBusinessDate;
+  const planData = visibleBoardSnapshot?.planData;
+  const statusData = visibleBoardSnapshot?.statusData;
+  const mesData = visibleBoardSnapshot?.mesData;
+  const refreshedAt = visibleBoardSnapshot?.refreshedAt ?? 0;
   const previousBusinessDate = addIsoDateDays(businessDate, -1);
   const [isPreviousSummaryOpen, setIsPreviousSummaryOpen] = useState(false);
   const [cachedPreviousSnapshot, setCachedPreviousSnapshot] = useState<PreviousBoardSnapshot | null>(
     () => readPreviousSummaryCache(previousBusinessDate),
   );
-  const copy = boardCopy[language];
-  useReloadOnNewBuild();
-  const planQuery = useQuery({
-    queryKey: ["production-plan-summary", businessDate, "injection-board"],
-    queryFn: () => getProductionPlanSummary(businessDate),
-    refetchInterval: BOARD_REFRESH_INTERVAL_MS,
-  });
-  const statusQuery = useQuery({
-    queryKey: ["production-status", businessDate, "injection-board"],
-    queryFn: () => getProductionStatus(businessDate),
-    refetchInterval: BOARD_REFRESH_INTERVAL_MS,
-  });
-  const mesQuery = useQuery({
-    queryKey: ["mes", "injection-board-matrix", businessDate],
-    queryFn: getInjectionProductionMatrix,
-    refetchInterval: BOARD_REFRESH_INTERVAL_MS,
-  });
   const previousPlanQuery = useQuery({
     queryKey: ["production-plan-summary", previousBusinessDate, "injection-board-history"],
     queryFn: () => getProductionPlanSummary(previousBusinessDate),
@@ -1174,8 +1213,8 @@ export function InjectionBoardPage() {
     refetchOnWindowFocus: false,
   });
   const summary = useMemo(
-    () => buildRealtimeProgressSummary(planQuery.data, mesQuery.data, statusQuery.data, businessDate),
-    [businessDate, mesQuery.data, planQuery.data, statusQuery.data],
+    () => buildRealtimeProgressSummary(planData, mesData, statusData, businessDate),
+    [businessDate, mesData, planData, statusData],
   );
   const previousSummary = useMemo(
     () => buildRealtimeProgressSummary(
@@ -1198,7 +1237,7 @@ export function InjectionBoardPage() {
     && (previousPlanQuery.isPending || previousPlanQuery.isFetching || previousMesQuery.isPending || previousMesQuery.isFetching);
   const previousSummaryIsError = !cachedPreviousSnapshot && !previousQueriesReady && !previousSummaryIsLoading
     && (previousPlanQuery.isError || previousMesQuery.isError);
-  const latestMesTime = getLatestMesTime(mesQuery.data);
+  const latestMesTime = getLatestMesTime(mesData);
   const isStale = Boolean(latestMesTime && Date.now() - latestMesTime.getTime() > STALE_DATA_THRESHOLD_MS);
   const businessStart = new Date(`${businessDate}T08:00:00+08:00`);
   const businessEnd = new Date(businessStart.getTime() + 24 * 60 * 60 * 1000);
@@ -1206,8 +1245,8 @@ export function InjectionBoardPage() {
     ? Math.max(0, Math.min(100, ((latestMesTime.getTime() - businessStart.getTime()) / (businessEnd.getTime() - businessStart.getTime())) * 100))
     : 0;
   const machines = useMemo(
-    () => buildBoardMachines(businessDate, summary, mesQuery.data, elapsedRate, isStale, copy.noPart, copy.noPlan),
-    [businessDate, copy.noPart, copy.noPlan, elapsedRate, isStale, mesQuery.data, summary],
+    () => buildBoardMachines(businessDate, summary, mesData, elapsedRate, isStale, copy.noPart, copy.noPlan),
+    [businessDate, copy.noPart, copy.noPlan, elapsedRate, isStale, mesData, summary],
   );
   const plannedRunningCount = machines.filter((machine) => machine.row?.hasPlan && machine.row.isRunning).length;
   const unplannedRunningCount = machines.filter((machine) => !machine.row?.hasPlan && machine.row?.isRunning).length;
@@ -1228,8 +1267,7 @@ export function InjectionBoardPage() {
   const isLoading = planQuery.isPending || statusQuery.isPending || mesQuery.isPending;
   const isRefreshing = planQuery.isFetching || statusQuery.isFetching || mesQuery.isFetching;
   const isError = planQuery.isError || statusQuery.isError || mesQuery.isError;
-  const showBlockingLoading = isLoading && !planQuery.data && !statusQuery.data && !mesQuery.data;
-  const refreshedAt = Math.max(planQuery.dataUpdatedAt, statusQuery.dataUpdatedAt, mesQuery.dataUpdatedAt);
+  const showBlockingLoading = isLoading && !visibleBoardSnapshot;
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -1249,15 +1287,6 @@ export function InjectionBoardPage() {
       window.removeEventListener("scroll", syncMobileHeader);
       window.removeEventListener("resize", syncMobileHeader);
     };
-  }, []);
-
-  useEffect(() => {
-    const syncBusinessDate = () => {
-      const nextBusinessDate = getShanghaiBusinessDateString();
-      setBusinessDate((current) => current === nextBusinessDate ? current : nextBusinessDate);
-    };
-    const timer = window.setInterval(syncBusinessDate, 30_000);
-    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {

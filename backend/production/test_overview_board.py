@@ -305,6 +305,28 @@ class OverviewBoardQualityContractTests(TestCase):
 
         self.assertEqual(snapshot["energy"]["usage_kwh"], 2.5)
 
+    def test_energy_counter_ignores_negative_missing_sentinel(self):
+        start = SHANGHAI_TZ.localize(datetime(2026, 8, 10, 8, 0))
+        for offset, value in [(-1, 100.0), (10, -1.0), (70, 101.25)]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name="3호기",
+                device_code="energy-machine-3",
+                timestamp=start + timedelta(minutes=offset),
+                power_kwh=value,
+            )
+
+        with patch(
+            "production.overview_board.get_daily_production_context",
+            return_value=_production_context(self.target_date),
+        ):
+            snapshot = build_overview_board_snapshot(self.target_date, language="ko")
+
+        self.assertEqual(snapshot["energy"]["usage_kwh"], 1.25)
+        self.assertLess(max(
+            point["usage_kwh"] or 0
+            for point in snapshot["energy"]["hourly_trend"]
+        ), 10)
+
     def test_energy_trend_and_efficiency_use_paired_hourly_counters(self):
         reference = SHANGHAI_TZ.localize(datetime(2026, 8, 10, 12, 0))
         first_sample = reference - timedelta(hours=49) + timedelta(minutes=10)
@@ -552,6 +574,49 @@ class OverviewBoardQualityContractTests(TestCase):
         self.assertEqual(snapshot["quality"]["resolved_machine_count"], 0)
         self.assertIn("quality_current_part_unresolved:3", snapshot["warnings"])
 
+    def test_injection_machine_feed_uses_first_pending_plan_group_for_display_only(self):
+        context = _production_context(self.target_date)
+        first = context["injection"]["machine_rows"][0]["parts"][0]
+        first.update({
+            "status": "pending",
+            "sequence": 1,
+            "part_no": "NEXT-001",
+            "model_name": "NEXT-MODEL",
+            "production_group_id": "NEXT:1",
+        })
+        context["injection"]["machine_rows"][0]["parts"].append({
+            "status": "pending",
+            "sequence": 2,
+            "part_no": "LATER-002",
+            "model_name": "LATER-MODEL",
+            "production_group_id": "LATER:2",
+        })
+        context["injection"]["machine_rows"][0].update({
+            "actual_qty": 0,
+            "progress_rate": 0,
+            "is_running": False,
+            "recent_60m_shots": 0,
+        })
+        with patch(
+            "production.overview_board.get_daily_production_context",
+            return_value=context,
+        ), patch(
+            "production.overview_board.get_injection_active_machine_context",
+            return_value=_activity_context(self.target_date, machine_numbers=()),
+        ):
+            snapshot = build_overview_board_snapshot(self.target_date, language="ko")
+
+        machine = snapshot["equipment"]["injection"][0]
+        self.assertEqual(machine["production_state"], "planned_waiting")
+        self.assertEqual(machine["current_parts"], [{"part_no": "NEXT-001", "model_name": "NEXT-MODEL"}])
+        self.assertEqual(machine["current_part_resolution"]["status"], "planned")
+        self.assertEqual(
+            machine["current_part_resolution"]["method"],
+            "first_pending_plan_group_same_as_injection_board",
+        )
+        # Pending plan display candidates must never enter historical quality matching.
+        self.assertEqual(snapshot["quality"]["items"], [])
+
     def test_oee_is_calculated_only_when_all_three_factors_are_explicitly_source_backed(self):
         context = _production_context(self.target_date)
         context["injection"]["oee_factors"] = {
@@ -667,10 +732,21 @@ class OverviewBoardEndpointTests(TestCase):
             password="test-password",
         )
 
-    def test_endpoint_requires_authentication(self):
-        response = self.client.get("/api/production/overview-board/")
+    def test_endpoint_is_public_read_only(self):
+        payload = {
+            "schema_version": "overview-board.v1",
+            "language": "ko",
+            "business_date": "2026-08-10",
+        }
+        with patch("production.views.build_overview_board_snapshot", return_value=payload):
+            response = self.client.get(
+                "/api/production/overview-board/",
+                {"date": "2026-08-10"},
+            )
 
-        self.assertIn(response.status_code, {401, 403})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), payload)
+        self.assertIn("no-store", response["Cache-Control"])
 
     def test_endpoint_validates_date_and_passes_language(self):
         self.client.force_authenticate(self.user)

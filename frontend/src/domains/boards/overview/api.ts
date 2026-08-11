@@ -736,6 +736,7 @@ export async function getOverviewBoard(
   try {
     const response = await http.get<unknown>(OVERVIEW_BOARD_ENDPOINT, {
       params: { date: businessDate, lang: language },
+      skipAuth: true,
     });
     return {
       model: normalizeOverviewResponse(response.data, businessDate, language),
