@@ -717,6 +717,10 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             handler.MODEL_CHUNK_OUTPUT_SCHEMA,
         )
         self.assertEqual(gemma.calls[0][2]["max_tokens"], handler.MODEL_CHUNK_MAX_TOKENS)
+        self.assertLessEqual(
+            len(gemma.calls[0][1]["phenomena"]),
+            handler.MODEL_CHUNK_MAX_PHENOMENA,
+        )
         self.assertEqual(result["source"], "local_llm_rewrite")
         self.assertEqual(result["llm_attempts"], 1)
         self.assertEqual(result["llm_chunk_count"], 1)

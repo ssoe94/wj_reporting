@@ -13,6 +13,7 @@ REQUIRED_SOURCE = "quality_daily_attention"
 REQUIRED_SCHEMA_VERSION = "quality-daily-attention-ai.v1"
 REPORT_METRICS_SCHEMA_VERSION = "quality-daily-report.v1"
 MODEL_CHUNK_MAX_TOKENS = 900
+MODEL_CHUNK_MAX_PHENOMENA = 18
 ALLOW_UNAVAILABLE_MODEL_FALLBACK = True
 REQUIRE_LLM_FOR_READY_RESULT = True
 
@@ -1422,22 +1423,36 @@ def analyze_with_llm(
             attention_items.append(fallback_item)
             continue
 
+        bounded_phenomena = sorted(
+            (row for row in phenomena if isinstance(row, dict)),
+            key=lambda row: (
+                -_nonnegative_int(row.get("count")),
+                _clean_text(row.get("evidence_key"), limit=220),
+            ),
+        )[:MODEL_CHUNK_MAX_PHENOMENA]
+
         attempted += 1
-        chunk = llm.structured_analysis(
-            MODEL_CHUNK_SYSTEM_PROMPT,
-            {
-                "source_key": item["source_key"],
-                "machine_name": item.get("machine_name"),
-                "part_prefix": item.get("part_prefix"),
-                "model_names": item.get("model_names") or [],
-                "part_nos": item.get("part_nos") or [],
-                "phenomena": phenomena,
-                "required_output_schema": MODEL_CHUNK_OUTPUT_SCHEMA,
-            },
-            enable_thinking=False,
-            timeout_seconds=180,
-            max_tokens=MODEL_CHUNK_MAX_TOKENS,
-        )
+        try:
+            chunk = llm.structured_analysis(
+                MODEL_CHUNK_SYSTEM_PROMPT,
+                {
+                    "source_key": item["source_key"],
+                    "machine_name": item.get("machine_name"),
+                    "part_prefix": item.get("part_prefix"),
+                    "model_names": (item.get("model_names") or [])[:4],
+                    "part_nos": (item.get("part_nos") or [])[:4],
+                    "phenomena": bounded_phenomena,
+                    "omitted_phenomenon_count": max(0, len(phenomena) - len(bounded_phenomena)),
+                    "required_output_schema": MODEL_CHUNK_OUTPUT_SCHEMA,
+                },
+                enable_thinking=False,
+                timeout_seconds=180,
+                max_tokens=MODEL_CHUNK_MAX_TOKENS,
+            )
+        except Exception as exc:
+            raise ValueError(
+                f"Gemma model chunk failed for {item['source_key']}: {exc}"
+            ) from exc
         if not isinstance(chunk, dict) or chunk.get("source_key") != item["source_key"]:
             raise ValueError("Gemma model chunk returned an invalid source_key.")
         attention_items.append({
