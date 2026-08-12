@@ -27,11 +27,13 @@ All-history report identifiers stay in the server-owned grounding payload. The
 Gemma prompt and result use compact aggregate evidence keys; the Worker validates
 those keys and calculates de-duplicated counts before completion.
 
-The same structured call can also write the bilingual daily quality report. The
-backend supplies authoritative `report_metrics` for repeated issues, report-frequency
-trends, and affected production scope. Gemma may only prioritize supplied metric,
-target, and evidence keys. The Worker verifies the plan and evidence fingerprints,
-then replaces free report prose with grounded bilingual templates for
+The backend supplies authoritative `report_metrics` for repeated issues,
+report-frequency trends, and affected production scope. Gemma does not write the
+daily report prose: bounded per-target calls select server-classified metric and
+evidence keys, followed by one compact call that ranks and connects eligible
+metric, target, and evidence keys for the report. The Worker verifies the plan
+and evidence fingerprints, rejects unknown/ineligible key combinations, and
+replaces all prose with grounded bilingual templates for
 `executive_summary`, `repeated_issues`, `accelerating_issues`, `affected_targets`,
 `shift_checks`, and `caveats`. It rejects invented keys, numeric prose,
 current-defect claims, root-cause claims, defect-rate claims, and prescriptive

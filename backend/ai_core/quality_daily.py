@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date, datetime, time
+import hashlib
 import re
 from typing import Any
 
@@ -33,6 +35,8 @@ QUALITY_DAILY_EVIDENCE_DEBOUNCE_SECONDS = 5 * 60
 QUALITY_DAILY_RETRY_COOLDOWN_SECONDS = 5 * 60
 QUALITY_DAILY_PAGE_REPORT_SCHEMA_VERSION = "quality-daily-page-report.v1"
 QUALITY_DAILY_NARRATIVE_SCHEMA_VERSION = "quality-daily-report-narrative.v1"
+QUALITY_DAILY_PUBLIC_CONTRACT_VERSION = "quality-daily-public-report.v2"
+QUALITY_DAILY_EXPECTED_PROMPT_VERSION = "quality-daily-attention-gemma-v3"
 QUALITY_DAILY_ACTIVE_STATUSES = (
     AiJob.STATUS_PENDING,
     AiJob.STATUS_CLAIMED,
@@ -53,6 +57,8 @@ def _is_retryable_job(job: AiJob | None) -> bool:
         return True
     if job.status != AiJob.STATUS_COMPLETED or not isinstance(job.result_payload, dict):
         return False
+    if job.prompt_version != QUALITY_DAILY_EXPECTED_PROMPT_VERSION:
+        return True
     if job.result_payload.get("llm_fallback") is True:
         return True
     report = job.result_payload.get("report")
@@ -235,6 +241,7 @@ def enqueue_daily_quality_summary(now: datetime | None = None) -> dict[str, Any]
         target_date,
         model_id=QUALITY_DAILY_MODEL_ID,
     )
+    input_payload["selection_contract_version"] = QUALITY_DAILY_EXPECTED_PROMPT_VERSION
     # The plan can change while the all-history evidence is being assembled.
     if input_payload.get("source_plan_hash") != source_plan_hash:
         return {
@@ -262,6 +269,7 @@ def enqueue_daily_quality_summary(now: datetime | None = None) -> dict[str, Any]
         "date": target_date.isoformat(),
         "language": QUALITY_DAILY_LANGUAGE,
         "model_id": QUALITY_DAILY_MODEL_ID,
+        "selection_contract_version": QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
         "source_plan_hash": source_plan_hash,
         "source_evidence_hash": source_evidence_hash,
         "plan_stable_since": plan_state.get("source_plan_last_changed_at"),
@@ -509,6 +517,180 @@ def _authoritative_attention_checkpoints() -> dict[str, list[str]]:
     }
 
 
+def _compact_public_revision(
+    source_plan_hash: str | None,
+    source_evidence_hash: str | None,
+) -> str | None:
+    """Return one opaque public revision without leaking internal fingerprints."""
+
+    if not source_plan_hash or not source_evidence_hash:
+        return None
+    material = (
+        f"{QUALITY_DAILY_PUBLIC_CONTRACT_VERSION}\0"
+        f"{source_plan_hash}\0{source_evidence_hash}"
+    ).encode("utf-8")
+    return hashlib.sha256(material).hexdigest()[:12]
+
+
+def _public_deterministic_report(value: dict[str, Any]) -> dict[str, Any]:
+    """Project numeric report metrics without internal grounding identifiers.
+
+    Evidence keys and free recorded text are used only inside the job/restore
+    pipeline.  The authenticated page receives canonical metrics, counts,
+    dates and plan impact scope, which are sufficient to audit every public
+    sentence without revealing implementation fingerprints.
+    """
+
+    result = deepcopy(value if isinstance(value, dict) else {})
+    for group_name in ("problem_types", "occurrence_locations"):
+        for metric in result.get(group_name) or []:
+            if not isinstance(metric, dict):
+                continue
+            metric.pop("source_evidence_keys", None)
+            metric.pop("recorded_text", None)
+            if metric.get("classification_basis") == "unclassified_recorded_text_hash":
+                metric["label"] = dict(QUALITY_UNKNOWN_PROBLEM_TYPE)
+                metric["classification_basis"] = "unclassified"
+    calculation_basis = result.get("calculation_basis")
+    if isinstance(calculation_basis, dict):
+        calculation_basis["unknown_problem_policy"] = "server_unclassified"
+    return result
+
+
+def _localized_list(values: Any, *, limit: int = 2) -> dict[str, str]:
+    cleaned = [str(value).strip() for value in values or [] if str(value or "").strip()]
+    cleaned = list(dict.fromkeys(cleaned))
+    visible = cleaned[:limit]
+    remainder = max(0, len(cleaned) - len(visible))
+    if not visible:
+        return {"ko": "", "zh": ""}
+    joined = ", ".join(visible)
+    return {
+        "ko": f"{joined}{f' 외 {remainder}개' if remainder else ''}",
+        "zh": f"{joined}{f'等{len(cleaned)}项' if remainder else ''}",
+    }
+
+
+def _metric_impact_text(metric: dict[str, Any]) -> dict[str, str]:
+    impact = metric.get("impact_scope") if isinstance(metric.get("impact_scope"), dict) else {}
+    machines = _localized_list(impact.get("machine_names"))
+    models = _localized_list(impact.get("model_names"))
+    parts = _localized_list(impact.get("part_nos"), limit=1)
+    group_count = int(impact.get("plan_group_count") or 0)
+
+    ko_values = [value for value in (machines["ko"], models["ko"], parts["ko"]) if value]
+    zh_values = [value for value in (machines["zh"], models["zh"], parts["zh"]) if value]
+    if not ko_values:
+        return {"ko": "연결 계획 없음", "zh": "无关联计划"}
+    ko = " / ".join(ko_values)
+    zh = " / ".join(zh_values)
+    if group_count:
+        ko += f" ({group_count}개 계획 그룹)"
+        zh += f"（{group_count}个计划组）"
+    return {"ko": ko, "zh": zh}
+
+
+def _metric_label_and_kind(metric: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
+    label = _metric_template_label(metric)
+    metric_key = str(metric.get("metric_key") or "")
+    if metric_key.startswith("location:"):
+        return label, {"ko": "발생 위치", "zh": "发生位置"}
+    return label, {"ko": "문제 유형", "zh": "问题类型"}
+
+
+def _pct(value: Any) -> str:
+    try:
+        return f"{float(value):.1f}"
+    except (TypeError, ValueError, OverflowError):
+        return "-"
+
+
+def _authoritative_target_headline(source_item: dict[str, Any]) -> dict[str, str]:
+    machine = str(source_item.get("machine_name") or "").strip() or "설비 미확인"
+    machines_zh = machine if machine != "설비 미확인" else "设备未确认"
+    models = _localized_list(source_item.get("model_names"), limit=2)
+    parts = _localized_list(source_item.get("part_nos"), limit=1)
+    report_count = int(source_item.get("matching_report_count") or 0)
+    target_ko = " / ".join(value for value in (machine, models["ko"], parts["ko"]) if value)
+    target_zh = " / ".join(value for value in (machines_zh, models["zh"], parts["zh"]) if value)
+    return {
+        "ko": f"{target_ko}: 연결된 과거 품질 기록 {report_count}건을 생산 전 확인합니다.",
+        "zh": f"{target_zh}：生产前确认关联的{report_count}条历史品质记录。",
+    }
+
+
+def _authoritative_target_checkpoints(source_item: dict[str, Any]) -> dict[str, list[str]]:
+    headline = _authoritative_target_headline(source_item)
+    latest = str(source_item.get("latest_report_dt") or "").strip()
+    ko = [headline["ko"]]
+    zh = [headline["zh"]]
+    if latest:
+        ko.append(f"이 계획 대상과 연결된 가장 최근 과거 기록일은 {latest[:10]}입니다.")
+        zh.append(f"与该计划对象关联的最近历史记录日期为{latest[:10]}。")
+    return {"ko": ko, "zh": zh}
+
+
+def _authoritative_public_target_headline(
+    source_item: dict[str, Any],
+    signals: list[dict[str, Any]],
+) -> dict[str, str]:
+    if not signals:
+        return _authoritative_target_headline(source_item)
+    primary = signals[0]
+    label = _bilingual(primary.get("label"))
+    count = int(primary.get("evidence_count") or 0)
+    denominator = int(primary.get("denominator") or 0)
+    trend = primary.get("trend") if isinstance(primary.get("trend"), dict) else {}
+    prefix_ko = "최근 증가 이력" if trend.get("status") == "increase" else "반복 과거 이력"
+    prefix_zh = "近期上升记录" if trend.get("status") == "increase" else "重复历史记录"
+    machine = str(source_item.get("machine_name") or "").strip() or "설비 미확인"
+    machine_zh = machine if machine != "설비 미확인" else "设备未确认"
+    models = _localized_list(source_item.get("model_names"), limit=1)
+    target_ko = " / ".join(value for value in (machine, models["ko"]) if value)
+    target_zh = " / ".join(value for value in (machine_zh, models["zh"]) if value)
+    return {
+        "ko": f"{target_ko}: {prefix_ko} {label['ko']} {count}/{denominator}건을 우선 확인합니다.",
+        "zh": f"{target_zh}：优先确认{prefix_zh}{label['zh']}（{count}/{denominator}条）。",
+    }
+
+
+def _authoritative_public_target_checkpoints(
+    source_item: dict[str, Any],
+    signals: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    result = _authoritative_target_checkpoints(source_item)
+    if not signals:
+        return result
+    primary = signals[0]
+    label = _bilingual(primary.get("label"))
+    trend = primary.get("trend") if isinstance(primary.get("trend"), dict) else {}
+    if trend.get("status") == "increase":
+        ko = (
+            f"{label['ko']} 기록은 최근 30일 "
+            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}건, "
+            f"직전 30일 {int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}건입니다."
+        )
+        zh = (
+            f"{label['zh']}记录最近30天为"
+            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}条，"
+            f"此前30天为{int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}条。"
+        )
+    else:
+        ko = (
+            f"{label['ko']} 과거 기록은 전체 "
+            f"{int(primary.get('denominator') or 0)}건 중 "
+            f"{int(primary.get('evidence_count') or 0)}건입니다."
+        )
+        zh = (
+            f"{label['zh']}历史记录在全部{int(primary.get('denominator') or 0)}条中为"
+            f"{int(primary.get('evidence_count') or 0)}条。"
+        )
+    return {
+        "ko": [ko, *result["ko"]][:3],
+        "zh": [zh, *result["zh"]][:3],
+    }
+
+
 def _metric_template_label(metric: dict[str, Any]) -> dict[str, str]:
     if metric.get("classification_basis") == "unclassified_recorded_text_hash":
         return {"ko": "미분류 현상", "zh": "未分类现象"}
@@ -524,16 +706,335 @@ def _authoritative_metric_narrative(
     *,
     accelerating: bool,
 ) -> dict[str, str]:
-    label = _metric_template_label(metric)
+    label, kind = _metric_label_and_kind(metric)
+    evidence_count = int(metric.get("evidence_count") or 0)
+    denominator = int(metric.get("all_history_denominator") or 0)
+    share = _pct(metric.get("all_history_share_pct"))
+    latest = str(metric.get("latest_report_dt") or "").strip()[:10] or "-"
+    impact = _metric_impact_text(metric)
     if accelerating:
+        trend = metric.get("trend") if isinstance(metric.get("trend"), dict) else {}
+        recent_count = int(trend.get("recent_count") or 0)
+        recent_denominator = int(trend.get("recent_denominator") or 0)
+        previous_count = int(trend.get("previous_count") or 0)
+        previous_denominator = int(trend.get("previous_denominator") or 0)
+        recent_share = _pct(trend.get("recent_share_pct"))
+        previous_share = _pct(trend.get("previous_share_pct"))
+        count_change = int(trend.get("count_change") or 0)
+        share_change = _pct(trend.get("share_change_pp"))
         return {
-            "ko": f"{label['ko']} 분류의 최근 보고 빈도 변화를 확인합니다.",
-            "zh": f"确认{label['zh']}分类近期报告频次的变化。",
+            "ko": (
+                f"최근 증가 {kind['ko']}: {label['ko']} — 최근 30일 "
+                f"{recent_count}/{recent_denominator}건({recent_share}%)으로 직전 30일 "
+                f"{previous_count}/{previous_denominator}건({previous_share}%)보다 "
+                f"보고 빈도가 {count_change}건·{share_change}%p 높습니다. "
+                f"현재 계획 영향 범위는 {impact['ko']}입니다."
+            ),
+            "zh": (
+                f"近期上升的{kind['zh']}：{label['zh']}——最近30天为"
+                f"{recent_count}/{recent_denominator}条（{recent_share}%），较此前30天的"
+                f"{previous_count}/{previous_denominator}条（{previous_share}%）增加"
+                f"{count_change}条、{share_change}个百分点。当前计划影响范围：{impact['zh']}。"
+            ),
         }
     return {
-        "ko": f"{label['ko']} 분류의 반복 과거 기록을 우선 확인합니다.",
-        "zh": f"优先确认{label['zh']}分类的重复历史记录。",
+        "ko": (
+            f"반복 {kind['ko']}: {label['ko']} — 연결된 전체 과거 품질 기록 "
+            f"{denominator}건 중 {evidence_count}건({share}%)이며, 최근 기록일은 "
+            f"{latest}입니다. 현재 계획 영향 범위는 {impact['ko']}입니다."
+        ),
+        "zh": (
+            f"重复{kind['zh']}：{label['zh']}——关联的全部历史品质记录"
+            f"{denominator}条中有{evidence_count}条（{share}%），最近记录日期为"
+            f"{latest}。当前计划影响范围：{impact['zh']}。"
+        ),
     }
+
+
+def _metric_from_rows(
+    rows: list[dict[str, Any]],
+    metric_index: dict[str, dict[str, Any]],
+    *,
+    prefix: str | None = None,
+) -> dict[str, Any] | None:
+    for row in rows:
+        metric_key = str(row.get("metric_key") or "")
+        if prefix and not metric_key.startswith(prefix):
+            continue
+        metric = metric_index.get(metric_key)
+        if metric:
+            return metric
+    return None
+
+
+def _first_deterministic_metric(
+    metrics: dict[str, Any],
+    group_name: str,
+    *,
+    repeated_only: bool = False,
+    increasing_only: bool = False,
+) -> dict[str, Any] | None:
+    for metric in metrics.get(group_name) or []:
+        if not isinstance(metric, dict):
+            continue
+        if repeated_only and int(metric.get("evidence_count") or 0) < 2:
+            continue
+        if increasing_only and (metric.get("trend") or {}).get("status") != "increase":
+            continue
+        return metric
+    return None
+
+
+def _top_recorded_location(metrics: dict[str, Any]) -> dict[str, Any] | None:
+    return next(
+        (
+            metric
+            for metric in metrics.get("occurrence_locations") or []
+            if isinstance(metric, dict)
+            and str(metric.get("metric_key") or "") != "location:unknown"
+        ),
+        None,
+    )
+
+
+def _unknown_location_metric(metrics: dict[str, Any]) -> dict[str, Any] | None:
+    return next(
+        (
+            metric
+            for metric in metrics.get("occurrence_locations") or []
+            if isinstance(metric, dict)
+            and str(metric.get("metric_key") or "") == "location:unknown"
+        ),
+        None,
+    )
+
+
+def _metric_applies_to_source(
+    metric: dict[str, Any],
+    source_item: dict[str, Any],
+) -> bool:
+    impact = metric.get("impact_scope") if isinstance(metric.get("impact_scope"), dict) else {}
+    machine = str(source_item.get("machine_name") or "")
+    prefix = str(source_item.get("part_prefix") or "")
+    return (
+        machine in {str(value) for value in impact.get("machine_names") or []}
+        and prefix in {str(value) for value in impact.get("part_prefixes") or []}
+    )
+
+
+def _public_metric_signal(metric: dict[str, Any]) -> dict[str, Any]:
+    metric_key = str(metric.get("metric_key") or "")
+    trend = metric.get("trend") if isinstance(metric.get("trend"), dict) else {}
+    return {
+        "metric_key": metric_key,
+        "dimension": "location" if metric_key.startswith("location:") else "problem_type",
+        "label": _metric_template_label(metric),
+        "evidence_count": int(metric.get("evidence_count") or 0),
+        "denominator": int(metric.get("all_history_denominator") or 0),
+        "share_pct": metric.get("all_history_share_pct"),
+        "trend": {
+            key: trend.get(key)
+            for key in (
+                "status",
+                "reason",
+                "recent_count",
+                "recent_denominator",
+                "recent_share_pct",
+                "previous_count",
+                "previous_denominator",
+                "previous_share_pct",
+                "count_change",
+                "share_change_pp",
+            )
+        },
+    }
+
+
+def _authoritative_report_summary(
+    metrics: dict[str, Any],
+    metric_index: dict[str, dict[str, Any]],
+    repeated_rows: list[dict[str, Any]],
+    accelerating_rows: list[dict[str, Any]],
+    affected_targets: list[dict[str, Any]],
+    source_items: dict[str, dict[str, Any]],
+) -> dict[str, str]:
+    coverage = metrics.get("coverage") if isinstance(metrics.get("coverage"), dict) else {}
+    total_reports = int(coverage.get("matched_report_count") or 0)
+    if total_reports <= 0:
+        return {
+            "ko": "현재 생산계획 품번과 연결된 과거 품질 기록이 없어 반복 문제와 최근 증가를 판단하지 않습니다.",
+            "zh": "当前生产计划料号没有关联的历史品质记录，因此不判断重复问题与近期上升趋势。",
+        }
+
+    problem = _metric_from_rows(repeated_rows, metric_index, prefix="problem:")
+    if problem is None:
+        problem = _first_deterministic_metric(metrics, "problem_types", repeated_only=True)
+    location = next(
+        (
+            metric_index.get(str(row.get("metric_key") or ""))
+            for row in repeated_rows
+            if str(row.get("metric_key") or "").startswith("location:")
+            and str(row.get("metric_key") or "") != "location:unknown"
+            and metric_index.get(str(row.get("metric_key") or ""))
+        ),
+        None,
+    )
+    if location is None:
+        location = _top_recorded_location(metrics)
+    unknown_location = _unknown_location_metric(metrics)
+    increasing = _metric_from_rows(accelerating_rows, metric_index)
+    if increasing is None:
+        increasing = (
+            _first_deterministic_metric(metrics, "problem_types", increasing_only=True)
+            or _first_deterministic_metric(metrics, "occurrence_locations", increasing_only=True)
+        )
+
+    if problem:
+        problem_label = _metric_template_label(problem)
+        problem_count = int(problem.get("evidence_count") or 0)
+        problem_ko = f"반복 문제 상위는 {problem_label['ko']} {problem_count}건"
+        problem_zh = f"重复问题首位为{problem_label['zh']}（{problem_count}条）"
+    else:
+        problem_ko = "2건 이상 반복된 문제 유형은 없음"
+        problem_zh = "没有记录达到2条以上的重复问题类型"
+
+    if location:
+        location_label = _metric_template_label(location)
+        location_count = int(location.get("evidence_count") or 0)
+        location_ko = f"주요 기록 위치는 {location_label['ko']} {location_count}건"
+        location_zh = f"主要记录位置为{location_label['zh']}（{location_count}条）"
+    else:
+        location_ko = "확인 가능한 기록 위치는 없음"
+        location_zh = "没有可确认的记录位置"
+
+    sentences_ko = [
+        f"연결된 전체 과거 품질 기록 {total_reports}건 기준, {problem_ko}이고 {location_ko}입니다."
+    ]
+    sentences_zh = [
+        f"按关联的全部{total_reports}条历史品质记录，{problem_zh}，{location_zh}。"
+    ]
+    if unknown_location:
+        unknown_count = int(unknown_location.get("evidence_count") or 0)
+        unknown_denominator = int(unknown_location.get("all_history_denominator") or 0)
+        unknown_share = _pct(unknown_location.get("all_history_share_pct"))
+        if unknown_count:
+            sentences_ko.append(
+                f"발생 위치 미기록은 {unknown_count}/{unknown_denominator}건({unknown_share}%)으로 "
+                "위치 분석 신뢰가 제한됩니다."
+            )
+            sentences_zh.append(
+                f"发生位置未记录为{unknown_count}/{unknown_denominator}条（{unknown_share}%），"
+                "因此位置分析的可信度受限。"
+            )
+    if increasing:
+        label = _metric_template_label(increasing)
+        trend = increasing.get("trend") or {}
+        sentences_ko.append(
+            f"최근 증가 지표는 {label['ko']}이며 최근 30일 "
+            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}건, "
+            f"직전 30일 {int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}건입니다."
+        )
+        sentences_zh.append(
+            f"近期上升指标为{label['zh']}，最近30天为"
+            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}条，"
+            f"此前30天为{int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}条。"
+        )
+    else:
+        sentences_ko.append("최근 30일과 직전 30일 비교에서 증가 기준을 충족한 지표는 없습니다.")
+        sentences_zh.append("最近30天与此前30天的比较中，没有指标满足上升判定标准。")
+
+    selected_target = None
+    for target in affected_targets:
+        selected_target = source_items.get(str(target.get("source_key") or ""))
+        if selected_target:
+            break
+    if selected_target is None and source_items:
+        selected_target = max(
+            source_items.values(),
+            key=lambda item: int(item.get("matching_report_count") or 0),
+        )
+    if selected_target:
+        target_text = _authoritative_target_headline(selected_target)
+        sentences_ko.append(target_text["ko"])
+        sentences_zh.append(target_text["zh"])
+    return {"ko": " ".join(sentences_ko), "zh": " ".join(sentences_zh)}
+
+
+def _authoritative_report_shift_checks(
+    metrics: dict[str, Any],
+    metric_index: dict[str, dict[str, Any]],
+    repeated_rows: list[dict[str, Any]],
+    accelerating_rows: list[dict[str, Any]],
+    affected_targets: list[dict[str, Any]],
+    source_items: dict[str, dict[str, Any]],
+) -> dict[str, list[str]]:
+    ko: list[str] = []
+    zh: list[str] = []
+    repeated_problem = _metric_from_rows(repeated_rows, metric_index, prefix="problem:")
+    repeated_location = next(
+        (
+            metric_index.get(str(row.get("metric_key") or ""))
+            for row in repeated_rows
+            if str(row.get("metric_key") or "").startswith("location:")
+            and str(row.get("metric_key") or "") != "location:unknown"
+            and metric_index.get(str(row.get("metric_key") or ""))
+        ),
+        None,
+    )
+    if repeated_problem is None:
+        repeated_problem = _first_deterministic_metric(metrics, "problem_types", repeated_only=True)
+    if repeated_location is None:
+        repeated_location = _top_recorded_location(metrics)
+    if repeated_problem:
+        label = _metric_template_label(repeated_problem)
+        count = int(repeated_problem.get("evidence_count") or 0)
+        denominator = int(repeated_problem.get("all_history_denominator") or 0)
+        ko.append(f"반복 문제 {label['ko']}의 과거 기록 {count}/{denominator}건을 교대 전 확인하세요.")
+        zh.append(f"交接班前确认重复问题{label['zh']}的历史记录{count}/{denominator}条。")
+    if repeated_location:
+        label = _metric_template_label(repeated_location)
+        count = int(repeated_location.get("evidence_count") or 0)
+        ko.append(f"주요 기록 위치 {label['ko']} 관련 과거 기록 {count}건을 검사 기준과 함께 확인하세요.")
+        zh.append(f"请结合检验标准确认主要记录位置{label['zh']}相关的{count}条历史记录。")
+    unknown_location = _unknown_location_metric(metrics)
+    if unknown_location and int(unknown_location.get("evidence_count") or 0):
+        count = int(unknown_location.get("evidence_count") or 0)
+        denominator = int(unknown_location.get("all_history_denominator") or 0)
+        share = _pct(unknown_location.get("all_history_share_pct"))
+        ko.append(
+            f"발생 위치 미기록 {count}/{denominator}건({share}%)은 위치 분석 신뢰를 제한하므로 "
+            "신규 품질 기록에 위치를 명시하세요."
+        )
+        zh.append(
+            f"发生位置未记录为{count}/{denominator}条（{share}%），会限制位置分析可信度；"
+            "请在新增品质记录中明确填写发生位置。"
+        )
+
+    increasing = _metric_from_rows(accelerating_rows, metric_index)
+    if increasing:
+        label = _metric_template_label(increasing)
+        trend = increasing.get("trend") or {}
+        ko.append(
+            f"{label['ko']} 보고 빈도는 최근 30일 "
+            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}건, "
+            f"직전 30일 {int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}건이므로 이력 변화를 공유하세요."
+        )
+        zh.append(
+            f"{label['zh']}报告频次最近30天为"
+            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}条，"
+            f"此前30天为{int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}条，请在交接时共享该变化。"
+        )
+
+    for target in affected_targets[:1]:
+        source_item = source_items.get(str(target.get("source_key") or ""))
+        if not source_item:
+            continue
+        checks = _authoritative_target_checkpoints(source_item)
+        ko.extend(checks["ko"][:1])
+        zh.extend(checks["zh"][:1])
+    if not ko:
+        return _authoritative_attention_checkpoints()
+    return {"ko": ko[:4], "zh": zh[:4]}
 
 
 def _candidate_has_unsafe_prose(candidate: dict[str, Any]) -> bool:
@@ -767,22 +1268,39 @@ def _restore_page_report_narrative(
         affected_targets.append({
             "source_key": source_key,
             "source_evidence_keys": list(dict.fromkeys(accepted_keys)),
-            "headline": _authoritative_attention_headline(),
+            "headline": _authoritative_target_headline(source_item),
         })
 
+    repeated_issues = metric_narratives(
+        raw_report.get("repeated_issues"),
+        accelerating=False,
+    )
+    accelerating_issues = metric_narratives(
+        raw_report.get("accelerating_issues"),
+        accelerating=True,
+    )
+    executive_summary = _authoritative_report_summary(
+        metrics,
+        metric_index,
+        repeated_issues,
+        accelerating_issues,
+        affected_targets,
+        source_items,
+    )
     return {
         "schema_version": QUALITY_DAILY_NARRATIVE_SCHEMA_VERSION,
-        "executive_summary": _authoritative_summary(source),
-        "repeated_issues": metric_narratives(
-            raw_report.get("repeated_issues"),
-            accelerating=False,
-        ),
-        "accelerating_issues": metric_narratives(
-            raw_report.get("accelerating_issues"),
-            accelerating=True,
-        ),
+        "executive_summary": executive_summary,
+        "repeated_issues": repeated_issues,
+        "accelerating_issues": accelerating_issues,
         "affected_targets": affected_targets,
-        "shift_checks": _authoritative_attention_checkpoints(),
+        "shift_checks": _authoritative_report_shift_checks(
+            metrics,
+            metric_index,
+            repeated_issues,
+            accelerating_issues,
+            affected_targets,
+            source_items,
+        ),
         "caveats": {
             "ko": [
                 "과거 보고 기록 빈도 기준이며 현재 상태를 뜻하지 않습니다.",
@@ -916,6 +1434,10 @@ def restore_authoritative_quality_result(job: AiJob, worker_result: Any) -> dict
             "source_evidence_last_changed_at"
         ),
         "model_id": source.get("model_id") or QUALITY_DAILY_MODEL_ID,
+        "selection_contract_version": (
+            source.get("selection_contract_version")
+            or QUALITY_DAILY_EXPECTED_PROMPT_VERSION
+        ),
         "summary": _authoritative_summary(source),
         "report": _restore_page_report_narrative(source, candidate),
         "attention_items": restored_items,
@@ -943,10 +1465,12 @@ def _public_completed_result(
         result.get("source_plan_hash") != source_plan_hash
         or result.get("source_evidence_hash") != source_evidence_hash
     )
+    prompt_mismatch = job.prompt_version != QUALITY_DAILY_EXPECTED_PROMPT_VERSION
     llm_fallback = (
         result.get("llm_fallback") is True
         or generation_source != "local_llm_rewrite"
         or source_hash_mismatch
+        or prompt_mismatch
     )
     public_items = []
     valid_source_keys = {
@@ -1020,6 +1544,7 @@ def _public_completed_result(
         "llm_fallback_code": str(
             result.get("llm_fallback_code")
             or ("source_hash_mismatch" if source_hash_mismatch else "")
+            or ("outdated_prompt_version" if prompt_mismatch else "")
             or ("unverified_generation_source" if llm_fallback else "")
         )[:64],
     }
@@ -1127,20 +1652,24 @@ def quality_daily_report_for_page(
         source_evidence_last_changed_at = evidence_state.get(
             "source_evidence_last_changed_at"
         )
-    deterministic = dict(deterministic_report or {})
+    deterministic_internal = dict(deterministic_report or {})
+    deterministic = _public_deterministic_report(deterministic_internal)
+    source_revision = _compact_public_revision(
+        source_plan_hash,
+        source_evidence_hash,
+    )
     base = {
         "schema_version": QUALITY_DAILY_PAGE_REPORT_SCHEMA_VERSION,
+        "contract_version": QUALITY_DAILY_PUBLIC_CONTRACT_VERSION,
         "status": "unavailable",
         "reason": "no_plan" if not source_plan_hash else "not_generated",
         "business_date": target_date.isoformat(),
-        "source_plan_hash": source_plan_hash,
+        "source_revision": source_revision,
         "source_plan_last_changed_at": source_plan_last_changed_at,
-        "source_evidence_hash": source_evidence_hash,
         "source_evidence_last_changed_at": source_evidence_last_changed_at,
         "generated_at": None,
         "completed_at": None,
         "model_id": QUALITY_DAILY_MODEL_ID,
-        "model_name": "",
         "ai_schema_version": QUALITY_ATTENTION_AI_SCHEMA_VERSION,
         "deterministic_schema_version": (
             deterministic.get("schema_version") or QUALITY_DAILY_REPORT_SCHEMA_VERSION
@@ -1186,10 +1715,14 @@ def quality_daily_report_for_page(
                 result.get("source_plan_hash") != source_plan_hash
                 or result.get("source_evidence_hash") != source_evidence_hash
             )
+            prompt_mismatch = (
+                completed.prompt_version != QUALITY_DAILY_EXPECTED_PROMPT_VERSION
+            )
             llm_fallback = (
                 result.get("llm_fallback") is True
                 or generation_source != "local_llm_rewrite"
                 or source_hash_mismatch
+                or prompt_mismatch
             )
             if llm_fallback:
                 return {
@@ -1201,6 +1734,7 @@ def quality_daily_report_for_page(
                     "llm_fallback_code": str(
                         result.get("llm_fallback_code")
                         or ("source_hash_mismatch" if source_hash_mismatch else "")
+                        or ("outdated_prompt_version" if prompt_mismatch else "")
                         or "unverified_generation_source"
                     )[:64],
                 }
@@ -1252,7 +1786,7 @@ def quality_daily_report_for_page(
             metric_index = {
                 str(metric.get("metric_key")): metric
                 for group_name in ("problem_types", "occurrence_locations")
-                for metric in deterministic.get(group_name) or []
+                for metric in deterministic_internal.get(group_name) or []
                 if isinstance(metric, dict) and metric.get("metric_key")
             }
 
@@ -1282,15 +1816,162 @@ def quality_daily_report_for_page(
                     })
                 return rows
 
-            summary = _authoritative_summary(
+            input_payload = (
                 completed.input_payload
                 if isinstance(completed.input_payload, dict)
                 else {}
             )
-            executive_summary = _authoritative_summary(
-                completed.input_payload
-                if isinstance(completed.input_payload, dict)
-                else {}
+            source_items = {
+                str(item.get("source_key")): item
+                for item in input_payload.get("items") or []
+                if isinstance(item, dict) and item.get("source_key")
+            }
+            repeated_issues = public_metric_narratives(
+                "repeated_issues",
+                accelerating=False,
+            )
+            accelerating_issues = public_metric_narratives(
+                "accelerating_issues",
+                accelerating=True,
+            )
+            internal_affected_targets = [
+                row
+                for row in stored_report.get("affected_targets") or []
+                if isinstance(row, dict)
+                and source_items.get(str(row.get("source_key") or ""))
+            ]
+            # Worker v3's final report selector is the authoritative AI target
+            # ordering.  Keep only exact restored source keys, then append any
+            # remaining verified attention targets in their deterministic
+            # fallback order.  Public ranks are recomputed so they cannot be
+            # forged by either payload.
+            fallback_priority_keys = [
+                str(priority.get("source_key") or "")
+                for priority in priorities
+                if source_items.get(str(priority.get("source_key") or ""))
+            ]
+            selector_priority_keys = [
+                str(target.get("source_key") or "")
+                for target in internal_affected_targets
+                if source_items.get(str(target.get("source_key") or ""))
+            ]
+            ordered_priority_keys: list[str] = []
+            for source_key in selector_priority_keys + fallback_priority_keys:
+                if source_key and source_key not in ordered_priority_keys:
+                    ordered_priority_keys.append(source_key)
+            priorities = [
+                {"priority_rank": rank, "source_key": source_key}
+                for rank, source_key in enumerate(ordered_priority_keys, start=1)
+            ]
+            summary = _authoritative_report_summary(
+                deterministic_internal,
+                metric_index,
+                repeated_issues,
+                accelerating_issues,
+                internal_affected_targets,
+                source_items,
+            )
+
+            def public_target(source_key: str) -> dict[str, Any] | None:
+                source_item = source_items.get(source_key)
+                if not source_item:
+                    return None
+                target_ref = hashlib.sha256(
+                    f"{source_revision or ''}\0{source_key}".encode("utf-8")
+                ).hexdigest()[:10]
+                signals: list[dict[str, Any]] = []
+                used_metric_keys: set[str] = set()
+
+                def add_signal(metric: dict[str, Any] | None) -> None:
+                    if not metric or not _metric_applies_to_source(metric, source_item):
+                        return
+                    metric_key = str(metric.get("metric_key") or "")
+                    if not metric_key or metric_key in used_metric_keys:
+                        return
+                    used_metric_keys.add(metric_key)
+                    signals.append(_public_metric_signal(metric))
+
+                # The worker controls selection/order only.  Every public
+                # signal is restored from the deterministic metric index and
+                # must overlap this exact machine/prefix plan target.
+                for selected in accelerating_issues + repeated_issues:
+                    add_signal(metric_index.get(str(selected.get("metric_key") or "")))
+                    if len(signals) >= 3 or {
+                        row["dimension"] for row in signals
+                    } == {"problem_type", "location"}:
+                        break
+                if not any(row["dimension"] == "problem_type" for row in signals):
+                    for metric in deterministic_internal.get("problem_types") or []:
+                        if isinstance(metric, dict) and int(metric.get("evidence_count") or 0) >= 2:
+                            add_signal(metric)
+                            if any(row["dimension"] == "problem_type" for row in signals):
+                                break
+                if not any(row["dimension"] == "location" for row in signals):
+                    for metric in deterministic_internal.get("occurrence_locations") or []:
+                        if (
+                            isinstance(metric, dict)
+                            and metric.get("metric_key") != "location:unknown"
+                        ):
+                            add_signal(metric)
+                            if any(row["dimension"] == "location" for row in signals):
+                                break
+                if not any(row["dimension"] == "location" for row in signals):
+                    add_signal(metric_index.get("location:unknown"))
+
+                signals.sort(key=lambda signal: (
+                    0 if signal["metric_key"] == (
+                        str((accelerating_issues + repeated_issues)[0].get("metric_key") or "")
+                        if accelerating_issues + repeated_issues
+                        else ""
+                    ) else 1,
+                    0 if signal["dimension"] == "problem_type" else 1,
+                    -int(signal.get("evidence_count") or 0),
+                    signal["metric_key"],
+                ))
+
+                return {
+                    "target_ref": target_ref,
+                    "machine_name": source_item.get("machine_name") or "",
+                    "machine_number": source_item.get("machine_number"),
+                    "model_names": list(source_item.get("model_names") or []),
+                    "part_nos": list(source_item.get("part_nos") or []),
+                    "primary_metric_key": (
+                        signals[0]["metric_key"] if signals else None
+                    ),
+                    "signals": signals[:3],
+                    "headline": _authoritative_public_target_headline(
+                        source_item,
+                        signals,
+                    ),
+                }
+
+            public_priorities = []
+            for priority in priorities:
+                projected = public_target(str(priority.get("source_key") or ""))
+                if not projected:
+                    continue
+                source_item = source_items[str(priority["source_key"])]
+                public_priorities.append({
+                    "priority_rank": priority["priority_rank"],
+                    **projected,
+                    "checkpoints": _authoritative_public_target_checkpoints(
+                        source_item,
+                        list(projected.get("signals") or []),
+                    ),
+                })
+            public_affected_targets = []
+            for row in internal_affected_targets:
+                projected = public_target(str(row.get("source_key") or ""))
+                if projected:
+                    public_affected_targets.append(projected)
+
+            shift_checks = _authoritative_report_shift_checks(
+                deterministic_internal,
+                metric_index,
+                repeated_issues,
+                accelerating_issues,
+                internal_affected_targets,
+                source_items,
             )
             return {
                 **base,
@@ -1298,31 +1979,28 @@ def quality_daily_report_for_page(
                 "reason": None,
                 "generated_at": result.get("generated_at"),
                 "completed_at": completed.completed_at.isoformat() if completed.completed_at else None,
-                "model_name": completed.model_name or "",
                 "disclaimer": dict(result.get("disclaimer") or QUALITY_DAILY_DISCLAIMER),
                 "narrative": {
                     "schema_version": QUALITY_DAILY_NARRATIVE_SCHEMA_VERSION,
                     "summary": summary,
-                    "executive_summary": executive_summary,
-                    "priorities": priorities,
-                    "repeated_issues": public_metric_narratives(
-                        "repeated_issues",
-                        accelerating=False,
-                    ),
-                    "accelerating_issues": public_metric_narratives(
-                        "accelerating_issues",
-                        accelerating=True,
-                    ),
-                    "affected_targets": [
+                    "executive_summary": summary,
+                    "priorities": public_priorities,
+                    "repeated_issues": [
                         {
-                            "source_key": str(row.get("source_key") or "")[:200],
-                            "source_evidence_keys": list(row.get("source_evidence_keys") or []),
-                            "headline": _authoritative_attention_headline(),
+                            "metric_key": row["metric_key"],
+                            "narrative": row["narrative"],
                         }
-                        for row in stored_report.get("affected_targets") or []
-                        if isinstance(row, dict) and row.get("source_key")
+                        for row in repeated_issues
                     ],
-                    "shift_checks": _authoritative_attention_checkpoints(),
+                    "accelerating_issues": [
+                        {
+                            "metric_key": row["metric_key"],
+                            "narrative": row["narrative"],
+                        }
+                        for row in accelerating_issues
+                    ],
+                    "affected_targets": public_affected_targets,
+                    "shift_checks": shift_checks,
                     "caveats": {
                         "ko": [
                             "과거 보고 기록 빈도 기준이며 현재 상태를 뜻하지 않습니다.",

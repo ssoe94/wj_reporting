@@ -18,6 +18,7 @@ from quality.models import QualityReport
 
 from .models import AiJob
 from .quality_daily import (
+    QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
     QUALITY_DAILY_MODE,
     QUALITY_DAILY_MODEL_ID,
     QUALITY_DAILY_TRIGGER,
@@ -87,6 +88,7 @@ class DailyQualitySummaryTests(TestCase):
                 "report": {"schema_version": "quality-daily-report-narrative.v1"},
             },
             completed_at=self._local(7, 1),
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
         )
         completed_duplicate = enqueue_daily_quality_summary(self._local(7, 2))
         self.assertEqual(completed_duplicate["status"], "exists")
@@ -159,6 +161,7 @@ class DailyQualitySummaryTests(TestCase):
                 "attention_items": [],
             },
             completed_at=self._local(7, 5),
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
         )
 
         QualityReport.objects.filter(pk=report.pk).update(
@@ -266,6 +269,7 @@ class DailyQualitySummaryTests(TestCase):
             },
             completed_at=self._local(7, 1),
             updated_at=self._local(7, 1),
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
         )
 
         page_report = quality_daily_report_for_page(
@@ -283,6 +287,60 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(retried["status"], "retried")
         job.refresh_from_db()
         self.assertEqual(job.status, AiJob.STATUS_PENDING)
+
+    def test_old_prompt_completion_is_retried_after_cooldown(self):
+        self._plan(updated_at=self._local(6, 30))
+        created = enqueue_daily_quality_summary(self._local(7, 0))
+        job = created["job"]
+        AiJob.objects.filter(pk=job.pk).update(
+            status=AiJob.STATUS_COMPLETED,
+            result_payload={
+                "generation_source": "local_llm_rewrite",
+                "llm_fallback": False,
+                "source_plan_hash": job.scope["source_plan_hash"],
+                "source_evidence_hash": job.scope["source_evidence_hash"],
+                "report": {"schema_version": "quality-daily-report-narrative.v1"},
+            },
+            completed_at=self._local(7, 1),
+            updated_at=self._local(7, 1),
+            prompt_version="quality-daily-attention-gemma-v2",
+        )
+
+        page_before_retry = quality_daily_report_for_page(
+            datetime(2026, 8, 12).date(),
+            deterministic_report=job.input_payload["report_metrics"],
+            source_plan_hash=job.scope["source_plan_hash"],
+            source_evidence_hash=job.scope["source_evidence_hash"],
+        )
+        overview_before_retry = quality_summary_for_overview(
+            datetime(2026, 8, 12).date()
+        )
+        cooldown = enqueue_daily_quality_summary(self._local(7, 4))
+        retried = enqueue_daily_quality_summary(self._local(7, 16))
+
+        self.assertEqual(page_before_retry["status"], "unavailable")
+        self.assertEqual(
+            page_before_retry["llm_fallback_code"],
+            "outdated_prompt_version",
+        )
+        self.assertEqual(overview_before_retry["status"], "unavailable")
+        self.assertEqual(
+            overview_before_retry["llm_fallback_code"],
+            "outdated_prompt_version",
+        )
+        self.assertEqual(cooldown["status"], "retry_cooldown")
+        self.assertEqual(retried["status"], "retried")
+        job.refresh_from_db()
+        self.assertEqual(job.status, AiJob.STATUS_PENDING)
+        self.assertEqual(job.prompt_version, "")
+        self.assertEqual(
+            job.scope["selection_contract_version"],
+            QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
+        )
+        self.assertEqual(
+            job.input_payload["selection_contract_version"],
+            QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
+        )
 
     def test_all_history_totals_deduplicate_shared_report_across_machines(self):
         self._plan(machine="850T-1")
@@ -665,7 +723,15 @@ class DailyQualitySummaryTests(TestCase):
         job.result_payload = restored
         job.completed_at = timezone.now()
         job.model_name = "gemma-test"
-        job.save(update_fields=["status", "result_payload", "completed_at", "model_name", "updated_at"])
+        job.prompt_version = QUALITY_DAILY_EXPECTED_PROMPT_VERSION
+        job.save(update_fields=[
+            "status",
+            "result_payload",
+            "completed_at",
+            "model_name",
+            "prompt_version",
+            "updated_at",
+        ])
         public = quality_summary_for_overview(datetime(2026, 8, 12).date())
         public_json = json.dumps(public, ensure_ascii=False)
         self.assertEqual(public["status"], "ready")
@@ -764,6 +830,7 @@ class DailyQualitySummaryTests(TestCase):
             },
             completed_at=timezone.now(),
             model_name="gemma-test",
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
         )
 
         ready = quality_summary_for_overview(datetime(2026, 8, 12).date())
@@ -910,6 +977,7 @@ class DailyQualitySummaryTests(TestCase):
             result_payload=restored,
             completed_at=self._local(7, 10),
             model_name="gemma-test",
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
         )
         ready = quality_daily_report_for_page(
             datetime(2026, 8, 12).date(),
@@ -917,23 +985,24 @@ class DailyQualitySummaryTests(TestCase):
             source_plan_hash=source["source_plan_hash"],
         )
         self.assertEqual(ready["status"], "ready")
-        self.assertEqual(ready["source_evidence_hash"], source["source_evidence_hash"])
+        self.assertTrue(ready["source_revision"])
+        self.assertNotIn("source_plan_hash", ready)
+        self.assertNotIn("source_evidence_hash", ready)
+        self.assertNotIn("model_name", ready)
         self.assertEqual(ready["narrative"]["priorities"][0]["priority_rank"], 1)
-        self.assertEqual(
-            ready["narrative"]["summary"]["ko"],
-            "당일 생산계획과 연결된 과거 품질 이력을 서버 검증 기준으로 정리했습니다.",
-        )
-        self.assertEqual(
-            ready["narrative"]["executive_summary"]["ko"],
-            "당일 생산계획과 연결된 과거 품질 이력을 서버 검증 기준으로 정리했습니다.",
-        )
+        self.assertIn("연결된 전체 과거 품질 기록 1건", ready["narrative"]["summary"]["ko"])
+        self.assertIn("게이트부 1건", ready["narrative"]["executive_summary"]["ko"])
         self.assertEqual(ready["narrative"]["repeated_issues"], [])
         self.assertEqual(ready["narrative"]["accelerating_issues"], [])
-        self.assertEqual(ready["narrative"]["affected_targets"][0]["source_key"], source_item["source_key"])
+        affected = ready["narrative"]["affected_targets"][0]
+        self.assertEqual(affected["machine_name"], source_item["machine_name"])
+        self.assertEqual(affected["model_names"], source_item["model_names"])
+        self.assertTrue(affected["target_ref"])
         self.assertNotIn("problem_types", ready["narrative"]["priorities"][0])
         report_json = json.dumps(ready, ensure_ascii=False)
         self.assertNotIn('"report_id"', report_json)
         self.assertNotIn('"images"', report_json)
+        self.assertNotIn("source_evidence_keys", report_json)
 
         ProductionPlan.objects.filter(pk=plan.pk).update(
             planned_quantity=2000,
@@ -952,6 +1021,155 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(stale["reason"], "plan_changed")
         self.assertIsNone(stale["narrative"])
         self.assertEqual(stale["deterministic"]["coverage"]["matched_report_count"], 1)
+
+    def test_daily_page_public_narrative_uses_authoritative_metrics_and_hides_internal_ids(self):
+        self._plan()
+        target_date = datetime(2026, 8, 12).date()
+        previous_dates = [
+            datetime(2026, 6, 20, 8, 0),
+            datetime(2026, 6, 22, 8, 0),
+            datetime(2026, 6, 24, 8, 0),
+            datetime(2026, 6, 26, 8, 0),
+            datetime(2026, 6, 28, 8, 0),
+        ]
+        recent_dates = [
+            datetime(2026, 7, 20, 8, 0),
+            datetime(2026, 7, 22, 8, 0),
+            datetime(2026, 7, 24, 8, 0),
+            datetime(2026, 7, 26, 8, 0),
+            datetime(2026, 7, 28, 8, 0),
+        ]
+        for index, report_dt in enumerate(previous_dates + recent_dates):
+            is_contamination = index == 0 or index >= 5 and index < 9
+            QualityReport.objects.create(
+                report_dt=SHANGHAI_TZ.localize(report_dt),
+                section="LQC_INJ",
+                model="MODEL-A",
+                part_no=f"ABC123456-H{index}",
+                judgement="NG",
+                phenomenon="게이트 오염" if is_contamination else "표면 스크래치",
+            )
+
+        source = build_daily_quality_attention(target_date, include_images=False)
+        input_payload = build_daily_quality_attention_ai_input(
+            target_date,
+            model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        contamination = next(
+            row
+            for row in input_payload["report_metrics"]["problem_types"]
+            if row.get("canonical_key") == "contamination"
+        )
+        gate = next(
+            row
+            for row in input_payload["report_metrics"]["occurrence_locations"]
+            if row.get("metric_key") == "location:gate"
+        )
+        source_item = input_payload["items"][0]
+        contamination_evidence_key = next(
+            row["evidence_key"]
+            for row in input_payload["evidence_catalog"][0]["phenomena"]
+            if "오염" in row["text"]
+        )
+        job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "date": target_date.isoformat(),
+                "source_plan_hash": input_payload["source_plan_hash"],
+                "source_evidence_hash": input_payload["source_evidence_hash"],
+                "model_id": QUALITY_DAILY_MODEL_ID,
+            },
+            input_payload=input_payload,
+        )
+        restored = restore_authoritative_quality_result(job, {
+            "source": "local_llm_rewrite",
+            "summary": {"ko": "과거 이력을 확인합니다.", "zh": "确认历史记录。"},
+            "report": {
+                "executive_summary": {"ko": "과거 이력을 확인합니다.", "zh": "确认历史记录。"},
+                "repeated_issues": [
+                    {"metric_key": contamination["metric_key"]},
+                    {"metric_key": gate["metric_key"]},
+                ],
+                "accelerating_issues": [
+                    {"metric_key": contamination["metric_key"]},
+                ],
+                "affected_targets": [{
+                    "source_key": source_item["source_key"],
+                    "source_evidence_keys": [contamination_evidence_key],
+                }],
+                "shift_checks": {"ko": ["과거 이력을 확인합니다."], "zh": ["确认历史记录。"]},
+                "caveats": {"ko": ["과거 이력입니다."], "zh": ["仅为历史记录。"]},
+            },
+            "attention_items": [{
+                "source_key": source_item["source_key"],
+                "headline": {"ko": "과거 이력을 확인합니다.", "zh": "确认历史记录。"},
+                "checkpoints": {"ko": ["과거 이력을 확인합니다."], "zh": ["确认历史记录。"]},
+                "problem_types": [],
+                "locations": [],
+            }],
+        })
+        AiJob.objects.filter(pk=job.pk).update(
+            status=AiJob.STATUS_COMPLETED,
+            result_payload=restored,
+            completed_at=self._local(7, 10),
+            model_name="/Users/operator/.cache/models/private/gemma-model-path",
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
+        )
+
+        report = quality_daily_report_for_page(
+            target_date,
+            deterministic_report=source["report_metrics"],
+            source_plan_hash=source["source_plan_hash"],
+            source_evidence_hash=source["source_evidence_hash"],
+        )
+
+        self.assertEqual(report["status"], "ready")
+        summary = report["narrative"]["executive_summary"]
+        self.assertIn("연결된 전체 과거 품질 기록 10건", summary["ko"])
+        self.assertIn("오염·이물 5건", summary["ko"])
+        self.assertIn("게이트부 5건", summary["ko"])
+        self.assertIn("최근 증가 지표는 오염·이물", summary["ko"])
+        self.assertIn("최근 30일 4/5건", summary["ko"])
+        self.assertIn("직전 30일 1/5건", summary["ko"])
+        repeated_text = report["narrative"]["repeated_issues"][0]["narrative"]
+        self.assertIn("10건 중 5건(50.0%)", repeated_text["ko"])
+        self.assertIn("850T-1 / MODEL-A / ABC123456-X", repeated_text["ko"])
+        accelerating_text = report["narrative"]["accelerating_issues"][0]["narrative"]
+        self.assertIn("4/5건(80.0%)", accelerating_text["ko"])
+        self.assertIn("1/5건(20.0%)", accelerating_text["ko"])
+        self.assertIn("3건·60.0%p", accelerating_text["ko"])
+        self.assertIn("关联的全部历史品质记录10条中有5条", repeated_text["zh"])
+        self.assertIn(
+            "최근 증가 이력 오염·이물 5/10건",
+            report["narrative"]["priorities"][0]["headline"]["ko"],
+        )
+        priority = report["narrative"]["priorities"][0]
+        self.assertEqual(priority["primary_metric_key"], contamination["metric_key"])
+        self.assertEqual(priority["signals"][0]["metric_key"], contamination["metric_key"])
+        self.assertEqual(priority["signals"][0]["dimension"], "problem_type")
+        self.assertEqual(priority["signals"][0]["evidence_count"], 5)
+        self.assertEqual(priority["signals"][0]["denominator"], 10)
+        self.assertEqual(priority["signals"][0]["trend"]["status"], "increase")
+        self.assertTrue(any(
+            signal["metric_key"] == gate["metric_key"]
+            for signal in priority["signals"]
+        ), priority["signals"])
+        public_json = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("source_plan_hash", public_json)
+        self.assertNotIn("source_evidence_hash", public_json)
+        self.assertNotIn("source_evidence_keys", public_json)
+        self.assertNotIn(source_item["source_key"], public_json)
+        self.assertNotIn("private/gemma-model-path", public_json)
+        self.assertNotIn("recorded_text", public_json)
+
+        # The overview contract deliberately retains its exact internal-source
+        # gates while omitting the detailed page report.
+        overview = quality_summary_for_overview(target_date)
+        self.assertEqual(overview["status"], "ready")
+        self.assertEqual(overview["source_plan_hash"], source["source_plan_hash"])
+        self.assertEqual(overview["source_evidence_hash"], source["source_evidence_hash"])
 
     def test_missing_phenomenon_is_forced_to_unclassified_and_unknown_location(self):
         self._plan()
@@ -1020,6 +1238,169 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(restored_item["problem_types"][0]["count"], 1)
         self.assertEqual(restored["report"]["affected_targets"], [])
 
+    def test_summary_separates_unknown_location_warning_from_top_explicit_location(self):
+        self._plan()
+        target_date = datetime(2026, 8, 12).date()
+        for index in range(10):
+            if index < 7:
+                phenomenon = "오염"
+            elif index < 9:
+                phenomenon = "모서리 오염"
+            else:
+                phenomenon = "상단 스크래치"
+            QualityReport.objects.create(
+                report_dt=self._local(7, 0) - timedelta(days=index + 1),
+                section="LQC_INJ",
+                model="MODEL-A",
+                part_no=f"ABC123456-L{index}",
+                judgement="NG",
+                phenomenon=phenomenon,
+            )
+        source = build_daily_quality_attention(target_date, include_images=False)
+        metrics = source["report_metrics"]
+
+        report = quality_daily_report_for_page(
+            target_date,
+            deterministic_report=metrics,
+            source_plan_hash=source["source_plan_hash"],
+            source_evidence_hash=source["source_evidence_hash"],
+        )
+        # No AI completion yet, so directly exercise the same deterministic
+        # server summary through a completed, empty selector result.
+        input_payload = build_daily_quality_attention_ai_input(
+            target_date,
+            model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "date": target_date.isoformat(),
+                "source_plan_hash": source["source_plan_hash"],
+                "source_evidence_hash": source["source_evidence_hash"],
+            },
+            input_payload=input_payload,
+        )
+        restored = restore_authoritative_quality_result(job, {
+            "source": "local_llm_rewrite",
+            "summary": {"ko": "과거 이력", "zh": "历史记录"},
+            "report": {
+                "executive_summary": {"ko": "과거 이력", "zh": "历史记录"},
+                "repeated_issues": [],
+                "accelerating_issues": [],
+                "affected_targets": [],
+                "shift_checks": {"ko": [], "zh": []},
+                "caveats": {"ko": [], "zh": []},
+            },
+            "attention_items": [],
+        })
+        AiJob.objects.filter(pk=job.pk).update(
+            status=AiJob.STATUS_COMPLETED,
+            result_payload=restored,
+            completed_at=self._local(7, 10),
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
+        )
+        report = quality_daily_report_for_page(
+            target_date,
+            deterministic_report=metrics,
+            source_plan_hash=source["source_plan_hash"],
+            source_evidence_hash=source["source_evidence_hash"],
+        )
+
+        self.assertEqual(report["status"], "ready")
+        summary = report["narrative"]["summary"]
+        self.assertIn("주요 기록 위치는 모서리·테두리 2건", summary["ko"])
+        self.assertIn("발생 위치 미기록은 7/10건(70.0%)", summary["ko"])
+        self.assertIn("위치 분석 신뢰가 제한", summary["ko"])
+        self.assertIn("主要记录位置为边缘（2条）", summary["zh"])
+        self.assertIn("发生位置未记录为7/10条（70.0%）", summary["zh"])
+        checks = " ".join(report["narrative"]["shift_checks"]["ko"])
+        self.assertIn("신규 품질 기록에 위치를 명시", checks)
+        self.assertNotIn("현재 불량", checks)
+
+    def test_public_priorities_follow_verified_selector_then_append_fallback_targets(self):
+        self._plan(machine="850T-1")
+        self._plan(machine="850T-2")
+        target_date = datetime(2026, 8, 12).date()
+        QualityReport.objects.create(
+            report_dt=self._local(7, 0) - timedelta(days=1),
+            section="LQC_INJ",
+            model="MODEL-A",
+            part_no="ABC123456-HISTORY",
+            judgement="NG",
+            phenomenon="게이트 백화",
+        )
+        source = build_daily_quality_attention(target_date, include_images=False)
+        input_payload = build_daily_quality_attention_ai_input(
+            target_date,
+            model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        first_item, selected_item = input_payload["items"]
+        evidence_key = input_payload["evidence_catalog"][0]["phenomena"][0]["evidence_key"]
+        job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "date": target_date.isoformat(),
+                "source_plan_hash": source["source_plan_hash"],
+                "source_evidence_hash": source["source_evidence_hash"],
+            },
+            input_payload=input_payload,
+        )
+        restored = restore_authoritative_quality_result(job, {
+            "source": "local_llm_rewrite",
+            "summary": {"ko": "과거 이력", "zh": "历史记录"},
+            "report": {
+                "executive_summary": {"ko": "과거 이력", "zh": "历史记录"},
+                "repeated_issues": [],
+                "accelerating_issues": [],
+                # The selector deliberately ranks machine 2 first and omits
+                # machine 1; machine 1 must be appended as deterministic fallback.
+                "affected_targets": [{
+                    "source_key": selected_item["source_key"],
+                    "source_evidence_keys": [evidence_key],
+                }],
+                "shift_checks": {"ko": [], "zh": []},
+                "caveats": {"ko": [], "zh": []},
+            },
+            "attention_items": [
+                {
+                    "source_key": first_item["source_key"],
+                    "problem_types": [],
+                    "locations": [],
+                },
+                {
+                    "source_key": selected_item["source_key"],
+                    "problem_types": [],
+                    "locations": [],
+                },
+            ],
+        })
+        AiJob.objects.filter(pk=job.pk).update(
+            status=AiJob.STATUS_COMPLETED,
+            result_payload=restored,
+            completed_at=self._local(7, 10),
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
+        )
+
+        report = quality_daily_report_for_page(
+            target_date,
+            deterministic_report=source["report_metrics"],
+            source_plan_hash=source["source_plan_hash"],
+            source_evidence_hash=source["source_evidence_hash"],
+        )
+
+        priorities = report["narrative"]["priorities"]
+        self.assertEqual([row["machine_name"] for row in priorities], ["850T-2", "850T-1"])
+        self.assertEqual([row["priority_rank"] for row in priorities], [1, 2])
+        self.assertNotEqual(priorities[0]["target_ref"], priorities[1]["target_ref"])
+        self.assertTrue(priorities[0]["primary_metric_key"])
+        public_json = json.dumps(priorities, ensure_ascii=False)
+        self.assertNotIn(selected_item["source_key"], public_json)
+        self.assertNotIn("source_evidence_keys", public_json)
+
 
 class DailyQualityPageEndpointTests(APITestCase):
     def test_authenticated_endpoint_attaches_deterministic_pending_report(self):
@@ -1068,17 +1449,18 @@ class DailyQualityPageEndpointTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+        self.assertNotIn("source_plan_hash", response.data)
+        self.assertNotIn("source_evidence_hash", response.data)
         self.assertEqual(response.data["report"]["status"], "pending")
         self.assertIsNone(response.data["report"]["narrative"])
         self.assertEqual(
             response.data["report"]["source_plan_last_changed_at"],
             response.data["source_plan_last_changed_at"],
         )
-        self.assertTrue(response.data["report"]["source_evidence_hash"])
-        self.assertEqual(
-            response.data["report"]["source_evidence_hash"],
-            response.data["source_evidence_hash"],
-        )
+        self.assertTrue(response.data["report"]["source_revision"])
+        self.assertNotIn("source_plan_hash", response.data["report"])
+        self.assertNotIn("source_evidence_hash", response.data["report"])
+        self.assertNotIn("model_name", response.data["report"])
         self.assertEqual(
             response.data["report"]["source_evidence_last_changed_at"],
             response.data["source_evidence_last_changed_at"],
@@ -1090,6 +1472,8 @@ class DailyQualityPageEndpointTests(APITestCase):
         )
         report_json = json.dumps(response.data["report"], ensure_ascii=False)
         self.assertNotIn('"report_id"', report_json)
+        self.assertNotIn("source_evidence_keys", report_json)
+        self.assertNotIn("recorded_text", report_json)
         self.assertNotIn("private-evidence.jpg", report_json)
         self.assertNotIn("민감한 작업자 자유서술", report_json)
 

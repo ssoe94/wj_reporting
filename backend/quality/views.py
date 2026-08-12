@@ -103,6 +103,11 @@ class DailyQualityAttentionView(APIView):
                 'source_evidence_last_changed_at'
             ),
         )
+        # Fingerprints are internal scheduler/ready-gate details.  The daily
+        # page receives only the opaque report.source_revision; job scope and
+        # input retain the exact hashes for authoritative matching.
+        payload.pop('source_plan_hash', None)
+        payload.pop('source_evidence_hash', None)
         return Response(payload)
 
 
