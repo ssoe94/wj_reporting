@@ -355,6 +355,8 @@ export type OverviewBoardModel = {
   attention: AttentionItem[];
   quality: {
     scope: string | null;
+    businessDate: string | null;
+    historyCoverage: string | null;
     historyWindowDays: number;
     disclaimer: string | null;
     items: QualityAttentionItem[];

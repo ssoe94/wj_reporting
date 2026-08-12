@@ -193,6 +193,8 @@ export function createOverviewDemoModel(
     ],
     quality: {
       scope: "resolved-current-injection-parts",
+      businessDate,
+      historyCoverage: "all_history",
       historyWindowDays: 90,
       disclaimer: language === "ko"
         ? "현재 불량 발생을 의미하지 않습니다"

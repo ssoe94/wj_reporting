@@ -225,6 +225,7 @@ const COPY = {
     qualityPartLabel: "품번",
     qualityLatest: "최근",
     recentReports: "최근 {days}일 {count}건",
+    allHistoryReports: "전체 이력 {count}건",
     previousQualityPage: "이전 품질 이력",
     nextQualityPage: "다음 품질 이력",
     previousQualityAiPage: "이전 Gemma 품질 주의",
@@ -406,6 +407,7 @@ const COPY = {
     qualityPartLabel: "零件号",
     qualityLatest: "最近",
     recentReports: "近 {days} 天 {count} 件",
+    allHistoryReports: "全部历史 {count} 件",
     previousQualityPage: "上一页品质记录",
     nextQualityPage: "下一页品质记录",
     previousQualityAiPage: "上一项 Gemma 品质注意",
@@ -1046,19 +1048,26 @@ function QualityHistorySlide({
   item,
   language,
   historyWindowDays,
+  historyCoverage,
   aiStatusLabel,
   aiStatusState,
 }: {
   item: QualityAttentionItem;
   language: AppLanguage;
   historyWindowDays: number;
+  historyCoverage: string | null;
   aiStatusLabel: string;
   aiStatusState: "pending" | "stale" | "unavailable";
 }) {
   const copy = COPY[language];
   const machineIdentity = getMachineIdentity({ label: item.machineLabel }, language);
   const phenomena = item.phenomena.length > 0 ? item.phenomena.join(" · ") : "—";
-  const historyLabel = replaceCount(copy.recentReports, historyWindowDays, item.reportCount);
+  const historyLabel = historyCoverage === "all_history"
+    ? copy.allHistoryReports.replace(
+        "{count}",
+        item.reportCount === null ? "—" : formatInteger(item.reportCount, language),
+      )
+    : replaceCount(copy.recentReports, historyWindowDays, item.reportCount);
   return (
     <article className={`${styles.qualitySlide} ${styles.qualityHistorySlide}`}>
       <header className={styles.qualitySlideHeader}>
@@ -1178,9 +1187,10 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
   const [interactionPaused, setInteractionPaused] = useState(false);
   const qualityItems = useMemo(() => [...model.quality.items], [model.quality.items]);
   const qualityAi = model.quality.aiSummary;
+  const qualityBusinessDate = model.quality.businessDate ?? model.businessDate;
   const qualityAiSummaryText = getQualityAiText(qualityAi?.summary ?? null, language);
   const showQualityAi = qualityAi?.status === "ready"
-    && qualityAi.businessDate === model.businessDate
+    && qualityAi.businessDate === qualityBusinessDate
     && qualityAi.modelId === "gemma4_26b_a4b"
     && qualityAi.schemaVersion === "quality-daily-attention-ai.v1"
     && !qualityAi.llmFallback
@@ -1203,10 +1213,10 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
   const positionCount = activeItemCount > activeWindowSize ? activeItemCount : 1;
   const canRotate = positionCount > 1;
   const autoPaused = reducedMotion || manuallyPaused || interactionPaused || !canRotate;
-  const qualityAiFallbackState = qualityAi?.status === "pending" && qualityAi.businessDate === model.businessDate
+  const qualityAiFallbackState = qualityAi?.status === "pending" && qualityAi.businessDate === qualityBusinessDate
     ? "pending"
     : qualityAi?.status === "stale"
-      || Boolean(qualityAi?.businessDate && qualityAi.businessDate !== model.businessDate)
+      || Boolean(qualityAi?.businessDate && qualityAi.businessDate !== qualityBusinessDate)
       ? "stale"
       : "unavailable";
   const qualityAiFallbackLabel = qualityAiFallbackState === "pending"
@@ -1224,7 +1234,7 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
               : copy.qualityAiUnavailable;
 
   useEffect(() => setStartIndex(0), [
-    model.businessDate,
+    qualityBusinessDate,
     qualityItems.length,
     qualityAiItems.length,
     qualityAi?.sourcePlanHash,
@@ -1329,6 +1339,7 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
                     <QualityHistorySlide
                       aiStatusLabel={qualityAiFallbackLabel}
                       aiStatusState={qualityAiFallbackState}
+                      historyCoverage={model.quality.historyCoverage}
                       historyWindowDays={model.quality.historyWindowDays}
                       item={item}
                       key={item.id}

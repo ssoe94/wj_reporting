@@ -13,9 +13,11 @@ from quality.models import QualityReport
 
 from .ai_metrics import SHANGHAI_TZ
 from .overview_board import (
+    _build_daily_plan_quality_items,
     _fetch_nanjing_weather,
     _weather_day_phase,
     build_overview_board_snapshot,
+    current_quality_analysis_date,
     current_shanghai_business_date,
 )
 
@@ -434,6 +436,60 @@ class OverviewBoardQualityContractTests(TestCase):
 
         self.assertEqual(current_shanghai_business_date(before_start), datetime(2026, 8, 9).date())
         self.assertEqual(current_shanghai_business_date(at_start), datetime(2026, 8, 10).date())
+
+    def test_quality_analysis_previews_incoming_shift_from_0700(self):
+        before_preview = SHANGHAI_TZ.localize(datetime(2026, 8, 10, 6, 59))
+        at_preview = SHANGHAI_TZ.localize(datetime(2026, 8, 10, 7, 0))
+        current_business_date = datetime(2026, 8, 9).date()
+
+        self.assertEqual(
+            current_quality_analysis_date(current_business_date, before_preview),
+            current_business_date,
+        )
+        self.assertEqual(
+            current_quality_analysis_date(current_business_date, at_preview),
+            datetime(2026, 8, 10).date(),
+        )
+
+    def test_daily_plan_quality_items_include_every_plan_group(self):
+        quality_date = datetime(2036, 8, 10).date()
+        source_items = [
+            {
+                "source_key": f"{machine}|PREFIX{machine}",
+                "machine_name": f"{machine}호기",
+                "machine_number": machine,
+                "model_names": [f"MODEL-{machine}"],
+                "part_nos": [f"PREFIX{machine}01"],
+                "part_prefix": f"PREFIX{machine}",
+                "matching_report_count": machine,
+                "latest_report_dt": "2026-08-01",
+                "top_phenomena": [{"phenomenon": "백화", "count": machine}],
+            }
+            for machine in range(1, 7)
+        ]
+        source = {
+            "date": quality_date.isoformat(),
+            "history_window": "all_history",
+            "match_basis": "part_prefix_9",
+            "source_plan_hash": "plan-hash",
+            "total_plan_count": 6,
+            "total_matching_reports": 21,
+            "items": source_items,
+        }
+
+        with patch(
+            "production.overview_board.build_daily_quality_attention",
+            return_value=source,
+        ):
+            items, meta = _build_daily_plan_quality_items(
+                quality_date,
+                language="ko",
+            )
+
+        self.assertEqual(len(items), 6)
+        self.assertEqual(items[-1]["model_name"], "MODEL-6")
+        self.assertEqual(items[-1]["matching_report_count"], 6)
+        self.assertEqual(meta["plan_group_count"], 6)
 
     def test_process_contract_compares_completion_with_elapsed_time(self):
         with patch(

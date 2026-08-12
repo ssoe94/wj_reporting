@@ -32,6 +32,7 @@ from injection.models import InjectionMonitoringRecord, MouldDataSnapshot
 from injection.mould_snapshots import BOARD_SNAPSHOT_KEY, decorate_board_payload
 from inventory.models import DailyInventorySnapshot, FinishedGoodsTransactionSnapshot
 from inventory.services.outbound_performance import get_outbound_performance
+from quality.daily_attention import build_daily_quality_attention
 from quality.models import QualityReport
 
 from .ai_metrics import SHANGHAI_TZ, safe_rate
@@ -389,6 +390,29 @@ def current_shanghai_business_date(now: datetime | None = None) -> date:
     if timezone.is_naive(reference):
         reference = timezone.make_aware(reference, timezone.get_current_timezone())
     return (reference.astimezone(SHANGHAI_TZ) - timedelta(hours=8)).date()
+
+
+def current_quality_analysis_date(
+    target_date: date,
+    now: datetime | None = None,
+) -> date:
+    """Preview the incoming shift's quality plan from 07:00 to 08:00.
+
+    Production KPIs retain the 08:00 business-day boundary.  Quality attention
+    is prepared one hour earlier for shift handover, using the calendar date's
+    already-uploaded injection plan.
+    """
+
+    reference = now or timezone.now()
+    if timezone.is_naive(reference):
+        reference = timezone.make_aware(reference, timezone.get_current_timezone())
+    local_reference = reference.astimezone(SHANGHAI_TZ)
+    if (
+        target_date == current_shanghai_business_date(reference)
+        and local_reference.hour == 7
+    ):
+        return local_reference.date()
+    return target_date
 
 
 def _source_state(
@@ -784,6 +808,66 @@ def _build_quality_attention(
         "join": "exact normalized full part_no",
     }
     return quality, warnings, source, trace
+
+
+def _quality_plan_group_label(values: Any, language: str) -> str:
+    rows = [str(value or "").strip() for value in values or [] if str(value or "").strip()]
+    if not rows:
+        return "-"
+    if len(rows) == 1:
+        return rows[0]
+    suffix = f" 외 {len(rows) - 1}" if language == "ko" else f" 另{len(rows) - 1}"
+    return f"{rows[0]}{suffix}"
+
+
+def _build_daily_plan_quality_items(
+    target_date: date,
+    *,
+    language: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Return one compact wall slide per daily-attention plan group."""
+
+    cache_key = f"overview-board:quality-plan-groups:v1:{target_date.isoformat()}:{language}"
+    cached = cache.get(cache_key)
+    if isinstance(cached, dict) and isinstance(cached.get("items"), list):
+        return list(cached["items"]), dict(cached.get("meta") or {})
+
+    source = build_daily_quality_attention(target_date, include_images=False)
+    items: list[dict[str, Any]] = []
+    for index, row in enumerate(source.get("items") or []):
+        if not isinstance(row, dict):
+            continue
+        phenomena = [
+            str(value.get("phenomenon") or "").strip()
+            for value in row.get("top_phenomena") or []
+            if isinstance(value, dict) and str(value.get("phenomenon") or "").strip()
+        ]
+        machine_name = str(row.get("machine_name") or "").strip()
+        if not machine_name:
+            continue
+        source_key = str(row.get("source_key") or f"quality-plan-{index}")
+        items.append({
+            "id": source_key,
+            "machine_name": machine_name,
+            "machine_number": row.get("machine_number"),
+            "model_name": _quality_plan_group_label(row.get("model_names"), language),
+            "part_no": _quality_plan_group_label(row.get("part_nos"), language),
+            "part_prefix": row.get("part_prefix"),
+            "phenomena": phenomena,
+            "matching_report_count": _safe_int(row.get("matching_report_count")),
+            "latest_report_dt": row.get("latest_report_dt"),
+            "match_label": "품번 앞 9자리 · 전체 이력" if language == "ko" else "品号前9位 · 全部历史",
+        })
+    meta = {
+        "business_date": source.get("date") or target_date.isoformat(),
+        "history_coverage": source.get("history_window") or "all_history",
+        "match_basis": source.get("match_basis") or "part_prefix_9",
+        "source_plan_hash": source.get("source_plan_hash"),
+        "plan_group_count": _safe_int(source.get("total_plan_count")),
+        "matched_report_count": _safe_int(source.get("total_matching_reports")),
+    }
+    cache.set(cache_key, {"items": items, "meta": meta}, timeout=300)
+    return items, meta
 
 
 def _build_energy(
@@ -1862,6 +1946,7 @@ def build_overview_board_snapshot(target_date: date, *, language: str = "ko") ->
     )
     warnings.extend(production_warnings)
 
+    quality_target_date = current_quality_analysis_date(target_date)
     try:
         quality, quality_warnings, quality_source, quality_trace = _build_quality_attention(
             injection,
@@ -1891,13 +1976,41 @@ def build_overview_board_snapshot(target_date: date, *, language: str = "ko") ->
     warnings.extend(quality_warnings)
     traces.append(quality_trace)
     try:
-        quality["ai_summary"] = quality_summary_for_overview(target_date)
+        plan_quality_items, plan_quality_meta = _build_daily_plan_quality_items(
+            quality_target_date,
+            language=language,
+        )
+        quality["plan_items"] = plan_quality_items
+        quality["business_date"] = plan_quality_meta.get("business_date")
+        quality["history_coverage"] = plan_quality_meta.get("history_coverage")
+        quality["plan_group_count"] = plan_quality_meta.get("plan_group_count")
+        quality["plan_matched_report_count"] = plan_quality_meta.get("matched_report_count")
+        traces.append({
+            "source": "quality.daily_attention.build_daily_quality_attention",
+            "status": "ok",
+            "rows_returned": len(plan_quality_items),
+            "business_date": quality["business_date"],
+            "join": plan_quality_meta.get("match_basis"),
+        })
+    except DatabaseError as exc:
+        quality["plan_items"] = []
+        quality["business_date"] = quality_target_date.isoformat()
+        quality["history_coverage"] = "all_history"
+        warnings.append("quality_daily_plan_groups_unavailable")
+        traces.append({
+            "source": "quality.daily_attention.build_daily_quality_attention",
+            "status": "error",
+            "detail": exc.__class__.__name__,
+            "rows_returned": 0,
+        })
+    try:
+        quality["ai_summary"] = quality_summary_for_overview(quality_target_date)
     except DatabaseError:
         # Local AI is optional wall context; deterministic quality history must
         # remain available even when the AI job table cannot be read.
         quality["ai_summary"] = {
             "status": "unavailable",
-            "business_date": target_date.isoformat(),
+            "business_date": quality_target_date.isoformat(),
             "source_plan_hash": None,
             "source_evidence_hash": None,
             "source_evidence_last_changed_at": None,

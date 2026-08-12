@@ -1261,6 +1261,18 @@ def handle_job(
                 "title": "string",
                 "summary": "string",
             })
+            chunked_analysis = getattr(handler, "analyze_with_llm", None)
+            if callable(chunked_analysis):
+                attempts = 1
+                normalized = chunked_analysis(
+                    job,
+                    llm,
+                    model_name,
+                    deterministic,
+                )
+                normalized["llm_attempted"] = True
+                normalized.setdefault("llm_attempts", 1)
+                return normalized, handler.PROMPT_VERSION
             result = llm.structured_analysis(handler.SYSTEM_PROMPT, {
                 "job_type": job_type,
                 "scope": job.get("scope") or {},

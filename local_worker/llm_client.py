@@ -64,6 +64,7 @@ class LocalLlmClient:
         enable_thinking: bool = False,
         thinking_budget: int | None = None,
         timeout_seconds: float | None = None,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         request_payload: dict[str, Any] = {
             "model": self.model,
@@ -95,6 +96,8 @@ class LocalLlmClient:
             request_payload["chat_template_kwargs"] = {
                 "enable_thinking": False,
             }
+        if max_tokens is not None:
+            request_payload["max_tokens"] = max(128, min(4096, int(max_tokens)))
         response = requests.post(
             f"{self.base_url}/chat/completions",
             json=request_payload,

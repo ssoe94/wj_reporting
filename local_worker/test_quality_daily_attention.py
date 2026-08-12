@@ -688,14 +688,18 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         self.assertNotIn("Q-1", str(llm_payload))
         self.assertNotIn("Q-3", str(llm_payload))
 
-    def test_valid_gemma_result_uses_one_structured_call_and_exact_json_contract(self):
+    def test_valid_gemma_result_uses_one_bounded_call_per_history_group(self):
         class Gemma:
             def __init__(self):
                 self.calls = []
 
             def structured_analysis(self, system_prompt, payload, **kwargs):
                 self.calls.append((system_prompt, payload, kwargs))
-                return valid_llm_result()
+                return {
+                    "source_key": payload["source_key"],
+                    "problem_types": valid_llm_result()["attention_items"][0]["problem_types"],
+                    "locations": valid_llm_result()["attention_items"][0]["locations"],
+                }
 
         gemma = Gemma()
         result, prompt_version = handle_job(
@@ -708,9 +712,14 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(gemma.calls), 1)
         self.assertEqual(prompt_version, handler.PROMPT_VERSION)
-        self.assertEqual(gemma.calls[0][1]["required_output_schema"], handler.REQUIRED_OUTPUT_SCHEMA)
+        self.assertEqual(
+            gemma.calls[0][1]["required_output_schema"],
+            handler.MODEL_CHUNK_OUTPUT_SCHEMA,
+        )
+        self.assertEqual(gemma.calls[0][2]["max_tokens"], handler.MODEL_CHUNK_MAX_TOKENS)
         self.assertEqual(result["source"], "local_llm_rewrite")
         self.assertEqual(result["llm_attempts"], 1)
+        self.assertEqual(result["llm_chunk_count"], 1)
         self.assertEqual(
             set(result),
             {
@@ -726,6 +735,8 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
                 "source",
                 "llm_attempted",
                 "llm_attempts",
+                "llm_chunk_count",
+                "llm_chunk_basis",
             },
         )
 

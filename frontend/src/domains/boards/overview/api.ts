@@ -745,7 +745,10 @@ function normalizeOverviewResponse(
   const processes = asRecord(source.processes);
   const overallStatus = asRecord(source.overall_status);
   const quality = asRecord(source.quality);
-  const qualityItems = firstValue(quality, ["items", "rows"]);
+  const planQualityItems = firstValue(quality, ["plan_items", "planItems"]);
+  const qualityItems = Array.isArray(planQualityItems) && planQualityItems.length > 0
+    ? planQualityItems
+    : firstValue(quality, ["items", "rows"]);
   const freshness = asRecord(source.freshness);
   const freshnessSources = asRecord(freshness.sources);
   const freshnessStates = Object.values(freshnessSources).map(asRecord);
@@ -807,6 +810,8 @@ function normalizeOverviewResponse(
     attention,
     quality: {
       scope: firstString(quality, ["scope", "scope_label"]),
+      businessDate: firstString(quality, ["business_date", "businessDate"]),
+      historyCoverage: firstString(quality, ["history_coverage", "historyCoverage"]),
       historyWindowDays: firstNumber(quality, ["history_window_days", "lookback_days"]) ?? 90,
       disclaimer: firstString(quality, ["disclaimer"]),
       items: normalizedQualityItems,
