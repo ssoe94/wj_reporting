@@ -100,6 +100,27 @@ def resource_record(
 
 
 class MouldTransformTests(SimpleTestCase):
+    def test_location_conflicts_require_distinct_moulds_in_exclusive_slots(self):
+        rows = mould_service._location_rows(
+            [
+                {"instance_id": "same", "location_code": "A4-3"},
+                {"instance_id": "same", "location_code": "A4-3"},
+                {"instance_id": "first", "location_code": "C7-16"},
+                {"instance_id": "second", "location_code": "C7-16"},
+                {"instance_id": "offsite-1", "location_code": "厂外"},
+                {"instance_id": "offsite-2", "location_code": "厂外"},
+                {"instance_id": "unknown-1", "location_code": "仓库保管-44"},
+                {"instance_id": "unknown-2", "location_code": "仓库保管-44"},
+            ]
+        )
+        by_code = {row["code"]: row for row in rows}
+
+        self.assertEqual(by_code["A4-3"]["mould_count"], 1)
+        self.assertFalse(by_code["A4-3"]["conflict"])
+        self.assertTrue(by_code["C7-16"]["conflict"])
+        self.assertFalse(by_code["厂外"]["conflict"])
+        self.assertFalse(by_code["仓库保管-44"]["conflict"])
+
     def test_parent_fields_are_resolved_by_field_name_not_tenant_code(self):
         result = normalize_mould_record(
             custom_record(1_736_127_906_878_176, "MOLD-0674", "C9-18")

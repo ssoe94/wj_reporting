@@ -1274,6 +1274,27 @@ def discover_child_objects(metadata_payload: Mapping[str, Any]) -> dict[str, dic
     return discovered
 
 
+def _unique_location_occupants(
+    occupants: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    """Deduplicate repeated payload rows without merging distinct moulds."""
+
+    unique: list[Mapping[str, Any]] = []
+    seen: set[str] = set()
+    for index, occupant in enumerate(occupants):
+        identity = str(
+            occupant.get("instance_id")
+            or occupant.get("asset_code")
+            or occupant.get("mould_code")
+            or f"row:{index}"
+        ).strip()
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(occupant)
+    return unique
+
+
 def _machine_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     by_location: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for mould in moulds:
@@ -1291,7 +1312,7 @@ def _machine_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             continue
         number = int(match.group("number"))
         tonnage = match.group("tonnage")
-        occupants = by_location.get(location_code, [])
+        occupants = _unique_location_occupants(by_location.get(location_code, []))
         machines.append(
             {
                 "number": number,
@@ -1317,18 +1338,22 @@ def _location_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     all_codes = set(grouped) | set(MACHINE_LOCATION_CODES)
     for code in sorted(all_codes):
-        occupants = grouped.get(code, [])
+        occupants = _unique_location_occupants(grouped.get(code, []))
         machine_match = _MACHINE_CODE_RE.match(code)
+        location_kind = classify_location(code)
         rows.append(
             {
                 "code": code,
                 "label": code,
-                "kind": classify_location(code),
+                "kind": location_kind,
                 "machine_number": (
                     int(machine_match.group("number")) if machine_match else None
                 ),
                 "mould_count": len(occupants),
-                "conflict": len(occupants) > 1,
+                "conflict": (
+                    location_kind in {"machine", "storage"}
+                    and len(occupants) > 1
+                ),
                 "mould_instance_ids": [row.get("instance_id") for row in occupants],
             }
         )

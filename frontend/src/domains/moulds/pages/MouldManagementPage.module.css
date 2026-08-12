@@ -630,7 +630,7 @@
 
 .validationIdle {
   background: #eef2f6;
-  color: #718295;
+  color: #5f707b;
 }
 
 .machineRow.machineMismatch:not(.selectedMachine) {
@@ -1506,6 +1506,14 @@
   --board-navy: #132d45;
   --board-blue: #1764b0;
   --board-surface: rgba(255, 255, 255, 0.94);
+  --machine-running-accent: #4f756a;
+  --machine-running-border: #becec8;
+  --machine-running-surface: #eff5f2;
+  --machine-running-surface-end: #fbfdfc;
+  --machine-stopped-accent: #aab5bb;
+  --machine-stopped-border: #d7dfe3;
+  --machine-stopped-surface: #f3f5f6;
+  --machine-stopped-text: #5e707a;
   position: fixed;
   z-index: 40;
   inset: 0;
@@ -5964,14 +5972,14 @@
 }
 
 .zonePreviewMap {
-  --zone-preview-cell-size: clamp(7px, 0.625vw, 24px);
   display: grid;
+  width: 100%;
   min-width: 0;
-  min-height: clamp(93px, calc(5.625vw + 30px), 246px);
   flex: 1;
-  grid-template-columns: repeat(18, var(--zone-preview-cell-size));
+  align-self: start;
+  grid-template-columns: repeat(18, minmax(0, 1fr));
   grid-auto-flow: row;
-  grid-auto-rows: var(--zone-preview-cell-size);
+  grid-auto-rows: auto;
   place-content: start;
   gap: 2px;
   padding: 7px;
@@ -5984,11 +5992,20 @@
 
 .zonePreviewCell {
   display: block;
-  width: var(--zone-preview-cell-size);
-  height: var(--zone-preview-cell-size);
+  width: 100%;
+  height: auto;
   aspect-ratio: 1;
   border-radius: 2px;
   transition: opacity 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.zonePreviewSpacer {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .zonePreviewEmpty {
@@ -6001,11 +6018,13 @@
 }
 
 .zonePreviewInactiveSix {
-  background: linear-gradient(145deg, #dde8dd, #bfd2c0);
+  border: 1px solid #b3bec5;
+  background: linear-gradient(145deg, #d9dfe3, #c7d0d6);
 }
 
 .zonePreviewInactiveTwelve {
-  background: linear-gradient(145deg, #e9ddd5, #d3beb3);
+  border: 1px solid #74828c;
+  background: linear-gradient(145deg, #a4afb7, #87949d);
 }
 
 .zonePreviewConflict {
@@ -6093,11 +6112,11 @@
 }
 
 .zoneAgeSix {
-  background: #bfd2c0;
+  background: #c7d0d6;
 }
 
 .zoneAgeTwelve {
-  background: #d3beb3;
+  background: #87949d;
 }
 
 .zoneSearchResult {
@@ -6220,43 +6239,65 @@
   }
 }
 
-/* Keep long-unused moulds distinct without turning the board into a grey mass. */
+/* Two-step grayscale keeps inactivity separate from zone identity and alarms. */
 .page .coordinateCell.inactiveSixMonths:not(.selectedCell):not(.conflictCell) {
-  border-color: #9cb7a1;
-  background: linear-gradient(145deg, #dde8dd, #bfd2c0);
-  color: #35513a;
+  border-color: #b3bec5;
+  background: linear-gradient(145deg, #d9dfe3, #c7d0d6);
+  color: #354752;
   text-shadow: none;
 }
 
 .page .coordinateCell.inactiveTwelveMonths:not(.selectedCell):not(.conflictCell) {
-  border-color: #c4a99c;
-  background: linear-gradient(145deg, #e9ddd5, #d3beb3);
-  color: #5c4237;
+  border-color: #74828c;
+  background: linear-gradient(145deg, #a4afb7, #87949d);
+  color: #fff;
   text-shadow: none;
 }
 
 .page .coordinateCell.inactiveSixMonths:hover:not(:disabled):not(.conflictCell),
 .page .coordinateCell.inactiveSixMonths:focus-visible:not(:disabled):not(.conflictCell) {
-  border-color: #819f88;
-  background: linear-gradient(145deg, #d2e1d2, #aec5b1);
-  color: #2f4934;
+  border-color: #9daab2;
+  background: linear-gradient(145deg, #d1d8dc, #bbc6cc);
+  color: #2f414c;
 }
 
 .page .coordinateCell.inactiveTwelveMonths:hover:not(:disabled):not(.conflictCell),
 .page .coordinateCell.inactiveTwelveMonths:focus-visible:not(:disabled):not(.conflictCell) {
-  border-color: #a88c7e;
-  background: linear-gradient(145deg, #e0d1c8, #c7aea2);
-  color: #523b31;
+  border-color: #66747e;
+  background: linear-gradient(145deg, #98a4ac, #788690);
+  color: #fff;
 }
 
 .legendInactiveSix {
-  border-color: #9cb7a1;
-  background: #bfd2c0;
+  border-color: #b3bec5;
+  background: #c7d0d6;
 }
 
 .legendInactiveTwelve {
-  border-color: #c4a99c;
-  background: #d3beb3;
+  border-color: #74828c;
+  background: #87949d;
+}
+
+.cellLegend > .inactivityLegendIntro {
+  display: inline-grid;
+  gap: 0;
+  padding: 4px 8px;
+  border: 1px solid rgba(134, 151, 162, 0.28);
+  border-radius: 8px;
+  background: rgba(240, 244, 246, 0.82);
+  line-height: 1.2;
+}
+
+.inactivityLegendIntro strong {
+  color: #465a66;
+  font-size: 0.61rem;
+  font-weight: 900;
+}
+
+.inactivityLegendIntro small {
+  color: #7b8b94;
+  font-size: 0.52rem;
+  font-weight: 700;
 }
 
 @media (max-width: 980px) {
@@ -6394,5 +6435,271 @@
   .zoneSummaryCard:hover .zoneSummaryAction,
   .zoneSummaryCard:focus-visible .zoneSummaryAction {
     transform: none;
+  }
+}
+
+/* Readable zone summaries and an unmistakable machine run/stop state. */
+.zoneOverviewGrid {
+  height: auto;
+  min-height: 100%;
+  grid-template-rows: none;
+  grid-auto-rows: auto;
+  align-content: start;
+}
+
+.zoneSummaryCard {
+  grid-template-rows: auto auto auto auto;
+  align-content: start;
+  gap: 10px;
+  padding: clamp(14px, 1vw, 20px);
+}
+
+.zoneSummaryIdentity {
+  gap: 12px;
+}
+
+.zoneSummaryMonogram {
+  width: clamp(42px, 2.6vw, 52px);
+  height: clamp(42px, 2.6vw, 52px);
+  flex-basis: clamp(42px, 2.6vw, 52px);
+  font-size: clamp(1rem, 0.9vw, 1.24rem);
+}
+
+.zoneSummaryIdentity strong {
+  font-size: clamp(1.18rem, 1.08vw, 1.44rem);
+  line-height: 1.15;
+}
+
+.zoneSummaryIdentity small {
+  font-size: clamp(0.82rem, 0.74vw, 0.96rem);
+  line-height: 1.35;
+}
+
+.zoneSummaryAction {
+  width: clamp(40px, 2.4vw, 48px);
+  height: clamp(40px, 2.4vw, 48px);
+  flex-basis: clamp(40px, 2.4vw, 48px);
+}
+
+.zoneSummaryVisual {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+}
+
+.zoneSummaryOccupancy {
+  display: grid;
+  width: 100%;
+  flex: 0 0 auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 3px 10px;
+}
+
+.zoneSummaryOccupancy > strong {
+  font-size: clamp(2.15rem, 2.15vw, 2.9rem);
+  line-height: 1;
+}
+
+.zoneSummaryOccupancy > small {
+  font-size: clamp(0.82rem, 0.72vw, 0.92rem);
+  line-height: 1.25;
+}
+
+.zoneSummaryOccupancy > span {
+  width: 100%;
+  grid-column: 1 / -1;
+  margin-top: 3px;
+}
+
+.zonePreviewMap {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  flex: 0 0 auto;
+  aspect-ratio: 2 / 1;
+}
+
+.zoneSummaryMetrics {
+  gap: 7px;
+}
+
+.zoneSummaryMetrics > span {
+  min-height: 48px;
+  gap: 4px;
+  padding: 8px 7px;
+}
+
+.zoneSummaryMetrics small {
+  font-size: clamp(0.76rem, 0.69vw, 0.88rem);
+  line-height: 1.2;
+}
+
+.zoneSummaryMetrics strong {
+  font-size: clamp(1.02rem, 0.96vw, 1.28rem);
+  line-height: 1.15;
+}
+
+.zoneSummaryAges {
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
+.zoneSummaryAges > span {
+  font-size: clamp(0.74rem, 0.67vw, 0.84rem);
+  line-height: 1.25;
+}
+
+.zoneSummaryAges strong {
+  font-size: clamp(0.92rem, 0.8vw, 1.06rem);
+}
+
+.machineGraphicCard.machineRunning {
+  border-color: var(--machine-running-border);
+  border-left-color: var(--machine-running-accent);
+  background: linear-gradient(145deg, var(--machine-running-surface) 0%, var(--machine-running-surface-end) 72%);
+  box-shadow:
+    inset 0 0 0 1px rgba(79, 117, 106, 0.06),
+    0 4px 12px rgba(36, 61, 55, 0.08);
+}
+
+.machineGraphicCard.machineRunning .machineGraphicArt {
+  border-color: #c5d5d0;
+  background: #eaf2ef;
+}
+
+.machineGraphicCard.machineRunning .machineGraphicArt img {
+  filter: saturate(0.94) contrast(1.02);
+}
+
+.machineGraphicCard.machineRunning:hover,
+.machineGraphicCard.machineRunning:focus-visible {
+  border-color: #91afa6;
+  background: linear-gradient(145deg, #e8f0ed 0%, #f8fbfa 74%);
+  box-shadow:
+    inset 0 0 0 1px rgba(79, 117, 106, 0.08),
+    0 6px 15px rgba(36, 61, 55, 0.11);
+}
+
+.machineGraphicCard.machineStopped {
+  border-color: var(--machine-stopped-border);
+  border-left-color: var(--machine-stopped-accent);
+  background: linear-gradient(145deg, #f1f3f4, #fafbfb 72%);
+  color: var(--machine-stopped-text);
+  box-shadow: inset 0 0 0 1px rgba(86, 103, 113, 0.035);
+}
+
+.machineGraphicCard.machineStopped .machineGraphicTopline > strong,
+.machineGraphicCard.machineStopped .machineGraphicInfo > strong,
+.machineGraphicCard.machineStopped .machineGraphicInfo > small,
+.machineGraphicCard.machineStopped .machineGraphicInfo > span small,
+.machineGraphicCard.machineStopped .machineGraphicInfo > span b {
+  color: var(--machine-stopped-text);
+}
+
+.machineGraphicCard.machineStopped .machineGraphicArt {
+  border-color: #d8dfe3;
+  background: #e9edef;
+}
+
+.machineGraphicCard.machineStopped .machineGraphicArt img {
+  opacity: 0.58;
+  filter: grayscale(0.9) saturate(0.2);
+}
+
+.machineRow.machineRunning:not(.selectedMachine) {
+  border-color: #c8d9d4;
+  background: linear-gradient(90deg, var(--machine-running-surface) 0%, var(--machine-running-surface-end) 64%);
+  box-shadow: inset 4px 0 0 var(--machine-running-accent);
+}
+
+.machineRow.machineRunning:not(.selectedMachine):hover,
+.machineRow.machineRunning:not(.selectedMachine):focus-visible {
+  background: linear-gradient(90deg, #e8f0ed 0%, #f8fbfa 68%);
+  box-shadow: inset 4px 0 0 #426c61, 0 3px 9px rgba(36, 61, 55, 0.08);
+}
+
+.machineRow.machineStopped:not(.selectedMachine) {
+  border-color: var(--machine-stopped-border);
+  background: var(--machine-stopped-surface);
+  box-shadow: inset 4px 0 0 var(--machine-stopped-accent);
+}
+
+.machineRow.machineStopped:not(.selectedMachine) > strong,
+.machineRow.machineStopped:not(.selectedMachine) .machineMountedCell strong,
+.machineRow.machineStopped:not(.selectedMachine) .machineProductionCell strong {
+  color: var(--machine-stopped-text);
+}
+
+.machineRow.machineStopped:not(.selectedMachine):hover,
+.machineRow.machineStopped:not(.selectedMachine):focus-visible {
+  background: #eceff1;
+  box-shadow: inset 4px 0 0 #98a5ac;
+}
+
+.machineGraphicCard.machineRunning.selectedMachine {
+  border-color: #2d86b4;
+  box-shadow: inset 0 0 0 1px #2d86b4, 0 6px 16px rgba(37, 83, 116, 0.13);
+}
+
+@media (max-width: 720px) {
+  .zoneOverviewGrid {
+    grid-auto-rows: auto;
+  }
+
+  .zoneSummaryCard {
+    min-height: 0;
+  }
+
+  .zoneSummaryIdentity small {
+    display: block;
+  }
+
+  .zoneSummaryMetrics > span {
+    min-height: 46px;
+    padding-inline: 7px;
+  }
+}
+
+/* True 4K overview: one screen, balanced panels, equal zone cards. */
+@media (min-width: 2800px) and (min-height: 1600px) {
+  .boardGrid {
+    grid-template-columns: minmax(1100px, 0.76fr) minmax(0, 1.24fr);
+  }
+
+  .machineGraphicGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+    align-content: stretch;
+  }
+
+  .zoneListOverview {
+    overflow: hidden;
+  }
+
+  .zoneOverviewGrid {
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: auto;
+    align-content: stretch;
+  }
+
+  .zoneSummaryCard {
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    align-content: stretch;
+  }
+
+  .zoneSummaryVisual {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .zoneSummaryOccupancy {
+    margin-top: auto;
   }
 }

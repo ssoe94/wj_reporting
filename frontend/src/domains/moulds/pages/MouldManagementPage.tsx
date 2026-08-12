@@ -50,6 +50,7 @@ import {
   type ProductionStatusMachine,
   type ProductionStatusPart,
 } from "@/domains/production/api";
+import { getOverviewBoard } from "@/domains/boards/overview/api";
 import { useStoredLanguage } from "@/shared/i18n/language";
 import { getShanghaiBusinessDateString } from "@/shared/utils/date";
 import injectionMachineGraphic from "@/assets/injection-machine-card.png";
@@ -112,6 +113,7 @@ const COPY = {
     installedMould: "MES 장착 금형",
     expectedModel: "생산 추정 모델",
     productionBasisActive: "형합수 기준 진행 중 추정",
+    productionBasisCarryover: "이전 계획 연장 추정",
     productionBasisRecent: "최근 생산 실적 기준",
     productionBasisPlanned: "생산계획만 있음",
     productionBasisAmbiguous: "동시에 진행 중인 생산이 여러 건",
@@ -239,7 +241,8 @@ const COPY = {
     confirmingCheckpoint: "확인 저장 중",
     confirmError: "확인 저장에 실패했습니다.",
     usageLegend: "10만 Shot 점검 알림",
-    inactivityLegend: "6/12개월 미사용",
+    inactivityLegend: "미사용 기간",
+    inactivityBasis: "최근 생산월 기준",
     shortMatch: "일치",
     shortReview: "판정필요",
     shortMismatch: "불일치",
@@ -309,6 +312,7 @@ const COPY = {
     installedMould: "MES 安装模具",
     expectedModel: "推算生产型号",
     productionBasisActive: "按合模次数推算进行中",
+    productionBasisCarryover: "沿用上一计划推算",
     productionBasisRecent: "按最近生产实绩",
     productionBasisPlanned: "仅有生产计划",
     productionBasisAmbiguous: "同时存在多项进行中生产",
@@ -436,7 +440,8 @@ const COPY = {
     confirmingCheckpoint: "正在保存确认",
     confirmError: "保存确认失败。",
     usageLegend: "每10万 Shot 点检提醒",
-    inactivityLegend: "6/12个月未使用",
+    inactivityLegend: "闲置时长",
+    inactivityBasis: "按最后生产月判断",
     shortMatch: "一致",
     shortReview: "待确认",
     shortMismatch: "不一致",
@@ -459,7 +464,7 @@ type ViewFilter = "all" | "machine" | "storage" | "repair" | "offsite" | "unknow
 type MachineViewMode = "graphic" | "table";
 type DetailTab = "movement" | "detail" | "production" | "repair";
 type SelectedDetail = MouldDetail | MouldRecord;
-type ProductionEvidence = "active_estimate" | "last_output" | "planned_only" | "ambiguous";
+type ProductionEvidence = "active_estimate" | "carryover_plan" | "last_output" | "planned_only" | "ambiguous";
 type ProductionMode = "single" | "multi_cavity";
 type MachineProductionLink = {
   date: string;
@@ -536,11 +541,6 @@ function milestoneLabel(milestone: number, language: "ko" | "zh"): string {
 function usageVisualClass(mould: MouldRecord): string {
   if (mould.inactivityTier === "twelve_months") return styles.inactiveTwelveMonths;
   if (mould.inactivityTier === "six_months") return styles.inactiveSixMonths;
-  if (mould.confirmationRequired) return styles.usageReviewDue;
-  if (mould.shotMilestoneLevel >= 4) return styles.usageLevelFour;
-  if (mould.shotMilestoneLevel >= 3) return styles.usageLevelThree;
-  if (mould.shotMilestoneLevel >= 2) return styles.usageLevelTwo;
-  if (mould.shotMilestoneLevel >= 1) return styles.usageLevelOne;
   return "";
 }
 
@@ -868,6 +868,7 @@ function productionBasisLabel(production: MachineProductionLink | undefined, cop
   if (!production) return copy.noProductionModel;
   return {
     active_estimate: copy.productionBasisActive,
+    carryover_plan: copy.productionBasisCarryover,
     last_output: copy.productionBasisRecent,
     planned_only: copy.productionBasisPlanned,
     ambiguous: copy.productionBasisAmbiguous,
@@ -1058,8 +1059,7 @@ function recommendationLocationText(recommendations: ModelRecommendation[], limi
   return locations.length > limit ? `${visible} +${locations.length - limit}` : visible;
 }
 
-async function getLatestMachineProductionLinks() {
-  const referenceDate = getShanghaiBusinessDateString();
+async function getLatestMachineProductionEvidence(referenceDate: string) {
   const fallbackDates = Array.from({ length: 8 }, (_, index) => {
     const candidateDate = new Date(`${referenceDate}T00:00:00Z`);
     candidateDate.setUTCDate(candidateDate.getUTCDate() - index);
@@ -1103,6 +1103,7 @@ async function getLatestMachineProductionLinks() {
   recentStatuses.forEach((item) => {
     if (!item) return;
     buildMachineProductionLinks(item.status.injection, item.date, item.planRecords).forEach((link, machineNumber) => {
+      if (!link.model) return;
       if (link.basis === "planned_only") {
         if (!plannedLinks.has(machineNumber)) plannedLinks.set(machineNumber, link);
       } else if (!actualLinks.has(machineNumber)) {
@@ -1110,8 +1111,87 @@ async function getLatestMachineProductionLinks() {
       }
     });
   });
-  const result = new Map(plannedLinks);
-  actualLinks.forEach((link, machineNumber) => result.set(machineNumber, link));
+  const result = new Map<number, MachineProductionLink>();
+  plannedLinks.forEach((link, machineNumber) => result.set(machineNumber, { ...link, isRunning: false }));
+  actualLinks.forEach((link, machineNumber) => result.set(machineNumber, { ...link, isRunning: false }));
+  return result;
+}
+
+async function getCurrentMachineActivityLinks(referenceDate: string) {
+  const currentActivity = await getOverviewBoard(referenceDate, "ko");
+  const activityRows = currentActivity.model.equipment.injectionRows;
+  const activityWarnings = currentActivity.model.warnings;
+  const activityUnavailable = currentActivity.mode !== "live"
+    || currentActivity.model.equipment.injectionOee.activityMetricsAvailable === false
+    || activityRows.some((row) => row.sourceStatus === "missing" || row.sourceStatus === "stale")
+    || activityWarnings.some((warning) => [
+      "injection_mes_data_missing",
+      "injection_mes_data_stale",
+      "injection_activity_context_unavailable",
+    ].includes(warning));
+  if (activityUnavailable) {
+    throw new Error("Current injection activity is unavailable.");
+  }
+
+  const result = new Map<number, MachineProductionLink>();
+  activityRows.forEach((activity) => {
+    const machineNumber = activity.machineNumber;
+    if (!machineNumber || !activity.isRunning) return;
+
+    const currentParts = activity.currentParts.filter((part) => part.modelName || part.partNumber);
+    const currentModels = [...new Set(currentParts.map((part) => text(part.modelName, "")).filter(Boolean))];
+    const currentPartNos = [...new Set(currentParts.map((part) => text(part.partNumber, "")).filter(Boolean))];
+    const currentModel = currentModels[0] ?? "";
+    result.set(machineNumber, {
+      date: referenceDate,
+      isRunning: true,
+      model: currentModel,
+      partNo: currentPartNos[0] ?? "-",
+      partNos: currentPartNos,
+      parts: [],
+      basis: currentModels.length > 1 ? "ambiguous" : "active_estimate",
+      mode: currentPartNos.length > 1 ? "multi_cavity" : "single",
+      cavityPattern: "",
+      cavityGroup: "",
+      productionGroupId: "",
+      actualQuantity: activity.actualQuantity ?? 0,
+      plannedQuantity: activity.plannedQuantity ?? 0,
+      candidateCount: Math.max(1, currentModels.length),
+    });
+  });
+  return result;
+}
+
+function mergeMachineProductionLinks(
+  evidence: Map<number, MachineProductionLink>,
+  currentActivity: Map<number, MachineProductionLink>,
+) {
+  const result = new Map(evidence);
+  currentActivity.forEach((activity, machineNumber) => {
+    const currentEvidence = evidence.get(machineNumber);
+    const carryoverEvidence = !activity.model
+      && currentEvidence?.model
+      && productionAgeDays(currentEvidence.date) <= 3
+      ? currentEvidence
+      : undefined;
+    const sameDayEvidence = currentEvidence?.date === activity.date ? currentEvidence : undefined;
+    const metadataEvidence = carryoverEvidence ?? sameDayEvidence;
+    result.set(machineNumber, {
+      ...activity,
+      date: carryoverEvidence?.date ?? activity.date,
+      model: carryoverEvidence?.model ?? activity.model,
+      partNo: carryoverEvidence?.partNo ?? activity.partNo,
+      partNos: carryoverEvidence?.partNos.length ? carryoverEvidence.partNos : activity.partNos,
+      parts: metadataEvidence?.parts ?? activity.parts,
+      basis: carryoverEvidence ? "carryover_plan" : activity.basis,
+      mode: carryoverEvidence?.mode ?? activity.mode,
+      cavityPattern: metadataEvidence?.cavityPattern ?? activity.cavityPattern,
+      cavityGroup: metadataEvidence?.cavityGroup ?? activity.cavityGroup,
+      productionGroupId: metadataEvidence?.productionGroupId ?? activity.productionGroupId,
+      plannedQuantity: activity.plannedQuantity || carryoverEvidence?.plannedQuantity || 0,
+      candidateCount: carryoverEvidence?.candidateCount ?? activity.candidateCount,
+    });
+  });
   return result;
 }
 
@@ -1195,14 +1275,55 @@ function matchesSearch(mould: MouldRecord, search: string) {
 }
 
 function coordinateParts(location: MouldLocation) {
-  const code = location.code.toUpperCase();
-  const match = code.match(/^([ABCS])(\d+)?[-_](\d+)$/);
+  const code = location.code
+    .normalize("NFKC")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/_/g, "-");
+  const match = code.match(/^([ABCS])(\d+)?-(\d+)$/);
   if (!match) return null;
   return {
     zone: match[1] ?? "",
     row: Number(match[2] ?? 1),
     column: Number(match[3] ?? 1),
   };
+}
+
+function canonicalStorageCoordinate(location: MouldLocation): string | null {
+  const parts = coordinateParts(location);
+  return parts ? `${parts.zone}${parts.row}-${parts.column}` : null;
+}
+
+function locationGroupKey(location: MouldLocation): string {
+  const coordinate = canonicalStorageCoordinate(location);
+  if (coordinate) return `storage:${coordinate}`;
+  if (location.kind === "machine" && location.machineNumber) return `machine:${location.machineNumber}`;
+  const code = location.code.normalize("NFKC").trim().toUpperCase().replace(/\s+/g, " ");
+  return `${location.kind}:${code}`;
+}
+
+function mouldRecordIdentity(mould: MouldRecord): string {
+  return [mould.instanceId, mould.assetCode, mould.mouldCode]
+    .map((value) => value.normalize("NFKC").trim().toUpperCase())
+    .find(Boolean) ?? `${locationGroupKey(mould.location)}:${mould.name}`;
+}
+
+function physicalLocationDescriptor(location: MouldLocation): {
+  key: string;
+  label: string;
+  kind: "storage" | "machine";
+} | null {
+  const coordinate = canonicalStorageCoordinate(location);
+  if (coordinate) return { key: `storage:${coordinate}`, label: coordinate, kind: "storage" };
+  if (location.kind === "machine" && location.machineNumber) {
+    return {
+      key: `machine:${location.machineNumber}`,
+      label: location.code || `${location.machineNumber}호기`,
+      kind: "machine",
+    };
+  }
+  return null;
 }
 
 function topologyLocation(zone: keyof typeof STORAGE_TOPOLOGY, row: number, column: number): MouldLocation {
@@ -1474,13 +1595,22 @@ export function MouldManagementPage() {
       queryClient.setQueryData(["injection", "moulds", "board"], freshBoard);
     },
   });
-  const productionLinksQuery = useQuery({
-    queryKey: ["production-status", "mould-board-model-links"],
-    queryFn: getLatestMachineProductionLinks,
+  const productionBusinessDate = getShanghaiBusinessDateString();
+  const productionEvidenceQuery = useQuery({
+    queryKey: ["production-status", "mould-board-model-evidence", productionBusinessDate],
+    queryFn: () => getLatestMachineProductionEvidence(productionBusinessDate),
     enabled: !developmentFallback,
     retry: 1,
     staleTime: 300_000,
     refetchInterval: 300_000,
+  });
+  const productionLinksQuery = useQuery({
+    queryKey: ["production-status", "mould-board-current-activity", productionBusinessDate],
+    queryFn: () => getCurrentMachineActivityLinks(productionBusinessDate),
+    enabled: !developmentFallback,
+    retry: 1,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
   const machineValidationRulesQuery = useQuery({
     queryKey: MACHINE_VALIDATION_QUERY_KEY,
@@ -1496,9 +1626,13 @@ export function MouldManagementPage() {
     () => buildFallbackMachineProductionLinks(usingFallback ? board : undefined),
     [board, usingFallback],
   );
+  const liveProductionLinks = useMemo(() => mergeMachineProductionLinks(
+    productionEvidenceQuery.data ?? new Map<number, MachineProductionLink>(),
+    productionLinksQuery.data ?? new Map<number, MachineProductionLink>(),
+  ), [productionEvidenceQuery.data, productionLinksQuery.data]);
   const productionLinks = usingFallback
     ? fallbackProductionLinks
-    : productionLinksQuery.data ?? new Map<number, MachineProductionLink>();
+    : liveProductionLinks;
   const machineValidationRules = useMemo(() => new Map(
     (machineValidationRulesQuery.data ?? []).map((rule) => [validationRuleMapKey(rule), rule]),
   ), [machineValidationRulesQuery.data]);
@@ -1571,33 +1705,56 @@ export function MouldManagementPage() {
   }, [selectedInstanceId, visibleIds]);
 
   const mouldsByLocation = useMemo(() => {
-    const result = new Map<string, MouldRecord[]>();
+    const grouped = new Map<string, Map<string, MouldRecord>>();
     (board?.moulds ?? []).forEach((mould) => {
-      const code = mould.location.code;
-      if (!code) return;
-      const rows = result.get(code) ?? [];
-      rows.push(mould);
-      result.set(code, rows);
+      if (!mould.location.code) return;
+      const key = locationGroupKey(mould.location);
+      const occupants = grouped.get(key) ?? new Map<string, MouldRecord>();
+      occupants.set(mouldRecordIdentity(mould), mould);
+      grouped.set(key, occupants);
     });
-    return result;
+    return new Map(
+      [...grouped.entries()].map(([key, occupants]) => [key, [...occupants.values()]]),
+    );
   }, [board?.moulds]);
   const zones = useMemo(() => board ? buildZoneLayouts(board) : [], [board]);
   const knownStorageCodes = useMemo(() => new Set(
-    zones.flatMap((zone) => zone.rows.flatMap((row) => row.cells.map(({ location }) => location.code))),
+    zones.flatMap((zone) => zone.rows.flatMap((row) => row.cells.map(({ location }) => locationGroupKey(location)))),
   ), [zones]);
-  const conflictGroups = useMemo(() => (
-    [...mouldsByLocation.entries()]
-      .filter(([, occupants]) => occupants.length > 1)
-      .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
-  ), [mouldsByLocation]);
-  const storageConflictGroups = useMemo(() => conflictGroups.filter(([, occupants]) => (
-    occupants.some((mould) => mould.location.kind === "storage")
+  const conflictGroups = useMemo(() => {
+    const groups = new Map<string, {
+      label: string;
+      kind: "storage" | "machine";
+      occupants: Map<string, MouldRecord>;
+    }>();
+    (board?.moulds ?? []).forEach((mould) => {
+      const descriptor = physicalLocationDescriptor(mould.location);
+      if (!descriptor) return;
+      const group = groups.get(descriptor.key) ?? {
+        label: descriptor.label,
+        kind: descriptor.kind,
+        occupants: new Map<string, MouldRecord>(),
+      };
+      group.occupants.set(mouldRecordIdentity(mould), mould);
+      groups.set(descriptor.key, group);
+    });
+    return [...groups.values()]
+      .filter((group) => group.occupants.size > 1)
+      .map((group) => [
+        group.label,
+        [...group.occupants.values()],
+        group.kind,
+      ] as [string, MouldRecord[], "storage" | "machine"])
+      .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
+  }, [board?.moulds]);
+  const storageConflictGroups = useMemo(() => conflictGroups.filter(([, , kind]) => (
+    kind === "storage"
   )), [conflictGroups]);
-  const machineConflictGroups = useMemo(() => conflictGroups.filter(([, occupants]) => (
-    occupants.some((mould) => mould.location.kind === "machine")
+  const machineConflictGroups = useMemo(() => conflictGroups.filter(([, , kind]) => (
+    kind === "machine"
   )), [conflictGroups]);
   const unmappedStorageMoulds = useMemo(() => (board?.moulds ?? []).filter((mould) => (
-    mould.location.kind === "storage" && !knownStorageCodes.has(mould.location.code)
+    mould.location.kind === "storage" && !knownStorageCodes.has(locationGroupKey(mould.location))
   )), [board?.moulds, knownStorageCodes]);
   const mountedMachineCount = useMemo(() => {
     const mountedNumbers = new Set(
@@ -1611,7 +1768,7 @@ export function MouldManagementPage() {
     ? conflictGroups.filter(([locationCode]) => locationCode === conflictFocusCode)
     : conflictGroups;
   const displayedUnmappedMoulds = conflictFocusCode
-    ? unmappedStorageMoulds.filter((mould) => mould.location.code === conflictFocusCode)
+    ? unmappedStorageMoulds.filter((mould) => canonicalStorageCoordinate(mould.location) === conflictFocusCode)
     : unmappedStorageMoulds;
 
   const filters: Array<{ key: ViewFilter; label: string; count: number }> = board ? [
@@ -1629,8 +1786,20 @@ export function MouldManagementPage() {
     : zones.filter((zone) => zone.code !== "S");
   const zoneSummaries = useMemo(() => {
     const zoneOrder = new Map(["A", "B", "C", "S"].map((code, index) => [code, index]));
+    const previewColumnCount = STORAGE_TOPOLOGY.C.columns;
     return zones.map((zone) => {
       const cells = zone.rows.flatMap((row) => row.cells);
+      const previewRows: CoordinateCell[][] = zone.code === "C"
+        ? Array.from({ length: zone.columns }, (_, column) => (
+          zone.rows
+            .map((row) => row.cells[column])
+            .filter((cell): cell is CoordinateCell => Boolean(cell))
+        ))
+        : zone.rows.map((row) => row.cells);
+      const previewCells: Array<CoordinateCell | null> = previewRows.flatMap((row) => [
+        ...row,
+        ...Array.from({ length: Math.max(0, previewColumnCount - row.length) }, () => null),
+      ]);
       let occupied = 0;
       let mouldRecords = 0;
       let conflicts = 0;
@@ -1640,13 +1809,13 @@ export function MouldManagementPage() {
       let matchingMoulds = 0;
 
       cells.forEach(({ location }) => {
-        const records = mouldsByLocation.get(location.code);
+        const records = mouldsByLocation.get(locationGroupKey(location));
         const recordCount = records?.length ?? location.mouldCount;
         const matchingRecords = (records ?? []).filter((mould) => visibleIds.has(mould.instanceId));
 
         if (recordCount > 0) occupied += 1;
         mouldRecords += recordCount;
-        if (location.conflict || recordCount > 1) conflicts += 1;
+        if ((records?.length ?? 0) > 1) conflicts += 1;
         if (search.trim() && matchingRecords.length) {
           matchingCoordinates.push(location.code);
           matchingMoulds += matchingRecords.length;
@@ -1661,6 +1830,7 @@ export function MouldManagementPage() {
       return {
         zone,
         cells,
+        previewCells,
         occupied,
         capacity: cells.length,
         mouldRecords,
@@ -1676,6 +1846,9 @@ export function MouldManagementPage() {
       (zoneOrder.get(left.zone.code) ?? 99) - (zoneOrder.get(right.zone.code) ?? 99)
     ));
   }, [mouldsByLocation, search, visibleIds, zones]);
+  const visibleStorageConflictCount = focusedZone
+    ? zoneSummaries.find((summary) => summary.zone.code === focusedZone)?.conflicts ?? 0
+    : zoneSummaries.reduce((total, summary) => total + summary.conflicts, 0);
   const searchActive = Boolean(search.trim());
   const detailTabs: Array<{ key: DetailTab; label: string; icon: typeof History }> = [
     { key: "movement", label: copy.movement, icon: History },
@@ -1705,11 +1878,20 @@ export function MouldManagementPage() {
     : [];
   const verificationMould = verificationMoulds.length === 1 ? verificationMoulds[0] : undefined;
   const verificationProduction = verificationMachine ? productionLinks.get(verificationMachine.number) : undefined;
-  const verificationAutomaticResult: ModelValidation = !usingFallback && !productionLinksQuery.isSuccess && !productionLinksQuery.isError
+  const productionStatusState: "ready" | "loading" | "unavailable" = usingFallback
+    ? "ready"
+    : productionLinksQuery.isError || productionLinksQuery.isRefetchError
+      ? "unavailable"
+      : productionLinksQuery.isSuccess
+        ? "ready"
+        : "loading";
+  const verificationAutomaticResult: ModelValidation = productionStatusState === "loading"
     ? "loading"
-    : verificationMachine && (verificationMachine.conflict || verificationMachine.mouldCount > 1)
-      ? "conflict"
-      : modelValidation(verificationMoulds, verificationProduction);
+    : productionStatusState === "unavailable"
+      ? "stale"
+      : verificationMachine && (verificationMachine.conflict || verificationMachine.mouldCount > 1)
+        ? "conflict"
+        : modelValidation(verificationMoulds, verificationProduction);
   const verificationRuleLookup = machineValidationRuleLookup(verificationMould, verificationProduction);
   const verificationRule = verificationRuleLookup
     ? machineValidationRules.get(verificationRuleLookup.mapKey)
@@ -1724,7 +1906,6 @@ export function MouldManagementPage() {
   const verificationCandidates = verificationAutomaticResult === "mould_missing"
     ? modelRecommendations(board, verificationProduction)
     : [];
-  const productionResolved = usingFallback || productionLinksQuery.isSuccess || productionLinksQuery.isError;
   const machineOverviewItems = (board?.machines ?? []).map((machine) => {
     const mountedMoulds = (board?.moulds ?? []).filter((mould) => (
       mould.location.kind === "machine" && mould.location.machineNumber === machine.number
@@ -1732,15 +1913,17 @@ export function MouldManagementPage() {
     const mounted = mountedMoulds.length === 1 ? mountedMoulds[0] : undefined;
     const productionLink = productionLinks.get(machine.number);
     const machineHasConflict = machine.conflict || machine.mouldCount > 1 || mountedMoulds.length > 1;
-    const automaticValidation: ModelValidation = !productionResolved
+    const automaticValidation: ModelValidation = productionStatusState === "loading"
       ? "loading"
-      : machineHasConflict
-        ? "conflict"
-        : modelValidation(mountedMoulds, productionLink);
+      : productionStatusState === "unavailable"
+        ? "stale"
+        : machineHasConflict
+          ? "conflict"
+          : modelValidation(mountedMoulds, productionLink);
     const ruleLookup = machineValidationRuleLookup(mounted, productionLink);
     const rule = ruleLookup ? machineValidationRules.get(ruleLookup.mapKey) : undefined;
     const validation = resolveValidationRule(automaticValidation, rule);
-    const activeProductionModel = productionLink?.isRunning && productionLink.basis === "active_estimate" && productionAgeDays(productionLink.date) <= 3
+    const activeProductionModel = productionLink?.isRunning && ["active_estimate", "carryover_plan"].includes(productionLink.basis) && productionAgeDays(productionLink.date) <= 3
       ? text(productionLink.model)
       : "-";
     const recommendations = automaticValidation === "mould_missing"
@@ -1979,7 +2162,7 @@ export function MouldManagementPage() {
                     aria-expanded={verificationMachineNumber === machine.number}
                     aria-haspopup="dialog"
                     aria-label={`${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${copy.productionModel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
-                    className={`${styles.machineGraphicCard} ${productionLink?.isRunning ? styles.machineRunning : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
+                    className={`${styles.machineGraphicCard} ${productionStatusState === "ready" && productionLink?.isRunning ? styles.machineRunning : productionStatusState === "ready" ? styles.machineStopped : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                     key={machine.number}
                     onClick={() => setVerificationMachineNumber(machine.number)}
                     type="button"
@@ -2020,7 +2203,7 @@ export function MouldManagementPage() {
                       aria-expanded={verificationMachineNumber === machine.number}
                       aria-haspopup="dialog"
                       aria-label={`${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${copy.productionModel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
-                      className={`${styles.machineRow} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
+                      className={`${styles.machineRow} ${productionStatusState === "ready" && productionLink?.isRunning ? styles.machineRunning : productionStatusState === "ready" ? styles.machineStopped : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                       key={machine.number}
                       onClick={() => setVerificationMachineNumber(machine.number)}
                       title={copy.verifyHint}
@@ -2065,7 +2248,8 @@ export function MouldManagementPage() {
                 ) : null}
                 <span className={styles.coordinateGuide}><MapIcon aria-hidden="true" size={18} />{copy.coordinateGuide}</span>
                 <span><i className={styles.legendUsage} />{copy.usageLegend}</span>
-                <span><i className={styles.legendConflict} />{copy.duplicateLocations}</span>
+                {visibleStorageConflictCount ? <span><i className={styles.legendConflict} />{copy.duplicateLocations}</span> : null}
+                <span className={styles.inactivityLegendIntro}><strong>{copy.inactivityLegend}</strong><small>{copy.inactivityBasis}</small></span>
                 <span><i className={styles.legendInactiveSix} />{copy.unusedSixMonths}</span>
                 <span><i className={styles.legendInactiveTwelve} />{copy.unusedTwelveMonths}</span>
               </div>
@@ -2112,19 +2296,18 @@ export function MouldManagementPage() {
                           </span>
 
                           <span className={styles.zoneSummaryVisual}>
-                            <span className={styles.zoneSummaryOccupancy}>
-                              <strong>{summary.fillRate}%</strong>
-                              <small>{copy.occupiedCells}</small>
-                              <span aria-hidden="true"><i /></span>
-                            </span>
                             <span
                               aria-hidden="true"
                               className={styles.zonePreviewMap}
                             >
-                              {summary.cells.map(({ location }) => {
-                                const records = mouldsByLocation.get(location.code);
+                              {summary.previewCells.map((cell, index) => {
+                                if (!cell) {
+                                  return <i className={styles.zonePreviewSpacer} key={`spacer-${index}`} />;
+                                }
+                                const { location } = cell;
+                                const records = mouldsByLocation.get(locationGroupKey(location));
                                 const recordCount = records?.length ?? location.mouldCount;
-                                const conflict = location.conflict || recordCount > 1;
+                                const conflict = (records?.length ?? 0) > 1;
                                 const inactiveTwelve = records?.some((mould) => mould.inactivityTier === "twelve_months");
                                 const inactiveSix = !inactiveTwelve && records?.some((mould) => mould.inactivityTier === "six_months");
                                 const searchMatch = searchActive && Boolean(records?.some((mould) => visibleIds.has(mould.instanceId)));
@@ -2135,6 +2318,11 @@ export function MouldManagementPage() {
                                   />
                                 );
                               })}
+                            </span>
+                            <span className={styles.zoneSummaryOccupancy}>
+                              <strong>{summary.fillRate}%</strong>
+                              <small>{copy.occupiedCells}</small>
+                              <span aria-hidden="true"><i /></span>
                             </span>
                           </span>
 
@@ -2169,9 +2357,9 @@ export function MouldManagementPage() {
               ) : displayedZones.length ? displayedZones.map((zone) => {
                 const zoneLabel = localizedZoneLabel(zone, language);
                 const zoneCells = zone.rows.flatMap((row) => row.cells);
-                const occupied = zoneCells.filter(({ location }) => (mouldsByLocation.get(location.code)?.length ?? location.mouldCount) > 0).length;
-                const mouldRecords = zoneCells.reduce((total, { location }) => total + (mouldsByLocation.get(location.code)?.length ?? location.mouldCount), 0);
-                const zoneConflicts = zoneCells.filter(({ location }) => (mouldsByLocation.get(location.code)?.length ?? location.mouldCount) > 1).length;
+                const occupied = zoneCells.filter(({ location }) => (mouldsByLocation.get(locationGroupKey(location))?.length ?? location.mouldCount) > 0).length;
+                const mouldRecords = zoneCells.reduce((total, { location }) => total + (mouldsByLocation.get(locationGroupKey(location))?.length ?? location.mouldCount), 0);
+                const zoneConflicts = zoneCells.filter(({ location }) => (mouldsByLocation.get(locationGroupKey(location))?.length ?? 0) > 1).length;
                 const zoneStyle = zone.code === "A"
                   ? styles.zoneA
                   : zone.code === "B"
@@ -2215,11 +2403,11 @@ export function MouldManagementPage() {
                         <div className={styles.coordinateRow} key={row.key}>
                           <div className={styles.coordinateCells}>
                             {row.cells.map(({ location }) => {
-                              const occupants = mouldsByLocation.get(location.code) ?? [];
+                              const occupants = mouldsByLocation.get(locationGroupKey(location)) ?? [];
                               const occupant = occupants[0];
                               const selected = occupants.some((item) => item.instanceId === selectedInstanceId);
                               const visible = occupants.length ? occupants.some((item) => visibleIds.has(item.instanceId)) : filter === "all" && !search.trim();
-                              const conflict = location.conflict || occupants.length > 1;
+                              const conflict = occupants.length > 1;
                               const occupantCodes = occupants.map((item) => item.mouldCode).join(", ");
                               return (
                                 <button
@@ -2233,7 +2421,7 @@ export function MouldManagementPage() {
                                       zoneDragRef.current.moved = false;
                                       return;
                                     }
-                                    if (conflict) openConflictList(location.code);
+                                    if (conflict) openConflictList(canonicalStorageCoordinate(location) ?? location.code);
                                     else if (occupant) selectMould(occupant.instanceId);
                                   }}
                                   title={occupant ? conflict ? `${location.code} · ${copy.conflict} ${occupants.length}${copy.listCount} · ${occupantCodes}` : `${occupant.mouldCode} · ${occupant.name}${inactivityLabel(occupant, copy) ? ` · ${inactivityLabel(occupant, copy)}` : ""}` : copy.emptyCell}
