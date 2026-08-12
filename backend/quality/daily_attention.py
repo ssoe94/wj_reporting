@@ -10,6 +10,7 @@ prose is rendered from server-owned templates.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import hashlib
@@ -791,12 +792,16 @@ def build_daily_quality_report_metrics(
 
     problem_groups: dict[str, dict[str, Any]] = {}
     location_groups: dict[str, dict[str, Any]] = {}
+    problem_location_pair_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    ambiguous_pair_report_ids: set[int] = set()
     for prefix, report_ids in report_ids_by_prefix.items():
         for report_id in report_ids:
             report = reports_by_id[report_id]
             phenomenon = _clean_text(report.get("phenomenon"))
             evidence_key = _phenomenon_evidence_key(prefix, phenomenon)
-            for classification in _canonical_problem_types(phenomenon):
+            classifications = _canonical_problem_types(phenomenon)
+            locations = _explicit_occurrence_locations(phenomenon)
+            for classification in classifications:
                 problem_key = classification["key"]
                 problem = problem_groups.setdefault(problem_key, {
                     "metric_key": classification["metric_key"],
@@ -813,7 +818,7 @@ def build_daily_quality_report_metrics(
                 problem["report_ids"].add(report_id)
                 problem["prefixes"].add(prefix)
 
-            for location in _explicit_occurrence_locations(phenomenon):
+            for location in locations:
                 location_group = location_groups.setdefault(location["key"], {
                     "metric_key": f"location:{location['key']}",
                     "label": location["label"],
@@ -827,6 +832,51 @@ def build_daily_quality_report_metrics(
                 location_group["source_evidence_keys"].add(evidence_key)
                 location_group["report_ids"].add(report_id)
                 location_group["prefixes"].add(prefix)
+
+            # A paired signal is intentionally stricter than either coverage
+            # dimension by itself: both the server-owned canonical problem and
+            # an explicit recorded location must come from this exact source
+            # QualityReport row.  Unknown/unclassified phenomena and missing
+            # locations never create a pair.  Problem-type totals above still
+            # include every matching report, regardless of location presence.
+            canonical_problems = [
+                classification
+                for classification in classifications
+                if classification.get("classification_basis") == "canonical_alias_v1"
+            ]
+            explicit_locations = [
+                location for location in locations if location.get("key") != "unknown"
+            ]
+            if len(canonical_problems) > 1 and len(explicit_locations) > 1:
+                # Without clause-level source fields, a cross-product could
+                # falsely turn e.g. "top burr / bottom scratch" into four
+                # pairs.  Fail closed until deterministic phrase segmentation
+                # is introduced.
+                ambiguous_pair_report_ids.add(report_id)
+                continue
+            for classification in canonical_problems:
+                for location in explicit_locations:
+                    pair_key = (classification["key"], location["key"])
+                    pair = problem_location_pair_groups.setdefault(pair_key, {
+                        "metric_key": f"pair:{classification['key']}:{location['key']}",
+                        "dimension": "problem_location_pair",
+                        "problem_canonical_key": classification["key"],
+                        "location_canonical_key": location["key"],
+                        "problem_label": classification["label"],
+                        "location_label": location["label"],
+                        "label": {
+                            "ko": f"{classification['label']['ko']} · {location['label']['ko']}",
+                            "zh": f"{classification['label']['zh']} · {location['label']['zh']}",
+                        },
+                        "classification_basis": "canonical_problem_explicit_location_pair_v1",
+                        "pair_basis": "same_quality_report_id",
+                        "source_evidence_keys": set(),
+                        "report_ids": set(),
+                        "prefixes": set(),
+                    })
+                    pair["source_evidence_keys"].add(evidence_key)
+                    pair["report_ids"].add(report_id)
+                    pair["prefixes"].add(prefix)
 
     global_denominator_ids = set(reports_by_id)
 
@@ -874,10 +924,23 @@ def build_daily_quality_report_metrics(
             row["canonical_key"] = group["canonical_key"]
         if "recorded_text" in group:
             row["recorded_text"] = group["recorded_text"]
+        for key in (
+            "dimension",
+            "problem_canonical_key",
+            "location_canonical_key",
+            "problem_label",
+            "location_label",
+            "pair_basis",
+        ):
+            if key in group:
+                row[key] = deepcopy(group[key])
         return row
 
     problem_types = [metric_row(group) for group in problem_groups.values()]
     occurrence_locations = [metric_row(group) for group in location_groups.values()]
+    problem_location_pairs = [
+        metric_row(group) for group in problem_location_pair_groups.values()
+    ]
 
     def sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
         label = row.get("label") if isinstance(row.get("label"), dict) else {}
@@ -889,7 +952,23 @@ def build_daily_quality_report_metrics(
         )
 
     problem_types.sort(key=sort_key)
-    occurrence_locations.sort(key=sort_key)
+    problem_location_pairs.sort(key=sort_key)
+    # Standalone locations are coverage diagnostics only, never AI candidates.
+    # Keep the missing-location bucket last even when it has the largest count.
+    occurrence_locations.sort(key=lambda row: (
+        str(row.get("metric_key") or "") == "location:unknown",
+        *sort_key(row),
+    ))
+    for index, row in enumerate(occurrence_locations, start=1):
+        is_unknown = str(row.get("metric_key") or "") == "location:unknown"
+        row.update({
+            "dimension": "location_coverage",
+            "analysis_role": "coverage_only",
+            "ai_candidate": False,
+            "is_unknown_location": is_unknown,
+            "sort_state": "unknown_last" if is_unknown else "evidence_desc",
+            "sort_rank": index,
+        })
     all_report_datetimes = [
         _report_datetime(report.get("report_dt"))
         for report in reports_by_id.values()
@@ -940,8 +1019,11 @@ def build_daily_quality_report_metrics(
             }),
             "problem_type_count": len(problem_types),
             "occurrence_location_count": len(occurrence_locations),
+            "problem_location_pair_count": len(problem_location_pairs),
+            "ambiguous_pair_report_count": len(ambiguous_pair_report_ids),
         },
         "problem_types": problem_types,
+        "problem_location_pairs": problem_location_pairs,
         "occurrence_locations": occurrence_locations,
         "calculation_basis": {
             "counts_are_backend_authoritative": True,
@@ -954,7 +1036,11 @@ def build_daily_quality_report_metrics(
             "unknown_problem_policy": "separate_unclassified_recorded_text_hash",
             "metric_denominator_basis": "unique_matching_reports_in_current_plan_prefixes",
             "location_rule": "explicit_recorded_keyword_else_unknown",
+            "standalone_location_role": "coverage_only_not_ai_candidate",
+            "problem_location_pair_rule": "same_quality_report_id_with_canonical_problem_and_explicit_location",
+            "ambiguous_pair_policy": "skip_when_multiple_problems_and_multiple_locations",
             "problem_type_memberships_may_overlap": True,
+            "problem_location_pair_memberships_may_overlap": True,
             "location_memberships_may_overlap": True,
             "trend_is_report_frequency_not_defect_rate": True,
             "zero_reports_do_not_prove_zero_defects": True,

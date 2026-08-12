@@ -40,6 +40,14 @@ current-defect claims, root-cause claims, defect-rate claims, and prescriptive
 corrective actions. A deterministic fallback remains retryable and is never
 published as a successful Gemma report.
 
+AI report candidates are limited to canonical `problem_types` and backend-owned
+`problem_location_pairs`. A pair is accepted only when the backend marks it as
+coming from the same `QualityReport` row (`pair_basis=same_quality_report_id`);
+the Worker never joins a problem and location itself. Standalone location
+metrics and unknown/missing location coverage are not sent to Gemma and cannot
+become a daily priority. A problem type remains eligible even when its location
+was not recorded.
+
 For continuous Mac Studio operation, use the Keychain-backed launch agents in
 [`scripts/local_ai`](../scripts/local_ai/README.md). The launch agents keep the
 MLX server and Worker running without putting `AI_WORKER_TOKEN` in a plist or

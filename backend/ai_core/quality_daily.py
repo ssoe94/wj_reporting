@@ -36,7 +36,7 @@ QUALITY_DAILY_RETRY_COOLDOWN_SECONDS = 5 * 60
 QUALITY_DAILY_PAGE_REPORT_SCHEMA_VERSION = "quality-daily-page-report.v1"
 QUALITY_DAILY_NARRATIVE_SCHEMA_VERSION = "quality-daily-report-narrative.v1"
 QUALITY_DAILY_PUBLIC_CONTRACT_VERSION = "quality-daily-public-report.v2"
-QUALITY_DAILY_EXPECTED_PROMPT_VERSION = "quality-daily-attention-gemma-v3"
+QUALITY_DAILY_EXPECTED_PROMPT_VERSION = "quality-daily-attention-gemma-v4"
 QUALITY_DAILY_ACTIVE_STATUSES = (
     AiJob.STATUS_PENDING,
     AiJob.STATUS_CLAIMED,
@@ -47,7 +47,6 @@ QUALITY_DAILY_DISCLAIMER = {
     "zh": "仅为历史品质记录，不代表当前正在发生不良。",
 }
 QUALITY_UNKNOWN_PROBLEM_TYPE = {"ko": "유형 미분류", "zh": "类型未分类"}
-QUALITY_UNKNOWN_LOCATION = {"ko": "위치 미확인", "zh": "位置未确认"}
 
 
 def _is_retryable_job(job: AiJob | None) -> bool:
@@ -512,8 +511,8 @@ def _authoritative_attention_headline() -> dict[str, str]:
 
 def _authoritative_attention_checkpoints() -> dict[str, list[str]]:
     return {
-        "ko": ["교대 전 서버가 연결한 과거 현상과 위치 기록을 확인하세요."],
-        "zh": ["交接班前请确认服务器关联的历史现象与位置记录。"],
+        "ko": ["교대 전 서버가 연결한 과거 문제 현상을 확인하세요."],
+        "zh": ["交接班前请确认服务器关联的历史问题现象。"],
     }
 
 
@@ -542,7 +541,11 @@ def _public_deterministic_report(value: dict[str, Any]) -> dict[str, Any]:
     """
 
     result = deepcopy(value if isinstance(value, dict) else {})
-    for group_name in ("problem_types", "occurrence_locations"):
+    for group_name in (
+        "problem_types",
+        "problem_location_pairs",
+        "occurrence_locations",
+    ):
         for metric in result.get(group_name) or []:
             if not isinstance(metric, dict):
                 continue
@@ -593,6 +596,8 @@ def _metric_impact_text(metric: dict[str, Any]) -> dict[str, str]:
 def _metric_label_and_kind(metric: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
     label = _metric_template_label(metric)
     metric_key = str(metric.get("metric_key") or "")
+    if metric_key.startswith("pair:"):
+        return label, {"ko": "문제·위치 결합", "zh": "问题·位置组合"}
     if metric_key.startswith("location:"):
         return label, {"ko": "발생 위치", "zh": "发生位置"}
     return label, {"ko": "문제 유형", "zh": "问题类型"}
@@ -785,30 +790,6 @@ def _first_deterministic_metric(
     return None
 
 
-def _top_recorded_location(metrics: dict[str, Any]) -> dict[str, Any] | None:
-    return next(
-        (
-            metric
-            for metric in metrics.get("occurrence_locations") or []
-            if isinstance(metric, dict)
-            and str(metric.get("metric_key") or "") != "location:unknown"
-        ),
-        None,
-    )
-
-
-def _unknown_location_metric(metrics: dict[str, Any]) -> dict[str, Any] | None:
-    return next(
-        (
-            metric
-            for metric in metrics.get("occurrence_locations") or []
-            if isinstance(metric, dict)
-            and str(metric.get("metric_key") or "") == "location:unknown"
-        ),
-        None,
-    )
-
-
 def _metric_applies_to_source(
     metric: dict[str, Any],
     source_item: dict[str, Any],
@@ -825,9 +806,14 @@ def _metric_applies_to_source(
 def _public_metric_signal(metric: dict[str, Any]) -> dict[str, Any]:
     metric_key = str(metric.get("metric_key") or "")
     trend = metric.get("trend") if isinstance(metric.get("trend"), dict) else {}
+    dimension = (
+        "problem_location_pair"
+        if metric_key.startswith("pair:")
+        else "problem_type"
+    )
     return {
         "metric_key": metric_key,
-        "dimension": "location" if metric_key.startswith("location:") else "problem_type",
+        "dimension": dimension,
         "label": _metric_template_label(metric),
         "evidence_count": int(metric.get("evidence_count") or 0),
         "denominator": int(metric.get("all_history_denominator") or 0),
@@ -869,24 +855,30 @@ def _authoritative_report_summary(
     problem = _metric_from_rows(repeated_rows, metric_index, prefix="problem:")
     if problem is None:
         problem = _first_deterministic_metric(metrics, "problem_types", repeated_only=True)
-    location = next(
+    paired = next(
         (
             metric_index.get(str(row.get("metric_key") or ""))
             for row in repeated_rows
-            if str(row.get("metric_key") or "").startswith("location:")
-            and str(row.get("metric_key") or "") != "location:unknown"
+            if str(row.get("metric_key") or "").startswith("pair:")
             and metric_index.get(str(row.get("metric_key") or ""))
         ),
         None,
     )
-    if location is None:
-        location = _top_recorded_location(metrics)
-    unknown_location = _unknown_location_metric(metrics)
+    if paired is None:
+        paired = _first_deterministic_metric(
+            metrics,
+            "problem_location_pairs",
+            repeated_only=True,
+        )
     increasing = _metric_from_rows(accelerating_rows, metric_index)
     if increasing is None:
         increasing = (
             _first_deterministic_metric(metrics, "problem_types", increasing_only=True)
-            or _first_deterministic_metric(metrics, "occurrence_locations", increasing_only=True)
+            or _first_deterministic_metric(
+                metrics,
+                "problem_location_pairs",
+                increasing_only=True,
+            )
         )
 
     if problem:
@@ -898,34 +890,21 @@ def _authoritative_report_summary(
         problem_ko = "2건 이상 반복된 문제 유형은 없음"
         problem_zh = "没有记录达到2条以上的重复问题类型"
 
-    if location:
-        location_label = _metric_template_label(location)
-        location_count = int(location.get("evidence_count") or 0)
-        location_ko = f"주요 기록 위치는 {location_label['ko']} {location_count}건"
-        location_zh = f"主要记录位置为{location_label['zh']}（{location_count}条）"
+    if paired:
+        paired_label = _metric_template_label(paired)
+        paired_count = int(paired.get("evidence_count") or 0)
+        paired_ko = f"동일 보고서에서 확인된 문제·위치 결합은 {paired_label['ko']} {paired_count}건"
+        paired_zh = f"同一报告中确认的问题·位置组合为{paired_label['zh']}（{paired_count}条）"
     else:
-        location_ko = "확인 가능한 기록 위치는 없음"
-        location_zh = "没有可确认的记录位置"
+        paired_ko = "반복 기준을 충족한 문제·위치 결합은 없음"
+        paired_zh = "没有达到重复标准的问题·位置组合"
 
     sentences_ko = [
-        f"연결된 전체 과거 품질 기록 {total_reports}건 기준, {problem_ko}이고 {location_ko}입니다."
+        f"연결된 전체 과거 품질 기록 {total_reports}건 기준, {problem_ko}이고 {paired_ko}입니다."
     ]
     sentences_zh = [
-        f"按关联的全部{total_reports}条历史品质记录，{problem_zh}，{location_zh}。"
+        f"按关联的全部{total_reports}条历史品质记录，{problem_zh}，{paired_zh}。"
     ]
-    if unknown_location:
-        unknown_count = int(unknown_location.get("evidence_count") or 0)
-        unknown_denominator = int(unknown_location.get("all_history_denominator") or 0)
-        unknown_share = _pct(unknown_location.get("all_history_share_pct"))
-        if unknown_count:
-            sentences_ko.append(
-                f"발생 위치 미기록은 {unknown_count}/{unknown_denominator}건({unknown_share}%)으로 "
-                "위치 분석 신뢰가 제한됩니다."
-            )
-            sentences_zh.append(
-                f"发生位置未记录为{unknown_count}/{unknown_denominator}条（{unknown_share}%），"
-                "因此位置分析的可信度受限。"
-            )
     if increasing:
         label = _metric_template_label(increasing)
         trend = increasing.get("trend") or {}
@@ -971,45 +950,34 @@ def _authoritative_report_shift_checks(
     ko: list[str] = []
     zh: list[str] = []
     repeated_problem = _metric_from_rows(repeated_rows, metric_index, prefix="problem:")
-    repeated_location = next(
+    repeated_pair = next(
         (
             metric_index.get(str(row.get("metric_key") or ""))
             for row in repeated_rows
-            if str(row.get("metric_key") or "").startswith("location:")
-            and str(row.get("metric_key") or "") != "location:unknown"
+            if str(row.get("metric_key") or "").startswith("pair:")
             and metric_index.get(str(row.get("metric_key") or ""))
         ),
         None,
     )
     if repeated_problem is None:
         repeated_problem = _first_deterministic_metric(metrics, "problem_types", repeated_only=True)
-    if repeated_location is None:
-        repeated_location = _top_recorded_location(metrics)
+    if repeated_pair is None:
+        repeated_pair = _first_deterministic_metric(
+            metrics,
+            "problem_location_pairs",
+            repeated_only=True,
+        )
     if repeated_problem:
         label = _metric_template_label(repeated_problem)
         count = int(repeated_problem.get("evidence_count") or 0)
         denominator = int(repeated_problem.get("all_history_denominator") or 0)
         ko.append(f"반복 문제 {label['ko']}의 과거 기록 {count}/{denominator}건을 교대 전 확인하세요.")
         zh.append(f"交接班前确认重复问题{label['zh']}的历史记录{count}/{denominator}条。")
-    if repeated_location:
-        label = _metric_template_label(repeated_location)
-        count = int(repeated_location.get("evidence_count") or 0)
-        ko.append(f"주요 기록 위치 {label['ko']} 관련 과거 기록 {count}건을 검사 기준과 함께 확인하세요.")
-        zh.append(f"请结合检验标准确认主要记录位置{label['zh']}相关的{count}条历史记录。")
-    unknown_location = _unknown_location_metric(metrics)
-    if unknown_location and int(unknown_location.get("evidence_count") or 0):
-        count = int(unknown_location.get("evidence_count") or 0)
-        denominator = int(unknown_location.get("all_history_denominator") or 0)
-        share = _pct(unknown_location.get("all_history_share_pct"))
-        ko.append(
-            f"발생 위치 미기록 {count}/{denominator}건({share}%)은 위치 분석 신뢰를 제한하므로 "
-            "신규 품질 기록에 위치를 명시하세요."
-        )
-        zh.append(
-            f"发生位置未记录为{count}/{denominator}条（{share}%），会限制位置分析可信度；"
-            "请在新增品质记录中明确填写发生位置。"
-        )
-
+    if repeated_pair:
+        label = _metric_template_label(repeated_pair)
+        count = int(repeated_pair.get("evidence_count") or 0)
+        ko.append(f"동일 보고서에서 확인된 문제·위치 결합 {label['ko']}의 과거 기록 {count}건을 검사 기준과 함께 확인하세요.")
+        zh.append(f"请结合检验标准确认同一报告中的问题·位置组合{label['zh']}相关的{count}条历史记录。")
     increasing = _metric_from_rows(accelerating_rows, metric_index)
     if increasing:
         label = _metric_template_label(increasing)
@@ -1184,6 +1152,113 @@ def _classified_groups(
     return result
 
 
+def _restore_attention_issue_selections(
+    value: Any,
+    *,
+    metrics: dict[str, Any],
+    valid_report_ids: set[int],
+    evidence_report_ids: dict[str, set[int]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split v4 issue selections into problem and same-report pair facts.
+
+    The Worker currently returns both metric dimensions in its historical
+    ``problem_types`` list.  This server projection keeps the old problem list
+    useful while exposing pairs distinctly and restoring every label/count
+    from the authoritative metric/evidence input.
+    """
+
+    problem_index = {
+        str(row.get("metric_key")): row
+        for row in metrics.get("problem_types") or []
+        if isinstance(row, dict) and row.get("metric_key")
+    }
+    pair_index = {
+        str(row.get("metric_key")): row
+        for row in metrics.get("problem_location_pairs") or []
+        if isinstance(row, dict)
+        and str(row.get("metric_key") or "").startswith("pair:")
+        and row.get("dimension") == "problem_location_pair"
+        and row.get("classification_basis")
+        == "canonical_problem_explicit_location_pair_v1"
+        and row.get("pair_basis") == "same_quality_report_id"
+    }
+    problem_rows: list[dict[str, Any]] = []
+    pairs: list[dict[str, Any]] = []
+    used_pair_keys: set[str] = set()
+    for raw in value if isinstance(value, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        metric_key = str(raw.get("metric_key") or "")
+        requested_keys = [
+            str(key)
+            for key in raw.get("source_evidence_keys") or []
+            if str(key) in evidence_report_ids
+        ]
+        if metric := pair_index.get(metric_key):
+            if metric_key in used_pair_keys:
+                continue
+            allowed_keys = {
+                str(key) for key in metric.get("source_evidence_keys") or []
+            }
+            accepted_keys = list(dict.fromkeys(
+                key for key in requested_keys if key in allowed_keys
+            ))
+            source_ids = sorted({
+                report_id
+                for key in accepted_keys
+                for report_id in evidence_report_ids.get(key, set())
+                if report_id in valid_report_ids
+            })
+            if not accepted_keys or not source_ids:
+                continue
+            used_pair_keys.add(metric_key)
+            problem_label = _bilingual(metric.get("problem_label"))
+            location_label = _bilingual(metric.get("location_label"))
+            label = _bilingual(metric.get("label"))
+            if not all(
+                bilingual.get("ko") and bilingual.get("zh")
+                for bilingual in (problem_label, location_label, label)
+            ):
+                continue
+            problem_rows.append({
+                "label": problem_label,
+                "source_evidence_keys": accepted_keys,
+            })
+            pairs.append({
+                "metric_key": metric_key,
+                "dimension": "problem_location_pair",
+                "label": label,
+                "problem_label": problem_label,
+                "location_label": location_label,
+                "count": len(source_ids),
+                "source_evidence_keys": accepted_keys,
+                "pair_basis": "same_quality_report_id",
+            })
+            continue
+        if metric_key.startswith("pair:"):
+            # Never downgrade an invented or malformed pair into a problem row.
+            continue
+        if metric := problem_index.get(metric_key):
+            allowed_keys = {
+                str(key) for key in metric.get("source_evidence_keys") or []
+            }
+            accepted_keys = list(dict.fromkeys(
+                key for key in requested_keys if key in allowed_keys
+            ))
+            if accepted_keys:
+                problem_rows.append({
+                    "label": _metric_template_label(metric),
+                    "source_evidence_keys": accepted_keys,
+                })
+            continue
+        # Preserve pre-v4/no-key problem classifications for backward
+        # compatibility; prompt/version gating prevents them becoming current
+        # after the v4 rollout.
+        if not metric_key:
+            problem_rows.append(raw)
+    return problem_rows, pairs
+
+
 def _restore_page_report_narrative(
     source: dict[str, Any],
     candidate: dict[str, Any],
@@ -1196,7 +1271,10 @@ def _restore_page_report_narrative(
         return None
 
     metric_index: dict[str, dict[str, Any]] = {}
-    for group_name in ("problem_types", "occurrence_locations"):
+    # Standalone location coverage rows are deliberately excluded: Gemma may
+    # select a problem type or a server-proven same-report problem/location
+    # pair, never a location by itself.
+    for group_name in ("problem_types", "problem_location_pairs"):
         for metric in metrics.get(group_name) or []:
             if not isinstance(metric, dict) or not metric.get("metric_key"):
                 continue
@@ -1388,6 +1466,16 @@ def restore_authoritative_quality_result(job: AiJob, worker_result: Any) -> dict
             }
             if aggregate.get("is_missing_text") is True:
                 missing_evidence_keys.add(str(aggregate["evidence_key"]))
+        attention_problem_rows, attention_pairs = _restore_attention_issue_selections(
+            worker_item.get("problem_types"),
+            metrics=(
+                source.get("report_metrics")
+                if isinstance(source.get("report_metrics"), dict)
+                else {}
+            ),
+            valid_report_ids=report_ids,
+            evidence_report_ids=evidence_report_ids,
+        )
         restored_items.append({
             "source_key": source_key,
             "priority_rank": worker_priority.get(source_key),
@@ -1403,19 +1491,18 @@ def restore_authoritative_quality_result(job: AiJob, worker_result: Any) -> dict
             "headline": _authoritative_attention_headline(),
             "checkpoints": _authoritative_attention_checkpoints(),
             "problem_types": _classified_groups(
-                worker_item.get("problem_types"),
+                attention_problem_rows,
                 report_ids,
                 evidence_report_ids,
                 missing_evidence_keys,
                 QUALITY_UNKNOWN_PROBLEM_TYPE,
             ),
-            "locations": _classified_groups(
-                worker_item.get("locations"),
-                report_ids,
-                evidence_report_ids,
-                missing_evidence_keys,
-                QUALITY_UNKNOWN_LOCATION,
-            ),
+            "problem_location_pairs": attention_pairs,
+            # The overview keeps its existing list-shaped contract, but
+            # standalone/unknown locations are no longer AI insights.  Paired
+            # issue/location signals live exclusively in report_metrics and
+            # the authenticated daily report.
+            "locations": [],
             "evidence_report_ids": sorted(report_ids),
         })
 
@@ -1502,12 +1589,13 @@ def _public_completed_result(
                 "headline",
                 "checkpoints",
                 "problem_types",
+                "problem_location_pairs",
                 "locations",
             )
         })
         public_items[-1]["headline"] = _authoritative_attention_headline()
         public_items[-1]["checkpoints"] = _authoritative_attention_checkpoints()
-        for group_key in ("problem_types", "locations"):
+        for group_key in ("problem_types",):
             public_items[-1][group_key] = [
                 {
                     "label": group.get("label"),
@@ -1517,6 +1605,18 @@ def _public_completed_result(
                 for group in item.get(group_key) or []
                 if isinstance(group, dict)
             ]
+        public_items[-1]["locations"] = []
+        public_items[-1]["problem_location_pairs"] = [
+            {
+                "label": pair.get("label"),
+                "problem_label": pair.get("problem_label"),
+                "location_label": pair.get("location_label"),
+                "count": int(pair.get("count") or 0),
+            }
+            for pair in item.get("problem_location_pairs") or []
+            if isinstance(pair, dict)
+            and int(pair.get("count") or 0) > 0
+        ]
     return {
         "status": "ready",
         "business_date": target_date.isoformat(),
@@ -1528,7 +1628,6 @@ def _public_completed_result(
         "generated_at": result.get("generated_at"),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "model_id": QUALITY_DAILY_MODEL_ID,
-        "model_name": job.model_name or "",
         "schema_version": result.get("schema_version") or QUALITY_ATTENTION_AI_SCHEMA_VERSION,
         "summary": _authoritative_summary(
             job.input_payload if isinstance(job.input_payload, dict) else {}
@@ -1572,7 +1671,6 @@ def quality_summary_for_overview(target_date: date) -> dict[str, Any]:
         "generated_at": None,
         "completed_at": None,
         "model_id": QUALITY_DAILY_MODEL_ID,
-        "model_name": "",
         "schema_version": QUALITY_ATTENTION_AI_SCHEMA_VERSION,
         "summary": None,
         "disclaimer": dict(QUALITY_DAILY_DISCLAIMER),
@@ -1785,7 +1883,7 @@ def quality_daily_report_for_page(
             priorities.sort(key=lambda item: (item["priority_rank"], item["source_key"]))
             metric_index = {
                 str(metric.get("metric_key")): metric
-                for group_name in ("problem_types", "occurrence_locations")
+                for group_name in ("problem_types", "problem_location_pairs")
                 for metric in deterministic_internal.get(group_name) or []
                 if isinstance(metric, dict) and metric.get("metric_key")
             }
@@ -1840,7 +1938,7 @@ def quality_daily_report_for_page(
                 if isinstance(row, dict)
                 and source_items.get(str(row.get("source_key") or ""))
             ]
-            # Worker v3's final report selector is the authoritative AI target
+            # Worker v4's final report selector is the authoritative AI target
             # ordering.  Keep only exact restored source keys, then append any
             # remaining verified attention targets in their deterministic
             # fallback order.  Public ranks are recomputed so they cannot be
@@ -1898,7 +1996,7 @@ def quality_daily_report_for_page(
                     add_signal(metric_index.get(str(selected.get("metric_key") or "")))
                     if len(signals) >= 3 or {
                         row["dimension"] for row in signals
-                    } == {"problem_type", "location"}:
+                    } == {"problem_type", "problem_location_pair"}:
                         break
                 if not any(row["dimension"] == "problem_type" for row in signals):
                     for metric in deterministic_internal.get("problem_types") or []:
@@ -1906,17 +2004,21 @@ def quality_daily_report_for_page(
                             add_signal(metric)
                             if any(row["dimension"] == "problem_type" for row in signals):
                                 break
-                if not any(row["dimension"] == "location" for row in signals):
-                    for metric in deterministic_internal.get("occurrence_locations") or []:
+                if not any(
+                    row["dimension"] == "problem_location_pair"
+                    for row in signals
+                ):
+                    for metric in deterministic_internal.get("problem_location_pairs") or []:
                         if (
                             isinstance(metric, dict)
-                            and metric.get("metric_key") != "location:unknown"
+                            and int(metric.get("evidence_count") or 0) >= 2
                         ):
                             add_signal(metric)
-                            if any(row["dimension"] == "location" for row in signals):
+                            if any(
+                                row["dimension"] == "problem_location_pair"
+                                for row in signals
+                            ):
                                 break
-                if not any(row["dimension"] == "location" for row in signals):
-                    add_signal(metric_index.get("location:unknown"))
 
                 signals.sort(key=lambda signal: (
                     0 if signal["metric_key"] == (

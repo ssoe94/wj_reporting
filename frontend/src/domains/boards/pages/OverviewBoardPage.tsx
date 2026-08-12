@@ -212,9 +212,8 @@ const COPY = {
     qualityAiDisconnected: "Gemma 연결 불가",
     qualityAiRetry: "Gemma 결과 재생성 대기",
     qualityAiGenerated: "생성",
-    qualityAiSource: "분석",
     qualityAiProblemTypes: "반복 문제 유형",
-    qualityAiLocations: "주요 발생 위치",
+    qualityAiProblemLocationPair: "문제유형 · 발생위치",
     qualityAiCheck: "확인 포인트",
     qualityAiEvidence: "근거 {count}건",
     qualityAiNoAttention: "특정 주의 항목이 제시되지 않았습니다.",
@@ -394,9 +393,8 @@ const COPY = {
     qualityAiDisconnected: "Gemma 无法连接",
     qualityAiRetry: "Gemma 结果待重新生成",
     qualityAiGenerated: "生成",
-    qualityAiSource: "分析",
     qualityAiProblemTypes: "重复问题类型",
-    qualityAiLocations: "主要发生位置",
+    qualityAiProblemLocationPair: "问题类型 · 发生位置",
     qualityAiCheck: "确认要点",
     qualityAiEvidence: "依据 {count} 件",
     qualityAiNoAttention: "未提示特定注意项目。",
@@ -611,7 +609,7 @@ function getQualityAiText(value: QualityAiLocalizedText | null, language: AppLan
 }
 
 function formatQualityAiRankedLabels(
-  values: QualityAiAttentionItem["problemTypes"] | QualityAiAttentionItem["locations"],
+  values: QualityAiAttentionItem["problemTypes"],
   language: AppLanguage,
 ) {
   return values
@@ -619,6 +617,26 @@ function formatQualityAiRankedLabels(
       const label = getQualityAiText(item.label, language);
       if (!label) return null;
       return item.count === null ? label : `${label} ${formatInteger(item.count, language)}`;
+    })
+    .filter((item): item is string => Boolean(item))
+    .join(" · ");
+}
+
+function formatQualityAiProblemLocationPairs(
+  values: QualityAiAttentionItem["problemLocationPairs"],
+  language: AppLanguage,
+) {
+  return values
+    .map((item) => {
+      const problem = getQualityAiText(item.problemLabel, language);
+      const location = getQualityAiText(item.locationLabel, language);
+      const verifiedLabel = problem && location
+        ? `${problem} · ${location}`
+        : getQualityAiText(item.label, language);
+      if (!verifiedLabel) return null;
+      return item.count === null
+        ? verifiedLabel
+        : `${verifiedLabel} ${formatInteger(item.count, language)}`;
     })
     .filter((item): item is string => Boolean(item))
     .join(" · ");
@@ -1105,13 +1123,11 @@ function QualityAiSlide({
   item,
   language,
   generatedAt,
-  sourceLabel,
   totalEvidenceCount,
 }: {
   item: QualityAiAttentionItem;
   language: AppLanguage;
   generatedAt: string | null;
-  sourceLabel: string;
   totalEvidenceCount: number | null;
 }) {
   const copy = COPY[language];
@@ -1124,7 +1140,7 @@ function QualityAiSlide({
   const modelTitle = item.modelNames.filter(Boolean).join(" · ") || "—";
   const partTitle = item.partNumbers.filter(Boolean).join(" · ") || item.partPrefix || "—";
   const problemTypes = formatQualityAiRankedLabels(item.problemTypes, language) || "—";
-  const locations = formatQualityAiRankedLabels(item.locations, language) || "—";
+  const problemLocationPairs = formatQualityAiProblemLocationPairs(item.problemLocationPairs, language) || "—";
   const checkpoints = item.checkpoints[language].filter(Boolean);
   const checkpointLabel = checkpoints.join(" · ") || "—";
   const evidenceLabel = copy.qualityAiEvidence.replace(
@@ -1151,14 +1167,14 @@ function QualityAiSlide({
         <strong title={headline}>{headline}</strong>
       </div>
       <div className={styles.qualitySlideDetails}>
-        <article className={styles.qualityAiGrounding} title={`${copy.qualityAiProblemTypes}: ${problemTypes} · ${copy.qualityAiLocations}: ${locations}`}>
+        <article className={styles.qualityAiGrounding} title={`${copy.qualityAiProblemTypes}: ${problemTypes} · ${copy.qualityAiProblemLocationPair}: ${problemLocationPairs}`}>
           <div>
             <span>{copy.qualityAiProblemTypes}</span>
             <strong>{problemTypes}</strong>
           </div>
           <div>
-            <span>{copy.qualityAiLocations}</span>
-            <strong>{locations}</strong>
+            <span>{copy.qualityAiProblemLocationPair}</span>
+            <strong>{problemLocationPairs}</strong>
           </div>
         </article>
         <article className={styles.qualityAiCheckpoint} title={checkpointLabel}>
@@ -1169,7 +1185,6 @@ function QualityAiSlide({
       </div>
       <footer className={styles.qualitySlideFooter}>
         <span>{copy.qualityAiGenerated} {formatShortDate(generatedAt)} {formatShanghaiTime(generatedAt)}</span>
-        <span>{copy.qualityAiSource} {sourceLabel}</span>
         {totalEvidenceCount === null ? null : (
           <span>{copy.qualityAiEvidence.replace("{count}", formatInteger(totalEvidenceCount, language))}</span>
         )}
@@ -1195,6 +1210,7 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
     && qualityAi.schemaVersion === "quality-daily-attention-ai.v1"
     && !qualityAi.llmFallback
     && Boolean(qualityAi.sourcePlanHash)
+    && Boolean(qualityAi.sourceEvidenceHash)
     && Boolean(qualityAiSummaryText);
   const qualityAiItems = useMemo(
     () => showQualityAi ? [...(qualityAi?.attentionItems ?? [])] : [],
@@ -1238,6 +1254,7 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
     qualityItems.length,
     qualityAiItems.length,
     qualityAi?.sourcePlanHash,
+    qualityAi?.sourceEvidenceHash,
     showQualityAi,
     language,
   ]);
@@ -1256,7 +1273,6 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
     setStartIndex((current) => (current + step + positionCount) % positionCount);
   };
   const qualityAiGeneratedAt = qualityAi?.completedAt ?? qualityAi?.generatedAt ?? null;
-  const qualityAiSourceLabel = qualityAi?.modelName ?? "Gemma 4";
 
   return (
     <section
@@ -1290,7 +1306,7 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
                 custom={rollDirection}
                 exit={reducedMotion ? undefined : "exit"}
                 initial={reducedMotion ? false : "enter"}
-                key={`ai-${qualityAi?.sourcePlanHash}-${startIndex}-${language}`}
+                key={`ai-${qualityAi?.sourcePlanHash}-${qualityAi?.sourceEvidenceHash}-${startIndex}-${language}`}
                 transition={{ duration: reducedMotion ? 0 : 0.58, ease: [0.22, 1, 0.36, 1] }}
                 variants={FULL_SLIDE_ROLL_VARIANTS}
               >
@@ -1301,7 +1317,6 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
                         item={item}
                         key={item.sourceKey}
                         language={language}
-                        sourceLabel={qualityAiSourceLabel}
                         totalEvidenceCount={qualityAi?.totals?.matchedReportCount ?? null}
                       />
                     ))
@@ -1313,7 +1328,6 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
                         <p className={styles.qualitySlideEmpty}>{copy.qualityAiNoAttention}</p>
                         <footer className={styles.qualitySlideFooter}>
                           <span>{copy.qualityAiGenerated} {formatShortDate(qualityAiGeneratedAt)} {formatShanghaiTime(qualityAiGeneratedAt)}</span>
-                          <span>{copy.qualityAiSource} {qualityAiSourceLabel}</span>
                         </footer>
                       </article>
                     )}

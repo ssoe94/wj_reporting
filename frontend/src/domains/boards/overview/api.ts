@@ -18,6 +18,7 @@ import type {
   ProductionProcess,
   QualityAiAttentionItem,
   QualityAiLocalizedText,
+  QualityAiProblemLocationPair,
   QualityAiSummary,
   QualityAttentionItem,
   WeatherStatus,
@@ -403,6 +404,22 @@ function normalizeQualityAiRankedLabels(value: unknown) {
   }).filter((item) => item.label !== null);
 }
 
+function normalizeQualityAiProblemLocationPairs(value: unknown): QualityAiProblemLocationPair[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const source = asRecord(item);
+    const problemLabel = normalizeQualityAiLocalizedText(source.problem_label);
+    const locationLabel = normalizeQualityAiLocalizedText(source.location_label);
+    if (!problemLabel || !locationLabel) return [];
+    return [{
+      label: normalizeQualityAiLocalizedText(source.label),
+      problemLabel,
+      locationLabel,
+      count: firstNumber(source, ["count"]),
+    }];
+  });
+}
+
 function normalizeQualityAiAttentionItems(value: unknown): QualityAiAttentionItem[] {
   if (!Array.isArray(value)) return [];
   return value.map((item, index) => {
@@ -423,6 +440,7 @@ function normalizeQualityAiAttentionItems(value: unknown): QualityAiAttentionIte
         zh: asStringArray(checkpoints.zh),
       },
       problemTypes: normalizeQualityAiRankedLabels(source.problem_types),
+      problemLocationPairs: normalizeQualityAiProblemLocationPairs(source.problem_location_pairs),
       locations: normalizeQualityAiRankedLabels(source.locations),
     };
   });
@@ -445,10 +463,10 @@ function normalizeQualityAiSummary(value: unknown): QualityAiSummary | null {
     status,
     businessDate: firstString(source, ["business_date"]),
     sourcePlanHash: firstString(source, ["source_plan_hash"]),
+    sourceEvidenceHash: firstString(source, ["source_evidence_hash"]),
     generatedAt: firstString(source, ["generated_at"]),
     completedAt: firstString(source, ["completed_at"]),
     modelId: firstString(source, ["model_id"]),
-    modelName: firstString(source, ["model_name"]),
     schemaVersion: firstString(source, ["schema_version"]),
     generationSource: firstString(source, ["generation_source"]),
     llmFallback: asBoolean(firstValue(source, ["llm_fallback"])),

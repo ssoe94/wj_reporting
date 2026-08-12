@@ -2017,7 +2017,6 @@ def build_overview_board_snapshot(target_date: date, *, language: str = "ko") ->
             "generated_at": None,
             "completed_at": None,
             "model_id": QUALITY_DAILY_MODEL_ID,
-            "model_name": "",
             "schema_version": QUALITY_ATTENTION_AI_SCHEMA_VERSION,
             "summary": None,
             "disclaimer": dict(QUALITY_DAILY_DISCLAIMER),

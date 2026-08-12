@@ -154,8 +154,52 @@ def quality_job() -> dict:
                 "occurrence_locations": [
                     {
                         "metric_key": "location:gate",
+                        "dimension": "location_coverage",
+                        "analysis_role": "coverage_only",
+                        "ai_candidate": False,
+                        "is_unknown_location": False,
                         "label": {"ko": "게이트", "zh": "浇口"},
                         "classification_basis": "explicit_keyword_v1",
+                        "source_evidence_keys": ["ACQ307763:phenomenon:white"],
+                        "evidence_count": 2,
+                        "repeat_status": "repeated",
+                        "latest_report_dt": "2026-07-29",
+                        "all_history_denominator": 3,
+                        "all_history_denominator_basis": "unique_matching_reports_in_current_plan_prefixes",
+                        "all_history_share_pct": 66.7,
+                        "trend": {
+                            "status": "increase",
+                            "reason": "count_and_share_increased",
+                            "recent_count": 2,
+                            "previous_count": 0,
+                            "recent_denominator": 2,
+                            "previous_denominator": 1,
+                            "recent_share_pct": 100.0,
+                            "previous_share_pct": 0.0,
+                            "share_change_pp": 100.0,
+                            "count_change": 2,
+                        },
+                        "impact_scope": {
+                            "machine_names": ["850T-14"],
+                            "model_names": ["DEMO-M4414"],
+                            "part_nos": ["ACQ30776309"],
+                            "part_prefixes": ["ACQ307763"],
+                            "plan_group_count": 1,
+                            "planned_quantity": 1800,
+                        },
+                    }
+                ],
+                "problem_location_pairs": [
+                    {
+                        "metric_key": "pair:whitening:gate",
+                        "dimension": "problem_location_pair",
+                        "problem_canonical_key": "whitening",
+                        "location_canonical_key": "gate",
+                        "problem_label": {"ko": "백화", "zh": "发白"},
+                        "location_label": {"ko": "게이트", "zh": "浇口"},
+                        "label": {"ko": "백화 · 게이트", "zh": "发白 · 浇口"},
+                        "classification_basis": "canonical_problem_explicit_location_pair_v1",
+                        "pair_basis": "same_quality_report_id",
                         "source_evidence_keys": ["ACQ307763:phenomenon:white"],
                         "evidence_count": 2,
                         "repeat_status": "repeated",
@@ -399,7 +443,7 @@ def valid_llm_result() -> dict:
             ],
             "accelerating_issues": [
                 {
-                    "metric_key": "location:gate",
+                    "metric_key": "pair:whitening:gate",
                     "source_evidence_keys": ["ACQ307763:phenomenon:white"],
                     "narrative": {
                         "ko": "보고 기록 빈도 증가 추세를 교대 전 확인하세요.",
@@ -478,8 +522,9 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
 
         self.assertEqual(payload["summary_basis"]["history_coverage"], "all_history")
         self.assertEqual(payload["report_metrics"]["schema_version"], "quality-daily-report.v1")
+        self.assertNotIn("occurrence_locations", payload["report_metrics"])
         self.assertEqual(
-            payload["report_metrics"]["occurrence_locations"][0]["trend"]["status"],
+            payload["report_metrics"]["problem_location_pairs"][0]["trend"]["status"],
             "increase",
         )
         self.assertEqual(
@@ -498,7 +543,7 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             payload["report_metrics"]["calculation_basis"]
             ["trend_is_report_frequency_not_defect_rate"]
         )
-        for group_name in ("problem_types", "occurrence_locations"):
+        for group_name in ("problem_types", "problem_location_pairs"):
             for metric in payload["report_metrics"][group_name]:
                 self.assertNotIn("recorded_text", metric)
         self.assertEqual(payload["items"][0]["evidence_key"], "prefix:ACQ307763")
@@ -522,27 +567,62 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         self.assertEqual(grounding["source_plan_hash"], "plan-hash")
         self.assertEqual(grounding["source_evidence_hash"], "evidence-hash")
 
+    def test_location_coverage_never_becomes_an_ai_candidate(self):
+        grounding = handler.build_grounding_payload(quality_job())
+        metrics = grounding["report_metrics"]
+
+        self.assertNotIn("occurrence_locations", metrics)
+        self.assertEqual(
+            handler._metric_selection_candidates(
+                metrics,
+                "occurrence_locations",
+                {"ACQ307763:phenomenon:white"},
+            ),
+            [],
+        )
+        selector = handler._report_selector_payload(grounding, {})
+        all_keys = {
+            row["metric_key"]
+            for name in ("repeated_candidates", "accelerating_candidates")
+            for row in selector[name]
+        }
+        self.assertIn("problem:abc123def456", all_keys)
+        self.assertIn("pair:whitening:gate", all_keys)
+        self.assertNotIn("problem:missing000000", all_keys)
+        self.assertNotIn("location:gate", all_keys)
+        self.assertFalse(any(key.startswith("location:") for key in all_keys))
+
+    def test_pair_candidate_requires_exact_same_report_backend_contract(self):
+        mutations = [
+            lambda pair: pair.update(metric_key="location:gate"),
+            lambda pair: pair.update(classification_basis="explicit_keyword_v1"),
+            lambda pair: pair.update(pair_basis="same_aggregate_only"),
+            lambda pair: pair.update(location_canonical_key="unknown"),
+            lambda pair: pair.update(location_label={"ko": "위치 미확인", "zh": "位置未确认"}),
+        ]
+        for mutate in mutations:
+            job = quality_job()
+            mutate(job["input_payload"]["report_metrics"]["problem_location_pairs"][0])
+            with self.subTest(mutation=mutate):
+                metrics = handler.build_grounding_payload(job)["report_metrics"]
+                self.assertEqual(metrics["problem_location_pairs"], [])
+
     def test_deterministic_fallback_is_bilingual_and_marks_unknown_classification(self):
         result = handler.build_dummy_result(quality_job())
 
         self.assertTrue(result["summary"]["ko"])
         self.assertTrue(result["summary"]["zh"])
-        self.assertEqual(result["attention_items"][0]["locations"][0]["label"], handler.UNKNOWN_LOCATION)
-        self.assertEqual(result["attention_items"][0]["locations"][0]["count"], 3)
-        self.assertEqual(
-            result["attention_items"][0]["locations"][0]["source_evidence_keys"],
-            ["ACQ307763:phenomenon:white", "ACQ307763:phenomenon:missing"],
-        )
+        self.assertEqual(result["attention_items"][0]["locations"], [])
         self.assertEqual(len(result["attention_items"]), 1)
         self.assertIn("현재 불량 발생을 의미하지 않습니다", result["disclaimer"]["ko"])
         self.assertNotIn("현재 불량", result["summary"]["ko"])
         self.assertEqual(
             [row["metric_key"] for row in result["report"]["repeated_issues"]],
-            ["problem:abc123def456", "location:gate"],
+            ["problem:abc123def456", "pair:whitening:gate"],
         )
         self.assertEqual(
             [row["metric_key"] for row in result["report"]["accelerating_issues"]],
-            ["location:gate"],
+            ["pair:whitening:gate"],
         )
         self.assertIn("현재 상태를 뜻하지 않습니다", result["report"]["caveats"]["ko"][0])
 
@@ -576,11 +656,7 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             ["ACQ307763:phenomenon:missing"],
         )
         self.assertNotIn("중복 분류", [group["label"]["ko"] for group in item["problem_types"]])
-        self.assertEqual(item["locations"][1]["label"], handler.UNKNOWN_LOCATION)
-        self.assertEqual(
-            item["locations"][1]["source_evidence_keys"],
-            ["ACQ307763:phenomenon:missing"],
-        )
+        self.assertEqual(item["locations"], [])
         self.assertNotIn("source_report_ids", str(result))
         self.assertNotIn("Q-1", str(result))
         self.assertEqual(result["source_plan_hash"], "plan-hash")
@@ -598,7 +674,7 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             [row["metric_key"] for row in report["accelerating_issues"]],
-            ["location:gate"],
+            ["pair:whitening:gate"],
         )
         self.assertEqual(
             [row["source_key"] for row in report["affected_targets"]],
@@ -610,7 +686,7 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         )
         self.assertNotIn("invented:metric", str(report))
         self.assertNotIn("invented|source", str(report))
-        self.assertIn(
+        self.assertNotIn(
             "비교 자료가 충분하지 않은 추세는 해석하지 않습니다.",
             report["caveats"]["ko"],
         )
@@ -711,14 +787,9 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
                     }
                 return {
                     "source_key": payload["source_key"],
-                    "problem_selections": [{
-                        "metric_key": payload["problem_candidates"][0]["metric_key"],
-                        "source_evidence_keys": payload["problem_candidates"][0]
-                        ["source_evidence_keys"],
-                    }],
-                    "location_selections": [{
-                        "metric_key": payload["location_candidates"][0]["metric_key"],
-                        "source_evidence_keys": payload["location_candidates"][0]
+                    "issue_selections": [{
+                        "metric_key": payload["issue_candidates"][0]["metric_key"],
+                        "source_evidence_keys": payload["issue_candidates"][0]
                         ["source_evidence_keys"],
                     }],
                 }
@@ -740,6 +811,15 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         )
         self.assertEqual(gemma.calls[0][2]["max_tokens"], handler.MODEL_CHUNK_MAX_TOKENS)
         self.assertNotIn("phenomena", gemma.calls[0][1])
+        self.assertNotIn("location_candidates", gemma.calls[0][1])
+        self.assertFalse(any(
+            row["metric_key"].startswith("location:")
+            for row in gemma.calls[0][1]["issue_candidates"]
+        ))
+        self.assertEqual(
+            gemma.calls[0][1]["issue_candidates"][0]["metric_key"],
+            "pair:whitening:gate",
+        )
         self.assertEqual(
             gemma.calls[1][1]["required_output_schema"],
             handler.REPORT_SELECTOR_OUTPUT_SCHEMA,
@@ -754,8 +834,9 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             result["report"]["accelerating_issues"][0]["metric_key"],
-            "location:gate",
+            "pair:whitening:gate",
         )
+        self.assertEqual(result["attention_items"][0]["locations"], [])
         for _system_prompt, payload, _options in gemma.calls:
             self.assertNotIn("report_ids", str(payload))
             self.assertNotIn("report_refs", str(payload))
@@ -787,8 +868,7 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             grounding,
             {
                 "14|ACQ307763": {
-                    "problem_metric_keys": ["problem:abc123def456"],
-                    "location_metric_keys": ["location:gate"],
+                    "issue_metric_keys": ["pair:whitening:gate"],
                 }
             },
         )
@@ -797,11 +877,13 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             {
                 "repeated_metric_keys": [
                     "location:gate",
+                    "pair:whitening:gate",
                     "invented:metric",
                     "problem:missing000000",
                 ],
                 "accelerating_metric_keys": [
                     "location:gate",
+                    "pair:whitening:gate",
                     "problem:abc123def456",
                 ],
                 "affected_targets": [
@@ -825,11 +907,11 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
 
         self.assertEqual(
             [row["metric_key"] for row in report["repeated_issues"]],
-            ["location:gate"],
+            ["pair:whitening:gate"],
         )
         self.assertEqual(
             [row["metric_key"] for row in report["accelerating_issues"]],
-            ["location:gate"],
+            ["pair:whitening:gate"],
         )
         self.assertEqual(
             report["affected_targets"][0]["source_evidence_keys"],
@@ -863,7 +945,7 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
                 },
             ],
             candidates,
-            field_name="problem_selections",
+            field_name="issue_selections",
         )
 
         self.assertEqual(normalized, [{
@@ -885,7 +967,7 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             handler._normalize_metric_key_selections(
                 [],
                 problem_candidates,
-                field_name="problem_selections",
+                field_name="issue_selections",
             )
 
         selector_payload = handler._report_selector_payload(grounding, {})
@@ -1103,14 +1185,9 @@ class QualityDailyAttentionWorkerRoutingTests(unittest.TestCase):
                 }
             return {
                 "source_key": payload["source_key"],
-                "problem_selections": [{
-                    "metric_key": payload["problem_candidates"][0]["metric_key"],
-                    "source_evidence_keys": payload["problem_candidates"][0]
-                    ["source_evidence_keys"],
-                }],
-                "location_selections": [{
-                    "metric_key": payload["location_candidates"][0]["metric_key"],
-                    "source_evidence_keys": payload["location_candidates"][0]
+                "issue_selections": [{
+                    "metric_key": payload["issue_candidates"][0]["metric_key"],
+                    "source_evidence_keys": payload["issue_candidates"][0]
                     ["source_evidence_keys"],
                 }],
             }

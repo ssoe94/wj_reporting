@@ -149,6 +149,13 @@ export type QualityAiLocalizedText = {
   zh: string | null;
 };
 
+export type QualityAiProblemLocationPair = {
+  label: QualityAiLocalizedText | null;
+  problemLabel: QualityAiLocalizedText | null;
+  locationLabel: QualityAiLocalizedText | null;
+  count: number | null;
+};
+
 export type QualityAiAttentionItem = {
   sourceKey: string;
   machineName: string | null;
@@ -167,6 +174,7 @@ export type QualityAiAttentionItem = {
     label: QualityAiLocalizedText | null;
     count: number | null;
   }>;
+  problemLocationPairs: QualityAiProblemLocationPair[];
   locations: Array<{
     label: QualityAiLocalizedText | null;
     count: number | null;
@@ -177,10 +185,10 @@ export type QualityAiSummary = {
   status: "ready" | "pending" | "stale" | "unavailable";
   businessDate: string | null;
   sourcePlanHash: string | null;
+  sourceEvidenceHash: string | null;
   generatedAt: string | null;
   completedAt: string | null;
   modelId: string | null;
-  modelName: string | null;
   schemaVersion: string | null;
   generationSource: string | null;
   llmFallback: boolean;

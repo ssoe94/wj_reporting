@@ -445,6 +445,108 @@ class DailyQualitySummaryTests(TestCase):
         self.assertNotIn('"images"', serialized)
         self.assertNotIn('"disposition"', serialized)
 
+    def test_pair_metrics_require_same_report_problem_and_explicit_location(self):
+        self._plan()
+        target_date = datetime(2026, 8, 12).date()
+        phenomena = [
+            "게이트 백화",
+            "게이트 백화",
+            "백화",
+            "백화",
+            "백화",
+            "백화",
+            "게이트 미등록특수현상",
+        ]
+        for index, phenomenon in enumerate(phenomena, start=1):
+            QualityReport.objects.create(
+                report_dt=self._local(7, 0) - timedelta(days=index),
+                section="LQC_INJ",
+                model="MODEL-A",
+                part_no=f"ABC123456-P{index}",
+                judgement="NG",
+                phenomenon=phenomenon,
+            )
+
+        ai_input = build_daily_quality_attention_ai_input(
+            target_date,
+            model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        metrics = ai_input["report_metrics"]
+        whitening = next(
+            row for row in metrics["problem_types"]
+            if row.get("canonical_key") == "gas_mark_whitening"
+        )
+        pair = next(
+            row for row in metrics["problem_location_pairs"]
+            if row["metric_key"] == "pair:gas_mark_whitening:gate"
+        )
+
+        # The problem metric includes all six whitening reports, while the
+        # pair includes only the two exact source rows that also say gate.
+        self.assertEqual(whitening["evidence_count"], 6)
+        self.assertEqual(pair["evidence_count"], 2)
+        self.assertEqual(pair["all_history_denominator"], 7)
+        self.assertEqual(pair["trend"]["recent_count"], 2)
+        self.assertEqual(pair["dimension"], "problem_location_pair")
+        self.assertEqual(
+            pair["classification_basis"],
+            "canonical_problem_explicit_location_pair_v1",
+        )
+        self.assertEqual(pair["pair_basis"], "same_quality_report_id")
+        self.assertEqual(pair["problem_canonical_key"], "gas_mark_whitening")
+        self.assertEqual(pair["location_canonical_key"], "gate")
+        self.assertEqual(pair["problem_label"]["ko"], "가스 자국·백화")
+        self.assertEqual(pair["location_label"]["ko"], "게이트부")
+        self.assertFalse(any(
+            row["metric_key"].startswith("pair:unclassified:")
+            for row in metrics["problem_location_pairs"]
+        ))
+
+        locations = metrics["occurrence_locations"]
+        self.assertEqual(locations[-1]["metric_key"], "location:unknown")
+        self.assertEqual(locations[-1]["evidence_count"], 4)
+        self.assertTrue(locations[-1]["is_unknown_location"])
+        self.assertEqual(locations[-1]["sort_state"], "unknown_last")
+        self.assertTrue(all(row["analysis_role"] == "coverage_only" for row in locations))
+        self.assertTrue(all(row["ai_candidate"] is False for row in locations))
+
+        page = quality_daily_report_for_page(
+            target_date,
+            deterministic_report=metrics,
+            source_plan_hash=ai_input["source_plan_hash"],
+            source_evidence_hash=ai_input["source_evidence_hash"],
+        )
+        public_pair = page["deterministic"]["problem_location_pairs"][0]
+        self.assertNotIn("source_evidence_keys", public_pair)
+        self.assertEqual(public_pair["dimension"], "problem_location_pair")
+
+    def test_pair_metrics_fail_closed_for_ambiguous_multi_problem_multi_location(self):
+        self._plan()
+        QualityReport.objects.create(
+            report_dt=self._local(7, 0) - timedelta(days=1),
+            section="LQC_INJ",
+            model="MODEL-A",
+            part_no="ABC123456-AMBIGUOUS",
+            judgement="NG",
+            phenomenon="상단 플래시 / 하단 스크래치",
+        )
+
+        metrics = build_daily_quality_attention_ai_input(
+            datetime(2026, 8, 12).date(),
+            model_id=QUALITY_DAILY_MODEL_ID,
+        )["report_metrics"]
+
+        self.assertEqual(metrics["problem_location_pairs"], [])
+        self.assertEqual(metrics["coverage"]["ambiguous_pair_report_count"], 1)
+        self.assertEqual(
+            metrics["calculation_basis"]["ambiguous_pair_policy"],
+            "skip_when_multiple_problems_and_multiple_locations",
+        )
+        self.assertEqual(
+            {row.get("canonical_key") for row in metrics["problem_types"]},
+            {"burr_flash", "scratch_damage"},
+        )
+
     def test_page_report_trend_is_fail_closed_when_previous_denominator_is_zero(self):
         self._plan()
         for days_ago in range(1, 6):
@@ -569,6 +671,10 @@ class DailyQualitySummaryTests(TestCase):
             row for row in input_payload["report_metrics"]["problem_types"]
             if row.get("canonical_key") == "gas_mark_whitening"
         )
+        standalone_location = next(
+            row for row in input_payload["report_metrics"]["occurrence_locations"]
+            if row.get("metric_key") == "location:gate"
+        )
         evidence_key = gate_metric["source_evidence_keys"][0]
         job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
@@ -596,6 +702,11 @@ class DailyQualitySummaryTests(TestCase):
                         "metric_key": "invented-metric",
                         "source_evidence_keys": [evidence_key],
                         "narrative": {"ko": "가짜 분류", "zh": "虚假分类"},
+                    },
+                    {
+                        "metric_key": standalone_location["metric_key"],
+                        "source_evidence_keys": standalone_location["source_evidence_keys"],
+                        "narrative": {"ko": "위치 단독", "zh": "单独位置"},
                     },
                 ],
                 "accelerating_issues": [{
@@ -630,6 +741,7 @@ class DailyQualitySummaryTests(TestCase):
         self.assertNotIn("invented-metric", restored_json)
         self.assertNotIn("invented-source", restored_json)
         self.assertNotIn("invented-key", restored_json)
+        self.assertNotIn("location:gate", restored_json)
         self.assertNotIn('"count"', restored_json)
         self.assertNotIn('"report_id"', restored_json)
 
@@ -710,10 +822,10 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(item["machine_name"], source_item["machine_name"])
         self.assertEqual(item["matching_report_count"], 1)
         self.assertEqual(item["problem_types"][0]["count"], 1)
-        self.assertEqual(item["locations"][0]["count"], 1)
+        self.assertEqual(item["locations"], [])
         self.assertEqual(
             item["checkpoints"]["ko"],
-            ["교대 전 서버가 연결한 과거 현상과 위치 기록을 확인하세요."],
+            ["교대 전 서버가 연결한 과거 문제 현상을 확인하세요."],
         )
         restored_json = json.dumps(restored, ensure_ascii=False)
         self.assertNotIn("게이트 주변을 확인하세요", restored_json)
@@ -735,6 +847,8 @@ class DailyQualitySummaryTests(TestCase):
         public = quality_summary_for_overview(datetime(2026, 8, 12).date())
         public_json = json.dumps(public, ensure_ascii=False)
         self.assertEqual(public["status"], "ready")
+        self.assertNotIn("model_name", public)
+        self.assertEqual(public["model_id"], QUALITY_DAILY_MODEL_ID)
         self.assertNotIn("source_report_ids", public_json)
         self.assertNotIn("evidence_report_ids", public_json)
         self.assertNotIn("disposition", public_json)
@@ -991,7 +1105,10 @@ class DailyQualitySummaryTests(TestCase):
         self.assertNotIn("model_name", ready)
         self.assertEqual(ready["narrative"]["priorities"][0]["priority_rank"], 1)
         self.assertIn("연결된 전체 과거 품질 기록 1건", ready["narrative"]["summary"]["ko"])
-        self.assertIn("게이트부 1건", ready["narrative"]["executive_summary"]["ko"])
+        self.assertIn(
+            "반복 기준을 충족한 문제·위치 결합은 없음",
+            ready["narrative"]["executive_summary"]["ko"],
+        )
         self.assertEqual(ready["narrative"]["repeated_issues"], [])
         self.assertEqual(ready["narrative"]["accelerating_issues"], [])
         affected = ready["narrative"]["affected_targets"][0]
@@ -1060,10 +1177,10 @@ class DailyQualitySummaryTests(TestCase):
             for row in input_payload["report_metrics"]["problem_types"]
             if row.get("canonical_key") == "contamination"
         )
-        gate = next(
+        gate_pair = next(
             row
-            for row in input_payload["report_metrics"]["occurrence_locations"]
-            if row.get("metric_key") == "location:gate"
+            for row in input_payload["report_metrics"]["problem_location_pairs"]
+            if row.get("metric_key") == "pair:contamination:gate"
         )
         source_item = input_payload["items"][0]
         contamination_evidence_key = next(
@@ -1090,7 +1207,7 @@ class DailyQualitySummaryTests(TestCase):
                 "executive_summary": {"ko": "과거 이력을 확인합니다.", "zh": "确认历史记录。"},
                 "repeated_issues": [
                     {"metric_key": contamination["metric_key"]},
-                    {"metric_key": gate["metric_key"]},
+                    {"metric_key": gate_pair["metric_key"]},
                 ],
                 "accelerating_issues": [
                     {"metric_key": contamination["metric_key"]},
@@ -1106,7 +1223,11 @@ class DailyQualitySummaryTests(TestCase):
                 "source_key": source_item["source_key"],
                 "headline": {"ko": "과거 이력을 확인합니다.", "zh": "确认历史记录。"},
                 "checkpoints": {"ko": ["과거 이력을 확인합니다."], "zh": ["确认历史记录。"]},
-                "problem_types": [],
+                "problem_types": [{
+                    "metric_key": gate_pair["metric_key"],
+                    "label": gate_pair["label"],
+                    "source_evidence_keys": gate_pair["source_evidence_keys"],
+                }],
                 "locations": [],
             }],
         })
@@ -1129,7 +1250,7 @@ class DailyQualitySummaryTests(TestCase):
         summary = report["narrative"]["executive_summary"]
         self.assertIn("연결된 전체 과거 품질 기록 10건", summary["ko"])
         self.assertIn("오염·이물 5건", summary["ko"])
-        self.assertIn("게이트부 5건", summary["ko"])
+        self.assertIn("오염·이물 · 게이트부 5건", summary["ko"])
         self.assertIn("최근 증가 지표는 오염·이물", summary["ko"])
         self.assertIn("최근 30일 4/5건", summary["ko"])
         self.assertIn("직전 30일 1/5건", summary["ko"])
@@ -1153,9 +1274,14 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(priority["signals"][0]["denominator"], 10)
         self.assertEqual(priority["signals"][0]["trend"]["status"], "increase")
         self.assertTrue(any(
-            signal["metric_key"] == gate["metric_key"]
+            signal["metric_key"] == gate_pair["metric_key"]
             for signal in priority["signals"]
         ), priority["signals"])
+        self.assertFalse(any(
+            signal["dimension"] == "location"
+            or signal["metric_key"].startswith("location:")
+            for signal in priority["signals"]
+        ))
         public_json = json.dumps(report, ensure_ascii=False)
         self.assertNotIn("source_plan_hash", public_json)
         self.assertNotIn("source_evidence_hash", public_json)
@@ -1168,8 +1294,27 @@ class DailyQualitySummaryTests(TestCase):
         # gates while omitting the detailed page report.
         overview = quality_summary_for_overview(target_date)
         self.assertEqual(overview["status"], "ready")
+        self.assertNotIn("model_name", overview)
+        self.assertNotIn("private/gemma-model-path", json.dumps(overview))
         self.assertEqual(overview["source_plan_hash"], source["source_plan_hash"])
         self.assertEqual(overview["source_evidence_hash"], source["source_evidence_hash"])
+        self.assertTrue(all(
+            item.get("locations") == []
+            for item in overview["attention_items"]
+        ))
+        overview_pair = overview["attention_items"][0]["problem_location_pairs"][0]
+        self.assertEqual(overview_pair, {
+            "label": gate_pair["label"],
+            "problem_label": gate_pair["problem_label"],
+            "location_label": gate_pair["location_label"],
+            "count": 5,
+        })
+        self.assertEqual(
+            overview["attention_items"][0]["problem_types"][0]["label"],
+            gate_pair["problem_label"],
+        )
+        self.assertNotIn("metric_key", overview_pair)
+        self.assertNotIn("pair_basis", overview_pair)
 
     def test_missing_phenomenon_is_forced_to_unclassified_and_unknown_location(self):
         self._plan()
@@ -1234,11 +1379,11 @@ class DailyQualitySummaryTests(TestCase):
         self.assertTrue(restored["llm_fallback"])
         self.assertEqual(restored["llm_fallback_code"], "unverified_generation_source")
         self.assertEqual(restored_item["problem_types"][0]["label"]["ko"], "유형 미분류")
-        self.assertEqual(restored_item["locations"][0]["label"]["ko"], "위치 미확인")
+        self.assertEqual(restored_item["locations"], [])
         self.assertEqual(restored_item["problem_types"][0]["count"], 1)
         self.assertEqual(restored["report"]["affected_targets"], [])
 
-    def test_summary_separates_unknown_location_warning_from_top_explicit_location(self):
+    def test_summary_uses_same_report_pair_and_keeps_unknown_location_in_coverage_only(self):
         self._plan()
         target_date = datetime(2026, 8, 12).date()
         for index in range(10):
@@ -1310,14 +1455,25 @@ class DailyQualitySummaryTests(TestCase):
 
         self.assertEqual(report["status"], "ready")
         summary = report["narrative"]["summary"]
-        self.assertIn("주요 기록 위치는 모서리·테두리 2건", summary["ko"])
-        self.assertIn("발생 위치 미기록은 7/10건(70.0%)", summary["ko"])
-        self.assertIn("위치 분석 신뢰가 제한", summary["ko"])
-        self.assertIn("主要记录位置为边缘（2条）", summary["zh"])
-        self.assertIn("发生位置未记录为7/10条（70.0%）", summary["zh"])
+        self.assertIn(
+            "동일 보고서에서 확인된 문제·위치 결합은 오염·이물 · 모서리·테두리 2건",
+            summary["ko"],
+        )
+        self.assertNotIn("발생 위치 미기록", summary["ko"])
+        self.assertNotIn("위치 분석 신뢰", summary["ko"])
+        self.assertIn(
+            "同一报告中确认的问题·位置组合为脏污·异物 · 边缘（2条）",
+            summary["zh"],
+        )
+        self.assertNotIn("发生位置未记录", summary["zh"])
         checks = " ".join(report["narrative"]["shift_checks"]["ko"])
-        self.assertIn("신규 품질 기록에 위치를 명시", checks)
+        self.assertNotIn("위치 미기록", checks)
         self.assertNotIn("현재 불량", checks)
+        unknown = report["deterministic"]["occurrence_locations"][-1]
+        self.assertEqual(unknown["metric_key"], "location:unknown")
+        self.assertEqual(unknown["evidence_count"], 7)
+        self.assertEqual(unknown["analysis_role"], "coverage_only")
+        self.assertTrue(unknown["is_unknown_location"])
 
     def test_public_priorities_follow_verified_selector_then_append_fallback_targets(self):
         self._plan(machine="850T-1")
@@ -1396,7 +1552,8 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual([row["machine_name"] for row in priorities], ["850T-2", "850T-1"])
         self.assertEqual([row["priority_rank"] for row in priorities], [1, 2])
         self.assertNotEqual(priorities[0]["target_ref"], priorities[1]["target_ref"])
-        self.assertTrue(priorities[0]["primary_metric_key"])
+        self.assertIsNone(priorities[0]["primary_metric_key"])
+        self.assertEqual(priorities[0]["signals"], [])
         public_json = json.dumps(priorities, ensure_ascii=False)
         self.assertNotIn(selected_item["source_key"], public_json)
         self.assertNotIn("source_evidence_keys", public_json)

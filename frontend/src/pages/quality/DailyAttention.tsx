@@ -93,15 +93,25 @@ type QualityPlanTarget = {
 
 type QualityReportMetric = {
   metric_key: string;
+  dimension?: 'problem_type' | 'problem_location_pair' | 'location_coverage';
   canonical_key?: string;
   label: LocalizedText;
+  problem_label?: LocalizedText;
+  location_label?: LocalizedText;
   classification_basis:
     | 'canonical_alias_v1'
     | 'unclassified_recorded_text_hash'
     | 'unclassified'
     | 'missing_recorded_phenomenon'
     | 'explicit_keyword_v1'
-    | 'unlocated';
+    | 'unlocated'
+    | 'canonical_problem_explicit_location_pair_v1';
+  pair_basis?: 'same_quality_report_id';
+  analysis_role?: 'coverage_only';
+  ai_candidate?: boolean;
+  is_unknown_location?: boolean;
+  sort_state?: 'evidence_desc' | 'unknown_last';
+  sort_rank?: number;
   evidence_count: number;
   repeat_status: 'repeated' | 'single';
   latest_report_dt: string | null;
@@ -151,8 +161,10 @@ type QualityDeterministicReport = {
     part_nos: string[];
     problem_type_count: number;
     occurrence_location_count: number;
+    ambiguous_pair_report_count?: number;
   };
   problem_types: QualityReportMetric[];
+  problem_location_pairs?: QualityReportMetric[];
   occurrence_locations: QualityReportMetric[];
   calculation_basis: Record<string, unknown>;
 };
@@ -164,8 +176,10 @@ type QualityNarrativeItem = {
 
 type QualityPublicMetricSignal = {
   metric_key: string;
-  dimension: 'problem_type' | 'location';
+  dimension: 'problem_type' | 'problem_location_pair';
   label: LocalizedText;
+  problem_label?: LocalizedText;
+  location_label?: LocalizedText;
   evidence_count: number;
   denominator: number;
   share_pct: number | null;
@@ -247,9 +261,9 @@ type DailyAttentionResponse = {
   report?: QualityDailyReport | null;
 };
 
-type MetricDimension = 'problem' | 'location';
+type MetricDimension = 'problem' | 'pair' | 'location';
 
-type DimensionedMetric = QualityReportMetric & {
+type DimensionedMetric = Omit<QualityReportMetric, 'dimension'> & {
   dimension: MetricDimension;
 };
 
@@ -522,12 +536,6 @@ function sortMetrics(metrics: DimensionedMetric[]): DimensionedMetric[] {
   });
 }
 
-function metricDimensionLabel(metric: DimensionedMetric, lang: string): string {
-  return metric.dimension === 'location'
-    ? (lang === 'zh' ? '发生位置' : '발생위치')
-    : (lang === 'zh' ? '问题类型' : '문제유형');
-}
-
 function metricTrendLabel(metric: DimensionedMetric, lang: string): string {
   if (metric.trend.status === 'increase') {
     return lang === 'zh' ? '最近增加' : '최근 증가';
@@ -538,8 +546,26 @@ function metricTrendLabel(metric: DimensionedMetric, lang: string): string {
   return lang === 'zh' ? '未满足增加标准' : '증가 기준 미충족';
 }
 
+function isUnknownLocationMetric(metric: QualityReportMetric | DimensionedMetric): boolean {
+  return metric.metric_key === 'location:unknown' || metric.classification_basis === 'unlocated' || metric.is_unknown_location === true;
+}
+
 function firstMetricTarget(metric: DimensionedMetric): QualityPlanTarget | null {
   return metric.impact_scope.plan_targets[0] ?? null;
+}
+
+function metricDisplayLabel(metric: DimensionedMetric, lang: string): string {
+  if (metric.dimension !== 'pair') return localizedText(metric.label, lang);
+  const problem = localizedText(metric.problem_label, lang);
+  const location = localizedText(metric.location_label, lang);
+  if (problem && location) return `${problem} · ${location}`;
+  return problem || localizedText(metric.label, lang);
+}
+
+function metricKindLabel(metric: DimensionedMetric, lang: string): string {
+  return metric.dimension === 'pair'
+    ? (lang === 'zh' ? '问题类型 · 发生位置' : '문제유형 · 발생위치')
+    : (lang === 'zh' ? '问题类型' : '문제유형');
 }
 
 function findMetricForTarget(
@@ -680,9 +706,7 @@ function MetricBarPanel({
 function TrendMetricCard({ metric, lang, narrative }: { metric: DimensionedMetric; lang: string; narrative?: string }) {
   const isIncrease = metric.trend.status === 'increase';
   const isInsufficient = metric.trend.status === 'insufficient_data';
-  const dimensionLabel = metric.dimension === 'problem'
-    ? (lang === 'zh' ? '问题类型' : '문제유형')
-    : (lang === 'zh' ? '发生位置' : '발생위치');
+  const dimensionLabel = metricKindLabel(metric, lang);
   const statusLabel = isIncrease
     ? (lang === 'zh' ? '数量与占比同时增加' : '건수·비중 동시 증가')
     : isInsufficient
@@ -699,8 +723,8 @@ function TrendMetricCard({ metric, lang, narrative }: { metric: DimensionedMetri
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{dimensionLabel}</div>
-          <h4 className="mt-1 truncate font-semibold text-slate-900" title={localizedText(metric.label, lang)}>
-            {localizedText(metric.label, lang) || '-'}
+          <h4 className="mt-1 truncate font-semibold text-slate-900" title={metricDisplayLabel(metric, lang)}>
+            {metricDisplayLabel(metric, lang) || '-'}
           </h4>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${badgeClass}`}>
@@ -1109,7 +1133,12 @@ export default function DailyAttentionPage() {
         problemTypes: '问题类型',
         problemTypesDescription: '按原始记录现象独立分类 · 分析对象全部历史内占比',
         locations: '发生位置',
-        locationsDescription: '按明确位置关键词独立分类 · 分析对象全部历史内占比 · 不与问题类型组合推断',
+        locationsDescription: '发生位置仅用于覆盖率统计；未知位置单独作为数据质量项',
+        locationCoverage: '发生位置统计',
+        locationUnknown: '位置未确认',
+        locationDataQuality: '数据质量',
+        pairedSignals: '问题类型 · 发生位置',
+        pairedSignalsDescription: '仅显示同一品质报告中同时确认的问题类型与发生位置',
         repeatedTrend: '反复问题与近期变化',
         repeatedTrendDescription: '最近 30 天与此前 30 天使用相同分母口径比较',
         affectedTargets: '计划对象影响范围',
@@ -1156,7 +1185,12 @@ export default function DailyAttentionPage() {
         problemTypes: '문제유형',
         problemTypesDescription: '원본 기록 현상을 독립 분류 · 분석 대상 전체 이력 내 비중',
         locations: '발생위치',
-        locationsDescription: '명시된 위치 키워드를 독립 분류 · 분석 대상 전체 이력 내 비중 · 문제유형과 조합 추정하지 않음',
+        locationsDescription: '발생위치는 커버리지 통계로만 표시하고 미확인 위치는 데이터 품질로 분리',
+        locationCoverage: '발생위치 통계',
+        locationUnknown: '위치 미확인',
+        locationDataQuality: '데이터 품질',
+        pairedSignals: '문제유형 · 발생위치',
+        pairedSignalsDescription: '같은 품질 보고서에서 함께 확인된 문제유형과 발생위치만 표시',
         repeatedTrend: '반복 문제 및 최근 변화',
         repeatedTrendDescription: '최근 30일과 이전 30일을 동일한 분모 기준으로 비교',
         affectedTargets: '계획 대상 모델·호기 영향',
@@ -1266,12 +1300,22 @@ export default function DailyAttentionPage() {
     if (!deterministic) return [];
     return [
       ...deterministic.problem_types.map((metric) => ({ ...metric, dimension: 'problem' as const })),
-      ...deterministic.occurrence_locations.map((metric) => ({ ...metric, dimension: 'location' as const })),
+      ...(deterministic.problem_location_pairs ?? []).map((metric) => ({ ...metric, dimension: 'pair' as const })),
     ];
   }, [deterministic]);
 
   const sortedAnalysisMetrics = useMemo(() => sortMetrics(allMetrics), [allMetrics]);
   const fallbackPriorityMetrics = sortedAnalysisMetrics.slice(0, 3);
+  const explicitLocationMetrics = useMemo(
+    () => [...(deterministic?.occurrence_locations ?? [])]
+      .filter((metric) => !isUnknownLocationMetric(metric))
+      .sort((a, b) => b.evidence_count - a.evidence_count),
+    [deterministic],
+  );
+  const unknownLocationMetric = useMemo(
+    () => (deterministic?.occurrence_locations ?? []).find(isUnknownLocationMetric) ?? null,
+    [deterministic],
+  );
   const narrativePriorities = useMemo(
     () => [...(narrative?.priorities ?? [])].sort((a, b) => a.priority_rank - b.priority_rank).slice(0, 3),
     [narrative],
@@ -1283,7 +1327,9 @@ export default function DailyAttentionPage() {
   const trendNarrativeLookup = useMemo(() => {
     const map = new Map<string, string>();
     [...(narrative?.repeated_issues ?? []), ...(narrative?.accelerating_issues ?? [])].forEach((item) => {
-      map.set(item.metric_key, localizedText(item.narrative, lang));
+      if (!item.metric_key.startsWith('location:')) {
+        map.set(item.metric_key, localizedText(item.narrative, lang));
+      }
     });
     return map;
   }, [narrative, lang]);
@@ -1292,7 +1338,7 @@ export default function DailyAttentionPage() {
     const rankedKeys = [
       ...(narrative?.accelerating_issues ?? []).map((item) => item.metric_key),
       ...(narrative?.repeated_issues ?? []).map((item) => item.metric_key),
-    ];
+    ].filter((metricKey) => !metricKey.startsWith('location:'));
     const ranked = rankedKeys
       .map((metricKey) => metricByKey.get(metricKey))
       .filter((metric): metric is DimensionedMetric => Boolean(metric));
@@ -1332,7 +1378,7 @@ export default function DailyAttentionPage() {
       const target = firstMetricTarget(metric);
       return {
         key: `${metric.dimension}-${metric.metric_key}`,
-        title: localizedText(metric.label, lang),
+        title: metricDisplayLabel(metric, lang),
         checkpoints: [] as string[],
         machineName: target?.machine_name ?? metric.impact_scope.machine_names[0] ?? '',
         machineNumber: null,
@@ -1360,7 +1406,7 @@ export default function DailyAttentionPage() {
         const rankDiff = trendRank(b) - trendRank(a);
         if (rankDiff !== 0) return rankDiff;
         if (b.evidence_count !== a.evidence_count) return b.evidence_count - a.evidence_count;
-        return localizedText(a.label, lang).localeCompare(localizedText(b.label, lang));
+        return metricDisplayLabel(a, lang).localeCompare(metricDisplayLabel(b, lang));
       })
       .slice(0, 4);
   }, [allMetrics, lang]);
@@ -1386,7 +1432,7 @@ export default function DailyAttentionPage() {
         ].join('|');
         const entry = targetMap.get(key) ?? { target, signals: [] };
         if (!entry.signals.some((signal) => signal.metric.metric_key === metric.metric_key)) {
-          entry.signals.push({ metric, label: localizedText(metric.label, lang) });
+          entry.signals.push({ metric, label: metricDisplayLabel(metric, lang) });
         }
         targetMap.set(key, entry);
       });
@@ -1678,7 +1724,7 @@ export default function DailyAttentionPage() {
                       <div className="grid gap-3 lg:grid-cols-3">
                         {priorityCards.map((priority, index) => {
                           const metric = priority.metric;
-                          const dimension = metric ? metricDimensionLabel(metric, lang) : analysisCopy.plannedTarget;
+                          const dimension = metric ? metricKindLabel(metric, lang) : analysisCopy.plannedTarget;
                           const trendClass = metric?.trend.status === 'increase'
                             ? 'bg-rose-50 text-rose-700 ring-rose-200'
                             : 'bg-slate-100 text-slate-600 ring-slate-200';
@@ -1699,7 +1745,7 @@ export default function DailyAttentionPage() {
                               {metric && (
                                 <div className="mt-4">
                                   <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{dimension}</div>
-                                  <h4 className="mt-1 text-xl font-bold leading-7 text-slate-950">{localizedText(metric.label, lang) || '-'}</h4>
+                                  <h4 className="mt-1 text-xl font-bold leading-7 text-slate-950">{metricDisplayLabel(metric, lang) || '-'}</h4>
                                 </div>
                               )}
                               {!metric && <h4 className="mt-4 text-lg font-bold leading-7 text-slate-950">{priority.title || '-'}</h4>}
@@ -1744,7 +1790,7 @@ export default function DailyAttentionPage() {
                   </section>
                 </div>
 
-                <div className="grid gap-5 xl:grid-cols-2">
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                   <MetricBarPanel
                     title={analysisCopy.problemTypes}
                     subtitle={analysisCopy.problemTypesDescription}
@@ -1752,14 +1798,91 @@ export default function DailyAttentionPage() {
                     lang={lang}
                     dimension="problem"
                   />
-                  <MetricBarPanel
-                    title={analysisCopy.locations}
-                    subtitle={analysisCopy.locationsDescription}
-                    metrics={[...deterministic.occurrence_locations].sort((a, b) => b.evidence_count - a.evidence_count)}
-                    lang={lang}
-                    dimension="location"
-                  />
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-5 flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
+                        <Target className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-slate-900">{analysisCopy.locationCoverage}</h3>
+                        <p className="mt-0.5 text-xs leading-5 text-slate-500">{analysisCopy.locationsDescription}</p>
+                      </div>
+                    </div>
+                    {explicitLocationMetrics.length === 0 && !unknownLocationMetric ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                        {analysisCopy.noMetrics}
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {explicitLocationMetrics.slice(0, 6).map((metric) => (
+                          <div key={metric.metric_key}>
+                            <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
+                              <span className="truncate font-medium text-slate-800">{localizedText(metric.label, lang) || '-'}</span>
+                              <span className="shrink-0 font-semibold tabular-nums text-slate-900">{formatMetricPercent(metric.all_history_share_pct)}</span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                              <div className="h-full rounded-full bg-violet-500" style={{ width: percentageWidth(metric.all_history_share_pct) }} />
+                            </div>
+                            <div className="mt-1.5 text-[11px] text-slate-500">
+                              {analysisCopy.evidence} {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)}
+                            </div>
+                          </div>
+                        ))}
+                        {unknownLocationMetric && (
+                          <div className="mt-5 rounded-xl border border-slate-200 bg-slate-100/80 px-4 py-3 text-sm text-slate-600">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="inline-flex items-center gap-2 font-medium">
+                                <CircleAlert className="h-4 w-4 text-slate-500" />
+                                {analysisCopy.locationUnknown}
+                                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">{analysisCopy.locationDataQuality}</span>
+                              </span>
+                              <strong className="tabular-nums text-slate-700">
+                                {formatMetricNumber(unknownLocationMetric.evidence_count)} / {formatMetricNumber(unknownLocationMetric.all_history_denominator)} · {formatMetricPercent(unknownLocationMetric.all_history_share_pct)}
+                              </strong>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </section>
                 </div>
+
+                {(deterministic.problem_location_pairs ?? []).length > 0 && (
+                  <section className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50/70 via-white to-white p-5 shadow-sm">
+                    <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Layers3 className="h-5 w-5 text-cyan-700" />
+                          <h3 className="font-bold text-slate-950">{analysisCopy.pairedSignals}</h3>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{analysisCopy.pairedSignalsDescription}</p>
+                      </div>
+                      {(deterministic.coverage.ambiguous_pair_report_count ?? 0) > 0 && (
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                          {lang === 'zh' ? '因组合不明确而排除' : '조합 불명확 제외'} {formatMetricNumber(deterministic.coverage.ambiguous_pair_report_count)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {[...(deterministic.problem_location_pairs ?? [])]
+                        .sort((a, b) => b.evidence_count - a.evidence_count)
+                        .slice(0, 6)
+                        .map((metric) => (
+                          <article key={metric.metric_key} className="rounded-xl border border-cyan-100 bg-white p-4">
+                            <div className="text-xs font-semibold text-blue-700">{localizedText(metric.problem_label, lang) || '-'}</div>
+                            <div className="mt-1 flex items-center gap-2 text-base font-bold text-slate-950">
+                              <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+                              {localizedText(metric.location_label, lang) || '-'}
+                            </div>
+                            <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500">
+                              <span>{analysisCopy.evidence} {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)}</span>
+                              <strong className="tabular-nums text-slate-800">{formatMetricPercent(metric.all_history_share_pct)}</strong>
+                            </div>
+                          </article>
+                        ))}
+                    </div>
+                  </section>
+                )}
 
                 <section>
                   <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
