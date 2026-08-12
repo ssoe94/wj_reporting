@@ -28,7 +28,9 @@ QUALITY_DAILY_LANGUAGE = "bilingual"
 QUALITY_DAILY_START_HOUR = 7
 QUALITY_DAILY_PLAN_DEBOUNCE_SECONDS = 5 * 60
 QUALITY_DAILY_EVIDENCE_DEBOUNCE_SECONDS = 5 * 60
-QUALITY_DAILY_RETRY_COOLDOWN_SECONDS = 15 * 60
+# Morning shift summaries should recover promptly from a bounded local-model
+# failure without creating a tight retry loop.
+QUALITY_DAILY_RETRY_COOLDOWN_SECONDS = 5 * 60
 QUALITY_DAILY_PAGE_REPORT_SCHEMA_VERSION = "quality-daily-page-report.v1"
 QUALITY_DAILY_NARRATIVE_SCHEMA_VERSION = "quality-daily-report-narrative.v1"
 QUALITY_DAILY_ACTIVE_STATUSES = (

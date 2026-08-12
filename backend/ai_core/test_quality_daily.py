@@ -237,8 +237,8 @@ class DailyQualitySummaryTests(TestCase):
             deterministic_report=job.input_payload["report_metrics"],
             source_plan_hash=job.scope["source_plan_hash"],
         )
-        cooldown = enqueue_daily_quality_summary(self._local(7, 10))
-        retried = enqueue_daily_quality_summary(self._local(7, 16))
+        cooldown = enqueue_daily_quality_summary(self._local(7, 4))
+        retried = enqueue_daily_quality_summary(self._local(7, 6))
 
         self.assertEqual(unavailable["status"], "unavailable")
         self.assertEqual(unavailable["reason"], "llm_fallback")
@@ -273,8 +273,8 @@ class DailyQualitySummaryTests(TestCase):
             deterministic_report=job.input_payload["report_metrics"],
             source_plan_hash=job.scope["source_plan_hash"],
         )
-        cooldown = enqueue_daily_quality_summary(self._local(7, 10))
-        retried = enqueue_daily_quality_summary(self._local(7, 16))
+        cooldown = enqueue_daily_quality_summary(self._local(7, 4))
+        retried = enqueue_daily_quality_summary(self._local(7, 6))
 
         self.assertEqual(page_report["status"], "unavailable")
         self.assertEqual(page_report["reason"], "not_generated")
