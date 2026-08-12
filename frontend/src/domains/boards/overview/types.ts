@@ -323,14 +323,35 @@ export type EnergyStatus = {
 
 export type MouldStatus = {
   total: number | null;
+  producing: number | null;
+  repairCurrent: number | null;
   mounted: number | null;
   stored: number | null;
   maintenance: number | null;
   repair: number | null;
-  offsite: number | null;
   unknown: number | null;
   confirmationRequired: number | null;
   conflicts: number | null;
+  serviceTrend: {
+    status: "ok" | "partial" | "stale" | "unavailable";
+    weekly: Array<{
+      weekStart: string | null;
+      maintenance: number | null;
+      repair: number | null;
+    }>;
+    last30d: number | null;
+    previous30d: number | null;
+    changePercent: number | null;
+    repeatMoulds90d: number | null;
+    coveredMoulds: number | null;
+    freshMoulds: number | null;
+    totalMoulds: number | null;
+    coveragePercent: number | null;
+    freshnessPercent: number | null;
+    unknownEventCount: number | null;
+    staleDetailCount: number | null;
+    sourceLatestAt: string | null;
+  };
 };
 
 export type WeatherStatus = {

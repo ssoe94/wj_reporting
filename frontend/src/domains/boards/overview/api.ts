@@ -707,16 +707,50 @@ function normalizeEnergy(value: unknown): EnergyStatus {
 
 function normalizeMoulds(value: unknown): MouldStatus {
   const source = asRecord(value);
+  const rawTrend = asRecord(firstValue(source, ["service_trend"]));
+  const rawTrendStatus = firstString(rawTrend, ["status"]);
+  const trendStatus: MouldStatus["serviceTrend"]["status"] = rawTrendStatus === "ok"
+    || rawTrendStatus === "partial"
+    || rawTrendStatus === "stale"
+    ? rawTrendStatus
+    : "unavailable";
+  const rawWeekly = firstValue(rawTrend, ["weeks", "weekly"]);
   return {
     total: firstNumber(source, ["total", "managed_count", "total_count", "mould_count"]),
+    producing: firstNumber(source, ["producing", "producing_count"]),
+    repairCurrent: firstNumber(source, ["repair_current", "repair_current_count"]),
     mounted: firstNumber(source, ["mounted"]),
     stored: firstNumber(source, ["stored"]),
     maintenance: firstNumber(source, ["maintenance"]),
     repair: firstNumber(source, ["repair"]),
-    offsite: firstNumber(source, ["offsite"]),
     unknown: firstNumber(source, ["unknown"]),
     confirmationRequired: firstNumber(source, ["confirmation_required", "inspection_due_count"]),
     conflicts: firstNumber(source, ["conflicts", "location_conflicts", "location_conflict_count", "conflict_count"]),
+    serviceTrend: {
+      status: trendStatus,
+      weekly: Array.isArray(rawWeekly)
+        ? rawWeekly.slice(-8).map((item) => {
+            const point = asRecord(item);
+            return {
+              weekStart: firstString(point, ["week_start"]),
+              maintenance: firstNumber(point, ["maintenance"]),
+              repair: firstNumber(point, ["repair"]),
+            };
+          })
+        : [],
+      last30d: firstNumber(rawTrend, ["last_30_days", "last_30d"]),
+      previous30d: firstNumber(rawTrend, ["previous_30_days", "previous_30d"]),
+      changePercent: firstNumber(rawTrend, ["change_percent"]),
+      repeatMoulds90d: firstNumber(rawTrend, ["repeat_moulds_90d"]),
+      coveredMoulds: firstNumber(rawTrend, ["covered_detail_count", "coverage_moulds", "covered_moulds"]),
+      freshMoulds: firstNumber(rawTrend, ["fresh_detail_count", "fresh_moulds"]),
+      totalMoulds: firstNumber(rawTrend, ["eligible_mould_count", "total_moulds"]),
+      coveragePercent: firstNumber(rawTrend, ["coverage_percent"]),
+      freshnessPercent: firstNumber(rawTrend, ["freshness_percent"]),
+      unknownEventCount: firstNumber(rawTrend, ["unknown_event_count"]),
+      staleDetailCount: firstNumber(rawTrend, ["stale_detail_count"]),
+      sourceLatestAt: firstString(rawTrend, ["source_latest_at"]),
+    },
   };
 }
 

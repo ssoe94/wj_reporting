@@ -280,17 +280,35 @@ const COPY = {
     meteredMachines: "계측 설비",
     noEnergyTrend: "시간대별 전력 데이터 없음",
     moulds: "금형 / 유지보수",
-    managedMoulds: "금형 관리 수",
+    managedMoulds: "총 금형",
+    producingMoulds: "생산 중",
+    repairCurrentMoulds: "수리 중",
     mountedMoulds: "장착 금형",
     storedMoulds: "보관",
     maintenanceMoulds: "보전",
     repairMoulds: "수리",
-    offsiteMoulds: "외부",
     mouldStatusMix: "금형 상태 구성",
     confirmationRequired: "확인 필요",
     mouldHighlights: "특기 사항",
     shotInspection: "샷수 점검",
     maintenanceInProgress: "유지보수 중",
+    mouldServiceTrend: "최근 8주 수리·보전 접수",
+    mouldServiceTrendUnit: "주간 건수",
+    mouldServiceCoverage: "확인된 이력 {covered}/{total} 금형 기준",
+    mouldServiceFreshness: "최신 상세 {fresh}/{total}",
+    mouldLast30Days: "최근 30일",
+    mouldPrevious30Days: "직전 30일",
+    mouldRepeat90Days: "90일 반복",
+    mouldRepeatDefinition: "2회 이상 접수",
+    mouldPreventionDue: "예방점검",
+    mouldPreventionDefinition: "샷수 기준 확인",
+    mouldServiceOk: "상세 집계 완료",
+    mouldServicePartial: "일부 상세 수신",
+    mouldServiceStale: "상세 갱신 지연",
+    mouldServiceUnavailable: "수리 이력 미수신",
+    mouldServiceUnavailableDescription: "상세 이력이 연결되면 최근 수리·보전 추이를 표시합니다.",
+    mouldCountUnit: "개",
+    mouldRecordUnit: "건",
     unknownMoulds: "미확인",
     locationConflict: "위치 충돌",
     dataUnavailable: "통합 현황 데이터를 불러올 수 없습니다.",
@@ -461,17 +479,35 @@ const COPY = {
     meteredMachines: "计量设备",
     noEnergyTrend: "暂无分时用电数据",
     moulds: "模具 / 维护",
-    managedMoulds: "模具管理数",
+    managedMoulds: "模具总数",
+    producingMoulds: "生产中",
+    repairCurrentMoulds: "维修中",
     mountedMoulds: "已安装模具",
     storedMoulds: "在库",
     maintenanceMoulds: "保养",
     repairMoulds: "维修",
-    offsiteMoulds: "外部",
     mouldStatusMix: "模具状态构成",
     confirmationRequired: "需要确认",
     mouldHighlights: "重点事项",
     shotInspection: "模次检查",
     maintenanceInProgress: "维护中",
+    mouldServiceTrend: "近8周维修·保养受理",
+    mouldServiceTrendUnit: "每周件数",
+    mouldServiceCoverage: "基于已确认履历 {covered}/{total} 套模具",
+    mouldServiceFreshness: "最新明细 {fresh}/{total}",
+    mouldLast30Days: "近30天",
+    mouldPrevious30Days: "前30天",
+    mouldRepeat90Days: "90天重复",
+    mouldRepeatDefinition: "受理2次以上",
+    mouldPreventionDue: "预防点检",
+    mouldPreventionDefinition: "按模次确认",
+    mouldServiceOk: "明细汇总完成",
+    mouldServicePartial: "部分明细已接收",
+    mouldServiceStale: "明细更新延迟",
+    mouldServiceUnavailable: "未接收维修履历",
+    mouldServiceUnavailableDescription: "连接明细履历后显示近期维修与保养趋势。",
+    mouldCountUnit: "套",
+    mouldRecordUnit: "件",
     unknownMoulds: "未确认",
     locationConflict: "位置冲突",
     dataUnavailable: "无法读取综合运营数据。",
@@ -1635,57 +1671,115 @@ function EnergyPanel({ model, language }: { model: OverviewBoardModel; language:
 
 function MouldPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
   const copy = COPY[language];
-  const maintenanceInProgress = model.moulds.maintenance === null && model.moulds.repair === null
-    ? null
-    : (model.moulds.maintenance ?? 0) + (model.moulds.repair ?? 0);
+  const trend = model.moulds.serviceTrend;
   const statusRows = [
-    { key: "stored", label: copy.storedMoulds, value: model.moulds.stored, icon: PackageOpen },
-    { key: "mounted", label: copy.mountedMoulds, value: model.moulds.mounted, icon: Gauge },
-    { key: "offsite", label: copy.offsiteMoulds, value: model.moulds.offsite, icon: MapPin },
+    { key: "total", label: copy.managedMoulds, value: model.moulds.total, icon: PackageOpen, tone: "blue" },
+    { key: "producing", label: copy.producingMoulds, value: model.moulds.producing, icon: Factory, tone: "green" },
+    { key: "repair", label: copy.repairCurrentMoulds, value: model.moulds.repairCurrent, icon: Wrench, tone: "orange" },
   ];
-  const distributionRows = [
-    { key: "stored", label: copy.storedMoulds, value: model.moulds.stored, color: "#1765b2" },
-    { key: "mounted", label: copy.mountedMoulds, value: model.moulds.mounted, color: "#0a8a57" },
-    { key: "offsite", label: copy.offsiteMoulds, value: model.moulds.offsite, color: "#7b6fa9" },
-    { key: "maintenance", label: copy.maintenanceInProgress, value: maintenanceInProgress, color: "#d88718" },
-    { key: "unknown", label: copy.unknownMoulds, value: model.moulds.unknown, color: "#91a1b2" },
-  ].filter((row) => row.value !== null && row.value > 0);
-  const distributionTotal = distributionRows.reduce((sum, row) => sum + (row.value ?? 0), 0);
+  const trendData = trend.weekly.map((point) => ({
+    ...point,
+    label: formatShortDate(point.weekStart),
+  }));
+  const hasTrend = trend.status !== "unavailable"
+    && trendData.length > 0
+    && trendData.some((point) => point.maintenance !== null || point.repair !== null);
+  const trendStatusLabel = trend.status === "ok"
+    ? copy.mouldServiceOk
+    : trend.status === "partial"
+      ? copy.mouldServicePartial
+      : trend.status === "stale"
+        ? copy.mouldServiceStale
+        : copy.mouldServiceUnavailable;
+  const trendDelta = trend.changePercent === null
+    ? "—"
+    : `${trend.changePercent > 0 ? "+" : ""}${formatDecimal(trend.changePercent, 1)}%`;
+  const trendCoverageLabel = copy.mouldServiceCoverage
+    .replace("{covered}", formatInteger(trend.coveredMoulds, language))
+    .replace("{total}", formatInteger(trend.totalMoulds, language));
+  const trendFreshnessLabel = copy.mouldServiceFreshness
+    .replace("{fresh}", formatInteger(trend.freshMoulds, language))
+    .replace("{total}", formatInteger(trend.totalMoulds, language));
   return (
     <section className={`${styles.card} ${styles.mouldCard}`} aria-labelledby="mould-title">
-      <header className={`${styles.mouldHeading} ${styles.standardPanelHeading}`}>
-        <div className={styles.cardTitle}><Wrench aria-hidden="true" /><h2 id="mould-title">{copy.moulds}</h2></div>
-        <span>{copy.managedMoulds} <strong>{formatInteger(model.moulds.total, language)}</strong></span>
+      <header className={`${styles.cardTitle} ${styles.standardPanelHeading}`}>
+        <Wrench aria-hidden="true" /><h2 id="mould-title">{copy.moulds}</h2>
       </header>
-      <div className={styles.mouldSimpleBody}>
-        <div className={styles.mouldStatusSummary}>
+      <div className={styles.mouldDashboard}>
+        <div className={styles.mouldKpis}>
           {statusRows.map((row) => {
             const Icon = row.icon;
-            return <article key={row.key}><Icon aria-hidden="true" /><span>{row.label}</span><strong>{formatInteger(row.value, language)}</strong></article>;
+            return (
+              <article className={styles[`mouldKpi${row.tone[0].toUpperCase()}${row.tone.slice(1)}`]} key={row.key}>
+                <Icon aria-hidden="true" />
+                <span>{row.label}</span>
+                <strong>{formatInteger(row.value, language)}</strong>
+              </article>
+            );
           })}
         </div>
-        <div className={styles.mouldDistribution}>
-          <div>
-            <span>{copy.mouldStatusMix}</span>
-            <div>
-              {distributionRows.map((row) => <small key={row.key}><i style={{ backgroundColor: row.color }} />{row.label}</small>)}
+        <div className={styles.mouldTrendLayout}>
+          <div className={styles.mouldTrendPanel}>
+            <div className={styles.mouldTrendHeading}>
+              <div>
+                <strong>{copy.mouldServiceTrend}</strong>
+                <span>{copy.mouldServiceTrendUnit} · {trendCoverageLabel}</span>
+              </div>
+              <div className={styles.mouldTrendLegend}>
+                <span><i />{copy.maintenanceMoulds}</span>
+                <span><i />{copy.repairMoulds}</span>
+              </div>
             </div>
+            {hasTrend ? (
+              <div
+                aria-label={`${copy.mouldServiceTrend}. ${trendData.map((point) => `${point.label} ${copy.maintenanceMoulds} ${formatInteger(point.maintenance, language)}, ${copy.repairMoulds} ${formatInteger(point.repair, language)}`).join(". ")}`}
+                className={styles.mouldTrendChart}
+                role="img"
+              >
+                <ResponsiveContainer height="100%" width="100%">
+                  <ComposedChart data={trendData} margin={{ top: 5, right: 2, bottom: -6, left: -28 }}>
+                    <CartesianGrid stroke="#dfe8f1" strokeDasharray="3 4" vertical={false} />
+                    <XAxis axisLine={{ stroke: "#a7b7c8" }} dataKey="label" fontSize="0.52rem" interval={0} tickLine={false} />
+                    <YAxis allowDecimals={false} axisLine={false} fontSize="0.5rem" tickLine={false} width={34} />
+                    <Tooltip formatter={(value, name) => [`${formatInteger(Number(value), language)}${copy.mouldRecordUnit}`, name]} />
+                    <Bar barSize={17} dataKey="maintenance" fill="#2d78bd" isAnimationActive={false} name={copy.maintenanceMoulds} radius={[0, 0, 2, 2]} stackId="service" />
+                    <Bar barSize={17} dataKey="repair" fill="#e68825" isAnimationActive={false} name={copy.repairMoulds} radius={[3, 3, 0, 0]} stackId="service" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className={styles.mouldTrendEmpty}>
+                <Wrench aria-hidden="true" />
+                <strong>{copy.mouldServiceUnavailable}</strong>
+                <span>{copy.mouldServiceUnavailableDescription}</span>
+              </div>
+            )}
           </div>
-          <div aria-label={`${copy.mouldStatusMix} ${distributionRows.map((row) => `${row.label} ${formatInteger(row.value, language)}`).join(", ")}`} className={styles.mouldDistributionBar} role="img">
-            {distributionRows.map((row) => (
-              <i
-                key={row.key}
-                style={{ backgroundColor: row.color, width: distributionTotal > 0 ? `${((row.value ?? 0) / distributionTotal) * 100}%` : "0%" }}
-                title={`${row.label} ${formatInteger(row.value, language)}`}
-              />
-            ))}
-          </div>
-        </div>
-        <div className={styles.mouldHighlights}>
-          <span>{copy.mouldHighlights}</span>
-          <div>
-            <article title={copy.confirmationRequired}><Gauge aria-hidden="true" /><span>{copy.shotInspection}</span><strong>{formatInteger(model.moulds.confirmationRequired, language)}</strong></article>
-            <article title={`${copy.maintenanceMoulds} ${formatInteger(model.moulds.maintenance, language)} · ${copy.repairMoulds} ${formatInteger(model.moulds.repair, language)}`}><Wrench aria-hidden="true" /><span>{copy.maintenanceInProgress}</span><strong>{formatInteger(maintenanceInProgress, language)}</strong></article>
+          <div className={styles.mouldTrendInsights}>
+            <div className={styles.mouldTrendStatusGroup}>
+              <span
+                className={`${styles.mouldTrendStatus} ${styles[`mouldTrendStatus${trend.status[0].toUpperCase()}${trend.status.slice(1)}`]}`}
+                title={`${trendCoverageLabel} · ${trendFreshnessLabel}`}
+              >
+                {trendStatusLabel}
+              </span>
+              <small>{trendCoverageLabel}</small>
+            </div>
+            <article>
+              <span>{copy.mouldLast30Days}</span>
+              <strong>{formatInteger(trend.last30d, language)}<small>{trend.last30d === null ? "" : copy.mouldRecordUnit}</small></strong>
+              <em>{copy.mouldPrevious30Days} {formatInteger(trend.previous30d, language)} · {trendDelta}</em>
+            </article>
+            <article>
+              <span>{copy.mouldRepeat90Days}</span>
+              <strong>{formatInteger(trend.repeatMoulds90d, language)}<small>{trend.repeatMoulds90d === null ? "" : copy.mouldCountUnit}</small></strong>
+              <em>{copy.mouldRepeatDefinition}</em>
+            </article>
+            <article>
+              <span>{copy.mouldPreventionDue}</span>
+              <strong>{formatInteger(model.moulds.confirmationRequired, language)}<small>{model.moulds.confirmationRequired === null ? "" : copy.mouldCountUnit}</small></strong>
+              <em>{copy.mouldPreventionDefinition}</em>
+            </article>
           </div>
         </div>
       </div>

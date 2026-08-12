@@ -8,9 +8,11 @@ data, and it does not make a current-quality claim from historical reports.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone as datetime_timezone
 from email.utils import parsedate_to_datetime
 import gzip
+from hashlib import sha256
 import json
 import re
 from typing import Any, Iterable
@@ -21,6 +23,7 @@ from django.core.cache import cache
 from django.db import DatabaseError
 from django.db.models import Count, Max, Sum
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 
 from ai_core.quality_daily import (
     QUALITY_ATTENTION_AI_SCHEMA_VERSION,
@@ -55,6 +58,11 @@ WEATHER_FRESH_CACHE_KEY = "overview-board:nanjing-weather:fresh:v1"
 WEATHER_STALE_CACHE_KEY = "overview-board:nanjing-weather:stale:v1"
 WEATHER_DEFAULT_CACHE_SECONDS = 30 * 60
 WEATHER_STALE_CACHE_SECONDS = 6 * 60 * 60
+MOULD_BOARD_STALE_AFTER = timedelta(hours=1)
+MOULD_SERVICE_DETAIL_STALE_AFTER = timedelta(hours=36)
+MOULD_SERVICE_TREND_WEEKS = 8
+MOULD_SERVICE_TREND_CACHE_SECONDS = 5 * 60
+MOULD_SERVICE_TREND_CACHE_VERSION = "v1"
 
 
 COPY = {
@@ -1213,8 +1221,606 @@ def _build_inventory(
     return inventory, warnings, source, trace
 
 
-def _build_moulds() -> tuple[dict[str, Any], list[str], dict[str, Any], dict[str, Any]]:
+def _mould_identity(row: dict[str, Any], index: int) -> str:
+    return str(
+        row.get("instance_id")
+        or row.get("mould_code")
+        or row.get("asset_code")
+        or f"row:{index}"
+    ).strip()
+
+
+def _mould_machine_number(row: dict[str, Any]) -> int | None:
+    location = row.get("location") if isinstance(row.get("location"), dict) else {}
+    if str(location.get("kind") or "").strip().lower() != "machine":
+        return None
+    machine_number = _safe_int(location.get("machine_number"))
+    if machine_number > 0:
+        return machine_number
+    for value in (location.get("code"), location.get("label")):
+        match = re.match(r"^#(?P<number>\d+)-\d+T$", str(value or "").strip(), re.IGNORECASE)
+        if match:
+            return int(match.group("number"))
+    return None
+
+
+def _mould_text_values(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        return [
+            text
+            for key in ("label", "name", "message", "code")
+            for text in _mould_text_values(value.get(key))
+        ]
+    if isinstance(value, (list, tuple, set)):
+        return [text for item in value for text in _mould_text_values(item)]
+    text = str(value or "").strip()
+    return [text] if text else []
+
+
+def _normalised_mould_status(value: Any) -> str:
+    return "".join(_mould_text_values(value)).lower().replace(" ", "").replace("_", "")
+
+
+def _mould_has_explicit_repair(row: dict[str, Any]) -> bool:
+    if str(row.get("summary_category") or "").strip().lower() == "repair":
+        return True
+    text = "".join(
+        _normalised_mould_status(row.get(field))
+        for field in ("status", "repair_status")
+    )
+    if any(
+        marker in text
+        for marker in (
+            "维修完成",
+            "維修完成",
+            "已维修",
+            "已維修",
+            "修理完成",
+            "无需维修",
+            "無需維修",
+            "不需维修",
+            "不需維修",
+            "repaircompleted",
+            "repairdone",
+            "norepairrequired",
+            "수리완료",
+            "수리없음",
+            "수리불필요",
+        )
+    ):
+        return False
+    return any(
+        marker in text
+        for marker in (
+            "维修中",
+            "維修中",
+            "修理中",
+            "维修",
+            "維修",
+            "修理",
+            "待维修",
+            "待維修",
+            "待修",
+            "报修",
+            "報修",
+            "故障",
+            "inrepair",
+            "underrepair",
+            "repairing",
+            "repairpending",
+            "repair",
+            "수리중",
+            "수리대기",
+            "수리필요",
+            "수리",
+            "고장",
+        )
+    )
+
+
+def _mould_is_in_repair_location(row: dict[str, Any]) -> bool:
+    location = row.get("location") if isinstance(row.get("location"), dict) else {}
+    return any(
+        re.match(r"^修理[区區](?:-|$)", text.strip())
+        for value in (location.get("code"), location.get("label"))
+        for text in _mould_text_values(value)
+    )
+
+
+def _current_repair_mould_count(mould_rows: list[dict[str, Any]]) -> int:
+    repair_ids = {
+        _mould_identity(row, index)
+        for index, row in enumerate(mould_rows)
+        if _mould_has_explicit_repair(row) or _mould_is_in_repair_location(row)
+    }
+    return len(repair_ids)
+
+
+def _build_mould_producing(
+    mould_rows: list[dict[str, Any]],
+    *,
+    injection_activity: dict[str, Any],
+    board_stale: bool,
+) -> tuple[int | None, dict[str, Any]]:
+    active_rows = (
+        injection_activity.get("rows")
+        if isinstance(injection_activity.get("rows"), list)
+        else []
+    )
+    active_machine_numbers = {
+        _safe_int(row.get("machine_number"))
+        for row in active_rows
+        if isinstance(row, dict) and _safe_int(row.get("machine_number")) > 0
+    }
+    mounted: list[tuple[str, int | None]] = [
+        (_mould_identity(row, index), _mould_machine_number(row))
+        for index, row in enumerate(mould_rows)
+        if isinstance(row.get("location"), dict)
+        and str(row["location"].get("kind") or "").strip().lower() == "machine"
+    ]
+    mounted_identities = {identity for identity, _ in mounted}
+    unresolved_identities = {
+        identity for identity, machine_number in mounted if machine_number is None
+    }
+    machine_to_identities: defaultdict[int, set[str]] = defaultdict(set)
+    identity_to_machines: defaultdict[str, set[int]] = defaultdict(set)
+    for identity, machine_number in set(mounted):
+        if machine_number is None:
+            continue
+        machine_to_identities[machine_number].add(identity)
+        identity_to_machines[identity].add(machine_number)
+
+    duplicate_machine_numbers = {
+        machine_number
+        for machine_number, identities in machine_to_identities.items()
+        if len(identities) > 1
+    }
+    multiply_mounted_identities = {
+        identity
+        for identity, machine_numbers in identity_to_machines.items()
+        if len(machine_numbers) > 1
+    }
+    conflicted_identities = unresolved_identities | multiply_mounted_identities
+    for machine_number in duplicate_machine_numbers:
+        conflicted_identities.update(machine_to_identities[machine_number])
+    conflicted_machine_numbers = set(duplicate_machine_numbers)
+    for identity in multiply_mounted_identities:
+        conflicted_machine_numbers.update(identity_to_machines[identity])
+
+    reliable_machine_to_identity = {
+        machine_number: next(iter(identities))
+        for machine_number, identities in machine_to_identities.items()
+        if machine_number not in conflicted_machine_numbers
+        and len(identities) == 1
+        and next(iter(identities)) not in conflicted_identities
+    }
+    mounted_machine_numbers = set(machine_to_identities)
+    source_latest_at = injection_activity.get("latest_mes_time")
+    activity_stale = bool(injection_activity.get("is_stale"))
+    status = "ok"
+    reason = None
+    reasons: list[str] = []
+    if source_latest_at is None:
+        status = "unavailable"
+        reason = "injection_activity_source_unavailable"
+    elif activity_stale:
+        status = "unavailable"
+        reason = "injection_activity_source_stale"
+    else:
+        if board_stale:
+            reasons.append("mould_board_snapshot_stale")
+        if unresolved_identities:
+            reasons.append("mounted_mould_machine_number_unresolved")
+        if duplicate_machine_numbers:
+            reasons.append("mounted_machine_has_multiple_moulds")
+        if multiply_mounted_identities:
+            reasons.append("mould_mounted_on_multiple_machines")
+        has_mapping_gap = bool(
+            unresolved_identities
+            or duplicate_machine_numbers
+            or multiply_mounted_identities
+        )
+        status = "partial" if has_mapping_gap else ("stale" if board_stale else "ok")
+        reason = reasons[0] if reasons else None
+    producing_ids = {
+        identity
+        for machine_number, identity in reliable_machine_to_identity.items()
+        if machine_number in active_machine_numbers
+    }
+    producing = len(producing_ids) if status != "unavailable" else None
+    activity_available = status != "unavailable"
+    return producing, {
+        "status": status,
+        "reason": reason,
+        "reasons": reasons if activity_available else [reason],
+        "activity_window_minutes": _safe_int(
+            injection_activity.get("lookback_minutes") or QUALITY_ACTIVITY_WINDOW_MINUTES
+        ),
+        "activity_source_latest_at": _iso(source_latest_at),
+        "activity_source_stale": activity_stale,
+        "active_machine_count": len(active_machine_numbers) if activity_available else None,
+        "mounted_mould_count": len(mounted_identities),
+        "mounted_machine_count": len(mounted_machine_numbers),
+        "mounted_moulds_with_machine_number": len(identity_to_machines),
+        "reliable_mounted_mould_count": len(reliable_machine_to_identity),
+        "unresolved_mounted_mould_count": len(unresolved_identities),
+        "duplicate_mounted_machine_count": len(duplicate_machine_numbers),
+        "multiply_mounted_mould_count": len(multiply_mounted_identities),
+        "matched_active_machine_count": (
+            len(active_machine_numbers & set(reliable_machine_to_identity))
+            if activity_available else None
+        ),
+        "unmatched_active_machine_count": (
+            len(active_machine_numbers - set(reliable_machine_to_identity))
+            if activity_available else None
+        ),
+        "calculation_basis": (
+            "one unambiguous mould per injection-machine position intersected with "
+            "machines whose MES shot counter increased in the latest 60 minutes; "
+            "unresolved and conflicting mount mappings are excluded"
+        ),
+    }
+
+
+def _mould_history_datetime(value: Any) -> datetime | None:
+    try:
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, date):
+            parsed = datetime.combine(value, datetime.min.time())
+        else:
+            text = str(value or "").strip()
+            if not text:
+                return None
+            try:
+                parsed = parse_datetime(text)
+            except (TypeError, ValueError, OverflowError):
+                parsed = None
+            if parsed is None:
+                try:
+                    parsed_date = parse_date(text)
+                except (TypeError, ValueError, OverflowError):
+                    parsed_date = None
+                parsed = (
+                    datetime.combine(parsed_date, datetime.min.time())
+                    if parsed_date is not None else None
+                )
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed is None:
+        return None
+    try:
+        if timezone.is_naive(parsed):
+            parsed = SHANGHAI_TZ.localize(parsed)
+        return parsed.astimezone(SHANGHAI_TZ)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _mould_service_category(value: Any) -> str:
+    text = _normalised_mould_status(value)
+    if any(
+        marker in text
+        for marker in (
+            "保养",
+            "保養",
+            "维保",
+            "維保",
+            "维护",
+            "維護",
+            "maintenance",
+            "preventive",
+            "preventativemaintenance",
+            "보전",
+            "정비",
+            "점검",
+            "유지보수",
+        )
+    ):
+        return "maintenance"
+    if any(
+        marker in text
+        for marker in (
+            "维修",
+            "維修",
+            "修理",
+            "修复",
+            "修復",
+            "故障修理",
+            "repair",
+            "corrective",
+            "breakdown",
+            "수리",
+            "고장조치",
+        )
+    ):
+        return "repair"
+    return "unknown"
+
+
+def _empty_mould_service_trend(
+    *,
+    as_of: datetime,
+    status: str,
+    covered_detail_count: int = 0,
+    fresh_detail_count: int = 0,
+    stale_detail_count: int = 0,
+    invalid_detail_count: int = 0,
+    missing_detail_count: int = 0,
+    eligible_mould_count: int = 0,
+    unknown_event_count: int | None = None,
+    source_latest_at: Any = None,
+) -> dict[str, Any]:
+    local_as_of = as_of.astimezone(SHANGHAI_TZ)
+    current_week_start = local_as_of.date() - timedelta(days=local_as_of.weekday())
+    first_week_start = current_week_start - timedelta(
+        weeks=MOULD_SERVICE_TREND_WEEKS - 1
+    )
+    weeks = [
+        {
+            "week_start": (first_week_start + timedelta(weeks=index)).isoformat(),
+            "week_end": (
+                first_week_start + timedelta(weeks=index, days=6)
+            ).isoformat(),
+            "maintenance": None,
+            "repair": None,
+            "total": None,
+        }
+        for index in range(MOULD_SERVICE_TREND_WEEKS)
+    ]
+    coverage_percent = (
+        round(covered_detail_count / eligible_mould_count * 100, 1)
+        if eligible_mould_count > 0 else 0.0
+    )
+    freshness_percent = (
+        round(fresh_detail_count / eligible_mould_count * 100, 1)
+        if eligible_mould_count > 0 else 0.0
+    )
+    return {
+        "status": status,
+        "weeks": weeks,
+        "last_30_days": None,
+        "previous_30_days": None,
+        "change_percent": None,
+        "repeat_moulds_90d": None,
+        "eligible_mould_count": eligible_mould_count,
+        "covered_detail_count": covered_detail_count,
+        "fresh_detail_count": fresh_detail_count,
+        "stale_detail_count": stale_detail_count,
+        "invalid_detail_count": invalid_detail_count,
+        "missing_detail_count": missing_detail_count,
+        "coverage_percent": coverage_percent,
+        "freshness_percent": freshness_percent,
+        "unknown_event_count": unknown_event_count,
+        "source_latest_at": _iso(source_latest_at),
+        "as_of": local_as_of.isoformat(),
+        "calculation_basis": (
+            "Observed confirmed BLACKLAKE mould detail repair_history only; "
+            "requested_at first, then started_at, then finished_at; stale valid "
+            "snapshots are included and every aggregate is a coverage-dependent "
+            "lower bound, not an estimate of unobserved history"
+        ),
+    }
+
+
+def _build_mould_service_trend(
+    mould_rows: list[dict[str, Any]],
+    *,
+    as_of: datetime,
+) -> dict[str, Any]:
+    eligible_identities = {
+        _mould_identity(row, index)
+        for index, row in enumerate(mould_rows)
+    }
+    eligible_ids = {
+        str(row.get("instance_id") or "").strip()
+        for row in mould_rows
+        if str(row.get("instance_id") or "").strip()
+    }
+    eligible_count = len(eligible_identities)
+    if eligible_count == 0:
+        return _empty_mould_service_trend(
+            as_of=as_of,
+            status="unavailable",
+            eligible_mould_count=0,
+        )
+
+    detail_queryset = MouldDataSnapshot.objects.filter(
+        kind=MouldDataSnapshot.KIND_DETAIL,
+        instance_id__in=eligible_ids,
+    )
+    detail_state = detail_queryset.aggregate(
+        snapshot_count=Count("id"),
+        latest_refreshed_at=Max("refreshed_at"),
+        latest_source_at=Max("source_latest_at"),
+        max_last_error=Max("last_error"),
+    )
+    cache_material = {
+        "eligible_identities": sorted(eligible_identities),
+        "as_of_date": as_of.astimezone(SHANGHAI_TZ).date().isoformat(),
+        "snapshot_count": _safe_int(detail_state.get("snapshot_count")),
+        "latest_refreshed_at": _iso(detail_state.get("latest_refreshed_at")),
+        "latest_source_at": _iso(detail_state.get("latest_source_at")),
+        "max_last_error": str(detail_state.get("max_last_error") or ""),
+    }
+    cache_digest = sha256(
+        json.dumps(
+            cache_material,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    cache_key = (
+        f"overview-board:mould-service-trend:"
+        f"{MOULD_SERVICE_TREND_CACHE_VERSION}:{cache_digest}"
+    )
+    cached = cache.get(cache_key)
+    if isinstance(cached, dict):
+        return deepcopy(cached)
+
+    detail_rows: dict[str, MouldDataSnapshot] = {}
+    for snapshot in (
+        detail_queryset
+        .only(
+            "instance_id",
+            "payload",
+            "source_latest_at",
+            "refreshed_at",
+            "last_error",
+        )
+        .order_by("instance_id", "-refreshed_at")
+    ):
+        detail_rows.setdefault(str(snapshot.instance_id), snapshot)
+
+    now = timezone.now()
+    stale_cutoff = now - MOULD_SERVICE_DETAIL_STALE_AFTER
+    stale_count = 0
+    invalid_count = 0
+    fresh_count = 0
+    valid_rows: list[MouldDataSnapshot] = []
+    source_dates: list[datetime] = []
+    for snapshot in detail_rows.values():
+        source_date = snapshot.source_latest_at or snapshot.refreshed_at
+        if source_date is not None:
+            source_dates.append(source_date)
+        payload = snapshot.payload if isinstance(snapshot.payload, dict) else {}
+        if not isinstance(payload.get("repair_history"), list):
+            invalid_count += 1
+            continue
+        valid_rows.append(snapshot)
+        freshness = (
+            payload.get("data_freshness")
+            if isinstance(payload.get("data_freshness"), dict)
+            else {}
+        )
+        is_stale = bool(
+            snapshot.last_error
+            or snapshot.refreshed_at < stale_cutoff
+            or freshness.get("stale")
+            or str(freshness.get("status") or "").lower() in {"error", "missing"}
+        )
+        if is_stale:
+            stale_count += 1
+        else:
+            fresh_count += 1
+
+    covered_count = len(valid_rows)
+    missing_count = max(0, eligible_count - len(detail_rows))
+    source_latest_at = max(source_dates) if source_dates else None
+    if covered_count == 0:
+        result = _empty_mould_service_trend(
+            as_of=as_of,
+            status="unavailable",
+            covered_detail_count=covered_count,
+            fresh_detail_count=fresh_count,
+            stale_detail_count=stale_count,
+            invalid_detail_count=invalid_count,
+            missing_detail_count=missing_count,
+            eligible_mould_count=eligible_count,
+            source_latest_at=source_latest_at,
+        )
+        cache.set(cache_key, deepcopy(result), MOULD_SERVICE_TREND_CACHE_SECONDS)
+        return result
+
+    result = _empty_mould_service_trend(
+        as_of=as_of,
+        status=(
+            "ok"
+            if covered_count == eligible_count and fresh_count == eligible_count
+            else "partial"
+        ),
+        covered_detail_count=covered_count,
+        fresh_detail_count=fresh_count,
+        stale_detail_count=stale_count,
+        invalid_detail_count=invalid_count,
+        missing_detail_count=missing_count,
+        eligible_mould_count=eligible_count,
+        source_latest_at=source_latest_at,
+    )
+    local_as_of = as_of.astimezone(SHANGHAI_TZ)
+    first_week_start = date.fromisoformat(result["weeks"][0]["week_start"])
+    last_30_start = local_as_of - timedelta(days=30)
+    previous_30_start = local_as_of - timedelta(days=60)
+    repeat_90_start = local_as_of - timedelta(days=90)
+    week_counts = [Counter() for _ in range(MOULD_SERVICE_TREND_WEEKS)]
+    last_30_count = 0
+    previous_30_count = 0
+    recent_by_mould: Counter[str] = Counter()
+    unknown_event_count = 0
+    seen_events: set[tuple[str, str]] = set()
+    for snapshot in valid_rows:
+        payload = snapshot.payload if isinstance(snapshot.payload, dict) else {}
+        for index, event in enumerate(payload.get("repair_history") or []):
+            if not isinstance(event, dict):
+                continue
+            occurred_at = next(
+                (
+                    parsed
+                    for field in ("requested_at", "started_at", "finished_at")
+                    for parsed in [_mould_history_datetime(event.get(field))]
+                    if parsed is not None
+                ),
+                None,
+            )
+            if occurred_at is None or occurred_at > local_as_of:
+                continue
+            event_identity = str(
+                event.get("id")
+                or event.get("record_code")
+                or f"{occurred_at.isoformat()}:{index}"
+            )
+            dedupe_key = (str(snapshot.instance_id), event_identity)
+            if dedupe_key in seen_events:
+                continue
+            seen_events.add(dedupe_key)
+            category = _mould_service_category(event.get("type"))
+            if category == "unknown":
+                unknown_event_count += 1
+                continue
+            week_index = (occurred_at.date() - first_week_start).days // 7
+            if 0 <= week_index < MOULD_SERVICE_TREND_WEEKS:
+                week_counts[week_index][category] += 1
+            if last_30_start <= occurred_at <= local_as_of:
+                last_30_count += 1
+            elif previous_30_start <= occurred_at < last_30_start:
+                previous_30_count += 1
+            if repeat_90_start <= occurred_at <= local_as_of:
+                recent_by_mould[str(snapshot.instance_id)] += 1
+
+    result["unknown_event_count"] = unknown_event_count
+    coverage_ratio = covered_count / eligible_count * 100
+    freshness_ratio = fresh_count / eligible_count * 100
+    if coverage_ratio >= 50:
+        for week, counts in zip(result["weeks"], week_counts):
+            week["maintenance"] = int(counts.get("maintenance", 0))
+            week["repair"] = int(counts.get("repair", 0))
+            week["total"] = week["maintenance"] + week["repair"]
+    if coverage_ratio >= 80:
+        result["last_30_days"] = last_30_count
+        result["previous_30_days"] = previous_30_count
+        result["repeat_moulds_90d"] = sum(
+            1 for count in recent_by_mould.values() if count >= 2
+        )
+        if freshness_ratio >= 80:
+            result["change_percent"] = (
+                round((last_30_count - previous_30_count) / previous_30_count * 100, 1)
+                if previous_30_count > 0 else (0.0 if last_30_count == 0 else None)
+            )
+    cache.set(cache_key, deepcopy(result), MOULD_SERVICE_TREND_CACHE_SECONDS)
+    return result
+
+
+def _build_moulds(
+    *,
+    injection_activity: dict[str, Any] | None = None,
+    reference_time: datetime | None = None,
+) -> tuple[dict[str, Any], list[str], dict[str, Any], dict[str, Any]]:
     warnings: list[str] = []
+    injection_activity = injection_activity or {}
+    reference_time = reference_time or timezone.now()
+    if timezone.is_naive(reference_time):
+        reference_time = timezone.make_aware(reference_time, SHANGHAI_TZ)
     snapshot = MouldDataSnapshot.objects.filter(snapshot_key=BOARD_SNAPSHOT_KEY).first()
     if snapshot is None:
         warnings.append("mould_board_snapshot_missing")
@@ -1226,6 +1832,16 @@ def _build_moulds() -> tuple[dict[str, Any], list[str], dict[str, Any], dict[str
             "repair": 0,
             "conflicts": 0,
             "confirmation_required": 0,
+            "producing": None,
+            "repair_current": None,
+            "producing_coverage": {
+                "status": "unavailable",
+                "reason": "mould_board_snapshot_missing",
+            },
+            "service_trend": _empty_mould_service_trend(
+                as_of=reference_time,
+                status="unavailable",
+            ),
         }
         source = _source_state(status="missing")
         return moulds, warnings, source, {
@@ -1244,21 +1860,37 @@ def _build_moulds() -> tuple[dict[str, Any], list[str], dict[str, Any], dict[str
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     mould_rows = payload.get("moulds") if isinstance(payload.get("moulds"), list) else []
     freshness = payload.get("data_freshness") if isinstance(payload.get("data_freshness"), dict) else {}
-    stale = bool(freshness.get("stale"))
+    stale = bool(
+        freshness.get("stale")
+        or snapshot.refreshed_at < timezone.now() - MOULD_BOARD_STALE_AFTER
+    )
     if stale:
         warnings.append("mould_board_snapshot_stale")
     if snapshot.last_error:
         warnings.append("mould_board_snapshot_last_refresh_failed")
+    public_mould_rows = [row for row in mould_rows if isinstance(row, dict)]
+    producing, producing_coverage = _build_mould_producing(
+        public_mould_rows,
+        injection_activity=injection_activity,
+        board_stale=stale,
+    )
+    service_trend = _build_mould_service_trend(
+        public_mould_rows,
+        as_of=reference_time,
+    )
     moulds = {
         "total": _safe_int(summary.get("total")),
         "mounted": _safe_int(summary.get("mounted")),
         "stored": _safe_int(summary.get("stored")),
         "maintenance": _safe_int(summary.get("maintenance")),
         "repair": _safe_int(summary.get("repair")),
-        "offsite": _safe_int(summary.get("offsite")),
         "unknown": _safe_int(summary.get("unknown")),
         "conflicts": _safe_int(summary.get("conflicts")),
         "confirmation_required": sum(1 for row in mould_rows if isinstance(row, dict) and row.get("confirmation_required")),
+        "producing": producing,
+        "repair_current": _current_repair_mould_count(public_mould_rows),
+        "producing_coverage": producing_coverage,
+        "service_trend": service_trend,
     }
     latest_at = snapshot.source_latest_at or freshness.get("source_latest_at") or snapshot.refreshed_at
     source = _source_state(
@@ -1272,6 +1904,11 @@ def _build_moulds() -> tuple[dict[str, Any], list[str], dict[str, Any], dict[str
         "source": "injection.MouldDataSnapshot",
         "status": source["status"],
         "rows_returned": len(mould_rows),
+        "components": {
+            "current_board": source["status"],
+            "producing": producing_coverage["status"],
+            "service_trend": service_trend["status"],
+        },
     }
     return moulds, warnings, source, trace
 
@@ -2112,7 +2749,10 @@ def build_overview_board_snapshot(target_date: date, *, language: str = "ko") ->
     traces.append(inventory_trace)
 
     try:
-        moulds, mould_warnings, mould_source, mould_trace = _build_moulds()
+        moulds, mould_warnings, mould_source, mould_trace = _build_moulds(
+            injection_activity=injection_activity,
+            reference_time=reference_time,
+        )
     except DatabaseError as exc:
         moulds = {
             "total": 0,
@@ -2122,6 +2762,16 @@ def build_overview_board_snapshot(target_date: date, *, language: str = "ko") ->
             "repair": 0,
             "conflicts": 0,
             "confirmation_required": 0,
+            "producing": None,
+            "repair_current": None,
+            "producing_coverage": {
+                "status": "unavailable",
+                "reason": "mould_board_snapshot_unavailable",
+            },
+            "service_trend": _empty_mould_service_trend(
+                as_of=reference_time,
+                status="unavailable",
+            ),
         }
         mould_warnings = ["mould_board_snapshot_unavailable"]
         mould_source = _source_state(status="error", detail=exc.__class__.__name__)

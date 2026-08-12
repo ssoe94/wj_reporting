@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from injection.models import InjectionMonitoringRecord, MouldDataSnapshot
@@ -14,6 +16,7 @@ from quality.models import QualityReport
 from .ai_metrics import SHANGHAI_TZ
 from .overview_board import (
     _build_daily_plan_quality_items,
+    _build_moulds,
     _fetch_nanjing_weather,
     _weather_day_phase,
     build_overview_board_snapshot,
@@ -183,6 +186,7 @@ def _activity_context(target_date, *, machine_numbers=(3,), stale=False):
 
 class OverviewBoardQualityContractTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.target_date = datetime(2026, 8, 10).date()
         self.reference = SHANGHAI_TZ.localize(datetime(2026, 8, 10, 12, 0))
         weather_patcher = patch(
@@ -359,6 +363,438 @@ class OverviewBoardQualityContractTests(TestCase):
         self.assertEqual(snapshot["moulds"]["confirmation_required"], 1)
         self.assertEqual(snapshot["moulds"]["maintenance"], 0)
         self.assertEqual(snapshot["moulds"]["repair"], 0)
+
+    def test_mould_current_counts_intersect_live_mes_and_include_repair_zone(self):
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                "summary": {
+                    "total": 4,
+                    "mounted": 2,
+                    "stored": 0,
+                    "maintenance": 0,
+                    "repair": 1,
+                    "offsite": 0,
+                    "unknown": 1,
+                    "conflicts": 0,
+                },
+                "moulds": [
+                    {
+                        "instance_id": "mounted-3",
+                        "mould_code": "M-3",
+                        "summary_category": "machine",
+                        "location": {
+                            "kind": "machine",
+                            "code": "#3-1300T",
+                            "machine_number": 3,
+                        },
+                    },
+                    {
+                        "instance_id": "mounted-8",
+                        "mould_code": "M-8",
+                        "summary_category": "machine",
+                        "location": {
+                            "kind": "machine",
+                            "code": "#8-850T",
+                            "machine_number": 8,
+                        },
+                    },
+                    {
+                        "instance_id": "repair-zone",
+                        "mould_code": "R-ZONE",
+                        "summary_category": "unknown",
+                        "location": {
+                            "kind": "unknown",
+                            "code": "修理区-2",
+                        },
+                    },
+                    {
+                        "instance_id": "repair-status",
+                        "mould_code": "R-STATUS",
+                        "summary_category": "unknown",
+                        "status": {"label": "维修中"},
+                        "location": {"kind": "unknown", "code": "-"},
+                    },
+                    # A duplicate source row must not double-count a current repair.
+                    {
+                        "instance_id": "repair-zone",
+                        "mould_code": "R-ZONE",
+                        "summary_category": "unknown",
+                        "location": {
+                            "kind": "unknown",
+                            "code": "修理区-2",
+                        },
+                    },
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+
+        moulds, _, _, _ = _build_moulds(
+            injection_activity=_activity_context(
+                self.target_date,
+                machine_numbers=(3, 17),
+            ),
+            reference_time=self.reference,
+        )
+
+        self.assertEqual(moulds["producing"], 1)
+        self.assertEqual(moulds["repair_current"], 2)
+        self.assertEqual(moulds["producing_coverage"]["status"], "ok")
+        self.assertEqual(
+            moulds["producing_coverage"]["matched_active_machine_count"],
+            1,
+        )
+        self.assertEqual(
+            moulds["producing_coverage"]["unmatched_active_machine_count"],
+            1,
+        )
+
+    def test_mould_producing_fails_closed_when_mes_activity_is_stale(self):
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                "summary": {"total": 1, "mounted": 1},
+                "moulds": [
+                    {
+                        "instance_id": "mounted-3",
+                        "summary_category": "machine",
+                        "location": {
+                            "kind": "machine",
+                            "code": "#3-1300T",
+                            "machine_number": 3,
+                        },
+                    }
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+
+        moulds, _, _, _ = _build_moulds(
+            injection_activity=_activity_context(
+                self.target_date,
+                machine_numbers=(3,),
+                stale=True,
+            ),
+            reference_time=self.reference,
+        )
+
+        self.assertIsNone(moulds["producing"])
+        self.assertEqual(moulds["producing_coverage"]["status"], "unavailable")
+        self.assertEqual(
+            moulds["producing_coverage"]["reason"],
+            "injection_activity_source_stale",
+        )
+
+    def test_mould_service_trend_uses_requested_date_and_full_detail_coverage(self):
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                "summary": {"total": 2, "stored": 2},
+                "moulds": [
+                    {"instance_id": "detail-1", "location": {"kind": "storage"}},
+                    {"instance_id": "detail-2", "location": {"kind": "storage"}},
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+        MouldDataSnapshot.objects.create(
+            snapshot_key="mould-detail:v1:detail-1",
+            kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id="detail-1",
+            payload={
+                "repair_history": [
+                    {
+                        "id": "d1-repair",
+                        "requested_at": "2026-08-09T08:00:00+08:00",
+                        # requested_at is authoritative even when started_at differs.
+                        "started_at": "2026-05-01T08:00:00+08:00",
+                        "type": "修理",
+                    },
+                    {
+                        "id": "d1-maintenance",
+                        "requested_at": "2026-07-20T08:00:00+08:00",
+                        "type": {"label": "保养"},
+                    },
+                    {
+                        "id": "d1-maintenance",
+                        "requested_at": "2026-07-20T08:00:00+08:00",
+                        "type": {"label": "保养"},
+                    },
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+        MouldDataSnapshot.objects.create(
+            snapshot_key="mould-detail:v1:detail-2",
+            kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id="detail-2",
+            payload={
+                "repair_history": [
+                    {
+                        "id": "d2-repair-current",
+                        "requested_at": "2026-08-08T08:00:00+08:00",
+                        "type": "维修",
+                    },
+                    {
+                        "id": "d2-repair-previous",
+                        "requested_at": None,
+                        "started_at": "2026-06-25T08:00:00+08:00",
+                        "type": "改造",
+                    },
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+
+        moulds, _, _, _ = _build_moulds(
+            injection_activity=_activity_context(self.target_date),
+            reference_time=self.reference,
+        )
+        trend = moulds["service_trend"]
+
+        self.assertEqual(trend["status"], "ok")
+        self.assertEqual(trend["coverage_percent"], 100.0)
+        self.assertEqual(trend["freshness_percent"], 100.0)
+        self.assertEqual(trend["last_30_days"], 3)
+        self.assertEqual(trend["previous_30_days"], 0)
+        self.assertIsNone(trend["change_percent"])
+        self.assertEqual(trend["repeat_moulds_90d"], 1)
+        self.assertEqual(trend["unknown_event_count"], 1)
+        self.assertEqual(sum(week["maintenance"] for week in trend["weeks"]), 1)
+        self.assertEqual(sum(week["repair"] for week in trend["weeks"]), 2)
+
+    def test_mould_service_trend_shows_weekly_lower_bound_at_half_coverage(self):
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                "summary": {"total": 2, "stored": 2},
+                "moulds": [
+                    {"instance_id": "detail-1", "location": {"kind": "storage"}},
+                    {"instance_id": "detail-2", "location": {"kind": "storage"}},
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+        MouldDataSnapshot.objects.create(
+            snapshot_key="mould-detail:v1:detail-1",
+            kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id="detail-1",
+            payload={
+                "repair_history": [],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+
+        moulds, _, _, _ = _build_moulds(
+            injection_activity=_activity_context(self.target_date),
+            reference_time=self.reference,
+        )
+        trend = moulds["service_trend"]
+
+        self.assertEqual(trend["status"], "partial")
+        self.assertEqual(trend["covered_detail_count"], 1)
+        self.assertEqual(trend["fresh_detail_count"], 1)
+        self.assertEqual(trend["missing_detail_count"], 1)
+        self.assertEqual(trend["coverage_percent"], 50.0)
+        self.assertEqual(trend["freshness_percent"], 50.0)
+        self.assertIsNone(trend["last_30_days"])
+        self.assertIsNone(trend["repeat_moulds_90d"])
+        self.assertTrue(all(week["total"] == 0 for week in trend["weeks"]))
+
+    def test_mould_service_trend_uses_stale_valid_snapshots_and_safe_date_fallback(self):
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                "summary": {"total": 4, "stored": 4},
+                "moulds": [
+                    {"instance_id": f"detail-{index}", "location": {"kind": "storage"}}
+                    for index in range(1, 5)
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+        first = MouldDataSnapshot.objects.create(
+            snapshot_key="mould-detail:v1:detail-1",
+            kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id="detail-1",
+            payload={
+                "repair_history": [
+                    {
+                        "id": "bad-requested-good-started",
+                        "requested_at": "2026-99-99T99:99:99",
+                        "started_at": "2026-08-09T08:00:00+08:00",
+                        "type": "修理",
+                    }
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+        MouldDataSnapshot.objects.create(
+            snapshot_key="mould-detail:v1:detail-2",
+            kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id="detail-2",
+            payload={
+                "repair_history": [
+                    {
+                        "id": "fresh-maintenance",
+                        "requested_at": "2026-08-08T08:00:00+08:00",
+                        "type": "保养",
+                    }
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+        third = MouldDataSnapshot.objects.create(
+            snapshot_key="mould-detail:v1:detail-3",
+            kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id="detail-3",
+            payload={
+                "repair_history": [
+                    {
+                        "id": "stale-repair",
+                        "requested_at": "2026-08-07T08:00:00+08:00",
+                        "type": "维修",
+                    }
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+        stale_at = timezone.now() - timedelta(hours=40)
+        MouldDataSnapshot.objects.filter(pk__in=[first.pk, third.pk]).update(
+            refreshed_at=stale_at
+        )
+
+        moulds, _, _, _ = _build_moulds(
+            injection_activity=_activity_context(self.target_date),
+            reference_time=self.reference,
+        )
+        trend = moulds["service_trend"]
+
+        self.assertEqual(trend["status"], "partial")
+        self.assertEqual(trend["covered_detail_count"], 3)
+        self.assertEqual(trend["fresh_detail_count"], 1)
+        self.assertEqual(trend["stale_detail_count"], 2)
+        self.assertEqual(trend["missing_detail_count"], 1)
+        self.assertEqual(trend["coverage_percent"], 75.0)
+        self.assertEqual(trend["freshness_percent"], 25.0)
+        self.assertEqual(sum(week["total"] for week in trend["weeks"]), 3)
+        self.assertIsNone(trend["last_30_days"])
+        self.assertIsNone(trend["repeat_moulds_90d"])
+
+    def test_mould_service_trend_cache_returns_an_isolated_copy(self):
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                "summary": {"total": 1, "stored": 1},
+                "moulds": [
+                    {"instance_id": "detail-cache", "location": {"kind": "storage"}}
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+        MouldDataSnapshot.objects.create(
+            snapshot_key="mould-detail:v1:detail-cache",
+            kind=MouldDataSnapshot.KIND_DETAIL,
+            instance_id="detail-cache",
+            payload={
+                "repair_history": [],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+
+        first, _, _, _ = _build_moulds(
+            injection_activity=_activity_context(self.target_date),
+            reference_time=self.reference,
+        )
+        first["service_trend"]["weeks"][0]["total"] = 999
+        second, _, _, _ = _build_moulds(
+            injection_activity=_activity_context(self.target_date),
+            reference_time=self.reference,
+        )
+
+        self.assertEqual(second["service_trend"]["status"], "ok")
+        self.assertEqual(second["service_trend"]["weeks"][0]["total"], 0)
+
+    def test_mould_producing_excludes_conflicting_and_unresolved_mounts(self):
+        MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                "summary": {"total": 4, "mounted": 4},
+                "moulds": [
+                    {
+                        "instance_id": "conflict-a",
+                        "location": {"kind": "machine", "machine_number": 3},
+                    },
+                    {
+                        "instance_id": "conflict-b",
+                        "location": {"kind": "machine", "machine_number": 3},
+                    },
+                    {
+                        "instance_id": "reliable",
+                        "location": {"kind": "machine", "machine_number": 8},
+                    },
+                    {
+                        "instance_id": "unresolved",
+                        "location": {"kind": "machine", "code": "unknown"},
+                    },
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+
+        moulds, _, _, _ = _build_moulds(
+            injection_activity=_activity_context(
+                self.target_date,
+                machine_numbers=(3, 8),
+            ),
+            reference_time=self.reference,
+        )
+
+        self.assertEqual(moulds["producing"], 1)
+        coverage = moulds["producing_coverage"]
+        self.assertEqual(coverage["status"], "partial")
+        self.assertEqual(coverage["duplicate_mounted_machine_count"], 1)
+        self.assertEqual(coverage["unresolved_mounted_mould_count"], 1)
+        self.assertEqual(coverage["matched_active_machine_count"], 1)
+
+    def test_mould_producing_publishes_last_known_intersection_for_stale_board(self):
+        board = MouldDataSnapshot.objects.create(
+            snapshot_key=BOARD_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            payload={
+                "summary": {"total": 1, "mounted": 1},
+                "moulds": [
+                    {
+                        "instance_id": "mounted-3",
+                        "location": {"kind": "machine", "machine_number": 3},
+                    }
+                ],
+                "data_freshness": {"status": "live", "stale": False},
+            },
+        )
+        MouldDataSnapshot.objects.filter(pk=board.pk).update(
+            refreshed_at=timezone.now() - timedelta(hours=2)
+        )
+
+        moulds, _, _, _ = _build_moulds(
+            injection_activity=_activity_context(self.target_date, machine_numbers=(3,)),
+            reference_time=self.reference,
+        )
+
+        self.assertEqual(moulds["producing"], 1)
+        self.assertEqual(moulds["producing_coverage"]["status"], "stale")
+        self.assertEqual(
+            moulds["producing_coverage"]["reason"],
+            "mould_board_snapshot_stale",
+        )
 
     def test_energy_counter_ignores_negative_missing_sentinel(self):
         start = SHANGHAI_TZ.localize(datetime(2026, 8, 10, 8, 0))
