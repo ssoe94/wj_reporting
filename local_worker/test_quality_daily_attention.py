@@ -493,6 +493,60 @@ def valid_llm_result() -> dict:
     }
 
 
+def quality_job_with_two_ai_targets() -> dict:
+    """Return two independently selectable history targets for chunk tests."""
+
+    job = quality_job()
+    payload = job["input_payload"]
+    second_item = copy.deepcopy(payload["items"][0])
+    second_item.update({
+        "source_key": "15|ACQ307764",
+        "evidence_key": "prefix:ACQ307764",
+        "machine_name": "850T-15",
+        "machine_number": 15,
+        "sequence": 2,
+        "part_prefix": "ACQ307764",
+        "part_nos": ["ACQ30776401"],
+        "model_names": ["DEMO-M4415"],
+        "matching_report_count": 2,
+    })
+    payload["items"][1] = second_item
+
+    second_history = copy.deepcopy(payload["evidence_catalog"][0])
+    second_history.update({
+        "evidence_key": "prefix:ACQ307764",
+        "part_prefix": "ACQ307764",
+        "matching_report_count": 2,
+    })
+    second_history["phenomena"] = [{
+        "evidence_key": "ACQ307764:phenomenon:white",
+        "text": "게이트 주변 백화",
+        "count": 2,
+        "report_ids": ["Q-4", "Q-5"],
+        "latest_report_dt": "2026-07-28",
+        "is_missing_text": False,
+    }]
+    second_history["report_refs"] = []
+    payload["evidence_catalog"][1] = second_history
+
+    for group_name in ("problem_types", "problem_location_pairs"):
+        first_metric = payload["report_metrics"][group_name][0]
+        second_metric = copy.deepcopy(first_metric)
+        second_metric["metric_key"] = f"{first_metric['metric_key']}:target-15"
+        second_metric["source_evidence_keys"] = ["ACQ307764:phenomenon:white"]
+        second_metric["impact_scope"] = {
+            "machine_names": ["850T-15"],
+            "model_names": ["DEMO-M4415"],
+            "part_nos": ["ACQ30776401"],
+            "part_prefixes": ["ACQ307764"],
+            "plan_group_count": 1,
+            "planned_quantity": 1200,
+        }
+        payload["report_metrics"][group_name].append(second_metric)
+    payload["totals"].update(plan_group_count=2, matched_report_count=5, without_history_count=0)
+    return job
+
+
 class QualityDailyAttentionHandlerTests(unittest.TestCase):
     def test_handler_is_registered_for_quality_job_claims(self):
         job = quality_job()
@@ -773,25 +827,12 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
                 self.calls.append((system_prompt, payload, kwargs))
                 if system_prompt == handler.REPORT_SELECTOR_SYSTEM_PROMPT:
                     return {
-                        "repeated_metric_keys": [
-                            payload["repeated_candidates"][0]["metric_key"],
-                        ],
-                        "accelerating_metric_keys": [
-                            payload["accelerating_candidates"][0]["metric_key"],
-                        ],
-                        "affected_targets": [{
-                            "source_key": payload["affected_target_candidates"][0]["source_key"],
-                            "source_evidence_keys": payload["affected_target_candidates"][0]
-                            ["source_evidence_keys"],
-                        }],
+                        "repeated_indices": [0],
+                        "accelerating_indices": [0],
+                        "affected_target_indices": [0],
                     }
                 return {
-                    "source_key": payload["source_key"],
-                    "issue_selections": [{
-                        "metric_key": payload["issue_candidates"][0]["metric_key"],
-                        "source_evidence_keys": payload["issue_candidates"][0]
-                        ["source_evidence_keys"],
-                    }],
+                    "selected_candidate_indices": [0],
                 }
 
         gemma = Gemma()
@@ -816,6 +857,10 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             row["metric_key"].startswith("location:")
             for row in gemma.calls[0][1]["issue_candidates"]
         ))
+        self.assertEqual(
+            gemma.calls[0][1]["required_output_schema"],
+            {"selected_candidate_indices": ["zero-based integer index into issue_candidates"]},
+        )
         self.assertEqual(
             gemma.calls[0][1]["issue_candidates"][0]["metric_key"],
             "pair:whitening:gate",
@@ -862,6 +907,148 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             },
         )
 
+    def test_model_chunk_retries_once_then_preserves_success(self):
+        class RetryGemma:
+            def __init__(self):
+                self.model_calls = 0
+                self.report_calls = 0
+
+            def structured_analysis(self, system_prompt, _payload, **_kwargs):
+                if system_prompt == handler.REPORT_SELECTOR_SYSTEM_PROMPT:
+                    self.report_calls += 1
+                    return {
+                        "repeated_indices": [0],
+                        "accelerating_indices": [0],
+                        "affected_target_indices": [0],
+                    }
+                self.model_calls += 1
+                if self.model_calls == 1:
+                    raise ValueError("malformed first model chunk")
+                return {"selected_candidate_indices": [0]}
+
+        gemma = RetryGemma()
+        result, _ = handle_job(
+            quality_job(),
+            use_llm=True,
+            llm=gemma,
+            model_name="gemma-test",
+            fallback_to_deterministic=True,
+        )
+
+        self.assertEqual(gemma.model_calls, 2)
+        self.assertEqual(gemma.report_calls, 1)
+        self.assertEqual(result["source"], "local_llm_rewrite")
+        self.assertEqual(result["llm_chunk_count"], 2)
+        self.assertEqual(
+            result["attention_items"][0]["problem_types"][0]["label"],
+            {"ko": "백화 · 게이트", "zh": "发白 · 浇口"},
+        )
+
+    def test_failed_target_chunk_isolated_while_other_target_stays_llm_selected(self):
+        failed_source = "14|ACQ307763"
+
+        class PartialGemma:
+            def __init__(self):
+                self.model_calls = {failed_source: 0, "15|ACQ307764": 0}
+
+            def structured_analysis(self, system_prompt, payload, **_kwargs):
+                if system_prompt == handler.REPORT_SELECTOR_SYSTEM_PROMPT:
+                    return {
+                        "repeated_indices": [0],
+                        "accelerating_indices": [0],
+                        "affected_target_indices": [0],
+                    }
+                source_key = payload["source_key"]
+                self.model_calls[source_key] += 1
+                if source_key == failed_source:
+                    raise ValueError("malformed target chunk")
+                return {"selected_candidate_indices": [0]}
+
+        job = quality_job_with_two_ai_targets()
+        gemma = PartialGemma()
+        result, _ = handle_job(
+            job,
+            use_llm=True,
+            llm=gemma,
+            model_name="gemma-test",
+            fallback_to_deterministic=True,
+        )
+
+        self.assertEqual(gemma.model_calls[failed_source], 2)
+        self.assertEqual(gemma.model_calls["15|ACQ307764"], 1)
+        self.assertEqual(result["source"], "local_llm_rewrite")
+        attention = {row["source_key"]: row for row in result["attention_items"]}
+        self.assertEqual(
+            attention[failed_source]["problem_types"][0]["label"],
+            handler.UNCLASSIFIED_TYPE,
+        )
+        self.assertEqual(
+            attention["15|ACQ307764"]["problem_types"][0]["label"],
+            {"ko": "게이트 주변 백화", "zh": "浇口周边发白"},
+        )
+
+    def test_all_model_chunks_failing_twice_uses_guarded_fallback(self):
+        class FailingGemma:
+            def __init__(self):
+                self.model_calls = 0
+                self.report_calls = 0
+
+            def structured_analysis(self, system_prompt, _payload, **_kwargs):
+                if system_prompt == handler.REPORT_SELECTOR_SYSTEM_PROMPT:
+                    self.report_calls += 1
+                else:
+                    self.model_calls += 1
+                raise ValueError("malformed model chunk")
+
+        gemma = FailingGemma()
+        result, _ = handle_job(
+            quality_job_with_two_ai_targets(),
+            use_llm=True,
+            llm=gemma,
+            model_name="gemma-test",
+            fallback_to_deterministic=True,
+        )
+
+        self.assertEqual(gemma.model_calls, 4)
+        self.assertEqual(gemma.report_calls, 0)
+        self.assertEqual(result["source"], "local_llm_guarded_fallback")
+        self.assertTrue(result["llm_fallback"])
+        self.assertEqual(result["llm_fallback_code"], "invalid_response")
+
+    def test_report_selector_failure_isolated_from_successful_attention(self):
+        class ReportFailGemma:
+            def __init__(self):
+                self.model_calls = 0
+                self.report_calls = 0
+
+            def structured_analysis(self, system_prompt, _payload, **_kwargs):
+                if system_prompt == handler.REPORT_SELECTOR_SYSTEM_PROMPT:
+                    self.report_calls += 1
+                    raise ValueError("malformed report selector")
+                self.model_calls += 1
+                return {"selected_candidate_indices": [0]}
+
+        job = quality_job()
+        deterministic_report = handler.build_dummy_result(job)["report"]
+        gemma = ReportFailGemma()
+        result, _ = handle_job(
+            job,
+            use_llm=True,
+            llm=gemma,
+            model_name="gemma-test",
+            fallback_to_deterministic=True,
+        )
+
+        self.assertEqual(gemma.model_calls, 1)
+        self.assertEqual(gemma.report_calls, 2)
+        self.assertEqual(result["source"], "local_llm_rewrite")
+        self.assertEqual(result["llm_chunk_count"], 1)
+        self.assertEqual(result["report"], deterministic_report)
+        self.assertEqual(
+            result["attention_items"][0]["problem_types"][0]["label"],
+            {"ko": "백화 · 게이트", "zh": "发白 · 浇口"},
+        )
+
     def test_key_selector_discards_unknown_and_ineligible_report_selections(self):
         grounding = handler.build_grounding_payload(quality_job())
         selector_payload = handler._report_selector_payload(
@@ -872,34 +1059,20 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
                 }
             },
         )
+        repeated_index = next(
+            index for index, row in enumerate(selector_payload["repeated_candidates"])
+            if row["metric_key"] == "pair:whitening:gate"
+        )
+        accelerating_index = next(
+            index for index, row in enumerate(selector_payload["accelerating_candidates"])
+            if row["metric_key"] == "pair:whitening:gate"
+        )
 
         report = handler._report_from_key_selections(
             {
-                "repeated_metric_keys": [
-                    "location:gate",
-                    "pair:whitening:gate",
-                    "invented:metric",
-                    "problem:missing000000",
-                ],
-                "accelerating_metric_keys": [
-                    "location:gate",
-                    "pair:whitening:gate",
-                    "problem:abc123def456",
-                ],
-                "affected_targets": [
-                    {
-                        "source_key": "14|ACQ307763",
-                        "source_evidence_keys": [
-                            "ACQ307763:phenomenon:white",
-                            "ACQ307763:phenomenon:missing",
-                            "invented:evidence",
-                        ],
-                    },
-                    {
-                        "source_key": "invented|source",
-                        "source_evidence_keys": ["ACQ307763:phenomenon:white"],
-                    },
-                ],
+                "repeated_indices": [True, -1, 999, repeated_index, repeated_index],
+                "accelerating_indices": [False, 999, accelerating_index],
+                "affected_target_indices": [True, -1, 999, 0, 0],
             },
             grounding,
             selector_payload,
@@ -955,6 +1128,26 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         }])
         self.assertNotIn("count", normalized[0])
 
+    def test_model_chunk_index_normalizer_restores_authoritative_candidate(self):
+        grounding = handler.build_grounding_payload(quality_job())
+        candidates = handler._metric_selection_candidates(
+            grounding["report_metrics"],
+            "problem_types",
+            {"ACQ307763:phenomenon:white"},
+        )
+
+        normalized = handler._normalize_candidate_index_selections(
+            [True, -1, 99, 0, 0, "0"],
+            candidates,
+            field_name="selected_candidate_indices",
+        )
+
+        self.assertEqual(normalized, [{
+            "metric_key": "problem:abc123def456",
+            "label": {"ko": "게이트 주변 백화", "zh": "浇口周边发白"},
+            "source_evidence_keys": ["ACQ307763:phenomenon:white"],
+        }])
+
     def test_key_selectors_require_one_grounded_selection_when_candidates_exist(self):
         grounding = handler.build_grounding_payload(quality_job())
         metrics = grounding["report_metrics"]
@@ -971,15 +1164,12 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             )
 
         selector_payload = handler._report_selector_payload(grounding, {})
-        with self.assertRaisesRegex(ValueError, "valid repeated_candidates key"):
+        with self.assertRaisesRegex(ValueError, "valid repeated_candidates index"):
             handler._report_from_key_selections(
                 {
-                    "repeated_metric_keys": [],
-                    "accelerating_metric_keys": ["location:gate"],
-                    "affected_targets": [{
-                        "source_key": "14|ACQ307763",
-                        "source_evidence_keys": ["ACQ307763:phenomenon:white"],
-                    }],
+                    "repeated_indices": [],
+                    "accelerating_indices": [0],
+                    "affected_target_indices": [0],
                 },
                 grounding,
                 selector_payload,
@@ -1171,25 +1361,12 @@ class QualityDailyAttentionWorkerRoutingTests(unittest.TestCase):
             self.calls += 1
             if system_prompt == handler.REPORT_SELECTOR_SYSTEM_PROMPT:
                 return {
-                    "repeated_metric_keys": [
-                        payload["repeated_candidates"][0]["metric_key"],
-                    ],
-                    "accelerating_metric_keys": [
-                        payload["accelerating_candidates"][0]["metric_key"],
-                    ],
-                    "affected_targets": [{
-                        "source_key": payload["affected_target_candidates"][0]["source_key"],
-                        "source_evidence_keys": payload["affected_target_candidates"][0]
-                        ["source_evidence_keys"],
-                    }],
+                    "repeated_indices": [0],
+                    "accelerating_indices": [0],
+                    "affected_target_indices": [0],
                 }
             return {
-                "source_key": payload["source_key"],
-                "issue_selections": [{
-                    "metric_key": payload["issue_candidates"][0]["metric_key"],
-                    "source_evidence_keys": payload["issue_candidates"][0]
-                    ["source_evidence_keys"],
-                }],
+                "selected_candidate_indices": [0],
             }
 
     class Qwen:
