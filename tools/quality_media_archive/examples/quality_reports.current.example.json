@@ -1,0 +1,14 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 17,
+      "updated_at": "2026-08-14T08:00:00+08:00",
+      "image1": "https://res.cloudinary.com/example-cloud/image/upload/v1720000000/quality/example.jpg",
+      "image2": null,
+      "image3": null
+    }
+  ]
+}

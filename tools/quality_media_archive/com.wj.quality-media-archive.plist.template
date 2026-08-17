@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.wj.quality-media-archive</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/opt/python@3.12/libexec/bin/python3</string>
+    <string>__INSTALL_DIR__/scheduler.py</string>
+    <string>sync</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__INSTALL_DIR__</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>23</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>300</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+    <key>PYTHONDONTWRITEBYTECODE</key>
+    <string>1</string>
+    <key>WJ_QUALITY_ARCHIVE_API_BASE_URL</key>
+    <string>https://wj-reporting.onrender.com</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/scheduler.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/scheduler.err.log</string>
+</dict>
+</plist>
