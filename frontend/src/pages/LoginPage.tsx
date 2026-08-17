@@ -112,7 +112,7 @@ export default function LoginPage() {
       };
       console.log('Sending request data:', requestData);
       
-      const response = await api.post('/signup-request/', requestData);
+      const response = await api.post('/signup-request/', requestData, { skipAuth: true });
 
       if (response.status === 200 || response.status === 201) {
         alert(t('signup_request_success'));
@@ -122,7 +122,7 @@ export default function LoginPage() {
         console.log('Error response:', response.data);
         setSignupError(t('signup_request_error'));
       }
-    } catch (error) {
+    } catch (_error) {
       setSignupError(t('signup_request_error'));
     }
     

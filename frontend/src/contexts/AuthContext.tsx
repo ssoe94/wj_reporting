@@ -1,9 +1,17 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+import { useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
 import type { ReactNode } from 'react';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
-import { refreshAccessToken } from '../domains/auth/auth-refresh';
-import { clearTokens, setAccessToken, setRefreshToken } from '../domains/auth/auth-storage';
+import { AuthRefreshError, refreshAccessToken } from '../domains/auth/auth-refresh';
+import {
+  clearTokens,
+  getAuthSessionSnapshot,
+  invalidateAuthSession,
+  startAuthSession,
+  subscribeToAuthStorage,
+} from '../domains/auth/auth-storage';
 import {
   canUseDevLogin,
   createDevTokenPair,
@@ -53,8 +61,10 @@ interface AuthContextType {
   token: string | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
+  retryAuth: () => void;
   isLoading: boolean;
   isAuthenticated: boolean;
+  authRecoveryError: string | null;
   hasPermission: (permission: keyof UserPermissions) => boolean;
   canAccessRoute: (route: string) => boolean;
 }
@@ -73,81 +83,169 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+const AUTH_RETRY_DELAY_MS = 5_000;
+
+function isTokenExpired(jwt: string): boolean {
+  try {
+    const [, payload] = jwt.split('.');
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = JSON.parse(atob(base64));
+    if (decoded.exp && typeof decoded.exp === 'number') {
+      return decoded.exp * 1000 < Date.now();
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+async function fetchUserInfo(): Promise<User> {
+  const response = await api.get('/injection/user/me/');
+  return response.data;
+}
+
+function isDefinitiveIdentityError(error: unknown) {
+  if (error instanceof AuthRefreshError) return error.isDefinitive;
+  if (!axios.isAxiosError<{ code?: unknown }>(error) || error.response?.status !== 401) {
+    return false;
+  }
+  return new Set(['token_not_valid', 'user_not_found', 'user_inactive', 'password_changed'])
+    .has(String(error.response.data?.code || ''));
+}
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  const queryClient = useQueryClient();
+  const initialSessionRef = useRef(getAuthSessionSnapshot());
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('access_token'));
+  const [token, setToken] = useState<string | null>(initialSessionRef.current.access);
   const [isLoading, setIsLoading] = useState(true);
+  const [authRecoveryError, setAuthRecoveryError] = useState<string | null>(null);
+  const [sessionRevision, setSessionRevision] = useState(0);
+  const sessionIdRef = useRef<string | null>(initialSessionRef.current.id);
 
-  // 토큰을 decode하여 exp 확인 (간단한 base64url decode)
-  const isTokenExpired = (jwt: string): boolean => {
-    try {
-      const [, payload] = jwt.split('.');
-      const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-      const decoded = JSON.parse(atob(base64));
-      if (decoded.exp && typeof decoded.exp === 'number') {
-        return decoded.exp * 1000 < Date.now();
-      }
-      return true;
-    } catch {
-      return true;
+  useEffect(() => subscribeToAuthStorage(() => {
+    const session = getAuthSessionSnapshot();
+    if (session.id && session.id === sessionIdRef.current) {
+      // Same-session access-token rotation must not unmount protected pages or
+      // discard unsaved form state. API retries already use the new token.
+      setToken(session.access);
+      return;
     }
-  };
-
-  // 사용자 정보 가져오기
-  const fetchUserInfo = async (): Promise<User | null> => {
-    try {
-      const response = await api.get('/injection/user/me/');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch user info:', error);
-      return null;
-    }
-  };
+    // Cached server data belongs to the authenticated principal that fetched
+    // it. Remove it synchronously before a different account can render.
+    void queryClient.cancelQueries();
+    queryClient.clear();
+    setToken(session.access);
+    sessionIdRef.current = session.id;
+    setUser(null);
+    setAuthRecoveryError(null);
+    setIsLoading(true);
+    setSessionRevision((current) => current + 1);
+  }), [queryClient]);
 
   useEffect(() => {
-    const initializeAuth = async () => {
-      const storedToken = localStorage.getItem('access_token');
-      let activeToken = storedToken;
+    let cancelled = false;
+    let retryTimer: number | null = null;
 
-      if (activeToken && isTokenExpired(activeToken)) {
+    const retainSessionAndRetry = (error: unknown, expectedSessionId: string | null) => {
+      if (cancelled) return;
+      const currentSession = getAuthSessionSnapshot();
+      if (currentSession.id !== expectedSessionId) return;
+      console.error('Authentication temporarily unavailable:', error);
+      setToken(currentSession.access);
+      setUser(null);
+      setAuthRecoveryError('서버 연결이 불안정합니다. 로그인 정보는 유지되며 자동으로 다시 연결합니다.');
+      setIsLoading(false);
+      retryTimer = window.setTimeout(() => {
+        setSessionRevision((current) => current + 1);
+      }, AUTH_RETRY_DELAY_MS);
+    };
+
+    const initializeAuth = async () => {
+      if (!cancelled) {
+        setIsLoading(true);
+      }
+
+      const sessionAtStartSnapshot = getAuthSessionSnapshot();
+      let activeToken = sessionAtStartSnapshot.access;
+      const storedRefresh = sessionAtStartSnapshot.refresh;
+      const sessionAtStart = sessionAtStartSnapshot.id;
+
+      const clearSessionIfCurrent = () => {
+        if (cancelled || !invalidateAuthSession(sessionAtStart)) return;
+        setToken(null);
+        setUser(null);
+        setAuthRecoveryError(null);
+        setIsLoading(false);
+      };
+
+      if (!activeToken && !storedRefresh) {
+        if (!cancelled) {
+          setToken(null);
+          setUser(null);
+          setAuthRecoveryError(null);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      if ((!activeToken || isTokenExpired(activeToken)) && storedRefresh) {
         try {
-          activeToken = await refreshAccessToken(activeToken);
-        } catch {
-          activeToken = null;
+          activeToken = await refreshAccessToken(activeToken, sessionAtStart);
+        } catch (error) {
+          if (isDefinitiveIdentityError(error)) {
+            clearSessionIfCurrent();
+          } else {
+            retainSessionAndRetry(error, sessionAtStart);
+          }
+          return;
         }
       }
 
       if (activeToken && !isTokenExpired(activeToken)) {
-        setToken(activeToken);
-        const userInfo = import.meta.env.DEV && isDevSessionToken(activeToken)
-          ? getDevCurrentUser() as User
-          : await fetchUserInfo();
-        if (userInfo) {
+        try {
+          const userInfo = import.meta.env.DEV && isDevSessionToken(activeToken)
+            ? getDevCurrentUser() as User
+            : await fetchUserInfo();
+          if (cancelled) return;
+          setToken(activeToken);
           setUser(userInfo);
-        } else {
-          logout();
+          setAuthRecoveryError(null);
+          setIsLoading(false);
+        } catch (error) {
+          if (isDefinitiveIdentityError(error)) {
+            clearSessionIfCurrent();
+          } else {
+            retainSessionAndRetry(error, sessionAtStart);
+          }
         }
       } else {
-        logout();
+        clearSessionIfCurrent();
       }
-      setIsLoading(false);
     };
 
-    initializeAuth();
-  }, []);
+    void initializeAuth();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [sessionRevision]);
 
   const login = async (username: string, password: string): Promise<boolean> => {
     if (canUseDevLogin({ username, password })) {
       const { access, refresh } = createDevTokenPair();
-      setAccessToken(access);
-      setRefreshToken(refresh);
+      startAuthSession(access, refresh);
       setToken(access);
-      setUser(getDevCurrentUser() as User);
+      setUser(null);
+      setAuthRecoveryError(null);
+      setIsLoading(true);
       return true;
     }
 
     try {
-      const response = await api.post('/token/', { username, password });
+      const response = await api.post('/token/', { username, password }, { skipAuth: true });
       console.log('Login response:', response);
       
       // 응답이 있는지 확인
@@ -162,19 +260,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return false;
       }
 
-      setAccessToken(access);
-      setRefreshToken(refresh);
+      startAuthSession(access, refresh);
       setToken(access);
-
-      // 실제 사용자 정보 가져오기
-      const userInfo = await fetchUserInfo();
-      if (userInfo) {
-        setUser(userInfo);
-        return true;
-      } else {
-        logout();
-        return false;
-      }
+      setUser(null);
+      setAuthRecoveryError(null);
+      setIsLoading(true);
+      return true;
     } catch (error) {
       console.error('Login error:', error);
       if (error instanceof Error) {
@@ -185,9 +276,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
+    void queryClient.cancelQueries();
+    queryClient.clear();
     clearTokens();
     setToken(null);
     setUser(null);
+    setAuthRecoveryError(null);
+    setIsLoading(false);
+  };
+
+  const retryAuth = () => {
+    setSessionRevision((current) => current + 1);
   };
 
   // 권한 확인 함수
@@ -225,8 +324,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     token,
     login,
     logout,
+    retryAuth,
     isLoading,
     isAuthenticated: !!token,
+    authRecoveryError,
     hasPermission,
     canAccessRoute,
   };

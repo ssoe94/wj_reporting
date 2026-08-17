@@ -23,4 +23,4 @@ celery==5.3.4
 redis==5.0.1
 cloudinary==1.41.0
 django-cloudinary-storage==0.3.0
-
+Pillow==12.3.0

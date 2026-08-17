@@ -39,7 +39,7 @@ export default defineConfig({
   webServer: skipWebServer
     ? undefined
     : {
-      command: 'cd ../.. && VITE_USE_REMOTE_PRODUCTION_API=true npm --prefix frontend run dev -- --host 127.0.0.1 --port 5174',
+      command: 'cd ../.. && VITE_ENABLE_DEV_LOGIN=true VITE_USE_REMOTE_PRODUCTION_API=true npm --prefix frontend run dev -- --host 127.0.0.1 --port 5174',
       url: baseURL,
       reuseExistingServer: !process.env.CI,
       timeout: 120 * 1000,

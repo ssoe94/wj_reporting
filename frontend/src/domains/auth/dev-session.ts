@@ -4,7 +4,10 @@ import type { CurrentUser, TokenPair } from "@/domains/auth/types";
 const DEV_LOGIN_USERNAME = "superuser";
 const DEV_LOGIN_PASSWORD = "";
 const DEV_TOKEN_MARKER = "wj-next-local";
-const ENABLE_DEV_LOGIN = import.meta.env.VITE_ENABLE_DEV_LOGIN !== "false";
+// A preview-only identity cannot authenticate Django APIs. Keep it explicitly
+// opt-in for mocked visual/e2e work so a normal local login never appears
+// successful while protected API calls receive 401 responses.
+const ENABLE_DEV_LOGIN = import.meta.env.VITE_ENABLE_DEV_LOGIN === "true";
 
 function base64UrlEncode(value: string) {
   return window.btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");

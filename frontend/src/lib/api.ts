@@ -1,4 +1,7 @@
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { AuthRefreshError, refreshAccessToken } from '@/domains/auth/auth-refresh';
+import { getAuthSessionSnapshot } from '@/domains/auth/auth-storage';
+import { isDevSessionToken } from '@/domains/auth/dev-session';
 
 // API 기본 URL 설정 - 환경 변수 우선, 없으면 프록시 사용
 const API_URL = import.meta.env.PROD
@@ -18,11 +21,30 @@ const api = axios.create({
   },
 });
 
+type RetriableRequest = InternalAxiosRequestConfig & {
+  _retry?: boolean;
+  _authSessionId?: string | null;
+};
+
 // 요청 인터셉터: 인증 토큰 자동 추가
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
+    const request = config as RetriableRequest;
+    if (config.skipAuth) {
+      config.headers.delete('Authorization');
+      request._authSessionId = null;
+      return config;
+    }
+
+    const session = getAuthSessionSnapshot();
+    if (request._authSessionId === undefined) {
+      request._authSessionId = session.id;
+    }
+    if (request._authSessionId !== session.id) {
+      return Promise.reject(new AuthRefreshError('The authenticated session changed', false));
+    }
+    const token = session.access;
+    if (token && !isDevSessionToken(token)) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -35,6 +57,14 @@ api.interceptors.request.use(
 // 응답 인터셉터: 토큰 만료 시 자동 갱신 및 에러 로깅
 api.interceptors.response.use(
   (response) => {
+    const request = response.config as RetriableRequest;
+    if (
+      !request.skipAuth
+      && request._authSessionId
+      && request._authSessionId !== getAuthSessionSnapshot().id
+    ) {
+      return Promise.reject(new AuthRefreshError('The authenticated session changed', false));
+    }
     // 응답 헤더 검증 (디버깅용)
     const contentType = response.headers['content-type'];
     if (contentType && !contentType.includes('application/json')) {
@@ -47,7 +77,7 @@ api.interceptors.response.use(
     return response;
   },
   async (error: AxiosError) => {
-    const originalRequest = error.config as any;
+    const originalRequest = error.config as RetriableRequest | undefined;
     
     // HTML 응답 감지 (프록시 실패 시)
     if (error.response) {
@@ -67,22 +97,38 @@ api.interceptors.response.use(
     }
     
     // 401 에러 처리
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (
+      originalRequest &&
+      !originalRequest.skipAuth &&
+      error.response?.status === 401 &&
+      !originalRequest._retry
+    ) {
       originalRequest._retry = true;
-      
+
+      const requestSessionId = originalRequest._authSessionId;
+      const session = getAuthSessionSnapshot();
+      if (!requestSessionId || requestSessionId !== session.id) {
+        return Promise.reject(new AuthRefreshError('The authenticated session changed', false));
+      }
+
+      const authorization = originalRequest.headers.Authorization;
+      const failedAccess = typeof authorization === 'string' && authorization.startsWith('Bearer ')
+        ? authorization.slice('Bearer '.length)
+        : session.access;
+
+      if (isDevSessionToken(failedAccess)) {
+        return Promise.reject(error);
+      }
+
       try {
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (refreshToken) {
-          const response = await api.post('/token/refresh/', { refresh: refreshToken });
-          const { access } = response.data;
-          localStorage.setItem('access_token', access);
-          originalRequest.headers.Authorization = `Bearer ${access}`;
-          return api(originalRequest);
+        const refreshedAccess = await refreshAccessToken(failedAccess, requestSessionId);
+        if (requestSessionId !== getAuthSessionSnapshot().id) {
+          throw new AuthRefreshError('The authenticated session changed', false);
         }
+        originalRequest.headers.Authorization = `Bearer ${refreshedAccess}`;
+        return api(originalRequest);
       } catch (refreshError) {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        window.location.href = '/login';
+        return Promise.reject(refreshError);
       }
     }
     
