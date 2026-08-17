@@ -1,7 +1,7 @@
-from injection.permissions import QualityPermission
+from injection.permissions import QualityPermission as BaseQualityPermission
 
 
-class QualityImportPermission(QualityPermission):
+class QualityPermission(BaseQualityPermission):
     """Quality permission flags with a fail-closed missing-profile policy."""
 
     def has_permission(self, request, view):
@@ -16,3 +16,7 @@ class QualityImportPermission(QualityPermission):
         if not getattr(profile, 'pk', None):
             return False
         return super().has_permission(request, view)
+
+
+class QualityImportPermission(QualityPermission):
+    """Quality import access follows the same fail-closed quality policy."""

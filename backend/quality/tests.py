@@ -35,6 +35,93 @@ from .models import (
 )
 
 
+class QualityReportPermissionTests(APITestCase):
+    def setUp(self):
+        self.viewer = get_user_model().objects.create_user(
+            username='quality-viewer',
+            password='test-password',
+        )
+        self.viewer.profile.can_view_quality = True
+        self.viewer.profile.can_edit_quality = False
+        self.viewer.profile.save(update_fields=['can_view_quality', 'can_edit_quality'])
+
+        self.editor = get_user_model().objects.create_user(
+            username='quality-report-editor',
+            password='test-password',
+        )
+        self.editor.profile.can_view_quality = True
+        self.editor.profile.can_edit_quality = True
+        self.editor.profile.save(update_fields=['can_view_quality', 'can_edit_quality'])
+
+        self.hidden_user = get_user_model().objects.create_user(
+            username='quality-hidden-user',
+            password='test-password',
+        )
+        self.hidden_user.profile.can_view_quality = False
+        self.hidden_user.profile.can_edit_quality = False
+        self.hidden_user.profile.save(update_fields=['can_view_quality', 'can_edit_quality'])
+
+        self.report = QualityReport.objects.create(
+            report_dt=timezone.now(),
+            section='LQC_INJ',
+            model='27G523',
+            part_no='ACQ30776301',
+            judgement='NG',
+            phenomenon='表面色差',
+            action_result='확인 중',
+        )
+        self.list_url = reverse('quality-report-list')
+        self.detail_url = reverse('quality-report-detail', args=[self.report.pk])
+
+    def test_view_permission_allows_read_but_denies_report_and_supporting_writes(self):
+        self.client.force_authenticate(self.viewer)
+
+        self.assertEqual(self.client.get(self.list_url).status_code, 200)
+        self.assertEqual(
+            self.client.patch(self.detail_url, {'action_result': '변경'}, format='json').status_code,
+            403,
+        )
+        self.assertEqual(self.client.delete(self.detail_url).status_code, 403)
+        self.assertEqual(
+            self.client.post(self.list_url, {'report_dt': timezone.now().isoformat()}, format='json').status_code,
+            403,
+        )
+        self.assertEqual(self.client.get(reverse('supplier-list')).status_code, 200)
+        self.assertEqual(
+            self.client.post(reverse('supplier-list'), {'name': 'restricted'}, format='json').status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post(reverse('cloudinary-signature'), {'folder': 'quality'}, format='json').status_code,
+            403,
+        )
+
+    def test_editor_can_update_and_delete_report(self):
+        self.client.force_authenticate(self.editor)
+
+        response = self.client.patch(
+            self.detail_url,
+            {'action_result': '조치 완료'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.action_result, '조치 완료')
+        self.assertEqual(self.client.delete(self.detail_url).status_code, 204)
+
+    def test_quality_access_is_fail_closed_without_view_permission_or_profile(self):
+        self.client.force_authenticate(self.hidden_user)
+        self.assertEqual(self.client.get(self.list_url).status_code, 403)
+
+        no_profile = get_user_model().objects.create_user(
+            username='quality-no-profile',
+            password='test-password',
+        )
+        no_profile.profile.delete()
+        self.client.force_authenticate(no_profile)
+        self.assertEqual(self.client.get(self.list_url).status_code, 403)
+
+
 def build_quality_workbook(
     *,
     workbook_title='quality-source',

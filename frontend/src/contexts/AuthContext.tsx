@@ -312,7 +312,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     if (base.startsWith('/injection')) return true;
     if (base.startsWith('/assembly')) return true;
-    if (base.startsWith('/quality')) return true;
+    if (base.startsWith('/quality')) return hasPermission('can_view_quality');
     if (base.startsWith('/sales')) return true;
     if (base.startsWith('/eco2') || base.startsWith('/eco') || base.startsWith('/models')) return true;
 

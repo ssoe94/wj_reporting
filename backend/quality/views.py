@@ -26,7 +26,7 @@ from .models import (
     QualityReport,
     Supplier,
 )
-from .permissions import QualityImportPermission
+from .permissions import QualityImportPermission, QualityPermission
 from .serializers import (
     QualityImportAssetSerializer,
     QualityImportMediaSerializer,
@@ -67,6 +67,7 @@ class QualityImportPagination(PageNumberPagination):
 
 
 class QualityReportViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, QualityPermission]
     queryset = QualityReport.objects.all()
     serializer_class = QualityReportSerializer
     pagination_class = QualityReportPagination
@@ -118,7 +119,7 @@ class QualityReportViewSet(viewsets.ModelViewSet):
 
 
 class DailyQualityAttentionView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, QualityPermission]
 
     def get(self, request, *args, **kwargs):
         date_str = request.query_params.get('date')
@@ -152,6 +153,7 @@ class DailyQualityAttentionView(APIView):
 
 class SupplierViewSet(viewsets.ModelViewSet):
     """공급자 관리 ViewSet"""
+    permission_classes = [IsAuthenticated, QualityPermission]
     queryset = Supplier.objects.all()
     serializer_class = SupplierSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
@@ -559,7 +561,7 @@ class QualityImportAssetViewSet(
 
 @csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, QualityPermission])
 def get_cloudinary_signature(request):
     """
     Cloudinary 업로드를 위한 서명 생성

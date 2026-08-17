@@ -6,26 +6,32 @@ import QualityReportForm from './QualityReportForm';
 import QualityReportHistory from './QualityReportHistory';
 import QualityExcelImport from './QualityExcelImport';
 import { ClipboardList, FileSpreadsheet } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 type QualityTab = 'report' | 'import' | 'history';
 
 export default function QualityPage() {
   const { t } = useLang();
+  const { user, hasPermission } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<QualityTab>('report');
+  const canEditQuality = Boolean(user?.is_staff || hasPermission('can_edit_quality'));
 
   useEffect(() => {
     if (location.hash === '#stats') {
       setActiveTab('history');
-    } else if (location.hash === '#import') {
+    } else if (location.hash === '#import' && canEditQuality) {
       setActiveTab('import');
-    } else {
+    } else if (canEditQuality) {
       setActiveTab('report');
+    } else {
+      setActiveTab('history');
     }
-  }, [location.hash]);
+  }, [canEditQuality, location.hash]);
 
   const selectTab = (tab: QualityTab) => {
+    if (!canEditQuality && tab !== 'history') return;
     const hash = tab === 'history' ? 'stats' : tab;
     setActiveTab(tab);
     navigate(`/quality#${hash}`);
@@ -40,37 +46,43 @@ export default function QualityPage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 space-y-6">
       {/* 페이지 제목과 토글을 같은 줄에 배치 */}
-      <div className="flex flex-wrap items-center gap-4">
-        <ClipboardList className="w-7 h-7 text-blue-600" />
-        <h1 className="text-2xl font-bold text-gray-900">{t('brand_quality')}</h1>
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-1 ml-2 rounded-lg inline-flex">
-          <button
-            onClick={() => selectTab('report')}
-            aria-selected={activeTab === 'report'}
-            className={`px-6 py-2 rounded-md font-medium transition-all duration-200 ${
-              activeTab === 'report'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-gray-600 hover:text-blue-600'
-            }`}
-          >
-            {t('quality.report_tab')}
-          </button>
-          <button
-            onClick={() => selectTab('import')}
-            aria-selected={activeTab === 'import'}
-            className={`inline-flex items-center gap-2 px-6 py-2 rounded-md font-medium transition-all duration-200 ${
-              activeTab === 'import'
-                ? 'bg-cyan-600 text-white shadow-md'
-                : 'text-gray-600 hover:text-cyan-700'
-            }`}
-          >
-            <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
-            {t('quality.import_tab')}
-          </button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+        <div className="flex items-center gap-3">
+          <ClipboardList className="h-7 w-7 text-blue-600" />
+          <h1 className="text-2xl font-bold text-gray-900">{t('brand_quality')}</h1>
+        </div>
+        <div className={`grid w-full rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-1 sm:ml-2 sm:inline-flex sm:w-auto ${canEditQuality ? 'grid-cols-3' : 'grid-cols-1'}`}>
+          {canEditQuality && (
+            <>
+              <button
+                onClick={() => selectTab('report')}
+                aria-selected={activeTab === 'report'}
+                className={`min-w-0 px-2 py-2 text-sm font-medium transition-all duration-200 sm:px-6 sm:text-base ${
+                  activeTab === 'report'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-gray-600 hover:text-blue-600'
+                }`}
+              >
+                {t('quality.report_tab')}
+              </button>
+              <button
+                onClick={() => selectTab('import')}
+                aria-selected={activeTab === 'import'}
+                className={`inline-flex min-w-0 items-center justify-center gap-1 px-2 py-2 text-sm font-medium transition-all duration-200 sm:gap-2 sm:px-6 sm:text-base ${
+                  activeTab === 'import'
+                    ? 'bg-cyan-600 text-white shadow-md'
+                    : 'text-gray-600 hover:text-cyan-700'
+                }`}
+              >
+                <FileSpreadsheet className="hidden h-4 w-4 shrink-0 min-[420px]:block" aria-hidden="true" />
+                <span className="truncate">{t('quality.import_tab')}</span>
+              </button>
+            </>
+          )}
           <button
             onClick={() => selectTab('history')}
             aria-selected={activeTab === 'history'}
-            className={`px-6 py-2 rounded-md font-medium transition-all duration-200 ${
+            className={`min-w-0 px-2 py-2 text-sm font-medium transition-all duration-200 sm:px-6 sm:text-base ${
               activeTab === 'history'
                 ? 'bg-indigo-600 text-white shadow-md'
                 : 'text-gray-600 hover:text-indigo-600'
@@ -82,7 +94,7 @@ export default function QualityPage() {
       </div>
 
       <AnimatePresence mode="wait">
-        {activeTab === 'report' && (
+        {canEditQuality && activeTab === 'report' && (
           <motion.div
             key="report"
             variants={tabVariants}
@@ -104,7 +116,7 @@ export default function QualityPage() {
             <QualityReportHistory />
           </motion.div>
         )}
-        {activeTab === 'import' && (
+        {canEditQuality && activeTab === 'import' && (
           <motion.div
             key="import"
             variants={tabVariants}

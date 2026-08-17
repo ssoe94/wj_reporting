@@ -19,6 +19,7 @@ import {
   useAssemblyPartspecsByModel,
   useAssemblyPartsByModel,
 } from '../../hooks/useAssemblyParts';
+import { useAuth } from '../../contexts/AuthContext';
 
 // 서버에서 받아올 데이터 타입 정의
 interface QualityReport {
@@ -40,6 +41,21 @@ interface QualityReport {
   image3?: string;
 }
 
+const IMAGE_ERROR_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="48" height="48"%3E%3Crect fill="%23ddd" width="48" height="48"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3E?%3C/text%3E%3C/svg%3E';
+
+function resolveImageUrl(url: string) {
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+  if (url.startsWith('/media')) {
+    return `${apiBase || 'http://localhost:8000'}${url}`;
+  }
+  return `${apiBase}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
+function getReportImages(report: QualityReport) {
+  return [report.image1, report.image2, report.image3].filter(Boolean) as string[];
+}
+
 type ModelOption = {
   model_code: string;
   description?: string | null;
@@ -53,7 +69,9 @@ type PartOption = {
 
 export default function QualityReportHistory() {
   const { t, lang } = useLang();
+  const { user, hasPermission } = useAuth();
   const queryClient = useQueryClient();
+  const canEditQuality = Boolean(user?.is_staff || hasPermission('can_edit_quality'));
   const [filters, setFilters] = useState(() => {
     const defaultTo = dayjs().format('YYYY-MM-DD');
     const defaultFrom = dayjs().subtract(29, 'day').format('YYYY-MM-DD');
@@ -410,6 +428,7 @@ export default function QualityReportHistory() {
   };
 
   const handleSaveActionResult = async (reportId: number) => {
+    if (!canEditQuality) return;
     const actionResult = actionResults[reportId] || '';
     setSavingId(reportId);
     try {
@@ -427,6 +446,7 @@ export default function QualityReportHistory() {
   };
 
   const handleDeleteReport = async (reportId: number) => {
+    if (!canEditQuality) return;
     if (!window.confirm(t('quality.confirm_delete'))) {
       return;
     }
@@ -834,9 +854,177 @@ export default function QualityReportHistory() {
             </label>
           </div>
         </div>
-        {/* 테이블 */}
-        <div className="overflow-x-hidden border border-indigo-200 rounded-lg shadow-sm">
-          <table className="w-full table-fixed text-sm">
+        {/* 모바일 카드 목록 */}
+        <div className="space-y-3 xl:hidden">
+          {isLoading ? (
+            <div className="rounded-xl border border-indigo-100 bg-white px-4 py-10 text-center text-sm text-gray-500">
+              {t('loading')}...
+            </div>
+          ) : isError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-10 text-center text-sm text-red-600">
+              {t('error_loading_data')}
+            </div>
+          ) : reports.length === 0 ? (
+            <div className="rounded-xl border border-indigo-100 bg-white px-4 py-10 text-center text-sm text-gray-500">
+              {t('no_data')}
+            </div>
+          ) : (
+            reports.map((r: QualityReport) => {
+              const isEditing = editingId === r.id;
+              const currentValue = actionResults[r.id] !== undefined
+                ? actionResults[r.id]
+                : (r.action_result || '');
+              const images = getReportImages(r);
+
+              return (
+                <article
+                  key={r.id}
+                  className="min-w-0 overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-gray-500">{t('date')}</p>
+                      <p className="mt-0.5 text-sm font-semibold text-gray-900">
+                        {(r.report_dt || '').slice(0, 10)}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
+                      r.judgement === 'OK'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {r.judgement || '-'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-4 p-4">
+                    <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3">
+                      {[
+                        [t('quality.section'), r.section],
+                        [t('model'), r.model],
+                        [t('part_no'), r.part_no],
+                        [t('quality.lot_size'), r.lot_qty],
+                        [t('quality.defect_rate'), r.defect_rate],
+                      ].map(([label, value]) => (
+                        <div key={String(label)} className="min-w-0">
+                          <dt className="text-xs font-medium text-gray-500">{label}</dt>
+                          <dd className="mt-1 break-words text-sm font-medium text-gray-800">
+                            {value ?? '-'}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+
+                    <div className="min-w-0 border-t border-gray-100 pt-3">
+                      <p className="text-xs font-medium text-gray-500">{t('quality.defect_phenomenon')}</p>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-gray-900">
+                        {r.phenomenon || '-'}
+                      </p>
+                    </div>
+
+                    <div className="border-t border-gray-100 pt-3">
+                      <p className="text-xs font-medium text-gray-500">{t('quality.image_upload')}</p>
+                      {images.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedImages(images.map(resolveImageUrl));
+                            setCurrentImageIndex(0);
+                          }}
+                          className="mt-2 flex min-h-14 w-full items-center gap-3 rounded-lg border border-indigo-100 bg-indigo-50/50 p-2 text-left transition-colors hover:bg-indigo-50"
+                          aria-label={`${t('quality.image_upload')} ${images.length}`}
+                        >
+                          <span className="relative shrink-0">
+                            <img
+                              src={resolveImageUrl(images[0])}
+                              alt=""
+                              className="h-12 w-12 rounded-md border border-indigo-200 object-cover"
+                              onError={(event) => {
+                                event.currentTarget.src = IMAGE_ERROR_PLACEHOLDER;
+                              }}
+                            />
+                            {images.length > 1 && (
+                              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1 text-[11px] font-bold text-white">
+                                {images.length}
+                              </span>
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1 text-sm font-medium text-indigo-700">
+                            {t('quality.view_detail')}
+                          </span>
+                          <Eye className="h-5 w-5 shrink-0 text-indigo-600" aria-hidden="true" />
+                        </button>
+                      ) : (
+                        <p className="mt-1 text-sm text-gray-400">-</p>
+                      )}
+                    </div>
+
+                    <div className="border-t border-gray-100 pt-3">
+                      <Label htmlFor={`mobile-action-result-${r.id}`} className="text-xs font-medium text-gray-500">
+                        {t('quality.action_result')}
+                      </Label>
+                      {canEditQuality ? (
+                        <Input
+                          id={`mobile-action-result-${r.id}`}
+                          value={currentValue}
+                          onChange={(event) => {
+                            setActionResults((previous) => ({ ...previous, [r.id]: event.target.value }));
+                            if (!isEditing) setEditingId(r.id);
+                          }}
+                          placeholder={t('quality.action_result_placeholder')}
+                          className="mt-2 h-11 w-full min-w-0 text-base"
+                        />
+                      ) : (
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-800">
+                          {currentValue || '-'}
+                        </p>
+                      )}
+                      {canEditQuality && isEditing && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleSaveActionResult(r.id)}
+                          disabled={savingId === r.id}
+                          className="mt-2 w-full bg-indigo-600 text-white hover:bg-indigo-700"
+                        >
+                          <Save className={`mr-2 h-4 w-4 ${savingId === r.id ? 'animate-pulse' : ''}`} />
+                          {savingId === r.id ? t('saving') : t('quality.save_action')}
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className={`grid gap-2 border-t border-gray-100 pt-3 ${canEditQuality ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setSelectedReport(r)}
+                        className="min-w-0"
+                      >
+                        <Eye className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{t('quality.view_detail')}</span>
+                      </Button>
+                      {canEditQuality && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => handleDeleteReport(r.id)}
+                          disabled={isDeleting}
+                          className="min-w-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{t('quality.delete_report')}</span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+
+        {/* 데스크톱 테이블 */}
+        <div className="hidden overflow-x-auto rounded-lg border border-indigo-200 shadow-sm xl:block">
+          <table className="w-full min-w-[1180px] table-fixed text-sm">
             <thead className="bg-gradient-to-r from-indigo-50 to-blue-50 whitespace-nowrap">
               <tr className="border-b border-indigo-200">
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('date')}</th>
@@ -880,45 +1068,27 @@ export default function QualityReportHistory() {
                       </td>
                       <td className="px-3 py-3 text-center">
                         {(() => {
-                          const images = [r.image1, r.image2, r.image3].filter(Boolean) as string[];
+                          const images = getReportImages(r);
                           if (images.length === 0) {
                             return <span className="text-gray-400 text-xs">-</span>;
                           }
-                          
-                          // 이미지 URL 처리 (Cloudinary는 절대 URL 반환)
-                          const getImageUrl = (url: string) => {
-                            // 이미 절대 URL인 경우 (Cloudinary)
-                            if (url.startsWith('http://') || url.startsWith('https://')) {
-                              return url;
-                            }
-                            // 상대 경로인 경우 (로컬 개발 또는 기존 이미지)
-                            // API 베이스 URL 사용 (프록시를 통해 백엔드로 전달)
-                            const apiBase = import.meta.env.VITE_API_BASE_URL || '';
-                            // /media로 시작하는 경우 백엔드 서버 URL 사용
-                            if (url.startsWith('/media')) {
-                              // 개발 환경: localhost:8000, 프로덕션: API 서버
-                              const backendUrl = apiBase || 'http://localhost:8000';
-                              return `${backendUrl}${url}`;
-                            }
-                            return `${apiBase}${url.startsWith('/') ? url : '/' + url}`;
-                          };
                           
                           return (
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={() => {
-                                  setSelectedImages(images.map(getImageUrl));
+                                  setSelectedImages(images.map(resolveImageUrl));
                                   setCurrentImageIndex(0);
                                 }}
                                 className="relative"
                               >
                                 <img
-                                  src={getImageUrl(images[0])}
+                                  src={resolveImageUrl(images[0])}
                                   alt="Thumbnail"
                                   className="w-12 h-12 object-cover rounded border border-indigo-200 hover:border-indigo-400 transition-all cursor-pointer"
                                   onError={(e) => {
                                     console.error('Image load error:', images[0]);
-                                    e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="48" height="48"%3E%3Crect fill="%23ddd" width="48" height="48"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3E?%3C/text%3E%3C/svg%3E';
+                                    e.currentTarget.src = IMAGE_ERROR_PLACEHOLDER;
                                   }}
                                 />
                                 {images.length > 1 && (
@@ -933,16 +1103,22 @@ export default function QualityReportHistory() {
                       </td>
                       <td className="px-2 py-3 w-[144px] align-top">
                         <div className="flex flex-col gap-1">
-                          <Input
-                            value={currentValue}
-                            onChange={(e) => {
-                              setActionResults(prev => ({ ...prev, [r.id]: e.target.value }));
-                              if (!isEditing) setEditingId(r.id);
-                            }}
-                            placeholder={t('quality.action_result_placeholder')}
-                            className="text-sm w-full min-w-0"
-                          />
-                          {isEditing && (
+                          {canEditQuality ? (
+                            <Input
+                              value={currentValue}
+                              onChange={(e) => {
+                                setActionResults(prev => ({ ...prev, [r.id]: e.target.value }));
+                                if (!isEditing) setEditingId(r.id);
+                              }}
+                              placeholder={t('quality.action_result_placeholder')}
+                              className="text-sm w-full min-w-0"
+                            />
+                          ) : (
+                            <p className="whitespace-pre-wrap break-words text-sm leading-5 text-gray-700">
+                              {currentValue || '-'}
+                            </p>
+                          )}
+                          {canEditQuality && isEditing && (
                             <Button
                               size="sm"
                               onClick={() => handleSaveActionResult(r.id)}
@@ -973,14 +1149,16 @@ export default function QualityReportHistory() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => handleDeleteReport(r.id)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title={t('quality.delete_report')}
-                            disabled={isDeleting}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {canEditQuality && (
+                            <button
+                              onClick={() => handleDeleteReport(r.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title={t('quality.delete_report')}
+                              disabled={isDeleting}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -991,9 +1169,9 @@ export default function QualityReportHistory() {
           </table>
         </div>
         {/* 페이지네이션 */}
-        <div className="flex items-center justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>{t('quality.prev_page')}</Button>
-          <span className="text-xs text-gray-500">{page} / {totalPages}</span>
+        <div className="flex flex-wrap items-center justify-center gap-2 xl:justify-end">
+          <Button className="min-w-24 flex-1 sm:flex-none" type="button" variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>{t('quality.prev_page')}</Button>
+          <span className="order-first w-full text-center text-xs text-gray-500 sm:order-none sm:w-auto">{page} / {totalPages}</span>
           <Input
             type="number"
             min={1}
@@ -1007,10 +1185,10 @@ export default function QualityReportHistory() {
             }}
             className="h-9 w-20 text-center"
           />
-          <Button type="button" variant="secondary" onClick={handlePageJump}>
+          <Button className="shrink-0" type="button" variant="secondary" onClick={handlePageJump}>
             {lang === 'zh' ? '跳转' : '이동'}
           </Button>
-          <Button type="button" variant="secondary" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>{t('quality.next_page')}</Button>
+          <Button className="min-w-24 flex-1 sm:flex-none" type="button" variant="secondary" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>{t('quality.next_page')}</Button>
         </div>
       </div>
 
@@ -1254,26 +1432,8 @@ export default function QualityReportHistory() {
 
               {/* 이미지 */}
               {(() => {
-                const images = [selectedReport.image1, selectedReport.image2, selectedReport.image3].filter(Boolean) as string[];
+                const images = getReportImages(selectedReport);
                 if (images.length === 0) return null;
-                
-                // 이미지 URL 처리 (Cloudinary는 절대 URL 반환)
-                const getImageUrl = (url: string) => {
-                  // 이미 절대 URL인 경우 (Cloudinary)
-                  if (url.startsWith('http://') || url.startsWith('https://')) {
-                    return url;
-                  }
-                  // 상대 경로인 경우 (로컬 개발 또는 기존 이미지)
-                  // API 베이스 URL 사용 (프록시를 통해 백엔드로 전달)
-                  const apiBase = import.meta.env.VITE_API_BASE_URL || '';
-                  // /media로 시작하는 경우 백엔드 서버 URL 사용
-                  if (url.startsWith('/media')) {
-                    // 개발 환경: localhost:8000, 프로덕션: API 서버
-                    const backendUrl = apiBase || 'http://localhost:8000';
-                    return `${backendUrl}${url}`;
-                  }
-                  return `${apiBase}${url.startsWith('/') ? url : '/' + url}`;
-                };
                 
                 return (
                   <div>
@@ -1284,11 +1444,11 @@ export default function QualityReportHistory() {
                       {images.map((img, idx) => (
                         <div key={idx} className="relative group">
                           <img
-                            src={getImageUrl(img)}
+                            src={resolveImageUrl(img)}
                             alt={`Image ${idx + 1}`}
                             className="w-full h-48 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:border-indigo-400 transition-all"
                             onClick={() => {
-                              setSelectedImages(images.map(getImageUrl));
+                              setSelectedImages(images.map(resolveImageUrl));
                               setCurrentImageIndex(idx);
                             }}
                             onError={(e) => {
@@ -1315,24 +1475,26 @@ export default function QualityReportHistory() {
               >
                 {t('close')}
               </Button>
-              <Button
-                variant="danger"
-                onClick={() => handleDeleteReport(selectedReport.id)}
-                disabled={isDeleting}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                {isDeleting ? (
-                  <span className="flex items-center gap-2">
-                    <Trash2 className="w-4 h-4 animate-pulse" />
-                    {t('deleting')}...
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    <Trash2 className="w-4 h-4" />
-                    {t('quality.delete_report')}
-                  </span>
-                )}
-              </Button>
+              {canEditQuality && (
+                <Button
+                  variant="danger"
+                  onClick={() => handleDeleteReport(selectedReport.id)}
+                  disabled={isDeleting}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {isDeleting ? (
+                    <span className="flex items-center gap-2">
+                      <Trash2 className="w-4 h-4 animate-pulse" />
+                      {t('deleting')}...
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Trash2 className="w-4 h-4" />
+                      {t('quality.delete_report')}
+                    </span>
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         </div>
