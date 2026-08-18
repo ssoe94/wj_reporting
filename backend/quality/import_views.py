@@ -426,7 +426,11 @@ class QualityExcelImportRollbackView(APIView):
                     },
                     status=status.HTTP_409_CONFLICT,
                 )
-            reports = list(_today_excel_report_queryset(target_date).select_for_update())
+            # The source-import relation is nullable. PostgreSQL rejects FOR
+            # UPDATE across that outer join, so lock only the report rows.
+            reports = list(
+                _today_excel_report_queryset(target_date).select_for_update(of=('self',))
+            )
             if len(reports) != expected_count:
                 return Response(
                     {
