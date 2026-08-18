@@ -37,7 +37,7 @@ from .permissions import (
     DevelopmentPermission,
     AdminOnlyPermission,
 )
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from config.authentication import ScopedJWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import make_password
@@ -884,7 +884,7 @@ class EngineeringChangeOrderViewSet(viewsets.ModelViewSet):
 class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
     queryset = UserRegistrationRequest.objects.all()
     serializer_class = UserRegistrationRequestSerializer
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [ScopedJWTAuthentication]
     permission_classes = [AdminOnlyPermission]
 
     def get_queryset(self):

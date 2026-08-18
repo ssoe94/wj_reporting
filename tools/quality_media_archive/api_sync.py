@@ -70,8 +70,8 @@ except ImportError:
 
 API_BASE_URL_ENV = "WJ_QUALITY_ARCHIVE_API_BASE_URL"
 API_BEARER_TOKEN_ENV = "WJ_QUALITY_ARCHIVE_BEARER_TOKEN"
-REPORTS_PATH = "/api/quality/reports/"
-IMPORT_ASSETS_PATH = "/api/quality/import-assets/"
+REPORTS_PATH = "/api/quality/archive/reports/"
+IMPORT_ASSETS_PATH = "/api/quality/archive/assets/"
 MAX_JSON_RESPONSE_BYTES = 20 * 1024 * 1024
 MAX_API_PAGES = 10_000
 MAX_API_ROWS = 1_000_000
@@ -352,7 +352,7 @@ def collect_api_snapshot(transport: SyncTransport, base_url: str) -> ApiSnapshot
         created_at = normalize_aware_iso_datetime(
             asset.get("created_at"), f"quality import asset {asset_id} created_at"
         )
-        content_path = f"/api/quality/import-assets/{asset_id}/content/"
+        content_path = f"/api/quality/archive/assets/{asset_id}/content/"
         content_url = _absolute_api_url(
             base_url,
             _require_nonempty_string(asset.get("url"), "asset url"),
@@ -388,8 +388,8 @@ def collect_api_snapshot(transport: SyncTransport, base_url: str) -> ApiSnapshot
         )
         mark_url = _absolute_api_url(
             base_url,
-            f"/api/quality/import-assets/{asset_id}/mark-mirrored/",
-            exact_path=f"/api/quality/import-assets/{asset_id}/mark-mirrored/",
+            f"/api/quality/archive/assets/{asset_id}/mark-mirrored/",
+            exact_path=f"/api/quality/archive/assets/{asset_id}/mark-mirrored/",
         )
         marks[label] = MarkSpec(label, mark_url, sha, "asset")
 

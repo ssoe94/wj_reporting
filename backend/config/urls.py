@@ -4,7 +4,9 @@ URL configuration for config project.
 from django.contrib import admin
 from django.urls import path, include, re_path
 from django.views.generic import TemplateView
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+from .token_views import ScopedTokenRefreshView
 
 from . import views
 from . import urls_admin
@@ -42,8 +44,8 @@ urlpatterns = [
     # JWT endpoints (AllowAny by default)
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token', TokenObtainPairView.as_view(), name='token_obtain_pair_no_slash'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('api/token/refresh', TokenRefreshView.as_view(), name='token_refresh_no_slash'),
+    path('api/token/refresh/', ScopedTokenRefreshView.as_view(), name='token_refresh'),
+    path('api/token/refresh', ScopedTokenRefreshView.as_view(), name='token_refresh_no_slash'),
 
     # API routes
     path('', include(api_urlpatterns)),

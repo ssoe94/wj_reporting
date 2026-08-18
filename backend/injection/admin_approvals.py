@@ -9,7 +9,7 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from config.authentication import ScopedJWTAuthentication
 
 from .models import UserRegistrationRequest, UserProfile
 from .serializers import UserProfileSerializer, UserRegistrationRequestSerializer
@@ -31,7 +31,7 @@ def _generate_temp_password(length: int = 12) -> str:
 
 class SignupApprovalRequestsView(APIView):
     """List signup approval requests."""
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [ScopedJWTAuthentication]
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request):
@@ -46,7 +46,7 @@ class SignupApprovalRequestsView(APIView):
 
 class SignupApprovalApproveView(APIView):
     """Approve a signup request and create/update user + profile."""
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [ScopedJWTAuthentication]
     permission_classes = [AdminOnlyPermission]
 
     @transaction.atomic
@@ -135,7 +135,7 @@ class SignupApprovalApproveView(APIView):
 
 class SignupApprovalRejectView(APIView):
     """Reject a signup request."""
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [ScopedJWTAuthentication]
     permission_classes = [AdminOnlyPermission]
 
     @transaction.atomic
@@ -157,7 +157,7 @@ class SignupApprovalRejectView(APIView):
 class AdminUserCreateView(APIView):
     """Create an active user with narrowly selected application permissions."""
 
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [ScopedJWTAuthentication]
     permission_classes = [AdminOnlyPermission]
 
     @transaction.atomic
