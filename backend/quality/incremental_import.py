@@ -20,6 +20,7 @@ from datetime import date, datetime
 from typing import Any, Iterable, Mapping
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from .direct_import import (
     IMAGE_FIELDS,
@@ -39,6 +40,7 @@ from .direct_import import (
 )
 from .excel_import import (
     ISSUE_SHEET_PATTERN,
+    MAX_STAGED_MEDIA_BYTES,
     MAX_CELL_TEXT,
     MAX_MEDIA_BYTES,
     MAX_NORMALIZED_MEDIA_TOTAL_BYTES,
@@ -47,6 +49,7 @@ from .excel_import import (
     MAX_SUPPORTED_SHEETS,
     MAX_TOTAL_ROWS,
     MAX_UPLOAD_BYTES,
+    NORMALIZER_VERSION,
     OQC_SHEET_NAME,
     ParsedWorkbook,
     WorkbookValidationError,
@@ -54,14 +57,26 @@ from .excel_import import (
     _image_dimensions,
     _image_format,
     _normalize_image_content,
+    _lock_staging_capacity,
+    _metadata_matches,
+    _pending_staged_bytes,
     _parse_issue_sheet,
     _parse_oqc_sheet,
+    kick_quality_import_pump,
 )
-from .models import QualityImportRow, QualityReport
+from .models import (
+    QualityImportAsset,
+    QualityImportBatch,
+    QualityImportMedia,
+    QualityImportProvenance,
+    QualityImportRow,
+    QualityReport,
+)
 from .storage import quality_import_media_upload_available
 
 
 MANIFEST_VERSION = 'quality-incremental-v1'
+INCREMENTAL_JOB_DATASET_KEY = 'quality_incremental_direct:v1'
 # Multipart form fields use Django's default in-memory request guard.  Two MiB
 # is still far above the measured 8월 workbook manifest (~109 KiB) while
 # keeping preview and commit behavior consistent without deployment settings.
@@ -137,6 +152,21 @@ class _ManifestWorksheet:
 
 def _manifest_error(code: str, message: str) -> WorkbookValidationError:
     return WorkbookValidationError(code, message)
+
+
+def _ensure_monthly_direct_scope(context: ManifestContext) -> None:
+    """Direct registration accepts one monthly issue sheet, never the OQC ledger."""
+
+    sheet_names = list(context.parsed.sheet_names or [])
+    if (
+        len(sheet_names) != 1
+        or sheet_names[0] == OQC_SHEET_NAME
+        or ISSUE_SHEET_PATTERN.fullmatch(sheet_names[0]) is None
+    ):
+        raise _manifest_error(
+            'monthly_sheet_required',
+            'Direct quality registration must contain exactly one monthly issue sheet.',
+        )
 
 
 def _bounded_int(value: Any, *, name: str, minimum: int, maximum: int) -> int:
@@ -830,6 +860,7 @@ def _decision_row(decision: RowDecision, *, preview: bool) -> dict[str, Any]:
 
 def preview_quality_manifest(payload: Any, *, uploaded_on: date | None = None) -> dict[str, Any]:
     context = _validate_manifest(payload, uploaded_on=uploaded_on or date.today())
+    _ensure_monthly_direct_scope(context)
     decisions = _classify(context)
     required_media_keys = [
         item['key']
@@ -926,6 +957,709 @@ def _record_media_baselines(decisions: list[RowDecision]) -> None:
         )
 
 
+def _incremental_job_scope_key(selected_row_keys: set[str]) -> str:
+    digest = hashlib.sha256(
+        ('\n'.join(sorted(selected_row_keys)) or 'empty-selection').encode('ascii')
+    ).hexdigest()
+    return f'inc:{digest[:28]}'
+
+
+def _incremental_job_metadata(decision: RowDecision) -> dict[str, Any]:
+    return {
+        'row_key': stable_source_key(decision.row),
+        'preview_status': decision.status,
+        'preview_message': decision.message,
+        'preview_report_id': decision.report.pk if decision.report else None,
+        'images_found': len(decision.media),
+        'media': [
+            {
+                'key': item['key'],
+                'source_anchor_row': item['source_anchor_row'],
+                'source_anchor_col': item['source_anchor_col'],
+                'source_index': item['source_index'],
+                'original_filename': item['original_filename'],
+                'source_sha256': item['source_sha256'],
+                'original_byte_size': item['original_byte_size'],
+                'content_type': item['content_type'],
+            }
+            for item in decision.selected_media
+        ],
+    }
+
+
+def _quality_import_row_values(decision: RowDecision) -> dict[str, Any]:
+    row = decision.row
+    raw_data = dict(row.get('raw_data') or {})
+    raw_data['_incremental_job'] = _incremental_job_metadata(decision)
+    evidence = hashlib.sha256(json.dumps(
+        {
+            'content_sha256': row['content_sha256'],
+            'media': [
+                {
+                    'column': item['source_anchor_col'],
+                    'index': item['source_index'],
+                    'sha256': item['source_sha256'],
+                }
+                for item in decision.selected_media
+            ],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(',', ':'),
+    ).encode('utf-8')).hexdigest()
+    delta_status = {
+        'new': QualityImportRow.DeltaStatus.ADDED,
+        'changed': QualityImportRow.DeltaStatus.CHANGED,
+        'unchanged': QualityImportRow.DeltaStatus.UNCHANGED,
+        'failed': QualityImportRow.DeltaStatus.ADDED,
+    }[decision.status]
+    review_status = (
+        QualityImportRow.ReviewStatus.UNCHANGED
+        if decision.status == 'unchanged'
+        else QualityImportRow.ReviewStatus.DRAFT
+    )
+    return {
+        'sheet_name': row['sheet_name'],
+        'sheet_role': row.get('sheet_role', ''),
+        'source_row_number': row['source_row_number'],
+        'source_sequence': row.get('source_sequence', ''),
+        'source_key': stable_source_key(row),
+        'business_key': row['business_key'],
+        'content_sha256': row['content_sha256'],
+        'evidence_sha256': evidence,
+        'delta_status': delta_status,
+        'report_date': row.get('report_date'),
+        'section': row.get('section', ''),
+        'occurrence_location': row.get('occurrence_location', ''),
+        'model': row.get('model', ''),
+        'part_no': row.get('part_no', ''),
+        'item_name': row.get('item_name', ''),
+        'lot_qty': row.get('lot_qty'),
+        'inspection_qty': row.get('inspection_qty'),
+        'defect_qty': row.get('defect_qty'),
+        'defect_rate': row.get('defect_rate', ''),
+        'judgement': row.get('judgement', ''),
+        'phenomenon': row.get('phenomenon', ''),
+        'disposition': row.get('disposition', ''),
+        'action_result': row.get('action_result', ''),
+        'raw_data': raw_data,
+        'warnings': sorted(set([*(row.get('warnings') or []), *decision.warnings])),
+        'review_status': review_status,
+    }
+
+
+def _stage_incremental_asset(
+    *,
+    batch: QualityImportBatch,
+    item: dict[str, Any],
+    pending_bytes: list[int],
+) -> tuple[QualityImportAsset, bool]:
+    item['storage_key'] = f'quality-import/assets/{item["sha256"]}'
+    asset = QualityImportAsset.objects.select_for_update().filter(sha256=item['sha256']).first()
+    if asset is None:
+        pending_bytes[0] += item['byte_size']
+        if pending_bytes[0] > MAX_STAGED_MEDIA_BYTES:
+            raise _manifest_error(
+                'staging_capacity_exceeded',
+                'Pending normalized images exceed the temporary database staging limit.',
+            )
+        return QualityImportAsset.objects.create(
+            sha256=item['sha256'],
+            normalizer_version=NORMALIZER_VERSION,
+            byte_size=item['byte_size'],
+            content_type=item['content_type'],
+            width=item['width'],
+            height=item['height'],
+            extension=item['extension'],
+            storage_key=item['storage_key'],
+            file='',
+            staged_bytes=item['content'],
+            upload_state=QualityImportAsset.UploadState.STAGED,
+            created_by_batch=batch,
+        ), True
+    if not _metadata_matches(asset, item):
+        raise _manifest_error(
+            'asset_metadata_mismatch',
+            'An existing content-addressed image has conflicting metadata.',
+        )
+    if asset.staged_bytes is None and asset.upload_state != QualityImportAsset.UploadState.UPLOADING:
+        pending_bytes[0] += item['byte_size']
+        if pending_bytes[0] > MAX_STAGED_MEDIA_BYTES:
+            raise _manifest_error(
+                'staging_capacity_exceeded',
+                'Pending normalized images exceed the temporary database staging limit.',
+            )
+        asset.staged_bytes = item['content']
+    if asset.upload_state != QualityImportAsset.UploadState.UPLOADING:
+        # READY in the database is not proof that the remote object still
+        # exists. The worker verifies/recreates it from these staged bytes.
+        asset.upload_state = QualityImportAsset.UploadState.STAGED
+        asset.processing_owner = ''
+        asset.lease_expires_at = None
+        asset.next_attempt_at = None
+        asset.last_error = ''
+        asset.save(update_fields=[
+            'staged_bytes', 'upload_state', 'processing_owner',
+            'lease_expires_at', 'next_attempt_at', 'last_error',
+        ])
+    return asset, False
+
+
+def _enqueue_quality_manifest_once(
+    payload: Any,
+    *,
+    uploaded_files: Mapping[str, Any],
+    uploaded_by,
+    uploaded_on: date | None = None,
+    selected_row_keys: set[str] | None = None,
+) -> tuple[QualityImportBatch, bool]:
+    """Durably stage one small incremental chunk and return before remote I/O."""
+
+    context = _validate_manifest(payload, uploaded_on=uploaded_on or date.today())
+    _ensure_monthly_direct_scope(context)
+    all_decisions = _classify(context)
+    decisions_by_key = {
+        stable_source_key(decision.row): decision
+        for decision in all_decisions
+    }
+    selected_row_keys = set(decisions_by_key) if selected_row_keys is None else selected_row_keys
+    unknown_row_keys = selected_row_keys - set(decisions_by_key)
+    if unknown_row_keys:
+        raise _manifest_error('invalid_row_selection', 'Job references an unknown workbook row.')
+    decisions = [
+        decision for decision in all_decisions
+        if stable_source_key(decision.row) in selected_row_keys
+    ]
+    if len(decisions) > MAX_COMMIT_ROWS:
+        raise _manifest_error(
+            'commit_too_large',
+            f'Job may contain at most {MAX_COMMIT_ROWS} workbook rows.',
+        )
+    required_keys = {
+        item['key']
+        for decision in decisions
+        if decision.status == 'new'
+        for item in decision.selected_media
+    }
+    selected_media_keys = {
+        item['key']
+        for decision in decisions
+        for item in decision.selected_media
+    }
+    provided_keys = set(uploaded_files)
+    if len(required_keys) > MAX_COMMIT_MEDIA_ITEMS or len(provided_keys) > MAX_COMMIT_MEDIA_ITEMS:
+        raise _manifest_error(
+            'commit_too_large',
+            f'Job may contain at most {MAX_COMMIT_MEDIA_ITEMS} images.',
+        )
+    provided_bytes = sum(
+        max(0, int(getattr(upload, 'size', 0) or 0))
+        for upload in uploaded_files.values()
+    )
+    if provided_bytes > MAX_COMMIT_MEDIA_BYTES:
+        raise _manifest_error('commit_too_large', 'Uploaded images exceed the 20 MiB request limit.')
+    if provided_keys - selected_media_keys:
+        raise _manifest_error('unexpected_media', 'Job contains media outside its selected rows.')
+    if required_keys - provided_keys:
+        raise _manifest_error('missing_media', 'One or more required images were not uploaded.')
+    if required_keys and not quality_import_media_upload_available():
+        raise _manifest_error(
+            'production_storage_required',
+            'Cloudinary image storage is required for Excel quality imports in production.',
+        )
+
+    import_scope_key = _incremental_job_scope_key(selected_row_keys)
+    existing = QualityImportBatch.objects.filter(
+        sha256=context.source_sha256,
+        import_scope_key=import_scope_key,
+        dataset_key=INCREMENTAL_JOB_DATASET_KEY,
+    ).first()
+    if existing is not None:
+        if existing.status == QualityImportBatch.Status.QUEUED:
+            kick_quality_import_pump()
+        return existing, True
+
+    normalized_by_key: dict[str, dict[str, Any]] = {}
+    normalized_total = 0
+    cache_by_source_hash: dict[str, dict[str, Any]] = {}
+    for key in required_keys:
+        manifest_item = context.media_by_key[key]
+        cached = cache_by_source_hash.get(manifest_item['source_sha256'])
+        if cached is not None:
+            normalized_by_key[key] = {**manifest_item, **cached}
+            continue
+        normalized = _read_uploaded_media(uploaded_files[key], manifest_item)
+        normalized['storage_key'] = f'quality-import/assets/{normalized["sha256"]}'
+        normalized_total += len(normalized['content'])
+        if normalized_total > MAX_NORMALIZED_MEDIA_TOTAL_BYTES:
+            raise _manifest_error(
+                'normalized_images_too_large',
+                'Normalized images exceed the aggregate safe limit.',
+            )
+        cached_values = {
+            field: normalized[field]
+            for field in (
+                'content', 'sha256', 'source_sha256', 'byte_size', 'content_type',
+                'extension', 'original_width', 'original_height', 'width', 'height',
+                'storage_key',
+            )
+        }
+        cache_by_source_hash[manifest_item['source_sha256']] = cached_values
+        normalized_by_key[key] = normalized
+
+    preview_rows = [_decision_row(decision, preview=True) for decision in decisions]
+    images_ignored = sum(max(0, len(decision.media) - MAX_IMAGES_PER_REPORT) for decision in decisions)
+    now = timezone.now()
+    with transaction.atomic():
+        _lock_staging_capacity()
+        existing = QualityImportBatch.objects.select_for_update().filter(
+            sha256=context.source_sha256,
+            import_scope_key=import_scope_key,
+        ).first()
+        if existing is not None:
+            replay = True
+            batch = existing
+        else:
+            replay = False
+            batch = QualityImportBatch.objects.create(
+                uploaded_by=uploaded_by,
+                original_filename=context.filename,
+                sha256=context.source_sha256,
+                import_scope_key=import_scope_key,
+                file_size=context.file_size,
+                dataset_key=INCREMENTAL_JOB_DATASET_KEY,
+                status=QualityImportBatch.Status.QUEUED,
+                phase='queued',
+                sheet_names=context.parsed.sheet_names,
+                total_rows=len(decisions),
+                total_media=len(required_keys),
+                source_total_rows=len(context.parsed.rows),
+                added_count=sum(decision.status == 'new' for decision in decisions),
+                changed_count=sum(decision.status == 'changed' for decision in decisions),
+                unchanged_count=sum(decision.status == 'unchanged' for decision in decisions),
+                warnings=context.parsed.warnings,
+                warning_count=(
+                    len(context.parsed.warnings)
+                    + sum(len(decision.warnings) for decision in decisions)
+                ),
+                delta_summary={
+                    'incremental_preview_rows': preview_rows,
+                    'incremental_result': None,
+                    'images_found': sum(len(decision.media) for decision in decisions),
+                    'images_ignored': images_ignored,
+                    'selected_row_keys': sorted(selected_row_keys),
+                },
+                results_persisted_at=now,
+            )
+            QualityImportProvenance.objects.create(
+                batch=batch,
+                source_sha256=context.source_sha256,
+                source_content_type='application/vnd.wj.quality-manifest+json',
+                source_filename=context.filename,
+                source_byte_size=context.file_size,
+                parser_name='quality_browser_manifest_v1',
+                parser_version='1',
+                workbook_properties=context.parsed.properties,
+                source_discarded_at=now,
+            )
+            row_models: dict[str, QualityImportRow] = {}
+            for decision in decisions:
+                row_model = QualityImportRow.objects.create(
+                    batch=batch,
+                    **_quality_import_row_values(decision),
+                )
+                row_models[stable_source_key(decision.row)] = row_model
+
+            pending_bytes = [_pending_staged_bytes()]
+            assets_by_key: dict[str, QualityImportAsset] = {}
+            new_asset_ids: set[int] = set()
+            for key, item in normalized_by_key.items():
+                asset, created = _stage_incremental_asset(
+                    batch=batch,
+                    item=item,
+                    pending_bytes=pending_bytes,
+                )
+                assets_by_key[key] = asset
+                if created:
+                    new_asset_ids.add(asset.pk)
+
+            for decision in decisions:
+                if decision.status != 'new':
+                    continue
+                row_model = row_models[stable_source_key(decision.row)]
+                for item in decision.selected_media:
+                    normalized = normalized_by_key[item['key']]
+                    QualityImportMedia.objects.create(
+                        batch=batch,
+                        row=row_model,
+                        asset=assets_by_key[item['key']],
+                        source_sheet_name=item['source_sheet_name'],
+                        source_anchor_row=item['source_anchor_row'],
+                        source_anchor_col=item['source_anchor_col'],
+                        source_index=item['source_index'],
+                        original_filename=item['original_filename'],
+                        source_sha256=item['source_sha256'],
+                        source_byte_size=item['original_byte_size'],
+                        source_width=normalized['original_width'],
+                        source_height=normalized['original_height'],
+                        warnings=item.get('warnings') or [],
+                    )
+            unique_assets = set(assets_by_key.values())
+            ready_assets = sum(
+                asset.upload_state == QualityImportAsset.UploadState.READY
+                for asset in unique_assets
+            )
+            batch.new_media_count = len(new_asset_ids)
+            batch.reused_media_count = max(0, len(required_keys) - len(new_asset_ids))
+            batch.progress_done = ready_assets
+            batch.progress_total = len(unique_assets)
+            batch.save(update_fields=[
+                'new_media_count', 'reused_media_count', 'progress_done',
+                'progress_total', 'updated_at',
+            ])
+
+        transaction.on_commit(kick_quality_import_pump)
+
+    # Safe metadata-only writes for old direct imports do not perform remote I/O.
+    _record_media_baselines(all_decisions)
+    return batch, replay
+
+
+def enqueue_quality_manifest(
+    payload: Any,
+    *,
+    uploaded_files: Mapping[str, Any],
+    uploaded_by,
+    uploaded_on: date | None = None,
+    selected_row_keys: set[str] | None = None,
+) -> tuple[QualityImportBatch, bool]:
+    """Retry one intake transaction when a concurrent idempotent write wins."""
+
+    try:
+        return _enqueue_quality_manifest_once(
+            payload,
+            uploaded_files=uploaded_files,
+            uploaded_by=uploaded_by,
+            uploaded_on=uploaded_on,
+            selected_row_keys=selected_row_keys,
+        )
+    except IntegrityError:
+        for upload in uploaded_files.values():
+            seek = getattr(upload, 'seek', None)
+            if callable(seek):
+                seek(0)
+        return _enqueue_quality_manifest_once(
+            payload,
+            uploaded_files=uploaded_files,
+            uploaded_by=uploaded_by,
+            uploaded_on=uploaded_on,
+            selected_row_keys=selected_row_keys,
+        )
+
+
+def serialize_quality_import_job(batch: QualityImportBatch) -> dict[str, Any]:
+    summary = batch.delta_summary or {}
+    return {
+        'id': batch.pk,
+        'status': batch.status,
+        'phase': batch.phase,
+        'progress_done': batch.progress_done,
+        'progress_total': batch.progress_total,
+        'attempt_count': batch.attempt_count,
+        'next_attempt_at': batch.next_attempt_at.isoformat() if batch.next_attempt_at else None,
+        'filename': batch.original_filename,
+        'total_rows': batch.total_rows,
+        'result': summary.get('incremental_result'),
+        'warnings': list(batch.warnings or []),
+    }
+
+
+def _job_row_dict(row: QualityImportRow) -> dict[str, Any]:
+    return {
+        'sheet_name': row.sheet_name,
+        'sheet_role': row.sheet_role,
+        'source_row_number': row.source_row_number,
+        'source_sequence': row.source_sequence,
+        'business_key': row.business_key,
+        'content_sha256': row.content_sha256,
+        'report_date': row.report_date,
+        'section': row.section,
+        'occurrence_location': row.occurrence_location,
+        'model': row.model,
+        'part_no': row.part_no,
+        'item_name': row.item_name,
+        'lot_qty': row.lot_qty,
+        'inspection_qty': row.inspection_qty,
+        'defect_qty': row.defect_qty,
+        'defect_rate': row.defect_rate,
+        'judgement': row.judgement,
+        'phenomenon': row.phenomenon,
+        'disposition': row.disposition,
+        'action_result': row.action_result,
+        'raw_data': row.raw_data or {},
+        'warnings': list(row.warnings or []),
+    }
+
+
+def _job_media_item(row: QualityImportRow, metadata: dict[str, Any]) -> dict[str, Any]:
+    attachment_by_anchor = {
+        (item.source_anchor_col, item.source_index, item.source_sha256): item
+        for item in row.media.all()
+    }
+    attachment = attachment_by_anchor.get((
+        int(metadata['source_anchor_col']),
+        int(metadata['source_index']),
+        str(metadata['source_sha256']),
+    ))
+    asset = attachment.asset if attachment is not None else None
+    return {
+        'key': metadata['key'],
+        'source_sheet_name': row.sheet_name,
+        'source_anchor_row': int(metadata['source_anchor_row']),
+        'source_anchor_col': int(metadata['source_anchor_col']),
+        'source_index': int(metadata['source_index']),
+        'original_filename': metadata['original_filename'],
+        'content_type': asset.content_type if asset else metadata['content_type'],
+        'byte_size': asset.byte_size if asset else 0,
+        'sha256': asset.sha256 if asset else str(metadata['source_sha256']),
+        'source_sha256': str(metadata['source_sha256']),
+        'original_byte_size': int(metadata['original_byte_size']),
+        'storage_key': asset.storage_key if asset else '',
+        'content': None,
+        'extension': asset.extension if asset else '',
+        'original_width': attachment.source_width if attachment else None,
+        'original_height': attachment.source_height if attachment else None,
+        'width': asset.width if asset else None,
+        'height': asset.height if asset else None,
+        'warnings': list(attachment.warnings or []) if attachment else [],
+        '_asset': asset,
+    }
+
+
+def _job_result_payload(
+    *,
+    batch: QualityImportBatch,
+    rows: list[dict[str, Any]],
+    images_found: int,
+    images_ignored: int,
+) -> dict[str, Any]:
+    created_ids = sorted({item['report_id'] for item in rows if item['status'] == 'created' and item['report_id']})
+    skipped_ids = sorted({item['report_id'] for item in rows if item['status'] == 'skipped' and item['report_id']})
+    changed_ids = sorted({item['report_id'] for item in rows if item['status'] == 'changed' and item['report_id']})
+    return {
+        'filename': batch.original_filename,
+        'total_rows': len(rows),
+        'created_count': sum(item['status'] == 'created' for item in rows),
+        'skipped_count': sum(item['status'] == 'skipped' for item in rows),
+        'changed_count': sum(item['status'] == 'changed' for item in rows),
+        'failed_count': sum(item['status'] == 'failed' for item in rows),
+        'images_found': images_found,
+        'images_saved': sum(item['images_saved'] for item in rows if item['status'] == 'created'),
+        'images_failed': 0,
+        'images_ignored': images_ignored,
+        'images_skipped': sum(
+            min(item['images_found'], MAX_IMAGES_PER_REPORT)
+            for item in rows
+            if item['status'] in {'skipped', 'changed'}
+        ),
+        'created_report_ids': created_ids,
+        'skipped_report_ids': skipped_ids,
+        'changed_report_ids': changed_ids,
+        'warnings': sorted(set(batch.warnings or [])),
+        'rows': sorted(rows, key=lambda item: (item['sheet_name'], item['source_row_number'])),
+    }
+
+
+def finalize_quality_import_job(batch_id: int, owner: str) -> dict[str, Any]:
+    """Create reports after every staged asset is durable; safe to retry."""
+
+    batch = QualityImportBatch.objects.select_related('uploaded_by').get(pk=batch_id)
+    if batch.dataset_key != INCREMENTAL_JOB_DATASET_KEY:
+        raise _manifest_error('invalid_job', 'The batch is not an incremental registration job.')
+    if batch.status != QualityImportBatch.Status.PROCESSING or batch.processing_owner != owner:
+        raise _manifest_error('processing_lease_lost', 'The registration lease was lost.')
+    existing_result = (batch.delta_summary or {}).get('incremental_result')
+    if isinstance(existing_result, dict):
+        return existing_result
+
+    QualityImportBatch.objects.filter(pk=batch.pk, processing_owner=owner).update(
+        phase='registering_reports',
+        last_heartbeat_at=timezone.now(),
+    )
+    row_models = list(
+        QualityImportRow.objects.filter(batch=batch)
+        .select_related('approved_report')
+        .prefetch_related('media__asset')
+        .order_by('sheet_name', 'source_row_number', 'id')
+    )
+    parsed_rows = [_job_row_dict(row) for row in row_models]
+    media: list[dict[str, Any]] = []
+    media_by_row_id: dict[int, list[dict[str, Any]]] = {}
+    for row in row_models:
+        metadata = (row.raw_data or {}).get('_incremental_job') or {}
+        row_media = [
+            _job_media_item(row, item)
+            for item in (metadata.get('media') or [])
+            if isinstance(item, dict)
+        ]
+        media_by_row_id[row.pk] = row_media
+        media.extend(row_media)
+    parsed = ParsedWorkbook(
+        sheet_names=list(batch.sheet_names or []),
+        properties={},
+        rows=parsed_rows,
+        media=media,
+        warnings=list(batch.warnings or []),
+    )
+    context = ManifestContext(
+        filename=batch.original_filename,
+        file_size=batch.file_size,
+        source_sha256=batch.sha256,
+        parsed=parsed,
+        media_by_key={item['key']: item for item in media},
+    )
+    decisions = _classify(context) if parsed_rows else []
+    decision_by_row_key = {
+        stable_source_key(decision.row): decision
+        for decision in decisions
+    }
+    result_rows: list[dict[str, Any]] = []
+
+    for row_model, row in zip(row_models, parsed_rows):
+        row_key = stable_source_key(row)
+        decision = decision_by_row_key[row_key]
+        selected_media = media_by_row_id[row_model.pk]
+        metadata = (row_model.raw_data or {}).get('_incremental_job') or {}
+        images_found = int(metadata.get('images_found') or len(selected_media))
+
+        if row_model.approved_report_id:
+            report = row_model.approved_report
+            checkpoint = RowDecision(
+                row=row,
+                media=decision.media,
+                selected_media=selected_media,
+                status='created',
+                report=report,
+                warnings=decision.warnings,
+                message='Registered.',
+            )
+            payload = _decision_row(checkpoint, preview=False)
+            payload['images_found'] = images_found
+            payload['images_saved'] = len(selected_media)
+            result_rows.append(payload)
+            continue
+
+        if decision.status != 'new':
+            payload = _decision_row(decision, preview=False)
+            payload['images_found'] = images_found
+            result_rows.append(payload)
+            continue
+
+        image_urls: list[str | None] = []
+        for item in selected_media:
+            asset = item.get('_asset')
+            if (
+                asset is None
+                or asset.upload_state != QualityImportAsset.UploadState.READY
+                or not asset.file
+            ):
+                raise _manifest_error(
+                    'normalized_checkpoint_incomplete',
+                    'A report image did not reach durable storage.',
+                )
+            image_urls.append(asset.file.url)
+        clean_media = [
+            {key: value for key, value in item.items() if key != '_asset'}
+            for item in selected_media
+        ]
+        values = _report_values(
+            row,
+            image_urls=image_urls,
+            filename=batch.original_filename,
+            source_sha256=batch.sha256,
+            uploaded_by=batch.uploaded_by,
+            media_items=clean_media,
+        )
+        try:
+            with transaction.atomic():
+                locked_row = QualityImportRow.objects.select_for_update().select_related(
+                    'approved_report'
+                ).get(pk=row_model.pk)
+                if locked_row.approved_report_id:
+                    report = locked_row.approved_report
+                else:
+                    report = QualityReport.objects.create(**values)
+                    locked_row.approved_report = report
+                    locked_row.review_status = QualityImportRow.ReviewStatus.PUBLISHED
+                    locked_row.reviewed_by = batch.uploaded_by
+                    locked_row.reviewed_at = timezone.now()
+                    locked_row.published_at = timezone.now()
+                    locked_row.save(update_fields=[
+                        'approved_report', 'review_status', 'reviewed_by',
+                        'reviewed_at', 'published_at', 'updated_at',
+                    ])
+        except IntegrityError:
+            report = QualityReport.objects.filter(excel_import_key=row['business_key']).first()
+            if report is None:
+                raise
+            differences = _concurrent_report_differences(
+                report,
+                row,
+                clean_media,
+                source_sha256=batch.sha256,
+            )
+            conflict = RowDecision(
+                row=row,
+                media=decision.media,
+                selected_media=selected_media,
+                status='changed' if differences else 'unchanged',
+                report=report,
+                warnings=[*decision.warnings, 'existing_match:concurrent_job', *differences],
+                message=(
+                    'Another request registered a different version; review it before applying changes.'
+                    if differences
+                    else 'Existing report was created by another request and skipped.'
+                ),
+            )
+            payload = _decision_row(conflict, preview=False)
+            payload['images_found'] = images_found
+            result_rows.append(payload)
+            continue
+
+        created = RowDecision(
+            row=row,
+            media=decision.media,
+            selected_media=selected_media,
+            status='created',
+            report=report,
+            warnings=decision.warnings,
+            message='Registered.',
+        )
+        payload = _decision_row(created, preview=False)
+        payload['images_found'] = images_found
+        payload['images_saved'] = len(selected_media)
+        result_rows.append(payload)
+
+    _record_media_baselines(decisions)
+    summary = batch.delta_summary or {}
+    result = _job_result_payload(
+        batch=batch,
+        rows=result_rows,
+        images_found=int(summary.get('images_found') or 0),
+        images_ignored=int(summary.get('images_ignored') or 0),
+    )
+    with transaction.atomic():
+        locked_batch = QualityImportBatch.objects.select_for_update().get(pk=batch.pk)
+        if locked_batch.processing_owner != owner:
+            raise _manifest_error('processing_lease_lost', 'The registration lease was lost.')
+        locked_summary = dict(locked_batch.delta_summary or {})
+        locked_summary['incremental_result'] = result
+        locked_batch.delta_summary = locked_summary
+        locked_batch.results_persisted_at = timezone.now()
+        locked_batch.save(update_fields=['delta_summary', 'results_persisted_at', 'updated_at'])
+    return result
+
+
 def commit_quality_manifest(
     payload: Any,
     *,
@@ -935,6 +1669,7 @@ def commit_quality_manifest(
     selected_row_keys: set[str] | None = None,
 ) -> dict[str, Any]:
     context = _validate_manifest(payload, uploaded_on=uploaded_on or date.today())
+    _ensure_monthly_direct_scope(context)
     all_decisions = _classify(context)
     decisions_by_key = {
         stable_source_key(decision.row): decision

@@ -11,7 +11,11 @@ from .views import (
 )
 from .import_views import (
     QualityExcelImportCommitView,
+    QualityExcelImportJobDetailView,
+    QualityExcelImportJobRetryView,
+    QualityExcelImportJobView,
     QualityExcelImportPreviewView,
+    QualityExcelImportRollbackView,
     QualityExcelImportView,
     QualityImportBatchViewSet,
 )
@@ -43,6 +47,26 @@ urlpatterns = [
         'excel-import/commit/',
         QualityExcelImportCommitView.as_view(),
         name='quality-excel-import-commit',
+    ),
+    path(
+        'excel-import/jobs/',
+        QualityExcelImportJobView.as_view(),
+        name='quality-excel-import-jobs',
+    ),
+    path(
+        'excel-import/jobs/<int:pk>/',
+        QualityExcelImportJobDetailView.as_view(),
+        name='quality-excel-import-job-detail',
+    ),
+    path(
+        'excel-import/jobs/<int:pk>/retry/',
+        QualityExcelImportJobRetryView.as_view(),
+        name='quality-excel-import-job-retry',
+    ),
+    path(
+        'excel-import/rollback-today/',
+        QualityExcelImportRollbackView.as_view(),
+        name='quality-excel-import-rollback-today',
     ),
     path('archive/reports/', ArchiveReportListView.as_view(), name='quality-archive-report-list'),
     path('archive/assets/', ArchiveAssetListView.as_view(), name='quality-archive-asset-list'),

@@ -58,6 +58,62 @@ function isSupportedSheet(name: string): boolean {
   return name === OQC_SHEET_NAME || ISSUE_SHEET_PATTERN.test(name);
 }
 
+function issueSheetMonth(name: string): number | null {
+  const match = name.match(/^\s*(\d{1,2})\s*月\s*$/);
+  if (!match) return null;
+  const month = Number(match[1]);
+  return month >= 1 && month <= 12 ? month : null;
+}
+
+function filenameMonths(filename: string): number[] {
+  return Array.from(filename.matchAll(/(^|\D)(\d{1,2})\s*月/g), (match) => Number(match[2]))
+    .filter((month) => month >= 1 && month <= 12);
+}
+
+interface SheetSelection {
+  selectedName: string;
+  excludedNames: string[];
+  reason: 'filename' | 'current_month' | 'only_monthly_sheet' | 'latest_monthly_sheet';
+}
+
+function selectMonthlyIssueSheet(sheetNames: readonly string[], filename: string): SheetSelection {
+  const monthlySheets = sheetNames
+    .map((name) => ({ name, month: issueSheetMonth(name) }))
+    .filter((sheet): sheet is { name: string; month: number } => sheet.month != null);
+  if (monthlySheets.length === 0) {
+    throw workbookError('직접 업로드할 월별 품질 시트(예: 8月)를 찾지 못했습니다. OQC 이력 시트는 직접 업로드 대상이 아닙니다.');
+  }
+
+  let selected: { name: string; month: number } | undefined;
+  let reason: SheetSelection['reason'] = 'latest_monthly_sheet';
+  for (const month of filenameMonths(filename).reverse()) {
+    selected = monthlySheets.find((sheet) => sheet.month === month);
+    if (selected) {
+      reason = 'filename';
+      break;
+    }
+  }
+  if (!selected) {
+    const currentMonth = new Date().getMonth() + 1;
+    selected = monthlySheets.find((sheet) => sheet.month === currentMonth);
+    if (selected) reason = 'current_month';
+  }
+  if (!selected && monthlySheets.length === 1) {
+    [selected] = monthlySheets;
+    reason = 'only_monthly_sheet';
+  }
+  if (!selected) {
+    selected = [...monthlySheets].sort((left, right) => right.month - left.month)[0];
+  }
+
+  const supportedNames = sheetNames.filter(isSupportedSheet);
+  return {
+    selectedName: selected.name,
+    excludedNames: supportedNames.filter((name) => name !== selected.name),
+    reason,
+  };
+}
+
 function safeInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
 }
@@ -327,21 +383,25 @@ function worksheetRows(
   return rows;
 }
 
-function buildSheetManifest(workbook: WorkBook, XLSX: typeof import('xlsx')): QualityWorkbookSheetManifest[] {
+function buildSheetManifest(
+  workbook: WorkBook,
+  XLSX: typeof import('xlsx'),
+  filename: string,
+): { sheets: QualityWorkbookSheetManifest[]; selection: SheetSelection } {
   const supportedNames = workbook.SheetNames.filter(isSupportedSheet);
-  if (supportedNames.length === 0) throw workbookError('지원되는 품질 시트를 찾지 못했습니다.');
   if (supportedNames.length > MAX_SUPPORTED_SHEETS) {
     throw workbookError('지원되는 품질 시트가 16개를 초과합니다.');
   }
+  const selection = selectMonthlyIssueSheet(workbook.SheetNames, filename);
   const date1904 = Boolean(workbook.Workbook?.WBProps?.date1904);
-  const sheets = supportedNames.map((sheetName) => ({
-    sheet_name: sheetName,
-    rows: worksheetRows(workbook.Sheets[sheetName], XLSX, date1904),
-  }));
+  const sheets = [{
+    sheet_name: selection.selectedName,
+    rows: worksheetRows(workbook.Sheets[selection.selectedName], XLSX, date1904),
+  }];
   if (sheets.reduce((total, sheet) => total + sheet.rows.length, 0) > MAX_TOTAL_ROWS + 32) {
     throw workbookError('Excel 행 수가 전체 제한을 초과합니다.');
   }
-  return sheets;
+  return { sheets, selection };
 }
 
 function safeSheetKey(sheetName: string): string {
@@ -411,7 +471,7 @@ export async function scanQualityWorkbook(file: File): Promise<ScannedQualityWor
   } catch {
     throw workbookError('Excel 셀 데이터를 읽을 수 없습니다.');
   }
-  const sheets = buildSheetManifest(workbook, XLSX);
+  const { sheets, selection } = buildSheetManifest(workbook, XLSX, file.name);
   const supportedSheetNames = new Set(sheets.map((sheet) => sheet.sheet_name));
 
   const xmlCache = new Map<string, XMLDocument>();
@@ -457,7 +517,12 @@ export async function scanQualityWorkbook(file: File): Promise<ScannedQualityWor
 
   const media: QualityWorkbookMediaManifest[] = [];
   const mediaSources = new Map<string, MediaSource>();
-  const warnings: string[] = [];
+  const warnings: string[] = [
+    `direct_import_selected_monthly_sheet:${selection.selectedName}:${selection.reason}`,
+  ];
+  if (selection.excludedNames.length > 0) {
+    warnings.push(`direct_import_excluded_sheets:${selection.excludedNames.join(',')}`);
+  }
   const imageCache = new Map<string, { bytes: Uint8Array; sha256: string }>();
   let mediaTotalBytes = 0;
   for (const sheet of sheetParts) {

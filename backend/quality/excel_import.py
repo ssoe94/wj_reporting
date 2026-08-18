@@ -2001,6 +2001,19 @@ def process_quality_import_batch(batch_id: int | None = None, *, should_stop=Non
         return None
     batch, owner = claimed
     try:
+        from .incremental_import import (  # pylint: disable=import-outside-toplevel
+            INCREMENTAL_JOB_DATASET_KEY,
+            finalize_quality_import_job,
+        )
+        if (
+            batch.dataset_key == INCREMENTAL_JOB_DATASET_KEY
+            and batch.total_media
+            and not quality_import_media_upload_available()
+        ):
+            raise WorkbookValidationError(
+                'production_storage_required',
+                'Cloudinary image storage is required for Excel quality imports in production.',
+            )
         asset_ids = list(
             QualityImportAsset.objects.filter(attachments__batch=batch)
             .exclude(upload_state=QualityImportAsset.UploadState.READY)
@@ -2016,6 +2029,11 @@ def process_quality_import_batch(batch_id: int | None = None, *, should_stop=Non
                 raise QualityImportStop('Processing stop requested.')
             _upload_staged_asset(asset_id, owner=owner)
             _renew_upload_lease(batch.id, owner, done=ready_before + offset, total=total)
+        # Incremental direct-import jobs reuse this durable asset queue, then
+        # create reports only after every image reached remote storage. Import
+        # lazily to keep the workbook parser dependency one-directional.
+        if batch.dataset_key == INCREMENTAL_JOB_DATASET_KEY:
+            finalize_quality_import_job(batch.id, owner)
         result = _finish_batch(batch.id, owner)
         LOGGER.info(
             'Quality import batch %s completed status=%s rows=%s media=%s elapsed_seconds=%.3f max_rss=%s',

@@ -96,6 +96,37 @@ export interface QualityExcelImportProgress {
   percent: number;
 }
 
+export type QualityExcelImportJobStatus =
+  | 'queued'
+  | 'processing'
+  | 'ready'
+  | 'ready_with_warnings'
+  | 'failed';
+
+export interface QualityExcelImportJob {
+  id: number;
+  status: QualityExcelImportJobStatus;
+  phase: string;
+  progress_done: number;
+  progress_total: number;
+  attempt_count: number;
+  next_attempt_at: string | null;
+  filename: string;
+  total_rows: number;
+  result: QualityExcelImportResult | null;
+  warnings: string[];
+  idempotent_replay?: boolean;
+}
+
+export interface QualityExcelImportJobProgress {
+  acceptedJobs: number;
+  totalJobs: number;
+  completedJobs: number;
+  phase: string;
+  progressDone: number;
+  progressTotal: number;
+}
+
 export interface QualityReportHistoryScope {
   reportIds: number[];
   kind: 'created' | 'skipped' | 'changed' | 'all';
