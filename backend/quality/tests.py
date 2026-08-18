@@ -72,6 +72,7 @@ class QualityReportPermissionTests(APITestCase):
             action_result='확인 중',
         )
         self.list_url = reverse('quality-report-list')
+        self.by_ids_url = reverse('quality-report-by-ids')
         self.detail_url = reverse('quality-report-detail', args=[self.report.pk])
 
     def test_view_permission_allows_read_but_denies_report_and_supporting_writes(self):
@@ -130,6 +131,110 @@ class QualityReportPermissionTests(APITestCase):
         self.assertEqual(response.data['results'][0]['id'], other.pk)
         invalid = self.client.get(self.list_url, {'ids': '1,not-an-id'})
         self.assertEqual(invalid.status_code, 400, invalid.data)
+
+        over_legacy_limit = self.client.get(
+            self.list_url,
+            {'ids': ','.join(str(value) for value in range(1, 502))},
+        )
+        self.assertEqual(over_legacy_limit.status_code, 400, over_legacy_limit.data)
+
+    def test_report_list_by_ids_uses_read_permission_ordering_and_pagination(self):
+        older = QualityReport.objects.create(
+            report_dt=timezone.now() - timedelta(days=2),
+            section='OQC',
+            model='OLDER',
+            part_no='OLD-01',
+            phenomenon='older report',
+        )
+        newest = QualityReport.objects.create(
+            report_dt=timezone.now() + timedelta(days=2),
+            section='OQC',
+            model='NEWEST',
+            part_no='NEW-01',
+            phenomenon='newest report',
+        )
+        excluded = QualityReport.objects.create(
+            report_dt=timezone.now() + timedelta(days=3),
+            section='OQC',
+            model='EXCLUDED',
+            part_no='EXCLUDED-01',
+            phenomenon='excluded report',
+        )
+        self.client.force_authenticate(self.viewer)
+
+        first_page = self.client.post(
+            f'{self.by_ids_url}?page_size=2',
+            {'ids': [older.pk, self.report.pk, newest.pk]},
+            format='json',
+        )
+
+        self.assertEqual(first_page.status_code, 200, first_page.data)
+        self.assertEqual(first_page.data['count'], 3)
+        self.assertEqual(len(first_page.data['results']), 2)
+        self.assertEqual(first_page.data['results'][0]['id'], newest.pk)
+        self.assertNotIn(excluded.pk, [item['id'] for item in first_page.data['results']])
+        self.assertIsNotNone(first_page.data['next'])
+
+        second_page = self.client.post(
+            f'{self.by_ids_url}?page_size=2&page=2',
+            {'ids': [older.pk, self.report.pk, newest.pk]},
+            format='json',
+        )
+        self.assertEqual(second_page.status_code, 200, second_page.data)
+        returned_ids = {
+            item['id']
+            for item in [*first_page.data['results'], *second_page.data['results']]
+        }
+        self.assertEqual(returned_ids, {older.pk, self.report.pk, newest.pk})
+
+    def test_report_list_by_ids_accepts_ten_thousand_unique_ids(self):
+        self.client.force_authenticate(self.viewer)
+
+        response = self.client.post(
+            self.by_ids_url,
+            {'ids': list(range(1, 10_001))},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], self.report.pk)
+
+    def test_report_list_by_ids_rejects_invalid_id_arrays(self):
+        self.client.force_authenticate(self.viewer)
+        invalid_payloads = (
+            {},
+            {'ids': '1,2'},
+            {'ids': [1, True]},
+            {'ids': [1, 0]},
+            {'ids': [1, -2]},
+            {'ids': [1, 1]},
+            {'ids': [9_223_372_036_854_775_808]},
+            {'ids': list(range(1, 10_002))},
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload_type=type(payload.get('ids')).__name__):
+                response = self.client.post(self.by_ids_url, payload, format='json')
+                self.assertEqual(response.status_code, 400, response.data)
+
+    def test_report_list_by_ids_remains_fail_closed(self):
+        self.client.force_authenticate(self.hidden_user)
+        self.assertEqual(
+            self.client.post(self.by_ids_url, {'ids': [self.report.pk]}, format='json').status_code,
+            403,
+        )
+
+        no_profile = get_user_model().objects.create_user(
+            username='quality-by-ids-no-profile',
+            password='test-password',
+        )
+        no_profile.profile.delete()
+        self.client.force_authenticate(no_profile)
+        self.assertEqual(
+            self.client.post(self.by_ids_url, {'ids': [self.report.pk]}, format='json').status_code,
+            403,
+        )
 
     def test_quality_access_is_fail_closed_without_view_permission_or_profile(self):
         self.client.force_authenticate(self.hidden_user)

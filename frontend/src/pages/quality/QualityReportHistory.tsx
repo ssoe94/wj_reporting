@@ -401,25 +401,30 @@ export default function QualityReportHistory({
         page_size: pageSize,
       };
 
-      if (reportScopeKey) {
-        params.ids = reportScopeKey;
-      } else {
-        params.report_dt_after = filters.dateFrom || undefined;
-        params.report_dt_before = filters.dateTo || undefined;
+      if (scopedReportIds.length > 0) {
+        const { data } = await api.post(
+          '/quality/reports/by-ids/',
+          { ids: scopedReportIds },
+          { params },
+        );
+        return data;
+      }
 
-        const modelFilter = filters.model.trim();
-        if (modelFilter) {
-          params.model__icontains = modelFilter;
-        }
+      params.report_dt_after = filters.dateFrom || undefined;
+      params.report_dt_before = filters.dateTo || undefined;
 
-        const partFilterRaw = filters.part_no.trim();
-        if (partFilterRaw) {
-          const normalizedPart = partFilterRaw.replace(/\s+/g, '').toUpperCase();
-          if (filters.includeSimilar) {
-            params.part_no__istartswith = normalizedPart.slice(0, 9);
-          } else {
-            params.part_no__icontains = normalizedPart;
-          }
+      const modelFilter = filters.model.trim();
+      if (modelFilter) {
+        params.model__icontains = modelFilter;
+      }
+
+      const partFilterRaw = filters.part_no.trim();
+      if (partFilterRaw) {
+        const normalizedPart = partFilterRaw.replace(/\s+/g, '').toUpperCase();
+        if (filters.includeSimilar) {
+          params.part_no__istartswith = normalizedPart.slice(0, 9);
+        } else {
+          params.part_no__icontains = normalizedPart;
         }
       }
 

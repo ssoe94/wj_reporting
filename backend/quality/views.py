@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -31,7 +32,7 @@ from .models import (
     QualityReport,
     Supplier,
 )
-from .permissions import QualityImportPermission, QualityPermission
+from .permissions import QualityImportPermission, QualityPermission, QualityReadPermission
 from .serializers import (
     QualityImportAssetSerializer,
     QualityImportMediaSerializer,
@@ -81,6 +82,39 @@ class QualityReportViewSet(viewsets.ModelViewSet):
     search_fields = ['model', 'part_no', 'phenomenon', 'disposition']
     ordering_fields = ['report_dt', 'created_at']
     ordering = ['-report_dt']
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='by-ids',
+        url_name='by-ids',
+        parser_classes=[JSONParser],
+        permission_classes=[IsAuthenticated, QualityReadPermission],
+    )
+    def by_ids(self, request):
+        """Return the normal paginated report list scoped by a JSON ID array."""
+
+        if not isinstance(request.data, dict):
+            raise ValidationError({'ids': 'Request body must contain an ids array.'})
+        report_ids = request.data.get('ids')
+        if not isinstance(report_ids, list):
+            raise ValidationError({'ids': 'Report IDs must be provided as an array.'})
+        if len(report_ids) > 10_000:
+            raise ValidationError({'ids': 'At most 10,000 report IDs may be requested.'})
+        if any(type(value) is not int for value in report_ids):
+            raise ValidationError({'ids': 'Report IDs must be integers.'})
+        if any(value <= 0 or value > 9_223_372_036_854_775_807 for value in report_ids):
+            raise ValidationError({'ids': 'Report IDs must be valid positive integers.'})
+        if len(set(report_ids)) != len(report_ids):
+            raise ValidationError({'ids': 'Report IDs must be unique.'})
+
+        queryset = self.filter_queryset(self.get_queryset().filter(pk__in=report_ids))
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
     def get_queryset(self):
         queryset = super().get_queryset()

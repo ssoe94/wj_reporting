@@ -128,18 +128,16 @@ export default function QualityPage() {
             />
           </motion.div>
         )}
-        {canEditQuality && activeTab === 'import' && (
-          <motion.div
-            key="import"
-            variants={tabVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <QualityExcelImport onPostProcess={openImportedReports} />
-          </motion.div>
-        )}
       </AnimatePresence>
+      {canEditQuality && (
+        <motion.div
+          className={activeTab === 'import' ? '' : 'hidden'}
+          initial={false}
+          animate={{ opacity: activeTab === 'import' ? 1 : 0 }}
+        >
+          <QualityExcelImport onPostProcess={openImportedReports} />
+        </motion.div>
+      )}
     </div>
   );
 }
