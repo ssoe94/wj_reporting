@@ -79,23 +79,6 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as RetriableRequest | undefined;
     
-    // HTML 응답 감지 (프록시 실패 시)
-    if (error.response) {
-      const contentType = error.response.headers['content-type'];
-      if (contentType?.includes('text/html')) {
-        console.error('[API Error] Received HTML instead of JSON:', {
-          url: originalRequest?.url,
-          method: originalRequest?.method,
-          status: error.response.status,
-          contentType,
-          baseURL: API_URL,
-        });
-        return Promise.reject(new Error(
-          `API routing error: Received HTML instead of JSON. Check proxy configuration. URL: ${originalRequest?.url}`
-        ));
-      }
-    }
-    
     // 401 에러 처리
     if (
       originalRequest &&
@@ -130,6 +113,22 @@ api.interceptors.response.use(
       } catch (refreshError) {
         return Promise.reject(refreshError);
       }
+    }
+
+    // Preserve the Axios status/response when an upstream proxy returns HTML.
+    // This is commonly a 502/504 processing timeout, not an API route error.
+    if (error.response?.headers['content-type']?.includes('text/html')) {
+      const responseStatus = error.response.status;
+      console.error('[API Error] Received HTML instead of JSON:', {
+        url: originalRequest?.url,
+        method: originalRequest?.method,
+        status: responseStatus,
+        contentType: error.response.headers['content-type'],
+        baseURL: API_URL,
+      });
+      error.message = [502, 503, 504].includes(responseStatus)
+        ? '서버 처리가 중단되었거나 지연되었습니다. 잠시 후 다시 시도해 주세요.'
+        : `API가 예상하지 않은 응답을 반환했습니다. (HTTP ${responseStatus})`;
     }
     
     // 일반 에러 로깅

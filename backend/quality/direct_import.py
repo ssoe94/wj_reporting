@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import re
 import tempfile
 import uuid
 from collections import defaultdict, deque
@@ -169,6 +171,7 @@ def _existing_reports_for_rows(
                 approved_report__isnull=False,
             )
             .select_related('approved_report')
+            .prefetch_related('media')
             .order_by('-published_at', '-id')
         )
         for legacy_row in legacy_rows:
@@ -180,6 +183,7 @@ def _existing_reports_for_rows(
                 matches[index] = {
                     'report': legacy_row.approved_report,
                     'reason': 'legacy_excel_event_key',
+                    'legacy_row': legacy_row,
                     'content_changed': bool(
                         legacy_row.content_sha256
                         and legacy_row.content_sha256 != rows[index].get('content_sha256')
@@ -221,6 +225,28 @@ def _media_by_row(parsed: ParsedWorkbook) -> dict[tuple[str, int], list[dict[str
     for items in grouped.values():
         items.sort(key=lambda item: (item['source_index'], item['source_anchor_col']))
     return grouped
+
+
+def stable_source_key(row: dict[str, Any]) -> str:
+    """Return the stable worksheet coordinate for one source row.
+
+    Sequence is intentionally metadata, not part of the coordinate.  Users can
+    correct a sequence in-place; including it here would make that correction
+    look like a brand-new event and could create a duplicate report.
+    """
+
+    sheet_name = re.sub(r'\s+', '', str(row.get('sheet_name') or '')).casefold()
+    report_date = row.get('report_date')
+    source_year = getattr(report_date, 'year', None) or row.get('source_year') or 0
+    identity = {
+        'sheet_role': str(row.get('sheet_role') or ''),
+        'sheet_name': sheet_name,
+        'source_year': int(source_year),
+        'source_row_number': int(row.get('source_row_number') or 0),
+    }
+    return hashlib.sha256(
+        json.dumps(identity, ensure_ascii=False, sort_keys=True).encode('utf-8')
+    ).hexdigest()
 
 
 def _row_validation_errors(row: dict[str, Any]) -> list[str]:
@@ -337,6 +363,7 @@ def _source_metadata(
     filename: str,
     source_sha256: str,
     uploaded_by,
+    media_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         'source_filename': filename,
@@ -347,6 +374,20 @@ def _source_metadata(
         'source_sequence': row['source_sequence'],
         'business_key': row['business_key'],
         'content_sha256': row['content_sha256'],
+        'stable_source_key': stable_source_key(row),
+        'source_year': row['report_date'].year if row.get('report_date') else None,
+        'media_source_sha256s': [
+            str(item.get('source_sha256') or item.get('sha256') or '')
+            for item in (media_items or [])
+        ],
+        'media_source_fingerprints': [
+            (
+                f'{int(item.get("source_index") or 0)}:'
+                f'{int(item.get("source_anchor_col") or 0)}:'
+                f'{str(item.get("source_sha256") or item.get("sha256") or "")}'
+            )
+            for item in (media_items or [])
+        ],
         'occurrence_location': row.get('occurrence_location', ''),
         'item_name': row.get('item_name', ''),
         'raw_data': row.get('raw_data') or {},
@@ -361,6 +402,7 @@ def _report_values(
     filename: str,
     source_sha256: str,
     uploaded_by,
+    media_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     report_dt = datetime.combine(row['report_date'], time(hour=8), tzinfo=REPORT_TIMEZONE)
     values = {
@@ -382,6 +424,7 @@ def _report_values(
             filename=filename,
             source_sha256=source_sha256,
             uploaded_by=uploaded_by,
+            media_items=media_items,
         ),
     }
     for index, field_name in enumerate(IMAGE_FIELDS):
@@ -569,6 +612,7 @@ def import_quality_workbook_direct(upload, *, uploaded_by) -> dict[str, Any]:
             filename=filename,
             source_sha256=source_sha256,
             uploaded_by=uploaded_by,
+            media_items=selected_media,
         )
         try:
             with transaction.atomic():

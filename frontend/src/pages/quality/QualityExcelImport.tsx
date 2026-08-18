@@ -12,13 +12,21 @@ import {
   Rows3,
   SkipForward,
   UploadCloud,
+  GitCompareArrows,
   XCircle,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLang } from '../../i18n';
-import { QUALITY_IMPORT_MAX_FILE_BYTES, uploadQualityExcel } from './importApi';
+import {
+  QUALITY_IMPORT_MAX_FILE_BYTES,
+  commitQualityExcel,
+  previewQualityExcel,
+} from './importApi';
+import { scanQualityWorkbook } from './qualityWorkbookScanner';
+import { combineQualityImportResults, createQualityImportChunks } from './importResult';
 import type {
+  QualityExcelImportPreview,
   QualityExcelImportProgress,
   QualityExcelImportResult,
   QualityExcelImportRowResult,
@@ -28,13 +36,20 @@ import type {
 const copy = {
   ko: {
     title: 'Excel 품질 이슈 업로드',
-    description: 'Excel의 품질 이슈와 연결 사진을 읽어 신규 보고서만 즉시 등록합니다.',
+    description: 'Excel은 브라우저에서 비교하고, 신규 행의 사진만 전송해 즉시 등록합니다.',
     drop: '.xlsx 파일을 놓거나 클릭해 선택하세요',
     fileHelp: '최대 80MB · 같은 내용은 건너뛰고 사진은 행당 최대 5장 저장합니다.',
-    uploading: '업로드 및 저장 중',
+    scanning: 'Excel을 기기에서 분석 중',
+    comparing: '기존 보고서와 비교 중',
+    extracting: '신규 행의 사진만 준비 중',
+    uploading: '필요한 사진 업로드 및 저장 중',
+    deltaSummary: '신규 {rows}건 · 사진 {images}장만 전송합니다.',
     success: 'Excel 처리가 완료되었습니다.',
     partialSuccess: '일부 행을 처리하지 못했습니다. 실패 행을 확인한 뒤 다시 시도하세요.',
     allFailed: '등록된 행이 없습니다. 실패 원인을 확인한 뒤 다시 시도하세요.',
+    upstreamUnavailable: '서버 처리가 중단되었거나 지연되었습니다. 잠시 후 다시 시도해 주세요.',
+    partialInterrupted: '전체 처리를 끝내지 못해 일부 등록 결과를 확인할 수 없습니다.',
+    completionUnconfirmed: '등록 완료를 확인하지 못했습니다. 다시 시도하면 등록된 건은 안전하게 건너뜁니다.',
     invalidFile: '.xlsx 형식의 Excel 파일만 선택할 수 있습니다.',
     emptyFile: '내용이 없는 파일은 업로드할 수 없습니다.',
     oversizedFile: 'Excel 파일은 최대 80MB까지 업로드할 수 있습니다.',
@@ -45,6 +60,7 @@ const copy = {
     total: '전체 행',
     created: '신규 등록',
     skipped: '기존 건너뜀',
+    changed: '변경 감지',
     failed: '실패',
     imagesFound: '발견 사진',
     imagesSaved: '사진 저장',
@@ -54,6 +70,7 @@ const copy = {
     workbookWarnings: '파일 확인 사항',
     createdPostProcess: '신규 건 후처리',
     skippedView: '기존 건 보기',
+    changedPostProcess: '변경 건 확인',
     allView: '전체 결과 보기',
     source: '원본 위치',
     status: '결과',
@@ -70,13 +87,20 @@ const copy = {
   },
   zh: {
     title: '上传 Excel 品质问题',
-    description: '读取 Excel 中的品质问题及关联图片，仅立即登记新增报告。',
+    description: '在浏览器中比较 Excel，仅上传新增行的图片并立即登记。',
     drop: '拖入或点击选择 .xlsx 文件',
     fileHelp: '最大 80MB · 跳过相同内容，每行最多保存 5 张图片。',
-    uploading: '正在上传并保存',
+    scanning: '正在本机分析 Excel',
+    comparing: '正在与已有报告比较',
+    extracting: '正在准备新增行的图片',
+    uploading: '正在上传必要图片并保存',
+    deltaSummary: '仅传输 {rows} 条新增记录和 {images} 张图片。',
     success: 'Excel 处理完成。',
     partialSuccess: '部分行未处理，请确认失败行后重试。',
     allFailed: '没有登记任何行，请确认失败原因后重试。',
+    upstreamUnavailable: '服务器处理已中断或延迟，请稍后重试。',
+    partialInterrupted: '处理未完成，部分登记结果无法确认。',
+    completionUnconfirmed: '无法确认登记是否完成。重试时会安全跳过已登记的记录。',
     invalidFile: '只能选择 .xlsx 格式的 Excel 文件。',
     emptyFile: '无法上传空文件。',
     oversizedFile: 'Excel 文件最大可上传 80MB。',
@@ -87,6 +111,7 @@ const copy = {
     total: '总行数',
     created: '新增登记',
     skipped: '跳过已有',
+    changed: '检测到变更',
     failed: '失败',
     imagesFound: '发现图片',
     imagesSaved: '已保存图片',
@@ -96,6 +121,7 @@ const copy = {
     workbookWarnings: '文件注意事项',
     createdPostProcess: '处理新增报告',
     skippedView: '查看已有报告',
+    changedPostProcess: '确认变更记录',
     allView: '查看全部结果',
     source: '源位置',
     status: '结果',
@@ -113,6 +139,7 @@ const copy = {
 } as const;
 
 type Copy = (typeof copy)[keyof typeof copy];
+type ImportPhase = 'idle' | 'scanning' | 'comparing' | 'extracting' | 'uploading';
 
 interface QualityExcelImportProps {
   onPostProcess: (scope: QualityReportHistoryScope) => void;
@@ -125,13 +152,27 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 ** unitIndex)).toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
-function getUploadErrorMessage(error: unknown, fallback: string): string {
+function getUploadErrorMessage(
+  error: unknown,
+  fallback: string,
+  upstreamFallback: string,
+): string {
   if (axios.isAxiosError(error)) {
     const payload = error.response?.data as { error?: string; detail?: string; code?: string } | string | undefined;
-    if (typeof payload === 'string' && payload.trim()) return payload;
     if (payload && typeof payload === 'object') {
       return payload.error || payload.detail || error.message || payload.code || fallback;
     }
+    const status = error.response?.status;
+    const contentType = String(error.response?.headers['content-type'] || '').toLowerCase();
+    const isUpstreamFailure = status != null && [502, 503, 504].includes(status);
+    if (typeof payload === 'string' && payload.trim()) {
+      const text = payload.trim();
+      const looksLikeMarkup = /^\s*</.test(text) || /<(?:!doctype|html|head|body|title)\b/i.test(text);
+      if (isUpstreamFailure || contentType.includes('text/html')) return upstreamFallback;
+      if (looksLikeMarkup || text.length > 1_000) return fallback;
+      return text;
+    }
+    if (isUpstreamFailure) return upstreamFallback;
     return error.message || fallback;
   }
   return error instanceof Error && error.message ? error.message : fallback;
@@ -143,14 +184,23 @@ function uniqueReportIds(ids: Array<number | null | undefined>): number[] {
 
 function statusStyle(status: QualityExcelImportRowResult['status']): string {
   if (status === 'created') return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+  if (status === 'changed') return 'bg-violet-50 text-violet-700 ring-violet-200';
   if (status === 'skipped') return 'bg-amber-50 text-amber-700 ring-amber-200';
   return 'bg-rose-50 text-rose-700 ring-rose-200';
 }
 
 function statusLabel(status: QualityExcelImportRowResult['status'], c: Copy): string {
   if (status === 'created') return c.created;
+  if (status === 'changed') return c.changed;
   if (status === 'skipped') return c.skipped;
   return c.failed;
+}
+
+function interpolate(template: string, values: Record<string, number>): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.replace(`{${key}}`, value.toLocaleString()),
+    template,
+  );
 }
 
 function ResultMetric({
@@ -184,34 +234,67 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [phase, setPhase] = useState<ImportPhase>('idle');
   const [progress, setProgress] = useState<QualityExcelImportProgress | null>(null);
+  const [preview, setPreview] = useState<QualityExcelImportPreview | null>(null);
   const [result, setResult] = useState<QualityExcelImportResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const uploading = phase !== 'idle';
 
   const upload = async (candidate: File) => {
+    let completedPreview: QualityExcelImportPreview | null = null;
+    const completedCommits: QualityExcelImportResult[] = [];
     setFile(candidate);
-    setUploading(true);
+    setPhase('scanning');
     setProgress(null);
+    setPreview(null);
     setResult(null);
     setErrorMessage(null);
     try {
-      const response = await uploadQualityExcel(candidate, setProgress);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const scanned = await scanQualityWorkbook(candidate);
+      setPhase('comparing');
+      const comparison = await previewQualityExcel(scanned.manifest);
+      completedPreview = comparison;
+      setPreview(comparison);
+      const chunks = createQualityImportChunks(comparison, scanned.manifest);
+      for (const chunk of chunks) {
+        setPhase('extracting');
+        const requiredMedia = await scanned.extractMedia(chunk.mediaKeys);
+        setPhase('uploading');
+        completedCommits.push(await commitQualityExcel(
+          scanned.manifest,
+          requiredMedia,
+          chunk.rowKeys,
+          setProgress,
+        ));
+      }
+      const response = combineQualityImportResults(comparison, completedCommits);
       setResult(response);
-      await queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
+      void queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
       if (response.failed_count === 0) {
         toast.success(c.success);
-      } else if (response.created_count + response.skipped_count === 0) {
+      } else if (response.created_count + response.skipped_count + response.changed_count === 0) {
         toast.error(c.allFailed);
       } else {
         toast.warning(c.partialSuccess);
       }
     } catch (error) {
-      const message = getUploadErrorMessage(error, c.uploadFailed);
-      setErrorMessage(message);
-      toast.error(message);
+      const message = getUploadErrorMessage(error, c.uploadFailed, c.upstreamUnavailable);
+      if (completedPreview) {
+        setResult(combineQualityImportResults(completedPreview, completedCommits, {
+          includeUnprocessedNewAsFailed: true,
+          unprocessedMessage: c.completionUnconfirmed,
+        }));
+        void queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
+        setErrorMessage(`${c.partialInterrupted}\n${message}`);
+        toast.warning(c.partialInterrupted);
+      } else {
+        setErrorMessage(message);
+        toast.error(message);
+      }
     } finally {
-      setUploading(false);
+      setPhase('idle');
     }
   };
 
@@ -243,11 +326,25 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
 
   const resultCreatedIds = result ? uniqueReportIds(result.created_report_ids) : [];
   const resultSkippedIds = result ? uniqueReportIds(result.skipped_report_ids) : [];
-  const allResultIds = uniqueReportIds([...resultCreatedIds, ...resultSkippedIds]);
+  const resultChangedIds = result ? uniqueReportIds(result.changed_report_ids) : [];
+  const allResultIds = uniqueReportIds([
+    ...resultCreatedIds,
+    ...resultSkippedIds,
+    ...resultChangedIds,
+  ]);
   const resultHasFailures = Boolean(result?.failed_count);
   const resultAllFailed = Boolean(
-    result && result.failed_count > 0 && result.created_count + result.skipped_count === 0,
+    result
+      && result.failed_count > 0
+      && result.created_count + result.skipped_count + result.changed_count === 0,
   );
+  const phaseLabel = phase === 'scanning'
+    ? c.scanning
+    : phase === 'comparing'
+      ? c.comparing
+      : phase === 'extracting'
+        ? c.extracting
+        : c.uploading;
 
   return (
     <div className="space-y-6">
@@ -309,14 +406,27 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
           {uploading && (
             <div className="mt-4" role="status">
               <div className="mb-1 flex flex-wrap justify-between gap-2 text-xs font-semibold text-blue-700">
-                <span>{c.uploading}</span>
-                <span className="tabular-nums">
-                  {formatBytes(progress?.uploadedBytes || 0)} / {formatBytes(progress?.totalBytes || file?.size || 0)} · {progress?.percent || 0}%
-                </span>
+                <span>{phaseLabel}</span>
+                {phase === 'uploading' && progress && (
+                  <span className="tabular-nums">
+                    {formatBytes(progress.uploadedBytes)} / {formatBytes(progress.totalBytes)} · {progress.percent}%
+                  </span>
+                )}
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-blue-100">
-                <div className="h-full rounded-full bg-blue-600 transition-[width]" style={{ width: `${progress?.percent || 0}%` }} />
+                <div
+                  className={`h-full rounded-full bg-blue-600 transition-[width] ${phase === 'uploading' ? '' : 'animate-pulse'}`}
+                  style={{ width: phase === 'uploading' ? `${progress?.percent || 0}%` : '55%' }}
+                />
               </div>
+              {preview && (
+                <p className="mt-2 text-xs text-slate-600">
+                  {interpolate(c.deltaSummary, {
+                    rows: preview.new_count,
+                    images: preview.images_to_upload,
+                  })}
+                </p>
+              )}
             </div>
           )}
 
@@ -360,6 +470,9 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                 <button type="button" disabled={resultCreatedIds.length === 0} onClick={() => openReports(resultCreatedIds, 'created')} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40">
                   {c.createdPostProcess}
                 </button>
+                <button type="button" disabled={resultChangedIds.length === 0} onClick={() => openReports(resultChangedIds, 'changed')} className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40">
+                  {c.changedPostProcess}
+                </button>
                 <button type="button" disabled={resultSkippedIds.length === 0} onClick={() => openReports(resultSkippedIds, 'skipped')} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40">
                   {c.skippedView}
                 </button>
@@ -374,9 +487,10 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
               </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
+            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5 2xl:grid-cols-10">
               <ResultMetric icon={Rows3} label={c.total} value={result.total_rows} tone="text-blue-600" />
               <ResultMetric icon={CheckCircle2} label={c.created} value={result.created_count} tone="text-emerald-600" />
+              <ResultMetric icon={GitCompareArrows} label={c.changed} value={result.changed_count} tone="text-violet-600" />
               <ResultMetric icon={SkipForward} label={c.skipped} value={result.skipped_count} tone="text-amber-600" />
               <ResultMetric icon={XCircle} label={c.failed} value={result.failed_count} tone="text-rose-600" />
               <ResultMetric icon={ImageIcon} label={c.imagesFound} value={result.images_found} tone="text-blue-500" />
@@ -414,7 +528,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                   {result.rows.length === 0 ? (
                     <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">{c.noRows}</td></tr>
                   ) : result.rows.map((row, index) => (
-                    <tr key={`${row.sheet_name}-${row.source_row_number}-${row.source_sequence}-${index}`} className={row.status === 'failed' ? 'bg-rose-50/30' : 'hover:bg-blue-50/30'}>
+                    <tr key={`${row.sheet_name}-${row.source_row_number}-${row.source_sequence}-${index}`} className={row.status === 'failed' ? 'bg-rose-50/30' : row.status === 'changed' ? 'bg-violet-50/30' : 'hover:bg-blue-50/30'}>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">
                         <strong className="block text-slate-900">{row.sheet_name}</strong>
                         <span className="text-xs text-slate-500">#{row.source_row_number}{row.source_sequence ? ` · No.${row.source_sequence}` : ''}</span>
@@ -443,7 +557,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button type="button" disabled={!row.report_id} onClick={() => row.report_id && openReports([row.report_id], row.status === 'created' ? 'created' : 'skipped')} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
+                        <button type="button" disabled={!row.report_id} onClick={() => row.report_id && openReports([row.report_id], row.status === 'created' ? 'created' : row.status === 'changed' ? 'changed' : 'skipped')} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
                           <Eye className="h-3.5 w-3.5" />{c.viewReport}
                         </button>
                       </td>
