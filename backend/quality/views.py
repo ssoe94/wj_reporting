@@ -62,7 +62,7 @@ def _require_archive_admin(request):
 class QualityReportPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
-    max_page_size = 200
+    max_page_size = 500
 
 
 class QualityImportPagination(PageNumberPagination):
@@ -73,7 +73,7 @@ class QualityImportPagination(PageNumberPagination):
 
 class QualityReportViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, QualityPermission]
-    queryset = QualityReport.objects.all()
+    queryset = QualityReport.objects.select_related('source_import_row').all()
     serializer_class = QualityReportSerializer
     pagination_class = QualityReportPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -85,6 +85,19 @@ class QualityReportViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         query_params = self.request.query_params
+
+        ids_filter = query_params.get('ids')
+        if ids_filter:
+            raw_ids = [value.strip() for value in ids_filter.split(',') if value.strip()]
+            if len(raw_ids) > 500:
+                raise ValidationError({'ids': 'At most 500 report IDs may be requested.'})
+            try:
+                report_ids = [int(value) for value in raw_ids]
+            except ValueError as exc:
+                raise ValidationError({'ids': 'Report IDs must be comma-separated integers.'}) from exc
+            if any(value <= 0 for value in report_ids):
+                raise ValidationError({'ids': 'Report IDs must be positive integers.'})
+            queryset = queryset.filter(pk__in=report_ids)
 
         date_after = query_params.get('report_dt_after')
         if date_after:
@@ -506,7 +519,7 @@ class QualityImportRowViewSet(
                 )
 
             image_urls = []
-            for media in row.media.select_related('asset').order_by('source_index', 'id')[:3]:
+            for media in row.media.select_related('asset').order_by('source_index', 'id')[:5]:
                 try:
                     if media.asset_id and media.asset.file:
                         image_urls.append(media.asset.file.url)
@@ -530,6 +543,8 @@ class QualityImportRowViewSet(
                 'image1': image_urls[0] if len(image_urls) > 0 else None,
                 'image2': image_urls[1] if len(image_urls) > 1 else None,
                 'image3': image_urls[2] if len(image_urls) > 2 else None,
+                'image4': image_urls[3] if len(image_urls) > 3 else None,
+                'image5': image_urls[4] if len(image_urls) > 4 else None,
             }
             updated_existing_report = bool(revision_source or duplicate_action == 'update_existing')
             linked_existing_report = bool(duplicate_action == 'link_existing')
@@ -556,7 +571,7 @@ class QualityImportRowViewSet(
                     # omitted slots and fields keep richer manually entered
                     # evidence.  The manual timestamp is preserved because the
                     # workbook carries a date, not an occurrence time.
-                    for index, field in enumerate(('image1', 'image2', 'image3')):
+                    for index, field in enumerate(('image1', 'image2', 'image3', 'image4', 'image5')):
                         if index >= len(image_urls):
                             update_values.pop(field, None)
                     for field, value in update_values.items():

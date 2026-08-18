@@ -42,7 +42,7 @@ API sync는 Mac에서 서버로 outbound HTTPS만 사용합니다. 브라우저�
 
 ## 기존 시스템에서 확인한 범위
 
-- 품질 사진은 `QualityReport.image1`, `image2`, `image3`에 Cloudinary URL로 저장됩니다.
+- 품질 사진은 `QualityReport.image1`부터 `image5`까지 Cloudinary URL로 저장됩니다.
 - 현재 `QualityReport`에는 승인 상태 필드가 없습니다.
 - 수동 archive 모드는 credential이나 DB를 직접 읽지 않고, 사용자가 별도로 준비한
   **완전한 현재 QualityReport JSON export**를 입력으로 받습니다.
@@ -85,7 +85,7 @@ API sync는 Mac에서 서버로 outbound HTTPS만 사용합니다. 브라우저�
 
 DRF의 한 페이지가 아니라 전체 결과여야 합니다. `next` 또는 `previous`가 남아 있으면
 부분 백업을 막기 위해 실패합니다. 각 행에는 `id`, timezone을 포함한 `updated_at`,
-`image1..3`이 필요합니다.
+`image1..5`가 필요합니다.
 
 [`examples/quality_reports.current.example.json`](examples/quality_reports.current.example.json)을
 참고하세요. 실제 export에 access token이나 request header를 넣지 마세요.
@@ -125,7 +125,7 @@ python3 tools/quality_media_archive/quality_media_archive.py verify
 
 현재 backend 계약을 다음 순서로 완전 pagination합니다.
 
-1. `GET /api/quality/archive/reports/` — 현재 `image1..3` Cloudinary 참조만 제공하는 축소 응답
+1. `GET /api/quality/archive/reports/` — 현재 `image1..5` Cloudinary 참조만 제공하는 축소 응답
 2. `GET /api/quality/archive/assets/?mirror_state=pending` — 아직 mirror되지 않은 중복 제거 사진 asset
 3. 인증된 `content` 다운로드 및 Ted_SSD hash archive
 4. object hash 재검증 후 asset의 `mark-mirrored` POST

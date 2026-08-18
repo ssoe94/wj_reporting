@@ -5,6 +5,7 @@ import { useLang } from '../../i18n';
 import QualityReportForm from './QualityReportForm';
 import QualityReportHistory from './QualityReportHistory';
 import QualityExcelImport from './QualityExcelImport';
+import type { QualityReportHistoryScope } from './importTypes';
 import { ClipboardList, FileSpreadsheet } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -16,6 +17,7 @@ export default function QualityPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<QualityTab>('report');
+  const [historyScope, setHistoryScope] = useState<QualityReportHistoryScope | null>(null);
   const canEditQuality = Boolean(user?.is_staff || hasPermission('can_edit_quality'));
 
   useEffect(() => {
@@ -32,9 +34,16 @@ export default function QualityPage() {
 
   const selectTab = (tab: QualityTab) => {
     if (!canEditQuality && tab !== 'history') return;
+    if (tab === 'history') setHistoryScope(null);
     const hash = tab === 'history' ? 'stats' : tab;
     setActiveTab(tab);
     navigate(`/quality#${hash}`);
+  };
+
+  const openImportedReports = (scope: QualityReportHistoryScope) => {
+    setHistoryScope(scope);
+    setActiveTab('history');
+    navigate('/quality#stats');
   };
 
   const tabVariants = {
@@ -113,7 +122,10 @@ export default function QualityPage() {
             animate="visible"
             exit="exit"
           >
-            <QualityReportHistory />
+            <QualityReportHistory
+              reportScope={historyScope}
+              onClearReportScope={() => setHistoryScope(null)}
+            />
           </motion.div>
         )}
         {canEditQuality && activeTab === 'import' && (
@@ -124,7 +136,7 @@ export default function QualityPage() {
             animate="visible"
             exit="exit"
           >
-            <QualityExcelImport />
+            <QualityExcelImport onPostProcess={openImportedReports} />
           </motion.div>
         )}
       </AnimatePresence>

@@ -9,7 +9,7 @@ from .views import (
     SupplierViewSet,
     get_cloudinary_signature,
 )
-from .import_views import QualityImportBatchViewSet
+from .import_views import QualityExcelImportView, QualityImportBatchViewSet
 from .archive_views import (
     ArchiveAssetContentView,
     ArchiveAssetListView,
@@ -28,6 +28,7 @@ router.register(r'import-media', QualityImportMediaViewSet, basename='quality-im
 router.register(r'import-assets', QualityImportAssetViewSet, basename='quality-import-asset')
 
 urlpatterns = [
+    path('excel-import/', QualityExcelImportView.as_view(), name='quality-excel-import'),
     path('archive/reports/', ArchiveReportListView.as_view(), name='quality-archive-report-list'),
     path('archive/assets/', ArchiveAssetListView.as_view(), name='quality-archive-asset-list'),
     path(

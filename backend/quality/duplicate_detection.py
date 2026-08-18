@@ -90,6 +90,8 @@ def _report_local_date(report: QualityReport):
 
 
 def _source_kind(report: QualityReport) -> str:
+    if report.excel_import_key:
+        return 'excel'
     try:
         report.source_import_row
     except QualityImportRow.DoesNotExist:
@@ -118,6 +120,8 @@ def report_duplicate_version(report: QualityReport) -> str:
         'image1': report.image1,
         'image2': report.image2,
         'image3': report.image3,
+        'image4': report.image4,
+        'image5': report.image5,
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
     return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
@@ -229,7 +233,10 @@ def _score(row: QualityImportRow, report: QualityReport) -> dict | None:
             'disposition': report.disposition,
             'action_result': report.action_result,
             'images': [
-                value for value in (report.image1, report.image2, report.image3)
+                value for value in (
+                    report.image1, report.image2, report.image3,
+                    report.image4, report.image5,
+                )
                 if value
             ],
         },
