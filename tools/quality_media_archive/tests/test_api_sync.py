@@ -60,7 +60,7 @@ class FakeTransport:
                     "count": 2,
                     "next": None
                     if self.incomplete_reports
-                    else f"{BASE_URL}/api/quality/archive/reports/?page=2&page_size=200",
+                    else "/api/quality/archive/reports/?page=2&page_size=200",
                     "previous": None,
                     "results": [
                         {
@@ -75,7 +75,7 @@ class FakeTransport:
             return {
                 "count": 2,
                 "next": None,
-                "previous": f"{BASE_URL}/api/quality/archive/reports/?page=1&page_size=200",
+                "previous": "/api/quality/archive/reports/?page=1&page_size=200",
                 "results": [
                     {
                         "id": 11,
@@ -103,7 +103,7 @@ class FakeTransport:
                         "height": 8,
                         "mirror_state": "pending",
                         "mirrored_at": None,
-                        "url": f"{BASE_URL}/api/quality/archive/assets/31/content/",
+                        "url": "/api/quality/archive/assets/31/content/",
                         "created_at": "2026-08-14T09:30:00+08:00",
                     }
                 ],

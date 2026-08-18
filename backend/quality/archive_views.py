@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit, urlunsplit
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -64,6 +65,19 @@ class ArchivePagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 200
 
+    @staticmethod
+    def _relative_link(link):
+        if link is None:
+            return None
+        parsed = urlsplit(link)
+        return urlunsplit(('', '', parsed.path, parsed.query, ''))
+
+    def get_next_link(self):
+        return self._relative_link(super().get_next_link())
+
+    def get_previous_link(self):
+        return self._relative_link(super().get_previous_link())
+
 
 class ArchiveQualityReportSerializer(serializers.ModelSerializer):
     class Meta:
@@ -82,9 +96,7 @@ class ArchiveQualityAssetSerializer(serializers.ModelSerializer):
         ]
 
     def get_url(self, obj):
-        request = self.context.get('request')
-        path = reverse('quality-archive-asset-content', kwargs={'pk': obj.pk})
-        return request.build_absolute_uri(path) if request else path
+        return reverse('quality-archive-asset-content', kwargs={'pk': obj.pk})
 
 
 class ArchiveReportListView(APIView):
