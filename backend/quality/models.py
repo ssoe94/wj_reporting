@@ -28,10 +28,25 @@ class QualityReport(models.Model):
     disposition = models.TextField('처리 방식', blank=True, default='')
     action_result = models.TextField('처리 결과', blank=True, default='')
     
-    # 이미지 URL 필드 (Cloudinary URL 저장) - 최대 3장
+    # 이미지 URL 필드 (Cloudinary URL 저장) - 최대 5장
     image1 = models.URLField('불량 이미지 1', max_length=500, blank=True, null=True)
     image2 = models.URLField('불량 이미지 2', max_length=500, blank=True, null=True)
     image3 = models.URLField('불량 이미지 3', max_length=500, blank=True, null=True)
+    image4 = models.URLField('불량 이미지 4', max_length=500, blank=True, null=True)
+    image5 = models.URLField('불량 이미지 5', max_length=500, blank=True, null=True)
+
+    # Direct Excel imports use a deterministic event key so replaying the same
+    # workbook row is idempotent. Manual reports keep this field NULL.
+    excel_import_key = models.CharField(
+        max_length=64,
+        blank=True,
+        null=True,
+        unique=True,
+        editable=False,
+    )
+    # Preserve the source row for audit and later user correction without
+    # keeping the uploaded workbook itself.
+    excel_source = models.JSONField(default=dict, blank=True, editable=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -82,7 +82,7 @@ class ArchivePagination(PageNumberPagination):
 class ArchiveQualityReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = QualityReport
-        fields = ['id', 'updated_at', 'image1', 'image2', 'image3']
+        fields = ['id', 'updated_at', 'image1', 'image2', 'image3', 'image4', 'image5']
 
 
 class ArchiveQualityAssetSerializer(serializers.ModelSerializer):
@@ -105,7 +105,7 @@ class ArchiveReportListView(APIView):
     def get(self, request):
         _validate_archive_query(request)
         queryset = QualityReport.objects.only(
-            'id', 'updated_at', 'image1', 'image2', 'image3',
+            'id', 'updated_at', 'image1', 'image2', 'image3', 'image4', 'image5',
         ).order_by('id')
         paginator = ArchivePagination()
         page = paginator.paginate_queryset(queryset, request, view=self)

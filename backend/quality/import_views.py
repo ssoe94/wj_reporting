@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+import logging
+import uuid
 
 from django.core.files.uploadhandler import StopUpload, TemporaryFileUploadHandler
 from rest_framework import mixins, status, viewsets
@@ -9,7 +10,9 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from .direct_import import import_quality_workbook_direct, safe_workbook_filename
 from .duplicate_detection import find_best_report_duplicates
 from .excel_import import (
     MAX_UPLOAD_BYTES,
@@ -29,6 +32,10 @@ READY_STATUSES = {
     QualityImportBatch.Status.READY,
     QualityImportBatch.Status.READY_WITH_WARNINGS,
 }
+LOGGER = logging.getLogger(__name__)
+# Backward-compatible private alias for the existing security test and any
+# in-process callers while the direct endpoint owns the shared implementation.
+_safe_filename = safe_workbook_filename
 
 
 class QualityImportTemporaryUploadHandler(TemporaryFileUploadHandler):
@@ -50,25 +57,6 @@ class QualityImportTemporaryUploadHandler(TemporaryFileUploadHandler):
             self.exceeded = True
             raise StopUpload(connection_reset=False)
         return super().receive_data_chunk(raw_data, start)
-
-
-def _safe_filename(value: object) -> str:
-    if not isinstance(value, str):
-        raise WorkbookValidationError('invalid_filename', 'The workbook filename is invalid.')
-    basename = PurePosixPath(value.replace('\\', '/')).name
-    if (
-        not value
-        or value != value.strip()
-        or value != basename
-        or len(value) > 255
-        or len(value.encode('utf-8')) > 512
-        or any(ord(character) < 32 or 127 <= ord(character) <= 159 for character in value)
-    ):
-        raise WorkbookValidationError(
-            'invalid_filename',
-            'The workbook filename must be a safe basename.',
-        )
-    return value
 
 
 def _error(exc: WorkbookValidationError) -> Response:
@@ -135,7 +123,7 @@ class QualityImportBatchViewSet(
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            upload.name = _safe_filename(upload.name)
+            upload.name = safe_workbook_filename(upload.name)
             import_scope = parse_import_scope(
                 request.data.get('import_mode'),
                 request.data.get('range_start'),
@@ -196,3 +184,54 @@ class QualityImportBatchViewSet(
             context=context,
         )
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+
+
+class QualityExcelImportView(APIView):
+    """Register new quality reports directly from one XLSX workbook."""
+
+    permission_classes = [IsAuthenticated, QualityImportPermission]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def initialize_request(self, request, *args, **kwargs):
+        handler = QualityImportTemporaryUploadHandler(request)
+        request.upload_handlers = [handler]
+        request._quality_import_upload_handler = handler
+        return super().initialize_request(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        upload = request.FILES.get('file')
+        handler = getattr(request._request, '_quality_import_upload_handler', None)
+        if handler and handler.exceeded:
+            return _error(WorkbookValidationError(
+                'file_too_large',
+                f'Workbook exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB upload limit.',
+            ))
+        if upload is None:
+            return Response(
+                {'code': 'file_required', 'error': 'Multipart field "file" is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(request.FILES) != 1:
+            upload.close()
+            return Response(
+                {'code': 'one_file_required', 'error': 'Upload exactly one workbook.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            result = import_quality_workbook_direct(upload, uploaded_by=request.user)
+        except WorkbookValidationError as exc:
+            return _error(exc)
+        except Exception:
+            reference = uuid.uuid4().hex[:12]
+            LOGGER.exception('Direct quality Excel import failed reference=%s', reference)
+            return Response(
+                {
+                    'code': 'quality_import_failed',
+                    'error': (
+                        'The workbook could not be registered. '
+                        f'Retry the upload or contact an administrator with reference {reference}.'
+                    ),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response(result, status=status.HTTP_200_OK)

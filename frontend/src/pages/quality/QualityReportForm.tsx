@@ -18,6 +18,12 @@ import api from '../../lib/api';
 import machines from '../../constants/machines';
 import { uploadToCloudinary } from '../../utils/cloudinaryUpload';
 
+const MAX_REPORT_IMAGES = 5;
+
+function createEmptyImageSlots<T>(): Array<T | null> {
+  return Array<T | null>(MAX_REPORT_IMAGES).fill(null);
+}
+
 export default function QualityReportForm() {
   const { t, lang } = useLang();
   const queryClient = useQueryClient();
@@ -51,9 +57,9 @@ export default function QualityReportForm() {
     disposition: '',
   });
 
-  // 이미지 파일 상태 (최대 3장)
-  const [imageFiles, setImageFiles] = useState<(File | null)[]>([null, null, null]);
-  const [imagePreviews, setImagePreviews] = useState<(string | null)[]>([null, null, null]);
+  // 이미지 파일 상태 (최대 5장)
+  const [imageFiles, setImageFiles] = useState<(File | null)[]>(() => createEmptyImageSlots<File>());
+  const [imagePreviews, setImagePreviews] = useState<(string | null)[]>(() => createEmptyImageSlots<string>());
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -185,7 +191,7 @@ export default function QualityReportForm() {
       return;
     }
 
-    // 최대 3장까지만 처리
+    // 비어 있는 슬롯 범위에서 최대 5장까지만 처리
     const filesToAdd = files.slice(0, Math.min(files.length, emptySlots.length));
     
     if (files.length > emptySlots.length) {
@@ -266,7 +272,7 @@ export default function QualityReportForm() {
       return;
     }
 
-    // 최대 3장까지만 처리
+    // 비어 있는 슬롯 범위에서 최대 5장까지만 처리
     const filesToAdd = files.slice(0, Math.min(files.length, emptySlots.length));
     
     if (files.length > emptySlots.length) {
@@ -335,7 +341,7 @@ export default function QualityReportForm() {
         }
 
         // 1. 이미지를 Cloudinary에 업로드
-        const uploadedUrls: (string | null)[] = [null, null, null];
+        const uploadedUrls = createEmptyImageSlots<string>();
         for (let i = 0; i < imageFiles.length; i++) {
           if (imageFiles[i]) {
             try {
@@ -371,6 +377,8 @@ export default function QualityReportForm() {
           image1: uploadedUrls[0] || null,
           image2: uploadedUrls[1] || null,
           image3: uploadedUrls[2] || null,
+          image4: uploadedUrls[3] || null,
+          image5: uploadedUrls[4] || null,
         };
         
         console.log('📤 Sending report data:', reportData);
@@ -399,8 +407,8 @@ export default function QualityReportForm() {
         });
         setSelectedModelDesc(null);
         setSelectedPartSpec(null);
-        setImageFiles([null, null, null]);
-        setImagePreviews([null, null, null]);
+        setImageFiles(createEmptyImageSlots<File>());
+        setImagePreviews(createEmptyImageSlots<string>());
       } catch (err: any) {
         console.error('Save error:', err);
         toast.error(t('save_fail'));
@@ -790,7 +798,7 @@ export default function QualityReportForm() {
             </div>
           </div>
 
-          {/* 네 번째 행: 이미지 업로드 (최대 3장) */}
+          {/* 네 번째 행: 이미지 업로드 (최대 5장) */}
           <div>
             <div className="flex items-center gap-3 mb-3">
               <Label>{t('quality.image_upload')}</Label>
@@ -821,8 +829,8 @@ export default function QualityReportForm() {
             >
               {imageFiles.some(f => f !== null) ? (
                 /* 이미지 미리보기 그리드 */
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {[0, 1, 2].map((index) => (
+                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
+                  {Array.from({ length: MAX_REPORT_IMAGES }, (_, index) => index).map((index) => (
                     imagePreviews[index] && (
                       <div key={index} className="relative group">
                         <img

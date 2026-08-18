@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from io import BytesIO, StringIO
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
@@ -95,6 +96,10 @@ class QualityReportPermissionTests(APITestCase):
             self.client.post(reverse('cloudinary-signature'), {'folder': 'quality'}, format='json').status_code,
             403,
         )
+        self.assertEqual(
+            self.client.post(reverse('quality-excel-import'), {}, format='multipart').status_code,
+            403,
+        )
 
     def test_editor_can_update_and_delete_report(self):
         self.client.force_authenticate(self.editor)
@@ -108,6 +113,23 @@ class QualityReportPermissionTests(APITestCase):
         self.report.refresh_from_db()
         self.assertEqual(self.report.action_result, '조치 완료')
         self.assertEqual(self.client.delete(self.detail_url).status_code, 204)
+
+    def test_report_list_can_be_scoped_to_import_result_ids(self):
+        other = QualityReport.objects.create(
+            report_dt=timezone.now(),
+            section='OQC',
+            model='32QN600',
+            part_no='ABJ76507611',
+            phenomenon='表面脏 灰',
+        )
+        self.client.force_authenticate(self.viewer)
+
+        response = self.client.get(self.list_url, {'ids': str(other.pk), 'page_size': 500})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], other.pk)
+        invalid = self.client.get(self.list_url, {'ids': '1,not-an-id'})
+        self.assertEqual(invalid.status_code, 400, invalid.data)
 
     def test_quality_access_is_fail_closed_without_view_permission_or_profile(self):
         self.client.force_authenticate(self.hidden_user)
@@ -131,6 +153,7 @@ def build_quality_workbook(
     issue_count=1,
     phenomena=None,
     image_rows=None,
+    unique_images=False,
     issue_date=8.03,
     oqc_date=1.15,
 ) -> bytes:
@@ -150,10 +173,11 @@ def build_quality_workbook(
             'B/C', row_phenomenon, 'Lot数：8\n不良数：2', None, '刚生产',
         ])
     if include_image:
-        image_buffer = BytesIO()
-        PillowImage.new('RGB', (12, 8), color=(20, 120, 220)).save(image_buffer, format='PNG')
-        image_content = image_buffer.getvalue()
-        for row_number in image_rows or (3,):
+        for image_index, row_number in enumerate(image_rows or (3,)):
+            image_buffer = BytesIO()
+            color = (20 + image_index, 120, 220) if unique_images else (20, 120, 220)
+            PillowImage.new('RGB', (12, 8), color=color).save(image_buffer, format='PNG')
+            image_content = image_buffer.getvalue()
             issue.add_image(ExcelImage(BytesIO(image_content)), f'J{row_number}')
 
     oqc = workbook.create_sheet('OQC出库不良 返工list')
@@ -715,6 +739,324 @@ class QualityWorkbookImportAPITests(APITestCase):
         self.assertEqual(response.status_code, 503, response.data)
         self.assertEqual(response.data['code'], 'production_storage_required')
         self.assertEqual(QualityImportBatch.objects.count(), 0)
+
+
+@override_settings(
+    QUALITY_IMPORT_ALLOW_LOCAL_PROXY=True,
+    QUALITY_IMPORT_DISABLE_BACKGROUND_PUMP=True,
+)
+class QualityExcelDirectImportAPITests(APITestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.storage = FileSystemStorage(location=self.temp_dir.name, base_url='/test-media/')
+        self.storage_patch = mock.patch(
+            'quality.direct_import.quality_import_media_storage',
+            return_value=self.storage,
+        )
+        self.storage_patch.start()
+        self.user = get_user_model().objects.create_user(
+            username='quality-direct-import-editor',
+            password='test-password',
+        )
+        self.user.profile.can_view_quality = True
+        self.user.profile.can_edit_quality = True
+        self.user.profile.save(update_fields=['can_view_quality', 'can_edit_quality'])
+        self.client.force_authenticate(self.user)
+        self.url = reverse('quality-excel-import')
+        self.workbook = build_quality_workbook(
+            image_rows=(3, 3, 3, 3, 3),
+            unique_images=True,
+        )
+
+    def tearDown(self):
+        self.storage_patch.stop()
+        self.temp_dir.cleanup()
+
+    def upload(self, content=None):
+        return self.client.post(
+            self.url,
+            {
+                'file': SimpleUploadedFile(
+                    '品质 Issue List - 8月.xlsx',
+                    self.workbook if content is None else content,
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                ),
+            },
+            format='multipart',
+        )
+
+    def test_registers_reports_immediately_with_five_images_and_source_audit(self):
+        response = self.upload()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['total_rows'], 2)
+        self.assertEqual(response.data['created_count'], 2)
+        self.assertEqual(response.data['skipped_count'], 0)
+        self.assertEqual(response.data['failed_count'], 0)
+        self.assertEqual(response.data['images_found'], 5)
+        self.assertEqual(response.data['images_saved'], 5)
+        self.assertEqual(
+            response.data['images_found'],
+            response.data['images_saved']
+            + response.data['images_failed']
+            + response.data['images_ignored']
+            + response.data['images_skipped'],
+        )
+        self.assertEqual(QualityImportBatch.objects.count(), 0)
+        report = QualityReport.objects.get(part_no='ACQ30854201')
+        self.assertTrue(all(getattr(report, field) for field in ('image1', 'image2', 'image3', 'image4', 'image5')))
+        self.assertEqual(
+            len({getattr(report, field) for field in ('image1', 'image2', 'image3', 'image4', 'image5')}),
+            5,
+        )
+        self.assertEqual(report.excel_source['sheet_name'], '8月')
+        self.assertEqual(report.excel_source['source_row_number'], 3)
+        self.assertEqual(report.excel_source['occurrence_location'], '注塑')
+        self.assertEqual(report.excel_source['item_name'], 'B/C')
+        detail = self.client.get(reverse('quality-report-detail', kwargs={'pk': report.pk}))
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertNotIn('excel_source', detail.data)
+        self.assertNotIn('excel_import_key', detail.data)
+        self.assertEqual(detail.data['source_import']['source_row_number'], 3)
+
+    def test_replaying_same_workbook_skips_every_existing_excel_event(self):
+        first = self.upload()
+        second = self.upload()
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertEqual(second.data['created_count'], 0)
+        self.assertEqual(second.data['skipped_count'], 2)
+        self.assertEqual(second.data['failed_count'], 0)
+        self.assertEqual(len(second.data['skipped_report_ids']), 2)
+        self.assertEqual(second.data['images_skipped'], 5)
+        self.assertEqual(QualityReport.objects.count(), 2)
+
+    def test_sixth_image_is_reported_and_not_saved(self):
+        response = self.upload(content=build_quality_workbook(
+            image_rows=(3, 3, 3, 3, 3, 3),
+            unique_images=True,
+        ))
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['images_found'], 6)
+        self.assertEqual(response.data['images_saved'], 5)
+        self.assertEqual(response.data['images_ignored'], 1)
+        issue_result = next(item for item in response.data['rows'] if item['part_no'] == 'ACQ30854201')
+        self.assertEqual(issue_result['images_found'], 6)
+        self.assertEqual(issue_result['images_saved'], 5)
+        self.assertIn('images_over_limit:1', issue_result['warnings'])
+        report = QualityReport.objects.get(part_no='ACQ30854201')
+        self.assertTrue(all(getattr(report, field) for field in ('image1', 'image2', 'image3', 'image4', 'image5')))
+
+    def test_exact_existing_manual_report_is_skipped_without_overwriting_post_processing(self):
+        uploaded_on = timezone.localdate()
+        report_year = uploaded_on.year - 1 if 8 > uploaded_on.month + 1 else uploaded_on.year
+        manual = QualityReport.objects.create(
+            report_dt=datetime(report_year, 8, 3, 11, tzinfo=ZoneInfo('Asia/Shanghai')),
+            section='LQC_INJ',
+            model='27G523',
+            part_no='ACQ30854201',
+            lot_qty=8,
+            defect_qty=2,
+            judgement='NG',
+            phenomenon='顶部拉白',
+            disposition='수동 후처리',
+            action_result='조치 완료',
+        )
+
+        response = self.upload()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['created_count'], 1)
+        self.assertEqual(response.data['skipped_count'], 1)
+        self.assertIn(manual.pk, response.data['skipped_report_ids'])
+        issue_result = next(item for item in response.data['rows'] if item['part_no'] == 'ACQ30854201')
+        self.assertEqual(issue_result['status'], 'skipped')
+        self.assertEqual(issue_result['report_id'], manual.pk)
+        self.assertIn('existing_match:exact_report_match', issue_result['warnings'])
+        manual.refresh_from_db()
+        self.assertEqual(manual.action_result, '조치 완료')
+        self.assertEqual(QualityReport.objects.count(), 2)
+
+    def test_existing_excel_event_with_changed_content_is_skipped_and_flagged(self):
+        first = self.upload()
+        revised = self.upload(content=build_quality_workbook(phenomenon='顶部拉白 修订'))
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(revised.status_code, 200, revised.data)
+        self.assertEqual(revised.data['created_count'], 0)
+        self.assertEqual(revised.data['skipped_count'], 2)
+        issue_result = next(item for item in revised.data['rows'] if item['part_no'] == 'ACQ30854201')
+        self.assertEqual(issue_result['status'], 'skipped')
+        self.assertIn('existing_content_differs', issue_result['warnings'])
+        self.assertEqual(QualityReport.objects.count(), 2)
+
+    def test_exact_source_replay_matches_even_if_inferred_year_changes(self):
+        from .direct_import import _existing_reports_for_rows
+
+        source_sha256 = 'a' * 64
+        report = QualityReport.objects.create(
+            report_dt=datetime(2026, 8, 3, 8, tzinfo=ZoneInfo('Asia/Shanghai')),
+            section='LQC_INJ',
+            model='27G523',
+            part_no='ACQ30854201',
+            defect_qty=2,
+            phenomenon='顶部拉白',
+            excel_import_key='b' * 64,
+            excel_source={
+                'source_sha256': source_sha256,
+                'sheet_name': '8月',
+                'source_row_number': 3,
+                'source_sequence': '1',
+            },
+        )
+        replay_row = {
+            'sheet_name': '8月',
+            'source_row_number': 3,
+            'source_sequence': '1',
+            'business_key': 'c' * 64,
+            'content_sha256': 'd' * 64,
+            'report_date': date(2027, 8, 3),
+            'section': 'LQC_INJ',
+            'model': '27G523',
+            'part_no': 'ACQ30854201',
+            'lot_qty': None,
+            'inspection_qty': None,
+            'defect_qty': 2,
+            'defect_rate': '',
+            'judgement': 'NG',
+            'phenomenon': '顶部拉白',
+        }
+
+        matches = _existing_reports_for_rows([replay_row], source_sha256=source_sha256)
+
+        self.assertEqual(matches[0]['report'].pk, report.pk)
+        self.assertEqual(matches[0]['reason'], 'exact_source_replay')
+
+    def test_one_manual_report_only_consumes_one_identical_excel_row(self):
+        from .direct_import import _existing_reports_for_rows
+
+        report_date = date(2026, 8, 3)
+        manual = QualityReport.objects.create(
+            report_dt=datetime(2026, 8, 3, 11, tzinfo=ZoneInfo('Asia/Shanghai')),
+            section='LQC_INJ',
+            model='27G523',
+            part_no='ACQ30854201',
+            lot_qty=8,
+            defect_qty=2,
+            judgement='NG',
+            phenomenon='顶部拉白',
+        )
+
+        def row(*, row_number, sequence, business_key):
+            return {
+                'sheet_name': '8月',
+                'source_row_number': row_number,
+                'source_sequence': sequence,
+                'business_key': business_key,
+                'content_sha256': business_key,
+                'report_date': report_date,
+                'section': 'LQC_INJ',
+                'model': '27G523',
+                'part_no': 'ACQ30854201',
+                'lot_qty': 8,
+                'inspection_qty': None,
+                'defect_qty': 2,
+                'defect_rate': '',
+                'judgement': 'NG',
+                'phenomenon': '顶部拉白',
+            }
+
+        matches = _existing_reports_for_rows(
+            [
+                row(row_number=3, sequence='1', business_key='1' * 64),
+                row(row_number=4, sequence='2', business_key='2' * 64),
+            ],
+            source_sha256='3' * 64,
+        )
+
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]['report'].pk, manual.pk)
+        self.assertNotIn(1, matches)
+
+    def test_direct_report_is_not_reused_as_a_manual_signature_fallback(self):
+        from .direct_import import _existing_reports_for_rows
+
+        QualityReport.objects.create(
+            report_dt=datetime(2026, 8, 3, 8, tzinfo=ZoneInfo('Asia/Shanghai')),
+            section='LQC_INJ',
+            model='27G523',
+            part_no='ACQ30854201',
+            lot_qty=8,
+            defect_qty=2,
+            judgement='NG',
+            phenomenon='顶部拉白',
+            excel_import_key='4' * 64,
+            excel_source={'source_sha256': '5' * 64},
+        )
+        new_event = {
+            'sheet_name': '8月',
+            'source_row_number': 4,
+            'source_sequence': '2',
+            'business_key': '6' * 64,
+            'content_sha256': '7' * 64,
+            'report_date': date(2026, 8, 3),
+            'section': 'LQC_INJ',
+            'model': '27G523',
+            'part_no': 'ACQ30854201',
+            'lot_qty': 8,
+            'inspection_qty': None,
+            'defect_qty': 2,
+            'defect_rate': '',
+            'judgement': 'NG',
+            'phenomenon': '顶部拉白',
+        }
+
+        matches = _existing_reports_for_rows([new_event], source_sha256='8' * 64)
+
+        self.assertEqual(matches, {})
+
+    def test_invalid_workbook_returns_specific_api_error_without_reports(self):
+        response = self.upload(content=b'not-an-xlsx')
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data['code'], 'invalid_ooxml')
+        self.assertEqual(QualityReport.objects.count(), 0)
+
+    def test_image_storage_failure_leaves_affected_row_retryable(self):
+        with mock.patch.object(self.storage, 'save', side_effect=OSError('storage unavailable')):
+            with mock.patch('quality.direct_import.LOGGER.exception'):
+                response = self.upload()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['created_count'], 1)
+        self.assertEqual(response.data['failed_count'], 1)
+        self.assertEqual(response.data['images_failed'], 5)
+        self.assertFalse(QualityReport.objects.filter(part_no='ACQ30854201').exists())
+        imported_row = next(
+            item for item in response.data['rows']
+            if item['part_no'] == 'ACQ30854201'
+        )
+        self.assertEqual(imported_row['status'], 'failed')
+        self.assertIsNone(imported_row['report_id'])
+        self.assertEqual(imported_row['images_saved'], 0)
+        self.assertIn('image_upload_failed:1', imported_row['warnings'])
+
+    @override_settings(
+        DEBUG=False,
+        QUALITY_IMPORT_ALLOW_LOCAL_PROXY=False,
+    )
+    def test_production_rejects_image_import_when_durable_storage_is_unavailable(self):
+        with mock.patch(
+            'quality.direct_import.quality_import_media_upload_available',
+            return_value=False,
+        ):
+            response = self.upload()
+
+        self.assertEqual(response.status_code, 503, response.data)
+        self.assertEqual(response.data['code'], 'production_storage_required')
+        self.assertEqual(QualityReport.objects.count(), 0)
 
 
 class QualityImportImageValidationTests(APITestCase):

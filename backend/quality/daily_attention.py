@@ -278,7 +278,7 @@ def _report_groups(prefixes: set[str], *, include_images: bool) -> dict[str, lis
         "updated_at",
     ]
     if include_images:
-        report_fields.extend(("image1", "image2", "image3"))
+        report_fields.extend(("image1", "image2", "image3", "image4", "image5"))
     reports = (
         QualityReport.objects.exclude(part_no="")
         .order_by("-report_dt", "-id")
@@ -483,7 +483,10 @@ def build_daily_quality_attention(
             if include_images:
                 report_data["images"] = [
                     image
-                    for image in (report.image1, report.image2, report.image3)
+                    for image in (
+                        report.image1, report.image2, report.image3,
+                        report.image4, report.image5,
+                    )
                     if image
                 ]
             reports_data.append(report_data)

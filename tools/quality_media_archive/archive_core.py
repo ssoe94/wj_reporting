@@ -458,7 +458,7 @@ def quality_report_candidates(export_paths: Sequence[Path]) -> ArchivePlan:
                 row.get("updated_at"),
                 f"quality report {report_id_text} updated_at",
             )
-            for field_name in ("image1", "image2", "image3"):
+            for field_name in ("image1", "image2", "image3", "image4", "image5"):
                 raw_url = row.get(field_name)
                 if raw_url in (None, ""):
                     continue

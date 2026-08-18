@@ -123,7 +123,7 @@ class QualityArchiveServiceTests(APITestCase):
         self.assertEqual(reports.data['count'], 1)
         self.assertEqual(
             set(reports.data['results'][0]),
-            {'id', 'updated_at', 'image1', 'image2', 'image3'},
+            {'id', 'updated_at', 'image1', 'image2', 'image3', 'image4', 'image5'},
         )
 
         assets = self.service_client.get(

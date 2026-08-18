@@ -1,4 +1,4 @@
-import { FolderOpen, Save, X, ChevronLeft, ChevronRight, Eye, Trash2 } from 'lucide-react';
+import { CheckCircle2, FolderOpen, Save, X, ChevronLeft, ChevronRight, Eye, Trash2 } from 'lucide-react';
 import { useLang } from '../../i18n';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Label } from '../../components/ui/label';
@@ -20,6 +20,7 @@ import {
   useAssemblyPartsByModel,
 } from '../../hooks/useAssemblyParts';
 import { useAuth } from '../../contexts/AuthContext';
+import type { QualityReportHistoryScope } from './importTypes';
 
 // 서버에서 받아올 데이터 타입 정의
 interface QualityReport {
@@ -39,6 +40,8 @@ interface QualityReport {
   image1?: string;
   image2?: string;
   image3?: string;
+  image4?: string;
+  image5?: string;
 }
 
 const IMAGE_ERROR_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="48" height="48"%3E%3Crect fill="%23ddd" width="48" height="48"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3E?%3C/text%3E%3C/svg%3E';
@@ -53,7 +56,7 @@ function resolveImageUrl(url: string) {
 }
 
 function getReportImages(report: QualityReport) {
-  return [report.image1, report.image2, report.image3].filter(Boolean) as string[];
+  return [report.image1, report.image2, report.image3, report.image4, report.image5].filter(Boolean) as string[];
 }
 
 type ModelOption = {
@@ -67,7 +70,15 @@ type PartOption = {
   description?: string | null;
 };
 
-export default function QualityReportHistory() {
+interface QualityReportHistoryProps {
+  reportScope?: QualityReportHistoryScope | null;
+  onClearReportScope?: () => void;
+}
+
+export default function QualityReportHistory({
+  reportScope = null,
+  onClearReportScope,
+}: QualityReportHistoryProps) {
   const { t, lang } = useLang();
   const { user, hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -101,6 +112,10 @@ export default function QualityReportHistory() {
   const datePlaceholder = lang === 'zh' ? '年-月-日' : '년-월-일';
   const dateInputClassName = 'text-center placeholder:text-center cursor-pointer';
   const [openCalendar, setOpenCalendar] = useState<'from' | 'to' | null>(null);
+  const [calendarMonths, setCalendarMonths] = useState<Record<'from' | 'to', Date>>(() => ({
+    from: dayjs().subtract(29, 'day').toDate(),
+    to: dayjs().toDate(),
+  }));
   const fromFieldRef = useRef<HTMLDivElement | null>(null);
   const toFieldRef = useRef<HTMLDivElement | null>(null);
   const dateLocale = lang === 'zh' ? zhCN : ko;
@@ -110,6 +125,11 @@ export default function QualityReportHistory() {
   const activeModelCodeRaw = (selectedModelOption?.model_code || filters.model || '').trim();
   const normalizedActiveModelCode = activeModelCodeRaw.toUpperCase();
   const hasActiveModel = normalizedActiveModelCode.length > 0;
+  const scopedReportIds = useMemo(
+    () => [...new Set((reportScope?.reportIds || []).filter((id) => Number.isSafeInteger(id) && id > 0))],
+    [reportScope],
+  );
+  const reportScopeKey = scopedReportIds.join(',');
 
   // 모델 검색용 - modelQuery 사용
   const { data: modelSearchResults = [] } = usePartSpecSearch(modelQuery.toUpperCase());
@@ -272,10 +292,14 @@ export default function QualityReportHistory() {
     const value = type === 'from' ? filters.dateFrom : filters.dateTo;
     const selectedDate = value ? dayjs(value, 'YYYY-MM-DD').toDate() : undefined;
     const fieldRef = type === 'from' ? fromFieldRef : toFieldRef;
-    const [currentMonth, setCurrentMonth] = useState(selectedDate || dayjs().toDate());
+    const currentMonth = calendarMonths[type];
+    const setCurrentMonth = (month: Date) => {
+      setCalendarMonths(previous => ({ ...previous, [type]: month }));
+    };
     
     const handleSelect = (date: Date | undefined) => {
       const formatted = date ? dayjs(date).format('YYYY-MM-DD') : '';
+      if (date) setCurrentMonth(date);
       setPage(1);
       setFilters(f => ({
         ...f,
@@ -370,27 +394,32 @@ export default function QualityReportHistory() {
 
   // useQuery를 사용하여 서버에서 데이터 가져오기
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['quality-reports', filters, page, pageSize],
+    queryKey: ['quality-reports', filters, page, pageSize, reportScopeKey],
     queryFn: async () => {
       const params: Record<string, any> = {
         page,
         page_size: pageSize,
-        report_dt_after: filters.dateFrom || undefined,
-        report_dt_before: filters.dateTo || undefined,
       };
 
-      const modelFilter = filters.model.trim();
-      if (modelFilter) {
-        params.model__icontains = modelFilter;
-      }
+      if (reportScopeKey) {
+        params.ids = reportScopeKey;
+      } else {
+        params.report_dt_after = filters.dateFrom || undefined;
+        params.report_dt_before = filters.dateTo || undefined;
 
-      const partFilterRaw = filters.part_no.trim();
-      if (partFilterRaw) {
-        const normalizedPart = partFilterRaw.replace(/\s+/g, '').toUpperCase();
-        if (filters.includeSimilar) {
-          params.part_no__istartswith = normalizedPart.slice(0, 9);
-        } else {
-          params.part_no__icontains = normalizedPart;
+        const modelFilter = filters.model.trim();
+        if (modelFilter) {
+          params.model__icontains = modelFilter;
+        }
+
+        const partFilterRaw = filters.part_no.trim();
+        if (partFilterRaw) {
+          const normalizedPart = partFilterRaw.replace(/\s+/g, '').toUpperCase();
+          if (filters.includeSimilar) {
+            params.part_no__istartswith = normalizedPart.slice(0, 9);
+          } else {
+            params.part_no__icontains = normalizedPart;
+          }
         }
       }
 
@@ -399,7 +428,7 @@ export default function QualityReportHistory() {
       });
       return data;
     },
-    placeholderData: (previousData) => previousData,
+    placeholderData: reportScopeKey ? undefined : (previousData) => previousData,
   });
 
   const reports = data?.results || [];
@@ -409,6 +438,10 @@ export default function QualityReportHistory() {
   useEffect(() => {
     setPageInput(String(page));
   }, [page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [reportScopeKey]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -471,8 +504,19 @@ export default function QualityReportHistory() {
         <h2 className="text-base font-semibold text-gray-800">{t('quality.history_title')}</h2>
       </div>
       <div className="p-4 space-y-4">
+        {reportScopeKey && (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-blue-600" aria-hidden="true" />
+            <strong className="min-w-0 flex-1">
+              {t(`quality.import_scope_${reportScope?.kind || 'all'}`, { count: scopedReportIds.length.toLocaleString() })}
+            </strong>
+            <Button type="button" variant="secondary" size="sm" onClick={onClearReportScope}>
+              {t('quality.import_scope_clear')}
+            </Button>
+          </div>
+        )}
         {/* 필터 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        {!reportScopeKey && <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
             <Label>{t('start_date')}</Label>
             {renderDateInput('from')}
@@ -853,7 +897,7 @@ export default function QualityReportHistory() {
               <span>{t('quality.show_similar_parts')}</span>
             </label>
           </div>
-        </div>
+        </div>}
         {/* 모바일 카드 목록 */}
         <div className="space-y-3 xl:hidden">
           {isLoading ? (
@@ -1440,7 +1484,7 @@ export default function QualityReportHistory() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       {t('quality.image_upload')}
                     </label>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
                       {images.map((img, idx) => (
                         <div key={idx} className="relative group">
                           <img

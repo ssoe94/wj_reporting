@@ -18,7 +18,14 @@ class QualityReportSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = QualityReport
-        fields = '__all__'
+        fields = [
+            'id', 'report_dt', 'section', 'model', 'part_no', 'lot_qty',
+            'inspection_qty', 'defect_qty', 'defect_rate', 'judgement',
+            'phenomenon', 'disposition', 'action_result',
+            'image1', 'image2', 'image3', 'image4', 'image5',
+            'source_import', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['source_import', 'created_at', 'updated_at']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -34,7 +41,18 @@ class QualityReportSerializer(serializers.ModelSerializer):
         try:
             row = instance.source_import_row
         except QualityImportRow.DoesNotExist:
-            return None
+            source = instance.excel_source or {}
+            if not source:
+                return None
+            return {
+                'row_id': None,
+                'batch_id': None,
+                'sheet_name': source.get('sheet_name', ''),
+                'source_row_number': source.get('source_row_number'),
+                'occurrence_location': source.get('occurrence_location', ''),
+                'item_name': source.get('item_name', ''),
+                'source_filename': source.get('source_filename', ''),
+            }
         return {
             'row_id': row.id,
             'batch_id': row.batch_id,

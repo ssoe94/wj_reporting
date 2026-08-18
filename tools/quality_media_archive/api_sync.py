@@ -308,7 +308,7 @@ def collect_api_snapshot(transport: SyncTransport, base_url: str) -> ApiSnapshot
         updated_at = normalize_aware_iso_datetime(
             report.get("updated_at"), f"quality report {report_id} updated_at"
         )
-        for field_name in ("image1", "image2", "image3"):
+        for field_name in ("image1", "image2", "image3", "image4", "image5"):
             raw_url = report.get(field_name)
             if raw_url in (None, ""):
                 continue
