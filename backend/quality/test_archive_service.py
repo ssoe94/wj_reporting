@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from unittest import mock
+from urllib.parse import parse_qs, urlsplit
 
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
@@ -132,7 +133,7 @@ class QualityArchiveServiceTests(APITestCase):
         self.assertEqual(assets.status_code, 200, assets.data)
         self.assertEqual(assets.data['count'], 1)
         content_url = reverse('quality-archive-asset-content', args=[self.asset.pk])
-        self.assertTrue(assets.data['results'][0]['url'].endswith(content_url))
+        self.assertEqual(assets.data['results'][0]['url'], content_url)
 
         storage = QualityImportAsset._meta.get_field('file').storage
         with mock.patch.object(storage, 'open', return_value=ContentFile(b'png-data')):
@@ -157,6 +158,37 @@ class QualityArchiveServiceTests(APITestCase):
         self.assertEqual(replay.status_code, 200, replay.data)
         self.asset.refresh_from_db()
         self.assertEqual(self.asset.mirrored_at, first_mirrored_at)
+
+    def test_archive_pagination_links_are_relative(self):
+        QualityReport.objects.bulk_create([
+            QualityReport(
+                report_dt=timezone.now(),
+                section='LQC_INJ',
+                model=f'archive-page-{index}',
+                part_no=f'ARCHIVE{index:05d}',
+                judgement='NG',
+            )
+            for index in range(200)
+        ])
+
+        first = self.service_client.get(
+            reverse('quality-archive-report-list'),
+            {'page_size': 200},
+        )
+        self.assertEqual(first.status_code, 200, first.data)
+        next_link = urlsplit(first.data['next'])
+        self.assertEqual(next_link.scheme, '')
+        self.assertEqual(next_link.netloc, '')
+        self.assertEqual(next_link.path, reverse('quality-archive-report-list'))
+        self.assertEqual(parse_qs(next_link.query), {'page': ['2'], 'page_size': ['200']})
+
+        second = self.service_client.get(first.data['next'])
+        self.assertEqual(second.status_code, 200, second.data)
+        previous_link = urlsplit(second.data['previous'])
+        self.assertEqual(previous_link.scheme, '')
+        self.assertEqual(previous_link.netloc, '')
+        self.assertEqual(previous_link.path, reverse('quality-archive-report-list'))
+        self.assertEqual(parse_qs(previous_link.query), {'page_size': ['200']})
 
     def test_archive_token_is_rejected_by_every_representative_general_route(self):
         blocked = [
