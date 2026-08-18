@@ -83,17 +83,13 @@ export default function QualityReportHistory({
   const { user, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const canEditQuality = Boolean(user?.is_staff || hasPermission('can_edit_quality'));
-  const [filters, setFilters] = useState(() => {
-    const defaultTo = dayjs().format('YYYY-MM-DD');
-    const defaultFrom = dayjs().subtract(29, 'day').format('YYYY-MM-DD');
-    return {
-      dateFrom: defaultFrom,
-      dateTo: defaultTo,
-      model: '',
-      part_no: '',
-      includeSimilar: false,
-    };
-  });
+  const [filters, setFilters] = useState(() => ({
+    dateFrom: '',
+    dateTo: '',
+    model: '',
+    part_no: '',
+    includeSimilar: false,
+  }));
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const [pageInput, setPageInput] = useState('1');
@@ -130,6 +126,20 @@ export default function QualityReportHistory({
     [reportScope],
   );
   const reportScopeKey = scopedReportIds.join(',');
+  const isAllDates = !filters.dateFrom && !filters.dateTo;
+  const recent30DateFrom = dayjs().subtract(29, 'day').format('YYYY-MM-DD');
+  const recent30DateTo = dayjs().format('YYYY-MM-DD');
+  const isRecent30Days = filters.dateFrom === recent30DateFrom && filters.dateTo === recent30DateTo;
+
+  const applyDatePreset = (preset: 'all' | 'recent30') => {
+    setPage(1);
+    setOpenCalendar(null);
+    setFilters((previous) => ({
+      ...previous,
+      dateFrom: preset === 'all' ? '' : recent30DateFrom,
+      dateTo: preset === 'all' ? '' : recent30DateTo,
+    }));
+  };
 
   // 모델 검색용 - modelQuery 사용
   const { data: modelSearchResults = [] } = usePartSpecSearch(modelQuery.toUpperCase());
@@ -410,8 +420,8 @@ export default function QualityReportHistory({
         return data;
       }
 
-      params.report_dt_after = filters.dateFrom || undefined;
-      params.report_dt_before = filters.dateTo || undefined;
+      if (filters.dateFrom) params.report_dt_after = filters.dateFrom;
+      if (filters.dateTo) params.report_dt_before = filters.dateTo;
 
       const modelFilter = filters.model.trim();
       if (modelFilter) {
@@ -522,6 +532,29 @@ export default function QualityReportHistory({
         )}
         {/* 필터 */}
         {!reportScopeKey && <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="flex flex-wrap items-center gap-2 md:col-span-4">
+            <span className="text-xs font-semibold text-gray-500">
+              {lang === 'zh' ? '查询期间' : '조회 기간'}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant={isAllDates ? 'primary' : 'secondary'}
+              aria-pressed={isAllDates}
+              onClick={() => applyDatePreset('all')}
+            >
+              {lang === 'zh' ? '全部期间' : '전체 기간'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={isRecent30Days ? 'primary' : 'secondary'}
+              aria-pressed={isRecent30Days}
+              onClick={() => applyDatePreset('recent30')}
+            >
+              {lang === 'zh' ? '最近 30 天' : '최근 30일'}
+            </Button>
+          </div>
           <div>
             <Label>{t('start_date')}</Label>
             {renderDateInput('from')}
@@ -1220,7 +1253,10 @@ export default function QualityReportHistory({
         {/* 페이지네이션 */}
         <div className="flex flex-wrap items-center justify-center gap-2 xl:justify-end">
           <Button className="min-w-24 flex-1 sm:flex-none" type="button" variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>{t('quality.prev_page')}</Button>
-          <span className="order-first w-full text-center text-xs text-gray-500 sm:order-none sm:w-auto">{page} / {totalPages}</span>
+          <span className="order-first w-full text-center text-xs font-medium text-gray-600 sm:order-none sm:w-auto">
+            {lang === 'zh' ? `共 ${totalCount.toLocaleString()} 条` : `총 ${totalCount.toLocaleString()}건`}
+            {' · '}{page} / {totalPages}
+          </span>
           <Input
             type="number"
             min={1}
