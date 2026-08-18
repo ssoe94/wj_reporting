@@ -10,11 +10,13 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .duplicate_detection import find_best_report_duplicates
 from .excel_import import (
     MAX_UPLOAD_BYTES,
     WorkbookValidationError,
     ingest_quality_workbook,
     kick_quality_import_pump,
+    parse_import_scope,
     retry_quality_import_batch,
 )
 from .models import QualityImportBatch, QualityImportRow
@@ -134,7 +136,16 @@ class QualityImportBatchViewSet(
             )
         try:
             upload.name = _safe_filename(upload.name)
-            batch, replay = ingest_quality_workbook(upload, uploaded_by=request.user)
+            import_scope = parse_import_scope(
+                request.data.get('import_mode'),
+                request.data.get('range_start'),
+                request.data.get('range_end'),
+            )
+            batch, replay = ingest_quality_workbook(
+                upload,
+                uploaded_by=request.user,
+                import_scope=import_scope,
+            )
         except WorkbookValidationError as exc:
             return _error(exc)
         payload = self.get_serializer(batch).data
@@ -176,9 +187,12 @@ class QualityImportBatchViewSet(
                 raise ValidationError({'delta_status': 'Expected added, changed, or unchanged.'})
             queryset = queryset.filter(delta_status=delta_status)
         page = self.paginate_queryset(queryset)
+        selected_rows = list(page) if page is not None else list(queryset)
+        context = self.get_serializer_context()
+        context['duplicate_matches'] = find_best_report_duplicates(selected_rows)
         serializer = QualityImportRowSerializer(
-            page if page is not None else queryset,
+            selected_rows,
             many=True,
-            context=self.get_serializer_context(),
+            context=context,
         )
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)

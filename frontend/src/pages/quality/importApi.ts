@@ -5,8 +5,10 @@ import type {
   QualityImportClientUploadProgress,
   QualityImportPage,
   QualityImportRow,
+  QualityImportDuplicateAction,
   QualityImportRowFilters,
   QualityImportRowUpdate,
+  QualityImportScopeRequest,
   QualityImportUploadResult,
 } from './importTypes';
 
@@ -44,6 +46,7 @@ function emitUploadProgress(
 
 export async function uploadQualityImportBatch(
   file: File,
+  scope: QualityImportScopeRequest,
   onProgress?: UploadProgressCallback,
 ): Promise<QualityImportUploadResult> {
   if (file.size <= 0) throw new Error('The selected workbook is empty.');
@@ -53,6 +56,11 @@ export async function uploadQualityImportBatch(
 
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('import_mode', scope.mode);
+  if (scope.mode === 'date_range') {
+    formData.append('range_start', scope.rangeStart || '');
+    formData.append('range_end', scope.rangeEnd || '');
+  }
   emitUploadProgress(onProgress, {
     uploadedBytes: 0,
     totalBytes: file.size,
@@ -123,13 +131,28 @@ export async function updateQualityImportRow(
 
 export async function publishQualityImportRow(
   rowId: number,
-  options: { confirmDuplicate?: boolean; duplicateReason?: string } = {},
-): Promise<QualityImportRow & { idempotent_replay: boolean; updated_existing_report?: boolean }> {
-  const response = await api.post<QualityImportRow & { idempotent_replay: boolean; updated_existing_report?: boolean }>(
+  options: {
+    confirmDuplicate?: boolean;
+    duplicateReason?: string;
+    duplicateAction?: QualityImportDuplicateAction;
+    duplicateReportId?: number;
+    duplicateReportVersion?: string;
+  } = {},
+): Promise<QualityImportRow & { idempotent_replay: boolean; updated_existing_report?: boolean; linked_existing_report?: boolean }> {
+  const payload: Record<string, unknown> = {};
+  if (options.confirmDuplicate) {
+    payload.confirm_duplicate = true;
+    payload.duplicate_reason = options.duplicateReason?.trim() || '';
+  }
+  if (options.duplicateAction) {
+    payload.duplicate_action = options.duplicateAction;
+    payload.duplicate_report_id = options.duplicateReportId;
+    payload.duplicate_report_version = options.duplicateReportVersion;
+    payload.duplicate_reason = options.duplicateReason?.trim() || '';
+  }
+  const response = await api.post<QualityImportRow & { idempotent_replay: boolean; updated_existing_report?: boolean; linked_existing_report?: boolean }>(
     `/quality/import-rows/${rowId}/publish/`,
-    options.confirmDuplicate
-      ? { confirm_duplicate: true, duplicate_reason: options.duplicateReason?.trim() || '' }
-      : {},
+    payload,
   );
   return response.data;
 }

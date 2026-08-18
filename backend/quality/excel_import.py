@@ -91,6 +91,105 @@ class ParsedWorkbook:
     warnings: list[str]
 
 
+@dataclass(frozen=True)
+class ImportScope:
+    """User-selected report-date scope for one workbook intake."""
+
+    mode: str
+    range_start: date | None = None
+    range_end: date | None = None
+
+    def as_dict(self) -> dict[str, str | None]:
+        return {
+            'mode': self.mode,
+            'range_start': self.range_start.isoformat() if self.range_start else None,
+            'range_end': self.range_end.isoformat() if self.range_end else None,
+        }
+
+    @property
+    def key(self) -> str:
+        if self.mode == 'full':
+            return 'full'
+        return f'{self.range_start.isoformat()}:{self.range_end.isoformat()}'
+
+
+def parse_import_scope(mode: object, range_start: object, range_end: object) -> ImportScope:
+    normalized_mode = str(mode or '').strip()
+    if normalized_mode == 'full':
+        if range_start or range_end:
+            raise WorkbookValidationError(
+                'unexpected_import_range',
+                'Full-history import must not include range_start or range_end.',
+            )
+        return ImportScope(mode='full')
+    if normalized_mode != 'date_range':
+        raise WorkbookValidationError(
+            'invalid_import_mode',
+            'import_mode must be date_range or full.',
+        )
+    try:
+        start = date.fromisoformat(str(range_start or ''))
+        end = date.fromisoformat(str(range_end or ''))
+    except ValueError as exc:
+        raise WorkbookValidationError(
+            'invalid_import_range',
+            'range_start and range_end must use YYYY-MM-DD.',
+        ) from exc
+    if start > end:
+        raise WorkbookValidationError(
+            'invalid_import_range',
+            'range_start must be on or before range_end.',
+        )
+    return ImportScope(mode='date_range', range_start=start, range_end=end)
+
+
+def apply_import_scope(parsed: ParsedWorkbook, scope: ImportScope) -> tuple[ParsedWorkbook, dict[str, Any]]:
+    """Select rows and their anchored photos without retaining excluded bytes."""
+
+    source_total = len(parsed.rows)
+    undated_rows = [row for row in parsed.rows if row.get('report_date') is None]
+    undated = len(undated_rows)
+    if scope.mode == 'full':
+        selected_rows = list(parsed.rows)
+        selected_dated_count = source_total - undated
+    else:
+        selected_dated_rows = [
+            row for row in parsed.rows
+            if row.get('report_date') is not None
+            and scope.range_start <= row['report_date'] <= scope.range_end
+        ]
+        selected_dated_count = len(selected_dated_rows)
+        # Undated incidents remain recoverable as a separate review bucket;
+        # their existing missing_report_date warning prevents publication
+        # until a reviewer supplies a date.
+        selected_rows = selected_dated_rows + undated_rows
+    selected_anchors = {
+        (row['sheet_name'], row['source_row_number'])
+        for row in selected_rows
+    }
+    selected_media = [
+        item for item in parsed.media
+        if (item['source_sheet_name'], item['source_anchor_row']) in selected_anchors
+    ]
+    selection = {
+        **scope.as_dict(),
+        'source_total_rows': source_total,
+        'selected_rows': selected_dated_count,
+        'retained_rows': len(selected_rows),
+        'excluded_rows': source_total - len(selected_rows),
+        'undated_rows': undated,
+    }
+    properties = dict(parsed.properties)
+    properties['selection_scope'] = selection
+    return ParsedWorkbook(
+        sheet_names=list(parsed.sheet_names),
+        properties=properties,
+        rows=selected_rows,
+        media=selected_media,
+        warnings=list(parsed.warnings),
+    ), selection
+
+
 def sha256_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
@@ -789,7 +888,13 @@ def _workbook_sheet_parts(archive: ZipFile) -> list[tuple[str, str]]:
     return result
 
 
-def _parse_media(source: BinaryIO, workbook_sha256: str, *, heartbeat=None) -> tuple[list[dict[str, Any]], list[str]]:
+def _parse_media(
+    source: BinaryIO,
+    workbook_sha256: str,
+    *,
+    heartbeat=None,
+    allowed_anchors: set[tuple[str, int]] | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
     parsed: list[dict[str, Any]] = []
     warnings: list[str] = []
     total_bytes = 0
@@ -834,8 +939,6 @@ def _parse_media(source: BinaryIO, workbook_sha256: str, *, heartbeat=None) -> t
                     }
                 ]
                 for anchor in anchors:
-                    if len(parsed) >= MAX_MEDIA_ITEMS:
-                        raise WorkbookValidationError('too_many_images', 'Workbook exceeds the embedded image limit.')
                     marker = anchor.find(f'{{{drawing_ns}}}from')
                     row_node = marker.find(f'{{{drawing_ns}}}row') if marker is not None else None
                     col_node = marker.find(f'{{{drawing_ns}}}col') if marker is not None else None
@@ -844,6 +947,13 @@ def _parse_media(source: BinaryIO, workbook_sha256: str, *, heartbeat=None) -> t
                         continue
                     row_number = int(row_node.text or '0') + 1
                     col_number = int(col_node.text or '0') + 1
+                    if (
+                        allowed_anchors is not None
+                        and (sheet_name, row_number) not in allowed_anchors
+                    ):
+                        continue
+                    if len(parsed) >= MAX_MEDIA_ITEMS:
+                        raise WorkbookValidationError('too_many_images', 'Workbook exceeds the embedded image limit.')
                     blip = anchor.find(f'.//{{{drawingml_ns}}}blip')
                     embed_id = blip.attrib.get(f'{{{rel_ns}}}embed') if blip is not None else None
                     image_target = drawing_relationships.get(embed_id or '')
@@ -928,6 +1038,7 @@ def parse_quality_workbook(
     workbook_sha256: str,
     uploaded_on: date,
     heartbeat=None,
+    import_scope: ImportScope | None = None,
 ) -> ParsedWorkbook:
     source, warnings, _names = validate_and_sanitize_ooxml(content)
     try:
@@ -993,9 +1104,39 @@ def parse_quality_workbook(
         'modified': _json_value(getattr(workbook.properties, 'modified', None)),
         'recognized_sheets': recognized,
     }
+    source_dataset_key, source_dataset_warnings = _dataset_period_from_rows(
+        rows,
+        fallback_date=uploaded_on,
+    )
+    properties['source_dataset_key'] = source_dataset_key
+    properties['source_dataset_warnings'] = source_dataset_warnings
     all_sheet_names = list(workbook.sheetnames)
     workbook.close()
-    media, media_warnings = _parse_media(source, workbook_sha256, heartbeat=heartbeat)
+    allowed_anchors = None
+    if import_scope is not None:
+        scoped, _selection = apply_import_scope(
+            ParsedWorkbook(
+                sheet_names=all_sheet_names,
+                properties=properties,
+                rows=rows,
+                media=[],
+                warnings=warnings,
+            ),
+            import_scope,
+        )
+        rows = scoped.rows
+        properties = scoped.properties
+        if import_scope.mode == 'date_range':
+            allowed_anchors = {
+                (row['sheet_name'], row['source_row_number'])
+                for row in rows
+            }
+    media, media_warnings = _parse_media(
+        source,
+        workbook_sha256,
+        heartbeat=heartbeat,
+        allowed_anchors=allowed_anchors,
+    )
     warnings.extend(media_warnings)
     recognized_rows = {(row['sheet_name'], row['source_row_number']) for row in rows}
     for item in media:
@@ -1024,15 +1165,19 @@ class QualityImportStop(RuntimeError):
     """Cooperative stop requested after a durable media checkpoint."""
 
 
-def _dataset_period(parsed: ParsedWorkbook, batch: QualityImportBatch) -> tuple[str, list[str]]:
+def _dataset_period_from_rows(
+    rows: list[dict[str, Any]],
+    *,
+    fallback_date: date,
+) -> tuple[str, list[str]]:
     counts: dict[str, int] = {}
-    for row in parsed.rows:
+    for row in rows:
         report_date = row.get('report_date')
         if report_date:
             period = report_date.strftime('%Y-%m')
             counts[period] = counts.get(period, 0) + 1
     warnings: list[str] = []
-    monthly_rows = [row for row in parsed.rows if row.get('sheet_role') == 'monthly_issue']
+    monthly_rows = [row for row in rows if row.get('sheet_role') == 'monthly_issue']
     explicit_months = {
         int(match.group(1))
         for row in monthly_rows
@@ -1047,17 +1192,28 @@ def _dataset_period(parsed: ParsedWorkbook, batch: QualityImportBatch) -> tuple[
         month = next(iter(explicit_months))
         year = sorted(explicit_years, key=lambda value: (-explicit_years[value], value))[0]
         period = f'{year:04d}-{month:02d}'
+    elif len(explicit_months) == 1:
+        period = f'{fallback_date.year:04d}-{next(iter(explicit_months)):02d}'
+        warnings.append('dataset_year_inferred_from_upload_date')
     elif counts:
         period = sorted(counts, key=lambda value: (-counts[value], value))[0]
     else:
-        local_created = timezone.localtime(batch.created_at)
-        month_match = re.search(r'(\d{1,2})\s*月', batch.original_filename)
-        month = int(month_match.group(1)) if month_match else local_created.month
-        period = f'{local_created.year:04d}-{month:02d}'
-        warnings.append('dataset_period_inferred_from_filename')
+        period = fallback_date.strftime('%Y-%m')
+        warnings.append('dataset_period_inferred_from_upload_date')
     if len(counts) > 1:
         warnings.append('mixed_report_periods:' + ','.join(sorted(counts)))
     return f'quality_issue_workbook:{period}', warnings
+
+
+def _dataset_period(parsed: ParsedWorkbook, batch: QualityImportBatch) -> tuple[str, list[str]]:
+    source_key = parsed.properties.get('source_dataset_key')
+    source_warnings = parsed.properties.get('source_dataset_warnings')
+    if isinstance(source_key, str) and source_key.startswith('quality_issue_workbook:'):
+        return source_key, list(source_warnings) if isinstance(source_warnings, list) else []
+    return _dataset_period_from_rows(
+        parsed.rows,
+        fallback_date=timezone.localtime(batch.created_at).date(),
+    )
 
 
 def _row_evidence_sha(row: dict[str, Any], media: list[dict[str, Any]]) -> str:
@@ -1192,6 +1348,45 @@ def _pending_staged_bytes() -> int:
     )
 
 
+def _latest_baseline_rows(
+    *,
+    dataset_key: str,
+    selection_scope: dict[str, Any],
+) -> tuple[QualityImportBatch | None, list[QualityImportRow], list[int]]:
+    """Return the latest known row for each business key in this scope.
+
+    A single latest batch is insufficient once daily date-scoped imports are
+    allowed: yesterday's correction must still find yesterday's prior row even
+    if today's batch is newer.  Missing calculations are scoped identically so
+    rows outside the selected period are never reported as deleted.
+    """
+
+    queryset = QualityImportRow.objects.select_related('batch').filter(
+        batch__dataset_key=dataset_key,
+        batch__status__in=[
+            QualityImportBatch.Status.READY,
+            QualityImportBatch.Status.READY_WITH_WARNINGS,
+        ],
+    )
+    if selection_scope.get('mode') == 'date_range':
+        queryset = queryset.filter(
+            models.Q(
+                report_date__gte=selection_scope['range_start'],
+                report_date__lte=selection_scope['range_end'],
+            )
+            | models.Q(report_date__isnull=True)
+        )
+    queryset = queryset.order_by('-batch__created_at', '-batch_id', '-id')
+    latest_by_key: dict[str, QualityImportRow] = {}
+    for row in queryset.iterator(chunk_size=500):
+        latest_by_key.setdefault(row.business_key, row)
+    rows = list(latest_by_key.values())
+    batches = {row.batch_id: row.batch for row in rows}
+    baseline_ids = sorted(batches)
+    baseline = next(iter(batches.values())) if len(batches) == 1 else None
+    return baseline, rows, baseline_ids
+
+
 def _persist_parsed_workbook(
     *,
     parsed: ParsedWorkbook,
@@ -1200,12 +1395,17 @@ def _persist_parsed_workbook(
     source_content_type: str,
     source_byte_size: int,
     uploaded_by,
+    import_scope_key: str,
+    selection_scope: dict[str, Any],
 ) -> tuple[QualityImportBatch, bool]:
     """Atomically persist review rows and normalized-image staging bytes."""
 
     with transaction.atomic():
         _lock_staging_capacity()
-        existing = QualityImportBatch.objects.select_for_update().filter(sha256=source_sha256).first()
+        existing = QualityImportBatch.objects.select_for_update().filter(
+            sha256=source_sha256,
+            import_scope_key=import_scope_key,
+        ).first()
         if existing:
             return existing, True
 
@@ -1213,17 +1413,17 @@ def _persist_parsed_workbook(
             uploaded_by=uploaded_by,
             original_filename=source_filename,
             sha256=source_sha256,
+            import_scope_key=import_scope_key,
             file_size=source_byte_size,
             dataset_key='quality_issue_workbook:pending',
             status=QualityImportBatch.Status.QUEUED,
             phase='staging_results',
         )
         dataset_key, dataset_warnings = _dataset_period(parsed, batch)
-        baseline = QualityImportBatch.objects.filter(
+        baseline, baseline_rows, baseline_batch_ids = _latest_baseline_rows(
             dataset_key=dataset_key,
-            status__in=[QualityImportBatch.Status.READY, QualityImportBatch.Status.READY_WITH_WARNINGS],
-        ).exclude(pk=batch.pk).order_by('-created_at', '-id').first()
-        baseline_rows = list(baseline.rows.all()) if baseline else []
+            selection_scope=selection_scope,
+        )
         candidates: dict[str, list[QualityImportRow]] = {}
         for baseline_row in baseline_rows:
             candidates.setdefault(baseline_row.business_key, []).append(baseline_row)
@@ -1443,14 +1643,18 @@ def _persist_parsed_workbook(
         batch.sheet_names = parsed.sheet_names
         batch.total_rows = len(parsed.rows)
         batch.total_media = len(parsed.media)
-        batch.source_total_rows = len(parsed.rows)
+        batch.source_total_rows = int(selection_scope['source_total_rows'])
         batch.added_count = added
         batch.changed_count = changed
         batch.unchanged_count = unchanged
         batch.missing_count = len(missing_rows)
         batch.new_media_count = len(new_asset_shas)
         batch.reused_media_count = reused_attachments
-        batch.delta_summary = _make_delta_summary(created_rows, missing_rows)
+        batch.delta_summary = {
+            **_make_delta_summary(created_rows, missing_rows),
+            'selection_scope': selection_scope,
+            'baseline_batch_ids': baseline_batch_ids,
+        }
         batch.warnings = all_warnings
         batch.warning_count = warning_count
         batch.progress_done = len(staged_asset_cache) - len(pending_assets)
@@ -1462,7 +1666,12 @@ def _persist_parsed_workbook(
         return batch, False
 
 
-def ingest_quality_workbook(upload, *, uploaded_by) -> tuple[QualityImportBatch, bool]:
+def ingest_quality_workbook(
+    upload,
+    *,
+    uploaded_by,
+    import_scope: ImportScope,
+) -> tuple[QualityImportBatch, bool]:
     """Stream one multipart upload, parse it, and discard its raw bytes."""
 
     filename = str(getattr(upload, 'name', '') or '')
@@ -1493,7 +1702,10 @@ def ingest_quality_workbook(upload, *, uploaded_by) -> tuple[QualityImportBatch,
                 source.write(block)
             validate_upload_metadata(filename, content_type, size)
             source_sha256 = digest.hexdigest()
-            existing = QualityImportBatch.objects.filter(sha256=source_sha256).first()
+            existing = QualityImportBatch.objects.filter(
+                sha256=source_sha256,
+                import_scope_key=import_scope.key,
+            ).first()
             if existing:
                 return existing, True
             source.flush()
@@ -1502,7 +1714,14 @@ def ingest_quality_workbook(upload, *, uploaded_by) -> tuple[QualityImportBatch,
                 source,
                 workbook_sha256=source_sha256,
                 uploaded_on=timezone.localdate(),
+                import_scope=import_scope,
             )
+            selection_scope = parsed.properties['selection_scope']
+            if import_scope.mode == 'date_range' and not parsed.rows:
+                raise WorkbookValidationError(
+                    'no_rows_in_selected_range',
+                    'No quality rows were found in the selected date range.',
+                )
             source.seek(0, os.SEEK_END)
         finally:
             try:
@@ -1519,6 +1738,8 @@ def ingest_quality_workbook(upload, *, uploaded_by) -> tuple[QualityImportBatch,
         source_content_type=content_type,
         source_byte_size=size,
         uploaded_by=uploaded_by,
+        import_scope_key=import_scope.key,
+        selection_scope=selection_scope,
     )
     if batch.status == QualityImportBatch.Status.QUEUED:
         transaction.on_commit(kick_quality_import_pump)

@@ -66,7 +66,9 @@ class QualityImportBatch(models.Model):
     """One immutable workbook intake.
 
     Imported rows deliberately remain separate from :class:`QualityReport` until
-    a human has reviewed them.  ``sha256`` makes retrying the same upload safe.
+    a human has reviewed them.  ``sha256`` plus ``import_scope_key`` makes
+    retrying the same file and selected period safe while still allowing a later
+    backfill from the same workbook.
     """
 
     class Status(models.TextChoices):
@@ -85,7 +87,8 @@ class QualityImportBatch(models.Model):
         related_name='quality_import_batches',
     )
     original_filename = models.CharField(max_length=255)
-    sha256 = models.CharField(max_length=64, unique=True, db_index=True)
+    sha256 = models.CharField(max_length=64, db_index=True)
+    import_scope_key = models.CharField(max_length=32, default='full', db_index=True)
     file_size = models.PositiveBigIntegerField()
     dataset_key = models.CharField(max_length=64, default='quality_issue_workbook', db_index=True)
     baseline_batch = models.ForeignKey(
@@ -130,6 +133,10 @@ class QualityImportBatch(models.Model):
         ordering = ['-created_at', '-id']
         constraints = [
             models.UniqueConstraint(
+                fields=['sha256', 'import_scope_key'],
+                name='quality_import_unique_source_scope',
+            ),
+            models.UniqueConstraint(
                 fields=['status'],
                 condition=models.Q(status='processing'),
                 name='quality_import_single_processing_batch',
@@ -148,7 +155,7 @@ class QualityImportProvenance(models.Model):
         on_delete=models.CASCADE,
         related_name='provenance',
     )
-    source_sha256 = models.CharField(max_length=64, unique=True, db_index=True)
+    source_sha256 = models.CharField(max_length=64, db_index=True)
     source_content_type = models.CharField(max_length=128, blank=True, default='')
     source_filename = models.CharField(max_length=255)
     source_byte_size = models.PositiveBigIntegerField()

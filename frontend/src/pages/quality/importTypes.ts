@@ -26,6 +26,27 @@ export interface QualityImportMissingRow {
 export interface QualityImportDeltaSummary {
   by_date: Record<string, QualityImportDeltaDay>;
   missing?: QualityImportMissingRow[];
+  selection_scope?: QualityImportSelectionScope;
+  baseline_batch_ids?: number[];
+}
+
+export type QualityImportMode = 'date_range' | 'full';
+
+export interface QualityImportScopeRequest {
+  mode: QualityImportMode;
+  rangeStart?: string;
+  rangeEnd?: string;
+}
+
+export interface QualityImportSelectionScope {
+  mode: QualityImportMode;
+  range_start: string | null;
+  range_end: string | null;
+  source_total_rows: number;
+  selected_rows: number;
+  retained_rows?: number;
+  excluded_rows: number;
+  undated_rows: number;
 }
 
 export type QualityImportReviewStatus = 'draft' | 'reviewed' | 'rejected' | 'published' | 'unchanged';
@@ -120,9 +141,41 @@ export interface QualityImportRow {
   duplicate_override_by?: string | null;
   duplicate_override_at?: string | null;
   duplicate_override_reason?: string;
+  duplicate_match?: QualityImportDuplicateMatch | null;
   created_at?: string;
   updated_at?: string;
   media: QualityImportMedia[];
+}
+
+export type QualityImportDuplicateLevel = 'confirmed' | 'likely';
+export type QualityImportDuplicateAction = 'link_existing' | 'update_existing' | 'separate';
+
+export interface QualityImportDuplicateReportSummary {
+  report_dt: string;
+  report_date: string;
+  section: string;
+  model: string;
+  part_no: string;
+  lot_qty: number | null;
+  inspection_qty: number | null;
+  defect_qty: number | null;
+  defect_rate: string;
+  judgement: string;
+  phenomenon: string;
+  disposition: string;
+  action_result: string;
+  images: string[];
+}
+
+export interface QualityImportDuplicateMatch {
+  level: QualityImportDuplicateLevel;
+  score: number;
+  report_id: number;
+  version: string;
+  source_kind: 'manual' | 'excel';
+  reasons: string[];
+  allowed_actions: QualityImportDuplicateAction[];
+  report: QualityImportDuplicateReportSummary;
 }
 
 export interface QualityImportPage<T> {

@@ -17,6 +17,11 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from .duplicate_detection import (
+    find_best_report_duplicate,
+    find_best_report_duplicates,
+    score_report_duplicate,
+)
 from .excel_import import normalized_row_fingerprint
 from .models import (
     QualityImportAsset,
@@ -212,6 +217,17 @@ class QualityImportRowViewSet(
             queryset = queryset.filter(sheet_name=sheet_name)
         return queryset
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        rows = list(page) if page is not None else list(queryset)
+        context = self.get_serializer_context()
+        context['duplicate_matches'] = find_best_report_duplicates(rows)
+        serializer = self.get_serializer(rows, many=True, context=context)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
+
     def perform_update(self, serializer):
         # DRF validates before calling ``perform_update``. Re-lock and reload
         # the row so a publish that committed after that validation cannot be
@@ -381,6 +397,114 @@ class QualityImportRowViewSet(
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+            duplicate_action = str(request.data.get('duplicate_action', '')).strip()
+            duplicate_report = None
+            manual_candidate = None
+            if not revision_source and not published_duplicate:
+                manual_candidate = find_best_report_duplicate(row)
+            if manual_candidate:
+                requested_report_id = request.data.get('duplicate_report_id')
+                requested_report_version = str(
+                    request.data.get('duplicate_report_version', '')
+                ).strip()
+                try:
+                    requested_report_id = int(requested_report_id) if requested_report_id else None
+                except (TypeError, ValueError):
+                    requested_report_id = None
+                allowed_actions = manual_candidate['allowed_actions']
+                if not duplicate_action:
+                    return Response(
+                        {
+                            'code': 'possible_existing_report_duplicate',
+                            'error': 'A semantically similar quality report already exists.',
+                            'candidate': manual_candidate,
+                            'allowed_actions': allowed_actions,
+                            'confirmation_required': True,
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                if (
+                    requested_report_id != manual_candidate['report_id']
+                    or requested_report_version != manual_candidate['version']
+                    or duplicate_action not in allowed_actions
+                ):
+                    return Response(
+                        {
+                            'code': 'duplicate_candidate_changed',
+                            'error': 'The duplicate candidate changed; review it again.',
+                            'candidate': manual_candidate,
+                            'allowed_actions': allowed_actions,
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                reason = str(request.data.get('duplicate_reason', '')).strip()[:255]
+                if len(reason) < 3:
+                    return Response(
+                        {
+                            'code': 'duplicate_reason_required',
+                            'error': 'duplicate_reason (3-255 characters) is required.',
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                row.duplicate_override_by = request.user
+                row.duplicate_override_at = timezone.now()
+                row.duplicate_override_reason = (
+                    f'{duplicate_action}:report:{requested_report_id}:{reason}'
+                )[:255]
+                if duplicate_action in {'link_existing', 'update_existing'}:
+                    try:
+                        duplicate_report = QualityReport.objects.select_for_update().get(
+                            pk=requested_report_id,
+                        )
+                    except QualityReport.DoesNotExist:
+                        return Response(
+                            {
+                                'code': 'duplicate_candidate_changed',
+                                'error': 'The existing report is no longer available.',
+                            },
+                            status=status.HTTP_409_CONFLICT,
+                        )
+                    locked_candidate = score_report_duplicate(row, duplicate_report)
+                    if (
+                        not locked_candidate
+                        or locked_candidate['source_kind'] != 'manual'
+                        or locked_candidate['version'] != requested_report_version
+                        or duplicate_action not in locked_candidate['allowed_actions']
+                    ):
+                        return Response(
+                            {
+                                'code': 'duplicate_candidate_changed',
+                                'error': 'The existing report changed; review it again.',
+                                'candidate': locked_candidate,
+                                'allowed_actions': (
+                                    locked_candidate['allowed_actions']
+                                    if locked_candidate
+                                    else []
+                                ),
+                            },
+                            status=status.HTTP_409_CONFLICT,
+                        )
+                    try:
+                        existing_source_row = duplicate_report.source_import_row
+                    except QualityImportRow.DoesNotExist:
+                        existing_source_row = None
+                    if existing_source_row is not None:
+                        return Response(
+                            {
+                                'code': 'duplicate_candidate_changed',
+                                'error': 'The existing report is already linked to another import row.',
+                            },
+                            status=status.HTTP_409_CONFLICT,
+                        )
+            elif duplicate_action and not revision_source and not published_duplicate:
+                return Response(
+                    {
+                        'code': 'duplicate_candidate_changed',
+                        'error': 'The duplicate candidate is no longer available; review the row again.',
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
             image_urls = []
             for media in row.media.select_related('asset').order_by('source_index', 'id')[:3]:
                 try:
@@ -407,7 +531,8 @@ class QualityImportRowViewSet(
                 'image2': image_urls[1] if len(image_urls) > 1 else None,
                 'image3': image_urls[2] if len(image_urls) > 2 else None,
             }
-            updated_existing_report = bool(revision_source)
+            updated_existing_report = bool(revision_source or duplicate_action == 'update_existing')
+            linked_existing_report = bool(duplicate_action == 'link_existing')
             if revision_source:
                 report = QualityReport.objects.select_for_update().get(
                     pk=revision_source.approved_report_id,
@@ -417,6 +542,26 @@ class QualityImportRowViewSet(
                 for field, value in report_values.items():
                     setattr(report, field, value)
                 report.save(update_fields=[*report_values.keys(), 'updated_at'])
+            elif duplicate_report is not None:
+                report = duplicate_report
+                if duplicate_action == 'update_existing':
+                    update_values = {
+                        field: value
+                        for field, value in report_values.items()
+                        if field != 'report_dt' and value not in (None, '')
+                    }
+                    if not row.judgement:
+                        update_values.pop('judgement', None)
+                    # Only supplied Excel evidence replaces a matching slot;
+                    # omitted slots and fields keep richer manually entered
+                    # evidence.  The manual timestamp is preserved because the
+                    # workbook carries a date, not an occurrence time.
+                    for index, field in enumerate(('image1', 'image2', 'image3')):
+                        if index >= len(image_urls):
+                            update_values.pop(field, None)
+                    for field, value in update_values.items():
+                        setattr(report, field, value)
+                    report.save(update_fields=[*update_values.keys(), 'updated_at'])
             else:
                 report = QualityReport.objects.create(**report_values)
             now = timezone.now()
@@ -436,9 +581,14 @@ class QualityImportRowViewSet(
         payload = self.get_serializer(row).data
         payload['idempotent_replay'] = False
         payload['updated_existing_report'] = updated_existing_report
+        payload['linked_existing_report'] = linked_existing_report
         return Response(
             payload,
-            status=status.HTTP_200_OK if updated_existing_report else status.HTTP_201_CREATED,
+            status=(
+                status.HTTP_200_OK
+                if updated_existing_report or linked_existing_report
+                else status.HTTP_201_CREATED
+            ),
         )
 
 

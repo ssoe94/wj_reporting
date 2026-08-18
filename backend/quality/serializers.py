@@ -1,6 +1,7 @@
 from django.urls import reverse
 from rest_framework import serializers
 
+from .duplicate_detection import find_best_report_duplicate
 from .models import (
     QualityImportAsset,
     QualityImportBatch,
@@ -142,6 +143,7 @@ class QualityImportRowSerializer(serializers.ModelSerializer):
         read_only=True,
         allow_null=True,
     )
+    duplicate_match = serializers.SerializerMethodField()
 
     class Meta:
         model = QualityImportRow
@@ -163,6 +165,7 @@ class QualityImportRowSerializer(serializers.ModelSerializer):
             'duplicate_override_by',
             'duplicate_override_at',
             'duplicate_override_reason',
+            'duplicate_match',
             'report_date',
             'section',
             'occurrence_location',
@@ -206,6 +209,7 @@ class QualityImportRowSerializer(serializers.ModelSerializer):
             'duplicate_override_by',
             'duplicate_override_at',
             'duplicate_override_reason',
+            'duplicate_match',
             'raw_data',
             'warnings',
             'reviewed_by',
@@ -216,6 +220,12 @@ class QualityImportRowSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+    def get_duplicate_match(self, obj):
+        matches = self.context.get('duplicate_matches')
+        if isinstance(matches, dict):
+            return matches.get(obj.pk)
+        return find_best_report_duplicate(obj)
 
     def validate_part_no(self, value):
         return value.strip().upper()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
-from datetime import timedelta
+from datetime import date, timedelta
 from io import BytesIO, StringIO
 from unittest import mock
 
@@ -131,6 +131,8 @@ def build_quality_workbook(
     issue_count=1,
     phenomena=None,
     image_rows=None,
+    issue_date=8.03,
+    oqc_date=1.15,
 ) -> bytes:
     workbook = Workbook()
     workbook.properties.title = workbook_title
@@ -144,7 +146,7 @@ def build_quality_workbook(
     for index in range(1, issue_count + 1):
         row_phenomenon = phenomena[index - 1] if phenomena else phenomenon
         issue.append([
-            None, index, 8.03, '注塑', '27G523', f'{part_no}{index}' if issue_count > 1 else part_no,
+            None, index, issue_date, '注塑', '27G523', f'{part_no}{index}' if issue_count > 1 else part_no,
             'B/C', row_phenomenon, 'Lot数：8\n不良数：2', None, '刚生产',
         ])
     if include_image:
@@ -161,7 +163,7 @@ def build_quality_workbook(
         '生产日期', '不良类型', '对应部门', '处理结果', '备注',
     ])
     oqc.append([
-        None, 1, 1.15, '32QN600', 'ABJ76507611', 'C/A', 3,
+        None, 1, oqc_date, '32QN600', 'ABJ76507611', 'C/A', 3,
         '26.1.19', '表面脏 灰', '注塑', '已处理', '复检完成',
     ])
     output = BytesIO()
@@ -195,17 +197,32 @@ class QualityWorkbookImportAPITests(APITestCase):
         self.media_field.storage = self.original_storage
         self.temp_dir.cleanup()
 
-    def upload(self, content=None, *, filename='品质 Issue List - 8月.xlsx', content_type=None):
+    def upload(
+        self,
+        content=None,
+        *,
+        filename='品质 Issue List - 8月.xlsx',
+        content_type=None,
+        import_mode='full',
+        range_start=None,
+        range_end=None,
+    ):
         content = self.workbook if content is None else content
+        payload = {
+            'file': SimpleUploadedFile(
+                filename,
+                content,
+                content_type=content_type or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ),
+            'import_mode': import_mode,
+        }
+        if range_start is not None:
+            payload['range_start'] = range_start
+        if range_end is not None:
+            payload['range_end'] = range_end
         return self.client.post(
             self.url,
-            {
-                'file': SimpleUploadedFile(
-                    filename,
-                    content,
-                    content_type=content_type or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                ),
-            },
+            payload,
             format='multipart',
         )
 
@@ -248,6 +265,181 @@ class QualityWorkbookImportAPITests(APITestCase):
         self.assertEqual(issue.part_no, 'ACQ30854201')
         self.assertEqual(issue.lot_qty, 8)
         self.assertEqual(issue.media.get().asset_id, asset.pk)
+
+    def test_date_range_persists_only_selected_rows_and_linked_media(self):
+        response = self.upload(
+            import_mode='date_range',
+            range_start='2026-08-03',
+            range_end='2026-08-03',
+        )
+
+        self.assertEqual(response.status_code, 202, response.data)
+        batch = QualityImportBatch.objects.get(pk=response.data['id'])
+        self.assertEqual(batch.source_total_rows, 2)
+        self.assertEqual(batch.total_rows, 1)
+        self.assertEqual(batch.total_media, 1)
+        self.assertEqual(list(batch.rows.values_list('report_date', flat=True)), [date(2026, 8, 3)])
+        scope = batch.delta_summary['selection_scope']
+        self.assertEqual(scope, {
+            'mode': 'date_range',
+            'range_start': '2026-08-03',
+            'range_end': '2026-08-03',
+            'source_total_rows': 2,
+            'selected_rows': 1,
+            'retained_rows': 1,
+            'excluded_rows': 1,
+            'undated_rows': 0,
+        })
+        self.assertEqual(batch.provenance.workbook_properties['selection_scope'], scope)
+
+    def test_date_range_retains_undated_rows_and_photos_for_review(self):
+        workbook = build_quality_workbook(workbook_title='undated', issue_date=None)
+        response = self.upload(
+            content=workbook,
+            import_mode='date_range',
+            range_start='2026-08-17',
+            range_end='2026-08-17',
+        )
+        self.assertEqual(response.status_code, 202, response.data)
+        batch = QualityImportBatch.objects.get(pk=response.data['id'])
+        self.assertEqual(batch.total_rows, 1)
+        self.assertEqual(batch.total_media, 1)
+        row = batch.rows.get()
+        self.assertIsNone(row.report_date)
+        self.assertIn('missing_report_date', row.warnings)
+        scope = batch.delta_summary['selection_scope']
+        self.assertEqual(scope['selected_rows'], 0)
+        self.assertEqual(scope['retained_rows'], 1)
+        self.assertEqual(scope['undated_rows'], 1)
+        self.assertEqual(scope['excluded_rows'], 1)
+
+        process_quality_import_batch(batch.id)
+        repeated = self.upload(
+            content=workbook,
+            import_mode='date_range',
+            range_start='2026-08-18',
+            range_end='2026-08-18',
+        )
+        self.assertEqual(repeated.status_code, 202, repeated.data)
+        repeated_row = QualityImportBatch.objects.get(pk=repeated.data['id']).rows.get()
+        self.assertEqual(repeated_row.delta_status, QualityImportRow.DeltaStatus.UNCHANGED)
+        self.assertEqual(repeated_row.review_status, QualityImportRow.ReviewStatus.UNCHANGED)
+
+    def test_date_range_validation_and_exact_source_can_be_reused_for_another_scope(self):
+        missing_mode = self.client.post(
+            self.url,
+            {
+                'file': SimpleUploadedFile(
+                    'quality.xlsx',
+                    self.workbook,
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                ),
+            },
+            format='multipart',
+        )
+        self.assertEqual(missing_mode.status_code, 400, missing_mode.data)
+        self.assertEqual(missing_mode.data['code'], 'invalid_import_mode')
+
+        invalid_range = self.upload(
+            import_mode='date_range',
+            range_start='2026-08-04',
+            range_end='2026-08-03',
+        )
+        self.assertEqual(invalid_range.status_code, 400, invalid_range.data)
+        self.assertEqual(invalid_range.data['code'], 'invalid_import_range')
+
+        empty_range = self.upload(
+            import_mode='date_range',
+            range_start='2026-08-17',
+            range_end='2026-08-17',
+        )
+        self.assertEqual(empty_range.status_code, 400, empty_range.data)
+        self.assertEqual(empty_range.data['code'], 'no_rows_in_selected_range')
+        self.assertEqual(QualityImportBatch.objects.count(), 0)
+
+        accepted = self.upload()
+        self.assertEqual(accepted.status_code, 202, accepted.data)
+        scoped = self.upload(
+            import_mode='date_range',
+            range_start='2026-08-03',
+            range_end='2026-08-03',
+        )
+        self.assertEqual(scoped.status_code, 202, scoped.data)
+        self.assertNotEqual(scoped.data['id'], accepted.data['id'])
+        self.assertFalse(scoped.data['idempotent_replay'])
+        self.assertEqual(QualityImportBatch.objects.count(), 2)
+        full_batch = QualityImportBatch.objects.get(pk=accepted.data['id'])
+        scoped_batch = QualityImportBatch.objects.get(pk=scoped.data['id'])
+        self.assertEqual(full_batch.import_scope_key, 'full')
+        self.assertEqual(scoped_batch.import_scope_key, '2026-08-03:2026-08-03')
+
+        replay = self.upload(
+            import_mode='date_range',
+            range_start='2026-08-03',
+            range_end='2026-08-03',
+        )
+        self.assertEqual(replay.status_code, 202, replay.data)
+        self.assertEqual(replay.data['id'], scoped.data['id'])
+        self.assertTrue(replay.data['idempotent_replay'])
+        self.assertEqual(QualityImportBatch.objects.count(), 2)
+
+    def test_scoped_revision_finds_prior_date_across_newer_daily_batch(self):
+        first = self.upload(
+            content=build_quality_workbook(workbook_title='day-1', phenomenon='表面色差'),
+            import_mode='date_range',
+            range_start='2026-08-03',
+            range_end='2026-08-03',
+        )
+        self.assertEqual(first.status_code, 202, first.data)
+        process_quality_import_batch(first.data['id'])
+        baseline_row = QualityImportBatch.objects.get(pk=first.data['id']).rows.get()
+
+        second = self.upload(
+            content=build_quality_workbook(
+                workbook_title='day-2',
+                issue_date=8.04,
+                phenomenon='划伤',
+            ),
+            import_mode='date_range',
+            range_start='2026-08-04',
+            range_end='2026-08-04',
+        )
+        self.assertEqual(second.status_code, 202, second.data)
+        process_quality_import_batch(second.data['id'])
+
+        correction = self.upload(
+            content=build_quality_workbook(
+                workbook_title='day-1-corrected',
+                phenomenon='表面色差 调整后',
+            ),
+            import_mode='date_range',
+            range_start='2026-08-03',
+            range_end='2026-08-03',
+        )
+        self.assertEqual(correction.status_code, 202, correction.data)
+        corrected_row = QualityImportBatch.objects.get(pk=correction.data['id']).rows.get()
+        self.assertEqual(corrected_row.delta_status, QualityImportRow.DeltaStatus.CHANGED)
+        self.assertEqual(corrected_row.supersedes_id, baseline_row.id)
+
+    def test_mixed_period_workbook_keeps_one_dataset_identity_across_scopes(self):
+        full = self.upload()
+        self.assertEqual(full.status_code, 202, full.data)
+        process_quality_import_batch(full.data['id'])
+        full_batch = QualityImportBatch.objects.get(pk=full.data['id'])
+        baseline_oqc = full_batch.rows.get(sheet_name='OQC出库不良 返工list')
+        self.assertEqual(full_batch.dataset_key, 'quality_issue_workbook:2026-08')
+
+        january = self.upload(
+            import_mode='date_range',
+            range_start='2026-01-15',
+            range_end='2026-01-15',
+        )
+        self.assertEqual(january.status_code, 202, january.data)
+        january_batch = QualityImportBatch.objects.get(pk=january.data['id'])
+        january_row = january_batch.rows.get()
+        self.assertEqual(january_batch.dataset_key, full_batch.dataset_key)
+        self.assertEqual(january_row.delta_status, QualityImportRow.DeltaStatus.UNCHANGED)
+        self.assertEqual(january_row.baseline_row_id, baseline_oqc.id)
 
     def test_request_persistence_performs_no_storage_network_io(self):
         with mock.patch.object(self.storage, 'exists') as exists, mock.patch.object(self.storage, 'save') as save:
