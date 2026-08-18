@@ -59,6 +59,55 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(request.full_url, "https://wj-reporting.example/api/token/refresh/")
         self.assertEqual(timeout, scheduler.HTTP_TIMEOUT_SECONDS)
 
+    def test_provision_request_accepts_only_fixed_service_identity_and_scope(self):
+        opener = FakeOpener({
+            "service_username": scheduler.ARCHIVE_SERVICE_USERNAME,
+            "scope": scheduler.ARCHIVE_TOKEN_SCOPE,
+            "refresh": "service-refresh",
+        })
+
+        result = scheduler.request_archive_service_refresh(
+            "https://wj-reporting.example",
+            admin_access="admin-access",
+            opener=opener,
+        )
+
+        self.assertEqual(result, "service-refresh")
+        request, timeout = opener.requests[0]
+        self.assertEqual(
+            request.full_url,
+            "https://wj-reporting.example/api/quality/archive/provision/",
+        )
+        self.assertEqual(request.get_header("Authorization"), "Bearer admin-access")
+        self.assertEqual(timeout, scheduler.HTTP_TIMEOUT_SECONDS)
+
+    def test_configure_stores_service_refresh_not_admin_refresh(self):
+        stored = []
+        with (
+            mock.patch.object(scheduler, "api_base_url", return_value="https://wj-reporting.example"),
+            mock.patch.object(scheduler, "keychain_identity", return_value=("service", "account")),
+            mock.patch.object(scheduler.getpass, "getpass", return_value="admin-password"),
+            mock.patch.object(
+                scheduler,
+                "request_token_pair",
+                return_value={"access": "admin-access", "refresh": "admin-refresh"},
+            ),
+            mock.patch.object(
+                scheduler,
+                "request_archive_service_refresh",
+                return_value="service-refresh",
+            ),
+            mock.patch.object(
+                scheduler,
+                "keychain_store_refresh_token",
+                side_effect=lambda token, **_kwargs: stored.append(token),
+            ),
+        ):
+            result = scheduler.configure(username="admin")
+
+        self.assertEqual(stored, ["service-refresh"])
+        self.assertEqual(result["service_username"], scheduler.ARCHIVE_SERVICE_USERNAME)
+
     def test_sync_rotates_keychain_before_archive_work(self):
         calls = []
         with (

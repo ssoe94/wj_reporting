@@ -125,8 +125,8 @@ python3 tools/quality_media_archive/quality_media_archive.py verify
 
 현재 backend 계약을 다음 순서로 완전 pagination합니다.
 
-1. `GET /api/quality/reports/` — 현재 `image1..3` Cloudinary 참조
-2. `GET /api/quality/import-assets/?mirror_state=pending` — 아직 mirror되지 않은 중복 제거 사진 asset
+1. `GET /api/quality/archive/reports/` — 현재 `image1..3` Cloudinary 참조만 제공하는 축소 응답
+2. `GET /api/quality/archive/assets/?mirror_state=pending` — 아직 mirror되지 않은 중복 제거 사진 asset
 3. 인증된 `content` 다운로드 및 Ted_SSD hash archive
 4. object hash 재검증 후 asset의 `mark-mirrored` POST
 
@@ -160,9 +160,12 @@ token 계정에는 품질 import read/mirror acknowledgement에 필요한 최소
 
 LaunchAgent는 Mac의 현지 시간 기준 매일 23:30에 한 번 실행합니다. access token(30분)은
 저장하지 않고, macOS Keychain의 refresh token만 매 실행 직전에 회전한 뒤 메모리에서
-사용합니다. 로그인 비밀번호는 최초 설정 요청에만 쓰고 저장하지 않습니다. 설치 시 실행
-파일은 개발 저장소가 아니라 사용자 전용 Application Support의 버전별 디렉터리로 복사되고,
-LaunchAgent는 그 고정 버전을 실행합니다.
+사용합니다. 관리자 로그인 비밀번호는 최초 전용 계정 프로비저닝 요청에만 메모리에서
+쓰고 저장하지 않습니다. 서버는 비밀번호 로그인이 불가능한
+`wj_quality_archive_service` 계정과 범위가 제한된 refresh token을 만들며, 스케줄러는
+그 refresh token만 Keychain에 저장합니다. 설치 시 실행 파일은 개발 저장소가 아니라
+사용자 전용 Application Support의 버전별 디렉터리로 복사되고, LaunchAgent는 그 고정
+버전을 실행합니다.
 
 ```bash
 tools/quality_media_archive/install-scheduler.sh
@@ -196,8 +199,9 @@ tools/quality_media_archive/install-scheduler.sh --uninstall
    운영 정책으로 보완해야 합니다.
 3. 이 도구는 Cloudinary에서 삭제하는 기능이 없으며, 현재 report에서 참조되지 않는
    Cloudinary orphan asset도 수집하지 않습니다.
-4. 현재 서버에는 archive-only JWT scope가 없습니다. 따라서 scheduler를 production superuser로
-   등록하지 말고, 전용 최소권한 계정을 마련하기 전에는 credential 설정을 보류합니다.
+4. `configure`는 관리자 인증으로 archive-only 계정을 생성·수리하고 기존 service refresh를
+   폐기한 뒤 새 refresh만 Keychain에 저장합니다. 서비스 계정은 일반 로그인, 관리자 화면,
+   품질 보고 편집 및 다른 업무 API에 접근할 수 없습니다.
 
 ## 테스트
 

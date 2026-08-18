@@ -10,6 +10,13 @@ from .views import (
     get_cloudinary_signature,
 )
 from .import_views import QualityImportBatchViewSet
+from .archive_views import (
+    ArchiveAssetContentView,
+    ArchiveAssetListView,
+    ArchiveAssetMarkMirroredView,
+    ArchiveReportListView,
+    ArchiveServiceProvisionView,
+)
 
 
 router = DefaultRouter()
@@ -21,7 +28,23 @@ router.register(r'import-media', QualityImportMediaViewSet, basename='quality-im
 router.register(r'import-assets', QualityImportAssetViewSet, basename='quality-import-asset')
 
 urlpatterns = [
+    path('archive/reports/', ArchiveReportListView.as_view(), name='quality-archive-report-list'),
+    path('archive/assets/', ArchiveAssetListView.as_view(), name='quality-archive-asset-list'),
+    path(
+        'archive/assets/<int:pk>/content/',
+        ArchiveAssetContentView.as_view(),
+        name='quality-archive-asset-content',
+    ),
+    path(
+        'archive/assets/<int:pk>/mark-mirrored/',
+        ArchiveAssetMarkMirroredView.as_view(),
+        name='quality-archive-asset-mark-mirrored',
+    ),
+    path(
+        'archive/provision/',
+        ArchiveServiceProvisionView.as_view(),
+        name='quality-archive-service-provision',
+    ),
     path('cloudinary-signature/', get_cloudinary_signature, name='cloudinary-signature'),
     path('daily-attention/', DailyQualityAttentionView.as_view(), name='daily-quality-attention'),
 ] + router.urls
-

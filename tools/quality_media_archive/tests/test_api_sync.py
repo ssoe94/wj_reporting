@@ -54,13 +54,13 @@ class FakeTransport:
         parsed = urllib.parse.urlsplit(url)
         query = urllib.parse.parse_qs(parsed.query)
         page = query.get("page", ["1"])[0]
-        if parsed.path == "/api/quality/reports/":
+        if parsed.path == "/api/quality/archive/reports/":
             if page == "1":
                 return {
                     "count": 2,
                     "next": None
                     if self.incomplete_reports
-                    else f"{BASE_URL}/api/quality/reports/?page=2&page_size=200",
+                    else f"{BASE_URL}/api/quality/archive/reports/?page=2&page_size=200",
                     "previous": None,
                     "results": [
                         {
@@ -75,7 +75,7 @@ class FakeTransport:
             return {
                 "count": 2,
                 "next": None,
-                "previous": f"{BASE_URL}/api/quality/reports/?page=1&page_size=200",
+                "previous": f"{BASE_URL}/api/quality/archive/reports/?page=1&page_size=200",
                 "results": [
                     {
                         "id": 11,
@@ -86,7 +86,7 @@ class FakeTransport:
                     }
                 ],
             }
-        if parsed.path == "/api/quality/import-assets/":
+        if parsed.path == "/api/quality/archive/assets/":
             self.assert_pending_query(query)
             return {
                 "count": 1,
@@ -103,7 +103,7 @@ class FakeTransport:
                         "height": 8,
                         "mirror_state": "pending",
                         "mirrored_at": None,
-                        "url": f"{BASE_URL}/api/quality/import-assets/31/content/",
+                        "url": f"{BASE_URL}/api/quality/archive/assets/31/content/",
                         "created_at": "2026-08-14T09:30:00+08:00",
                     }
                 ],
@@ -227,8 +227,8 @@ class QualityApiSyncTests(unittest.TestCase):
         self.assertEqual(
             result["planned_endpoints"],
             [
-                "/api/quality/reports/",
-                "/api/quality/import-assets/?mirror_state=pending",
+                "/api/quality/archive/reports/",
+                "/api/quality/archive/assets/?mirror_state=pending",
             ],
         )
         self.assertFalse(any("import-batches" in path for path in result["planned_endpoints"]))
@@ -332,7 +332,7 @@ class QualityApiSyncTests(unittest.TestCase):
                 validate_api_base_url(value)
 
     def test_authenticated_transport_refreshes_once_after_access_expiry(self) -> None:
-        url = f"{BASE_URL}/api/quality/reports/?page_size=200"
+        url = f"{BASE_URL}/api/quality/archive/reports/?page_size=200"
         refreshed = []
         opener = _UnauthorizedThenOkOpener(url)
         transport = AuthenticatedApiTransport(

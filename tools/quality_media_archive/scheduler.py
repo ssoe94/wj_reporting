@@ -36,6 +36,9 @@ API_BASE_URL_ENV = "WJ_QUALITY_ARCHIVE_API_BASE_URL"
 KEYCHAIN_SERVICE_ENV = "WJ_QUALITY_ARCHIVE_KEYCHAIN_SERVICE"
 KEYCHAIN_ACCOUNT_ENV = "WJ_QUALITY_ARCHIVE_KEYCHAIN_ACCOUNT"
 DEFAULT_KEYCHAIN_SERVICE = "com.wj.quality-media-archive.refresh-token"
+ARCHIVE_PROVISION_PATH = "/api/quality/archive/provision/"
+ARCHIVE_SERVICE_USERNAME = "wj_quality_archive_service"
+ARCHIVE_TOKEN_SCOPE = "quality_media_archive"
 MAX_TOKEN_RESPONSE_BYTES = 64 * 1024
 HTTP_TIMEOUT_SECONDS = 30
 ERR_SEC_ITEM_NOT_FOUND = -25300
@@ -286,27 +289,89 @@ def request_token_pair(
     return {"access": access, "refresh": refresh}
 
 
+def request_archive_service_refresh(
+    base_url: str,
+    *,
+    admin_access: str,
+    opener: Any | None = None,
+) -> str:
+    if not admin_access or any(character.isspace() for character in admin_access):
+        raise SchedulerError("administrator access credential is invalid")
+    base = urllib.parse.urlsplit(base_url)
+    endpoint = urllib.parse.urlunsplit(
+        ("https", base.hostname or "", ARCHIVE_PROVISION_PATH, "", "")
+    )
+    request = urllib.request.Request(
+        endpoint,
+        data=b"{}",
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {admin_access}",
+            "Content-Type": "application/json",
+        },
+    )
+    client = opener or urllib.request.build_opener(_NoRedirectHandler())
+    try:
+        with client.open(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            if response.status != 200:
+                raise SchedulerError("archive service provisioning returned an unexpected status")
+            raw = response.read(MAX_TOKEN_RESPONSE_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        if exc.code in {400, 401, 403, 409}:
+            raise SchedulerError("archive service provisioning was rejected") from exc
+        raise SchedulerError("archive service provisioning is temporarily unavailable") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise SchedulerError("archive service provisioning could not be reached") from exc
+    if len(raw) > MAX_TOKEN_RESPONSE_BYTES:
+        raise SchedulerError("archive service provisioning response exceeded the safe size limit")
+    try:
+        decoded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SchedulerError("archive service provisioning returned an invalid response") from exc
+    if not isinstance(decoded, dict):
+        raise SchedulerError("archive service provisioning returned an invalid response")
+    if (
+        decoded.get("service_username") != ARCHIVE_SERVICE_USERNAME
+        or decoded.get("scope") != ARCHIVE_TOKEN_SCOPE
+    ):
+        raise SchedulerError("archive service provisioning returned the wrong identity or scope")
+    refresh = decoded.get("refresh")
+    if not isinstance(refresh, str) or not refresh or any(character.isspace() for character in refresh):
+        raise SchedulerError("archive service provisioning did not return a valid refresh credential")
+    return refresh
+
+
 def configure(*, username: str | None = None) -> dict[str, Any]:
     base_url = api_base_url()
     service, account = keychain_identity()
-    login_name = (username or input("WJ Reporting username: ")).strip()
+    login_name = (username or input("WJ Reporting administrator username: ")).strip()
     if not login_name:
         raise SchedulerError("username is required")
-    password = getpass.getpass("WJ Reporting password (not stored): ")
+    password = getpass.getpass("WJ Reporting administrator password (not stored): ")
     if not password:
         raise SchedulerError("password is required")
     try:
-        pair = request_token_pair(
+        admin_pair = request_token_pair(
             base_url,
             payload={"username": login_name, "password": password},
             endpoint_suffix="",
         )
     finally:
         password = ""
-    keychain_store_refresh_token(pair["refresh"], service=service, account=account)
+    try:
+        service_refresh = request_archive_service_refresh(
+            base_url,
+            admin_access=admin_pair["access"],
+        )
+    finally:
+        admin_pair.clear()
+    keychain_store_refresh_token(service_refresh, service=service, account=account)
     return {
         "status": "configured",
         "api_origin": base_url,
+        "service_username": ARCHIVE_SERVICE_USERNAME,
+        "scope": ARCHIVE_TOKEN_SCOPE,
         "keychain_service": service,
         "keychain_account": account,
         "password_stored": False,
@@ -375,8 +440,14 @@ def status() -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage the daily Ted_SSD quality archive sync")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    configure_parser = subparsers.add_parser("configure", help="sign in once and store only a rotating refresh credential in Keychain")
-    configure_parser.add_argument("--username", help="WJ Reporting username; password is always prompted securely")
+    configure_parser = subparsers.add_parser(
+        "configure",
+        help="provision the archive-only identity with an administrator sign-in and store only its rotating refresh credential",
+    )
+    configure_parser.add_argument(
+        "--username",
+        help="WJ Reporting administrator username; password is always prompted securely",
+    )
     subparsers.add_parser("sync", help="rotate the Keychain refresh credential and run one archive sync")
     subparsers.add_parser("status", help="show non-secret scheduler readiness")
     return parser
