@@ -1,4 +1,7 @@
+from zoneinfo import ZoneInfo
+
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import serializers
 
 from .duplicate_detection import find_best_report_duplicate
@@ -11,6 +14,9 @@ from .models import (
     QualityReport,
     Supplier,
 )
+
+
+QUALITY_REPORT_TIMEZONE = ZoneInfo('Asia/Shanghai')
 
 
 class QualityReportSerializer(serializers.ModelSerializer):
@@ -36,6 +42,16 @@ class QualityReportSerializer(serializers.ModelSerializer):
         # URLField이므로 별도 처리 불필요
         
         return data
+
+    def validate_report_dt(self, value):
+        local_value = value
+        if timezone.is_naive(local_value):
+            local_value = timezone.make_aware(local_value, QUALITY_REPORT_TIMEZONE)
+        local_date = timezone.localtime(local_value, QUALITY_REPORT_TIMEZONE).date()
+        local_today = timezone.now().astimezone(QUALITY_REPORT_TIMEZONE).date()
+        if local_date > local_today:
+            raise serializers.ValidationError('Report date cannot be in the future.')
+        return value
 
     def get_source_import(self, instance):
         try:
@@ -247,6 +263,11 @@ class QualityImportRowSerializer(serializers.ModelSerializer):
 
     def validate_part_no(self, value):
         return value.strip().upper()
+
+    def validate_report_date(self, value):
+        if value and value > timezone.now().astimezone(QUALITY_REPORT_TIMEZONE).date():
+            raise serializers.ValidationError('Report date cannot be in the future.')
+        return value
 
     def validate_review_status(self, value):
         if value in {

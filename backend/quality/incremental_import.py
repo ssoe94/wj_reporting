@@ -126,6 +126,7 @@ class _ManifestWorksheet:
     def __init__(self, title: str, rows: list[list[Any]]):
         self.title = title
         self._rows = rows
+        self.supports_cell_metadata = False
         self.max_row = len(rows)
         self.max_column = max((len(row) for row in rows), default=0)
 

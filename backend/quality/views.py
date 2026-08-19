@@ -424,6 +424,8 @@ class QualityImportRowViewSet(
             validation_errors = []
             if not row.report_date:
                 validation_errors.append('report_date is required')
+            elif row.report_date > timezone.now().astimezone(ZoneInfo('Asia/Shanghai')).date():
+                validation_errors.append('report_date cannot be in the future')
             if not row.section:
                 validation_errors.append('section is required')
             if not (row.model or row.part_no):

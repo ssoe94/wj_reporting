@@ -260,6 +260,22 @@ class QualityImportManualDuplicateTests(APITestCase):
         )
         self.assertEqual(QualityReport.objects.count(), 1)
 
+    def test_future_reviewed_row_cannot_be_published(self):
+        self.row.report_date = date(2026, 8, 20)
+        self.row.reviewed_content_sha256 = normalized_row_fingerprint(self.row)
+        self.row.save(update_fields=['report_date', 'reviewed_content_sha256', 'updated_at'])
+
+        with mock.patch(
+            'quality.views.timezone.now',
+            return_value=datetime(2026, 8, 19, 12, tzinfo=ZoneInfo('Asia/Shanghai')),
+        ):
+            blocked = self.client.post(self.publish_url, {}, format='json')
+
+        self.assertEqual(blocked.status_code, 400, blocked.data)
+        self.assertEqual(blocked.data['code'], 'publish_validation_failed')
+        self.assertIn('report_date cannot be in the future', blocked.data['errors'])
+        self.assertIsNone(self.row.approved_report_id)
+
     def test_same_part_with_unrelated_defect_is_not_flagged(self):
         self.manual.phenomenon = '尺寸超差'
         self.manual.disposition = '重新测量尺寸'

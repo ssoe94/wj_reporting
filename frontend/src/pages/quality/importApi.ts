@@ -1,3 +1,4 @@
+import axios, { type AxiosResponse } from 'axios';
 import api from '../../lib/api';
 import type {
   QualityCloudinaryUploadReceipt,
@@ -123,6 +124,21 @@ const ALLOWED_FORMATS_BY_CONTENT_TYPE: Readonly<Record<string, string>> = {
   'image/tiff': 'tif,tiff',
   'image/webp': 'webp',
 };
+const PREPARE_RETRY_DELAYS_MS = [1_000, 2_000, 4_000] as const;
+
+function isRetryablePrepareError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  if (error.code === 'ERR_CANCELED') return false;
+  if (!error.response) {
+    return Boolean(error.request)
+      || ['ECONNABORTED', 'ETIMEDOUT', 'ERR_NETWORK'].includes(error.code || '');
+  }
+  return [500, 502, 503, 504].includes(error.response.status);
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => { window.setTimeout(resolve, milliseconds); });
+}
 
 type ValidatedJobEnvelope = Omit<QualityExcelImportJob, 'status'> & { status: string };
 
@@ -271,11 +287,21 @@ export async function prepareQualityExcelDirectJob(
   rowKeys: readonly string[],
   expectedMediaKeys: readonly string[],
 ): Promise<QualityExcelDirectJob> {
-  const response = await api.post<unknown>(
-    '/quality/excel-import/direct/jobs/',
-    { manifest, row_keys: rowKeys },
-    { timeout: 60_000 },
-  );
+  let response: AxiosResponse<unknown>;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      response = await api.post<unknown>(
+        '/quality/excel-import/direct/jobs/',
+        { manifest, row_keys: rowKeys },
+        { timeout: 60_000 },
+      );
+      break;
+    } catch (error) {
+      const delay = PREPARE_RETRY_DELAYS_MS[attempt];
+      if (delay == null || !isRetryablePrepareError(error)) throw error;
+      await wait(delay);
+    }
+  }
   if (response.status !== 202) {
     throw new Error('서버가 Excel 직접 업로드 준비를 확인하지 않았습니다. 같은 파일로 다시 시도해 주세요.');
   }

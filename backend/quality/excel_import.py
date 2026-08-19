@@ -311,6 +311,17 @@ def _decimal_date_text(value: float) -> str:
     return format(Decimal(str(value)), 'f')
 
 
+def _validated_report_date(
+    candidate: date,
+    *,
+    uploaded_on: date,
+    warnings: list[str],
+) -> tuple[date | None, list[str]]:
+    if candidate > uploaded_on:
+        return None, [*warnings, f'future_report_date:{candidate.isoformat()}']
+    return candidate, warnings
+
+
 def _parse_date(
     value: Any,
     *,
@@ -320,9 +331,9 @@ def _parse_date(
     if value in (None, ''):
         return None, ['missing_report_date']
     if isinstance(value, datetime):
-        return value.date(), []
+        return _validated_report_date(value.date(), uploaded_on=uploaded_on, warnings=[])
     if isinstance(value, date):
-        return value, []
+        return _validated_report_date(value, uploaded_on=uploaded_on, warnings=[])
 
     text = _decimal_date_text(value) if isinstance(value, float) else _text(value)
     normalized = re.sub(r'[年/\-]', '.', text).replace('月', '.').replace('日', '')
@@ -332,13 +343,25 @@ def _parse_date(
         if len(parts) == 3:
             year = int(parts[0])
             year = year + 2000 if year < 100 else year
-            return date(year, int(parts[1]), int(parts[2])), []
+            return _validated_report_date(
+                date(year, int(parts[1]), int(parts[2])),
+                uploaded_on=uploaded_on,
+                warnings=[],
+            )
         if len(parts) == 2:
             month, day = int(parts[0]), int(parts[1])
             if explicit_year is not None:
-                return date(explicit_year, month, day), []
+                return _validated_report_date(
+                    date(explicit_year, month, day),
+                    uploaded_on=uploaded_on,
+                    warnings=[],
+                )
             year = uploaded_on.year - 1 if month > uploaded_on.month + 1 else uploaded_on.year
-            return date(year, month, day), [f'report_year_inferred:{year}']
+            return _validated_report_date(
+                date(year, month, day),
+                uploaded_on=uploaded_on,
+                warnings=[f'report_year_inferred:{year}'],
+            )
     except (ValueError, TypeError):
         pass
     return None, [f'invalid_report_date:{text[:64]}']
@@ -460,19 +483,46 @@ def _section_for_location(location: str) -> tuple[str, list[str]]:
     return '', [f'unmapped_occurrence_location:{location or "blank"}']
 
 
+def _cell_source_value(value: Any) -> Any:
+    return getattr(value, 'value', value)
+
+
+def _date_cell_source_value(value: Any) -> Any:
+    raw_value = _cell_source_value(value)
+    number_format = str(getattr(value, 'number_format', '') or '').split(';', 1)[0]
+    decimal_format = re.search(r'(?<![0#])0\.([0]+)(?![0#])', number_format)
+    if (
+        isinstance(raw_value, (int, float))
+        and not isinstance(raw_value, bool)
+        and decimal_format is not None
+        and len(decimal_format.group(1)) == 2
+    ):
+        return format(Decimal(str(raw_value)).quantize(Decimal('0.00')), 'f')
+    return raw_value
+
+
 def _headers(values: tuple[Any, ...], first_col: int = 2) -> dict[int, str]:
     """Map zero-based tuple positions to non-empty header labels."""
 
     return {
-        index: _text(value)
+        index: _text(_cell_source_value(value))
         for index, value in enumerate(values)
-        if index + 1 >= first_col and _text(value)
+        if index + 1 >= first_col and _text(_cell_source_value(value))
     }
 
 
-def _row_dict(values: tuple[Any, ...], headers: dict[int, str]) -> dict[str, Any]:
+def _row_dict(
+    values: tuple[Any, ...],
+    headers: dict[int, str],
+    *,
+    date_headers: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
     return {
-        header: _json_value(values[index] if index < len(values) else None)
+        header: _json_value(
+            _date_cell_source_value(values[index])
+            if header in date_headers and index < len(values)
+            else _cell_source_value(values[index]) if index < len(values) else None
+        )
         for index, header in headers.items()
     }
 
@@ -553,7 +603,7 @@ def _parse_issue_sheet(ws, uploaded_on: date, *, consume_row=None) -> list[dict[
         max_row=row_limit,
         min_col=1,
         max_col=min(ws.max_column, 32),
-        values_only=True,
+        values_only=not getattr(ws, 'supports_cell_metadata', True),
     )
     try:
         headers = _headers(tuple(next(values_iter)))
@@ -564,7 +614,7 @@ def _parse_issue_sheet(ws, uploaded_on: date, *, consume_row=None) -> list[dict[
         raise WorkbookValidationError('invalid_issue_sheet', f'{ws.title} is missing required headers.')
     parsed: list[dict[str, Any]] = []
     for row_number, values in enumerate(_iter_rows_tolerating_wps_filter(values_iter), start=3):
-        raw = _row_dict(tuple(values), headers)
+        raw = _row_dict(tuple(values), headers, date_headers=frozenset({'发生日期'}))
         if not any(_text(raw.get(name)) for name in ('序号', '发生日期', '发生场所', 'Mold', 'P/N', '不良现象')):
             continue
         warnings: list[str] = []
@@ -637,7 +687,7 @@ def _parse_oqc_sheet(
         max_row=row_limit,
         min_col=1,
         max_col=min(ws.max_column, 32),
-        values_only=True,
+        values_only=not getattr(ws, 'supports_cell_metadata', True),
     )
     try:
         headers = _headers(tuple(next(values_iter)))
@@ -648,7 +698,7 @@ def _parse_oqc_sheet(
         raise WorkbookValidationError('invalid_oqc_sheet', f'{ws.title} is missing required headers.')
     parsed: list[dict[str, Any]] = []
     for row_number, values in enumerate(_iter_rows_tolerating_wps_filter(values_iter), start=3):
-        raw = _row_dict(tuple(values), headers)
+        raw = _row_dict(tuple(values), headers, date_headers=frozenset({'检查日期'}))
         if not any(_text(raw.get(name)) for name in ('检查日期', '型号', 'P/N', '不良类型', '数量')):
             continue
         warnings: list[str] = []
