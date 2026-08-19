@@ -1,16 +1,16 @@
-import type { AxiosProgressEvent } from 'axios';
 import api from '../../lib/api';
 import type {
+  QualityCloudinaryUploadReceipt,
+  QualityExcelDirectJob,
+  QualityExcelDirectUploadIntent,
   QualityExcelImportPreview,
   QualityExcelImportJob,
-  QualityExcelImportProgress,
   QualityExcelImportResult,
   QualityWorkbookManifest,
 } from './importTypes';
 
 export const QUALITY_IMPORT_MAX_FILE_BYTES = 80 * 1024 * 1024;
-
-type UploadProgressCallback = (progress: QualityExcelImportProgress) => void;
+const QUALITY_IMPORT_DIRECT_UPLOAD_PRESET = 'wj-quality-import-browser-direct-v1';
 
 function isJsonResponse(contentType: unknown): boolean {
   return /\bapplication\/(?:[\w.+-]*\+)?json\b/i.test(String(contentType || ''));
@@ -110,18 +110,31 @@ function isCommitResponse(value: unknown): value is QualityExcelImportResult {
 }
 
 const JOB_STATUSES = new Set(['queued', 'processing', 'ready', 'ready_with_warnings', 'failed']);
+const DIRECT_JOB_STATUSES = new Set([...JOB_STATUSES, 'staging']);
+const TERMINAL_DIRECT_STATUSES = new Set(['ready', 'ready_with_warnings']);
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const CLOUD_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
+const ALLOWED_FORMATS_PATTERN = /^[a-z0-9]+(?:,[a-z0-9]+)*$/;
+const ALLOWED_FORMATS_BY_CONTENT_TYPE: Readonly<Record<string, string>> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg,jpeg',
+  'image/gif': 'gif',
+  'image/bmp': 'bmp',
+  'image/tiff': 'tif,tiff',
+  'image/webp': 'webp',
+};
 
-function assertJobResponse(
+type ValidatedJobEnvelope = Omit<QualityExcelImportJob, 'status'> & { status: string };
+
+function isJobResponse(
   value: unknown,
-  contentType: unknown,
-  requireReplay: boolean,
-): asserts value is QualityExcelImportJob {
-  const valid = isJsonResponse(contentType)
-    && isRecord(value)
+  statuses: ReadonlySet<string>,
+): value is ValidatedJobEnvelope {
+  return isRecord(value)
     && Number.isSafeInteger(value.id)
     && Number(value.id) > 0
     && typeof value.status === 'string'
-    && JOB_STATUSES.has(value.status)
+    && statuses.has(value.status)
     && typeof value.phase === 'string'
     && isCount(value.progress_done)
     && isCount(value.progress_total)
@@ -131,26 +144,114 @@ function assertJobResponse(
     && isCount(value.total_rows)
     && (value.result === null || isCommitResponse(value.result))
     && isStringArray(value.warnings)
-    && (!requireReplay || typeof value.idempotent_replay === 'boolean')
     && (value.idempotent_replay === undefined || typeof value.idempotent_replay === 'boolean')
     && (!['ready', 'ready_with_warnings'].includes(String(value.status)) || isCommitResponse(value.result));
-  if (!valid) {
+}
+
+function assertJobResponse(
+  value: unknown,
+  contentType: unknown,
+  statuses: ReadonlySet<string> = JOB_STATUSES,
+): asserts value is QualityExcelImportJob {
+  if (!isJsonResponse(contentType) || !isJobResponse(value, statuses)) {
     throw new Error('서버의 Excel 작업 상태 응답 형식이 올바르지 않습니다. 잠시 후 상태를 다시 확인해 주세요.');
   }
 }
 
-function emitUploadProgress(
-  callback: UploadProgressCallback | undefined,
-  uploadedBytes: number,
-  totalBytes: number,
+function isDirectUploadIntent(value: unknown): value is QualityExcelDirectUploadIntent {
+  if (!isRecord(value) || !isRecord(value.upload)) return false;
+  const upload = value.upload;
+  const expectedAllowedFormats = typeof value.source_content_type === 'string'
+    ? ALLOWED_FORMATS_BY_CONTENT_TYPE[value.source_content_type]
+    : undefined;
+  return typeof value.asset_sha256 === 'string'
+    && SHA256_PATTERN.test(value.asset_sha256)
+    && isStringArray(value.media_keys)
+    && value.media_keys.length > 0
+    && new Set(value.media_keys).size === value.media_keys.length
+    && Number.isSafeInteger(value.source_byte_size)
+    && Number(value.source_byte_size) > 0
+    && typeof value.source_content_type === 'string'
+    && value.source_content_type.startsWith('image/')
+    && typeof upload.cloud_name === 'string'
+    && upload.cloud_name.length <= 128
+    && CLOUD_NAME_PATTERN.test(upload.cloud_name)
+    && typeof upload.api_key === 'string'
+    && upload.api_key.length > 0
+    && upload.api_key.length <= 256
+    && Number.isSafeInteger(upload.timestamp)
+    && Number(upload.timestamp) > 0
+    && typeof upload.signature === 'string'
+    && upload.signature.length > 0
+    && upload.signature.length <= 256
+    && typeof upload.public_id === 'string'
+    && upload.public_id.length > 0
+    && upload.public_id.length <= 256
+    && typeof upload.allowed_formats === 'string'
+    && upload.allowed_formats.length <= 128
+    && ALLOWED_FORMATS_PATTERN.test(upload.allowed_formats)
+    && upload.allowed_formats === expectedAllowedFormats
+    && upload.upload_preset === QUALITY_IMPORT_DIRECT_UPLOAD_PRESET
+    && upload.overwrite === false
+    && upload.unique_filename === false;
+}
+
+type DirectJobEnvelope = Omit<QualityExcelDirectJob, 'idempotent_replay'> & {
+  idempotent_replay?: boolean;
+};
+
+function parseDirectJobResponse(
+  value: unknown,
+  contentType: unknown,
+  requireReplay: boolean,
+): DirectJobEnvelope {
+  if (!isJsonResponse(contentType) || !isJobResponse(value, DIRECT_JOB_STATUSES)) {
+    throw new Error('서버의 브라우저 직접 업로드 응답 형식이 올바르지 않습니다. 같은 파일로 다시 시도해 주세요.');
+  }
+  const candidate = value as ValidatedJobEnvelope & Record<string, unknown>;
+  const uploadIntents = candidate.upload_intents;
+  if (
+    candidate.delivery_mode !== 'browser_direct'
+    || !Array.isArray(uploadIntents)
+    || !uploadIntents.every(isDirectUploadIntent)
+    || new Set(uploadIntents.map((intent) => intent.asset_sha256)).size !== uploadIntents.length
+    || (requireReplay && typeof candidate.idempotent_replay !== 'boolean')
+  ) {
+    throw new Error('서버의 브라우저 직접 업로드 응답 형식이 올바르지 않습니다. 같은 파일로 다시 시도해 주세요.');
+  }
+  return candidate as DirectJobEnvelope;
+}
+
+function validateDirectIntents(
+  job: DirectJobEnvelope,
+  manifest: QualityWorkbookManifest,
+  expectedMediaKeys: readonly string[],
 ): void {
-  callback?.({
-    uploadedBytes,
-    totalBytes,
-    percent: totalBytes > 0
-      ? Math.max(0, Math.min(100, Math.round((uploadedBytes / totalBytes) * 100)))
-      : 0,
-  });
+  const mediaByKey = new Map(manifest.media.map((item) => [item.key, item]));
+  const allowedMediaKeys = new Set(expectedMediaKeys);
+  const seenMediaKeys = new Set<string>();
+  for (const intent of job.upload_intents) {
+    const allowedPublicId = new RegExp(
+      `^(?:media/)?quality-import/pending/${job.id}/${intent.asset_sha256}-[0-9a-f]{24}$`,
+    );
+    if (!allowedPublicId.test(intent.upload.public_id)) {
+      throw new Error('서버가 지정한 Cloudinary 사진 경로가 올바르지 않습니다. 업로드를 중단했습니다.');
+    }
+    for (const mediaKey of intent.media_keys) {
+      const media = mediaByKey.get(mediaKey);
+      if (
+        !media
+        || !allowedMediaKeys.has(mediaKey)
+        || seenMediaKeys.has(mediaKey)
+        || media.sha256 !== intent.asset_sha256
+        || media.byte_size !== intent.source_byte_size
+        || media.content_type !== intent.source_content_type
+      ) {
+        throw new Error('서버의 사진 업로드 대상이 Excel 비교 결과와 일치하지 않습니다. 업로드를 중단했습니다.');
+      }
+      seenMediaKeys.add(mediaKey);
+    }
+  }
 }
 
 export async function previewQualityExcel(
@@ -165,76 +266,64 @@ export async function previewQualityExcel(
   return response.data;
 }
 
-function buildQualityExcelJobFormData(
+export async function prepareQualityExcelDirectJob(
   manifest: QualityWorkbookManifest,
-  media: Map<string, Blob>,
   rowKeys: readonly string[],
-): { formData: FormData; totalBytes: number } {
-  const formData = new FormData();
-  const serializedManifest = JSON.stringify(manifest);
-  const serializedRowKeys = JSON.stringify(rowKeys);
-  formData.append('manifest', serializedManifest);
-  formData.append('row_keys', serializedRowKeys);
-
-  const mediaByKey = new Map(manifest.media.map((item) => [item.key, item]));
-  let totalBytes = new TextEncoder().encode(serializedManifest + serializedRowKeys).byteLength;
-  for (const [key, blob] of media) {
-    const item = mediaByKey.get(key);
-    if (!item) throw new Error(`Unknown workbook media key: ${key}`);
-    formData.append(`media_${key}`, blob, item.original_filename);
-    totalBytes += blob.size;
-  }
-  return { formData, totalBytes };
-}
-
-export async function enqueueQualityExcelJob(
-  manifest: QualityWorkbookManifest,
-  media: Map<string, Blob>,
-  rowKeys: readonly string[],
-  onProgress?: UploadProgressCallback,
-): Promise<QualityExcelImportJob> {
-  const { formData, totalBytes } = buildQualityExcelJobFormData(manifest, media, rowKeys);
-  emitUploadProgress(onProgress, 0, totalBytes);
-  const response = await api.post<QualityExcelImportJob>(
-    '/quality/excel-import/jobs/',
-    formData,
-    {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 60_000,
-      onUploadProgress: (event: AxiosProgressEvent) => {
-        emitUploadProgress(onProgress, Math.min(event.loaded, totalBytes), totalBytes);
-      },
-    },
+  expectedMediaKeys: readonly string[],
+): Promise<QualityExcelDirectJob> {
+  const response = await api.post<unknown>(
+    '/quality/excel-import/direct/jobs/',
+    { manifest, row_keys: rowKeys },
+    { timeout: 60_000 },
   );
   if (response.status !== 202) {
-    throw new Error('서버가 Excel 작업 접수를 확인하지 않았습니다. 같은 파일로 다시 시도해 주세요.');
+    throw new Error('서버가 Excel 직접 업로드 준비를 확인하지 않았습니다. 같은 파일로 다시 시도해 주세요.');
   }
-  assertJobResponse(response.data, response.headers['content-type'], true);
-  emitUploadProgress(onProgress, totalBytes, totalBytes);
-  return response.data;
+  const job = parseDirectJobResponse(response.data, response.headers['content-type'], true);
+  validateDirectIntents(job, manifest, expectedMediaKeys);
+  if (job.filename !== manifest.filename) {
+    throw new Error('서버가 준비한 작업의 Excel 파일명이 일치하지 않습니다. 업로드를 중단했습니다.');
+  }
+  return job as QualityExcelDirectJob;
 }
 
-export async function getQualityExcelJob(
+export async function completeQualityExcelDirectAsset(
   jobId: number,
-  signal?: AbortSignal,
-): Promise<QualityExcelImportJob> {
-  const response = await api.get<QualityExcelImportJob>(
-    `/quality/excel-import/jobs/${jobId}/`,
-    { timeout: 30_000, signal },
-  );
-  assertJobResponse(response.data, response.headers['content-type'], false);
-  return response.data;
-}
-
-export async function retryQualityExcelJob(jobId: number): Promise<QualityExcelImportJob> {
-  const response = await api.post<QualityExcelImportJob>(
-    `/quality/excel-import/jobs/${jobId}/retry/`,
-    undefined,
+  assetSha256: string,
+  receipt: QualityCloudinaryUploadReceipt,
+): Promise<void> {
+  if (!Number.isSafeInteger(jobId) || jobId <= 0 || !SHA256_PATTERN.test(assetSha256)) {
+    throw new Error('사진 업로드 작업 식별자가 올바르지 않습니다.');
+  }
+  const response = await api.post<unknown>(
+    `/quality/excel-import/direct/jobs/${jobId}/assets/${assetSha256}/complete/`,
+    receipt,
     { timeout: 30_000 },
   );
-  if (response.status !== 202) {
-    throw new Error('서버가 Excel 작업 재시도를 확인하지 않았습니다. 잠시 후 다시 시도해 주세요.');
+  if (response.status !== 200) {
+    throw new Error('서버가 Cloudinary 사진 저장을 확인하지 않았습니다. 같은 파일로 다시 시도해 주세요.');
   }
-  assertJobResponse(response.data, response.headers['content-type'], false);
+  const acknowledged = parseDirectJobResponse(response.data, response.headers['content-type'], false);
+  if (acknowledged.id !== jobId) {
+    throw new Error('서버가 다른 Excel 작업의 사진 확인 결과를 반환했습니다.');
+  }
+}
+
+export async function finalizeQualityExcelDirectJob(jobId: number): Promise<QualityExcelImportJob> {
+  if (!Number.isSafeInteger(jobId) || jobId <= 0) {
+    throw new Error('Excel 직접 업로드 작업 식별자가 올바르지 않습니다.');
+  }
+  const response = await api.post<unknown>(
+    `/quality/excel-import/direct/jobs/${jobId}/finalize/`,
+    {},
+    { timeout: 60_000 },
+  );
+  if (response.status !== 200) {
+    throw new Error('서버가 Excel 등록 완료를 확인하지 않았습니다. 같은 파일로 다시 시도해 주세요.');
+  }
+  assertJobResponse(response.data, response.headers['content-type'], TERMINAL_DIRECT_STATUSES);
+  if (!response.data.result) {
+    throw new Error('서버가 Excel 등록 결과를 반환하지 않았습니다. 같은 파일로 다시 확인해 주세요.');
+  }
   return response.data;
 }

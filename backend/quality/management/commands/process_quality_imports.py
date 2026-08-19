@@ -2,6 +2,7 @@ import signal
 import threading
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import close_old_connections
 
 from quality.excel_import import (
     process_quality_import_batch,
@@ -43,6 +44,7 @@ class Command(BaseCommand):
 
         failures = 0
         processed = 0
+        close_old_connections()
         try:
             recovered = recover_stale_quality_imports()
             if recovered:
@@ -61,6 +63,8 @@ class Command(BaseCommand):
                     if stop.wait(poll_seconds):
                         break
                     continue
+                finally:
+                    close_old_connections()
                 if result is None:
                     if watch:
                         if stop.wait(poll_seconds):
@@ -74,6 +78,7 @@ class Command(BaseCommand):
                 if not watch and (batch_id or processed >= limit):
                     break
         finally:
+            close_old_connections()
             for signum, previous in previous_handlers.items():
                 signal.signal(signum, previous)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import tempfile
 from datetime import date, datetime, timedelta
 from io import BytesIO, StringIO
@@ -24,6 +25,7 @@ from .excel_import import (
     WorkbookValidationError,
     _image_dimensions,
     _normalize_image_content,
+    kick_quality_import_pump,
     process_quality_import_batch,
     recover_stale_quality_imports,
 )
@@ -115,6 +117,16 @@ class QualityReportPermissionTests(APITestCase):
         self.assertEqual(self.report.action_result, '조치 완료')
         self.assertEqual(self.client.delete(self.detail_url).status_code, 204)
 
+    @override_settings(QUALITY_IMPORT_DISABLE_BACKGROUND_PUMP=None)
+    def test_background_import_pump_can_be_disabled_by_environment(self):
+        with (
+            mock.patch.dict(os.environ, {'QUALITY_IMPORT_DISABLE_BACKGROUND_PUMP': 'true'}),
+            mock.patch('quality.excel_import._PUMP_WAKE.set') as wake,
+        ):
+            kick_quality_import_pump()
+
+        wake.assert_not_called()
+
     def test_report_list_can_be_scoped_to_import_result_ids(self):
         other = QualityReport.objects.create(
             report_dt=timezone.now(),
@@ -186,6 +198,46 @@ class QualityReportPermissionTests(APITestCase):
             for item in [*first_page.data['results'], *second_page.data['results']]
         }
         self.assertEqual(returned_ids, {older.pk, self.report.pk, newest.pk})
+
+    def test_report_list_supports_deterministic_user_selected_ordering(self):
+        shared_report_dt = timezone.now() + timedelta(days=5)
+        first = QualityReport.objects.create(
+            report_dt=shared_report_dt,
+            section='OQC',
+            model='SAME-DATE-1',
+            part_no='SAME-01',
+            phenomenon='first same-date report',
+        )
+        second = QualityReport.objects.create(
+            report_dt=shared_report_dt,
+            section='OQC',
+            model='SAME-DATE-2',
+            part_no='SAME-02',
+            phenomenon='second same-date report',
+        )
+        self.client.force_authenticate(self.viewer)
+
+        newest_first = self.client.post(
+            f'{self.by_ids_url}?ordering=-report_dt,-id',
+            {'ids': [first.pk, second.pk]},
+            format='json',
+        )
+        oldest_first = self.client.post(
+            f'{self.by_ids_url}?ordering=report_dt,id',
+            {'ids': [first.pk, second.pk]},
+            format='json',
+        )
+
+        self.assertEqual(newest_first.status_code, 200, newest_first.data)
+        self.assertEqual(oldest_first.status_code, 200, oldest_first.data)
+        self.assertEqual(
+            [item['id'] for item in newest_first.data['results']],
+            [second.pk, first.pk],
+        )
+        self.assertEqual(
+            [item['id'] for item in oldest_first.data['results']],
+            [first.pk, second.pk],
+        )
 
     def test_report_list_by_ids_accepts_ten_thousand_unique_ids(self):
         self.client.force_authenticate(self.viewer)
@@ -611,13 +663,17 @@ class QualityWorkbookImportAPITests(APITestCase):
     def test_management_command_is_manual_queue_recovery(self):
         queued = self.upload()
         output = StringIO()
-        call_command('process_quality_imports', limit=1, stdout=output)
+        with mock.patch(
+            'quality.management.commands.process_quality_imports.close_old_connections'
+        ) as close_connections:
+            call_command('process_quality_imports', limit=1, stdout=output)
         batch = QualityImportBatch.objects.get(pk=queued.data['id'])
         self.assertIn(batch.status, {
             QualityImportBatch.Status.READY,
             QualityImportBatch.Status.READY_WITH_WARNINGS,
         })
         self.assertIn(f'Batch {batch.id}:', output.getvalue())
+        self.assertGreaterEqual(close_connections.call_count, 2)
 
     def test_crash_after_remote_upload_before_checkpoint_is_idempotent(self):
         queued = self.upload()

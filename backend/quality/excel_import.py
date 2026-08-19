@@ -2146,7 +2146,12 @@ def kick_quality_import_pump() -> None:
     """Lazily start one daemon in this process; DB leases arbitrate processes."""
 
     global _PUMP_THREAD
-    if getattr(settings, 'QUALITY_IMPORT_DISABLE_BACKGROUND_PUMP', False):
+    configured = getattr(settings, 'QUALITY_IMPORT_DISABLE_BACKGROUND_PUMP', None)
+    if configured is None:
+        configured = os.getenv('QUALITY_IMPORT_DISABLE_BACKGROUND_PUMP', '')
+    if isinstance(configured, str):
+        configured = configured.strip().lower() in {'1', 'true', 'yes', 'on'}
+    if bool(configured):
         return
     _PUMP_WAKE.set()
     with _PUMP_GUARD:

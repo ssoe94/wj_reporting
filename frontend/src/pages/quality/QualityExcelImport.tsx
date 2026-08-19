@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -21,24 +21,22 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useLang } from '../../i18n';
 import {
   QUALITY_IMPORT_MAX_FILE_BYTES,
-  enqueueQualityExcelJob,
+  completeQualityExcelDirectAsset,
+  finalizeQualityExcelDirectJob,
   previewQualityExcel,
-  retryQualityExcelJob,
+  prepareQualityExcelDirectJob,
 } from './importApi';
 import { scanQualityWorkbook } from './qualityWorkbookScanner';
+import { deliverQualityDirectAssets } from './qualityDirectCloudinaryUpload';
 import { combineQualityImportResults, createQualityImportChunks } from './importResult';
 import {
   acceptedQualityImportJobIds,
   clearQualityImportWorkflow,
-  isQualityImportFullyAccepted,
   loadQualityImportWorkflow,
   saveQualityImportWorkflow,
-  waitForQualityImportJobs,
 } from './qualityImportJobs';
 import type { PersistedQualityImportWorkflow } from './qualityImportJobs';
 import type {
-  QualityExcelImportJob,
-  QualityExcelImportJobProgress,
   QualityExcelImportPreview,
   QualityExcelImportProgress,
   QualityExcelImportResult,
@@ -49,40 +47,30 @@ import type {
 const copy = {
   ko: {
     title: 'Excel 품질 이슈 업로드',
-    description: 'Excel은 브라우저에서 비교한 뒤 서버가 먼저 접수하고, 신규 행과 사진은 백엔드에서 안전하게 등록합니다.',
+    description: 'Excel은 브라우저에서 비교하고, 신규 사진은 이 PC에서 Cloudinary로 직접 전송한 뒤 서버에는 판정 결과만 등록합니다.',
     drop: '.xlsx 파일을 놓거나 클릭해 선택하세요',
     fileHelp: '최대 80MB · 같은 내용은 건너뛰고 사진은 행당 최대 5장 저장합니다.',
     scanning: 'Excel을 기기에서 분석 중',
     comparing: '기존 보고서와 비교 중',
-    extracting: '신규 행의 사진만 준비 중',
-    uploading: '필요한 사진을 서버에 접수 중',
-    processing: '서버 접수 완료 · 백엔드 처리 중',
-    acceptingProgress: '{accepted}/{total}개 작업 접수',
-    processingProgress: '{completed}/{total}개 작업 완료',
-    phaseQueued: '처리 대기',
-    phaseUploading: '사진 저장 중',
-    phaseRegistering: '보고서 등록 중',
-    phaseRetryWait: '자동 재시도 대기',
-    phaseReady: '완료',
-    phaseFailed: '처리 실패',
-    deltaSummary: '신규 {rows}건 · 사진 {images}장만 전송합니다.',
+    preparing: '안전한 Cloudinary 사진 경로 준비 중',
+    extracting: '신규 행의 사진을 이 PC에서 준비 중',
+    uploading: '이 PC에서 Cloudinary로 사진 직접 전송 중',
+    finalizing: '사진 확인 및 품질 보고서 등록 중',
+    chunkProgress: '{completed}/{total}개 묶음 완료',
+    deltaSummary: '신규 {rows}건 · 사진 {images}장만 PC에서 직접 전송합니다.',
     success: 'Excel 처리가 완료되었습니다.',
     partialSuccess: '일부 행을 처리하지 못했습니다. 실패 행을 확인한 뒤 다시 시도하세요.',
     allFailed: '등록된 행이 없습니다. 실패 원인을 확인한 뒤 다시 시도하세요.',
-    upstreamUnavailable: '서버 처리가 중단되었거나 지연되었습니다. 잠시 후 다시 시도해 주세요.',
-    acceptanceInterrupted: '일부 작업만 접수되었습니다. 같은 파일을 다시 선택하면 접수된 작업은 유지하고 이어서 진행합니다.',
-    statusCheckUnavailable: '작업은 서버에 접수되었습니다. 현재 상태 확인이 지연되고 있으니 잠시 후 다시 확인해 주세요.',
-    resumeSameFile: '접수를 마치려면 같은 Excel 파일을 다시 선택해 주세요.',
-    otherImportPending: '먼저 접수된 Excel 작업이 남아 있습니다. 해당 작업의 상태를 확인한 뒤 새 파일을 올려 주세요.',
-    backendJobFailed: '백엔드 작업이 완료되지 않았습니다. 실패 작업을 다시 시도해 주세요.',
+    upstreamUnavailable: 'Cloudinary 또는 서버 확인이 지연되었습니다. 같은 Excel 파일을 다시 선택하면 완료된 사진은 건너뛰고 이어서 진행합니다.',
+    acceptanceInterrupted: '직접 전송이 중단되었습니다. 같은 Excel 파일을 다시 선택하면 완료된 사진은 건너뛰고 이어서 진행합니다.',
+    resumeSameFile: '직접 전송을 재개하려면 같은 Excel 파일을 다시 선택해 주세요.',
+    otherImportPending: '먼저 시작한 Excel 직접 전송이 남아 있습니다. 같은 파일로 완료한 뒤 새 파일을 올려 주세요.',
     invalidFile: '.xlsx 형식의 Excel 파일만 선택할 수 있습니다.',
     emptyFile: '내용이 없는 파일은 업로드할 수 없습니다.',
     oversizedFile: 'Excel 파일은 최대 80MB까지 업로드할 수 있습니다.',
     permissionDenied: '품질 자료를 업로드할 권한이 없습니다.',
     retry: '다시 시도',
-    checkStatus: '상태 다시 확인',
     selectSameFile: '같은 파일 선택',
-    retryFailed: '실패 건 다시 시도',
     resultTitle: '처리 결과',
     total: '전체 행',
     created: '신규 등록',
@@ -115,40 +103,30 @@ const copy = {
   },
   zh: {
     title: '上传 Excel 品质问题',
-    description: '浏览器完成 Excel 比较后由服务器先接收，新增记录和图片将在后台安全登记。',
+    description: '浏览器比较 Excel 后，由此电脑将新增图片直接上传到 Cloudinary，服务器仅登记判定结果。',
     drop: '拖入或点击选择 .xlsx 文件',
     fileHelp: '最大 80MB · 跳过相同内容，每行最多保存 5 张图片。',
     scanning: '正在本机分析 Excel',
     comparing: '正在与已有报告比较',
-    extracting: '正在准备新增行的图片',
-    uploading: '正在将必要图片提交到服务器',
-    processing: '服务器已接收 · 正在后台处理',
-    acceptingProgress: '已接收 {accepted}/{total} 个任务',
-    processingProgress: '已完成 {completed}/{total} 个任务',
-    phaseQueued: '等待处理',
-    phaseUploading: '正在保存图片',
-    phaseRegistering: '正在登记报告',
-    phaseRetryWait: '等待自动重试',
-    phaseReady: '完成',
-    phaseFailed: '处理失败',
-    deltaSummary: '仅传输 {rows} 条新增记录和 {images} 张图片。',
+    preparing: '正在准备安全的 Cloudinary 图片路径',
+    extracting: '正在此电脑准备新增记录的图片',
+    uploading: '正在从此电脑直接上传图片到 Cloudinary',
+    finalizing: '正在确认图片并登记品质报告',
+    chunkProgress: '已完成 {completed}/{total} 个批次',
+    deltaSummary: '仅从此电脑直接传输 {rows} 条新增记录的 {images} 张图片。',
     success: 'Excel 处理完成。',
     partialSuccess: '部分行未处理，请确认失败行后重试。',
     allFailed: '没有登记任何行，请确认失败原因后重试。',
-    upstreamUnavailable: '服务器处理已中断或延迟，请稍后重试。',
-    acceptanceInterrupted: '仅接收了部分任务。重新选择同一文件后，将保留已接收任务并继续。',
-    statusCheckUnavailable: '任务已由服务器接收，但状态查询暂时延迟。请稍后重新查询。',
-    resumeSameFile: '请重新选择同一 Excel 文件以完成接收。',
-    otherImportPending: '已有 Excel 任务等待处理。请先确认该任务状态，再上传新文件。',
-    backendJobFailed: '后台任务未完成，请重试失败任务。',
+    upstreamUnavailable: 'Cloudinary 或服务器确认暂时延迟。重新选择同一 Excel 文件后，将跳过已完成的图片并继续。',
+    acceptanceInterrupted: '直接上传已中断。重新选择同一 Excel 文件后，将跳过已完成的图片并继续。',
+    resumeSameFile: '请重新选择同一 Excel 文件以继续直接上传。',
+    otherImportPending: '已有 Excel 直接上传尚未完成。请先用同一文件完成，再上传新文件。',
     invalidFile: '只能选择 .xlsx 格式的 Excel 文件。',
     emptyFile: '无法上传空文件。',
     oversizedFile: 'Excel 文件最大可上传 80MB。',
     permissionDenied: '您没有上传品质资料的权限。',
     retry: '重试',
-    checkStatus: '重新查询状态',
     selectSameFile: '选择同一文件',
-    retryFailed: '重试失败项',
     resultTitle: '处理结果',
     total: '总行数',
     created: '新增登记',
@@ -182,7 +160,12 @@ const copy = {
 } as const;
 
 type Copy = (typeof copy)[keyof typeof copy];
-type ImportPhase = 'idle' | 'scanning' | 'comparing' | 'extracting' | 'uploading' | 'processing';
+type ImportPhase = 'idle' | 'scanning' | 'comparing' | 'preparing' | 'extracting' | 'uploading' | 'finalizing';
+
+interface DirectWorkflowProgress {
+  completedChunks: number;
+  totalChunks: number;
+}
 
 interface QualityExcelImportProps {
   onPostProcess: (scope: QualityReportHistoryScope) => void;
@@ -204,15 +187,20 @@ function getUploadErrorMessage(
     if (error.code === 'ECONNABORTED' || /\btimeout\b/i.test(error.message || '')) {
       return upstreamFallback;
     }
-    const payload = error.response?.data as { error?: string; detail?: string; code?: string } | string | undefined;
+    if (!error.response && (error.request || error.code === 'ERR_NETWORK')) return upstreamFallback;
+    const payload: unknown = error.response?.data;
     const status = error.response?.status;
     const contentType = String(error.response?.headers['content-type'] || '').toLowerCase();
     const isUpstreamFailure = status != null && [502, 503, 504].includes(status);
     if (isUpstreamFailure) return upstreamFallback;
-    if (payload && typeof payload === 'object') {
-      const detail = payload.error || payload.detail || payload.code;
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const record = payload as Record<string, unknown>;
+      const detail = [record.error, record.detail, record.code]
+        .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        ?.trim();
       if (detail && /\btimeout\b/i.test(detail)) return upstreamFallback;
-      return detail || error.message || fallback;
+      if (detail && detail.length <= 1_000 && !/^\s*</.test(detail)) return detail;
+      return fallback;
     }
     if (typeof payload === 'string' && payload.trim()) {
       const text = payload.trim();
@@ -224,15 +212,6 @@ function getUploadErrorMessage(
     return error.message || fallback;
   }
   return error instanceof Error && error.message ? error.message : fallback;
-}
-
-function jobPhaseLabel(phase: string, c: Copy): string {
-  if (phase === 'uploading_media') return c.phaseUploading;
-  if (phase === 'registering_reports') return c.phaseRegistering;
-  if (phase === 'retry_wait') return c.phaseRetryWait;
-  if (phase === 'ready') return c.phaseReady;
-  if (phase === 'failed') return c.phaseFailed;
-  return c.phaseQueued;
 }
 
 function uniqueReportIds(ids: Array<number | null | undefined>): number[] {
@@ -258,6 +237,10 @@ function interpolate(template: string, values: Record<string, string | number>):
     (result, [key, value]) => result.replace(`{${key}}`, value.toLocaleString()),
     template,
   );
+}
+
+function sortedRowKeysKey(rowKeys: readonly string[]): string {
+  return JSON.stringify([...rowKeys].sort());
 }
 
 function ResultMetric({
@@ -297,82 +280,9 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
   const [result, setResult] = useState<QualityExcelImportResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedSheetName, setSelectedSheetName] = useState<string | null>(null);
-  const [jobProgress, setJobProgress] = useState<QualityExcelImportJobProgress | null>(null);
+  const [workflowProgress, setWorkflowProgress] = useState<DirectWorkflowProgress | null>(null);
   const [pendingWorkflow, setPendingWorkflow] = useState<PersistedQualityImportWorkflow | null>(null);
-  const [terminalJobs, setTerminalJobs] = useState<QualityExcelImportJob[] | null>(null);
-  const pollAbortRef = useRef<AbortController | null>(null);
   const uploading = phase !== 'idle';
-
-  const runAcceptedWorkflow = useCallback(async (workflow: PersistedQualityImportWorkflow) => {
-    if (!isQualityImportFullyAccepted(workflow) || pollAbortRef.current) return;
-    const jobIds = acceptedQualityImportJobIds(workflow);
-    const controller = new AbortController();
-    pollAbortRef.current = controller;
-    setPendingWorkflow(workflow);
-    setPhase('processing');
-    setProgress(null);
-    setErrorMessage(null);
-    setJobProgress({
-      acceptedJobs: jobIds.length,
-      totalJobs: workflow.chunks.length,
-      completedJobs: 0,
-      phase: 'queued',
-      progressDone: 0,
-      progressTotal: 0,
-    });
-    try {
-      const jobs = await waitForQualityImportJobs(
-        jobIds,
-        (nextProgress) => setJobProgress({
-          ...nextProgress,
-          acceptedJobs: jobIds.length,
-          totalJobs: workflow.chunks.length,
-        }),
-        controller.signal,
-      );
-      const failedJobs = jobs.filter((job) => job.status === 'failed');
-      const commits = jobs.flatMap((job) => job.result ? [job.result] : []);
-      const response = combineQualityImportResults(workflow.preview, commits, {
-        includeUnprocessedNewAsFailed: failedJobs.length > 0,
-        unprocessedMessage: c.backendJobFailed,
-      });
-      response.warnings = [...new Set([
-        ...response.warnings,
-        ...jobs.flatMap((job) => job.warnings),
-      ])].sort();
-      setTerminalJobs(jobs);
-      setResult(response);
-      void queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
-      if (failedJobs.length === 0) {
-        clearQualityImportWorkflow(workflow.workbookSha256);
-        setPendingWorkflow(null);
-        if (response.failed_count === 0) toast.success(c.success);
-        else if (response.created_count + response.skipped_count + response.changed_count === 0) {
-          toast.error(c.allFailed);
-        } else {
-          toast.warning(c.partialSuccess);
-        }
-      } else if (response.created_count + response.skipped_count + response.changed_count === 0) {
-        setErrorMessage(c.backendJobFailed);
-        toast.error(c.allFailed);
-      } else {
-        setErrorMessage(c.backendJobFailed);
-        toast.warning(c.partialSuccess);
-      }
-    } catch (error) {
-      if (!controller.signal.aborted && !axios.isCancel(error)) {
-        // An accepted job is not converted into a failed row merely because
-        // the browser temporarily lost its status connection.
-        setErrorMessage(c.statusCheckUnavailable);
-        toast.warning(c.statusCheckUnavailable);
-      }
-    } finally {
-      if (pollAbortRef.current === controller) {
-        pollAbortRef.current = null;
-        setPhase('idle');
-      }
-    }
-  }, [c, queryClient]);
 
   useEffect(() => {
     const restored = loadQualityImportWorkflow();
@@ -380,34 +290,21 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
     setPendingWorkflow(restored);
     setPreview(restored.preview);
     setSelectedSheetName(restored.selectedSheetName);
-    setJobProgress({
-      acceptedJobs: acceptedQualityImportJobIds(restored).length,
-      totalJobs: restored.chunks.length,
-      completedJobs: 0,
-      phase: 'queued',
-      progressDone: 0,
-      progressTotal: 0,
-    });
-    if (isQualityImportFullyAccepted(restored)) {
-      void runAcceptedWorkflow(restored);
-    } else {
-      setErrorMessage(c.resumeSameFile);
-    }
-  }, [c.resumeSameFile, runAcceptedWorkflow]);
-
-  useEffect(() => () => {
-    pollAbortRef.current?.abort();
-  }, []);
+    setWorkflowProgress({ completedChunks: 0, totalChunks: restored.chunks.length });
+    // Raw workbook Blobs are deliberately not persisted. Reload recovery is
+    // explicit: the user reselects the same SHA-identical workbook, then every
+    // chunk is prepared again so the backend returns only missing assets.
+    setErrorMessage(c.resumeSameFile);
+  }, [c.resumeSameFile]);
 
   const upload = async (candidate: File) => {
     let workflow: PersistedQualityImportWorkflow | null = null;
     setFile(candidate);
     setPhase('scanning');
     setProgress(null);
-    setJobProgress(null);
+    setWorkflowProgress(null);
     setPreview(null);
     setResult(null);
-    setTerminalJobs(null);
     setErrorMessage(null);
     setSelectedSheetName(null);
     try {
@@ -421,7 +318,6 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
         stored
         && stored.workbookSha256 !== scanned.manifest.workbook_sha256
         && acceptedQualityImportJobIds(stored).length > 0
-        && !terminalJobs?.every((job) => ['ready', 'ready_with_warnings', 'failed'].includes(job.status))
       ) {
         setFile(null);
         setPendingWorkflow(stored);
@@ -431,62 +327,160 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
         toast.warning(c.otherImportPending);
         return;
       }
-      if (stored && stored.workbookSha256 === scanned.manifest.workbook_sha256) {
-        workflow = stored;
-        setPreview(stored.preview);
-        setSelectedSheetName(stored.selectedSheetName);
-      } else {
-        if (stored) clearQualityImportWorkflow();
-        setPhase('comparing');
-        const comparison = await previewQualityExcel(scanned.manifest);
-        setPreview(comparison);
-        const chunks = createQualityImportChunks(comparison, scanned.manifest);
-        workflow = {
-          version: 1,
-          filename: candidate.name,
-          workbookSha256: scanned.manifest.workbook_sha256,
-          selectedSheetName: selectedSheet,
-          preview: comparison,
-          chunks: chunks.map((chunk) => ({ ...chunk, jobId: null })),
-          acceptedAt: new Date().toISOString(),
-        };
-        saveQualityImportWorkflow(workflow);
-      }
+      const sameWorkbook = stored?.workbookSha256 === scanned.manifest.workbook_sha256;
+      if (stored && !sameWorkbook) clearQualityImportWorkflow();
+      setPhase('comparing');
+      const comparison = await previewQualityExcel(scanned.manifest);
+      setPreview(comparison);
+      setSelectedSheetName(selectedSheet);
+      const storedChunksByRowKeys = new Map(
+        sameWorkbook && stored
+          ? stored.chunks.map((chunk) => [sortedRowKeysKey(chunk.rowKeys), chunk] as const)
+          : [],
+      );
+      const chunks = createQualityImportChunks(comparison, scanned.manifest);
+      workflow = {
+        version: 2,
+        deliveryMode: 'browser_direct',
+        filename: comparison.filename,
+        workbookSha256: scanned.manifest.workbook_sha256,
+        selectedSheetName: selectedSheet,
+        preview: comparison,
+        chunks: chunks.map((chunk) => {
+          const preserved = storedChunksByRowKeys.get(sortedRowKeysKey(chunk.rowKeys));
+          return {
+            ...chunk,
+            jobId: preserved?.jobId ?? null,
+            receipts: preserved ? [...preserved.receipts] : [],
+          };
+        }),
+        acceptedAt: sameWorkbook && stored ? stored.acceptedAt : new Date().toISOString(),
+      };
+      saveQualityImportWorkflow(workflow);
 
+      if (!workflow) throw new Error(c.uploadFailed);
       setPendingWorkflow(workflow);
+      setWorkflowProgress({ completedChunks: 0, totalChunks: workflow.chunks.length });
+      const commits: QualityExcelImportResult[] = [];
+      const jobWarnings: string[] = [];
       for (let index = 0; index < workflow.chunks.length; index += 1) {
         const chunk = workflow.chunks[index];
-        if (chunk.jobId != null) continue;
-        setPhase('extracting');
-        const requiredMedia = await scanned.extractMedia(chunk.mediaKeys);
-        setPhase('uploading');
-        const job = await enqueueQualityExcelJob(
+        setPhase('preparing');
+        setProgress(null);
+        // Prepare every chunk on every same-file retry. The backend returns
+        // upload intents only for assets whose Cloudinary receipt is missing.
+        const job = await prepareQualityExcelDirectJob(
           scanned.manifest,
-          requiredMedia,
           chunk.rowKeys,
-          setProgress,
+          chunk.mediaKeys,
         );
         workflow = {
           ...workflow,
           chunks: workflow.chunks.map((item, chunkIndex) => (
-            chunkIndex === index ? { ...item, jobId: job.id } : item
+            chunkIndex === index
+              ? {
+                ...item,
+                jobId: job.id,
+                receipts: item.receipts.filter((receipt) => (
+                  job.upload_intents.some((intent) => (
+                    intent.asset_sha256 === receipt.assetSha256
+                    && intent.upload.public_id === receipt.public_id
+                  ))
+                )),
+              }
+              : item
           )),
         };
         saveQualityImportWorkflow(workflow);
         setPendingWorkflow(workflow);
-        setJobProgress({
-          acceptedJobs: acceptedQualityImportJobIds(workflow).length,
-          totalJobs: workflow.chunks.length,
-          completedJobs: 0,
-          phase: 'queued',
-          progressDone: 0,
-          progressTotal: 0,
+        if (job.upload_intents.length > 0) {
+          const currentChunk = workflow.chunks[index];
+          const savedReceipts = new Map(currentChunk.receipts.map((receipt) => [
+            receipt.assetSha256,
+            {
+              public_id: receipt.public_id,
+              version: receipt.version,
+              signature: receipt.signature,
+            },
+          ]));
+          setPhase('extracting');
+          const requiredKeys = [...new Set(
+            job.upload_intents
+              .filter((intent) => !savedReceipts.has(intent.asset_sha256))
+              .map((intent) => intent.media_keys[0]),
+          )];
+          const requiredMedia = await scanned.extractMedia(requiredKeys);
+          setPhase('uploading');
+          await deliverQualityDirectAssets({
+            intents: job.upload_intents,
+            media: requiredMedia,
+            receipts: savedReceipts,
+            onProgress: setProgress,
+            onReceipt: (intent, receipt) => {
+              if (!workflow) throw new Error(c.uploadFailed);
+              workflow = {
+                ...workflow,
+                chunks: workflow.chunks.map((item, chunkIndex) => (
+                  chunkIndex === index
+                    ? {
+                      ...item,
+                      receipts: [
+                        ...item.receipts.filter((saved) => saved.assetSha256 !== intent.asset_sha256),
+                        { assetSha256: intent.asset_sha256, ...receipt },
+                      ],
+                    }
+                    : item
+                )),
+              };
+              saveQualityImportWorkflow(workflow);
+              setPendingWorkflow(workflow);
+            },
+            confirm: async (intent, receipt) => {
+              await completeQualityExcelDirectAsset(job.id, intent.asset_sha256, receipt);
+              if (!workflow) throw new Error(c.uploadFailed);
+              workflow = {
+                ...workflow,
+                chunks: workflow.chunks.map((item, chunkIndex) => (
+                  chunkIndex === index
+                    ? {
+                      ...item,
+                      receipts: item.receipts.filter(
+                        (saved) => saved.assetSha256 !== intent.asset_sha256,
+                      ),
+                    }
+                    : item
+                )),
+              };
+              saveQualityImportWorkflow(workflow);
+              setPendingWorkflow(workflow);
+            },
+          });
+        }
+        setPhase('finalizing');
+        const finalized = await finalizeQualityExcelDirectJob(job.id);
+        if (!finalized.result) throw new Error(c.uploadFailed);
+        commits.push(finalized.result);
+        jobWarnings.push(...finalized.warnings);
+        setWorkflowProgress({
+          completedChunks: index + 1,
+          totalChunks: workflow.chunks.length,
         });
       }
-      await runAcceptedWorkflow(workflow);
+      const response = combineQualityImportResults(workflow.preview, commits);
+      response.warnings = [...new Set([...response.warnings, ...jobWarnings])].sort();
+      setResult(response);
+      clearQualityImportWorkflow(workflow.workbookSha256);
+      setPendingWorkflow(null);
+      void queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
+      if (response.failed_count === 0) toast.success(c.success);
+      else if (response.created_count + response.skipped_count + response.changed_count === 0) {
+        toast.error(c.allFailed);
+      } else {
+        toast.warning(c.partialSuccess);
+      }
     } catch (error) {
       const message = getUploadErrorMessage(error, c.uploadFailed, c.upstreamUnavailable);
-      if (workflow && acceptedQualityImportJobIds(workflow).length > 0) {
+      if (workflow) {
         setPendingWorkflow(workflow);
         setErrorMessage(`${c.acceptanceInterrupted}\n${message}`);
         toast.warning(c.acceptanceInterrupted);
@@ -500,31 +494,8 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
   };
 
   const retryPendingWorkflow = async () => {
-    if (!pendingWorkflow) {
-      if (file) void upload(file);
-      return;
-    }
-    if (!isQualityImportFullyAccepted(pendingWorkflow)) {
-      if (file) void upload(file);
-      else fileInputRef.current?.click();
-      return;
-    }
-    const failedJobIds = terminalJobs
-      ?.filter((job) => job.status === 'failed')
-      .map((job) => job.id) || [];
-    if (failedJobIds.length > 0) {
-      setPhase('processing');
-      setErrorMessage(null);
-      try {
-        await Promise.all(failedJobIds.map((jobId) => retryQualityExcelJob(jobId)));
-        setTerminalJobs(null);
-      } catch {
-        setErrorMessage(c.statusCheckUnavailable);
-        setPhase('idle');
-        return;
-      }
-    }
-    await runAcceptedWorkflow(pendingWorkflow);
+    if (file) void upload(file);
+    else fileInputRef.current?.click();
   };
 
   const selectFile = (candidate: File | null) => {
@@ -567,18 +538,19 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
       && result.failed_count > 0
       && result.created_count + result.skipped_count + result.changed_count === 0,
   );
-  const hasFailedBackendJobs = Boolean(terminalJobs?.some((job) => job.status === 'failed'));
   const phaseLabel = phase === 'scanning'
     ? c.scanning
     : phase === 'comparing'
       ? c.comparing
-      : phase === 'extracting'
-        ? c.extracting
-        : phase === 'processing'
-          ? `${c.processing} · ${jobPhaseLabel(jobProgress?.phase || 'queued', c)}`
-          : c.uploading;
-  const jobPercent = jobProgress && jobProgress.totalJobs > 0
-    ? Math.round((jobProgress.completedJobs / jobProgress.totalJobs) * 100)
+      : phase === 'preparing'
+        ? c.preparing
+        : phase === 'extracting'
+          ? c.extracting
+          : phase === 'finalizing'
+            ? c.finalizing
+            : c.uploading;
+  const workflowPercent = workflowProgress && workflowProgress.totalChunks > 0
+    ? Math.round((workflowProgress.completedChunks / workflowProgress.totalChunks) * 100)
     : 0;
 
   return (
@@ -597,10 +569,13 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
               disabled={uploading}
               onRolledBack={() => {
                 clearQualityImportWorkflow();
+                setFile(null);
                 setPendingWorkflow(null);
-                setTerminalJobs(null);
                 setPreview(null);
                 setResult(null);
+                setProgress(null);
+                setWorkflowProgress(null);
+                setSelectedSheetName(null);
                 setErrorMessage(null);
               }}
             />
@@ -663,18 +638,11 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                   <span className="tabular-nums">
                     {formatBytes(progress.uploadedBytes)} / {formatBytes(progress.totalBytes)} · {progress.percent}%
                   </span>
-                ) : phase === 'processing' && jobProgress ? (
+                ) : workflowProgress ? (
                   <span className="tabular-nums">
-                    {interpolate(c.processingProgress, {
-                      completed: jobProgress.completedJobs,
-                      total: jobProgress.totalJobs,
-                    })}
-                  </span>
-                ) : jobProgress ? (
-                  <span className="tabular-nums">
-                    {interpolate(c.acceptingProgress, {
-                      accepted: jobProgress.acceptedJobs,
-                      total: jobProgress.totalJobs,
+                    {interpolate(c.chunkProgress, {
+                      completed: workflowProgress.completedChunks,
+                      total: workflowProgress.totalChunks,
                     })}
                   </span>
                 ) : null}
@@ -685,8 +653,8 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                   style={{
                     width: phase === 'uploading'
                       ? `${progress?.percent || 0}%`
-                      : phase === 'processing'
-                        ? `${Math.max(4, jobPercent)}%`
+                      : workflowProgress
+                        ? `${Math.max(4, workflowPercent)}%`
                         : '55%',
                   }}
                 />
@@ -710,11 +678,9 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                 <button type="button" onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100">
                   <RefreshCw className="h-4 w-4" />
                   {pendingWorkflow
-                    ? isQualityImportFullyAccepted(pendingWorkflow)
-                      ? c.checkStatus
-                      : file
-                        ? c.retry
-                        : c.selectSameFile
+                    ? file
+                      ? c.retry
+                      : c.selectSameFile
                     : c.retry}
                 </button>
               )}
@@ -761,7 +727,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                 {resultHasFailures && (file || pendingWorkflow) && (
                   <button type="button" onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
                     <RefreshCw className="h-4 w-4" />
-                    {hasFailedBackendJobs ? c.retryFailed : c.retry}
+                    {c.retry}
                   </button>
                 )}
               </div>
