@@ -371,7 +371,7 @@ class AiJobApiTests(APITestCase):
                 'llm_ready': True,
                 'model_name': '/private/models/Qwen3.5-test',
                 'worker_version': 'test-v1',
-                'available_model_ids': ['qwen35', 'gemma4_26b_a4b'],
+                'available_model_ids': ['qwen35', 'qwen38', 'gemma4_26b_a4b'],
             },
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
@@ -380,7 +380,7 @@ class AiJobApiTests(APITestCase):
         self.assertEqual(heartbeat_response.data['model_name'], 'Qwen3.5-test')
         self.assertEqual(
             heartbeat_response.data['available_model_ids'],
-            ['qwen35', 'gemma4_26b_a4b'],
+            ['qwen35', 'qwen38', 'gemma4_26b_a4b'],
         )
 
         second_heartbeat = self.client.post(
@@ -414,6 +414,21 @@ class AiJobApiTests(APITestCase):
         job_list = self.client.get('/api/ai/jobs/').data
         rows = job_list.get('results', []) if isinstance(job_list, dict) else job_list
         self.assertNotIn('worker_heartbeat', [row['job_type'] for row in rows])
+
+    def test_worker_heartbeat_rejects_unknown_model_id(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            '/api/ai/worker/heartbeat/',
+            {
+                'worker_name': 'mac-studio-test',
+                'available_model_ids': ['unknown-model'],
+            },
+            format='json',
+            HTTP_X_AI_WORKER_TOKEN='test-worker-token',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('available_model_ids', response.data)
 
     def test_worker_status_is_unknown_without_heartbeat_and_offline_when_stale(self):
         unknown = self.client.get('/api/ai/worker/status/')

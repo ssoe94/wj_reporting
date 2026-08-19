@@ -20,12 +20,12 @@ from quality.daily_attention import (
     quality_attention_plan_snapshot,
 )
 
+from .model_registry import QUALITY_DAILY_MODEL_ID
 from .models import AiJob
 
 
 QUALITY_DAILY_MODE = "daily_attention_summary"
 QUALITY_DAILY_TRIGGER = "daily_attention"
-QUALITY_DAILY_MODEL_ID = "qwen38"
 QUALITY_DAILY_LANGUAGE = "bilingual"
 QUALITY_DAILY_START_HOUR = 7
 QUALITY_DAILY_PLAN_DEBOUNCE_SECONDS = 5 * 60

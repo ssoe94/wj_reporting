@@ -1650,6 +1650,63 @@ class DailyQualityPageEndpointTests(APITestCase):
 
 @override_settings(AI_WORKER_TOKEN="test-worker-token")
 class DailyQualityWorkerQueueTests(APITestCase):
+    def _claim_one(self):
+        return self.client.post(
+            "/api/ai/jobs/claim/",
+            {
+                "worker_name": "mac-studio-test",
+                "worker_version": "production-ai-worker-v2",
+                "limit": 1,
+                "job_types": [
+                    AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                    AiJob.JOB_TYPE_QUALITY_IMAGE,
+                ],
+            },
+            format="json",
+            HTTP_X_AI_WORKER_TOKEN="test-worker-token",
+        )
+
+    def test_today_quality_jobs_are_claimed_first_with_fifo(self):
+        local_today = timezone.now().astimezone(SHANGHAI_TZ).date()
+        yesterday_quality = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "date": (local_today - timedelta(days=1)).isoformat(),
+                "model_id": "gemma4_26b_a4b",
+            },
+        )
+        first_today = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "date": local_today.isoformat(),
+                "model_id": QUALITY_DAILY_MODEL_ID,
+                "source_plan_hash": "today-first",
+            },
+        )
+        second_today = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "date": local_today.isoformat(),
+                "model_id": QUALITY_DAILY_MODEL_ID,
+                "source_plan_hash": "today-second",
+            },
+        )
+
+        first_response = self._claim_one()
+        second_response = self._claim_one()
+        third_response = self._claim_one()
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(first_response.data["jobs"][0]["id"], first_today.id)
+        self.assertEqual(second_response.data["jobs"][0]["id"], second_today.id)
+        self.assertEqual(third_response.data["jobs"][0]["id"], yesterday_quality.id)
+
     def test_daily_quality_job_is_claimed_before_hourly_analysis(self):
         legacy_quality = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,

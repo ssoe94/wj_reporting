@@ -568,6 +568,7 @@ class AiWorkerClaimView(APIView):
                 scope__trigger=QUALITY_DAILY_TRIGGER,
             )
         now = timezone.now()
+        local_today = now.astimezone(SHANGHAI_TZ).date().isoformat()
         stale_before = now - timedelta(seconds=ai_job_timeout_seconds())
 
         with transaction.atomic():
@@ -583,9 +584,14 @@ class AiWorkerClaimView(APIView):
                 .filter(eligible_job_types)
                 .annotate(
                     trigger_priority=Case(
-                        When(scope__trigger=QUALITY_DAILY_TRIGGER, then=Value(0)),
-                        When(scope__trigger='hourly', then=Value(1)),
-                        default=Value(2),
+                        When(
+                            scope__trigger=QUALITY_DAILY_TRIGGER,
+                            scope__date=local_today,
+                            then=Value(0),
+                        ),
+                        When(scope__trigger=QUALITY_DAILY_TRIGGER, then=Value(1)),
+                        When(scope__trigger='hourly', then=Value(2)),
+                        default=Value(3),
                         output_field=IntegerField(),
                     )
                 )
