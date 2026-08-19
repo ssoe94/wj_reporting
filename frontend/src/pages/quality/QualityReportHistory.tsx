@@ -1,4 +1,17 @@
-import { CheckCircle2, FolderOpen, Save, X, ChevronLeft, ChevronRight, Eye, Trash2 } from 'lucide-react';
+import {
+  ArrowUpDown,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  FolderOpen,
+  RotateCcw,
+  Save,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useLang } from '../../i18n';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Label } from '../../components/ui/label';
@@ -70,6 +83,25 @@ type PartOption = {
   description?: string | null;
 };
 
+type ReportOrdering = '-report_dt,-id' | 'report_dt,id' | '-created_at,-id';
+
+const FILTER_AUTOCOMPLETE_SX = {
+  '& .MuiAutocomplete-inputRoot': {
+    boxSizing: 'border-box',
+    height: 'var(--wj-control-height)',
+    minHeight: 'var(--wj-control-height)',
+    paddingTop: '0 !important',
+    paddingBottom: '0 !important',
+  },
+  '& .MuiAutocomplete-inputRoot input.MuiAutocomplete-input': {
+    boxSizing: 'border-box',
+    height: 'var(--wj-control-height-inner)',
+    minHeight: 'var(--wj-control-height-inner)',
+    paddingTop: '0 !important',
+    paddingBottom: '0 !important',
+  },
+};
+
 interface QualityReportHistoryProps {
   reportScope?: QualityReportHistoryScope | null;
   onClearReportScope?: () => void;
@@ -89,7 +121,12 @@ export default function QualityReportHistory({
     model: '',
     part_no: '',
     includeSimilar: false,
+    keyword: '',
+    section: '',
   }));
+  const [keywordInput, setKeywordInput] = useState('');
+  const [ordering, setOrdering] = useState<ReportOrdering>('-report_dt,-id');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const [pageInput, setPageInput] = useState('1');
@@ -114,6 +151,7 @@ export default function QualityReportHistory({
   }));
   const fromFieldRef = useRef<HTMLDivElement | null>(null);
   const toFieldRef = useRef<HTMLDivElement | null>(null);
+  const listTopRef = useRef<HTMLDivElement | null>(null);
   const dateLocale = lang === 'zh' ? zhCN : ko;
   const hasPartFilter = filters.part_no.trim().length > 0;
   const modelQuery = modelInputValue.trim();
@@ -130,6 +168,14 @@ export default function QualityReportHistory({
   const recent30DateFrom = dayjs().subtract(29, 'day').format('YYYY-MM-DD');
   const recent30DateTo = dayjs().format('YYYY-MM-DD');
   const isRecent30Days = filters.dateFrom === recent30DateFrom && filters.dateTo === recent30DateTo;
+  const activeFilterCount = [
+    Boolean(filters.keyword.trim()),
+    Boolean(filters.section),
+    !isAllDates,
+    Boolean(filters.model.trim()),
+    Boolean(filters.part_no.trim()),
+  ].filter(Boolean).length;
+  const hasCustomizedView = activeFilterCount > 0 || ordering !== '-report_dt,-id';
 
   const applyDatePreset = (preset: 'all' | 'recent30') => {
     setPage(1);
@@ -139,6 +185,35 @@ export default function QualityReportHistory({
       dateFrom: preset === 'all' ? '' : recent30DateFrom,
       dateTo: preset === 'all' ? '' : recent30DateTo,
     }));
+  };
+
+  const applyKeywordSearch = () => {
+    const keyword = keywordInput.trim();
+    setPage(1);
+    setFilters((previous) => (
+      previous.keyword === keyword ? previous : { ...previous, keyword }
+    ));
+  };
+
+  const resetSearchView = () => {
+    setFilters({
+      dateFrom: '',
+      dateTo: '',
+      model: '',
+      part_no: '',
+      includeSimilar: false,
+      keyword: '',
+      section: '',
+    });
+    setKeywordInput('');
+    setOrdering('-report_dt,-id');
+    setModelInputValue('');
+    setPartInputValue('');
+    setSelectedModelOption(null);
+    setSelectedPartOption(null);
+    setOpenCalendar(null);
+    setShowAdvancedFilters(false);
+    setPage(1);
   };
 
   // 모델 검색용 - modelQuery 사용
@@ -276,6 +351,7 @@ export default function QualityReportHistory({
     normalizedActiveModelCode,
     partListByModel,
     partSearchResults,
+    selectedModelOption,
     selectedPartOption,
   ]);
 
@@ -403,25 +479,19 @@ export default function QualityReportHistory({
   };
 
   // useQuery를 사용하여 서버에서 데이터 가져오기
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['quality-reports', filters, page, pageSize, reportScopeKey],
+  const { data, isLoading, isError, isFetching } = useQuery({
+    queryKey: ['quality-reports', filters, ordering, page, pageSize, reportScopeKey],
     queryFn: async () => {
       const params: Record<string, any> = {
         page,
         page_size: pageSize,
+        ordering,
       };
-
-      if (scopedReportIds.length > 0) {
-        const { data } = await api.post(
-          '/quality/reports/by-ids/',
-          { ids: scopedReportIds },
-          { params },
-        );
-        return data;
-      }
 
       if (filters.dateFrom) params.report_dt_after = filters.dateFrom;
       if (filters.dateTo) params.report_dt_before = filters.dateTo;
+      if (filters.keyword.trim()) params.search = filters.keyword.trim();
+      if (filters.section) params.section = filters.section;
 
       const modelFilter = filters.model.trim();
       if (modelFilter) {
@@ -436,6 +506,15 @@ export default function QualityReportHistory({
         } else {
           params.part_no__icontains = normalizedPart;
         }
+      }
+
+      if (scopedReportIds.length > 0) {
+        const { data } = await api.post(
+          '/quality/reports/by-ids/',
+          { ids: scopedReportIds },
+          { params },
+        );
+        return data;
       }
 
       const { data } = await api.get('/quality/reports/', {
@@ -464,6 +543,19 @@ export default function QualityReportHistory({
     }
   }, [page, totalPages]);
 
+  const navigateToPage = (nextPage: number) => {
+    const clampedPage = Math.min(Math.max(nextPage, 1), totalPages);
+    if (clampedPage === page) {
+      setPageInput(String(clampedPage));
+      return;
+    }
+    setPage(clampedPage);
+    setPageInput(String(clampedPage));
+    window.requestAnimationFrame(() => {
+      listTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   const handlePageJump = () => {
     const nextPage = Number.parseInt(pageInput, 10);
     if (Number.isNaN(nextPage)) {
@@ -471,8 +563,7 @@ export default function QualityReportHistory({
       return;
     }
     const clampedPage = Math.min(Math.max(nextPage, 1), totalPages);
-    setPage(clampedPage);
-    setPageInput(String(clampedPage));
+    navigateToPage(clampedPage);
   };
 
   const handleSaveActionResult = async (reportId: number) => {
@@ -486,7 +577,7 @@ export default function QualityReportHistory({
       toast.success(t('save_success'));
       queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
       setEditingId(null);
-    } catch (err) {
+    } catch (_err) {
       toast.error(t('save_fail'));
     } finally {
       setSavingId(null);
@@ -505,7 +596,7 @@ export default function QualityReportHistory({
       toast.success(t('delete_success'));
       queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
       setSelectedReport(null);
-    } catch (err) {
+    } catch (_err) {
       toast.error(t('delete_fail'));
     } finally {
       setIsDeleting(false);
@@ -530,9 +621,141 @@ export default function QualityReportHistory({
             </Button>
           </div>
         )}
-        {/* 필터 */}
-        {!reportScopeKey && <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="flex flex-wrap items-center gap-2 md:col-span-4">
+        {/* 검색 / 정렬 */}
+        <section className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-slate-800">
+                  {lang === 'zh' ? '搜索与排序' : '검색 및 정렬'}
+                </h3>
+                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                  {lang === 'zh' ? `共 ${totalCount.toLocaleString()} 条` : `총 ${totalCount.toLocaleString()}건`}
+                </span>
+                {activeFilterCount > 0 && (
+                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                    {lang === 'zh' ? `${activeFilterCount} 个筛选条件` : `필터 ${activeFilterCount}개 적용`}
+                  </span>
+                )}
+                {isFetching && (
+                  <span className="text-xs font-medium text-indigo-600" role="status">
+                    {lang === 'zh' ? '正在更新…' : '조회 중…'}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {lang === 'zh'
+                  ? '可同时搜索型号、Part No.、不良现象和处理方式。'
+                  : '모델, Part No., 불량 현상과 처리 방식을 한 번에 검색합니다.'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={resetSearchView}
+              disabled={!hasCustomizedView}
+              className="shrink-0 gap-1.5 text-slate-600"
+            >
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              {lang === 'zh' ? '重置' : '초기화'}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(300px,1.45fr)_minmax(140px,0.6fr)_minmax(170px,0.7fr)_minmax(132px,0.5fr)]">
+            <form
+              className="min-w-0 sm:col-span-2 lg:col-span-1"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applyKeywordSearch();
+              }}
+            >
+              <Label htmlFor="quality-history-keyword" className="mb-1.5 block text-xs font-semibold text-slate-600">
+                {lang === 'zh' ? '综合搜索' : '통합 검색'}
+              </Label>
+              <div className="flex min-w-0 gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                  <Input
+                    id="quality-history-keyword"
+                    type="search"
+                    value={keywordInput}
+                    onChange={(event) => setKeywordInput(event.target.value)}
+                    placeholder={lang === 'zh' ? '搜索型号、Part No.、不良现象' : '모델, Part No., 불량 현상 검색'}
+                    className="h-[var(--wj-control-height)] min-h-[var(--wj-control-height)] pl-10"
+                  />
+                </div>
+                <Button type="submit" size="sm" className="h-[var(--wj-control-height)] min-h-[var(--wj-control-height)] shrink-0 px-4">
+                  {lang === 'zh' ? '搜索' : '검색'}
+                </Button>
+              </div>
+            </form>
+
+            <div className="min-w-0">
+              <Label htmlFor="quality-history-section" className="mb-1.5 block text-xs font-semibold text-slate-600">
+                {lang === 'zh' ? '报告部门' : '보고 부서'}
+              </Label>
+              <select
+                id="quality-history-section"
+                value={filters.section}
+                onChange={(event) => {
+                  setFilters((previous) => ({ ...previous, section: event.target.value }));
+                  setPage(1);
+                }}
+                className="ui-input h-[var(--wj-control-height)] min-h-[var(--wj-control-height)] w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">{lang === 'zh' ? '全部部门' : '전체 부서'}</option>
+                <option value="LQC_INJ">LQC - {t('quality.section_injection')}</option>
+                <option value="LQC_ASM">LQC - {t('quality.section_assembly')}</option>
+                <option value="IQC">IQC</option>
+                <option value="OQC">OQC</option>
+                <option value="CS">CS</option>
+              </select>
+            </div>
+
+            <div className="min-w-0">
+              <Label htmlFor="quality-history-ordering" className="mb-1.5 block text-xs font-semibold text-slate-600">
+                {lang === 'zh' ? '排序方式' : '정렬 기준'}
+              </Label>
+              <div className="relative">
+                <select
+                  id="quality-history-ordering"
+                  value={ordering}
+                  onChange={(event) => {
+                    setOrdering(event.target.value as ReportOrdering);
+                    setPage(1);
+                  }}
+                  className="ui-input h-[var(--wj-control-height)] min-h-[var(--wj-control-height)] w-full appearance-none rounded-md border border-gray-200 bg-white py-2 pl-3 pr-10 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="-report_dt,-id">{lang === 'zh' ? '报告日期：最新优先' : '보고일 최신순'}</option>
+                  <option value="report_dt,id">{lang === 'zh' ? '报告日期：最早优先' : '보고일 오래된순'}</option>
+                  <option value="-created_at,-id">{lang === 'zh' ? '登记时间：最新优先' : '최근 등록순'}</option>
+                </select>
+                <ArrowUpDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">
+                {lang === 'zh' ? '其他条件' : '추가 조건'}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant={showAdvancedFilters ? 'primary' : 'secondary'}
+                aria-expanded={showAdvancedFilters}
+                onClick={() => setShowAdvancedFilters((previous) => !previous)}
+                className="h-[var(--wj-control-height)] min-h-[var(--wj-control-height)] w-full gap-2 px-4"
+              >
+                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                {lang === 'zh' ? '详细筛选' : '상세 필터'}
+              </Button>
+            </div>
+          </div>
+
+          {showAdvancedFilters && (
+            <div className="mt-3 grid grid-cols-1 gap-3 border-t border-slate-200 pt-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="flex flex-wrap items-center gap-2 sm:col-span-2 xl:col-span-4">
             <span className="text-xs font-semibold text-gray-500">
               {lang === 'zh' ? '查询期间' : '조회 기간'}
             </span>
@@ -710,6 +933,7 @@ export default function QualityReportHistory({
                   {...params}
                   size="small"
                   placeholder={t('model_search')}
+                  sx={FILTER_AUTOCOMPLETE_SX}
                   InputProps={{
                     ...params.InputProps,
                     className: (params.InputProps.className || '') + ' text-sm',
@@ -895,6 +1119,7 @@ export default function QualityReportHistory({
                   {...params}
                   size="small"
                   placeholder={t('quality.part_no_placeholder')}
+                  sx={FILTER_AUTOCOMPLETE_SX}
                   InputProps={{
                     ...params.InputProps,
                     className: (params.InputProps.className || '') + ' text-sm',
@@ -935,9 +1160,12 @@ export default function QualityReportHistory({
               <span>{t('quality.show_similar_parts')}</span>
             </label>
           </div>
-        </div>}
+            </div>
+          )}
+        </section>
+        <div ref={listTopRef} className="scroll-mt-24" aria-hidden="true" />
         {/* 모바일 카드 목록 */}
-        <div className="space-y-3 xl:hidden">
+        <div className="space-y-3 xl:hidden" aria-busy={isFetching}>
           {isLoading ? (
             <div className="rounded-xl border border-indigo-100 bg-white px-4 py-10 text-center text-sm text-gray-500">
               {t('loading')}...
@@ -1105,7 +1333,7 @@ export default function QualityReportHistory({
         </div>
 
         {/* 데스크톱 테이블 */}
-        <div className="hidden overflow-x-auto rounded-lg border border-indigo-200 shadow-sm xl:block">
+        <div className="hidden overflow-x-auto rounded-lg border border-indigo-200 shadow-sm xl:block" aria-busy={isFetching}>
           <table className="w-full min-w-[1180px] table-fixed text-sm">
             <thead className="bg-gradient-to-r from-indigo-50 to-blue-50 whitespace-nowrap">
               <tr className="border-b border-indigo-200">
@@ -1251,30 +1479,85 @@ export default function QualityReportHistory({
           </table>
         </div>
         {/* 페이지네이션 */}
-        <div className="flex flex-wrap items-center justify-center gap-2 xl:justify-end">
-          <Button className="min-w-24 flex-1 sm:flex-none" type="button" variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>{t('quality.prev_page')}</Button>
-          <span className="order-first w-full text-center text-xs font-medium text-gray-600 sm:order-none sm:w-auto">
-            {lang === 'zh' ? `共 ${totalCount.toLocaleString()} 条` : `총 ${totalCount.toLocaleString()}건`}
-            {' · '}{page} / {totalPages}
-          </span>
-          <Input
-            type="number"
-            min={1}
-            max={totalPages}
-            value={pageInput}
-            onChange={(e) => setPageInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handlePageJump();
-              }
-            }}
-            className="h-9 w-20 text-center"
-          />
-          <Button className="shrink-0" type="button" variant="secondary" onClick={handlePageJump}>
-            {lang === 'zh' ? '跳转' : '이동'}
-          </Button>
-          <Button className="min-w-24 flex-1 sm:flex-none" type="button" variant="secondary" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>{t('quality.next_page')}</Button>
-        </div>
+        <nav
+          aria-label={lang === 'zh' ? '报告列表分页' : '보고 이력 페이지 이동'}
+          className="flex flex-nowrap items-center justify-between gap-3 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 py-2 sm:px-3"
+        >
+          <p className="shrink-0 whitespace-nowrap text-xs font-medium text-slate-600">
+            <strong className="font-semibold text-slate-900">{totalCount.toLocaleString()}</strong>
+            {lang === 'zh' ? ' 条结果' : '건의 결과'}
+          </p>
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => navigateToPage(page - 1)}
+              disabled={page <= 1 || isFetching}
+              aria-label={t('quality.prev_page')}
+              className="!h-[42px] !min-h-[42px] gap-1 px-2.5"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">{lang === 'zh' ? '上一页' : '이전'}</span>
+            </Button>
+
+            <span
+              className="min-w-[72px] whitespace-nowrap rounded-lg bg-white px-2.5 py-2 text-center text-sm font-semibold text-slate-800 ring-1 ring-slate-200"
+              aria-live="polite"
+            >
+              {page} <span className="font-normal text-slate-400">/</span> {totalPages}
+            </span>
+
+            {totalPages > 1 && (
+              <div className="hidden items-center gap-1.5 md:flex">
+                <label htmlFor="quality-history-page-input" className="text-xs font-medium text-slate-500">
+                  {lang === 'zh' ? '页码' : '페이지'}
+                </label>
+                <div className="w-16 shrink-0">
+                  <Input
+                    id="quality-history-page-input"
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    value={pageInput}
+                    onChange={(e) => setPageInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handlePageJump();
+                      }
+                    }}
+                    aria-label={lang === 'zh' ? '输入要跳转的页码' : '이동할 페이지 번호'}
+                    className="!h-[42px] !min-h-[42px] py-1 text-center"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={handlePageJump}
+                  disabled={isFetching}
+                  className="!h-[42px] !min-h-[42px] px-2.5"
+                >
+                  {lang === 'zh' ? '跳转' : '이동'}
+                </Button>
+              </div>
+            )}
+
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => navigateToPage(page + 1)}
+              disabled={page >= totalPages || isFetching}
+              aria-label={t('quality.next_page')}
+              className="!h-[42px] !min-h-[42px] gap-1 px-2.5"
+            >
+              <span className="hidden sm:inline">{lang === 'zh' ? '下一页' : '다음'}</span>
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+        </nav>
       </div>
 
       {/* 이미지 모달 (다중 이미지 지원) */}

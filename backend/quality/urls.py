@@ -10,6 +10,10 @@ from .views import (
     get_cloudinary_signature,
 )
 from .import_views import (
+    QualityExcelDirectAssetCompleteView,
+    QualityExcelDirectFinalizeView,
+    QualityExcelDirectJobDetailView,
+    QualityExcelDirectJobView,
     QualityExcelImportCommitView,
     QualityExcelImportJobDetailView,
     QualityExcelImportJobRetryView,
@@ -62,6 +66,26 @@ urlpatterns = [
         'excel-import/jobs/<int:pk>/retry/',
         QualityExcelImportJobRetryView.as_view(),
         name='quality-excel-import-job-retry',
+    ),
+    path(
+        'excel-import/direct/jobs/',
+        QualityExcelDirectJobView.as_view(),
+        name='quality-excel-import-direct-jobs',
+    ),
+    path(
+        'excel-import/direct/jobs/<int:pk>/',
+        QualityExcelDirectJobDetailView.as_view(),
+        name='quality-excel-import-direct-job-detail',
+    ),
+    path(
+        'excel-import/direct/jobs/<int:pk>/assets/<str:asset_sha256>/complete/',
+        QualityExcelDirectAssetCompleteView.as_view(),
+        name='quality-excel-import-direct-asset-complete',
+    ),
+    path(
+        'excel-import/direct/jobs/<int:pk>/finalize/',
+        QualityExcelDirectFinalizeView.as_view(),
+        name='quality-excel-import-direct-finalize',
     ),
     path(
         'excel-import/rollback-today/',

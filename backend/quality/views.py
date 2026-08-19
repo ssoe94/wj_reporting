@@ -80,8 +80,8 @@ class QualityReportViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['section', 'model', 'part_no']
     search_fields = ['model', 'part_no', 'phenomenon', 'disposition']
-    ordering_fields = ['report_dt', 'created_at']
-    ordering = ['-report_dt']
+    ordering_fields = ['report_dt', 'created_at', 'id']
+    ordering = ['-report_dt', '-id']
 
     @action(
         detail=False,

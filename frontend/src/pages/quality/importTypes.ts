@@ -118,13 +118,38 @@ export interface QualityExcelImportJob {
   idempotent_replay?: boolean;
 }
 
-export interface QualityExcelImportJobProgress {
-  acceptedJobs: number;
-  totalJobs: number;
-  completedJobs: number;
-  phase: string;
-  progressDone: number;
-  progressTotal: number;
+export interface QualityExcelDirectUploadParameters {
+  cloud_name: string;
+  api_key: string;
+  timestamp: number;
+  signature: string;
+  public_id: string;
+  allowed_formats: string;
+  upload_preset: 'wj-quality-import-browser-direct-v1';
+  overwrite: false;
+  unique_filename: false;
+}
+
+export interface QualityExcelDirectUploadIntent {
+  asset_sha256: string;
+  media_keys: string[];
+  source_byte_size: number;
+  source_content_type: string;
+  upload: QualityExcelDirectUploadParameters;
+}
+
+export interface QualityExcelDirectJob
+  extends Omit<QualityExcelImportJob, 'status' | 'idempotent_replay'> {
+  status: QualityExcelImportJobStatus | 'staging';
+  idempotent_replay: boolean;
+  delivery_mode: 'browser_direct';
+  upload_intents: QualityExcelDirectUploadIntent[];
+}
+
+export interface QualityCloudinaryUploadReceipt {
+  public_id: string;
+  version: number;
+  signature: string;
 }
 
 export interface QualityReportHistoryScope {

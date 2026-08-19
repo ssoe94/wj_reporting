@@ -22,6 +22,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .direct_import import import_quality_workbook_direct, safe_workbook_filename
+from .browser_direct_import import (
+    DIRECT_DELIVERY_MODE,
+    complete_browser_direct_asset,
+    destroy_browser_direct_pending_uploads,
+    finalize_browser_direct_job,
+    prepare_browser_direct_quality_manifest,
+    serialize_browser_direct_job,
+    unresolved_browser_direct_public_ids,
+)
 from .duplicate_detection import find_best_report_duplicates
 from .excel_import import (
     MAX_UPLOAD_BYTES,
@@ -106,6 +115,27 @@ def _excel_report_source(report: QualityReport) -> tuple[str, str]:
     )
 
 
+def _active_incremental_jobs_queryset():
+    now = timezone.now()
+    return QualityImportBatch.objects.filter(dataset_key=INCREMENTAL_JOB_DATASET_KEY).filter(
+        Q(status=QualityImportBatch.Status.QUEUED)
+        | Q(status=QualityImportBatch.Status.PROCESSING)
+        | (
+            Q(status=QualityImportBatch.Status.STAGING)
+            & Q(delta_summary__delivery_mode=DIRECT_DELIVERY_MODE)
+            & Q(lease_expires_at__gt=now)
+        )
+    )
+
+
+def _expired_direct_jobs_queryset():
+    return QualityImportBatch.objects.filter(
+        dataset_key=INCREMENTAL_JOB_DATASET_KEY,
+        delta_summary__delivery_mode=DIRECT_DELIVERY_MODE,
+        status=QualityImportBatch.Status.STAGING,
+    ).filter(Q(lease_expires_at__isnull=True) | Q(lease_expires_at__lte=timezone.now()))
+
+
 def _incremental_result_report_ids(batch: QualityImportBatch) -> set[int]:
     result = (batch.delta_summary or {}).get('incremental_result')
     if not isinstance(result, dict):
@@ -134,10 +164,8 @@ def _excel_rollback_preview(target_date) -> dict:
         .exclude(_excel_origin_predicate())
         .count()
     )
-    active_jobs = QualityImportBatch.objects.filter(
-        dataset_key=INCREMENTAL_JOB_DATASET_KEY,
-        status__in=[QualityImportBatch.Status.QUEUED, QualityImportBatch.Status.PROCESSING],
-    ).count()
+    active_jobs = _active_incremental_jobs_queryset().count()
+    expired_direct_jobs = _expired_direct_jobs_queryset().count()
     terminal_jobs_today = QualityImportBatch.objects.filter(
         dataset_key=INCREMENTAL_JOB_DATASET_KEY,
         created_at__gte=start,
@@ -153,6 +181,7 @@ def _excel_rollback_preview(target_date) -> dict:
         'count': len(reports),
         'manual_reports_preserved': manual_preserved,
         'active_incremental_jobs': active_jobs,
+        'expired_direct_jobs': expired_direct_jobs,
         'terminal_incremental_jobs': terminal_jobs_today,
         'image_reference_count': sum(
             bool(getattr(report, field_name))
@@ -194,8 +223,16 @@ class QualityImportTemporaryUploadHandler(TemporaryFileUploadHandler):
 def _error(exc: WorkbookValidationError) -> Response:
     if exc.code == 'file_too_large':
         response_status = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
-    elif exc.code in {'production_storage_required', 'staging_capacity_exceeded'}:
+    elif exc.code in {
+        'production_storage_required',
+        'staging_capacity_exceeded',
+        'cloudinary_verification_unavailable',
+    }:
         response_status = status.HTTP_503_SERVICE_UNAVAILABLE
+    elif exc.code == 'job_owner_mismatch':
+        response_status = status.HTTP_403_FORBIDDEN
+    elif exc.code in {'job_busy', 'job_delivery_conflict', 'job_expired', 'missing_media'}:
+        response_status = status.HTTP_409_CONFLICT
     else:
         response_status = status.HTTP_400_BAD_REQUEST
     return Response({'code': exc.code, 'error': exc.message}, status=response_status)
@@ -413,16 +450,41 @@ class QualityExcelImportRollbackView(APIView):
             # intake. Existing queued rows are locked below so the pump cannot
             # start one between the safety check and deletion.
             _lock_staging_capacity()
-            active_jobs = QualityImportBatch.objects.select_for_update().filter(
-                dataset_key=INCREMENTAL_JOB_DATASET_KEY,
-                status__in=[QualityImportBatch.Status.QUEUED, QualityImportBatch.Status.PROCESSING],
-            ).count()
+            # Cancel expired, non-processing browser reservations under the
+            # same advisory lock used by prepare/reclaim. Their upload targets
+            # are job-scoped, so a late receipt becomes a harmless 404 instead
+            # of recreating reports after the rollback.
+            expired_direct_jobs = list(
+                _expired_direct_jobs_queryset()
+                .select_for_update()
+            )
+            expired_direct_job_ids = [batch.pk for batch in expired_direct_jobs]
+            abandoned_public_ids = [
+                public_id
+                for batch in expired_direct_jobs
+                for public_id in unresolved_browser_direct_public_ids(batch)
+            ]
+            cancelled_expired_jobs = len(expired_direct_job_ids)
+            if expired_direct_job_ids:
+                QualityImportBatch.objects.filter(pk__in=expired_direct_job_ids).delete()
+            if abandoned_public_ids:
+                transaction.on_commit(
+                    lambda public_ids=tuple(abandoned_public_ids):
+                    destroy_browser_direct_pending_uploads(public_ids)
+                )
+            active_job_ids = list(
+                _active_incremental_jobs_queryset()
+                .select_for_update()
+                .values_list('id', flat=True)
+            )
+            active_jobs = len(active_job_ids)
             if active_jobs:
                 return Response(
                     {
                         'code': 'rollback_jobs_active',
                         'error': 'Wait for active Excel jobs to finish before rolling back today.',
                         'active_incremental_jobs': active_jobs,
+                        'cancelled_expired_jobs': cancelled_expired_jobs,
                     },
                     status=status.HTTP_409_CONFLICT,
                 )
@@ -501,6 +563,7 @@ class QualityExcelImportRollbackView(APIView):
             'source_groups': source_groups,
             'deleted_image_references': image_reference_count,
             'deleted_incremental_jobs': deleted_job_count,
+            'cancelled_expired_jobs': cancelled_expired_jobs,
             'remote_image_cleanup': 'not_required' if image_reference_count == 0 else 'deferred',
         })
 
@@ -558,6 +621,155 @@ class QualityIncrementalTemporaryUploadHandler(TemporaryFileUploadHandler):
             self.exceeded = True
             raise StopUpload(connection_reset=False)
         return super().receive_data_chunk(raw_data, start)
+
+
+def _direct_row_keys(value):
+    if (
+        not isinstance(value, list)
+        or len(value) > MAX_COMMIT_ROWS
+        or any(
+            not isinstance(item, str)
+            or re.fullmatch(r'[0-9a-f]{64}', item) is None
+            for item in value
+        )
+        or len(set(value)) != len(value)
+    ):
+        raise WorkbookValidationError(
+            'invalid_row_selection',
+            'row_keys must contain unique workbook row keys.',
+        )
+    return set(value)
+
+
+class QualityExcelDirectJobView(APIView):
+    """Prepare a manifest chunk and issue immutable browser upload intents."""
+
+    permission_classes = [IsAuthenticated, QualityImportPermission]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        envelope = request.data
+        if not isinstance(envelope, dict) or not isinstance(envelope.get('manifest'), dict):
+            return Response(
+                {'code': 'manifest_required', 'error': 'JSON field "manifest" is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            row_keys = _direct_row_keys(envelope.get('row_keys'))
+            batch, replay = prepare_browser_direct_quality_manifest(
+                envelope['manifest'],
+                uploaded_by=request.user,
+                uploaded_on=datetime.now(REPORT_TIMEZONE).date(),
+                selected_row_keys=row_keys,
+            )
+            payload = serialize_browser_direct_job(batch, requester=request.user)
+        except WorkbookValidationError as exc:
+            return _error(exc)
+        except Exception:
+            reference = uuid.uuid4().hex[:12]
+            LOGGER.exception('Browser-direct quality import prepare failed reference=%s', reference)
+            return Response(
+                {
+                    'code': 'quality_import_prepare_failed',
+                    'error': (
+                        'The workbook chunk could not be prepared. '
+                        f'Retry or contact an administrator with reference {reference}.'
+                    ),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        payload['idempotent_replay'] = replay
+        return Response(payload, status=status.HTTP_202_ACCEPTED)
+
+
+class QualityExcelDirectJobDetailView(APIView):
+    permission_classes = [IsAuthenticated, QualityImportPermission]
+    parser_classes = [JSONParser]
+
+    @staticmethod
+    def _job(pk):
+        return get_object_or_404(
+            QualityImportBatch.objects.select_related('uploaded_by'),
+            pk=pk,
+            dataset_key=INCREMENTAL_JOB_DATASET_KEY,
+        )
+
+    def get(self, request, pk, *args, **kwargs):
+        try:
+            return Response(serialize_browser_direct_job(
+                self._job(pk),
+                requester=request.user,
+            ))
+        except WorkbookValidationError as exc:
+            return _error(exc)
+
+
+class QualityExcelDirectAssetCompleteView(QualityExcelDirectJobDetailView):
+    def post(self, request, pk, asset_sha256, *args, **kwargs):
+        if re.fullmatch(r'[0-9a-f]{64}', asset_sha256) is None:
+            return Response(
+                {'code': 'unknown_upload_asset', 'error': 'Invalid image identifier.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Resolve the job first so an invalid or foreign identifier does not
+        # disclose Cloudinary receipt validation behavior.
+        batch = self._job(pk)
+        try:
+            batch = complete_browser_direct_asset(
+                batch.pk,
+                asset_sha256=asset_sha256,
+                receipt=request.data,
+                requester=request.user,
+            )
+            payload = serialize_browser_direct_job(batch, requester=request.user)
+        except WorkbookValidationError as exc:
+            return _error(exc)
+        except Exception:
+            reference = uuid.uuid4().hex[:12]
+            LOGGER.exception(
+                'Browser-direct quality image confirmation failed batch=%s reference=%s',
+                pk,
+                reference,
+            )
+            return Response(
+                {
+                    'code': 'quality_import_confirmation_failed',
+                    'error': (
+                        'The uploaded image could not be confirmed. '
+                        f'Retry or contact an administrator with reference {reference}.'
+                    ),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class QualityExcelDirectFinalizeView(QualityExcelDirectJobDetailView):
+    def post(self, request, pk, *args, **kwargs):
+        batch = self._job(pk)
+        try:
+            batch = finalize_browser_direct_job(batch.pk, requester=request.user)
+            payload = serialize_browser_direct_job(batch, requester=request.user)
+        except WorkbookValidationError as exc:
+            return _error(exc)
+        except Exception:
+            reference = uuid.uuid4().hex[:12]
+            LOGGER.exception(
+                'Browser-direct quality import finalize failed batch=%s reference=%s',
+                pk,
+                reference,
+            )
+            return Response(
+                {
+                    'code': 'quality_import_finalize_failed',
+                    'error': (
+                        'The accepted workbook rows could not be registered. '
+                        f'Retry or contact an administrator with reference {reference}.'
+                    ),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class QualityExcelImportJobView(APIView):
