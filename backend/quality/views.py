@@ -336,10 +336,12 @@ class QualityImportRowViewSet(
             related_filter = Q(business_key=seed.business_key)
             if seed.reviewed_content_sha256:
                 related_filter |= Q(reviewed_content_sha256=seed.reviewed_content_sha256)
+            # ``approved_report`` is nullable.  Joining it in a locking query
+            # makes PostgreSQL reject ``FOR UPDATE`` on the outer-joined side.
             related_rows = list(
-                QualityImportRow.objects.select_for_update().select_related(
-                    'approved_report',
-                ).filter(related_filter).order_by('id')
+                QualityImportRow.objects.select_for_update()
+                .filter(related_filter)
+                .order_by('id')
             )
             row = next(item for item in related_rows if item.pk == seed.pk)
             if row.approved_report_id:
