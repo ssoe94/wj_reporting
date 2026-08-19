@@ -1583,9 +1583,10 @@ def finalize_quality_import_job(batch_id: int, owner: str) -> dict[str, Any]:
         )
         try:
             with transaction.atomic():
-                locked_row = QualityImportRow.objects.select_for_update().select_related(
-                    'approved_report'
-                ).get(pk=row_model.pk)
+                # ``approved_report`` is nullable.  Keep it out of the locking
+                # query because PostgreSQL cannot apply a bare ``FOR UPDATE``
+                # to the nullable side of the resulting outer join.
+                locked_row = QualityImportRow.objects.select_for_update().get(pk=row_model.pk)
                 if locked_row.approved_report_id:
                     report = locked_row.approved_report
                 else:

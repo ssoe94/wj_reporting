@@ -192,9 +192,11 @@ def _resume_existing_direct_batch(batch_id: int, *, uploaded_by) -> QualityImpor
     retired_public_ids: list[str] = []
     with transaction.atomic():
         _lock_staging_capacity()
-        batch = QualityImportBatch.objects.select_for_update().select_related('uploaded_by').get(
-            pk=batch_id,
-        )
+        # ``uploaded_by`` is nullable.  Joining it here makes PostgreSQL emit a
+        # LEFT OUTER JOIN and a bare ``FOR UPDATE`` then tries to lock the
+        # nullable side as well, which PostgreSQL rejects.  The resume path only
+        # compares ``uploaded_by_id``, so lock the batch row without the join.
+        batch = QualityImportBatch.objects.select_for_update().get(pk=batch_id)
         if _direct_summary(batch) is None:
             raise _manifest_error(
                 'job_delivery_conflict',

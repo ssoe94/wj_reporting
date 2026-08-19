@@ -11,8 +11,9 @@ from zoneinfo import ZoneInfo
 from cloudinary.utils import api_sign_request
 from django.contrib.auth import get_user_model
 from django.core.files.storage import FileSystemStorage
-from django.db import OperationalError
+from django.db import OperationalError, connection
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from PIL import Image as PillowImage
 from rest_framework.test import APITestCase
@@ -692,12 +693,25 @@ class QualityBrowserDirectImportTests(APITestCase):
         prepared = self._prepare(_manifest(workbook_sha256='7' * 64))
         self._assert_prepare_contract(prepared, intent_count=0)
 
-        finalized = self.client.post(
-            self._finalize_url(prepared.data['id']),
-            {},
-            format='json',
-        )
+        with CaptureQueriesContext(connection) as queries:
+            finalized = self.client.post(
+                self._finalize_url(prepared.data['id']),
+                {},
+                format='json',
+            )
         self._assert_terminal_finalize(finalized)
+        row_selects = [
+            query['sql']
+            for query in queries.captured_queries
+            if 'quality_qualityimportrow' in query['sql'].lower()
+            and '"quality_qualityimportrow"."id" =' in query['sql'].lower()
+            and query['sql'].lstrip().upper().startswith('SELECT')
+        ]
+        self.assertTrue(row_selects)
+        self.assertFalse(any(
+            'JOIN "QUALITY_QUALITYREPORT"' in query.upper()
+            for query in row_selects
+        ), '\n'.join(row_selects))
         batch = QualityImportBatch.objects.get(pk=prepared.data['id'])
 
         self.assertIn(batch.status, {
@@ -1004,6 +1018,33 @@ class QualityBrowserDirectImportTests(APITestCase):
             type='upload',
             timeout=10,
         )
+
+    def test_same_file_replay_locks_batch_without_nullable_user_join(self):
+        """Keep the resume lock compatible with PostgreSQL nullable FKs.
+
+        PostgreSQL rejects ``FOR UPDATE`` when the selected query includes the
+        nullable side of an outer join.  SQLite does not enforce that rule, so
+        also assert the shape of the first batch query to keep CI protective.
+        """
+
+        manifest = _manifest(workbook_sha256='f' * 64)
+        prepared = self._prepare(manifest)
+        self._assert_prepare_contract(prepared, intent_count=0)
+
+        with CaptureQueriesContext(connection) as queries:
+            replay = self._prepare(manifest)
+
+        self._assert_prepare_contract(replay, intent_count=0)
+        self.assertTrue(replay.data['idempotent_replay'])
+        batch_selects = [
+            query['sql']
+            for query in queries.captured_queries
+            if 'quality_qualityimportbatch' in query['sql'].lower()
+            and '"quality_qualityimportbatch"."id" =' in query['sql'].lower()
+            and query['sql'].lstrip().upper().startswith('SELECT')
+        ]
+        self.assertTrue(batch_selects)
+        self.assertNotIn(' JOIN ', batch_selects[0].upper(), '\n'.join(batch_selects))
 
     def test_six_images_issue_only_five_intents_and_save_at_most_five(self):
         images = {
