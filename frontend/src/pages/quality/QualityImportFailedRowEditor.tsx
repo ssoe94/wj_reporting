@@ -199,6 +199,7 @@ function correctionErrorMessage(error: unknown, c: FailedRowCopy): string {
 
 interface QualityImportFailedRowEditorProps {
   row: QualityExcelImportRowResult;
+  onSubmittingChange?: (submitting: boolean) => void;
   onRegistered: (
     sourceRow: QualityExcelImportRowResult,
     publishedRow: QualityImportRowWorkflowResult,
@@ -208,12 +209,14 @@ interface QualityImportFailedRowEditorProps {
 
 export default function QualityImportFailedRowEditor({
   row,
+  onSubmittingChange,
   onRegistered,
 }: QualityImportFailedRowEditorProps) {
   const { lang } = useLang();
   const c = failedRowCopy[lang === 'zh' ? 'zh' : 'ko'];
   const rootRef = useRef<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [registered, setRegistered] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [reviewedVersion, setReviewedVersion] = useState<string | null>(null);
@@ -286,6 +289,7 @@ export default function QualityImportFailedRowEditor({
   const submit = async () => {
     if (!row.import_row_id || submitting) return;
     setSubmitting(true);
+    onSubmittingChange?.(true);
     setSubmitError(null);
     try {
       let expectedVersion = reviewedVersion;
@@ -298,6 +302,7 @@ export default function QualityImportFailedRowEditor({
         row.import_row_id,
         expectedVersion,
       );
+      setRegistered(true);
       onRegistered(row, published, c.correctedRegistered);
       toast.success(c.correctedRegistered);
     } catch (error) {
@@ -312,8 +317,11 @@ export default function QualityImportFailedRowEditor({
       toast.error(message);
     } finally {
       setSubmitting(false);
+      onSubmittingChange?.(false);
     }
   };
+
+  if (registered) return null;
 
   return (
     <article ref={rootRef} className="rounded-xl border border-rose-200 bg-white shadow-sm">

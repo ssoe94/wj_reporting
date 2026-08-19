@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowUpDown,
   CheckCircle2,
   ChevronLeft,
@@ -12,6 +13,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
 import { useLang } from '../../i18n';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Label } from '../../components/ui/label';
@@ -137,6 +139,8 @@ export default function QualityReportHistory({
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [selectedReport, setSelectedReport] = useState<QualityReport | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedReportIds, setSelectedReportIds] = useState<Set<number>>(() => new Set());
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<number[] | null>(null);
   const [modelInputValue, setModelInputValue] = useState('');
   const [partInputValue, setPartInputValue] = useState('');
   const [selectedModelOption, setSelectedModelOption] = useState<ModelOption | null>(null);
@@ -152,6 +156,8 @@ export default function QualityReportHistory({
   const fromFieldRef = useRef<HTMLDivElement | null>(null);
   const toFieldRef = useRef<HTMLDivElement | null>(null);
   const listTopRef = useRef<HTMLDivElement | null>(null);
+  const selectAllToolbarRef = useRef<HTMLInputElement | null>(null);
+  const selectAllTableRef = useRef<HTMLInputElement | null>(null);
   const dateLocale = lang === 'zh' ? zhCN : ko;
   const hasPartFilter = filters.part_no.trim().length > 0;
   const modelQuery = modelInputValue.trim();
@@ -525,9 +531,14 @@ export default function QualityReportHistory({
     placeholderData: reportScopeKey ? undefined : (previousData) => previousData,
   });
 
-  const reports = data?.results || [];
+  const reports: QualityReport[] = Array.isArray(data?.results) ? data.results : [];
   const totalCount = data?.count || 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const visibleReportIds = useMemo(() => reports.map((report) => report.id), [reports]);
+  const selectedVisibleCount = visibleReportIds.filter((id) => selectedReportIds.has(id)).length;
+  const reportMutationInFlight = isDeleting || savingId !== null;
+  const allVisibleSelected = visibleReportIds.length > 0 && selectedVisibleCount === visibleReportIds.length;
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
 
   useEffect(() => {
     setPageInput(String(page));
@@ -536,6 +547,23 @@ export default function QualityReportHistory({
   useEffect(() => {
     setPage(1);
   }, [reportScopeKey]);
+
+  useEffect(() => {
+    setSelectedReportIds(new Set());
+  }, [filters, ordering, page, reportScopeKey]);
+
+  useEffect(() => {
+    if (selectAllToolbarRef.current) selectAllToolbarRef.current.indeterminate = someVisibleSelected;
+    if (selectAllTableRef.current) selectAllTableRef.current.indeterminate = someVisibleSelected;
+  }, [someVisibleSelected]);
+
+  useEffect(() => {
+    const visible = new Set(visibleReportIds);
+    setSelectedReportIds((current) => {
+      if ([...current].every((id) => visible.has(id))) return current;
+      return new Set([...current].filter((id) => visible.has(id)));
+    });
+  }, [visibleReportIds]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -584,20 +612,74 @@ export default function QualityReportHistory({
     }
   };
 
-  const handleDeleteReport = async (reportId: number) => {
-    if (!canEditQuality) return;
-    if (!window.confirm(t('quality.confirm_delete'))) {
-      return;
-    }
-    
+  const toggleReportSelection = (reportId: number) => {
+    if (!canEditQuality || reportMutationInFlight) return;
+    setSelectedReportIds((current) => {
+      const next = new Set(current);
+      if (next.has(reportId)) next.delete(reportId);
+      else next.add(reportId);
+      return next;
+    });
+  };
+
+  const toggleVisibleReports = () => {
+    if (!canEditQuality || reportMutationInFlight) return;
+    setSelectedReportIds((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) visibleReportIds.forEach((id) => next.delete(id));
+      else visibleReportIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const handleDeleteReport = (reportId: number) => {
+    if (!canEditQuality || reportMutationInFlight) return;
+    setPendingDeleteIds([reportId]);
+  };
+
+  const requestSelectedDelete = () => {
+    if (!canEditQuality || reportMutationInFlight || selectedVisibleCount === 0) return;
+    setPendingDeleteIds(
+      visibleReportIds.filter((id) => selectedReportIds.has(id)).sort((a, b) => a - b),
+    );
+  };
+
+  const confirmReportDelete = async () => {
+    if (!canEditQuality || !pendingDeleteIds?.length || reportMutationInFlight) return;
+    const deleteIds = [...pendingDeleteIds];
     setIsDeleting(true);
     try {
-      await api.delete(`/quality/reports/${reportId}/`);
-      toast.success(t('delete_success'));
-      queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
-      setSelectedReport(null);
-    } catch (_err) {
-      toast.error(t('delete_fail'));
+      await api.post('/quality/reports/bulk-delete/', {
+        ids: deleteIds,
+        confirmation: `DELETE_REPORTS:${deleteIds.length}`,
+      });
+      toast.success(lang === 'zh'
+        ? `已删除 ${deleteIds.length.toLocaleString()} 条报告。`
+        : `선택한 보고서 ${deleteIds.length.toLocaleString()}건을 삭제했습니다.`);
+      setSelectedReportIds((current) => {
+        const next = new Set(current);
+        deleteIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      if (selectedReport && deleteIds.includes(selectedReport.id)) setSelectedReport(null);
+      setPendingDeleteIds(null);
+      await queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
+    } catch (error: unknown) {
+      const payload = (error as { response?: { data?: { code?: string } } })?.response?.data;
+      if (payload?.code === 'bulk_delete_jobs_active') {
+        toast.error(lang === 'zh'
+          ? 'Excel 登记仍在处理中。请等待完成后再删除。'
+          : 'Excel 등록이 처리 중입니다. 완료 후 다시 삭제해 주세요.');
+      } else if (payload?.code === 'bulk_delete_scope_changed') {
+        toast.error(lang === 'zh'
+          ? '所选报告已发生变化。请刷新后重新选择。'
+          : '선택한 보고서가 변경되었습니다. 새로 조회한 뒤 다시 선택해 주세요.');
+        setSelectedReportIds(new Set());
+        setPendingDeleteIds(null);
+        await queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
+      } else {
+        toast.error(t('delete_fail'));
+      }
     } finally {
       setIsDeleting(false);
     }
@@ -1164,6 +1246,51 @@ export default function QualityReportHistory({
           )}
         </section>
         <div ref={listTopRef} className="scroll-mt-24" aria-hidden="true" />
+        {canEditQuality && (
+          <div className={`sticky top-2 z-10 flex flex-col gap-2 rounded-xl border px-3 py-2.5 shadow-sm backdrop-blur sm:flex-row sm:items-center ${selectedVisibleCount > 0 ? 'border-rose-200 bg-rose-50/95' : 'border-slate-200 bg-white/95'}`}>
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <label className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm font-semibold text-slate-700 hover:bg-white">
+                <input
+                  ref={selectAllToolbarRef}
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  disabled={visibleReportIds.length === 0 || reportMutationInFlight}
+                  onChange={toggleVisibleReports}
+                  className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>{lang === 'zh' ? '选择本页' : '현재 페이지 선택'}</span>
+              </label>
+              <p className="min-w-0 flex-1 truncate text-right text-sm text-slate-600 sm:text-left" aria-live="polite">
+                {lang === 'zh'
+                  ? `已选 ${selectedVisibleCount.toLocaleString()} / ${visibleReportIds.length.toLocaleString()} 条`
+                  : `${selectedVisibleCount.toLocaleString()} / ${visibleReportIds.length.toLocaleString()}건 선택`}
+              </p>
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={selectedVisibleCount === 0 || reportMutationInFlight}
+                onClick={() => setSelectedReportIds(new Set())}
+                className="min-w-0 text-slate-600"
+              >
+                {lang === 'zh' ? '取消选择' : '선택 해제'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                disabled={selectedVisibleCount === 0 || reportMutationInFlight}
+                onClick={requestSelectedDelete}
+                className="min-w-0 bg-rose-600 text-white hover:bg-rose-700 disabled:bg-slate-300"
+              >
+                <Trash2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                {lang === 'zh' ? '删除所选' : '선택 삭제'}
+              </Button>
+            </div>
+          </div>
+        )}
         {/* 모바일 카드 목록 */}
         <div className="space-y-3 xl:hidden" aria-busy={isFetching}>
           {isLoading ? (
@@ -1189,14 +1316,28 @@ export default function QualityReportHistory({
               return (
                 <article
                   key={r.id}
-                  className="min-w-0 overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm"
+                  className={`min-w-0 overflow-hidden rounded-xl border bg-white shadow-sm transition ${selectedReportIds.has(r.id) ? 'border-indigo-400 ring-2 ring-indigo-200' : 'border-indigo-200'}`}
                 >
                   <div className="flex items-start justify-between gap-3 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-gray-500">{t('date')}</p>
-                      <p className="mt-0.5 text-sm font-semibold text-gray-900">
-                        {(r.report_dt || '').slice(0, 10)}
-                      </p>
+                    <div className="flex min-w-0 items-start gap-2">
+                      {canEditQuality && (
+                        <label className="-ml-2 -mt-1 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg hover:bg-white/70">
+                          <input
+                            type="checkbox"
+                            checked={selectedReportIds.has(r.id)}
+                            disabled={reportMutationInFlight}
+                            onChange={() => toggleReportSelection(r.id)}
+                            aria-label={`${(r.report_dt || '').slice(0, 10)} ${r.section} ${r.part_no} ${lang === 'zh' ? '选择报告' : '보고서 선택'}`}
+                            className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                        </label>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-500">{t('date')}</p>
+                        <p className="mt-0.5 text-sm font-semibold text-gray-900">
+                          {(r.report_dt || '').slice(0, 10)}
+                        </p>
+                      </div>
                     </div>
                     <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
                       r.judgement === 'OK'
@@ -1317,7 +1458,7 @@ export default function QualityReportHistory({
                           type="button"
                           variant="secondary"
                           onClick={() => handleDeleteReport(r.id)}
-                          disabled={isDeleting}
+                          disabled={reportMutationInFlight}
                           className="min-w-0 text-red-600 hover:bg-red-50 hover:text-red-700"
                         >
                           <Trash2 className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -1334,9 +1475,22 @@ export default function QualityReportHistory({
 
         {/* 데스크톱 테이블 */}
         <div className="hidden overflow-x-auto rounded-lg border border-indigo-200 shadow-sm xl:block" aria-busy={isFetching}>
-          <table className="w-full min-w-[1180px] table-fixed text-sm">
+          <table className="w-full min-w-[1230px] table-fixed text-sm">
             <thead className="bg-gradient-to-r from-indigo-50 to-blue-50 whitespace-nowrap">
               <tr className="border-b border-indigo-200">
+                {canEditQuality && (
+                  <th className="w-12 px-2 py-3 text-center">
+                    <input
+                      ref={selectAllTableRef}
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      disabled={visibleReportIds.length === 0 || isDeleting}
+                      onChange={toggleVisibleReports}
+                      aria-label={lang === 'zh' ? '选择当前页全部报告' : '현재 페이지 보고서 전체 선택'}
+                      className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                  </th>
+                )}
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('date')}</th>
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.section')}</th>
                 <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('model')}</th>
@@ -1352,18 +1506,30 @@ export default function QualityReportHistory({
             </thead>
             <tbody className="divide-y divide-indigo-100 bg-white">
               {isLoading ? (
-                <tr><td colSpan={11} className="text-center py-10 text-gray-500">{t('loading')}...</td></tr>
+                <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-gray-500">{t('loading')}...</td></tr>
               ) : isError ? (
-                <tr><td colSpan={11} className="text-center py-10 text-red-500">{t('error_loading_data')}</td></tr>
+                <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-red-500">{t('error_loading_data')}</td></tr>
               ) : reports.length === 0 ? (
-                <tr><td colSpan={11} className="text-center py-10 text-gray-500">{t('no_data')}</td></tr>
+                <tr><td colSpan={canEditQuality ? 12 : 11} className="text-center py-10 text-gray-500">{t('no_data')}</td></tr>
               ) : (
                 reports.map((r: QualityReport) => {
                   const isEditing = editingId === r.id;
                   const currentValue = actionResults[r.id] !== undefined ? actionResults[r.id] : (r.action_result || '');
                   
                   return (
-                    <tr key={r.id} className="hover:bg-indigo-50/50 transition-colors duration-150">
+                    <tr key={r.id} className={`transition-colors duration-150 ${selectedReportIds.has(r.id) ? 'bg-indigo-50' : 'hover:bg-indigo-50/50'}`}>
+                      {canEditQuality && (
+                        <td className="px-2 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedReportIds.has(r.id)}
+                            disabled={reportMutationInFlight}
+                            onChange={() => toggleReportSelection(r.id)}
+                            aria-label={`${(r.report_dt || '').slice(0, 10)} ${r.section} ${r.part_no} ${lang === 'zh' ? '选择报告' : '보고서 선택'}`}
+                            className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                        </td>
+                      )}
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{(r.report_dt || '').slice(0, 10)}</td>
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.section}</td>
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.model}</td>
@@ -1464,7 +1630,7 @@ export default function QualityReportHistory({
                               onClick={() => handleDeleteReport(r.id)}
                               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                               title={t('quality.delete_report')}
-                              disabled={isDeleting}
+                              disabled={reportMutationInFlight}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1847,7 +2013,7 @@ export default function QualityReportHistory({
                 <Button
                   variant="danger"
                   onClick={() => handleDeleteReport(selectedReport.id)}
-                  disabled={isDeleting}
+                  disabled={reportMutationInFlight}
                   className="bg-red-600 hover:bg-red-700 text-white"
                 >
                   {isDeleting ? (
@@ -1867,6 +2033,65 @@ export default function QualityReportHistory({
           </div>
         </div>
       )}
+
+      <Dialog
+        open={pendingDeleteIds !== null}
+        onClose={() => {
+          if (!isDeleting) setPendingDeleteIds(null);
+        }}
+        className="relative z-[90]"
+      >
+        <DialogBackdrop className="fixed inset-0 bg-slate-950/55 backdrop-blur-sm" />
+        <div className="fixed inset-0 overflow-y-auto p-4 sm:p-6">
+          <div className="flex min-h-full items-center justify-center">
+            <DialogPanel className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl ring-1 ring-slate-900/10 sm:p-6">
+              <div className="flex items-start gap-3">
+                <span className="rounded-xl bg-rose-100 p-2.5 text-rose-700">
+                  <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <DialogTitle className="text-lg font-bold text-slate-950">
+                    {lang === 'zh' ? '删除所选报告' : '선택한 보고서 삭제'}
+                  </DialogTitle>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    {lang === 'zh'
+                      ? `将永久删除所选 ${pendingDeleteIds?.length || 0} 条报告。此操作无法撤销。`
+                      : `선택한 보고서 ${pendingDeleteIds?.length || 0}건을 영구 삭제합니다. 이 작업은 되돌릴 수 없습니다.`}
+                  </p>
+                  <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
+                    {lang === 'zh'
+                      ? '为避免影响共享图片，Cloudinary 原始文件会保留。'
+                      : '공유 사진 손상을 막기 위해 Cloudinary 원본 파일은 보존합니다.'}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={isDeleting}
+                  onClick={() => setPendingDeleteIds(null)}
+                >
+                  {t('cancel')}
+                </Button>
+                <Button
+                  type="button"
+                  autoFocus
+                  variant="danger"
+                  disabled={reportMutationInFlight}
+                  onClick={() => void confirmReportDelete()}
+                  className="bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60"
+                >
+                  <Trash2 className={`mr-2 h-4 w-4 ${isDeleting ? 'animate-pulse' : ''}`} aria-hidden="true" />
+                  {isDeleting
+                    ? (lang === 'zh' ? '正在删除…' : '삭제 중…')
+                    : (lang === 'zh' ? '确认删除' : '삭제 확인')}
+                </Button>
+              </div>
+            </DialogPanel>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

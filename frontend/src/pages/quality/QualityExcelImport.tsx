@@ -16,7 +16,6 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import QualityExcelRollbackButton from './QualityExcelRollbackButton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLang } from '../../i18n';
 import {
@@ -29,6 +28,7 @@ import {
 import QualityImportFailedRowEditor, {
   qualityImportFailureMessage,
 } from './QualityImportFailedRowEditor';
+import QualityImportCompletionModal from './QualityImportCompletionModal';
 import { scanQualityWorkbook } from './qualityWorkbookScanner';
 import { deliverQualityDirectAssets } from './qualityDirectCloudinaryUpload';
 import {
@@ -54,8 +54,8 @@ import type {
 
 const copy = {
   ko: {
-    title: 'Excel 품질 이슈 업로드',
-    description: 'Excel은 브라우저에서 비교하고, 신규 사진은 이 PC에서 Cloudinary로 직접 전송한 뒤 서버에는 판정 결과만 등록합니다.',
+    title: 'Excel에서 가져오기',
+    description: '월별 품질 Excel을 선택하면 기존 보고와 비교하고 신규 사진만 이 PC에서 전송합니다.',
     drop: '.xlsx 파일을 놓거나 클릭해 선택하세요',
     fileHelp: '최대 80MB · 같은 내용은 건너뛰고 사진은 행당 최대 5장 저장합니다.',
     scanning: 'Excel을 기기에서 분석 중',
@@ -79,6 +79,7 @@ const copy = {
     emptyFile: '내용이 없는 파일은 업로드할 수 없습니다.',
     oversizedFile: 'Excel 파일은 최대 80MB까지 업로드할 수 있습니다.',
     permissionDenied: '품질 자료를 업로드할 권한이 없습니다.',
+    correctionInProgress: '실패 행을 등록하는 동안에는 다른 Excel 파일을 선택하거나 등록을 취소할 수 없습니다.',
     retry: '다시 시도',
     selectSameFile: '같은 파일 선택',
     resultTitle: '처리 결과',
@@ -94,11 +95,10 @@ const copy = {
     imagesSkipped: '사진 건너뜀',
     workbookWarnings: '파일 확인 사항',
     selectedSheet: '처리 대상: {sheet} 시트만 · OQC 이력 및 다른 월 시트는 제외합니다.',
-    createdPostProcess: '신규 보고서 확인',
-    createdReviewHelp: '보고서 등록은 이미 완료되었습니다. 아래 버튼은 신규 보고서를 확인하거나 처리 결과를 입력할 때 사용합니다.',
-    skippedView: '기존 건 보기',
-    changedPostProcess: '변경 건 확인',
-    allView: '전체 결과 보기',
+    reopenSummary: '업로드 요약 다시 보기',
+    uploadComplete: '업로드 완료',
+    continueFailures: '실패 수정 계속',
+    reviewResults: '처리 결과 확인',
     source: '원본 위치',
     status: '결과',
     report: '보고서',
@@ -113,10 +113,12 @@ const copy = {
     uploadFailed: 'Excel 업로드에 실패했습니다.',
     fixRequiredTitle: '수정 필요한 행',
     fixRequiredDescription: '{count}개 행은 입력값을 바로잡아야 등록됩니다. 실패 원인을 확인하고 수정 후 등록하세요.',
+    showDetails: '상세 결과 보기',
+    hideDetails: '상세 결과 접기',
   },
   zh: {
-    title: '上传 Excel 品质问题',
-    description: '浏览器比较 Excel 后，由此电脑将新增图片直接上传到 Cloudinary，服务器仅登记判定结果。',
+    title: '从 Excel 导入',
+    description: '选择月度品质 Excel 后，将与已有报告比较，仅由此电脑传输新增图片。',
     drop: '拖入或点击选择 .xlsx 文件',
     fileHelp: '最大 80MB · 跳过相同内容，每行最多保存 5 张图片。',
     scanning: '正在本机分析 Excel',
@@ -140,6 +142,7 @@ const copy = {
     emptyFile: '无法上传空文件。',
     oversizedFile: 'Excel 文件最大可上传 80MB。',
     permissionDenied: '您没有上传品质资料的权限。',
+    correctionInProgress: '登记失败行期间，无法选择其他 Excel 文件或取消本次登记。',
     retry: '重试',
     selectSameFile: '选择同一文件',
     resultTitle: '处理结果',
@@ -155,11 +158,10 @@ const copy = {
     imagesSkipped: '跳过图片',
     workbookWarnings: '文件注意事项',
     selectedSheet: '处理范围：仅 {sheet} 工作表 · 排除 OQC 历史表及其他月份。',
-    createdPostProcess: '查看新增报告',
-    createdReviewHelp: '报告登记已经完成。下方按钮仅用于查看新增报告或填写处理结果。',
-    skippedView: '查看已有报告',
-    changedPostProcess: '确认变更记录',
-    allView: '查看全部结果',
+    reopenSummary: '再次查看上传摘要',
+    uploadComplete: '上传完成',
+    continueFailures: '继续修改失败行',
+    reviewResults: '查看处理结果',
     source: '源位置',
     status: '结果',
     report: '报告',
@@ -174,6 +176,8 @@ const copy = {
     uploadFailed: 'Excel 上传失败。',
     fixRequiredTitle: '需要修改的行',
     fixRequiredDescription: '{count} 行需要更正输入值后才能登记。请确认失败原因并修改后登记。',
+    showDetails: '查看详细结果',
+    hideDetails: '收起详细结果',
   },
 } as const;
 
@@ -188,6 +192,7 @@ interface DirectWorkflowProgress {
 
 interface QualityExcelImportProps {
   onPostProcess: (scope: QualityReportHistoryScope) => void;
+  embedded?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -285,13 +290,17 @@ function ResultMetric({
 }
 
 
-export default function QualityExcelImport({ onPostProcess }: QualityExcelImportProps) {
+export default function QualityExcelImport({ onPostProcess, embedded = false }: QualityExcelImportProps) {
   const { lang } = useLang();
   const { user, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const c = copy[lang === 'zh' ? 'zh' : 'ko'];
   const canUpload = Boolean(user?.is_staff || hasPermission('can_edit_quality'));
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const failedRowsSectionRef = useRef<HTMLDivElement | null>(null);
+  const resultSectionRef = useRef<HTMLElement | null>(null);
+  const resultGenerationRef = useRef(0);
+  const correctingRowsRef = useRef(new Set<string>());
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [phase, setPhase] = useState<ImportPhase>('idle');
@@ -302,6 +311,9 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
   const [selectedSheetName, setSelectedSheetName] = useState<string | null>(null);
   const [workflowProgress, setWorkflowProgress] = useState<DirectWorkflowProgress | null>(null);
   const [pendingWorkflow, setPendingWorkflow] = useState<PersistedQualityImportWorkflow | null>(null);
+  const [completionModalOpen, setCompletionModalOpen] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [correctionInFlight, setCorrectionInFlight] = useState(false);
   const uploading = phase !== 'idle';
 
   useEffect(() => {
@@ -322,6 +334,11 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
   }, [c.resumeSameFile]);
 
   const upload = async (candidate: File) => {
+    if (correctingRowsRef.current.size > 0) {
+      toast.info(c.correctionInProgress);
+      return;
+    }
+    resultGenerationRef.current += 1;
     let workflow: PersistedQualityImportWorkflow | null = null;
     setFile(candidate);
     setPhase('scanning');
@@ -329,6 +346,8 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
     setWorkflowProgress(null);
     setPreview(null);
     setResult(null);
+    setCompletionModalOpen(false);
+    setDetailsExpanded(false);
     setErrorMessage(null);
     setSelectedSheetName(null);
     try {
@@ -517,6 +536,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
       const response = combineQualityImportResults(workflow.preview, commits);
       response.warnings = [...new Set([...response.warnings, ...jobWarnings])].sort();
       setResult(response);
+      setCompletionModalOpen(true);
       clearQualityImportWorkflow(workflow.workbookSha256);
       setPendingWorkflow(null);
       void queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
@@ -542,6 +562,10 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
   };
 
   const retryPendingWorkflow = async () => {
+    if (correctingRowsRef.current.size > 0) {
+      toast.info(c.correctionInProgress);
+      return;
+    }
     if (file) void upload(file);
     else fileInputRef.current?.click();
   };
@@ -573,14 +597,19 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
   };
 
   const handleCorrectedRowRegistered = (
+    resultGeneration: number,
     sourceRow: QualityExcelImportRowResult,
     publishedRow: QualityImportRowWorkflowResult,
     successMessage: string,
   ) => {
+    if (resultGeneration !== resultGenerationRef.current) return;
     const reportId = publishedRow.approved_report;
     if (!reportId) return;
     setResult((current) => {
-      if (!current) return current;
+      if (resultGeneration !== resultGenerationRef.current || !current) return current;
+      if (!current.rows.some((row) => (
+        row.row_key === sourceRow.row_key && row.status === 'failed'
+      ))) return current;
       const rows = current.rows.map((row) => row.row_key === sourceRow.row_key ? {
         ...row,
         import_row_id: publishedRow.id,
@@ -606,6 +635,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
       } : row).sort(sortQualityImportRows);
       return {
         ...current,
+        rows,
         created_count: rows.filter((row) => row.status === 'created').length,
         skipped_count: rows.filter((row) => row.status === 'skipped').length,
         changed_count: rows.filter((row) => row.status === 'changed').length,
@@ -613,7 +643,23 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
         created_report_ids: uniqueReportIds([...current.created_report_ids, reportId]),
       };
     });
+    setDetailsExpanded(false);
+    setCompletionModalOpen(true);
     void queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
+  };
+
+  const handleCorrectionSubmittingChange = (
+    resultGeneration: number,
+    rowKey: string,
+    submitting: boolean,
+  ) => {
+    const trackingKey = `${resultGeneration}:${rowKey}`;
+    if (submitting && resultGeneration !== resultGenerationRef.current) return;
+    const next = new Set(correctingRowsRef.current);
+    if (submitting) next.add(trackingKey);
+    else next.delete(trackingKey);
+    correctingRowsRef.current = next;
+    setCorrectionInFlight(next.size > 0);
   };
 
   const resultCreatedIds = result ? uniqueReportIds(result.created_report_ids) : [];
@@ -665,33 +711,68 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
       percent: workflowPercent,
     })
     : null;
+  const renderedResultGeneration = resultGenerationRef.current;
+
+  const focusResultTarget = (target: HTMLElement | null) => {
+    window.setTimeout(() => {
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target?.focus({ preventScroll: true });
+    }, 200);
+  };
+
+  const reviewRemainingFailures = () => {
+    setCompletionModalOpen(false);
+    if (editableFailedRows.length > 0) {
+      focusResultTarget(failedRowsSectionRef.current);
+      return;
+    }
+    setDetailsExpanded(true);
+    focusResultTarget(resultSectionRef.current);
+  };
+
+  const showDetailedResults = () => {
+    setCompletionModalOpen(false);
+    setDetailsExpanded(true);
+    focusResultTarget(resultSectionRef.current);
+  };
+
+  const completeAndOpenHistory = () => {
+    if (correctingRowsRef.current.size > 0) {
+      toast.info(c.correctionInProgress);
+      return;
+    }
+    if (allResultIds.length === 0) {
+      if (editableFailedRows.length > 0) reviewRemainingFailures();
+      else showDetailedResults();
+      return;
+    }
+    setCompletionModalOpen(false);
+    onPostProcess({ reportIds: allResultIds, kind: 'all' });
+  };
+  const primaryResultActionLabel = allResultIds.length > 0
+    ? c.uploadComplete
+    : editableFailedRows.length > 0
+      ? c.continueFailures
+      : c.reviewResults;
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-white via-blue-50/40 to-cyan-50/60 shadow-sm">
-        <div className="p-5 md:p-7">
+      <section className={embedded
+        ? 'border-t border-slate-200 bg-gradient-to-br from-cyan-50/35 via-white to-blue-50/40'
+        : 'overflow-hidden rounded-2xl border border-cyan-100 bg-gradient-to-br from-white via-cyan-50/35 to-blue-50/50 shadow-sm'}>
+        <div className="p-4 md:p-5">
           <div className="flex flex-wrap items-start gap-3">
-            <span className="rounded-xl bg-blue-600 p-2.5 text-white shadow-sm">
-              <FileSpreadsheet className="h-6 w-6" aria-hidden="true" />
+            <span className="rounded-lg bg-cyan-600 p-2 text-white shadow-sm">
+              <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-xl font-bold text-slate-950">{c.title}</h2>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{c.description}</p>
+              {embedded ? (
+                <h3 className="text-base font-bold text-slate-950">{c.title}</h3>
+              ) : (
+                <h2 className="text-base font-bold text-slate-950">{c.title}</h2>
+              )}
+              <p className="mt-0.5 text-xs leading-5 text-slate-500">{c.description}</p>
             </div>
-            <QualityExcelRollbackButton
-              disabled={uploading}
-              onRolledBack={() => {
-                clearQualityImportWorkflow();
-                setFile(null);
-                setPendingWorkflow(null);
-                setPreview(null);
-                setResult(null);
-                setProgress(null);
-                setWorkflowProgress(null);
-                setSelectedSheetName(null);
-                setErrorMessage(null);
-              }}
-            />
           </div>
 
           <input
@@ -699,7 +780,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
             type="file"
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="sr-only"
-            disabled={uploading}
+            disabled={uploading || correctionInFlight}
             onChange={(event) => {
               const candidate = event.currentTarget.files?.[0] || null;
               event.currentTarget.value = '';
@@ -708,7 +789,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
           />
           <button
             type="button"
-            disabled={uploading}
+            disabled={uploading || correctionInFlight}
             onClick={() => {
               if (!canUpload) {
                 toast.error(c.permissionDenied);
@@ -722,12 +803,14 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
             onDrop={(event) => {
               event.preventDefault();
               setDragging(false);
-              if (!uploading) selectFile(event.dataTransfer.files?.[0] || null);
+              if (!uploading && !correctionInFlight) {
+                selectFile(event.dataTransfer.files?.[0] || null);
+              }
             }}
-            className={`mt-5 flex w-full items-center gap-4 rounded-xl border-2 border-dashed px-5 py-6 text-left transition disabled:cursor-wait disabled:opacity-70 ${dragging ? 'border-blue-500 bg-blue-100/70' : 'border-blue-200 bg-white/80 hover:border-blue-400 hover:bg-white'}`}
+            className={`mt-4 flex w-full items-center gap-3 rounded-xl border-2 border-dashed px-4 py-3.5 text-left transition disabled:cursor-not-allowed disabled:opacity-70 ${dragging ? 'border-cyan-500 bg-cyan-100/70' : 'border-cyan-200 bg-white/80 hover:border-cyan-400 hover:bg-white'}`}
           >
-            <span className="rounded-full bg-blue-50 p-3 text-blue-600">
-              {uploading ? <Loader2 className="h-6 w-6 animate-spin" /> : <UploadCloud className="h-6 w-6" />}
+            <span className="rounded-full bg-cyan-50 p-2.5 text-cyan-700">
+              {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <UploadCloud className="h-5 w-5" />}
             </span>
             <span className="min-w-0 flex-1">
               <strong className="block truncate text-sm text-slate-900">{file?.name || pendingWorkflow?.filename || c.drop}</strong>
@@ -793,7 +876,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
               <XCircle className="h-5 w-5 shrink-0 text-rose-600" />
               <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{errorMessage}</span>
               {(file || pendingWorkflow) && (
-                <button type="button" onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100">
+                <button type="button" disabled={correctionInFlight} onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50">
                   <RefreshCw className="h-4 w-4" />
                   {pendingWorkflow
                     ? file
@@ -808,9 +891,18 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
       </section>
 
       {result && (
-        <section className="space-y-5" aria-labelledby="quality-import-result-title">
+        <section
+          ref={resultSectionRef}
+          className="space-y-5 focus:outline-none"
+          aria-labelledby="quality-import-result-title"
+          tabIndex={-1}
+        >
           {editableFailedRows.length > 0 && (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 shadow-sm md:p-6">
+            <div
+              ref={failedRowsSectionRef}
+              className="scroll-mt-6 rounded-2xl border border-rose-200 bg-rose-50/60 p-5 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-400 md:p-6"
+              tabIndex={-1}
+            >
               <div className="flex items-start gap-3">
                 <span className="rounded-xl bg-rose-600 p-2.5 text-white shadow-sm">
                   <AlertTriangle className="h-5 w-5" aria-hidden="true" />
@@ -827,7 +919,19 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                   <QualityImportFailedRowEditor
                     key={row.row_key}
                     row={row}
-                    onRegistered={handleCorrectedRowRegistered}
+                    onSubmittingChange={(submitting) => handleCorrectionSubmittingChange(
+                      renderedResultGeneration,
+                      row.row_key,
+                      submitting,
+                    )}
+                    onRegistered={(sourceRow, publishedRow, successMessage) => (
+                      handleCorrectedRowRegistered(
+                        renderedResultGeneration,
+                        sourceRow,
+                        publishedRow,
+                        successMessage,
+                      )
+                    )}
                   />
                 ))}
               </div>
@@ -852,27 +956,16 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                     {resultAllFailed ? c.allFailed : c.partialSuccess}
                   </p>
                 )}
-                {resultCreatedIds.length > 0 && (
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                    {c.createdReviewHelp}
-                  </p>
-                )}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={resultCreatedIds.length === 0} onClick={() => openReports(resultCreatedIds, 'created')} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40">
-                  {c.createdPostProcess}
+                <button type="button" onClick={() => setCompletionModalOpen(true)} className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                  {c.reopenSummary}
                 </button>
-                <button type="button" disabled={resultChangedIds.length === 0} onClick={() => openReports(resultChangedIds, 'changed')} className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40">
-                  {c.changedPostProcess}
-                </button>
-                <button type="button" disabled={resultSkippedIds.length === 0} onClick={() => openReports(resultSkippedIds, 'skipped')} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40">
-                  {c.skippedView}
-                </button>
-                <button type="button" disabled={allResultIds.length === 0} onClick={() => openReports(allResultIds, 'all')} className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
-                  {c.allView}
+                <button type="button" disabled={correctionInFlight} onClick={completeAndOpenHistory} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-wait disabled:opacity-50">
+                  {primaryResultActionLabel}
                 </button>
                 {hasNonEditableFailures && (file || pendingWorkflow) && (
-                  <button type="button" onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
+                  <button type="button" disabled={correctionInFlight} onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50">
                     <RefreshCw className="h-4 w-4" />
                     {c.retry}
                   </button>
@@ -903,9 +996,21 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
             )}
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="min-w-[1080px] w-full border-collapse text-left">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              aria-expanded={detailsExpanded}
+              onClick={() => setDetailsExpanded((current) => !current)}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              {detailsExpanded ? c.hideDetails : c.showDetails}
+            </button>
+          </div>
+
+          {detailsExpanded && (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="min-w-[1080px] w-full border-collapse text-left">
                 <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">{c.source}</th>
@@ -963,10 +1068,25 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </section>
+      )}
+
+      {result && (
+        <QualityImportCompletionModal
+          open={completionModalOpen}
+          result={result}
+          selectedSheetName={selectedSheetName}
+          canOpenHistory={allResultIds.length > 0}
+          completionDisabled={correctionInFlight}
+          onClose={() => setCompletionModalOpen(false)}
+          onReviewFailures={reviewRemainingFailures}
+          onShowDetails={showDetailedResults}
+          onComplete={completeAndOpenHistory}
+        />
       )}
     </div>
   );

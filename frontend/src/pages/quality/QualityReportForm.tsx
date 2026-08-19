@@ -20,11 +20,15 @@ import { uploadToCloudinary } from '../../utils/cloudinaryUpload';
 
 const MAX_REPORT_IMAGES = 5;
 
+interface QualityReportFormProps {
+  embedded?: boolean;
+}
+
 function createEmptyImageSlots<T>(): Array<T | null> {
   return Array<T | null>(MAX_REPORT_IMAGES).fill(null);
 }
 
-export default function QualityReportForm() {
+export default function QualityReportForm({ embedded = false }: QualityReportFormProps) {
   const { t, lang } = useLang();
   const queryClient = useQueryClient();
   
@@ -515,6 +519,7 @@ export default function QualityReportForm() {
       <AnimatePresence mode="wait">
         <motion.div
           key={fieldKey}
+          className="min-w-0"
           variants={fieldVariants}
           initial="initial"
           animate="animate"
@@ -529,16 +534,34 @@ export default function QualityReportForm() {
 
   return (
     <>
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-3 bg-gradient-to-r from-blue-50 to-white">
-          <FileText className="w-5 h-5 text-blue-600" />
-          <h2 className="text-base font-semibold text-gray-800">{t('nav_quality_report')}</h2>
+      <section
+        className={embedded ? 'bg-white' : 'overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm'}
+        aria-labelledby="quality-manual-report-title"
+      >
+        <div className={`flex items-center gap-3 px-4 py-3.5 md:px-5 ${embedded ? 'border-b border-slate-100' : 'border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white'}`}>
+          <span className="rounded-lg bg-blue-600 p-2 text-white shadow-sm">
+            <FileText className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div>
+            {embedded ? (
+              <h3 id="quality-manual-report-title" className="text-base font-bold text-slate-950">
+                {lang === 'zh' ? '直接登记' : '직접 등록'}
+              </h3>
+            ) : (
+              <h2 id="quality-manual-report-title" className="text-base font-bold text-slate-950">
+                {t('nav_quality_report')}
+              </h2>
+            )}
+            <p className="mt-0.5 text-xs text-slate-500">
+              {lang === 'zh' ? '单件不良可在此快速登记。' : '개별 불량 건을 빠르게 등록합니다.'}
+            </p>
+          </div>
         </div>
         
-        <form onSubmit={handleSubmit} className="px-4 pt-6 pb-6 space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4 px-4 py-4 md:px-5">
           {/* 첫 번째 행: 보고일시/보고부문/동적필드/모델/PART NO. */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <div className="min-w-0">
               <Label htmlFor="report_dt">{t('quality.report_datetime')}</Label>
               <DateTimeField
                 value={form.report_dt || ''}
@@ -548,7 +571,7 @@ export default function QualityReportForm() {
               />
             </div>
             
-            <div>
+            <div className="min-w-0">
               <Label htmlFor="section">{t('quality.section')}</Label>
               <select
                 id="section"
@@ -567,7 +590,7 @@ export default function QualityReportForm() {
             {/* 동적 필드 */}
             {renderDynamicField()}
 
-            <div>
+            <div className="min-w-0">
               <Label>{t('model')}</Label>
               <Autocomplete<PartSpec | { isAddModel: true; model_code: string; description?: string }>
                 options={uniqueModelDesc}
@@ -619,7 +642,7 @@ export default function QualityReportForm() {
               />
             </div>
 
-            <div>
+            <div className="min-w-0">
               <Label>{t('part_no')}</Label>
               <Autocomplete<PartSpec | { isAddNew: boolean; part_no: string } | { isAddNewForModel: boolean }>
                 options={(() => {
@@ -747,7 +770,7 @@ export default function QualityReportForm() {
             const defect = Number(form.defect_qty) || 0;
             const rate = insp > 0 ? Math.round((defect / insp) * 10000) / 100 : 0;
             return (
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 <div>
                   <Label htmlFor="lot_qty">{t('quality.lot_size')}</Label>
                   <Input id="lot_qty" value={form.lot_qty} onChange={(e) => handleChange('lot_qty', e.target.value)} placeholder="400" />
@@ -781,12 +804,12 @@ export default function QualityReportForm() {
           })()}
 
           {/* 세 번째 행: 불량 현상 / 처리 방식 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <div>
               <Label htmlFor="phenomenon">{t('quality.defect_phenomenon')}</Label>
               <Textarea 
                 id="phenomenon" 
-                rows={3} 
+                rows={2}
                 value={form.phenomenon} 
                 onChange={(e) => handleChange('phenomenon', e.target.value)}
                 placeholder={t('quality.phenomenon_placeholder')}
@@ -794,13 +817,13 @@ export default function QualityReportForm() {
             </div>
             <div>
               <Label htmlFor="disposition">{t('quality.disposition')}</Label>
-              <Textarea id="disposition" rows={3} value={form.disposition} onChange={(e) => handleChange('disposition', e.target.value)} placeholder={t('quality.disposition_placeholder')} />
+              <Textarea id="disposition" rows={2} value={form.disposition} onChange={(e) => handleChange('disposition', e.target.value)} placeholder={t('quality.disposition_placeholder')} />
             </div>
           </div>
 
           {/* 네 번째 행: 이미지 업로드 (최대 5장) */}
           <div>
-            <div className="flex items-center gap-3 mb-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2.5">
               <Label>{t('quality.image_upload')}</Label>
               <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm">
                 <Plus className="w-4 h-4" />
@@ -821,7 +844,7 @@ export default function QualityReportForm() {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-lg p-6 transition-all ${
+              className={`rounded-xl border-2 border-dashed p-3 transition-all ${
                 isDragging
                   ? 'border-blue-500 bg-blue-50'
                   : 'border-gray-300 bg-gray-50'
@@ -829,14 +852,14 @@ export default function QualityReportForm() {
             >
               {imageFiles.some(f => f !== null) ? (
                 /* 이미지 미리보기 그리드 */
-                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
                   {Array.from({ length: MAX_REPORT_IMAGES }, (_, index) => index).map((index) => (
                     imagePreviews[index] && (
                       <div key={index} className="relative group">
                         <img
                           src={imagePreviews[index]!}
                           alt={`Preview ${index + 1}`}
-                          className="w-full h-40 rounded-lg border border-gray-300 object-cover"
+                          className="h-24 w-full rounded-lg border border-gray-300 object-cover"
                         />
                         <button
                           type="button"
@@ -854,10 +877,12 @@ export default function QualityReportForm() {
                 </div>
               ) : (
                 /* 빈 상태 */
-                <div className="text-center py-8">
-                  <FileText className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                  <p className="text-sm text-gray-600 mb-1">{t('quality.image_drag_drop')}</p>
-                  <p className="text-xs text-gray-400">{t('quality.image_max_info')}</p>
+                <div className="flex items-center gap-3 px-2 py-2 text-left sm:justify-center sm:text-center">
+                  <FileText className="h-8 w-8 shrink-0 text-gray-400" aria-hidden="true" />
+                  <div>
+                    <p className="text-sm text-gray-600">{t('quality.image_drag_drop')}</p>
+                    <p className="mt-0.5 text-xs text-gray-400">{t('quality.image_max_info')}</p>
+                  </div>
                 </div>
               )}
             </div>
@@ -869,7 +894,7 @@ export default function QualityReportForm() {
               permission="can_edit_quality"
               type="submit"
               disabled={isUploading}
-              className="px-6 py-3 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white transition-all duration-200 hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
             >
               {isUploading ? (
                 <>
@@ -885,7 +910,7 @@ export default function QualityReportForm() {
             </PermissionButton>
           </div>
         </form>
-      </div>
+      </section>
 
       {/* Add Part Modal */}
       {showAddPartModal && (
