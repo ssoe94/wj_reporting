@@ -1,7 +1,6 @@
 from rest_framework import serializers
 
-from production.ai_types import PRODUCTION_AI_MODEL_IDS
-
+from .model_registry import AI_WORKER_CAPABILITY_MODEL_IDS
 from .models import AiJob
 
 
@@ -165,7 +164,7 @@ class AiWorkerHeartbeatSerializer(serializers.Serializer):
     worker_version = serializers.CharField(max_length=64, required=False, allow_blank=True)
     last_error = serializers.CharField(max_length=500, required=False, allow_blank=True)
     available_model_ids = serializers.ListField(
-        child=serializers.ChoiceField(choices=PRODUCTION_AI_MODEL_IDS),
+        child=serializers.ChoiceField(choices=AI_WORKER_CAPABILITY_MODEL_IDS),
         required=False,
         allow_empty=True,
     )
