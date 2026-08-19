@@ -1112,7 +1112,7 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(ready["narrative"]["priorities"][0]["priority_rank"], 1)
         self.assertIn("연결된 전체 과거 품질 기록 1건", ready["narrative"]["summary"]["ko"])
         self.assertIn(
-            "반복 기준을 충족한 문제·위치 결합은 없음",
+            "2건 이상 반복된 분류 가능 문제 유형은 없습니다",
             ready["narrative"]["executive_summary"]["ko"],
         )
         self.assertEqual(ready["narrative"]["repeated_issues"], [])
@@ -1261,12 +1261,10 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(report["status"], "ready")
         summary = report["narrative"]["executive_summary"]
         self.assertIn("연결된 전체 과거 품질 기록 10건", summary["ko"])
-        self.assertIn("오염·이물 5건", summary["ko"])
-        self.assertIn("오염·이물 · 게이트부 5건", summary["ko"])
-        self.assertIn("함께 확인할 반복 유형은 스크래치·찍힘 5건", summary["ko"])
-        self.assertIn("최근 증가 지표는 오염·이물", summary["ko"])
-        self.assertIn("최근 30일 4/5건", summary["ko"])
-        self.assertIn("직전 30일 1/5건", summary["ko"])
+        self.assertIn("오늘 우선 확인 리스크는 오염·이물 5건(최근 4/5건)", summary["ko"])
+        self.assertIn("스크래치·찍힘 5건", summary["ko"])
+        self.assertNotIn("오염·이물 · 게이트부", summary["ko"])
+        self.assertEqual(summary["ko"].count("."), 1)
         repeated_text = report["narrative"]["repeated_issues"][0]["narrative"]
         self.assertIn("10건 중 5건(50.0%)", repeated_text["ko"])
         self.assertIn("850T-1 / MODEL-A / ABC123456-X", repeated_text["ko"])
@@ -1286,10 +1284,20 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(priority["signals"][0]["evidence_count"], 5)
         self.assertEqual(priority["signals"][0]["denominator"], 10)
         self.assertEqual(priority["signals"][0]["trend"]["status"], "increase")
-        self.assertTrue(any(
+        self.assertEqual([signal["metric_key"] for signal in priority["signals"]], [
+            contamination["metric_key"],
+        ])
+        priorities = report["narrative"]["priorities"]
+        self.assertEqual([row["primary_metric_key"] for row in priorities], [
+            contamination["metric_key"],
+            scratch["metric_key"],
+        ])
+        self.assertEqual(len({row["primary_metric_key"] for row in priorities}), 2)
+        self.assertFalse(any(
             signal["metric_key"] == gate_pair["metric_key"]
-            for signal in priority["signals"]
-        ), priority["signals"])
+            for row in priorities
+            for signal in row["signals"]
+        ))
         self.assertFalse(any(
             signal["dimension"] == "location"
             or signal["metric_key"].startswith("location:")
@@ -1396,7 +1404,7 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(restored_item["problem_types"][0]["count"], 1)
         self.assertEqual(restored["report"]["affected_targets"], [])
 
-    def test_summary_uses_same_report_pair_and_keeps_unknown_location_in_coverage_only(self):
+    def test_summary_keeps_unknown_location_and_pairs_out_of_priority_focus(self):
         self._plan()
         target_date = datetime(2026, 8, 12).date()
         for index in range(10):
@@ -1468,16 +1476,12 @@ class DailyQualitySummaryTests(TestCase):
 
         self.assertEqual(report["status"], "ready")
         summary = report["narrative"]["summary"]
-        self.assertIn(
-            "동일 보고서에서 확인된 문제·위치 결합은 오염·이물 · 모서리·테두리 2건",
-            summary["ko"],
-        )
+        self.assertIn("오늘 우선 확인 리스크는 오염·이물 9건", summary["ko"])
+        self.assertNotIn("오염·이물 · 모서리·테두리", summary["ko"])
         self.assertNotIn("발생 위치 미기록", summary["ko"])
         self.assertNotIn("위치 분석 신뢰", summary["ko"])
-        self.assertIn(
-            "同一报告中确认的问题·位置组合为脏污·异物 · 边缘（2条）",
-            summary["zh"],
-        )
+        self.assertIn("今日优先确认风险为脏污·异物9条", summary["zh"])
+        self.assertNotIn("脏污·异物 · 边缘", summary["zh"])
         self.assertNotIn("发生位置未记录", summary["zh"])
         checks = " ".join(report["narrative"]["shift_checks"]["ko"])
         self.assertNotIn("위치 미기록", checks)
@@ -1487,6 +1491,230 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(unknown["evidence_count"], 7)
         self.assertEqual(unknown["analysis_role"], "coverage_only")
         self.assertTrue(unknown["is_unknown_location"])
+
+    def test_public_priorities_use_three_distinct_risks_and_targets(self):
+        target_date = datetime(2026, 8, 12).date()
+        for machine, model in (
+            ("850T-1", "24G411B-BA.AEUYJVN"),
+            ("850T-2", "24G411C-BA.AEUYJVN"),
+            ("1200T-17", "34U650A-BA.AEUKMKN"),
+        ):
+            ProductionPlan.objects.create(
+                plan_date=target_date,
+                plan_type="injection",
+                machine_name=machine,
+                model_name=model,
+                part_no="ABC123456-X",
+                lot_no=f"LOT-{machine}",
+                planned_quantity=1000,
+                sequence=1,
+            )
+        for index, phenomenon in enumerate((
+            "플래시",
+            "플래시",
+            "스크래치",
+            "스크래치",
+            "백화",
+            "백화",
+        )):
+            QualityReport.objects.create(
+                report_dt=self._local(7, 0) - timedelta(days=index + 1),
+                section="LQC_INJ",
+                model="MODEL-A",
+                part_no=f"ABC123456-H{index}",
+                judgement="NG",
+                phenomenon=phenomenon,
+            )
+
+        source = build_daily_quality_attention(target_date, include_images=False)
+        input_payload = build_daily_quality_attention_ai_input(
+            target_date,
+            model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        metrics_by_canonical = {
+            row.get("canonical_key"): row
+            for row in input_payload["report_metrics"]["problem_types"]
+        }
+        selected_metrics = [
+            metrics_by_canonical["scratch_damage"],
+            metrics_by_canonical["burr_flash"],
+            metrics_by_canonical["gas_mark_whitening"],
+        ]
+        items = input_payload["items"]
+        selected_items = [items[2], items[0], items[1]]
+        evidence_key = input_payload["evidence_catalog"][0]["phenomena"][0]["evidence_key"]
+        job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "date": target_date.isoformat(),
+                "source_plan_hash": source["source_plan_hash"],
+                "source_evidence_hash": source["source_evidence_hash"],
+            },
+            input_payload=input_payload,
+        )
+        restored = restore_authoritative_quality_result(job, {
+            "source": "local_llm_rewrite",
+            "summary": {"ko": "과거 이력", "zh": "历史记录"},
+            "report": {
+                "executive_summary": {"ko": "과거 이력", "zh": "历史记录"},
+                "repeated_issues": [
+                    {"metric_key": metric["metric_key"]}
+                    for metric in selected_metrics
+                ],
+                "accelerating_issues": [],
+                "affected_targets": [
+                    {
+                        "source_key": item["source_key"],
+                        "source_evidence_keys": [evidence_key],
+                    }
+                    for item in selected_items
+                ],
+                "shift_checks": {"ko": [], "zh": []},
+                "caveats": {"ko": [], "zh": []},
+            },
+            "attention_items": [
+                {
+                    "source_key": item["source_key"],
+                    "priority_rank": rank,
+                    "problem_types": [],
+                    "locations": [],
+                }
+                for rank, item in enumerate(items, start=1)
+            ],
+        })
+        AiJob.objects.filter(pk=job.pk).update(
+            status=AiJob.STATUS_COMPLETED,
+            result_payload=restored,
+            completed_at=self._local(7, 10),
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
+        )
+
+        report = quality_daily_report_for_page(
+            target_date,
+            deterministic_report=source["report_metrics"],
+            source_plan_hash=source["source_plan_hash"],
+            source_evidence_hash=source["source_evidence_hash"],
+        )
+
+        priorities = report["narrative"]["priorities"]
+        expected_metric_keys = [metric["metric_key"] for metric in selected_metrics]
+        self.assertEqual([row["primary_metric_key"] for row in priorities], expected_metric_keys)
+        self.assertEqual([row["machine_name"] for row in priorities], [
+            item["machine_name"] for item in selected_items
+        ])
+        self.assertEqual([row["priority_rank"] for row in priorities], [1, 2, 3])
+        self.assertTrue(all(
+            [signal["metric_key"] for signal in row["signals"]] == [row["primary_metric_key"]]
+            for row in priorities
+        ))
+        summary = report["narrative"]["summary"]["ko"]
+        self.assertLess(
+            summary.index("스크래치·찍힘"),
+            summary.index("버·플래시"),
+        )
+        self.assertLess(
+            summary.index("버·플래시"),
+            summary.index("가스 자국·백화"),
+        )
+
+    def test_pair_selection_keeps_qwen_risk_order_as_parent_problem(self):
+        self._plan()
+        target_date = datetime(2026, 8, 12).date()
+        for index, phenomenon in enumerate((
+            "모서리 스크래치",
+            "모서리 스크래치",
+            "플래시",
+            "플래시",
+        )):
+            QualityReport.objects.create(
+                report_dt=self._local(7, 0) - timedelta(days=index + 1),
+                section="LQC_INJ",
+                model="MODEL-A",
+                part_no=f"ABC123456-P{index}",
+                judgement="NG",
+                phenomenon=phenomenon,
+            )
+
+        source = build_daily_quality_attention(target_date, include_images=False)
+        input_payload = build_daily_quality_attention_ai_input(
+            target_date,
+            model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        problem_metrics = {
+            row.get("canonical_key"): row
+            for row in input_payload["report_metrics"]["problem_types"]
+        }
+        scratch = problem_metrics["scratch_damage"]
+        burr = problem_metrics["burr_flash"]
+        scratch_pair = next(
+            row
+            for row in input_payload["report_metrics"]["problem_location_pairs"]
+            if row.get("problem_canonical_key") == "scratch_damage"
+        )
+        item = input_payload["items"][0]
+        evidence_key = input_payload["evidence_catalog"][0]["phenomena"][0]["evidence_key"]
+        job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "date": target_date.isoformat(),
+                "source_plan_hash": source["source_plan_hash"],
+                "source_evidence_hash": source["source_evidence_hash"],
+            },
+            input_payload=input_payload,
+        )
+        restored = restore_authoritative_quality_result(job, {
+            "source": "local_llm_rewrite",
+            "summary": {"ko": "과거 이력", "zh": "历史记录"},
+            "report": {
+                "executive_summary": {"ko": "과거 이력", "zh": "历史记录"},
+                "repeated_issues": [
+                    {"metric_key": scratch_pair["metric_key"]},
+                    {"metric_key": burr["metric_key"]},
+                ],
+                "accelerating_issues": [],
+                "affected_targets": [{
+                    "source_key": item["source_key"],
+                    "source_evidence_keys": [evidence_key],
+                }],
+                "shift_checks": {"ko": [], "zh": []},
+                "caveats": {"ko": [], "zh": []},
+            },
+            "attention_items": [{
+                "source_key": item["source_key"],
+                "priority_rank": 1,
+                "problem_types": [],
+                "locations": [],
+            }],
+        })
+        AiJob.objects.filter(pk=job.pk).update(
+            status=AiJob.STATUS_COMPLETED,
+            result_payload=restored,
+            completed_at=self._local(7, 10),
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
+        )
+
+        report = quality_daily_report_for_page(
+            target_date,
+            deterministic_report=source["report_metrics"],
+            source_plan_hash=source["source_plan_hash"],
+            source_evidence_hash=source["source_evidence_hash"],
+        )
+
+        priorities = report["narrative"]["priorities"]
+        self.assertEqual(
+            [row["primary_metric_key"] for row in priorities],
+            [scratch["metric_key"], burr["metric_key"]],
+        )
+        self.assertTrue(all(
+            not row["primary_metric_key"].startswith("pair:")
+            for row in priorities
+        ))
+        summary = report["narrative"]["summary"]["ko"]
+        self.assertLess(summary.index("스크래치·찍힘"), summary.index("버·플래시"))
 
     def test_public_priorities_follow_verified_selector_then_append_fallback_targets(self):
         self._plan(machine="850T-1")

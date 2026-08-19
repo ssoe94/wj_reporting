@@ -588,6 +588,67 @@ function historicalSignalProblemKey(metric: DimensionedMetric): string {
     : metric.canonical_key ?? metric.metric_key;
 }
 
+function compactMachineLabel(machineName: string, machineNumber: number | null, lang: string): string {
+  const parsedNumber = machineNumber ?? Number(
+    machineName.match(/(?:-|\b)(\d+)\s*(?:호기|号机)?\s*$/)?.[1] ?? Number.NaN,
+  );
+  if (Number.isFinite(parsedNumber)) {
+    return lang === 'zh' ? `${parsedNumber}号机` : `${parsedNumber}호기`;
+  }
+  return machineName || '-';
+}
+
+function compactModelLabel(modelNames: string[], lang: string): string {
+  const grouped = new Map<string, Set<string>>();
+
+  modelNames.forEach((rawModel) => {
+    const normalized = rawModel.trim().replace(/\s+/g, '');
+    const factorySuffix = normalized.match(/^(.+\d[A-Z]?)-[A-Z]{2}(?:\.[A-Z0-9]+)?$/i);
+    const model = factorySuffix?.[1] ?? normalized;
+    if (!model) return;
+    const slashVariants = model.match(/^(.+\d)([A-Z])\/([A-Z])$/i);
+    const singleVariant = model.match(/^(.+\d)([A-Z])$/i);
+    const base = slashVariants?.[1] ?? singleVariant?.[1] ?? model;
+    const variants = grouped.get(base) ?? new Set<string>();
+    if (slashVariants) {
+      variants.add(slashVariants[2].toUpperCase());
+      variants.add(slashVariants[3].toUpperCase());
+    } else if (singleVariant) {
+      variants.add(singleVariant[2].toUpperCase());
+    }
+    grouped.set(base, variants);
+  });
+
+  const labels = Array.from(grouped.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([base, variants]) => (
+      variants.size > 0
+        ? `${base} ${Array.from(variants).sort((left, right) => left.localeCompare(right)).join('/')}`
+        : base
+    ));
+  if (labels.length === 0) return '-';
+  const visible = labels.slice(0, 2).join(' · ');
+  const hiddenCount = Math.max(0, labels.length - 2);
+  return hiddenCount > 0
+    ? `${visible} ${lang === 'zh' ? '等' : '외'} ${hiddenCount}`
+    : visible;
+}
+
+function fullTargetIdentityTitle(
+  machineName: string,
+  modelNames: string[],
+  partNos: string[],
+  lang: string,
+): string {
+  const modelLabel = lang === 'zh' ? '机种' : '모델';
+  const partLabel = lang === 'zh' ? '料号' : '품번';
+  return [
+    machineName,
+    `${modelLabel}: ${modelNames.join(', ') || '-'}`,
+    `${partLabel}: ${partNos.join(', ') || '-'}`,
+  ].filter(Boolean).join(' · ');
+}
+
 function firstMetricTarget(metric: DimensionedMetric): QualityPlanTarget | null {
   return metric.impact_scope.plan_targets[0] ?? null;
 }
@@ -1195,8 +1256,8 @@ export default function DailyAttentionPage() {
         scope: '分析范围：与所选生产计划料号前 9 位匹配的全部质量历史',
         executive: '执行摘要',
         executiveDescription: '面向交接班的结论优先简报',
-        priorities: '今日优先确认 3 项',
-        prioritiesDescription: '直接显示历史问题、发生位置、近期变化与当前计划对象',
+        priorities: '今日优先确认',
+        prioritiesDescription: '每张卡片显示不同的不良风险及对应机台与机种',
         plannedTarget: '计划对象',
         problemTypes: '问题类型',
         problemTypesDescription: '按服务器分类词典汇总 · 未分类原文单独作为数据质量项',
@@ -1247,8 +1308,8 @@ export default function DailyAttentionPage() {
         scope: '분석 범위: 선택한 생산계획 품번 앞 9자리에 매칭되는 품질 전체 이력',
         executive: 'Executive Summary',
         executiveDescription: '교대 전 확인을 위한 결론 우선 브리핑',
-        priorities: '오늘 우선확인 3',
-        prioritiesDescription: '역사 문제·발생 위치·최근 변화·현재 계획 대상을 직접 표시',
+        priorities: '오늘 우선확인',
+        prioritiesDescription: '카드마다 서로 다른 불량 리스크와 해당 호기·모델을 표시',
         plannedTarget: '계획 대상',
         problemTypes: '문제유형',
         problemTypesDescription: '서버 분류 사전 기준 통합 · 미분류 원문은 데이터 품질로 별도 표시',
@@ -1377,7 +1438,16 @@ export default function DailyAttentionPage() {
     () => sortedAnalysisMetrics.filter(isMeaningfulHistoricalSignal),
     [sortedAnalysisMetrics],
   );
-  const fallbackPriorityMetrics = actionableAnalysisMetrics.slice(0, 3);
+  const fallbackPriorityMetrics = useMemo(() => {
+    const usedProblems = new Set<string>();
+    return actionableAnalysisMetrics.filter((metric) => {
+      if (metric.dimension !== 'problem') return false;
+      const problemKey = historicalSignalProblemKey(metric);
+      if (usedProblems.has(problemKey)) return false;
+      usedProblems.add(problemKey);
+      return true;
+    }).slice(0, 3);
+  }, [actionableAnalysisMetrics]);
   const explicitLocationMetrics = useMemo(
     () => [...(deterministic?.occurrence_locations ?? [])]
       .filter((metric) => !isUnknownLocationMetric(metric))
@@ -1437,7 +1507,7 @@ export default function DailyAttentionPage() {
           .filter(isMeaningfulHistoricalSignal)
           .slice(0, 3);
         return {
-          key: priority.target_ref,
+          key: `${priority.target_ref}:${priority.primary_metric_key ?? priority.priority_rank}`,
           title: localizedText(affectedTarget?.headline ?? priority.headline, lang),
           checkpoints: priority.checkpoints[lang === 'zh' ? 'zh' : 'ko'].slice(0, 2),
           machineName,
@@ -1620,7 +1690,7 @@ export default function DailyAttentionPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-[1680px] space-y-4">
       <section className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-gray-200 bg-gradient-to-r from-amber-50 to-white px-4 py-3">
           <AlertTriangle className="h-5 w-5 text-amber-600" />
@@ -1629,7 +1699,7 @@ export default function DailyAttentionPage() {
             <p className="text-sm text-gray-600">{t('quality.daily_attention_description')}</p>
           </div>
         </div>
-        <div className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex items-end gap-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">{t('date')}</label>
@@ -1672,7 +1742,7 @@ export default function DailyAttentionPage() {
                     <BrainCircuit className="h-4 w-4" />
                     {analysisCopy.eyebrow}
                   </div>
-                  <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">{analysisCopy.title}</h2>
+                  <h2 className="!text-2xl font-bold !text-white tracking-tight sm:!text-3xl">{analysisCopy.title}</h2>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">{analysisCopy.scope}</p>
                 </div>
                 <div className="flex flex-col items-start gap-2 xl:items-end">
@@ -1754,7 +1824,7 @@ export default function DailyAttentionPage() {
                   })}
                 </div>
 
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)]">
+                <div className="grid gap-5 min-[1800px]:grid-cols-[minmax(0,0.78fr)_minmax(0,2fr)]">
                   <section className="relative overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 via-white to-cyan-50 p-6 shadow-sm">
                     <div className="absolute -right-10 -top-10 h-36 w-36 rounded-full bg-cyan-200/30 blur-2xl" />
                     <div className="relative">
@@ -1763,12 +1833,33 @@ export default function DailyAttentionPage() {
                           <Sparkles className="h-5 w-5" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold text-slate-950">{analysisCopy.executive}</h3>
+                          <h3 className="!text-lg font-bold text-slate-950">{analysisCopy.executive}</h3>
                           <p className="text-xs text-slate-500">{analysisCopy.executiveDescription}</p>
                         </div>
                       </div>
 
-                      <p className="mt-5 text-[15px] font-medium leading-7 text-slate-800">
+                      {priorityCards[0]?.metric && (
+                        <div className="mt-5 rounded-2xl border border-blue-100 bg-white/85 p-4 shadow-sm">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-blue-700">
+                            {lang === 'zh' ? '今日最优先' : '오늘 최우선'}
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+                            <h4 className="text-2xl font-bold tracking-tight text-slate-950">
+                              {metricDisplayLabel(priorityCards[0].metric, lang)}
+                            </h4>
+                            <div className="flex flex-wrap gap-2 text-xs font-semibold tabular-nums text-slate-700">
+                              <span className="rounded-full bg-slate-100 px-3 py-1.5">
+                                {analysisCopy.evidence} {formatMetricNumber(priorityCards[0].metric.evidence_count)} / {formatMetricNumber(priorityCards[0].metric.all_history_denominator)}
+                              </span>
+                              <span className="rounded-full bg-rose-50 px-3 py-1.5 text-rose-700">
+                                {lang === 'zh' ? '最近 30 天' : '최근 30일'} {formatMetricNumber(priorityCards[0].metric.trend.recent_count)} / {formatMetricNumber(priorityCards[0].metric.trend.recent_denominator)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <p className="mt-4 max-w-[72ch] !text-base font-medium !leading-7 text-slate-800">
                         {narrative
                           ? localizedText(narrative.executive_summary, lang)
                           : analysisCopy.historySummary
@@ -1787,9 +1878,9 @@ export default function DailyAttentionPage() {
                       {narrative && narrative.shift_checks[lang === 'zh' ? 'zh' : 'ko'].length > 0 && (
                         <div className="mt-5 border-t border-blue-100 pt-4">
                           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-blue-700">{analysisCopy.shiftChecks}</div>
-                          <ul className="space-y-2 text-sm leading-6 text-slate-700">
-                            {narrative.shift_checks[lang === 'zh' ? 'zh' : 'ko'].slice(0, 3).map((check, index) => (
-                              <li key={`${check}-${index}`} className="flex gap-2">
+                          <ul className="grid gap-2 text-sm leading-6 text-slate-700 sm:grid-cols-2">
+                            {narrative.shift_checks[lang === 'zh' ? 'zh' : 'ko'].slice(0, 2).map((check, index) => (
+                              <li key={`${check}-${index}`} className="flex gap-2 rounded-xl bg-white/75 px-3 py-2.5">
                                 <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-blue-600" />
                                 <span>{check}</span>
                               </li>
@@ -1806,26 +1897,42 @@ export default function DailyAttentionPage() {
                         <Target className="h-5 w-5" />
                       </div>
                       <div>
-                        <h3 className="text-lg font-bold text-slate-950">{analysisCopy.priorities}</h3>
+                        <h3 className="!text-lg font-bold text-slate-950">
+                          {analysisCopy.priorities} {priorityCards.length}{lang === 'zh' ? ' 项' : ''}
+                        </h3>
                         <p className="text-xs leading-5 text-slate-500">{analysisCopy.prioritiesDescription}</p>
                       </div>
                     </div>
 
                     {priorityCards.length > 0 ? (
-                      <div className="grid gap-3 lg:grid-cols-3">
+                      <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
                         {priorityCards.map((priority, index) => {
                           const metric = priority.metric;
                           const dimension = metric ? metricKindLabel(metric, lang) : analysisCopy.plannedTarget;
                           const trendClass = metric?.trend.status === 'increase'
                             ? 'bg-rose-50 text-rose-700 ring-rose-200'
                             : 'bg-slate-100 text-slate-600 ring-slate-200';
-                          const displayedModel = priority.modelNames[0] ?? '';
-                          const displayedPart = priority.partNos[0] ?? '';
-                          const additionalModelCount = Math.max(0, priority.modelNames.length - 1);
-                          const additionalPartCount = Math.max(0, priority.partNos.length - 1);
+                          const machineLabel = compactMachineLabel(priority.machineName, priority.machineNumber, lang);
+                          const modelLabel = compactModelLabel(priority.modelNames, lang);
+                          const identityTitle = fullTargetIdentityTitle(
+                            priority.machineName,
+                            priority.modelNames,
+                            priority.partNos,
+                            lang,
+                          );
+                          const accentClass = index === 0
+                            ? 'border-t-rose-500'
+                            : index === 1
+                              ? 'border-t-amber-500'
+                              : 'border-t-blue-500';
+                          const tooltipAlignmentClass = index === 1
+                            ? 'right-0'
+                            : index === 2
+                              ? 'left-0 xl:left-auto xl:right-0'
+                              : 'left-0';
 
                           return (
-                            <article key={priority.key} className="flex min-h-[250px] flex-col rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm">
+                            <article key={priority.key} className={`flex min-w-0 flex-col rounded-2xl border border-t-4 border-slate-200 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm ${accentClass}`}>
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-sm font-bold text-white">{index + 1}</div>
                                 <div className="flex flex-wrap justify-end gap-1.5">
@@ -1836,51 +1943,48 @@ export default function DailyAttentionPage() {
                               {metric && (
                                 <div className="mt-4">
                                   <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{dimension}</div>
-                                  <h4 className="mt-1 text-xl font-bold leading-7 text-slate-950">{metricDisplayLabel(metric, lang) || '-'}</h4>
+                                  <h4 className="mt-1 line-clamp-2 text-xl font-bold leading-7 text-slate-950" title={metricDisplayLabel(metric, lang)}>{metricDisplayLabel(metric, lang) || '-'}</h4>
                                 </div>
                               )}
                               {!metric && <h4 className="mt-4 text-lg font-bold leading-7 text-slate-950">{priority.title || '-'}</h4>}
-                              {priority.signals.length > 1 && (
-                                <div className="mt-3 space-y-1.5 rounded-xl border border-slate-200 bg-white/80 p-2.5">
-                                  {priority.signals.slice(1, 3).map((signal) => (
-                                    <div key={`${signal.dimension}-${signal.metric_key}`} className="flex items-center justify-between gap-2 text-xs">
-                                      <span className="min-w-0 truncate font-medium text-slate-700" title={metricDisplayLabel(signal, lang)}>
-                                        {metricDisplayLabel(signal, lang)}
-                                      </span>
-                                      <strong className="shrink-0 tabular-nums text-slate-600">
-                                        {formatMetricNumber(signal.evidence_count)} · {metricTrendLabel(signal, lang)}
-                                      </strong>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {priority.checkpoints.length > 0 ? (
-                                <ul className="mt-3 space-y-2 text-sm leading-5 text-slate-600">
-                                  {priority.checkpoints.map((checkpoint, checkpointIndex) => (
-                                    <li key={`${checkpoint}-${checkpointIndex}`} className="flex gap-2">
-                                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                                      <span>{checkpoint}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <p className="mt-3 text-sm leading-6 text-slate-600">{metric ? analysisCopy.deterministicPriority : priority.title}</p>
-                              )}
-                              <div className="mt-auto border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <span className="font-semibold text-slate-900">
-                                    {priority.machineName || '-'}{priority.machineNumber != null ? ` · ${priority.machineNumber}` : ''}
-                                  </span>
-                                  {metric && (
-                                    <strong className="tabular-nums text-slate-800">
-                                      {analysisCopy.evidence} {formatMetricNumber(metric.evidence_count)} · {formatMetricPercent(metric.all_history_share_pct)}
+                              {metric && (
+                                <div className="mt-4 rounded-xl border border-slate-200 bg-white/85 p-3">
+                                  <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                                    <span>{lang === 'zh' ? '全部历史' : '전체 이력'}</span>
+                                    <strong className="tabular-nums text-slate-900">
+                                      {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)} · {formatMetricPercent(metric.all_history_share_pct)}
                                     </strong>
-                                  )}
+                                  </div>
+                                  <div className="mt-3 grid grid-cols-2 divide-x divide-slate-200 border-t border-slate-100 pt-3">
+                                    <div className="pr-3">
+                                      <div className="text-[11px] text-slate-500">{lang === 'zh' ? '最近 30 天' : '최근 30일'}</div>
+                                      <div className="mt-0.5 font-bold tabular-nums text-slate-900">
+                                        {formatMetricNumber(metric.trend.recent_count)} / {formatMetricNumber(metric.trend.recent_denominator)}
+                                      </div>
+                                    </div>
+                                    <div className="pl-3">
+                                      <div className="text-[11px] text-slate-500">{lang === 'zh' ? '此前 30 天' : '직전 30일'}</div>
+                                      <div className="mt-0.5 font-bold tabular-nums text-slate-900">
+                                        {formatMetricNumber(metric.trend.previous_count)} / {formatMetricNumber(metric.trend.previous_denominator)}
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="mt-1 line-clamp-2" title={[...priority.modelNames, ...priority.partNos].join(', ')}>
-                                  {displayedModel || '-'}{additionalModelCount > 0 ? ` ${analysisCopy.more} ${additionalModelCount}` : ''}
-                                  {' · '}
-                                  {displayedPart || '-'}{additionalPartCount > 0 ? ` ${analysisCopy.more} ${additionalPartCount}` : ''}
+                              )}
+                              <div className="mt-auto pt-4">
+                                <div
+                                  className="group relative flex min-w-0 items-center gap-2 rounded-xl bg-slate-950 px-3 py-2.5 text-sm font-semibold text-white outline-none ring-cyan-300 focus-visible:ring-2"
+                                  aria-label={identityTitle}
+                                  tabIndex={0}
+                                >
+                                  <Factory className="h-4 w-4 shrink-0 text-cyan-300" />
+                                  <span className="truncate">{machineLabel} <span className="text-slate-400">—</span> {modelLabel}</span>
+                                  <span
+                                    role="tooltip"
+                                    className={`pointer-events-none absolute bottom-full z-30 mb-2 hidden w-max max-w-[min(28rem,80vw)] rounded-lg bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white shadow-xl group-hover:block group-focus:block ${tooltipAlignmentClass}`}
+                                  >
+                                    {identityTitle}
+                                  </span>
                                 </div>
                               </div>
                             </article>
@@ -2050,19 +2154,22 @@ export default function DailyAttentionPage() {
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {impactedTargets.map(({ target, signals }) => {
-                            const compactIdentity = [target.model_name, target.part_no]
+                            const compactModel = target.model_name ? compactModelLabel([target.model_name], lang) : '';
+                            const compactIdentity = [compactModel, target.part_no]
                               .map((value) => value.trim())
                               .filter(Boolean)
                               .join(' ') || '-';
                             const fullIdentity = [
-                              compactIdentity,
+                              target.model_name,
+                              target.part_no,
                               target.lot_no ? `LOT ${target.lot_no}` : '',
                               target.sequence != null ? `#${target.sequence}` : '',
                             ].filter(Boolean).join(' · ');
+                            const compactMachine = compactMachineLabel(target.machine_name, null, lang);
                             return (
                               <tr key={[target.machine_name, target.sequence, target.model_name, target.part_no, target.lot_no].join('|')} className="align-top hover:bg-slate-50/70">
-                              <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900">
-                                {target.machine_name || '-'}
+                              <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900" title={target.machine_name}>
+                                {compactMachine}
                                 {target.sequence != null && <span className="ml-2 text-xs font-normal text-slate-400">#{target.sequence}</span>}
                               </td>
                               <td className="max-w-[320px] px-5 py-4">

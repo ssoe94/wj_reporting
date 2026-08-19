@@ -801,6 +801,75 @@ def _first_deterministic_metric(
     return None
 
 
+def _is_meaningful_priority_problem_metric(metric: dict[str, Any] | None) -> bool:
+    if not isinstance(metric, dict):
+        return False
+    metric_key = str(metric.get("metric_key") or "")
+    return (
+        metric_key.startswith("problem:")
+        and metric_key != "problem:missing"
+        and not metric_key.startswith("problem:unclassified")
+        and metric.get("classification_basis") not in {
+            "missing_recorded_phenomenon",
+            "unclassified_recorded_text_hash",
+            "unclassified",
+        }
+        and int(metric.get("evidence_count") or 0) >= 2
+    )
+
+
+def _ranked_priority_problem_metrics(
+    metrics: dict[str, Any],
+    metric_index: dict[str, dict[str, Any]],
+    repeated_rows: list[dict[str, Any]],
+    accelerating_rows: list[dict[str, Any]],
+    *,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    """Return distinct, classifiable defect risks in Qwen-selected order."""
+
+    ranked: list[dict[str, Any]] = []
+    used_problem_keys: set[str] = set()
+    problem_metrics_by_canonical = {
+        str(metric.get("canonical_key") or ""): metric
+        for metric in metrics.get("problem_types") or []
+        if isinstance(metric, dict) and metric.get("canonical_key")
+    }
+
+    def canonical_problem_metric(
+        metric: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if not isinstance(metric, dict):
+            return None
+        metric_key = str(metric.get("metric_key") or "")
+        if not metric_key.startswith("pair:"):
+            return metric
+        return problem_metrics_by_canonical.get(
+            str(metric.get("problem_canonical_key") or "")
+        )
+
+    def add(metric: dict[str, Any] | None) -> None:
+        metric = canonical_problem_metric(metric)
+        if len(ranked) >= limit or not _is_meaningful_priority_problem_metric(metric):
+            return
+        assert metric is not None
+        problem_key = str(metric.get("canonical_key") or metric.get("metric_key") or "")
+        if not problem_key or problem_key in used_problem_keys:
+            return
+        used_problem_keys.add(problem_key)
+        ranked.append(metric)
+
+    # Qwen controls the preferred verified risk order. A selected problem /
+    # location pair keeps its Qwen rank but projects to the authoritative
+    # parent problem, so a pair never consumes a duplicate card. Deterministic
+    # problem metrics fill any remaining slots; data-quality rows are excluded.
+    for row in accelerating_rows + repeated_rows:
+        add(metric_index.get(str(row.get("metric_key") or "")))
+    for metric in metrics.get("problem_types") or []:
+        add(metric if isinstance(metric, dict) else None)
+    return ranked
+
+
 def _metric_applies_to_source(
     metric: dict[str, Any],
     source_item: dict[str, Any],
@@ -863,157 +932,42 @@ def _authoritative_report_summary(
             "zh": "当前生产计划料号没有关联的历史品质记录，因此不判断重复问题与近期上升趋势。",
         }
 
-    problem = _metric_from_rows(repeated_rows, metric_index, prefix="problem:")
-    if problem is None:
-        problem = _first_deterministic_metric(metrics, "problem_types", repeated_only=True)
-    paired = next(
-        (
-            metric_index.get(str(row.get("metric_key") or ""))
-            for row in repeated_rows
-            if str(row.get("metric_key") or "").startswith("pair:")
-            and metric_index.get(str(row.get("metric_key") or ""))
-        ),
-        None,
+    priority_metrics = _ranked_priority_problem_metrics(
+        metrics,
+        metric_index,
+        repeated_rows,
+        accelerating_rows,
     )
-    if paired is None:
-        paired = _first_deterministic_metric(
-            metrics,
-            "problem_location_pairs",
-            repeated_only=True,
-        )
-    increasing = _metric_from_rows(accelerating_rows, metric_index)
-    if increasing is None:
-        increasing = (
-            _first_deterministic_metric(metrics, "problem_types", increasing_only=True)
-            or _first_deterministic_metric(
-                metrics,
-                "problem_location_pairs",
-                increasing_only=True,
-            )
-        )
+    if not priority_metrics:
+        return {
+            "ko": f"연결된 전체 과거 품질 기록 {total_reports}건 중 2건 이상 반복된 분류 가능 문제 유형은 없습니다.",
+            "zh": f"关联的全部{total_reports}条历史品质记录中，没有可分类且重复2条以上的问题类型。",
+        }
 
-    if problem:
-        problem_label = _metric_template_label(problem)
-        problem_count = int(problem.get("evidence_count") or 0)
-        problem_ko = f"반복 문제 상위는 {problem_label['ko']} {problem_count}건"
-        problem_zh = f"重复问题首位为{problem_label['zh']}（{problem_count}条）"
-    else:
-        problem_ko = "2건 이상 반복된 문제 유형은 없음"
-        problem_zh = "没有记录达到2条以上的重复问题类型"
+    def compact_metric(metric: dict[str, Any], language: str) -> str:
+        label = _metric_template_label(metric)[language]
+        count = int(metric.get("evidence_count") or 0)
+        trend = metric.get("trend") if isinstance(metric.get("trend"), dict) else {}
+        if trend.get("status") == "increase":
+            recent = int(trend.get("recent_count") or 0)
+            denominator = int(trend.get("recent_denominator") or 0)
+            if language == "ko":
+                return f"{label} {count}건(최근 {recent}/{denominator}건)"
+            return f"{label}{count}条（最近{recent}/{denominator}条）"
+        if language == "ko":
+            return f"{label} {count}건"
+        return f"{label}{count}条"
 
-    if paired:
-        paired_label = _metric_template_label(paired)
-        paired_count = int(paired.get("evidence_count") or 0)
-        paired_ko = f"동일 보고서에서 확인된 문제·위치 결합은 {paired_label['ko']} {paired_count}건"
-        paired_zh = f"同一报告中确认的问题·位置组合为{paired_label['zh']}（{paired_count}条）"
-    else:
-        paired_ko = "반복 기준을 충족한 문제·위치 결합은 없음"
-        paired_zh = "没有达到重复标准的问题·位置组合"
-
-    sentences_ko = [
-        f"연결된 전체 과거 품질 기록 {total_reports}건 기준, {problem_ko}이고 {paired_ko}입니다."
-    ]
-    sentences_zh = [
-        f"按关联的全部{total_reports}条历史品质记录，{problem_zh}，{paired_zh}。"
-    ]
-    if increasing:
-        label = _metric_template_label(increasing)
-        trend = increasing.get("trend") or {}
-        sentences_ko.append(
-            f"최근 증가 지표는 {label['ko']}이며 최근 30일 "
-            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}건, "
-            f"직전 30일 {int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}건입니다."
-        )
-        sentences_zh.append(
-            f"近期上升指标为{label['zh']}，最近30天为"
-            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}条，"
-            f"此前30天为{int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}条。"
-        )
-    else:
-        sentences_ko.append("최근 30일과 직전 30일 비교에서 증가 기준을 충족한 지표는 없습니다.")
-        sentences_zh.append("最近30天与此前30天的比较中，没有指标满足上升判定标准。")
-
-    selected_repeated_metrics: list[dict[str, Any]] = []
-    selected_keys: set[str] = set()
-    for row in repeated_rows:
-        metric_key = str(row.get("metric_key") or "")
-        metric = metric_index.get(metric_key)
-        if (
-            not metric
-            or not metric_key.startswith("problem:")
-            or metric_key.startswith("problem:unclassified")
-            or metric_key == "problem:missing"
-            or metric_key in selected_keys
-        ):
-            continue
-        selected_keys.add(metric_key)
-        selected_repeated_metrics.append(metric)
-        if len(selected_repeated_metrics) >= 3:
-            break
-    additional_repeated = [
-        metric for metric in selected_repeated_metrics
-        if not problem or metric.get("metric_key") != problem.get("metric_key")
-    ][:2]
-    if additional_repeated:
-        repeated_ko = ", ".join(
-            f"{_metric_template_label(metric)['ko']} {int(metric.get('evidence_count') or 0)}건"
-            for metric in additional_repeated
-        )
-        repeated_zh = "、".join(
-            f"{_metric_template_label(metric)['zh']}（{int(metric.get('evidence_count') or 0)}条）"
-            for metric in additional_repeated
-        )
-        sentences_ko.append(f"함께 확인할 반복 유형은 {repeated_ko}입니다.")
-        sentences_zh.append(f"同时需确认的重复类型为{repeated_zh}。")
-
-    selected_increases: list[dict[str, Any]] = []
-    selected_keys.clear()
-    for row in accelerating_rows:
-        metric_key = str(row.get("metric_key") or "")
-        metric = metric_index.get(metric_key)
-        if not metric or metric_key in selected_keys:
-            continue
-        selected_keys.add(metric_key)
-        selected_increases.append(metric)
-        if len(selected_increases) >= 3:
-            break
-    additional_increases = [
-        metric for metric in selected_increases
-        if not increasing or metric.get("metric_key") != increasing.get("metric_key")
-    ][:2]
-    if additional_increases:
-        increase_ko = ", ".join(
-            f"{_metric_template_label(metric)['ko']} "
-            f"{int((metric.get('trend') or {}).get('recent_count') or 0)}/"
-            f"{int((metric.get('trend') or {}).get('recent_denominator') or 0)}건"
-            for metric in additional_increases
-        )
-        increase_zh = "、".join(
-            f"{_metric_template_label(metric)['zh']}"
-            f"（{int((metric.get('trend') or {}).get('recent_count') or 0)}/"
-            f"{int((metric.get('trend') or {}).get('recent_denominator') or 0)}条）"
-            for metric in additional_increases
-        )
-        sentences_ko.append(f"추가 증가 신호는 {increase_ko}입니다.")
-        sentences_zh.append(f"其他上升信号为{increase_zh}。")
-
-    selected_targets: list[dict[str, Any]] = []
-    for target in affected_targets:
-        selected_target = source_items.get(str(target.get("source_key") or ""))
-        if selected_target and selected_target not in selected_targets:
-            selected_targets.append(selected_target)
-        if len(selected_targets) >= 2:
-            break
-    if not selected_targets and source_items:
-        selected_targets.append(max(
-            source_items.values(),
-            key=lambda item: int(item.get("matching_report_count") or 0),
-        ))
-    for selected_target in selected_targets:
-        target_text = _authoritative_target_headline(selected_target)
-        sentences_ko.append(target_text["ko"])
-        sentences_zh.append(target_text["zh"])
-    return {"ko": " ".join(sentences_ko), "zh": " ".join(sentences_zh)}
+    return {
+        "ko": (
+            f"연결된 전체 과거 품질 기록 {total_reports}건 기준, 오늘 우선 확인 리스크는 "
+            f"{', '.join(compact_metric(metric, 'ko') for metric in priority_metrics)}입니다."
+        ),
+        "zh": (
+            f"按关联的全部{total_reports}条历史品质记录，今日优先确认风险为"
+            f"{'、'.join(compact_metric(metric, 'zh') for metric in priority_metrics)}。"
+        ),
+    }
 
 
 def _authoritative_report_shift_checks(
@@ -1026,7 +980,6 @@ def _authoritative_report_shift_checks(
 ) -> dict[str, list[str]]:
     ko: list[str] = []
     zh: list[str] = []
-    repeated_problem = _metric_from_rows(repeated_rows, metric_index, prefix="problem:")
     repeated_pair = next(
         (
             metric_index.get(str(row.get("metric_key") or ""))
@@ -1036,50 +989,55 @@ def _authoritative_report_shift_checks(
         ),
         None,
     )
-    if repeated_problem is None:
-        repeated_problem = _first_deterministic_metric(metrics, "problem_types", repeated_only=True)
     if repeated_pair is None:
         repeated_pair = _first_deterministic_metric(
             metrics,
             "problem_location_pairs",
             repeated_only=True,
         )
-    if repeated_problem:
-        label = _metric_template_label(repeated_problem)
-        count = int(repeated_problem.get("evidence_count") or 0)
-        denominator = int(repeated_problem.get("all_history_denominator") or 0)
-        ko.append(f"반복 문제 {label['ko']}의 과거 기록 {count}/{denominator}건을 교대 전 확인하세요.")
-        zh.append(f"交接班前确认重复问题{label['zh']}的历史记录{count}/{denominator}条。")
     if repeated_pair:
         label = _metric_template_label(repeated_pair)
         count = int(repeated_pair.get("evidence_count") or 0)
-        ko.append(f"동일 보고서에서 확인된 문제·위치 결합 {label['ko']}의 과거 기록 {count}건을 검사 기준과 함께 확인하세요.")
-        zh.append(f"请结合检验标准确认同一报告中的问题·位置组合{label['zh']}相关的{count}条历史记录。")
+        ko.append(f"{label['ko']} {count}건 이력: 해당 위치 검사 기준을 확인하세요.")
+        zh.append(f"{label['zh']}{count}条记录：请确认该位置的检验标准。")
     increasing = _metric_from_rows(accelerating_rows, metric_index)
+    if not _is_meaningful_priority_problem_metric(increasing):
+        increasing = _first_deterministic_metric(
+            metrics,
+            "problem_types",
+            increasing_only=True,
+        )
     if increasing:
         label = _metric_template_label(increasing)
         trend = increasing.get("trend") or {}
         ko.append(
-            f"{label['ko']} 보고 빈도는 최근 30일 "
-            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}건, "
-            f"직전 30일 {int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}건이므로 이력 변화를 공유하세요."
+            f"{label['ko']} 최근 {int(trend.get('recent_count') or 0)}/"
+            f"{int(trend.get('recent_denominator') or 0)}건 · 직전 "
+            f"{int(trend.get('previous_count') or 0)}/"
+            f"{int(trend.get('previous_denominator') or 0)}건: 교대 시 변화를 공유하세요."
         )
         zh.append(
-            f"{label['zh']}报告频次最近30天为"
-            f"{int(trend.get('recent_count') or 0)}/{int(trend.get('recent_denominator') or 0)}条，"
-            f"此前30天为{int(trend.get('previous_count') or 0)}/{int(trend.get('previous_denominator') or 0)}条，请在交接时共享该变化。"
+            f"{label['zh']}最近{int(trend.get('recent_count') or 0)}/"
+            f"{int(trend.get('recent_denominator') or 0)}条 · 此前"
+            f"{int(trend.get('previous_count') or 0)}/"
+            f"{int(trend.get('previous_denominator') or 0)}条：交接时请共享变化。"
         )
 
-    for target in affected_targets[:1]:
-        source_item = source_items.get(str(target.get("source_key") or ""))
-        if not source_item:
-            continue
-        checks = _authoritative_target_checkpoints(source_item)
-        ko.extend(checks["ko"][:1])
-        zh.extend(checks["zh"][:1])
+    if not ko:
+        repeated_problem = _first_deterministic_metric(
+            metrics,
+            "problem_types",
+            repeated_only=True,
+        )
+        if repeated_problem:
+            label = _metric_template_label(repeated_problem)
+            count = int(repeated_problem.get("evidence_count") or 0)
+            denominator = int(repeated_problem.get("all_history_denominator") or 0)
+            ko.append(f"{label['ko']} 반복 이력 {count}/{denominator}건: 교대 전 검사 기준을 확인하세요.")
+            zh.append(f"{label['zh']}重复记录{count}/{denominator}条：交接班前请确认检验标准。")
     if not ko:
         return _authoritative_attention_checkpoints()
-    return {"ko": ko[:4], "zh": zh[:4]}
+    return {"ko": ko[:2], "zh": zh[:2]}
 
 
 def _candidate_has_unsafe_prose(candidate: dict[str, Any]) -> bool:
@@ -2038,6 +1996,12 @@ def quality_daily_report_for_page(
                 {"priority_rank": rank, "source_key": source_key}
                 for rank, source_key in enumerate(ordered_priority_keys, start=1)
             ]
+            priority_problem_metrics = _ranked_priority_problem_metrics(
+                deterministic_internal,
+                metric_index,
+                repeated_issues,
+                accelerating_issues,
+            )
             summary = _authoritative_report_summary(
                 deterministic_internal,
                 metric_index,
@@ -2047,7 +2011,12 @@ def quality_daily_report_for_page(
                 source_items,
             )
 
-            def public_target(source_key: str) -> dict[str, Any] | None:
+            def public_target(
+                source_key: str,
+                *,
+                preferred_metric: dict[str, Any] | None = None,
+                focused: bool = False,
+            ) -> dict[str, Any] | None:
                 source_item = source_items.get(source_key)
                 if not source_item:
                     return None
@@ -2066,43 +2035,53 @@ def quality_daily_report_for_page(
                     used_metric_keys.add(metric_key)
                     signals.append(_public_metric_signal(metric))
 
+                add_signal(preferred_metric)
+
                 # The worker controls selection/order only.  Every public
                 # signal is restored from the deterministic metric index and
                 # must overlap this exact machine/prefix plan target.
-                for selected in accelerating_issues + repeated_issues:
-                    add_signal(metric_index.get(str(selected.get("metric_key") or "")))
-                    if len(signals) >= 3 or {
-                        row["dimension"] for row in signals
-                    } == {"problem_type", "problem_location_pair"}:
-                        break
-                if not any(row["dimension"] == "problem_type" for row in signals):
-                    for metric in deterministic_internal.get("problem_types") or []:
-                        if isinstance(metric, dict) and int(metric.get("evidence_count") or 0) >= 2:
-                            add_signal(metric)
-                            if any(row["dimension"] == "problem_type" for row in signals):
-                                break
-                if not any(
-                    row["dimension"] == "problem_location_pair"
-                    for row in signals
-                ):
-                    for metric in deterministic_internal.get("problem_location_pairs") or []:
-                        if (
-                            isinstance(metric, dict)
-                            and int(metric.get("evidence_count") or 0) >= 2
-                        ):
-                            add_signal(metric)
-                            if any(
-                                row["dimension"] == "problem_location_pair"
-                                for row in signals
+                if not focused:
+                    for selected in accelerating_issues + repeated_issues:
+                        add_signal(metric_index.get(str(selected.get("metric_key") or "")))
+                        if len(signals) >= 3 or {
+                            row["dimension"] for row in signals
+                        } == {"problem_type", "problem_location_pair"}:
+                            break
+                    if not any(row["dimension"] == "problem_type" for row in signals):
+                        for metric in deterministic_internal.get("problem_types") or []:
+                            if _is_meaningful_priority_problem_metric(
+                                metric if isinstance(metric, dict) else None
                             ):
-                                break
+                                add_signal(metric)
+                                if any(row["dimension"] == "problem_type" for row in signals):
+                                    break
+                    if not any(
+                        row["dimension"] == "problem_location_pair"
+                        for row in signals
+                    ):
+                        for metric in deterministic_internal.get("problem_location_pairs") or []:
+                            if (
+                                isinstance(metric, dict)
+                                and int(metric.get("evidence_count") or 0) >= 2
+                            ):
+                                add_signal(metric)
+                                if any(
+                                    row["dimension"] == "problem_location_pair"
+                                    for row in signals
+                                ):
+                                    break
 
-                signals.sort(key=lambda signal: (
-                    0 if signal["metric_key"] == (
+                primary_signal_key = (
+                    str(preferred_metric.get("metric_key") or "")
+                    if preferred_metric
+                    else (
                         str((accelerating_issues + repeated_issues)[0].get("metric_key") or "")
                         if accelerating_issues + repeated_issues
                         else ""
-                    ) else 1,
+                    )
+                )
+                signals.sort(key=lambda signal: (
+                    0 if signal["metric_key"] == primary_signal_key else 1,
                     0 if signal["dimension"] == "problem_type" else 1,
                     -int(signal.get("evidence_count") or 0),
                     signal["metric_key"],
@@ -2125,19 +2104,59 @@ def quality_daily_report_for_page(
                 }
 
             public_priorities = []
-            for priority in priorities:
-                projected = public_target(str(priority.get("source_key") or ""))
-                if not projected:
-                    continue
-                source_item = source_items[str(priority["source_key"])]
-                public_priorities.append({
-                    "priority_rank": priority["priority_rank"],
-                    **projected,
-                    "checkpoints": _authoritative_public_target_checkpoints(
-                        source_item,
-                        list(projected.get("signals") or []),
-                    ),
-                })
+            if priority_problem_metrics:
+                assignment_source_keys = list(ordered_priority_keys)
+                for source_key in source_items:
+                    if source_key not in assignment_source_keys:
+                        assignment_source_keys.append(source_key)
+                used_source_keys: set[str] = set()
+                for metric in priority_problem_metrics:
+                    compatible_source_keys = [
+                        source_key
+                        for source_key in assignment_source_keys
+                        if _metric_applies_to_source(metric, source_items[source_key])
+                    ]
+                    if not compatible_source_keys:
+                        continue
+                    source_key = next(
+                        (
+                            candidate
+                            for candidate in compatible_source_keys
+                            if candidate not in used_source_keys
+                        ),
+                        compatible_source_keys[0],
+                    )
+                    used_source_keys.add(source_key)
+                    projected = public_target(
+                        source_key,
+                        preferred_metric=metric,
+                        focused=True,
+                    )
+                    if not projected:
+                        continue
+                    source_item = source_items[source_key]
+                    public_priorities.append({
+                        "priority_rank": len(public_priorities) + 1,
+                        **projected,
+                        "checkpoints": _authoritative_public_target_checkpoints(
+                            source_item,
+                            list(projected.get("signals") or []),
+                        ),
+                    })
+            else:
+                for priority in priorities:
+                    projected = public_target(str(priority.get("source_key") or ""))
+                    if not projected:
+                        continue
+                    source_item = source_items[str(priority["source_key"])]
+                    public_priorities.append({
+                        "priority_rank": priority["priority_rank"],
+                        **projected,
+                        "checkpoints": _authoritative_public_target_checkpoints(
+                            source_item,
+                            list(projected.get("signals") or []),
+                        ),
+                    })
             public_affected_targets = []
             for row in internal_affected_targets:
                 projected = public_target(str(row.get("source_key") or ""))
