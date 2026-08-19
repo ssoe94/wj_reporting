@@ -13,23 +13,24 @@ pip install -r requirements.txt
 python worker.py --once
 ```
 
-`AI_WORKER_USE_LLM=false` keeps the worker in deterministic-analysis mode. Set it to `true` only when an OpenAI-compatible local LLM endpoint is running at `LOCAL_LLM_BASE_URL`.
+`AI_WORKER_USE_LLM=false` keeps the worker in deterministic-analysis mode. Set it to `true` only when the configured OpenAI-compatible local LLM endpoints are running.
 
 With `AI_WORKER_ENQUEUE_PERIODIC=true`, the worker asks the Render backend to ensure one Korean and one Chinese daily-analysis job exist for the current Asia/Shanghai hour. Repeated polling is idempotent within the hour.
 
 The Worker also claims server-scheduled `quality_image_analysis` jobs whose mode is
 `daily_attention_summary`. These jobs are bilingual, use only the
-`gemma4_26b_a4b` target, and summarize the server-provided all-history quality
-aggregates for the current production plan. If Gemma is unavailable or returns
+`qwen38` target on `127.0.0.1:8082`, and summarize the server-provided all-history quality
+aggregates for the current production plan. If Qwen 3.8 is unavailable or returns
 an invalid/ungrounded contract, the job completes with a deterministic bilingual
 fallback; the browser never connects to the local model directly.
 All-history report identifiers stay in the server-owned grounding payload. The
-Gemma prompt and result use compact aggregate evidence keys; the Worker validates
+Qwen prompt and result use compact aggregate evidence keys; the Worker validates
 those keys and calculates de-duplicated counts before completion.
 
 The backend supplies authoritative `report_metrics` for repeated issues,
-report-frequency trends, and affected production scope. Gemma does not write the
-daily report prose: bounded per-target calls select server-classified metric and
+report-frequency trends, and affected production scope. Qwen does not calculate
+metrics or write unchecked public prose. JSON-constrained, bounded per-target
+calls select server-classified metric and
 evidence keys, followed by one compact call that ranks and connects eligible
 metric, target, and evidence keys for the report. The Worker verifies the plan
 and evidence fingerprints, rejects unknown/ineligible key combinations, and
@@ -38,13 +39,13 @@ replaces all prose with grounded bilingual templates for
 `shift_checks`, and `caveats`. It rejects invented keys, numeric prose,
 current-defect claims, root-cause claims, defect-rate claims, and prescriptive
 corrective actions. A deterministic fallback remains retryable and is never
-published as a successful Gemma report.
+published as a successful Qwen report.
 
 AI report candidates are limited to canonical `problem_types` and backend-owned
 `problem_location_pairs`. A pair is accepted only when the backend marks it as
 coming from the same `QualityReport` row (`pair_basis=same_quality_report_id`);
 the Worker never joins a problem and location itself. Standalone location
-metrics and unknown/missing location coverage are not sent to Gemma and cannot
+metrics and unknown/missing location coverage are not sent to Qwen and cannot
 become a daily priority. A problem type remains eligible even when its location
 was not recorded.
 
@@ -76,6 +77,8 @@ RENDER_API_BASE_URL=http://127.0.0.1:8000/api
 AI_WORKER_TOKEN=change-me
 LOCAL_LLM_BASE_URL=http://127.0.0.1:8080/v1
 LOCAL_LLM_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit
+LOCAL_QWEN38_BASE_URL=http://127.0.0.1:8082/v1
+LOCAL_QWEN38_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit
 LOCAL_GEMMA_BASE_URL=http://127.0.0.1:8081/v1
 LOCAL_GEMMA_MODEL=/Users/macstudio_ted/Developer/local-ai/models/gemma-4-26b-a4b-it-4bit
 LOCAL_LLM_DEFAULT_MODEL_ID=qwen35

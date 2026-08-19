@@ -248,7 +248,7 @@ export function createOverviewDemoModel(
         sourceEvidenceHash: `demo-evidence-${businessDate}`,
         generatedAt,
         completedAt: generatedAt,
-        modelId: "gemma4_26b_a4b",
+        modelId: "qwen38",
         schemaVersion: "quality-daily-attention-ai.v1",
         generationSource: "deterministic_demo",
         llmFallback: false,

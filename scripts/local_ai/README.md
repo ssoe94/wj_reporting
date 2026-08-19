@@ -6,7 +6,11 @@ The Mac Studio runs three user-level `launchd` services after login:
 - `com.wj.local-ai-gemma`: keeps Gemma 4 26B-A4B running on `127.0.0.1:8081`.
 - `com.wj.local-ai-worker`: waits for `/v1/models`, polls the Render backend, ensures hourly jobs exist, and submits results.
 
-The Worker advertises Gemma capability only while the Gemma endpoint passes its exact-model readiness check. The backend rejects Gemma questions when that heartbeat is missing or stale, while Qwen remains the compatibility default.
+Daily quality summaries use the separately managed Qwen 3.8 endpoint on
+`127.0.0.1:8082`. These launch-agent scripts do not start, stop, or restart that
+protected runtime; they only let the outbound WJ Worker use it when available.
+
+The Worker advertises each local model only while its endpoint passes the exact-model readiness check. Qwen 3.5 remains the compatibility default for production analysis, while scheduled daily quality summaries explicitly request Qwen 3.8.
 
 The Worker token is stored in macOS Keychain. It is never written to a plist, `.env`, frontend bundle, or repository file.
 

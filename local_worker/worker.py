@@ -40,8 +40,9 @@ HANDLERS = {
 }
 
 QWEN_MODEL_ID = "qwen35"
+QWEN38_MODEL_ID = "qwen38"
 GEMMA_MODEL_ID = "gemma4_26b_a4b"
-SUPPORTED_MODEL_IDS = {QWEN_MODEL_ID, GEMMA_MODEL_ID}
+SUPPORTED_MODEL_IDS = {QWEN_MODEL_ID, QWEN38_MODEL_ID, GEMMA_MODEL_ID}
 GEMMA_READY_WORKER_VERSION = "production-ai-worker-v2-gemma1"
 
 REPAIR_SYSTEM_PROMPT = """You repair a manufacturing AI explanation that failed numeric grounding.
@@ -1487,6 +1488,10 @@ def main() -> int:
         "LOCAL_LLM_MODEL",
         "/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit",
     )
+    qwen38_model = os.getenv(
+        "LOCAL_QWEN38_MODEL",
+        "/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit",
+    )
     gemma_model = os.getenv(
         "LOCAL_GEMMA_MODEL",
         "/Users/macstudio_ted/Developer/local-ai/models/gemma-4-26b-a4b-it-4bit",
@@ -1513,6 +1518,12 @@ def main() -> int:
             timeout=llm_timeout,
             model_family="qwen",
         )
+        qwen38_llm = LocalLlmClient(
+            base_url=os.getenv("LOCAL_QWEN38_BASE_URL", "http://127.0.0.1:8082/v1"),
+            model=qwen38_model,
+            timeout=llm_timeout,
+            model_family="qwen",
+        )
         gemma_llm = LocalLlmClient(
             base_url=os.getenv("LOCAL_GEMMA_BASE_URL", "http://127.0.0.1:8081/v1"),
             model=gemma_model,
@@ -1521,6 +1532,7 @@ def main() -> int:
         )
         model_targets = {
             QWEN_MODEL_ID: LocalModelTarget(QWEN_MODEL_ID, qwen_llm, qwen_model),
+            QWEN38_MODEL_ID: LocalModelTarget(QWEN38_MODEL_ID, qwen38_llm, qwen38_model),
             GEMMA_MODEL_ID: LocalModelTarget(GEMMA_MODEL_ID, gemma_llm, gemma_model),
         }
         llm = model_targets[default_model_id].client

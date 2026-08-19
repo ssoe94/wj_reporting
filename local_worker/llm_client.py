@@ -65,6 +65,7 @@ class LocalLlmClient:
         thinking_budget: int | None = None,
         timeout_seconds: float | None = None,
         max_tokens: int | None = None,
+        json_object: bool = False,
     ) -> dict[str, Any]:
         request_payload: dict[str, Any] = {
             "model": self.model,
@@ -98,6 +99,11 @@ class LocalLlmClient:
             }
         if max_tokens is not None:
             request_payload["max_tokens"] = max(128, min(4096, int(max_tokens)))
+        if json_object:
+            # The OpenAI-compatible MLX server supports JSON-object mode.
+            # Opt in per bounded handler so other local-model workflows keep
+            # their existing request contract.
+            request_payload["response_format"] = {"type": "json_object"}
         response = requests.post(
             f"{self.base_url}/chat/completions",
             json=request_payload,
