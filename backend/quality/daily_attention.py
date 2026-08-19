@@ -46,7 +46,8 @@ _UNKNOWN_LOCATION_LABEL = {"ko": "위치 미확인", "zh": "位置未确认"}
 # Server-owned phenomenon taxonomy.  Aliases intentionally follow the
 # long-standing daily-attention UI normalization and add conservative Korean /
 # English equivalents.  A report can belong to multiple explicit categories;
-# unmatched text remains a separate, auditable unclassified bucket.
+# unmatched text remains auditable through its source evidence key but rolls
+# up into one data-quality bucket instead of producing duplicate public rows.
 _PHENOMENON_TAXONOMY = (
     ("contamination", {"ko": "오염·이물", "zh": "脏污·异物"},
      ("脏污", "油污", "油渍", "油点", "灰尘", "污渍", "擦拭印", "오염", "이물", "기름때", "얼룩", "먼지", "contamination", "stain")),
@@ -154,16 +155,15 @@ def _canonical_problem_types(phenomenon: Any) -> list[dict[str, Any]]:
     if matches:
         return matches
 
-    # Unknown text is not merged with unrelated phenomena and is not assigned
-    # a guessed category.  The stable hash keeps repeat counts auditable while
-    # the recorded label remains visible on the authenticated report page.
-    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+    # Unknown text is never guessed into a canonical defect type.  All such
+    # rows share one deterministic metric so the public report has exactly one
+    # unclassified bucket.  The aggregate source evidence keys still retain a
+    # stable hash of the recorded text for server-side audit and restoration.
     return [{
-        "key": f"unclassified:{digest}",
-        "metric_key": f"problem:unclassified:{digest}",
-        "label": {"ko": raw, "zh": raw},
+        "key": "unclassified",
+        "metric_key": "problem:unclassified",
+        "label": {"ko": "유형 미분류", "zh": "类型未分类"},
         "classification_basis": "unclassified_recorded_text_hash",
-        "recorded_text": raw,
     }]
 
 
@@ -1036,7 +1036,7 @@ def build_daily_quality_report_metrics(
             "current_defect_claim_allowed": False,
             "root_cause_claim_allowed": False,
             "problem_type_taxonomy": QUALITY_PHENOMENON_TAXONOMY_VERSION,
-            "unknown_problem_policy": "separate_unclassified_recorded_text_hash",
+            "unknown_problem_policy": "single_unclassified_bucket_with_hashed_source_evidence",
             "metric_denominator_basis": "unique_matching_reports_in_current_plan_prefixes",
             "location_rule": "explicit_recorded_keyword_else_unknown",
             "standalone_location_role": "coverage_only_not_ai_candidate",

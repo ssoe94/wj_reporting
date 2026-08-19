@@ -1432,6 +1432,27 @@ class LocalLlmReadinessTests(unittest.TestCase):
         self.assertEqual(result["summary"], "검증된 답변")
         self.assertNotIn("reasoning", str(result))
 
+    def test_bounded_handler_can_require_json_object_mode(self):
+        response = self.Response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": '{"selected_candidate_indices":[0]}'},
+            }],
+        })
+        with patch.object(llm_client_module.requests, "post", return_value=response) as post:
+            result = self.client.structured_analysis(
+                "selector",
+                {"issue_candidates": [{"metric_key": "problem:scratch"}]},
+                json_object=True,
+            )
+
+        request_payload = post.call_args.kwargs["json"]
+        self.assertEqual(
+            request_payload["response_format"],
+            {"type": "json_object"},
+        )
+        self.assertEqual(result["selected_candidate_indices"], [0])
+
     def test_gemma_disables_unbounded_thinking_to_preserve_final_json(self):
         client = LocalLlmClient(
             "http://127.0.0.1:8081/v1",

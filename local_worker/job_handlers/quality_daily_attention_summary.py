@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-PROMPT_VERSION = "quality-daily-attention-gemma-v4"
-REQUIRED_MODEL_ID = "gemma4_26b_a4b"
+PROMPT_VERSION = "quality-daily-attention-qwen38-v5"
+REQUIRED_MODEL_ID = "qwen38"
 REQUIRED_MODE = "daily_attention_summary"
 REQUIRED_TRIGGER = "daily_attention"
 REQUIRED_SOURCE = "quality_daily_attention"
@@ -164,7 +164,8 @@ three candidate indexes ordered by attention value for the planned target. Each 
 Prefer a supplied problem/location pair over its overlapping problem-only metric when both cite the same
 evidence. When the candidate list is non-empty, select at least one valid candidate index. Omit an uncertain
 candidate rather than infer anything beyond the supplied facts.
-Never output report ids, summaries, current-defect claims, causes, specifications, or reasoning."""
+Never output report ids, summaries, current-defect claims, causes, specifications, or reasoning. Return exactly
+one JSON object shaped like {"selected_candidate_indices":[0]}; never return a bare array."""
 
 MODEL_CHUNK_OUTPUT_SCHEMA = {
     "selected_candidate_indices": ["zero-based integer index into issue_candidates"],
@@ -175,11 +176,16 @@ All counts, dates, repeat eligibility, increase eligibility, labels, and impact 
 server. Eligible metrics are problem types or server-verified problem/location pairs from the same source record;
 standalone and unknown/missing locations are never eligible. Do not calculate, rewrite, explain, infer, construct
 a pair, or output prose. Return only zero-based indexes into each supplied candidate list. Order repeated and
-accelerating candidate indexes by operational attention value. Select an affected target only when its supplied
+accelerating candidate indexes by operational attention value. Build a diverse briefing: prefer recent increases,
+then strong repeated history, then a location-specific pair when it adds information not already represented by
+its parent problem type. Avoid redundant selections for the same canonical problem and evidence unless a pair
+preserves an independently verified location insight. Prefer affected targets across distinct machines or part
+prefixes when the selected evidence supports that coverage. Select an affected target only when its supplied
 evidence overlaps a selected report metric. Each index may appear at most once. When a candidate list is
 non-empty, select at least one valid index from it. Use at most six repeated candidates, four accelerating
 candidates, and five affected targets. Never output a report id, key, label, current-defect claim, cause, action,
-or reasoning."""
+or reasoning. Return exactly one JSON object with repeated_indices, accelerating_indices, and
+affected_target_indices arrays; never return a bare array."""
 
 REPORT_SELECTOR_OUTPUT_SCHEMA = {
     "repeated_indices": ["zero-based integer index into repeated_candidates"],
@@ -1432,7 +1438,7 @@ def _report_from_key_selections(
     selector_payload: dict[str, Any],
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ValueError("Gemma report selector must return an object.")
+        raise ValueError("Qwen 3.8 report selector must return an object.")
 
     metric_index = _metric_index(grounding.get("report_metrics") or {})
 
@@ -1479,7 +1485,7 @@ def _report_from_key_selections(
             if len(result) >= limit:
                 break
         if candidates and not result:
-            raise ValueError(f"Gemma did not select a valid {candidate_name} index.")
+            raise ValueError(f"Qwen 3.8 did not select a valid {candidate_name} index.")
         return result
 
     repeated_issues = selected_metrics(
@@ -1544,7 +1550,7 @@ def _report_from_key_selections(
         if len(affected_targets) >= 5:
             break
     if eligible_target_count and not affected_targets:
-        raise ValueError("Gemma did not select a valid affected target index.")
+        raise ValueError("Qwen 3.8 did not select a valid affected target index.")
 
     base = _fallback_report(grounding, [])
     return {
@@ -1843,7 +1849,7 @@ def analyze_with_llm(
     model_name: str,
     deterministic: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run bounded key-selection requests without letting Gemma calculate or narrate.
+    """Run bounded key-selection requests without letting Qwen calculate or narrate.
 
     The per-model chunks select server-classified metric/evidence pairs. A final
     compact selector connects and orders only eligible verified metric/source
@@ -1937,9 +1943,10 @@ def analyze_with_llm(
                     enable_thinking=False,
                     timeout_seconds=180,
                     max_tokens=MODEL_CHUNK_MAX_TOKENS,
+                    json_object=True,
                 )
                 if not isinstance(chunk, dict):
-                    raise ValueError("Gemma model chunk must return an object.")
+                    raise ValueError("Qwen 3.8 model chunk must return an object.")
                 selected_issues = _normalize_candidate_index_selections(
                     chunk.get("selected_candidate_indices"),
                     issue_candidates,
@@ -1964,7 +1971,7 @@ def analyze_with_llm(
 
     if completed == 0:
         raise ValueError(
-            "Gemma did not complete any model chunk: "
+            "Qwen 3.8 did not complete any model chunk: "
             + "; ".join(failed_chunks)[:500]
         )
 
@@ -1990,6 +1997,7 @@ def analyze_with_llm(
                     enable_thinking=False,
                     timeout_seconds=180,
                     max_tokens=REPORT_SELECTOR_MAX_TOKENS,
+                    json_object=True,
                 )
                 report = _report_from_key_selections(
                     selector_result,

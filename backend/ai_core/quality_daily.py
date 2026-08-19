@@ -1,4 +1,4 @@
-"""Gemma-only daily quality-attention scheduling and result hardening."""
+"""Qwen 3.8 daily quality-attention scheduling and result hardening."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from .models import AiJob
 
 QUALITY_DAILY_MODE = "daily_attention_summary"
 QUALITY_DAILY_TRIGGER = "daily_attention"
-QUALITY_DAILY_MODEL_ID = "gemma4_26b_a4b"
+QUALITY_DAILY_MODEL_ID = "qwen38"
 QUALITY_DAILY_LANGUAGE = "bilingual"
 QUALITY_DAILY_START_HOUR = 7
 QUALITY_DAILY_PLAN_DEBOUNCE_SECONDS = 5 * 60
@@ -36,7 +36,7 @@ QUALITY_DAILY_RETRY_COOLDOWN_SECONDS = 5 * 60
 QUALITY_DAILY_PAGE_REPORT_SCHEMA_VERSION = "quality-daily-page-report.v1"
 QUALITY_DAILY_NARRATIVE_SCHEMA_VERSION = "quality-daily-report-narrative.v1"
 QUALITY_DAILY_PUBLIC_CONTRACT_VERSION = "quality-daily-public-report.v2"
-QUALITY_DAILY_EXPECTED_PROMPT_VERSION = "quality-daily-attention-gemma-v4"
+QUALITY_DAILY_EXPECTED_PROMPT_VERSION = "quality-daily-attention-qwen38-v5"
 QUALITY_DAILY_ACTIVE_STATUSES = (
     AiJob.STATUS_PENDING,
     AiJob.STATUS_CLAIMED,
@@ -782,6 +782,17 @@ def _first_deterministic_metric(
     for metric in metrics.get(group_name) or []:
         if not isinstance(metric, dict):
             continue
+        metric_key = str(metric.get("metric_key") or "")
+        if (
+            metric_key == "problem:missing"
+            or metric_key.startswith("problem:unclassified")
+            or metric.get("classification_basis") in {
+                "missing_recorded_phenomenon",
+                "unclassified_recorded_text_hash",
+                "unclassified",
+            }
+        ):
+            continue
         if repeated_only and int(metric.get("evidence_count") or 0) < 2:
             continue
         if increasing_only and (metric.get("trend") or {}).get("status") != "increase":
@@ -922,17 +933,83 @@ def _authoritative_report_summary(
         sentences_ko.append("최근 30일과 직전 30일 비교에서 증가 기준을 충족한 지표는 없습니다.")
         sentences_zh.append("最近30天与此前30天的比较中，没有指标满足上升判定标准。")
 
-    selected_target = None
+    selected_repeated_metrics: list[dict[str, Any]] = []
+    selected_keys: set[str] = set()
+    for row in repeated_rows:
+        metric_key = str(row.get("metric_key") or "")
+        metric = metric_index.get(metric_key)
+        if (
+            not metric
+            or not metric_key.startswith("problem:")
+            or metric_key.startswith("problem:unclassified")
+            or metric_key == "problem:missing"
+            or metric_key in selected_keys
+        ):
+            continue
+        selected_keys.add(metric_key)
+        selected_repeated_metrics.append(metric)
+        if len(selected_repeated_metrics) >= 3:
+            break
+    additional_repeated = [
+        metric for metric in selected_repeated_metrics
+        if not problem or metric.get("metric_key") != problem.get("metric_key")
+    ][:2]
+    if additional_repeated:
+        repeated_ko = ", ".join(
+            f"{_metric_template_label(metric)['ko']} {int(metric.get('evidence_count') or 0)}건"
+            for metric in additional_repeated
+        )
+        repeated_zh = "、".join(
+            f"{_metric_template_label(metric)['zh']}（{int(metric.get('evidence_count') or 0)}条）"
+            for metric in additional_repeated
+        )
+        sentences_ko.append(f"함께 확인할 반복 유형은 {repeated_ko}입니다.")
+        sentences_zh.append(f"同时需确认的重复类型为{repeated_zh}。")
+
+    selected_increases: list[dict[str, Any]] = []
+    selected_keys.clear()
+    for row in accelerating_rows:
+        metric_key = str(row.get("metric_key") or "")
+        metric = metric_index.get(metric_key)
+        if not metric or metric_key in selected_keys:
+            continue
+        selected_keys.add(metric_key)
+        selected_increases.append(metric)
+        if len(selected_increases) >= 3:
+            break
+    additional_increases = [
+        metric for metric in selected_increases
+        if not increasing or metric.get("metric_key") != increasing.get("metric_key")
+    ][:2]
+    if additional_increases:
+        increase_ko = ", ".join(
+            f"{_metric_template_label(metric)['ko']} "
+            f"{int((metric.get('trend') or {}).get('recent_count') or 0)}/"
+            f"{int((metric.get('trend') or {}).get('recent_denominator') or 0)}건"
+            for metric in additional_increases
+        )
+        increase_zh = "、".join(
+            f"{_metric_template_label(metric)['zh']}"
+            f"（{int((metric.get('trend') or {}).get('recent_count') or 0)}/"
+            f"{int((metric.get('trend') or {}).get('recent_denominator') or 0)}条）"
+            for metric in additional_increases
+        )
+        sentences_ko.append(f"추가 증가 신호는 {increase_ko}입니다.")
+        sentences_zh.append(f"其他上升信号为{increase_zh}。")
+
+    selected_targets: list[dict[str, Any]] = []
     for target in affected_targets:
         selected_target = source_items.get(str(target.get("source_key") or ""))
-        if selected_target:
+        if selected_target and selected_target not in selected_targets:
+            selected_targets.append(selected_target)
+        if len(selected_targets) >= 2:
             break
-    if selected_target is None and source_items:
-        selected_target = max(
+    if not selected_targets and source_items:
+        selected_targets.append(max(
             source_items.values(),
             key=lambda item: int(item.get("matching_report_count") or 0),
-        )
-    if selected_target:
+        ))
+    for selected_target in selected_targets:
         target_text = _authoritative_target_headline(selected_target)
         sentences_ko.append(target_text["ko"])
         sentences_zh.append(target_text["zh"])
@@ -1271,7 +1348,7 @@ def _restore_page_report_narrative(
         return None
 
     metric_index: dict[str, dict[str, Any]] = {}
-    # Standalone location coverage rows are deliberately excluded: Gemma may
+    # Standalone location coverage rows are deliberately excluded: Qwen may
     # select a problem type or a server-proven same-report problem/location
     # pair, never a location by itself.
     for group_name in ("problem_types", "problem_location_pairs"):
@@ -1736,7 +1813,7 @@ def quality_daily_report_for_page(
     """Return the authenticated daily-page report contract.
 
     Numeric analysis is always the caller-supplied deterministic report built
-    from the current plan and quality history.  Completed Gemma output is
+    from the current plan and quality history.  Completed Qwen output is
     projected only as bilingual narrative and priority order, and only when it
     matches both the exact current plan and relevant-quality-evidence
     fingerprints.

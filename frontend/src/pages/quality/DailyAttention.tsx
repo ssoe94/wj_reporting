@@ -95,6 +95,8 @@ type QualityReportMetric = {
   metric_key: string;
   dimension?: 'problem_type' | 'problem_location_pair' | 'location_coverage';
   canonical_key?: string;
+  problem_canonical_key?: string;
+  location_canonical_key?: string;
   label: LocalizedText;
   problem_label?: LocalizedText;
   location_label?: LocalizedText;
@@ -238,7 +240,7 @@ type QualityDailyReport = {
   source_evidence_last_changed_at: string | null;
   generated_at: string | null;
   completed_at: string | null;
-  model_id: 'gemma4_26b_a4b';
+  model_id: 'qwen38';
   ai_schema_version: 'quality-daily-attention-ai.v1';
   deterministic_schema_version: 'quality-daily-report.v1';
   disclaimer: LocalizedText;
@@ -550,6 +552,42 @@ function isUnknownLocationMetric(metric: QualityReportMetric | DimensionedMetric
   return metric.metric_key === 'location:unknown' || metric.classification_basis === 'unlocated' || metric.is_unknown_location === true;
 }
 
+function isDataQualityProblemMetric(metric: QualityReportMetric | DimensionedMetric): boolean {
+  return (
+    metric.metric_key === 'problem:missing'
+    || metric.metric_key.startsWith('problem:unclassified')
+    || metric.classification_basis === 'missing_recorded_phenomenon'
+    || metric.classification_basis === 'unclassified_recorded_text_hash'
+    || metric.classification_basis === 'unclassified'
+  );
+}
+
+function isMeaningfulHistoricalSignal(metric: DimensionedMetric): boolean {
+  return (
+    metric.dimension !== 'location'
+    && !isDataQualityProblemMetric(metric)
+    && metric.repeat_status === 'repeated'
+    && metric.evidence_count >= 2
+  );
+}
+
+function compareHistoricalSignals(a: DimensionedMetric, b: DimensionedMetric): number {
+  const trendDiff = Number(b.trend.status === 'increase') - Number(a.trend.status === 'increase');
+  if (trendDiff !== 0) return trendDiff;
+  const dimensionDiff = Number(a.dimension === 'pair') - Number(b.dimension === 'pair');
+  if (dimensionDiff !== 0) return dimensionDiff;
+  if (b.evidence_count !== a.evidence_count) return b.evidence_count - a.evidence_count;
+  const latestDiff = String(b.latest_report_dt ?? '').localeCompare(String(a.latest_report_dt ?? ''));
+  if (latestDiff !== 0) return latestDiff;
+  return a.metric_key.localeCompare(b.metric_key);
+}
+
+function historicalSignalProblemKey(metric: DimensionedMetric): string {
+  return metric.dimension === 'pair'
+    ? metric.problem_canonical_key ?? metric.metric_key
+    : metric.canonical_key ?? metric.metric_key;
+}
+
 function firstMetricTarget(metric: DimensionedMetric): QualityPlanTarget | null {
   return metric.impact_scope.plan_targets[0] ?? null;
 }
@@ -649,7 +687,14 @@ function MetricBarPanel({
   const accent = dimension === 'problem'
     ? { icon: 'bg-blue-50 text-blue-700', bar: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700' }
     : { icon: 'bg-violet-50 text-violet-700', bar: 'bg-violet-500', badge: 'bg-violet-50 text-violet-700' };
-  const visibleMetrics = metrics.slice(0, 6);
+  const dataQualityMetrics = dimension === 'problem'
+    ? metrics.filter(isDataQualityProblemMetric)
+    : [];
+  const visibleMetrics = metrics
+    .filter((metric) => !isDataQualityProblemMetric(metric))
+    .slice(0, 6);
+  const dataQualityCount = dataQualityMetrics.reduce((total, metric) => total + metric.evidence_count, 0);
+  const dataQualityDenominator = Math.max(0, ...dataQualityMetrics.map((metric) => metric.all_history_denominator));
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -663,7 +708,7 @@ function MetricBarPanel({
         </div>
       </div>
 
-      {visibleMetrics.length === 0 ? (
+      {visibleMetrics.length === 0 && dataQualityMetrics.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
           {lang === 'zh' ? '无可分析的历史记录' : '분석 가능한 이력이 없습니다.'}
         </div>
@@ -697,6 +742,29 @@ function MetricBarPanel({
               </div>
             </div>
           ))}
+          {dataQualityMetrics.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-100/80 px-4 py-3 text-sm text-slate-600">
+              <div className="flex items-center justify-between gap-3">
+                <span className="inline-flex min-w-0 items-center gap-2 font-medium">
+                  <CircleAlert className="h-4 w-4 shrink-0 text-slate-500" />
+                  <span className="truncate">
+                    {lang === 'zh' ? '未分类·未填写现象合并' : '유형 미분류·현상 미입력 통합'}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                    {lang === 'zh' ? '数据质量' : '데이터 품질'}
+                  </span>
+                </span>
+                <strong className="shrink-0 tabular-nums text-slate-700">
+                  {formatMetricNumber(dataQualityCount)} / {formatMetricNumber(dataQualityDenominator)}
+                </strong>
+              </div>
+              <p className="mt-1.5 text-xs leading-5 text-slate-500">
+                {lang === 'zh'
+                  ? '未在分类词典中确认的原文不作推测，仅汇总为一个数据质量项。'
+                  : '분류 사전에서 확인되지 않은 원문은 추정하지 않고 하나의 데이터 품질 항목으로만 합산합니다.'}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -1131,7 +1199,7 @@ export default function DailyAttentionPage() {
         prioritiesDescription: '直接显示历史问题、发生位置、近期变化与当前计划对象',
         plannedTarget: '计划对象',
         problemTypes: '问题类型',
-        problemTypesDescription: '按原始记录现象独立分类 · 分析对象全部历史内占比',
+        problemTypesDescription: '按服务器分类词典汇总 · 未分类原文单独作为数据质量项',
         locations: '发生位置',
         locationsDescription: '发生位置仅用于覆盖率统计；未知位置单独作为数据质量项',
         locationCoverage: '发生位置统计',
@@ -1142,7 +1210,7 @@ export default function DailyAttentionPage() {
         repeatedTrend: '反复问题与近期变化',
         repeatedTrendDescription: '最近 30 天与此前 30 天使用相同分母口径比较',
         affectedTargets: '计划对象影响范围',
-        affectedTargetsDescription: '仅显示与历史依据明确匹配的当前计划机台、机种与料号',
+        affectedTargetsDescription: '每个计划对象仅显示最多 3 个有反复依据的有效历史信号',
         machine: '机台',
         modelPart: '机种 / 料号',
         plannedQty: '计划数量',
@@ -1161,13 +1229,13 @@ export default function DailyAttentionPage() {
         rawDescription: '以下保留现有机台、料号、照片及原始记录，可用于追溯分析依据。',
         noCurrentDefect: '本报告基于历史质量记录与当前生产计划的匹配结果，不表示当前正在发生不良。',
         noReport: 'AI 报告尚不可用。下方继续显示现有计划与原始历史记录。',
-        noNarrative: 'AI 文字分析尚未完成，当前先显示可审计的数据分析结果。',
+        noNarrative: 'Qwen 3.8 摘要暂不可用，当前显示可审计的数据分析结果。',
         noMetrics: '没有可展示的分类指标。',
-        noTargets: '当前计划中没有与分类指标明确关联的对象。',
+        noTargets: '当前计划中没有达到重复依据标准的有效历史信号。',
         trendRule: '仅当数量和占比同时增加时标记为“增加”',
         sampleRule: '每个比较窗口分母至少 {denominator} 件，合计依据至少 {issues} 件',
         historySummary: '所选计划共 {plans} 组，{prefixes} 个料号前缀在全历史中匹配到 {matches} 条记录；{without} 组暂无历史匹配。',
-        deterministicPriority: 'AI 文字生成期间，按可审计指标优先级显示。',
+        deterministicPriority: '按全部历史记录与近期变化的可审计优先级显示。',
         repeatedLabel: '反复历史项',
         increaseLabel: '近期增加',
         fallbackLabel: '数据优先级',
@@ -1183,7 +1251,7 @@ export default function DailyAttentionPage() {
         prioritiesDescription: '역사 문제·발생 위치·최근 변화·현재 계획 대상을 직접 표시',
         plannedTarget: '계획 대상',
         problemTypes: '문제유형',
-        problemTypesDescription: '원본 기록 현상을 독립 분류 · 분석 대상 전체 이력 내 비중',
+        problemTypesDescription: '서버 분류 사전 기준 통합 · 미분류 원문은 데이터 품질로 별도 표시',
         locations: '발생위치',
         locationsDescription: '발생위치는 커버리지 통계로만 표시하고 미확인 위치는 데이터 품질로 분리',
         locationCoverage: '발생위치 통계',
@@ -1194,7 +1262,7 @@ export default function DailyAttentionPage() {
         repeatedTrend: '반복 문제 및 최근 변화',
         repeatedTrendDescription: '최근 30일과 이전 30일을 동일한 분모 기준으로 비교',
         affectedTargets: '계획 대상 모델·호기 영향',
-        affectedTargetsDescription: '역사 근거와 명시적으로 매칭된 현재 계획의 설비·모델·품번만 표시',
+        affectedTargetsDescription: '계획 대상별 반복 근거가 있는 유효 역사 신호만 최대 3개 표시',
         machine: '호기',
         modelPart: '모델 / 품번',
         plannedQty: '계획수량',
@@ -1213,13 +1281,13 @@ export default function DailyAttentionPage() {
         rawDescription: '아래에는 기존 설비·품번별 사진과 원본 기록을 보존해 분석 근거를 추적할 수 있습니다.',
         noCurrentDefect: '이 보고서는 과거 품질 이력과 현재 생산계획의 매칭 결과이며, 현재 불량 발생을 의미하지 않습니다.',
         noReport: 'AI 분석 보고서를 아직 사용할 수 없습니다. 아래 기존 계획 및 원본 이력은 계속 제공합니다.',
-        noNarrative: 'AI 문장 분석이 아직 완료되지 않아 감사 가능한 데이터 분석 결과를 먼저 표시합니다.',
+        noNarrative: 'Qwen 3.8 요약을 사용할 수 없어 감사 가능한 데이터 분석 결과를 표시합니다.',
         noMetrics: '표시할 분류 지표가 없습니다.',
-        noTargets: '현재 계획에서 분류 지표와 명시적으로 연결된 대상이 없습니다.',
+        noTargets: '현재 계획에서 반복 근거 기준을 충족한 유효 역사 신호가 없습니다.',
         trendRule: '건수와 비중이 함께 증가한 경우에만 ‘증가’로 표시',
         sampleRule: '비교 구간별 분모 {denominator}건 이상, 합산 근거 {issues}건 이상',
         historySummary: '선택 계획 {plans}개 그룹, 품번 접두어 {prefixes}개에 대해 전체 이력 {matches}건이 매칭되었고 {without}개 그룹은 매칭 이력이 없습니다.',
-        deterministicPriority: 'AI 문장 생성 중에는 감사 가능한 지표 우선순위를 표시합니다.',
+        deterministicPriority: '전체 이력과 최근 변화에 따른 감사 가능한 우선순위입니다.',
         repeatedLabel: '반복 역사 항목',
         increaseLabel: '최근 증가',
         fallbackLabel: '데이터 우선순위',
@@ -1289,7 +1357,7 @@ export default function DailyAttentionPage() {
     report.source_revision &&
     report.contract_version === 'quality-daily-public-report.v2' &&
     report.schema_version === 'quality-daily-page-report.v1' &&
-    report.model_id === 'gemma4_26b_a4b' &&
+    report.model_id === 'qwen38' &&
     report.ai_schema_version === 'quality-daily-attention-ai.v1' &&
     report.deterministic_schema_version === 'quality-daily-report.v1' &&
     report.narrative.schema_version === 'quality-daily-report-narrative.v1',
@@ -1305,7 +1373,11 @@ export default function DailyAttentionPage() {
   }, [deterministic]);
 
   const sortedAnalysisMetrics = useMemo(() => sortMetrics(allMetrics), [allMetrics]);
-  const fallbackPriorityMetrics = sortedAnalysisMetrics.slice(0, 3);
+  const actionableAnalysisMetrics = useMemo(
+    () => sortedAnalysisMetrics.filter(isMeaningfulHistoricalSignal),
+    [sortedAnalysisMetrics],
+  );
+  const fallbackPriorityMetrics = actionableAnalysisMetrics.slice(0, 3);
   const explicitLocationMetrics = useMemo(
     () => [...(deterministic?.occurrence_locations ?? [])]
       .filter((metric) => !isUnknownLocationMetric(metric))
@@ -1343,8 +1415,8 @@ export default function DailyAttentionPage() {
       .map((metricKey) => metricByKey.get(metricKey))
       .filter((metric): metric is DimensionedMetric => Boolean(metric));
     const used = new Set(ranked.map((metric) => metric.metric_key));
-    return [...ranked, ...sortedAnalysisMetrics.filter((metric) => !used.has(metric.metric_key))];
-  }, [narrative, allMetrics, sortedAnalysisMetrics]);
+    return [...ranked, ...actionableAnalysisMetrics.filter((metric) => !used.has(metric.metric_key))];
+  }, [narrative, allMetrics, actionableAnalysisMetrics]);
   const narrativeMetricLookup = useMemo(
     () => new Map(allMetrics.map((metric) => [metric.metric_key, metric])),
     [allMetrics],
@@ -1359,6 +1431,11 @@ export default function DailyAttentionPage() {
         const priorityParts = priority.part_nos ?? [];
         const modelNames = priorityModels.length > 0 ? priorityModels : affectedTarget?.model_names ?? [];
         const partNos = priorityParts.length > 0 ? priorityParts : affectedTarget?.part_nos ?? [];
+        const signalMetrics = (priority.signals ?? [])
+          .map((signal) => narrativeMetricLookup.get(signal.metric_key))
+          .filter((metric): metric is DimensionedMetric => Boolean(metric))
+          .filter(isMeaningfulHistoricalSignal)
+          .slice(0, 3);
         return {
           key: priority.target_ref,
           title: localizedText(affectedTarget?.headline ?? priority.headline, lang),
@@ -1367,6 +1444,7 @@ export default function DailyAttentionPage() {
           machineNumber,
           modelNames,
           partNos,
+          signals: signalMetrics,
           metric: priority.primary_metric_key
             ? narrativeMetricLookup.get(priority.primary_metric_key) ?? null
             : findMetricForTarget(narrativeRankedMetrics, machineName, modelNames, partNos),
@@ -1384,6 +1462,7 @@ export default function DailyAttentionPage() {
         machineNumber: null,
         modelNames: target?.model_name ? [target.model_name] : metric.impact_scope.model_names,
         partNos: target?.part_no ? [target.part_no] : metric.impact_scope.part_nos,
+        signals: [metric],
         metric,
       };
     });
@@ -1401,7 +1480,7 @@ export default function DailyAttentionPage() {
       if (metric.trend.status === 'stable_or_decrease') return 2;
       return 1;
     };
-    return [...allMetrics]
+    return [...actionableAnalysisMetrics]
       .sort((a, b) => {
         const rankDiff = trendRank(b) - trendRank(a);
         if (rankDiff !== 0) return rankDiff;
@@ -1409,7 +1488,7 @@ export default function DailyAttentionPage() {
         return metricDisplayLabel(a, lang).localeCompare(metricDisplayLabel(b, lang));
       })
       .slice(0, 4);
-  }, [allMetrics, lang]);
+  }, [actionableAnalysisMetrics, lang]);
 
   const impactedTargets = useMemo(() => {
     const targetMap = new Map<
@@ -1420,7 +1499,7 @@ export default function DailyAttentionPage() {
       }
     >();
 
-    sortedAnalysisMetrics.forEach((metric) => {
+    actionableAnalysisMetrics.forEach((metric) => {
       metric.impact_scope.plan_targets.forEach((target) => {
         const key = [
           target.machine_name,
@@ -1438,12 +1517,24 @@ export default function DailyAttentionPage() {
       });
     });
 
-    return Array.from(targetMap.values()).sort((a, b) => {
+    return Array.from(targetMap.values()).map((entry) => {
+      const selectedProblemKeys = new Set<string>();
+      const selectedSignals: typeof entry.signals = [];
+      [...entry.signals]
+        .sort((a, b) => compareHistoricalSignals(a.metric, b.metric))
+        .forEach((signal) => {
+          const problemKey = historicalSignalProblemKey(signal.metric);
+          if (selectedProblemKeys.has(problemKey) || selectedSignals.length >= 3) return;
+          selectedProblemKeys.add(problemKey);
+          selectedSignals.push(signal);
+        });
+      return { ...entry, signals: selectedSignals };
+    }).filter((entry) => entry.signals.length > 0).sort((a, b) => {
       const machineDiff = a.target.machine_name.localeCompare(b.target.machine_name, undefined, { numeric: true });
       if (machineDiff !== 0) return machineDiff;
       return (a.target.sequence ?? 999) - (b.target.sequence ?? 999);
     });
-  }, [sortedAnalysisMetrics, lang]);
+  }, [actionableAnalysisMetrics, lang]);
 
   const isPhenomenonOpen = (itemKey: string, phenomenon: string) =>
     collapsedGroups[itemKey]?.[phenomenon] !== false;
@@ -1749,6 +1840,20 @@ export default function DailyAttentionPage() {
                                 </div>
                               )}
                               {!metric && <h4 className="mt-4 text-lg font-bold leading-7 text-slate-950">{priority.title || '-'}</h4>}
+                              {priority.signals.length > 1 && (
+                                <div className="mt-3 space-y-1.5 rounded-xl border border-slate-200 bg-white/80 p-2.5">
+                                  {priority.signals.slice(1, 3).map((signal) => (
+                                    <div key={`${signal.dimension}-${signal.metric_key}`} className="flex items-center justify-between gap-2 text-xs">
+                                      <span className="min-w-0 truncate font-medium text-slate-700" title={metricDisplayLabel(signal, lang)}>
+                                        {metricDisplayLabel(signal, lang)}
+                                      </span>
+                                      <strong className="shrink-0 tabular-nums text-slate-600">
+                                        {formatMetricNumber(signal.evidence_count)} · {metricTrendLabel(signal, lang)}
+                                      </strong>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                               {priority.checkpoints.length > 0 ? (
                                 <ul className="mt-3 space-y-2 text-sm leading-5 text-slate-600">
                                   {priority.checkpoints.map((checkpoint, checkpointIndex) => (
@@ -1944,15 +2049,24 @@ export default function DailyAttentionPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {impactedTargets.map(({ target, signals }) => (
-                            <tr key={[target.machine_name, target.sequence, target.model_name, target.part_no, target.lot_no].join('|')} className="align-top hover:bg-slate-50/70">
+                          {impactedTargets.map(({ target, signals }) => {
+                            const compactIdentity = [target.model_name, target.part_no]
+                              .map((value) => value.trim())
+                              .filter(Boolean)
+                              .join(' ') || '-';
+                            const fullIdentity = [
+                              compactIdentity,
+                              target.lot_no ? `LOT ${target.lot_no}` : '',
+                              target.sequence != null ? `#${target.sequence}` : '',
+                            ].filter(Boolean).join(' · ');
+                            return (
+                              <tr key={[target.machine_name, target.sequence, target.model_name, target.part_no, target.lot_no].join('|')} className="align-top hover:bg-slate-50/70">
                               <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900">
                                 {target.machine_name || '-'}
                                 {target.sequence != null && <span className="ml-2 text-xs font-normal text-slate-400">#{target.sequence}</span>}
                               </td>
-                              <td className="px-5 py-4">
-                                <div className="font-medium text-slate-900">{target.model_name || '-'}</div>
-                                <div className="mt-1 font-mono text-xs text-slate-500">{target.part_no || '-'}{target.lot_no ? ` · LOT ${target.lot_no}` : ''}</div>
+                              <td className="max-w-[320px] px-5 py-4">
+                                <div className="truncate whitespace-nowrap font-medium text-slate-900" title={fullIdentity}>{compactIdentity}</div>
                               </td>
                               <td className="px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{formatMetricNumber(target.planned_quantity)}</td>
                               <td className="px-5 py-4">
@@ -1966,8 +2080,9 @@ export default function DailyAttentionPage() {
                                   ))}
                                 </div>
                               </td>
-                            </tr>
-                          ))}
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

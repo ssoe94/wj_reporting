@@ -30,6 +30,8 @@ fi
 export RENDER_API_BASE_URL="${RENDER_API_BASE_URL:-https://wj-reporting-backend.onrender.com/api}"
 export LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-http://127.0.0.1:8080/v1}"
 export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit}"
+export LOCAL_QWEN38_BASE_URL="${LOCAL_QWEN38_BASE_URL:-http://127.0.0.1:8082/v1}"
+export LOCAL_QWEN38_MODEL="${LOCAL_QWEN38_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit}"
 export LOCAL_GEMMA_BASE_URL="${LOCAL_GEMMA_BASE_URL:-http://127.0.0.1:8081/v1}"
 export LOCAL_GEMMA_MODEL="${LOCAL_GEMMA_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/gemma-4-26b-a4b-it-4bit}"
 export LOCAL_LLM_DEFAULT_MODEL_ID="${LOCAL_LLM_DEFAULT_MODEL_ID:-qwen35}"

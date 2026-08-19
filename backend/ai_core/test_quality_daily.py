@@ -60,7 +60,7 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(result["status"], "before_schedule")
         self.assertFalse(AiJob.objects.exists())
 
-    def test_at_07_enqueues_one_gemma_bilingual_job_and_is_idempotent(self):
+    def test_at_07_enqueues_one_qwen38_bilingual_job_and_is_idempotent(self):
         self._plan(updated_at=self._local(6, 50))
 
         first = enqueue_daily_quality_summary(self._local(7, 0))
@@ -597,14 +597,17 @@ class DailyQualitySummaryTests(TestCase):
             judgement="NG",
             phenomenon="스크래치",
         )
-        for days_ago in (2, 3):
+        for days_ago, phenomenon in (
+            (2, "未收录特殊现象"),
+            (3, "另一个未分类现象"),
+        ):
             QualityReport.objects.create(
                 report_dt=self._local(7, 0) - timedelta(days=days_ago),
                 section="LQC_INJ",
                 model="MODEL-B",
                 part_no="XYZ987654-HISTORY",
                 judgement="NG",
-                phenomenon="未收录特殊现象",
+                phenomenon=phenomenon,
             )
 
         metrics = build_daily_quality_attention(
@@ -619,16 +622,19 @@ class DailyQualitySummaryTests(TestCase):
             row for row in metrics["problem_types"]
             if row.get("canonical_key") == "scratch_damage"
         )
-        unclassified = next(
+        unclassified_rows = [
             row for row in metrics["problem_types"]
             if row.get("classification_basis") == "unclassified_recorded_text_hash"
-        )
+        ]
+        self.assertEqual(len(unclassified_rows), 1)
+        unclassified = unclassified_rows[0]
 
         self.assertEqual(contamination["evidence_count"], 3)
         self.assertEqual(contamination["label"]["ko"], "오염·이물")
         self.assertEqual(contamination["classification_basis"], "canonical_alias_v1")
         self.assertEqual(unclassified["evidence_count"], 2)
-        self.assertTrue(unclassified["metric_key"].startswith("problem:unclassified:"))
+        self.assertEqual(unclassified["metric_key"], "problem:unclassified")
+        self.assertEqual(len(unclassified["source_evidence_keys"]), 2)
         self.assertEqual(contamination["all_history_denominator"], 6)
         self.assertEqual(scratch["all_history_denominator"], 6)
         self.assertEqual(
@@ -1177,6 +1183,11 @@ class DailyQualitySummaryTests(TestCase):
             for row in input_payload["report_metrics"]["problem_types"]
             if row.get("canonical_key") == "contamination"
         )
+        scratch = next(
+            row
+            for row in input_payload["report_metrics"]["problem_types"]
+            if row.get("canonical_key") == "scratch_damage"
+        )
         gate_pair = next(
             row
             for row in input_payload["report_metrics"]["problem_location_pairs"]
@@ -1207,6 +1218,7 @@ class DailyQualitySummaryTests(TestCase):
                 "executive_summary": {"ko": "과거 이력을 확인합니다.", "zh": "确认历史记录。"},
                 "repeated_issues": [
                     {"metric_key": contamination["metric_key"]},
+                    {"metric_key": scratch["metric_key"]},
                     {"metric_key": gate_pair["metric_key"]},
                 ],
                 "accelerating_issues": [
@@ -1251,6 +1263,7 @@ class DailyQualitySummaryTests(TestCase):
         self.assertIn("연결된 전체 과거 품질 기록 10건", summary["ko"])
         self.assertIn("오염·이물 5건", summary["ko"])
         self.assertIn("오염·이물 · 게이트부 5건", summary["ko"])
+        self.assertIn("함께 확인할 반복 유형은 스크래치·찍힘 5건", summary["ko"])
         self.assertIn("최근 증가 지표는 오염·이물", summary["ko"])
         self.assertIn("최근 30일 4/5건", summary["ko"])
         self.assertIn("직전 30일 1/5건", summary["ko"])

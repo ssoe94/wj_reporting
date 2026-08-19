@@ -21,7 +21,7 @@ def quality_job() -> dict:
             "mode": "daily_attention_summary",
             "trigger": "daily_attention",
             "date": "2026-08-12",
-            "model_id": "gemma4_26b_a4b",
+            "model_id": "qwen38",
             "source_plan_hash": "plan-hash",
             "source_evidence_hash": "evidence-hash",
             "language": "bilingual",
@@ -32,7 +32,7 @@ def quality_job() -> dict:
             "schema_version": "quality-daily-attention-ai.v1",
             "date": "2026-08-12",
             "language": "bilingual",
-            "model_id": "gemma4_26b_a4b",
+            "model_id": "qwen38",
             "source_plan_hash": "plan-hash",
             "source_evidence_hash": "evidence-hash",
             "source_evidence_last_changed_at": "2026-08-11T18:30:00+08:00",
@@ -237,7 +237,7 @@ def quality_job() -> dict:
                     "current_defect_claim_allowed": False,
                     "root_cause_claim_allowed": False,
                     "problem_type_taxonomy": "server_canonical_alias_v1",
-                    "unknown_problem_policy": "separate_unclassified_recorded_text_hash",
+                    "unknown_problem_policy": "single_unclassified_bucket_with_hashed_source_evidence",
                     "metric_denominator_basis": "unique_matching_reports_in_current_plan_prefixes",
                     "location_rule": "explicit_recorded_keyword_else_unknown",
                     "location_memberships_may_overlap": True,
@@ -554,7 +554,7 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         self.assertIs(handler_for_job(job), handler)
         self.assertIn("quality_image_analysis", worker_module.HANDLERS)
 
-    def test_quality_job_requires_gemma_bilingual_server_contract(self):
+    def test_quality_job_requires_qwen38_bilingual_server_contract(self):
         for mutate, message in [
             (lambda job: job["scope"].update(model_id="qwen35"), "require model_id"),
             (lambda job: job["scope"].update(mode="image_review"), "Unsupported quality analysis mode"),
@@ -818,8 +818,8 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         self.assertNotIn("Q-1", str(llm_payload))
         self.assertNotIn("Q-3", str(llm_payload))
 
-    def test_valid_gemma_result_uses_one_bounded_call_per_history_group(self):
-        class Gemma:
+    def test_valid_qwen38_result_uses_json_mode_for_each_bounded_call(self):
+        class Qwen38:
             def __init__(self):
                 self.calls = []
 
@@ -835,41 +835,43 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
                     "selected_candidate_indices": [0],
                 }
 
-        gemma = Gemma()
+        qwen38 = Qwen38()
         result, prompt_version = handle_job(
             quality_job(),
             use_llm=True,
-            llm=gemma,
-            model_name="gemma-test",
+            llm=qwen38,
+            model_name="qwen38-test",
             fallback_to_deterministic=False,
         )
 
-        self.assertEqual(len(gemma.calls), 2)
+        self.assertEqual(len(qwen38.calls), 2)
         self.assertEqual(prompt_version, handler.PROMPT_VERSION)
         self.assertEqual(
-            gemma.calls[0][1]["required_output_schema"],
+            qwen38.calls[0][1]["required_output_schema"],
             handler.MODEL_CHUNK_OUTPUT_SCHEMA,
         )
-        self.assertEqual(gemma.calls[0][2]["max_tokens"], handler.MODEL_CHUNK_MAX_TOKENS)
-        self.assertNotIn("phenomena", gemma.calls[0][1])
-        self.assertNotIn("location_candidates", gemma.calls[0][1])
+        self.assertEqual(qwen38.calls[0][2]["max_tokens"], handler.MODEL_CHUNK_MAX_TOKENS)
+        self.assertTrue(qwen38.calls[0][2]["json_object"])
+        self.assertNotIn("phenomena", qwen38.calls[0][1])
+        self.assertNotIn("location_candidates", qwen38.calls[0][1])
         self.assertFalse(any(
             row["metric_key"].startswith("location:")
-            for row in gemma.calls[0][1]["issue_candidates"]
+            for row in qwen38.calls[0][1]["issue_candidates"]
         ))
         self.assertEqual(
-            gemma.calls[0][1]["required_output_schema"],
+            qwen38.calls[0][1]["required_output_schema"],
             {"selected_candidate_indices": ["zero-based integer index into issue_candidates"]},
         )
         self.assertEqual(
-            gemma.calls[0][1]["issue_candidates"][0]["metric_key"],
+            qwen38.calls[0][1]["issue_candidates"][0]["metric_key"],
             "pair:whitening:gate",
         )
         self.assertEqual(
-            gemma.calls[1][1]["required_output_schema"],
+            qwen38.calls[1][1]["required_output_schema"],
             handler.REPORT_SELECTOR_OUTPUT_SCHEMA,
         )
-        self.assertEqual(gemma.calls[1][2]["max_tokens"], handler.REPORT_SELECTOR_MAX_TOKENS)
+        self.assertEqual(qwen38.calls[1][2]["max_tokens"], handler.REPORT_SELECTOR_MAX_TOKENS)
+        self.assertTrue(qwen38.calls[1][2]["json_object"])
         self.assertEqual(result["source"], "local_llm_rewrite")
         self.assertEqual(result["llm_attempts"], 1)
         self.assertEqual(result["llm_chunk_count"], 2)
@@ -882,7 +884,7 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             "pair:whitening:gate",
         )
         self.assertEqual(result["attention_items"][0]["locations"], [])
-        for _system_prompt, payload, _options in gemma.calls:
+        for _system_prompt, payload, _options in qwen38.calls:
             self.assertNotIn("report_ids", str(payload))
             self.assertNotIn("report_refs", str(payload))
             self.assertNotIn("Q-1", str(payload))
@@ -1298,12 +1300,12 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
         self.assertTrue(result["report"]["executive_summary"]["ko"])
         self.assertTrue(result["report"]["executive_summary"]["zh"])
 
-    def test_wrong_model_cannot_use_deterministic_path_to_bypass_gemma_requirement(self):
+    def test_wrong_model_cannot_use_deterministic_path_to_bypass_qwen38_requirement(self):
         job = quality_job()
         job["scope"]["model_id"] = "qwen35"
         job["input_payload"]["model_id"] = "qwen35"
 
-        with self.assertRaisesRegex(ValueError, "require model_id gemma4_26b_a4b"):
+        with self.assertRaisesRegex(ValueError, "require model_id qwen38"):
             handle_job(job, False, None, "qwen-test", True)
 
     def test_llm_disabled_quality_result_is_explicit_retryable_fallback(self):
@@ -1383,7 +1385,7 @@ class QualityDailyAttentionWorkerRoutingTests(unittest.TestCase):
         def structured_analysis(self, _system_prompt, _payload, **_kwargs):
             raise AssertionError("unavailable Gemma must use deterministic fallback")
 
-    def test_claims_quality_type_and_routes_job_to_ready_gemma(self):
+    def test_claims_quality_type_and_routes_job_to_ready_qwen38(self):
         client = self.Client(quality_job())
         gemma = self.Gemma()
         qwen = self.Qwen()
@@ -1393,10 +1395,10 @@ class QualityDailyAttentionWorkerRoutingTests(unittest.TestCase):
                 qwen,
                 "/models/qwen",
             ),
-            worker_module.GEMMA_MODEL_ID: LocalModelTarget(
-                worker_module.GEMMA_MODEL_ID,
+            worker_module.QWEN38_MODEL_ID: LocalModelTarget(
+                worker_module.QWEN38_MODEL_ID,
                 gemma,
-                "/models/gemma",
+                "/models/qwen38",
             ),
         }
 
@@ -1416,18 +1418,18 @@ class QualityDailyAttentionWorkerRoutingTests(unittest.TestCase):
         self.assertEqual(gemma.calls, 2)
         self.assertFalse(client.failed)
         result = client.completed[0][1]["result_payload"]
-        self.assertEqual(result["model_id"], worker_module.GEMMA_MODEL_ID)
+        self.assertEqual(result["model_id"], worker_module.QWEN38_MODEL_ID)
         self.assertTrue(result["summary"]["ko"])
         self.assertTrue(result["summary"]["zh"])
 
-    def test_unavailable_gemma_completes_quality_job_with_deterministic_fallback(self):
+    def test_unavailable_qwen38_completes_quality_job_with_deterministic_fallback(self):
         client = self.Client(quality_job())
         gemma = self.UnavailableGemma()
         targets = {
-            worker_module.GEMMA_MODEL_ID: LocalModelTarget(
-                worker_module.GEMMA_MODEL_ID,
+            worker_module.QWEN38_MODEL_ID: LocalModelTarget(
+                worker_module.QWEN38_MODEL_ID,
                 gemma,
-                "/models/gemma",
+                "/models/qwen38",
             ),
         }
 
