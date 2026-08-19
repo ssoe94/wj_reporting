@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from cloudinary.utils import api_sign_request
 from django.contrib.auth import get_user_model
 from django.core.files.storage import FileSystemStorage
+from django.db import OperationalError
 from django.test import override_settings
 from django.utils import timezone
 from PIL import Image as PillowImage
@@ -144,6 +145,28 @@ class QualityBrowserDirectImportTests(APITestCase):
                 rf'^{re.escape(storage_prefix)}quality-import/pending/{batch_id}/'
                 rf'{asset_sha256}-[0-9a-f]{{24}}$'
             ),
+        )
+
+    def test_prepare_database_interruption_is_retryable_and_replay_is_idempotent(self):
+        manifest = _manifest(media=[])
+        payload = self._prepare_payload(manifest)
+        with mock.patch(
+            'quality.import_views.serialize_browser_direct_job',
+            side_effect=OperationalError('connection interrupted'),
+        ):
+            interrupted = self.client.post(self.jobs_url, payload, format='json')
+
+        self.assertEqual(interrupted.status_code, 503, interrupted.data)
+        self.assertEqual(interrupted.data['code'], 'quality_import_prepare_retryable')
+        self.assertIs(interrupted.data['retryable'], True)
+        self.assertRegex(interrupted.data['reference'], r'^[0-9a-f]{12}$')
+
+        replay = self.client.post(self.jobs_url, payload, format='json')
+        self.assertEqual(replay.status_code, 202, replay.data)
+        self.assertIs(replay.data['idempotent_replay'], True)
+        self.assertEqual(
+            QualityImportBatch.objects.filter(dataset_key=INCREMENTAL_JOB_DATASET_KEY).count(),
+            1,
         )
 
     @staticmethod

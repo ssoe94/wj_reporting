@@ -8,7 +8,7 @@ from collections import Counter
 from datetime import datetime, time, timedelta
 
 from django.core.files.uploadhandler import StopUpload, TemporaryFileUploadHandler
-from django.db import transaction
+from django.db import InterfaceError, OperationalError, close_old_connections, transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -654,6 +654,7 @@ class QualityExcelDirectJobView(APIView):
                 {'code': 'manifest_required', 'error': 'JSON field "manifest" is required.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        row_keys = set()
         try:
             row_keys = _direct_row_keys(envelope.get('row_keys'))
             batch, replay = prepare_browser_direct_quality_manifest(
@@ -665,12 +666,50 @@ class QualityExcelDirectJobView(APIView):
             payload = serialize_browser_direct_job(batch, requester=request.user)
         except WorkbookValidationError as exc:
             return _error(exc)
-        except Exception:
+        except (InterfaceError, OperationalError) as exc:
             reference = uuid.uuid4().hex[:12]
-            LOGGER.exception('Browser-direct quality import prepare failed reference=%s', reference)
+            manifest = envelope['manifest']
+            media = manifest.get('media') if isinstance(manifest.get('media'), list) else []
+            LOGGER.exception(
+                'Browser-direct quality import prepare temporarily unavailable '
+                'reference=%s exception=%s workbook=%s rows=%d media=%d',
+                reference,
+                type(exc).__name__,
+                str(manifest.get('workbook_sha256') or '')[:12],
+                len(row_keys),
+                len(media),
+            )
+            close_old_connections()
+            return Response(
+                {
+                    'code': 'quality_import_prepare_retryable',
+                    'retryable': True,
+                    'reference': reference,
+                    'error': (
+                        'The workbook chunk could not be prepared temporarily. '
+                        f'Retry with reference {reference}.'
+                    ),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers={'Retry-After': '1'},
+            )
+        except Exception as exc:
+            reference = uuid.uuid4().hex[:12]
+            manifest = envelope['manifest']
+            media = manifest.get('media') if isinstance(manifest.get('media'), list) else []
+            LOGGER.exception(
+                'Browser-direct quality import prepare failed '
+                'reference=%s exception=%s workbook=%s rows=%d media=%d',
+                reference,
+                type(exc).__name__,
+                str(manifest.get('workbook_sha256') or '')[:12],
+                len(row_keys),
+                len(media),
+            )
             return Response(
                 {
                     'code': 'quality_import_prepare_failed',
+                    'reference': reference,
                     'error': (
                         'The workbook chunk could not be prepared. '
                         f'Retry or contact an administrator with reference {reference}.'

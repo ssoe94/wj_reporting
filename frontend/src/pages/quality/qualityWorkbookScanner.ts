@@ -332,10 +332,14 @@ function formatDateParts(year: number, month: number, day: number): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+const DISPLAY_DATE_HEADERS = new Set(['发生日期', '检查日期']);
+const DISPLAY_DATE_PATTERN = /^(?:\d{1,2}[./-]\d{1,2}|\d{2,4}[./-]\d{1,2}[./-]\d{1,2})$/;
+
 function cellValue(
   cell: CellObject | undefined,
   XLSX: typeof import('xlsx'),
   date1904: boolean,
+  preferDisplayedDate = false,
 ): QualityWorkbookCell {
   if (!cell || cell.t === 'z' || cell.t === 'e' || cell.v == null) return null;
   const value = cell.v;
@@ -345,6 +349,11 @@ function cellValue(
       const parsed = XLSX.SSF.parse_date_code(value, { date1904 });
       if (parsed) return formatDateParts(parsed.y, parsed.m, parsed.d);
     }
+    // These workbooks encode month/day as a decimal number. A value such as
+    // 8.1 is displayed as 8.10 by the cell's `0.00` format, so using only the
+    // raw number would silently turn August 10 into August 1.
+    const displayed = typeof cell.w === 'string' ? cell.w.trim() : '';
+    if (preferDisplayedDate && DISPLAY_DATE_PATTERN.test(displayed)) return displayed;
     return value;
   }
   if (value instanceof Date) {
@@ -367,6 +376,15 @@ function worksheetRows(
   const rowCount = range.e.r + 1;
   if (rowCount > MAX_ROWS_PER_SHEET) throw workbookError('품질 시트가 5,000행 제한을 초과합니다.');
   const lastColumn = Math.min(range.e.c, MAX_COLUMNS - 1);
+  const displayDateColumns = new Set<number>();
+  const headerRowIndex = 1;
+  if (rowCount > headerRowIndex) {
+    for (let columnIndex = 0; columnIndex <= lastColumn; columnIndex += 1) {
+      const headerCell = sheet[XLSX.utils.encode_cell({ r: headerRowIndex, c: columnIndex })];
+      const header = String(headerCell?.v ?? '').replace(/\s+/g, '');
+      if (DISPLAY_DATE_HEADERS.has(header)) displayDateColumns.add(columnIndex);
+    }
+  }
   const rows: QualityWorkbookCell[][] = [];
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
     const row: QualityWorkbookCell[] = [];
@@ -375,6 +393,7 @@ function worksheetRows(
         sheet[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })],
         XLSX,
         date1904,
+        displayDateColumns.has(columnIndex),
       ));
     }
     while (row.length > 0 && row[row.length - 1] == null) row.pop();

@@ -15,7 +15,11 @@ from django.urls import reverse
 from PIL import Image as PillowImage
 from rest_framework.test import APITestCase
 
-from .incremental_import import _concurrent_report_differences, _validate_manifest
+from .incremental_import import (
+    _concurrent_report_differences,
+    _validate_manifest,
+    preview_quality_manifest,
+)
 from .models import QualityImportBatch, QualityImportMedia, QualityImportRow, QualityReport
 
 
@@ -111,6 +115,27 @@ class QualityExcelIncrementalImportAPITests(APITestCase):
                 content_type='image/png',
             )
         return self.client.post(self.commit_url, payload, format='multipart')
+
+    def test_preview_uses_displayed_month_day_and_rejects_future_date(self):
+        displayed = make_manifest(rows=issue_rows(report_date='8.10'))
+        displayed_preview = preview_quality_manifest(
+            displayed,
+            uploaded_on=date(2026, 8, 19),
+        )
+        self.assertEqual(displayed_preview['new_count'], 1)
+        self.assertEqual(displayed_preview['rows'][0]['report_date'], '2026-08-10')
+
+        future = make_manifest(rows=issue_rows(report_date='8.30'))
+        future_preview = preview_quality_manifest(
+            future,
+            uploaded_on=date(2026, 8, 19),
+        )
+        self.assertEqual(future_preview['failed_count'], 1)
+        self.assertIsNone(future_preview['rows'][0]['report_date'])
+        self.assertIn(
+            'future_report_date:2026-08-30',
+            future_preview['rows'][0]['warnings'],
+        )
 
     def test_preview_is_read_only_and_commit_uploads_only_new_row_media(self):
         image = png_bytes()
