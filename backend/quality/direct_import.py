@@ -249,16 +249,22 @@ def stable_source_key(row: dict[str, Any]) -> str:
     ).hexdigest()
 
 
-def _row_validation_errors(row: dict[str, Any]) -> list[str]:
-    errors = []
+def _row_validation_issues(row: dict[str, Any]) -> list[dict[str, str]]:
+    """Return stable, field-addressable validation issues for import UIs."""
+
+    issues: list[dict[str, str]] = []
+
+    def add(field: str, code: str, message: str) -> None:
+        issues.append({'field': field, 'code': code, 'message': message})
+
     if not row.get('report_date'):
-        errors.append('report_date is required')
+        add('report_date', 'required', 'report_date is required')
     if row.get('section') not in {value for value, _label in QualityReport.SECTION_CHOICES}:
-        errors.append('a supported section is required')
+        add('section', 'unsupported', 'a supported section is required')
     if not (row.get('model') or row.get('part_no')):
-        errors.append('model or part_no is required')
+        add('model_or_part_no', 'required', 'model or part_no is required')
     if not row.get('phenomenon'):
-        errors.append('phenomenon is required')
+        add('phenomenon', 'required', 'phenomenon is required')
     for field_name, maximum in (
         ('model', 64),
         ('part_no', 64),
@@ -266,8 +272,18 @@ def _row_validation_errors(row: dict[str, Any]) -> list[str]:
         ('judgement', 8),
     ):
         if len(str(row.get(field_name) or '')) > maximum:
-            errors.append(f'{field_name} exceeds {maximum} characters')
-    return errors
+            add(
+                field_name,
+                'max_length',
+                f'{field_name} exceeds {maximum} characters',
+            )
+    return issues
+
+
+def _row_validation_errors(row: dict[str, Any]) -> list[str]:
+    """Backward-compatible plain validation messages."""
+
+    return [issue['message'] for issue in _row_validation_issues(row)]
 
 
 def _store_image(run_id: str, item: dict[str, Any]) -> str:
@@ -444,18 +460,32 @@ def _result_row(
 ) -> dict[str, Any]:
     report_date = row.get('report_date')
     return {
+        'row_key': stable_source_key(row),
         'sheet_name': row['sheet_name'],
         'source_row_number': row['source_row_number'],
         'source_sequence': row['source_sequence'],
         'status': status,
+        'import_row_id': None,
         'report_id': report_id,
         'report_date': report_date.isoformat() if report_date else None,
         'section': row.get('section', ''),
+        'occurrence_location': row.get('occurrence_location', ''),
         'model': row.get('model', ''),
         'part_no': row.get('part_no', ''),
+        'lot_qty': row.get('lot_qty'),
+        'inspection_qty': row.get('inspection_qty'),
+        'defect_qty': row.get('defect_qty'),
+        'defect_rate': row.get('defect_rate', ''),
+        'judgement': row.get('judgement', ''),
         'phenomenon': row.get('phenomenon', ''),
+        'disposition': row.get('disposition', ''),
+        'action_result': row.get('action_result', ''),
         'images_found': images_found,
         'images_saved': images_saved,
+        'media_keys': [],
+        'editable': False,
+        'failure_code': '',
+        'validation_errors': [],
         'warnings': sorted(set(warnings)),
         'message': message,
     }

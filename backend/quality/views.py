@@ -24,6 +24,7 @@ from .duplicate_detection import (
     score_report_duplicate,
 )
 from .excel_import import normalized_row_fingerprint
+from .incremental_import import update_incremental_result_after_publish
 from .models import (
     QualityImportAsset,
     QualityImportBatch,
@@ -345,6 +346,7 @@ class QualityImportRowViewSet(
             )
             row = next(item for item in related_rows if item.pk == seed.pk)
             if row.approved_report_id:
+                update_incremental_result_after_publish(row, row.approved_report)
                 payload = self.get_serializer(row).data
                 payload['idempotent_replay'] = True
                 return Response(payload, status=status.HTTP_200_OK)
@@ -354,6 +356,24 @@ class QualityImportRowViewSet(
                     {'code': 'row_not_reviewed', 'error': 'Review the draft before publishing it.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            expected_review = request.data.get('expected_reviewed_content_sha256')
+            if expected_review is not None:
+                if not isinstance(expected_review, str) or not expected_review:
+                    return Response(
+                        {
+                            'code': 'invalid_review_version',
+                            'error': 'A valid reviewed content version is required.',
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if expected_review != row.reviewed_content_sha256:
+                    return Response(
+                        {
+                            'code': 'review_version_changed',
+                            'error': 'This row was edited again after your review. Reload and confirm the latest values.',
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
             if row.reviewed_content_sha256 != normalized_row_fingerprint(row):
                 return Response(
                     {
@@ -630,6 +650,7 @@ class QualityImportRowViewSet(
                     'duplicate_override_at', 'duplicate_override_reason', 'updated_at',
                 ]
             )
+            update_incremental_result_after_publish(row, report)
 
         payload = self.get_serializer(row).data
         payload['idempotent_replay'] = False

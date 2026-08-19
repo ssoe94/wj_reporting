@@ -302,7 +302,11 @@ def _required_media(decisions) -> tuple[dict[str, dict[str, Any]], dict[str, lis
     by_key: dict[str, dict[str, Any]] = {}
     keys_by_sha: dict[str, list[str]] = {}
     for decision in decisions:
-        if decision.status != 'new':
+        # Correctable validation failures are persisted as review drafts.  Their
+        # evidence must be delivered with the draft so publishing after an
+        # inline correction never requires the user to upload the workbook (or
+        # its pictures) a second time.
+        if decision.status != 'new' and not decision.editable:
             continue
         for item in decision.selected_media:
             by_key[item['key']] = item
@@ -439,7 +443,7 @@ def _prepare_browser_direct_once(
     images_ignored += sum(
         len(decision.selected_media)
         for decision in decisions
-        if decision.status == 'failed'
+        if decision.status == 'failed' and not decision.editable
     )
     now = timezone.now()
     with transaction.atomic():
@@ -523,7 +527,7 @@ def _prepare_browser_direct_once(
                 new_asset_ids.add(asset.pk)
 
         for decision in decisions:
-            if decision.status != 'new':
+            if decision.status != 'new' and not decision.editable:
                 continue
             row_model = row_models[stable_source_key(decision.row)]
             for item in decision.selected_media:

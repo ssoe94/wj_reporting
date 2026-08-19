@@ -26,9 +26,16 @@ import {
   previewQualityExcel,
   prepareQualityExcelDirectJob,
 } from './importApi';
+import QualityImportFailedRowEditor, {
+  qualityImportFailureMessage,
+} from './QualityImportFailedRowEditor';
 import { scanQualityWorkbook } from './qualityWorkbookScanner';
 import { deliverQualityDirectAssets } from './qualityDirectCloudinaryUpload';
-import { combineQualityImportResults, createQualityImportChunks } from './importResult';
+import {
+  combineQualityImportResults,
+  createQualityImportChunks,
+  sortQualityImportRows,
+} from './importResult';
 import {
   acceptedQualityImportJobIds,
   clearQualityImportWorkflow,
@@ -41,6 +48,7 @@ import type {
   QualityExcelImportProgress,
   QualityExcelImportResult,
   QualityExcelImportRowResult,
+  QualityImportRowWorkflowResult,
   QualityReportHistoryScope,
 } from './importTypes';
 
@@ -56,11 +64,13 @@ const copy = {
     extracting: '신규 행의 사진을 이 PC에서 준비 중',
     uploading: '이 PC에서 Cloudinary로 사진 직접 전송 중',
     finalizing: '사진 확인 및 품질 보고서 등록 중',
-    chunkProgress: '{completed}/{total}개 묶음 완료',
-    deltaSummary: '신규 {rows}건 · 사진 {images}장만 PC에서 직접 전송합니다.',
+    overallProgress: '전체 진행 {completed}/{total}개 묶음 · {percent}%',
+    currentChunkUpload: '현재 묶음 사진 {uploaded} / {total} · {percent}%',
+    overallProgressLabel: 'Excel 전체 처리 진행률',
+    deltaSummary: '신규 {newRows}건 · 수정 필요 {failedRows}건 · 전송 사진 {images}장',
     success: 'Excel 처리가 완료되었습니다.',
-    partialSuccess: '일부 행을 처리하지 못했습니다. 실패 행을 확인한 뒤 다시 시도하세요.',
-    allFailed: '등록된 행이 없습니다. 실패 원인을 확인한 뒤 다시 시도하세요.',
+    partialSuccess: '일부 행은 입력값 수정 또는 재확인이 필요합니다. 아래 실패 행을 확인하세요.',
+    allFailed: '등록된 행이 없습니다. 아래 실패 원인을 확인하고 수정 가능한 행은 바로 등록하세요.',
     upstreamUnavailable: 'Cloudinary 또는 서버 확인이 지연되었습니다. 같은 Excel 파일을 다시 선택하면 완료된 사진은 건너뛰고 이어서 진행합니다.',
     acceptanceInterrupted: '직접 전송이 중단되었습니다. 같은 Excel 파일을 다시 선택하면 완료된 사진은 건너뛰고 이어서 진행합니다.',
     resumeSameFile: '직접 전송을 재개하려면 같은 Excel 파일을 다시 선택해 주세요.',
@@ -84,7 +94,8 @@ const copy = {
     imagesSkipped: '사진 건너뜀',
     workbookWarnings: '파일 확인 사항',
     selectedSheet: '처리 대상: {sheet} 시트만 · OQC 이력 및 다른 월 시트는 제외합니다.',
-    createdPostProcess: '신규 건 후처리',
+    createdPostProcess: '신규 보고서 확인',
+    createdReviewHelp: '보고서 등록은 이미 완료되었습니다. 아래 버튼은 신규 보고서를 확인하거나 처리 결과를 입력할 때 사용합니다.',
     skippedView: '기존 건 보기',
     changedPostProcess: '변경 건 확인',
     allView: '전체 결과 보기',
@@ -94,12 +105,14 @@ const copy = {
     issue: '품질 이슈',
     images: '사진',
     notes: '메시지',
-    action: '후처리',
+    action: '확인',
     noRows: '표시할 행별 결과가 없습니다.',
     unknown: '미확인',
     reportNumber: '보고서 #{id}',
     viewReport: '보고서 보기',
     uploadFailed: 'Excel 업로드에 실패했습니다.',
+    fixRequiredTitle: '수정 필요한 행',
+    fixRequiredDescription: '{count}개 행은 입력값을 바로잡아야 등록됩니다. 실패 원인을 확인하고 수정 후 등록하세요.',
   },
   zh: {
     title: '上传 Excel 品质问题',
@@ -112,11 +125,13 @@ const copy = {
     extracting: '正在此电脑准备新增记录的图片',
     uploading: '正在从此电脑直接上传图片到 Cloudinary',
     finalizing: '正在确认图片并登记品质报告',
-    chunkProgress: '已完成 {completed}/{total} 个批次',
-    deltaSummary: '仅从此电脑直接传输 {rows} 条新增记录的 {images} 张图片。',
+    overallProgress: '总体进度 {completed}/{total} 个批次 · {percent}%',
+    currentChunkUpload: '当前批次图片 {uploaded} / {total} · {percent}%',
+    overallProgressLabel: 'Excel 整体处理进度',
+    deltaSummary: '新增 {newRows} 行 · 需修改 {failedRows} 行 · 传输图片 {images} 张',
     success: 'Excel 处理完成。',
-    partialSuccess: '部分行未处理，请确认失败行后重试。',
-    allFailed: '没有登记任何行，请确认失败原因后重试。',
+    partialSuccess: '部分行需要修改输入值或重新确认，请查看下方失败行。',
+    allFailed: '没有登记任何行，请确认下方失败原因，可修改的行可直接登记。',
     upstreamUnavailable: 'Cloudinary 或服务器确认暂时延迟。重新选择同一 Excel 文件后，将跳过已完成的图片并继续。',
     acceptanceInterrupted: '直接上传已中断。重新选择同一 Excel 文件后，将跳过已完成的图片并继续。',
     resumeSameFile: '请重新选择同一 Excel 文件以继续直接上传。',
@@ -140,7 +155,8 @@ const copy = {
     imagesSkipped: '跳过图片',
     workbookWarnings: '文件注意事项',
     selectedSheet: '处理范围：仅 {sheet} 工作表 · 排除 OQC 历史表及其他月份。',
-    createdPostProcess: '处理新增报告',
+    createdPostProcess: '查看新增报告',
+    createdReviewHelp: '报告登记已经完成。下方按钮仅用于查看新增报告或填写处理结果。',
     skippedView: '查看已有报告',
     changedPostProcess: '确认变更记录',
     allView: '查看全部结果',
@@ -150,12 +166,14 @@ const copy = {
     issue: '品质问题',
     images: '图片',
     notes: '消息',
-    action: '后续处理',
+    action: '查看',
     noRows: '没有可显示的逐行结果。',
     unknown: '未确认',
     reportNumber: '报告 #{id}',
     viewReport: '查看报告',
     uploadFailed: 'Excel 上传失败。',
+    fixRequiredTitle: '需要修改的行',
+    fixRequiredDescription: '{count} 行需要更正输入值后才能登记。请确认失败原因并修改后登记。',
   },
 } as const;
 
@@ -165,6 +183,7 @@ type ImportPhase = 'idle' | 'scanning' | 'comparing' | 'preparing' | 'extracting
 interface DirectWorkflowProgress {
   completedChunks: number;
   totalChunks: number;
+  currentChunkFraction: number;
 }
 
 interface QualityExcelImportProps {
@@ -265,6 +284,7 @@ function ResultMetric({
   );
 }
 
+
 export default function QualityExcelImport({ onPostProcess }: QualityExcelImportProps) {
   const { lang } = useLang();
   const { user, hasPermission } = useAuth();
@@ -290,7 +310,11 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
     setPendingWorkflow(restored);
     setPreview(restored.preview);
     setSelectedSheetName(restored.selectedSheetName);
-    setWorkflowProgress({ completedChunks: 0, totalChunks: restored.chunks.length });
+    setWorkflowProgress({
+      completedChunks: 0,
+      totalChunks: restored.chunks.length,
+      currentChunkFraction: 0,
+    });
     // Raw workbook Blobs are deliberately not persisted. Reload recovery is
     // explicit: the user reselects the same SHA-identical workbook, then every
     // chunk is prepared again so the backend returns only missing assets.
@@ -360,7 +384,11 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
 
       if (!workflow) throw new Error(c.uploadFailed);
       setPendingWorkflow(workflow);
-      setWorkflowProgress({ completedChunks: 0, totalChunks: workflow.chunks.length });
+      setWorkflowProgress({
+        completedChunks: 0,
+        totalChunks: workflow.chunks.length,
+        currentChunkFraction: 0,
+      });
       const commits: QualityExcelImportResult[] = [];
       const jobWarnings: string[] = [];
       for (let index = 0; index < workflow.chunks.length; index += 1) {
@@ -404,6 +432,9 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
             },
           ]));
           setPhase('extracting');
+          setWorkflowProgress((current) => (
+            current ? { ...current, currentChunkFraction: 0.1 } : current
+          ));
           const requiredKeys = [...new Set(
             job.upload_intents
               .filter((intent) => !savedReceipts.has(intent.asset_sha256))
@@ -411,11 +442,24 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
           )];
           const requiredMedia = await scanned.extractMedia(requiredKeys);
           setPhase('uploading');
+          setWorkflowProgress((current) => (
+            current ? { ...current, currentChunkFraction: 0.1 } : current
+          ));
           await deliverQualityDirectAssets({
             intents: job.upload_intents,
             media: requiredMedia,
             receipts: savedReceipts,
-            onProgress: setProgress,
+            onProgress: (nextProgress) => {
+              setProgress(nextProgress);
+              setWorkflowProgress((current) => (
+                current
+                  ? {
+                    ...current,
+                    currentChunkFraction: 0.1 + (0.8 * (nextProgress.percent / 100)),
+                  }
+                  : current
+              ));
+            },
             onReceipt: (intent, receipt) => {
               if (!workflow) throw new Error(c.uploadFailed);
               workflow = {
@@ -457,6 +501,9 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
           });
         }
         setPhase('finalizing');
+        setWorkflowProgress((current) => (
+          current ? { ...current, currentChunkFraction: 0.9 } : current
+        ));
         const finalized = await finalizeQualityExcelDirectJob(job.id);
         if (!finalized.result) throw new Error(c.uploadFailed);
         commits.push(finalized.result);
@@ -464,6 +511,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
         setWorkflowProgress({
           completedChunks: index + 1,
           totalChunks: workflow.chunks.length,
+          currentChunkFraction: 0,
         });
       }
       const response = combineQualityImportResults(workflow.preview, commits);
@@ -524,6 +572,50 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
     if (reportIds.length > 0) onPostProcess({ reportIds, kind });
   };
 
+  const handleCorrectedRowRegistered = (
+    sourceRow: QualityExcelImportRowResult,
+    publishedRow: QualityImportRowWorkflowResult,
+    successMessage: string,
+  ) => {
+    const reportId = publishedRow.approved_report;
+    if (!reportId) return;
+    setResult((current) => {
+      if (!current) return current;
+      const rows = current.rows.map((row) => row.row_key === sourceRow.row_key ? {
+        ...row,
+        import_row_id: publishedRow.id,
+        editable: false,
+        failure_code: '',
+        validation_errors: [],
+        status: 'created' as const,
+        report_id: reportId,
+        report_date: publishedRow.report_date,
+        section: publishedRow.section,
+        occurrence_location: publishedRow.occurrence_location,
+        model: publishedRow.model,
+        part_no: publishedRow.part_no,
+        lot_qty: publishedRow.lot_qty,
+        inspection_qty: publishedRow.inspection_qty,
+        defect_qty: publishedRow.defect_qty,
+        defect_rate: publishedRow.defect_rate,
+        judgement: publishedRow.judgement,
+        phenomenon: publishedRow.phenomenon,
+        disposition: publishedRow.disposition,
+        action_result: publishedRow.action_result,
+        message: successMessage,
+      } : row).sort(sortQualityImportRows);
+      return {
+        ...current,
+        created_count: rows.filter((row) => row.status === 'created').length,
+        skipped_count: rows.filter((row) => row.status === 'skipped').length,
+        changed_count: rows.filter((row) => row.status === 'changed').length,
+        failed_count: rows.filter((row) => row.status === 'failed').length,
+        created_report_ids: uniqueReportIds([...current.created_report_ids, reportId]),
+      };
+    });
+    void queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
+  };
+
   const resultCreatedIds = result ? uniqueReportIds(result.created_report_ids) : [];
   const resultSkippedIds = result ? uniqueReportIds(result.skipped_report_ids) : [];
   const resultChangedIds = result ? uniqueReportIds(result.changed_report_ids) : [];
@@ -532,6 +624,15 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
     ...resultSkippedIds,
     ...resultChangedIds,
   ]);
+  const editableFailedRows = result?.rows.filter((row) => (
+    row.status === 'failed' && row.editable && row.import_row_id !== null
+  )) || [];
+  const hasNonEditableFailures = Boolean(result?.rows.some((row) => (
+    row.status === 'failed' && !(row.editable && row.import_row_id !== null)
+  )));
+  const tableResultRows = result?.rows.filter((row) => !(
+    row.status === 'failed' && row.editable && row.import_row_id !== null
+  )) || [];
   const resultHasFailures = Boolean(result?.failed_count);
   const resultAllFailed = Boolean(
     result
@@ -550,8 +651,20 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
             ? c.finalizing
             : c.uploading;
   const workflowPercent = workflowProgress && workflowProgress.totalChunks > 0
-    ? Math.round((workflowProgress.completedChunks / workflowProgress.totalChunks) * 100)
+    ? workflowProgress.completedChunks >= workflowProgress.totalChunks
+      ? 100
+      : Math.min(99, Math.floor((
+        (workflowProgress.completedChunks + workflowProgress.currentChunkFraction)
+        / workflowProgress.totalChunks
+      ) * 100))
     : 0;
+  const overallProgressText = workflowProgress
+    ? interpolate(c.overallProgress, {
+      completed: workflowProgress.completedChunks,
+      total: workflowProgress.totalChunks,
+      percent: workflowPercent,
+    })
+    : null;
 
   return (
     <div className="space-y-6">
@@ -631,38 +744,43 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
           )}
 
           {uploading && (
-            <div className="mt-4" role="status">
+            <div className="mt-4">
               <div className="mb-1 flex flex-wrap justify-between gap-2 text-xs font-semibold text-blue-700">
                 <span>{phaseLabel}</span>
-                {(phase === 'uploading' && progress) ? (
-                  <span className="tabular-nums">
-                    {formatBytes(progress.uploadedBytes)} / {formatBytes(progress.totalBytes)} · {progress.percent}%
-                  </span>
-                ) : workflowProgress ? (
-                  <span className="tabular-nums">
-                    {interpolate(c.chunkProgress, {
-                      completed: workflowProgress.completedChunks,
-                      total: workflowProgress.totalChunks,
-                    })}
-                  </span>
-                ) : null}
+                {overallProgressText && <span className="tabular-nums">{overallProgressText}</span>}
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-blue-100">
+              <div
+                className="h-2 overflow-hidden rounded-full bg-blue-100"
+                role="progressbar"
+                aria-label={c.overallProgressLabel}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={workflowProgress ? workflowPercent : undefined}
+                aria-valuetext={overallProgressText || phaseLabel}
+              >
                 <div
-                  className={`h-full rounded-full bg-blue-600 transition-[width] ${phase === 'uploading' ? '' : 'animate-pulse'}`}
+                  className={`h-full rounded-full bg-blue-600 transition-[width] ${workflowProgress ? '' : 'animate-pulse'}`}
                   style={{
-                    width: phase === 'uploading'
-                      ? `${progress?.percent || 0}%`
-                      : workflowProgress
-                        ? `${Math.max(4, workflowPercent)}%`
-                        : '55%',
+                    width: workflowProgress ? `${workflowPercent}%` : '55%',
                   }}
                 />
               </div>
+              {phase === 'uploading' && progress && (
+                <p className="mt-1 text-right text-xs tabular-nums text-slate-500">
+                  {interpolate(c.currentChunkUpload, {
+                    uploaded: formatBytes(progress.uploadedBytes),
+                    total: formatBytes(progress.totalBytes),
+                    percent: progress.percent,
+                  })}
+                </p>
+              )}
               {preview && (
                 <p className="mt-2 text-xs text-slate-600">
                   {interpolate(c.deltaSummary, {
-                    rows: preview.new_count,
+                    newRows: preview.new_count,
+                    failedRows: preview.rows.filter((row) => (
+                      row.status === 'failed' && row.editable
+                    )).length,
                     images: preview.images_to_upload,
                   })}
                 </p>
@@ -691,6 +809,30 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
 
       {result && (
         <section className="space-y-5" aria-labelledby="quality-import-result-title">
+          {editableFailedRows.length > 0 && (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5 shadow-sm md:p-6">
+              <div className="flex items-start gap-3">
+                <span className="rounded-xl bg-rose-600 p-2.5 text-white shadow-sm">
+                  <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-950">{c.fixRequiredTitle}</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    {interpolate(c.fixRequiredDescription, { count: editableFailedRows.length })}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 space-y-3">
+                {editableFailedRows.map((row) => (
+                  <QualityImportFailedRowEditor
+                    key={row.row_key}
+                    row={row}
+                    onRegistered={handleCorrectedRowRegistered}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm md:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -710,6 +852,11 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                     {resultAllFailed ? c.allFailed : c.partialSuccess}
                   </p>
                 )}
+                {resultCreatedIds.length > 0 && (
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                    {c.createdReviewHelp}
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" disabled={resultCreatedIds.length === 0} onClick={() => openReports(resultCreatedIds, 'created')} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40">
@@ -724,7 +871,7 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                 <button type="button" disabled={allResultIds.length === 0} onClick={() => openReports(allResultIds, 'all')} className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
                   {c.allView}
                 </button>
-                {resultHasFailures && (file || pendingWorkflow) && (
+                {hasNonEditableFailures && (file || pendingWorkflow) && (
                   <button type="button" onClick={() => void retryPendingWorkflow()} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
                     <RefreshCw className="h-4 w-4" />
                     {c.retry}
@@ -771,10 +918,10 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {result.rows.length === 0 ? (
+                  {tableResultRows.length === 0 ? (
                     <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">{c.noRows}</td></tr>
-                  ) : result.rows.map((row, index) => (
-                    <tr key={`${row.sheet_name}-${row.source_row_number}-${row.source_sequence}-${index}`} className={row.status === 'failed' ? 'bg-rose-50/30' : row.status === 'changed' ? 'bg-violet-50/30' : 'hover:bg-blue-50/30'}>
+                  ) : tableResultRows.map((row) => (
+                    <tr key={row.row_key} className={row.status === 'failed' ? 'bg-rose-50/30' : row.status === 'changed' ? 'bg-violet-50/30' : 'hover:bg-blue-50/30'}>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">
                         <strong className="block text-slate-900">{row.sheet_name}</strong>
                         <span className="text-xs text-slate-500">#{row.source_row_number}{row.source_sequence ? ` · No.${row.source_sequence}` : ''}</span>
@@ -795,7 +942,13 @@ export default function QualityExcelImport({ onPostProcess }: QualityExcelImport
                         <span> / {row.images_found.toLocaleString()}</span>
                       </td>
                       <td className="max-w-sm px-4 py-3 text-sm text-slate-600">
-                        {row.message && <p className="whitespace-pre-wrap break-words">{row.message}</p>}
+                        {row.message && (
+                          <p className="whitespace-pre-wrap break-words">
+                            {row.status === 'failed'
+                              ? qualityImportFailureMessage(row, lang === 'zh' ? 'zh' : 'ko')
+                              : row.message}
+                          </p>
+                        )}
                         {row.warnings.length > 0 && (
                           <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-amber-700">
                             {row.warnings.map((warning, warningIndex) => <li key={`${warning}-${warningIndex}`}>{warning}</li>)}
