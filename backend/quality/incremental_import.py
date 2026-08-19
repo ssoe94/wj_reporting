@@ -15,7 +15,7 @@ import math
 import re
 import uuid
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Iterable, Mapping
 
@@ -34,7 +34,7 @@ from .direct_import import (
     _report_values,
     _result_row,
     _row_report_signature,
-    _row_validation_errors,
+    _row_validation_issues,
     safe_workbook_filename,
     stable_source_key,
 )
@@ -118,6 +118,9 @@ class RowDecision:
     warnings: list[str]
     message: str
     baseline_media: bool = False
+    editable: bool = False
+    failure_code: str = ''
+    validation_errors: list[dict[str, str]] = field(default_factory=list)
 
 
 class _ManifestWorksheet:
@@ -662,19 +665,7 @@ def _classify(context: ManifestContext) -> list[RowDecision]:
         warnings = list(row.get('warnings') or [])
         if len(all_media) > MAX_IMAGES_PER_REPORT:
             warnings.append(f'images_over_limit:{len(all_media) - MAX_IMAGES_PER_REPORT}')
-        validation_errors = _row_validation_errors(row)
-        if validation_errors:
-            decisions.append(RowDecision(
-                row=row,
-                media=all_media,
-                selected_media=selected_media,
-                status='failed',
-                report=None,
-                warnings=[*warnings, *validation_errors],
-                message='Required report fields are missing or invalid.',
-            ))
-            continue
-
+        validation_issues = _row_validation_issues(row)
         match = existing.get(index)
         ambiguous_source_identity = False
         if match is None:
@@ -704,18 +695,75 @@ def _classify(context: ManifestContext) -> list[RowDecision]:
             elif sequence_key is not None and candidates:
                 ambiguous_source_identity = True
 
+        if match is None and ambiguous_source_identity:
+            decisions.append(RowDecision(
+                row=row,
+                media=all_media,
+                selected_media=selected_media,
+                status='failed',
+                report=None,
+                warnings=[*warnings, 'ambiguous_source_identity'],
+                message='A moved row could not be matched safely; review it manually.',
+                failure_code='ambiguous_source_identity',
+            ))
+            continue
+
+        # A corrected draft keeps the original workbook fingerprint for audit.
+        # When that exact source row has already been published, an unchanged
+        # re-upload must resolve to the approved report instead of surfacing the
+        # original validation error again.  Any changed/unknown source still
+        # fails validation and remains editable.
+        validation_matches_published_source = False
+        if validation_issues and match is not None:
+            stored_content_sha256 = _stored_content_sha256(
+                match,
+                legacy_by_report_id=legacy_by_report_id,
+            )
+            stored_sequence = _stored_source_sequence(
+                match,
+                legacy_by_report_id=legacy_by_report_id,
+            )
+            current_sequence = str(row.get('source_sequence') or '').strip()
+            validation_matches_published_source = bool(
+                stored_content_sha256
+                and stored_content_sha256 == str(row.get('content_sha256') or '')
+                and (stored_sequence is None or stored_sequence == current_sequence)
+            )
+        if validation_issues and not validation_matches_published_source:
+            selected_media_bytes = sum(
+                int(item.get('original_byte_size') or 0)
+                for item in selected_media
+            )
+            editable = selected_media_bytes <= MAX_COMMIT_MEDIA_BYTES
+            failure_code = (
+                'row_validation_failed'
+                if editable
+                else 'selected_row_images_too_large'
+            )
+            if not editable:
+                warnings.append('selected_row_images_too_large')
+            decisions.append(RowDecision(
+                row=row,
+                media=all_media,
+                selected_media=selected_media,
+                status='failed',
+                report=None,
+                warnings=[
+                    *warnings,
+                    *(issue['message'] for issue in validation_issues),
+                ],
+                message=(
+                    'Correct the highlighted input fields and register this row.'
+                    if editable
+                    else 'This row needs more than 20 MiB of images; compress them before importing.'
+                ),
+                editable=editable,
+                failure_code=failure_code,
+                validation_errors=validation_issues,
+            ))
+            continue
+
         if match is None:
-            if ambiguous_source_identity:
-                decisions.append(RowDecision(
-                    row=row,
-                    media=all_media,
-                    selected_media=selected_media,
-                    status='failed',
-                    report=None,
-                    warnings=[*warnings, 'ambiguous_source_identity'],
-                    message='A moved row could not be matched safely; review it manually.',
-                ))
-                continue
             if sum(int(item.get('original_byte_size') or 0) for item in selected_media) > MAX_COMMIT_MEDIA_BYTES:
                 decisions.append(RowDecision(
                     row=row,
@@ -725,6 +773,7 @@ def _classify(context: ManifestContext) -> list[RowDecision]:
                     report=None,
                     warnings=[*warnings, 'selected_row_images_too_large'],
                     message='This row needs more than 20 MiB of images; compress them before importing.',
+                    failure_code='selected_row_images_too_large',
                 ))
                 continue
             decisions.append(RowDecision(
@@ -856,6 +905,9 @@ def _decision_row(decision: RowDecision, *, preview: bool) -> dict[str, Any]:
     )
     payload['media_keys'] = [item['key'] for item in decision.selected_media]
     payload['row_key'] = stable_source_key(decision.row)
+    payload['editable'] = decision.editable
+    payload['failure_code'] = decision.failure_code
+    payload['validation_errors'] = decision.validation_errors
     return payload
 
 
@@ -866,7 +918,7 @@ def preview_quality_manifest(payload: Any, *, uploaded_on: date | None = None) -
     required_media_keys = [
         item['key']
         for decision in decisions
-        if decision.status == 'new'
+        if decision.status == 'new' or decision.editable
         for item in decision.selected_media
     ]
     unlinked = _unlinked_media_count(context)
@@ -874,7 +926,7 @@ def preview_quality_manifest(payload: Any, *, uploaded_on: date | None = None) -
     ignored += sum(
         len(decision.selected_media)
         for decision in decisions
-        if decision.status == 'failed'
+        if decision.status == 'failed' and not decision.editable
     )
     return {
         'version': MANIFEST_VERSION,
@@ -971,6 +1023,9 @@ def _incremental_job_metadata(decision: RowDecision) -> dict[str, Any]:
         'preview_status': decision.status,
         'preview_message': decision.message,
         'preview_report_id': decision.report.pk if decision.report else None,
+        'editable': decision.editable,
+        'failure_code': decision.failure_code,
+        'validation_errors': decision.validation_errors,
         'images_found': len(decision.media),
         'media': [
             {
@@ -1139,7 +1194,7 @@ def _enqueue_quality_manifest_once(
     required_keys = {
         item['key']
         for decision in decisions
-        if decision.status == 'new'
+        if decision.status == 'new' or decision.editable
         for item in decision.selected_media
     }
     selected_media_keys = {
@@ -1210,6 +1265,11 @@ def _enqueue_quality_manifest_once(
 
     preview_rows = [_decision_row(decision, preview=True) for decision in decisions]
     images_ignored = sum(max(0, len(decision.media) - MAX_IMAGES_PER_REPORT) for decision in decisions)
+    images_ignored += sum(
+        len(decision.selected_media)
+        for decision in decisions
+        if decision.status == 'failed' and not decision.editable
+    )
     now = timezone.now()
     with transaction.atomic():
         _lock_staging_capacity()
@@ -1285,7 +1345,7 @@ def _enqueue_quality_manifest_once(
                     new_asset_ids.add(asset.pk)
 
             for decision in decisions:
-                if decision.status != 'new':
+                if decision.status != 'new' and not decision.editable:
                     continue
                 row_model = row_models[stable_source_key(decision.row)]
                 for item in decision.selected_media:
@@ -1358,6 +1418,46 @@ def enqueue_quality_manifest(
         )
 
 
+def _upgrade_incremental_result_shape(value: Any) -> dict[str, Any] | None:
+    """Backfill fields added after older terminal results were persisted."""
+
+    if not isinstance(value, dict):
+        return None
+    raw_rows = value.get('rows')
+    if not isinstance(raw_rows, list):
+        return value
+    defaults = {
+        'row_key': '',
+        'import_row_id': None,
+        'editable': False,
+        'failure_code': '',
+        'validation_errors': [],
+        'occurrence_location': '',
+        'lot_qty': None,
+        'inspection_qty': None,
+        'defect_qty': None,
+        'defect_rate': '',
+        'judgement': '',
+        'disposition': '',
+        'action_result': '',
+        'media_keys': [],
+    }
+    rows = []
+    for row in raw_rows:
+        if not isinstance(row, dict):
+            rows.append(row)
+            continue
+        normalized = {**defaults, **row}
+        if not normalized['row_key']:
+            normalized['row_key'] = 'legacy:{sheet}:{number}:{sequence}'.format(
+                sheet=normalized.get('sheet_name') or '',
+                number=normalized.get('source_row_number') or 0,
+                sequence=normalized.get('source_sequence') or '',
+            )
+        rows.append(normalized)
+    return {**value, 'rows': rows}
+
+
 def serialize_quality_import_job(batch: QualityImportBatch) -> dict[str, Any]:
     summary = batch.delta_summary or {}
     return {
@@ -1370,7 +1470,7 @@ def serialize_quality_import_job(batch: QualityImportBatch) -> dict[str, Any]:
         'next_attempt_at': batch.next_attempt_at.isoformat() if batch.next_attempt_at else None,
         'filename': batch.original_filename,
         'total_rows': batch.total_rows,
-        'result': summary.get('incremental_result'),
+        'result': _upgrade_incremental_result_shape(summary.get('incremental_result')),
         'warnings': list(batch.warnings or []),
     }
 
@@ -1455,7 +1555,7 @@ def _job_result_payload(
         'changed_count': sum(item['status'] == 'changed' for item in rows),
         'failed_count': sum(item['status'] == 'failed' for item in rows),
         'images_found': images_found,
-        'images_saved': sum(item['images_saved'] for item in rows if item['status'] == 'created'),
+        'images_saved': sum(item['images_saved'] for item in rows),
         'images_failed': 0,
         'images_ignored': images_ignored,
         'images_skipped': sum(
@@ -1467,8 +1567,98 @@ def _job_result_payload(
         'skipped_report_ids': skipped_ids,
         'changed_report_ids': changed_ids,
         'warnings': sorted(set(batch.warnings or [])),
-        'rows': sorted(rows, key=lambda item: (item['sheet_name'], item['source_row_number'])),
+        'rows': sorted(
+            rows,
+            key=lambda item: (
+                item['status'] != 'failed',
+                item['sheet_name'],
+                -item['source_row_number'],
+            ),
+        ),
     }
+
+
+def update_incremental_result_after_publish(
+    row: QualityImportRow,
+    report: QualityReport,
+) -> None:
+    """Make a terminal incremental checkpoint reflect an inline-corrected row.
+
+    Browser-direct prepare is idempotent and may replay the persisted terminal
+    result.  Updating that checkpoint in the same transaction as publication
+    prevents the original validation failure from reappearing on a same-file
+    retry.
+    """
+
+    batch = QualityImportBatch.objects.select_for_update().get(pk=row.batch_id)
+    if batch.dataset_key != INCREMENTAL_JOB_DATASET_KEY:
+        return
+    summary = dict(batch.delta_summary or {})
+    result = _upgrade_incremental_result_shape(summary.get('incremental_result'))
+    if not isinstance(result, dict) or not isinstance(result.get('rows'), list):
+        return
+    metadata = (row.raw_data or {}).get('_incremental_job') or {}
+    row_key = str(metadata.get('row_key') or row.source_key or '')
+    result_rows = [item for item in result['rows'] if isinstance(item, dict)]
+    matched = any(
+        item.get('import_row_id') == row.pk
+        or (row_key and item.get('row_key') == row_key)
+        for item in result_rows
+    )
+    if not matched:
+        return
+
+    attached_media = list(row.media.select_related('asset').order_by('source_index', 'id'))
+    images_saved = sum(bool(item.asset_id and item.asset and item.asset.file) for item in attached_media)
+    job_row = _job_row_dict(row)
+    validation_messages = {
+        str(item.get('message') or '')
+        for item in (metadata.get('validation_errors') or [])
+        if isinstance(item, dict)
+    }
+    corrected = RowDecision(
+        row=job_row,
+        media=[],
+        selected_media=[],
+        status='created',
+        report=report,
+        warnings=[
+            warning
+            for warning in (row.warnings or [])
+            if warning not in validation_messages
+        ],
+        message='Registered after correcting input errors.',
+    )
+    corrected_payload = _decision_row(corrected, preview=False)
+    corrected_payload.update({
+        'import_row_id': row.pk,
+        'row_key': row_key,
+        'images_found': int(metadata.get('images_found') or len(attached_media)),
+        'images_saved': images_saved,
+        'media_keys': [
+            str(item.get('key'))
+            for item in (metadata.get('media') or [])
+            if isinstance(item, dict) and item.get('key')
+        ],
+    })
+    updated_rows = [
+        corrected_payload
+        if (
+            item.get('import_row_id') == row.pk
+            or (row_key and item.get('row_key') == row_key)
+        )
+        else item
+        for item in result_rows
+    ]
+    summary['incremental_result'] = _job_result_payload(
+        batch=batch,
+        rows=updated_rows,
+        images_found=int(result.get('images_found') or 0),
+        images_ignored=int(result.get('images_ignored') or 0),
+    )
+    batch.delta_summary = summary
+    batch.results_persisted_at = timezone.now()
+    batch.save(update_fields=['delta_summary', 'results_persisted_at', 'updated_at'])
 
 
 def finalize_quality_import_job(batch_id: int, owner: str) -> dict[str, Any]:
@@ -1547,12 +1737,19 @@ def finalize_quality_import_job(batch_id: int, owner: str) -> dict[str, Any]:
             payload = _decision_row(checkpoint, preview=False)
             payload['images_found'] = images_found
             payload['images_saved'] = len(selected_media)
+            payload['import_row_id'] = row_model.pk
             result_rows.append(payload)
             continue
 
         if decision.status != 'new':
             payload = _decision_row(decision, preview=False)
             payload['images_found'] = images_found
+            payload['images_saved'] = (
+                len(selected_media)
+                if decision.editable
+                else 0
+            )
+            payload['import_row_id'] = row_model.pk
             result_rows.append(payload)
             continue
 
@@ -1640,6 +1837,7 @@ def finalize_quality_import_job(batch_id: int, owner: str) -> dict[str, Any]:
         payload = _decision_row(created, preview=False)
         payload['images_found'] = images_found
         payload['images_saved'] = len(selected_media)
+        payload['import_row_id'] = row_model.pk
         result_rows.append(payload)
 
     _record_media_baselines(decisions)

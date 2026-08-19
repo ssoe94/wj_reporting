@@ -29,7 +29,12 @@ from .incremental_import import (
     _incremental_job_scope_key,
     preview_quality_manifest,
 )
-from .models import QualityImportAsset, QualityImportBatch, QualityReport
+from .models import (
+    QualityImportAsset,
+    QualityImportBatch,
+    QualityImportRow,
+    QualityReport,
+)
 from .test_incremental_import_jobs import _issue_rows, _manifest, _media_item, _png_bytes
 
 
@@ -431,6 +436,182 @@ class QualityBrowserDirectImportTests(APITestCase):
         self.preset_api.assert_not_called()
         self.assertEqual(QualityImportBatch.objects.count(), 0)
         self.assertEqual(QualityImportAsset.objects.count(), 0)
+
+    def test_invalid_section_with_image_is_saved_as_editable_draft_then_published(self):
+        image = _png_bytes((72, 118, 164))
+        rows = _issue_rows(
+            sequence=150,
+            row_number=152,
+            phenomenon='上下尺寸小0.1-0.2',
+        )
+        # A product name was accidentally entered in the occurrence/department
+        # column.  The parser cannot map this value to a supported section.
+        rows[151][3] = '24G411'
+        manifest = _manifest(
+            [_media_item('m0', image, 0, row=152)],
+            workbook_sha256='1' * 64,
+            rows=rows,
+        )
+
+        preview = preview_quality_manifest(manifest, uploaded_on=date(2026, 8, 19))
+
+        self.assertEqual(len(preview['rows']), 1)
+        preview_row = preview['rows'][0]
+        self.assertEqual(preview_row['status'], 'failed')
+        self.assertIs(preview_row['editable'], True)
+        self.assertEqual(preview_row['failure_code'], 'row_validation_failed')
+        self.assertEqual(
+            preview_row['validation_errors'],
+            [{
+                'field': 'section',
+                'code': 'unsupported',
+                'message': 'a supported section is required',
+            }],
+        )
+        self.assertEqual(preview['required_media_keys'], ['m0'])
+
+        prepared = self._prepare(manifest)
+        self._assert_prepare_contract(prepared, intent_count=1)
+        intent = prepared.data['upload_intents'][0]
+        self.assertEqual(intent['media_keys'], ['m0'])
+        self.assertEqual(QualityReport.objects.count(), 0)
+
+        self._complete(
+            batch_id=prepared.data['id'],
+            intent=intent,
+            content=image,
+            version=151,
+        )
+        finalized = self.client.post(
+            self._finalize_url(prepared.data['id']),
+            {},
+            format='json',
+        )
+        self._assert_terminal_finalize(finalized)
+
+        result_row = finalized.data['result']['rows'][0]
+        self.assertEqual(result_row['status'], 'failed')
+        self.assertIs(result_row['editable'], True)
+        self.assertEqual(result_row['failure_code'], 'row_validation_failed')
+        self.assertEqual(result_row['images_saved'], 1)
+
+        draft = QualityImportRow.objects.get(pk=result_row['import_row_id'])
+        self.assertEqual(draft.review_status, QualityImportRow.ReviewStatus.DRAFT)
+        self.assertEqual(draft.section, '')
+        self.assertEqual(draft.occurrence_location, '24G411')
+        self.assertIsNone(draft.approved_report_id)
+        self.assertEqual(draft.media.count(), 1)
+        media = draft.media.select_related('asset').get()
+        self.assertEqual(media.source_anchor_row, 152)
+        self.assertEqual(media.asset.upload_state, QualityImportAsset.UploadState.READY)
+        self.assertTrue(media.asset.file)
+        self.assertEqual(QualityReport.objects.count(), 0)
+
+        detail_url = f'/api/quality/import-rows/{draft.pk}/'
+        publish_url = f'/api/quality/import-rows/{draft.pk}/publish/'
+        corrected = self.client.patch(
+            detail_url,
+            {
+                'section': 'LQC_INJ',
+                'occurrence_location': '注塑',
+                'review_status': QualityImportRow.ReviewStatus.REVIEWED,
+            },
+            format='json',
+        )
+        self.assertEqual(corrected.status_code, 200, corrected.data)
+        reviewed_version = corrected.data['reviewed_content_sha256']
+        self.assertRegex(reviewed_version, r'^[0-9a-f]{64}$')
+
+        stale_publish = self.client.post(
+            publish_url,
+            {'expected_reviewed_content_sha256': '0' * 64},
+            format='json',
+        )
+        self.assertEqual(stale_publish.status_code, 409, stale_publish.data)
+        self.assertEqual(stale_publish.data['code'], 'review_version_changed')
+        self.assertEqual(QualityReport.objects.count(), 0)
+
+        published = self.client.post(
+            publish_url,
+            {'expected_reviewed_content_sha256': reviewed_version},
+            format='json',
+        )
+        self.assertEqual(published.status_code, 201, published.data)
+        self.assertIs(published.data['idempotent_replay'], False)
+        self.assertEqual(QualityReport.objects.count(), 1)
+
+        draft.refresh_from_db()
+        report = QualityReport.objects.get(pk=draft.approved_report_id)
+        self.assertEqual(draft.review_status, QualityImportRow.ReviewStatus.PUBLISHED)
+        self.assertEqual(report.section, 'LQC_INJ')
+        self.assertEqual(report.phenomenon, '上下尺寸小0.1-0.2')
+        self.assertEqual(report.image1, media.asset.file.url)
+
+        replay = self.client.post(
+            publish_url,
+            {'expected_reviewed_content_sha256': reviewed_version},
+            format='json',
+        )
+        self.assertEqual(replay.status_code, 200, replay.data)
+        self.assertIs(replay.data['idempotent_replay'], True)
+        self.assertEqual(replay.data['approved_report'], report.pk)
+        self.assertEqual(QualityReport.objects.count(), 1)
+
+        repeated_preview = preview_quality_manifest(
+            manifest,
+            uploaded_on=date(2026, 8, 19),
+        )
+        self.assertEqual(repeated_preview['rows'][0]['status'], 'unchanged')
+        self.assertEqual(repeated_preview['rows'][0]['report_id'], report.pk)
+        self.assertIs(repeated_preview['rows'][0]['editable'], False)
+
+        batch_replay = self._prepare(manifest)
+        self._assert_prepare_contract(batch_replay, intent_count=0)
+        self.assertIs(batch_replay.data['idempotent_replay'], True)
+        self.assertEqual(batch_replay.data['id'], prepared.data['id'])
+        replay_rows = batch_replay.data['result']['rows']
+        self.assertEqual(len(replay_rows), 1)
+        self.assertEqual(replay_rows[0]['status'], 'created')
+        self.assertEqual(replay_rows[0]['report_id'], report.pk)
+        self.assertEqual(replay_rows[0]['import_row_id'], draft.pk)
+        self.assertEqual(replay_rows[0]['row_key'], preview_row['row_key'])
+        self.assertIs(replay_rows[0]['editable'], False)
+        self.assertEqual(replay_rows[0]['failure_code'], '')
+        self.assertEqual(replay_rows[0]['validation_errors'], [])
+        self.assertEqual(QualityReport.objects.count(), 1)
+
+    def test_non_editable_oversized_failed_row_does_not_issue_upload_intent(self):
+        rows = _issue_rows(sequence=151, row_number=153)
+        rows[152][3] = '24G411'
+        media = []
+        for index in range(3):
+            content = _png_bytes((30 + index, 80 + index, 130 + index))
+            item = _media_item(f'm{index}', content, index, row=153)
+            # Each source is individually valid for direct upload, while the
+            # row total exceeds the 20 MiB transaction safety limit.
+            item['byte_size'] = 8 * 1024 * 1024
+            media.append(item)
+        manifest = _manifest(media, workbook_sha256='2' * 64, rows=rows)
+
+        preview = preview_quality_manifest(manifest, uploaded_on=date(2026, 8, 19))
+
+        self.assertEqual(len(preview['rows']), 1)
+        preview_row = preview['rows'][0]
+        self.assertEqual(preview_row['status'], 'failed')
+        self.assertIs(preview_row['editable'], False)
+        self.assertEqual(
+            preview_row['failure_code'],
+            'selected_row_images_too_large',
+        )
+        self.assertEqual(preview['required_media_keys'], [])
+
+        prepared = self._prepare(manifest)
+        self._assert_prepare_contract(prepared, intent_count=0)
+        self.preset_api.assert_not_called()
+        self.assertEqual(QualityImportAsset.objects.count(), 0)
+        draft = QualityImportRow.objects.get(batch_id=prepared.data['id'])
+        self.assertEqual(draft.media.count(), 0)
+        self.assertEqual(QualityReport.objects.count(), 0)
 
     def test_complete_rejects_foreign_owner_wrong_public_id_and_bad_signature(self):
         image = _png_bytes((80, 20, 160))

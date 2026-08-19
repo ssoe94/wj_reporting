@@ -17,7 +17,13 @@ from rest_framework.test import APITestCase
 
 from . import incremental_import
 from .excel_import import WorkbookValidationError, process_quality_import_batch
-from .models import QualityImportAsset, QualityImportBatch, QualityReport
+from .models import (
+    QualityImportAsset,
+    QualityImportBatch,
+    QualityImportMedia,
+    QualityImportRow,
+    QualityReport,
+)
 
 
 def _png_bytes(color: tuple[int, int, int]) -> bytes:
@@ -194,6 +200,53 @@ class QualityExcelIncrementalJobTests(APITestCase):
         self.assertTrue(bytes(asset.staged_bytes))
         self.assertEqual(hashlib.sha256(bytes(asset.staged_bytes)).hexdigest(), asset.sha256)
         self.assertFalse(asset.file)
+        self.assertEqual(QualityReport.objects.count(), 0)
+
+    def test_editable_failed_row_image_is_staged_by_background_enqueue(self):
+        image = _png_bytes((45, 95, 145))
+        rows = _issue_rows(
+            sequence=150,
+            row_number=152,
+            phenomenon='上下尺寸小0.1-0.2',
+        )
+        rows[151][3] = '24G411'
+        manifest = _manifest(
+            [_media_item('m0', image, 0, row=152)],
+            workbook_sha256='7' * 64,
+            rows=rows,
+        )
+
+        preview = self._preview(manifest)
+        self.assertEqual(preview.data['required_media_keys'], ['m0'])
+        self.assertEqual(preview.data['rows'][0]['status'], 'failed')
+        self.assertIs(preview.data['rows'][0]['editable'], True)
+
+        response = self._post_job(manifest, {'m0': image})
+
+        self.assertEqual(response.status_code, 202, response.data)
+        batch = QualityImportBatch.objects.get(pk=response.data['id'])
+        self.assertEqual(batch.status, QualityImportBatch.Status.QUEUED)
+        self.assertEqual(batch.total_media, 1)
+        self.assertEqual(batch.new_media_count, 1)
+        asset = QualityImportAsset.objects.get(created_by_batch=batch)
+        self.assertEqual(asset.upload_state, QualityImportAsset.UploadState.STAGED)
+        self.assertTrue(asset.staged_bytes)
+        self.assertFalse(asset.file)
+
+        draft = QualityImportRow.objects.get(batch=batch)
+        self.assertEqual(draft.review_status, QualityImportRow.ReviewStatus.DRAFT)
+        self.assertEqual(draft.section, '')
+        self.assertEqual(draft.occurrence_location, '24G411')
+        metadata = draft.raw_data['_incremental_job']
+        self.assertIs(metadata['editable'], True)
+        self.assertEqual(metadata['failure_code'], 'row_validation_failed')
+        attachment = QualityImportMedia.objects.select_related('asset').get(
+            batch=batch,
+            row=draft,
+        )
+        self.assertEqual(attachment.asset_id, asset.pk)
+        self.assertEqual(attachment.source_anchor_row, 152)
+        self.assertEqual(attachment.source_sha256, hashlib.sha256(image).hexdigest())
         self.assertEqual(QualityReport.objects.count(), 0)
 
     @override_settings(
@@ -435,6 +488,83 @@ class QualityExcelIncrementalJobTests(APITestCase):
         self.assertEqual(terminal.data['phase'], 'ready')
         self.assertEqual(terminal.data['progress_done'], terminal.data['progress_total'])
         self.assertEqual(terminal.data['result']['created_count'], 1)
+
+    def test_terminal_legacy_result_rows_receive_current_contract_defaults(self):
+        legacy_row = {
+            'sheet_name': '8月',
+            'source_row_number': 3,
+            'source_sequence': '1',
+            'status': 'skipped',
+            'report_id': 44,
+            'report_date': '2026-08-18',
+            'section': 'LQC_INJ',
+            'model': '27G523',
+            'part_no': 'ACQ30854201',
+            'phenomenon': '顶部拉白',
+            'images_found': 0,
+            'images_saved': 0,
+            'warnings': [],
+            'message': 'Existing report is unchanged and will be skipped.',
+        }
+        batch = QualityImportBatch.objects.create(
+            uploaded_by=self.editor,
+            original_filename='legacy-quality.xlsx',
+            sha256='8' * 64,
+            import_scope_key='inc:' + '8' * 28,
+            file_size=1234,
+            dataset_key=incremental_import.INCREMENTAL_JOB_DATASET_KEY,
+            status=QualityImportBatch.Status.READY,
+            phase='ready',
+            total_rows=1,
+            delta_summary={
+                'incremental_result': {
+                    'filename': 'legacy-quality.xlsx',
+                    'total_rows': 1,
+                    'created_count': 0,
+                    'skipped_count': 1,
+                    'changed_count': 0,
+                    'failed_count': 0,
+                    'images_found': 0,
+                    'images_saved': 0,
+                    'images_failed': 0,
+                    'images_ignored': 0,
+                    'images_skipped': 0,
+                    'created_report_ids': [],
+                    'skipped_report_ids': [44],
+                    'changed_report_ids': [],
+                    'warnings': [],
+                    'rows': [legacy_row],
+                },
+            },
+        )
+
+        with mock.patch('quality.import_views.kick_quality_import_pump'):
+            response = self.client.get(
+                reverse('quality-excel-import-job-detail', args=[batch.pk]),
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        row = response.data['result']['rows'][0]
+        for field, expected in {
+            'import_row_id': None,
+            'occurrence_location': '',
+            'lot_qty': None,
+            'inspection_qty': None,
+            'defect_qty': None,
+            'defect_rate': '',
+            'judgement': '',
+            'disposition': '',
+            'action_result': '',
+            'media_keys': [],
+            'editable': False,
+            'failure_code': '',
+            'validation_errors': [],
+        }.items():
+            self.assertIn(field, row)
+            self.assertEqual(row[field], expected)
+        self.assertEqual(row['row_key'], 'legacy:8月:3:1')
+        self.assertEqual(row['report_id'], 44)
+        self.assertEqual(row['status'], 'skipped')
 
     def test_job_permissions_require_authentication_and_edit_access(self):
         manifest = _manifest(workbook_sha256='d' * 64)

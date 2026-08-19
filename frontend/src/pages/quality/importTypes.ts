@@ -3,6 +3,12 @@ export type QualityExcelPreviewRowStatus = 'new' | 'unchanged' | 'changed' | 'fa
 
 export type QualityWorkbookCell = string | number | boolean | null;
 
+export interface QualityExcelImportValidationError {
+  field: string;
+  code: string;
+  message: string;
+}
+
 export interface QualityWorkbookSheetManifest {
   sheet_name: string;
   rows: QualityWorkbookCell[][];
@@ -33,6 +39,10 @@ export interface QualityWorkbookManifest {
 
 export interface QualityExcelImportRowResult {
   row_key: string;
+  import_row_id: number | null;
+  editable: boolean;
+  failure_code: string;
+  validation_errors: QualityExcelImportValidationError[];
   sheet_name: string;
   source_row_number: number;
   source_sequence: string;
@@ -40,14 +50,63 @@ export interface QualityExcelImportRowResult {
   report_id: number | null;
   report_date: string | null;
   section: string;
+  occurrence_location: string;
   model: string;
   part_no: string;
+  lot_qty: number | null;
+  inspection_qty: number | null;
+  defect_qty: number | null;
+  defect_rate: string;
+  judgement: string;
   phenomenon: string;
+  disposition: string;
+  action_result: string;
   images_found: number;
   images_saved: number;
   media_keys: string[];
   warnings: string[];
   message: string;
+}
+
+export interface QualityImportRowReviewPayload {
+  report_date: string;
+  section: string;
+  occurrence_location: string;
+  model: string;
+  part_no: string;
+  defect_rate: string;
+  judgement: string;
+  phenomenon: string;
+  review_status: 'reviewed';
+}
+
+export interface QualityImportRowWorkflowResult {
+  id: number;
+  reviewed_content_sha256: string;
+  report_date: string | null;
+  section: string;
+  occurrence_location: string;
+  model: string;
+  part_no: string;
+  lot_qty: number | null;
+  inspection_qty: number | null;
+  defect_qty: number | null;
+  defect_rate: string;
+  judgement: string;
+  phenomenon: string;
+  disposition: string;
+  action_result: string;
+  review_status: 'draft' | 'reviewed' | 'rejected' | 'unchanged' | 'published';
+  approved_report: number | null;
+  idempotent_replay?: boolean;
+}
+
+export interface QualityImportPublishConflict {
+  code: string;
+  error: string;
+  confirmation_required?: boolean;
+  approved_report?: number;
+  original_import_row?: number;
 }
 
 export interface QualityExcelImportResult {

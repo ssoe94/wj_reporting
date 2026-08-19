@@ -7,6 +7,9 @@ import type {
   QualityExcelImportPreview,
   QualityExcelImportJob,
   QualityExcelImportResult,
+  QualityImportPublishConflict,
+  QualityImportRowReviewPayload,
+  QualityImportRowWorkflowResult,
   QualityWorkbookManifest,
 } from './importTypes';
 
@@ -42,9 +45,26 @@ function isOptionalString(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
 }
 
+function isOptionalCount(value: unknown): value is number | null {
+  return value === null || isCount(value);
+}
+
+function isValidationErrors(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => (
+    isRecord(item)
+    && typeof item.field === 'string'
+    && typeof item.code === 'string'
+    && typeof item.message === 'string'
+  ));
+}
+
 function isImportRow(value: unknown, statuses: ReadonlySet<string>): boolean {
   return isRecord(value)
     && typeof value.row_key === 'string'
+    && (value.import_row_id === null || (Number.isSafeInteger(value.import_row_id) && Number(value.import_row_id) > 0))
+    && typeof value.editable === 'boolean'
+    && typeof value.failure_code === 'string'
+    && isValidationErrors(value.validation_errors)
     && typeof value.sheet_name === 'string'
     && isCount(value.source_row_number)
     && typeof value.source_sequence === 'string'
@@ -53,14 +73,90 @@ function isImportRow(value: unknown, statuses: ReadonlySet<string>): boolean {
     && isOptionalReportId(value.report_id)
     && isOptionalString(value.report_date)
     && typeof value.section === 'string'
+    && typeof value.occurrence_location === 'string'
     && typeof value.model === 'string'
     && typeof value.part_no === 'string'
+    && isOptionalCount(value.lot_qty)
+    && isOptionalCount(value.inspection_qty)
+    && isOptionalCount(value.defect_qty)
+    && typeof value.defect_rate === 'string'
+    && typeof value.judgement === 'string'
     && typeof value.phenomenon === 'string'
+    && typeof value.disposition === 'string'
+    && typeof value.action_result === 'string'
     && isCount(value.images_found)
     && isCount(value.images_saved)
     && isStringArray(value.media_keys)
     && isStringArray(value.warnings)
     && typeof value.message === 'string';
+}
+
+const IMPORT_ROW_REVIEW_STATUSES = new Set([
+  'draft', 'reviewed', 'rejected', 'unchanged', 'published',
+]);
+
+function isImportRowWorkflowResult(value: unknown): value is QualityImportRowWorkflowResult {
+  return isRecord(value)
+    && Number.isSafeInteger(value.id)
+    && Number(value.id) > 0
+    && /^[0-9a-f]{64}$/.test(String(value.reviewed_content_sha256 || ''))
+    && isOptionalString(value.report_date)
+    && typeof value.section === 'string'
+    && typeof value.occurrence_location === 'string'
+    && typeof value.model === 'string'
+    && typeof value.part_no === 'string'
+    && isOptionalCount(value.lot_qty)
+    && isOptionalCount(value.inspection_qty)
+    && isOptionalCount(value.defect_qty)
+    && typeof value.defect_rate === 'string'
+    && typeof value.judgement === 'string'
+    && typeof value.phenomenon === 'string'
+    && typeof value.disposition === 'string'
+    && typeof value.action_result === 'string'
+    && typeof value.review_status === 'string'
+    && IMPORT_ROW_REVIEW_STATUSES.has(value.review_status)
+    && isOptionalReportId(value.approved_report)
+    && (value.idempotent_replay === undefined || typeof value.idempotent_replay === 'boolean');
+}
+
+function assertImportRowWorkflowResponse(
+  value: unknown,
+  contentType: unknown,
+): asserts value is QualityImportRowWorkflowResult {
+  if (!isJsonResponse(contentType) || !isImportRowWorkflowResult(value)) {
+    throw new Error('서버의 실패 행 수정 응답 형식이 올바르지 않습니다. 잠시 후 다시 확인해 주세요.');
+  }
+}
+
+function parsePublishConflict(value: unknown): QualityImportPublishConflict | null {
+  if (
+    !isRecord(value)
+    || typeof value.code !== 'string'
+    || typeof value.error !== 'string'
+  ) return null;
+  return {
+    code: value.code,
+    error: value.error,
+    confirmation_required: typeof value.confirmation_required === 'boolean'
+      ? value.confirmation_required
+      : undefined,
+    approved_report: Number.isSafeInteger(value.approved_report) && Number(value.approved_report) > 0
+      ? Number(value.approved_report)
+      : undefined,
+    original_import_row: Number.isSafeInteger(value.original_import_row) && Number(value.original_import_row) > 0
+      ? Number(value.original_import_row)
+      : undefined,
+  };
+}
+
+export class QualityImportPublishConflictError extends Error {
+  readonly conflict: QualityImportPublishConflict;
+
+  constructor(conflict: QualityImportPublishConflict) {
+    super(conflict.error);
+    this.name = 'QualityImportPublishConflictError';
+    this.conflict = conflict;
+  }
 }
 
 const PREVIEW_STATUSES = new Set(['new', 'unchanged', 'changed', 'failed']);
@@ -352,4 +448,57 @@ export async function finalizeQualityExcelDirectJob(jobId: number): Promise<Qual
     throw new Error('서버가 Excel 등록 결과를 반환하지 않았습니다. 같은 파일로 다시 확인해 주세요.');
   }
   return response.data;
+}
+
+export async function reviewQualityImportRow(
+  importRowId: number,
+  payload: QualityImportRowReviewPayload,
+): Promise<QualityImportRowWorkflowResult> {
+  if (!Number.isSafeInteger(importRowId) || importRowId <= 0) {
+    throw new Error('수정할 Excel 행 식별자가 올바르지 않습니다.');
+  }
+  const response = await api.patch<unknown>(
+    `/quality/import-rows/${importRowId}/`,
+    payload,
+    { timeout: 30_000 },
+  );
+  assertImportRowWorkflowResponse(response.data, response.headers['content-type']);
+  if (response.data.id !== importRowId || response.data.review_status !== 'reviewed') {
+    throw new Error('서버가 수정한 Excel 행을 검토 완료 상태로 저장하지 못했습니다.');
+  }
+  return response.data;
+}
+
+export async function publishQualityImportRow(
+  importRowId: number,
+  expectedReviewedContentSha256: string,
+): Promise<QualityImportRowWorkflowResult> {
+  if (!Number.isSafeInteger(importRowId) || importRowId <= 0) {
+    throw new Error('등록할 Excel 행 식별자가 올바르지 않습니다.');
+  }
+  if (!/^[0-9a-f]{64}$/.test(expectedReviewedContentSha256)) {
+    throw new Error('검토한 Excel 행의 버전 정보가 올바르지 않습니다. 다시 수정해 주세요.');
+  }
+  try {
+    const response = await api.post<unknown>(
+      `/quality/import-rows/${importRowId}/publish/`,
+      { expected_reviewed_content_sha256: expectedReviewedContentSha256 },
+      { timeout: 60_000 },
+    );
+    assertImportRowWorkflowResponse(response.data, response.headers['content-type']);
+    if (
+      response.data.id !== importRowId
+      || response.data.review_status !== 'published'
+      || response.data.approved_report === null
+    ) {
+      throw new Error('서버가 수정한 Excel 행의 보고서 등록을 확인하지 못했습니다.');
+    }
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 409) {
+      const conflict = parsePublishConflict(error.response.data);
+      if (conflict) throw new QualityImportPublishConflictError(conflict);
+    }
+    throw error;
+  }
 }
