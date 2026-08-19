@@ -12,7 +12,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
@@ -23,8 +23,12 @@ from .duplicate_detection import (
     find_best_report_duplicates,
     score_report_duplicate,
 )
-from .excel_import import normalized_row_fingerprint
-from .incremental_import import update_incremental_result_after_publish
+from .browser_direct_import import DIRECT_DELIVERY_MODE
+from .excel_import import _lock_staging_capacity, normalized_row_fingerprint
+from .incremental_import import (
+    INCREMENTAL_JOB_DATASET_KEY,
+    update_incremental_result_after_publish,
+)
 from .models import (
     QualityImportAsset,
     QualityImportBatch,
@@ -46,6 +50,41 @@ from .daily_attention import build_daily_quality_attention
 from ai_core.quality_daily import quality_daily_report_for_page
 
 logger = logging.getLogger(__name__)
+
+
+BULK_DELETE_MAX_REPORTS = 100
+MAX_DATABASE_ID = 9_223_372_036_854_775_807
+
+
+def _active_incremental_report_delete_jobs():
+    """Jobs that could race a user-selected report deletion."""
+
+    now = timezone.now()
+    return QualityImportBatch.objects.filter(dataset_key=INCREMENTAL_JOB_DATASET_KEY).filter(
+        Q(status=QualityImportBatch.Status.QUEUED)
+        | Q(status=QualityImportBatch.Status.PROCESSING)
+        | (
+            Q(status=QualityImportBatch.Status.STAGING)
+            & Q(delta_summary__delivery_mode=DIRECT_DELIVERY_MODE)
+            & Q(lease_expires_at__gt=now)
+        )
+    )
+
+
+def _result_report_ids(batch: QualityImportBatch) -> set[int]:
+    result = (batch.delta_summary or {}).get('incremental_result')
+    if not isinstance(result, dict):
+        return set()
+    report_ids: set[int] = set()
+    for field_name in ('created_report_ids', 'skipped_report_ids', 'changed_report_ids'):
+        values = result.get(field_name)
+        if not isinstance(values, list):
+            continue
+        report_ids.update(
+            value for value in values
+            if type(value) is int and value > 0
+        )
+    return report_ids
 
 
 def _content_archive_path(sha256):
@@ -104,7 +143,7 @@ class QualityReportViewSet(viewsets.ModelViewSet):
             raise ValidationError({'ids': 'At most 10,000 report IDs may be requested.'})
         if any(type(value) is not int for value in report_ids):
             raise ValidationError({'ids': 'Report IDs must be integers.'})
-        if any(value <= 0 or value > 9_223_372_036_854_775_807 for value in report_ids):
+        if any(value <= 0 or value > MAX_DATABASE_ID for value in report_ids):
             raise ValidationError({'ids': 'Report IDs must be valid positive integers.'})
         if len(set(report_ids)) != len(report_ids):
             raise ValidationError({'ids': 'Report IDs must be unique.'})
@@ -164,11 +203,187 @@ class QualityReportViewSet(viewsets.ModelViewSet):
             serializer.save()
 
     def perform_update(self, serializer):
-        part_no = serializer.validated_data.get('part_no')
-        if isinstance(part_no, str):
-            serializer.save(part_no=part_no.upper())
-        else:
-            serializer.save()
+        # The normal DRF update flow reads the instance before this hook.  Lock
+        # and re-fetch it inside the write transaction so a concurrent bulk
+        # delete cannot commit between that read and ``Model.save()`` (which
+        # could otherwise fall back to an INSERT with the deleted primary key).
+        with transaction.atomic():
+            try:
+                locked_report = (
+                    QualityReport.objects
+                    .select_for_update(of=('self',))
+                    .get(pk=serializer.instance.pk)
+                )
+            except QualityReport.DoesNotExist as exc:
+                raise NotFound('The quality report no longer exists.') from exc
+
+            serializer.instance = locked_report
+            part_no = serializer.validated_data.get('part_no')
+            if isinstance(part_no, str):
+                serializer.save(part_no=part_no.upper())
+            else:
+                serializer.save()
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='bulk-delete',
+        url_name='bulk-delete',
+        parser_classes=[JSONParser],
+    )
+    def bulk_delete(self, request):
+        """Atomically delete an exact user-selected set of quality reports.
+
+        Remote image objects are deliberately retained because report image
+        URLs can refer to shared, content-addressed assets.  Incremental Excel
+        checkpoints that mention a deleted report are invalidated so retrying
+        the workbook cannot replay stale report IDs.
+        """
+
+        if not isinstance(request.data, dict):
+            raise ValidationError({'detail': 'Expected a JSON object.'})
+        report_ids = request.data.get('ids')
+        if not isinstance(report_ids, list) or not report_ids:
+            raise ValidationError({'ids': 'Select at least one report.'})
+        if len(report_ids) > BULK_DELETE_MAX_REPORTS:
+            raise ValidationError({
+                'ids': f'At most {BULK_DELETE_MAX_REPORTS} reports may be deleted at once.',
+            })
+        if any(
+            type(value) is not int or value <= 0 or value > MAX_DATABASE_ID
+            for value in report_ids
+        ):
+            raise ValidationError({'ids': 'Report IDs must be positive integers.'})
+        if len(set(report_ids)) != len(report_ids):
+            raise ValidationError({'ids': 'Report IDs must be unique.'})
+        expected_confirmation = f'DELETE_REPORTS:{len(report_ids)}'
+        if request.data.get('confirmation') != expected_confirmation:
+            raise ValidationError({'confirmation': 'The deletion confirmation token does not match.'})
+
+        requested_ids = sorted(report_ids)
+        with transaction.atomic():
+            # Serialize report deletion with new durable Excel intake.  This
+            # prevents a job from publishing one of these rows between the
+            # active-job check and the report delete.
+            _lock_staging_capacity()
+            active_job_ids = list(
+                _active_incremental_report_delete_jobs()
+                .select_for_update()
+                .values_list('id', flat=True)
+            )
+            if active_job_ids:
+                return Response(
+                    {
+                        'code': 'bulk_delete_jobs_active',
+                        'error': 'Wait for active Excel jobs to finish before deleting reports.',
+                        'active_incremental_jobs': len(active_job_ids),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            # ``source_import_row`` is nullable.  PostgreSQL rejects FOR
+            # UPDATE across that outer join, so lock only QualityReport rows.
+            reports = list(
+                QualityReport.objects
+                .select_for_update(of=('self',))
+                .filter(pk__in=requested_ids)
+                .order_by('id')
+            )
+            found_ids = [report.pk for report in reports]
+            if found_ids != requested_ids:
+                found_id_set = set(found_ids)
+                return Response(
+                    {
+                        'code': 'bulk_delete_scope_changed',
+                        'error': 'The selected reports changed. Refresh the list and select them again.',
+                        'missing_report_ids': [
+                            report_id for report_id in requested_ids
+                            if report_id not in found_id_set
+                        ],
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            image_reference_count = sum(
+                bool(getattr(report, field_name))
+                for report in reports
+                for field_name in ('image1', 'image2', 'image3', 'image4', 'image5')
+            )
+            linked_rows = list(
+                QualityImportRow.objects.select_for_update().filter(
+                    approved_report_id__in=requested_ids,
+                )
+            )
+            linked_row_ids = [row.pk for row in linked_rows]
+            linked_batch_ids = set(
+                QualityImportRow.objects.filter(
+                    pk__in=linked_row_ids,
+                    batch__dataset_key=INCREMENTAL_JOB_DATASET_KEY,
+                ).values_list('batch_id', flat=True)
+            )
+
+            terminal_batches = list(
+                QualityImportBatch.objects.select_for_update().filter(
+                    dataset_key=INCREMENTAL_JOB_DATASET_KEY,
+                    status__in=[
+                        QualityImportBatch.Status.READY,
+                        QualityImportBatch.Status.READY_WITH_WARNINGS,
+                        QualityImportBatch.Status.FAILED,
+                    ],
+                )
+            )
+            requested_id_set = set(requested_ids)
+            affected_batches = [
+                batch for batch in terminal_batches
+                if (
+                    batch.pk in linked_batch_ids
+                    or bool(_result_report_ids(batch).intersection(requested_id_set))
+                )
+            ]
+
+            QualityReport.objects.filter(pk__in=requested_ids).delete()
+            if linked_row_ids:
+                QualityImportRow.objects.filter(pk__in=linked_row_ids).update(
+                    review_status=QualityImportRow.ReviewStatus.DRAFT,
+                    reviewed_by=None,
+                    reviewed_at=None,
+                    reviewed_content_sha256='',
+                    published_at=None,
+                    updated_at=timezone.now(),
+                )
+
+            for batch in affected_batches:
+                summary = dict(batch.delta_summary or {})
+                summary['incremental_result'] = None
+                batch.delta_summary = summary
+                batch.status = QualityImportBatch.Status.FAILED
+                batch.phase = 'reports_deleted'
+                batch.processing_owner = ''
+                batch.lease_expires_at = None
+                batch.next_attempt_at = None
+                batch.last_heartbeat_at = None
+                batch.results_persisted_at = None
+                batch.save(update_fields=[
+                    'delta_summary', 'status', 'phase', 'processing_owner',
+                    'lease_expires_at', 'next_attempt_at', 'last_heartbeat_at',
+                    'results_persisted_at', 'updated_at',
+                ])
+
+        logger.warning(
+            'Quality report bulk delete user=%s report_ids=%s reset_incremental_jobs=%s',
+            request.user.pk,
+            requested_ids,
+            len(affected_batches),
+        )
+        return Response({
+            'deleted_count': len(requested_ids),
+            'deleted_report_ids': requested_ids,
+            'deleted_image_references': image_reference_count,
+            'reset_incremental_jobs': len(affected_batches),
+            'remote_image_cleanup': (
+                'not_required' if image_reference_count == 0 else 'deferred'
+            ),
+        })
 
 
 class DailyQualityAttentionView(APIView):

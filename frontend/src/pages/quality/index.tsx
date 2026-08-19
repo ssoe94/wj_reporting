@@ -1,141 +1,140 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { ClipboardList, FileText, History } from 'lucide-react';
 import { useLang } from '../../i18n';
+import { useAuth } from '../../contexts/AuthContext';
 import QualityReportForm from './QualityReportForm';
 import QualityReportHistory from './QualityReportHistory';
 import QualityExcelImport from './QualityExcelImport';
+import QualityRecentReports from './QualityRecentReports';
 import type { QualityReportHistoryScope } from './importTypes';
-import { ClipboardList, FileSpreadsheet } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
-
-type QualityTab = 'report' | 'import' | 'history';
 
 export default function QualityPage() {
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const { user, hasPermission } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<QualityTab>('report');
+  const excelSectionRef = useRef<HTMLDivElement | null>(null);
   const [historyScope, setHistoryScope] = useState<QualityReportHistoryScope | null>(null);
   const canEditQuality = Boolean(user?.is_staff || hasPermission('can_edit_quality'));
+  const isHistoryView = !canEditQuality || location.hash === '#stats';
 
   useEffect(() => {
-    if (location.hash === '#stats') {
-      setActiveTab('history');
-    } else if (location.hash === '#import' && canEditQuality) {
-      setActiveTab('import');
-    } else if (canEditQuality) {
-      setActiveTab('report');
-    } else {
-      setActiveTab('history');
-    }
+    if (!canEditQuality || location.hash !== '#import') return;
+    const frame = window.requestAnimationFrame(() => {
+      excelSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [canEditQuality, location.hash]);
 
-  const selectTab = (tab: QualityTab) => {
-    if (!canEditQuality && tab !== 'history') return;
-    if (tab === 'history') setHistoryScope(null);
-    const hash = tab === 'history' ? 'stats' : tab;
-    setActiveTab(tab);
-    navigate(`/quality#${hash}`);
+  const openWorkspace = () => {
+    navigate('/quality#report');
+  };
+
+  const openAllHistory = () => {
+    setHistoryScope(null);
+    navigate('/quality#stats');
   };
 
   const openImportedReports = (scope: QualityReportHistoryScope) => {
     setHistoryScope(scope);
-    setActiveTab('history');
     navigate('/quality#stats');
   };
 
-  const tabVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-    exit: { opacity: 0, y: -20, transition: { duration: 0.2 } }
-  };
-
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 space-y-6">
-      {/* 페이지 제목과 토글을 같은 줄에 배치 */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
-        <div className="flex items-center gap-3">
-          <ClipboardList className="h-7 w-7 text-blue-600" />
-          <h1 className="text-2xl font-bold text-gray-900">{t('brand_quality')}</h1>
+    <div className="mx-auto max-w-7xl space-y-5 px-4 py-5 md:px-8 md:py-6">
+      <header className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="rounded-xl bg-blue-600 p-2 text-white shadow-sm">
+            <ClipboardList className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-slate-950">{t('brand_quality')}</h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              {lang === 'zh' ? '登记、Excel 导入与最近履历集中管理' : '등록, Excel 가져오기, 최근 이력을 한곳에서 관리합니다.'}
+            </p>
+          </div>
         </div>
-        <div className={`grid w-full rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-1 sm:ml-2 sm:inline-flex sm:w-auto ${canEditQuality ? 'grid-cols-3' : 'grid-cols-1'}`}>
+
+        <nav
+          aria-label={lang === 'zh' ? '品质管理页面' : '품질 관리 화면'}
+          className={`grid w-full rounded-xl border border-blue-200 bg-white/80 p-1 shadow-sm sm:w-auto ${canEditQuality ? 'grid-cols-2' : 'grid-cols-1'}`}
+        >
           {canEditQuality && (
-            <>
-              <button
-                onClick={() => selectTab('report')}
-                aria-selected={activeTab === 'report'}
-                className={`min-w-0 px-2 py-2 text-sm font-medium transition-all duration-200 sm:px-6 sm:text-base ${
-                  activeTab === 'report'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-gray-600 hover:text-blue-600'
-                }`}
-              >
-                {t('quality.report_tab')}
-              </button>
-              <button
-                onClick={() => selectTab('import')}
-                aria-selected={activeTab === 'import'}
-                className={`inline-flex min-w-0 items-center justify-center gap-1 px-2 py-2 text-sm font-medium transition-all duration-200 sm:gap-2 sm:px-6 sm:text-base ${
-                  activeTab === 'import'
-                    ? 'bg-cyan-600 text-white shadow-md'
-                    : 'text-gray-600 hover:text-cyan-700'
-                }`}
-              >
-                <FileSpreadsheet className="hidden h-4 w-4 shrink-0 min-[420px]:block" aria-hidden="true" />
-                <span className="truncate">{t('quality.import_tab')}</span>
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={openWorkspace}
+              aria-current={!isHistoryView ? 'page' : undefined}
+              className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+                !isHistoryView
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+              }`}
+            >
+              <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{lang === 'zh' ? '品质登记' : '품질 등록'}</span>
+            </button>
           )}
           <button
-            onClick={() => selectTab('history')}
-            aria-selected={activeTab === 'history'}
-            className={`min-w-0 px-2 py-2 text-sm font-medium transition-all duration-200 sm:px-6 sm:text-base ${
-              activeTab === 'history'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-gray-600 hover:text-indigo-600'
+            type="button"
+            onClick={openAllHistory}
+            aria-current={isHistoryView ? 'page' : undefined}
+            className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+              isHistoryView
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
             }`}
           >
-            {t('quality.history_tab')}
+            <History className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{lang === 'zh' ? '全部报告履历' : '전체 보고 이력'}</span>
           </button>
-        </div>
-      </div>
+        </nav>
+      </header>
 
-      <AnimatePresence mode="wait">
-        {canEditQuality && activeTab === 'report' && (
-          <motion.div
-            key="report"
-            variants={tabVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <QualityReportForm />
-          </motion.div>
-        )}
-        {activeTab === 'history' && (
-          <motion.div
-            key="history"
-            variants={tabVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <QualityReportHistory
-              reportScope={historyScope}
-              onClearReportScope={() => setHistoryScope(null)}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
       {canEditQuality && (
         <motion.div
-          className={activeTab === 'import' ? '' : 'hidden'}
+          className={isHistoryView ? 'hidden' : 'space-y-5'}
           initial={false}
-          animate={{ opacity: activeTab === 'import' ? 1 : 0 }}
+          animate={{ opacity: isHistoryView ? 0 : 1 }}
         >
-          <QualityExcelImport onPostProcess={openImportedReports} />
+          <section className="overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm" aria-labelledby="quality-registration-workspace-title">
+            <div className="flex items-center gap-3 border-b border-blue-100 bg-gradient-to-r from-blue-50 via-white to-cyan-50 px-4 py-4 md:px-5">
+              <span className="rounded-xl bg-blue-600 p-2.5 text-white shadow-sm">
+                <FileText className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 id="quality-registration-workspace-title" className="text-lg font-bold text-slate-950">
+                  {lang === 'zh' ? '品质报告登记' : '품질 보고 등록'}
+                </h2>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  {lang === 'zh' ? '直接输入单件报告，或从 Excel 批量登记。' : '개별 보고서를 직접 입력하거나 Excel로 여러 건을 등록합니다.'}
+                </p>
+              </div>
+            </div>
+
+            <QualityReportForm embedded />
+
+            <div ref={excelSectionRef} id="quality-excel-import-section" className="scroll-mt-5">
+              <QualityExcelImport embedded onPostProcess={openImportedReports} />
+            </div>
+          </section>
+
+          <QualityRecentReports onViewAll={openAllHistory} />
+        </motion.div>
+      )}
+
+      {isHistoryView && (
+        <motion.div
+          key="quality-full-history"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <QualityReportHistory
+            reportScope={historyScope}
+            onClearReportScope={() => setHistoryScope(null)}
+          />
         </motion.div>
       )}
     </div>
