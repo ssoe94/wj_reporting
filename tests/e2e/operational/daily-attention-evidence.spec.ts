@@ -25,7 +25,7 @@ test('priority evidence separates exact and related parts and shows every photo'
     canonical_key: 'color_difference',
     label: localized('색차', '色差'),
     classification_basis: 'canonical_alias_v1',
-    evidence_count: 2,
+    evidence_count: 3,
     repeat_status: 'repeated',
     latest_report_dt: '2026-08-09T09:00:00+08:00',
     all_history_denominator: 3,
@@ -45,24 +45,47 @@ test('priority evidence separates exact and related parts and shows every photo'
       denominator_basis: 'unique_matching_reports_in_current_plan_prefixes',
     },
     impact_scope: {
-      plan_group_count: 1,
-      planned_quantity: 1920,
-      machine_names: ['850T-9'],
+      plan_group_count: 2,
+      planned_quantity: 3840,
+      machine_names: ['850T-1', '850T-9'],
       model_names: ['24G411B-BB.AEUYJVN'],
       part_nos: ['ACQ30776301'],
       part_prefixes: ['ACQ307763'],
-      plan_targets: [{
-        machine_name: '850T-9',
-        sequence: 1,
-        model_name: '24G411B-BB.AEUYJVN',
-        part_no: 'ACQ30776301',
-        lot_no: 'LOT-9',
-        planned_quantity: 1920,
-      }],
+      plan_targets: [
+        {
+          machine_name: '850T-1',
+          sequence: 1,
+          model_name: '24G411B-BB.AEUYJVN',
+          part_no: 'ACQ30776301',
+          lot_no: 'LOT-1',
+          planned_quantity: 1920,
+        },
+        {
+          machine_name: '850T-9',
+          sequence: 1,
+          model_name: '24G411B-BB.AEUYJVN',
+          part_no: 'ACQ30776301',
+          lot_no: 'LOT-9',
+          planned_quantity: 1920,
+        },
+      ],
       historical_model_names: ['24G411', '24G411A(1#)'],
       historical_part_nos: ['ACQ30776301', 'ACQ30776319(1#)'],
     },
   };
+  const additionalMetrics = [
+    ['label_abnormality', '라벨 불량', '标签异常'],
+    ['burr_flash', '버·플래시', '毛刺未去除'],
+    ['silver_streak', '은선', '料花'],
+    ['scratch_damage', '스크래치·찍힘', '擦伤·碰伤'],
+    ['packaging_abnormality', '포장 이상', '包装异常'],
+  ].map(([canonicalKey, ko, zh]) => ({
+    ...metric,
+    metric_key: `problem:${canonicalKey}`,
+    canonical_key: canonicalKey,
+    label: localized(ko, zh),
+    evidence_count: 2,
+  }));
 
   const reports = [
     {
@@ -121,10 +144,26 @@ test('priority evidence separates exact and related parts and shows every photo'
       contentType: 'application/json',
       body: JSON.stringify({
         date: '2026-08-20',
-        total_plan_count: 1,
+        total_plan_count: 2,
         total_matching_reports: 3,
         without_history_count: 0,
         items: [{
+          source_key: '850T-1:1:ACQ307763',
+          match_basis: 'part_prefix_9',
+          machine_name: '850T-1',
+          machine_number: 1,
+          sequence: 1,
+          part_prefix: 'ACQ307763',
+          part_nos: ['ACQ30776301'],
+          model_names: ['24G411B-BB.AEUYJVN'],
+          lot_nos: ['LOT-1'],
+          planned_quantity: 1920,
+          plan_row_count: 1,
+          matching_report_count: 3,
+          latest_report_dt: '2026-08-09T09:00:00+08:00',
+          top_phenomena: [],
+          reports,
+        }, {
           source_key: '850T-9:1:ACQ307763',
           match_basis: 'part_prefix_9',
           machine_name: '850T-9',
@@ -188,8 +227,14 @@ test('priority evidence separates exact and related parts and shows every photo'
               },
             ],
             priorities: [],
-            repeated_issues: [],
-            accelerating_issues: [],
+            repeated_issues: [{
+              metric_key: 'problem:burr_flash',
+              narrative: localized('버·플래시 반복 이력', '毛刺未去除重复履历'),
+            }],
+            accelerating_issues: [{
+              metric_key: 'problem:label_abnormality',
+              narrative: localized('라벨 불량 최근 증가', '标签异常近期增加'),
+            }],
             affected_targets: [],
             shift_checks: { ko: [], zh: [] },
             caveats: { ko: [], zh: [] },
@@ -218,17 +263,17 @@ test('priority evidence separates exact and related parts and shows every photo'
               window_anchor: 'selected_plan_date',
             },
             coverage: {
-              plan_group_count: 1,
+              plan_group_count: 2,
               distinct_prefix_count: 1,
               matched_report_count: 3,
               without_history_count: 0,
               latest_report_dt: '2026-08-09T09:00:00+08:00',
               model_names: ['24G411B-BB.AEUYJVN'],
               part_nos: ['ACQ30776301'],
-              problem_type_count: 2,
+              problem_type_count: 6,
               occurrence_location_count: 2,
             },
-            problem_types: [metric],
+            problem_types: [metric, ...additionalMetrics],
             problem_location_pairs: [],
             occurrence_locations: [],
             calculation_basis: {},
@@ -261,13 +306,34 @@ test('priority evidence separates exact and related parts and shows every photo'
   });
 
   await page.goto('/quality/daily-attention');
-  const executiveDetails = page.getByLabel('Executive Summary 상세');
-  await expect(executiveDetails).toBeVisible();
-  await expect(executiveDetails.locator(':scope > div')).toHaveCount(3);
-  await expect(executiveDetails.getByText('오늘 초점', { exact: true })).toBeVisible();
-  await expect(executiveDetails.locator('strong')).toHaveText(['색차', '2건 / 3건']);
-  await expect(executiveDetails.locator('strong').first()).toHaveCSS('display', 'inline');
-  await page.getByRole('button', { name: '근거 사례·사진 보기', exact: true }).click();
+  await expect(page.getByText('Executive Summary', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '오늘 우선확인 5' })).toBeVisible();
+  await expect(page.getByText('관련 계획 대상', { exact: true })).toHaveCount(5);
+  const prioritySection = page
+    .getByRole('heading', { name: '오늘 우선확인 5' })
+    .locator('xpath=ancestor::section[1]');
+  await expect(prioritySection.locator('article h4').nth(0)).toHaveText('라벨 불량');
+  await expect(prioritySection.locator('article h4').nth(1)).toHaveText('버·플래시');
+  const initialViewport = page.viewportSize();
+  if (initialViewport && initialViewport.width >= 1000) {
+    await page.setViewportSize({ width: 900, height: 800 });
+    const secondCardTarget = prioritySection
+      .locator('article')
+      .nth(1)
+      .getByRole('button', { name: '근거 사례·사진 보기: 1호기 — 24G411 B' });
+    await secondCardTarget.focus();
+    const tooltip = secondCardTarget.getByRole('tooltip');
+    await expect(tooltip).toBeVisible();
+    const tooltipBox = await tooltip.boundingBox();
+    expect(tooltipBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((tooltipBox?.x ?? 0) + (tooltipBox?.width ?? 901)).toBeLessThanOrEqual(900);
+    await page.setViewportSize(initialViewport);
+  }
+  const colorDifferenceCard = page.getByRole('article').filter({
+    has: page.getByRole('heading', { name: '색차', exact: true }),
+  });
+  await expect(colorDifferenceCard.getByRole('button', { name: '근거 사례·사진 보기: 1호기 — 24G411 B' })).toBeVisible();
+  await colorDifferenceCard.getByRole('button', { name: '근거 사례·사진 보기: 9호기 — 24G411 B' }).click();
 
   const dialog = page.getByRole('dialog', { name: /색차 근거 사례·사진/ });
   await expect(dialog.getByRole('heading', { name: '색차 근거 사례·사진' })).toBeVisible();
