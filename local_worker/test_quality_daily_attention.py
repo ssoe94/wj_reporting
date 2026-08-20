@@ -1341,7 +1341,7 @@ class QualityDailyAttentionWorkerRoutingTests(unittest.TestCase):
             self.claim_request = {"worker_name": worker_name, **kwargs}
             return [self.job]
 
-        def start_job(self, _job_id):
+        def start_job(self, _job_id, **_payload):
             return {}
 
         def complete_job(self, job_id, **kwargs):

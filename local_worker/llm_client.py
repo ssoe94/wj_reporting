@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from ipaddress import ip_address
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -31,7 +33,21 @@ class LocalLlmClient:
         timeout: int = 120,
         model_family: str = "qwen",
     ):
-        self.base_url = base_url.rstrip("/")
+        normalized_base_url = base_url.rstrip("/")
+        parsed = urlparse(normalized_base_url)
+        hostname = str(parsed.hostname or "").lower()
+        try:
+            is_loopback = ip_address(hostname).is_loopback
+        except ValueError:
+            is_loopback = hostname == "localhost"
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not is_loopback
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("Local LLM base_url must use a loopback HTTP(S) address.")
+        self.base_url = normalized_base_url
         self.model = model
         self.timeout = timeout
         self.model_family = model_family
@@ -66,7 +82,21 @@ class LocalLlmClient:
         timeout_seconds: float | None = None,
         max_tokens: int | None = None,
         json_object: bool = False,
+        json_schema: dict[str, Any] | None = None,
+        image_urls: list[str] | None = None,
     ) -> dict[str, Any]:
+        user_text = json.dumps(user_payload, ensure_ascii=False, default=str)
+        user_content: str | list[dict[str, Any]] = user_text
+        if image_urls:
+            user_content = [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": str(image_url)},
+                }
+                for image_url in image_urls
+                if str(image_url or "").strip()
+            ]
+            user_content.append({"type": "text", "text": user_text})
         request_payload: dict[str, Any] = {
             "model": self.model,
             "temperature": 0.1,
@@ -75,7 +105,7 @@ class LocalLlmClient:
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": json.dumps(user_payload, ensure_ascii=False, default=str),
+                    "content": user_content,
                 },
             ],
         }
@@ -99,7 +129,20 @@ class LocalLlmClient:
             }
         if max_tokens is not None:
             request_payload["max_tokens"] = max(128, min(4096, int(max_tokens)))
-        if json_object:
+        if json_schema is not None:
+            if json_object:
+                raise ValueError("json_object and json_schema are mutually exclusive.")
+            if not isinstance(json_schema, dict) or not json_schema:
+                raise ValueError("json_schema must be a non-empty object.")
+            request_payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "bounded_analysis",
+                    "strict": True,
+                    "schema": json_schema,
+                },
+            }
+        elif json_object:
             # The OpenAI-compatible MLX server supports JSON-object mode.
             # Opt in per bounded handler so other local-model workflows keep
             # their existing request contract.

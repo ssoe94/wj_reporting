@@ -22,11 +22,13 @@ class RenderClient:
         limit: int = 1,
         job_types: list[str] | None = None,
         worker_version: str = WORKER_VERSION,
+        available_model_ids: list[str] | None = None,
     ) -> list[dict]:
         payload: dict = {
             "worker_name": worker_name,
             "worker_version": worker_version,
             "limit": limit,
+            "available_model_ids": available_model_ids or [],
         }
         if job_types:
             payload["job_types"] = job_types
@@ -74,10 +76,19 @@ class RenderClient:
         response.raise_for_status()
         return response.json()
 
-    def start_job(self, job_id: int) -> dict:
+    def start_job(
+        self,
+        job_id: int,
+        *,
+        worker_name: str = "",
+        claim_timestamp: str = "",
+    ) -> dict:
         response = self.session.post(
             f"{self.api_base_url}/ai/jobs/{job_id}/start/",
-            json={},
+            json={
+                "worker_name": worker_name,
+                "claim_timestamp": claim_timestamp,
+            },
             timeout=self.timeout,
         )
         response.raise_for_status()
@@ -89,6 +100,8 @@ class RenderClient:
         result_payload: dict,
         model_name: str = "",
         prompt_version: str = "",
+        worker_name: str = "",
+        claim_timestamp: str = "",
     ) -> dict:
         response = self.session.post(
             f"{self.api_base_url}/ai/jobs/{job_id}/complete/",
@@ -96,6 +109,8 @@ class RenderClient:
                 "result_payload": result_payload,
                 "model_name": model_name,
                 "prompt_version": prompt_version,
+                "worker_name": worker_name,
+                "claim_timestamp": claim_timestamp,
             },
             timeout=self.timeout,
         )
@@ -108,6 +123,8 @@ class RenderClient:
         error_message: str,
         model_name: str = "",
         prompt_version: str = "",
+        worker_name: str = "",
+        claim_timestamp: str = "",
     ) -> dict:
         response = self.session.post(
             f"{self.api_base_url}/ai/jobs/{job_id}/fail/",
@@ -115,6 +132,8 @@ class RenderClient:
                 "error_message": error_message[:4000],
                 "model_name": model_name,
                 "prompt_version": prompt_version,
+                "worker_name": worker_name,
+                "claim_timestamp": claim_timestamp,
             },
             timeout=self.timeout,
         )

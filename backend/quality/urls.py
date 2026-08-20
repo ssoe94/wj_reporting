@@ -2,6 +2,9 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import (
     DailyQualityAttentionView,
+    QualityClassificationAuditApplyColorView,
+    QualityClassificationAuditReviewView,
+    QualityClassificationAuditView,
     QualityImportAssetViewSet,
     QualityImportMediaViewSet,
     QualityImportRowViewSet,
@@ -111,4 +114,19 @@ urlpatterns = [
     ),
     path('cloudinary-signature/', get_cloudinary_signature, name='cloudinary-signature'),
     path('daily-attention/', DailyQualityAttentionView.as_view(), name='daily-quality-attention'),
+    path(
+        'classification-audit/',
+        QualityClassificationAuditView.as_view(),
+        name='quality-classification-audit',
+    ),
+    path(
+        'classification-audit/<int:job_id>/review/',
+        QualityClassificationAuditReviewView.as_view(),
+        name='quality-classification-audit-review',
+    ),
+    path(
+        'classification-audit/<int:job_id>/apply-color/',
+        QualityClassificationAuditApplyColorView.as_view(),
+        name='quality-classification-audit-apply-color',
+    ),
 ] + router.urls

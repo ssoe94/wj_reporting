@@ -31,6 +31,7 @@ from .serializers import (
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from .permissions import (
     InjectionPermission,
+    PartSpecPermission,
     AssemblyPermission,
     QualityPermission,
     SalesPermission,
@@ -525,6 +526,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 class PartSpecViewSet(viewsets.ModelViewSet):
     queryset = PartSpec.objects.all()
     serializer_class = PartSpecSerializer
+    permission_classes = [PartSpecPermission]
     # 검색/필터 활성화: 모델코드 기반 추천 및 키워드 검색 지원
     search_fields = ['part_no', 'description', 'model_code']
     filterset_fields = ['model_code', 'part_no', 'description']

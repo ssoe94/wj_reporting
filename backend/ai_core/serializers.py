@@ -137,12 +137,19 @@ class AiJobClaimSerializer(serializers.Serializer):
         required=False,
         allow_empty=False,
     )
+    available_model_ids = serializers.ListField(
+        child=serializers.ChoiceField(choices=AI_WORKER_CAPABILITY_MODEL_IDS),
+        required=False,
+        allow_empty=True,
+    )
 
 
 class AiJobCompleteSerializer(serializers.Serializer):
     result_payload = serializers.JSONField()
     model_name = serializers.CharField(max_length=128, required=False, allow_blank=True)
     prompt_version = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    worker_name = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    claim_timestamp = serializers.DateTimeField(required=False, allow_null=True)
 
     def validate_result_payload(self, value):
         if not isinstance(value, dict):
@@ -154,6 +161,8 @@ class AiJobFailSerializer(serializers.Serializer):
     error_message = serializers.CharField(allow_blank=False)
     model_name = serializers.CharField(max_length=128, required=False, allow_blank=True)
     prompt_version = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    worker_name = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    claim_timestamp = serializers.DateTimeField(required=False, allow_null=True)
 
 
 class AiWorkerHeartbeatSerializer(serializers.Serializer):

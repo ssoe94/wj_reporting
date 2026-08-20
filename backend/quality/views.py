@@ -18,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from ai_core.models import AiJob
 from .duplicate_detection import (
     find_best_report_duplicate,
     find_best_report_duplicates,
@@ -37,7 +38,12 @@ from .models import (
     QualityReport,
     Supplier,
 )
-from .permissions import QualityImportPermission, QualityPermission, QualityReadPermission
+from .permissions import (
+    QualityColorMasterPermission,
+    QualityImportPermission,
+    QualityPermission,
+    QualityReadPermission,
+)
 from .serializers import (
     QualityImportAssetSerializer,
     QualityImportMediaSerializer,
@@ -47,13 +53,32 @@ from .serializers import (
 )
 from .cloudinary_utils import get_upload_params
 from .daily_attention import build_daily_quality_attention
-from ai_core.quality_daily import quality_daily_report_for_page
+from .classification_audit import (
+    QUALITY_REPORT_AUDIT_MAX_MANUAL_BATCH,
+    apply_approved_part_color,
+    enqueue_quality_report_audit,
+    enqueue_stale_quality_report_audits,
+    quality_report_audit_queue,
+    review_quality_report_audit,
+)
+from ai_core.quality_daily import (
+    enqueue_daily_quality_summary,
+    quality_daily_report_for_page,
+)
 
 logger = logging.getLogger(__name__)
 
 
 BULK_DELETE_MAX_REPORTS = 100
 MAX_DATABASE_ID = 9_223_372_036_854_775_807
+
+
+def _enqueue_quality_report_audit_safely(report_id):
+    try:
+        report = QualityReport.objects.get(pk=report_id)
+        enqueue_quality_report_audit(report)
+    except Exception:
+        logger.exception('Could not enqueue the quality report audit report_id=%s', report_id)
 
 
 def _active_incremental_report_delete_jobs():
@@ -198,9 +223,12 @@ class QualityReportViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         part_no = serializer.validated_data.get('part_no')
         if isinstance(part_no, str):
-            serializer.save(part_no=part_no.upper())
+            report = serializer.save(part_no=part_no.upper())
         else:
-            serializer.save()
+            report = serializer.save()
+        transaction.on_commit(
+            lambda report_id=report.pk: _enqueue_quality_report_audit_safely(report_id)
+        )
 
     def perform_update(self, serializer):
         # The normal DRF update flow reads the instance before this hook.  Lock
@@ -220,9 +248,12 @@ class QualityReportViewSet(viewsets.ModelViewSet):
             serializer.instance = locked_report
             part_no = serializer.validated_data.get('part_no')
             if isinstance(part_no, str):
-                serializer.save(part_no=part_no.upper())
+                report = serializer.save(part_no=part_no.upper())
             else:
-                serializer.save()
+                report = serializer.save()
+            transaction.on_commit(
+                lambda report_id=report.pk: _enqueue_quality_report_audit_safely(report_id)
+            )
 
     @action(
         detail=False,
@@ -401,22 +432,181 @@ class DailyQualityAttentionView(APIView):
 
         payload = build_daily_quality_attention(target_date)
         report_metrics = payload.pop('report_metrics', {})
-        payload['report'] = quality_daily_report_for_page(
-            target_date,
-            deterministic_report=report_metrics,
-            source_plan_hash=payload.get('source_plan_hash'),
-            source_plan_last_changed_at=payload.get('source_plan_last_changed_at'),
-            source_evidence_hash=payload.get('source_evidence_hash'),
-            source_evidence_last_changed_at=payload.get(
+        report_kwargs = {
+            'deterministic_report': report_metrics,
+            'source_plan_hash': payload.get('source_plan_hash'),
+            'source_plan_last_changed_at': payload.get('source_plan_last_changed_at'),
+            'source_evidence_hash': payload.get('source_evidence_hash'),
+            'source_evidence_last_changed_at': payload.get(
                 'source_evidence_last_changed_at'
             ),
+        }
+        payload['report'] = quality_daily_report_for_page(
+            target_date,
+            **report_kwargs,
         )
+        if (
+            payload['report'].get('llm_fallback_code')
+            == 'outdated_terminology_dictionary'
+        ):
+            retry = enqueue_daily_quality_summary(target_date=target_date)
+            if retry.get('status') == 'retried':
+                payload['report'] = quality_daily_report_for_page(
+                    target_date,
+                    **report_kwargs,
+                )
         # Fingerprints are internal scheduler/ready-gate details.  The daily
         # page receives only the opaque report.source_revision; job scope and
         # input retain the exact hashes for authoritative matching.
         payload.pop('source_plan_hash', None)
         payload.pop('source_evidence_hash', None)
         return Response(payload)
+
+
+class QualityClassificationAuditView(APIView):
+    """List the review queue or enqueue bounded report-level Qwen audits."""
+
+    def get_permissions(self):
+        permission_classes = (
+            [IsAuthenticated, QualityReadPermission]
+            if self.request.method == 'GET'
+            else [IsAuthenticated, QualityPermission]
+        )
+        return [permission() for permission in permission_classes]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            page = int(request.query_params.get('page') or 1)
+            page_size = int(request.query_params.get('page_size') or 20)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({'page': 'page and page_size must be integers.'}) from exc
+        report_id = request.query_params.get('report_id')
+        if report_id not in (None, ''):
+            try:
+                report_id = int(report_id)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError({'report_id': 'report_id must be an integer.'}) from exc
+        return Response(quality_report_audit_queue(
+            page=page,
+            page_size=page_size,
+            status_filter=str(request.query_params.get('status') or 'attention'),
+            report_id=report_id,
+            search=str(request.query_params.get('search') or ''),
+        ))
+
+    def post(self, request, *args, **kwargs):
+        if not isinstance(request.data, dict):
+            raise ValidationError({'detail': 'Expected a JSON object.'})
+        report_ids = request.data.get('report_ids')
+        if report_ids is not None:
+            if not isinstance(report_ids, list):
+                raise ValidationError({'report_ids': 'report_ids must be an array.'})
+            if len(report_ids) > QUALITY_REPORT_AUDIT_MAX_MANUAL_BATCH:
+                raise ValidationError({
+                    'report_ids': (
+                        f'At most {QUALITY_REPORT_AUDIT_MAX_MANUAL_BATCH} reports '
+                        'may be queued at once.'
+                    ),
+                })
+            if any(type(value) is not int or value <= 0 for value in report_ids):
+                raise ValidationError({'report_ids': 'report_ids must contain positive integers.'})
+            report_ids = list(dict.fromkeys(report_ids))
+        try:
+            limit = int(request.data.get('limit') or 50)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({'limit': 'limit must be an integer.'}) from exc
+        if limit < 1 or limit > QUALITY_REPORT_AUDIT_MAX_MANUAL_BATCH:
+            raise ValidationError({
+                'limit': f'limit must be between 1 and {QUALITY_REPORT_AUDIT_MAX_MANUAL_BATCH}.',
+            })
+        result = enqueue_stale_quality_report_audits(
+            limit=limit,
+            report_ids=report_ids,
+            created_by=request.user,
+        )
+        return Response(result, status=status.HTTP_202_ACCEPTED)
+
+
+class QualityClassificationAuditReviewView(APIView):
+    permission_classes = [IsAuthenticated, QualityPermission]
+
+    def post(self, request, job_id, *args, **kwargs):
+        if not isinstance(request.data, dict):
+            raise ValidationError({'detail': 'Expected a JSON object.'})
+        category_keys = request.data.get('category_keys') or []
+        if not isinstance(category_keys, list) or any(
+            not isinstance(value, str) for value in category_keys
+        ):
+            raise ValidationError({'category_keys': 'category_keys must be a string array.'})
+        try:
+            job = review_quality_report_audit(
+                job_id,
+                user=request.user,
+                action=str(request.data.get('action') or ''),
+                category_keys=category_keys,
+                product_color_key=request.data.get('product_color_key'),
+                note=str(request.data.get('note') or ''),
+            )
+        except AiJob.DoesNotExist as exc:
+            raise NotFound('AI audit job not found.') from exc
+        except QualityReport.DoesNotExist as exc:
+            raise NotFound('The source quality report no longer exists.') from exc
+        except RuntimeError as exc:
+            if str(exc) == 'stale_revision':
+                return Response({
+                    'code': 'stale_revision',
+                    'detail': 'The report, photos, dictionary, or PartSpec changed. Re-run the audit.',
+                }, status=status.HTTP_409_CONFLICT)
+            raise
+        except ValueError as exc:
+            raise ValidationError({'detail': str(exc)}) from exc
+        return Response({
+            'job_id': job.pk,
+            'review': (job.result_payload or {}).get('review'),
+        })
+
+
+class QualityClassificationAuditApplyColorView(APIView):
+    permission_classes = [IsAuthenticated, QualityColorMasterPermission]
+
+    def post(self, request, job_id, *args, **kwargs):
+        if not isinstance(request.data, dict):
+            raise ValidationError({'detail': 'Expected a JSON object.'})
+        if request.data.get('confirmation') != 'CONFIRM_EXACT_PART_COLOR':
+            raise ValidationError({
+                'confirmation': 'Confirm that the visible product body colour was checked.',
+            })
+        valid_from = parse_date(str(request.data.get('valid_from') or ''))
+        if valid_from is None:
+            raise ValidationError({'valid_from': 'valid_from must use YYYY-MM-DD.'})
+        try:
+            part_spec, created = apply_approved_part_color(
+                job_id,
+                color_key=str(request.data.get('color_key') or ''),
+                valid_from=valid_from,
+                user=request.user,
+            )
+        except AiJob.DoesNotExist as exc:
+            raise NotFound('AI audit job not found.') from exc
+        except QualityReport.DoesNotExist as exc:
+            raise NotFound('The source quality report no longer exists.') from exc
+        except RuntimeError as exc:
+            code = str(exc)
+            if code in {'stale_revision', 'part_spec_version_conflict'}:
+                return Response({'code': code}, status=status.HTTP_409_CONFLICT)
+            raise
+        except ValueError as exc:
+            raise ValidationError({'detail': str(exc)}) from exc
+        return Response({
+            'created': created,
+            'part_spec': {
+                'id': part_spec.pk,
+                'part_no': part_spec.part_no,
+                'model_code': part_spec.model_code,
+                'color': part_spec.color,
+                'valid_from': part_spec.valid_from.isoformat(),
+            },
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 class SupplierViewSet(viewsets.ModelViewSet):
