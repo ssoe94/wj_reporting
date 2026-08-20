@@ -25,6 +25,15 @@ from django.db.models import Max
 
 from production.models import ProductionPlan, ProductionPlanChangeLog
 
+from .injection_terminology import (
+    INJECTION_DEFECT_OBSERVED_TERMS,
+    INJECTION_DEFECT_TERMS,
+    INJECTION_LOCATION_TERMS,
+    INJECTION_TERMINOLOGY_VERSION,
+    UNCLASSIFIED_PROBLEM_LABEL,
+    UNKNOWN_LOCATION_LABEL,
+    UNKNOWN_PROBLEM_LABEL,
+)
 from .models import QualityReport
 
 
@@ -36,70 +45,24 @@ QUALITY_TREND_WINDOW_DAYS = 30
 QUALITY_TREND_MIN_WINDOW_DENOMINATOR = 5
 QUALITY_TREND_MIN_COMBINED_ISSUE_COUNT = 3
 QUALITY_EVIDENCE_SNAPSHOT_CACHE_SECONDS = 5 * 60
+# Preserve the existing public classification-basis/evidence fingerprint so
+# completed Qwen selections remain reusable for historical dates.  The
+# additive terminology version below audits display/classifier evolution.
 QUALITY_PHENOMENON_TAXONOMY_VERSION = "server_canonical_alias_v1"
+QUALITY_CANONICAL_CLASSIFICATION_BASIS = "canonical_alias_v1"
 
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _NO_PHENOMENON_MARKER = "[NO_PHENOMENON_RECORDED]"
-_UNKNOWN_PROBLEM_LABEL = {"ko": "현상 미입력", "zh": "未填写现象"}
-_UNKNOWN_LOCATION_LABEL = {"ko": "위치 미확인", "zh": "位置未确认"}
+_UNKNOWN_PROBLEM_LABEL = UNKNOWN_PROBLEM_LABEL
+_UNKNOWN_LOCATION_LABEL = UNKNOWN_LOCATION_LABEL
 
-# Server-owned phenomenon taxonomy.  Aliases intentionally follow the
-# long-standing daily-attention UI normalization and add conservative Korean /
-# English equivalents.  A report can belong to multiple explicit categories;
-# unmatched text remains auditable through its source evidence key but rolls
-# up into one data-quality bucket instead of producing duplicate public rows.
-_PHENOMENON_TAXONOMY = (
-    ("contamination", {"ko": "오염·이물", "zh": "脏污·异物"},
-     ("脏污", "油污", "油渍", "油点", "灰尘", "污渍", "擦拭印", "오염", "이물", "기름때", "얼룩", "먼지", "contamination", "stain")),
-    ("white_powder_residue", {"ko": "백색 분말 잔류", "zh": "白色粉末残留"},
-     ("白色粉末", "粉末残留", "백색분말", "분말잔류", "powderresidue")),
-    ("burr_flash", {"ko": "버·플래시", "zh": "毛刺·飞边"},
-     ("毛刺", "飞边", "바리", "플래시", "burr", "flash")),
-    ("lint_residue", {"ko": "보풀·섬유 잔류", "zh": "毛絮残留"},
-     ("毛絮", "보풀", "섬유잔류", "lint")),
-    ("scorch_mark", {"ko": "탄화·그을음", "zh": "糊斑·烧焦"},
-     ("糊斑", "烧焦", "燒焦", "탄화", "그을음", "burnmark", "scorch")),
-    ("gas_mark_whitening", {"ko": "가스 자국·백화", "zh": "气印·白化"},
-     ("气印", "氣印", "白化", "顶白", "頂白", "가스자국", "백화", "gasmark", "whitening")),
-    ("sink_mark", {"ko": "수축 자국", "zh": "缩印"},
-     ("缩印", "縮印", "缩影", "縮影", "缩水", "縮水", "수축", "sinkmark")),
-    ("short_shot", {"ko": "미성형·쇼트", "zh": "缺胶"},
-     ("缺胶", "缺膠", "미성형", "쇼트", "shortshot")),
-    ("gloss", {"ko": "광택 이상", "zh": "发亮·高光"},
-     ("发亮", "發亮", "高光", "광택", "번들거림", "gloss")),
-    ("scratch_damage", {"ko": "스크래치·찍힘", "zh": "擦伤·碰伤"},
-     ("拉伤", "拉傷", "擦伤", "擦傷", "削伤", "削傷", "磕伤", "磕傷", "夹伤", "夾傷", "损伤", "損傷", "스크래치", "긁힘", "찍힘", "scratch", "damage")),
-    ("color_black_material", {"ko": "이색·흑점·재료무늬", "zh": "夹色·黑点·料花"},
-     ("夹色", "夾色", "黑点", "黑點", "料花", "이색", "흑점", "실버", "blackspot")),
-    ("label_abnormality", {"ko": "라벨 이상", "zh": "标签异常"},
-     ("标签", "標籤", "重码", "重碼", "漏贴", "漏貼", "라벨", "중복코드", "누락부착", "label")),
-    ("packaging_abnormality", {"ko": "포장 이상", "zh": "包装异常"},
-     ("包装", "包裝", "包裹", "水渍", "水漬", "포장", "수분자국", "packaging")),
-    ("deformation", {"ko": "변형", "zh": "变形"},
-     ("变形", "變形", "변형", "deformation", "warpage")),
-    ("crack", {"ko": "균열", "zh": "裂纹"},
-     ("裂纹", "裂紋", "开裂", "開裂", "균열", "크랙", "crack")),
-    ("flow_weld_mark", {"ko": "흐름·웰드 자국", "zh": "流痕·熔接线"},
-     ("流痕", "流纹", "流紋", "熔接线", "熔接線", "웰드", "흐름자국", "flowmark", "weldline")),
-)
-
-# Location is intentionally fail-closed.  Only an explicit recorded keyword is
-# mapped; everything else remains unknown instead of asking the LLM to infer.
-_EXPLICIT_LOCATION_RULES = (
-    ("gate", {"ko": "게이트부", "zh": "浇口部"}, ("게이트", "gate", "浇口", "澆口", "进胶", "進膠")),
-    ("hole", {"ko": "홀·구멍부", "zh": "孔位"}, ("홀", "구멍", "hole", "孔位", "孔部", "孔边", "孔邊")),
-    ("edge", {"ko": "모서리·테두리", "zh": "边缘"}, ("모서리", "테두리", "edge", "边缘", "邊緣", "边角", "邊角")),
-    ("corner", {"ko": "코너부", "zh": "角部"}, ("코너", "corner", "角部", "角位", "角落")),
-    ("surface", {"ko": "표면", "zh": "表面"}, ("표면", "surface", "表面")),
-    ("inside", {"ko": "내측", "zh": "内侧"}, ("내측", "안쪽", "inner", "内侧", "內側", "内部", "內部")),
-    ("outside", {"ko": "외측", "zh": "外侧"}, ("외측", "바깥", "outer", "外侧", "外側")),
-    ("top", {"ko": "상단", "zh": "顶部"}, ("상단", "윗면", "top", "顶部", "頂部", "上部")),
-    ("bottom", {"ko": "하단", "zh": "底部"}, ("하단", "아랫면", "bottom", "底部", "下部")),
-    ("side", {"ko": "측면", "zh": "侧面"}, ("측면", "side", "侧面", "側面")),
-    ("boss", {"ko": "보스부", "zh": "柱位"}, ("보스", "boss", "柱位", "螺丝柱", "螺絲柱")),
-    ("rib", {"ko": "리브부", "zh": "筋位"}, ("리브", "rib", "筋位")),
-    ("parting_line", {"ko": "파팅라인", "zh": "分型线"}, ("파팅", "parting", "分型线", "分型線")),
-)
+# The display dictionary lives in one dedicated module so every analytical
+# card, table and server-authored sentence uses the same shop-floor wording.
+# Raw report text remains unchanged.  Location matching is fail-closed: only
+# explicit recorded keywords are mapped and everything else stays unknown.
+_PHENOMENON_TAXONOMY = INJECTION_DEFECT_TERMS
+_PHENOMENON_OBSERVED_TERM_RULES = INJECTION_DEFECT_OBSERVED_TERMS
+_EXPLICIT_LOCATION_RULES = INJECTION_LOCATION_TERMS
 
 
 def normalize_part_no(part_no: Any) -> str:
@@ -131,6 +94,36 @@ def _normalized_phenomenon_text(value: Any) -> str:
     return re.sub(r"\s+", "", normalized).casefold()
 
 
+def _phenomenon_alias_matches(raw: str, normalized: str, alias: str) -> bool:
+    normalized_alias = _normalized_phenomenon_text(alias)
+    if normalized_alias != "버":
+        if not normalized_alias:
+            return False
+        matches = tuple(re.finditer(re.escape(normalized_alias), normalized))
+        if not matches:
+            return False
+
+        # Quality-report notes occasionally record that a Chinese-language
+        # defect was *not* found. Do not turn those explicit negatives into a
+        # positive category, while still allowing phrases such as 未去除毛刺.
+        if re.search(r"[\u3400-\u9fff]", normalized_alias):
+            negative_prefix = re.compile(
+                r"(?:无|無|不|没有|沒有|未见|未見|未发现|未發現|"
+                r"无发现|無發現|未检出|未檢出)"
+                r"(?:明显|明顯|任何|可见|可見)?$"
+            )
+            return any(
+                negative_prefix.search(normalized[:match.start()]) is None
+                for match in matches
+            )
+        return True
+
+    # A bare one-syllable alias must not turn 실버/실버스트릭/커버 into flash.
+    # It remains valid as a standalone shop-floor term such as "버 발생".
+    token_text = unicodedata.normalize("NFKC", raw).casefold()
+    return bool(re.search(r"(?<![0-9a-z가-힣])버(?![0-9a-z가-힣])", token_text))
+
+
 def _canonical_problem_types(phenomenon: Any) -> list[dict[str, Any]]:
     raw = _clean_text(phenomenon)
     normalized = _normalized_phenomenon_text(raw)
@@ -145,13 +138,29 @@ def _canonical_problem_types(phenomenon: Any) -> list[dict[str, Any]]:
 
     matches = []
     for key, label, aliases in _PHENOMENON_TAXONOMY:
-        if any(_normalized_phenomenon_text(alias) in normalized for alias in aliases):
-            matches.append({
+        if any(_phenomenon_alias_matches(raw, normalized, alias) for alias in aliases):
+            classification = {
                 "key": key,
                 "metric_key": f"problem:{key}",
                 "label": dict(label),
-                "classification_basis": "canonical_alias_v1",
-            })
+                "classification_basis": QUALITY_CANONICAL_CLASSIFICATION_BASIS,
+            }
+            observed_terms = [
+                {
+                    "key": observed_key,
+                    "label": dict(observed_label),
+                    "classification_basis": "canonical_observed_alias_v1",
+                }
+                for observed_key, observed_label, observed_aliases
+                in _PHENOMENON_OBSERVED_TERM_RULES.get(key, ())
+                if any(
+                    _phenomenon_alias_matches(raw, normalized, alias)
+                    for alias in observed_aliases
+                )
+            ]
+            if observed_terms:
+                classification["observed_terms"] = observed_terms
+            matches.append(classification)
     if matches:
         return matches
 
@@ -162,7 +171,7 @@ def _canonical_problem_types(phenomenon: Any) -> list[dict[str, Any]]:
     return [{
         "key": "unclassified",
         "metric_key": "problem:unclassified",
-        "label": {"ko": "유형 미분류", "zh": "类型未分类"},
+        "label": dict(UNCLASSIFIED_PROBLEM_LABEL),
         "classification_basis": "unclassified_recorded_text_hash",
     }]
 
@@ -276,9 +285,15 @@ def _report_groups(prefixes: set[str], *, include_images: bool) -> dict[str, lis
         "disposition",
         "action_result",
         "updated_at",
+        # Image URLs stay server-side here. They are needed to validate a
+        # human-approved report-level audit revision even when the daily LLM
+        # input itself is built with include_images=False.
+        "image1",
+        "image2",
+        "image3",
+        "image4",
+        "image5",
     ]
-    if include_images:
-        report_fields.extend(("image1", "image2", "image3", "image4", "image5"))
     reports = (
         QualityReport.objects.exclude(part_no="")
         .order_by("-report_dt", "-id")
@@ -312,13 +327,37 @@ def _canonical_evidence_rows(
     ]
 
 
+def _approved_audit_classifications(
+    report_groups: dict[str, list[QualityReport]],
+) -> tuple[dict[int, list[dict[str, Any]]], list[dict[str, Any]]]:
+    reports: dict[int, QualityReport] = {}
+    for grouped_reports in report_groups.values():
+        for report in grouped_reports:
+            reports.setdefault(report.pk, report)
+    if not reports:
+        return {}, []
+    # Local import avoids a module cycle: the audit builder reuses this
+    # module's deterministic classifier when it creates the immutable job
+    # input. Only a human-approved, current report revision is returned.
+    from .classification_audit import approved_quality_report_classifications
+
+    return approved_quality_report_classifications(reports.values())
+
+
 def quality_attention_evidence_hash(
     report_groups: dict[str, list[QualityReport]],
+    *,
+    approved_audit_revisions: list[dict[str, Any]] | None = None,
 ) -> str:
+    if approved_audit_revisions is None:
+        _overrides, approved_audit_revisions = _approved_audit_classifications(
+            report_groups
+        )
     encoded = json.dumps(
         {
             "taxonomy_version": QUALITY_PHENOMENON_TAXONOMY_VERSION,
             "reports": _canonical_evidence_rows(report_groups),
+            "approved_audit_revisions": approved_audit_revisions,
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -403,8 +442,14 @@ def build_daily_quality_attention(
         if prefix
     }
     report_groups = _report_groups(prefixes, include_images=include_images)
+    approved_classifications, approved_revision_rows = (
+        _approved_audit_classifications(report_groups)
+    )
     source_evidence_hash = (
-        quality_attention_evidence_hash(report_groups) if prefixes else None
+        quality_attention_evidence_hash(
+            report_groups,
+            approved_audit_revisions=approved_revision_rows,
+        ) if prefixes else None
     )
     latest_evidence_change = max(
         (report.updated_at for reports in report_groups.values() for report in reports),
@@ -467,6 +512,9 @@ def build_daily_quality_attention(
         matched_reports = report_groups.get(group["part_prefix"], [])
         reports_data = []
         for report in matched_reports:
+            classifications = approved_classifications.get(report.pk)
+            if classifications is None:
+                classifications = _canonical_problem_types(report.phenomenon)
             report_data = {
                 "id": report.id,
                 "report_dt": report.report_dt.isoformat(),
@@ -476,6 +524,29 @@ def build_daily_quality_attention(
                 "judgement": report.judgement or "",
                 "defect_rate": report.defect_rate or "",
                 "phenomenon": report.phenomenon or "",
+                "problem_types": [
+                    {
+                        "key": classification["key"],
+                        "label": dict(classification["label"]),
+                        **({
+                            "observed_terms": [
+                                {
+                                    "key": observed["key"],
+                                    "label": dict(observed["label"]),
+                                }
+                                for observed in classification.get("observed_terms") or []
+                            ],
+                        } if classification.get("observed_terms") else {}),
+                    }
+                    for classification in classifications
+                ],
+                "occurrence_locations": [
+                    {
+                        "key": location["key"],
+                        "label": dict(location["label"]),
+                    }
+                    for location in _explicit_occurrence_locations(report.phenomenon)
+                ],
                 "disposition": report.disposition or "",
                 "action_result": report.action_result or "",
                 "match_basis": QUALITY_ATTENTION_MATCH_BASIS,
@@ -802,8 +873,76 @@ def build_daily_quality_report_metrics(
             report = reports_by_id[report_id]
             phenomenon = _clean_text(report.get("phenomenon"))
             evidence_key = _phenomenon_evidence_key(prefix, phenomenon)
-            classifications = _canonical_problem_types(phenomenon)
+            stored_problem_types = report.get("problem_types")
+            classifications = []
+            if isinstance(stored_problem_types, list):
+                for stored in stored_problem_types:
+                    if not isinstance(stored, dict) or not stored.get("key"):
+                        continue
+                    stored_key = str(stored["key"])
+                    default_basis = (
+                        "missing_recorded_phenomenon"
+                        if stored_key == "missing"
+                        else "unclassified_recorded_text_hash"
+                        if stored_key == "unclassified"
+                        else QUALITY_CANONICAL_CLASSIFICATION_BASIS
+                    )
+                    classification = {
+                        "key": stored_key,
+                        "metric_key": f"problem:{stored_key}",
+                        "label": deepcopy(stored.get("label") or {}),
+                        "classification_basis": stored.get(
+                            "classification_basis",
+                            default_basis,
+                        ),
+                    }
+                    observed_terms = [
+                        {
+                            "key": str(observed.get("key") or ""),
+                            "label": deepcopy(observed.get("label") or {}),
+                            "classification_basis": observed.get(
+                                "classification_basis",
+                                "canonical_observed_alias_v1",
+                            ),
+                        }
+                        for observed in stored.get("observed_terms") or []
+                        if isinstance(observed, dict) and observed.get("key")
+                    ]
+                    if observed_terms:
+                        classification["observed_terms"] = observed_terms
+                    classifications.append(classification)
+            if not classifications:
+                classifications = _canonical_problem_types(phenomenon)
             locations = _explicit_occurrence_locations(phenomenon)
+
+            def add_observed_terms(
+                parent: dict[str, Any],
+                classification: dict[str, Any],
+            ) -> None:
+                if not classification.get("observed_terms"):
+                    return
+                observed_groups = parent.setdefault("observed_term_groups", {})
+                for observed in classification.get("observed_terms") or []:
+                    observed_key = str(observed.get("key") or "")
+                    observed_label = observed.get("label")
+                    if not observed_key or not isinstance(observed_label, dict):
+                        continue
+                    observed_group = observed_groups.setdefault(observed_key, {
+                        "metric_key": (
+                            f"{parent['metric_key']}:observed:{observed_key}"
+                        ),
+                        "canonical_key": observed_key,
+                        "parent_metric_key": parent["metric_key"],
+                        "label": dict(observed_label),
+                        "classification_basis": "canonical_observed_alias_v1",
+                        "source_evidence_keys": set(),
+                        "report_ids": set(),
+                        "prefixes": set(),
+                    })
+                    observed_group["source_evidence_keys"].add(evidence_key)
+                    observed_group["report_ids"].add(report_id)
+                    observed_group["prefixes"].add(prefix)
+
             for classification in classifications:
                 problem_key = classification["key"]
                 problem = problem_groups.setdefault(problem_key, {
@@ -820,6 +959,7 @@ def build_daily_quality_report_metrics(
                 problem["source_evidence_keys"].add(evidence_key)
                 problem["report_ids"].add(report_id)
                 problem["prefixes"].add(prefix)
+                add_observed_terms(problem, classification)
 
             for location in locations:
                 location_group = location_groups.setdefault(location["key"], {
@@ -845,7 +985,7 @@ def build_daily_quality_report_metrics(
             canonical_problems = [
                 classification
                 for classification in classifications
-                if classification.get("classification_basis") == "canonical_alias_v1"
+                if classification.get("classification_basis") == QUALITY_CANONICAL_CLASSIFICATION_BASIS
             ]
             explicit_locations = [
                 location for location in locations if location.get("key") != "unknown"
@@ -880,6 +1020,7 @@ def build_daily_quality_report_metrics(
                     pair["source_evidence_keys"].add(evidence_key)
                     pair["report_ids"].add(report_id)
                     pair["prefixes"].add(prefix)
+                    add_observed_terms(pair, classification)
 
     global_denominator_ids = set(reports_by_id)
 
@@ -929,6 +1070,7 @@ def build_daily_quality_report_metrics(
             row["recorded_text"] = group["recorded_text"]
         for key in (
             "dimension",
+            "parent_metric_key",
             "problem_canonical_key",
             "location_canonical_key",
             "problem_label",
@@ -937,6 +1079,16 @@ def build_daily_quality_report_metrics(
         ):
             if key in group:
                 row[key] = deepcopy(group[key])
+        observed_groups = group.get("observed_term_groups")
+        if isinstance(observed_groups, dict):
+            row["observed_terms"] = [
+                metric_row(observed_group)
+                for observed_group in observed_groups.values()
+            ]
+            row["observed_terms"].sort(key=lambda observed: (
+                -int(observed.get("evidence_count") or 0),
+                str((observed.get("label") or {}).get("ko") or ""),
+            ))
         return row
 
     problem_types = [metric_row(group) for group in problem_groups.values()]
@@ -1036,6 +1188,7 @@ def build_daily_quality_report_metrics(
             "current_defect_claim_allowed": False,
             "root_cause_claim_allowed": False,
             "problem_type_taxonomy": QUALITY_PHENOMENON_TAXONOMY_VERSION,
+            "terminology_dictionary": INJECTION_TERMINOLOGY_VERSION,
             "unknown_problem_policy": "single_unclassified_bucket_with_hashed_source_evidence",
             "metric_denominator_basis": "unique_matching_reports_in_current_plan_prefixes",
             "location_rule": "explicit_recorded_keyword_else_unknown",

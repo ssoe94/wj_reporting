@@ -19,6 +19,10 @@ from quality.daily_attention import (
     quality_attention_evidence_snapshot,
     quality_attention_plan_snapshot,
 )
+from quality.injection_terminology import (
+    INJECTION_TERMINOLOGY_VERSION,
+    UNCLASSIFIED_PROBLEM_LABEL,
+)
 
 from .model_registry import QUALITY_DAILY_MODEL_ID
 from .models import AiJob
@@ -46,7 +50,19 @@ QUALITY_DAILY_DISCLAIMER = {
     "ko": "과거 품질 이력이며 현재 불량 발생을 의미하지 않습니다.",
     "zh": "仅为历史品质记录，不代表当前正在发生不良。",
 }
-QUALITY_UNKNOWN_PROBLEM_TYPE = {"ko": "유형 미분류", "zh": "类型未分类"}
+QUALITY_UNKNOWN_PROBLEM_TYPE = UNCLASSIFIED_PROBLEM_LABEL
+
+
+def _input_terminology_version(input_payload: Any) -> str:
+    if not isinstance(input_payload, dict):
+        return ""
+    metrics = input_payload.get("report_metrics")
+    if not isinstance(metrics, dict):
+        return ""
+    basis = metrics.get("calculation_basis")
+    if not isinstance(basis, dict):
+        return ""
+    return str(basis.get("terminology_dictionary") or "")
 
 
 def _is_retryable_job(job: AiJob | None) -> bool:
@@ -57,6 +73,8 @@ def _is_retryable_job(job: AiJob | None) -> bool:
     if job.status != AiJob.STATUS_COMPLETED or not isinstance(job.result_payload, dict):
         return False
     if job.prompt_version != QUALITY_DAILY_EXPECTED_PROMPT_VERSION:
+        return True
+    if _input_terminology_version(job.input_payload) != INJECTION_TERMINOLOGY_VERSION:
         return True
     if job.result_payload.get("llm_fallback") is True:
         return True
@@ -118,17 +136,33 @@ def _evidence_stable_seconds(
     )
 
 
-def enqueue_daily_quality_summary(now: datetime | None = None) -> dict[str, Any]:
-    """Create one job per local date and stable plan/evidence hash, at/after 07:00.
+def enqueue_daily_quality_summary(
+    now: datetime | None = None,
+    *,
+    target_date: date | None = None,
+) -> dict[str, Any]:
+    """Create one job per stable date/plan/evidence combination.
 
-    Plan timestamps and relevant quality-report update timestamps are debounce
-    clocks.  The evidence snapshot is cached for five minutes, so calling this
-    function every minute is safe without scanning full history every minute.
+    Today's scheduled job starts at/after 07:00. An explicit historical date
+    may be retried on demand when its stored terminology contract is obsolete.
+    Plan and report timestamps remain debounce clocks, and the evidence snapshot
+    cache keeps periodic calls bounded.
     """
 
     local_now = _local_now(now)
-    target_date = local_now.date()
-    if local_now.time() < time(QUALITY_DAILY_START_HOUR, 0):
+    local_date = local_now.date()
+    target_date = target_date or local_date
+    if target_date > local_date:
+        return {
+            "status": "future_date",
+            "date": target_date.isoformat(),
+            "created": False,
+            "job": None,
+        }
+    if (
+        target_date == local_date
+        and local_now.time() < time(QUALITY_DAILY_START_HOUR, 0)
+    ):
         return {
             "status": "before_schedule",
             "date": target_date.isoformat(),
@@ -526,6 +560,7 @@ def _compact_public_revision(
         return None
     material = (
         f"{QUALITY_DAILY_PUBLIC_CONTRACT_VERSION}\0"
+        f"{INJECTION_TERMINOLOGY_VERSION}\0"
         f"{source_plan_hash}\0{source_evidence_hash}"
     ).encode("utf-8")
     return hashlib.sha256(material).hexdigest()[:12]
@@ -551,6 +586,10 @@ def _public_deterministic_report(value: dict[str, Any]) -> dict[str, Any]:
                 continue
             metric.pop("source_evidence_keys", None)
             metric.pop("recorded_text", None)
+            for observed in metric.get("observed_terms") or []:
+                if isinstance(observed, dict):
+                    observed.pop("source_evidence_keys", None)
+                    observed.pop("recorded_text", None)
             if metric.get("classification_basis") == "unclassified_recorded_text_hash":
                 metric["label"] = dict(QUALITY_UNKNOWN_PROBLEM_TYPE)
                 metric["classification_basis"] = "unclassified"
@@ -699,6 +738,30 @@ def _authoritative_public_target_checkpoints(
 def _metric_template_label(metric: dict[str, Any]) -> dict[str, str]:
     if metric.get("classification_basis") == "unclassified_recorded_text_hash":
         return {"ko": "미분류 현상", "zh": "未分类现象"}
+    problem_key = str(
+        metric.get("canonical_key")
+        or metric.get("problem_canonical_key")
+        or ""
+    )
+    if problem_key == "color_black_material":
+        observed = [
+            row
+            for row in metric.get("observed_terms") or []
+            if isinstance(row, dict) and int(row.get("evidence_count") or 0) > 0
+        ]
+        observed.sort(key=lambda row: (
+            {"mixed_color": 0, "black_dot": 1}.get(
+                str(row.get("canonical_key") or ""),
+                99,
+            ),
+            str(row.get("canonical_key") or ""),
+        ))
+        labels = [_bilingual(row.get("label")) for row in observed]
+        if labels:
+            return {
+                "ko": "·".join(label["ko"] for label in labels if label["ko"]),
+                "zh": "·".join(label["zh"] for label in labels if label["zh"]),
+            }
     label = _bilingual(metric.get("label"))
     return {
         "ko": label["ko"] or "품질 현상",
@@ -870,6 +933,31 @@ def _ranked_priority_problem_metrics(
     return ranked
 
 
+def _stored_selector_matches_current_terminology(
+    input_payload: dict[str, Any],
+    current_metrics: dict[str, Any],
+) -> bool:
+    """Reject Qwen ordering produced against a different defect dictionary.
+
+    Evidence hashes intentionally remain stable for existing historical dates,
+    but a stored selector must not rank new canonical categories using an old
+    alias membership. New jobs carry the dictionary version in their
+    deterministic calculation basis; jobs from a missing or older dictionary
+    are marked as an AI fallback and retried for the requested business date.
+    """
+
+    current_basis = (
+        current_metrics.get("calculation_basis")
+        if isinstance(current_metrics.get("calculation_basis"), dict)
+        else {}
+    )
+    current_version = str(
+        current_basis.get("terminology_dictionary")
+        or INJECTION_TERMINOLOGY_VERSION
+    )
+    return _input_terminology_version(input_payload) == current_version
+
+
 def _metric_applies_to_source(
     metric: dict[str, Any],
     source_item: dict[str, Any],
@@ -891,7 +979,7 @@ def _public_metric_signal(metric: dict[str, Any]) -> dict[str, Any]:
         if metric_key.startswith("pair:")
         else "problem_type"
     )
-    return {
+    signal = {
         "metric_key": metric_key,
         "dimension": dimension,
         "label": _metric_template_label(metric),
@@ -914,6 +1002,40 @@ def _public_metric_signal(metric: dict[str, Any]) -> dict[str, Any]:
             )
         },
     }
+    observed_terms = [
+        observed
+        for observed in metric.get("observed_terms") or []
+        if isinstance(observed, dict)
+        and int(observed.get("evidence_count") or 0) > 0
+    ]
+    if observed_terms:
+        signal["observed_terms"] = [
+            {
+                "canonical_key": str(observed.get("canonical_key") or ""),
+                "label": _bilingual(observed.get("label")),
+                "evidence_count": int(observed.get("evidence_count") or 0),
+                "denominator": int(observed.get("all_history_denominator") or 0),
+                "share_pct": observed.get("all_history_share_pct"),
+                "latest_report_dt": observed.get("latest_report_dt"),
+                "trend": {
+                    key: (observed.get("trend") or {}).get(key)
+                    for key in (
+                        "status",
+                        "reason",
+                        "recent_count",
+                        "recent_denominator",
+                        "recent_share_pct",
+                        "previous_count",
+                        "previous_denominator",
+                        "previous_share_pct",
+                        "count_change",
+                        "share_change_pp",
+                    )
+                },
+            }
+            for observed in observed_terms
+        ]
+    return signal
 
 
 def _authoritative_report_summary(
@@ -968,6 +1090,106 @@ def _authoritative_report_summary(
             f"{'、'.join(compact_metric(metric, 'zh') for metric in priority_metrics)}。"
         ),
     }
+
+
+def _authoritative_executive_summary_segments(
+    metrics: dict[str, Any],
+    priority_metrics: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return semantic, safely emphasized summary rows for the page UI.
+
+    The legacy full sentence remains in ``executive_summary`` for compatible
+    clients.  These additive segments avoid parsing Korean/Chinese prose in the
+    browser and keep every emphasized number tied to deterministic metrics.
+    """
+
+    coverage = metrics.get("coverage") if isinstance(metrics.get("coverage"), dict) else {}
+    total_reports = int(coverage.get("matched_report_count") or 0)
+
+    def part(ko: str, zh: str, *, strong: bool = False) -> dict[str, Any]:
+        return {
+            "text": {"ko": ko, "zh": zh},
+            "strong": strong,
+        }
+
+    if total_reports <= 0:
+        return [{
+            "key": "basis",
+            "label": {"ko": "분석 기준", "zh": "分析依据"},
+            "parts": [part(
+                "현재 생산계획 품번과 연결된 과거 품질 기록이 없습니다.",
+                "当前生产计划料号没有关联的历史品质记录。",
+            )],
+        }]
+
+    segments: list[dict[str, Any]] = [{
+        "key": "basis",
+        "label": {"ko": "분석 기준", "zh": "分析依据"},
+        "parts": [
+            part("연결된 전체 과거 품질 기록 ", "按关联的全部历史品质记录"),
+            part(f"{total_reports}건", f"{total_reports}条", strong=True),
+            part("을 기준으로 분석했습니다.", "进行分析。"),
+        ],
+    }]
+
+    if not priority_metrics:
+        segments.append({
+            "key": "focus",
+            "label": {"ko": "우선 판단", "zh": "优先判断"},
+            "parts": [part(
+                "2건 이상 반복된 분류 가능 문제 유형은 없습니다.",
+                "没有可分类且重复2条以上的问题类型。",
+            )],
+        })
+        return segments
+
+    primary = priority_metrics[0]
+    primary_label = _metric_template_label(primary)
+    primary_count = int(primary.get("evidence_count") or 0)
+    primary_trend = (
+        primary.get("trend")
+        if isinstance(primary.get("trend"), dict)
+        else {}
+    )
+    recent_count = int(primary_trend.get("recent_count") or 0)
+    recent_denominator = int(primary_trend.get("recent_denominator") or 0)
+    focus_parts = [
+        part(
+            f"{primary_label['ko']} {primary_count}건",
+            f"{primary_label['zh']}{primary_count}条",
+            strong=True,
+        ),
+    ]
+    if primary_trend.get("status") == "increase" and recent_denominator > 0:
+        focus_parts.append(part(
+            f" · 최근 30일 {recent_count}/{recent_denominator}건",
+            f" · 最近30天{recent_count}/{recent_denominator}条",
+            strong=True,
+        ))
+    segments.append({
+        "key": "focus",
+        "label": {"ko": "핵심 근거", "zh": "核心依据"},
+        "parts": focus_parts,
+    })
+
+    secondary = priority_metrics[1:3]
+    if secondary:
+        next_parts = []
+        for index, metric in enumerate(secondary):
+            label = _metric_template_label(metric)
+            count = int(metric.get("evidence_count") or 0)
+            next_parts.append(part(
+                f"{' · ' if index else ''}{label['ko']} {count}건",
+                f"{' · ' if index else ''}{label['zh']}{count}条",
+                strong=True,
+            ))
+        segments.append({
+            "key": "next_priority",
+            "label": {"ko": "함께 확인", "zh": "同时确认"},
+            "parts": next_parts,
+        })
+
+    return segments
 
 
 def _authoritative_report_shift_checks(
@@ -1890,20 +2112,48 @@ def quality_daily_report_for_page(
                 return {**base, "reason": "not_generated"}
             stored_report = verified_stored_report
 
-            priorities = []
-            valid_priority_sources = {
-                str(item.get("source_key"))
-                for item in (
-                    completed.input_payload.get("items")
-                    if isinstance(completed.input_payload, dict)
-                    else []
-                ) or []
+            input_payload = (
+                completed.input_payload
+                if isinstance(completed.input_payload, dict)
+                else {}
+            )
+            source_items = {
+                str(item.get("source_key")): item
+                for item in input_payload.get("items") or []
                 if isinstance(item, dict) and item.get("source_key")
             }
-            for fallback_rank, item in enumerate(result.get("attention_items") or [], start=1):
+            selector_terminology_compatible = (
+                _stored_selector_matches_current_terminology(
+                    input_payload,
+                    deterministic_internal,
+                )
+            )
+            if not selector_terminology_compatible:
+                return {
+                    **base,
+                    "reason": "llm_fallback",
+                    "completed_at": (
+                        completed.completed_at.isoformat()
+                        if completed.completed_at
+                        else None
+                    ),
+                    "generation_source": generation_source or "unverified",
+                    "llm_fallback": True,
+                    "llm_fallback_code": "outdated_terminology_dictionary",
+                    "data_policy": {
+                        **base["data_policy"],
+                        "llm_selector_terminology_compatible": False,
+                        "llm_selection_applied": False,
+                    },
+                }
+            priorities = []
+            for fallback_rank, item in enumerate(
+                result.get("attention_items") or [],
+                start=1,
+            ):
                 if (
                     not isinstance(item, dict)
-                    or str(item.get("source_key") or "") not in valid_priority_sources
+                    or str(item.get("source_key") or "") not in source_items
                 ):
                     continue
                 rank = item.get("priority_rank")
@@ -1949,16 +2199,6 @@ def quality_daily_report_for_page(
                     })
                 return rows
 
-            input_payload = (
-                completed.input_payload
-                if isinstance(completed.input_payload, dict)
-                else {}
-            )
-            source_items = {
-                str(item.get("source_key")): item
-                for item in input_payload.get("items") or []
-                if isinstance(item, dict) and item.get("source_key")
-            }
             repeated_issues = public_metric_narratives(
                 "repeated_issues",
                 accelerating=False,
@@ -1973,11 +2213,10 @@ def quality_daily_report_for_page(
                 if isinstance(row, dict)
                 and source_items.get(str(row.get("source_key") or ""))
             ]
-            # Worker v4's final report selector is the authoritative AI target
-            # ordering.  Keep only exact restored source keys, then append any
-            # remaining verified attention targets in their deterministic
-            # fallback order.  Public ranks are recomputed so they cannot be
-            # forged by either payload.
+            # A terminology-compatible worker selector controls target order.
+            # Keep only exact restored source keys, then append verified
+            # deterministic targets. Public ranks are recomputed so neither
+            # the worker payload nor an older dictionary can forge ordering.
             fallback_priority_keys = [
                 str(priority.get("source_key") or "")
                 for priority in priorities
@@ -2009,6 +2248,10 @@ def quality_daily_report_for_page(
                 accelerating_issues,
                 internal_affected_targets,
                 source_items,
+            )
+            executive_summary_segments = _authoritative_executive_summary_segments(
+                deterministic_internal,
+                priority_problem_metrics,
             )
 
             def public_target(
@@ -2182,6 +2425,7 @@ def quality_daily_report_for_page(
                     "schema_version": QUALITY_DAILY_NARRATIVE_SCHEMA_VERSION,
                     "summary": summary,
                     "executive_summary": summary,
+                    "executive_summary_segments": executive_summary_segments,
                     "priorities": public_priorities,
                     "repeated_issues": [
                         {
@@ -2211,6 +2455,13 @@ def quality_daily_report_for_page(
                     },
                 },
                 "generation_source": generation_source,
+                "data_policy": {
+                    **base["data_policy"],
+                    "llm_selector_terminology_compatible": (
+                        selector_terminology_compatible
+                    ),
+                    "llm_selection_applied": selector_terminology_compatible,
+                },
             }
         if exact.filter(status__in=QUALITY_DAILY_ACTIVE_STATUSES).exists():
             return {**base, "status": "pending", "reason": "generation_pending"}

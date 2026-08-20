@@ -1376,6 +1376,13 @@ class LocalLlmReadinessTests(unittest.TestCase):
             "/private/models/Qwen3.5-35B-A3B-4bit",
         )
 
+    def test_client_rejects_non_loopback_model_endpoint(self):
+        with self.assertRaisesRegex(ValueError, "loopback"):
+            LocalLlmClient(
+                "https://example.com/v1",
+                "/private/models/Qwen3.8-27B-4bit",
+            )
+
     def test_ready_requires_configured_model_or_basename(self):
         for model_id in [
             "/private/models/Qwen3.5-35B-A3B-4bit",
@@ -1621,7 +1628,7 @@ class WorkerRunReportingTests(unittest.TestCase):
             self.claim_requests.append({"worker_name": worker_name, **kwargs})
             return [self.job] if self.job else []
 
-        def start_job(self, _job_id):
+        def start_job(self, _job_id, **_payload):
             return {}
 
         def complete_job(self, job_id, **payload):

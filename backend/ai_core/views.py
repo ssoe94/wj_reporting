@@ -22,12 +22,20 @@ from production.ai_types import (
 )
 
 from .models import AiJob
+from .model_registry import QUALITY_DAILY_MODEL_ID
 from .quality_daily import (
     QUALITY_DAILY_MODE,
     QUALITY_DAILY_TRIGGER,
     enqueue_daily_quality_summary,
     is_daily_quality_summary_job,
     restore_authoritative_quality_result,
+)
+from .quality_report_audit import (
+    QUALITY_REPORT_AUDIT_MODE,
+    QUALITY_REPORT_AUDIT_PROMPT_VERSION,
+    QUALITY_REPORT_AUDIT_TRIGGER,
+    is_quality_report_audit_job,
+    restore_authoritative_quality_report_audit_result,
 )
 from .serializers import (
     AiJobClaimSerializer,
@@ -520,6 +528,12 @@ class AiWorkerPeriodicEnqueueView(APIView):
         if quality_enqueue.get('created'):
             created_count += 1
         quality_job = quality_enqueue.get('job')
+        from quality.classification_audit import enqueue_stale_quality_report_audits
+
+        quality_audit_enqueue = enqueue_stale_quality_report_audits(
+            bounded_scan=True,
+        )
+        created_count += int(quality_audit_enqueue.get('created_count') or 0)
 
         return Response({
             'schedule_slot': schedule_slot,
@@ -532,6 +546,7 @@ class AiWorkerPeriodicEnqueueView(APIView):
             } | {
                 'job': AiJobResultSerializer(quality_job).data if quality_job else None,
             },
+            'quality_report_audit': quality_audit_enqueue,
         })
 
 
@@ -544,6 +559,9 @@ class AiWorkerClaimView(APIView):
         serializer.is_valid(raise_exception=True)
         worker_name = serializer.validated_data['worker_name']
         worker_version = serializer.validated_data['worker_version']
+        available_model_ids = set(
+            serializer.validated_data.get('available_model_ids') or []
+        )
         if worker_version != SUPPORTED_AI_WORKER_VERSION:
             return Response({
                 'detail': 'This AI Worker version is not supported.',
@@ -562,10 +580,21 @@ class AiWorkerClaimView(APIView):
         ]
         eligible_job_types = Q(job_type__in=non_quality_job_types)
         if AiJob.JOB_TYPE_QUALITY_IMAGE in job_types:
-            eligible_job_types |= Q(
-                job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
-                scope__mode=QUALITY_DAILY_MODE,
-                scope__trigger=QUALITY_DAILY_TRIGGER,
+            eligible_job_types |= (
+                Q(
+                    job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+                    scope__mode=QUALITY_DAILY_MODE,
+                    scope__trigger=QUALITY_DAILY_TRIGGER,
+                )
+                | (
+                    Q(
+                        job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+                        scope__mode=QUALITY_REPORT_AUDIT_MODE,
+                        scope__trigger=QUALITY_REPORT_AUDIT_TRIGGER,
+                    )
+                    if QUALITY_DAILY_MODEL_ID in available_model_ids
+                    else Q(pk__in=[])
+                )
             )
         now = timezone.now()
         local_today = now.astimezone(SHANGHAI_TZ).date().isoformat()
@@ -612,25 +641,47 @@ class AiWorkerJobTransitionView(APIView):
     permission_classes = [HasWorkerToken]
     transition = None
 
-    def get_object(self, pk):
+    def get_object(self, pk, *, for_update=False):
         try:
-            return AiJob.objects.get(pk=pk)
+            queryset = AiJob.objects.select_for_update() if for_update else AiJob.objects
+            return queryset.get(pk=pk)
         except AiJob.DoesNotExist:
             raise NotFound('AI job not found.')
 
     def post(self, request, pk, *args, **kwargs):
-        job = self.get_object(pk)
-        if job.status == AiJob.STATUS_CANCELLED:
-            raise PermissionDenied('Cancelled job cannot be updated.')
-        if self.transition == 'start':
-            return self.start(job)
-        if self.transition == 'complete':
-            return self.complete(request, job)
-        if self.transition == 'fail':
-            return self.fail(request, job)
-        raise NotFound('Unknown transition.')
+        with transaction.atomic():
+            job = self.get_object(pk, for_update=True)
+            if job.status == AiJob.STATUS_CANCELLED:
+                raise PermissionDenied('Cancelled job cannot be updated.')
+            if self.transition == 'start':
+                return self.start(request, job)
+            if self.transition == 'complete':
+                return self.complete(request, job)
+            if self.transition == 'fail':
+                return self.fail(request, job)
+            raise NotFound('Unknown transition.')
 
-    def start(self, job):
+    def assert_quality_audit_claim(self, job, payload):
+        if not is_quality_report_audit_job(job):
+            return
+        worker_name = str(payload.get('worker_name') or '').strip()
+        claim_timestamp = payload.get('claim_timestamp')
+        if isinstance(claim_timestamp, str):
+            claim_timestamp = parse_datetime(claim_timestamp)
+        if (
+            not worker_name
+            or worker_name != job.claimed_by
+            or claim_timestamp is None
+            or job.claimed_at is None
+            or claim_timestamp != job.claimed_at
+        ):
+            raise PermissionDenied('This audit lease belongs to another Worker claim.')
+
+    def start(self, request, job):
+        if is_quality_report_audit_job(job):
+            self.assert_quality_audit_claim(job, request.data)
+            if job.status != AiJob.STATUS_CLAIMED:
+                raise ValidationError({'detail': f'{job.status} audit job cannot be started.'})
         if job.status not in [AiJob.STATUS_CLAIMED, AiJob.STATUS_PENDING]:
             raise ValidationError({'detail': f'{job.status} job cannot be started.'})
         job.status = AiJob.STATUS_RUNNING
@@ -643,13 +694,26 @@ class AiWorkerJobTransitionView(APIView):
             raise ValidationError({'detail': f'{job.status} job cannot be completed.'})
         serializer = AiJobCompleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        self.assert_quality_audit_claim(job, serializer.validated_data)
+        if (
+            is_quality_report_audit_job(job)
+            and serializer.validated_data.get('prompt_version')
+            != QUALITY_REPORT_AUDIT_PROMPT_VERSION
+        ):
+            raise ValidationError({
+                'prompt_version': 'The quality report audit prompt version is not supported.',
+            })
         job.status = AiJob.STATUS_COMPLETED
         worker_result = serializer.validated_data['result_payload']
-        job.result_payload = (
-            restore_authoritative_quality_result(job, worker_result)
-            if is_daily_quality_summary_job(job)
-            else restore_authoritative_production_result(job, worker_result)
-        )
+        if is_daily_quality_summary_job(job):
+            job.result_payload = restore_authoritative_quality_result(job, worker_result)
+        elif is_quality_report_audit_job(job):
+            job.result_payload = restore_authoritative_quality_report_audit_result(
+                job,
+                worker_result,
+            )
+        else:
+            job.result_payload = restore_authoritative_production_result(job, worker_result)
         job.model_name = serializer.validated_data.get('model_name') or ''
         job.prompt_version = serializer.validated_data.get('prompt_version') or ''
         job.error_message = ''
@@ -670,6 +734,7 @@ class AiWorkerJobTransitionView(APIView):
             raise ValidationError({'detail': f'{job.status} job cannot be failed.'})
         serializer = AiJobFailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        self.assert_quality_audit_claim(job, serializer.validated_data)
         job.status = AiJob.STATUS_FAILED
         job.error_message = serializer.validated_data['error_message']
         job.model_name = serializer.validated_data.get('model_name') or ''

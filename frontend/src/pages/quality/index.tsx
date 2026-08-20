@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ClipboardList, FileText, History } from 'lucide-react';
+import { BrainCircuit, ClipboardList, FileText, History } from 'lucide-react';
 import { useLang } from '../../i18n';
 import { useAuth } from '../../contexts/AuthContext';
 import QualityReportForm from './QualityReportForm';
 import QualityReportHistory from './QualityReportHistory';
 import QualityExcelImport from './QualityExcelImport';
 import QualityRecentReports from './QualityRecentReports';
+import QualityClassificationReview from './QualityClassificationReview';
 import type { QualityReportHistoryScope } from './importTypes';
 
 export default function QualityPage() {
@@ -18,7 +19,9 @@ export default function QualityPage() {
   const excelSectionRef = useRef<HTMLDivElement | null>(null);
   const [historyScope, setHistoryScope] = useState<QualityReportHistoryScope | null>(null);
   const canEditQuality = Boolean(user?.is_staff || hasPermission('can_edit_quality'));
+  const isReviewView = canEditQuality && location.hash === '#review';
   const isHistoryView = !canEditQuality || location.hash === '#stats';
+  const isWorkspaceView = canEditQuality && !isHistoryView && !isReviewView;
 
   useEffect(() => {
     if (!canEditQuality || location.hash !== '#import') return;
@@ -35,6 +38,10 @@ export default function QualityPage() {
   const openAllHistory = () => {
     setHistoryScope(null);
     navigate('/quality#stats');
+  };
+
+  const openClassificationReview = () => {
+    navigate('/quality#review');
   };
 
   const openImportedReports = (scope: QualityReportHistoryScope) => {
@@ -59,15 +66,15 @@ export default function QualityPage() {
 
         <nav
           aria-label={lang === 'zh' ? '品质管理页面' : '품질 관리 화면'}
-          className={`grid w-full rounded-xl border border-blue-200 bg-white/80 p-1 shadow-sm sm:w-auto ${canEditQuality ? 'grid-cols-2' : 'grid-cols-1'}`}
+          className={`grid w-full rounded-xl border border-blue-200 bg-white/80 p-1 shadow-sm sm:w-auto ${canEditQuality ? 'grid-cols-3' : 'grid-cols-1'}`}
         >
           {canEditQuality && (
             <button
               type="button"
               onClick={openWorkspace}
-              aria-current={!isHistoryView ? 'page' : undefined}
+              aria-current={isWorkspaceView ? 'page' : undefined}
               className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
-                !isHistoryView
+                isWorkspaceView
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
               }`}
@@ -89,14 +96,29 @@ export default function QualityPage() {
             <History className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{lang === 'zh' ? '全部报告履历' : '전체 보고 이력'}</span>
           </button>
+          {canEditQuality && (
+            <button
+              type="button"
+              onClick={openClassificationReview}
+              aria-current={isReviewView ? 'page' : undefined}
+              className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+                isReviewView
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'
+              }`}
+            >
+              <BrainCircuit className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{lang === 'zh' ? 'AI 分类审核' : 'AI 분류 검토'}</span>
+            </button>
+          )}
         </nav>
       </header>
 
       {canEditQuality && (
         <motion.div
-          className={isHistoryView ? 'hidden' : 'space-y-5'}
+          className={isWorkspaceView ? 'space-y-5' : 'hidden'}
           initial={false}
-          animate={{ opacity: isHistoryView ? 0 : 1 }}
+          animate={{ opacity: isWorkspaceView ? 1 : 0 }}
         >
           <section className="overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm" aria-labelledby="quality-registration-workspace-title">
             <div className="flex items-center gap-3 border-b border-blue-100 bg-gradient-to-r from-blue-50 via-white to-cyan-50 px-4 py-4 md:px-5">
@@ -135,6 +157,17 @@ export default function QualityPage() {
             reportScope={historyScope}
             onClearReportScope={() => setHistoryScope(null)}
           />
+        </motion.div>
+      )}
+
+      {isReviewView && (
+        <motion.div
+          key="quality-classification-review"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <QualityClassificationReview />
         </motion.div>
       )}
     </div>

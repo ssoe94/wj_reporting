@@ -13,6 +13,7 @@ import {
   Database,
   Factory,
   FolderOpen,
+  Images,
   Layers3,
   Printer,
   ShieldCheck,
@@ -26,15 +27,33 @@ import api from '../../lib/api';
 import { useLang } from '../../i18n';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import DailyAttentionEvidenceDialog, {
+  type DailyAttentionEvidenceCase,
+  type DailyAttentionEvidenceSelection,
+} from './DailyAttentionEvidenceDialog';
 
 type HistoricalReport = {
   id: number;
   report_dt: string;
   section: string;
+  model: string;
   part_no: string;
   judgement: string;
   defect_rate: string;
   phenomenon: string;
+  recorded_phenomenon?: string;
+  problem_types?: Array<{
+    key: string;
+    label: LocalizedText;
+    observed_terms?: Array<{
+      key: string;
+      label: LocalizedText;
+    }>;
+  }>;
+  occurrence_locations?: Array<{
+    key: string;
+    label: LocalizedText;
+  }>;
   disposition: string;
   action_result: string;
   images: string[];
@@ -63,6 +82,15 @@ type LocalizedText = {
   zh: string;
 };
 
+type QualityExecutiveSummarySegment = {
+  key: 'basis' | 'focus' | 'next_priority';
+  label: LocalizedText;
+  parts: Array<{
+    text: LocalizedText;
+    strong: boolean;
+  }>;
+};
+
 type QualityTrend = {
   status: 'increase' | 'stable_or_decrease' | 'insufficient_data';
   reason:
@@ -89,6 +117,31 @@ type QualityPlanTarget = {
   part_no: string;
   lot_no: string;
   planned_quantity: number;
+};
+
+type QualityObservedTermMetric = {
+  metric_key: string;
+  canonical_key: string;
+  parent_metric_key: string;
+  label: LocalizedText;
+  classification_basis: 'canonical_observed_alias_v1';
+  evidence_count: number;
+  repeat_status: 'repeated' | 'single';
+  latest_report_dt: string | null;
+  all_history_denominator: number;
+  all_history_share_pct: number | null;
+  trend: QualityTrend;
+  impact_scope: {
+    plan_group_count: number;
+    planned_quantity: number;
+    machine_names: string[];
+    model_names: string[];
+    part_nos: string[];
+    part_prefixes: string[];
+    plan_targets: QualityPlanTarget[];
+    historical_model_names: string[];
+    historical_part_nos: string[];
+  };
 };
 
 type QualityReportMetric = {
@@ -132,6 +185,7 @@ type QualityReportMetric = {
     historical_model_names: string[];
     historical_part_nos: string[];
   };
+  observed_terms?: QualityObservedTermMetric[];
 };
 
 type QualityDeterministicReport = {
@@ -186,12 +240,22 @@ type QualityPublicMetricSignal = {
   denominator: number;
   share_pct: number | null;
   trend: QualityTrend;
+  observed_terms?: Array<{
+    canonical_key: string;
+    label: LocalizedText;
+    evidence_count: number;
+    denominator: number;
+    share_pct: number | null;
+    latest_report_dt: string | null;
+    trend: QualityTrend;
+  }>;
 };
 
 type QualityReportNarrative = {
   schema_version: 'quality-daily-report-narrative.v1';
   summary: LocalizedText;
   executive_summary: LocalizedText;
+  executive_summary_segments?: QualityExecutiveSummarySegment[];
   priorities: Array<{
     priority_rank: number;
     target_ref: string;
@@ -271,6 +335,7 @@ type DimensionedMetric = Omit<QualityReportMetric, 'dimension'> & {
 
 type PhenomenonGroup = {
   phenomenon: string;
+  recordedPhenomena: string[];
   reports: HistoricalReport[];
   totalCount: number;
   sectionCounts: Array<{ section: string; count: number }>;
@@ -281,6 +346,7 @@ type PrintableImage = {
   id: string;
   imageUrl: string;
   phenomenon: string;
+  recordedPhenomenon: string;
   reportDt: string;
   section: string;
   partNo: string;
@@ -310,6 +376,7 @@ type PrintLabels = {
   date: string;
   selectedPhotos: string;
   topPhenomena: string;
+  recordedPhenomenon: string;
 };
 
 const SECTION_ORDER: Record<string, number> = {
@@ -326,117 +393,29 @@ function normalizeSection(section: string): string {
   return value || 'ETC';
 }
 
-function normalizePhenomenonLabel(value: string, emptyLabel: string): string {
-  const raw = (value || '').trim();
-  if (!raw) return emptyLabel;
-
-  const normalized = raw
-    .normalize('NFKC')
-    .replace(/[\r\n\t]+/g, ' ')
-    .replace(/[，、,;；/／|]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/[。．.]+$/g, '')
-    .trim()
-    .replace(/\s/g, '');
-
-  if (!normalized) return emptyLabel;
-
-  const tokens = new Set<string>();
-
-  if (
-    normalized.includes('脏污') ||
-    normalized.includes('油污') ||
-    normalized.includes('油渍') ||
-    normalized.includes('油点') ||
-    normalized.includes('灰尘') ||
-    normalized.includes('污渍') ||
-    normalized.includes('擦拭印')
-  ) {
-    tokens.add('脏污');
+function reportPhenomenonLabel(report: HistoricalReport, emptyLabel: string, lang: 'ko' | 'zh'): string {
+  const canonicalLabels = (report.problem_types ?? [])
+    .flatMap((problem) => (
+      problem.observed_terms?.length
+        ? problem.observed_terms.map((observed) => localizedText(observed.label, lang))
+        : [localizedText(problem.label, lang)]
+    ))
+    .filter(Boolean);
+  if (canonicalLabels.length > 0) {
+    return Array.from(new Set(canonicalLabels)).join(' / ');
   }
-
-  if (normalized.includes('白色粉末') || normalized.includes('粉末残留')) {
-    tokens.add('白色粉末残留');
-  }
-
-  if (normalized.includes('毛刺') || normalized.includes('飞边')) {
-    tokens.add('毛刺未去除');
-  }
-
-  if (normalized.includes('毛絮')) {
-    tokens.add('毛絮残留');
-  }
-
-  if (normalized.includes('糊斑')) {
-    tokens.add('糊斑');
-  }
-
-  if (normalized.includes('气印')) {
-    tokens.add('气印发白');
-  }
-
-  if (normalized.includes('缩印') || normalized.includes('缩影')) {
-    tokens.add('缩印');
-  }
-
-  if (normalized.includes('缺胶')) {
-    tokens.add('缺胶');
-  }
-
-  if (normalized.includes('发亮') || normalized.includes('高光')) {
-    tokens.add('发亮');
-  }
-
-  if (
-    normalized.includes('拉伤') ||
-    normalized.includes('擦伤') ||
-    normalized.includes('削伤') ||
-    normalized.includes('磕伤') ||
-    normalized.includes('夹伤') ||
-    normalized.includes('损伤')
-  ) {
-    tokens.add('擦伤/碰伤');
-  }
-
-  if (
-    normalized.includes('夹色') ||
-    normalized.includes('黑点') ||
-    normalized.includes('料花')
-  ) {
-    tokens.add('夹色/黑点/料花');
-  }
-
-  if (
-    normalized.includes('标签') ||
-    normalized.includes('重码') ||
-    normalized.includes('漏贴')
-  ) {
-    tokens.add('标签异常');
-  }
-
-  if (
-    normalized.includes('包装') ||
-    normalized.includes('包裹') ||
-    normalized.includes('水渍')
-  ) {
-    tokens.add('包装异常');
-  }
-
-  if (tokens.size > 0) {
-    return Array.from(tokens).join(' / ');
-  }
-
-  return normalized;
+  return (report.phenomenon || '').trim() || emptyLabel;
 }
 
-function groupReportsByPhenomenon(reports: HistoricalReport[], emptyLabel: string): PhenomenonGroup[] {
+function groupReportsByPhenomenon(reports: HistoricalReport[], emptyLabel: string, lang: 'ko' | 'zh'): PhenomenonGroup[] {
   const groups = new Map<string, HistoricalReport[]>();
 
   reports.forEach((report) => {
-    const phenomenon = normalizePhenomenonLabel(report.phenomenon || '', emptyLabel);
+    const phenomenon = reportPhenomenonLabel(report, emptyLabel, lang);
     const current = groups.get(phenomenon) ?? [];
     current.push({
       ...report,
+      recorded_phenomenon: report.phenomenon,
       phenomenon,
     });
     groups.set(phenomenon, current);
@@ -466,6 +445,11 @@ function groupReportsByPhenomenon(reports: HistoricalReport[], emptyLabel: strin
 
       return {
         phenomenon,
+        recordedPhenomena: Array.from(new Set(
+          sortedReports
+            .map((report) => (report.recorded_phenomenon || '').trim())
+            .filter((value) => value && value !== phenomenon),
+        )),
         reports: sortedReports,
         totalCount: sortedReports.length,
         sectionCounts,
@@ -654,8 +638,17 @@ function firstMetricTarget(metric: DimensionedMetric): QualityPlanTarget | null 
 }
 
 function metricDisplayLabel(metric: DimensionedMetric, lang: string): string {
-  if (metric.dimension !== 'pair') return localizedText(metric.label, lang);
-  const problem = localizedText(metric.problem_label, lang);
+  const observedLabels = [...(metric.observed_terms ?? [])]
+    .filter((observed) => observed.evidence_count > 0)
+    .sort((left, right) => {
+      const order = { mixed_color: 0, black_dot: 1 } as Record<string, number>;
+      return (order[left.canonical_key] ?? 99) - (order[right.canonical_key] ?? 99);
+    })
+    .map((observed) => localizedText(observed.label, lang))
+    .filter(Boolean);
+  const observedLabel = observedLabels.join('·');
+  if (metric.dimension !== 'pair') return observedLabel || localizedText(metric.label, lang);
+  const problem = observedLabel || localizedText(metric.problem_label, lang);
   const location = localizedText(metric.location_label, lang);
   if (problem && location) return `${problem} · ${location}`;
   return problem || localizedText(metric.label, lang);
@@ -682,6 +675,90 @@ function findMetricForTarget(
       (target.part_no && partSet.has(target.part_no))
     )
   ))) ?? null;
+}
+
+function normalizePartIdentity(value: string): string {
+  return (value || '').toUpperCase().replace(/\s+/g, '');
+}
+
+function findEvidenceItem(
+  items: DailyAttentionItem[],
+  machineName: string,
+  partNos: string[],
+  metric: DimensionedMetric,
+): DailyAttentionItem | null {
+  const normalizedParts = new Set(partNos.map(normalizePartIdentity).filter(Boolean));
+  const metricPrefixes = new Set(metric.impact_scope.part_prefixes.filter(Boolean));
+  const isPartMatch = (item: DailyAttentionItem) => item.part_nos.some((partNo) => normalizedParts.has(normalizePartIdentity(partNo)));
+  const isPrefixMatch = (item: DailyAttentionItem) => (
+    metricPrefixes.has(item.part_prefix)
+    || item.part_nos.some((partNo) => metricPrefixes.has(normalizePartIdentity(partNo).slice(0, 9)))
+  );
+
+  if (!machineName) return null;
+  return items.find((item) => item.machine_name === machineName && isPartMatch(item))
+    ?? items.find((item) => item.machine_name === machineName && isPrefixMatch(item))
+    ?? null;
+}
+
+function buildEvidenceCases(
+  item: DailyAttentionItem,
+  targetPartNos: string[],
+  metric: DimensionedMetric,
+  lang: 'ko' | 'zh',
+): DailyAttentionEvidenceCase[] {
+  const targetPartSet = new Set(
+    (targetPartNos.length > 0 ? targetPartNos : item.part_nos)
+      .map(normalizePartIdentity)
+      .filter(Boolean),
+  );
+  const problemKey = historicalSignalProblemKey(metric);
+  const seen = new Set<number>();
+
+  return item.reports
+    .filter((report) => {
+      const problemMatches = (report.problem_types ?? []).some((problem) => problem.key === problemKey);
+      if (!problemMatches || metric.dimension !== 'pair') return problemMatches;
+      return Boolean(
+        metric.location_canonical_key
+        && (report.occurrence_locations ?? []).some((location) => location.key === metric.location_canonical_key),
+      );
+    })
+    .filter((report) => {
+      if (seen.has(report.id)) return false;
+      seen.add(report.id);
+      return true;
+    })
+    .map((report) => ({
+      id: report.id,
+      reportDt: report.report_dt,
+      section: normalizeSection(report.section),
+      model: report.model || '',
+      partNo: report.part_no || '',
+      judgement: report.judgement || '',
+      defectRate: report.defect_rate || '',
+      rawPhenomenon: report.recorded_phenomenon || report.phenomenon || '',
+      canonicalLabels: Array.from(new Set(
+        (report.problem_types ?? [])
+          .flatMap((problem) => (
+            problem.observed_terms?.length
+              ? problem.observed_terms.map((observed) => localizedText(observed.label, lang))
+              : [localizedText(problem.label, lang)]
+          ))
+          .filter(Boolean),
+      )),
+      disposition: report.disposition || '',
+      actionResult: report.action_result || '',
+      images: (report.images ?? []).filter(Boolean),
+      matchLevel: targetPartSet.has(normalizePartIdentity(report.part_no))
+        ? 'exact_part' as const
+        : 'related_prefix' as const,
+    }))
+    .sort((left, right) => {
+      if (left.matchLevel !== right.matchLevel) return left.matchLevel === 'exact_part' ? -1 : 1;
+      const dateDiff = dayjs(right.reportDt).valueOf() - dayjs(left.reportDt).valueOf();
+      return dateDiff !== 0 ? dateDiff : right.id - left.id;
+    });
 }
 
 function ReportStatusBadge({
@@ -779,8 +856,8 @@ function MetricBarPanel({
             <div key={`${dimension}-${metric.metric_key}`}>
               <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate font-medium text-slate-800" title={localizedText(metric.label, lang)}>
-                    {localizedText(metric.label, lang) || '-'}
+                  <span className="truncate font-medium text-slate-800" title={metricDisplayLabel({ ...metric, dimension }, lang)}>
+                    {metricDisplayLabel({ ...metric, dimension }, lang) || '-'}
                   </span>
                   {metric.repeat_status === 'repeated' && (
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${accent.badge}`}>
@@ -801,6 +878,15 @@ function MetricBarPanel({
                 </span>
                 <span>{lang === 'zh' ? '最近' : '최근'} {formatReportDate(metric.latest_report_dt)}</span>
               </div>
+              {(metric.observed_terms ?? []).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {metric.observed_terms?.map((observed) => (
+                    <span key={observed.canonical_key} className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                      {localizedText(observed.label, lang)} {formatMetricNumber(observed.evidence_count)}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
           {dataQualityMetrics.length > 0 && (
@@ -907,6 +993,7 @@ function collectPrintableImages(groups: PhenomenonGroup[]): PrintableImage[] {
         id: `${report.id}-${imageIndex}`,
         imageUrl,
         phenomenon: group.phenomenon,
+        recordedPhenomenon: report.recorded_phenomenon || report.phenomenon,
         reportDt: report.report_dt,
         section: report.section,
         partNo: report.part_no,
@@ -933,6 +1020,9 @@ function buildPrintDocumentHtml(params: {
         <div class="summary-tag">
           <div class="summary-tag-title">${escapeHtml(group.phenomenon)}</div>
           <div class="summary-tag-meta">${group.totalCount} | ${escapeHtml(formatSectionCounts(group.sectionCounts))}</div>
+          ${group.recordedPhenomena.length > 0
+            ? `<div class="summary-tag-meta">${escapeHtml(labels.recordedPhenomenon)}: ${escapeHtml(group.recordedPhenomena.join(' · '))}</div>`
+            : ''}
         </div>
       `).join('');
 
@@ -963,6 +1053,9 @@ function buildPrintDocumentHtml(params: {
                     <span>${escapeHtml(dayjs(image.reportDt).format('YYYY-MM-DD'))}</span>
                   </div>
                   <div>${escapeHtml(labels.partNo)}: ${escapeHtml(image.partNo || '-')}</div>
+                  ${image.recordedPhenomenon && image.recordedPhenomenon !== image.phenomenon
+                    ? `<div>${escapeHtml(labels.recordedPhenomenon)}: ${escapeHtml(image.recordedPhenomenon)}</div>`
+                    : ''}
                   <div>${escapeHtml(labels.action)}: ${escapeHtml(image.disposition || image.actionResult || '-')}</div>
                 </div>
               </article>
@@ -1235,6 +1328,7 @@ export default function DailyAttentionPage() {
   const [targetDate, setTargetDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, Record<string, boolean>>>({});
   const [printSelection, setPrintSelection] = useState<PrintSelectionState | null>(null);
+  const [evidenceSelection, setEvidenceSelection] = useState<DailyAttentionEvidenceSelection | null>(null);
 
   const noPhenomenonLabel = lang === 'zh' ? '未填写现象' : '현상 미입력';
   const expandAllLabel = lang === 'zh' ? '全部展开' : '모두 펼치기';
@@ -1257,7 +1351,7 @@ export default function DailyAttentionPage() {
         executive: '执行摘要',
         executiveDescription: '面向交接班的结论优先简报',
         priorities: '今日优先确认',
-        prioritiesDescription: '每张卡片显示不同的不良风险及对应机台与机种',
+        prioritiesDescription: '每张卡片显示不同的不良风险；点击卡片下方的机台与机种可查看原始案例和全部照片',
         plannedTarget: '计划对象',
         problemTypes: '问题类型',
         problemTypesDescription: '按服务器分类词典汇总 · 未分类原文单独作为数据质量项',
@@ -1300,6 +1394,7 @@ export default function DailyAttentionPage() {
         repeatedLabel: '反复历史项',
         increaseLabel: '近期增加',
         fallbackLabel: '数据优先级',
+        viewEvidence: '查看案例与照片',
         more: '等',
       }
     : {
@@ -1309,7 +1404,7 @@ export default function DailyAttentionPage() {
         executive: 'Executive Summary',
         executiveDescription: '교대 전 확인을 위한 결론 우선 브리핑',
         priorities: '오늘 우선확인',
-        prioritiesDescription: '카드마다 서로 다른 불량 리스크와 해당 호기·모델을 표시',
+        prioritiesDescription: '카드마다 다른 불량 리스크를 표시하며, 하단 호기·모델을 누르면 원문 사례와 전체 사진을 확인할 수 있습니다.',
         plannedTarget: '계획 대상',
         problemTypes: '문제유형',
         problemTypesDescription: '서버 분류 사전 기준 통합 · 미분류 원문은 데이터 품질로 별도 표시',
@@ -1352,6 +1447,7 @@ export default function DailyAttentionPage() {
         repeatedLabel: '반복 역사 항목',
         increaseLabel: '최근 증가',
         fallbackLabel: '데이터 우선순위',
+        viewEvidence: '근거 사례·사진 보기',
         more: '외',
       };
 
@@ -1370,6 +1466,7 @@ export default function DailyAttentionPage() {
     date: t('date'),
     selectedPhotos: lang === 'zh' ? '选择照片数' : '선택 사진 수',
     topPhenomena: t('quality.daily_attention_top_phenomena'),
+    recordedPhenomenon: lang === 'zh' ? '记录原文' : '기록 원문',
   };
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery<DailyAttentionResponse>({
@@ -1396,10 +1493,10 @@ export default function DailyAttentionPage() {
     const map: Record<string, PhenomenonGroup[]> = {};
     sortedItems.forEach((item) => {
       const itemKey = `${item.machine_name}-${item.sequence}-${item.part_prefix}`;
-      map[itemKey] = groupReportsByPhenomenon(item.reports, noPhenomenonLabel);
+      map[itemKey] = groupReportsByPhenomenon(item.reports, noPhenomenonLabel, lang);
     });
     return map;
-  }, [sortedItems, noPhenomenonLabel]);
+  }, [sortedItems, noPhenomenonLabel, lang]);
 
   const report = data?.report ?? null;
   const deterministic = (
@@ -1605,6 +1702,38 @@ export default function DailyAttentionPage() {
       return (a.target.sequence ?? 999) - (b.target.sequence ?? 999);
     });
   }, [actionableAnalysisMetrics, lang]);
+
+  const openEvidenceSelection = (
+    selectionKey: string,
+    metric: DimensionedMetric,
+    machineName: string,
+    machineNumber: number | null,
+    modelNames: string[],
+    partNos: string[],
+  ) => {
+    const item = findEvidenceItem(sortedItems, machineName, partNos, metric);
+    const resolvedParts = partNos.length > 0 ? partNos : item?.part_nos ?? [];
+    const resolvedModels = modelNames.length > 0 ? modelNames : item?.model_names ?? [];
+    const machineLabel = compactMachineLabel(machineName || item?.machine_name || '', machineNumber ?? item?.machine_number ?? null, lang);
+    const modelLabel = compactModelLabel(resolvedModels, lang);
+    const partLabel = resolvedParts.join(', ') || '-';
+    const partPrefix = item?.part_prefix
+      ?? metric.impact_scope.part_prefixes[0]
+      ?? normalizePartIdentity(resolvedParts[0] ?? '').slice(0, 9);
+
+    setEvidenceSelection({
+      key: `${selectionKey}:${metric.metric_key}:${partPrefix}`,
+      metricLabel: metricDisplayLabel(metric, lang),
+      businessDate: targetDate,
+      targetLabel: `${machineLabel} — ${modelLabel} · ${partLabel}`,
+      machineName: machineName || item?.machine_name || '',
+      modelNames: resolvedModels,
+      partNos: resolvedParts,
+      partPrefix,
+      metricEvidenceCount: metric.evidence_count,
+      cases: item ? buildEvidenceCases(item, resolvedParts, metric, lang === 'zh' ? 'zh' : 'ko') : [],
+    });
+  };
 
   const isPhenomenonOpen = (itemKey: string, phenomenon: string) =>
     collapsedGroups[itemKey]?.[phenomenon] !== false;
@@ -1856,18 +1985,66 @@ export default function DailyAttentionPage() {
                               </span>
                             </div>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => openEvidenceSelection(
+                              `executive:${priorityCards[0].key}`,
+                              priorityCards[0].metric!,
+                              priorityCards[0].machineName,
+                              priorityCards[0].machineNumber,
+                              priorityCards[0].modelNames,
+                              priorityCards[0].partNos,
+                            )}
+                            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                          >
+                            <Images className="h-4 w-4" />
+                            {analysisCopy.viewEvidence}
+                          </button>
                         </div>
                       )}
 
-                      <p className="mt-4 max-w-[72ch] !text-base font-medium !leading-7 text-slate-800">
-                        {narrative
-                          ? localizedText(narrative.executive_summary, lang)
-                          : analysisCopy.historySummary
-                              .replace('{plans}', formatMetricNumber(deterministic.coverage.plan_group_count))
-                              .replace('{prefixes}', formatMetricNumber(deterministic.coverage.distinct_prefix_count))
-                              .replace('{matches}', formatMetricNumber(deterministic.coverage.matched_report_count))
-                              .replace('{without}', formatMetricNumber(deterministic.coverage.without_history_count))}
-                      </p>
+                      {narrative?.executive_summary_segments?.length ? (
+                        <dl
+                          className="mt-4 divide-y divide-blue-100/80 rounded-xl border border-blue-100 bg-white/65 px-4"
+                          aria-label={lang === 'zh' ? '执行摘要明细' : 'Executive Summary 상세'}
+                        >
+                          {narrative.executive_summary_segments.map((segment) => (
+                            <div
+                              key={segment.key}
+                              className="grid min-w-0 gap-1 py-3 sm:grid-cols-[5.5rem_minmax(0,1fr)] sm:gap-4"
+                            >
+                              <dt className="pt-0.5 text-xs font-bold text-blue-700">
+                                {localizedText(segment.label, lang)}
+                              </dt>
+                              <dd className="min-w-0 break-keep !text-[15px] font-normal !leading-6 text-slate-700 [overflow-wrap:anywhere] sm:!text-base sm:!leading-7">
+                                {segment.parts.map((part, index) => {
+                                  const value = localizedText(part.text, lang);
+                                  return part.strong ? (
+                                    <strong
+                                      key={`${segment.key}-${index}-${value}`}
+                                      className="font-bold tabular-nums text-slate-950"
+                                    >
+                                      {value}
+                                    </strong>
+                                  ) : (
+                                    <span key={`${segment.key}-${index}-${value}`}>{value}</span>
+                                  );
+                                })}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : (
+                        <p className="mt-4 max-w-[72ch] !text-base font-normal !leading-7 text-slate-800">
+                          {narrative
+                            ? localizedText(narrative.executive_summary, lang)
+                            : analysisCopy.historySummary
+                                .replace('{plans}', formatMetricNumber(deterministic.coverage.plan_group_count))
+                                .replace('{prefixes}', formatMetricNumber(deterministic.coverage.distinct_prefix_count))
+                                .replace('{matches}', formatMetricNumber(deterministic.coverage.matched_report_count))
+                                .replace('{without}', formatMetricNumber(deterministic.coverage.without_history_count))}
+                        </p>
+                      )}
 
                       {!narrative && (
                         <div className="mt-4 rounded-xl border border-blue-100 bg-white/80 px-4 py-3 text-sm leading-6 text-blue-800">
@@ -1944,6 +2121,15 @@ export default function DailyAttentionPage() {
                                 <div className="mt-4">
                                   <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{dimension}</div>
                                   <h4 className="mt-1 line-clamp-2 text-xl font-bold leading-7 text-slate-950" title={metricDisplayLabel(metric, lang)}>{metricDisplayLabel(metric, lang) || '-'}</h4>
+                                  {(metric.observed_terms ?? []).length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-1.5" aria-label={lang === 'zh' ? '实际记录' : '실제 기록'}>
+                                      {metric.observed_terms?.map((observed) => (
+                                        <span key={observed.canonical_key} className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-100">
+                                          {localizedText(observed.label, lang)} {formatMetricNumber(observed.evidence_count)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {!metric && <h4 className="mt-4 text-lg font-bold leading-7 text-slate-950">{priority.title || '-'}</h4>}
@@ -1972,20 +2158,31 @@ export default function DailyAttentionPage() {
                                 </div>
                               )}
                               <div className="mt-auto pt-4">
-                                <div
-                                  className="group relative flex min-w-0 items-center gap-2 rounded-xl bg-slate-950 px-3 py-2.5 text-sm font-semibold text-white outline-none ring-cyan-300 focus-visible:ring-2"
-                                  aria-label={identityTitle}
-                                  tabIndex={0}
+                                <button
+                                  type="button"
+                                  onClick={() => metric && openEvidenceSelection(
+                                    priority.key,
+                                    metric,
+                                    priority.machineName,
+                                    priority.machineNumber,
+                                    priority.modelNames,
+                                    priority.partNos,
+                                  )}
+                                  disabled={!metric}
+                                  className="group relative flex w-full min-w-0 items-center gap-2 rounded-xl bg-slate-950 px-3 py-2.5 text-left text-sm font-semibold text-white outline-none ring-cyan-300 transition hover:bg-slate-800 focus-visible:ring-2 disabled:cursor-default disabled:opacity-70"
+                                  aria-label={`${analysisCopy.viewEvidence}: ${identityTitle}`}
                                 >
                                   <Factory className="h-4 w-4 shrink-0 text-cyan-300" />
-                                  <span className="truncate">{machineLabel} <span className="text-slate-400">—</span> {modelLabel}</span>
+                                  <span className="min-w-0 flex-1 truncate">{machineLabel} <span className="text-slate-400">—</span> {modelLabel}</span>
+                                  {metric && <span className="shrink-0 text-[11px] text-cyan-200">{lang === 'zh' ? '查看' : '보기'}</span>}
+                                  {metric && <Images className="h-4 w-4 shrink-0 text-cyan-300" aria-hidden="true" />}
                                   <span
                                     role="tooltip"
                                     className={`pointer-events-none absolute bottom-full z-30 mb-2 hidden w-max max-w-[min(28rem,80vw)] rounded-lg bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white shadow-xl group-hover:block group-focus:block ${tooltipAlignmentClass}`}
                                   >
-                                    {identityTitle}
+                                    {metric ? `${analysisCopy.viewEvidence} · ${identityTitle}` : identityTitle}
                                   </span>
-                                </div>
+                                </button>
                               </div>
                             </article>
                           );
@@ -2360,6 +2557,14 @@ export default function DailyAttentionPage() {
                                   <div className="mt-1 text-sm text-slate-600">
                                     {group.totalCount} | {formatSectionCounts(group.sectionCounts)}
                                   </div>
+                                  {group.recordedPhenomena.length > 0 && (
+                                    <div
+                                      className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500"
+                                      title={group.recordedPhenomena.join(' · ')}
+                                    >
+                                      {lang === 'zh' ? '记录原文' : '기록 원문'}: {group.recordedPhenomena.join(' · ')}
+                                    </div>
+                                  )}
                                 </div>
                                 {isOpen ? <ChevronDown className="h-5 w-5 text-slate-500" /> : <ChevronRight className="h-5 w-5 text-slate-500" />}
                               </button>
@@ -2379,13 +2584,25 @@ export default function DailyAttentionPage() {
                                       </div>
                                       <div className="space-y-2 px-3 py-3 text-sm">
                                         <div className="flex items-center justify-between gap-2">
-                                          <div className="font-semibold text-slate-900">{report.phenomenon || noPhenomenonLabel}</div>
+                                          <div
+                                            className="font-semibold text-slate-900"
+                                            title={report.recorded_phenomenon || report.phenomenon || noPhenomenonLabel}
+                                          >
+                                            {report.phenomenon || noPhenomenonLabel}
+                                          </div>
                                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
                                             {normalizeSection(report.section)}
                                           </span>
                                         </div>
+                                        {report.recorded_phenomenon && report.recorded_phenomenon !== report.phenomenon && (
+                                          <div className="break-words text-xs leading-5 text-slate-500">
+                                            {lang === 'zh' ? '记录原文' : '기록 원문'}: {report.recorded_phenomenon}
+                                          </div>
+                                        )}
                                         <div className="text-slate-600">{dayjs(report.report_dt).format('YYYY-MM-DD')} | {report.section}</div>
-                                        <div className="text-slate-600">{report.part_no}</div>
+                                        <div className="break-words text-slate-600">
+                                          {lang === 'zh' ? '机种' : '모델'} {report.model || '-'} · {lang === 'zh' ? '料号' : '품번'} {report.part_no || '-'}
+                                        </div>
                                         <div className="line-clamp-3 text-slate-700">{report.disposition || report.action_result || '-'}</div>
                                       </div>
                                     </article>
@@ -2406,6 +2623,12 @@ export default function DailyAttentionPage() {
           )}
         </div>
       )}
+
+      <DailyAttentionEvidenceDialog
+        lang={lang === 'zh' ? 'zh' : 'ko'}
+        selection={evidenceSelection}
+        onClose={() => setEvidenceSelection(null)}
+      />
 
       {printSelection && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4">
@@ -2467,6 +2690,11 @@ export default function DailyAttentionPage() {
                               {normalizeSection(image.section)}
                             </span>
                           </div>
+                          {image.recordedPhenomenon && image.recordedPhenomenon !== image.phenomenon && (
+                            <div className="break-words text-xs leading-5 text-slate-500">
+                              {lang === 'zh' ? '记录原文' : '기록 원문'}: {image.recordedPhenomenon}
+                            </div>
+                          )}
                           <div className="text-slate-600">{dayjs(image.reportDt).format('YYYY-MM-DD')}</div>
                           <div className="text-slate-600">{image.partNo || '-'}</div>
                           <div className="line-clamp-2 text-slate-700">{image.disposition || image.actionResult || '-'}</div>

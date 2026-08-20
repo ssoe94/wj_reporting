@@ -19,6 +19,7 @@ try:
         production_machine_analysis,
         production_question_analysis,
         quality_daily_attention_summary,
+        quality_report_taxonomy_audit,
     )
     from .llm_client import LocalLlmClient
     from .render_client import RenderClient, WORKER_VERSION
@@ -28,6 +29,7 @@ except ImportError:
         production_machine_analysis,
         production_question_analysis,
         quality_daily_attention_summary,
+        quality_report_taxonomy_audit,
     )
     from llm_client import LocalLlmClient
     from render_client import RenderClient, WORKER_VERSION
@@ -139,8 +141,15 @@ def health_check_passed(result: dict[str, Any]) -> bool:
 
 def handler_for_job(job: dict):
     input_payload = job.get("input_payload") or {}
+    scope = job.get("scope") if isinstance(job.get("scope"), dict) else {}
     if input_payload.get("source") == "production_ai_question":
         return production_question_analysis
+    if (
+        job.get("job_type") == "quality_image_analysis"
+        and scope.get("mode") == quality_report_taxonomy_audit.MODE
+        and scope.get("trigger") == quality_report_taxonomy_audit.TRIGGER
+    ):
+        return quality_report_taxonomy_audit
     return HANDLERS.get(job.get("job_type"))
 
 
@@ -1369,6 +1378,7 @@ def run_once(
     report: RunOnceReport | None = None,
     model_targets: dict[str, LocalModelTarget] | None = None,
     default_model_id: str = QWEN_MODEL_ID,
+    available_model_ids: list[str] | None = None,
 ) -> int:
     report = report if report is not None else RunOnceReport()
     if enqueue_periodic:
@@ -1378,17 +1388,26 @@ def run_once(
             message = f"periodic enqueue failed: {exc}"
             report.add(message, failure=True)
             print(message, file=sys.stderr)
+    claim_model_ids = available_model_ids
+    if claim_model_ids is None:
+        claim_model_ids = [
+            model_id
+            for model_id, target in model_targets.items()
+            if use_llm and target.client is not None
+        ] if model_targets is not None else []
     jobs = client.claim_jobs(
         worker_name,
         limit=1,
         job_types=list(HANDLERS.keys()),
         worker_version=WORKER_VERSION,
+        available_model_ids=claim_model_ids,
     )
     if not jobs:
         return 0
 
     for job in jobs:
         job_id = int(job["id"])
+        claim_timestamp = str(job.get("claimed_at") or "")
         handler = handler_for_job(job)
         allow_unavailable_fallback = bool(
             fallback_to_deterministic
@@ -1424,7 +1443,11 @@ def run_once(
                     if not allow_unavailable_fallback:
                         raise RuntimeError(model_unavailable_error)
                     job_use_llm = False
-            client.start_job(job_id)
+            client.start_job(
+                job_id,
+                worker_name=worker_name,
+                claim_timestamp=claim_timestamp,
+            )
             result, prompt_version = handle_job(
                 job,
                 job_use_llm,
@@ -1453,13 +1476,21 @@ def run_once(
                 result_payload=result,
                 model_name=result.get("model_name") or selected_model_name,
                 prompt_version=prompt_version,
+                worker_name=worker_name,
+                claim_timestamp=claim_timestamp,
             )
             print(f"completed ai job {job_id} with {selected_model_id}")
         except Exception as exc:
             message = f"ai job {job_id} failed: {exc}"
             report.add(message, failure=True)
             try:
-                client.fail_job(job_id, str(exc), model_name=selected_model_name)
+                client.fail_job(
+                    job_id,
+                    str(exc),
+                    model_name=selected_model_name,
+                    worker_name=worker_name,
+                    claim_timestamp=claim_timestamp,
+                )
             except Exception as fail_exc:
                 report.add(f"ai job {job_id} fail transition failed: {fail_exc}", failure=True)
             print(message, file=sys.stderr)
@@ -1558,6 +1589,7 @@ def main() -> int:
     next_periodic_check = 0.0
     next_heartbeat = 0.0
     last_worker_error = ""
+    last_available_model_ids: list[str] = []
     default_target = model_targets.get(default_model_id)
     while True:
         monotonic_now = time.monotonic()
@@ -1568,6 +1600,11 @@ def main() -> int:
                 for model_id, target in model_targets.items()
             }
             llm_ready = model_readiness.get(default_model_id, False)
+            last_available_model_ids = [
+                model_id
+                for model_id, is_ready in model_readiness.items()
+                if is_ready
+            ]
             reported_worker_version = heartbeat_worker_version(model_readiness)
             try:
                 client.send_heartbeat(
@@ -1577,11 +1614,7 @@ def main() -> int:
                     model_name=default_target.model_name if default_target else "",
                     worker_version=reported_worker_version,
                     last_error=last_worker_error,
-                    available_model_ids=[
-                        model_id
-                        for model_id, is_ready in model_readiness.items()
-                        if is_ready
-                    ],
+                    available_model_ids=last_available_model_ids,
                 )
                 last_worker_error = ""
             except Exception as exc:
@@ -1600,6 +1633,7 @@ def main() -> int:
                 report=run_report,
                 model_targets=model_targets if use_llm else None,
                 default_model_id=default_model_id,
+                available_model_ids=last_available_model_ids,
             )
             if run_report.messages:
                 last_worker_error = run_report.summary()
