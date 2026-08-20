@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import unittest
 
 try:
@@ -871,7 +872,15 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
             handler.REPORT_SELECTOR_OUTPUT_SCHEMA,
         )
         self.assertEqual(qwen38.calls[1][2]["max_tokens"], handler.REPORT_SELECTOR_MAX_TOKENS)
-        self.assertTrue(qwen38.calls[1][2]["json_object"])
+        self.assertNotIn("json_object", qwen38.calls[1][2])
+        self.assertEqual(
+            qwen38.calls[1][2]["json_schema"]["properties"]
+            ["repeated_indices"]["items"]["maximum"],
+            len(qwen38.calls[1][1]["repeated_candidates"]) - 1,
+        )
+        self.assertNotIn("source_evidence_keys", str(qwen38.calls[1][1]))
+        self.assertNotIn("metric_key", str(qwen38.calls[1][1]))
+        self.assertIn("overlapping_repeated_indices", str(qwen38.calls[1][1]))
         self.assertEqual(result["source"], "local_llm_rewrite")
         self.assertEqual(result["llm_attempts"], 1)
         self.assertEqual(result["llm_chunk_count"], 2)
@@ -907,6 +916,30 @@ class QualityDailyAttentionHandlerTests(unittest.TestCase):
                 "llm_chunk_count",
                 "llm_chunk_basis",
             },
+        )
+
+    def test_report_selector_model_view_is_bounded_when_evidence_is_large(self):
+        grounding = handler.build_grounding_payload(quality_job())
+        selector = handler._report_selector_payload(
+            grounding,
+            {"14|ACQ307763": {"issue_metric_keys": ["pair:whitening:gate"]}},
+        )
+        long_keys = [f"ACQ307763:phenomenon:{index:04d}:" + "x" * 180 for index in range(300)]
+        for candidate in selector["repeated_candidates"]:
+            candidate["source_evidence_keys"] = list(long_keys)
+        for candidate in selector["accelerating_candidates"]:
+            candidate["source_evidence_keys"] = list(long_keys)
+        selector["affected_target_candidates"][0]["source_evidence_keys"] = list(long_keys)
+
+        model_view = handler._report_selector_llm_payload(selector)
+        encoded = json.dumps(model_view, ensure_ascii=False)
+
+        self.assertLess(len(encoded), 12000)
+        self.assertNotIn("source_evidence_keys", encoded)
+        self.assertNotIn(long_keys[0], encoded)
+        self.assertEqual(
+            model_view["affected_target_candidates"][0]["overlapping_repeated_indices"],
+            list(range(len(model_view["repeated_candidates"]))),
         )
 
     def test_model_chunk_retries_once_then_preserves_success(self):

@@ -1432,6 +1432,152 @@ def _report_selector_payload(
     }
 
 
+def _report_selector_llm_payload(
+    selector_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the bounded ranking view sent to Qwen.
+
+    ``selector_payload`` is also the authoritative restoration catalog and can
+    contain hundreds of evidence keys.  The model selects list indexes only,
+    so those keys are unnecessary prompt input.  Keep them server-side and
+    expose only the already-calculated fields that can affect ordering.
+    """
+
+    def compact_metric(candidate: Any) -> dict[str, Any] | None:
+        if not isinstance(candidate, dict):
+            return None
+        trend = candidate.get("trend") if isinstance(candidate.get("trend"), dict) else {}
+        impact = (
+            candidate.get("impact_scope")
+            if isinstance(candidate.get("impact_scope"), dict)
+            else {}
+        )
+        result = {
+            "dimension": _clean_text(candidate.get("dimension"), limit=80),
+            "canonical_key": _clean_text(candidate.get("canonical_key"), limit=160),
+            "label": _bilingual(candidate.get("label")),
+            "evidence_count": _nonnegative_int(candidate.get("evidence_count")),
+            "repeat_status": _clean_text(candidate.get("repeat_status"), limit=40),
+            "latest_report_dt": _clean_text(candidate.get("latest_report_dt"), limit=40),
+            "trend": {
+                "status": _clean_text(trend.get("status"), limit=40),
+                "recent_count": _number(trend.get("recent_count")),
+                "previous_count": _number(trend.get("previous_count")),
+                "share_change_pp": _number(trend.get("share_change_pp")),
+            },
+            "impact_scope": {
+                "machine_names": _clean_text_list(
+                    impact.get("machine_names"), limit=120
+                )[:5],
+                "plan_group_count": _nonnegative_int(impact.get("plan_group_count")),
+                "planned_quantity": _nonnegative_int(impact.get("planned_quantity")),
+            },
+        }
+        if result["dimension"] == "problem_location_pair":
+            result.update({
+                "problem_canonical_key": _clean_text(
+                    candidate.get("problem_canonical_key"), limit=160
+                ),
+                "location_canonical_key": _clean_text(
+                    candidate.get("location_canonical_key"), limit=160
+                ),
+            })
+        return result
+
+    repeated = [
+        row
+        for candidate in selector_payload.get("repeated_candidates") or []
+        if (row := compact_metric(candidate)) is not None
+    ]
+    accelerating = [
+        row
+        for candidate in selector_payload.get("accelerating_candidates") or []
+        if (row := compact_metric(candidate)) is not None
+    ]
+
+    repeated_source_keys = [
+        set(_clean_evidence_keys(candidate.get("source_evidence_keys")))
+        for candidate in selector_payload.get("repeated_candidates") or []
+        if isinstance(candidate, dict)
+    ]
+    accelerating_source_keys = [
+        set(_clean_evidence_keys(candidate.get("source_evidence_keys")))
+        for candidate in selector_payload.get("accelerating_candidates") or []
+        if isinstance(candidate, dict)
+    ]
+    targets: list[dict[str, Any]] = []
+    for candidate in selector_payload.get("affected_target_candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        target_keys = set(_clean_evidence_keys(candidate.get("source_evidence_keys")))
+        targets.append({
+            "machine_name": _clean_text(candidate.get("machine_name"), limit=120),
+            "model_names": _clean_text_list(candidate.get("model_names"), limit=160)[:2],
+            "part_nos": _clean_text_list(candidate.get("part_nos"), limit=120)[:2],
+            "matching_report_count": _nonnegative_int(
+                candidate.get("matching_report_count")
+            ),
+            "latest_report_dt": _clean_text(
+                candidate.get("latest_report_dt"), limit=40
+            ),
+            "selected_metric_count": len(
+                _clean_text_list(candidate.get("selected_metric_keys"), limit=220)
+            ),
+            "overlapping_repeated_indices": [
+                index
+                for index, evidence_keys in enumerate(repeated_source_keys)
+                if target_keys.intersection(evidence_keys)
+            ],
+            "overlapping_accelerating_indices": [
+                index
+                for index, evidence_keys in enumerate(accelerating_source_keys)
+                if target_keys.intersection(evidence_keys)
+            ],
+        })
+
+    return {
+        "history_coverage": _clean_text(
+            selector_payload.get("history_coverage"), limit=40
+        ),
+        "repeated_candidates": repeated,
+        "accelerating_candidates": accelerating,
+        "affected_target_candidates": targets,
+        "required_output_schema": REPORT_SELECTOR_OUTPUT_SCHEMA,
+    }
+
+
+def _report_selector_json_schema(
+    selector_payload: dict[str, Any],
+) -> dict[str, Any]:
+    def index_array(candidate_name: str, limit: int) -> dict[str, Any]:
+        count = len(selector_payload.get(candidate_name) or [])
+        return {
+            "type": "array",
+            "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": max(0, count - 1),
+            },
+            "minItems": 1 if count else 0,
+            "maxItems": min(limit, count),
+        }
+
+    return {
+        "type": "object",
+        "properties": {
+            "repeated_indices": index_array("repeated_candidates", 6),
+            "accelerating_indices": index_array("accelerating_candidates", 4),
+            "affected_target_indices": index_array("affected_target_candidates", 5),
+        },
+        "required": [
+            "repeated_indices",
+            "accelerating_indices",
+            "affected_target_indices",
+        ],
+        "additionalProperties": False,
+    }
+
+
 def _report_from_key_selections(
     value: Any,
     grounding: dict[str, Any],
@@ -1987,17 +2133,18 @@ def analyze_with_llm(
     if selector_candidates_present:
         attempted += 1
         report = None
+        selector_llm_payload = _report_selector_llm_payload(selector_payload)
         # Like target chunks, retry this small selector once without feeding
         # malformed raw output back into the next prompt.
         for _attempt in range(2):
             try:
                 selector_result = llm.structured_analysis(
                     REPORT_SELECTOR_SYSTEM_PROMPT,
-                    selector_payload,
+                    selector_llm_payload,
                     enable_thinking=False,
                     timeout_seconds=180,
                     max_tokens=REPORT_SELECTOR_MAX_TOKENS,
-                    json_object=True,
+                    json_schema=_report_selector_json_schema(selector_llm_payload),
                 )
                 report = _report_from_key_selections(
                     selector_result,
