@@ -299,6 +299,32 @@ class QualityClassificationAuditApiTests(APITestCase):
         self.assertEqual([row["id"] for row in response.data["jobs"]], [job_id])
         self.assertEqual(response.data["jobs"][0]["scope"]["model_id"], "qwen38")
 
+    def test_claimed_audit_starts_with_serialized_claim_timestamp(self):
+        enqueue = self.client.post(
+            reverse("quality-classification-audit"),
+            {"report_ids": [self.report.pk], "limit": 1},
+            format="json",
+        )
+        job = AiJob.objects.get(pk=enqueue.data["created_job_ids"][0])
+        job.status = AiJob.STATUS_CLAIMED
+        job.claimed_by = "test-worker"
+        job.claimed_at = timezone.now()
+        job.save(update_fields=["status", "claimed_by", "claimed_at", "updated_at"])
+        self.client.force_authenticate(user=None)
+
+        response = self.client.post(
+            f"/api/ai/jobs/{job.pk}/start/",
+            {
+                "worker_name": "test-worker",
+                "claim_timestamp": job.claimed_at.isoformat(),
+            },
+            format="json",
+            HTTP_X_AI_WORKER_TOKEN="test-worker-token",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["status"], AiJob.STATUS_RUNNING)
+
     def test_backdated_colour_version_clones_only_the_effective_spec(self):
         PartSpec.objects.create(
             part_no="TEST30776301",
