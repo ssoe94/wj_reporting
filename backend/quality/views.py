@@ -445,12 +445,33 @@ class DailyQualityAttentionView(APIView):
             target_date,
             **report_kwargs,
         )
-        if (
+        retry_outdated_dictionary = (
             payload['report'].get('llm_fallback_code')
             == 'outdated_terminology_dictionary'
-        ):
-            retry = enqueue_daily_quality_summary(target_date=target_date)
-            if retry.get('status') == 'retried':
+        )
+        retry_stale_source = (
+            payload['report'].get('status') == 'stale'
+            and payload['report'].get('reason') in {
+                'evidence_changed',
+                'plan_changed',
+            }
+        )
+        if retry_outdated_dictionary or retry_stale_source:
+            retry = enqueue_daily_quality_summary(
+                target_date=target_date,
+                authoritative_evidence_state={
+                    'date': target_date.isoformat(),
+                    'source_evidence_hash': payload.get('source_evidence_hash'),
+                    'source_evidence_last_changed_at': payload.get(
+                        'source_evidence_last_changed_at'
+                    ),
+                    'matching_report_count': payload.get(
+                        'total_matching_reports',
+                        0,
+                    ),
+                },
+            )
+            if retry.get('status') in {'created', 'retried'}:
                 payload['report'] = quality_daily_report_for_page(
                     target_date,
                     **report_kwargs,

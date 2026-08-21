@@ -21,8 +21,10 @@ import unicodedata
 from zoneinfo import ZoneInfo
 
 from django.core.cache import cache
-from django.db.models import Max
+from django.db.models import F, Max, Value
+from django.db.models.functions import Replace, Upper
 
+from injection.models import PartSpec
 from production.models import ProductionPlan, ProductionPlanChangeLog
 
 from .injection_terminology import (
@@ -205,12 +207,66 @@ def _plan_rows(target_date: date) -> list[dict[str, Any]]:
         .values(
             "machine_name",
             "model_name",
+            "part_spec",
+            "product_family_code",
             "part_no",
             "planned_quantity",
             "sequence",
             "lot_no",
         )
     )
+
+
+def _effective_part_specs(
+    plan_rows: Iterable[dict[str, Any]],
+    *,
+    target_date: date,
+) -> dict[str, dict[str, str]]:
+    """Resolve one exact-Part master identity as of the selected plan date."""
+
+    part_nos = {
+        normalize_part_no(row.get("part_no"))
+        for row in plan_rows
+        if normalize_part_no(row.get("part_no"))
+    }
+    if not part_nos:
+        return {}
+
+    resolved: dict[str, dict[str, str]] = {}
+    normalized_part_no = Upper(
+        Replace(
+            Replace(
+                Replace(
+                    Replace(F("part_no"), Value(" "), Value("")),
+                    Value("\t"),
+                    Value(""),
+                ),
+                Value("\n"),
+                Value(""),
+            ),
+            Value("\r"),
+            Value(""),
+        )
+    )
+    rows = (
+        PartSpec.objects.annotate(normalized_part_no=normalized_part_no)
+        .filter(
+            normalized_part_no__in=sorted(part_nos),
+            valid_from__lte=target_date,
+        )
+        .order_by("normalized_part_no", "-valid_from", "-id")
+        .values("part_no", "model_code", "description", "valid_from")
+    )
+    for row in rows:
+        part_no = normalize_part_no(row.get("part_no"))
+        if not part_no or part_no in resolved:
+            continue
+        resolved[part_no] = {
+            "model_code": _clean_text(row.get("model_code")),
+            "description": _clean_text(row.get("description")),
+            "valid_from": row["valid_from"].isoformat(),
+        }
+    return resolved
 
 
 def _canonical_plan_rows(plan_rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -388,6 +444,7 @@ def quality_attention_evidence_snapshot(
     cache_key = (
         "quality-attention:evidence-snapshot:"
         f"{QUALITY_PHENOMENON_TAXONOMY_VERSION}:"
+        f"{INJECTION_TERMINOLOGY_VERSION}:"
         f"{target_date.isoformat()}:{source_plan_hash}"
     )
     if not force_refresh:
@@ -436,6 +493,10 @@ def build_daily_quality_attention(
     """
 
     plan_rows = _plan_rows(target_date)
+    effective_part_specs = _effective_part_specs(
+        plan_rows,
+        target_date=target_date,
+    )
     prefixes = {
         prefix
         for prefix in (part_prefix(row.get("part_no")) for row in plan_rows)
@@ -494,6 +555,13 @@ def build_daily_quality_attention(
         if lot_no and lot_no not in group["lot_nos"]:
             group["lot_nos"].append(lot_no)
         planned_quantity = _rounded_quantity(row.get("planned_quantity"))
+        family_label = {
+            "BC": "B/C",
+            "CA": "C/A",
+            "GP": "G/P",
+        }.get(_clean_text(row.get("product_family_code")).upper(), "")
+        plan_spec = family_label or _clean_text(row.get("part_spec"))
+        effective_spec = effective_part_specs.get(normalized_part_no, {})
         group["planned_quantity"] += planned_quantity
         group["plan_row_count"] += 1
         group["plan_targets"].append({
@@ -503,6 +571,9 @@ def build_daily_quality_attention(
             "part_no": normalized_part_no,
             "lot_no": lot_no,
             "planned_quantity": planned_quantity,
+            "display_model_code": effective_spec.get("model_code", ""),
+            "display_description": plan_spec or effective_spec.get("description", ""),
+            "display_model_valid_from": effective_spec.get("valid_from"),
         })
 
     items: list[dict[str, Any]] = []
@@ -804,6 +875,15 @@ def _impact_scope(
             "part_no": normalize_part_no(target.get("part_no")),
             "lot_no": _clean_text(target.get("lot_no")),
             "planned_quantity": _rounded_quantity(target.get("planned_quantity")),
+            "display_model_code": _clean_text(
+                target.get("display_model_code")
+            ),
+            "display_description": _clean_text(
+                target.get("display_description")
+            ),
+            "display_model_valid_from": (
+                _clean_text(target.get("display_model_valid_from")) or None
+            ),
         }
         key = tuple(projected.values())
         if key not in target_keys:
@@ -1212,6 +1292,19 @@ def build_daily_quality_attention_ai_input(
     """Build a compact all-history, count-authoritative bilingual LLM input."""
 
     source = build_daily_quality_attention(target_date, include_images=False)
+
+    def grounding_value(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: grounding_value(nested)
+                for key, nested in value.items()
+                if not key.startswith("display_")
+            }
+        if isinstance(value, list):
+            return [grounding_value(nested) for nested in value]
+        return value
+
+    grounding_report_metrics = grounding_value(source["report_metrics"])
     items = []
     evidence_catalog: dict[str, dict[str, Any]] = {}
     for item in source["items"]:
@@ -1260,7 +1353,7 @@ def build_daily_quality_attention_ai_input(
             "part_prefix": item["part_prefix"],
             "part_nos": item["part_nos"],
             "model_names": item["model_names"],
-            "plan_targets": item["plan_targets"],
+            "plan_targets": grounding_value(item["plan_targets"]),
             "planned_quantity": item["planned_quantity"],
             "matching_report_count": item["matching_report_count"],
             "latest_report_dt": item["latest_report_dt"],
@@ -1298,7 +1391,7 @@ def build_daily_quality_attention_ai_input(
             "matched_report_count": source["total_matching_reports"],
             "without_history_count": source["without_history_count"],
         },
-        "report_metrics": source["report_metrics"],
+        "report_metrics": grounding_report_metrics,
         "items": items,
         "evidence_catalog": [evidence_catalog[key] for key in sorted(evidence_catalog)],
     }

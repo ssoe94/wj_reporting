@@ -18,7 +18,6 @@ import {
   Printer,
   ShieldCheck,
   Target,
-  TrendingUp,
 } from 'lucide-react';
 import dayjs from 'dayjs';
 
@@ -116,6 +115,9 @@ type QualityPlanTarget = {
   part_no: string;
   lot_no: string;
   planned_quantity: number;
+  display_model_code?: string;
+  display_description?: string;
+  display_model_valid_from?: string | null;
 };
 
 type QualityPriorityTargetGroup = {
@@ -123,7 +125,12 @@ type QualityPriorityTargetGroup = {
   machineName: string;
   machineNumber: number | null;
   modelNames: string[];
+  displayModelLabels: string[];
   partNos: string[];
+  recentEvidenceCount: number;
+  recentExactEvidenceCount: number;
+  totalEvidenceCount: number;
+  latestEvidenceDt: string | null;
 };
 
 type QualityObservedTermMetric = {
@@ -531,12 +538,23 @@ function sortMetrics(metrics: DimensionedMetric[]): DimensionedMetric[] {
 
 function metricTrendLabel(metric: DimensionedMetric, lang: string): string {
   if (metric.trend.status === 'increase') {
-    return lang === 'zh' ? '最近增加' : '최근 증가';
+    return lang === 'zh' ? '数量与占比同时增加' : '건수·비중 동시 증가';
   }
   if (metric.trend.status === 'insufficient_data') {
     return lang === 'zh' ? '样本不足' : '표본 부족';
   }
-  return lang === 'zh' ? '未满足增加标准' : '증가 기준 미충족';
+  return lang === 'zh' ? '反复关注' : '반복 주의';
+}
+
+function formatSignedMetricNumber(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+  return `${sign}${formatMetricNumber(Math.abs(value))}`;
+}
+
+function formatSignedPercentagePoint(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(1)}%p`;
 }
 
 function isUnknownLocationMetric(metric: QualityReportMetric | DimensionedMetric): boolean {
@@ -589,34 +607,29 @@ function compactMachineLabel(machineName: string, machineNumber: number | null, 
   return machineName || '-';
 }
 
-function compactModelLabel(modelNames: string[], lang: string): string {
-  const grouped = new Map<string, Set<string>>();
+function compactFactoryModelLabel(rawModel: string): string {
+  const normalized = rawModel.trim().replace(/\s+/g, '');
+  return normalized.match(/^([A-Z0-9]+)-[A-Z]{2}(?:\.[A-Z0-9]+)?$/i)?.[1]
+    ?? normalized;
+}
 
-  modelNames.forEach((rawModel) => {
-    const normalized = rawModel.trim().replace(/\s+/g, '');
-    const factorySuffix = normalized.match(/^(.+\d[A-Z]?)-[A-Z]{2}(?:\.[A-Z0-9]+)?$/i);
-    const model = factorySuffix?.[1] ?? normalized;
-    if (!model) return;
-    const slashVariants = model.match(/^(.+\d)([A-Z])\/([A-Z])$/i);
-    const singleVariant = model.match(/^(.+\d)([A-Z])$/i);
-    const base = slashVariants?.[1] ?? singleVariant?.[1] ?? model;
-    const variants = grouped.get(base) ?? new Set<string>();
-    if (slashVariants) {
-      variants.add(slashVariants[2].toUpperCase());
-      variants.add(slashVariants[3].toUpperCase());
-    } else if (singleVariant) {
-      variants.add(singleVariant[2].toUpperCase());
-    }
-    grouped.set(base, variants);
-  });
-
-  const labels = Array.from(grouped.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([base, variants]) => (
-      variants.size > 0
-        ? `${base} ${Array.from(variants).sort((left, right) => left.localeCompare(right)).join('/')}`
-        : base
-    ));
+function compactModelLabel(
+  modelNames: string[],
+  lang: string,
+  resolvedLabels: string[] = [],
+): string {
+  const masterLabels = Array.from(new Set(
+    resolvedLabels
+      .map((label) => label.trim().replace(/\s+/g, ' '))
+      .filter(Boolean),
+  ));
+  const fallbackLabels = Array.from(new Set(
+    modelNames
+      .map(compactFactoryModelLabel)
+      .filter(Boolean),
+  ));
+  const labels = (masterLabels.length > 0 ? masterLabels : fallbackLabels)
+    .sort((left, right) => left.localeCompare(right));
   if (labels.length === 0) return '-';
   const visible = labels.slice(0, 2).join(' · ');
   const hiddenCount = Math.max(0, labels.length - 2);
@@ -640,13 +653,52 @@ function fullTargetIdentityTitle(
   ].filter(Boolean).join(' · ');
 }
 
-function groupMetricPlanTargets(metric: DimensionedMetric): QualityPriorityTargetGroup[] {
+function historicalReportMatchesMetric(report: HistoricalReport, metric: DimensionedMetric): boolean {
+  const problemKey = historicalSignalProblemKey(metric);
+  const problemMatches = (report.problem_types ?? []).some((problem) => problem.key === problemKey);
+  if (!problemMatches || metric.dimension !== 'pair') return problemMatches;
+  return Boolean(
+    metric.location_canonical_key
+    && (report.occurrence_locations ?? []).some((location) => location.key === metric.location_canonical_key),
+  );
+}
+
+function reportTimestamp(reportDt: string | null): number {
+  if (!reportDt) return 0;
+  const normalized = reportDt.trim();
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized);
+  const shanghaiTimestamp = /^\d{4}-\d{2}-\d{2}$/.test(normalized)
+    ? `${normalized}T00:00:00+08:00`
+    : `${normalized}+08:00`;
+  const parsed = Date.parse(hasExplicitTimezone ? normalized : shanghaiTimestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function reportFallsWithinDateRange(reportDt: string, start: string, end: string): boolean {
+  const normalized = reportDt.trim();
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized);
+  const parsedTime = Date.parse(normalized);
+  const dateKey = hasExplicitTimezone && Number.isFinite(parsedTime)
+    ? new Date(parsedTime + (8 * 60 * 60 * 1000)).toISOString().slice(0, 10)
+    : normalized.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return false;
+  return (!start || dateKey >= start) && (!end || dateKey <= end);
+}
+
+function groupMetricPlanTargets(
+  metric: DimensionedMetric,
+  items: DailyAttentionItem[],
+  recentStart: string,
+  recentEnd: string,
+): QualityPriorityTargetGroup[] {
   const grouped = new Map<
     string,
     {
       machineName: string;
       machineNumber: number | null;
+      partPrefix: string;
       modelNames: Set<string>;
+      displayModelLabels: Set<string>;
       partNos: Set<string>;
     }
   >();
@@ -663,23 +715,79 @@ function groupMetricPlanTargets(metric: DimensionedMetric): QualityPriorityTarge
     const entry = grouped.get(groupKey) ?? {
       machineName,
       machineNumber: Number.isFinite(parsedMachineNumber) ? parsedMachineNumber : null,
+      partPrefix,
       modelNames: new Set<string>(),
+      displayModelLabels: new Set<string>(),
       partNos: new Set<string>(),
     };
     if (target.model_name) entry.modelNames.add(target.model_name);
+    const displayModelLabel = [
+      target.display_model_code?.trim() || compactFactoryModelLabel(target.model_name),
+      target.display_description?.trim(),
+    ].filter(Boolean).join(' ');
+    if (displayModelLabel) entry.displayModelLabels.add(displayModelLabel);
     if (target.part_no) entry.partNos.add(target.part_no);
     grouped.set(groupKey, entry);
   });
 
   return Array.from(grouped.entries())
-    .map(([key, entry]) => ({
-      key,
-      machineName: entry.machineName,
-      machineNumber: entry.machineNumber,
-      modelNames: Array.from(entry.modelNames).sort((left, right) => left.localeCompare(right)),
-      partNos: Array.from(entry.partNos).sort((left, right) => left.localeCompare(right)),
-    }))
+    .map(([key, entry]) => {
+      const partNos = Array.from(entry.partNos).sort((left, right) => left.localeCompare(right));
+      const exactPartNos = new Set(partNos.map(normalizePartIdentity).filter(Boolean));
+      const reportById = new Map<number, HistoricalReport>();
+      const matchingItems = entry.partPrefix
+        ? items.filter((item) => (
+          item.machine_name === entry.machineName
+          && (
+            item.part_prefix === entry.partPrefix
+            || item.part_nos.some((partNo) => normalizePartIdentity(partNo).slice(0, 9) === entry.partPrefix)
+          )
+        ))
+        : findEvidenceItems(items, entry.machineName, partNos, metric);
+      matchingItems.forEach((item) => {
+        item.reports.forEach((report) => {
+          if (historicalReportMatchesMetric(report, metric)) reportById.set(report.id, report);
+        });
+      });
+      const reports = Array.from(reportById.values());
+      const recentReports = reports.filter((report) => reportFallsWithinDateRange(
+        report.report_dt,
+        recentStart,
+        recentEnd,
+      ));
+      const recentExactEvidenceCount = recentReports.filter((report) => (
+        exactPartNos.has(normalizePartIdentity(report.part_no))
+      )).length;
+      const latestEvidenceDt = reports.reduce<string | null>((latest, report) => (
+        reportTimestamp(report.report_dt) > reportTimestamp(latest) ? report.report_dt : latest
+      ), null);
+
+      return {
+        key,
+        machineName: entry.machineName,
+        machineNumber: entry.machineNumber,
+        modelNames: Array.from(entry.modelNames).sort((left, right) => left.localeCompare(right)),
+        displayModelLabels: Array.from(entry.displayModelLabels)
+          .sort((left, right) => left.localeCompare(right)),
+        partNos,
+        recentEvidenceCount: recentReports.length,
+        recentExactEvidenceCount,
+        totalEvidenceCount: reports.length,
+        latestEvidenceDt,
+      };
+    })
     .sort((left, right) => {
+      if (right.recentEvidenceCount !== left.recentEvidenceCount) {
+        return right.recentEvidenceCount - left.recentEvidenceCount;
+      }
+      if (right.recentExactEvidenceCount !== left.recentExactEvidenceCount) {
+        return right.recentExactEvidenceCount - left.recentExactEvidenceCount;
+      }
+      const latestDiff = reportTimestamp(right.latestEvidenceDt) - reportTimestamp(left.latestEvidenceDt);
+      if (latestDiff !== 0) return latestDiff;
+      if (right.totalEvidenceCount !== left.totalEvidenceCount) {
+        return right.totalEvidenceCount - left.totalEvidenceCount;
+      }
       const leftNumber = left.machineNumber ?? Number.MAX_SAFE_INTEGER;
       const rightNumber = right.machineNumber ?? Number.MAX_SAFE_INTEGER;
       if (leftNumber !== rightNumber) return leftNumber - rightNumber;
@@ -704,12 +812,6 @@ function metricDisplayLabel(metric: DimensionedMetric, lang: string): string {
   return problem || localizedText(metric.label, lang);
 }
 
-function metricKindLabel(metric: DimensionedMetric, lang: string): string {
-  return metric.dimension === 'pair'
-    ? (lang === 'zh' ? '问题类型 · 发生位置' : '문제유형 · 발생위치')
-    : (lang === 'zh' ? '问题类型' : '문제유형');
-}
-
 function normalizePartIdentity(value: string): string {
   return (value || '').toUpperCase().replace(/\s+/g, '');
 }
@@ -722,10 +824,14 @@ function findEvidenceItems(
 ): DailyAttentionItem[] {
   const normalizedParts = new Set(partNos.map(normalizePartIdentity).filter(Boolean));
   const metricPrefixes = new Set(metric.impact_scope.part_prefixes.filter(Boolean));
+  const targetPrefixes = new Set(
+    Array.from(normalizedParts, (partNo) => partNo.slice(0, 9)).filter(Boolean),
+  );
+  const allowedPrefixes = targetPrefixes.size > 0 ? targetPrefixes : metricPrefixes;
   const isPartMatch = (item: DailyAttentionItem) => item.part_nos.some((partNo) => normalizedParts.has(normalizePartIdentity(partNo)));
   const isPrefixMatch = (item: DailyAttentionItem) => (
-    metricPrefixes.has(item.part_prefix)
-    || item.part_nos.some((partNo) => metricPrefixes.has(normalizePartIdentity(partNo).slice(0, 9)))
+    allowedPrefixes.has(item.part_prefix)
+    || item.part_nos.some((partNo) => allowedPrefixes.has(normalizePartIdentity(partNo).slice(0, 9)))
   );
 
   if (!machineName) return [];
@@ -750,18 +856,10 @@ function buildEvidenceCases(
       .map(normalizePartIdentity)
       .filter(Boolean),
   );
-  const problemKey = historicalSignalProblemKey(metric);
   const seen = new Set<number>();
 
   return item.reports
-    .filter((report) => {
-      const problemMatches = (report.problem_types ?? []).some((problem) => problem.key === problemKey);
-      if (!problemMatches || metric.dimension !== 'pair') return problemMatches;
-      return Boolean(
-        metric.location_canonical_key
-        && (report.occurrence_locations ?? []).some((location) => location.key === metric.location_canonical_key),
-      );
-    })
+    .filter((report) => historicalReportMatchesMetric(report, metric))
     .filter((report) => {
       if (seen.has(report.id)) return false;
       seen.add(report.id);
@@ -956,36 +1054,31 @@ function MetricBarPanel({
   );
 }
 
-function TrendMetricCard({ metric, lang, narrative }: { metric: DimensionedMetric; lang: string; narrative?: string }) {
+function PriorityTrendComparison({ metric, lang }: { metric: DimensionedMetric; lang: string }) {
   const isIncrease = metric.trend.status === 'increase';
   const isInsufficient = metric.trend.status === 'insufficient_data';
-  const dimensionLabel = metricKindLabel(metric, lang);
-  const statusLabel = isIncrease
-    ? (lang === 'zh' ? '数量与占比同时增加' : '건수·비중 동시 증가')
-    : isInsufficient
-      ? (lang === 'zh' ? '样本不足' : '표본 부족')
-      : (lang === 'zh' ? '未满足增加标准' : '증가 기준 미충족');
-  const badgeClass = isIncrease
-    ? 'bg-rose-50 text-rose-700 ring-rose-200'
-    : isInsufficient
-      ? 'bg-slate-100 text-slate-600 ring-slate-200'
-      : 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+  const changeClass = isIncrease
+    ? 'bg-rose-50 text-rose-700'
+    : 'bg-amber-50 text-amber-700';
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{dimensionLabel}</div>
-          <h4 className="mt-1 truncate font-semibold text-slate-900" title={metricDisplayLabel(metric, lang)}>
-            {metricDisplayLabel(metric, lang) || '-'}
-          </h4>
-        </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${badgeClass}`}>
-          {statusLabel}
+    <div className="mt-2 rounded-xl border border-slate-200 bg-white/90 p-3 xl:p-2.5 2xl:p-3">
+      <div className="flex items-center justify-between gap-1.5">
+        <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500 xl:text-[10px] 2xl:text-[11px]">
+          {lang === 'zh' ? '近期变化' : '최근 변화'}
         </span>
+        {isInsufficient ? (
+          <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 xl:text-[9px] 2xl:text-[10px]">
+            {lang === 'zh' ? '样本不足 · 无法比较' : '표본 부족 · 비교 불가'}
+          </span>
+        ) : (
+          <span className={`whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold tabular-nums xl:text-[9px] 2xl:text-[10px] ${changeClass}`}>
+            {formatSignedMetricNumber(metric.trend.count_change)}{lang === 'zh' ? '件' : '건'} · {formatSignedPercentagePoint(metric.trend.share_change_pp)}
+          </span>
+        )}
       </div>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-3 space-y-3">
         {[
           {
             key: 'previous',
@@ -1005,22 +1098,36 @@ function TrendMetricCard({ metric, lang, narrative }: { metric: DimensionedMetri
           },
         ].map((window) => (
           <div key={window.key}>
-            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-              <span className="text-slate-500">{window.label}</span>
-              <span className="font-semibold tabular-nums text-slate-800">
+            <div className="mb-1 flex items-center justify-between gap-1.5 text-xs xl:text-[10px] 2xl:text-xs">
+              <span className="whitespace-nowrap text-slate-500">{window.label}</span>
+              <span className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
                 {formatMetricNumber(window.count)} / {formatMetricNumber(window.denominator)} · {formatMetricPercent(window.share)}
               </span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-              <div className={`h-full rounded-full ${window.barClass}`} style={{ width: percentageWidth(window.share) }} />
-            </div>
+            {window.share == null ? (
+              <div className="h-2 rounded-full bg-slate-100" aria-label={`${window.label} ${lang === 'zh' ? '无法比较' : '비교 불가'}`} />
+            ) : (
+              <div
+                className="h-2 overflow-hidden rounded-full bg-slate-100"
+                role="progressbar"
+                aria-label={`${window.label} ${formatMetricPercent(window.share)}`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={window.share}
+              >
+                <div className={`h-full rounded-full ${window.barClass}`} style={{ width: percentageWidth(window.share) }} />
+              </div>
+            )}
           </div>
         ))}
       </div>
-      {narrative && (
-        <p className="mt-4 border-t border-slate-100 pt-3 text-sm leading-6 text-slate-600">{narrative}</p>
-      )}
-    </article>
+      <div className="mt-3 flex items-center justify-between gap-1.5 border-t border-slate-100 pt-3 text-[11px] text-slate-500 xl:text-[10px] 2xl:text-[11px]">
+        <span className="whitespace-nowrap">{lang === 'zh' ? '全部历史' : '전체 이력'}</span>
+        <strong className="whitespace-nowrap tabular-nums text-slate-800">
+          {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)} · {formatMetricPercent(metric.all_history_share_pct)}
+        </strong>
+      </div>
+    </div>
   );
 }
 
@@ -1389,7 +1496,7 @@ export default function DailyAttentionPage() {
         executive: '执行摘要',
         executiveDescription: '面向交接班的结论优先简报',
         priorities: '今日优先确认',
-        prioritiesDescription: '按不良现象汇总最多 5 项，并列出所有关联的当前计划机台与机种。点击对象可查看原始案例和全部照片。',
+        prioritiesDescription: '先比较前后 30 天的变化，再列出关联的当前计划机台与机种。点击对象可查看原始案例和全部照片。',
         plannedTarget: '计划对象',
         problemTypes: '问题类型',
         problemTypesDescription: '按服务器分类词典汇总 · 未分类原文单独作为数据质量项',
@@ -1400,8 +1507,6 @@ export default function DailyAttentionPage() {
         locationDataQuality: '数据质量',
         pairedSignals: '问题类型 · 发生位置',
         pairedSignalsDescription: '仅显示同一品质报告中同时确认的问题类型与发生位置',
-        repeatedTrend: '反复问题与近期变化',
-        repeatedTrendDescription: '最近 30 天与此前 30 天使用相同分母口径比较',
         affectedTargets: '计划对象影响范围',
         affectedTargetsDescription: '每个计划对象仅显示最多 3 个有反复依据的有效历史信号',
         machine: '机台',
@@ -1442,7 +1547,7 @@ export default function DailyAttentionPage() {
         executive: 'Executive Summary',
         executiveDescription: '교대 전 확인을 위한 결론 우선 브리핑',
         priorities: '오늘 우선확인',
-        prioritiesDescription: '불량현상별로 최대 5개를 묶고, 연결된 오늘 계획 호기·모델을 모두 표시합니다. 대상을 누르면 원문 사례와 전체 사진을 확인할 수 있습니다.',
+        prioritiesDescription: '이전·최근 30일 변화를 먼저 비교하고, 이어서 연결된 오늘 계획 호기·모델을 표시합니다. 대상을 누르면 원문과 사진을 확인할 수 있습니다.',
         plannedTarget: '계획 대상',
         problemTypes: '문제유형',
         problemTypesDescription: '서버 분류 사전 기준 통합 · 미분류 원문은 데이터 품질로 별도 표시',
@@ -1453,8 +1558,6 @@ export default function DailyAttentionPage() {
         locationDataQuality: '데이터 품질',
         pairedSignals: '문제유형 · 발생위치',
         pairedSignalsDescription: '같은 품질 보고서에서 함께 확인된 문제유형과 발생위치만 표시',
-        repeatedTrend: '반복 문제 및 최근 변화',
-        repeatedTrendDescription: '최근 30일과 이전 30일을 동일한 분모 기준으로 비교',
         affectedTargets: '계획 대상 모델·호기 영향',
         affectedTargetsDescription: '계획 대상별 반복 근거가 있는 유효 역사 신호만 최대 3개 표시',
         machine: '호기',
@@ -1583,15 +1686,6 @@ export default function DailyAttentionPage() {
     () => (deterministic?.occurrence_locations ?? []).find(isUnknownLocationMetric) ?? null,
     [deterministic],
   );
-  const trendNarrativeLookup = useMemo(() => {
-    const map = new Map<string, string>();
-    [...(narrative?.repeated_issues ?? []), ...(narrative?.accelerating_issues ?? [])].forEach((item) => {
-      if (!item.metric_key.startsWith('location:')) {
-        map.set(item.metric_key, localizedText(item.narrative, lang));
-      }
-    });
-    return map;
-  }, [narrative, lang]);
   const priorityProblemMetrics = useMemo(() => {
     const metricByKey = new Map(allMetrics.map((metric) => [metric.metric_key, metric]));
     const problemByCanonicalKey = new Map(
@@ -1626,32 +1720,25 @@ export default function DailyAttentionPage() {
       .filter((metric) => metric.dimension === 'problem')
       .sort(compareHistoricalSignals)
       .forEach((metric) => addMetric(metric));
-    return ranked.slice(0, 5);
+    return ranked.slice(0, 4);
   }, [narrative, allMetrics, actionableAnalysisMetrics]);
   const priorityCards = useMemo(
-    () => priorityProblemMetrics.map((metric) => ({
-      key: metric.metric_key,
-      metric,
-      targets: groupMetricPlanTargets(metric),
-    })),
-    [priorityProblemMetrics],
+    () => priorityProblemMetrics.map((metric) => {
+      const rankedTargets = groupMetricPlanTargets(
+        metric,
+        sortedItems,
+        deterministic?.trend_policy.recent_start ?? '',
+        deterministic?.trend_policy.recent_end ?? '',
+      );
+      return {
+        key: metric.metric_key,
+        metric,
+        totalTargetCount: rankedTargets.length,
+        targets: rankedTargets.slice(0, 3),
+      };
+    }),
+    [priorityProblemMetrics, sortedItems, deterministic],
   );
-  const trendMetrics = useMemo(() => {
-    const trendRank = (metric: DimensionedMetric) => {
-      if (metric.trend.status === 'increase') return 3;
-      if (metric.trend.status === 'stable_or_decrease') return 2;
-      return 1;
-    };
-    return [...actionableAnalysisMetrics]
-      .sort((a, b) => {
-        const rankDiff = trendRank(b) - trendRank(a);
-        if (rankDiff !== 0) return rankDiff;
-        if (b.evidence_count !== a.evidence_count) return b.evidence_count - a.evidence_count;
-        return metricDisplayLabel(a, lang).localeCompare(metricDisplayLabel(b, lang));
-      })
-      .slice(0, 4);
-  }, [actionableAnalysisMetrics, lang]);
-
   const impactedTargets = useMemo(() => {
     const targetMap = new Map<
       string,
@@ -1705,6 +1792,7 @@ export default function DailyAttentionPage() {
     machineNumber: number | null,
     modelNames: string[],
     partNos: string[],
+    displayModelLabel?: string,
   ) => {
     const items = findEvidenceItems(sortedItems, machineName, partNos, metric);
     const resolvedParts = partNos.length > 0
@@ -1719,7 +1807,7 @@ export default function DailyAttentionPage() {
       machineNumber ?? firstItem?.machine_number ?? null,
       lang,
     );
-    const modelLabel = compactModelLabel(resolvedModels, lang);
+    const modelLabel = displayModelLabel || compactModelLabel(resolvedModels, lang);
     const partLabel = resolvedParts.join(', ') || '-';
     const partPrefix = firstItem?.part_prefix
       ?? metric.impact_scope.part_prefixes[0]
@@ -1966,57 +2054,62 @@ export default function DailyAttentionPage() {
                 </div>
 
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-                    <div className="mb-5 flex items-start gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
-                        <Target className="h-5 w-5" />
+                    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                          <Target className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="!text-lg font-bold text-slate-950">
+                            {analysisCopy.priorities} {priorityCards.length}{lang === 'zh' ? ' 项' : ''}
+                          </h3>
+                          <p className="text-xs leading-5 text-slate-500">{analysisCopy.prioritiesDescription}</p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="!text-lg font-bold text-slate-950">
-                          {analysisCopy.priorities} {priorityCards.length}{lang === 'zh' ? ' 项' : ''}
-                        </h3>
-                        <p className="text-xs leading-5 text-slate-500">{analysisCopy.prioritiesDescription}</p>
+                      <div className="shrink-0 text-xs tabular-nums text-slate-500">
+                        {formatReportDate(deterministic.trend_policy.previous_start)}–{formatReportDate(deterministic.trend_policy.previous_end)}
+                        <span className="px-2">vs</span>
+                        {formatReportDate(deterministic.trend_policy.recent_start)}–{formatReportDate(deterministic.trend_policy.recent_end)}
                       </div>
                     </div>
 
                     {priorityCards.length > 0 ? (
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         {priorityCards.map((priority, index) => {
                           const metric = priority.metric;
-                          const dimension = metricKindLabel(metric, lang);
                           const trendClass = metric.trend.status === 'increase'
                             ? 'bg-rose-50 text-rose-700 ring-rose-200'
-                            : 'bg-slate-100 text-slate-600 ring-slate-200';
+                            : metric.trend.status === 'insufficient_data'
+                              ? 'bg-slate-100 text-slate-600 ring-slate-200'
+                              : 'bg-amber-50 text-amber-700 ring-amber-200';
                           const accentClass = [
                             'border-t-rose-500',
                             'border-t-amber-500',
                             'border-t-blue-500',
                             'border-t-violet-500',
-                            'border-t-emerald-500',
                           ][index] ?? 'border-t-slate-400';
                           const twoColumnTooltipClass = index % 2 === 1
                             ? 'md:left-auto md:right-0 md:translate-x-0'
                             : 'md:left-0 md:right-auto md:translate-x-0';
-                          const threeColumnTooltipClass = index % 3 === 2
+                          const fourColumnTooltipClass = index % 4 === 3
                             ? 'xl:left-auto xl:right-0 xl:translate-x-0'
-                            : index % 3 === 1
-                              ? 'xl:left-1/2 xl:right-auto xl:-translate-x-1/2'
-                              : 'xl:left-0 xl:right-auto xl:translate-x-0';
-                          const tooltipAlignmentClass = `left-1/2 -translate-x-1/2 ${twoColumnTooltipClass} ${threeColumnTooltipClass}`;
+                            : index % 4 === 0
+                              ? 'xl:left-0 xl:right-auto xl:translate-x-0'
+                              : 'xl:left-1/2 xl:right-auto xl:-translate-x-1/2';
+                          const tooltipAlignmentClass = `left-1/2 -translate-x-1/2 ${twoColumnTooltipClass} ${fourColumnTooltipClass}`;
 
                           return (
-                            <article key={priority.key} className={`flex min-w-0 flex-col rounded-2xl border border-t-4 border-slate-200 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm ${accentClass}`}>
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-sm font-bold text-white">{index + 1}</div>
-                                <div className="flex flex-wrap justify-end gap-1.5">
-                                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">{dimension}</span>
-                                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${trendClass}`}>{metricTrendLabel(metric, lang)}</span>
-                                </div>
+                            <article key={priority.key} className={`flex h-full min-w-0 flex-col rounded-2xl border border-t-4 border-slate-200 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm ${accentClass}`}>
+                              <div className="flex min-w-0 items-center justify-between gap-1.5">
+                                <span className="inline-flex min-h-8 shrink-0 items-center rounded-xl border border-white/70 bg-slate-900/[0.045] px-2 py-1 text-[9px] font-bold tracking-tight text-slate-700 shadow-sm backdrop-blur-sm sm:text-[10px]">
+                                  {lang === 'zh' ? '问题类型' : '문제유형'}&nbsp;<span className="tabular-nums">{index + 1}</span>
+                                </span>
+                                <span className={`inline-flex min-h-8 min-w-0 items-center justify-center rounded-xl px-2 py-1 text-center text-[9px] font-semibold leading-4 ring-1 ring-inset sm:text-[10px] ${trendClass}`}>{metricTrendLabel(metric, lang)}</span>
                               </div>
-                              <div className="mt-4">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{dimension}</div>
-                                <h4 className="mt-1 line-clamp-2 text-xl font-bold leading-7 text-slate-950" title={metricDisplayLabel(metric, lang)}>{metricDisplayLabel(metric, lang) || '-'}</h4>
+                              <div className="mt-2 flex min-h-10 flex-col items-center justify-center text-center">
+                                <h4 className="max-w-full truncate text-base font-bold leading-6 text-slate-950 2xl:text-lg" title={metricDisplayLabel(metric, lang)}>{metricDisplayLabel(metric, lang) || '-'}</h4>
                                 {(metric.observed_terms ?? []).length > 0 && (
-                                  <div className="mt-2 flex flex-wrap gap-1.5" aria-label={lang === 'zh' ? '实际记录' : '실제 기록'}>
+                                  <div className="mt-1.5 flex flex-wrap justify-center gap-1.5" aria-label={lang === 'zh' ? '实际记录' : '실제 기록'}>
                                     {metric.observed_terms?.map((observed) => (
                                       <span key={observed.canonical_key} className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-100">
                                         {localizedText(observed.label, lang)} {formatMetricNumber(observed.evidence_count)}
@@ -2025,48 +2118,36 @@ export default function DailyAttentionPage() {
                                   </div>
                                 )}
                               </div>
-                              <div className="mt-4 rounded-xl border border-slate-200 bg-white/85 p-3">
-                                  <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
-                                    <span>{lang === 'zh' ? '全部历史' : '전체 이력'}</span>
-                                    <strong className="tabular-nums text-slate-900">
-                                      {formatMetricNumber(metric.evidence_count)} / {formatMetricNumber(metric.all_history_denominator)} · {formatMetricPercent(metric.all_history_share_pct)}
-                                    </strong>
-                                  </div>
-                                  <div className="mt-3 grid grid-cols-2 divide-x divide-slate-200 border-t border-slate-100 pt-3">
-                                    <div className="pr-3">
-                                      <div className="text-[11px] text-slate-500">{lang === 'zh' ? '最近 30 天' : '최근 30일'}</div>
-                                      <div className="mt-0.5 font-bold tabular-nums text-slate-900">
-                                        {formatMetricNumber(metric.trend.recent_count)} / {formatMetricNumber(metric.trend.recent_denominator)}
-                                      </div>
-                                    </div>
-                                    <div className="pl-3">
-                                      <div className="text-[11px] text-slate-500">{lang === 'zh' ? '此前 30 天' : '직전 30일'}</div>
-                                      <div className="mt-0.5 font-bold tabular-nums text-slate-900">
-                                        {formatMetricNumber(metric.trend.previous_count)} / {formatMetricNumber(metric.trend.previous_denominator)}
-                                      </div>
-                                    </div>
-                                  </div>
-                              </div>
+                              <PriorityTrendComparison metric={metric} lang={lang} />
                               <div className="mt-4 border-t border-slate-200 pt-4">
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                   <span className="text-xs font-bold text-slate-700">
                                     {lang === 'zh' ? '关联计划对象' : '관련 계획 대상'}
                                   </span>
                                   <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold tabular-nums text-slate-600">
-                                    {priority.targets.length}{lang === 'zh' ? ' 台' : '개'}
+                                    {priority.totalTargetCount > priority.targets.length
+                                      ? (lang === 'zh'
+                                        ? `前 ${priority.targets.length} / ${priority.totalTargetCount}`
+                                        : `상위 ${priority.targets.length} / ${priority.totalTargetCount}`)
+                                      : `${priority.totalTargetCount}${lang === 'zh' ? ' 台' : '개'}`}
                                   </span>
                                 </div>
                                 {priority.targets.length > 0 ? (
-                                  <div className="space-y-2">
-                                    {priority.targets.map((target) => {
+                                  <div className="divide-y divide-slate-200/70">
+                                    {priority.targets.map((target, targetIndex) => {
                                       const machineLabel = compactMachineLabel(target.machineName, target.machineNumber, lang);
-                                      const modelLabel = compactModelLabel(target.modelNames, lang);
+                                      const modelLabel = compactModelLabel(
+                                        target.modelNames,
+                                        lang,
+                                        target.displayModelLabels,
+                                      );
                                       const identityTitle = fullTargetIdentityTitle(
                                         target.machineName,
                                         target.modelNames,
                                         target.partNos,
                                         lang,
                                       );
+                                      const tooltipId = `priority-target-${index}-${targetIndex}-details`;
                                       return (
                                         <button
                                           key={target.key}
@@ -2078,20 +2159,30 @@ export default function DailyAttentionPage() {
                                             target.machineNumber,
                                             target.modelNames,
                                             target.partNos,
+                                            modelLabel,
                                           )}
-                                          title={identityTitle}
-                                          className="group relative flex w-full min-w-0 items-center gap-2 rounded-xl bg-slate-950 px-3 py-2.5 text-left text-sm font-semibold text-white outline-none ring-cyan-300 transition hover:bg-slate-800 focus-visible:ring-2"
-                                          aria-label={`${analysisCopy.viewEvidence}: ${machineLabel} — ${modelLabel}`}
+                                          onKeyDown={(event) => {
+                                            if (event.key === 'Escape') event.currentTarget.blur();
+                                          }}
+                                          className="group relative flex min-h-12 w-full min-w-0 items-center gap-1.5 px-1 py-2.5 text-left text-sm font-semibold text-slate-800 outline-none ring-blue-300 transition-colors hover:bg-blue-50/60 focus-visible:rounded-lg focus-visible:ring-2 xl:text-xs 2xl:text-sm"
+                                          aria-label={`${analysisCopy.viewEvidence}: ${machineLabel} — ${modelLabel}, ${lang === 'zh' ? '近 30 天关联履历' : '최근 30일 관련 이력'} ${target.recentEvidenceCount}${lang === 'zh' ? ' 件' : '건'}`}
+                                          aria-describedby={tooltipId}
                                         >
-                                          <Factory className="h-4 w-4 shrink-0 text-cyan-300" />
-                                          <span className="min-w-0 flex-1 truncate">{machineLabel} <span className="text-slate-400">—</span> {modelLabel}</span>
-                                          <span className="shrink-0 text-[11px] text-cyan-200">{lang === 'zh' ? '查看' : '보기'}</span>
-                                          <Images className="h-4 w-4 shrink-0 text-cyan-300" aria-hidden="true" />
+                                          <Factory className="h-4 w-4 shrink-0 text-blue-600 xl:hidden 2xl:block" />
+                                          <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-xs xl:text-[11px] 2xl:text-sm">{machineLabel} <span className="text-slate-400">—</span> {modelLabel}</span>
+                                            <span className="mt-0.5 block truncate text-[10px] font-medium text-slate-500">
+                                              {lang === 'zh' ? '近 30 天关联履历' : '최근 30일 관련 이력'} {formatMetricNumber(target.recentEvidenceCount)}{lang === 'zh' ? ' 件' : '건'}
+                                            </span>
+                                          </span>
+                                          <span className="shrink-0 text-[11px] text-blue-700 xl:hidden">{lang === 'zh' ? '查看' : '보기'}</span>
+                                          <Images className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
                                           <span
+                                            id={tooltipId}
                                             role="tooltip"
-                                            className={`pointer-events-none absolute bottom-full z-30 mb-2 hidden w-max max-w-[min(28rem,80vw)] rounded-lg bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white shadow-xl group-hover:block group-focus:block ${tooltipAlignmentClass}`}
+                                            className={`pointer-events-auto absolute bottom-full z-30 mb-2 hidden w-max max-w-[min(28rem,80vw)] rounded-lg bg-slate-950 px-3 py-2 text-xs font-medium leading-5 text-white shadow-xl group-hover:block group-focus:block ${tooltipAlignmentClass}`}
                                           >
-                                            {analysisCopy.viewEvidence} · {identityTitle}
+                                            {analysisCopy.viewEvidence} · {identityTitle} · {lang === 'zh' ? '近 30 天关联履历' : '최근 30일 관련 이력'} {formatMetricNumber(target.recentEvidenceCount)}{lang === 'zh' ? ' 件' : '건'}
                                           </span>
                                         </button>
                                       );
@@ -2207,39 +2298,6 @@ export default function DailyAttentionPage() {
                     </div>
                   </section>
                 )}
-
-                <section>
-                  <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="h-5 w-5 text-rose-600" />
-                        <h3 className="text-lg font-bold text-slate-950">{analysisCopy.repeatedTrend}</h3>
-                      </div>
-                      <p className="mt-1 text-sm text-slate-500">{analysisCopy.repeatedTrendDescription}</p>
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {formatReportDate(deterministic.trend_policy.previous_start)}–{formatReportDate(deterministic.trend_policy.previous_end)}
-                      <span className="px-2">vs</span>
-                      {formatReportDate(deterministic.trend_policy.recent_start)}–{formatReportDate(deterministic.trend_policy.recent_end)}
-                    </div>
-                  </div>
-                  {trendMetrics.length > 0 ? (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      {trendMetrics.map((metric) => (
-                        <TrendMetricCard
-                          key={`trend-${metric.dimension}-${metric.metric_key}`}
-                          metric={metric}
-                          lang={lang}
-                          narrative={trendNarrativeLookup.get(metric.metric_key)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500">
-                      {analysisCopy.noMetrics}
-                    </div>
-                  )}
-                </section>
 
                 <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">

@@ -7,6 +7,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
+from injection.models import PartSpec
 from production.ai_metrics import SHANGHAI_TZ
 from production.models import ProductionPlan
 from quality.daily_attention import (
@@ -37,12 +38,21 @@ class DailyQualitySummaryTests(TestCase):
     def _local(self, hour: int, minute: int = 0):
         return SHANGHAI_TZ.localize(datetime(2026, 8, 12, hour, minute))
 
-    def _plan(self, *, machine="850T-1", quantity=1000, updated_at=None):
+    def _plan(
+        self,
+        *,
+        machine="850T-1",
+        quantity=1000,
+        part_spec=None,
+        updated_at=None,
+    ):
         plan = ProductionPlan.objects.create(
             plan_date=datetime(2026, 8, 12).date(),
             plan_type="injection",
             machine_name=machine,
             model_name="MODEL-A",
+            part_spec=part_spec,
+            product_family_code="BC" if part_spec == "B/C" else None,
             part_no="ABC123456-X",
             lot_no="LOT-1",
             planned_quantity=quantity,
@@ -368,12 +378,8 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(
             source["items"][0]["reports"][0]["problem_types"],
             [{
-                "key": "gas_mark_whitening",
-                "label": {"ko": "가스 마크·백화", "zh": "气印·发白"},
-                "observed_terms": [{
-                    "key": "whitening",
-                    "label": {"ko": "백화·백색 자국", "zh": "发白·白印"},
-                }],
+                "key": "whitening",
+                "label": {"ko": "백화·백색 자국", "zh": "发白·白印"},
             }],
         )
         self.assertEqual(
@@ -389,6 +395,106 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(evidence["report_refs"][0]["report_id"], report.id)
         self.assertEqual(evidence["action_results"][0]["count"], 1)
         self.assertTrue(evidence["phenomena"][0]["evidence_key"].startswith("ABC123456:phenomenon:"))
+
+    def test_air_mark_and_whitening_have_independent_metrics(self):
+        self._plan()
+        target_date = datetime(2026, 8, 12).date()
+        for index, phenomenon in enumerate((
+            "表面气印",
+            "게이트 백화",
+            "侧面白印擦不掉，表面气印",
+        )):
+            QualityReport.objects.create(
+                report_dt=self._local(7, 0) - timedelta(days=index + 1),
+                section="LQC_INJ",
+                model="MODEL-A",
+                part_no=f"ABC123456-S{index}",
+                judgement="NG",
+                phenomenon=phenomenon,
+            )
+
+        source = build_daily_quality_attention(target_date, include_images=False)
+        problem_metrics = {
+            row.get("canonical_key"): row
+            for row in source["report_metrics"]["problem_types"]
+        }
+
+        self.assertNotIn("gas_mark_whitening", problem_metrics)
+        self.assertEqual(problem_metrics["air_mark"]["evidence_count"], 2)
+        self.assertEqual(problem_metrics["whitening"]["evidence_count"], 2)
+        self.assertEqual(problem_metrics["air_mark"]["all_history_denominator"], 3)
+        self.assertEqual(problem_metrics["whitening"]["all_history_denominator"], 3)
+        combined_report = next(
+            report
+            for report in source["items"][0]["reports"]
+            if "擦不掉" in report["phenomenon"]
+        )
+        self.assertEqual(
+            [row["key"] for row in combined_report["problem_types"]],
+            ["air_mark", "whitening"],
+        )
+
+    def test_plan_target_uses_effective_part_spec_display_identity(self):
+        self._plan(part_spec="B/C")
+        target_date = datetime(2026, 8, 12).date()
+        PartSpec.objects.create(
+            part_no=" abc 123456-x ",
+            model_code="24G411",
+            description="C/A",
+            valid_from=datetime(2026, 1, 1).date(),
+        )
+        PartSpec.objects.create(
+            part_no=" abc 123456-x ",
+            model_code="24G411A",
+            description="master description must not replace the plan family",
+            valid_from=datetime(2026, 8, 1).date(),
+        )
+        PartSpec.objects.create(
+            part_no=" abc 123456-x ",
+            model_code="FUTURE-MODEL",
+            description="FUTURE",
+            valid_from=datetime(2026, 8, 13).date(),
+        )
+        QualityReport.objects.create(
+            report_dt=self._local(7, 0) - timedelta(days=1),
+            section="LQC_INJ",
+            model="MODEL-A",
+            part_no="ABC123456-HISTORY",
+            judgement="NG",
+            phenomenon="플래시",
+        )
+
+        source = build_daily_quality_attention(target_date, include_images=False)
+        source_target = source["items"][0]["plan_targets"][0]
+        burr_metric = next(
+            row
+            for row in source["report_metrics"]["problem_types"]
+            if row.get("canonical_key") == "burr_flash"
+        )
+        metric_target = burr_metric["impact_scope"]["plan_targets"][0]
+
+        for target in (source_target, metric_target):
+            self.assertEqual(target["display_model_code"], "24G411A")
+            self.assertEqual(target["display_description"], "B/C")
+            self.assertEqual(target["display_model_valid_from"], "2026-08-01")
+
+        ai_input = build_daily_quality_attention_ai_input(
+            target_date,
+            model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        self.assertFalse(any(
+            key.startswith("display_")
+            for key in ai_input["items"][0]["plan_targets"][0]
+        ))
+        ai_metric_target = next(
+            row
+            for row in ai_input["report_metrics"]["problem_types"]
+            if row.get("canonical_key") == "burr_flash"
+        )["impact_scope"]["plan_targets"][0]
+        self.assertFalse(any(
+            key.startswith("display_")
+            for key in ai_metric_target
+        ))
 
     def test_page_report_metrics_calculate_repeat_trend_and_plan_impact(self):
         self._plan(machine="850T-1")
@@ -421,7 +527,7 @@ class DailyQualitySummaryTests(TestCase):
         metrics = source["report_metrics"]
         gate = next(
             row for row in metrics["problem_types"]
-            if row.get("canonical_key") == "gas_mark_whitening"
+            if row.get("canonical_key") == "whitening"
         )
         gate_location = next(
             row for row in metrics["occurrence_locations"]
@@ -493,11 +599,11 @@ class DailyQualitySummaryTests(TestCase):
         metrics = ai_input["report_metrics"]
         whitening = next(
             row for row in metrics["problem_types"]
-            if row.get("canonical_key") == "gas_mark_whitening"
+            if row.get("canonical_key") == "whitening"
         )
         pair = next(
             row for row in metrics["problem_location_pairs"]
-            if row["metric_key"] == "pair:gas_mark_whitening:gate"
+            if row["metric_key"] == "pair:whitening:gate"
         )
 
         # The problem metric includes all six whitening reports, while the
@@ -512,9 +618,9 @@ class DailyQualitySummaryTests(TestCase):
             "canonical_problem_explicit_location_pair_v1",
         )
         self.assertEqual(pair["pair_basis"], "same_quality_report_id")
-        self.assertEqual(pair["problem_canonical_key"], "gas_mark_whitening")
+        self.assertEqual(pair["problem_canonical_key"], "whitening")
         self.assertEqual(pair["location_canonical_key"], "gate")
-        self.assertEqual(pair["problem_label"]["ko"], "가스 마크·백화")
+        self.assertEqual(pair["problem_label"]["ko"], "백화·백색 자국")
         self.assertEqual(pair["location_label"]["ko"], "게이트부")
         self.assertFalse(any(
             row["metric_key"].startswith("pair:unclassified:")
@@ -742,7 +848,7 @@ class DailyQualitySummaryTests(TestCase):
         source_item = input_payload["items"][0]
         gate_metric = next(
             row for row in input_payload["report_metrics"]["problem_types"]
-            if row.get("canonical_key") == "gas_mark_whitening"
+            if row.get("canonical_key") == "whitening"
         )
         standalone_location = next(
             row for row in input_payload["report_metrics"]["occurrence_locations"]
@@ -1628,7 +1734,7 @@ class DailyQualitySummaryTests(TestCase):
         selected_metrics = [
             metrics_by_canonical["scratch_damage"],
             metrics_by_canonical["burr_flash"],
-            metrics_by_canonical["gas_mark_whitening"],
+            metrics_by_canonical["whitening"],
         ]
         items = input_payload["items"]
         selected_items = [items[2], items[0], items[1]]
@@ -1706,7 +1812,7 @@ class DailyQualitySummaryTests(TestCase):
         )
         self.assertLess(
             summary.index("버·플래시"),
-            summary.index("가스 마크·백화"),
+            summary.index("백화·백색 자국"),
         )
 
     def test_old_dictionary_qwen_order_does_not_rank_new_categories(self):
@@ -1792,6 +1898,13 @@ class DailyQualitySummaryTests(TestCase):
         )
         self.assertFalse(report["data_policy"]["llm_selection_applied"])
         self.assertIsNone(report["narrative"])
+        overview = quality_summary_for_overview(target_date)
+        self.assertEqual(overview["status"], "unavailable")
+        self.assertEqual(overview["reason"], "llm_fallback")
+        self.assertEqual(
+            overview["llm_fallback_code"],
+            "outdated_terminology_dictionary",
+        )
 
         retried = enqueue_daily_quality_summary(
             SHANGHAI_TZ.localize(datetime(2026, 8, 20, 9, 0)),
@@ -2153,6 +2266,103 @@ class DailyQualityPageEndpointTests(APITestCase):
                 "terminology_dictionary"
             ],
             INJECTION_TERMINOLOGY_VERSION,
+        )
+
+    def test_historical_changed_evidence_is_requeued_on_page_request(self):
+        local_today = timezone.now().astimezone(SHANGHAI_TZ).date()
+        target_date = local_today - timedelta(days=3)
+        stable_at = SHANGHAI_TZ.localize(
+            datetime.combine(target_date, datetime.min.time())
+            + timedelta(hours=6)
+        )
+        user = get_user_model().objects.create_user(
+            username="quality-historical-evidence-user",
+            password="test-password",
+        )
+        self.client.force_authenticate(user=user)
+        plan = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            model_name="MODEL-A",
+            part_no="ABC123456-X",
+            lot_no="LOT-1",
+            planned_quantity=1000,
+            sequence=1,
+        )
+        ProductionPlan.objects.filter(pk=plan.pk).update(updated_at=stable_at)
+        historical = QualityReport.objects.create(
+            report_dt=stable_at - timedelta(days=1),
+            section="LQC_INJ",
+            model="MODEL-A",
+            part_no="ABC123456-HISTORY",
+            judgement="NG",
+            phenomenon="백화",
+        )
+        QualityReport.objects.filter(pk=historical.pk).update(updated_at=stable_at)
+
+        source = build_daily_quality_attention(target_date, include_images=False)
+        input_payload = build_daily_quality_attention_ai_input(
+            target_date,
+            model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "date": target_date.isoformat(),
+                "source_plan_hash": source["source_plan_hash"],
+                "source_evidence_hash": source["source_evidence_hash"],
+            },
+            input_payload=input_payload,
+        )
+        restored = restore_authoritative_quality_result(job, {
+            "source": "local_llm_rewrite",
+            "summary": {"ko": "과거 이력", "zh": "历史记录"},
+            "report": {
+                "executive_summary": {"ko": "과거 이력", "zh": "历史记录"},
+                "repeated_issues": [],
+                "accelerating_issues": [],
+                "affected_targets": [],
+                "shift_checks": {"ko": [], "zh": []},
+                "caveats": {"ko": [], "zh": []},
+            },
+            "attention_items": [],
+        })
+        AiJob.objects.filter(pk=job.pk).update(
+            status=AiJob.STATUS_COMPLETED,
+            result_payload=restored,
+            completed_at=stable_at,
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
+        )
+        cached_before_change = quality_attention_evidence_snapshot(target_date)
+        self.assertEqual(
+            cached_before_change["source_evidence_hash"],
+            source["source_evidence_hash"],
+        )
+        QualityReport.objects.filter(pk=historical.pk).update(
+            phenomenon="气印",
+            updated_at=stable_at + timedelta(hours=1),
+        )
+
+        response = self.client.get(
+            "/api/quality/daily-attention/",
+            {"date": target_date.isoformat()},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["report"]["status"], "pending")
+        self.assertEqual(response.data["report"]["reason"], "generation_pending")
+        self.assertIsNone(response.data["report"]["narrative"])
+        self.assertEqual(AiJob.objects.count(), 2)
+        replacement = AiJob.objects.order_by("-id").first()
+        self.assertIsNotNone(replacement)
+        assert replacement is not None
+        self.assertEqual(replacement.status, AiJob.STATUS_PENDING)
+        self.assertNotEqual(
+            replacement.scope["source_evidence_hash"],
+            source["source_evidence_hash"],
         )
 
 

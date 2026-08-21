@@ -32,7 +32,7 @@ test('Qwen review keeps exact Part No and separates visual white from the defect
         next_page: null,
         previous_page: null,
         stats: { total: 1, with_images: 1, needs_review: 1 },
-        taxonomy_version: 'injection_industry_terms_v5',
+        taxonomy_version: 'injection_industry_terms_v6',
         color_match_policy: 'normalized_full_part_no_only',
         results: [{
           report: {

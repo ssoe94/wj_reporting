@@ -19,6 +19,7 @@ from .classification_audit import (
     _exact_part_consensus,
     build_quality_report_audit_input,
     enqueue_stale_quality_report_audits,
+    taxonomy_candidates,
 )
 from .daily_attention import build_daily_quality_attention
 from .models import QualityReport
@@ -54,6 +55,18 @@ class QualityClassificationAuditApiTests(APITestCase):
             valid_from=timezone.localdate() - timedelta(days=1),
         )
         self.client.force_authenticate(self.editor)
+
+    def test_gas_mark_and_whitening_are_independent_audit_candidates(self):
+        candidates = {
+            row["key"]: row
+            for row in taxonomy_candidates()
+        }
+
+        self.assertNotIn("gas_mark_whitening", candidates)
+        self.assertIsNone(candidates["air_mark"]["parent_key"])
+        self.assertEqual(candidates["air_mark"]["label"]["zh"], "气印")
+        self.assertIsNone(candidates["whitening"]["parent_key"])
+        self.assertEqual(candidates["whitening"]["label"]["zh"], "发白·白印")
 
     def _enqueue_and_complete(self):
         enqueue = self.client.post(
