@@ -14,7 +14,7 @@ LocalizedLabel: TypeAlias = dict[str, str]
 TerminologyRule: TypeAlias = tuple[str, LocalizedLabel, tuple[str, ...]]
 
 
-INJECTION_TERMINOLOGY_VERSION: Final = "injection_industry_terms_v5"
+INJECTION_TERMINOLOGY_VERSION: Final = "injection_industry_terms_v6"
 
 # Keep Chinese public labels aligned with the terms already used to normalize
 # operator-entered phenomena in the existing quality-defect report.  These are
@@ -68,36 +68,20 @@ COLOR_BLACK_MATERIAL_OBSERVED_TERMS: Final[tuple[TerminologyRule, ...]] = (
     ),
 )
 
-GAS_MARK_WHITENING_OBSERVED_TERMS: Final[tuple[TerminologyRule, ...]] = (
-    (
-        "air_mark",
-        {"ko": "가스 마크", "zh": DEFECT_REPORT_ZH_TERMS["air_mark"]},
-        (
-            "气印", "氣印", "气纹", "氣紋",
-            "가스자국", "가스마크", "gasmark",
-        ),
-    ),
-    (
-        "whitening",
-        {
-            "ko": "백화·백색 자국",
-            "zh": (
-                f'{DEFECT_REPORT_ZH_TERMS["whitening"]}·'
-                f'{DEFECT_REPORT_ZH_TERMS["white_mark"]}'
-            ),
-        },
-        (
-            "白印", "白化", "顶白", "頂白", "发白", "發白", "拉白",
-            "백화", "백색자국", "흰자국", "whitening",
-        ),
-    ),
+AIR_MARK_ALIASES: Final[tuple[str, ...]] = (
+    "气印", "氣印", "气纹", "氣紋",
+    "가스자국", "가스마크", "gasmark",
+)
+
+WHITENING_ALIASES: Final[tuple[str, ...]] = (
+    "白印", "白化", "顶白", "頂白", "发白", "發白", "拉白",
+    "백화", "백색자국", "흰자국", "whitening", "whitemark",
 )
 
 INJECTION_DEFECT_OBSERVED_TERMS: Final[
     dict[str, tuple[TerminologyRule, ...]]
 ] = {
     "color_black_material": COLOR_BLACK_MATERIAL_OBSERVED_TERMS,
-    "gas_mark_whitening": GAS_MARK_WHITENING_OBSERVED_TERMS,
 }
 
 UNKNOWN_PROBLEM_LABEL: Final[LocalizedLabel] = {
@@ -158,19 +142,20 @@ INJECTION_DEFECT_TERMS: Final[tuple[TerminologyRule, ...]] = (
         ),
     ),
     (
-        "gas_mark_whitening",
+        "air_mark",
+        {"ko": "가스 마크", "zh": DEFECT_REPORT_ZH_TERMS["air_mark"]},
+        AIR_MARK_ALIASES,
+    ),
+    (
+        "whitening",
         {
-            "ko": "가스 마크·백화",
+            "ko": "백화·백색 자국",
             "zh": (
-                f'{DEFECT_REPORT_ZH_TERMS["air_mark"]}·'
-                f'{DEFECT_REPORT_ZH_TERMS["whitening"]}'
+                f'{DEFECT_REPORT_ZH_TERMS["whitening"]}·'
+                f'{DEFECT_REPORT_ZH_TERMS["white_mark"]}'
             ),
         },
-        tuple(
-            alias
-            for _key, _label, aliases in GAS_MARK_WHITENING_OBSERVED_TERMS
-            for alias in aliases
-        ),
+        WHITENING_ALIASES,
     ),
     (
         "sink_mark",

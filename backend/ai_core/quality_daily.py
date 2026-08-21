@@ -140,6 +140,7 @@ def enqueue_daily_quality_summary(
     now: datetime | None = None,
     *,
     target_date: date | None = None,
+    authoritative_evidence_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create one job per stable date/plan/evidence combination.
 
@@ -181,7 +182,15 @@ def enqueue_daily_quality_summary(
             "source_plan_hash": None,
         }
 
-    evidence_state = quality_attention_evidence_snapshot(target_date)
+    evidence_state = (
+        dict(authoritative_evidence_state)
+        if (
+            authoritative_evidence_state
+            and authoritative_evidence_state.get("date") == target_date.isoformat()
+            and authoritative_evidence_state.get("source_evidence_hash")
+        )
+        else quality_attention_evidence_snapshot(target_date)
+    )
     source_evidence_hash = str(evidence_state.get("source_evidence_hash") or "")
     if not source_evidence_hash:
         return {
@@ -1810,11 +1819,16 @@ def _public_completed_result(
         or result.get("source_evidence_hash") != source_evidence_hash
     )
     prompt_mismatch = job.prompt_version != QUALITY_DAILY_EXPECTED_PROMPT_VERSION
+    terminology_mismatch = (
+        _input_terminology_version(job.input_payload)
+        != INJECTION_TERMINOLOGY_VERSION
+    )
     llm_fallback = (
         result.get("llm_fallback") is True
         or generation_source != "local_llm_rewrite"
         or source_hash_mismatch
         or prompt_mismatch
+        or terminology_mismatch
     )
     public_items = []
     valid_source_keys = {
@@ -1901,6 +1915,11 @@ def _public_completed_result(
             result.get("llm_fallback_code")
             or ("source_hash_mismatch" if source_hash_mismatch else "")
             or ("outdated_prompt_version" if prompt_mismatch else "")
+            or (
+                "outdated_terminology_dictionary"
+                if terminology_mismatch
+                else ""
+            )
             or ("unverified_generation_source" if llm_fallback else "")
         )[:64],
     }

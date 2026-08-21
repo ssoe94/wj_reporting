@@ -23,7 +23,7 @@ class InjectionTerminologyTests(SimpleTestCase):
                 self.assertTrue(label["zh"].strip())
                 self.assertTrue(aliases)
 
-        self.assertEqual(INJECTION_TERMINOLOGY_VERSION, "injection_industry_terms_v5")
+        self.assertEqual(INJECTION_TERMINOLOGY_VERSION, "injection_industry_terms_v6")
 
     def test_dictionary_uses_injection_industry_terms_for_public_labels(self):
         labels = {
@@ -38,6 +38,8 @@ class InjectionTerminologyTests(SimpleTestCase):
         self.assertEqual(labels["burr_flash"]["ko"], "버·플래시")
         self.assertEqual(labels["sink_mark"]["ko"], "싱크 마크(수축)")
         self.assertEqual(labels["short_shot"]["ko"], "미성형(쇼트 샷)")
+        self.assertEqual(labels["air_mark"]["ko"], "가스 마크")
+        self.assertEqual(labels["whitening"]["ko"], "백화·백색 자국")
         self.assertEqual(labels["color_difference"]["ko"], "색차")
         self.assertEqual(labels["color_black_material"]["ko"], "색상 혼입·흑점")
         self.assertEqual(labels["silver_streak"]["ko"], "은선")
@@ -56,7 +58,8 @@ class InjectionTerminologyTests(SimpleTestCase):
         self.assertEqual(labels["burr_flash"]["zh"], "毛刺未去除")
         self.assertEqual(labels["lint_residue"]["zh"], "毛絮残留")
         self.assertEqual(labels["scorch_mark"]["zh"], "糊斑")
-        self.assertEqual(labels["gas_mark_whitening"]["zh"], "气印·发白")
+        self.assertEqual(labels["air_mark"]["zh"], "气印")
+        self.assertEqual(labels["whitening"]["zh"], "发白·白印")
         self.assertEqual(labels["sink_mark"]["zh"], "缩印")
         self.assertEqual(labels["short_shot"]["zh"], "缺胶")
         self.assertEqual(labels["gloss"]["zh"], "发亮")
@@ -100,8 +103,9 @@ class InjectionTerminologyTests(SimpleTestCase):
 
     def test_legacy_defect_report_terms_are_not_left_unclassified(self):
         cases = (
-            ("侧面发白", "gas_mark_whitening"),
-            ("顶部拉白", "gas_mark_whitening"),
+            ("侧面发白", "whitening"),
+            ("顶部拉白", "whitening"),
+            ("表面气印", "air_mark"),
             ("底部缩瘪", "sink_mark"),
             ("浇不足", "short_shot"),
             ("边角碰伤", "scratch_damage"),
@@ -117,7 +121,7 @@ class InjectionTerminologyTests(SimpleTestCase):
 
     def test_explicit_chinese_negatives_do_not_create_false_defects(self):
         for raw in (
-            "无异物", "不发白", "无碰伤", "未发现黑点",
+            "无异物", "无气印", "不发白", "无碰伤", "未发现黑点",
             "未发现明显色差",
         ):
             with self.subTest(raw=raw):
@@ -185,23 +189,20 @@ class InjectionTerminologyTests(SimpleTestCase):
             ["black_dot"],
         )
 
-    def test_white_mark_and_air_mark_preserve_distinct_observed_terms(self):
+    def test_white_mark_and_air_mark_are_independent_problem_types(self):
         classified = _canonical_problem_types(
             "1.侧面白印擦不掉\n2.表面气印\n3.表面色差需要调整"
         )
 
         self.assertEqual(
             [row["key"] for row in classified],
-            ["gas_mark_whitening", "color_difference"],
+            ["air_mark", "whitening", "color_difference"],
         )
         self.assertEqual(
-            [row["key"] for row in classified[0]["observed_terms"]],
-            ["air_mark", "whitening"],
+            [row["label"]["zh"] for row in classified],
+            ["气印", "发白·白印", "色差"],
         )
-        self.assertEqual(
-            [row["label"]["zh"] for row in classified[0]["observed_terms"]],
-            ["气印", "发白·白印"],
-        )
+        self.assertTrue(all("observed_terms" not in row for row in classified))
 
     def test_short_burr_alias_does_not_match_silver_or_cover(self):
         self.assertEqual(
