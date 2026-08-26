@@ -303,7 +303,11 @@ def cavity_map_for_plans(plans: list[ProductionPlan]) -> dict[str, dict[str, Any
     return get_cavity_meta_map(ProductionPartCavity, part_nos)
 
 
-def get_injection_summary(target_date: Any) -> dict[str, Any]:
+def get_injection_summary(
+    target_date: Any,
+    *,
+    machine_numbers: list[int] | None = None,
+) -> dict[str, Any]:
     range_start, range_end = business_range(target_date)
     plan_queryset = (
         ProductionPlan.objects
@@ -311,6 +315,15 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
         .order_by("machine_name", "sequence", "id")
     )
     plans = list(plan_queryset)
+    requested_machine_numbers = (
+        {int(number) for number in machine_numbers}
+        if machine_numbers is not None else None
+    )
+    if requested_machine_numbers is not None:
+        plans = [
+            plan for plan in plans
+            if parse_machine_number(plan.machine_name) in requested_machine_numbers
+        ]
     cavity_map = cavity_map_for_plans(plans)
     latest_mes_time = (
         InjectionMonitoringRecord.objects
@@ -454,12 +467,15 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
         "active_equipment_count": sum(1 for row in machine_rows if row["actual_qty"] > 0),
         "running_equipment_count": sum(1 for row in machine_rows if row["is_running"]),
         "total_equipment_count": 17,
-        "plan_row_count": plan_queryset.count(),
+        "plan_row_count": len(plans),
         "monitoring_row_count": InjectionMonitoringRecord.objects.filter(
             timestamp__gte=range_start,
             timestamp__lt=range_end,
         ).count(),
-        "last_plan_updated_at": plan_queryset.order_by("-updated_at").values_list("updated_at", flat=True).first(),
+        "last_plan_updated_at": max(
+            (plan.updated_at for plan in plans if plan.updated_at is not None),
+            default=None,
+        ),
         "machine_rows": machine_rows,
         "part_rows": part_rows,
     }

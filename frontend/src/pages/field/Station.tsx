@@ -1,14 +1,16 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, LogOut } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
-import ProductionConsole from '@/components/production/ProductionConsole';
 import { getProductionStatusData } from '@/lib/api';
-import { getFieldStationById } from '@/lib/fieldTerminal';
+import { getFieldStationById, parseFieldTerminalUser } from '@/lib/fieldTerminal';
 import { useShanghaiBusinessDate } from '@/shared/hooks/useShanghaiBusinessDate';
 import InjectionKanban from './InjectionKanban';
+
+const ProductionConsole = lazy(() => import('@/components/production/ProductionConsole'));
 
 const formatUpdateTime = (timestamp: number) => {
   const date = new Date(timestamp);
@@ -20,14 +22,20 @@ const formatUpdateTime = (timestamp: number) => {
 export default function FieldStationPage() {
   const { stationId } = useParams();
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   const station = getFieldStationById(stationId);
+  const currentFieldUser = parseFieldTerminalUser(user?.username);
+  const assignedInjectionStationMismatch = Boolean(
+    station
+    && currentFieldUser?.type === 'injection'
+    && station.id !== currentFieldUser.stationId,
+  );
   const businessDate = useShanghaiBusinessDate();
   const { dataUpdatedAt } = useQuery<any>({
     queryKey: ['production-status-header', businessDate],
     queryFn: () => getProductionStatusData(businessDate),
-    enabled: station?.type === 'machining',
+    enabled: station?.type === 'machining' && !assignedInjectionStationMismatch,
     refetchInterval: 60 * 1000,
     refetchIntervalInBackground: true,
     staleTime: 30 * 1000,
@@ -35,6 +43,10 @@ export default function FieldStationPage() {
 
   if (!station) {
     return <Navigate to="/field" replace />;
+  }
+
+  if (assignedInjectionStationMismatch && currentFieldUser) {
+    return <Navigate to={`/field/${currentFieldUser.stationId}`} replace />;
   }
 
   if (station.type === 'injection') {
@@ -74,12 +86,14 @@ export default function FieldStationPage() {
         </div>
 
         <div className="min-h-0 flex-1">
-          <ProductionConsole
-            planType={station.type}
-            stationFilter={station.machineFilterValue}
-            kioskMode
-            title={stationTitle}
-          />
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-2xl font-bold text-slate-700">正在读取加工数据…</div>}>
+            <ProductionConsole
+              planType={station.type}
+              stationFilter={station.machineFilterValue}
+              kioskMode
+              title={stationTitle}
+            />
+          </Suspense>
         </div>
       </div>
     </div>

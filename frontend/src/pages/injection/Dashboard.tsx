@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { BarChart3, ClipboardList, Gauge } from 'lucide-react';
-import ProductionConsole from '@/components/production/ProductionConsole';
 import { useLang } from '@/i18n';
 import InjectionReportsPanel from './ReportsPanel';
 import InjectionSetupPanel from './SetupPanel';
+
+const ProductionConsole = lazy(() => import('@/components/production/ProductionConsole'));
 
 type InjectionDashboardTab = 'console' | 'records' | 'cycle-time';
 
@@ -118,11 +119,13 @@ export default function InjectionDashboardPage() {
       </div>
 
       {activeTab === 'console' && (
-        <ProductionConsole
-          planType="injection"
-          title="사출 생산 실행 관리"
-          subtitle="생산계획 기준으로 실적, 불량, 가동 C/T, 작업 메모를 입력합니다."
-        />
+        <Suspense fallback={<div className="flex min-h-96 items-center justify-center text-lg font-bold text-slate-600">생산 실행 화면을 불러오는 중입니다…</div>}>
+          <ProductionConsole
+            planType="injection"
+            title="사출 생산 실행 관리"
+            subtitle="생산계획 기준으로 실적, 불량, 가동 C/T, 작업 메모를 입력합니다."
+          />
+        </Suspense>
       )}
       {activeTab === 'records' && <InjectionReportsPanel />}
       {activeTab === 'cycle-time' && <InjectionSetupPanel />}

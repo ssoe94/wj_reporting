@@ -27,6 +27,7 @@ import {
   BarChart3,
   Factory,
   FileSpreadsheet,
+  FileText,
   FileUp,
 } from "lucide-react";
 import ModelsPage from './pages/models';
@@ -48,9 +49,6 @@ import DailyAttentionPage from './pages/quality/DailyAttention';
 import AssemblyDashboardPage from './pages/assembly/Dashboard';
 import InjectionDashboardPage from './pages/injection/Dashboard';
 import InjectionMonitoringPage from './pages/injection/MonitoringPage';
-import FieldLauncherPage from './pages/field/Launcher';
-import FieldStationPage from './pages/field/Station';
-import FieldMaterialsPage from './pages/development/FieldMaterialsPage';
 import ProductionStatsPage from './pages/production/Stats';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
 
@@ -81,6 +79,9 @@ const EnergyBoardPage = lazy(() => import('./domains/boards/pages/EnergyBoardPag
 const OverviewBoardPage = lazy(() => import('./domains/boards/pages/OverviewBoardPage').then((module) => ({
   default: module.OverviewBoardPage,
 })));
+const FieldLauncherPage = lazy(() => import('./pages/field/Launcher'));
+const FieldStationPage = lazy(() => import('./pages/field/Station'));
+const FieldMaterialsPage = lazy(() => import('./pages/development/FieldMaterialsPage'));
 
 const queryClient = new QueryClient();
 
@@ -122,6 +123,8 @@ function InjectionLegacyRedirect() {
 function useNavItems() {
   const { lang, t } = useLang();
   const { user, hasPermission } = useAuth();
+  const canViewFieldMaterials = Boolean(user && (user.is_staff || hasPermission('can_view_development')));
+  const canEditFieldMaterials = Boolean(user && (user.is_staff || hasPermission('can_edit_development')));
 
   // Staff users see the full navigation tree.
   if (user?.is_staff) {
@@ -185,7 +188,7 @@ function useNavItems() {
         children: [
           { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
           { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
-          { to: "/development/field-materials", label: lang === 'ko' ? '현장 자료 보충' : '现场资料补充', icon: FileUp },
+          { to: "/development/field-materials", label: lang === 'ko' ? '현장 칸반 자료관리' : '现场看板资料管理', icon: FileUp },
         ],
       },
       {
@@ -267,7 +270,13 @@ function useNavItems() {
     children: [
       { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
       { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
-      { to: "/development/field-materials", label: lang === 'ko' ? '현장 자료 보충' : '现场资料补充', icon: FileUp },
+      ...(canViewFieldMaterials ? [{
+        to: "/development/field-materials",
+        label: canEditFieldMaterials
+          ? (lang === 'ko' ? '현장 칸반 자료관리' : '现场看板资料管理')
+          : (lang === 'ko' ? '현장 칸반 자료현황' : '现场看板资料状态'),
+        icon: canEditFieldMaterials ? FileUp : FileText,
+      }] : []),
     ],
   });
   if (hasPermission('is_admin')) {
@@ -475,7 +484,7 @@ function AppContent() {
   else if (pathname.startsWith('/eco')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/quality')) breadcrumbLabel = t('brand_quality');
   else if (pathname.startsWith('/models')) breadcrumbLabel = t('nav_model_management');
-  else if (pathname.startsWith('/development/field-materials')) breadcrumbLabel = lang === 'ko' ? '현장 자료 보충' : '现场资料补充';
+  else if (pathname.startsWith('/development/field-materials')) breadcrumbLabel = lang === 'ko' ? '현장 칸반 자료관리' : '现场看板资料管理';
 
   // Global auth loading state.
   if (isLoading && !isPublicRoutePath(pathname)) {
@@ -769,10 +778,10 @@ function AppContent() {
             <Route path="/next/production/injection-board/index.html" element={<Navigate to="/boards/injection" replace />} />
             <Route path="/next/mes/monitoring" element={<Navigate to="/mes/monitoring" replace />} />
             <Route path="/next/inventory/raw-materials" element={<Navigate to="/sales/raw-materials" replace />} />
-            <Route path="/field" element={<PrivateRoute><PageTransition><FieldLauncherPage /></PageTransition></PrivateRoute>} />
-            <Route path="/field/:stationId" element={<PrivateRoute><PageTransition><FieldStationPage /></PageTransition></PrivateRoute>} />
+            <Route path="/field" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><FieldLauncherPage /></Suspense></PageTransition></PrivateRoute>} />
+            <Route path="/field/:stationId" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><FieldStationPage /></Suspense></PageTransition></PrivateRoute>} />
             <Route path="/models" element={<PrivateRoute><PageTransition><ModelsPage /></PageTransition></PrivateRoute>} />
-            <Route path="/development/field-materials" element={<PrivateRoute><PageTransition><FieldMaterialsPage /></PageTransition></PrivateRoute>} />
+            <Route path="/development/field-materials" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><FieldMaterialsPage /></Suspense></PageTransition></PrivateRoute>} />
             <Route path="/eco" element={<Navigate to="/eco2" replace />} />
             <Route path="/eco2" element={<PrivateRoute><PageTransition><Eco2Page /></PageTransition></PrivateRoute>} />
             <Route path="/analysis" element={<PrivateRoute><PageTransition><AnalysisPage /></PageTransition></PrivateRoute>} />

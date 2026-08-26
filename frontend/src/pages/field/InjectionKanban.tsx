@@ -81,6 +81,25 @@ const DEFECT_TYPES = [
   { code: "other", zh: "其他", ko: "기타" },
 ] as const;
 
+const defectErrorCopy = {
+  zh: {
+    defect_exceeds_gross_quantity: "输入的不良数超过服务器计算的本区间生产数，请减少数量后重试。",
+    production_plan_identity_mismatch: "生产计划已更新，请关闭窗口并重新读取后再录入。",
+    production_plan_missing: "当前没有可用于录入不良的生产计划。",
+    shift_checkpoint_not_due: "尚未到交接录入时间。",
+    permission_denied: "当前账号没有不良录入权限，请联系管理员。",
+    timeout: "保存处理超时。请用同一窗口再次提交，系统不会重复登记。",
+  },
+  ko: {
+    defect_exceeds_gross_quantity: "입력한 불량수가 서버에서 계산한 이번 구간 생산수보다 큽니다. 수량을 줄여 다시 시도해 주세요.",
+    production_plan_identity_mismatch: "생산계획이 변경되었습니다. 창을 닫고 새로 불러온 뒤 다시 입력해 주세요.",
+    production_plan_missing: "현재 불량 입력에 연결할 생산계획이 없습니다.",
+    shift_checkpoint_not_due: "아직 교대 불량 입력 시간이 아닙니다.",
+    permission_denied: "현재 계정에는 불량 입력 권한이 없습니다. 관리자에게 문의해 주세요.",
+    timeout: "저장 처리가 지연되었습니다. 같은 창에서 다시 제출해도 중복 등록되지 않습니다.",
+  },
+} as const;
+
 const copy = {
   zh: {
     brandSubtitle: "万佳数据平台",
@@ -315,6 +334,20 @@ function getErrorMessage(error: unknown, fallback: string) {
     if (typeof detail === "string" && detail.trim()) return detail;
   }
   return fallback;
+}
+
+function getDefectErrorMessage(error: unknown, language: FieldLanguage, fallback: string) {
+  if (!error || typeof error !== "object") return fallback;
+  const candidate = error as {
+    code?: unknown;
+    response?: { status?: number; data?: { code?: unknown } };
+  };
+  const responseCode = String(candidate.response?.data?.code || "");
+  const messages = defectErrorCopy[language] as Record<string, string>;
+  if (messages[responseCode]) return messages[responseCode];
+  if (candidate.response?.status === 403) return messages.permission_denied;
+  if (candidate.code === "ECONNABORTED" || candidate.code === "ETIMEDOUT") return messages.timeout;
+  return getErrorMessage(error, fallback);
 }
 
 function formatShanghaiTime(value: Date, language: FieldLanguage) {
@@ -696,7 +729,7 @@ function DefectModal({
         </section>
       </div>
       {defectMutation.isError ? (
-        <div className="field-modal__error" role="alert">{getErrorMessage(defectMutation.error, c.defectFailed)}</div>
+        <div className="field-modal__error" role="alert">{getDefectErrorMessage(defectMutation.error, language, c.defectFailed)}</div>
       ) : null}
       <div className="field-modal__actions field-modal__actions--defect">
         {!request.blocking ? (
@@ -854,7 +887,7 @@ function MaterialsModal({
 }
 
 export default function InjectionKanban({ station, onBack }: { station: FieldStation; onBack: () => void }) {
-  const { logout } = useAuth();
+  const { logout, user, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const businessDate = useShanghaiBusinessDate();
   const machineNumber = Number(station.machineFilterValue);
@@ -879,6 +912,11 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [allMaterialsOpen, setAllMaterialsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const c = copy[language];
+  const canEnterDefects = Boolean(
+    user?.is_staff
+    || hasPermission("is_admin")
+    || hasPermission("can_edit_injection"),
+  );
 
   useEffect(() => {
     window.localStorage.setItem("wj-field-language", language);
@@ -897,30 +935,56 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
 
   const snapshotQuery = useQuery({
     queryKey: ["field-kanban", businessDate, machineNumber],
-    queryFn: () => getFieldKanban(businessDate, machineNumber),
+    queryFn: () => getFieldKanban(businessDate, machineNumber, { includeQuality: false }),
     refetchInterval: 15_000,
     staleTime: 8_000,
     retry: 1,
   });
+  const coreKanbanReady = snapshotQuery.isSuccess && Boolean(snapshotQuery.data);
+  const [transitionQueriesEnabled, setTransitionQueriesEnabled] = useState(false);
+  useEffect(() => {
+    setTransitionQueriesEnabled(false);
+    if (!coreKanbanReady || !canEnterDefects) return;
+
+    // The full-day MES matrix is only needed for model-change analysis. Give
+    // the core Kanban one painted frame before starting that heavier request.
+    const timer = window.setTimeout(() => setTransitionQueriesEnabled(true), 1_000);
+    return () => window.clearTimeout(timer);
+  }, [businessDate, canEnterDefects, coreKanbanReady, machineNumber]);
+
   const planQuery = useQuery({
-    queryKey: ["production-plan-summary", businessDate, "field-kanban"],
+    queryKey: ["production-plan-summary", businessDate],
     queryFn: () => getProductionPlanSummary(businessDate),
+    enabled: transitionQueriesEnabled,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
   const matrixQuery = useQuery({
-    queryKey: ["mes", "injection-production-matrix", businessDate, "field-kanban"],
-    queryFn: () => getInjectionProductionMatrix(),
-    staleTime: 30_000,
+    queryKey: ["mes", "injection-production-matrix", businessDate, true, machineNumber],
+    queryFn: () => getInjectionProductionMatrix(machineNumber),
+    enabled: transitionQueriesEnabled,
+    staleTime: 60_000,
     refetchInterval: 60_000,
     retry: false,
   });
   const confirmationsQuery = useQuery({
     queryKey: ["production", "injection-downtime-confirmations", businessDate],
     queryFn: () => getInjectionDowntimeConfirmations(businessDate),
+    enabled: transitionQueriesEnabled,
     staleTime: 15_000,
     refetchInterval: 30_000,
     retry: false,
+  });
+  const qualityPlanIdentity = snapshotQuery.data?.active_plan
+    ? `${snapshotQuery.data.active_plan.plan_id ?? "-"}:${snapshotQuery.data.active_plan.part_no}`
+    : "no-plan";
+  const qualityQuery = useQuery({
+    queryKey: ["field-kanban-quality", businessDate, machineNumber, qualityPlanIdentity],
+    queryFn: () => getFieldKanban(businessDate, machineNumber, { includeQuality: true }),
+    enabled: coreKanbanReady && Boolean(snapshotQuery.data?.active_plan),
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
+    retry: 1,
   });
   const confirmationMutation = useMutation({ mutationFn: saveInjectionDowntimeConfirmation });
 
@@ -930,25 +994,36 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     businessDate,
   ), [businessDate, matrixQuery.data, planQuery.data]);
   const pendingTransition = useMemo(() => {
-    if (!confirmationsQuery.isSuccess) return null;
+    if (!canEnterDefects || !confirmationsQuery.isSuccess) return null;
     const confirmedKeys = new Set((confirmationsQuery.data?.confirmations ?? []).map((item) => item.event_key));
     return transitionAnalysis.events
       .filter((event) => event.machineKey === String(machineNumber))
       .filter((event) => event.type === "mold_change" || event.type === "core_change")
       .filter((event) => !confirmedKeys.has(event.eventKey) && !resolvedEventKeys.has(event.eventKey))
       .sort((left, right) => new Date(right.startTime).getTime() - new Date(left.startTime).getTime())[0] ?? null;
-  }, [confirmationsQuery.data?.confirmations, confirmationsQuery.isSuccess, machineNumber, resolvedEventKeys, transitionAnalysis.events]);
+  }, [canEnterDefects, confirmationsQuery.data?.confirmations, confirmationsQuery.isSuccess, machineNumber, resolvedEventKeys, transitionAnalysis.events]);
 
   useEffect(() => {
-    if (!pendingTransition || transitionReview || transitionWorkflow || defectRequest || allMaterialsOpen) return;
+    if (!canEnterDefects || !pendingTransition || transitionReview || transitionWorkflow || defectRequest || allMaterialsOpen) return;
     setTransitionError(null);
     setTransitionReview(pendingTransition);
-  }, [allMaterialsOpen, defectRequest, pendingTransition, transitionReview, transitionWorkflow]);
+  }, [allMaterialsOpen, canEnterDefects, defectRequest, pendingTransition, transitionReview, transitionWorkflow]);
 
-  const snapshot = snapshotQuery.data;
+  const snapshot = useMemo(() => {
+    const base = snapshotQuery.data;
+    if (!base) return undefined;
+    if (!qualityQuery.data) return base;
+    return { ...base, quality: qualityQuery.data.quality };
+  }, [qualityQuery.data, snapshotQuery.data]);
   const pendingPrompt = snapshot?.pending_prompt;
   useEffect(() => {
-    if (!snapshot || !pendingPrompt?.event_key || resolvedPromptKeys.has(pendingPrompt.event_key)) return;
+    if (
+      !canEnterDefects
+      || !snapshot?.active_plan
+      || !pendingPrompt?.event_key
+      || pendingPrompt.is_overdue
+      || resolvedPromptKeys.has(pendingPrompt.event_key)
+    ) return;
     if (pendingTransition || transitionReview || transitionWorkflow || defectRequest || allMaterialsOpen) return;
     setDefectRequest({
       eventKey: pendingPrompt.event_key,
@@ -963,7 +1038,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       sequence: pendingPrompt.sequence,
       dueAt: pendingPrompt.due_at,
     });
-  }, [allMaterialsOpen, defectRequest, pendingPrompt, pendingTransition, resolvedPromptKeys, snapshot, transitionReview, transitionWorkflow]);
+  }, [allMaterialsOpen, canEnterDefects, defectRequest, pendingPrompt, pendingTransition, resolvedPromptKeys, snapshot, transitionReview, transitionWorkflow]);
 
   const planIdentity = snapshot?.active_plan
     ? `${snapshot.active_plan.plan_id ?? "-"}:${snapshot.active_plan.part_no}:${snapshot.active_plan.model_name}`
@@ -1066,8 +1141,28 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   }
 
   function openManualDefect() {
+    if (!canEnterDefects) {
+      setToastMessage(defectErrorCopy[language].permission_denied);
+      return;
+    }
     if (!snapshot?.active_plan) {
       setToastMessage(c.noPlan);
+      return;
+    }
+    if (pendingPrompt?.event_key && !resolvedPromptKeys.has(pendingPrompt.event_key)) {
+      setDefectRequest({
+        eventKey: pendingPrompt.event_key,
+        trigger: pendingPrompt.trigger,
+        blocking: false,
+        source: "shift",
+        businessDate: pendingPrompt.business_date,
+        machineNumber: snapshot.machine.number,
+        planId: pendingPrompt.plan_id,
+        partNo: pendingPrompt.part_no,
+        modelName: pendingPrompt.model_name,
+        sequence: pendingPrompt.sequence,
+        dueAt: pendingPrompt.due_at,
+      });
       return;
     }
     const plan = snapshot.active_plan;
@@ -1101,6 +1196,10 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
 
   function beginTransitionDefect() {
     if (!transitionReview) return;
+    if (!canEnterDefects) {
+      setTransitionError(defectErrorCopy[language].permission_denied);
+      return;
+    }
     const event = transitionReview;
     const transitionBusinessDate = getTransitionBusinessDate(event, businessDate);
     const previousPlan = event.fromRecord;
@@ -1174,19 +1273,21 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
         <h1>{c.loadError}</h1>
         <p>{getErrorMessage(snapshotQuery.error, c.loadError)}</p>
         <button onClick={() => void snapshotQuery.refetch()} type="button"><RotateCcw />{c.retry}</button>
+        <button onClick={onBack} type="button"><ArrowLeft />{c.stationSelect}</button>
       </div>
     );
   }
 
   if (!snapshot) return null;
 
+  const transitionDataReady = !canEnterDefects || confirmationsQuery.isSuccess;
   const alertTone = pendingTransition
     ? "warning"
     : pendingPrompt
       ? "danger"
       : !documentsReady
         ? "warning"
-        : !confirmationsQuery.isSuccess
+        : !transitionDataReady
           ? "warning"
         : "info";
   const alertText = pendingTransition
@@ -1195,7 +1296,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       ? c.defectDue
       : !documentsReady
         ? c.missingMaterialAlert
-        : !confirmationsQuery.isSuccess
+        : !transitionDataReady
           ? c.confirmationDataPending
         : c.cycleAlert;
 
@@ -1272,8 +1373,8 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
             </div>
           </section>
           <section className="field-command-actions">
-            <button className="is-change" onClick={openPendingTransition} type="button"><ClipboardCheck />{c.confirmChange}</button>
-            <button className="is-defect" onClick={openManualDefect} type="button"><AlertTriangle />{c.inputDefect}</button>
+            <button className="is-change" disabled={!canEnterDefects} onClick={openPendingTransition} type="button"><ClipboardCheck />{c.confirmChange}</button>
+            <button className="is-defect" disabled={!canEnterDefects} onClick={openManualDefect} type="button"><AlertTriangle />{c.inputDefect}</button>
           </section>
         </aside>
 
@@ -1282,7 +1383,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
             <AlertTriangle aria-hidden="true" />
             <strong>{alertText}</strong>
             {pendingPrompt?.due_at ? <span>{c.due} {formatShortDateTime(pendingPrompt.due_at, language)} {pendingPrompt.is_overdue ? `· ${c.overdue}` : ""}</span> : null}
-            {!confirmationsQuery.isSuccess && alertText !== c.confirmationDataPending ? <span>{c.confirmationDataPending}</span> : null}
+            {!transitionDataReady && alertText !== c.confirmationDataPending ? <span>{c.confirmationDataPending}</span> : null}
           </div>
           <div className={`field-document-toolbar${canvasMode === "quality" ? " is-quality" : ""}`}>
             <div className="field-document-tabs" role="tablist">

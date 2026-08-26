@@ -19,6 +19,7 @@ function asArray<T>(value: T[] | null | undefined): T[] {
 }
 
 export type ProductionStatusPart = {
+  plan_id?: number | null;
   part_no: string | null;
   model_name: string | null;
   planned_quantity: number;

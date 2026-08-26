@@ -500,6 +500,15 @@
   background: rgba(13, 27, 50, .9);
 }
 
+.field-command-actions button:disabled {
+  color: #9aa7b8;
+  border-color: #8290a3;
+  background: #334155;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: .72;
+}
+
 .field-content-panel {
   display: grid;
   grid-template-rows: 51px 88px minmax(0, 1fr) 87px;

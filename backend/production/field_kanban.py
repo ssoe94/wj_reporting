@@ -37,6 +37,12 @@ MAX_DOCUMENT_BYTES = 30 * 1024 * 1024
 
 DOCUMENT_KINDS = {"work_instruction", "drawing"}
 SOURCE_EXTENSIONS = {"pdf", "ppt", "pptx"}
+MATERIAL_MATCH_EXACT = "exact"
+MATERIAL_MATCH_PART_FAMILY_LAST_TWO = "part_family_last_two"
+MATERIAL_MATCH_RULES = {
+    MATERIAL_MATCH_EXACT,
+    MATERIAL_MATCH_PART_FAMILY_LAST_TWO,
+}
 
 DEFECT_TYPES = [
     {"code": "scratch", "label": {"zh": "划伤", "ko": "스크래치"}},
@@ -73,6 +79,34 @@ def normalize_part_no(value: Any) -> str:
 
 def normalize_model_name(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip()).upper()
+
+
+def material_part_family_key(value: Any) -> str:
+    """Return the part scope shared by variants in the final two positions."""
+    normalized = normalize_part_no(value)
+    return normalized[:-2] if len(normalized) > 2 else ""
+
+
+def material_parts_share_family(left: Any, right: Any) -> bool:
+    normalized_left = normalize_part_no(left)
+    normalized_right = normalize_part_no(right)
+    return bool(
+        len(normalized_left) >= 3
+        and len(normalized_left) == len(normalized_right)
+        and normalized_left[:-2] == normalized_right[:-2]
+    )
+
+
+def _material_match_rule(value: Any, *, strict: bool = False) -> str:
+    normalized = str(value or MATERIAL_MATCH_EXACT).strip().lower()
+    if normalized in MATERIAL_MATCH_RULES:
+        return normalized
+    if strict:
+        raise FieldKanbanError(
+            "match_rule must be exact or part_family_last_two.",
+            code="invalid_material_match_rule",
+        )
+    return MATERIAL_MATCH_EXACT
 
 
 def current_shanghai_business_date(now: datetime | None = None) -> date:
@@ -155,6 +189,7 @@ def serialize_document(document: dict[str, Any] | None) -> dict[str, Any] | None
         "part_no": document.get("part_no") or "",
         "model_name": document.get("model_name") or "",
         "revision": document.get("revision") or "",
+        "match_rule": _material_match_rule(document.get("match_rule")),
         "source_format": source.get("format"),
         "source_url": source.get("url"),
         "source_file_name": source.get("file_name"),
@@ -177,25 +212,39 @@ def resolve_material_documents(
     source = list(documents if documents is not None else load_material_documents())
     active = [row for row in source if row.get("active", True)]
 
-    def candidates(kind: str) -> list[tuple[int, dict[str, Any]]]:
-        ranked: list[tuple[int, dict[str, Any]]] = []
+    normalized_family = material_part_family_key(normalized_part)
+
+    def candidates(kind: str) -> list[tuple[int, str, dict[str, Any]]]:
+        ranked: list[tuple[int, str, dict[str, Any]]] = []
         for row in active:
             if row.get("kind") != kind:
                 continue
             row_part = normalize_part_no(row.get("part_no"))
             row_model = normalize_model_name(row.get("model_name"))
-            if kind == "drawing":
-                if normalized_part and row_part == normalized_part:
-                    rank = 0 if normalized_model and row_model == normalized_model else 1
-                else:
-                    continue
-            elif normalized_part and row_part == normalized_part:
+            row_match_rule = _material_match_rule(row.get("match_rule"))
+            if (
+                row_match_rule == MATERIAL_MATCH_EXACT
+                and normalized_part
+                and row_part == normalized_part
+            ):
                 rank = 0 if normalized_model and row_model == normalized_model else 1
+                match_basis = MATERIAL_MATCH_EXACT
+            elif (
+                normalized_family
+                and row_match_rule == MATERIAL_MATCH_PART_FAMILY_LAST_TWO
+                and material_parts_share_family(row_part, normalized_part)
+                and row_model == normalized_model
+            ):
+                rank = 2 if normalized_model and row_model == normalized_model else 3
+                match_basis = MATERIAL_MATCH_PART_FAMILY_LAST_TWO
             elif normalized_model and not row_part and row_model == normalized_model:
-                rank = 2
+                if kind == "drawing":
+                    continue
+                rank = 4
+                match_basis = "model"
             else:
                 continue
-            ranked.append((rank, row))
+            ranked.append((rank, match_basis, row))
         return ranked
 
     resolved: dict[str, dict[str, Any] | None] = {}
@@ -204,12 +253,16 @@ def resolve_material_documents(
         if not ranked:
             resolved[kind] = None
             continue
-        best_rank = min(rank for rank, _row in ranked)
-        best = max(
-            (row for rank, row in ranked if rank == best_rank),
-            key=_document_sort_key,
+        best_rank = min(rank for rank, _basis, _row in ranked)
+        best_basis, best = max(
+            ((basis, row) for rank, basis, row in ranked if rank == best_rank),
+            key=lambda item: _document_sort_key(item[1]),
         )
-        resolved[kind] = serialize_document(best)
+        serialized = serialize_document(best)
+        if serialized is not None:
+            serialized["match_basis"] = best_basis
+            serialized["matched_from_part_no"] = normalize_part_no(best.get("part_no"))
+        resolved[kind] = serialized
     return resolved
 
 
@@ -365,16 +418,28 @@ def save_field_material(
     source_file: Any,
     preview_pdf: Any,
     user: Any,
+    match_rule: Any = MATERIAL_MATCH_EXACT,
 ) -> dict[str, Any]:
     normalized_kind = str(kind or "").strip()
     if normalized_kind not in DOCUMENT_KINDS:
         raise FieldKanbanError("kind must be work_instruction or drawing.", code="invalid_document_kind")
     normalized_part = normalize_part_no(part_no)
     normalized_model = str(model_name or "").strip()
+    normalized_match_rule = _material_match_rule(match_rule, strict=True)
     if not normalized_part and not normalized_model:
         raise FieldKanbanError("part_no or model_name is required.", code="document_scope_required")
     if normalized_kind == "drawing" and not normalized_part:
         raise FieldKanbanError("A drawing must be matched to a part number.", code="drawing_part_required")
+    if normalized_match_rule == MATERIAL_MATCH_PART_FAMILY_LAST_TWO and not material_part_family_key(normalized_part):
+        raise FieldKanbanError(
+            "part_family_last_two requires a part number with at least three characters.",
+            code="material_part_family_required",
+        )
+    if normalized_match_rule == MATERIAL_MATCH_PART_FAMILY_LAST_TWO and not normalize_model_name(normalized_model):
+        raise FieldKanbanError(
+            "part_family_last_two requires a model name.",
+            code="material_part_family_model_required",
+        )
 
     source_extension, source_filename = _validate_upload(
         source_file,
@@ -422,6 +487,7 @@ def save_field_material(
         "part_no": normalized_part,
         "model_name": normalized_model,
         "revision": str(revision or "").strip()[:80],
+        "match_rule": normalized_match_rule,
         "source": source,
         "preview": preview,
         "active": True,
@@ -444,11 +510,25 @@ def save_field_material(
             payload = _validate_material_manifest(snapshot.payload)
             documents = [row for row in payload["documents"] if isinstance(row, dict)]
             for previous in documents:
+                previous_match_rule = _material_match_rule(previous.get("match_rule"))
+                if normalized_match_rule == MATERIAL_MATCH_PART_FAMILY_LAST_TWO:
+                    same_scope = (
+                        previous_match_rule == MATERIAL_MATCH_PART_FAMILY_LAST_TWO
+                        and material_parts_share_family(previous.get("part_no"), normalized_part)
+                        and normalize_model_name(previous.get("model_name"))
+                        == normalize_model_name(normalized_model)
+                    )
+                else:
+                    same_scope = (
+                        previous_match_rule == MATERIAL_MATCH_EXACT
+                        and normalize_part_no(previous.get("part_no")) == normalized_part
+                        and normalize_model_name(previous.get("model_name"))
+                        == normalize_model_name(normalized_model)
+                    )
                 if (
                     previous.get("active", True)
                     and previous.get("kind") == normalized_kind
-                    and normalize_part_no(previous.get("part_no")) == normalized_part
-                    and normalize_model_name(previous.get("model_name")) == normalize_model_name(normalized_model)
+                    and same_scope
                 ):
                     previous["active"] = False
             documents.append(document)
@@ -467,8 +547,13 @@ def save_field_material(
     return serialize_document(document) or {}
 
 
-def build_field_material_readiness(target_date: date) -> dict[str, Any]:
+def build_field_material_readiness(
+    target_date: date,
+    *,
+    include_status: bool = False,
+) -> dict[str, Any]:
     documents = load_material_documents()
+    production_summary = _production_summary_payload(target_date) if include_status else {}
     plans = list(
         ProductionPlan.objects.filter(
             plan_date=target_date,
@@ -497,40 +582,133 @@ def build_field_material_readiness(target_date: date) -> dict[str, Any]:
         row["planned_quantity"] += _safe_int(plan.planned_quantity)
         row["sequence"] = min(row["sequence"], _safe_int(plan.sequence, 999))
 
-    rows = []
-    for row in grouped.values():
+    resolution_cache: dict[tuple[str, str], tuple[dict[str, Any], dict[str, bool]]] = {}
+
+    def resolved_with_readiness(part_no: Any, model_name: Any) -> tuple[dict[str, Any], dict[str, bool]]:
+        key = (normalize_part_no(part_no), normalize_model_name(model_name))
+        cached = resolution_cache.get(key)
+        if cached is not None:
+            return cached
         resolved = resolve_material_documents(
-            row["part_no"],
-            row["model_name"],
+            part_no,
+            model_name,
             documents=documents,
         )
         instruction_ready = bool(resolved["work_instruction"] and resolved["work_instruction"].get("ready"))
         drawing_ready = bool(resolved["drawing"] and resolved["drawing"].get("ready"))
+        readiness = {
+            "work_instruction": instruction_ready,
+            "drawing": drawing_ready,
+            "complete": instruction_ready and drawing_ready,
+        }
+        resolution_cache[key] = (resolved, readiness)
+        return resolved, readiness
+
+    rows = []
+    for row in grouped.values():
+        resolved, readiness = resolved_with_readiness(row["part_no"], row["model_name"])
         rows.append({
             **row,
             "machine_numbers": sorted(row["machine_numbers"]),
             "work_instruction": resolved["work_instruction"],
             "drawing": resolved["drawing"],
-            "readiness": {
-                "work_instruction": instruction_ready,
-                "drawing": drawing_ready,
-                "complete": instruction_ready and drawing_ready,
-            },
+            "readiness": readiness,
         })
     rows.sort(key=lambda row: (
         row["machine_numbers"][0] if row["machine_numbers"] else 999,
         row["sequence"],
         row["part_no"],
     ))
+    summary_by_plan_id = {
+        _safe_int(part.get("plan_id"), -1): part
+        for machine in production_summary.get("machine_rows", [])
+        if isinstance(machine, dict)
+        for part in machine.get("parts", [])
+        if isinstance(part, dict) and _safe_int(part.get("plan_id"), -1) > 0
+    }
+    plans_by_machine: dict[int, list[ProductionPlan]] = defaultdict(list)
+    unmapped_plans = []
+    for plan in plans:
+        machine_number = parse_machine_number(plan.machine_name)
+        if machine_number is None:
+            unmapped_plans.append({
+                "plan_id": plan.id,
+                "machine_name": plan.machine_name,
+                "part_no": normalize_part_no(plan.part_no),
+                "model_name": str(plan.model_name or plan.part_spec or "").strip(),
+                "sequence": _safe_int(plan.sequence),
+            })
+            continue
+        plans_by_machine[machine_number].append(plan)
+
+    machine_schedules = []
+    for machine_number, machine_plans in plans_by_machine.items():
+        machine_plans.sort(key=lambda plan: (_safe_int(plan.sequence, 999), _safe_int(plan.id, 999999)))
+        schedule_plans = []
+        for index, plan in enumerate(machine_plans):
+            estimated = summary_by_plan_id.get(_safe_int(plan.id, -1), {})
+            model_name = str(plan.model_name or plan.part_spec or "").strip()
+            resolved, readiness = resolved_with_readiness(
+                plan.part_no,
+                model_name,
+            )
+            mes_estimated_status = str(estimated.get("status") or "") or None
+            schedule_plans.append({
+                "plan_id": plan.id,
+                "sequence": _safe_int(plan.sequence),
+                "source_sequence": _safe_int(plan.sequence),
+                "display_order": index + 1,
+                "lot_no": str(plan.lot_no or "").strip(),
+                "part_no": normalize_part_no(plan.part_no),
+                "model_name": model_name,
+                "planned_quantity": _safe_int(plan.planned_quantity),
+                "actual_quantity": _safe_int(estimated.get("estimated_qty")),
+                "progress": float(estimated.get("progress_rate") or 0),
+                "mes_estimated_status": mes_estimated_status,
+                "status": mes_estimated_status or "planned",
+                "is_current": False,
+                "is_completed": mes_estimated_status == "completed",
+                "work_instruction": resolved["work_instruction"],
+                "drawing": resolved["drawing"],
+                "readiness": readiness,
+            })
+        if include_status:
+            active_index, active_plan = _select_active_plan(schedule_plans)
+            if active_index is not None and active_plan and not active_plan["is_completed"]:
+                schedule_plans[active_index]["is_current"] = True
+        machine_schedules.append({
+            "machine_number": machine_number,
+            "machine_label": machine_label(machine_number),
+            "machine_name": str(machine_plans[0].machine_name or "") if machine_plans else "",
+            "plans": schedule_plans,
+        })
+    machine_schedules.sort(key=lambda item: item["machine_number"] or 999)
+
     return {
         "schema_version": FIELD_MATERIALS_SCHEMA,
         "business_date": target_date.isoformat(),
         "models": rows,
+        "machine_schedules": machine_schedules,
+        "status_meta": {
+            "source": "mes_shot_allocation" if include_status else "not_requested",
+            "latest_mes_time": _iso(production_summary.get("latest_mes_time")),
+            "reference_time": _iso(production_summary.get("reference_time")),
+            "generated_at": timezone.now().astimezone(SHANGHAI_TZ).isoformat(),
+        },
+        "warnings": (["unmapped_machine_plans"] if unmapped_plans else []),
+        "unmapped_plans": unmapped_plans,
         "summary": {
             "total": len(rows),
             "complete": sum(1 for row in rows if row["readiness"]["complete"]),
             "missing_work_instruction": sum(1 for row in rows if not row["readiness"]["work_instruction"]),
             "missing_drawing": sum(1 for row in rows if not row["readiness"]["drawing"]),
+            "scheduled_plans": sum(len(item["plans"]) for item in machine_schedules),
+            "current_plans": sum(
+                1 for item in machine_schedules for plan in item["plans"] if plan["is_current"]
+            ),
+            "missing_plans": sum(
+                1 for item in machine_schedules for plan in item["plans"] if not plan["readiness"]["complete"]
+            ),
         },
     }
 
@@ -552,7 +730,7 @@ def _production_summary_payload(target_date: date) -> dict[str, Any]:
     if isinstance(cached, dict):
         return cached
     payload = get_injection_summary(target_date)
-    cache.set(cache_key, payload, timeout=8)
+    cache.set(cache_key, payload, timeout=30)
     return payload
 
 
@@ -562,7 +740,7 @@ def _machine_shot_payload(target_date: date, machine_number: int) -> dict[str, A
     if isinstance(cached, dict):
         return cached
     payload = get_injection_machine_shot_context(target_date, [machine_number])
-    cache.set(cache_key, payload, timeout=5)
+    cache.set(cache_key, payload, timeout=15)
     return payload
 
 
@@ -684,21 +862,6 @@ def _select_active_plan(parts: list[dict[str, Any]]) -> tuple[int | None, dict[s
     return None, None
 
 
-def _active_plan_for_machine(target_date: date, machine_number: int) -> dict[str, Any] | None:
-    """Resolve a plan for a rollover prompt without recursively building a Kanban."""
-    summary = _production_summary_payload(target_date)
-    machine_row = next(
-        (
-            row for row in summary.get("machine_rows", [])
-            if _safe_int(row.get("machine_number"), -1) == machine_number
-        ),
-        None,
-    )
-    parts = list(machine_row.get("parts", [])) if isinstance(machine_row, dict) else []
-    _index, source = _select_active_plan(parts)
-    return _plan_payload(source)
-
-
 def _defect_snapshot_key(target_date: date, machine_number: int) -> str:
     return f"field-defects-v1-{target_date.strftime('%Y%m%d')}-{machine_number:02d}"
 
@@ -749,6 +912,8 @@ def _pending_shift_prompt(
     current_business_date = current_shanghai_business_date(local_now)
     if target_date != current_business_date:
         return None
+    if not active_plan:
+        return None
 
     def completed_keys(business_date: date) -> set[str]:
         return {
@@ -778,32 +943,6 @@ def _pending_shift_prompt(
             "model_name": plan.get("model_name") if plan else "",
         }
 
-    # At 08:00 the business date rolls forward. Keep the prior day's 08:00
-    # closeout visible until it is completed instead of silently dropping it.
-    previous_business_date = target_date - timedelta(days=1)
-    previous_morning_key = (
-        f"defect:shift:{previous_business_date.isoformat()}:{machine_number}:0800"
-    )
-    previous_morning_cutoff = SHANGHAI_TZ.localize(
-        datetime.combine(target_date, time(8, 0))
-    )
-    if (
-        local_now >= previous_morning_cutoff
-        and previous_morning_key not in completed_keys(previous_business_date)
-    ):
-        previous_plan = _active_plan_for_machine(previous_business_date, machine_number)
-        if previous_plan:
-            return prompt_payload(
-                previous_business_date,
-                previous_plan,
-                event_key=previous_morning_key,
-                trigger="shift_0800",
-                due_at=SHANGHAI_TZ.localize(
-                    datetime.combine(target_date, time(7, 30))
-                ),
-                cutoff_at=previous_morning_cutoff,
-            )
-
     completed = completed_keys(target_date)
     candidates = [
         {
@@ -819,8 +958,11 @@ def _pending_shift_prompt(
             "cutoff_at": SHANGHAI_TZ.localize(datetime.combine(target_date + timedelta(days=1), time(8, 0))),
         },
     ]
-    for candidate in candidates:
-        if local_now < candidate["due_at"] or candidate["event_key"] in completed:
+    for candidate in sorted(candidates, key=lambda row: row["due_at"], reverse=True):
+        if (
+            local_now < candidate["due_at"]
+            or candidate["event_key"] in completed
+        ):
             continue
         return prompt_payload(
             target_date,
@@ -831,6 +973,31 @@ def _pending_shift_prompt(
             cutoff_at=candidate["cutoff_at"],
         )
     return None
+
+
+def _defect_checkpoint_context(target_date: date, machine_number: int) -> dict[str, Any]:
+    """Build only the plan and reset-safe counter data needed by a defect write."""
+    summary = get_injection_summary(
+        target_date,
+        machine_numbers=[machine_number],
+    )
+    summary_row = next(
+        (
+            row for row in summary.get("machine_rows", [])
+            if _safe_int(row.get("machine_number"), -1) == machine_number
+        ),
+        None,
+    )
+    parts = list(summary_row.get("parts", [])) if isinstance(summary_row, dict) else []
+    _active_index, active_source = _select_active_plan(parts)
+    queue = [payload for payload in (_plan_payload(row) for row in parts) if payload]
+    return {
+        "active_plan": _plan_payload(active_source),
+        "queue": queue,
+        "counters": {
+            "business_day_shots": _safe_int((summary_row or {}).get("shot_count")),
+        },
+    }
 
 
 def _validate_checkpoint_event(
@@ -1092,13 +1259,8 @@ def save_defect_checkpoint(
     if existing:
         return existing, False
 
-    snapshot = build_field_kanban_snapshot(
-        target_date,
-        machine_number,
-        include_quality=False,
-        use_cache=False,
-    )
-    queue = snapshot.get("queue") or []
+    context = _defect_checkpoint_context(target_date, machine_number)
+    queue = context.get("queue") or []
     requested_plan_id = None
     if plan_id not in (None, ""):
         try:
@@ -1153,7 +1315,7 @@ def save_defect_checkpoint(
                 status_code=409,
             )
     else:
-        plan = snapshot.get("active_plan")
+        plan = context.get("active_plan")
     if not plan:
         raise FieldKanbanError(
             "No injection production plan is available for this checkpoint.",
@@ -1162,7 +1324,9 @@ def save_defect_checkpoint(
         )
 
     current_plan_shots = _safe_int(plan.get("allocated_shots"))
-    observed_business_day_shots = _safe_int(snapshot.get("counters", {}).get("business_day_shots"))
+    observed_business_day_shots = _safe_int(
+        context.get("counters", {}).get("business_day_shots")
+    )
     cavity = max(1, _safe_int(plan.get("cavity"), 1))
     username = str(getattr(user, "username", "") or getattr(user, "pk", "") or "unknown")
 

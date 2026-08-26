@@ -106,7 +106,7 @@ function mesEndpoint(path: string) {
   return `${baseUrl}${path}`;
 }
 
-async function fetchInjectionProductionMatrix(date?: string) {
+async function fetchInjectionProductionMatrix(date?: string, machineNumber?: number) {
   if (date) {
     try {
       const historicalParams = new URLSearchParams({
@@ -114,6 +114,7 @@ async function fetchInjectionProductionMatrix(date?: string) {
         columns: "145",
         date,
       });
+      if (machineNumber) historicalParams.set("machine_number", String(machineNumber));
       const historicalResponse = await http.get<InjectionProductionMatrix>(
         mesEndpoint(`/injection/production-matrix/?${historicalParams.toString()}`),
         { skipAuth: true },
@@ -125,6 +126,7 @@ async function fetchInjectionProductionMatrix(date?: string) {
         columns: "49",
         date,
       });
+      if (machineNumber) historicalFallbackParams.set("machine_number", String(machineNumber));
       const historicalFallbackResponse = await http.get<InjectionProductionMatrix>(
         mesEndpoint(`/injection/production-matrix/?${historicalFallbackParams.toString()}`),
         { skipAuth: true },
@@ -138,6 +140,7 @@ async function fetchInjectionProductionMatrix(date?: string) {
       interval: "2min",
       columns: "721",
     });
+    if (machineNumber) twoMinuteParams.set("machine_number", String(machineNumber));
     const twoMinuteResponse = await http.get<InjectionProductionMatrix>(
       mesEndpoint(`/injection/production-matrix/?${twoMinuteParams.toString()}`),
       { skipAuth: true },
@@ -148,6 +151,7 @@ async function fetchInjectionProductionMatrix(date?: string) {
       interval: "10min",
       columns: "144",
     });
+    if (machineNumber) fallbackParams.set("machine_number", String(machineNumber));
     const fallbackResponse = await http.get<InjectionProductionMatrix>(
       mesEndpoint(`/injection/production-matrix/?${fallbackParams.toString()}`),
       { skipAuth: true },
@@ -156,8 +160,8 @@ async function fetchInjectionProductionMatrix(date?: string) {
   }
 }
 
-export async function getInjectionProductionMatrix() {
-  return fetchInjectionProductionMatrix();
+export async function getInjectionProductionMatrix(machineNumber?: number) {
+  return fetchInjectionProductionMatrix(undefined, machineNumber);
 }
 
 export async function getInjectionProductionMatrixForDate(date: string) {

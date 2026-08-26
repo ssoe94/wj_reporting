@@ -5,6 +5,8 @@ export type FieldLanguageLabel = {
   ko: string;
 };
 
+export type FieldMaterialMatchRule = "exact" | "part_family_last_two";
+
 export type FieldDocument = {
   id: string;
   kind: "work_instruction" | "drawing";
@@ -19,6 +21,9 @@ export type FieldDocument = {
   uploaded_at: string | null;
   verification_status: "matched" | "pending" | "mismatch" | null;
   verification_label: FieldLanguageLabel | null;
+  match_rule: FieldMaterialMatchRule;
+  match_basis: string | null;
+  matched_from_part_no: string | null;
 };
 
 export type FieldKanbanPlan = {
@@ -138,9 +143,32 @@ export type FieldMaterialModel = {
   };
 };
 
+export type FieldMaterialScheduleStatus = "completed" | "current" | "waiting";
+
+export type FieldMaterialSchedulePlan = FieldMaterialModel & {
+  plan_id: number | null;
+  sequence: number;
+  source_sequence: number;
+  display_order: number;
+  lot_no: string;
+  actual_quantity: number;
+  progress: number;
+  mes_estimated_status: string | null;
+  status: FieldMaterialScheduleStatus;
+  is_current: boolean;
+  is_completed: boolean;
+};
+
+export type FieldMaterialMachineSchedule = {
+  machine_number: number;
+  machine_label: string;
+  plans: FieldMaterialSchedulePlan[];
+};
+
 export type FieldMaterialsResponse = {
   business_date: string;
   models: FieldMaterialModel[];
+  machine_schedules?: FieldMaterialMachineSchedule[];
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -166,6 +194,10 @@ function asBoolean(value: unknown, fallback = false) {
 
 function normalizeVerificationStatus(value: unknown) {
   return value === "matched" || value === "pending" || value === "mismatch" ? value : null;
+}
+
+function normalizeMaterialMatchRule(value: unknown): FieldMaterialMatchRule {
+  return value === "part_family_last_two" ? "part_family_last_two" : "exact";
 }
 
 function normalizeLabel(value: unknown, fallbackZh = "", fallbackKo = ""): FieldLanguageLabel {
@@ -202,6 +234,9 @@ function normalizeDocument(value: unknown, fallbackKind: FieldDocument["kind"]):
     verification_label: row.verification_label
       ? normalizeLabel(row.verification_label)
       : null,
+    match_rule: normalizeMaterialMatchRule(row.match_rule),
+    match_basis: asString(row.match_basis) || null,
+    matched_from_part_no: asString(row.matched_from_part_no) || null,
   };
 }
 
@@ -318,8 +353,16 @@ export function normalizeFieldKanbanResponse(value: unknown, date: string, machi
   };
 }
 
-export async function getFieldKanban(date: string, machineNumber: number) {
-  const params = new URLSearchParams({ date, machine_number: String(machineNumber) });
+export async function getFieldKanban(
+  date: string,
+  machineNumber: number,
+  options: { includeQuality?: boolean } = {},
+) {
+  const params = new URLSearchParams({
+    date,
+    machine_number: String(machineNumber),
+    include_quality: options.includeQuality === false ? "false" : "true",
+  });
   const response = await http.get<unknown>(`/production/field-kanban/?${params.toString()}`);
   return normalizeFieldKanbanResponse(response.data, date, machineNumber);
 }
@@ -393,12 +436,73 @@ function normalizeMaterialModel(value: unknown): FieldMaterialModel {
   };
 }
 
+function normalizeMaterialScheduleStatus(row: UnknownRecord): FieldMaterialScheduleStatus {
+  const status = asString(row.status).trim().toLowerCase();
+  if (asBoolean(row.is_completed) || ["completed", "complete", "done", "finished"].includes(status)) {
+    return "completed";
+  }
+  if (asBoolean(row.is_current)) {
+    return "current";
+  }
+  return "waiting";
+}
+
+function normalizeMaterialMachineSchedule(value: unknown): FieldMaterialMachineSchedule | null {
+  const row = asRecord(value);
+  const machineNumber = asNumber(row.machine_number || row.machine_no || row.number);
+  if (machineNumber <= 0) return null;
+  const rawPlans = Array.isArray(row.plans) ? row.plans : [];
+  const normalizedPlans = rawPlans.map((planValue, index) => {
+    const plan = asRecord(planValue);
+    const model = normalizeMaterialModel(planValue);
+    const status = normalizeMaterialScheduleStatus(plan);
+    const sourceSequence = asNumber(plan.source_sequence ?? plan.sequence);
+    const displayOrder = Math.max(1, asNumber(plan.display_order, index + 1));
+    return {
+      ...model,
+      machine_numbers: [machineNumber],
+      plan_id: plan.plan_id === null || plan.plan_id === undefined ? null : asNumber(plan.plan_id),
+      sequence: asNumber(plan.sequence, sourceSequence || displayOrder),
+      source_sequence: sourceSequence,
+      display_order: displayOrder,
+      lot_no: asString(plan.lot_no),
+      actual_quantity: asNumber(plan.actual_quantity),
+      progress: Math.max(0, asNumber(plan.progress)),
+      mes_estimated_status: asString(plan.mes_estimated_status) || null,
+      status,
+      is_current: status === "current",
+      is_completed: status === "completed",
+    } satisfies FieldMaterialSchedulePlan;
+  }).sort((left, right) => left.display_order - right.display_order || left.source_sequence - right.source_sequence);
+  let hasCurrentPlan = false;
+  const plans = normalizedPlans.map((plan) => {
+    if (!plan.is_current) return plan;
+    if (!hasCurrentPlan) {
+      hasCurrentPlan = true;
+      return plan;
+    }
+    return { ...plan, status: "waiting", is_current: false } satisfies FieldMaterialSchedulePlan;
+  });
+  return {
+    machine_number: machineNumber,
+    machine_label: asString(row.machine_label, `${String(machineNumber).padStart(2, "0")}号机`),
+    plans,
+  };
+}
+
 export async function getFieldMaterials(date: string): Promise<FieldMaterialsResponse> {
   const response = await http.get<unknown>(`/production/field-materials/?date=${encodeURIComponent(date)}`);
   const root = asRecord(response.data);
+  const machineSchedules = Array.isArray(root.machine_schedules)
+    ? root.machine_schedules
+      .map(normalizeMaterialMachineSchedule)
+      .filter((item): item is FieldMaterialMachineSchedule => Boolean(item))
+      .sort((left, right) => left.machine_number - right.machine_number)
+    : undefined;
   return {
     business_date: asString(root.business_date, date),
     models: Array.isArray(root.models) ? root.models.map(normalizeMaterialModel) : [],
+    machine_schedules: machineSchedules,
   };
 }
 
@@ -409,12 +513,14 @@ export async function uploadFieldMaterial(input: {
   revision: string;
   file: File;
   previewPdf?: File | null;
+  matchRule?: FieldMaterialMatchRule;
 }) {
   const form = new FormData();
   form.append("kind", input.kind);
   form.append("part_no", input.partNo.trim());
   form.append("model_name", input.modelName.trim());
   form.append("revision", input.revision.trim());
+  form.append("match_rule", input.matchRule ?? "exact");
   form.append("file", input.file);
   if (input.previewPdf) form.append("preview_pdf", input.previewPdf);
   const response = await http.post<unknown>("/production/field-materials/", form, {

@@ -106,6 +106,32 @@ class InjectionEnergyMatrixTests(TestCase):
         self.assertEqual(matrix['power_usage_matrix']['3'], [0.0, 0.0, 1.0])
         self.assertEqual(matrix['power_kwh_matrix']['3'], [100.0, 100.0, 101.0])
 
+    def test_matrix_can_be_limited_to_one_field_machine(self):
+        cst = pytz.timezone('Asia/Shanghai')
+        reference = cst.localize(datetime(2026, 8, 11, 10, 0))
+        for machine_number in (3, 4):
+            InjectionMonitoringRecord.objects.create(
+                machine_name=f'{machine_number}호기',
+                device_code=f'machine-{machine_number}',
+                timestamp=reference.replace(hour=9),
+                capacity=100 + machine_number,
+                power_kwh=200 + machine_number,
+            )
+
+        matrix = mes_service.get_production_matrix(
+            interval_type='1hour',
+            columns=2,
+            reference_time=reference,
+            machine_numbers=[3],
+        )
+
+        self.assertEqual(list(matrix['actual_production_matrix']), ['3'])
+        self.assertEqual(list(matrix['power_usage_matrix']), ['3'])
+        self.assertEqual(
+            [row['machine_number'] for row in matrix['machines']],
+            [3],
+        )
+
 
 class InjectionMonitoringRollupTests(TestCase):
     def test_detailed_shots_override_stale_rollups_without_losing_rollup_only_data(self):

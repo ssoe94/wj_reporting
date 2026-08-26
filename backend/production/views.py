@@ -1279,6 +1279,7 @@ class ProductionStatusView(APIView):
                 'is_running': bool(row.get('is_running')),
                 'parts': [
                     {
+                        'plan_id': part.get('plan_id'),
                         'part_no': part.get('part_no'),
                         'model_name': part.get('model_name'),
                         'planned_quantity': int(part.get('planned_qty') or 0),

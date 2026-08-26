@@ -9,7 +9,9 @@ import pytz
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 from injection.models import InjectionMonitoringRecord, MouldDataSnapshot
@@ -19,6 +21,7 @@ from .field_kanban import (
     FIELD_MATERIALS_SCHEMA,
     FIELD_MATERIALS_SNAPSHOT_KEY,
     FieldKanbanError,
+    _defect_checkpoint_context,
     _defect_snapshot_key,
     _pending_shift_prompt,
     _quality_summary,
@@ -46,6 +49,7 @@ def _stored_document(
     model_name: str = "",
     uploaded_at: str = "2026-08-24T09:00:00+08:00",
     ready: bool = True,
+    match_rule: str = "exact",
 ) -> dict:
     source = {
         "url": f"https://cdn.example.test/{document_id}.pdf",
@@ -58,6 +62,7 @@ def _stored_document(
         "part_no": part_no,
         "model_name": model_name,
         "revision": "A",
+        "match_rule": match_rule,
         "source": source,
         "preview": source if ready else None,
         "active": True,
@@ -176,6 +181,9 @@ class FieldQualitySummaryTests(TestCase):
 
 
 class FieldMaterialResolutionTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
     def test_part_specific_instruction_beats_model_fallback_and_drawing_is_part_only(self):
         documents = [
             _stored_document(
@@ -218,9 +226,65 @@ class FieldMaterialResolutionTests(TestCase):
         self.assertEqual(model_only["work_instruction"]["id"], "model-instruction")
         self.assertIsNone(model_only["drawing"])
 
+    def test_last_two_part_family_sharing_is_explicit_and_exact_part_wins(self):
+        documents = [
+            _stored_document(
+                "family-instruction",
+                kind="work_instruction",
+                part_no="24U411B-01",
+                model_name="MODEL-A",
+                match_rule="part_family_last_two",
+                uploaded_at="2026-08-24T12:00:00+08:00",
+            ),
+            _stored_document(
+                "family-drawing",
+                kind="drawing",
+                part_no="24U411B-01",
+                model_name="MODEL-A",
+                match_rule="part_family_last_two",
+            ),
+            _stored_document(
+                "exact-source-instruction",
+                kind="work_instruction",
+                part_no="24U411B-01",
+                model_name="MODEL-A",
+                uploaded_at="2026-08-24T08:00:00+08:00",
+            ),
+            _stored_document(
+                "exact-instruction",
+                kind="work_instruction",
+                part_no="24U411B-02",
+                uploaded_at="2026-08-24T08:00:00+08:00",
+            ),
+            _stored_document(
+                "legacy-exact",
+                kind="drawing",
+                part_no="OTHER-01",
+            ),
+        ]
+
+        exact = resolve_material_documents("24U411B-02", "MODEL-A", documents=documents)
+        exact_source = resolve_material_documents("24U411B-01", "MODEL-A", documents=documents)
+        shared = resolve_material_documents("24U411B-03", "MODEL-A", documents=documents)
+        different_model = resolve_material_documents("24U411B-03", "MODEL-B", documents=documents)
+        unequal_length = resolve_material_documents("24U411B-3", "MODEL-A", documents=documents)
+        unrelated = resolve_material_documents("OTHER-02", "MODEL-A", documents=documents)
+
+        self.assertEqual(exact["work_instruction"]["id"], "exact-instruction")
+        self.assertEqual(exact["work_instruction"]["match_basis"], "exact")
+        self.assertEqual(exact_source["work_instruction"]["id"], "exact-source-instruction")
+        self.assertEqual(shared["work_instruction"]["id"], "family-instruction")
+        self.assertEqual(shared["drawing"]["id"], "family-drawing")
+        self.assertEqual(shared["drawing"]["match_basis"], "part_family_last_two")
+        self.assertEqual(shared["drawing"]["matched_from_part_no"], "24U411B-01")
+        self.assertIsNone(different_model["work_instruction"])
+        self.assertIsNone(different_model["drawing"])
+        self.assertIsNone(unequal_length["drawing"])
+        self.assertIsNone(unrelated["drawing"])
+
     def test_today_material_readiness_reports_complete_and_missing_models(self):
         target_date = date(2026, 8, 24)
-        ProductionPlan.objects.create(
+        ready_plan = ProductionPlan.objects.create(
             plan_date=target_date,
             plan_type="injection",
             machine_name="850T-1",
@@ -229,7 +293,7 @@ class FieldMaterialResolutionTests(TestCase):
             planned_quantity=100,
             sequence=1,
         )
-        ProductionPlan.objects.create(
+        missing_plan = ProductionPlan.objects.create(
             plan_date=target_date,
             plan_type="injection",
             machine_name="650T-10",
@@ -269,6 +333,70 @@ class FieldMaterialResolutionTests(TestCase):
         self.assertEqual(rows["PART-READY"]["machine_numbers"], [1])
         self.assertTrue(rows["PART-READY"]["readiness"]["complete"])
         self.assertFalse(rows["PART-MISSING"]["readiness"]["complete"])
+        schedules = {row["machine_number"]: row for row in payload["machine_schedules"]}
+        self.assertEqual(schedules[1]["plans"][0]["part_no"], "PART-READY")
+        self.assertFalse(schedules[1]["plans"][0]["is_current"])
+        self.assertEqual(schedules[10]["plans"][0]["status"], "planned")
+        self.assertEqual(payload["status_meta"]["source"], "not_requested")
+
+        live_summary = {
+            "latest_mes_time": None,
+            "reference_time": None,
+            "machine_rows": [
+                {"parts": [{
+                    "plan_id": ready_plan.id,
+                    "status": "completed",
+                    "estimated_qty": 100,
+                    "progress_rate": 100,
+                }]},
+                {"parts": [{
+                    "plan_id": missing_plan.id,
+                    "status": "pending",
+                    "estimated_qty": 0,
+                    "progress_rate": 0,
+                }]},
+            ],
+        }
+        with patch("production.field_kanban._production_summary_payload", return_value=live_summary):
+            live_payload = build_field_material_readiness(target_date, include_status=True)
+        live_schedules = {row["machine_number"]: row for row in live_payload["machine_schedules"]}
+        self.assertTrue(live_schedules[1]["plans"][0]["is_completed"])
+        self.assertFalse(live_schedules[1]["plans"][0]["is_current"])
+        self.assertTrue(live_schedules[10]["plans"][0]["is_current"])
+        self.assertEqual(live_payload["status_meta"]["source"], "mes_shot_allocation")
+
+    def test_machine_schedule_keeps_duplicate_sequence_and_lot_rows_in_stable_order(self):
+        target_date = date(2026, 8, 27)
+        first = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-2",
+            part_no="PART-SAME",
+            model_name="MODEL-A",
+            lot_no="LOT-1",
+            planned_quantity=100,
+            sequence=5,
+        )
+        second = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-2",
+            part_no="PART-SAME",
+            model_name="MODEL-A",
+            lot_no="LOT-2",
+            planned_quantity=200,
+            sequence=5,
+        )
+
+        with CaptureQueriesContext(connection) as queries:
+            payload = build_field_material_readiness(target_date)
+        plans = payload["machine_schedules"][0]["plans"]
+
+        self.assertEqual([row["plan_id"] for row in plans], [first.id, second.id])
+        self.assertEqual([row["lot_no"] for row in plans], ["LOT-1", "LOT-2"])
+        self.assertEqual([row["display_order"] for row in plans], [1, 2])
+        self.assertEqual([row["source_sequence"] for row in plans], [5, 5])
+        self.assertLessEqual(len(queries), 3)
 
 
 class FieldDefectCheckpointTests(TestCase):
@@ -294,12 +422,12 @@ class FieldDefectCheckpointTests(TestCase):
 
     def test_server_calculates_piece_arithmetic_and_event_is_idempotent(self):
         with patch(
-            "production.field_kanban.build_field_kanban_snapshot",
+            "production.field_kanban._defect_checkpoint_context",
             return_value=self._kanban_payload(
                 allocated_shots=10,
                 business_day_shots=10,
             ),
-        ) as build_snapshot:
+        ) as build_context:
             checkpoint, created = save_defect_checkpoint(
                 target_date=self.target_date,
                 machine_number=1,
@@ -331,16 +459,34 @@ class FieldDefectCheckpointTests(TestCase):
         self.assertEqual(checkpoint["defect_piece_qty"], 3)
         self.assertEqual(checkpoint["good_piece_qty"], 17)
         self.assertEqual(checkpoint["items"], [{"code": "scratch", "quantity": 3}])
-        self.assertEqual(build_snapshot.call_count, 1)
+        self.assertEqual(build_context.call_count, 1)
 
         stored = MouldDataSnapshot.objects.get(
             snapshot_key="field-defects-v1-20260824-01"
         )
         self.assertEqual(len(stored.payload["checkpoints"]), 1)
 
+    def test_checkpoint_context_queries_only_requested_machine(self):
+        for machine_number in range(1, 18):
+            ProductionPlan.objects.create(
+                plan_date=self.target_date,
+                plan_type="injection",
+                machine_name=f"850T-{machine_number}",
+                part_no=f"PART-{machine_number}",
+                model_name=f"MODEL-{machine_number}",
+                planned_quantity=100,
+                sequence=1,
+            )
+
+        with CaptureQueriesContext(connection) as queries:
+            context = _defect_checkpoint_context(self.target_date, 1)
+
+        self.assertEqual(context["active_plan"]["part_no"], "PART-1")
+        self.assertLessEqual(len(queries), 15)
+
     def test_defect_quantity_above_server_gross_is_rejected_without_append(self):
         with patch(
-            "production.field_kanban.build_field_kanban_snapshot",
+            "production.field_kanban._defect_checkpoint_context",
             return_value=self._kanban_payload(
                 allocated_shots=1,
                 business_day_shots=1,
@@ -389,7 +535,7 @@ class FieldDefectCheckpointTests(TestCase):
         }
 
         with patch(
-            "production.field_kanban.build_field_kanban_snapshot",
+            "production.field_kanban._defect_checkpoint_context",
             return_value=snapshot,
         ):
             checkpoint, created = save_defect_checkpoint(
@@ -420,7 +566,7 @@ class FieldDefectCheckpointTests(TestCase):
         ]
         checkpoints = []
         with patch(
-            "production.field_kanban.build_field_kanban_snapshot",
+            "production.field_kanban._defect_checkpoint_context",
             side_effect=payloads,
         ):
             for index in range(4):
@@ -445,8 +591,8 @@ class FieldDefectCheckpointTests(TestCase):
 
     def test_shift_event_key_is_bound_to_date_machine_trigger_and_due_time(self):
         with patch(
-            "production.field_kanban.build_field_kanban_snapshot",
-        ) as build_snapshot:
+            "production.field_kanban._defect_checkpoint_context",
+        ) as build_context:
             with self.assertRaises(FieldKanbanError) as mismatch:
                 save_defect_checkpoint(
                     target_date=self.target_date,
@@ -470,12 +616,12 @@ class FieldDefectCheckpointTests(TestCase):
 
         self.assertEqual(mismatch.exception.code, "invalid_shift_event_key")
         self.assertEqual(early.exception.code, "shift_checkpoint_not_due")
-        build_snapshot.assert_not_called()
+        build_context.assert_not_called()
 
     def test_part_change_and_manual_event_keys_are_bound_to_date_and_machine(self):
         with patch(
-            "production.field_kanban.build_field_kanban_snapshot",
-        ) as build_snapshot:
+            "production.field_kanban._defect_checkpoint_context",
+        ) as build_context:
             with self.assertRaises(FieldKanbanError) as part_change_mismatch:
                 save_defect_checkpoint(
                     target_date=self.target_date,
@@ -500,11 +646,11 @@ class FieldDefectCheckpointTests(TestCase):
             "invalid_part_change_event_key",
         )
         self.assertEqual(manual_mismatch.exception.code, "invalid_manual_event_key")
-        build_snapshot.assert_not_called()
+        build_context.assert_not_called()
 
     def test_valid_morning_shift_checkpoint_can_be_saved_after_rollover(self):
         with patch(
-            "production.field_kanban.build_field_kanban_snapshot",
+            "production.field_kanban._defect_checkpoint_context",
             return_value=self._kanban_payload(
                 allocated_shots=5,
                 business_day_shots=7,
@@ -579,42 +725,34 @@ class FieldShiftPromptTests(TestCase):
         self.assertEqual(morning["part_no"], "PART-A")
         self.assertFalse(morning["is_overdue"])
 
-    def test_morning_prompt_survives_0800_rollover_until_prior_day_is_completed(self):
-        previous_date = date(2026, 8, 24)
+    def test_overdue_prompt_is_non_historical_and_requires_an_active_plan(self):
         current_date = date(2026, 8, 25)
-        plan = ProductionPlan.objects.create(
-            plan_date=previous_date,
-            plan_type="injection",
-            machine_name="850T-1",
-            part_no="PART-PRIOR",
-            model_name="MODEL-PRIOR",
-            planned_quantity=100,
-            sequence=0,
+        active_plan = {"part_no": "PART-A", "model_name": "MODEL-A"}
+
+        overdue = _pending_shift_prompt(
+            current_date,
+            1,
+            active_plan,
+            now=SHANGHAI_TZ.localize(datetime(2026, 8, 25, 20, 45)),
         )
-        now = SHANGHAI_TZ.localize(datetime(2026, 8, 25, 8, 1))
-
-        overdue = _pending_shift_prompt(current_date, 1, None, now=now)
-
-        self.assertEqual(overdue["business_date"], previous_date.isoformat())
-        self.assertEqual(overdue["event_key"], "defect:shift:2026-08-24:1:0800")
-        self.assertEqual(overdue["trigger"], "shift_0800")
+        self.assertEqual(overdue["trigger"], "shift_2000")
         self.assertTrue(overdue["is_overdue"])
-        self.assertEqual(overdue["plan_id"], plan.pk)
-        self.assertEqual(overdue["part_no"], "PART-PRIOR")
-
-        MouldDataSnapshot.objects.create(
-            snapshot_key=_defect_snapshot_key(previous_date, 1),
-            kind=MouldDataSnapshot.KIND_BOARD,
-            instance_id="field-defects-01",
-            payload={
-                "schema_version": FIELD_DEFECTS_SCHEMA,
-                "business_date": previous_date.isoformat(),
-                "machine_number": 1,
-                "checkpoints": [{"event_key": overdue["event_key"]}],
-            },
+        self.assertIsNone(
+            _pending_shift_prompt(
+                current_date + timedelta(days=1),
+                1,
+                active_plan,
+                now=SHANGHAI_TZ.localize(datetime(2026, 8, 26, 8, 1)),
+            )
         )
-
-        self.assertIsNone(_pending_shift_prompt(current_date, 1, None, now=now))
+        self.assertIsNone(
+            _pending_shift_prompt(
+                current_date,
+                1,
+                None,
+                now=SHANGHAI_TZ.localize(datetime(2026, 8, 25, 19, 30)),
+            )
+        )
 
 
 class FieldKanbanPermissionTests(TestCase):
@@ -647,6 +785,50 @@ class FieldKanbanPermissionTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["code"], "field_terminal_machine_mismatch")
+
+    def test_snapshot_can_defer_quality_and_editor_can_save_defect(self):
+        self.terminal.profile.can_edit_injection = True
+        self.terminal.profile.save(update_fields=["can_edit_injection"])
+        client = self._client_for(self.terminal)
+        payload = FieldDefectCheckpointTests._kanban_payload(
+            allocated_shots=10,
+            business_day_shots=10,
+        )
+
+        with patch(
+            "production.field_kanban_views.build_field_kanban_snapshot",
+            return_value={"quality": {"issues": []}},
+        ) as build_snapshot:
+            snapshot_response = client.get(
+                "/api/production/field-kanban/",
+                {
+                    "date": "2026-08-24",
+                    "machine_number": 5,
+                    "include_quality": "false",
+                },
+            )
+        with patch(
+            "production.field_kanban._defect_checkpoint_context",
+            return_value=payload,
+        ):
+            defect_response = client.post(
+                "/api/production/field-kanban/defects/",
+                {
+                    "business_date": "2026-08-24",
+                    "machine_number": 5,
+                    "event_key": "manual:2026-08-24:5:100",
+                    "trigger": "manual",
+                    "plan_id": 81,
+                    "part_no": "PART-A",
+                    "items": [{"code": "scratch", "quantity": 2}],
+                },
+                format="json",
+            )
+
+        self.assertEqual(snapshot_response.status_code, 200)
+        self.assertFalse(build_snapshot.call_args.kwargs["include_quality"])
+        self.assertEqual(defect_response.status_code, 201)
+        self.assertEqual(defect_response.json()["checkpoint"]["good_piece_qty"], 18)
 
     def test_development_view_permission_does_not_grant_material_edit(self):
         viewer_client = self._client_for(self.development_viewer)
@@ -681,6 +863,7 @@ class FieldKanbanPermissionTests(TestCase):
                 {
                     "kind": "work_instruction",
                     "model_name": "MODEL-A",
+                    "match_rule": "part_family_last_two",
                     "file": SimpleUploadedFile("work.pdf", b"%PDF-1.4\n"),
                 },
                 format="multipart",
@@ -688,6 +871,10 @@ class FieldKanbanPermissionTests(TestCase):
 
         self.assertEqual(allowed_response.status_code, 201)
         self.assertTrue(save_material.called)
+        self.assertEqual(
+            save_material.call_args.kwargs["match_rule"],
+            "part_family_last_two",
+        )
 
     def test_profile_missing_field_writes_fail_closed(self):
         user = get_user_model().objects.create_user(username="profile-missing")
@@ -695,6 +882,10 @@ class FieldKanbanPermissionTests(TestCase):
         user = get_user_model().objects.get(pk=user.pk)
         client = self._client_for(user)
 
+        material_read_response = client.get(
+            "/api/production/field-materials/",
+            {"date": "2026-08-24"},
+        )
         defect_response = client.post(
             "/api/production/field-kanban/defects/",
             {
@@ -716,6 +907,7 @@ class FieldKanbanPermissionTests(TestCase):
             format="multipart",
         )
 
+        self.assertEqual(material_read_response.status_code, 403)
         self.assertEqual(defect_response.status_code, 403)
         self.assertEqual(material_response.status_code, 403)
 
@@ -834,16 +1026,100 @@ class FieldMaterialUploadTests(TestCase):
             source_file=source,
             preview_pdf=None,
             user=self.user,
+            match_rule="part_family_last_two",
         )
 
         self.assertEqual(document["source_format"], "pptx")
         self.assertEqual(document["source_file_name"], "slides.pptx")
+        self.assertEqual(document["match_rule"], "part_family_last_two")
         self.assertNotIn("..", document["source_file_name"])
         self.assertFalse(document["ready"])
         self.assertIsNone(document["preview_url"])
         self.assertEqual(upload.call_count, 1)
         self.assertEqual(upload.call_args.kwargs["resource_type"], "raw")
         self.assertFalse(upload.call_args.kwargs["overwrite"])
+
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_invalid_material_match_rule_is_rejected_before_upload(self, upload):
+        with self.assertRaises(FieldKanbanError) as invalid_rule:
+            save_field_material(
+                kind="work_instruction",
+                part_no="PART-A",
+                model_name="MODEL-A",
+                revision="",
+                source_file=SimpleUploadedFile("instruction.pdf", b"%PDF-1.4\n"),
+                preview_pdf=None,
+                user=self.user,
+                match_rule="all_parts",
+            )
+        with self.assertRaises(FieldKanbanError) as short_part:
+            save_field_material(
+                kind="drawing",
+                part_no="A1",
+                model_name="MODEL-A",
+                revision="",
+                source_file=SimpleUploadedFile("drawing.pdf", b"%PDF-1.4\n"),
+                preview_pdf=None,
+                user=self.user,
+                match_rule="part_family_last_two",
+            )
+        with self.assertRaises(FieldKanbanError) as missing_model:
+            save_field_material(
+                kind="drawing",
+                part_no="PART-01",
+                model_name="",
+                revision="",
+                source_file=SimpleUploadedFile("drawing.pdf", b"%PDF-1.4\n"),
+                preview_pdf=None,
+                user=self.user,
+                match_rule="part_family_last_two",
+            )
+
+        self.assertEqual(invalid_rule.exception.code, "invalid_material_match_rule")
+        self.assertEqual(short_part.exception.code, "material_part_family_required")
+        self.assertEqual(missing_model.exception.code, "material_part_family_model_required")
+        upload.assert_not_called()
+
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_shared_replacement_is_scoped_by_family_model_and_does_not_deactivate_exact(self, upload):
+        upload.return_value = {
+            "secure_url": "https://cdn.example.test/document.pdf",
+            "public_id": "field/document.pdf",
+            "resource_type": "raw",
+            "bytes": 12,
+        }
+
+        def save(part_no: str, model_name: str, match_rule: str) -> dict:
+            return save_field_material(
+                kind="drawing",
+                part_no=part_no,
+                model_name=model_name,
+                revision="A",
+                source_file=SimpleUploadedFile(
+                    f"{part_no}-{model_name}.pdf",
+                    b"%PDF-1.4\n",
+                ),
+                preview_pdf=None,
+                user=self.user,
+                match_rule=match_rule,
+            )
+
+        shared_a = save("PART-01", "MODEL-A", "part_family_last_two")
+        exact_a = save("PART-01", "MODEL-A", "exact")
+        shared_a_replacement = save("PART-02", "MODEL-A", "part_family_last_two")
+        shared_b = save("PART-03", "MODEL-B", "part_family_last_two")
+
+        manifest = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload
+        active_by_id = {
+            row["id"]: row.get("active", True)
+            for row in manifest["documents"]
+        }
+        self.assertFalse(active_by_id[shared_a["id"]])
+        self.assertTrue(active_by_id[exact_a["id"]])
+        self.assertTrue(active_by_id[shared_a_replacement["id"]])
+        self.assertTrue(active_by_id[shared_b["id"]])
 
     @patch("production.field_kanban.cloudinary.uploader.upload")
     def test_legacy_ppt_upload_is_not_ready_without_pdf_preview(self, upload):

@@ -1148,7 +1148,7 @@ export function InjectionBoardPage() {
   });
   const mesQuery = useQuery({
     queryKey: ["mes", "injection-board-matrix", requestedBusinessDate],
-    queryFn: getInjectionProductionMatrix,
+    queryFn: () => getInjectionProductionMatrix(),
     refetchInterval: BOARD_REFRESH_INTERVAL_MS,
     placeholderData: (previousData) => previousData,
   });

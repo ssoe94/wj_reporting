@@ -5,7 +5,7 @@ import re
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import BasePermission, IsAuthenticated, SAFE_METHODS
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -31,15 +31,16 @@ def field_terminal_machine_number(user) -> int | None:
 
 
 class FieldWriteProfileRequired(BasePermission):
-    """Keep field writes fail-closed even though legacy section permissions do not."""
+    """Keep field material reads and field writes fail-closed without a profile."""
 
     def has_permission(self, request, view):
-        if request.method in SAFE_METHODS or getattr(request.user, "is_staff", False):
+        if getattr(request.user, "is_staff", False):
             return True
         try:
-            return bool(request.user.profile.pk)
+            has_profile = bool(request.user.profile.pk)
         except Exception:
             return False
+        return has_profile
 
 
 def _target_date(value):
@@ -87,6 +88,12 @@ def _error_response(exc: FieldKanbanError) -> Response:
     )
 
 
+def _query_bool(value, *, default: bool = True) -> bool:
+    if value in (None, ""):
+        return default
+    return str(value).strip().lower() not in {"0", "false", "no", "off"}
+
+
 class FieldKanbanView(APIView):
     permission_classes = [IsAuthenticated, InjectionPermission]
 
@@ -95,7 +102,10 @@ class FieldKanbanView(APIView):
             target_date = _target_date(request.query_params.get("date"))
             machine_number = _machine_number(request.query_params.get("machine_number"))
             _enforce_terminal_machine_scope(request, machine_number)
-            include_quality = QualityPermission().has_permission(request, self)
+            include_quality = (
+                _query_bool(request.query_params.get("include_quality"))
+                and QualityPermission().has_permission(request, self)
+            )
             return Response(
                 build_field_kanban_snapshot(
                     target_date,
@@ -142,7 +152,11 @@ class FieldMaterialsView(APIView):
         try:
             return Response(
                 build_field_material_readiness(
-                    _target_date(request.query_params.get("date"))
+                    _target_date(request.query_params.get("date")),
+                    include_status=_query_bool(
+                        request.query_params.get("include_status"),
+                        default=False,
+                    ),
                 )
             )
         except FieldKanbanError as exc:
@@ -158,6 +172,7 @@ class FieldMaterialsView(APIView):
                 source_file=request.FILES.get("file"),
                 preview_pdf=request.FILES.get("preview_pdf"),
                 user=request.user,
+                match_rule=request.data.get("match_rule"),
             )
             return Response({"document": document}, status=status.HTTP_201_CREATED)
         except FieldKanbanError as exc:

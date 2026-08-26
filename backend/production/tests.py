@@ -1578,7 +1578,7 @@ class InjectionAllocationContractTests(DjangoTestCase):
         tz = pytz.timezone('Asia/Shanghai')
         start = tz.localize(datetime(2026, 5, 18, 8, 0))
 
-        ProductionPlan.objects.create(
+        plan_a = ProductionPlan.objects.create(
             plan_date=target_date,
             plan_type='injection',
             machine_name='850T-1',
@@ -1625,6 +1625,7 @@ class InjectionAllocationContractTests(DjangoTestCase):
         machine = response.json()['injection'][0]
         self.assertEqual(machine['total_planned'], 70)
         self.assertEqual(machine['total_actual'], 50)
+        self.assertEqual(machine['parts'][0]['plan_id'], plan_a.id)
         self.assertEqual(machine['parts'][0]['part_no'], 'PART-A')
         self.assertEqual(machine['parts'][0]['actual_quantity'], 30)
         self.assertEqual(machine['parts'][0]['progress'], 100.0)

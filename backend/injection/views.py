@@ -2080,6 +2080,19 @@ class ProductionMatrixView(generics.GenericAPIView):
         interval_type = request.query_params.get('interval', '30min')  # '1min', '2min', '10min', '30min', '1hour', or '1day'
         columns = int(request.query_params.get('columns', '13'))  # 기본 13열
         date_str = request.query_params.get('date')
+        machine_number_value = request.query_params.get('machine_number')
+        machine_numbers = None
+        if machine_number_value not in (None, ''):
+            try:
+                machine_number = int(machine_number_value)
+            except (TypeError, ValueError):
+                machine_number = 0
+            if not 1 <= machine_number <= 17:
+                return Response(
+                    {"message": "machine_number must be between 1 and 17."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            machine_numbers = [machine_number]
         reference_time = None
         if date_str:
             try:
@@ -2098,6 +2111,7 @@ class ProductionMatrixView(generics.GenericAPIView):
                 interval_type=interval_type,
                 columns=columns,
                 reference_time=reference_time,
+                machine_numbers=machine_numbers,
             )
             
             # mes_data가 비어있거나 mes_source가 없는 경우, 에러로 간주

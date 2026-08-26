@@ -680,6 +680,7 @@ class MESResourceService:
         interval_type: str = '30min',
         columns: int = 13,
         reference_time: Optional[datetime] = None,
+        machine_numbers: Optional[List[int]] = None,
     ) -> Dict:
         from injection.models import InjectionReport
 
@@ -687,7 +688,13 @@ class MESResourceService:
         # self.update_records_from_mes()
 
         # 2. Proceed with reading from the DB and building the matrix.
-        machine_numbers = list(range(1, 18))
+        machine_numbers = sorted({
+            int(machine_number)
+            for machine_number in (machine_numbers or range(1, 18))
+            if 1 <= int(machine_number) <= 17
+        })
+        if not machine_numbers:
+            raise ValueError('At least one valid injection machine is required.')
         cst = pytz.timezone('Asia/Shanghai')
         latest_record = InjectionMonitoringRecord.objects.order_by('-timestamp').first()
         latest_time = reference_time or (latest_record.timestamp.astimezone(cst) if latest_record else datetime.now(cst))
@@ -729,31 +736,53 @@ class MESResourceService:
             if machine_num in records_by_machine:
                 records_by_machine[machine_num].append(record)
 
-        baseline_records = InjectionMonitoringRecord.objects.filter(
+        baseline_queryset = InjectionMonitoringRecord.objects.filter(
             machine_name__in=machine_names,
             timestamp__lt=start_of_first_slot,
-        ).filter(
-            Q(capacity__isnull=False) | Q(power_kwh__isnull=False)
-        ).order_by('machine_name', '-timestamp')
-        for record in baseline_records:
-            try:
-                machine_num = int(record.machine_name.replace('호기', '').strip())
-            except (TypeError, ValueError):
-                continue
-            if machine_num not in records_by_machine:
-                continue
-            if (
-                record.capacity is not None
-                and record.capacity >= 0
-                and baseline_capacity_by_machine[machine_num] is None
-            ):
-                baseline_capacity_by_machine[machine_num] = record
-            if (
-                record.power_kwh is not None
-                and record.power_kwh >= 0
-                and baseline_power_by_machine[machine_num] is None
-            ):
-                baseline_power_by_machine[machine_num] = record
+        )
+        if len(machine_numbers) == 1:
+            machine_num = machine_numbers[0]
+            baseline_capacity_by_machine[machine_num] = (
+                baseline_queryset
+                .filter(capacity__isnull=False, capacity__gte=0)
+                .order_by('-timestamp')
+                .first()
+            )
+            baseline_power_by_machine[machine_num] = (
+                baseline_queryset
+                .filter(power_kwh__isnull=False, power_kwh__gte=0)
+                .order_by('-timestamp')
+                .first()
+            )
+        else:
+            baseline_records = baseline_queryset.filter(
+                Q(capacity__isnull=False) | Q(power_kwh__isnull=False)
+            ).order_by('machine_name', '-timestamp')
+            for record in baseline_records:
+                try:
+                    machine_num = int(record.machine_name.replace('호기', '').strip())
+                except (TypeError, ValueError):
+                    continue
+                if machine_num not in records_by_machine:
+                    continue
+                if (
+                    record.capacity is not None
+                    and record.capacity >= 0
+                    and baseline_capacity_by_machine[machine_num] is None
+                ):
+                    baseline_capacity_by_machine[machine_num] = record
+                if (
+                    record.power_kwh is not None
+                    and record.power_kwh >= 0
+                    and baseline_power_by_machine[machine_num] is None
+                ):
+                    baseline_power_by_machine[machine_num] = record
+                if all(
+                    baseline_capacity_by_machine[number] is not None
+                    and baseline_power_by_machine[number] is not None
+                    for number in machine_numbers
+                ):
+                    break
 
         for machine_num in machine_numbers:
             slot_records = {}
