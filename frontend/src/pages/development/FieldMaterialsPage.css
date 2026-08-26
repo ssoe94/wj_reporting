@@ -62,7 +62,7 @@
 
 .field-materials-hero h1 {
   margin: 3px 0 0;
-  color: #fff;
+  color: #fff !important;
   font-size: clamp(31px, 3vw, 46px);
   font-weight: 950;
   line-height: 1.05;
@@ -251,7 +251,7 @@
 
 .field-material-schedule-heading h2 {
   margin: 4px 0 0;
-  color: #fff;
+  color: #fff !important;
   font-size: 24px;
   font-weight: 950;
   letter-spacing: -.025em;
