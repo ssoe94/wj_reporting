@@ -130,7 +130,7 @@ const copy = {
     noPlan: "本机当前没有生产计划",
     noPlanHint: "计划下发后，这里会自动显示对应型号、品号和现场资料。",
     noDocument: "尚未补充对应资料",
-    noDocumentHint: "请在“开发 > 现场资料补充”上传 PDF 预览文件。",
+    noDocumentHint: "请在“开发 > 现场看板资料管理”上传 PDF 预览文件。",
     sourceOnly: "原始文件已上传，仍需补充 PDF 预览",
     openSource: "打开原始文件",
     previousPage: "上一页",
@@ -238,7 +238,7 @@ const copy = {
     noPlan: "현재 이 설비의 생산계획이 없습니다",
     noPlanHint: "계획이 배포되면 모델, 품번, 현장 자료가 자동으로 표시됩니다.",
     noDocument: "해당 자료가 아직 없습니다",
-    noDocumentHint: "‘개발 > 현장 자료 보충’에서 PDF 미리보기를 올려 주세요.",
+    noDocumentHint: "‘개발 > 현장 칸반 자료관리’에서 PDF 미리보기를 올려 주세요.",
     sourceOnly: "원본은 업로드되었지만 PDF 미리보기가 필요합니다",
     openSource: "원본 파일 열기",
     previousPage: "이전 페이지",
@@ -1105,9 +1105,11 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const pageCount = displayedDocument?.page_count;
   const freshnessSeconds = getFreshnessSeconds(snapshot?.machine.latest_mes_time, now);
   const progress = Math.max(0, Math.min(100, snapshot?.active_plan?.progress_rate ?? 0));
-  const queue = snapshot?.queue.length
-    ? snapshot.queue
-    : [snapshot?.active_plan, snapshot?.next_plan].filter(Boolean) as NonNullable<FieldKanbanResponse["active_plan"]>[];
+  // The backend queue contains the full production-day history. The field
+  // panel must start at the resolved active plan so completed earlier rows do
+  // not appear as the current/next jobs.
+  const queue = [snapshot?.active_plan, snapshot?.next_plan]
+    .filter(Boolean) as NonNullable<FieldKanbanResponse["active_plan"]>[];
   const documentsReady = Boolean(snapshot?.documents.work_instruction?.ready && snapshot?.documents.drawing?.ready);
 
   function chooseCanvasMode(mode: CanvasMode) {
