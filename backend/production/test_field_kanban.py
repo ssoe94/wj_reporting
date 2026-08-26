@@ -135,6 +135,77 @@ class FieldKanbanSnapshotTests(TestCase):
             "quality_permission_required",
         )
 
+    @patch("production.field_kanban._machine_shot_payload")
+    @patch("production.field_kanban._production_summary_payload")
+    def test_next_plan_skips_completed_rows_after_active_plan(self, production_summary, machine_shots):
+        target_date = date(2026, 8, 24)
+        production_summary.return_value = {
+            "machine_rows": [{
+                "machine_number": 5,
+                "shot_count": 20,
+                "parts": [
+                    {
+                        "plan_id": 101,
+                        "sequence": 1,
+                        "part_no": "ACTIVE-PART",
+                        "model_name": "ACTIVE-MODEL",
+                        "planned_qty": 100,
+                        "estimated_qty": 20,
+                        "allocated_shots": 20,
+                        "cavity": 1,
+                        "progress_rate": 20,
+                        "status": "in_progress",
+                    },
+                    {
+                        "plan_id": 102,
+                        "sequence": 2,
+                        "part_no": "OLD-PART",
+                        "model_name": "OLD-MODEL",
+                        "planned_qty": 10,
+                        "estimated_qty": 10,
+                        "allocated_shots": 10,
+                        "cavity": 1,
+                        "progress_rate": 100,
+                        "status": "completed",
+                    },
+                    {
+                        "plan_id": 103,
+                        "sequence": 3,
+                        "part_no": "NEXT-PART",
+                        "model_name": "NEXT-MODEL",
+                        "planned_qty": 50,
+                        "estimated_qty": 0,
+                        "allocated_shots": 0,
+                        "cavity": 1,
+                        "progress_rate": 0,
+                        "status": "pending",
+                    },
+                ],
+            }],
+        }
+        machine_shots.return_value = {
+            "rows": [{
+                "machine_number": 5,
+                "device_code": "imm05",
+                "device_counter": 20,
+                "shot_count": 20,
+                "recent_60m_shots": 1,
+                "latest_timestamp": None,
+                "is_stale": False,
+            }],
+        }
+
+        snapshot = build_field_kanban_snapshot(
+            target_date,
+            5,
+            include_quality=False,
+            now=SHANGHAI_TZ.localize(datetime(2026, 8, 24, 14, 0)),
+        )
+
+        self.assertEqual(snapshot["active_plan"]["plan_id"], 101)
+        self.assertEqual([row["plan_id"] for row in snapshot["queue"]], [101, 102, 103])
+        self.assertEqual(snapshot["next_plan"]["plan_id"], 103)
+
 
 class FieldQualitySummaryTests(TestCase):
     @patch("production.field_kanban._quality_source_payload")

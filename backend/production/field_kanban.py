@@ -1111,7 +1111,15 @@ def build_field_kanban_snapshot(
     queue = [_plan_payload(row) for row in parts]
     queue = [row for row in queue if row is not None]
     active_plan = _plan_payload(active_source)
-    next_plan = queue[active_index + 1] if active_index is not None and active_index + 1 < len(queue) else None
+    next_source = next(
+        (
+            row
+            for row in parts[(active_index + 1) if active_index is not None else len(parts):]
+            if row.get("status") == "pending"
+        ),
+        None,
+    )
+    next_plan = _plan_payload(next_source)
     shot_count = _safe_int(shot_row.get("shot_count"), _safe_int((summary_row or {}).get("shot_count")))
     recent_shots = _safe_int(shot_row.get("recent_60m_shots"), _safe_int((summary_row or {}).get("recent_60m_shots")))
 

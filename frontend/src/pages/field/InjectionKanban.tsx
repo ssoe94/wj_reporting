@@ -1108,7 +1108,8 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   // The backend queue contains the full production-day history. The field
   // panel must start at the resolved active plan so completed earlier rows do
   // not appear as the current/next jobs.
-  const queue = [snapshot?.active_plan, snapshot?.next_plan]
+  const nextVisiblePlan = snapshot?.next_plan?.status === "completed" ? null : snapshot?.next_plan;
+  const queue = [snapshot?.active_plan, nextVisiblePlan]
     .filter(Boolean) as NonNullable<FieldKanbanResponse["active_plan"]>[];
   const documentsReady = Boolean(snapshot?.documents.work_instruction?.ready && snapshot?.documents.drawing?.ready);
 
