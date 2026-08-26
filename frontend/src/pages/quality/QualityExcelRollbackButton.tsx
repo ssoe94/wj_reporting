@@ -62,6 +62,7 @@ export default function QualityExcelRollbackButton({
   if (!user?.is_staff) return null;
 
   const loadPreview = async () => {
+    if (disabled) return;
     setWorking(true);
     try {
       const { data } = await api.get<RollbackPreview>('/quality/excel-import/rollback-today/');
@@ -90,7 +91,7 @@ export default function QualityExcelRollbackButton({
   };
 
   const rollback = async () => {
-    if (!preview) return;
+    if (!preview || disabled) return;
     setWorking(true);
     try {
       const { data } = await api.post<RollbackResult>('/quality/excel-import/rollback-today/', {
@@ -187,7 +188,7 @@ export default function QualityExcelRollbackButton({
               <Button type="button" variant="secondary" disabled={working} onClick={() => setPreview(null)}>
                 {zh ? '取消' : '취소'}
               </Button>
-              <Button type="button" variant="danger" disabled={working} onClick={() => void rollback()}>
+              <Button type="button" variant="danger" disabled={disabled || working} onClick={() => void rollback()}>
                 {working ? (zh ? '正在删除…' : '삭제 중…') : (zh ? '确认删除' : '확인 후 삭제')}
               </Button>
             </div>

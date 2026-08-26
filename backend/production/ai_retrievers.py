@@ -206,13 +206,14 @@ def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[i
 
     for machine_number in normalized_numbers:
         monitoring_name = machine_monitoring_name(machine_number)
-        latest_mes_time = (
+        latest_sample = (
             monitoring_queryset
             .filter(machine_name=monitoring_name)
             .order_by("-timestamp")
-            .values_list("timestamp", flat=True)
+            .values("timestamp", "capacity")
             .first()
         )
+        latest_mes_time = latest_sample.get("timestamp") if latest_sample else None
         if not latest_mes_time:
             rows.append({
                 "machine_number": machine_number,
@@ -223,6 +224,7 @@ def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[i
                 "recent_window_start": None,
                 "reference_time": None,
                 "latest_mes_time": None,
+                "latest_capacity": None,
                 "is_stale": True,
                 "warning": "injection_capacity_data_missing",
             })
@@ -272,6 +274,9 @@ def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[i
             "recent_sample_count": recent_sample_count,
             "reference_time": reference_time,
             "latest_mes_time": latest_mes_time,
+            # Raw device counter is display-only because it may reset. All
+            # production arithmetic continues to use reset-safe deltas above.
+            "latest_capacity": safe_int(latest_sample.get("capacity")) if latest_sample else None,
             "is_stale": is_stale,
             "warning": (
                 "injection_recent_trend_window_missing"
@@ -317,6 +322,9 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
     reference_time = reference_time_for_business_day(target_date, latest_mes_time)
     time_progress_rate = elapsed_rate(target_date, reference_time)
     recent_start = max(range_start, reference_time - timedelta(minutes=60))
+    # Counter queries use an exclusive end. Include the latest sample when the
+    # selected business day is still in progress, without crossing 08:00.
+    counter_end = min(range_end, reference_time + timedelta(microseconds=1))
 
     def sort_key(plan: ProductionPlan) -> tuple[int, int, int]:
         machine_number = parse_machine_number(plan.machine_name)
@@ -332,8 +340,8 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
         if machine_number is None:
             continue
         monitor_name = machine_monitoring_name(machine_number)
-        shot_count = sum_positive_monitoring_delta(monitor_name, "capacity", range_start, reference_time)
-        recent_shots = sum_positive_monitoring_delta(monitor_name, "capacity", recent_start, reference_time)
+        shot_count = sum_positive_monitoring_delta(monitor_name, "capacity", range_start, counter_end)
+        recent_shots = sum_positive_monitoring_delta(monitor_name, "capacity", recent_start, counter_end)
         remaining_shots = shot_count
         planned_qty = 0
         capped_actual_qty = 0
@@ -373,6 +381,7 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
                 in_progress_count += 1 if status == "in_progress" else 0
                 pending_count += 1 if status == "pending" else 0
                 part_payload = {
+                    "plan_id": plan.id,
                     "sequence": sequence,
                     "machine": machine_label(machine_number),
                     "machine_name": machine_name or machine_label(machine_number),
@@ -384,6 +393,7 @@ def get_injection_summary(target_date: Any) -> dict[str, Any]:
                     "product_family_name": plan.product_family_name,
                     "is_finished_product": bool(plan.is_finished_product),
                     "planned_qty": part_planned_qty,
+                    "allocated_shots": int(round(allocated_shots)),
                     "estimated_qty": estimated_qty,
                     "gap_qty": estimated_qty - part_planned_qty,
                     "progress_rate": part_progress,

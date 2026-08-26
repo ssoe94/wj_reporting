@@ -178,6 +178,55 @@ for existing bookmarks.
 
 final result: passed
 
+## Quality unified workspace QA — 2026-08-19
+
+### Source visual truth
+
+- `/tmp/quality-source-report.png` — 1425×1072, existing manual defect registration page.
+- `/tmp/quality-source-import.png` — 1425×1016, existing Excel import page.
+- `/tmp/quality-source-history.png` — 1425×1016, existing full history page.
+
+### Implementation captures
+
+- `/tmp/quality-integrated-desktop-final-top.png` — 1425×990, integrated desktop workspace top.
+- `/tmp/quality-integrated-desktop-final-lower.png` — 1425×990, compact Excel import and recent history.
+- `/tmp/quality-integrated-mobile-final-top.png` — 375×812, mobile registration view.
+- `/tmp/quality-integrated-mobile-final-lower.png` — 375×812, mobile Excel and recent-history view.
+- `/tmp/quality-integrated-design-comparison.png` — combined source/implementation review surface.
+- `/tmp/quality-integrated-focused-form-comparison.png` — manual-form density comparison.
+- `/tmp/quality-integrated-focused-lower-comparison.png` — Excel/recent-history comparison.
+
+### Test context and interaction evidence
+
+- Desktop viewport override: 1440×1000; mobile viewport override: 390×844; browser screenshots preserve the application viewport without rescaling.
+- State: editor permission enabled, idle registration/import state, six realistic recent-report rows supplied by a local read-only mock.
+- `전체 이력 더보기` navigates to `/quality#stats` and renders the existing full-history screen.
+- `품질 등록` returns to `/quality#report` without remounting the Excel importer.
+- Legacy `/quality#import` remains valid and scrolls the integrated workspace to the Excel section.
+- A fresh page reload after the final fixes produced no error-level browser console entries.
+
+### Fidelity surfaces
+
+- Typography and color: retained the existing type scale, blue/cyan/indigo palette, Lucide icon system, and white bordered-card language.
+- Spacing and density: manual registration keeps every existing field and action while reducing vertical gaps, textarea rows, image-drop height, and preview height.
+- Excel import: retains all upload, resume, correction, completion, and rollback behavior; only the entry card is visually condensed.
+- Recent history: desktop uses a compact five-column table; mobile uses stacked summary cards with date, department, model/Part No., defect, and judgment.
+- Copy and localization: new workspace, import, recent-history, empty/error/loading, and navigation text are provided in Korean and Chinese.
+
+### Iteration history
+
+1. The first desktop review found the recent-history date breaking across two lines. The date column was widened and set to `whitespace-nowrap`.
+2. The first mobile review found the Excel rollback control compressing the title and description into a narrow column. The rollback control now occupies its own full-width row on mobile.
+3. Semantic review found a nested `main` landmark in the integrated page. The animated workspace wrapper was changed to a `div` while retaining the page-level landmark supplied by the application shell.
+4. Final desktop and mobile comparisons found no remaining actionable P0/P1/P2 visual or interaction defects.
+
+### Findings
+
+- The integrated workspace preserves all manual registration and Excel-import behavior while reducing page switching.
+- Full history remains isolated behind `/quality#stats`, so its filters, editing, pagination, and Excel result scoping are unchanged.
+- No remaining P0/P1/P2 visual, responsive, accessibility, or navigation defects were found in the tested flow.
+
+final result: passed
 ---
 
 # Incremental Design QA — Mould Data Layers and Status Lists
@@ -624,5 +673,167 @@ final result: passed
 ## Findings
 
 - No actionable P0, P1, or P2 visual or interaction findings remain.
+
+final result: passed
+
+---
+
+# Quality Excel completion UX — Design QA
+
+## Scope
+
+- Source visual truth: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-60361d23-c873-4c72-beb9-e67279d12b7c.png`
+- Implemented desktop capture: `/tmp/quality-import-completion-desktop-final-full.png`
+- Implemented mobile capture: `/tmp/quality-import-completion-mobile-final-full.png`
+- Side-by-side comparison: `/tmp/quality-import-design-comparison.png`
+- Desktop viewport: 1375 × 1000 CSS pixels; capture 1375 × 1016 pixels
+- Mobile viewport: 390 × 844 CSS pixels
+- Tested state: browser-direct Excel import completion, one editable failed row, corrected row publish, all-failed zero-report result, scoped history handoff
+
+## Full-view comparison
+
+The original screen keeps the correction form and long row-level result list visually dominant after registration. The implemented flow intentionally replaces that completion state with a centered summary dialog while preserving the existing blue/emerald/rose palette, rounded surfaces, typography, and action hierarchy. Detailed row results remain available as an explicit secondary action.
+
+## Focused regions
+
+- Header: success/warning tone changes with remaining failure count; close control and title remain visible at mobile width.
+- Period summary: file data range and newly registered/changed range are separated and labeled.
+- Metrics: total, processing success, created, changed, skipped, and failed counts use equal cards and tabular numerals.
+- Footer: the primary action is persistent; `업로드 완료` opens only scoped report history when report IDs exist. Zero-report results instead lead to failure correction or detailed results.
+- Failed-row correction: successful publish removes the editor immediately, recalculates the result rows/counts/date range, and reopens the refreshed completion summary.
+
+## Interaction evidence
+
+- Escape and close button dismiss the dialog.
+- `상세 결과 보기` closes the dialog and expands the row-level result table.
+- `업로드 완료` navigates to `/quality#stats` with two scoped report IDs in the tested success case.
+- All-failed result exposes `실패 수정 계속` and never navigates to unscoped history.
+- During a delayed correction publish, file replacement and rollback controls are disabled; after completion the editor and empty correction container are removed.
+- Browser console: no error-level entries during the verified flow.
+
+## Responsive and accessibility review
+
+- Desktop: modal is centered with six equal metric cards and a right-aligned primary action.
+- Mobile: content scrolls inside the dialog, footer actions stay visible, and cards collapse to two columns without horizontal overflow.
+- Headless UI Dialog provides focus management, Escape handling, overlay dismissal, and dialog semantics.
+- Buttons have visible focus rings; icons are decorative where labels already convey meaning.
+
+## Iteration history
+
+1. Initial mobile QA found the dialog footer clipped and the title wrapping too aggressively.
+2. Dialog layout changed to a bounded flex column with a scrollable body and non-shrinking header/footer.
+3. Final review found and fixed stale correction callbacks, zero-report history navigation, and a missing `rows` assignment after correction.
+4. Desktop, mobile, correction completion, all-failed, scoped history, and console checks passed after the fixes.
+
+## Findings
+
+- No remaining P0/P1/P2 visual or interaction defects found in the tested completion flow.
+- Existing build warnings for Browserslist freshness and large bundle chunks are unrelated to this change.
+
+final result: passed
+
+---
+
+# Quality registration workspace and selected deletion — Design QA
+
+## Scope
+
+- Source desktop capture: `/tmp/quality-merge-source-desktop.png`
+- Implemented desktop capture: `/tmp/quality-merge-implementation-desktop.png`
+- Side-by-side comparison: `/tmp/quality-merge-comparison.png`
+- Desktop viewport: 1440 × 1000 CSS pixels
+- Mobile viewport: 390 × 844 CSS pixels
+- Tested states: unified direct/Excel registration, recent history, full-history current-page selection, deletion confirmation
+
+## Visual comparison
+
+- The former direct-registration and Excel-registration cards are now one continuous `품질 보고 등록` workspace.
+- Direct registration remains first and compact; Excel import follows after a clear internal divider without losing its persistent upload state.
+- The isolated `오늘 Excel 등록 취소` control is absent.
+- Recent history remains a separate summary card below registration, preserving a clear transition from entry to review.
+- Existing blue/cyan palette, control sizing, typography, rounded surfaces, and responsive form grids are retained.
+
+## Selected deletion
+
+- Full history shows a current-page selection toolbar, per-report checkboxes in desktop rows and mobile cards, and a partial-selection state.
+- The mobile toolbar was revised from a wrapping single row to a two-row layout with equal-width actions.
+- Selected cards and rows receive a visible indigo selection treatment.
+- `선택 삭제` opens a focused confirmation dialog stating the exact count, irreversibility, and the shared-image preservation policy.
+- Cancel closes the dialog without issuing a delete request.
+
+## Responsive and accessibility review
+
+- Direct registration remains one column at 390 px; Excel import stays in the same card and keeps a full-width drop target.
+- Mobile selection checkboxes have a minimum 44 px touch target.
+- Native checkboxes expose current-page selection semantics, including indeterminate state.
+- The destructive dialog uses Headless UI focus and Escape handling, descriptive title/body text, and explicit cancel/confirm actions.
+- Browser console contained no error-level entries in the tested registration, history, and dialog states.
+
+## Verification
+
+- Frontend targeted ESLint: passed.
+- Frontend production build: passed; existing Browserslist and large-chunk warnings remain unrelated.
+- Backend bulk-delete contract: 8/8 passed.
+- Backend permission and Excel rollback regressions: 16/16 passed.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual or interaction findings remain in the tested flow.
+- Remote Cloudinary image objects are intentionally retained because image assets can be shared by reports.
+
+final result: passed
+
+---
+
+# Injection field Kanban and field-material readiness — Design QA
+
+## Scope
+
+- Selected visual reference: `/Users/macstudio_ted/.codex/generated_images/01a03187-29b1-71a3-bd11-2e7db0b818bf/exec-b50f4c04-f5d0-4ddd-8333-57e92a185df8.png`
+- Implemented field capture: `/tmp/wj-field-kanban-final-gate.png`
+- Historical-quality capture: `/tmp/wj-field-kanban-quality.jpg`
+- Reference/implementation comparison: `/tmp/wj-field-kanban-comparison-final.png`
+- Field-material readiness capture: `/tmp/wj-field-materials.jpg`
+- Verified field viewport: 2064 × 1161 CSS pixels (16:9); browser capture 3329 × 1873 pixels
+- Tested states: Chinese instruction, Korean drawing, Chinese/Korean historical-quality warning, manual defect entry and result, all-materials dialog, field-material upload dialog
+
+## Visual comparison
+
+- The selected fixed navy command panel and large white document canvas are preserved at the same 16:9 proportion.
+- Current counter, model, Part No., current-plan shots, theoretical pieces, completion rate, queue, change confirmation, and defect entry remain continuously visible.
+- The work instruction receives the largest area. Toolbar and footer controls stay outside the document canvas so they do not cover the source document.
+- A side-by-side comparison exposed the legacy application sidebar on the kiosk route and a three-column queue grid that squeezed Part No. vertically. The field route is now standalone and the queue is a readable two-column card.
+- Existing WJ logo artwork and Lucide icons are used; no placeholder icon art was introduced.
+
+## Rotation and quality-history checks
+
+- Automatic sequence is work instruction 60 seconds, then each matched historical quality issue for 30 seconds, then back to the instruction.
+- With no matched issue, the instruction remains on screen. A Part No./model identity change resets the sequence to the instruction.
+- Drawing selection and required dialogs pause rotation. While auto-rotation is active, the PDF is interaction-locked behind a bilingual `操作文档 / 문서 조작` affordance; the first touch pauses rotation and then enables PDF scrolling and zooming.
+- Quality history is matched to the exact injection machine and the current Part No. nine-character prefix.
+- The evidence count is labeled as report records, not defect pieces. The fixed Chinese/Korean disclaimer states that the content is historical and does not mean a current defect is occurring.
+
+## Interaction evidence
+
+- Chinese is the default field language; KOR switches every field label and the historical disclaimer, and switching back restores Chinese.
+- Work-instruction, drawing, and historical-quality tabs all changed the visible canvas.
+- Manual defect test: selected `划伤`, entered `3` with the touch numpad, and received the server result `3,248 × 2 = 6,496; 6,496 − 3 = 6,493` before final confirmation.
+- The all-materials dialog listed the matched work instruction and drawing with source links.
+- The development page listed three planned models and showed complete, missing, and PPT-without-PDF-preview states. The upload dialog exposed PDF/PPT/PPTX source selection plus an optional PDF preview; drawing input remained PDF-only.
+- Buttons have visible focus treatment, tab semantics use `role="tab"`, and dialogs move, trap, and restore focus while locking background scroll. At the 1366 × 768 breakpoint, document controls, defect buttons, and the numpad remain at least 56 px high.
+
+## Verification
+
+- Frontend production build: passed.
+- Frontend targeted ESLint for all changed field/development files: passed with zero warnings.
+- Full frontend ESLint: zero errors; 33 pre-existing warnings outside the changed files.
+- Focused backend field-Kanban tests: 25/25 passed.
+- Existing production backend regression tests: 62/62 passed.
+- Django system check, Python compile check, and `git diff --check`: passed.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual or interaction findings remain in the tested field flow.
+- P3: the QA document uses realistic mock content. Final legibility still depends on the page composition of each uploaded production PDF and the PDF preview supplied for PPT/PPTX sources.
 
 final result: passed

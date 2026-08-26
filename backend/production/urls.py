@@ -23,8 +23,20 @@ from .views import (
     ProductionPlanDetailView,
     ProductionPlanPartSearchView,
 )
+from .field_kanban_views import (
+    FieldDefectCheckpointView,
+    FieldKanbanView,
+    FieldMaterialsView,
+)
 
 urlpatterns = [
+    path('field-kanban/', FieldKanbanView.as_view(), name='production-field-kanban'),
+    path(
+        'field-kanban/defects/',
+        FieldDefectCheckpointView.as_view(),
+        name='production-field-kanban-defects',
+    ),
+    path('field-materials/', FieldMaterialsView.as_view(), name='production-field-materials'),
     path('console/', ProductionConsoleView.as_view(), name='production-console'),
     path('ai/briefing/', ProductionAiBriefingView.as_view(), name='production-ai-briefing'),
     path('ai/ask/', ProductionAiAskView.as_view(), name='production-ai-ask'),

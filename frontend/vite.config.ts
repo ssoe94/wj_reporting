@@ -17,15 +17,21 @@ export default defineConfig({
     sourcemap: false,
   },
   server: {
+    host: '0.0.0.0',
     port: 5173,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/mock': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   preview: {
+    host: '0.0.0.0',
     port: 4173,
     // SPA 히스토리 모드를 위한 폴백
     open: true,

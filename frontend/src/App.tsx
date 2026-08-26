@@ -27,6 +27,7 @@ import {
   BarChart3,
   Factory,
   FileSpreadsheet,
+  FileUp,
 } from "lucide-react";
 import ModelsPage from './pages/models';
 import Eco2Page from './pages/eco2';
@@ -49,6 +50,7 @@ import InjectionDashboardPage from './pages/injection/Dashboard';
 import InjectionMonitoringPage from './pages/injection/MonitoringPage';
 import FieldLauncherPage from './pages/field/Launcher';
 import FieldStationPage from './pages/field/Station';
+import FieldMaterialsPage from './pages/development/FieldMaterialsPage';
 import ProductionStatsPage from './pages/production/Stats';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
 
@@ -183,6 +185,7 @@ function useNavItems() {
         children: [
           { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
           { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
+          { to: "/development/field-materials", label: lang === 'ko' ? '현장 자료 보충' : '现场资料补充', icon: FileUp },
         ],
       },
       {
@@ -264,6 +267,7 @@ function useNavItems() {
     children: [
       { to: "/eco2", label: t('nav_eco_management'), icon: ClipboardCheck },
       { to: "/models", label: t('nav_model_management'), icon: PackageSearch },
+      { to: "/development/field-materials", label: lang === 'ko' ? '현장 자료 보충' : '现场资料补充', icon: FileUp },
     ],
   });
   if (hasPermission('is_admin')) {
@@ -454,7 +458,8 @@ function AppContent() {
     || pathname === '/boards/energy/';
   const isOverviewBoardRoute = pathname === '/boards/overview'
     || pathname === '/boards/overview/';
-  const isStandaloneBoardRoute = isInjectionBoardRoute || isMouldRoute || isEnergyBoardRoute || isOverviewBoardRoute;
+  const isFieldRoute = pathname === '/field' || pathname.startsWith('/field/');
+  const isStandaloneBoardRoute = isInjectionBoardRoute || isMouldRoute || isEnergyBoardRoute || isOverviewBoardRoute || isFieldRoute;
   let breadcrumbLabel = t('brand');
   if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
   else if (pathname.startsWith('/assembly')) breadcrumbLabel = t('brand_machining');
@@ -470,6 +475,7 @@ function AppContent() {
   else if (pathname.startsWith('/eco')) breadcrumbLabel = t('nav_eco_management');
   else if (pathname.startsWith('/quality')) breadcrumbLabel = t('brand_quality');
   else if (pathname.startsWith('/models')) breadcrumbLabel = t('nav_model_management');
+  else if (pathname.startsWith('/development/field-materials')) breadcrumbLabel = lang === 'ko' ? '현장 자료 보충' : '现场资料补充';
 
   // Global auth loading state.
   if (isLoading && !isPublicRoutePath(pathname)) {
@@ -766,6 +772,7 @@ function AppContent() {
             <Route path="/field" element={<PrivateRoute><PageTransition><FieldLauncherPage /></PageTransition></PrivateRoute>} />
             <Route path="/field/:stationId" element={<PrivateRoute><PageTransition><FieldStationPage /></PageTransition></PrivateRoute>} />
             <Route path="/models" element={<PrivateRoute><PageTransition><ModelsPage /></PageTransition></PrivateRoute>} />
+            <Route path="/development/field-materials" element={<PrivateRoute><PageTransition><FieldMaterialsPage /></PageTransition></PrivateRoute>} />
             <Route path="/eco" element={<Navigate to="/eco2" replace />} />
             <Route path="/eco2" element={<PrivateRoute><PageTransition><Eco2Page /></PageTransition></PrivateRoute>} />
             <Route path="/analysis" element={<PrivateRoute><PageTransition><AnalysisPage /></PageTransition></PrivateRoute>} />

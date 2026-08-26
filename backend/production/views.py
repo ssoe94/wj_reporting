@@ -45,7 +45,11 @@ from .ai_answer import (
 )
 from .ai_context import build_context_pack, build_used_data
 from .ai_gateway import answer_from_intent, build_injection_plan_context, heuristic_intent_from_question
-from .ai_retrievers import get_daily_production_context
+from .ai_retrievers import (
+    get_daily_production_context,
+    machine_label,
+    parse_machine_number,
+)
 from .ai_types import DEFAULT_PRODUCTION_AI_MODEL_ID, PRODUCTION_AI_MODELS
 from .counter_utils import calculate_cumulative_counter_delta
 from .cavity import (
@@ -63,6 +67,7 @@ from .machining_reconciliation import (
     create_manual_report,
 )
 from .overview_board import build_overview_board_snapshot, current_shanghai_business_date
+from .field_kanban_views import field_terminal_machine_number
 import math
 
 
@@ -973,6 +978,26 @@ class ProductionPlanChangeLogView(APIView):
 class InjectionDowntimeConfirmationView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @staticmethod
+    def _terminal_machine_keys(machine_number):
+        return [
+            str(machine_number),
+            f"{machine_number:02d}",
+            f"{machine_number}호기",
+            f"{machine_number}号机",
+            machine_label(machine_number),
+        ]
+
+    @staticmethod
+    def _enforce_terminal_machine(user, machine_key):
+        assigned_machine = field_terminal_machine_number(user)
+        if assigned_machine is None:
+            return
+        if parse_machine_number(str(machine_key or "")) != assigned_machine:
+            raise PermissionDenied(
+                'A field terminal can only manage confirmations for its assigned injection machine.'
+            )
+
     def get(self, request, *args, **kwargs):
         date_str = request.query_params.get('date')
         target_date = parse_date(date_str or '')
@@ -984,6 +1009,11 @@ class InjectionDowntimeConfirmationView(APIView):
         confirmations = InjectionDowntimeConfirmation.objects.filter(
             business_date=target_date,
         ).select_related('confirmed_by')
+        terminal_machine = field_terminal_machine_number(request.user)
+        if terminal_machine is not None:
+            confirmations = confirmations.filter(
+                machine_key__in=self._terminal_machine_keys(terminal_machine),
+            )
         latest_updated_at = confirmations.aggregate(latest=Max('updated_at'))['latest']
         return Response({
             'business_date': target_date.isoformat(),
@@ -1003,12 +1033,21 @@ class InjectionDowntimeConfirmationView(APIView):
             return Response({'detail': 'event_key is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if action == 'reset':
-            deleted_count, _ = InjectionDowntimeConfirmation.objects.filter(event_key=event_key).delete()
+            instance = InjectionDowntimeConfirmation.objects.filter(event_key=event_key).first()
+            if instance is not None:
+                self._enforce_terminal_machine(request.user, instance.machine_key)
+                instance.delete()
+                deleted_count = 1
+            else:
+                deleted_count = 0
             return Response({'event_key': event_key, 'deleted': deleted_count > 0})
         if action != 'confirm':
             return Response({'detail': 'Unsupported action.'}, status=status.HTTP_400_BAD_REQUEST)
 
         instance = InjectionDowntimeConfirmation.objects.filter(event_key=event_key).first()
+        self._enforce_terminal_machine(request.user, payload.get('machine_key'))
+        if instance is not None:
+            self._enforce_terminal_machine(request.user, instance.machine_key)
         serializer = InjectionDowntimeConfirmationSerializer(instance, data=payload)
         serializer.is_valid(raise_exception=True)
         confirmation = serializer.save(

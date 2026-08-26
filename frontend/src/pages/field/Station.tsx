@@ -7,16 +7,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import ProductionConsole from '@/components/production/ProductionConsole';
 import { getProductionStatusData } from '@/lib/api';
 import { getFieldStationById } from '@/lib/fieldTerminal';
-
-const getBusinessDateString = () => {
-  const now = new Date();
-  const businessDate = new Date(now);
-  if (businessDate.getHours() < 8) {
-    businessDate.setDate(businessDate.getDate() - 1);
-  }
-  const adjusted = new Date(businessDate.getTime() - businessDate.getTimezoneOffset() * 60000);
-  return adjusted.toISOString().slice(0, 10);
-};
+import { useShanghaiBusinessDate } from '@/shared/hooks/useShanghaiBusinessDate';
+import InjectionKanban from './InjectionKanban';
 
 const formatUpdateTime = (timestamp: number) => {
   const date = new Date(timestamp);
@@ -31,10 +23,11 @@ export default function FieldStationPage() {
   const { logout } = useAuth();
 
   const station = getFieldStationById(stationId);
-  const businessDate = getBusinessDateString();
+  const businessDate = useShanghaiBusinessDate();
   const { dataUpdatedAt } = useQuery<any>({
     queryKey: ['production-status-header', businessDate],
     queryFn: () => getProductionStatusData(businessDate),
+    enabled: station?.type === 'machining',
     refetchInterval: 60 * 1000,
     refetchIntervalInBackground: true,
     staleTime: 30 * 1000,
@@ -44,7 +37,11 @@ export default function FieldStationPage() {
     return <Navigate to="/field" replace />;
   }
 
-  const stationTitle = station.type === 'injection' ? `注塑 ${station.shortLabel}` : `加工${station.shortLabel}`;
+  if (station.type === 'injection') {
+    return <InjectionKanban onBack={() => navigate('/field')} station={station} />;
+  }
+
+  const stationTitle = `加工${station.shortLabel}`;
 
   return (
     <div className="h-screen overflow-hidden bg-white p-2">

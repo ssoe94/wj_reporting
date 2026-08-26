@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
 import { LogOut } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -14,6 +13,7 @@ import {
   parseFieldTerminalUser,
   type FieldStation,
 } from '@/lib/fieldTerminal';
+import { useShanghaiBusinessDate } from '@/shared/hooks/useShanghaiBusinessDate';
 
 type PlanItem = {
   machine_name: string;
@@ -24,21 +24,12 @@ type LauncherCell =
   | { key: string; station: FieldStation; accentGap: boolean }
   | { key: string; station: null; accentGap: boolean };
 
-function getBusinessDateString() {
-  const now = new Date();
-  const businessDate = new Date(now);
-  if (now.getHours() < 8) {
-    businessDate.setDate(businessDate.getDate() - 1);
-  }
-  return format(businessDate, 'yyyy-MM-dd');
-}
-
 export default function FieldLauncherPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
   const currentFieldUser = useMemo(() => parseFieldTerminalUser(user?.username), [user?.username]);
-  const businessDate = useMemo(() => getBusinessDateString(), []);
+  const businessDate = useShanghaiBusinessDate();
 
   const { data: planData } = useQuery({
     queryKey: ['field-launcher-plan-status', businessDate],
