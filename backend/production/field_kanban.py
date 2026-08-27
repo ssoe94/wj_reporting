@@ -777,10 +777,15 @@ def _quality_summary(
         return empty
 
     issues: dict[str, dict[str, Any]] = {}
-    for report in item.get("reports", []):
-        if not isinstance(report, dict):
-            continue
+    reports = sorted(
+        (report for report in item.get("reports", []) if isinstance(report, dict)),
+        key=lambda report: str(report.get("report_dt") or ""),
+        reverse=True,
+    )
+    for report in reports:
         report_dt = str(report.get("report_dt") or "")
+        report_images = report.get("images") if isinstance(report.get("images"), list) else []
+        section = str(report.get("section") or "").strip()
         report_keys: set[str] = set()
         for problem in report.get("problem_types", []):
             if not isinstance(problem, dict):
@@ -801,18 +806,29 @@ def _quality_summary(
                     "evidence_count": 0,
                     "latest_report_dt": None,
                     "section": None,
+                    "section_counts": {},
                     "image_url": None,
+                    "image_urls": [],
                     "action_result": None,
                     "disposition": None,
                 },
             )
             issue["evidence_count"] += 1
+            if section:
+                section_counts = issue["section_counts"]
+                section_counts[section] = _safe_int(section_counts.get(section)) + 1
+            for image_url in report_images:
+                normalized_url = str(image_url or "").strip()
+                if (
+                    normalized_url
+                    and normalized_url not in issue["image_urls"]
+                    and len(issue["image_urls"]) < 4
+                ):
+                    issue["image_urls"].append(normalized_url)
             if report_dt >= str(issue.get("latest_report_dt") or ""):
-                images = report.get("images") if isinstance(report.get("images"), list) else []
                 issue.update({
                     "latest_report_dt": report.get("report_dt"),
                     "section": report.get("section"),
-                    "image_url": images[0] if images else None,
                     "action_result": report.get("action_result") or None,
                     "disposition": report.get("disposition") or None,
                 })
@@ -821,6 +837,15 @@ def _quality_summary(
         issues.values(),
         key=lambda issue: (-_safe_int(issue.get("evidence_count")), str(issue.get("key"))),
     )[:6]
+    for issue in ordered:
+        issue["image_url"] = issue["image_urls"][0] if issue["image_urls"] else None
+        issue["section_counts"] = [
+            {"section": section, "evidence_count": count}
+            for section, count in sorted(
+                issue["section_counts"].items(),
+                key=lambda item: (-_safe_int(item[1]), item[0]),
+            )
+        ]
     return {
         "matching_report_count": _safe_int(item.get("matching_report_count")),
         "issues": ordered,

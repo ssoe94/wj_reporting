@@ -106,9 +106,16 @@ async function fetchUserInfo(): Promise<User> {
 
 function isDefinitiveIdentityError(error: unknown) {
   if (error instanceof AuthRefreshError) return error.isDefinitive;
-  if (!axios.isAxiosError<{ code?: unknown }>(error) || error.response?.status !== 401) {
+  if (!axios.isAxiosError<{ code?: unknown }>(error)) {
     return false;
   }
+  if (
+    error.response?.status === 403
+    && String(error.response.data?.code || '') === 'user_profile_required'
+  ) {
+    return true;
+  }
+  if (error.response?.status !== 401) return false;
   return new Set(['token_not_valid', 'user_not_found', 'user_inactive', 'password_changed'])
     .has(String(error.response.data?.code || ''));
 }

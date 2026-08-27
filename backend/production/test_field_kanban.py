@@ -250,6 +250,62 @@ class FieldQualitySummaryTests(TestCase):
         self.assertEqual(result["issues"][0]["evidence_count"], 1)
         self.assertIn("과거 품질 이력", result["disclaimer"]["ko"])
 
+    @patch("production.field_kanban._quality_source_payload")
+    def test_quality_history_collects_four_unique_images_and_section_counts(self, quality_source):
+        quality_source.return_value = {
+            "items": [{
+                "machine_number": 5,
+                "part_prefix": "24U411B-L",
+                "matching_report_count": 2,
+                "reports": [
+                    {
+                        "report_dt": "2026-08-18T10:24:00+08:00",
+                        "section": "IQC",
+                        "problem_types": [{
+                            "key": "black_dot",
+                            "label": {"zh": "黑点", "ko": "흑점"},
+                        }],
+                        "images": ["https://cdn.example.test/a.jpg", "https://cdn.example.test/b.jpg"],
+                    },
+                    {
+                        "report_dt": "2026-08-17T09:00:00+08:00",
+                        "section": "LQC_INJ",
+                        "problem_types": [
+                            {"key": "black_dot", "label": {"zh": "黑点", "ko": "흑점"}},
+                            {"key": "black_dot", "label": {"zh": "黑点", "ko": "흑점"}},
+                        ],
+                        "images": [
+                            "https://cdn.example.test/b.jpg",
+                            "https://cdn.example.test/c.jpg",
+                            "https://cdn.example.test/d.jpg",
+                            "https://cdn.example.test/e.jpg",
+                        ],
+                    },
+                ],
+            }],
+        }
+
+        result = _quality_summary(
+            date(2026, 8, 24),
+            5,
+            "24U411B-L",
+            include_quality=True,
+        )
+
+        issue = result["issues"][0]
+        self.assertEqual(issue["evidence_count"], 2)
+        self.assertEqual(issue["image_url"], "https://cdn.example.test/a.jpg")
+        self.assertEqual(issue["image_urls"], [
+            "https://cdn.example.test/a.jpg",
+            "https://cdn.example.test/b.jpg",
+            "https://cdn.example.test/c.jpg",
+            "https://cdn.example.test/d.jpg",
+        ])
+        self.assertEqual(issue["section_counts"], [
+            {"section": "IQC", "evidence_count": 1},
+            {"section": "LQC_INJ", "evidence_count": 1},
+        ])
+
 
 class FieldMaterialResolutionTests(TestCase):
     def setUp(self):

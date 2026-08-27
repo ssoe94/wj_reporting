@@ -1,18 +1,18 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
-from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.authentication import BaseAuthentication
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from config.authentication import ScopedJWTAuthentication
 
 from .models import UserRegistrationRequest, UserProfile
-from .serializers import UserProfileSerializer, UserRegistrationRequestSerializer
+from .serializers import (
+    AdminUserCreateSerializer,
+    UserProfileSerializer,
+    UserRegistrationRequestSerializer,
+)
 from .permissions import AdminOnlyPermission
 
 import secrets
@@ -78,7 +78,7 @@ class SignupApprovalApproveView(APIView):
                 'username': username,
                 'first_name': signup_req.full_name,
                 'password': make_password(temp_password),
-                'is_staff': is_admin_flag,
+                'is_staff': False,
             }
         )
 
@@ -90,9 +90,6 @@ class SignupApprovalApproveView(APIView):
         if not user.first_name:
             user.first_name = signup_req.full_name
             update_fields.append('first_name')
-        if user.is_staff != is_admin_flag:
-            user.is_staff = is_admin_flag
-            update_fields.append('is_staff')
         if update_fields:
             user.save(update_fields=update_fields)
 
@@ -155,48 +152,42 @@ class SignupApprovalRejectView(APIView):
 
 
 class AdminUserCreateView(APIView):
-    """Create an active user with narrowly selected application permissions."""
+    """Create an active user with a one-time random initial password."""
 
     authentication_classes = [ScopedJWTAuthentication]
     permission_classes = [AdminOnlyPermission]
 
     @transaction.atomic
     def post(self, request):
-        username = str(request.data.get('username') or '').strip()
-        password = str(request.data.get('password') or '')
-        department = str(request.data.get('department') or '').strip()
-        permissions = request.data.get('permissions') or {}
-
-        if not username:
-            return Response({'username': ['사용자명을 입력해주세요.']}, status=status.HTTP_400_BAD_REQUEST)
-        if User.objects.filter(username__iexact=username).exists():
-            return Response({'username': ['이미 사용 중인 사용자명입니다.']}, status=status.HTTP_400_BAD_REQUEST)
-
-        candidate = User(username=username)
-        try:
-            validate_password(password, user=candidate)
-        except DjangoValidationError as exc:
-            return Response({'password': list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = AdminUserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        permissions = data.get('permissions', {})
+        is_admin = bool(permissions.get('is_admin', False))
+        initial_password = _generate_temp_password(16)
 
         user = User.objects.create_user(
-            username=username,
-            password=password,
-            first_name=str(request.data.get('first_name') or username).strip(),
-            email=str(request.data.get('email') or '').strip(),
+            username=data['username'],
+            password=initial_password,
+            first_name=data['first_name'],
+            email=data.get('email', ''),
             is_active=True,
+            # Application administrators are intentionally not Django staff.
+            # Django staff can use session-authenticated admin views, which do
+            # not participate in the first-login JWT restriction.
             is_staff=False,
         )
         profile = UserProfile.get_user_permissions(user)
-        profile.department = department
+        profile.department = data.get('department', '')
         profile.can_confirm_moulds = bool(permissions.get('can_confirm_moulds', False))
         profile.can_edit_injection = bool(permissions.get('can_edit_injection', False))
         profile.can_edit_assembly = bool(permissions.get('can_edit_assembly', False))
         profile.can_edit_quality = bool(permissions.get('can_edit_quality', False))
         profile.can_edit_sales = bool(permissions.get('can_edit_sales', False))
         profile.can_edit_development = bool(permissions.get('can_edit_development', False))
-        profile.is_admin = False
-        profile.is_using_temp_password = False
-        profile.password_reset_required = False
+        profile.is_admin = is_admin
+        profile.is_using_temp_password = True
+        profile.password_reset_required = True
         profile.save(update_fields=[
             'department',
             'can_confirm_moulds',
@@ -210,4 +201,9 @@ class AdminUserCreateView(APIView):
             'password_reset_required',
             'updated_at',
         ])
-        return Response(UserProfileSerializer(profile).data, status=status.HTTP_201_CREATED)
+        response_data = UserProfileSerializer(profile).data
+        response_data['initial_password'] = initial_password
+        response = Response(response_data, status=status.HTTP_201_CREATED)
+        response['Cache-Control'] = 'no-store'
+        response['Pragma'] = 'no-cache'
+        return response

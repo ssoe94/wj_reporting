@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
   Check,
   CheckCircle2,
@@ -16,7 +17,9 @@ import {
   Delete,
   LogOut,
   Maximize2,
+  Minimize2,
   Minus,
+  MonitorCog,
   Plus,
   Radio,
   RotateCcw,
@@ -52,6 +55,24 @@ import "./InjectionKanban.css";
 type FieldLanguage = "zh" | "ko";
 type CanvasMode = "work_instruction" | "drawing" | "quality";
 const DEFAULT_DOCUMENT_ZOOM = 125;
+const DEFAULT_DISPLAY_SCALE = 100;
+const DISPLAY_SCALE_MIN = 85;
+const DISPLAY_SCALE_MAX = 105;
+const DISPLAY_SCALE_STEP = 5;
+const DISPLAY_SCALE_STORAGE_KEY = "wj-field-kanban-screen-scale-v1";
+
+type DisplayScalePreference =
+  | { mode: "fit" }
+  | { mode: "manual"; scale: number };
+
+type WebkitFullscreenDocument = Document & {
+  webkitExitFullscreen?: () => Promise<void> | void;
+  webkitFullscreenElement?: Element | null;
+};
+
+type WebkitFullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
 
 type DefectRequest = {
   eventKey: string;
@@ -108,10 +129,11 @@ const copy = {
     offline: "数据延迟",
     secondsAgo: "秒前",
     noSignal: "暂无数据",
-    currentShots: "当前合模数",
+    currentShots: "设备累计合模数",
+    businessDayShots: "本生产日合模数",
     model: "型号",
     partNo: "品号",
-    currentPlanShots: "当前作业合模数",
+    currentPlanShots: "当前作业推定合模数",
     theoretical: "理论产出（当前作业）",
     progress: "计划完成进度",
     pieces: "件",
@@ -120,13 +142,14 @@ const copy = {
     workQueue: "作业队列",
     currentJob: "当前作业",
     nextJob: "下一作业",
+    queueOutput: "生产 / 计划",
     plannedChange: "预计换型时间",
     noNext: "暂无下一作业",
     confirmChange: "确认换型",
     inputDefect: "输入不良",
     workInstruction: "作业指导书",
     drawing: "图纸",
-    qualityHistory: "品质Issue",
+    qualityHistory: "品质",
     noPlan: "本机当前没有生产计划",
     noPlanHint: "计划下发后，这里会自动显示对应型号、品号和现场资料。",
     noDocument: "尚未补充对应资料",
@@ -150,8 +173,10 @@ const copy = {
     historicalOnly: "历史记录提醒，不表示当前正在发生不良。",
     historicalEvidence: "关联记录",
     latestReport: "最近报告",
-    issueSummary: "现场重点",
     representativePhotos: "代表照片",
+    noRepresentativePhotos: "暂无代表照片",
+    matchingReports: "匹配报告",
+    historicalReference: "历史参考",
     sourceMaterial: "样本来源",
     verificationPending: "示例 · 型号/品号/版本待核对",
     verificationMatched: "资料匹配完成",
@@ -165,10 +190,19 @@ const copy = {
     retry: "重新读取",
     stationSelect: "工位选择",
     logout: "登出",
+    displayScale: "看板画面比例",
+    displayScaleHint: "整体缩放看板，不改变文档倍率。",
+    displayScaleDecrease: "缩小看板",
+    displayScaleIncrease: "放大看板",
+    displayScaleReset: "恢复屏幕适配",
+    screenFit: "屏幕适配",
+    enterFullscreen: "全屏显示",
+    exitFullscreen: "退出全屏",
+    fullscreenUnavailable: "当前浏览器不支持全屏显示，请使用浏览器菜单进入全屏。",
+    fullscreenFailed: "无法切换全屏显示，请再试一次。",
     changeDetected: "检测到品号 / 型号变更，请现场确认",
     defectDue: "不良录入时间已到，请先完成录入",
     missingMaterialAlert: "当前作业资料不完整，请联系开发团队补充",
-    cycleAlert: "作业指导书 60 秒 / 品质Issue 每项 30 秒自动轮播",
     interactDocument: "操作文档",
     interactDocumentHint: "点击后暂停轮播，可缩放、翻页或滚动查看。",
     allMaterials: "当前作业资料",
@@ -216,10 +250,11 @@ const copy = {
     offline: "데이터 지연",
     secondsAgo: "초 전",
     noSignal: "데이터 없음",
-    currentShots: "현재 형합수",
+    currentShots: "설비 누적 형합수",
+    businessDayShots: "생산일 형합수(08시 기준)",
     model: "모델",
     partNo: "품번",
-    currentPlanShots: "현재 작업 형합수",
+    currentPlanShots: "현재 작업 추정 형합수",
     theoretical: "이론 생산수(현재 작업)",
     progress: "계획 완료율",
     pieces: "개",
@@ -228,13 +263,14 @@ const copy = {
     workQueue: "작업 대기열",
     currentJob: "현재 작업",
     nextJob: "다음 작업",
+    queueOutput: "생산 / 계획",
     plannedChange: "예상 모델체인지",
     noNext: "다음 작업 없음",
     confirmChange: "모델체인지 확인",
     inputDefect: "불량 입력",
     workInstruction: "작업지도서",
     drawing: "도면",
-    qualityHistory: "품질Issue",
+    qualityHistory: "품질",
     noPlan: "현재 이 설비의 생산계획이 없습니다",
     noPlanHint: "계획이 배포되면 모델, 품번, 현장 자료가 자동으로 표시됩니다.",
     noDocument: "해당 자료가 아직 없습니다",
@@ -258,8 +294,10 @@ const copy = {
     historicalOnly: "이력 기반 참고이며 현재 불량 발생을 뜻하지 않습니다.",
     historicalEvidence: "연관 이력",
     latestReport: "최근 보고",
-    issueSummary: "현장 핵심",
     representativePhotos: "대표 사진",
+    noRepresentativePhotos: "대표 사진 없음",
+    matchingReports: "매칭 보고",
+    historicalReference: "이력 참고",
     sourceMaterial: "샘플 출처",
     verificationPending: "샘플 · 모델/품번/Revision 확인 전",
     verificationMatched: "자료 일치 확인 완료",
@@ -273,10 +311,19 @@ const copy = {
     retry: "다시 불러오기",
     stationSelect: "설비 선택",
     logout: "로그아웃",
+    displayScale: "칸반 화면 배율",
+    displayScaleHint: "문서 배율은 유지하고 칸반 전체를 조절합니다.",
+    displayScaleDecrease: "칸반 축소",
+    displayScaleIncrease: "칸반 확대",
+    displayScaleReset: "화면 맞춤으로 복원",
+    screenFit: "화면 맞춤",
+    enterFullscreen: "전체화면 보기",
+    exitFullscreen: "전체화면 종료",
+    fullscreenUnavailable: "이 브라우저는 전체화면을 지원하지 않습니다. 브라우저 메뉴에서 전체화면을 선택해 주세요.",
+    fullscreenFailed: "전체화면을 전환하지 못했습니다. 다시 시도해 주세요.",
     changeDetected: "품번 / 모델 변경 후보가 감지되었습니다. 현장 확인이 필요합니다",
     defectDue: "불량 입력 시간이 되었습니다. 먼저 입력을 완료해 주세요",
     missingMaterialAlert: "현재 작업 자료가 완비되지 않았습니다. 개발팀에 보충을 요청해 주세요",
-    cycleAlert: "작업지도서 60초 / 품질Issue별 30초 자동 순환",
     interactDocument: "문서 조작",
     interactDocumentHint: "누르면 자동 순환이 멈추며 확대·페이지 이동·스크롤을 사용할 수 있습니다.",
     allMaterials: "현재 작업 자료",
@@ -321,6 +368,83 @@ const copy = {
 
 function number(value: number | null | undefined) {
   return new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(Number(value) || 0)));
+}
+
+function clampDisplayScale(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_DISPLAY_SCALE;
+  const stepped = Math.round(value / DISPLAY_SCALE_STEP) * DISPLAY_SCALE_STEP;
+  return Math.min(DISPLAY_SCALE_MAX, Math.max(DISPLAY_SCALE_MIN, stepped));
+}
+
+function readDisplayScalePreference(): DisplayScalePreference {
+  const stored = window.localStorage.getItem(DISPLAY_SCALE_STORAGE_KEY);
+  if (!stored) return { mode: "fit" };
+
+  try {
+    const parsed = JSON.parse(stored) as Partial<DisplayScalePreference>;
+    if (parsed.mode === "fit") return { mode: "fit" };
+    if (parsed.mode === "manual" && typeof parsed.scale === "number") {
+      return { mode: "manual", scale: clampDisplayScale(parsed.scale) };
+    }
+  } catch {
+    const legacyScale = Number(stored);
+    if (Number.isFinite(legacyScale) && legacyScale > 0) {
+      return { mode: "manual", scale: clampDisplayScale(legacyScale) };
+    }
+  }
+
+  return { mode: "fit" };
+}
+
+function getViewportSize() {
+  return {
+    width: window.visualViewport?.width ?? window.innerWidth,
+    height: window.visualViewport?.height ?? window.innerHeight,
+  };
+}
+
+function getFullscreenElement() {
+  const fullscreenDocument = document as WebkitFullscreenDocument;
+  return document.fullscreenElement ?? fullscreenDocument.webkitFullscreenElement ?? null;
+}
+
+type FieldQueuePlan = NonNullable<FieldKanbanResponse["active_plan"]>;
+
+type FieldQueueItem = {
+  plan: FieldQueuePlan;
+  position: "previous" | "current" | "next";
+};
+
+function isSameQueuePlan(left: FieldQueuePlan, right: FieldQueuePlan) {
+  if (left.plan_id !== null && right.plan_id !== null) {
+    return left.plan_id === right.plan_id;
+  }
+  return left.sequence === right.sequence
+    && left.part_no === right.part_no
+    && left.model_name === right.model_name
+    && left.lot_no === right.lot_no;
+}
+
+function getFieldQueueWindow(plans: FieldQueuePlan[], activePlan: FieldQueuePlan | null): FieldQueueItem[] {
+  if (!activePlan) return [];
+  const activeIndex = plans.findIndex((plan) => isSameQueuePlan(plan, activePlan));
+  if (activeIndex < 0) {
+    return [{
+      plan: activePlan,
+      position: "current",
+    }];
+  }
+
+  const startIndex = Math.max(0, activeIndex - 2);
+  const endIndex = Math.min(plans.length, activeIndex + 3);
+  return plans.slice(startIndex, endIndex).map((plan, index) => {
+    const absoluteIndex = startIndex + index;
+    const relativeOffset = absoluteIndex - activeIndex;
+    return {
+      plan,
+      position: relativeOffset === 0 ? "current" : relativeOffset < 0 ? "previous" : "next",
+    };
+  });
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -381,12 +505,6 @@ function formatShortDateTime(value: string | null | undefined, language: FieldLa
     minute: "2-digit",
     hour12: false,
   }).format(parsed);
-}
-
-function formatShortTime(value: string | null | undefined, language: FieldLanguage) {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "-" : formatShanghaiTime(parsed, language);
 }
 
 function getFreshnessSeconds(latest: string | null | undefined, now: Date) {
@@ -775,18 +893,39 @@ function QualityCanvas({
 }) {
   const c = copy[language];
   const issue = snapshot.quality.issues[issueIndex];
-  if (!issue) return null;
-  const disclaimer = snapshot.quality.disclaimer[language] || c.historicalOnly;
-  const summaryPoints = issue.summary_points
-    .map((point) => point[language])
-    .filter(Boolean)
-    .slice(0, 3);
-  const fallbackPoints = [issue.action_result, issue.disposition, issue.section].filter(Boolean).slice(0, 3);
-  const points = summaryPoints.length ? summaryPoints : fallbackPoints;
-  const images = Array.from(new Set([
+  const images = issue ? Array.from(new Set([
     ...issue.image_urls,
     ...(issue.image_url ? [issue.image_url] : []),
-  ])).slice(0, 3);
+  ])).slice(0, 4) : [];
+  const imageSignature = images.join("|");
+  const [photoIndex, setPhotoIndex] = useState(0);
+
+  useEffect(() => {
+    setPhotoIndex(0);
+  }, [issue?.key, imageSignature]);
+
+  useEffect(() => {
+    if (images.length <= 1 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setTimeout(() => {
+      setPhotoIndex((current) => (current + 1) % images.length);
+    }, 5_000);
+    return () => window.clearTimeout(timer);
+  }, [imageSignature, images.length, photoIndex]);
+
+  if (!issue) return null;
+  const disclaimer = snapshot.quality.disclaimer[language] || c.historicalOnly;
+  const headline = issue.summary_points
+    .map((point) => point[language])
+    .find(Boolean)
+    || issue.action_result
+    || issue.disposition
+    || c.noDetail;
+  const sectionCounts = issue.section_counts?.length
+    ? issue.section_counts.slice(0, 3)
+    : issue.section
+      ? [{ section: issue.section, evidence_count: issue.evidence_count }]
+      : [];
+  const activePhotoIndex = images.length ? photoIndex % images.length : 0;
   const verificationLabel = getVerificationLabel(
     issue.verification_status,
     issue.verification_label,
@@ -795,55 +934,77 @@ function QualityCanvas({
   return (
     <article className="field-quality-canvas">
       <header>
-        <div>
+        <div className="field-quality-canvas__title">
           <div className="field-quality-canvas__eyebrow">
             <span>{c.qualityHistory}</span>
-            {verificationLabel ? (
-              <em className={`is-${issue.verification_status}`}>
-                <ShieldAlert aria-hidden="true" />
-                {verificationLabel}
-              </em>
-            ) : null}
+            <em
+              className={verificationLabel ? `is-${issue.verification_status}` : "is-history"}
+              title={disclaimer}
+            >
+              <ShieldAlert aria-hidden="true" />
+              {verificationLabel || c.historicalReference}
+            </em>
           </div>
           <h2>{issue.label[language] || issue.key}</h2>
-          <p>{snapshot.active_plan?.part_no || "-"} · {snapshot.active_plan?.model_name || "-"}</p>
+          <p className="field-quality-canvas__plan">
+            {snapshot.active_plan?.part_no || "-"} · {snapshot.active_plan?.model_name || "-"}
+          </p>
+          <p className="field-quality-canvas__headline">{headline}</p>
         </div>
-        <strong>{issueIndex + 1} / {snapshot.quality.issues.length}</strong>
+        <div className="field-quality-canvas__issue-position">
+          <strong>{issueIndex + 1}</strong><span>/ {snapshot.quality.issues.length}</span>
+        </div>
+        <div className="field-quality-canvas__header-meta">
+          <span><small>{c.historicalEvidence}</small><strong>{number(issue.evidence_count)} {c.records}</strong></span>
+          {sectionCounts.map((item) => (
+            <span className="is-section" key={item.section}>
+              <small>{item.section}</small><strong>{number(item.evidence_count)}</strong>
+            </span>
+          ))}
+          <span><small>{c.matchingReports}</small><strong>{number(snapshot.quality.matching_report_count)} {c.records}</strong></span>
+          <span><small>{c.latestReport}</small><strong>{formatShortDateTime(issue.latest_report_dt, language)}</strong></span>
+        </div>
       </header>
-      <div className={`field-quality-canvas__body${images.length ? " has-image" : ""}`}>
-        <section className="field-quality-canvas__summary">
-          <h3><ShieldAlert aria-hidden="true" />{c.issueSummary}</h3>
-          <ol>
-            {(points.length ? points : [c.noDetail]).map((point, index) => (
-              <li key={`${issue.key}-summary-${index}`}><span>{index + 1}</span><strong>{point}</strong></li>
-            ))}
-          </ol>
-          <div className="field-quality-canvas__meta">
-            <span><strong>{c.historicalEvidence}</strong>{number(issue.evidence_count)} {c.records}</span>
-            <span><strong>{c.latestReport}</strong>{formatShortDateTime(issue.latest_report_dt, language)}</span>
-            {issue.source_document || issue.source_model ? (
-              <span>
-                <strong>{c.sourceMaterial}</strong>
-                {[issue.source_model, issue.source_document].filter(Boolean).join(" · ")}
-              </span>
-            ) : null}
-          </div>
-        </section>
+      <div className="field-quality-canvas__body">
         {images.length ? (
-          <section className={`field-quality-canvas__gallery has-${images.length}`} aria-label={c.representativePhotos}>
-            {images.map((imageUrl, index) => (
-              <figure key={imageUrl}>
-                <img alt={`${issue.label[language]} ${c.representativePhotos} ${index + 1}`} src={imageUrl} />
-                <figcaption>{index === 0 ? c.representativePhotos : `${index + 1}`}</figcaption>
-              </figure>
-            ))}
+          <section className="field-quality-canvas__gallery" aria-label={c.representativePhotos}>
+            <div className="field-quality-canvas__viewport">
+              <div
+                className="field-quality-canvas__slides"
+                style={{ "--field-quality-photo-index": activePhotoIndex } as CSSProperties}
+              >
+                {images.map((imageUrl, index) => (
+                  <figure key={imageUrl}>
+                    <img alt={`${issue.label[language]} ${c.representativePhotos} ${index + 1}`} src={imageUrl} />
+                  </figure>
+                ))}
+              </div>
+            </div>
+            <div className="field-quality-canvas__carousel-controls">
+              <strong>{c.representativePhotos} · {activePhotoIndex + 1} / {images.length}</strong>
+              <div aria-label={c.representativePhotos} role="tablist">
+                {images.map((imageUrl, index) => (
+                  <button
+                    aria-label={`${c.representativePhotos} ${index + 1}`}
+                    aria-selected={activePhotoIndex === index}
+                    className={activePhotoIndex === index ? "is-active" : ""}
+                    key={`${imageUrl}-selector`}
+                    onClick={() => setPhotoIndex(index)}
+                    role="tab"
+                    type="button"
+                  ><span /></button>
+                ))}
+              </div>
+            </div>
           </section>
-        ) : null}
+        ) : (
+          <div className="field-quality-canvas__empty">
+            <ShieldAlert aria-hidden="true" />
+            <strong>{c.noRepresentativePhotos}</strong>
+            <span>{c.noDetail}</span>
+          </div>
+        )}
       </div>
-      <footer>
-        <AlertTriangle aria-hidden="true" />
-        <strong>{disclaimer}</strong>
-      </footer>
     </article>
   );
 }
@@ -891,6 +1052,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const queryClient = useQueryClient();
   const businessDate = useShanghaiBusinessDate();
   const machineNumber = Number(station.machineFilterValue);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const [language, setLanguage] = useState<FieldLanguage>(() => {
     const stored = window.localStorage.getItem("wj-field-language");
     return stored === "ko" ? "ko" : "zh";
@@ -902,6 +1064,10 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [manualPause, setManualPause] = useState(false);
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(DEFAULT_DOCUMENT_ZOOM);
+  const [displayScalePreference, setDisplayScalePreference] = useState<DisplayScalePreference>(readDisplayScalePreference);
+  const [viewportSize, setViewportSize] = useState(getViewportSize);
+  const [displayControlsOpen, setDisplayControlsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(getFullscreenElement()));
   const [transitionReview, setTransitionReview] = useState<InjectionTransitionEvent | null>(null);
   const [transitionWorkflow, setTransitionWorkflow] = useState<InjectionTransitionEvent | null>(null);
   const [defectRequest, setDefectRequest] = useState<DefectRequest | null>(null);
@@ -912,6 +1078,27 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [allMaterialsOpen, setAllMaterialsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const c = copy[language];
+  const compactViewport = viewportSize.width <= 1599 && viewportSize.height <= 850;
+  const tabletViewport = viewportSize.width <= 1180 && viewportSize.height >= 851;
+  const minimumLogicalWidth = compactViewport ? 1220 : tabletViewport ? 1050 : 1450;
+  const minimumLogicalHeight = 760;
+  const safeMaximumScaleRatio = Math.min(
+    DISPLAY_SCALE_MAX / 100,
+    viewportSize.width / minimumLogicalWidth,
+    viewportSize.height / minimumLogicalHeight,
+  );
+  const maximumDisplayScale = Math.max(
+    DISPLAY_SCALE_MIN,
+    Math.floor((safeMaximumScaleRatio * 100) / DISPLAY_SCALE_STEP) * DISPLAY_SCALE_STEP,
+  );
+  const fitDisplayScaleRatio = Math.max(
+    DISPLAY_SCALE_MIN / 100,
+    Math.min(DEFAULT_DISPLAY_SCALE / 100, safeMaximumScaleRatio),
+  );
+  const displayScaleRatio = displayScalePreference.mode === "fit"
+    ? fitDisplayScaleRatio
+    : Math.min(displayScalePreference.scale, maximumDisplayScale) / 100;
+  const displayScale = Math.round(displayScaleRatio * 100);
   const canEnterDefects = Boolean(
     user?.is_staff
     || hasPermission("is_admin")
@@ -921,6 +1108,53 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   useEffect(() => {
     window.localStorage.setItem("wj-field-language", language);
   }, [language]);
+
+  useEffect(() => {
+    window.localStorage.setItem(DISPLAY_SCALE_STORAGE_KEY, JSON.stringify(displayScalePreference));
+  }, [displayScalePreference]);
+
+  useEffect(() => {
+    const updateViewportSize = () => {
+      const viewportBounds = viewportRef.current?.getBoundingClientRect();
+      setViewportSize(viewportBounds
+        ? { width: viewportBounds.width, height: viewportBounds.height }
+        : getViewportSize());
+    };
+    window.addEventListener("resize", updateViewportSize);
+    window.visualViewport?.addEventListener("resize", updateViewportSize);
+    const animationFrame = window.requestAnimationFrame(updateViewportSize);
+    const settleTimer = window.setTimeout(updateViewportSize, 250);
+    const viewportObserver = typeof ResizeObserver === "undefined" || !viewportRef.current
+      ? null
+      : new ResizeObserver(updateViewportSize);
+    if (viewportObserver && viewportRef.current) viewportObserver.observe(viewportRef.current);
+    return () => {
+      window.removeEventListener("resize", updateViewportSize);
+      window.visualViewport?.removeEventListener("resize", updateViewportSize);
+      window.cancelAnimationFrame(animationFrame);
+      window.clearTimeout(settleTimer);
+      viewportObserver?.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const updateFullscreenState = () => setIsFullscreen(Boolean(getFullscreenElement()));
+    document.addEventListener("fullscreenchange", updateFullscreenState);
+    document.addEventListener("webkitfullscreenchange", updateFullscreenState);
+    return () => {
+      document.removeEventListener("fullscreenchange", updateFullscreenState);
+      document.removeEventListener("webkitfullscreenchange", updateFullscreenState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!displayControlsOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !getFullscreenElement()) setDisplayControlsOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [displayControlsOpen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1_000);
@@ -1053,6 +1287,9 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   }, [planIdentity]);
 
   const modalOpen = Boolean(transitionReview || defectRequest || allMaterialsOpen);
+  useEffect(() => {
+    if (modalOpen) setDisplayControlsOpen(false);
+  }, [modalOpen]);
   const qualityIssueCount = snapshot?.quality.issues.length ?? 0;
   const rotationPaused = manualPause || modalOpen || canvasMode === "drawing" || !snapshot?.active_plan;
   useEffect(() => {
@@ -1105,12 +1342,12 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const pageCount = displayedDocument?.page_count;
   const freshnessSeconds = getFreshnessSeconds(snapshot?.machine.latest_mes_time, now);
   const progress = Math.max(0, Math.min(100, snapshot?.active_plan?.progress_rate ?? 0));
-  // The backend queue contains the full production-day history. The field
-  // panel must start at the resolved active plan so completed earlier rows do
-  // not appear as the current/next jobs.
-  const nextVisiblePlan = snapshot?.next_plan?.status === "completed" ? null : snapshot?.next_plan;
-  const queue = [snapshot?.active_plan, nextVisiblePlan]
-    .filter(Boolean) as NonNullable<FieldKanbanResponse["active_plan"]>[];
+  // Keep the active plan centered in the production-day sequence: at most
+  // two completed/earlier plans, the active plan, and two following plans.
+  const queueSource = snapshot?.queue?.length
+    ? snapshot.queue
+    : [snapshot?.active_plan, snapshot?.next_plan].filter(Boolean) as FieldQueuePlan[];
+  const queue = getFieldQueueWindow(queueSource, snapshot?.active_plan ?? null);
   const documentsReady = Boolean(snapshot?.documents.work_instruction?.ready && snapshot?.documents.drawing?.ready);
 
   function chooseCanvasMode(mode: CanvasMode) {
@@ -1120,6 +1357,43 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     setManualPause(true);
     setPage(1);
     setZoom(mode === "work_instruction" ? DEFAULT_DOCUMENT_ZOOM : 100);
+  }
+
+  function changeDisplayScale(delta: number) {
+    const currentSteppedScale = Math.round(displayScale / DISPLAY_SCALE_STEP) * DISPLAY_SCALE_STEP;
+    const nextScale = Math.min(
+      maximumDisplayScale,
+      Math.max(DISPLAY_SCALE_MIN, currentSteppedScale + delta),
+    );
+    setDisplayScalePreference({ mode: "manual", scale: nextScale });
+  }
+
+  async function toggleFullscreen() {
+    const fullscreenDocument = document as WebkitFullscreenDocument;
+    const fullscreenViewport = viewportRef.current as WebkitFullscreenElement | null;
+
+    try {
+      if (getFullscreenElement()) {
+        const exitFullscreen = document.exitFullscreen?.bind(document)
+          ?? fullscreenDocument.webkitExitFullscreen?.bind(fullscreenDocument);
+        if (!exitFullscreen) {
+          setToastMessage(c.fullscreenUnavailable);
+          return;
+        }
+        await exitFullscreen();
+      } else {
+        const requestFullscreen = fullscreenViewport?.requestFullscreen?.bind(fullscreenViewport)
+          ?? fullscreenViewport?.webkitRequestFullscreen?.bind(fullscreenViewport);
+        if (!requestFullscreen) {
+          setToastMessage(c.fullscreenUnavailable);
+          return;
+        }
+        await requestFullscreen();
+      }
+      setDisplayControlsOpen(false);
+    } catch {
+      setToastMessage(c.fullscreenFailed);
+    }
   }
 
   function stepCanvas(direction: -1 | 1) {
@@ -1301,11 +1575,18 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
         ? c.missingMaterialAlert
         : !transitionDataReady
           ? c.confirmationDataPending
-        : c.cycleAlert;
+          : null;
 
   return (
-    <div className="field-kanban" data-language={language}>
-      <header className="field-kanban-header">
+    <div className="field-kanban" data-language={language} ref={viewportRef}>
+      <div
+        className="field-kanban-stage"
+        style={{
+          "--field-display-scale": displayScaleRatio,
+          "--field-layout-size": `${100 / displayScaleRatio}%`,
+        } as CSSProperties}
+      >
+        <header className="field-kanban-header">
         <button aria-label={c.stationSelect} className="field-kanban-brand" onClick={onBack} type="button">
           <img alt="WJ" src="/logo-transparent.png" />
           <span><strong>WJ DATA CENTER</strong><small>{c.brandSubtitle}</small></span>
@@ -1326,17 +1607,28 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
         <div className="field-kanban-header-actions">
           <button aria-label={c.stationSelect} onClick={onBack} type="button"><ArrowLeft /></button>
           <button aria-label={c.logout} onClick={logout} type="button"><LogOut /></button>
+          <button
+            aria-expanded={displayControlsOpen}
+            aria-haspopup="dialog"
+            aria-label={`${c.displayScale} ${displayScale}%`}
+            className={`field-display-controls-trigger${displayControlsOpen ? " is-open" : ""}`}
+            onClick={() => setDisplayControlsOpen((open) => !open)}
+            type="button"
+          >
+            <MonitorCog aria-hidden="true" />
+            <span>{displayScale}%</span>
+          </button>
           <div className="field-language-toggle" role="group" aria-label={language === "zh" ? "语言" : "언어"}>
             <button aria-pressed={language === "zh"} className={language === "zh" ? "is-active" : ""} onClick={() => setLanguage("zh")} type="button">中文</button>
             <button aria-pressed={language === "ko"} className={language === "ko" ? "is-active" : ""} onClick={() => setLanguage("ko")} type="button">KOR</button>
           </div>
         </div>
-      </header>
+        </header>
 
-      <main className="field-kanban-main">
+        <main className="field-kanban-main">
         <aside className="field-command-panel">
           <section className="field-shot-hero">
-            <span>{c.currentShots}</span>
+            <span>{snapshot.machine.device_counter === null ? c.businessDayShots : c.currentShots}</span>
             <strong>{number(snapshot.machine.device_counter ?? snapshot.counters.business_day_shots)}</strong>
           </section>
           <section className="field-part-summary">
@@ -1348,31 +1640,25 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
             <div><span>{c.theoretical}</span><strong>{number(snapshot.counters.theoretical_piece_qty)} <small>{c.pieces}</small></strong></div>
             <div><span>{c.progress}</span><strong>{Math.round(progress)}<small>%</small></strong><i><b style={{ width: `${progress}%` }} /></i></div>
           </section>
-          <section className="field-queue">
+          <section className={`field-queue${queue.length >= 4 ? " is-expanded" : ""}`}>
             <h2>{c.workQueue}</h2>
             <div className="field-queue-list">
-              {queue.slice(0, 2).map((plan, index) => (
-                <article className={index === 0 ? "is-current" : ""} key={`${plan.plan_id ?? index}:${plan.part_no}`}>
-                  <span className="field-queue-index">{index + 1}</span>
-                  <div className="field-queue-copy"><small>{index === 0 ? c.currentJob : c.nextJob}</small><strong>{plan.part_no || "-"}</strong><span>{plan.model_name || "-"}</span></div>
+              {queue.map(({ plan, position }, visibleIndex) => (
+                <article
+                  aria-label={`${visibleIndex + 1} / ${queue.length}`}
+                  aria-current={position === "current" ? "step" : undefined}
+                  className={`is-${position}`}
+                  key={`${plan.plan_id ?? `${plan.sequence}:${plan.part_no}:${plan.lot_no}`}`}
+                >
+                  <span className="field-queue-index">{visibleIndex + 1}</span>
+                  {visibleIndex < queue.length - 1 ? <ArrowDown aria-hidden="true" className="field-queue-flow" /> : null}
+                  <div className="field-queue-copy"><strong>{plan.part_no || "-"}</strong><span>{plan.model_name || "-"}</span></div>
                   <div className="field-queue-value">
-                    <small>{index === 0 ? c.currentShots : c.plannedChange}</small>
-                    {index === 0 ? (
-                      <>
-                        <strong>{number(plan.allocated_shots)} / {number(plan.planned_piece_qty)}</strong>
-                        <span>{c.shots} / {c.pieces}</span>
-                      </>
-                    ) : (
-                      <strong>{snapshot.machine.estimated_change_at
-                        ? formatShortTime(snapshot.machine.estimated_change_at, language)
-                        : (plan.status || c.noNext)}</strong>
-                    )}
+                    <small>{c.queueOutput}</small>
+                    <strong>{number(plan.actual_piece_qty)} / {number(plan.planned_piece_qty)}</strong>
                   </div>
                 </article>
               ))}
-              {queue.length < 2 ? (
-                <article className="is-empty"><span className="field-queue-index">2</span><div className="field-queue-copy"><small>{c.nextJob}</small><strong>{c.noNext}</strong></div></article>
-              ) : null}
             </div>
           </section>
           <section className="field-command-actions">
@@ -1381,13 +1667,15 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
           </section>
         </aside>
 
-        <section className={`field-content-panel${canvasMode === "quality" ? " is-quality" : ""}`}>
-          <div className={`field-alert-band field-alert-band--${alertTone}`}>
-            <AlertTriangle aria-hidden="true" />
-            <strong>{alertText}</strong>
-            {pendingPrompt?.due_at ? <span>{c.due} {formatShortDateTime(pendingPrompt.due_at, language)} {pendingPrompt.is_overdue ? `· ${c.overdue}` : ""}</span> : null}
-            {!transitionDataReady && alertText !== c.confirmationDataPending ? <span>{c.confirmationDataPending}</span> : null}
-          </div>
+        <section className={`field-content-panel${canvasMode === "quality" ? " is-quality" : ""}${alertText ? " has-alert" : ""}`}>
+          {alertText ? (
+            <div className={`field-alert-band field-alert-band--${alertTone}`}>
+              <AlertTriangle aria-hidden="true" />
+              <strong>{alertText}</strong>
+              {pendingPrompt?.due_at ? <span>{c.due} {formatShortDateTime(pendingPrompt.due_at, language)} {pendingPrompt.is_overdue ? `· ${c.overdue}` : ""}</span> : null}
+              {!transitionDataReady && alertText !== c.confirmationDataPending ? <span>{c.confirmationDataPending}</span> : null}
+            </div>
+          ) : null}
           <div className={`field-document-toolbar${canvasMode === "quality" ? " is-quality" : ""}`}>
             <div className="field-document-tabs" role="tablist">
               <button aria-selected={canvasMode === "work_instruction"} className={canvasMode === "work_instruction" ? "is-active" : ""} onClick={() => chooseCanvasMode("work_instruction")} role="tab" type="button">{c.workInstruction}</button>
@@ -1465,7 +1753,44 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
             <button onClick={() => setAllMaterialsOpen(true)} type="button"><FolderOpen />{c.viewAll}<ChevronRight /></button>
           </footer>
         </section>
-      </main>
+        </main>
+      </div>
+
+      {displayControlsOpen ? (
+        <div aria-label={c.displayScale} className="field-display-controls-popover" role="dialog">
+          <header>
+            <MonitorCog aria-hidden="true" />
+            <div><strong>{c.displayScale}</strong><small>{c.displayScaleHint}</small></div>
+            <button aria-label={c.close} onClick={() => setDisplayControlsOpen(false)} type="button"><X /></button>
+          </header>
+          <div className="field-display-controls-scale" role="group" aria-label={c.displayScale}>
+            <button
+              aria-label={c.displayScaleDecrease}
+              disabled={displayScale <= DISPLAY_SCALE_MIN}
+              onClick={() => changeDisplayScale(-DISPLAY_SCALE_STEP)}
+              type="button"
+            ><Minus /></button>
+            <button
+              aria-label={c.displayScaleReset}
+              className={displayScalePreference.mode === "fit" ? "is-value is-fit" : "is-value"}
+              onClick={() => setDisplayScalePreference({ mode: "fit" })}
+              type="button"
+            >
+              <strong>{displayScale}%</strong><small>{c.screenFit}</small>
+            </button>
+            <button
+              aria-label={c.displayScaleIncrease}
+              disabled={displayScale >= maximumDisplayScale}
+              onClick={() => changeDisplayScale(DISPLAY_SCALE_STEP)}
+              type="button"
+            ><Plus /></button>
+          </div>
+          <button className="field-display-controls-fullscreen" onClick={() => void toggleFullscreen()} type="button">
+            {isFullscreen ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+            <span>{isFullscreen ? c.exitFullscreen : c.enterFullscreen}</span>
+          </button>
+        </div>
+      ) : null}
 
       {toastMessage ? <div className="field-kanban-toast" role="status">{toastMessage}</div> : null}
       {transitionReview ? (

@@ -41,6 +41,7 @@ from .permissions import (
 from config.authentication import ScopedJWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from django.contrib.auth.hashers import make_password
 from django.db import transaction, OperationalError, ProgrammingError
 from django.utils import timezone
@@ -62,6 +63,12 @@ from production.models import ProductionPlan, ProductionPlanChangeLog
 from production.permissions import user_can_edit_plan
 
 User = get_user_model()
+
+
+def _blacklist_user_refresh_tokens(user):
+    """Invalidate every refresh token that predates a credential change."""
+    for outstanding in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=outstanding)
 
 class UpdateRecentSnapshotsView(generics.GenericAPIView):
     """On-demand API to trigger a recent snapshot backfill from the MES."""
@@ -933,7 +940,7 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
                 'username': username,
                 'first_name': signup_req.full_name,
                 'password': make_password(temp_password),
-                'is_staff': is_admin_flag,
+                'is_staff': False,
             }
         )
 
@@ -946,9 +953,6 @@ class UserRegistrationRequestViewSet(viewsets.ModelViewSet):
         if not user.first_name:
             user.first_name = signup_req.full_name
             update_fields.append('first_name')
-        if user.is_staff != is_admin_flag:
-            user.is_staff = is_admin_flag
-            update_fields.append('is_staff')
         if update_fields:
             user.save(update_fields=update_fields)
 
@@ -1077,7 +1081,7 @@ class SignupApprovalPortalView(View):
                     'username': username,
                     'first_name': signup_req.full_name,
                     'password': make_password(temp_password),
-                    'is_staff': is_admin_flag,
+                    'is_staff': False,
                 }
             )
 
@@ -1089,9 +1093,6 @@ class SignupApprovalPortalView(View):
             if not user.first_name:
                 user.first_name = signup_req.full_name
                 update_fields.append('first_name')
-            if user.is_staff != is_admin_flag:
-                user.is_staff = is_admin_flag
-                update_fields.append('is_staff')
             if update_fields:
                 user.save(update_fields=update_fields)
 
@@ -1143,6 +1144,19 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     queryset = UserProfile.objects.all()
     serializer_class = UserProfileSerializer
     permission_classes = [AdminOnlyPermission]
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        """Preserve business history and disable login instead of deleting a profile."""
+        instance = self.get_object()
+        serializer = self.get_serializer(
+            instance,
+            data={'is_active': False},
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class InventoryView(generics.GenericAPIView):
     """
@@ -1231,29 +1245,28 @@ class ChangePasswordView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ChangePasswordSerializer
 
+    @transaction.atomic
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         user = request.user
         new_password = serializer.validated_data['new_password']
         user.set_password(new_password)
-        user.save()
+        user.save(update_fields=['password'])
 
-        # 프로필 플래그 해제
-        try:
-            profile = user.profile
-            profile.is_using_temp_password = False
-            profile.password_reset_required = False
-            profile.last_password_change = timezone.now()
-            profile.save(update_fields=['is_using_temp_password', 'password_reset_required', 'last_password_change'])
-        except Exception:
-            pass
+        profile = UserProfile.get_user_permissions(user)
+        profile.is_using_temp_password = False
+        profile.password_reset_required = False
+        profile.last_password_change = timezone.now()
+        profile.save(update_fields=['is_using_temp_password', 'password_reset_required', 'last_password_change'])
+        _blacklist_user_refresh_tokens(user)
 
         return Response({'detail': '비밀번호가 변경되었습니다.'})
 
 class ResetPasswordView(generics.CreateAPIView):
     permission_classes = [AdminOnlyPermission]
 
+    @transaction.atomic
     def post(self, request, *args, **kwargs):
 
         user_id = request.data.get('user_id')
@@ -1265,7 +1278,7 @@ class ResetPasswordView(generics.CreateAPIView):
             return Response({'user_id': 'must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            target = User.objects.get(id=user_id)
+            target = User.objects.select_for_update().get(id=user_id)
         except User.DoesNotExist:
             return Response({'detail': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1279,18 +1292,24 @@ class ResetPasswordView(generics.CreateAPIView):
 
         temp_password = generate_temp_password(12)
         target.set_password(temp_password)
-        target.save()
+        target.save(update_fields=['password'])
 
         # 사용자 프로필 플래그 설정
-        try:
-            profile = UserProfile.get_user_permissions(target)
-            profile.is_using_temp_password = True
-            profile.password_reset_required = True
-            profile.save(update_fields=['is_using_temp_password', 'password_reset_required'])
-        except Exception:
-            pass
+        profile = UserProfile.get_user_permissions(target)
+        profile.is_using_temp_password = True
+        profile.password_reset_required = True
+        profile.last_password_change = timezone.now()
+        profile.save(update_fields=[
+            'is_using_temp_password',
+            'password_reset_required',
+            'last_password_change',
+        ])
+        _blacklist_user_refresh_tokens(target)
 
-        return Response({'username': target.username, 'temporary_password': temp_password})
+        response = Response({'username': target.username, 'temporary_password': temp_password})
+        response['Cache-Control'] = 'no-store'
+        response['Pragma'] = 'no-cache'
+        return response
 
 
 class CycleTimeSetupViewSet(viewsets.ModelViewSet):

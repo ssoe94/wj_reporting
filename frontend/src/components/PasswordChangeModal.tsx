@@ -7,6 +7,7 @@ interface PasswordChangeModalProps {
   isOpen: boolean;
   onClose: () => void;
   isRequired?: boolean; // 필수 변경인지 (임시 비밀번호 사용자)
+  onLogout?: () => void;
   onSuccess?: () => void;
 }
 
@@ -14,6 +15,7 @@ export default function PasswordChangeModal({
   isOpen, 
   onClose, 
   isRequired = false,
+  onLogout,
   onSuccess 
 }: PasswordChangeModalProps) {
   const { t } = useLang();
@@ -154,6 +156,16 @@ export default function PasswordChangeModal({
                 className="flex-1"
               >
                 {t('cancel')}
+              </Button>
+            )}
+            {isRequired && onLogout && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onLogout}
+                className="flex-1"
+              >
+                {t('logout')}
               </Button>
             )}
           </div>

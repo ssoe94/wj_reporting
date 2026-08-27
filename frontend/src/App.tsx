@@ -360,13 +360,6 @@ function AppContent() {
     };
   }, [sidebarOpen]);
 
-  // Force password change when a temporary password is in use.
-  useEffect(() => {
-    if (user && user.is_using_temp_password) {
-      setPasswordModalOpen(true);
-    }
-  }, [user]);
-
   // Toggle lite mode on the document root.
   useEffect(() => {
     if (isLiteMode) {
@@ -499,6 +492,24 @@ function AppContent() {
   if (!isAuthenticated && !isPublicRoutePath(pathname)) {
     const returnTo = `${routerLocation.pathname}${routerLocation.search}${routerLocation.hash}`;
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
+  }
+
+  const passwordChangeRequired = Boolean(
+    user?.password_reset_required || user?.is_using_temp_password,
+  );
+
+  if (isAuthenticated && user && passwordChangeRequired) {
+    return (
+      <div className="min-h-screen bg-slate-100">
+        <PasswordChangeModal
+          isOpen
+          isRequired
+          onClose={() => undefined}
+          onLogout={logout}
+          onSuccess={logout}
+        />
+      </div>
+    );
   }
 
   return (
@@ -834,7 +845,6 @@ function AppContent() {
       <PasswordChangeModal
         isOpen={passwordModalOpen}
         onClose={() => setPasswordModalOpen(false)}
-        isRequired={user?.is_using_temp_password || false}
         onSuccess={() => {
           // Refresh user info after a successful password change.
           window.location.reload();

@@ -47,6 +47,10 @@ export type FieldQualityIssue = {
   evidence_count: number;
   latest_report_dt: string | null;
   section: string;
+  section_counts: Array<{
+    section: string;
+    evidence_count: number;
+  }>;
   image_url: string | null;
   image_urls: string[];
   action_result: string;
@@ -315,9 +319,18 @@ export function normalizeFieldKanbanResponse(value: unknown, date: string, machi
           evidence_count: asNumber(row.evidence_count),
           latest_report_dt: asString(row.latest_report_dt) || null,
           section: asString(row.section),
+          section_counts: Array.isArray(row.section_counts)
+            ? row.section_counts.map((item) => {
+              const sectionRow = asRecord(item);
+              return {
+                section: asString(sectionRow.section),
+                evidence_count: asNumber(sectionRow.evidence_count ?? sectionRow.count),
+              };
+            }).filter((item) => item.section && item.evidence_count > 0)
+            : [],
           image_url: asString(row.image_url) || null,
           image_urls: Array.isArray(row.image_urls)
-            ? row.image_urls.map((url) => asString(url)).filter(Boolean).slice(0, 3)
+            ? row.image_urls.map((url) => asString(url)).filter(Boolean).slice(0, 4)
             : [],
           action_result: asString(row.action_result),
           disposition: asString(row.disposition),

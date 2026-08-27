@@ -1,8 +1,16 @@
 from rest_framework import serializers
 from .models import InjectionReport, Product, PartSpec, EngineeringChangeOrder, EcoDetail, EcoPartSpec, InventorySnapshot, UserRegistrationRequest, UserProfile, CycleTimeSetup, CycleTimeTestRecord, InjectionMonitoringRecord
 from functools import lru_cache
+from django.contrib.auth import get_user_model
+from django.contrib.auth import password_validation
+from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models.functions import Substr
-from django.db.models import Avg, ExpressionWrapper, F, FloatField
+from django.db.models import Avg, ExpressionWrapper, F, FloatField, Q
+
+User = get_user_model()
+username_validator = UnicodeUsernameValidator()
 
 @lru_cache(maxsize=1)
 def get_average_actual_cycle_times(prefix_length=9):
@@ -176,26 +184,157 @@ class UserRegistrationRequestSerializer(serializers.ModelSerializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(source='user.username', read_only=True)
-    email = serializers.CharField(source='user.email', read_only=True)
-    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    username = serializers.CharField(source='user.username', max_length=150, required=False)
+    email = serializers.EmailField(source='user.email', allow_blank=True, required=False)
+    first_name = serializers.CharField(source='user.first_name', max_length=150, allow_blank=True, required=False)
+    is_active = serializers.BooleanField(source='user.is_active', required=False)
+    is_staff = serializers.BooleanField(source='user.is_staff', read_only=True)
+    is_superuser = serializers.BooleanField(source='user.is_superuser', read_only=True)
 
     class Meta:
         model = UserProfile
         fields = [
             'id', 'user', 'username', 'email', 'first_name', 'department',
+            'is_active', 'is_staff', 'is_superuser',
             'can_view_injection', 'can_view_assembly', 'can_view_quality',
             'can_view_sales', 'can_view_development',
             'can_edit_injection', 'can_edit_assembly', 'can_edit_quality',
             'can_edit_sales', 'can_edit_development', 'can_confirm_moulds',
             'is_admin', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['user', 'username', 'email', 'first_name', 'created_at', 'updated_at']
+        read_only_fields = ['user', 'created_at', 'updated_at']
 
-from django.contrib.auth import get_user_model
-from django.contrib.auth import password_validation
+    def validate_username(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('아이디를 입력해주세요.')
+        try:
+            username_validator(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages)) from exc
 
-User = get_user_model()
+        queryset = User.objects.filter(username__iexact=value)
+        if self.instance is not None:
+            queryset = queryset.exclude(pk=self.instance.user_id)
+        if queryset.exists():
+            raise serializers.ValidationError('이미 사용 중인 아이디입니다.')
+        return value
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if not value:
+            return ''
+
+        queryset = User.objects.filter(email__iexact=value)
+        if self.instance is not None:
+            queryset = queryset.exclude(pk=self.instance.user_id)
+        if queryset.exists():
+            raise serializers.ValidationError('이미 사용 중인 이메일 주소입니다.')
+        return value
+
+    def validate_first_name(self, value):
+        return value.strip()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if self.instance is None:
+            return attrs
+
+        target = self.instance.user
+        user_data = attrs.get('user', {})
+        request_user = getattr(self.context.get('request'), 'user', None)
+        deactivating = target.is_active and user_data.get('is_active') is False
+        removing_admin = self.instance.is_admin and attrs.get('is_admin') is False
+
+        if deactivating and request_user and request_user.pk == target.pk:
+            raise serializers.ValidationError({
+                'is_active': '현재 로그인한 본인 계정은 사용 중지할 수 없습니다.'
+            })
+        if deactivating and target.is_staff:
+            raise serializers.ValidationError({
+                'is_active': 'Django 관리자 계정은 이 화면에서 사용 중지할 수 없습니다.'
+            })
+        if removing_admin and request_user and request_user.pk == target.pk:
+            raise serializers.ValidationError({
+                'is_admin': '현재 로그인한 본인의 관리자 권한은 해제할 수 없습니다.'
+            })
+
+        target_has_admin_access = bool(target.is_staff or self.instance.is_admin)
+        if target_has_admin_access and (deactivating or removing_admin):
+            another_active_admin_exists = UserProfile.objects.filter(
+                user__is_active=True,
+            ).exclude(user_id=target.pk).filter(
+                Q(is_admin=True) | Q(user__is_staff=True)
+            ).exists()
+            if not another_active_admin_exists:
+                field = 'is_active' if deactivating else 'is_admin'
+                raise serializers.ValidationError({
+                    field: '마지막 활성 관리자 계정 또는 권한은 해제할 수 없습니다.'
+                })
+
+        return attrs
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop('user', {})
+        user = instance.user
+        user_update_fields = []
+
+        for field in ('username', 'email', 'first_name', 'is_active'):
+            if field in user_data and getattr(user, field) != user_data[field]:
+                setattr(user, field, user_data[field])
+                user_update_fields.append(field)
+
+        if 'is_admin' in validated_data:
+            if user.is_superuser:
+                validated_data['is_admin'] = True
+
+        if user_update_fields:
+            user.save(update_fields=user_update_fields)
+
+        return super().update(instance, validated_data)
+
+
+class UserPermissionSelectionSerializer(serializers.Serializer):
+    can_edit_injection = serializers.BooleanField(required=False, default=False)
+    can_edit_assembly = serializers.BooleanField(required=False, default=False)
+    can_edit_quality = serializers.BooleanField(required=False, default=False)
+    can_edit_sales = serializers.BooleanField(required=False, default=False)
+    can_edit_development = serializers.BooleanField(required=False, default=False)
+    can_confirm_moulds = serializers.BooleanField(required=False, default=False)
+    is_admin = serializers.BooleanField(required=False, default=False)
+
+
+class AdminUserCreateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=150)
+    username = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    department = serializers.CharField(max_length=100, allow_blank=True, required=False, default='')
+    permissions = UserPermissionSelectionSerializer(required=False, default=dict)
+
+    def validate_first_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('이름을 입력해주세요.')
+        return value
+
+    def validate_username(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('아이디를 입력해주세요.')
+        try:
+            username_validator(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages)) from exc
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError('이미 사용 중인 아이디입니다.')
+        return value
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if value and User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError('이미 사용 중인 이메일 주소입니다.')
+        return value
 
 class UserSerializer(serializers.ModelSerializer):
     profile = UserProfileSerializer(read_only=True) # 기존 중첩 프로필 유지
