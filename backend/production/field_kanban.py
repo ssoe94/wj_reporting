@@ -67,6 +67,10 @@ QUALITY_DISCLAIMER = {
     "zh": "仅为与当前计划料号关联的历史品质记录，不代表当前正在发生不良。",
     "ko": "현재 계획 품번과 연결된 과거 품질 이력이며, 현재 불량 발생을 의미하지 않습니다.",
 }
+FIELD_QUALITY_OTHER_LABEL = {
+    "zh": "其他",
+    "ko": "기타",
+}
 
 
 class FieldKanbanError(ValueError):
@@ -1128,13 +1132,16 @@ def _quality_summary(
         # unambiguous.
         report_images_are_unambiguous = len(report_problems) == 1
         for key, label in report_problems:
+            # Keep the quality source's audit classification intact, but use a
+            # concise shop-floor label for the field Kanban's catch-all issue.
+            display_label = FIELD_QUALITY_OTHER_LABEL if key == "unclassified" else label
             issue = issues.setdefault(
                 key,
                 {
                     "key": key,
                     "label": {
-                        "zh": str(label.get("zh") or key),
-                        "ko": str(label.get("ko") or key),
+                        "zh": str(display_label.get("zh") or key),
+                        "ko": str(display_label.get("ko") or key),
                     },
                     "evidence_count": 0,
                     "latest_report_dt": None,

@@ -1113,22 +1113,37 @@
 .field-quality-canvas > header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 11px 20px;
-  padding: clamp(15px, 1.25vw, 24px) clamp(22px, 1.75vw, 34px);
+  gap: 8px 18px;
+  padding: clamp(10px, .9vw, 16px) clamp(18px, 1.4vw, 28px);
   color: #fff;
   background: linear-gradient(135deg, #69260f 0%, #8d3412 56%, #a84610 100%);
 }
 
 .field-quality-canvas__title {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 5px 15px;
+  align-content: center;
+  gap: 5px;
   min-width: 0;
+}
+
+.field-quality-canvas__heading,
+.field-quality-canvas__detail {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.field-quality-canvas__heading {
+  gap: 13px;
+}
+
+.field-quality-canvas__detail {
+  gap: 12px;
 }
 
 .field-quality-canvas__eyebrow {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -1175,9 +1190,11 @@
 }
 
 .field-quality-canvas > header h2 {
+  flex: 0 1 auto;
+  max-width: 62%;
   overflow: hidden;
   margin: 0;
-  font-size: clamp(34px, 2.45vw, 49px);
+  font-size: clamp(32px, 2.2vw, 44px);
   font-weight: 950;
   line-height: 1;
   white-space: nowrap;
@@ -1185,6 +1202,8 @@
 }
 
 .field-quality-canvas__plan {
+  flex: 0 1 auto;
+  max-width: 48%;
   overflow: hidden;
   margin: 0;
   font-size: clamp(15px, 1.05vw, 20px);
@@ -1194,9 +1213,12 @@
 }
 
 .field-quality-canvas__headline {
+  flex: 1 1 auto;
   overflow: hidden;
   margin: 0;
+  padding-left: 12px;
   color: #ffedd5;
+  border-left: 1px solid rgba(254, 215, 170, .55);
   font-size: clamp(14px, .92vw, 18px);
   font-weight: 750;
   white-space: nowrap;
@@ -1206,14 +1228,14 @@
 .field-quality-canvas__issue-position {
   display: flex;
   align-items: baseline;
-  align-self: start;
+  align-self: center;
   gap: 4px;
-  min-width: 82px;
+  min-width: 74px;
   justify-content: flex-end;
 }
 
 .field-quality-canvas__issue-position strong {
-  font-size: clamp(34px, 2.5vw, 50px);
+  font-size: clamp(32px, 2.25vw, 46px);
   font-weight: 950;
 }
 
@@ -1227,7 +1249,7 @@
   grid-column: 1 / -1;
   display: flex;
   min-width: 0;
-  gap: 8px;
+  gap: 6px;
   overflow: hidden;
 }
 
@@ -1236,8 +1258,8 @@
   min-width: 0;
   align-items: center;
   gap: 7px;
-  min-height: 36px;
-  padding: 5px 11px;
+  min-height: 32px;
+  padding: 4px 9px;
   color: #4c1d08;
   border: 1px solid rgba(255, 237, 213, .65);
   border-radius: 8px;

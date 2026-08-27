@@ -247,6 +247,38 @@ class FieldKanbanSnapshotTests(TestCase):
 
 class FieldQualitySummaryTests(TestCase):
     @patch("production.field_kanban._quality_source_payload")
+    def test_field_kanban_uses_other_label_for_unclassified_quality_issue(
+        self,
+        quality_source,
+    ):
+        quality_source.return_value = {
+            "items": [{
+                "machine_number": 5,
+                "part_prefix": "24U411B-L",
+                "matching_report_count": 1,
+                "reports": [{
+                    "report_dt": "2026-08-18T10:24:00+08:00",
+                    "section": "LQC_INJ",
+                    "problem_types": [{
+                        "key": "unclassified",
+                        "label": {"zh": "类型未分类", "ko": "유형 미분류"},
+                    }],
+                    "images": ["https://cdn.example.test/other.jpg"],
+                }],
+            }],
+        }
+
+        result = _quality_summary(
+            date(2026, 8, 24),
+            5,
+            "24U411B-L",
+            include_quality=True,
+        )
+
+        self.assertEqual(result["issues"][0]["key"], "unclassified")
+        self.assertEqual(result["issues"][0]["label"], {"zh": "其他", "ko": "기타"})
+
+    @patch("production.field_kanban._quality_source_payload")
     def test_quality_history_requires_exact_machine_and_current_part_prefix(self, quality_source):
         quality_source.return_value = {
             "items": [

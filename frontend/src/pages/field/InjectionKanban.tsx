@@ -1183,21 +1183,25 @@ function QualityCanvas({
     <article className="field-quality-canvas">
       <header>
         <div className="field-quality-canvas__title">
-          <div className="field-quality-canvas__eyebrow">
-            <span>{c.qualityHistory}</span>
-            <em
-              className={verificationLabel ? `is-${issue.verification_status}` : "is-history"}
-              title={disclaimer}
-            >
-              <ShieldAlert aria-hidden="true" />
-              {verificationLabel || c.historicalReference}
-            </em>
+          <div className="field-quality-canvas__heading">
+            <h2>{issue.label[language] || issue.key}</h2>
+            <div className="field-quality-canvas__eyebrow">
+              <span>{c.qualityHistory}</span>
+              <em
+                className={verificationLabel ? `is-${issue.verification_status}` : "is-history"}
+                title={disclaimer}
+              >
+                <ShieldAlert aria-hidden="true" />
+                {verificationLabel || c.historicalReference}
+              </em>
+            </div>
           </div>
-          <h2>{issue.label[language] || issue.key}</h2>
-          <p className="field-quality-canvas__plan">
-            {snapshot.active_plan?.part_no || "-"} · {snapshot.active_plan?.model_name || "-"}
-          </p>
-          <p className="field-quality-canvas__headline">{headline}</p>
+          <div className="field-quality-canvas__detail">
+            <p className="field-quality-canvas__plan">
+              {snapshot.active_plan?.part_no || "-"} · {snapshot.active_plan?.model_name || "-"}
+            </p>
+            <p className="field-quality-canvas__headline">{headline}</p>
+          </div>
         </div>
         <div className="field-quality-canvas__issue-position">
           <strong>{issueIndex + 1}</strong><span>/ {snapshot.quality.issues.length}</span>
@@ -1309,7 +1313,6 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [now, setNow] = useState(() => new Date());
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("work_instruction");
   const [qualityIndex, setQualityIndex] = useState(0);
-  const [_rotationSeconds, setRotationSeconds] = useState(60);
   const [manualPause, setManualPause] = useState(false);
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(DEFAULT_DOCUMENT_ZOOM);
@@ -1533,7 +1536,6 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   useEffect(() => {
     setCanvasMode("work_instruction");
     setQualityIndex(0);
-    setRotationSeconds(60);
     setManualPause(false);
     setPage(1);
     setZoom(DEFAULT_DOCUMENT_ZOOM);
@@ -1549,39 +1551,32 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     if (qualityIssueCount === 0 && canvasMode === "quality") {
       setCanvasMode("work_instruction");
       setQualityIndex(0);
-      setRotationSeconds(60);
     } else if (canvasMode === "quality" && qualityIndex >= qualityIssueCount) {
       setQualityIndex(0);
-      setRotationSeconds(30);
     }
   }, [canvasMode, qualityIndex, qualityIssueCount]);
 
   useEffect(() => {
     if (rotationPaused) return;
-    const timer = window.setInterval(() => {
-      setRotationSeconds((current) => {
-        if (current > 1) return current - 1;
-        if (canvasMode === "work_instruction") {
-          if (qualityIssueCount > 0) {
-            setQualityIndex(0);
-            setCanvasMode("quality");
-            return 30;
-          }
-          return 60;
-        }
-        if (canvasMode === "quality") {
-          if (qualityIndex + 1 < qualityIssueCount) {
-            setQualityIndex((value) => value + 1);
-            return 30;
-          }
+    const delay = canvasMode === "quality" ? 30_000 : 60_000;
+    const timer = window.setTimeout(() => {
+      if (canvasMode === "work_instruction") {
+        if (qualityIssueCount > 0) {
           setQualityIndex(0);
-          setCanvasMode("work_instruction");
-          return 60;
+          setCanvasMode("quality");
         }
-        return 60;
-      });
-    }, 1_000);
-    return () => window.clearInterval(timer);
+        return;
+      }
+      if (canvasMode === "quality") {
+        if (qualityIndex + 1 < qualityIssueCount) {
+          setQualityIndex((value) => value + 1);
+          return;
+        }
+        setQualityIndex(0);
+        setCanvasMode("work_instruction");
+      }
+    }, delay);
+    return () => window.clearTimeout(timer);
   }, [canvasMode, qualityIndex, qualityIssueCount, rotationPaused]);
 
   const displayedDocument = canvasMode === "drawing"
@@ -1604,8 +1599,9 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   function chooseCanvasMode(mode: CanvasMode) {
     setCanvasMode(mode);
     setQualityIndex(0);
-    setRotationSeconds(mode === "quality" ? 30 : 60);
-    setManualPause(true);
+    // Opening quality content is still part of the automatic carousel. The
+    // document canvases remain paused when an operator explicitly selects one.
+    setManualPause(mode !== "quality");
     setPage(1);
     setZoom(mode === "work_instruction" ? DEFAULT_DOCUMENT_ZOOM : 100);
   }
@@ -1652,19 +1648,19 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     const currentIndex = canvasMode === "quality" ? qualityIndex + 1 : 0;
     const nextIndex = (currentIndex + direction + carouselLength) % carouselLength;
 
-    setManualPause(true);
+    // Manual previous/next navigation restarts the countdown from the selected
+    // item instead of leaving the now-hidden pause state enabled forever.
+    setManualPause(false);
     setPage(1);
     if (nextIndex === 0) {
       setCanvasMode("work_instruction");
       setQualityIndex(0);
-      setRotationSeconds(60);
       setZoom(DEFAULT_DOCUMENT_ZOOM);
       return;
     }
 
     setCanvasMode("quality");
     setQualityIndex(nextIndex - 1);
-    setRotationSeconds(30);
     setZoom(100);
   }
 
@@ -1960,7 +1956,12 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
             ) : null}
           </div>
 
-          <div className="field-document-canvas" onPointerDown={() => setManualPause(true)}>
+          <div
+            className="field-document-canvas"
+            onPointerDown={() => {
+              if (canvasMode !== "quality") setManualPause(true);
+            }}
+          >
             {!snapshot.active_plan ? (
               <div className="field-document-empty"><Factory /><h2>{c.noPlan}</h2><p>{c.noPlanHint}</p></div>
             ) : canvasMode === "quality" ? (
