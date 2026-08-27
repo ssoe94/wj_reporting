@@ -1057,7 +1057,7 @@
 }
 
 .field-material-file-field {
-  grid-template-columns: 165px 145px minmax(0, 1fr);
+  grid-template-columns: 165px minmax(0, 1fr);
 }
 
 .field-material-file-field input {
@@ -1068,33 +1068,97 @@
   opacity: 0;
 }
 
-.field-material-file-field button {
-  display: flex;
-  min-height: 50px;
+.field-material-file-drop {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 108px;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
-  color: #0754a8;
-  border: 1px solid #75a7d9;
-  border-radius: 7px;
-  background: #eef6ff;
-  font-size: 14px;
-  font-weight: 900;
+  gap: 14px;
+  padding: 15px 17px;
+  color: #173a61;
+  border: 2px dashed #78a8d8;
+  border-radius: 10px;
+  background: #f4f9ff;
+  text-align: left;
   cursor: pointer;
+  transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
 }
 
-.field-material-file-field button svg {
-  width: 20px;
-  height: 20px;
+.field-material-file-drop:hover:not(:disabled) {
+  border-color: #0877ca;
+  background: #edf7ff;
 }
 
-.field-material-file-field > strong {
+.field-material-file-drop.is-dragging {
+  border-color: #00a8c2;
+  background: #e8fbff;
+  box-shadow: 0 0 0 4px rgba(0, 168, 194, .15);
+}
+
+.field-material-file-drop.has-file {
+  border-style: solid;
+  border-color: #51ad8d;
+  background: #effbf7;
+}
+
+.field-material-file-drop:disabled {
+  cursor: wait;
+  opacity: .68;
+}
+
+.field-material-file-drop__icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  color: #0754a8;
+  border-radius: 11px;
+  background: #dcebfb;
+}
+
+.field-material-file-drop.has-file .field-material-file-drop__icon {
+  color: #087052;
+  background: #d6f4e9;
+}
+
+.field-material-file-drop__icon svg {
+  width: 29px;
+  height: 29px;
+}
+
+.field-material-file-drop__copy {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.field-material-file-drop__copy strong {
   overflow: hidden;
-  color: #405269;
-  font-size: 13px;
-  font-weight: 750;
+  color: #102e50;
+  font-size: 16px;
+  font-weight: 900;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.field-material-file-drop__copy small {
+  color: #5e748d;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.field-material-file-drop > em {
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  color: #0754a8;
+  border: 1px solid #8bb4dd;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .field-material-ppt-warning {
@@ -1318,6 +1382,14 @@
   .field-material-file-field {
     grid-template-columns: 1fr;
     gap: 7px;
+  }
+
+  .field-material-file-drop {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .field-material-file-drop > em {
+    display: none;
   }
 
   .field-material-upload-fields > .field-material-match-rule {

@@ -22,6 +22,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The site-wide low-resource theme targets every aside element. The field
+   kiosk has its own high-contrast command panel and must remain isolated. */
+.lite-mode .field-kanban .field-command-panel {
+  border-right: 0 !important;
+  background: #032f58 !important;
+}
+
 .field-kanban-stage {
   --field-display-scale: 1;
   display: grid;
@@ -813,16 +820,23 @@
   background: #e6ebf0;
 }
 
-.field-document-canvas iframe {
+.field-pdf-preview {
   display: block;
   width: 100%;
-  height: 100%;
-  border: 0;
+  min-height: 100%;
   background: #fff;
 }
 
-.field-document-canvas iframe.is-interaction-locked {
+.field-pdf-preview.is-interaction-locked {
   pointer-events: none;
+}
+
+.field-pdf-preview img {
+  display: block;
+  max-width: none;
+  height: auto;
+  margin-inline: auto;
+  background: #fff;
 }
 
 .field-document-image-preview {
@@ -861,6 +875,10 @@
   color: #17365c;
   background: #f6f8fb;
   text-align: center;
+}
+
+.field-document-load-state.is-hidden {
+  display: none;
 }
 
 .field-document-load-state > svg {
@@ -1408,6 +1426,17 @@
 .field-quality-canvas__empty span {
   font-size: clamp(15px, 1vw, 20px);
   font-weight: 750;
+}
+
+.field-quality-canvas--status {
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  padding: 14px;
+  background: #ebeef2;
+}
+
+.field-quality-canvas__empty > svg.is-spinning {
+  animation: field-spin .9s linear infinite;
 }
 
 .field-display-controls-popover {
@@ -2937,6 +2966,536 @@
 
   .field-quality-canvas__body {
     padding: 14px;
+  }
+}
+
+/* Native 4:3 kiosk layout. Keep touch targets readable at 1024 × 768 instead
+   of fitting a desktop-width canvas with a transform. */
+@media (max-width: 1100px) and (max-height: 820px) {
+  .field-kanban-stage {
+    grid-template-rows: 68px minmax(0, 1fr);
+  }
+
+  .field-kanban-header {
+    grid-template-columns: 190px 185px 112px 150px minmax(0, 1fr);
+    height: 68px;
+  }
+
+  .field-kanban-brand {
+    gap: 7px;
+    min-height: 0;
+    padding: 4px 8px;
+  }
+
+  .field-kanban-brand img {
+    width: 48px;
+    height: 46px;
+  }
+
+  .field-kanban-brand span {
+    gap: 1px;
+  }
+
+  .field-kanban-brand strong {
+    font-size: 16px;
+  }
+
+  .field-kanban-brand small {
+    font-size: 10px;
+  }
+
+  .field-kanban-machine,
+  .field-kanban-live,
+  .field-kanban-clock {
+    gap: 5px;
+    padding: 4px 6px;
+  }
+
+  .field-kanban-machine svg {
+    width: 34px;
+    height: 34px;
+  }
+
+  .field-kanban-machine strong {
+    font-size: 21px;
+  }
+
+  .field-kanban-live {
+    font-size: 14px;
+  }
+
+  .field-kanban-live svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .field-kanban-live span {
+    display: none;
+  }
+
+  .field-kanban-clock {
+    gap: 7px;
+  }
+
+  .field-kanban-clock svg {
+    width: 23px;
+    height: 23px;
+  }
+
+  .field-kanban-clock strong {
+    font-size: 21px;
+  }
+
+  .field-kanban-clock span {
+    display: none;
+  }
+
+  .field-kanban-header-actions {
+    justify-content: flex-end;
+    gap: 3px;
+    padding: 4px;
+  }
+
+  .field-kanban-header-actions > button {
+    width: 44px;
+    height: 48px;
+  }
+
+  .field-kanban-header-actions > button svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .field-kanban-header-actions > .field-display-controls-trigger {
+    width: 80px;
+    padding-inline: 7px;
+  }
+
+  .field-display-controls-trigger span {
+    font-size: 13px;
+  }
+
+  .field-language-toggle,
+  .field-language-toggle button {
+    height: 48px;
+  }
+
+  .field-language-toggle button {
+    min-width: 55px;
+    padding: 0 6px;
+    font-size: 15px;
+  }
+
+  .field-kanban-main {
+    grid-template-columns: minmax(330px, 34%) minmax(0, 1fr);
+    height: auto;
+  }
+
+  .field-command-panel {
+    padding: 8px 10px;
+  }
+
+  .field-shot-hero {
+    padding: 0 4px 7px;
+  }
+
+  .field-shot-hero span {
+    font-size: 17px;
+  }
+
+  .field-shot-hero strong {
+    margin-top: 0;
+    font-size: 55px;
+  }
+
+  .field-part-summary {
+    grid-template-columns: 34% 66%;
+    padding: 8px 4px;
+  }
+
+  .field-part-summary > div + div {
+    padding-left: 11px;
+  }
+
+  .field-part-summary span {
+    font-size: 13px;
+  }
+
+  .field-part-summary strong {
+    margin-top: 4px;
+    font-size: 22px;
+  }
+
+  .field-current-metrics {
+    padding: 7px 0;
+  }
+
+  .field-current-metrics > div {
+    min-height: 54px;
+    padding: 0 6px;
+  }
+
+  .field-current-metrics span {
+    font-size: 11px;
+    line-height: 1.15;
+  }
+
+  .field-current-metrics strong {
+    margin-top: 4px;
+    font-size: 23px;
+  }
+
+  .field-current-metrics i {
+    height: 6px;
+    margin-top: 5px;
+  }
+
+  .field-queue {
+    padding-top: 6px;
+  }
+
+  .field-queue h2 {
+    margin: 0 0 5px 4px;
+    font-size: 18px;
+  }
+
+  .field-queue-list,
+  .field-queue.is-expanded .field-queue-list {
+    gap: 4px;
+  }
+
+  .field-queue-list article,
+  .field-queue.is-expanded .field-queue-list article {
+    grid-template-columns: minmax(0, 1fr) 132px;
+    min-height: 0;
+    margin-left: 34px;
+  }
+
+  .field-queue-index,
+  .field-queue.is-expanded .field-queue-index {
+    left: -39px;
+    width: 30px;
+    height: 30px;
+    border-width: 2px;
+    font-size: 16px;
+  }
+
+  .field-queue-flow,
+  .field-queue.is-expanded .field-queue-flow {
+    top: calc(100% + 2px);
+    left: -24px;
+    width: 9px;
+    height: 9px;
+  }
+
+  .field-queue-copy,
+  .field-queue-value,
+  .field-queue.is-expanded .field-queue-copy,
+  .field-queue.is-expanded .field-queue-value {
+    gap: 1px;
+    padding: 3px 6px;
+  }
+
+  .field-queue-value small,
+  .field-queue.is-expanded .field-queue-value small {
+    font-size: 11px;
+  }
+
+  .field-queue-copy strong,
+  .field-queue-value strong,
+  .field-queue.is-expanded .field-queue-copy strong,
+  .field-queue.is-expanded .field-queue-value strong {
+    font-size: 16px;
+  }
+
+  .field-queue-copy span,
+  .field-queue.is-expanded .field-queue-copy span {
+    font-size: 11px;
+  }
+
+  .field-command-actions {
+    gap: 7px;
+    padding-top: 7px;
+  }
+
+  .field-command-actions button {
+    min-height: 54px;
+    gap: 6px;
+    border-width: 3px;
+    font-size: 17px;
+  }
+
+  .field-command-actions svg {
+    width: 23px;
+    height: 23px;
+  }
+
+  .field-content-panel {
+    grid-template-rows: 104px minmax(0, 1fr) 56px;
+  }
+
+  .field-content-panel.has-alert {
+    grid-template-rows: 36px 104px minmax(0, 1fr) 56px;
+  }
+
+  .field-content-panel.is-quality {
+    grid-template-rows: 62px minmax(0, 1fr) 56px;
+  }
+
+  .field-content-panel.is-quality.has-alert {
+    grid-template-rows: 36px 62px minmax(0, 1fr) 56px;
+  }
+
+  .field-alert-band {
+    gap: 6px;
+    padding: 3px 8px;
+    font-size: 14px;
+  }
+
+  .field-alert-band svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .field-document-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: 55px 49px;
+    gap: 0 8px;
+    padding: 0 8px;
+  }
+
+  .field-document-toolbar.is-quality {
+    grid-template-rows: 62px;
+  }
+
+  .field-document-tabs {
+    grid-column: 1;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: end;
+    gap: 4px;
+    padding-top: 5px;
+  }
+
+  .field-document-tabs button,
+  .field-document-tabs button.is-quality {
+    min-width: 0;
+    height: 50px;
+    padding: 0 5px;
+    font-size: 17px;
+  }
+
+  .field-cycle-nav {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .field-cycle-nav button {
+    width: 43px;
+    height: 43px;
+  }
+
+  .field-cycle-nav button svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .field-document-controls {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: end;
+    padding: 2px 0 3px;
+  }
+
+  .field-document-controls button,
+  .field-document-controls a {
+    min-width: 42px;
+    height: 43px;
+  }
+
+  .field-document-controls strong,
+  .field-document-controls span {
+    min-width: 45px;
+    height: 43px;
+    font-size: 12px;
+  }
+
+  .field-document-controls svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .field-material-footer {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 4px 8px;
+  }
+
+  .field-material-footer > div {
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .field-material-footer > div > svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .field-material-footer span svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .field-material-footer > button {
+    min-height: 46px;
+    gap: 5px;
+    padding: 0 9px;
+    border-width: 1px;
+    font-size: 13px;
+  }
+
+  .field-material-footer > button svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .field-quality-canvas {
+    min-height: 0;
+  }
+
+  .field-quality-canvas > header {
+    gap: 3px 8px;
+    padding: 6px 9px;
+  }
+
+  .field-quality-canvas__title {
+    gap: 3px;
+  }
+
+  .field-quality-canvas__heading {
+    gap: 8px;
+  }
+
+  .field-quality-canvas > header h2 {
+    max-width: 70%;
+    font-size: 27px;
+  }
+
+  .field-quality-canvas__eyebrow {
+    gap: 5px;
+  }
+
+  .field-quality-canvas__eyebrow > span {
+    font-size: 12px;
+  }
+
+  .field-quality-canvas__eyebrow em {
+    gap: 3px;
+    padding: 2px 5px;
+    font-size: 10px;
+  }
+
+  .field-quality-canvas__eyebrow em svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .field-quality-canvas__detail {
+    gap: 7px;
+  }
+
+  .field-quality-canvas__plan {
+    max-width: 42%;
+    font-size: 12px;
+  }
+
+  .field-quality-canvas__headline {
+    padding-left: 7px;
+    font-size: 11px;
+  }
+
+  .field-quality-canvas__issue-position {
+    min-width: 54px;
+  }
+
+  .field-quality-canvas__issue-position strong {
+    font-size: 28px;
+  }
+
+  .field-quality-canvas__issue-position span {
+    font-size: 15px;
+  }
+
+  .field-quality-canvas__header-meta {
+    gap: 4px;
+  }
+
+  .field-quality-canvas__header-meta > span {
+    min-height: 24px;
+    gap: 4px;
+    padding: 2px 5px;
+    border-radius: 5px;
+  }
+
+  .field-quality-canvas__header-meta small {
+    font-size: 9px;
+  }
+
+  .field-quality-canvas__header-meta strong {
+    font-size: 11px;
+  }
+
+  .field-quality-canvas__body {
+    padding: 6px;
+  }
+
+  .field-quality-canvas__gallery,
+  .field-quality-canvas__empty {
+    border-width: 2px;
+    border-radius: 8px;
+  }
+
+  .field-quality-canvas__carousel-controls {
+    min-height: 40px;
+    gap: 8px;
+    padding: 2px 8px;
+  }
+
+  .field-quality-canvas__carousel-controls > strong {
+    font-size: 13px;
+  }
+
+  .field-quality-canvas__carousel-controls button {
+    width: 36px;
+    height: 34px;
+  }
+
+  .field-quality-canvas__carousel-controls button span {
+    width: 24px;
+    height: 6px;
+  }
+
+  .field-quality-canvas__carousel-controls button.is-active span {
+    width: 30px;
+  }
+
+  .field-quality-canvas__empty {
+    gap: 8px;
+    padding: 18px;
+  }
+
+  .field-quality-canvas__empty svg {
+    width: 54px;
+    height: 54px;
+  }
+
+  .field-quality-canvas__empty strong {
+    font-size: 24px;
+  }
+
+  .field-quality-canvas__empty span {
+    font-size: 14px;
   }
 }
 

@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "react-toastify";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -42,6 +43,7 @@ import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate"
 import "./FieldMaterialsPage.css";
 
 type MaterialKind = FieldDocument["kind"];
+const PPT_AUTO_CONVERSION_LIMIT = 10 * 1024 * 1024;
 
 const pageCopy = {
   ko: {
@@ -72,27 +74,30 @@ const pageCopy = {
     replace: "교체 업로드",
     modalTitleInstruction: "작업지도서 업로드",
     modalTitleDrawing: "도면 업로드",
-    modalHintInstruction: "PPT/PPTX 원본 하나만 올리면 현장용 미리보기를 자동 생성합니다. PDF도 바로 업로드할 수 있습니다.",
-    modalHintDrawing: "도면은 PDF 파일만 업로드할 수 있습니다.",
+    modalHintInstruction: "PDF, PPT 또는 PPTX 파일 하나만 올리면 됩니다. PPT/PPTX는 현장용 화면으로 자동 변환합니다.",
+    modalHintDrawing: "도면은 PDF 파일 하나만 올리면 됩니다.",
     revision: "개정번호",
     revisionPlaceholder: "예: Rev. C",
-    sourceFile: "원본 파일",
-    previewPdf: "현장용 PDF 미리보기",
-    previewOptional: "선택 사항 · 자동 변환 실패 또는 10MB 초과 시 사용",
+    uploadFile: "업로드 파일",
     chooseFile: "파일 선택",
+    changeFile: "파일 바꾸기",
+    dropFile: "파일을 여기에 놓거나 눌러서 선택",
+    dropActive: "여기에 파일을 놓아 주세요",
+    acceptedInstruction: "PDF · PPT · PPTX 중 파일 1개",
+    acceptedDrawing: "PDF 파일 1개",
+    singleFileOnly: "파일은 한 번에 하나만 올려 주세요.",
     noFile: "선택된 파일 없음",
     cancel: "취소",
     uploading: "업로드 중…",
     submit: "자료 업로드",
     uploadSuccess: "현장 자료를 업로드했습니다.",
     uploadConverting: "PPT 원본을 업로드했습니다. 현장용 미리보기를 변환하고 있습니다.",
-    uploadConversionFailed: "PPT 원본은 저장했지만 자동 변환을 시작하지 못했습니다. PDF 미리보기를 추가해 다시 업로드해 주세요.",
+    uploadConversionFailed: "PPT 원본은 저장했지만 자동 변환을 시작하지 못했습니다. 같은 자료를 PDF로 저장한 뒤 PDF 한 파일로 다시 올려 주세요.",
     uploadError: "현장 자료 업로드에 실패했습니다.",
     invalidDrawing: "도면은 PDF 파일만 선택해 주세요.",
     invalidInstruction: "작업지도서는 PDF, PPT, PPTX 파일만 선택해 주세요.",
-    invalidPreview: "미리보기는 PDF 파일만 선택해 주세요.",
-    pptWarning: "10MB 이하 PPT/PPTX는 업로드 후 현장용 화면으로 자동 변환됩니다.",
-    pptTooLarge: "10MB를 초과하는 PPT/PPTX는 현장용 PDF 미리보기를 함께 선택해 주세요.",
+    pptWarning: "PPT/PPTX는 업로드 후 현장용 화면으로 자동 변환됩니다.",
+    pptTooLarge: "파일이 10MB를 초과합니다. PDF로 변환해서 올려 주세요.",
     machinesUnit: "호기",
     pieces: "개",
     noRevision: "개정번호 없음",
@@ -142,27 +147,30 @@ const pageCopy = {
     replace: "替换上传",
     modalTitleInstruction: "上传作业指导书",
     modalTitleDrawing: "上传图纸",
-    modalHintInstruction: "只需上传一个 PPT/PPTX 原件，系统会自动生成现场预览；也可直接上传 PDF。",
-    modalHintDrawing: "图纸仅支持 PDF 文件。",
+    modalHintInstruction: "只需上传一个 PDF、PPT 或 PPTX 文件；PPT/PPTX 会自动转换为现场画面。",
+    modalHintDrawing: "图纸只需上传一个 PDF 文件。",
     revision: "修订号",
     revisionPlaceholder: "例如：Rev. C",
-    sourceFile: "原始文件",
-    previewPdf: "现场 PDF 预览",
-    previewOptional: "可选 · 自动转换失败或文件超过 10MB 时使用",
+    uploadFile: "上传文件",
     chooseFile: "选择文件",
+    changeFile: "更换文件",
+    dropFile: "将文件拖放到此处，或点击选择",
+    dropActive: "请将文件放在这里",
+    acceptedInstruction: "PDF · PPT · PPTX，仅限 1 个文件",
+    acceptedDrawing: "PDF，仅限 1 个文件",
+    singleFileOnly: "一次只能上传一个文件。",
     noFile: "未选择文件",
     cancel: "取消",
     uploading: "上传中…",
     submit: "上传资料",
     uploadSuccess: "现场资料已上传。",
     uploadConverting: "PPT 原件已上传，正在生成现场预览。",
-    uploadConversionFailed: "PPT 原件已保存，但无法启动自动转换。请添加 PDF 预览后重新上传。",
+    uploadConversionFailed: "PPT 原件已保存，但无法启动自动转换。请将同一资料另存为 PDF 后，仅上传该 PDF 文件。",
     uploadError: "现场资料上传失败。",
     invalidDrawing: "图纸只能选择 PDF 文件。",
     invalidInstruction: "作业指导书只能选择 PDF、PPT 或 PPTX 文件。",
-    invalidPreview: "预览文件只能选择 PDF。",
-    pptWarning: "10MB 以内的 PPT/PPTX 上传后会自动转换为现场画面。",
-    pptTooLarge: "超过 10MB 的 PPT/PPTX 请同时选择现场 PDF 预览。",
+    pptWarning: "PPT/PPTX 上传后会自动转换为现场画面。",
+    pptTooLarge: "文件超过 10MB，请转换为 PDF 后再上传。",
     machinesUnit: "号机",
     pieces: "件",
     noRevision: "无修订号",
@@ -326,6 +334,12 @@ function isPpt(file: File | null) {
   return name.endsWith(".ppt") || name.endsWith(".pptx");
 }
 
+function formatFileSize(size: number) {
+  const megabytes = size / (1024 * 1024);
+  if (megabytes >= 1) return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`;
+  return `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
 function DocumentStatus({
   document,
   ready,
@@ -443,12 +457,12 @@ function UploadDialog({
   const c = pageCopy[language];
   const queryClient = useQueryClient();
   const sourceInputRef = useRef<HTMLInputElement>(null);
-  const previewInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
   const currentDocument = kind === "work_instruction" ? model.work_instruction : model.drawing;
   const [revision, setRevision] = useState(currentDocument?.revision || "");
   const [matchRule, setMatchRule] = useState<FieldMaterialMatchRule>("exact");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
-  const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const uploadMutation = useMutation({ mutationFn: uploadFieldMaterial });
@@ -456,6 +470,60 @@ function UploadDialog({
   const uploadDialogRef = useModalFocusTrap<HTMLFormElement>({
     onEscape: uploadMutation.isPending ? undefined : onClose,
   });
+
+  function selectSourceFile(file: File | null) {
+    setSuccess(null);
+    setLocalError(null);
+    if (!file) {
+      setSourceFile(null);
+      return;
+    }
+    if (!isInstruction && !isPdf(file)) {
+      setLocalError(c.invalidDrawing);
+      return;
+    }
+    if (isInstruction && !isPdf(file) && !isPpt(file)) {
+      setLocalError(c.invalidInstruction);
+      return;
+    }
+    if (isInstruction && isPpt(file) && file.size > PPT_AUTO_CONVERSION_LIMIT) {
+      setLocalError(c.pptTooLarge);
+      toast.error(c.pptTooLarge);
+      return;
+    }
+    setSourceFile(file);
+  }
+
+  function selectDroppedFiles(files: FileList | null) {
+    if (!files?.length) return;
+    if (files.length !== 1) {
+      setSuccess(null);
+      setLocalError(c.singleFileOnly);
+      return;
+    }
+    selectSourceFile(files[0]);
+  }
+
+  function enterDropZone(event: React.DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    if (uploadMutation.isPending) return;
+    dragDepthRef.current += 1;
+    setIsDraggingFile(true);
+  }
+
+  function leaveDropZone(event: React.DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFile(false);
+  }
+
+  function dropFile(event: React.DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingFile(false);
+    if (uploadMutation.isPending) return;
+    selectDroppedFiles(event.dataTransfer.files);
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -473,11 +541,7 @@ function UploadDialog({
       setLocalError(c.invalidInstruction);
       return;
     }
-    if (previewFile && !isPdf(previewFile)) {
-      setLocalError(c.invalidPreview);
-      return;
-    }
-    if (isInstruction && isPpt(sourceFile) && !previewFile && sourceFile.size > 10 * 1024 * 1024) {
+    if (isInstruction && isPpt(sourceFile) && sourceFile.size > PPT_AUTO_CONVERSION_LIMIT) {
       setLocalError(c.pptTooLarge);
       return;
     }
@@ -489,7 +553,6 @@ function UploadDialog({
         revision,
         matchRule,
         file: sourceFile,
-        previewPdf: isInstruction ? previewFile : null,
       });
       await queryClient.invalidateQueries({ queryKey: ["field-materials"] });
       if (uploadedDocument?.conversion_status === "failed" && !uploadedDocument.ready) {
@@ -548,40 +611,48 @@ function UploadDialog({
             </div>
           </label>
           <div className="field-material-file-field">
-            <span>{c.sourceFile}</span>
+            <span>{c.uploadFile}</span>
             <input
               accept={isInstruction ? ".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" : ".pdf,application/pdf"}
               aria-hidden="true"
+              disabled={uploadMutation.isPending}
               onChange={(event) => {
-                setSourceFile(event.target.files?.[0] ?? null);
-                setLocalError(null);
+                selectDroppedFiles(event.currentTarget.files);
+                event.currentTarget.value = "";
               }}
               ref={sourceInputRef}
               tabIndex={-1}
               type="file"
             />
-            <button onClick={() => sourceInputRef.current?.click()} type="button"><FileUp />{c.chooseFile}</button>
-            <strong>{sourceFile?.name || c.noFile}</strong>
+            <button
+              aria-label={sourceFile ? `${c.changeFile}: ${sourceFile.name}` : c.dropFile}
+              className={`field-material-file-drop${isDraggingFile ? " is-dragging" : ""}${sourceFile ? " has-file" : ""}`}
+              disabled={uploadMutation.isPending}
+              onClick={() => sourceInputRef.current?.click()}
+              onDragEnter={enterDropZone}
+              onDragLeave={leaveDropZone}
+              onDragOver={(event) => {
+                event.preventDefault();
+                if (!uploadMutation.isPending) event.dataTransfer.dropEffect = "copy";
+              }}
+              onDrop={dropFile}
+              type="button"
+            >
+              <span className="field-material-file-drop__icon">
+                {sourceFile ? <FileCheck2 /> : <UploadCloud />}
+              </span>
+              <span className="field-material-file-drop__copy">
+                <strong>{isDraggingFile ? c.dropActive : sourceFile?.name || c.dropFile}</strong>
+                <small>
+                  {sourceFile
+                    ? `${sourceFile.name.split(".").pop()?.toUpperCase() || "FILE"} · ${formatFileSize(sourceFile.size)}`
+                    : isInstruction ? c.acceptedInstruction : c.acceptedDrawing}
+                </small>
+              </span>
+              <em>{sourceFile ? c.changeFile : c.chooseFile}</em>
+            </button>
           </div>
-          {isInstruction ? (
-            <div className="field-material-file-field">
-              <span>{c.previewPdf}<small>{c.previewOptional}</small></span>
-              <input
-                accept=".pdf,application/pdf"
-                aria-hidden="true"
-                onChange={(event) => {
-                  setPreviewFile(event.target.files?.[0] ?? null);
-                  setLocalError(null);
-                }}
-                ref={previewInputRef}
-                tabIndex={-1}
-                type="file"
-              />
-              <button onClick={() => previewInputRef.current?.click()} type="button"><FileText />{c.chooseFile}</button>
-              <strong>{previewFile?.name || c.noFile}</strong>
-            </div>
-          ) : null}
-          {isInstruction && isPpt(sourceFile) && !previewFile ? (
+          {isInstruction && isPpt(sourceFile) ? (
             <div className="field-material-ppt-warning"><FileCheck2 />{c.pptWarning}</div>
           ) : null}
         </div>

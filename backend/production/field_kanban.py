@@ -739,7 +739,7 @@ def save_field_material(
         and _safe_int(getattr(source_file, "size", 0)) > MAX_OFFICE_CONVERSION_BYTES
     ):
         raise FieldKanbanError(
-            "PowerPoint files over 10 MB require a PDF preview.",
+            "PowerPoint files over 10 MB cannot be converted automatically. Export the presentation as PDF and upload the PDF instead.",
             code="office_conversion_file_too_large",
             status_code=413,
         )

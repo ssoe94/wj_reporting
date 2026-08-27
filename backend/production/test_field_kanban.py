@@ -1494,7 +1494,7 @@ class FieldMaterialUploadTests(TestCase):
         )
 
     @patch("production.field_kanban.cloudinary.uploader.upload")
-    def test_pptx_over_conversion_limit_requires_manual_pdf_preview(self, upload):
+    def test_pptx_over_conversion_limit_requires_single_pdf_upload_instead(self, upload):
         with self.assertRaises(FieldKanbanError) as too_large:
             save_field_material(
                 kind="work_instruction",
@@ -1511,6 +1511,7 @@ class FieldMaterialUploadTests(TestCase):
 
         self.assertEqual(too_large.exception.code, "office_conversion_file_too_large")
         self.assertEqual(too_large.exception.status_code, 413)
+        self.assertIn("upload the PDF instead", too_large.exception.detail)
         upload.assert_not_called()
 
     @patch("production.field_kanban.cloudinary.api.resource")

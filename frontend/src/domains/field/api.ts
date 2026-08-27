@@ -115,6 +115,7 @@ export type FieldKanbanResponse = {
     matching_report_count: number;
     issues: FieldQualityIssue[];
     disclaimer: FieldLanguageLabel;
+    unavailable_reason: string | null;
   };
   pending_prompt: FieldPendingPrompt | null;
 };
@@ -332,6 +333,7 @@ export function normalizeFieldKanbanResponse(value: unknown, date: string, machi
     },
     quality: {
       matching_report_count: asNumber(quality.matching_report_count),
+      unavailable_reason: asString(quality.unavailable_reason) || null,
       issues: Array.isArray(quality.issues) ? quality.issues.map((item, index) => {
         const row = asRecord(item);
         return {

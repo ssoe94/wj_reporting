@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  PDFDocumentLoadingTask,
+  PDFDocumentProxy,
+  PDFPageProxy,
+  RenderTask,
+} from "pdfjs-dist";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -186,6 +192,12 @@ const copy = {
     latestReport: "最近报告",
     representativePhotos: "代表照片",
     noRepresentativePhotos: "暂无代表照片",
+    qualityLoading: "正在读取品质资料…",
+    qualityUnavailable: "暂时无法读取品质资料",
+    qualityPermissionRequired: "当前账号没有品质资料查看权限",
+    qualityPermissionHint: "请联系管理员确认品质查看权限。",
+    qualityEmpty: "当前型号暂无品质Issue",
+    qualityEmptyHint: "新增匹配的品质记录后会自动显示在这里。",
     matchingReports: "匹配报告",
     historicalReference: "历史参考",
     sourceMaterial: "样本来源",
@@ -316,6 +328,12 @@ const copy = {
     latestReport: "최근 보고",
     representativePhotos: "대표 사진",
     noRepresentativePhotos: "대표 사진 없음",
+    qualityLoading: "품질 자료를 불러오는 중입니다…",
+    qualityUnavailable: "품질 자료를 불러오지 못했습니다",
+    qualityPermissionRequired: "현재 계정에는 품질 자료 조회 권한이 없습니다",
+    qualityPermissionHint: "관리자에게 품질 조회 권한을 확인해 주세요.",
+    qualityEmpty: "현재 모델의 품질 이슈가 없습니다",
+    qualityEmptyHint: "일치하는 품질 기록이 추가되면 여기에 자동으로 표시됩니다.",
     matchingReports: "매칭 보고",
     historicalReference: "이력 참고",
     sourceMaterial: "샘플 출처",
@@ -564,13 +582,6 @@ function getReachableDocumentUrl(value: string | null | undefined) {
   } catch {
     return value;
   }
-}
-
-function getDocumentUrl(document: FieldDocument | null, page: number, zoom: number) {
-  const reachableUrl = getReachableDocumentUrl(document?.preview_url);
-  if (!reachableUrl) return null;
-  const base = reachableUrl.split("#")[0];
-  return `${base}#page=${Math.max(1, page)}&zoom=${Math.max(50, zoom)}&pagemode=none&navpanes=0`;
 }
 
 function getCloudinaryPdfPageImageUrl(document: FieldDocument | null, page: number) {
@@ -982,6 +993,192 @@ function DocumentEmptyState({ document, language }: { document: FieldDocument | 
   );
 }
 
+let pdfJsModulePromise: Promise<typeof import("pdfjs-dist")> | null = null;
+const pdfJsAssetBase = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}pdfjs/`;
+
+function loadPdfJs() {
+  if (!pdfJsModulePromise) {
+    pdfJsModulePromise = Promise.all([
+      import("pdfjs-dist"),
+      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+    ]).then(([pdfJs, workerModule]) => {
+      pdfJs.GlobalWorkerOptions.workerSrc = workerModule.default;
+      return pdfJs;
+    });
+    void pdfJsModulePromise.catch(() => {
+      pdfJsModulePromise = null;
+    });
+  }
+  return pdfJsModulePromise;
+}
+
+function isPdfRenderCancellation(error: unknown) {
+  return (error as { name?: string } | null)?.name === "RenderingCancelledException";
+}
+
+function PdfCanvasPreview({
+  attempt,
+  interactionLocked,
+  onLoadStateChange,
+  page,
+  title,
+  url,
+  zoom,
+}: {
+  attempt: number;
+  interactionLocked: boolean;
+  onLoadStateChange: (state: "loading" | "ready" | "error") => void;
+  page: number;
+  title: string;
+  url: string;
+  zoom: number;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
+  const [renderedPage, setRenderedPage] = useState<{
+    height: number;
+    url: string;
+    width: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+
+    let frame = 0;
+    const updateWidth = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const nextWidth = Math.max(1, Math.floor(host.clientWidth));
+        setContainerWidth((current) => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
+      });
+    };
+
+    updateWidth();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateWidth);
+    observer?.observe(host);
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateWidth);
+      window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let loadingTask: PDFDocumentLoadingTask | null = null;
+    let loadedDocument: PDFDocumentProxy | null = null;
+
+    setPdfDocument(null);
+    onLoadStateChange("loading");
+    void loadPdfJs()
+      .then((pdfJs) => {
+        if (!active) return null;
+        loadingTask = pdfJs.getDocument({
+          url: url.split("#")[0],
+          cMapPacked: true,
+          cMapUrl: `${pdfJsAssetBase}cmaps/`,
+          standardFontDataUrl: `${pdfJsAssetBase}standard_fonts/`,
+          useSystemFonts: true,
+        });
+        return loadingTask.promise;
+      })
+      .then((nextDocument) => {
+        if (!nextDocument) return;
+        loadedDocument = nextDocument;
+        if (!active) {
+          void nextDocument.destroy();
+          return;
+        }
+        setPdfDocument(nextDocument);
+      })
+      .catch(() => {
+        if (active) onLoadStateChange("error");
+      });
+
+    return () => {
+      active = false;
+      if (loadingTask) void loadingTask.destroy();
+      if (loadedDocument) void loadedDocument.destroy();
+    };
+  }, [attempt, onLoadStateChange, url]);
+
+  useEffect(() => {
+    if (!pdfDocument || !containerWidth) return;
+
+    let active = true;
+    let pdfPage: PDFPageProxy | null = null;
+    let renderTask: RenderTask | null = null;
+    setRenderedPage(null);
+    onLoadStateChange("loading");
+
+    void pdfDocument
+      .getPage(Math.min(Math.max(1, page), pdfDocument.numPages))
+      .then((nextPage) => {
+        if (!active) {
+          nextPage.cleanup();
+          return null;
+        }
+        pdfPage = nextPage;
+        const baseViewport = nextPage.getViewport({ scale: 1 });
+        const cssScale = (containerWidth / baseViewport.width) * (Math.max(50, zoom) / 100);
+        const cssViewport = nextPage.getViewport({ scale: cssScale });
+        const outputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+        const renderViewport = nextPage.getViewport({ scale: cssScale * outputScale });
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d", { alpha: false });
+        if (!context) throw new Error("PDF canvas is unavailable");
+
+        canvas.width = Math.max(1, Math.floor(renderViewport.width));
+        canvas.height = Math.max(1, Math.floor(renderViewport.height));
+        renderTask = nextPage.render({
+          canvasContext: context,
+          viewport: renderViewport,
+          background: "#ffffff",
+        });
+        return renderTask.promise.then(() => ({
+          height: Math.max(1, Math.floor(cssViewport.height)),
+          url: canvas.toDataURL("image/png"),
+          width: Math.max(1, Math.floor(cssViewport.width)),
+        }));
+      })
+      .then((result) => {
+        if (!result) return;
+        if (!active) return;
+        setRenderedPage(result);
+        onLoadStateChange("ready");
+      })
+      .catch((error) => {
+        if (active && !isPdfRenderCancellation(error)) onLoadStateChange("error");
+      });
+
+    return () => {
+      active = false;
+      renderTask?.cancel();
+      pdfPage?.cleanup();
+    };
+  }, [containerWidth, onLoadStateChange, page, pdfDocument, zoom]);
+
+  return (
+    <div
+      className={`field-pdf-preview${interactionLocked ? " is-interaction-locked" : ""}`}
+      ref={hostRef}
+    >
+      {renderedPage ? (
+        <img
+          alt={`${title} · ${page}`}
+          height={renderedPage.height}
+          onError={() => onLoadStateChange("error")}
+          src={renderedPage.url}
+          width={renderedPage.width}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function FieldDocumentPreview({
   document,
   interactionLocked,
@@ -1003,12 +1200,10 @@ function FieldDocumentPreview({
     ? getReachableDocumentUrl(document.preview_url)
     : null;
   const imageUrl = pageImageUrl || directImageUrl;
-  const pdfUrl = imageUrl ? null : getDocumentUrl(document, page, zoom);
+  const pdfUrl = imageUrl ? null : getReachableDocumentUrl(document.preview_url);
   const sourceUrl = getReachableDocumentUrl(document.source_url);
   const [attempt, setAttempt] = useState(0);
-  const [loadState, setLoadState] = useState<"checking" | "loading" | "ready" | "error">(
-    imageUrl ? "loading" : "checking",
-  );
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     if (imageUrl) {
@@ -1020,41 +1215,7 @@ function FieldDocumentPreview({
       return;
     }
 
-    let isCloudinary = false;
-    try {
-      isCloudinary = new URL(pdfUrl, window.location.origin).hostname === "res.cloudinary.com";
-    } catch {
-      // A relative same-origin URL is safe to leave to the browser viewer.
-    }
-    if (!isCloudinary) {
-      setLoadState("ready");
-      return;
-    }
-
-    const controller = new AbortController();
-    let active = true;
-    const timeout = window.setTimeout(() => controller.abort(), 10_000);
-    setLoadState("checking");
-    void fetch(pdfUrl.split("#")[0], {
-      cache: "no-store",
-      method: "HEAD",
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) throw new Error(`document delivery failed: ${response.status}`);
-        const contentLength = Number(response.headers.get("content-length") || "1");
-        if (contentLength === 0) throw new Error("document delivery returned an empty file");
-        if (active) setLoadState("ready");
-      })
-      .catch(() => {
-        if (active) setLoadState("error");
-      })
-      .finally(() => window.clearTimeout(timeout));
-    return () => {
-      active = false;
-      controller.abort();
-      window.clearTimeout(timeout);
-    };
+    setLoadState("loading");
   }, [attempt, imageUrl, pdfUrl]);
 
   if (loadState === "error") {
@@ -1091,21 +1252,25 @@ function FieldDocumentPreview({
             style={{ width: `${zoom}%` }}
           />
         </div>
-      ) : loadState === "ready" && pdfUrl ? (
-        <iframe
-          className={interactionLocked ? "is-interaction-locked" : undefined}
-          key={`${pdfUrl}:${attempt}`}
-          src={pdfUrl}
-          tabIndex={interactionLocked ? -1 : 0}
+      ) : pdfUrl ? (
+        <PdfCanvasPreview
+          attempt={attempt}
+          interactionLocked={interactionLocked}
+          onLoadStateChange={setLoadState}
+          page={page}
           title={document.original_name || c.workInstruction}
+          url={pdfUrl}
+          zoom={zoom}
         />
       ) : null}
-      {loadState === "checking" || loadState === "loading" ? (
-        <div className="field-document-load-state" role="status">
-          <FileText aria-hidden="true" />
-          <strong>{c.documentLoading}</strong>
-        </div>
-      ) : null}
+      <div
+        aria-hidden={loadState !== "loading"}
+        className={`field-document-load-state${loadState === "loading" ? "" : " is-hidden"}`}
+        role={loadState === "loading" ? "status" : undefined}
+      >
+        <FileText aria-hidden="true" />
+        <strong>{c.documentLoading}</strong>
+      </div>
       {interactionLocked && loadState === "ready" ? (
         <button
           aria-label={`${c.interactDocument}. ${c.interactDocumentHint}`}
@@ -1129,11 +1294,17 @@ function QualityCanvas({
   issueIndex,
   language,
   isPageVisible,
+  isLoading,
+  hasError,
+  unavailableReason,
 }: {
   snapshot: FieldKanbanResponse;
   issueIndex: number;
   language: FieldLanguage;
   isPageVisible: boolean;
+  isLoading: boolean;
+  hasError: boolean;
+  unavailableReason: string | null;
 }) {
   const c = copy[language];
   const issue = snapshot.quality.issues[issueIndex];
@@ -1159,7 +1330,19 @@ function QualityCanvas({
     return () => window.clearTimeout(timer);
   }, [displayImages.length, imageSignature, isPageVisible, photoIndex]);
 
-  if (!issue) return null;
+  if (!issue) {
+    const permissionRequired = unavailableReason === "quality_permission_required" && !isLoading;
+    const unavailable = hasError || unavailableReason === "quality_data_unavailable";
+    return (
+      <article className="field-quality-canvas field-quality-canvas--status">
+        <div className="field-quality-canvas__empty">
+          {isLoading ? <Loader2 aria-hidden="true" className="is-spinning" /> : unavailable || permissionRequired ? <AlertTriangle aria-hidden="true" /> : <ShieldAlert aria-hidden="true" />}
+          <strong>{isLoading ? c.qualityLoading : permissionRequired ? c.qualityPermissionRequired : unavailable ? c.qualityUnavailable : c.qualityEmpty}</strong>
+          <span>{permissionRequired ? c.qualityPermissionHint : unavailable ? c.retry : c.qualityEmptyHint}</span>
+        </div>
+      </article>
+    );
+  }
   const disclaimer = snapshot.quality.disclaimer[language] || c.historicalOnly;
   const headline = issue.summary_points
     .map((point) => point[language])
@@ -1331,10 +1514,11 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const c = copy[language];
   const isPageVisible = usePageVisibility();
+  const fourThreeViewport = viewportSize.width <= 1100 && viewportSize.height <= 820;
   const compactViewport = viewportSize.width <= 1599 && viewportSize.height <= 850;
   const tabletViewport = viewportSize.width <= 1180 && viewportSize.height >= 851;
-  const minimumLogicalWidth = compactViewport ? 1220 : tabletViewport ? 1050 : 1450;
-  const minimumLogicalHeight = 760;
+  const minimumLogicalWidth = fourThreeViewport ? 1024 : compactViewport ? 1220 : tabletViewport ? 1050 : 1450;
+  const minimumLogicalHeight = fourThreeViewport ? 768 : 760;
   const safeMaximumScaleRatio = Math.min(
     DISPLAY_SCALE_MAX / 100,
     viewportSize.width / minimumLogicalWidth,
@@ -1548,10 +1732,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const qualityIssueCount = snapshot?.quality.issues.length ?? 0;
   const rotationPaused = !isPageVisible || manualPause || modalOpen || canvasMode === "drawing" || !snapshot?.active_plan;
   useEffect(() => {
-    if (qualityIssueCount === 0 && canvasMode === "quality") {
-      setCanvasMode("work_instruction");
-      setQualityIndex(0);
-    } else if (canvasMode === "quality" && qualityIndex >= qualityIssueCount) {
+    if (canvasMode === "quality" && qualityIssueCount > 0 && qualityIndex >= qualityIssueCount) {
       setQualityIndex(0);
     }
   }, [canvasMode, qualityIndex, qualityIssueCount]);
@@ -1930,7 +2111,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
             <div className="field-document-tabs" role="tablist">
               <button aria-selected={canvasMode === "work_instruction"} className={canvasMode === "work_instruction" ? "is-active" : ""} onClick={() => chooseCanvasMode("work_instruction")} role="tab" type="button">{c.workInstruction}</button>
               <button aria-selected={canvasMode === "drawing"} className={canvasMode === "drawing" ? "is-active" : ""} onClick={() => chooseCanvasMode("drawing")} role="tab" type="button">{c.drawing}</button>
-              {qualityIssueCount > 0 ? <button aria-selected={canvasMode === "quality"} className={canvasMode === "quality" ? "is-active is-quality" : "is-quality"} onClick={() => chooseCanvasMode("quality")} role="tab" type="button">{c.qualityHistory}</button> : null}
+              <button aria-selected={canvasMode === "quality"} className={canvasMode === "quality" ? "is-active is-quality" : "is-quality"} onClick={() => chooseCanvasMode("quality")} role="tab" type="button">{c.qualityHistory}</button>
             </div>
             <div aria-label={`${c.previousContent} / ${c.nextContent}`} className="field-cycle-nav" role="group">
               <button aria-label={c.previousContent} disabled={qualityIssueCount === 0} onClick={() => stepCanvas(-1)} type="button"><ChevronLeft /></button>
@@ -1965,7 +2146,15 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
             {!snapshot.active_plan ? (
               <div className="field-document-empty"><Factory /><h2>{c.noPlan}</h2><p>{c.noPlanHint}</p></div>
             ) : canvasMode === "quality" ? (
-              <QualityCanvas isPageVisible={isPageVisible} issueIndex={qualityIndex} language={language} snapshot={snapshot} />
+              <QualityCanvas
+                hasError={qualityQuery.isError}
+                isLoading={qualityQuery.isPending || (qualityQuery.isFetching && qualityIssueCount === 0)}
+                isPageVisible={isPageVisible}
+                issueIndex={qualityIndex}
+                language={language}
+                snapshot={snapshot}
+                unavailableReason={snapshot.quality.unavailable_reason}
+              />
             ) : displayedDocument?.preview_url ? (
               <FieldDocumentPreview
                 document={displayedDocument}
