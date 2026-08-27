@@ -178,6 +178,78 @@ for existing bookmarks.
 
 final result: passed
 
+---
+
+# Incremental Design QA — Field Kanban HD Layout Polish (2026-08-27)
+
+## Comparison target
+
+- Source visual truth — queue: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-132a846a-b6fc-4d3a-8a75-934580d4b3e5.png` (`612 × 330` px).
+- Source visual truth — scale control: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-c00db60f-b79a-4924-9df0-29f1f878aca7.png` (`107 × 93` px).
+- Source visual truth — quality panel: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-ae79f884-2db6-4bb1-bff5-59a00e93cb7c.png` (`1294 × 828` px).
+- Browser-rendered full implementation: local QA artifact `local-field-imm05-layout-polish-final-raw.png` (`2203 × 1237` capture px).
+- Focused queue implementation: local QA artifact `local-field-imm05-queue-triangle-final.png` (`431 × 315` px).
+- Focused quality implementation: local QA artifact `local-field-imm05-quality-compact-pass1.png` (`937 × 548` px).
+- Focused scale implementation: local QA artifact `local-field-imm05-scale-button-final-full.png` (`126 × 63` px).
+- Side-by-side comparisons: local QA artifacts `qa-compare-queue-source-left-implementation-right.png`, `qa-compare-quality-source-left-implementation-right.png`, and `qa-compare-scale-source-left-implementation-right.png`.
+
+## Normalization and state
+
+- Target viewport: `1366 × 768`; the in-app browser reported `1366 × 767` CSS px because its viewport bridge rounded one physical pixel.
+- In-app browser capture density: `devicePixelRatio 0.62`; the raw capture is `2203 × 1237` px. Focused captures were clipped through the same browser surface and compared without changing aspect ratio.
+- Queue comparison normalized both regions to `330` px height; quality comparison normalized both regions to `620` px height; scale comparison normalized both regions to `100` px height.
+- State: authenticated `/field/imm05`, Korean locale, `100%` screen-fit display scale, five-item queue with item 3 current, quality tab active, three representative photos.
+- Reference and implementation use different live Part No./model/quality content. The comparison therefore judges the requested geometry, density, hierarchy, and control sizing rather than literal data equality.
+
+## Full-view and focused comparison evidence
+
+- The five queue circles remain on one vertical axis. Every filled triangle is centered horizontally within `0.013 px` and vertically within `0.127 px` of the midpoint between adjacent number circles.
+- The HD header stays inside the viewport with no horizontal overflow. The clock track is `203.6 px` wide, down from `237.2 px`, while the scale trigger is `90.0 px` wide, up from `70.0 px`.
+- The quality header is `105.0 px` high, down from `178.9 px`. All plan, summary, section, evidence, matching-report, and latest-report text remains visible without meta-row overflow.
+- The representative-photo viewport is `380.0 px` high, up from `297.7 px`, while retaining `object-fit: contain` so inspection evidence is not cropped.
+- Focused comparisons were required because the queue arrows, scale control, and quality metadata are too small to judge reliably in a full-board screenshot.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing WJ Korean/Chinese font fallbacks, bold identifiers, tab hierarchy, and quality colors are preserved. Compacting the quality panel did not introduce smaller unreadable production labels.
+- Spacing and layout rhythm: clock width was reassigned to the touch controls; the quality title now uses a two-column/two-row grid; meta chips remain on one row; photo padding and carousel height were reduced without removing touch affordances.
+- Colors and visual tokens: navy queue, cyan current-job state, orange quality panel, white evidence chips, and existing semantic colors are unchanged.
+- Image quality and asset fidelity: production evidence images remain the original source assets with contain fitting. The queue connector uses the installed Lucide `Triangle` icon rather than a CSS-drawn shape.
+- Copy and content: no field label, quality summary, report count, date, Part No., model, or production quantity was removed.
+
+## Comparison history
+
+### Pass 1
+
+- [P2] The former down-arrow glyph read as attached to the upper circle instead of as flow between queue steps.
+  - Fix: replaced it with a filled Lucide triangle and positioned it from the midpoint between adjacent circle centers.
+- [P2] The quality header used `178.9 px`, leaving only `297.7 px` for the representative photo at the HD breakpoint.
+  - Fix: arranged the eyebrow/title and plan/summary side by side, reduced vertical gaps and chip height, and tightened body/carousel padding.
+- [P2] The `70 px` scale trigger was visually cramped while the clock track consumed `237.2 px`.
+  - Fix: widened the trigger to `90 px` and reduced the clock track to `203.6 px` while keeping the full header within `1366 px`.
+
+### Pass 2
+
+- The first filled triangle was visually too large for the compressed five-row queue and nearly touched both circles.
+  - Fix: reduced the HD expanded-queue connector from `12 px` to `9 px` and corrected its vertical offset.
+  - Post-fix evidence: all four connectors now have less than `0.13 px` midpoint error and visible separation from the circles.
+- No actionable P0, P1, or P2 mismatch remains in the source/implementation comparison.
+
+## Interaction and runtime checks
+
+- Quality tab selection passed.
+- Representative-photo rotation advanced from photo 2 to photo 3 after five seconds.
+- The display-scale dialog opened; screen fit remained `100%`; the dialog closed normally.
+- Document width/height matched the viewport (`1366 × 767`) with no page overflow.
+- Browser console error entries: none.
+- Targeted ESLint and frontend production build: passed.
+
+## Follow-up polish
+
+- P3: confirm the final one-pixel viewport rounding and fullscreen behavior once on the physical `1366 × 768` shop-floor display; it does not affect the measured layout or scrolling.
+
+final result: passed
+
 ## Quality unified workspace QA — 2026-08-19
 
 ### Source visual truth

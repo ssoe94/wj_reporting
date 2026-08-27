@@ -105,7 +105,11 @@ const EMPTY_MATERIAL_SUMMARY: MachineMaterialSummary = {
 
 function initialLanguage(): Language {
   if (typeof window === 'undefined') return 'zh';
-  return window.localStorage.getItem('wj-field-language') === 'ko' ? 'ko' : 'zh';
+  try {
+    return window.localStorage.getItem('wj-field-language') === 'ko' ? 'ko' : 'zh';
+  } catch {
+    return 'zh';
+  }
 }
 
 function summarizeMachineMaterials(models: FieldMaterialModel[] | undefined) {
@@ -164,7 +168,11 @@ export default function FieldLauncherPage() {
     : null;
 
   useEffect(() => {
-    window.localStorage.setItem('wj-field-language', language);
+    try {
+      window.localStorage.setItem('wj-field-language', language);
+    } catch {
+      // Locked-down kiosk profiles can disable storage; keep the live choice.
+    }
   }, [language]);
 
   const planQuery = useQuery({

@@ -16,7 +16,7 @@ from injection.models import InjectionMonitoringRecord
 from .mes_progress import get_business_date, is_machining_progress_report, normalize_mes_part_no
 from .counter_utils import calculate_cumulative_counter_delta
 from .ai_gateway import heuristic_intent_from_question
-from .ai_metrics import project_end_of_business_day_shots
+from .ai_metrics import production_shift_window, project_end_of_business_day_shots
 from .ai_context import build_context_pack, build_top_risks
 from .ai_retrievers import (
     get_daily_production_context,
@@ -130,6 +130,49 @@ class InjectionShotProjectionMetricTests(TestCase):
         self.assertEqual(projection['warning'], 'projection_data_missing')
 
 
+class ProductionShiftWindowTests(TestCase):
+    def test_shift_boundaries_follow_shanghai_0800_and_2000(self):
+        tz = pytz.timezone('Asia/Shanghai')
+        cases = [
+            (
+                datetime(2026, 5, 18).date(),
+                tz.localize(datetime(2026, 5, 19, 7, 59, 59)),
+                'night',
+                '2026-05-18T20:00:00+08:00',
+                '2026-05-19T08:00:00+08:00',
+            ),
+            (
+                datetime(2026, 5, 19).date(),
+                tz.localize(datetime(2026, 5, 19, 8, 0)),
+                'day',
+                '2026-05-19T08:00:00+08:00',
+                '2026-05-19T20:00:00+08:00',
+            ),
+            (
+                datetime(2026, 5, 19).date(),
+                tz.localize(datetime(2026, 5, 19, 19, 59, 59)),
+                'day',
+                '2026-05-19T08:00:00+08:00',
+                '2026-05-19T20:00:00+08:00',
+            ),
+            (
+                datetime(2026, 5, 19).date(),
+                tz.localize(datetime(2026, 5, 19, 20, 0)),
+                'night',
+                '2026-05-19T20:00:00+08:00',
+                '2026-05-20T08:00:00+08:00',
+            ),
+        ]
+
+        for target_date, reference, expected_code, expected_start, expected_end in cases:
+            with self.subTest(reference=reference):
+                window = production_shift_window(target_date, reference)
+
+                self.assertEqual(window['code'], expected_code)
+                self.assertEqual(window['start'].isoformat(), expected_start)
+                self.assertEqual(window['end'].isoformat(), expected_end)
+
+
 class InjectionMachineShotRetrieverTests(DjangoTestCase):
     def test_reset_safe_shots_are_available_without_a_production_plan(self):
         target_date = datetime(2026, 5, 18).date()
@@ -153,6 +196,42 @@ class InjectionMachineShotRetrieverTests(DjangoTestCase):
         self.assertFalse(ProductionPlan.objects.filter(plan_date=target_date).exists())
         self.assertEqual(context['rows'][0]['shot_count'], 19)
         self.assertEqual(context['rows'][0]['warning'], 'injection_recent_trend_window_missing')
+
+    def test_current_shift_shots_exclude_other_shift_and_survive_counter_reset(self):
+        target_date = datetime(2026, 5, 18).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 5, 18, 8, 0))
+        for offset, capacity in [
+            (timedelta(minutes=-1), 90),
+            (timedelta(), 100),
+            (timedelta(hours=2), 130),
+            (timedelta(hours=11, minutes=59), 150),
+            (timedelta(hours=12), 160),
+            (timedelta(hours=13), 5),
+            (timedelta(hours=14), 9),
+        ]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name='1호기',
+                device_code='shift-reset-1',
+                timestamp=start + offset,
+                capacity=capacity,
+            )
+
+        day_context = get_injection_machine_shot_context(
+            target_date,
+            [1],
+            as_of=tz.localize(datetime(2026, 5, 18, 19, 59)),
+        )
+        night_context = get_injection_machine_shot_context(
+            target_date,
+            [1],
+            as_of=tz.localize(datetime(2026, 5, 18, 22, 0)),
+        )
+
+        self.assertEqual(day_context['rows'][0]['shift_shots'], 60)
+        self.assertEqual(day_context['rows'][0]['shift_code'], 'day')
+        self.assertEqual(night_context['rows'][0]['shift_shots'], 19)
+        self.assertEqual(night_context['rows'][0]['shift_code'], 'night')
 
 
 class MesProgressParsingTests(TestCase):

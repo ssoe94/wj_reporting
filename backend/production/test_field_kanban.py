@@ -23,8 +23,10 @@ from .field_kanban import (
     FieldKanbanError,
     _defect_checkpoint_context,
     _defect_snapshot_key,
+    _machine_shot_payload,
     _pending_shift_prompt,
     _quality_summary,
+    apply_field_material_conversion_notification,
     build_field_kanban_snapshot,
     build_field_material_readiness,
     resolve_material_documents,
@@ -72,6 +74,9 @@ def _stored_document(
 
 
 class FieldKanbanSnapshotTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
     def test_reset_safe_shots_drive_current_and_next_plan_payload(self):
         target_date = date(2026, 8, 24)
         business_start = SHANGHAI_TZ.localize(datetime(2026, 8, 24, 8, 0))
@@ -122,6 +127,16 @@ class FieldKanbanSnapshotTests(TestCase):
         self.assertEqual(snapshot["machine"]["device_counter"], 9)
         self.assertEqual(snapshot["machine"]["shot_count"], 19)
         self.assertEqual(snapshot["counters"]["business_day_shots"], 19)
+        self.assertEqual(snapshot["counters"]["shift_shots"], 19)
+        self.assertEqual(snapshot["counters"]["shift_code"], "day")
+        self.assertEqual(
+            snapshot["counters"]["shift_start"],
+            "2026-08-24T08:00:00+08:00",
+        )
+        self.assertEqual(
+            snapshot["counters"]["shift_end"],
+            "2026-08-24T20:00:00+08:00",
+        )
         self.assertEqual(snapshot["active_plan"]["part_no"], "PART-A")
         self.assertEqual(snapshot["active_plan"]["allocated_shots"], 19)
         self.assertEqual(snapshot["active_plan"]["cavity"], 2)
@@ -134,6 +149,29 @@ class FieldKanbanSnapshotTests(TestCase):
             snapshot["quality"]["unavailable_reason"],
             "quality_permission_required",
         )
+
+    @patch("production.field_kanban.get_injection_machine_shot_context")
+    def test_machine_shot_cache_changes_immediately_at_shift_boundary(self, shot_context):
+        target_date = date(2026, 8, 24)
+        shot_context.side_effect = [
+            {"rows": [{"shift_shots": 500, "shift_code": "day"}]},
+            {"rows": [{"shift_shots": 0, "shift_code": "night"}]},
+        ]
+
+        before_change = _machine_shot_payload(
+            target_date,
+            1,
+            as_of=SHANGHAI_TZ.localize(datetime(2026, 8, 24, 19, 59, 59)),
+        )
+        after_change = _machine_shot_payload(
+            target_date,
+            1,
+            as_of=SHANGHAI_TZ.localize(datetime(2026, 8, 24, 20, 0)),
+        )
+
+        self.assertEqual(before_change["rows"][0]["shift_shots"], 500)
+        self.assertEqual(after_change["rows"][0]["shift_shots"], 0)
+        self.assertEqual(shot_context.call_count, 2)
 
     @patch("production.field_kanban._machine_shot_payload")
     @patch("production.field_kanban._production_summary_payload")
@@ -305,6 +343,67 @@ class FieldQualitySummaryTests(TestCase):
             {"section": "IQC", "evidence_count": 1},
             {"section": "LQC_INJ", "evidence_count": 1},
         ])
+
+    @patch("production.field_kanban._quality_source_payload")
+    def test_mixed_defect_report_photos_are_excluded_from_representative_images(
+        self,
+        quality_source,
+    ):
+        quality_source.return_value = {
+            "items": [{
+                "machine_number": 5,
+                "part_prefix": "24U411B-L",
+                "matching_report_count": 2,
+                "reports": [
+                    {
+                        "report_dt": "2026-08-20T08:00:00+08:00",
+                        "section": "LQC_INJ",
+                        "problem_types": [
+                            {"key": "air_mark", "label": {"zh": "气印", "ko": "가스 마크"}},
+                            {"key": "burr_flash", "label": {"zh": "毛刺·飞边", "ko": "버·플래시"}},
+                        ],
+                        "images": ["https://cdn.example.test/mixed-burr.jpg"],
+                    },
+                    {
+                        "report_dt": "2026-08-19T08:00:00+08:00",
+                        "section": "OQC",
+                        "problem_types": [
+                            {"key": "air_mark", "label": {"zh": "气印", "ko": "가스 마크"}},
+                        ],
+                        "images": ["https://cdn.example.test/gas-mark.jpg"],
+                    },
+                ],
+            }],
+        }
+
+        result = _quality_summary(
+            date(2026, 8, 24),
+            5,
+            "24U411B-L",
+            include_quality=True,
+        )
+
+        issues = {issue["key"]: issue for issue in result["issues"]}
+        self.assertEqual(issues["air_mark"]["evidence_count"], 2)
+        self.assertEqual(
+            issues["air_mark"]["image_urls"],
+            ["https://cdn.example.test/gas-mark.jpg"],
+        )
+        self.assertEqual(
+            issues["air_mark"]["image_url"],
+            "https://cdn.example.test/gas-mark.jpg",
+        )
+        self.assertEqual(issues["burr_flash"]["evidence_count"], 1)
+        self.assertEqual(issues["burr_flash"]["image_urls"], [])
+        self.assertIsNone(issues["burr_flash"]["image_url"])
+        self.assertNotIn(
+            "https://cdn.example.test/mixed-burr.jpg",
+            [
+                image_url
+                for issue in result["issues"]
+                for image_url in issue["image_urls"]
+            ],
+        )
 
 
 class FieldMaterialResolutionTests(TestCase):
@@ -1002,6 +1101,60 @@ class FieldKanbanPermissionTests(TestCase):
             save_material.call_args.kwargs["match_rule"],
             "part_family_last_two",
         )
+        self.assertTrue(
+            save_material.call_args.kwargs["conversion_notification_url"].endswith(
+                "/api/production/field-materials/conversion-callback/"
+            )
+        )
+
+    @patch("production.field_kanban_views.apply_field_material_conversion_notification")
+    @patch("production.field_kanban_views.cloudinary.utils.verify_notification_signature")
+    def test_cloudinary_conversion_webhook_requires_signature_and_applies_result(
+        self,
+        verify_signature,
+        apply_notification,
+    ):
+        verify_signature.return_value = True
+        apply_notification.return_value = {
+            "id": "document-1",
+            "ready": True,
+            "conversion_status": "ready",
+        }
+        response = APIClient().post(
+            "/api/production/field-materials/conversion-callback/",
+            {
+                "notification_type": "info",
+                "info_kind": "aspose",
+                "info_status": "complete",
+                "public_id": "field/source.pptx",
+            },
+            format="json",
+            HTTP_X_CLD_TIMESTAMP="1787803200",
+            HTTP_X_CLD_SIGNATURE="valid-signature",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["accepted"])
+        apply_notification.assert_called_once_with(
+            public_id="field/source.pptx",
+            info_status="complete",
+            error="",
+        )
+
+        verify_signature.return_value = False
+        denied = APIClient().post(
+            "/api/production/field-materials/conversion-callback/",
+            {
+                "notification_type": "info",
+                "info_kind": "aspose",
+                "info_status": "complete",
+                "public_id": "field/source.pptx",
+            },
+            format="json",
+            HTTP_X_CLD_TIMESTAMP="1787803200",
+            HTTP_X_CLD_SIGNATURE="invalid-signature",
+        )
+        self.assertEqual(denied.status_code, 403)
 
     def test_profile_missing_field_writes_fail_closed(self):
         user = get_user_model().objects.create_user(username="profile-missing")
@@ -1119,18 +1272,22 @@ class FieldDowntimeConfirmationScopeTests(TestCase):
 
 class FieldMaterialUploadTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.user = get_user_model().objects.create_user(username="dev-editor")
 
     @staticmethod
-    def _pptx_bytes() -> bytes:
+    def _pptx_bytes(padding_size: int = 0) -> bytes:
         stream = BytesIO()
         with zipfile.ZipFile(stream, "w") as archive:
             archive.writestr("[Content_Types].xml", "<Types />")
             archive.writestr("ppt/presentation.xml", "<presentation />")
+            if padding_size:
+                archive.writestr("ppt/media/padding.bin", b"\0" * padding_size)
         return stream.getvalue()
 
+    @patch("production.field_kanban.cloudinary.api.update")
     @patch("production.field_kanban.cloudinary.uploader.upload")
-    def test_valid_pptx_upload_is_path_safe_and_not_ready_without_pdf_preview(self, upload):
+    def test_valid_pptx_upload_starts_automatic_preview_conversion(self, upload, update):
         upload.return_value = {
             "secure_url": "https://cdn.example.test/source.pptx",
             "public_id": "field/source.pptx",
@@ -1154,6 +1311,7 @@ class FieldMaterialUploadTests(TestCase):
             preview_pdf=None,
             user=self.user,
             match_rule="part_family_last_two",
+            conversion_notification_url="https://api.example.test/conversion-callback/",
         )
 
         self.assertEqual(document["source_format"], "pptx")
@@ -1162,9 +1320,17 @@ class FieldMaterialUploadTests(TestCase):
         self.assertNotIn("..", document["source_file_name"])
         self.assertFalse(document["ready"])
         self.assertIsNone(document["preview_url"])
+        self.assertEqual(document["conversion_status"], "pending")
+        self.assertEqual(document["conversion_provider"], "cloudinary_aspose")
         self.assertEqual(upload.call_count, 1)
         self.assertEqual(upload.call_args.kwargs["resource_type"], "raw")
         self.assertFalse(upload.call_args.kwargs["overwrite"])
+        update.assert_called_once_with(
+            "field/source.pptx",
+            resource_type="raw",
+            raw_convert="aspose",
+            notification_url="https://api.example.test/conversion-callback/",
+        )
 
     @patch("production.field_kanban.cloudinary.uploader.upload")
     def test_invalid_material_match_rule_is_rejected_before_upload(self, upload):
@@ -1211,8 +1377,9 @@ class FieldMaterialUploadTests(TestCase):
     def test_shared_replacement_is_scoped_by_family_model_and_does_not_deactivate_exact(self, upload):
         upload.return_value = {
             "secure_url": "https://cdn.example.test/document.pdf",
-            "public_id": "field/document.pdf",
-            "resource_type": "raw",
+            "public_id": "field/document",
+            "resource_type": "image",
+            "pages": 3,
             "bytes": 12,
         }
 
@@ -1247,9 +1414,14 @@ class FieldMaterialUploadTests(TestCase):
         self.assertTrue(active_by_id[exact_a["id"]])
         self.assertTrue(active_by_id[shared_a_replacement["id"]])
         self.assertTrue(active_by_id[shared_b["id"]])
+        self.assertEqual(shared_b["preview_resource_type"], "image")
+        self.assertEqual(shared_b["page_count"], 3)
+        self.assertTrue(all(call.kwargs["resource_type"] == "image" for call in upload.call_args_list))
+        self.assertTrue(all(not call.kwargs["public_id"].endswith(".pdf") for call in upload.call_args_list))
 
+    @patch("production.field_kanban.cloudinary.api.update")
     @patch("production.field_kanban.cloudinary.uploader.upload")
-    def test_legacy_ppt_upload_is_not_ready_without_pdf_preview(self, upload):
+    def test_legacy_ppt_upload_starts_automatic_preview_conversion(self, upload, update):
         upload.return_value = {
             "secure_url": "https://cdn.example.test/source.ppt",
             "public_id": "field/source.ppt",
@@ -1281,7 +1453,300 @@ class FieldMaterialUploadTests(TestCase):
         self.assertEqual(document["source_format"], "ppt")
         self.assertFalse(document["ready"])
         self.assertIsNone(document["preview_url"])
+        self.assertEqual(document["conversion_status"], "pending")
         self.assertEqual(upload.call_count, 1)
+        update.assert_called_once_with(
+            "field/source.ppt",
+            resource_type="raw",
+            raw_convert="aspose",
+        )
+
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_pptx_over_conversion_limit_requires_manual_pdf_preview(self, upload):
+        with self.assertRaises(FieldKanbanError) as too_large:
+            save_field_material(
+                kind="work_instruction",
+                part_no="PART-L",
+                model_name="MODEL-L",
+                revision="A",
+                source_file=SimpleUploadedFile(
+                    "large.pptx",
+                    self._pptx_bytes(10 * 1024 * 1024),
+                ),
+                preview_pdf=None,
+                user=self.user,
+            )
+
+        self.assertEqual(too_large.exception.code, "office_conversion_file_too_large")
+        self.assertEqual(too_large.exception.status_code, 413)
+        upload.assert_not_called()
+
+    @patch("production.field_kanban.cloudinary.api.resource")
+    @patch("production.field_kanban.cloudinary.api.update")
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_pptx_conversion_callback_makes_all_slides_ready(self, upload, update, resource):
+        upload.return_value = {
+            "secure_url": "https://cdn.example.test/raw/source.pptx",
+            "public_id": "field/source.pptx",
+            "resource_type": "raw",
+            "bytes": 123,
+        }
+        resource.return_value = {
+            "secure_url": "https://cdn.example.test/image/source.pptx.pdf",
+            "public_id": "field/source.pptx",
+            "resource_type": "image",
+            "format": "pdf",
+            "pages": 7,
+            "bytes": 456,
+        }
+        pending = save_field_material(
+            kind="work_instruction",
+            part_no="PART-C",
+            model_name="MODEL-C",
+            revision="D",
+            source_file=SimpleUploadedFile(
+                "slides.pptx",
+                self._pptx_bytes(),
+                content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ),
+            preview_pdf=None,
+            user=self.user,
+        )
+
+        ready = apply_field_material_conversion_notification(
+            public_id="field/source.pptx",
+            info_status="complete",
+        )
+
+        self.assertEqual(pending["conversion_status"], "pending")
+        self.assertIsNotNone(ready)
+        self.assertTrue(ready["ready"])
+        self.assertEqual(ready["conversion_status"], "ready")
+        self.assertEqual(ready["preview_resource_type"], "image")
+        self.assertEqual(ready["preview_format"], "pdf")
+        self.assertEqual(ready["preview_url"], "https://cdn.example.test/image/source.pptx.pdf")
+        self.assertEqual(ready["page_count"], 7)
+        late_failure = apply_field_material_conversion_notification(
+            public_id="field/source.pptx",
+            info_status="failed",
+            error="late duplicate failure",
+        )
+        self.assertIsNotNone(late_failure)
+        self.assertTrue(late_failure["ready"])
+        self.assertEqual(late_failure["conversion_status"], "ready")
+        resource.assert_called_once_with(
+            "field/source.pptx",
+            resource_type="image",
+            type="upload",
+        )
+
+    @patch("production.field_kanban.cloudinary.api.resource")
+    @patch("production.field_kanban.cloudinary.api.update")
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_pptx_replacement_keeps_published_document_until_conversion_succeeds(
+        self,
+        upload,
+        update,
+        resource,
+    ):
+        upload.side_effect = [
+            {
+                "secure_url": "https://cdn.example.test/image/current.pdf",
+                "public_id": "field/current",
+                "resource_type": "image",
+                "format": "pdf",
+                "pages": 2,
+            },
+            {
+                "secure_url": "https://cdn.example.test/raw/replacement.pptx",
+                "public_id": "field/replacement.pptx",
+                "resource_type": "raw",
+                "bytes": 123,
+            },
+        ]
+        resource.return_value = {
+            "secure_url": "https://cdn.example.test/image/replacement.pptx.pdf",
+            "public_id": "field/replacement.pptx",
+            "resource_type": "image",
+            "format": "pdf",
+            "pages": 6,
+        }
+        current = save_field_material(
+            kind="work_instruction",
+            part_no="PART-S",
+            model_name="MODEL-S",
+            revision="A",
+            source_file=SimpleUploadedFile("current.pdf", b"%PDF-1.4\n"),
+            preview_pdf=None,
+            user=self.user,
+        )
+        pending = save_field_material(
+            kind="work_instruction",
+            part_no="PART-S",
+            model_name="MODEL-S",
+            revision="B",
+            source_file=SimpleUploadedFile("replacement.pptx", self._pptx_bytes()),
+            preview_pdf=None,
+            user=self.user,
+        )
+
+        field_before = resolve_material_documents("PART-S", "MODEL-S")
+        manifest_before = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload["documents"]
+        management_before = resolve_material_documents(
+            "PART-S",
+            "MODEL-S",
+            documents=manifest_before,
+            include_pending_replacements=True,
+        )
+
+        self.assertEqual(field_before["work_instruction"]["id"], current["id"])
+        self.assertTrue(field_before["work_instruction"]["ready"])
+        self.assertEqual(management_before["work_instruction"]["id"], pending["id"])
+        self.assertEqual(management_before["work_instruction"]["conversion_status"], "pending")
+        resource.assert_not_called()
+
+        converted = apply_field_material_conversion_notification(
+            public_id="field/replacement.pptx",
+            info_status="complete",
+        )
+        field_after = resolve_material_documents("PART-S", "MODEL-S")
+        stored_after = {
+            row["id"]: row
+            for row in MouldDataSnapshot.objects.get(
+                snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+            ).payload["documents"]
+        }
+
+        self.assertTrue(converted["ready"])
+        self.assertEqual(field_after["work_instruction"]["id"], pending["id"])
+        self.assertFalse(stored_after[current["id"]]["active"])
+        self.assertTrue(stored_after[pending["id"]]["active"])
+        self.assertFalse(stored_after[pending["id"]]["pending_replacement"])
+
+    @patch("production.field_kanban.cloudinary.api.resource")
+    @patch("production.field_kanban.cloudinary.api.update")
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_pending_pptx_recovers_when_conversion_callback_is_missed(self, upload, update, resource):
+        upload.return_value = {
+            "secure_url": "https://cdn.example.test/raw/recovery.pptx",
+            "public_id": "field/recovery.pptx",
+            "resource_type": "raw",
+            "bytes": 123,
+        }
+        resource.return_value = {
+            "secure_url": "https://cdn.example.test/image/recovery.pptx.pdf",
+            "public_id": "field/recovery.pptx",
+            "resource_type": "image",
+            "format": "pdf",
+            "pages": 5,
+        }
+        save_field_material(
+            kind="work_instruction",
+            part_no="PART-R",
+            model_name="MODEL-R",
+            revision="A",
+            source_file=SimpleUploadedFile("recovery.pptx", self._pptx_bytes()),
+            preview_pdf=None,
+            user=self.user,
+        )
+
+        build_field_material_readiness(date(2026, 8, 24))
+        resolved = resolve_material_documents("PART-R", "MODEL-R")
+
+        self.assertTrue(resolved["work_instruction"]["ready"])
+        self.assertEqual(resolved["work_instruction"]["page_count"], 5)
+        self.assertEqual(resolved["work_instruction"]["conversion_status"], "ready")
+
+    @patch("production.field_kanban.cloudinary.api.update")
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_pptx_source_is_preserved_when_automatic_conversion_cannot_start(self, upload, update):
+        upload.side_effect = [
+            {
+                "secure_url": "https://cdn.example.test/image/current.pdf",
+                "public_id": "field/current",
+                "resource_type": "image",
+                "format": "pdf",
+                "pages": 2,
+            },
+            {
+                "secure_url": "https://cdn.example.test/raw/source.pptx",
+                "public_id": "field/source.pptx",
+                "resource_type": "raw",
+                "bytes": 123,
+            },
+        ]
+        update.side_effect = RuntimeError("add-on unavailable")
+
+        current = save_field_material(
+            kind="work_instruction",
+            part_no="PART-D",
+            model_name="MODEL-D",
+            revision="OLD",
+            source_file=SimpleUploadedFile("current.pdf", b"%PDF-1.4\n"),
+            preview_pdf=None,
+            user=self.user,
+        )
+
+        document = save_field_material(
+            kind="work_instruction",
+            part_no="PART-D",
+            model_name="MODEL-D",
+            revision="A",
+            source_file=SimpleUploadedFile("slides.pptx", self._pptx_bytes()),
+            preview_pdf=None,
+            user=self.user,
+        )
+
+        self.assertEqual(document["source_url"], "https://cdn.example.test/raw/source.pptx")
+        self.assertEqual(document["conversion_status"], "failed")
+        self.assertFalse(document["ready"])
+        stored = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload["documents"]
+        stored_by_id = {row["id"]: row for row in stored}
+        self.assertEqual(stored_by_id[document["id"]]["conversion"]["status"], "failed")
+        self.assertFalse(stored_by_id[document["id"]]["active"])
+        self.assertTrue(stored_by_id[current["id"]]["active"])
+        field_document = resolve_material_documents("PART-D", "MODEL-D")["work_instruction"]
+        self.assertEqual(field_document["id"], current["id"])
+
+    @patch("production.field_kanban.cloudinary.api.update")
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_pptx_with_manual_pdf_preview_is_ready_without_addon(self, upload, update):
+        upload.side_effect = [
+            {
+                "secure_url": "https://cdn.example.test/raw/source.pptx",
+                "public_id": "field/source.pptx",
+                "resource_type": "raw",
+                "bytes": 123,
+            },
+            {
+                "secure_url": "https://cdn.example.test/image/preview.pdf",
+                "public_id": "field/preview",
+                "resource_type": "image",
+                "format": "pdf",
+                "pages": 4,
+                "bytes": 456,
+            },
+        ]
+
+        document = save_field_material(
+            kind="work_instruction",
+            part_no="PART-E",
+            model_name="MODEL-E",
+            revision="A",
+            source_file=SimpleUploadedFile("slides.pptx", self._pptx_bytes()),
+            preview_pdf=SimpleUploadedFile("slides-preview.pdf", b"%PDF-1.4\n"),
+            user=self.user,
+        )
+
+        self.assertTrue(document["ready"])
+        self.assertIsNone(document["conversion_status"])
+        self.assertEqual(document["page_count"], 4)
+        self.assertEqual(upload.call_count, 2)
+        update.assert_not_called()
 
     @patch("production.field_kanban.cloudinary.uploader.upload")
     def test_invalid_pptx_archive_and_spoofed_pdf_are_rejected_before_upload(self, upload):
@@ -1351,8 +1816,8 @@ class FieldMaterialUploadTests(TestCase):
         )
         upload.return_value = {
             "secure_url": "https://cdn.example.test/new.pdf",
-            "public_id": "wj-field-materials/new.pdf",
-            "resource_type": "raw",
+            "public_id": "wj-field-materials/new",
+            "resource_type": "image",
             "bytes": 12,
         }
 
@@ -1369,8 +1834,8 @@ class FieldMaterialUploadTests(TestCase):
 
         self.assertEqual(invalid_manifest.exception.code, "unsupported_material_manifest")
         destroy.assert_called_once_with(
-            "wj-field-materials/new.pdf",
-            resource_type="raw",
+            "wj-field-materials/new",
+            resource_type="image",
             invalidate=True,
         )
 
@@ -1378,8 +1843,8 @@ class FieldMaterialUploadTests(TestCase):
     @patch("production.field_kanban.cloudinary.uploader.upload")
     def test_storage_response_without_url_cleans_the_new_upload(self, upload, destroy):
         upload.return_value = {
-            "public_id": "wj-field-materials/no-url.pdf",
-            "resource_type": "raw",
+            "public_id": "wj-field-materials/no-url",
+            "resource_type": "image",
             "bytes": 12,
         }
 
@@ -1396,8 +1861,8 @@ class FieldMaterialUploadTests(TestCase):
 
         self.assertEqual(invalid_response.exception.code, "document_storage_invalid_response")
         destroy.assert_called_once_with(
-            "wj-field-materials/no-url.pdf",
-            resource_type="raw",
+            "wj-field-materials/no-url",
+            resource_type="image",
             invalidate=True,
         )
 
@@ -1422,9 +1887,9 @@ class FieldMaterialUploadTests(TestCase):
         public_id = destroy.call_args.args[0]
         self.assertRegex(
             public_id,
-            r"^wj-field-materials/work_instruction/\d{4}-\d{2}/[0-9a-f]{32}\.pdf$",
+            r"^wj-field-materials/work_instruction/\d{4}-\d{2}/[0-9a-f]{32}$",
         )
         self.assertEqual(
             destroy.call_args.kwargs,
-            {"resource_type": "raw", "invalidate": True},
+            {"resource_type": "image", "invalidate": True},
         )

@@ -12,8 +12,10 @@
   --field-ink: #07111f;
   position: relative;
   width: 100vw;
+  height: 100vh;
   height: 100dvh;
   overflow: hidden;
+  overscroll-behavior: none;
   color: var(--field-ink);
   background: #f6f8fb;
   font-family: "Noto Sans SC", "Microsoft YaHei", "Noto Sans KR", "Apple SD Gothic Neo", Arial, sans-serif;
@@ -36,6 +38,7 @@
 .field-kanban button,
 .field-kanban a {
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .field-kanban button:focus-visible,
@@ -46,7 +49,7 @@
 
 .field-kanban-header {
   display: grid;
-  grid-template-columns: minmax(310px, 1.15fr) minmax(270px, 1fr) minmax(220px, .8fr) minmax(250px, .9fr) auto;
+  grid-template-columns: minmax(310px, 1.15fr) minmax(270px, 1fr) minmax(220px, .8fr) minmax(220px, .76fr) auto;
   align-items: stretch;
   height: 100%;
   border-bottom: 2px solid #f0a400;
@@ -196,8 +199,8 @@
   display: grid;
   grid-template-columns: auto auto;
   gap: 5px;
-  width: 78px;
-  padding-inline: 8px;
+  width: 96px;
+  padding-inline: 12px;
 }
 
 .field-kanban-header-actions > .field-display-controls-trigger.is-open {
@@ -259,8 +262,21 @@
 }
 
 .field-shot-hero span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3px 12px;
   font-size: clamp(22px, 1.55vw, 31px);
   font-weight: 900;
+}
+
+.field-shot-hero span small {
+  margin-left: auto;
+  font-size: .55em;
+  font-weight: 800;
+  white-space: nowrap;
+  opacity: .8;
 }
 
 .field-shot-hero strong {
@@ -440,12 +456,14 @@
 .field-queue-flow {
   position: absolute;
   z-index: 2;
-  top: calc(50% + 22px);
-  left: -49px;
-  width: 20px;
-  height: 20px;
+  top: calc(100% + 5.5px);
+  left: -39.5px;
+  width: 14px;
+  height: 14px;
   color: #bdefff;
-  stroke-width: 3;
+  fill: currentColor;
+  stroke-width: 1.5;
+  transform: translate(-50%, -50%) rotate(180deg);
   pointer-events: none;
 }
 
@@ -525,10 +543,10 @@
 }
 
 .field-queue.is-expanded .field-queue-flow {
-  top: calc(50% + 18px);
-  left: -42px;
-  width: 18px;
-  height: 18px;
+  top: calc(100% + 3px);
+  left: -33px;
+  width: 13px;
+  height: 13px;
 }
 
 .field-queue.is-expanded .field-queue-copy,
@@ -830,6 +848,83 @@
   transform-origin: top center;
 }
 
+.field-document-load-state {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 13px;
+  min-height: 280px;
+  padding: 32px;
+  color: #17365c;
+  background: #f6f8fb;
+  text-align: center;
+}
+
+.field-document-load-state > svg {
+  width: 72px;
+  height: 72px;
+  color: #55789f;
+  stroke-width: 1.5;
+}
+
+.field-document-load-state > strong,
+.field-document-load-state h2 {
+  margin: 0;
+  font-size: clamp(25px, 2vw, 38px);
+  font-weight: 950;
+}
+
+.field-document-load-state p {
+  max-width: 720px;
+  margin: 0;
+  font-size: clamp(16px, 1.15vw, 22px);
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.field-document-load-state > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.field-document-load-state button,
+.field-document-load-state a {
+  display: inline-flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 23px;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  background: #0754a8;
+  font-size: 18px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.field-document-load-state button svg,
+.field-document-load-state a svg {
+  width: 24px;
+  height: 24px;
+}
+
+.field-document-load-state--error {
+  color: #8f1d27;
+  background: #fff5f5;
+}
+
+.field-document-load-state--error > svg {
+  color: #dc2638;
+}
+
 .field-document-interaction-gate {
   position: absolute;
   z-index: 2;
@@ -893,6 +988,15 @@
   height: 86px;
   color: #7790ad;
   stroke-width: 1.4;
+}
+
+.field-document-empty > svg.is-spinning {
+  color: #0878c9;
+  animation: field-document-spin 1.1s linear infinite;
+}
+
+@keyframes field-document-spin {
+  to { transform: rotate(360deg); }
 }
 
 .field-document-empty h2 {
@@ -1016,6 +1120,10 @@
 }
 
 .field-quality-canvas__title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 15px;
   min-width: 0;
 }
 
@@ -1023,6 +1131,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .field-quality-canvas__eyebrow > span {
@@ -1066,7 +1176,7 @@
 
 .field-quality-canvas > header h2 {
   overflow: hidden;
-  margin: 6px 0 2px;
+  margin: 0;
   font-size: clamp(34px, 2.45vw, 49px);
   font-weight: 950;
   line-height: 1;
@@ -1076,7 +1186,7 @@
 
 .field-quality-canvas__plan {
   overflow: hidden;
-  margin: 6px 0 0;
+  margin: 0;
   font-size: clamp(15px, 1.05vw, 20px);
   font-weight: 800;
   white-space: nowrap;
@@ -1085,7 +1195,7 @@
 
 .field-quality-canvas__headline {
   overflow: hidden;
-  margin: 5px 0 0;
+  margin: 0;
   color: #ffedd5;
   font-size: clamp(14px, .92vw, 18px);
   font-weight: 750;
@@ -1186,23 +1296,17 @@
   background: #111827;
 }
 
-.field-quality-canvas__slides {
-  display: flex;
-  height: 100%;
-  transform: translateX(calc(var(--field-quality-photo-index, 0) * -100%));
-  transition: transform .5s ease;
-}
-
-.field-quality-canvas__slides figure {
+.field-quality-canvas__active-photo {
   display: grid;
-  min-width: 100%;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   place-items: center;
   margin: 0;
   background: #f8fafc;
 }
 
-.field-quality-canvas__slides img {
+.field-quality-canvas__active-photo img {
   display: block;
   width: 100%;
   height: 100%;
@@ -1978,6 +2082,7 @@
   place-items: center;
   align-content: center;
   width: 100%;
+  height: 100vh;
   height: 100dvh;
   min-height: 560px;
   padding: 40px;
@@ -2030,7 +2135,7 @@
   }
 
   .field-kanban-header {
-    grid-template-columns: minmax(255px, 1.05fr) minmax(225px, .9fr) minmax(180px, .7fr) minmax(210px, .8fr) auto;
+    grid-template-columns: minmax(250px, 1.05fr) minmax(215px, .9fr) minmax(170px, .72fr) minmax(190px, .68fr) auto;
     height: 78px;
   }
 
@@ -2098,8 +2203,8 @@
   }
 
   .field-kanban-header-actions > .field-display-controls-trigger {
-    width: 70px;
-    padding-inline: 6px;
+    width: 90px;
+    padding-inline: 10px;
   }
 
   .field-display-controls-trigger span {
@@ -2197,10 +2302,10 @@
   }
 
   .field-queue-flow {
-    top: calc(50% + 18px);
-    left: -42px;
-    width: 18px;
-    height: 18px;
+    top: calc(100% + 3.5px);
+    left: -33px;
+    width: 13px;
+    height: 13px;
   }
 
   .field-queue-copy,
@@ -2239,10 +2344,10 @@
   }
 
   .field-queue.is-expanded .field-queue-flow {
-    top: calc(50% + 17px);
-    left: -37px;
-    width: 17px;
-    height: 17px;
+    top: calc(100% + 3.5px);
+    left: -26px;
+    width: 9px;
+    height: 9px;
   }
 
   .field-queue.is-expanded .field-queue-copy,
@@ -2381,12 +2486,28 @@
   }
 
   .field-quality-canvas > header {
-    gap: 7px 14px;
-    padding: 10px 16px;
+    gap: 5px 12px;
+    padding: 8px 14px;
   }
 
   .field-quality-canvas > header h2 {
-    font-size: 34px;
+    font-size: 32px;
+  }
+
+  .field-quality-canvas__title {
+    gap: 3px 12px;
+  }
+
+  .field-quality-canvas__eyebrow {
+    gap: 7px;
+  }
+
+  .field-quality-canvas__eyebrow em {
+    padding: 3px 7px;
+  }
+
+  .field-quality-canvas__plan {
+    font-size: 14px;
   }
 
   .field-quality-canvas__headline {
@@ -2398,8 +2519,8 @@
   }
 
   .field-quality-canvas__header-meta > span {
-    min-height: 31px;
-    padding: 3px 8px;
+    min-height: 28px;
+    padding: 2px 7px;
   }
 
   .field-quality-canvas__header-meta small {
@@ -2411,12 +2532,12 @@
   }
 
   .field-quality-canvas__body {
-    padding: 9px;
+    padding: 7px;
   }
 
   .field-quality-canvas__carousel-controls {
-    min-height: 50px;
-    padding-block: 3px;
+    min-height: 44px;
+    padding-block: 1px;
   }
 
   .field-modal-backdrop {
@@ -2547,7 +2668,7 @@
   }
 
   .field-kanban-header {
-    grid-template-columns: minmax(215px, 1fr) minmax(190px, .9fr) minmax(105px, .48fr) minmax(150px, .7fr) auto;
+    grid-template-columns: minmax(215px, 1fr) minmax(190px, .9fr) minmax(105px, .48fr) minmax(135px, .6fr) auto;
     height: 88px;
   }
 
@@ -2614,8 +2735,8 @@
   }
 
   .field-kanban-header-actions > .field-display-controls-trigger {
-    width: 68px;
-    padding-inline: 5px;
+    width: 86px;
+    padding-inline: 8px;
   }
 
   .field-language-toggle,

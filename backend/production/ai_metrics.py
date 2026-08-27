@@ -18,6 +18,42 @@ def business_range(target_date: Any) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
+def production_shift_window(
+    target_date: Any,
+    reference_time: datetime | None = None,
+) -> dict[str, Any]:
+    """Return the 12-hour production shift containing the Shanghai reference time.
+
+    A production business day contains a day shift from 08:00 to 20:00 and a
+    night shift from 20:00 to the following 08:00. The reference is clamped to
+    the selected business day so historical and future snapshots stay bounded.
+    """
+    business_start, business_end = business_range(target_date)
+    reference = reference_time or timezone.now()
+    if timezone.is_naive(reference):
+        reference = SHANGHAI_TZ.localize(reference)
+    else:
+        reference = reference.astimezone(SHANGHAI_TZ)
+    reference = clamp_datetime(reference, business_start, business_end)
+
+    night_start = business_start + timedelta(hours=12)
+    if reference >= night_start:
+        shift_code = "night"
+        shift_start = night_start
+        shift_end = business_end
+    else:
+        shift_code = "day"
+        shift_start = business_start
+        shift_end = night_start
+
+    return {
+        "code": shift_code,
+        "start": shift_start,
+        "end": shift_end,
+        "reference_time": reference,
+    }
+
+
 def clamp_datetime(value: datetime, start: datetime, end: datetime) -> datetime:
     if value < start:
         return start

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 import re
 
+import cloudinary.utils
+from django.urls import reverse
 from django.utils.dateparse import parse_date
 from rest_framework import status
-from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -13,6 +16,7 @@ from injection.permissions import DevelopmentPermission, InjectionPermission, Qu
 
 from .field_kanban import (
     FieldKanbanError,
+    apply_field_material_conversion_notification,
     build_field_kanban_snapshot,
     build_field_material_readiness,
     current_shanghai_business_date,
@@ -164,6 +168,9 @@ class FieldMaterialsView(APIView):
 
     def post(self, request, *args, **kwargs):
         try:
+            conversion_notification_url = request.build_absolute_uri(
+                reverse("production-field-material-conversion-webhook")
+            )
             document = save_field_material(
                 kind=request.data.get("kind"),
                 part_no=request.data.get("part_no"),
@@ -173,7 +180,47 @@ class FieldMaterialsView(APIView):
                 preview_pdf=request.FILES.get("preview_pdf"),
                 user=request.user,
                 match_rule=request.data.get("match_rule"),
+                conversion_notification_url=conversion_notification_url,
             )
             return Response({"document": document}, status=status.HTTP_201_CREATED)
+        except FieldKanbanError as exc:
+            return _error_response(exc)
+
+
+class FieldMaterialConversionWebhookView(APIView):
+    """Accept only signed Cloudinary callbacks for Office preview conversion."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            raw_body = request.body.decode("utf-8")
+            timestamp = int(request.headers.get("X-Cld-Timestamp") or 0)
+            signature = str(request.headers.get("X-Cld-Signature") or "")
+            if not timestamp or not signature or not cloudinary.utils.verify_notification_signature(
+                raw_body,
+                timestamp,
+                signature,
+            ):
+                return Response(
+                    {"detail": "Invalid Cloudinary notification signature."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            payload = json.loads(raw_body)
+            if payload.get("notification_type") != "info" or payload.get("info_kind") != "aspose":
+                return Response({"accepted": False, "ignored": True}, status=status.HTTP_202_ACCEPTED)
+            document = apply_field_material_conversion_notification(
+                public_id=payload.get("public_id"),
+                info_status=payload.get("info_status"),
+                error=payload.get("error") or payload.get("message") or "",
+            )
+            return Response({"accepted": True, "document": document})
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return Response(
+                {"detail": "Invalid Cloudinary notification payload."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except FieldKanbanError as exc:
             return _error_response(exc)

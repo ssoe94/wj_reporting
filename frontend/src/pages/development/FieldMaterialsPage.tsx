@@ -26,6 +26,7 @@ import {
   type FieldMaterialMachineSchedule,
   type FieldMaterialMatchRule,
   type FieldMaterialModel,
+  type FieldMaterialsResponse,
   type FieldMaterialSchedulePlan,
 } from "@/domains/field/api";
 import {
@@ -65,28 +66,33 @@ const pageCopy = {
     ready: "현장 준비 완료",
     missing: "미등록",
     previewMissing: "PDF 미리보기 필요",
+    converting: "PPT 미리보기 변환 중",
+    conversionFailed: "PPT 변환 실패",
     upload: "업로드",
     replace: "교체 업로드",
     modalTitleInstruction: "작업지도서 업로드",
     modalTitleDrawing: "도면 업로드",
-    modalHintInstruction: "PDF는 바로 현장에 표시됩니다. PPT/PPTX는 원본과 함께 PDF 미리보기를 올려야 현장 준비 완료가 됩니다.",
+    modalHintInstruction: "PPT/PPTX 원본 하나만 올리면 현장용 미리보기를 자동 생성합니다. PDF도 바로 업로드할 수 있습니다.",
     modalHintDrawing: "도면은 PDF 파일만 업로드할 수 있습니다.",
     revision: "개정번호",
     revisionPlaceholder: "예: Rev. C",
     sourceFile: "원본 파일",
     previewPdf: "현장용 PDF 미리보기",
-    previewOptional: "PPT/PPTX 원본을 선택한 경우 추가해 주세요.",
+    previewOptional: "선택 사항 · 자동 변환 실패 또는 10MB 초과 시 사용",
     chooseFile: "파일 선택",
     noFile: "선택된 파일 없음",
     cancel: "취소",
     uploading: "업로드 중…",
     submit: "자료 업로드",
     uploadSuccess: "현장 자료를 업로드했습니다.",
+    uploadConverting: "PPT 원본을 업로드했습니다. 현장용 미리보기를 변환하고 있습니다.",
+    uploadConversionFailed: "PPT 원본은 저장했지만 자동 변환을 시작하지 못했습니다. PDF 미리보기를 추가해 다시 업로드해 주세요.",
     uploadError: "현장 자료 업로드에 실패했습니다.",
     invalidDrawing: "도면은 PDF 파일만 선택해 주세요.",
     invalidInstruction: "작업지도서는 PDF, PPT, PPTX 파일만 선택해 주세요.",
     invalidPreview: "미리보기는 PDF 파일만 선택해 주세요.",
-    pptWarning: "PDF 미리보기 없이 업로드하면 원본은 저장되지만 현장 화면에는 표시되지 않습니다.",
+    pptWarning: "10MB 이하 PPT/PPTX는 업로드 후 현장용 화면으로 자동 변환됩니다.",
+    pptTooLarge: "10MB를 초과하는 PPT/PPTX는 현장용 PDF 미리보기를 함께 선택해 주세요.",
     machinesUnit: "호기",
     pieces: "개",
     noRevision: "개정번호 없음",
@@ -130,28 +136,33 @@ const pageCopy = {
     ready: "现场可用",
     missing: "未登记",
     previewMissing: "需要 PDF 预览",
+    converting: "正在转换 PPT 预览",
+    conversionFailed: "PPT 转换失败",
     upload: "上传",
     replace: "替换上传",
     modalTitleInstruction: "上传作业指导书",
     modalTitleDrawing: "上传图纸",
-    modalHintInstruction: "PDF 可直接在现场显示。PPT/PPTX 需同时上传 PDF 预览后才算现场可用。",
+    modalHintInstruction: "只需上传一个 PPT/PPTX 原件，系统会自动生成现场预览；也可直接上传 PDF。",
     modalHintDrawing: "图纸仅支持 PDF 文件。",
     revision: "修订号",
     revisionPlaceholder: "例如：Rev. C",
     sourceFile: "原始文件",
     previewPdf: "现场 PDF 预览",
-    previewOptional: "选择 PPT/PPTX 原件时请一并添加。",
+    previewOptional: "可选 · 自动转换失败或文件超过 10MB 时使用",
     chooseFile: "选择文件",
     noFile: "未选择文件",
     cancel: "取消",
     uploading: "上传中…",
     submit: "上传资料",
     uploadSuccess: "现场资料已上传。",
+    uploadConverting: "PPT 原件已上传，正在生成现场预览。",
+    uploadConversionFailed: "PPT 原件已保存，但无法启动自动转换。请添加 PDF 预览后重新上传。",
     uploadError: "现场资料上传失败。",
     invalidDrawing: "图纸只能选择 PDF 文件。",
     invalidInstruction: "作业指导书只能选择 PDF、PPT 或 PPTX 文件。",
     invalidPreview: "预览文件只能选择 PDF。",
-    pptWarning: "未上传 PDF 预览时，原件会保存，但不会显示在现场屏幕。",
+    pptWarning: "10MB 以内的 PPT/PPTX 上传后会自动转换为现场画面。",
+    pptTooLarge: "超过 10MB 的 PPT/PPTX 请同时选择现场 PDF 预览。",
     machinesUnit: "号机",
     pieces: "件",
     noRevision: "无修订号",
@@ -325,12 +336,30 @@ function DocumentStatus({
   language: "ko" | "zh";
 }) {
   const c = pageCopy[language];
-  const needsPreview = Boolean(document && !ready);
+  const converting = document?.conversion_status === "pending";
+  const conversionFailed = document?.conversion_status === "failed";
+  const needsPreview = Boolean(document && !ready && !converting && !conversionFailed);
+  const statusClass = ready
+    ? "is-ready"
+    : converting
+      ? "is-converting"
+      : conversionFailed || needsPreview
+        ? "is-preview-missing"
+        : "is-missing";
+  const statusLabel = ready
+    ? c.ready
+    : converting
+      ? c.converting
+      : conversionFailed
+        ? c.conversionFailed
+        : needsPreview
+          ? c.previewMissing
+          : c.missing;
   return (
-    <div className={`field-material-document-status ${ready ? "is-ready" : needsPreview ? "is-preview-missing" : "is-missing"}`}>
-      <span>{ready ? <CheckCircle2 /> : <AlertTriangle />}</span>
+    <div className={`field-material-document-status ${statusClass}`}>
+      <span>{ready ? <CheckCircle2 /> : converting ? <Loader2 className="is-spinning" /> : <AlertTriangle />}</span>
       <div>
-        <strong>{ready ? c.ready : needsPreview ? c.previewMissing : c.missing}</strong>
+        <strong>{statusLabel}</strong>
         <small>{document?.original_name || "-"}</small>
         <span className="field-material-document-meta">
           <em>{document?.revision || c.noRevision}</em>
@@ -448,8 +477,12 @@ function UploadDialog({
       setLocalError(c.invalidPreview);
       return;
     }
+    if (isInstruction && isPpt(sourceFile) && !previewFile && sourceFile.size > 10 * 1024 * 1024) {
+      setLocalError(c.pptTooLarge);
+      return;
+    }
     try {
-      await uploadMutation.mutateAsync({
+      const uploadedDocument = await uploadMutation.mutateAsync({
         kind,
         partNo: model.part_no,
         modelName: model.model_name,
@@ -459,8 +492,12 @@ function UploadDialog({
         previewPdf: isInstruction ? previewFile : null,
       });
       await queryClient.invalidateQueries({ queryKey: ["field-materials"] });
-      setSuccess(c.uploadSuccess);
-      window.setTimeout(onClose, 700);
+      if (uploadedDocument?.conversion_status === "failed" && !uploadedDocument.ready) {
+        setLocalError(c.uploadConversionFailed);
+        return;
+      }
+      setSuccess(uploadedDocument?.conversion_status === "pending" ? c.uploadConverting : c.uploadSuccess);
+      window.setTimeout(onClose, uploadedDocument?.conversion_status === "pending" ? 1_200 : 700);
     } catch (error) {
       setLocalError(getErrorMessage(error, c.uploadError));
     }
@@ -545,7 +582,7 @@ function UploadDialog({
             </div>
           ) : null}
           {isInstruction && isPpt(sourceFile) && !previewFile ? (
-            <div className="field-material-ppt-warning"><AlertTriangle />{c.pptWarning}</div>
+            <div className="field-material-ppt-warning"><FileCheck2 />{c.pptWarning}</div>
           ) : null}
         </div>
 
@@ -578,7 +615,14 @@ export default function FieldMaterialsPage() {
     queryFn: () => getFieldMaterials(businessDate),
     enabled: canViewMaterials,
     staleTime: 30_000,
-    refetchInterval: 5 * 60_000,
+    refetchInterval: (query) => {
+      const data = query.state.data as FieldMaterialsResponse | undefined;
+      const hasPendingConversion = data?.models.some((item) => (
+        item.work_instruction?.conversion_status === "pending"
+        || item.drawing?.conversion_status === "pending"
+      ));
+      return hasPendingConversion ? 10_000 : 5 * 60_000;
+    },
   });
   const productionStatusQuery = useQuery({
     queryKey: ["production-status", businessDate],

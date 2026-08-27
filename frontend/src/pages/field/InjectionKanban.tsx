@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  ArrowDown,
   ArrowLeft,
   Check,
   CheckCircle2,
@@ -16,6 +15,7 @@ import {
   FolderOpen,
   Delete,
   LogOut,
+  Loader2,
   Maximize2,
   Minimize2,
   Minus,
@@ -24,6 +24,7 @@ import {
   Radio,
   RotateCcw,
   ShieldAlert,
+  Triangle,
   X,
 } from "lucide-react";
 
@@ -56,6 +57,7 @@ type FieldLanguage = "zh" | "ko";
 type CanvasMode = "work_instruction" | "drawing" | "quality";
 const DEFAULT_DOCUMENT_ZOOM = 125;
 const DEFAULT_DISPLAY_SCALE = 100;
+const DISPLAY_FIT_MIN = 70;
 const DISPLAY_SCALE_MIN = 85;
 const DISPLAY_SCALE_MAX = 105;
 const DISPLAY_SCALE_STEP = 5;
@@ -129,8 +131,9 @@ const copy = {
     offline: "数据延迟",
     secondsAgo: "秒前",
     noSignal: "暂无数据",
-    currentShots: "设备累计合模数",
-    businessDayShots: "本生产日合模数",
+    shiftShots: "本班合模数",
+    dayShiftWindow: "08:00–20:00",
+    nightShiftWindow: "20:00–次日 08:00",
     model: "型号",
     partNo: "品号",
     currentPlanShots: "当前作业推定合模数",
@@ -153,9 +156,17 @@ const copy = {
     noPlan: "本机当前没有生产计划",
     noPlanHint: "计划下发后，这里会自动显示对应型号、品号和现场资料。",
     noDocument: "尚未补充对应资料",
-    noDocumentHint: "请在“开发 > 现场看板资料管理”上传 PDF 预览文件。",
+    noDocumentHint: "请在“开发 > 现场看板资料管理”上传 PPT/PPTX 或 PDF。",
     sourceOnly: "原始文件已上传，仍需补充 PDF 预览",
+    conversionPending: "正在生成 PPT 现场预览",
+    conversionPendingHint: "转换完成后会自动显示，通常只需几秒钟。",
+    conversionFailed: "PPT 现场预览转换失败",
+    conversionFailedHint: "请在资料管理中补充 PDF 预览，或联系开发团队确认转换服务。",
     openSource: "打开原始文件",
+    documentLoading: "正在读取资料…",
+    documentUnavailable: "资料暂时无法显示",
+    documentUnavailableHint: "资料服务器拒绝访问或文件预览损坏，请联系开发团队重新上传。",
+    documentRetry: "重新读取资料",
     previousPage: "上一页",
     nextPage: "下一页",
     previousContent: "上一项资料",
@@ -250,8 +261,9 @@ const copy = {
     offline: "데이터 지연",
     secondsAgo: "초 전",
     noSignal: "데이터 없음",
-    currentShots: "설비 누적 형합수",
-    businessDayShots: "생산일 형합수(08시 기준)",
+    shiftShots: "이번 시프트 형합수",
+    dayShiftWindow: "08:00–20:00",
+    nightShiftWindow: "20:00–익일 08:00",
     model: "모델",
     partNo: "품번",
     currentPlanShots: "현재 작업 추정 형합수",
@@ -274,9 +286,17 @@ const copy = {
     noPlan: "현재 이 설비의 생산계획이 없습니다",
     noPlanHint: "계획이 배포되면 모델, 품번, 현장 자료가 자동으로 표시됩니다.",
     noDocument: "해당 자료가 아직 없습니다",
-    noDocumentHint: "‘개발 > 현장 칸반 자료관리’에서 PDF 미리보기를 올려 주세요.",
+    noDocumentHint: "‘개발 > 현장 칸반 자료관리’에서 PPT/PPTX 또는 PDF를 올려 주세요.",
     sourceOnly: "원본은 업로드되었지만 PDF 미리보기가 필요합니다",
+    conversionPending: "PPT 현장 미리보기 변환 중",
+    conversionPendingHint: "변환이 끝나면 자동으로 표시되며 보통 몇 초 정도 걸립니다.",
+    conversionFailed: "PPT 현장 미리보기 변환 실패",
+    conversionFailedHint: "자료관리에서 PDF 미리보기를 추가하거나 개발팀에 변환 서비스를 확인해 주세요.",
     openSource: "원본 파일 열기",
+    documentLoading: "자료를 불러오는 중…",
+    documentUnavailable: "자료를 표시할 수 없습니다",
+    documentUnavailableHint: "자료 서버가 접근을 거부했거나 미리보기 파일이 손상되었습니다. 개발팀에 재업로드를 요청해 주세요.",
+    documentRetry: "자료 다시 불러오기",
     previousPage: "이전 페이지",
     nextPage: "다음 페이지",
     previousContent: "이전 자료",
@@ -373,11 +393,28 @@ function number(value: number | null | undefined) {
 function clampDisplayScale(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_DISPLAY_SCALE;
   const stepped = Math.round(value / DISPLAY_SCALE_STEP) * DISPLAY_SCALE_STEP;
-  return Math.min(DISPLAY_SCALE_MAX, Math.max(DISPLAY_SCALE_MIN, stepped));
+  return Math.min(DISPLAY_SCALE_MAX, Math.max(DISPLAY_FIT_MIN, stepped));
+}
+
+function readLocalStorage(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalStorage(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable on locked-down kiosk profiles. The field
+    // screen must continue with its in-memory preference instead of crashing.
+  }
 }
 
 function readDisplayScalePreference(): DisplayScalePreference {
-  const stored = window.localStorage.getItem(DISPLAY_SCALE_STORAGE_KEY);
+  const stored = readLocalStorage(DISPLAY_SCALE_STORAGE_KEY);
   if (!stored) return { mode: "fit" };
 
   try {
@@ -536,6 +573,45 @@ function getDocumentUrl(document: FieldDocument | null, page: number, zoom: numb
   return `${base}#page=${Math.max(1, page)}&zoom=${Math.max(50, zoom)}&pagemode=none&navpanes=0`;
 }
 
+function getCloudinaryPdfPageImageUrl(document: FieldDocument | null, page: number) {
+  if (
+    document?.preview_resource_type !== "image"
+    || document.preview_format !== "pdf"
+    || !document.preview_url
+  ) return null;
+
+  try {
+    const parsed = new URL(document.preview_url, window.location.origin);
+    if (parsed.hostname !== "res.cloudinary.com") return null;
+    const uploadMarker = "/image/upload/";
+    const markerIndex = parsed.pathname.indexOf(uploadMarker);
+    if (markerIndex < 0) return null;
+    const prefix = parsed.pathname.slice(0, markerIndex + uploadMarker.length);
+    const assetPath = parsed.pathname.slice(markerIndex + uploadMarker.length).replace(/\.pdf$/i, ".jpg");
+    parsed.pathname = `${prefix}pg_${Math.max(1, page)},w_1800,c_limit,q_auto:good,f_jpg/${assetPath}`;
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function getOptimizedFieldImageUrl(value: string) {
+  try {
+    const parsed = new URL(value, window.location.origin);
+    if (parsed.hostname !== "res.cloudinary.com") return value;
+    const uploadMarker = "/image/upload/";
+    const markerIndex = parsed.pathname.indexOf(uploadMarker);
+    if (markerIndex < 0) return value;
+    const prefix = parsed.pathname.slice(0, markerIndex + uploadMarker.length);
+    const assetPath = parsed.pathname.slice(markerIndex + uploadMarker.length);
+    parsed.pathname = `${prefix}w_1800,c_limit,q_auto:good,f_auto/${assetPath}`;
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
 function isImagePreview(value: string | null | undefined) {
   if (!value) return false;
   try {
@@ -543,6 +619,16 @@ function isImagePreview(value: string | null | undefined) {
   } catch {
     return false;
   }
+}
+
+function usePageVisibility() {
+  const [isVisible, setIsVisible] = useState(() => !document.hidden);
+  useEffect(() => {
+    const update = () => setIsVisible(!document.hidden);
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  return isVisible;
 }
 
 function getVerificationLabel(
@@ -866,13 +952,27 @@ function DefectModal({
 
 function DocumentEmptyState({ document, language }: { document: FieldDocument | null; language: FieldLanguage }) {
   const c = copy[language];
+  const conversionPending = document?.conversion_status === "pending";
+  const conversionFailed = document?.conversion_status === "failed";
   const sourceOnly = Boolean(document?.source_url && !document.preview_url);
   const sourceUrl = getReachableDocumentUrl(document?.source_url);
+  const heading = conversionPending
+    ? c.conversionPending
+    : conversionFailed
+      ? c.conversionFailed
+      : sourceOnly
+        ? c.sourceOnly
+        : c.noDocument;
+  const hint = conversionPending
+    ? c.conversionPendingHint
+    : conversionFailed
+      ? c.conversionFailedHint
+      : c.noDocumentHint;
   return (
     <div className="field-document-empty">
-      <FileText aria-hidden="true" />
-      <h2>{sourceOnly ? c.sourceOnly : c.noDocument}</h2>
-      <p>{c.noDocumentHint}</p>
+      {conversionPending ? <Loader2 aria-hidden="true" className="is-spinning" /> : <FileText aria-hidden="true" />}
+      <h2>{heading}</h2>
+      <p>{hint}</p>
       {sourceOnly && sourceUrl ? (
         <a href={sourceUrl} rel="noreferrer" target="_blank">
           <ExternalLink aria-hidden="true" />{c.openSource}
@@ -882,14 +982,158 @@ function DocumentEmptyState({ document, language }: { document: FieldDocument | 
   );
 }
 
+function FieldDocumentPreview({
+  document,
+  interactionLocked,
+  language,
+  page,
+  zoom,
+  onInteract,
+}: {
+  document: FieldDocument;
+  interactionLocked: boolean;
+  language: FieldLanguage;
+  page: number;
+  zoom: number;
+  onInteract: () => void;
+}) {
+  const c = copy[language];
+  const pageImageUrl = getCloudinaryPdfPageImageUrl(document, page);
+  const directImageUrl = isImagePreview(document.preview_url)
+    ? getReachableDocumentUrl(document.preview_url)
+    : null;
+  const imageUrl = pageImageUrl || directImageUrl;
+  const pdfUrl = imageUrl ? null : getDocumentUrl(document, page, zoom);
+  const sourceUrl = getReachableDocumentUrl(document.source_url);
+  const [attempt, setAttempt] = useState(0);
+  const [loadState, setLoadState] = useState<"checking" | "loading" | "ready" | "error">(
+    imageUrl ? "loading" : "checking",
+  );
+
+  useEffect(() => {
+    if (imageUrl) {
+      setLoadState("loading");
+      return;
+    }
+    if (!pdfUrl) {
+      setLoadState("error");
+      return;
+    }
+
+    let isCloudinary = false;
+    try {
+      isCloudinary = new URL(pdfUrl, window.location.origin).hostname === "res.cloudinary.com";
+    } catch {
+      // A relative same-origin URL is safe to leave to the browser viewer.
+    }
+    if (!isCloudinary) {
+      setLoadState("ready");
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    const timeout = window.setTimeout(() => controller.abort(), 10_000);
+    setLoadState("checking");
+    void fetch(pdfUrl.split("#")[0], {
+      cache: "no-store",
+      method: "HEAD",
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`document delivery failed: ${response.status}`);
+        const contentLength = Number(response.headers.get("content-length") || "1");
+        if (contentLength === 0) throw new Error("document delivery returned an empty file");
+        if (active) setLoadState("ready");
+      })
+      .catch(() => {
+        if (active) setLoadState("error");
+      })
+      .finally(() => window.clearTimeout(timeout));
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [attempt, imageUrl, pdfUrl]);
+
+  if (loadState === "error") {
+    return (
+      <div className="field-document-load-state field-document-load-state--error" role="alert">
+        <AlertTriangle aria-hidden="true" />
+        <h2>{c.documentUnavailable}</h2>
+        <p>{c.documentUnavailableHint}</p>
+        <div>
+          <button onClick={() => setAttempt((current) => current + 1)} type="button">
+            <RotateCcw aria-hidden="true" />{c.documentRetry}
+          </button>
+          {sourceUrl ? (
+            <a href={sourceUrl} rel="noreferrer" target="_blank">
+              <ExternalLink aria-hidden="true" />{c.openSource}
+            </a>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {imageUrl ? (
+        <div className={`field-document-image-preview${interactionLocked ? " is-interaction-locked" : ""}`}>
+          <img
+            alt={document.original_name || c.workInstruction}
+            decoding="async"
+            key={`${imageUrl}:${attempt}`}
+            onError={() => setLoadState("error")}
+            onLoad={() => setLoadState("ready")}
+            src={imageUrl}
+            style={{ width: `${zoom}%` }}
+          />
+        </div>
+      ) : loadState === "ready" && pdfUrl ? (
+        <iframe
+          className={interactionLocked ? "is-interaction-locked" : undefined}
+          key={`${pdfUrl}:${attempt}`}
+          src={pdfUrl}
+          tabIndex={interactionLocked ? -1 : 0}
+          title={document.original_name || c.workInstruction}
+        />
+      ) : null}
+      {loadState === "checking" || loadState === "loading" ? (
+        <div className="field-document-load-state" role="status">
+          <FileText aria-hidden="true" />
+          <strong>{c.documentLoading}</strong>
+        </div>
+      ) : null}
+      {interactionLocked && loadState === "ready" ? (
+        <button
+          aria-label={`${c.interactDocument}. ${c.interactDocumentHint}`}
+          className="field-document-interaction-gate"
+          onClick={onInteract}
+          type="button"
+        >
+          <span>
+            <FileText aria-hidden="true" />
+            <strong>{c.interactDocument}</strong>
+            <small>{c.interactDocumentHint}</small>
+          </span>
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 function QualityCanvas({
   snapshot,
   issueIndex,
   language,
+  isPageVisible,
 }: {
   snapshot: FieldKanbanResponse;
   issueIndex: number;
   language: FieldLanguage;
+  isPageVisible: boolean;
 }) {
   const c = copy[language];
   const issue = snapshot.quality.issues[issueIndex];
@@ -899,18 +1143,21 @@ function QualityCanvas({
   ])).slice(0, 4) : [];
   const imageSignature = images.join("|");
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [failedPhotoUrls, setFailedPhotoUrls] = useState<Set<string>>(() => new Set());
+  const displayImages = images.filter((imageUrl) => !failedPhotoUrls.has(imageUrl));
 
   useEffect(() => {
     setPhotoIndex(0);
+    setFailedPhotoUrls(new Set());
   }, [issue?.key, imageSignature]);
 
   useEffect(() => {
-    if (images.length <= 1 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!isPageVisible || displayImages.length <= 1 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const timer = window.setTimeout(() => {
-      setPhotoIndex((current) => (current + 1) % images.length);
+      setPhotoIndex((current) => (current + 1) % displayImages.length);
     }, 5_000);
     return () => window.clearTimeout(timer);
-  }, [imageSignature, images.length, photoIndex]);
+  }, [displayImages.length, imageSignature, isPageVisible, photoIndex]);
 
   if (!issue) return null;
   const disclaimer = snapshot.quality.disclaimer[language] || c.historicalOnly;
@@ -925,7 +1172,8 @@ function QualityCanvas({
     : issue.section
       ? [{ section: issue.section, evidence_count: issue.evidence_count }]
       : [];
-  const activePhotoIndex = images.length ? photoIndex % images.length : 0;
+  const activePhotoIndex = displayImages.length ? photoIndex % displayImages.length : 0;
+  const activePhotoUrl = displayImages[activePhotoIndex];
   const verificationLabel = getVerificationLabel(
     issue.verification_status,
     issue.verification_label,
@@ -966,24 +1214,25 @@ function QualityCanvas({
         </div>
       </header>
       <div className="field-quality-canvas__body">
-        {images.length ? (
+        {displayImages.length && activePhotoUrl ? (
           <section className="field-quality-canvas__gallery" aria-label={c.representativePhotos}>
             <div className="field-quality-canvas__viewport">
-              <div
-                className="field-quality-canvas__slides"
-                style={{ "--field-quality-photo-index": activePhotoIndex } as CSSProperties}
-              >
-                {images.map((imageUrl, index) => (
-                  <figure key={imageUrl}>
-                    <img alt={`${issue.label[language]} ${c.representativePhotos} ${index + 1}`} src={imageUrl} />
-                  </figure>
-                ))}
-              </div>
+              <figure className="field-quality-canvas__active-photo" key={activePhotoUrl}>
+                <img
+                  alt={`${issue.label[language]} ${c.representativePhotos} ${activePhotoIndex + 1}`}
+                  decoding="async"
+                  onError={() => {
+                    setFailedPhotoUrls((current) => new Set(current).add(activePhotoUrl));
+                    setPhotoIndex(0);
+                  }}
+                  src={getOptimizedFieldImageUrl(activePhotoUrl)}
+                />
+              </figure>
             </div>
             <div className="field-quality-canvas__carousel-controls">
-              <strong>{c.representativePhotos} · {activePhotoIndex + 1} / {images.length}</strong>
+              <strong>{c.representativePhotos} · {activePhotoIndex + 1} / {displayImages.length}</strong>
               <div aria-label={c.representativePhotos} role="tablist">
-                {images.map((imageUrl, index) => (
+                {displayImages.map((imageUrl, index) => (
                   <button
                     aria-label={`${c.representativePhotos} ${index + 1}`}
                     aria-selected={activePhotoIndex === index}
@@ -1054,7 +1303,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const machineNumber = Number(station.machineFilterValue);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [language, setLanguage] = useState<FieldLanguage>(() => {
-    const stored = window.localStorage.getItem("wj-field-language");
+    const stored = readLocalStorage("wj-field-language");
     return stored === "ko" ? "ko" : "zh";
   });
   const [now, setNow] = useState(() => new Date());
@@ -1078,6 +1327,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [allMaterialsOpen, setAllMaterialsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const c = copy[language];
+  const isPageVisible = usePageVisibility();
   const compactViewport = viewportSize.width <= 1599 && viewportSize.height <= 850;
   const tabletViewport = viewportSize.width <= 1180 && viewportSize.height >= 851;
   const minimumLogicalWidth = compactViewport ? 1220 : tabletViewport ? 1050 : 1450;
@@ -1088,16 +1338,17 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     viewportSize.height / minimumLogicalHeight,
   );
   const maximumDisplayScale = Math.max(
-    DISPLAY_SCALE_MIN,
+    DISPLAY_FIT_MIN,
     Math.floor((safeMaximumScaleRatio * 100) / DISPLAY_SCALE_STEP) * DISPLAY_SCALE_STEP,
   );
+  const minimumDisplayScale = Math.min(DISPLAY_SCALE_MIN, maximumDisplayScale);
   const fitDisplayScaleRatio = Math.max(
-    DISPLAY_SCALE_MIN / 100,
+    DISPLAY_FIT_MIN / 100,
     Math.min(DEFAULT_DISPLAY_SCALE / 100, safeMaximumScaleRatio),
   );
   const displayScaleRatio = displayScalePreference.mode === "fit"
     ? fitDisplayScaleRatio
-    : Math.min(displayScalePreference.scale, maximumDisplayScale) / 100;
+    : Math.max(minimumDisplayScale, Math.min(displayScalePreference.scale, maximumDisplayScale)) / 100;
   const displayScale = Math.round(displayScaleRatio * 100);
   const canEnterDefects = Boolean(
     user?.is_staff
@@ -1106,11 +1357,11 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   );
 
   useEffect(() => {
-    window.localStorage.setItem("wj-field-language", language);
+    writeLocalStorage("wj-field-language", language);
   }, [language]);
 
   useEffect(() => {
-    window.localStorage.setItem(DISPLAY_SCALE_STORAGE_KEY, JSON.stringify(displayScalePreference));
+    writeLocalStorage(DISPLAY_SCALE_STORAGE_KEY, JSON.stringify(displayScalePreference));
   }, [displayScalePreference]);
 
   useEffect(() => {
@@ -1157,9 +1408,11 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   }, [displayControlsOpen]);
 
   useEffect(() => {
+    setNow(new Date());
+    if (!isPageVisible) return;
     const timer = window.setInterval(() => setNow(new Date()), 1_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [isPageVisible]);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -1170,7 +1423,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const snapshotQuery = useQuery({
     queryKey: ["field-kanban", businessDate, machineNumber],
     queryFn: () => getFieldKanban(businessDate, machineNumber, { includeQuality: false }),
-    refetchInterval: 15_000,
+    refetchInterval: isPageVisible ? 15_000 : false,
     staleTime: 8_000,
     retry: 1,
   });
@@ -1191,14 +1444,14 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     queryFn: () => getProductionPlanSummary(businessDate),
     enabled: transitionQueriesEnabled,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: isPageVisible ? 60_000 : false,
   });
   const matrixQuery = useQuery({
     queryKey: ["mes", "injection-production-matrix", businessDate, true, machineNumber],
     queryFn: () => getInjectionProductionMatrix(machineNumber),
     enabled: transitionQueriesEnabled,
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: isPageVisible ? 60_000 : false,
     retry: false,
   });
   const confirmationsQuery = useQuery({
@@ -1206,7 +1459,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     queryFn: () => getInjectionDowntimeConfirmations(businessDate),
     enabled: transitionQueriesEnabled,
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    refetchInterval: isPageVisible ? 30_000 : false,
     retry: false,
   });
   const qualityPlanIdentity = snapshotQuery.data?.active_plan
@@ -1217,7 +1470,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     queryFn: () => getFieldKanban(businessDate, machineNumber, { includeQuality: true }),
     enabled: coreKanbanReady && Boolean(snapshotQuery.data?.active_plan),
     staleTime: 5 * 60_000,
-    refetchInterval: 5 * 60_000,
+    refetchInterval: isPageVisible ? 5 * 60_000 : false,
     retry: 1,
   });
   const confirmationMutation = useMutation({ mutationFn: saveInjectionDowntimeConfirmation });
@@ -1291,7 +1544,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     if (modalOpen) setDisplayControlsOpen(false);
   }, [modalOpen]);
   const qualityIssueCount = snapshot?.quality.issues.length ?? 0;
-  const rotationPaused = manualPause || modalOpen || canvasMode === "drawing" || !snapshot?.active_plan;
+  const rotationPaused = !isPageVisible || manualPause || modalOpen || canvasMode === "drawing" || !snapshot?.active_plan;
   useEffect(() => {
     if (qualityIssueCount === 0 && canvasMode === "quality") {
       setCanvasMode("work_instruction");
@@ -1334,10 +1587,8 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const displayedDocument = canvasMode === "drawing"
     ? snapshot?.documents.drawing ?? null
     : snapshot?.documents.work_instruction ?? null;
-  const documentUrl = getDocumentUrl(displayedDocument, page, zoom);
-  const documentIsImage = isImagePreview(displayedDocument?.preview_url);
   const documentInteractionLocked = Boolean(
-    documentUrl && canvasMode === "work_instruction" && !manualPause,
+    displayedDocument?.preview_url && canvasMode === "work_instruction" && !manualPause,
   );
   const pageCount = displayedDocument?.page_count;
   const freshnessSeconds = getFreshnessSeconds(snapshot?.machine.latest_mes_time, now);
@@ -1363,7 +1614,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     const currentSteppedScale = Math.round(displayScale / DISPLAY_SCALE_STEP) * DISPLAY_SCALE_STEP;
     const nextScale = Math.min(
       maximumDisplayScale,
-      Math.max(DISPLAY_SCALE_MIN, currentSteppedScale + delta),
+      Math.max(minimumDisplayScale, currentSteppedScale + delta),
     );
     setDisplayScalePreference({ mode: "manual", scale: nextScale });
   }
@@ -1628,8 +1879,11 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
         <main className="field-kanban-main">
         <aside className="field-command-panel">
           <section className="field-shot-hero">
-            <span>{snapshot.machine.device_counter === null ? c.businessDayShots : c.currentShots}</span>
-            <strong>{number(snapshot.machine.device_counter ?? snapshot.counters.business_day_shots)}</strong>
+            <span>
+              {c.shiftShots}
+              <small>{snapshot.counters.shift_code === "night" ? c.nightShiftWindow : c.dayShiftWindow}</small>
+            </span>
+            <strong>{number(snapshot.counters.shift_shots)}</strong>
           </section>
           <section className="field-part-summary">
             <div><span>{c.model}</span><strong>{snapshot.active_plan?.model_name || "-"}</strong></div>
@@ -1651,7 +1905,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
                   key={`${plan.plan_id ?? `${plan.sequence}:${plan.part_no}:${plan.lot_no}`}`}
                 >
                   <span className="field-queue-index">{visibleIndex + 1}</span>
-                  {visibleIndex < queue.length - 1 ? <ArrowDown aria-hidden="true" className="field-queue-flow" /> : null}
+                  {visibleIndex < queue.length - 1 ? <Triangle aria-hidden="true" className="field-queue-flow" /> : null}
                   <div className="field-queue-copy"><strong>{plan.part_no || "-"}</strong><span>{plan.model_name || "-"}</span></div>
                   <div className="field-queue-value">
                     <small>{c.queueOutput}</small>
@@ -1694,7 +1948,14 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
                 <button aria-label={c.previousPage} disabled={page <= 1} onClick={() => { setManualPause(true); setPage((value) => Math.max(1, value - 1)); }} type="button"><ChevronLeft /></button>
                 <span>{page}{pageCount ? ` / ${pageCount}` : ""}</span>
                 <button aria-label={c.nextPage} disabled={Boolean(pageCount && page >= pageCount)} onClick={() => { setManualPause(true); setPage((value) => value + 1); }} type="button"><ChevronRight /></button>
-                {displayedDocument?.source_url ? <a aria-label={c.openSource} href={getReachableDocumentUrl(displayedDocument.source_url) || undefined} rel="noreferrer" target="_blank"><Maximize2 /></a> : null}
+                {displayedDocument?.source_url ? (
+                  <a
+                    aria-label={c.openSource}
+                    href={getCloudinaryPdfPageImageUrl(displayedDocument, page) || getReachableDocumentUrl(displayedDocument.source_url) || undefined}
+                    rel="noreferrer"
+                    target="_blank"
+                  ><Maximize2 /></a>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -1703,41 +1964,16 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
             {!snapshot.active_plan ? (
               <div className="field-document-empty"><Factory /><h2>{c.noPlan}</h2><p>{c.noPlanHint}</p></div>
             ) : canvasMode === "quality" ? (
-              <QualityCanvas issueIndex={qualityIndex} language={language} snapshot={snapshot} />
-            ) : documentUrl ? (
-              <>
-                {documentIsImage ? (
-                  <div className={`field-document-image-preview${documentInteractionLocked ? " is-interaction-locked" : ""}`}>
-                    <img
-                      alt={displayedDocument?.original_name || c.workInstruction}
-                      src={documentUrl.split("#")[0]}
-                      style={{ width: `${zoom}%` }}
-                    />
-                  </div>
-                ) : (
-                  <iframe
-                    className={documentInteractionLocked ? "is-interaction-locked" : undefined}
-                    key={documentUrl}
-                    src={documentUrl}
-                    tabIndex={documentInteractionLocked ? -1 : 0}
-                    title={displayedDocument?.original_name || c.workInstruction}
-                  />
-                )}
-                {documentInteractionLocked ? (
-                  <button
-                    aria-label={`${c.interactDocument}. ${c.interactDocumentHint}`}
-                    className="field-document-interaction-gate"
-                    onClick={() => setManualPause(true)}
-                    type="button"
-                  >
-                    <span>
-                      <FileText aria-hidden="true" />
-                      <strong>{c.interactDocument}</strong>
-                      <small>{c.interactDocumentHint}</small>
-                    </span>
-                  </button>
-                ) : null}
-              </>
+              <QualityCanvas isPageVisible={isPageVisible} issueIndex={qualityIndex} language={language} snapshot={snapshot} />
+            ) : displayedDocument?.preview_url ? (
+              <FieldDocumentPreview
+                document={displayedDocument}
+                interactionLocked={documentInteractionLocked}
+                language={language}
+                onInteract={() => setManualPause(true)}
+                page={page}
+                zoom={zoom}
+              />
             ) : (
               <DocumentEmptyState document={displayedDocument} language={language} />
             )}
@@ -1766,7 +2002,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
           <div className="field-display-controls-scale" role="group" aria-label={c.displayScale}>
             <button
               aria-label={c.displayScaleDecrease}
-              disabled={displayScale <= DISPLAY_SCALE_MIN}
+              disabled={displayScale <= minimumDisplayScale}
               onClick={() => changeDisplayScale(-DISPLAY_SCALE_STEP)}
               type="button"
             ><Minus /></button>

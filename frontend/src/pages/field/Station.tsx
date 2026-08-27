@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, LogOut } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -11,6 +11,37 @@ import { useShanghaiBusinessDate } from '@/shared/hooks/useShanghaiBusinessDate'
 import InjectionKanban from './InjectionKanban';
 
 const ProductionConsole = lazy(() => import('@/components/production/ProductionConsole'));
+
+class FieldRuntimeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Field terminal render failed', error, info.componentStack);
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="grid h-screen place-items-center bg-slate-100 p-8 text-center text-slate-900" role="alert">
+        <div className="max-w-2xl rounded-2xl border-2 border-red-200 bg-white p-10 shadow-xl">
+          <h1 className="text-4xl font-black">页面运行异常</h1>
+          <p className="mt-4 text-xl font-bold text-slate-600">现场数据仍保留在服务器。请重新加载画面。</p>
+          <button
+            className="mt-8 min-h-16 rounded-xl bg-blue-700 px-10 text-2xl font-black text-white"
+            onClick={() => window.location.reload()}
+            type="button"
+          >
+            重新加载
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
 
 const formatUpdateTime = (timestamp: number) => {
   const date = new Date(timestamp);
@@ -50,7 +81,11 @@ export default function FieldStationPage() {
   }
 
   if (station.type === 'injection') {
-    return <InjectionKanban onBack={() => navigate('/field')} station={station} />;
+    return (
+      <FieldRuntimeBoundary key={station.id}>
+        <InjectionKanban onBack={() => navigate('/field')} station={station} />
+      </FieldRuntimeBoundary>
+    );
   }
 
   const stationTitle = `加工${station.shortLabel}`;

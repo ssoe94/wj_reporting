@@ -10,7 +10,15 @@ from django.utils import timezone
 
 from injection.models import InjectionMonitoringRecord
 
-from .ai_metrics import SHANGHAI_TZ, business_range, elapsed_rate, reference_time_for_business_day, safe_int, safe_rate
+from .ai_metrics import (
+    SHANGHAI_TZ,
+    business_range,
+    elapsed_rate,
+    production_shift_window,
+    reference_time_for_business_day,
+    safe_int,
+    safe_rate,
+)
 from .machining_reconciliation import build_machining_provision_payload
 from .mes_progress import format_equipment_label
 from .models import ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
@@ -176,7 +184,12 @@ def get_injection_active_machine_context(target_date: Any, lookback_minutes: int
     }
 
 
-def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[int]) -> dict[str, Any]:
+def get_injection_machine_shot_context(
+    target_date: Any,
+    machine_numbers: list[int],
+    *,
+    as_of: Any | None = None,
+) -> dict[str, Any]:
     """Retrieve reset-safe shot trends for explicitly requested machines.
 
     Unlike the plan progress retriever, this does not require a production plan,
@@ -203,6 +216,11 @@ def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[i
     current_business_date = (
         timezone.now().astimezone(SHANGHAI_TZ) - timedelta(hours=8)
     ).date()
+    shift_window = production_shift_window(target_date, as_of)
+    shift_counter_end = min(
+        shift_window["end"],
+        shift_window["reference_time"] + timedelta(microseconds=1),
+    )
 
     for machine_number in normalized_numbers:
         monitoring_name = machine_monitoring_name(machine_number)
@@ -225,6 +243,10 @@ def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[i
                 "reference_time": None,
                 "latest_mes_time": None,
                 "latest_capacity": None,
+                "shift_shots": 0,
+                "shift_code": shift_window["code"],
+                "shift_start": shift_window["start"],
+                "shift_end": shift_window["end"],
                 "is_stale": True,
                 "warning": "injection_capacity_data_missing",
             })
@@ -247,6 +269,12 @@ def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[i
             "capacity",
             recent_start,
             counter_end,
+        )
+        shift_shots = sum_positive_monitoring_delta(
+            monitoring_name,
+            "capacity",
+            shift_window["start"],
+            shift_counter_end,
         )
         recent_sample_count = InjectionMonitoringRecord.objects.filter(
             machine_name=monitoring_name,
@@ -277,6 +305,10 @@ def get_injection_machine_shot_context(target_date: Any, machine_numbers: list[i
             # Raw device counter is display-only because it may reset. All
             # production arithmetic continues to use reset-safe deltas above.
             "latest_capacity": safe_int(latest_sample.get("capacity")) if latest_sample else None,
+            "shift_shots": shift_shots,
+            "shift_code": shift_window["code"],
+            "shift_start": shift_window["start"],
+            "shift_end": shift_window["end"],
             "is_stale": is_stale,
             "warning": (
                 "injection_recent_trend_window_missing"

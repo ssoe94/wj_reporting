@@ -16,8 +16,13 @@ export type FieldDocument = {
   original_name: string;
   source_url: string | null;
   preview_url: string | null;
+  preview_format: string | null;
+  preview_resource_type: "image" | "raw" | null;
   page_count: number | null;
   ready: boolean;
+  conversion_status: "pending" | "ready" | "failed" | null;
+  conversion_provider: string | null;
+  conversion_error: string | null;
   uploaded_at: string | null;
   verification_status: "matched" | "pending" | "mismatch" | null;
   verification_label: FieldLanguageLabel | null;
@@ -95,6 +100,10 @@ export type FieldKanbanResponse = {
   queue: FieldKanbanPlan[];
   counters: {
     business_day_shots: number;
+    shift_shots: number;
+    shift_code: "day" | "night";
+    shift_start: string | null;
+    shift_end: string | null;
     current_plan_shots: number;
     theoretical_piece_qty: number;
   };
@@ -200,6 +209,10 @@ function normalizeVerificationStatus(value: unknown) {
   return value === "matched" || value === "pending" || value === "mismatch" ? value : null;
 }
 
+function normalizeConversionStatus(value: unknown): FieldDocument["conversion_status"] {
+  return value === "pending" || value === "ready" || value === "failed" ? value : null;
+}
+
 function normalizeMaterialMatchRule(value: unknown): FieldMaterialMatchRule {
   return value === "part_family_last_two" ? "part_family_last_two" : "exact";
 }
@@ -231,8 +244,15 @@ function normalizeDocument(value: unknown, fallbackKind: FieldDocument["kind"]):
     original_name: asString(row.original_name || row.source_file_name || row.file_name || row.name),
     source_url: sourceUrl,
     preview_url: previewUrl,
+    preview_format: asString(row.preview_format || row.format).toLowerCase() || null,
+    preview_resource_type: row.preview_resource_type === "image" || row.preview_resource_type === "raw"
+      ? row.preview_resource_type
+      : null,
     page_count: row.page_count === null || row.page_count === undefined ? null : Math.max(1, asNumber(row.page_count, 1)),
     ready: explicitReady ?? Boolean(previewUrl),
+    conversion_status: normalizeConversionStatus(row.conversion_status),
+    conversion_provider: asString(row.conversion_provider) || null,
+    conversion_error: asString(row.conversion_error) || null,
     uploaded_at: asString(row.uploaded_at || row.created_at) || null,
     verification_status: normalizeVerificationStatus(row.verification_status),
     verification_label: row.verification_label
@@ -299,6 +319,10 @@ export function normalizeFieldKanbanResponse(value: unknown, date: string, machi
     queue,
     counters: {
       business_day_shots: asNumber(counters.business_day_shots || machine.shot_count),
+      shift_shots: asNumber(counters.shift_shots),
+      shift_code: asString(counters.shift_code) === "night" ? "night" : "day",
+      shift_start: asString(counters.shift_start) || null,
+      shift_end: asString(counters.shift_end) || null,
       current_plan_shots: asNumber(counters.current_plan_shots || activePlan?.allocated_shots),
       theoretical_piece_qty: asNumber(counters.theoretical_piece_qty || activePlan?.actual_piece_qty),
     },

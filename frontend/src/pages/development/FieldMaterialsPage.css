@@ -652,6 +652,10 @@
   background: #089349;
 }
 
+.field-material-document-status.is-converting > span {
+  background: #0878c9;
+}
+
 .field-material-document-status.is-preview-missing > span {
   color: #653b00;
   background: #f7b928;
@@ -676,6 +680,10 @@
 
 .field-material-document-status.is-ready strong {
   color: #08733b;
+}
+
+.field-material-document-status.is-converting strong {
+  color: #0864a7;
 }
 
 .field-material-document-status.is-preview-missing strong {
@@ -1094,10 +1102,10 @@
   align-items: center;
   gap: 9px;
   padding: 12px 14px;
-  color: #8b4500;
-  border: 1px solid #efbd58;
+  color: #075d4f;
+  border: 1px solid #78cbb9;
   border-radius: 7px;
-  background: #fff7dd;
+  background: #ecfbf6;
   font-size: 13px;
   font-weight: 850;
 }

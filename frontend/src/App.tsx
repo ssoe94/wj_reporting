@@ -30,27 +30,28 @@ import {
   FileText,
   FileUp,
 } from "lucide-react";
-import ModelsPage from './pages/models';
-import Eco2Page from './pages/eco2';
-import AnalysisPage from './pages/analysis';
-import AssemblyPage from './pages/assembly';
-import SalesInventoryPage from './pages/sales/Inventory';
-import OverviewPage from './pages/overview';
-import LoginPage from './pages/LoginPage';
 import PrivateRoute from './components/PrivateRoute';
-import InventoryStatusPage from './pages/sales/InventoryStatus';
-import DailyReportPage from './pages/sales/DailyReport';
-import UserApproval from './pages/admin/UserApproval';
 import PasswordChangeModal from './components/PasswordChangeModal';
 import PageTransition from './components/common/PageTransition';
 import { NavigationTree } from './components/layout/NavigationTree';
-import QualityPage from './pages/quality';
-import DailyAttentionPage from './pages/quality/DailyAttention';
-import AssemblyDashboardPage from './pages/assembly/Dashboard';
-import InjectionDashboardPage from './pages/injection/Dashboard';
-import InjectionMonitoringPage from './pages/injection/MonitoringPage';
-import ProductionStatsPage from './pages/production/Stats';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
+
+const ModelsPage = lazy(() => import('./pages/models'));
+const Eco2Page = lazy(() => import('./pages/eco2'));
+const AnalysisPage = lazy(() => import('./pages/analysis'));
+const AssemblyPage = lazy(() => import('./pages/assembly'));
+const SalesInventoryPage = lazy(() => import('./pages/sales/Inventory'));
+const OverviewPage = lazy(() => import('./pages/overview'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const InventoryStatusPage = lazy(() => import('./pages/sales/InventoryStatus'));
+const DailyReportPage = lazy(() => import('./pages/sales/DailyReport'));
+const UserApproval = lazy(() => import('./pages/admin/UserApproval'));
+const QualityPage = lazy(() => import('./pages/quality'));
+const DailyAttentionPage = lazy(() => import('./pages/quality/DailyAttention'));
+const AssemblyDashboardPage = lazy(() => import('./pages/assembly/Dashboard'));
+const InjectionDashboardPage = lazy(() => import('./pages/injection/Dashboard'));
+const InjectionMonitoringPage = lazy(() => import('./pages/injection/MonitoringPage'));
+const ProductionStatsPage = lazy(() => import('./pages/production/Stats'));
 
 const ProductionDashboardPage = lazy(() => import('./domains/production/pages/ProductionDashboardPage').then((module) => ({
   default: module.ProductionDashboardPage,
@@ -772,7 +773,8 @@ function AppContent() {
       {/* Main content */}
       <main className={isAuthenticated && !isFieldTerminal && !isStandaloneBoardRoute ? "main-workspace" : "main-workspace main-workspace--standalone"}>
         <AnimatePresence mode="wait">
-          <Routes location={routerLocation} key={locationKey}>
+          <Suspense fallback={<RouteLoading />} key={locationKey}>
+            <Routes location={routerLocation}>
             {/* Public routes */}
             <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
             <Route path="/boards" element={<Suspense fallback={<RouteLoading />}><BoardHubPage /></Suspense>} />
@@ -837,7 +839,8 @@ function AppContent() {
             {/* Existing placeholders */}
             <Route path="/overview" element={<PrivateRoute><PageTransition><OverviewPage /></PageTransition></PrivateRoute>} />
             <Route path="/sales" element={<PrivateRoute><PageTransition><SalesInventoryPage /></PageTransition></PrivateRoute>} />
-          </Routes>
+            </Routes>
+          </Suspense>
         </AnimatePresence>
       </main>
 
