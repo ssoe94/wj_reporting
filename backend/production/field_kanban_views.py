@@ -20,6 +20,7 @@ from .field_kanban import (
     build_field_kanban_snapshot,
     build_field_material_readiness,
     current_shanghai_business_date,
+    repair_field_material_preview,
     save_defect_checkpoint,
     save_field_material,
 )
@@ -187,6 +188,26 @@ class FieldMaterialsView(APIView):
             return _error_response(exc)
 
 
+class FieldMaterialPreviewRepairView(APIView):
+    """Repair a legacy raw PDF or restart an existing Office conversion."""
+
+    permission_classes = [IsAuthenticated, DevelopmentPermission, FieldWriteProfileRequired]
+    parser_classes = [JSONParser]
+
+    def post(self, request, document_id, *args, **kwargs):
+        try:
+            conversion_notification_url = request.build_absolute_uri(
+                reverse("production-field-material-conversion-webhook")
+            )
+            document = repair_field_material_preview(
+                document_id,
+                conversion_notification_url=conversion_notification_url,
+            )
+            return Response({"document": document})
+        except FieldKanbanError as exc:
+            return _error_response(exc)
+
+
 class FieldMaterialConversionWebhookView(APIView):
     """Accept only signed Cloudinary callbacks for Office preview conversion."""
 
@@ -215,6 +236,7 @@ class FieldMaterialConversionWebhookView(APIView):
                 public_id=payload.get("public_id"),
                 info_status=payload.get("info_status"),
                 error=payload.get("error") or payload.get("message") or "",
+                repair_token=request.query_params.get("repair_token"),
             )
             return Response({"accepted": True, "document": document})
         except (TypeError, ValueError, json.JSONDecodeError):

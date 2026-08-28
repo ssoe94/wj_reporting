@@ -626,6 +626,17 @@
   cursor: pointer;
 }
 
+.field-material-plan-documents button.is-repair {
+  color: #8a3c00;
+  border-color: #e2a13b;
+  background: #fff4db;
+}
+
+.field-material-plan-documents button:disabled {
+  cursor: wait;
+  opacity: .62;
+}
+
 .field-material-plan-documents button svg {
   width: 15px;
   height: 15px;

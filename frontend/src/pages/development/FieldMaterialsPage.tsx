@@ -22,6 +22,7 @@ import {
 
 import {
   getFieldMaterials,
+  repairFieldMaterialPreview,
   uploadFieldMaterial,
   type FieldDocument,
   type FieldMaterialMachineSchedule,
@@ -68,10 +69,15 @@ const pageCopy = {
     ready: "현장 준비 완료",
     missing: "미등록",
     previewMissing: "PDF 미리보기 필요",
-    converting: "PPT 미리보기 변환 중",
-    conversionFailed: "PPT 변환 실패",
+    converting: "현장 미리보기 생성 중",
+    conversionFailed: "미리보기 생성 실패",
     upload: "업로드",
     replace: "교체 업로드",
+    repairPreview: "미리보기 복구",
+    repairingPreview: "복구 중…",
+    repairReady: "현장용 미리보기를 복구했습니다.",
+    repairPending: "PPT 변환을 다시 시작했습니다.",
+    repairFailed: "미리보기를 복구하지 못했습니다.",
     modalTitleInstruction: "작업지도서 업로드",
     modalTitleDrawing: "도면 업로드",
     modalHintInstruction: "PDF, PPT 또는 PPTX 파일 하나만 올리면 됩니다. PPT/PPTX는 현장용 화면으로 자동 변환합니다.",
@@ -141,10 +147,15 @@ const pageCopy = {
     ready: "现场可用",
     missing: "未登记",
     previewMissing: "需要 PDF 预览",
-    converting: "正在转换 PPT 预览",
-    conversionFailed: "PPT 转换失败",
+    converting: "现场预览生成中",
+    conversionFailed: "预览生成失败",
     upload: "上传",
     replace: "替换上传",
+    repairPreview: "修复预览",
+    repairingPreview: "修复中…",
+    repairReady: "现场预览已修复。",
+    repairPending: "已重新启动 PPT 转换。",
+    repairFailed: "无法修复预览。",
     modalTitleInstruction: "上传作业指导书",
     modalTitleDrawing: "上传图纸",
     modalHintInstruction: "只需上传一个 PDF、PPT 或 PPTX 文件；PPT/PPTX 会自动转换为现场画面。",
@@ -392,19 +403,35 @@ function DocumentStatus({
 function SchedulePlanCard({
   canEdit,
   language,
+  onRepair,
   plan,
   onUpload,
+  repairingDocumentId,
 }: {
   canEdit: boolean;
   language: "ko" | "zh";
   plan: FieldMaterialSchedulePlan;
+  onRepair: (document: FieldDocument) => void;
   onUpload: (kind: MaterialKind, model: FieldMaterialModel) => void;
+  repairingDocumentId: string | null;
 }) {
   const c = pageCopy[language];
   const statusLabel = plan.status === "completed" ? c.completed : plan.status === "current" ? c.current : c.waiting;
   const StatusIcon = plan.status === "completed" ? CheckCircle2 : plan.status === "current" ? CircleDot : Clock3;
   const progress = Math.min(100, Math.max(0, plan.progress));
   const sourceSequence = plan.source_sequence > 0 ? plan.source_sequence : null;
+  const workInstructionNeedsRepair = Boolean(
+    plan.work_instruction
+    && plan.work_instruction.repairable
+    && !plan.readiness.work_instruction
+    && plan.work_instruction.conversion_status !== "pending",
+  );
+  const drawingNeedsRepair = Boolean(
+    plan.drawing
+    && plan.drawing.repairable
+    && !plan.readiness.drawing
+    && plan.drawing.conversion_status !== "pending",
+  );
   return (
     <article className={`field-material-plan-card is-${plan.status}`}>
       <header>
@@ -431,12 +458,34 @@ function SchedulePlanCard({
         <section className={plan.readiness.work_instruction ? "is-ready" : "is-missing"}>
           <h3>{c.instruction}</h3>
           <DocumentStatus document={plan.work_instruction} language={language} ready={plan.readiness.work_instruction} />
-          {canEdit ? <button onClick={() => onUpload("work_instruction", plan)} type="button"><FileUp />{plan.work_instruction ? c.replace : c.upload}</button> : null}
+          {canEdit && workInstructionNeedsRepair && plan.work_instruction ? (
+            <button
+              className="is-repair"
+              disabled={Boolean(repairingDocumentId)}
+              onClick={() => onRepair(plan.work_instruction as FieldDocument)}
+              type="button"
+            >
+              <RefreshCw className={repairingDocumentId === plan.work_instruction.id ? "is-spinning" : ""} />
+              {repairingDocumentId === plan.work_instruction.id ? c.repairingPreview : c.repairPreview}
+            </button>
+          ) : null}
+          {canEdit ? <button disabled={Boolean(repairingDocumentId)} onClick={() => onUpload("work_instruction", plan)} type="button"><FileUp />{plan.work_instruction ? c.replace : c.upload}</button> : null}
         </section>
         <section className={plan.readiness.drawing ? "is-ready" : "is-missing"}>
           <h3>{c.drawing}</h3>
           <DocumentStatus document={plan.drawing} language={language} ready={plan.readiness.drawing} />
-          {canEdit ? <button onClick={() => onUpload("drawing", plan)} type="button"><FileUp />{plan.drawing ? c.replace : c.upload}</button> : null}
+          {canEdit && drawingNeedsRepair && plan.drawing ? (
+            <button
+              className="is-repair"
+              disabled={Boolean(repairingDocumentId)}
+              onClick={() => onRepair(plan.drawing as FieldDocument)}
+              type="button"
+            >
+              <RefreshCw className={repairingDocumentId === plan.drawing.id ? "is-spinning" : ""} />
+              {repairingDocumentId === plan.drawing.id ? c.repairingPreview : c.repairPreview}
+            </button>
+          ) : null}
+          {canEdit ? <button disabled={Boolean(repairingDocumentId)} onClick={() => onUpload("drawing", plan)} type="button"><FileUp />{plan.drawing ? c.replace : c.upload}</button> : null}
         </section>
       </div>
     </article>
@@ -681,6 +730,17 @@ export default function FieldMaterialsPage() {
   const canViewMaterials = Boolean(user && (user.is_staff || hasPermission("can_view_development")));
   const canEditMaterials = Boolean(user && (user.is_staff || hasPermission("can_edit_development")));
   const [uploadTarget, setUploadTarget] = useState<{ kind: MaterialKind; model: FieldMaterialModel } | null>(null);
+  const queryClient = useQueryClient();
+  const repairMutation = useMutation({
+    mutationFn: repairFieldMaterialPreview,
+    onSuccess: async (document) => {
+      await queryClient.invalidateQueries({ queryKey: ["field-materials"] });
+      if (document.ready) toast.success(c.repairReady);
+      else if (document.conversion_status === "pending") toast.info(c.repairPending);
+      else toast.error(c.repairFailed);
+    },
+    onError: (error) => toast.error(getErrorMessage(error, c.repairFailed)),
+  });
   const materialsQuery = useQuery({
     queryKey: ["field-materials", businessDate],
     queryFn: () => getFieldMaterials(businessDate),
@@ -805,10 +865,14 @@ export default function FieldMaterialsPage() {
                         canEdit={canEditMaterials}
                         key={`${plan.plan_id ?? "plan"}:${plan.sequence}:${plan.part_no}`}
                         language={language}
+                        onRepair={(document) => {
+                          if (canEditMaterials) repairMutation.mutate(document.id);
+                        }}
                         onUpload={(kind, model) => {
                           if (canEditMaterials) setUploadTarget({ kind, model });
                         }}
                         plan={plan}
+                        repairingDocumentId={repairMutation.isPending ? repairMutation.variables : null}
                       />
                     ))}
                   </div>

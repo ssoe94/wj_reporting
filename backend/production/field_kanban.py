@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+import time as time_module
 import uuid
 import zipfile
 from collections import defaultdict
@@ -12,6 +13,7 @@ from typing import Any, Iterable
 
 import cloudinary.api
 import cloudinary.uploader
+import cloudinary.utils
 from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
@@ -27,7 +29,7 @@ from .ai_retrievers import (
     machine_monitoring_name,
     parse_machine_number,
 )
-from .models import InjectionDowntimeConfirmation, ProductionPlan
+from .models import InjectionDowntimeConfirmation, ProductionExecution, ProductionPlan
 
 
 FIELD_MATERIALS_SNAPSHOT_KEY = "field-materials-v1"
@@ -38,7 +40,7 @@ MAX_DOCUMENT_BYTES = 30 * 1024 * 1024
 MAX_OFFICE_CONVERSION_BYTES = 10 * 1024 * 1024
 OFFICE_CONVERSION_STALE_AFTER = timedelta(minutes=30)
 OFFICE_CONVERSION_REFRESH_SECONDS = 30
-
+PDF_PREVIEW_REPAIR_STALE_AFTER = timedelta(minutes=5)
 DOCUMENT_KINDS = {"work_instruction", "drawing"}
 SOURCE_EXTENSIONS = {"pdf", "ppt", "pptx"}
 MATERIAL_MATCH_EXACT = "exact"
@@ -226,6 +228,35 @@ def serialize_document(document: dict[str, Any] | None) -> dict[str, Any] | None
     source = document.get("source") if isinstance(document.get("source"), dict) else {}
     conversion = document.get("conversion") if isinstance(document.get("conversion"), dict) else None
     conversion_status = str(conversion.get("status") or "").strip() if conversion else ""
+    preview_is_usable = bool(
+        preview
+        and preview.get("url")
+        and not (
+            str(preview.get("format") or "").strip().lower() == "pdf"
+            and str(preview.get("resource_type") or "").strip().lower() == "raw"
+        )
+    )
+    ready = bool(preview_is_usable and conversion_status not in {"pending", "failed"})
+    is_publishable = bool(
+        document.get("active", True) is True
+        or document.get("pending_replacement") is True
+    )
+    source_format = str(source.get("format") or "").strip().lower()
+    repairable = bool(
+        is_publishable
+        and not ready
+        and (
+            source_format in {"ppt", "pptx"}
+            or (
+                source_format == "pdf"
+                and str(source.get("resource_type") or "").strip().lower() == "raw"
+                and (
+                    not preview
+                    or str(preview.get("resource_type") or "").strip().lower() == "raw"
+                )
+            )
+        )
+    )
     return {
         "id": document.get("id"),
         "kind": document.get("kind"),
@@ -233,7 +264,7 @@ def serialize_document(document: dict[str, Any] | None) -> dict[str, Any] | None
         "model_name": document.get("model_name") or "",
         "revision": document.get("revision") or "",
         "match_rule": _material_match_rule(document.get("match_rule")),
-        "source_format": source.get("format"),
+        "source_format": source_format or None,
         "source_url": source.get("url"),
         "source_file_name": source.get("file_name"),
         "preview_url": preview.get("url") if preview else None,
@@ -244,10 +275,14 @@ def serialize_document(document: dict[str, Any] | None) -> dict[str, Any] | None
             if preview and preview.get("format") == "pdf" and preview.get("pages") is not None
             else None
         ),
-        "ready": bool(
-            preview
-            and preview.get("url")
-            and conversion_status not in {"pending", "failed"}
+        "ready": ready,
+        "repairable": repairable,
+        "repair_reason": (
+            "office_preview_missing"
+            if repairable and source_format in {"ppt", "pptx"}
+            else "legacy_raw_pdf"
+            if repairable
+            else None
         ),
         "conversion_status": conversion_status or None,
         "conversion_provider": conversion.get("provider") if conversion else None,
@@ -479,6 +514,23 @@ def _cleanup_uploaded_documents(assets: Iterable[dict[str, Any]]) -> None:
             pass
 
 
+def _validated_cloudinary_pdf_resource(
+    resource: dict[str, Any],
+    *,
+    code: str = "office_conversion_invalid_response",
+) -> dict[str, Any]:
+    secure_url = str(resource.get("secure_url") or resource.get("url") or "").strip()
+    resource_type = str(resource.get("resource_type") or "").strip().lower()
+    resource_format = str(resource.get("format") or "").strip().lower()
+    if not secure_url or resource_type != "image" or resource_format != "pdf":
+        raise FieldKanbanError(
+            "The generated field preview is not a deliverable image PDF.",
+            code=code,
+            status_code=502,
+        )
+    return resource
+
+
 def _update_field_material_conversion(
     document_id: str,
     *,
@@ -518,16 +570,12 @@ def _update_field_material_conversion(
             conversion["requested_at"] = now
         if status in {"ready", "failed"}:
             conversion["completed_at"] = now
+            conversion.pop("repair_token", None)
         target["conversion"] = conversion
 
         if status == "ready" and converted_resource is not None:
+            converted_resource = _validated_cloudinary_pdf_resource(converted_resource)
             secure_url = str(converted_resource.get("secure_url") or converted_resource.get("url") or "").strip()
-            if not secure_url:
-                raise FieldKanbanError(
-                    "The converted PowerPoint preview has no delivery URL.",
-                    code="office_conversion_invalid_response",
-                    status_code=502,
-                )
             source = target.get("source") if isinstance(target.get("source"), dict) else {}
             source_filename = str(source.get("file_name") or "work-instruction").strip()
             target["preview"] = {
@@ -560,11 +608,443 @@ def _update_field_material_conversion(
         return serialize_document(target)
 
 
+def _store_field_material_preview(
+    document_id: str,
+    preview: dict[str, Any],
+    *,
+    repair_token: str | None = None,
+) -> tuple[dict[str, Any] | None, bool]:
+    """Attach a verified preview while preserving the original source asset."""
+    normalized_id = str(document_id or "").strip()
+    if not normalized_id:
+        return None, False
+
+    with transaction.atomic():
+        snapshot = MouldDataSnapshot.objects.select_for_update().filter(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).first()
+        if snapshot is None:
+            return None, False
+        payload = _validate_material_manifest(snapshot.payload)
+        documents = [row for row in payload["documents"] if isinstance(row, dict)]
+        target = next((row for row in documents if str(row.get("id") or "") == normalized_id), None)
+        if target is None:
+            return None, False
+        current_preview = target.get("preview") if isinstance(target.get("preview"), dict) else None
+        if (
+            current_preview
+            and current_preview.get("url")
+            and str(current_preview.get("resource_type") or "").lower() == "image"
+        ):
+            return serialize_document(target), False
+        conversion = target.get("conversion") if isinstance(target.get("conversion"), dict) else {}
+        if repair_token and conversion.get("repair_token") != repair_token:
+            return serialize_document(target), False
+
+        now = timezone.now().astimezone(SHANGHAI_TZ).isoformat()
+        target["preview"] = preview
+        conversion.update({
+            "provider": "cloudinary_pdf_copy",
+            "status": "ready",
+            "error": "",
+            "updated_at": now,
+            "completed_at": now,
+        })
+        conversion.pop("repair_token", None)
+        target["conversion"] = conversion
+        snapshot.payload = {
+            "schema_version": FIELD_MATERIALS_SCHEMA,
+            "documents": documents,
+        }
+        snapshot.source_latest_at = timezone.now()
+        snapshot.last_error = ""
+        snapshot.save()
+        return serialize_document(target), True
+
+
+def _reserve_field_material_preview_repair(
+    document_id: str,
+    *,
+    provider: str,
+    stale_after: timedelta,
+) -> tuple[dict[str, Any], str | None]:
+    """Persist a cross-worker repair reservation in the material manifest."""
+    normalized_id = str(document_id or "").strip()
+    with transaction.atomic():
+        snapshot = MouldDataSnapshot.objects.select_for_update().filter(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).first()
+        if snapshot is None:
+            raise FieldKanbanError(
+                "The field material document was not found.",
+                code="field_material_not_found",
+                status_code=404,
+            )
+        payload = _validate_material_manifest(snapshot.payload)
+        documents = [row for row in payload["documents"] if isinstance(row, dict)]
+        target = next((row for row in documents if str(row.get("id") or "") == normalized_id), None)
+        if target is None:
+            raise FieldKanbanError(
+                "The field material document was not found.",
+                code="field_material_not_found",
+                status_code=404,
+            )
+        serialized = serialize_document(target) or {}
+        if serialized.get("ready"):
+            return serialized, None
+        if target.get("active", True) is not True and target.get("pending_replacement") is not True:
+            raise FieldKanbanError(
+                "Only the active document or its pending replacement can be repaired.",
+                code="field_material_preview_inactive",
+                status_code=409,
+            )
+
+        now_dt = timezone.now()
+        now = now_dt.astimezone(SHANGHAI_TZ).isoformat()
+        conversion = target.get("conversion") if isinstance(target.get("conversion"), dict) else {}
+        requested_at = _parse_iso_datetime(conversion.get("requested_at"))
+        if (
+            conversion.get("status") == "pending"
+            and requested_at is not None
+            and now_dt - requested_at <= stale_after
+        ):
+            return serialized, None
+
+        repair_token = uuid.uuid4().hex
+        conversion.update({
+            "provider": provider,
+            "status": "pending",
+            "error": "",
+            "requested_at": now,
+            "updated_at": now,
+            "repair_token": repair_token,
+        })
+        conversion.pop("completed_at", None)
+        target["conversion"] = conversion
+        snapshot.payload = {
+            "schema_version": FIELD_MATERIALS_SCHEMA,
+            "documents": documents,
+        }
+        snapshot.source_latest_at = now_dt
+        snapshot.last_error = ""
+        snapshot.save()
+        return serialize_document(target) or serialized, repair_token
+
+
+def _fail_field_material_preview_repair(
+    document_id: str,
+    repair_token: str,
+    *,
+    error: str,
+) -> dict[str, Any] | None:
+    normalized_id = str(document_id or "").strip()
+    with transaction.atomic():
+        snapshot = MouldDataSnapshot.objects.select_for_update().filter(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).first()
+        if snapshot is None:
+            return None
+        payload = _validate_material_manifest(snapshot.payload)
+        documents = [row for row in payload["documents"] if isinstance(row, dict)]
+        target = next((row for row in documents if str(row.get("id") or "") == normalized_id), None)
+        if target is None:
+            return None
+        conversion = target.get("conversion") if isinstance(target.get("conversion"), dict) else {}
+        if conversion.get("repair_token") != repair_token:
+            return serialize_document(target)
+        now = timezone.now().astimezone(SHANGHAI_TZ).isoformat()
+        conversion.update({
+            "status": "failed",
+            "error": str(error or "").strip()[:500],
+            "updated_at": now,
+            "completed_at": now,
+        })
+        conversion.pop("repair_token", None)
+        target["conversion"] = conversion
+        snapshot.payload = {
+            "schema_version": FIELD_MATERIALS_SCHEMA,
+            "documents": documents,
+        }
+        snapshot.source_latest_at = timezone.now()
+        snapshot.save()
+        return serialize_document(target)
+
+
+def _trigger_office_preview_repair(
+    document_id: str,
+    repair_token: str,
+    source_public_id: str,
+    *,
+    conversion_notification_url: str | None,
+) -> dict[str, Any]:
+    """Start Aspose after the durable reservation has released the DB lock."""
+    documents = load_material_documents()
+    target = next((row for row in documents if str(row.get("id") or "") == document_id), None)
+    if target is None:
+        raise FieldKanbanError(
+            "The field material document was not found.",
+            code="field_material_not_found",
+            status_code=404,
+        )
+    serialized = serialize_document(target) or {}
+    conversion = target.get("conversion") if isinstance(target.get("conversion"), dict) else {}
+    if serialized.get("ready") or conversion.get("repair_token") != repair_token:
+        return serialized
+
+    options: dict[str, Any] = {
+        "resource_type": "raw",
+        "raw_convert": "aspose",
+    }
+    normalized_notification_url = str(conversion_notification_url or "").strip()
+    if normalized_notification_url:
+        separator = "&" if "?" in normalized_notification_url else "?"
+        options["notification_url"] = (
+            f"{normalized_notification_url}{separator}repair_token={repair_token}"
+        )
+    try:
+        cloudinary.api.update(source_public_id, **options)
+    except Exception:
+        failed = _fail_field_material_preview_repair(
+            document_id,
+            repair_token,
+            error="Automatic PowerPoint preview conversion could not be restarted.",
+        )
+        return failed or serialized
+
+    latest = next(
+        (
+            row
+            for row in load_material_documents()
+            if str(row.get("id") or "") == document_id
+        ),
+        None,
+    )
+    return serialize_document(latest) if latest is not None else serialized
+
+
+def _legacy_pdf_preview_public_id(document_id: str) -> str:
+    digest = hashlib.sha256(str(document_id).encode("utf-8")).hexdigest()
+    return f"wj-field-materials/legacy-preview/{digest}"
+
+
+def _legacy_pdf_preview_payload(
+    source: dict[str, Any],
+    resource: dict[str, Any],
+) -> dict[str, Any]:
+    resource = _validated_cloudinary_pdf_resource(
+        resource,
+        code="legacy_pdf_repair_invalid_response",
+    )
+    filename = _clean_filename(source.get("file_name") or "legacy-document.pdf")
+    if not filename.lower().endswith(".pdf"):
+        filename = f"{filename}.pdf"
+    return {
+        "url": resource.get("secure_url") or resource.get("url"),
+        "public_id": resource.get("public_id"),
+        "resource_type": "image",
+        "format": "pdf",
+        "pages": max(1, _safe_int(resource.get("pages"), 1)),
+        "bytes": _safe_int(resource.get("bytes"), _safe_int(source.get("bytes"))),
+        "sha256": str(source.get("sha256") or ""),
+        "file_name": filename,
+        "content_type": "application/pdf",
+    }
+
+
+def _copy_legacy_raw_pdf_preview(
+    document_id: str,
+    source: dict[str, Any],
+) -> dict[str, Any]:
+    """Let Cloudinary copy its signed raw PDF directly into an image PDF."""
+    source_public_id = str(source.get("public_id") or "").strip()
+    if not source_public_id:
+        raise FieldKanbanError(
+            "The legacy PDF has no storage identifier.",
+            code="legacy_pdf_public_id_missing",
+            status_code=409,
+        )
+    if _safe_int(source.get("bytes")) > MAX_DOCUMENT_BYTES:
+        raise FieldKanbanError(
+            "The legacy PDF exceeds the 30 MB repair limit.",
+            code="legacy_pdf_too_large",
+            status_code=413,
+        )
+
+    preview_public_id = _legacy_pdf_preview_public_id(document_id)
+    try:
+        existing = cloudinary.api.resource(
+            preview_public_id,
+            resource_type="image",
+            type="upload",
+        )
+    except Exception:
+        existing = None
+    if existing is not None:
+        return _legacy_pdf_preview_payload(source, existing)
+
+    download_url = cloudinary.utils.private_download_url(
+        source_public_id,
+        "pdf",
+        resource_type="raw",
+        type="upload",
+        expires_at=int(time_module.time()) + 5 * 60,
+    )
+    try:
+        resource = cloudinary.uploader.upload(
+            download_url,
+            resource_type="image",
+            public_id=preview_public_id,
+            format="pdf",
+            overwrite=False,
+            unique_filename=False,
+            use_filename=False,
+        )
+    except Exception as exc:
+        # A timed-out upload may still have completed. The deterministic public
+        # id makes that result recoverable instead of creating an orphan.
+        try:
+            resource = cloudinary.api.resource(
+                preview_public_id,
+                resource_type="image",
+                type="upload",
+            )
+        except Exception:
+            raise FieldKanbanError(
+                "The legacy PDF could not be copied into field preview storage.",
+                code="legacy_pdf_repair_failed",
+                status_code=502,
+            ) from exc
+    return _legacy_pdf_preview_payload(source, resource)
+
+
+def repair_field_material_preview(
+    document_id: Any,
+    *,
+    conversion_notification_url: str | None = None,
+) -> dict[str, Any]:
+    """Repair previews created before image-PDF and Office conversion support."""
+    normalized_id = str(document_id or "").strip()
+    documents = load_material_documents()
+    target = next((row for row in documents if str(row.get("id") or "") == normalized_id), None)
+    if target is None:
+        raise FieldKanbanError(
+            "The field material document was not found.",
+            code="field_material_not_found",
+            status_code=404,
+        )
+
+    serialized = serialize_document(target) or {}
+    if serialized.get("ready"):
+        return serialized
+    if target.get("active", True) is not True and target.get("pending_replacement") is not True:
+        raise FieldKanbanError(
+            "Only the active document or its pending replacement can be repaired.",
+            code="field_material_preview_inactive",
+            status_code=409,
+        )
+
+    source = target.get("source") if isinstance(target.get("source"), dict) else {}
+    source_format = str(source.get("format") or "").strip().lower()
+    source_public_id = str(source.get("public_id") or "").strip()
+    if not source_public_id:
+        raise FieldKanbanError(
+            "The original document has no storage identifier.",
+            code="field_material_public_id_missing",
+            status_code=409,
+        )
+
+    if source_format in {"ppt", "pptx"}:
+        if _safe_int(source.get("bytes")) > MAX_OFFICE_CONVERSION_BYTES:
+            raise FieldKanbanError(
+                "The PowerPoint file exceeds the 10 MB conversion limit. Export it as PDF and upload the PDF instead.",
+                code="office_conversion_file_too_large",
+                status_code=413,
+            )
+
+        # Attach a completed result first so a missed callback does not spend
+        # another conversion from the add-on quota.
+        try:
+            converted_resource = cloudinary.api.resource(
+                source_public_id,
+                resource_type="image",
+                type="upload",
+            )
+        except Exception:
+            converted_resource = None
+        if converted_resource is not None:
+            _validated_cloudinary_pdf_resource(converted_resource)
+            ready = _update_field_material_conversion(
+                normalized_id,
+                status="ready",
+                converted_resource=converted_resource,
+            )
+            return ready or serialized
+
+        pending, repair_token = _reserve_field_material_preview_repair(
+            normalized_id,
+            provider="cloudinary_aspose",
+            stale_after=OFFICE_CONVERSION_STALE_AFTER,
+        )
+        if repair_token is None:
+            return pending
+        return _trigger_office_preview_repair(
+            normalized_id,
+            repair_token,
+            source_public_id,
+            conversion_notification_url=conversion_notification_url,
+        )
+
+    preview = target.get("preview") if isinstance(target.get("preview"), dict) else None
+    if (
+        source_format == "pdf"
+        and str(source.get("resource_type") or "").strip().lower() == "raw"
+        and (
+            not preview
+            or str(preview.get("resource_type") or "").strip().lower() == "raw"
+        )
+    ):
+        pending, repair_token = _reserve_field_material_preview_repair(
+            normalized_id,
+            provider="cloudinary_pdf_copy",
+            stale_after=PDF_PREVIEW_REPAIR_STALE_AFTER,
+        )
+        if repair_token is None:
+            return pending
+        try:
+            copied_preview = _copy_legacy_raw_pdf_preview(normalized_id, source)
+            repaired, _installed = _store_field_material_preview(
+                normalized_id,
+                copied_preview,
+                repair_token=repair_token,
+            )
+            if repaired is None:
+                raise FieldKanbanError(
+                    "The repaired preview could not be saved.",
+                    code="legacy_pdf_repair_save_failed",
+                    status_code=409,
+                )
+            return repaired
+        except Exception:
+            _fail_field_material_preview_repair(
+                normalized_id,
+                repair_token,
+                error="Legacy PDF preview copy failed.",
+            )
+            raise
+
+    raise FieldKanbanError(
+        "This document does not have a repairable preview.",
+        code="field_material_preview_not_repairable",
+        status_code=409,
+    )
+
+
 def apply_field_material_conversion_notification(
     *,
     public_id: Any,
     info_status: Any,
     error: Any = "",
+    repair_token: Any = "",
 ) -> dict[str, Any] | None:
     """Apply a signed Cloudinary Office-conversion callback idempotently."""
     normalized_public_id = str(public_id or "").strip()
@@ -592,6 +1072,17 @@ def apply_field_material_conversion_notification(
 
     document_id = str(target.get("id") or "")
     if normalized_status == "failed":
+        conversion = target.get("conversion") if isinstance(target.get("conversion"), dict) else {}
+        current_repair_token = str(conversion.get("repair_token") or "").strip()
+        callback_repair_token = str(repair_token or "").strip()
+        if current_repair_token and callback_repair_token != current_repair_token:
+            return serialize_document(target)
+        if current_repair_token:
+            return _fail_field_material_preview_repair(
+                document_id,
+                current_repair_token,
+                error=str(error or "PowerPoint preview conversion failed."),
+            )
         return _update_field_material_conversion(
             document_id,
             status="failed",
@@ -620,12 +1111,20 @@ def apply_field_material_conversion_notification(
 def _refresh_pending_field_material_conversions(
     documents: Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Best-effort recovery for recent replacements on the management screen."""
+    """Best-effort recovery for replacements and repaired active legacy docs."""
     refreshed = list(documents)
     latest_pending_by_scope: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     for document in refreshed:
         conversion = document.get("conversion") if isinstance(document.get("conversion"), dict) else {}
-        if conversion.get("status") != "pending" or document.get("pending_replacement") is not True:
+        is_publishable_pending = (
+            document.get("pending_replacement") is True
+            or document.get("active", True) is True
+        )
+        if (
+            conversion.get("provider") not in {"cloudinary_aspose", "cloudinary_pdf_copy"}
+            or conversion.get("status") != "pending"
+            or not is_publishable_pending
+        ):
             continue
         scope_key = _document_scope_key(document)
         current = latest_pending_by_scope.get(scope_key)
@@ -635,18 +1134,73 @@ def _refresh_pending_field_material_conversions(
     now = timezone.now()
     for index, document in enumerate(refreshed):
         conversion = document.get("conversion") if isinstance(document.get("conversion"), dict) else {}
+        provider = str(conversion.get("provider") or "")
         source = document.get("source") if isinstance(document.get("source"), dict) else {}
         public_id = str(source.get("public_id") or "").strip()
         document_id = str(document.get("id") or "").strip()
+        is_publishable_pending = (
+            document.get("pending_replacement") is True
+            or document.get("active", True) is True
+        )
         if (
-            conversion.get("status") != "pending"
-            or document.get("pending_replacement") is not True
+            provider not in {"cloudinary_aspose", "cloudinary_pdf_copy"}
+            or conversion.get("status") != "pending"
+            or not is_publishable_pending
             or latest_pending_by_scope.get(_document_scope_key(document)) is not document
-            or not public_id
             or not document_id
         ):
             continue
         requested_at = _parse_iso_datetime(conversion.get("requested_at"))
+
+        if provider == "cloudinary_pdf_copy":
+            repair_token = str(conversion.get("repair_token") or "").strip()
+            preview_public_id = _legacy_pdf_preview_public_id(document_id)
+            throttle_key = (
+                "field-material-pdf-repair-check:"
+                f"{hashlib.sha256(preview_public_id.encode('utf-8')).hexdigest()}"
+            )
+            if not cache.add(
+                throttle_key,
+                True,
+                timeout=OFFICE_CONVERSION_REFRESH_SECONDS,
+            ):
+                continue
+            try:
+                preview_resource = cloudinary.api.resource(
+                    preview_public_id,
+                    resource_type="image",
+                    type="upload",
+                )
+                preview = _legacy_pdf_preview_payload(source, preview_resource)
+                updated, _installed = _store_field_material_preview(
+                    document_id,
+                    preview,
+                    repair_token=repair_token or None,
+                )
+            except Exception:
+                is_stale = (
+                    requested_at is None
+                    or now - requested_at > PDF_PREVIEW_REPAIR_STALE_AFTER
+                )
+                if not is_stale or not repair_token:
+                    continue
+                updated = _fail_field_material_preview_repair(
+                    document_id,
+                    repair_token,
+                    error="Legacy PDF preview copy timed out.",
+                )
+            if updated:
+                stored = load_material_documents()
+                replacement = next(
+                    (row for row in stored if str(row.get("id") or "") == document_id),
+                    None,
+                )
+                if replacement is not None:
+                    refreshed[index] = replacement
+            continue
+
+        if not public_id:
+            continue
         if requested_at is None or now - requested_at > OFFICE_CONVERSION_STALE_AFTER:
             _update_field_material_conversion(
                 document_id,
@@ -1196,11 +1750,16 @@ def _quality_summary(
     }
 
 
-def _plan_payload(row: dict[str, Any] | None) -> dict[str, Any] | None:
+def _plan_payload(
+    row: dict[str, Any] | None,
+    *,
+    plan_date: date | None = None,
+) -> dict[str, Any] | None:
     if not row:
         return None
     return {
         "plan_id": row.get("plan_id"),
+        "plan_date": plan_date.isoformat() if plan_date else None,
         "sequence": _safe_int(row.get("sequence")),
         "part_no": row.get("part_no") or "",
         "model_name": row.get("model_name") or "",
@@ -1214,6 +1773,200 @@ def _plan_payload(row: dict[str, Any] | None) -> dict[str, Any] | None:
         "production_group_id": row.get("production_group_id"),
         "production_group_complete": bool(row.get("production_group_complete", True)),
     }
+
+
+def _machine_plan_names(
+    machine_number: int,
+) -> list[str]:
+    """Resolve the small set of stored plan labels used for one machine."""
+    cache_key = "field-kanban:plan-machine-names:v1"
+    cached = cache.get(cache_key)
+    if not isinstance(cached, list):
+        cached = list(
+            ProductionPlan.objects.filter(
+                plan_type="injection",
+                planned_quantity__gt=0,
+            )
+            .order_by()
+            .values_list("machine_name", flat=True)
+            .distinct()
+        )
+        cache.set(cache_key, cached, timeout=60)
+    return [name for name in cached if parse_machine_number(name) == machine_number]
+
+
+def _execution_identity(
+    plan_date: date,
+    machine_name: Any,
+    part_no: Any,
+    lot_no: Any,
+    sequence: Any,
+) -> tuple[Any, ...]:
+    return (
+        plan_date,
+        str(machine_name or "").strip(),
+        normalize_part_no(part_no),
+        str(lot_no or "").strip(),
+        _safe_int(sequence),
+    )
+
+
+def _adjacent_machine_plan_parts(
+    target_date: date,
+    machine_number: int,
+    *,
+    previous_limit: int,
+    following_limit: int,
+) -> tuple[list[tuple[date, dict[str, Any]]], list[tuple[date, dict[str, Any]]]]:
+    """Read only the nearest static plan rows; never recalculate adjacent MES days."""
+    previous_limit = max(0, previous_limit)
+    following_limit = max(0, following_limit)
+    if previous_limit == 0 and following_limit == 0:
+        return [], []
+
+    machine_names = _machine_plan_names(machine_number)
+    if not machine_names:
+        return [], []
+
+    base = ProductionPlan.objects.filter(
+        plan_type="injection",
+        planned_quantity__gt=0,
+        machine_name__in=machine_names,
+    )
+    previous_plans = list(
+        base.filter(plan_date__lt=target_date)
+        .order_by("-plan_date", "-sequence", "-id")[:previous_limit]
+    )
+    previous_plans.reverse()
+    following_plans = list(
+        base.filter(plan_date__gt=target_date)
+        .order_by("plan_date", "sequence", "id")[:following_limit]
+    )
+    selected = previous_plans + following_plans
+    selected_dates = {plan.plan_date for plan in selected}
+    execution_map = {
+        _execution_identity(
+            row.plan_date,
+            row.machine_name,
+            row.part_no,
+            row.lot_no,
+            row.sequence,
+        ): row
+        for row in ProductionExecution.objects.filter(
+            plan_type="injection",
+            machine_name__in=machine_names,
+            plan_date__in=selected_dates,
+        )
+    } if selected_dates else {}
+
+    def plan_entry(plan: ProductionPlan) -> tuple[date, dict[str, Any]]:
+        execution = execution_map.get(_execution_identity(
+            plan.plan_date,
+            plan.machine_name,
+            plan.part_no,
+            plan.lot_no,
+            plan.sequence,
+        ))
+        actual_qty = _safe_int(execution.actual_qty) if execution else 0
+        planned_qty = _safe_int(plan.planned_quantity)
+        execution_status = str(execution.status or "") if execution else ""
+        if plan.plan_date < target_date:
+            status = "completed"
+        elif execution_status == "running":
+            status = "in_progress"
+        elif execution_status == "completed":
+            status = "completed"
+        else:
+            status = "pending"
+        return plan.plan_date, {
+            "plan_id": plan.id,
+            "sequence": plan.sequence,
+            "part_no": plan.part_no or "",
+            "model_name": plan.model_name or "",
+            "lot_no": plan.lot_no or "",
+            "planned_qty": planned_qty,
+            "estimated_qty": actual_qty,
+            "allocated_shots": 0,
+            "cavity": 1,
+            "progress_rate": (actual_qty / planned_qty * 100) if planned_qty > 0 else 0,
+            "status": status,
+            "production_group_id": None,
+            "production_group_complete": True,
+        }
+
+    return (
+        [plan_entry(plan) for plan in previous_plans],
+        [plan_entry(plan) for plan in following_plans],
+    )
+
+
+def _plan_queue_identity(plan: dict[str, Any]) -> tuple[Any, ...]:
+    plan_id = plan.get("plan_id")
+    if plan_id is not None:
+        return ("id", plan_id)
+    return (
+        "fallback",
+        plan.get("plan_date"),
+        plan.get("sequence"),
+        plan.get("part_no"),
+        plan.get("lot_no"),
+    )
+
+
+def _build_field_queue_window(
+    target_date: date,
+    machine_number: int,
+    parts: list[dict[str, Any]],
+    active_index: int | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Build up to two prior jobs, the current job, and two following jobs."""
+    if active_index is None or not 0 <= active_index < len(parts):
+        queue = [
+            payload
+            for payload in (
+                _plan_payload(row, plan_date=target_date)
+                for row in parts[:5]
+            )
+            if payload is not None
+        ]
+        return queue, None
+
+    previous_entries = [(target_date, row) for row in parts[:active_index]]
+    current_entry = (target_date, parts[active_index])
+    following_entries = [(target_date, row) for row in parts[active_index + 1:]]
+
+    adjacent_previous, adjacent_following = _adjacent_machine_plan_parts(
+        target_date,
+        machine_number,
+        previous_limit=max(0, 2 - len(previous_entries)),
+        following_limit=max(0, 2 - len(following_entries)),
+    )
+    previous_entries = adjacent_previous + previous_entries
+    following_entries.extend(adjacent_following)
+
+    ordered_entries = previous_entries[-2:] + [current_entry] + following_entries[:2]
+    queue: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for candidate_date, row in ordered_entries:
+        payload = _plan_payload(row, plan_date=candidate_date)
+        if payload is None:
+            continue
+        identity = _plan_queue_identity(payload)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        queue.append(payload)
+
+    next_plan = next(
+        (
+            payload
+            for candidate_date, row in following_entries
+            if (payload := _plan_payload(row, plan_date=candidate_date)) is not None
+            and payload.get("status") == "pending"
+        ),
+        None,
+    )
+    return queue, next_plan
 
 
 def _select_active_plan(parts: list[dict[str, Any]]) -> tuple[int | None, dict[str, Any] | None]:
@@ -1478,18 +2231,13 @@ def build_field_kanban_snapshot(
     shot_row = (shot_context.get("rows") or [{}])[0]
     parts = list(summary_row.get("parts", [])) if isinstance(summary_row, dict) else []
     active_index, active_source = _select_active_plan(parts)
-    queue = [_plan_payload(row) for row in parts]
-    queue = [row for row in queue if row is not None]
-    active_plan = _plan_payload(active_source)
-    next_source = next(
-        (
-            row
-            for row in parts[(active_index + 1) if active_index is not None else len(parts):]
-            if row.get("status") == "pending"
-        ),
-        None,
+    queue, next_plan = _build_field_queue_window(
+        target_date,
+        machine_number,
+        parts,
+        active_index,
     )
-    next_plan = _plan_payload(next_source)
+    active_plan = _plan_payload(active_source, plan_date=target_date)
     shot_count = _safe_int(shot_row.get("shot_count"), _safe_int((summary_row or {}).get("shot_count")))
     recent_shots = _safe_int(shot_row.get("recent_60m_shots"), _safe_int((summary_row or {}).get("recent_60m_shots")))
     shift_window = production_shift_window(target_date, local_now)

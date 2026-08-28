@@ -27,6 +27,7 @@ from .field_kanban_views import (
     FieldDefectCheckpointView,
     FieldKanbanView,
     FieldMaterialConversionWebhookView,
+    FieldMaterialPreviewRepairView,
     FieldMaterialsView,
 )
 
@@ -38,6 +39,11 @@ urlpatterns = [
         name='production-field-kanban-defects',
     ),
     path('field-materials/', FieldMaterialsView.as_view(), name='production-field-materials'),
+    path(
+        'field-materials/<str:document_id>/repair-preview/',
+        FieldMaterialPreviewRepairView.as_view(),
+        name='production-field-material-repair-preview',
+    ),
     path(
         'field-materials/conversion-callback/',
         FieldMaterialConversionWebhookView.as_view(),

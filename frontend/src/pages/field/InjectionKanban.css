@@ -502,6 +502,39 @@
   text-overflow: ellipsis;
 }
 
+.field-queue-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.field-queue-meta span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.field-queue-meta time {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  color: #dcecff;
+  border: 1px solid rgba(255, 255, 255, .4);
+  border-radius: 4px;
+  font-size: clamp(11px, .72vw, 14px);
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.field-queue-list article.is-current .field-queue-meta time {
+  color: #06284b;
+  border-color: rgba(3, 47, 88, .35);
+  background: rgba(255, 255, 255, .42);
+}
+
 .field-queue-value strong {
   overflow: hidden;
   font-size: clamp(21px, 1.45vw, 28px);
@@ -695,13 +728,17 @@
   min-width: clamp(150px, 9.6vw, 205px);
   height: 73px;
   padding: 0 22px;
+  overflow: hidden;
   color: #0a1019;
   border: 1px solid #bac3cf;
   border-bottom: 0;
   border-radius: 9px 9px 0 0;
   background: #f4f6f8;
   font-size: clamp(21px, 1.55vw, 31px);
-  font-weight: 950;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
 
@@ -709,11 +746,6 @@
   color: #fff;
   border-color: #0754a8;
   background: #0754a8;
-}
-
-.field-document-tabs button.is-quality {
-  min-width: 172px;
-  font-size: clamp(17px, 1.2vw, 23px);
 }
 
 .field-document-tabs button.is-quality.is-active {
@@ -1266,13 +1298,14 @@
 .field-quality-canvas__header-meta {
   grid-column: 1 / -1;
   display: flex;
+  flex-wrap: wrap;
   min-width: 0;
   gap: 6px;
-  overflow: hidden;
 }
 
 .field-quality-canvas__header-meta > span {
   display: flex;
+  flex: 0 1 auto;
   min-width: 0;
   align-items: center;
   gap: 7px;
@@ -1286,9 +1319,12 @@
 }
 
 .field-quality-canvas__header-meta small {
+  min-width: 0;
+  overflow: hidden;
   color: #9a3412;
   font-size: clamp(11px, .7vw, 14px);
   font-weight: 850;
+  text-overflow: ellipsis;
 }
 
 .field-quality-canvas__header-meta strong {
@@ -2423,6 +2459,10 @@
     font-size: 14px;
   }
 
+  .field-queue-meta time {
+    font-size: 11px;
+  }
+
   .field-command-actions {
     gap: 10px;
     padding-top: 9px;
@@ -2474,11 +2514,6 @@
     min-width: 100px;
     height: 63px;
     padding: 0 8px;
-    font-size: 18px;
-  }
-
-  .field-document-tabs button.is-quality {
-    min-width: 110px;
     font-size: 18px;
   }
 
@@ -2971,7 +3006,7 @@
 
 /* Native 4:3 kiosk layout. Keep touch targets readable at 1024 × 768 instead
    of fitting a desktop-width canvas with a transform. */
-@media (max-width: 1100px) and (max-height: 820px) {
+@media (max-width: 1180px) and (max-height: 900px) {
   .field-kanban-stage {
     grid-template-rows: 68px minmax(0, 1fr);
   }
@@ -3213,6 +3248,15 @@
     font-size: 11px;
   }
 
+  .field-queue-meta {
+    gap: 4px;
+  }
+
+  .field-queue-meta time {
+    padding: 2px 3px;
+    font-size: 10px;
+  }
+
   .field-command-actions {
     gap: 7px;
     padding-top: 7px;
@@ -3281,9 +3325,10 @@
   .field-document-tabs button,
   .field-document-tabs button.is-quality {
     min-width: 0;
+    width: 100%;
     height: 50px;
     padding: 0 5px;
-    font-size: 17px;
+    font-size: 18px;
   }
 
   .field-cycle-nav {
@@ -3292,8 +3337,8 @@
   }
 
   .field-cycle-nav button {
-    width: 43px;
-    height: 43px;
+    width: 44px;
+    height: 44px;
   }
 
   .field-cycle-nav button svg {
@@ -3379,7 +3424,7 @@
 
   .field-quality-canvas > header h2 {
     max-width: 70%;
-    font-size: 27px;
+    font-size: 30px;
   }
 
   .field-quality-canvas__eyebrow {
@@ -3387,13 +3432,13 @@
   }
 
   .field-quality-canvas__eyebrow > span {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .field-quality-canvas__eyebrow em {
     gap: 3px;
     padding: 2px 5px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .field-quality-canvas__eyebrow em svg {
@@ -3407,12 +3452,12 @@
 
   .field-quality-canvas__plan {
     max-width: 42%;
-    font-size: 12px;
+    font-size: 14px;
   }
 
   .field-quality-canvas__headline {
     padding-left: 7px;
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .field-quality-canvas__issue-position {
@@ -3428,6 +3473,8 @@
   }
 
   .field-quality-canvas__header-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 4px;
   }
 
@@ -3439,11 +3486,11 @@
   }
 
   .field-quality-canvas__header-meta small {
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .field-quality-canvas__header-meta strong {
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .field-quality-canvas__body {
@@ -3463,12 +3510,12 @@
   }
 
   .field-quality-canvas__carousel-controls > strong {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   .field-quality-canvas__carousel-controls button {
-    width: 36px;
-    height: 34px;
+    width: 44px;
+    height: 44px;
   }
 
   .field-quality-canvas__carousel-controls button span {

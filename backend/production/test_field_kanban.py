@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from io import BytesIO
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 import zipfile
 
@@ -23,12 +24,14 @@ from .field_kanban import (
     FieldKanbanError,
     _defect_checkpoint_context,
     _defect_snapshot_key,
+    _legacy_pdf_preview_public_id,
     _machine_shot_payload,
     _pending_shift_prompt,
     _quality_summary,
     apply_field_material_conversion_notification,
     build_field_kanban_snapshot,
     build_field_material_readiness,
+    repair_field_material_preview,
     resolve_material_documents,
     save_defect_checkpoint,
     save_field_material,
@@ -148,6 +151,51 @@ class FieldKanbanSnapshotTests(TestCase):
         self.assertEqual(
             snapshot["quality"]["unavailable_reason"],
             "quality_permission_required",
+        )
+
+    def test_queue_centers_current_plan_with_dated_previous_and_following_jobs(self):
+        target_date = date(2026, 8, 24)
+        dated_plans = [
+            (target_date - timedelta(days=30), "PART-PREV-2", 1),
+            (target_date - timedelta(days=20), "PART-PREV-1", 1),
+            (target_date, "PART-CURRENT", 1),
+            (target_date + timedelta(days=20), "PART-NEXT-1", 1),
+            (target_date + timedelta(days=30), "PART-NEXT-2", 1),
+        ]
+        created = []
+        for plan_date, part_no, sequence in dated_plans:
+            created.append(ProductionPlan.objects.create(
+                plan_date=plan_date,
+                plan_type="injection",
+                machine_name="850T-1",
+                part_no=part_no,
+                model_name=f"MODEL-{part_no}",
+                planned_quantity=100,
+                sequence=sequence,
+            ))
+
+        snapshot = build_field_kanban_snapshot(
+            target_date,
+            1,
+            include_quality=False,
+            now=SHANGHAI_TZ.localize(datetime(2026, 8, 24, 14, 0)),
+            use_cache=False,
+        )
+
+        self.assertEqual(
+            [row["plan_id"] for row in snapshot["queue"]],
+            [plan.id for plan in created],
+        )
+        self.assertEqual(
+            [row["plan_date"] for row in snapshot["queue"]],
+            [plan_date.isoformat() for plan_date, _part_no, _sequence in dated_plans],
+        )
+        self.assertEqual(snapshot["active_plan"]["plan_id"], created[2].id)
+        self.assertEqual(snapshot["active_plan"]["plan_date"], target_date.isoformat())
+        self.assertEqual(snapshot["next_plan"]["plan_id"], created[3].id)
+        self.assertEqual(
+            snapshot["next_plan"]["plan_date"],
+            (target_date + timedelta(days=20)).isoformat(),
         )
 
     @patch("production.field_kanban.get_injection_machine_shot_context")
@@ -1139,6 +1187,38 @@ class FieldKanbanPermissionTests(TestCase):
             )
         )
 
+    def test_preview_repair_requires_edit_permission_and_passes_callback_url(self):
+        endpoint = "/api/production/field-materials/legacy-document/repair-preview/"
+        denied_response = self._client_for(self.development_viewer).post(
+            endpoint,
+            {},
+            format="json",
+        )
+
+        with patch(
+            "production.field_kanban_views.repair_field_material_preview",
+            return_value={
+                "id": "legacy-document",
+                "ready": False,
+                "conversion_status": "pending",
+            },
+        ) as repair_preview:
+            allowed_response = self._client_for(self.development_editor).post(
+                endpoint,
+                {},
+                format="json",
+            )
+
+        self.assertEqual(denied_response.status_code, 403)
+        self.assertEqual(allowed_response.status_code, 200)
+        self.assertEqual(allowed_response.json()["document"]["conversion_status"], "pending")
+        self.assertEqual(repair_preview.call_args.args, ("legacy-document",))
+        self.assertTrue(
+            repair_preview.call_args.kwargs["conversion_notification_url"].endswith(
+                "/api/production/field-materials/conversion-callback/"
+            )
+        )
+
     @patch("production.field_kanban_views.apply_field_material_conversion_notification")
     @patch("production.field_kanban_views.cloudinary.utils.verify_notification_signature")
     def test_cloudinary_conversion_webhook_requires_signature_and_applies_result(
@@ -1171,6 +1251,7 @@ class FieldKanbanPermissionTests(TestCase):
             public_id="field/source.pptx",
             info_status="complete",
             error="",
+            repair_token=None,
         )
 
         verify_signature.return_value = False
@@ -1316,6 +1397,363 @@ class FieldMaterialUploadTests(TestCase):
             if padding_size:
                 archive.writestr("ppt/media/padding.bin", b"\0" * padding_size)
         return stream.getvalue()
+
+    def _store_legacy_document(self, document: dict) -> None:
+        MouldDataSnapshot.objects.update_or_create(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+            defaults={
+                "kind": MouldDataSnapshot.KIND_BOARD,
+                "instance_id": "field-materials",
+                "payload": {
+                    "schema_version": FIELD_MATERIALS_SCHEMA,
+                    "documents": [document],
+                },
+            },
+        )
+
+    @patch("production.field_kanban.cloudinary.api.update")
+    @patch("production.field_kanban.cloudinary.api.resource")
+    def test_legacy_active_ppt_repair_starts_and_recovers_conversion(self, resource, update):
+        legacy = {
+            "id": "legacy-ppt",
+            "kind": "work_instruction",
+            "part_no": "PART-LEGACY",
+            "model_name": "MODEL-LEGACY",
+            "revision": "A",
+            "source": {
+                "url": "https://cdn.example.test/raw/legacy.ppt",
+                "public_id": "field/legacy.ppt",
+                "resource_type": "raw",
+                "format": "ppt",
+                "bytes": 1024,
+                "file_name": "legacy.ppt",
+            },
+            "preview": None,
+            "active": True,
+            "uploaded_at": "2026-08-24T09:00:00+08:00",
+        }
+        self._store_legacy_document(legacy)
+        resource.side_effect = RuntimeError("not converted yet")
+
+        pending = repair_field_material_preview(
+            "legacy-ppt",
+            conversion_notification_url="https://api.example.test/conversion-callback/",
+        )
+        duplicate = repair_field_material_preview(
+            "legacy-ppt",
+            conversion_notification_url="https://api.example.test/conversion-callback/",
+        )
+
+        self.assertEqual(pending["conversion_status"], "pending")
+        self.assertEqual(duplicate["conversion_status"], "pending")
+        self.assertFalse(pending["ready"])
+        stored_pending = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload["documents"][0]
+        self.assertTrue(stored_pending["active"])
+        self.assertEqual(stored_pending["conversion"]["status"], "pending")
+        repair_token = stored_pending["conversion"]["repair_token"]
+        update.assert_called_once()
+        self.assertEqual(update.call_args.args, ("field/legacy.ppt",))
+        self.assertEqual(update.call_args.kwargs["resource_type"], "raw")
+        self.assertEqual(update.call_args.kwargs["raw_convert"], "aspose")
+        notification_url = urlparse(update.call_args.kwargs["notification_url"])
+        self.assertEqual(
+            f"{notification_url.scheme}://{notification_url.netloc}{notification_url.path}",
+            "https://api.example.test/conversion-callback/",
+        )
+        self.assertEqual(parse_qs(notification_url.query), {"repair_token": [repair_token]})
+
+        cache.clear()
+        resource.side_effect = None
+        resource.return_value = {
+            "secure_url": "https://cdn.example.test/image/legacy.ppt.pdf",
+            "public_id": "field/legacy.ppt",
+            "resource_type": "image",
+            "format": "pdf",
+            "pages": 6,
+            "bytes": 4096,
+        }
+        ready = repair_field_material_preview("legacy-ppt")
+
+        self.assertTrue(ready["ready"])
+        self.assertEqual(ready["preview_resource_type"], "image")
+        self.assertEqual(ready["page_count"], 6)
+        stored_ready = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload["documents"][0]
+        self.assertTrue(stored_ready["active"])
+        self.assertEqual(stored_ready["source"]["resource_type"], "raw")
+
+    @patch("production.field_kanban.cloudinary.api.resource")
+    def test_legacy_ppt_repair_rejects_non_pdf_derived_resource(self, resource):
+        self._store_legacy_document({
+            "id": "legacy-ppt-invalid",
+            "kind": "work_instruction",
+            "part_no": "PART-LEGACY",
+            "model_name": "MODEL-LEGACY",
+            "source": {
+                "url": "https://cdn.example.test/raw/legacy.ppt",
+                "public_id": "field/legacy.ppt",
+                "resource_type": "raw",
+                "format": "ppt",
+                "bytes": 1024,
+                "file_name": "legacy.ppt",
+            },
+            "preview": None,
+            "active": True,
+            "uploaded_at": "2026-08-24T09:00:00+08:00",
+        })
+        resource.return_value = {
+            "secure_url": "https://cdn.example.test/image/unrelated.jpg",
+            "public_id": "field/legacy.ppt",
+            "resource_type": "image",
+            "format": "jpg",
+        }
+
+        with self.assertRaises(FieldKanbanError) as invalid_preview:
+            repair_field_material_preview("legacy-ppt-invalid")
+
+        self.assertEqual(invalid_preview.exception.code, "office_conversion_invalid_response")
+
+    @patch("production.field_kanban.cloudinary.utils.private_download_url")
+    @patch("production.field_kanban.cloudinary.api.resource")
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_legacy_raw_pdf_repair_creates_image_preview_and_is_idempotent(
+        self,
+        upload,
+        resource,
+        private_download_url,
+    ):
+        legacy_source = {
+            "url": "https://cdn.example.test/raw/legacy.pdf",
+            "public_id": "field/legacy.pdf",
+            "resource_type": "raw",
+            "format": "pdf",
+            "bytes": 1024,
+            "sha256": "legacy-sha",
+            "file_name": "legacy.pdf",
+        }
+        self._store_legacy_document({
+            "id": "legacy-pdf",
+            "kind": "drawing",
+            "part_no": "PART-LEGACY",
+            "model_name": "MODEL-LEGACY",
+            "revision": "A",
+            "source": legacy_source,
+            "preview": legacy_source.copy(),
+            "active": True,
+            "uploaded_at": "2026-08-24T09:00:00+08:00",
+        })
+        resource.side_effect = RuntimeError("preview does not exist")
+        private_download_url.return_value = "https://cdn.example.test/signed/raw-download"
+        upload.return_value = {
+            "secure_url": "https://cdn.example.test/image/legacy-preview.pdf",
+            "public_id": "field/legacy-preview",
+            "resource_type": "image",
+            "format": "pdf",
+            "pages": 3,
+            "bytes": 22,
+        }
+
+        before = resolve_material_documents("PART-LEGACY", "MODEL-LEGACY")["drawing"]
+        repaired = repair_field_material_preview("legacy-pdf")
+        second = repair_field_material_preview("legacy-pdf")
+
+        self.assertFalse(before["ready"])
+        self.assertTrue(repaired["ready"])
+        self.assertEqual(repaired["preview_resource_type"], "image")
+        self.assertEqual(repaired["page_count"], 3)
+        self.assertEqual(second["preview_url"], repaired["preview_url"])
+        self.assertEqual(upload.call_count, 1)
+        self.assertEqual(upload.call_args.args, ("https://cdn.example.test/signed/raw-download",))
+        self.assertEqual(upload.call_args.kwargs["resource_type"], "image")
+        self.assertEqual(upload.call_args.kwargs["format"], "pdf")
+        self.assertEqual(private_download_url.call_args.args, ("field/legacy.pdf", "pdf"))
+        self.assertEqual(private_download_url.call_args.kwargs["resource_type"], "raw")
+        stored = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload["documents"][0]
+        self.assertEqual(stored["source"], legacy_source)
+        self.assertEqual(stored["preview"]["resource_type"], "image")
+
+    @patch("production.field_kanban.cloudinary.api.resource")
+    def test_pending_legacy_raw_pdf_repair_recovers_existing_deterministic_preview(
+        self,
+        resource,
+    ):
+        document_id = "legacy-pdf-pending"
+        repair_token = "pdf-copy-token"
+        requested_at = datetime.now(tz=SHANGHAI_TZ).isoformat()
+        legacy_source = {
+            "url": "https://cdn.example.test/raw/legacy-pending.pdf",
+            "public_id": "field/legacy-pending.pdf",
+            "resource_type": "raw",
+            "format": "pdf",
+            "bytes": 1024,
+            "sha256": "legacy-pending-sha",
+            "file_name": "legacy-pending.pdf",
+        }
+        self._store_legacy_document({
+            "id": document_id,
+            "kind": "drawing",
+            "part_no": "PART-PENDING",
+            "model_name": "MODEL-PENDING",
+            "revision": "A",
+            "source": legacy_source,
+            "preview": legacy_source.copy(),
+            "conversion": {
+                "provider": "cloudinary_pdf_copy",
+                "status": "pending",
+                "requested_at": requested_at,
+                "updated_at": requested_at,
+                "repair_token": repair_token,
+            },
+            "active": True,
+            "uploaded_at": "2026-08-24T09:00:00+08:00",
+        })
+        preview_public_id = _legacy_pdf_preview_public_id(document_id)
+        resource.return_value = {
+            "secure_url": "https://cdn.example.test/image/legacy-pending.pdf",
+            "public_id": preview_public_id,
+            "resource_type": "image",
+            "format": "pdf",
+            "pages": 4,
+            "bytes": 4096,
+        }
+
+        build_field_material_readiness(date(2026, 8, 24))
+
+        stored = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload["documents"][0]
+        self.assertEqual(stored["conversion"]["status"], "ready")
+        self.assertNotIn("repair_token", stored["conversion"])
+        self.assertEqual(stored["preview"]["public_id"], preview_public_id)
+        self.assertEqual(stored["preview"]["resource_type"], "image")
+        self.assertEqual(stored["preview"]["format"], "pdf")
+        self.assertEqual(stored["preview"]["pages"], 4)
+        resource.assert_called_once_with(
+            preview_public_id,
+            resource_type="image",
+            type="upload",
+        )
+
+    @patch("production.field_kanban.cloudinary.api.resource")
+    def test_stale_pending_legacy_raw_pdf_repair_fails_and_clears_token(
+        self,
+        resource,
+    ):
+        document_id = "legacy-pdf-stale"
+        repair_token = "stale-pdf-copy-token"
+        requested_at = (
+            datetime.now(tz=SHANGHAI_TZ) - timedelta(minutes=6)
+        ).isoformat()
+        legacy_source = {
+            "url": "https://cdn.example.test/raw/legacy-stale.pdf",
+            "public_id": "field/legacy-stale.pdf",
+            "resource_type": "raw",
+            "format": "pdf",
+            "bytes": 1024,
+            "sha256": "legacy-stale-sha",
+            "file_name": "legacy-stale.pdf",
+        }
+        self._store_legacy_document({
+            "id": document_id,
+            "kind": "drawing",
+            "part_no": "PART-STALE",
+            "model_name": "MODEL-STALE",
+            "revision": "A",
+            "source": legacy_source,
+            "preview": legacy_source.copy(),
+            "conversion": {
+                "provider": "cloudinary_pdf_copy",
+                "status": "pending",
+                "requested_at": requested_at,
+                "updated_at": requested_at,
+                "repair_token": repair_token,
+            },
+            "active": True,
+            "uploaded_at": "2026-08-24T09:00:00+08:00",
+        })
+        resource.side_effect = RuntimeError("deterministic preview is missing")
+
+        build_field_material_readiness(date(2026, 8, 24))
+
+        stored = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload["documents"][0]
+        self.assertEqual(stored["conversion"]["status"], "failed")
+        self.assertNotIn("repair_token", stored["conversion"])
+        self.assertTrue(stored["conversion"]["error"])
+        resource.assert_called_once_with(
+            _legacy_pdf_preview_public_id(document_id),
+            resource_type="image",
+            type="upload",
+        )
+
+    def test_failed_conversion_callback_requires_current_repair_token(self):
+        repair_token = "current-office-repair-token"
+        requested_at = datetime.now(tz=SHANGHAI_TZ).isoformat()
+        self._store_legacy_document({
+            "id": "legacy-ppt-retry",
+            "kind": "work_instruction",
+            "part_no": "PART-RETRY",
+            "model_name": "MODEL-RETRY",
+            "revision": "A",
+            "source": {
+                "url": "https://cdn.example.test/raw/legacy-retry.pptx",
+                "public_id": "field/legacy-retry.pptx",
+                "resource_type": "raw",
+                "format": "pptx",
+                "bytes": 1024,
+                "file_name": "legacy-retry.pptx",
+            },
+            "preview": None,
+            "conversion": {
+                "provider": "cloudinary_aspose",
+                "status": "pending",
+                "requested_at": requested_at,
+                "updated_at": requested_at,
+                "repair_token": repair_token,
+            },
+            "active": True,
+            "uploaded_at": "2026-08-24T09:00:00+08:00",
+        })
+
+        missing_token = apply_field_material_conversion_notification(
+            public_id="field/legacy-retry.pptx",
+            info_status="failed",
+            error="older callback without token",
+        )
+        mismatched_token = apply_field_material_conversion_notification(
+            public_id="field/legacy-retry.pptx",
+            info_status="failed",
+            error="older callback with different token",
+            repair_token="older-office-repair-token",
+        )
+
+        self.assertEqual(missing_token["conversion_status"], "pending")
+        self.assertEqual(mismatched_token["conversion_status"], "pending")
+        still_pending = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload["documents"][0]
+        self.assertEqual(still_pending["conversion"]["status"], "pending")
+        self.assertEqual(still_pending["conversion"]["repair_token"], repair_token)
+
+        matched_token = apply_field_material_conversion_notification(
+            public_id="field/legacy-retry.pptx",
+            info_status="failed",
+            error="current attempt failed",
+            repair_token=repair_token,
+        )
+
+        self.assertEqual(matched_token["conversion_status"], "failed")
+        stored_failed = MouldDataSnapshot.objects.get(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).payload["documents"][0]
+        self.assertEqual(stored_failed["conversion"]["status"], "failed")
+        self.assertNotIn("repair_token", stored_failed["conversion"])
 
     @patch("production.field_kanban.cloudinary.api.update")
     @patch("production.field_kanban.cloudinary.uploader.upload")
@@ -1926,3 +2364,62 @@ class FieldMaterialUploadTests(TestCase):
             destroy.call_args.kwargs,
             {"resource_type": "image", "invalidate": True},
         )
+
+
+class FieldKanbanQueueQueryRegressionTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    @patch("production.field_kanban._machine_plan_names")
+    def test_zero_adjacent_limits_skip_machine_name_and_database_queries(self, machine_plan_names):
+        from .field_kanban import _adjacent_machine_plan_parts
+
+        with CaptureQueriesContext(connection) as queries:
+            previous, following = _adjacent_machine_plan_parts(
+                date(2026, 8, 24),
+                1,
+                previous_limit=0,
+                following_limit=0,
+            )
+
+        self.assertEqual(previous, [])
+        self.assertEqual(following, [])
+        machine_plan_names.assert_not_called()
+        self.assertEqual(len(queries), 0)
+
+    def test_machine_plan_name_distinct_query_clears_default_ordering(self):
+        from .field_kanban import _machine_plan_names
+
+        ProductionPlan.objects.bulk_create([
+            ProductionPlan(
+                plan_date=date(2026, 8, 23),
+                plan_type="injection",
+                machine_name="850T-1",
+                part_no="PART-A",
+                planned_quantity=100,
+                sequence=1,
+            ),
+            ProductionPlan(
+                plan_date=date(2026, 8, 24),
+                plan_type="injection",
+                machine_name="850T-1",
+                part_no="PART-B",
+                planned_quantity=100,
+                sequence=2,
+            ),
+            ProductionPlan(
+                plan_date=date(2026, 8, 24),
+                plan_type="injection",
+                machine_name="650T-2",
+                part_no="PART-C",
+                planned_quantity=100,
+                sequence=1,
+            ),
+        ])
+
+        with CaptureQueriesContext(connection) as queries:
+            names = _machine_plan_names(1)
+
+        self.assertEqual(names, ["850T-1"])
+        self.assertEqual(len(queries), 1)
+        self.assertNotIn("ORDER BY", queries[0]["sql"].upper())

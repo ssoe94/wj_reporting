@@ -63,11 +63,14 @@ type FieldLanguage = "zh" | "ko";
 type CanvasMode = "work_instruction" | "drawing" | "quality";
 const DEFAULT_DOCUMENT_ZOOM = 125;
 const DEFAULT_DISPLAY_SCALE = 100;
-const DISPLAY_FIT_MIN = 70;
+const DISPLAY_FIT_MIN = 50;
 const DISPLAY_SCALE_MIN = 85;
 const DISPLAY_SCALE_MAX = 105;
 const DISPLAY_SCALE_STEP = 5;
-const DISPLAY_SCALE_STORAGE_KEY = "wj-field-kanban-screen-scale-v1";
+// v2 intentionally resets older kiosk calibrations once.  A saved manual
+// scale from the desktop-width layout would otherwise keep 1024×768 text
+// artificially small even after the native 4:3 layout is deployed.
+const DISPLAY_SCALE_STORAGE_KEY = "wj-field-kanban-screen-scale-v2";
 
 type DisplayScalePreference =
   | { mode: "fit" }
@@ -475,9 +478,18 @@ function isSameQueuePlan(left: FieldQueuePlan, right: FieldQueuePlan) {
     return left.plan_id === right.plan_id;
   }
   return left.sequence === right.sequence
+    && left.plan_date === right.plan_date
     && left.part_no === right.part_no
     && left.model_name === right.model_name
     && left.lot_no === right.lot_no;
+}
+
+function formatQueueDate(value: string, language: FieldLanguage) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return "-";
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  return language === "zh" ? `${month}月${day}日` : `${month}/${day}`;
 }
 
 function getFieldQueueWindow(plans: FieldQueuePlan[], activePlan: FieldQueuePlan | null): FieldQueueItem[] {
@@ -1514,11 +1526,16 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const c = copy[language];
   const isPageVisible = usePageVisibility();
-  const fourThreeViewport = viewportSize.width <= 1100 && viewportSize.height <= 820;
+  const fourThreeViewport = viewportSize.width <= 1180 && viewportSize.height <= 900;
   const compactViewport = viewportSize.width <= 1599 && viewportSize.height <= 850;
   const tabletViewport = viewportSize.width <= 1180 && viewportSize.height >= 851;
   const minimumLogicalWidth = fourThreeViewport ? 1024 : compactViewport ? 1220 : tabletViewport ? 1050 : 1450;
-  const minimumLogicalHeight = fourThreeViewport ? 768 : 760;
+  // A 1024×768 panel does not expose all 768 CSS pixels while Firefox keeps
+  // its browser chrome visible.  Keep the native kiosk layout down to a
+  // realistic 680px content viewport so text is not blurred by a fractional
+  // whole-screen transform.  Below that point the existing fit scaling still
+  // protects the layout from clipping.
+  const minimumLogicalHeight = fourThreeViewport ? 680 : 760;
   const safeMaximumScaleRatio = Math.min(
     DISPLAY_SCALE_MAX / 100,
     viewportSize.width / minimumLogicalWidth,
@@ -2079,11 +2096,17 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
                   aria-label={`${visibleIndex + 1} / ${queue.length}`}
                   aria-current={position === "current" ? "step" : undefined}
                   className={`is-${position}`}
-                  key={`${plan.plan_id ?? `${plan.sequence}:${plan.part_no}:${plan.lot_no}`}`}
+                  key={`${plan.plan_date}:${plan.plan_id ?? `${plan.sequence}:${plan.part_no}:${plan.lot_no}`}`}
                 >
                   <span className="field-queue-index">{visibleIndex + 1}</span>
                   {visibleIndex < queue.length - 1 ? <Triangle aria-hidden="true" className="field-queue-flow" /> : null}
-                  <div className="field-queue-copy"><strong>{plan.part_no || "-"}</strong><span>{plan.model_name || "-"}</span></div>
+                  <div className="field-queue-copy">
+                    <strong>{plan.part_no || "-"}</strong>
+                    <div className="field-queue-meta">
+                      <time dateTime={plan.plan_date}>{formatQueueDate(plan.plan_date, language)}</time>
+                      <span>{plan.model_name || "-"}</span>
+                    </div>
+                  </div>
                   <div className="field-queue-value">
                     <small>{c.queueOutput}</small>
                     <strong>{number(plan.actual_piece_qty)} / {number(plan.planned_piece_qty)}</strong>

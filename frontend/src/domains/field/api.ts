@@ -20,6 +20,8 @@ export type FieldDocument = {
   preview_resource_type: "image" | "raw" | null;
   page_count: number | null;
   ready: boolean;
+  repairable: boolean;
+  repair_reason: string | null;
   conversion_status: "pending" | "ready" | "failed" | null;
   conversion_provider: string | null;
   conversion_error: string | null;
@@ -33,6 +35,7 @@ export type FieldDocument = {
 
 export type FieldKanbanPlan = {
   plan_id: number | null;
+  plan_date: string;
   sequence: number;
   part_no: string;
   model_name: string;
@@ -251,6 +254,8 @@ function normalizeDocument(value: unknown, fallbackKind: FieldDocument["kind"]):
       : null,
     page_count: row.page_count === null || row.page_count === undefined ? null : Math.max(1, asNumber(row.page_count, 1)),
     ready: explicitReady ?? Boolean(previewUrl),
+    repairable: asBoolean(row.repairable),
+    repair_reason: asString(row.repair_reason) || null,
     conversion_status: normalizeConversionStatus(row.conversion_status),
     conversion_provider: asString(row.conversion_provider) || null,
     conversion_error: asString(row.conversion_error) || null,
@@ -270,6 +275,7 @@ function normalizePlan(value: unknown): FieldKanbanPlan | null {
   const row = asRecord(value);
   return {
     plan_id: row.plan_id === null || row.plan_id === undefined ? null : asNumber(row.plan_id),
+    plan_date: asString(row.plan_date || row.business_date),
     sequence: asNumber(row.sequence),
     part_no: asString(row.part_no),
     model_name: asString(row.model_name),
@@ -567,4 +573,15 @@ export async function uploadFieldMaterial(input: {
   });
   const root = asRecord(response.data);
   return normalizeDocument(root.document || root, input.kind);
+}
+
+export async function repairFieldMaterialPreview(documentId: string) {
+  const response = await http.post<unknown>(
+    `/production/field-materials/${encodeURIComponent(documentId)}/repair-preview/`,
+    {},
+  );
+  const root = asRecord(response.data);
+  const document = normalizeDocument(root.document || root, "work_instruction");
+  if (!document) throw new Error("The repaired field material response is invalid.");
+  return document;
 }
