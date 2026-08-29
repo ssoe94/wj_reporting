@@ -1215,7 +1215,12 @@ def _summary_claims_are_safe(
         # nouns before screening action separators. Physical-action nouns such
         # as 코팅/도포/조임 remain visible and are rejected.
         separator_scan_item = SAFE_PROCESS_COORDINATION.sub(
-            lambda match: f"{re.sub(r'(?:\s+및\s+|[和与與及])', ' ', match.group(1) or match.group(2))} ",
+            lambda match: re.sub(
+                r"(?:\s+및\s+|[和与與及])",
+                " ",
+                match.group(1) or match.group(2),
+            )
+            + " ",
             item_without_terminal_period,
         )
         separator_scan_item = SAFE_INFORMATION_COORDINATION.sub(
