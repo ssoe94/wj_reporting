@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   PDFDocumentLoadingTask,
@@ -22,11 +22,6 @@ import {
   Delete,
   LogOut,
   Loader2,
-  Maximize2,
-  Minimize2,
-  Minus,
-  MonitorCog,
-  Plus,
   Radio,
   RotateCcw,
   ShieldAlert,
@@ -44,9 +39,9 @@ import {
 } from "@/domains/field/api";
 import { getInjectionProductionMatrix } from "@/domains/mes/api";
 import {
-  getInjectionDowntimeConfirmations,
+  getFieldInjectionDowntimeConfirmations,
   getProductionPlanSummary,
-  saveInjectionDowntimeConfirmation,
+  saveFieldInjectionDowntimeConfirmation,
   type SaveInjectionDowntimeConfirmationPayload,
 } from "@/domains/production/api";
 import {
@@ -58,32 +53,13 @@ import { useModalFocusTrap } from "@/shared/hooks/useModalFocusTrap";
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
 
 import "./InjectionKanban.css";
+import "./InjectionKanban.layout.css";
 
 type FieldLanguage = "zh" | "ko";
 type CanvasMode = "work_instruction" | "drawing" | "quality";
-const DEFAULT_DOCUMENT_ZOOM = 125;
-const DEFAULT_DISPLAY_SCALE = 100;
-const DISPLAY_FIT_MIN = 50;
-const DISPLAY_SCALE_MIN = 85;
-const DISPLAY_SCALE_MAX = 105;
-const DISPLAY_SCALE_STEP = 5;
-// v2 intentionally resets older kiosk calibrations once.  A saved manual
-// scale from the desktop-width layout would otherwise keep 1024×768 text
-// artificially small even after the native 4:3 layout is deployed.
-const DISPLAY_SCALE_STORAGE_KEY = "wj-field-kanban-screen-scale-v2";
 
-type DisplayScalePreference =
-  | { mode: "fit" }
-  | { mode: "manual"; scale: number };
-
-type WebkitFullscreenDocument = Document & {
-  webkitExitFullscreen?: () => Promise<void> | void;
-  webkitFullscreenElement?: Element | null;
-};
-
-type WebkitFullscreenElement = HTMLElement & {
-  webkitRequestFullscreen?: () => Promise<void> | void;
-};
+const WORK_INSTRUCTION_DISPLAY_MS = 60_000;
+const QUALITY_PHOTO_DISPLAY_MS = 10_000;
 
 type DefectRequest = {
   eventKey: string;
@@ -216,16 +192,6 @@ const copy = {
     retry: "重新读取",
     stationSelect: "工位选择",
     logout: "登出",
-    displayScale: "看板画面比例",
-    displayScaleHint: "整体缩放看板，不改变文档倍率。",
-    displayScaleDecrease: "缩小看板",
-    displayScaleIncrease: "放大看板",
-    displayScaleReset: "恢复屏幕适配",
-    screenFit: "屏幕适配",
-    enterFullscreen: "全屏显示",
-    exitFullscreen: "退出全屏",
-    fullscreenUnavailable: "当前浏览器不支持全屏显示，请使用浏览器菜单进入全屏。",
-    fullscreenFailed: "无法切换全屏显示，请再试一次。",
     changeDetected: "检测到品号 / 型号变更，请现场确认",
     defectDue: "不良录入时间已到，请先完成录入",
     missingMaterialAlert: "当前作业资料不完整，请联系开发团队补充",
@@ -352,16 +318,6 @@ const copy = {
     retry: "다시 불러오기",
     stationSelect: "설비 선택",
     logout: "로그아웃",
-    displayScale: "칸반 화면 배율",
-    displayScaleHint: "문서 배율은 유지하고 칸반 전체를 조절합니다.",
-    displayScaleDecrease: "칸반 축소",
-    displayScaleIncrease: "칸반 확대",
-    displayScaleReset: "화면 맞춤으로 복원",
-    screenFit: "화면 맞춤",
-    enterFullscreen: "전체화면 보기",
-    exitFullscreen: "전체화면 종료",
-    fullscreenUnavailable: "이 브라우저는 전체화면을 지원하지 않습니다. 브라우저 메뉴에서 전체화면을 선택해 주세요.",
-    fullscreenFailed: "전체화면을 전환하지 못했습니다. 다시 시도해 주세요.",
     changeDetected: "품번 / 모델 변경 후보가 감지되었습니다. 현장 확인이 필요합니다",
     defectDue: "불량 입력 시간이 되었습니다. 먼저 입력을 완료해 주세요",
     missingMaterialAlert: "현재 작업 자료가 완비되지 않았습니다. 개발팀에 보충을 요청해 주세요",
@@ -408,13 +364,12 @@ const copy = {
 } as const;
 
 function number(value: number | null | undefined) {
-  return new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(Number(value) || 0)));
-}
-
-function clampDisplayScale(value: number) {
-  if (!Number.isFinite(value)) return DEFAULT_DISPLAY_SCALE;
-  const stepped = Math.round(value / DISPLAY_SCALE_STEP) * DISPLAY_SCALE_STEP;
-  return Math.min(DISPLAY_SCALE_MAX, Math.max(DISPLAY_FIT_MIN, stepped));
+  const rounded = Math.max(0, Math.round(Number(value) || 0));
+  try {
+    return new Intl.NumberFormat("en-US").format(rounded);
+  } catch {
+    return String(rounded).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
 }
 
 function readLocalStorage(key: string) {
@@ -432,38 +387,6 @@ function writeLocalStorage(key: string, value: string) {
     // Storage can be unavailable on locked-down kiosk profiles. The field
     // screen must continue with its in-memory preference instead of crashing.
   }
-}
-
-function readDisplayScalePreference(): DisplayScalePreference {
-  const stored = readLocalStorage(DISPLAY_SCALE_STORAGE_KEY);
-  if (!stored) return { mode: "fit" };
-
-  try {
-    const parsed = JSON.parse(stored) as Partial<DisplayScalePreference>;
-    if (parsed.mode === "fit") return { mode: "fit" };
-    if (parsed.mode === "manual" && typeof parsed.scale === "number") {
-      return { mode: "manual", scale: clampDisplayScale(parsed.scale) };
-    }
-  } catch {
-    const legacyScale = Number(stored);
-    if (Number.isFinite(legacyScale) && legacyScale > 0) {
-      return { mode: "manual", scale: clampDisplayScale(legacyScale) };
-    }
-  }
-
-  return { mode: "fit" };
-}
-
-function getViewportSize() {
-  return {
-    width: window.visualViewport?.width ?? window.innerWidth,
-    height: window.visualViewport?.height ?? window.innerHeight,
-  };
-}
-
-function getFullscreenElement() {
-  const fullscreenDocument = document as WebkitFullscreenDocument;
-  return document.fullscreenElement ?? fullscreenDocument.webkitFullscreenElement ?? null;
 }
 
 type FieldQueuePlan = NonNullable<FieldKanbanResponse["active_plan"]>;
@@ -541,37 +464,71 @@ function getDefectErrorMessage(error: unknown, language: FieldLanguage, fallback
   return getErrorMessage(error, fallback);
 }
 
+function getShanghaiDateParts(value: Date) {
+  const shanghaiTime = new Date(value.getTime() + 8 * 60 * 60 * 1_000);
+  return {
+    year: shanghaiTime.getUTCFullYear(),
+    month: shanghaiTime.getUTCMonth() + 1,
+    day: shanghaiTime.getUTCDate(),
+    weekday: shanghaiTime.getUTCDay(),
+    hour: shanghaiTime.getUTCHours(),
+    minute: shanghaiTime.getUTCMinutes(),
+  };
+}
+
+function twoDigits(value: number) {
+  return String(value).padStart(2, "0");
+}
+
 function formatShanghaiTime(value: Date, language: FieldLanguage) {
-  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "ko-KR", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(value);
+  try {
+    return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "ko-KR", {
+      timeZone: "Asia/Shanghai",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(value);
+  } catch {
+    const parts = getShanghaiDateParts(value);
+    return `${twoDigits(parts.hour)}:${twoDigits(parts.minute)}`;
+  }
 }
 
 function formatShanghaiDate(value: Date, language: FieldLanguage) {
-  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "ko-KR", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short",
-  }).format(value);
+  try {
+    return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "ko-KR", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      weekday: "short",
+    }).format(value);
+  } catch {
+    const parts = getShanghaiDateParts(value);
+    const weekdays = language === "zh"
+      ? ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+      : ["일", "월", "화", "수", "목", "금", "토"];
+    return `${parts.year}.${twoDigits(parts.month)}.${twoDigits(parts.day)} ${weekdays[parts.weekday]}`;
+  }
 }
 
 function formatShortDateTime(value: string | null | undefined, language: FieldLanguage) {
   if (!value) return "-";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "ko-KR", {
-    timeZone: "Asia/Shanghai",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(parsed);
+  try {
+    return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "ko-KR", {
+      timeZone: "Asia/Shanghai",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(parsed);
+  } catch {
+    const parts = getShanghaiDateParts(parsed);
+    return `${twoDigits(parts.month)}/${twoDigits(parts.day)} ${twoDigits(parts.hour)}:${twoDigits(parts.minute)}`;
+  }
 }
 
 function getFreshnessSeconds(latest: string | null | undefined, now: Date) {
@@ -611,7 +568,7 @@ function getCloudinaryPdfPageImageUrl(document: FieldDocument | null, page: numb
     if (markerIndex < 0) return null;
     const prefix = parsed.pathname.slice(0, markerIndex + uploadMarker.length);
     const assetPath = parsed.pathname.slice(markerIndex + uploadMarker.length).replace(/\.pdf$/i, ".jpg");
-    parsed.pathname = `${prefix}pg_${Math.max(1, page)},w_1800,c_limit,q_auto:good,f_jpg/${assetPath}`;
+    parsed.pathname = `${prefix}pg_${Math.max(1, page)},w_1200,dpr_1.0,c_limit,q_auto:good,f_jpg/${assetPath}`;
     parsed.hash = "";
     return parsed.toString();
   } catch {
@@ -628,7 +585,7 @@ function getOptimizedFieldImageUrl(value: string) {
     if (markerIndex < 0) return value;
     const prefix = parsed.pathname.slice(0, markerIndex + uploadMarker.length);
     const assetPath = parsed.pathname.slice(markerIndex + uploadMarker.length);
-    parsed.pathname = `${prefix}w_1800,c_limit,q_auto:good,f_auto/${assetPath}`;
+    parsed.pathname = `${prefix}w_1200,dpr_1.0,c_limit,q_auto:good,f_auto/${assetPath}`;
     return parsed.toString();
   } catch {
     return value;
@@ -642,6 +599,14 @@ function isImagePreview(value: string | null | undefined) {
   } catch {
     return false;
   }
+}
+
+function getQualityIssueImages(issue: FieldKanbanResponse["quality"]["issues"][number] | undefined) {
+  if (!issue) return [];
+  return Array.from(new Set([
+    ...issue.image_urls,
+    ...(issue.image_url ? [issue.image_url] : []),
+  ])).slice(0, 4);
 }
 
 function usePageVisibility() {
@@ -1005,14 +970,14 @@ function DocumentEmptyState({ document, language }: { document: FieldDocument | 
   );
 }
 
-let pdfJsModulePromise: Promise<typeof import("pdfjs-dist")> | null = null;
+let pdfJsModulePromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null = null;
 const pdfJsAssetBase = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}pdfjs/`;
 
 function loadPdfJs() {
   if (!pdfJsModulePromise) {
     pdfJsModulePromise = Promise.all([
-      import("pdfjs-dist"),
-      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+      import("pdfjs-dist/legacy/build/pdf.mjs"),
+      import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url"),
     ]).then(([pdfJs, workerModule]) => {
       pdfJs.GlobalWorkerOptions.workerSrc = workerModule.default;
       return pdfJs;
@@ -1035,7 +1000,6 @@ function PdfCanvasPreview({
   page,
   title,
   url,
-  zoom,
 }: {
   attempt: number;
   interactionLocked: boolean;
@@ -1043,37 +1007,40 @@ function PdfCanvasPreview({
   page: number;
   title: string;
   url: string;
-  zoom: number;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [containerSize, setContainerSize] = useState({ height: 0, width: 0 });
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
-  const [renderedPage, setRenderedPage] = useState<{
-    height: number;
-    url: string;
-    width: number;
-  } | null>(null);
+  const [renderedPage, setRenderedPage] = useState(false);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
     let frame = 0;
-    const updateWidth = () => {
+    const updateSize = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
+        const nextHeight = Math.max(1, Math.floor(host.clientHeight));
         const nextWidth = Math.max(1, Math.floor(host.clientWidth));
-        setContainerWidth((current) => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
+        setContainerSize((current) => (
+          Math.abs(current.height - nextHeight) > 1 || Math.abs(current.width - nextWidth) > 1
+            ? { height: nextHeight, width: nextWidth }
+            : current
+        ));
       });
     };
 
-    updateWidth();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateWidth);
+    updateSize();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateSize);
+    const legacyResizeTimer = observer ? null : window.setInterval(updateSize, 500);
     observer?.observe(host);
-    window.addEventListener("resize", updateWidth);
+    window.addEventListener("resize", updateSize);
     return () => {
       observer?.disconnect();
-      window.removeEventListener("resize", updateWidth);
+      if (legacyResizeTimer !== null) window.clearInterval(legacyResizeTimer);
+      window.removeEventListener("resize", updateSize);
       window.cancelAnimationFrame(frame);
     };
   }, []);
@@ -1118,12 +1085,13 @@ function PdfCanvasPreview({
   }, [attempt, onLoadStateChange, url]);
 
   useEffect(() => {
-    if (!pdfDocument || !containerWidth) return;
+    const canvas = canvasRef.current;
+    if (!pdfDocument || !containerSize.height || !containerSize.width || !canvas) return;
 
     let active = true;
     let pdfPage: PDFPageProxy | null = null;
     let renderTask: RenderTask | null = null;
-    setRenderedPage(null);
+    setRenderedPage(false);
     onLoadStateChange("loading");
 
     void pdfDocument
@@ -1135,31 +1103,32 @@ function PdfCanvasPreview({
         }
         pdfPage = nextPage;
         const baseViewport = nextPage.getViewport({ scale: 1 });
-        const cssScale = (containerWidth / baseViewport.width) * (Math.max(50, zoom) / 100);
+        const cssScale = Math.min(
+          containerSize.width / baseViewport.width,
+          containerSize.height / baseViewport.height,
+        );
         const cssViewport = nextPage.getViewport({ scale: cssScale });
-        const outputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+        // Direct canvas rendering avoids holding a second base64 PNG copy in
+        // memory. Capping DPR also protects low-memory Android kiosks.
+        const outputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1), 1.5);
         const renderViewport = nextPage.getViewport({ scale: cssScale * outputScale });
-        const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d", { alpha: false });
         if (!context) throw new Error("PDF canvas is unavailable");
 
         canvas.width = Math.max(1, Math.floor(renderViewport.width));
         canvas.height = Math.max(1, Math.floor(renderViewport.height));
+        canvas.style.width = `${Math.max(1, Math.floor(cssViewport.width))}px`;
+        canvas.style.height = `${Math.max(1, Math.floor(cssViewport.height))}px`;
         renderTask = nextPage.render({
           canvasContext: context,
           viewport: renderViewport,
           background: "#ffffff",
         });
-        return renderTask.promise.then(() => ({
-          height: Math.max(1, Math.floor(cssViewport.height)),
-          url: canvas.toDataURL("image/png"),
-          width: Math.max(1, Math.floor(cssViewport.width)),
-        }));
+        return renderTask.promise;
       })
-      .then((result) => {
-        if (!result) return;
+      .then(() => {
         if (!active) return;
-        setRenderedPage(result);
+        setRenderedPage(true);
         onLoadStateChange("ready");
       })
       .catch((error) => {
@@ -1171,22 +1140,19 @@ function PdfCanvasPreview({
       renderTask?.cancel();
       pdfPage?.cleanup();
     };
-  }, [containerWidth, onLoadStateChange, page, pdfDocument, zoom]);
+  }, [containerSize.height, containerSize.width, onLoadStateChange, page, pdfDocument]);
 
   return (
     <div
       className={`field-pdf-preview${interactionLocked ? " is-interaction-locked" : ""}`}
       ref={hostRef}
     >
-      {renderedPage ? (
-        <img
-          alt={`${title} · ${page}`}
-          height={renderedPage.height}
-          onError={() => onLoadStateChange("error")}
-          src={renderedPage.url}
-          width={renderedPage.width}
-        />
-      ) : null}
+      <canvas
+        aria-label={`${title} · ${page}`}
+        className={renderedPage ? "is-ready" : ""}
+        ref={canvasRef}
+        role="img"
+      />
     </div>
   );
 }
@@ -1196,14 +1162,12 @@ function FieldDocumentPreview({
   interactionLocked,
   language,
   page,
-  zoom,
   onInteract,
 }: {
   document: FieldDocument;
   interactionLocked: boolean;
   language: FieldLanguage;
   page: number;
-  zoom: number;
   onInteract: () => void;
 }) {
   const c = copy[language];
@@ -1261,7 +1225,6 @@ function FieldDocumentPreview({
             onError={() => setLoadState("error")}
             onLoad={() => setLoadState("ready")}
             src={imageUrl}
-            style={{ width: `${zoom}%` }}
           />
         </div>
       ) : pdfUrl ? (
@@ -1272,7 +1235,6 @@ function FieldDocumentPreview({
           page={page}
           title={document.original_name || c.workInstruction}
           url={pdfUrl}
-          zoom={zoom}
         />
       ) : null}
       <div
@@ -1320,10 +1282,7 @@ function QualityCanvas({
 }) {
   const c = copy[language];
   const issue = snapshot.quality.issues[issueIndex];
-  const images = issue ? Array.from(new Set([
-    ...issue.image_urls,
-    ...(issue.image_url ? [issue.image_url] : []),
-  ])).slice(0, 4) : [];
+  const images = getQualityIssueImages(issue);
   const imageSignature = images.join("|");
   const [photoIndex, setPhotoIndex] = useState(0);
   const [failedPhotoUrls, setFailedPhotoUrls] = useState<Set<string>>(() => new Set());
@@ -1335,10 +1294,10 @@ function QualityCanvas({
   }, [issue?.key, imageSignature]);
 
   useEffect(() => {
-    if (!isPageVisible || displayImages.length <= 1 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!isPageVisible || displayImages.length <= 1) return;
     const timer = window.setTimeout(() => {
       setPhotoIndex((current) => (current + 1) % displayImages.length);
-    }, 5_000);
+    }, QUALITY_PHOTO_DISPLAY_MS);
     return () => window.clearTimeout(timer);
   }, [displayImages.length, imageSignature, isPageVisible, photoIndex]);
 
@@ -1495,26 +1454,38 @@ function MaterialsModal({
   );
 }
 
+function FieldClock({ language }: { language: FieldLanguage }) {
+  const isPageVisible = usePageVisibility();
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    setNow(new Date());
+    if (!isPageVisible) return;
+    const timer = window.setInterval(() => setNow(new Date()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [isPageVisible]);
+
+  return (
+    <div className="field-kanban-clock">
+      <Clock3 aria-hidden="true" />
+      <div><strong>{formatShanghaiTime(now, language)}</strong><span>{formatShanghaiDate(now, language)}</span></div>
+    </div>
+  );
+}
+
 export default function InjectionKanban({ station, onBack }: { station: FieldStation; onBack: () => void }) {
-  const { logout, user, hasPermission } = useAuth();
+  const { logout, user } = useAuth();
   const queryClient = useQueryClient();
   const businessDate = useShanghaiBusinessDate();
   const machineNumber = Number(station.machineFilterValue);
-  const viewportRef = useRef<HTMLDivElement>(null);
   const [language, setLanguage] = useState<FieldLanguage>(() => {
     const stored = readLocalStorage("wj-field-language");
     return stored === "ko" ? "ko" : "zh";
   });
-  const [now, setNow] = useState(() => new Date());
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("work_instruction");
   const [qualityIndex, setQualityIndex] = useState(0);
   const [manualPause, setManualPause] = useState(false);
   const [page, setPage] = useState(1);
-  const [zoom, setZoom] = useState(DEFAULT_DOCUMENT_ZOOM);
-  const [displayScalePreference, setDisplayScalePreference] = useState<DisplayScalePreference>(readDisplayScalePreference);
-  const [viewportSize, setViewportSize] = useState(getViewportSize);
-  const [displayControlsOpen, setDisplayControlsOpen] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(getFullscreenElement()));
   const [transitionReview, setTransitionReview] = useState<InjectionTransitionEvent | null>(null);
   const [transitionWorkflow, setTransitionWorkflow] = useState<InjectionTransitionEvent | null>(null);
   const [defectRequest, setDefectRequest] = useState<DefectRequest | null>(null);
@@ -1525,98 +1496,17 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [allMaterialsOpen, setAllMaterialsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const c = copy[language];
+  const currentCanvasLabel = canvasMode === "work_instruction"
+    ? c.workInstruction
+    : canvasMode === "drawing"
+      ? c.drawing
+      : c.qualityHistory;
   const isPageVisible = usePageVisibility();
-  const fourThreeViewport = viewportSize.width <= 1180 && viewportSize.height <= 900;
-  const compactViewport = viewportSize.width <= 1599 && viewportSize.height <= 850;
-  const tabletViewport = viewportSize.width <= 1180 && viewportSize.height >= 851;
-  const minimumLogicalWidth = fourThreeViewport ? 1024 : compactViewport ? 1220 : tabletViewport ? 1050 : 1450;
-  // A 1024×768 panel does not expose all 768 CSS pixels while Firefox keeps
-  // its browser chrome visible.  Keep the native kiosk layout down to a
-  // realistic 680px content viewport so text is not blurred by a fractional
-  // whole-screen transform.  Below that point the existing fit scaling still
-  // protects the layout from clipping.
-  const minimumLogicalHeight = fourThreeViewport ? 680 : 760;
-  const safeMaximumScaleRatio = Math.min(
-    DISPLAY_SCALE_MAX / 100,
-    viewportSize.width / minimumLogicalWidth,
-    viewportSize.height / minimumLogicalHeight,
-  );
-  const maximumDisplayScale = Math.max(
-    DISPLAY_FIT_MIN,
-    Math.floor((safeMaximumScaleRatio * 100) / DISPLAY_SCALE_STEP) * DISPLAY_SCALE_STEP,
-  );
-  const minimumDisplayScale = Math.min(DISPLAY_SCALE_MIN, maximumDisplayScale);
-  const fitDisplayScaleRatio = Math.max(
-    DISPLAY_FIT_MIN / 100,
-    Math.min(DEFAULT_DISPLAY_SCALE / 100, safeMaximumScaleRatio),
-  );
-  const displayScaleRatio = displayScalePreference.mode === "fit"
-    ? fitDisplayScaleRatio
-    : Math.max(minimumDisplayScale, Math.min(displayScalePreference.scale, maximumDisplayScale)) / 100;
-  const displayScale = Math.round(displayScaleRatio * 100);
-  const canEnterDefects = Boolean(
-    user?.is_staff
-    || hasPermission("is_admin")
-    || hasPermission("can_edit_injection"),
-  );
+  const canEnterDefects = true;
 
   useEffect(() => {
     writeLocalStorage("wj-field-language", language);
   }, [language]);
-
-  useEffect(() => {
-    writeLocalStorage(DISPLAY_SCALE_STORAGE_KEY, JSON.stringify(displayScalePreference));
-  }, [displayScalePreference]);
-
-  useEffect(() => {
-    const updateViewportSize = () => {
-      const viewportBounds = viewportRef.current?.getBoundingClientRect();
-      setViewportSize(viewportBounds
-        ? { width: viewportBounds.width, height: viewportBounds.height }
-        : getViewportSize());
-    };
-    window.addEventListener("resize", updateViewportSize);
-    window.visualViewport?.addEventListener("resize", updateViewportSize);
-    const animationFrame = window.requestAnimationFrame(updateViewportSize);
-    const settleTimer = window.setTimeout(updateViewportSize, 250);
-    const viewportObserver = typeof ResizeObserver === "undefined" || !viewportRef.current
-      ? null
-      : new ResizeObserver(updateViewportSize);
-    if (viewportObserver && viewportRef.current) viewportObserver.observe(viewportRef.current);
-    return () => {
-      window.removeEventListener("resize", updateViewportSize);
-      window.visualViewport?.removeEventListener("resize", updateViewportSize);
-      window.cancelAnimationFrame(animationFrame);
-      window.clearTimeout(settleTimer);
-      viewportObserver?.disconnect();
-    };
-  }, []);
-
-  useEffect(() => {
-    const updateFullscreenState = () => setIsFullscreen(Boolean(getFullscreenElement()));
-    document.addEventListener("fullscreenchange", updateFullscreenState);
-    document.addEventListener("webkitfullscreenchange", updateFullscreenState);
-    return () => {
-      document.removeEventListener("fullscreenchange", updateFullscreenState);
-      document.removeEventListener("webkitfullscreenchange", updateFullscreenState);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!displayControlsOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !getFullscreenElement()) setDisplayControlsOpen(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [displayControlsOpen]);
-
-  useEffect(() => {
-    setNow(new Date());
-    if (!isPageVisible) return;
-    const timer = window.setInterval(() => setNow(new Date()), 1_000);
-    return () => window.clearInterval(timer);
-  }, [isPageVisible]);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -1659,8 +1549,8 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     retry: false,
   });
   const confirmationsQuery = useQuery({
-    queryKey: ["production", "injection-downtime-confirmations", businessDate],
-    queryFn: () => getInjectionDowntimeConfirmations(businessDate),
+    queryKey: ["production", "injection-downtime-confirmations", businessDate, machineNumber],
+    queryFn: () => getFieldInjectionDowntimeConfirmations(businessDate, machineNumber),
     enabled: transitionQueriesEnabled,
     staleTime: 15_000,
     refetchInterval: isPageVisible ? 30_000 : false,
@@ -1677,7 +1567,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     refetchInterval: isPageVisible ? 5 * 60_000 : false,
     retry: 1,
   });
-  const confirmationMutation = useMutation({ mutationFn: saveInjectionDowntimeConfirmation });
+  const confirmationMutation = useMutation({ mutationFn: saveFieldInjectionDowntimeConfirmation });
 
   const transitionAnalysis = useMemo(() => buildInjectionTransitionAnalysis(
     planQuery.data,
@@ -1739,14 +1629,13 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     setQualityIndex(0);
     setManualPause(false);
     setPage(1);
-    setZoom(DEFAULT_DOCUMENT_ZOOM);
   }, [planIdentity]);
 
   const modalOpen = Boolean(transitionReview || defectRequest || allMaterialsOpen);
-  useEffect(() => {
-    if (modalOpen) setDisplayControlsOpen(false);
-  }, [modalOpen]);
   const qualityIssueCount = snapshot?.quality.issues.length ?? 0;
+  const activeQualityIssue = snapshot?.quality.issues[qualityIndex];
+  const activeQualityPhotoCount = getQualityIssueImages(activeQualityIssue).length;
+  const qualityIssueDisplayMs = Math.max(1, activeQualityPhotoCount) * QUALITY_PHOTO_DISPLAY_MS;
   const rotationPaused = !isPageVisible || manualPause || modalOpen || canvasMode === "drawing" || !snapshot?.active_plan;
   useEffect(() => {
     if (canvasMode === "quality" && qualityIssueCount > 0 && qualityIndex >= qualityIssueCount) {
@@ -1756,7 +1645,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
 
   useEffect(() => {
     if (rotationPaused) return;
-    const delay = canvasMode === "quality" ? 30_000 : 60_000;
+    const delay = canvasMode === "quality" ? qualityIssueDisplayMs : WORK_INSTRUCTION_DISPLAY_MS;
     const timer = window.setTimeout(() => {
       if (canvasMode === "work_instruction") {
         if (qualityIssueCount > 0) {
@@ -1775,7 +1664,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       }
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [canvasMode, qualityIndex, qualityIssueCount, rotationPaused]);
+  }, [canvasMode, qualityIndex, qualityIssueCount, qualityIssueDisplayMs, rotationPaused]);
 
   const displayedDocument = canvasMode === "drawing"
     ? snapshot?.documents.drawing ?? null
@@ -1784,7 +1673,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     displayedDocument?.preview_url && canvasMode === "work_instruction" && !manualPause,
   );
   const pageCount = displayedDocument?.page_count;
-  const freshnessSeconds = getFreshnessSeconds(snapshot?.machine.latest_mes_time, now);
+  const freshnessSeconds = getFreshnessSeconds(snapshot?.machine.latest_mes_time, new Date());
   const progress = Math.max(0, Math.min(100, snapshot?.active_plan?.progress_rate ?? 0));
   // Keep the active plan centered in the production-day sequence: at most
   // two completed/earlier plans, the active plan, and two following plans.
@@ -1794,72 +1683,13 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const queue = getFieldQueueWindow(queueSource, snapshot?.active_plan ?? null);
   const documentsReady = Boolean(snapshot?.documents.work_instruction?.ready && snapshot?.documents.drawing?.ready);
 
-  function chooseCanvasMode(mode: CanvasMode) {
-    setCanvasMode(mode);
+  function chooseCanvasMode(nextMode: CanvasMode) {
+    setPage(1);
+    setCanvasMode(nextMode);
     setQualityIndex(0);
-    // Opening quality content is still part of the automatic carousel. The
-    // document canvases remain paused when an operator explicitly selects one.
-    setManualPause(mode !== "quality");
-    setPage(1);
-    setZoom(mode === "work_instruction" ? DEFAULT_DOCUMENT_ZOOM : 100);
-  }
-
-  function changeDisplayScale(delta: number) {
-    const currentSteppedScale = Math.round(displayScale / DISPLAY_SCALE_STEP) * DISPLAY_SCALE_STEP;
-    const nextScale = Math.min(
-      maximumDisplayScale,
-      Math.max(minimumDisplayScale, currentSteppedScale + delta),
-    );
-    setDisplayScalePreference({ mode: "manual", scale: nextScale });
-  }
-
-  async function toggleFullscreen() {
-    const fullscreenDocument = document as WebkitFullscreenDocument;
-    const fullscreenViewport = viewportRef.current as WebkitFullscreenElement | null;
-
-    try {
-      if (getFullscreenElement()) {
-        const exitFullscreen = document.exitFullscreen?.bind(document)
-          ?? fullscreenDocument.webkitExitFullscreen?.bind(fullscreenDocument);
-        if (!exitFullscreen) {
-          setToastMessage(c.fullscreenUnavailable);
-          return;
-        }
-        await exitFullscreen();
-      } else {
-        const requestFullscreen = fullscreenViewport?.requestFullscreen?.bind(fullscreenViewport)
-          ?? fullscreenViewport?.webkitRequestFullscreen?.bind(fullscreenViewport);
-        if (!requestFullscreen) {
-          setToastMessage(c.fullscreenUnavailable);
-          return;
-        }
-        await requestFullscreen();
-      }
-      setDisplayControlsOpen(false);
-    } catch {
-      setToastMessage(c.fullscreenFailed);
-    }
-  }
-
-  function stepCanvas(direction: -1 | 1) {
-    const carouselLength = qualityIssueCount + 1;
-    const currentIndex = canvasMode === "quality" ? qualityIndex + 1 : 0;
-    const nextIndex = (currentIndex + direction + carouselLength) % carouselLength;
-
-    // Manual previous/next navigation restarts the countdown from the selected
-    // item instead of leaving the now-hidden pause state enabled forever.
-    setManualPause(false);
-    setPage(1);
-    if (nextIndex === 0) {
-      setCanvasMode("work_instruction");
-      setQualityIndex(0);
-      setZoom(DEFAULT_DOCUMENT_ZOOM);
-      return;
-    }
-
-    setCanvasMode("quality");
-    setQualityIndex(nextIndex - 1);
-    setZoom(100);
+    // Drawing is intentionally manual-only. Returning to either automatic
+    // tab starts a fresh cycle from the operator's selected view.
+    setManualPause(nextMode === "drawing");
   }
 
   function openManualDefect() {
@@ -2023,14 +1853,12 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
           : null;
 
   return (
-    <div className="field-kanban" data-language={language} ref={viewportRef}>
-      <div
-        className="field-kanban-stage"
-        style={{
-          "--field-display-scale": displayScaleRatio,
-          "--field-layout-size": `${100 / displayScaleRatio}%`,
-        } as CSSProperties}
-      >
+    <div
+      className="field-kanban"
+      data-language={language}
+      data-read-only={canEnterDefects ? "false" : "true"}
+    >
+      <div className="field-kanban-stage">
         <header className="field-kanban-header">
         <button aria-label={c.stationSelect} className="field-kanban-brand" onClick={onBack} type="button">
           <img alt="WJ" src="/logo-transparent.png" />
@@ -2045,24 +1873,10 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
           <strong>{snapshot.machine.is_stale ? c.offline : c.online}</strong>
           <span>· {freshnessSeconds === null ? c.noSignal : `${freshnessSeconds} ${c.secondsAgo}`}</span>
         </div>
-        <div className="field-kanban-clock">
-          <Clock3 aria-hidden="true" />
-          <div><strong>{formatShanghaiTime(now, language)}</strong><span>{formatShanghaiDate(now, language)}</span></div>
-        </div>
+        <FieldClock language={language} />
         <div className="field-kanban-header-actions">
-          <button aria-label={c.stationSelect} onClick={onBack} type="button"><ArrowLeft /></button>
-          <button aria-label={c.logout} onClick={logout} type="button"><LogOut /></button>
-          <button
-            aria-expanded={displayControlsOpen}
-            aria-haspopup="dialog"
-            aria-label={`${c.displayScale} ${displayScale}%`}
-            className={`field-display-controls-trigger${displayControlsOpen ? " is-open" : ""}`}
-            onClick={() => setDisplayControlsOpen((open) => !open)}
-            type="button"
-          >
-            <MonitorCog aria-hidden="true" />
-            <span>{displayScale}%</span>
-          </button>
+          {user ? <button aria-label={c.stationSelect} onClick={onBack} type="button"><ArrowLeft /></button> : null}
+          {user ? <button aria-label={c.logout} onClick={logout} type="button"><LogOut /></button> : null}
           <div className="field-language-toggle" role="group" aria-label={language === "zh" ? "语言" : "언어"}>
             <button aria-pressed={language === "zh"} className={language === "zh" ? "is-active" : ""} onClick={() => setLanguage("zh")} type="button">中文</button>
             <button aria-pressed={language === "ko"} className={language === "ko" ? "is-active" : ""} onClick={() => setLanguage("ko")} type="button">KOR</button>
@@ -2115,57 +1929,62 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
               ))}
             </div>
           </section>
-          <section className="field-command-actions">
-            <button className="is-change" disabled={!canEnterDefects} onClick={openPendingTransition} type="button"><ClipboardCheck />{c.confirmChange}</button>
-            <button className="is-defect" disabled={!canEnterDefects} onClick={openManualDefect} type="button"><AlertTriangle />{c.inputDefect}</button>
-          </section>
+          {canEnterDefects ? (
+            <section className="field-command-actions">
+              <button className="is-change" onClick={openPendingTransition} type="button"><ClipboardCheck />{c.confirmChange}</button>
+              <button className="is-defect" onClick={openManualDefect} type="button"><AlertTriangle />{c.inputDefect}</button>
+            </section>
+          ) : null}
         </aside>
 
-        <section className={`field-content-panel${canvasMode === "quality" ? " is-quality" : ""}${alertText ? " has-alert" : ""}`}>
-          {alertText ? (
-            <div className={`field-alert-band field-alert-band--${alertTone}`}>
+        <section
+          aria-label={currentCanvasLabel}
+          className={`field-content-panel${canvasMode === "quality" ? " is-quality" : ""}${alertText ? " has-alert" : ""}`}
+        >
+          <div
+            aria-hidden={alertText ? undefined : true}
+            className={`field-alert-band field-alert-band--${alertTone}${alertText ? "" : " is-idle"}`}
+            role={alertText ? "status" : undefined}
+          >
+            {alertText ? (
+              <>
               <AlertTriangle aria-hidden="true" />
               <strong>{alertText}</strong>
               {pendingPrompt?.due_at ? <span>{c.due} {formatShortDateTime(pendingPrompt.due_at, language)} {pendingPrompt.is_overdue ? `· ${c.overdue}` : ""}</span> : null}
               {!transitionDataReady && alertText !== c.confirmationDataPending ? <span>{c.confirmationDataPending}</span> : null}
-            </div>
-          ) : null}
-          <div className={`field-document-toolbar${canvasMode === "quality" ? " is-quality" : ""}`}>
-            <div className="field-document-tabs" role="tablist">
-              <button aria-selected={canvasMode === "work_instruction"} className={canvasMode === "work_instruction" ? "is-active" : ""} onClick={() => chooseCanvasMode("work_instruction")} role="tab" type="button">{c.workInstruction}</button>
-              <button aria-selected={canvasMode === "drawing"} className={canvasMode === "drawing" ? "is-active" : ""} onClick={() => chooseCanvasMode("drawing")} role="tab" type="button">{c.drawing}</button>
-              <button aria-selected={canvasMode === "quality"} className={canvasMode === "quality" ? "is-active is-quality" : "is-quality"} onClick={() => chooseCanvasMode("quality")} role="tab" type="button">{c.qualityHistory}</button>
-            </div>
-            <div aria-label={`${c.previousContent} / ${c.nextContent}`} className="field-cycle-nav" role="group">
-              <button aria-label={c.previousContent} disabled={qualityIssueCount === 0} onClick={() => stepCanvas(-1)} type="button"><ChevronLeft /></button>
-              <button aria-label={c.nextContent} disabled={qualityIssueCount === 0} onClick={() => stepCanvas(1)} type="button"><ChevronRight /></button>
-            </div>
-            {canvasMode !== "quality" ? (
-              <div className="field-document-controls" role="group">
-                <button aria-label="zoom out" onClick={() => { setManualPause(true); setZoom((value) => Math.max(50, value - 10)); }} type="button"><Minus /></button>
-                <strong>{zoom}%</strong>
-                <button aria-label="zoom in" onClick={() => { setManualPause(true); setZoom((value) => Math.min(180, value + 10)); }} type="button"><Plus /></button>
-                <button aria-label={c.previousPage} disabled={page <= 1} onClick={() => { setManualPause(true); setPage((value) => Math.max(1, value - 1)); }} type="button"><ChevronLeft /></button>
-                <span>{page}{pageCount ? ` / ${pageCount}` : ""}</span>
-                <button aria-label={c.nextPage} disabled={Boolean(pageCount && page >= pageCount)} onClick={() => { setManualPause(true); setPage((value) => value + 1); }} type="button"><ChevronRight /></button>
-                {displayedDocument?.source_url ? (
-                  <a
-                    aria-label={c.openSource}
-                    href={getCloudinaryPdfPageImageUrl(displayedDocument, page) || getReachableDocumentUrl(displayedDocument.source_url) || undefined}
-                    rel="noreferrer"
-                    target="_blank"
-                  ><Maximize2 /></a>
-                ) : null}
-              </div>
+              </>
             ) : null}
           </div>
+          <div className="field-document-toolbar">
+            <div className="field-document-tabs" role="tablist" aria-label={c.allMaterials}>
+              <button
+                aria-selected={canvasMode === "work_instruction"}
+                className={`is-work${canvasMode === "work_instruction" ? " is-active" : ""}`}
+                disabled={!snapshot.active_plan}
+                onClick={() => chooseCanvasMode("work_instruction")}
+                role="tab"
+                type="button"
+              >{c.workInstruction}</button>
+              <button
+                aria-selected={canvasMode === "quality"}
+                className={`is-quality${canvasMode === "quality" ? " is-active" : ""}`}
+                disabled={!snapshot.active_plan}
+                onClick={() => chooseCanvasMode("quality")}
+                role="tab"
+                type="button"
+              >{c.qualityHistory}</button>
+              <button
+                aria-selected={canvasMode === "drawing"}
+                className={`is-drawing${canvasMode === "drawing" ? " is-active" : ""}`}
+                disabled={!snapshot.active_plan}
+                onClick={() => chooseCanvasMode("drawing")}
+                role="tab"
+                type="button"
+              >{c.drawing}</button>
+            </div>
+          </div>
 
-          <div
-            className="field-document-canvas"
-            onPointerDown={() => {
-              if (canvasMode !== "quality") setManualPause(true);
-            }}
-          >
+          <div className="field-document-canvas">
             {!snapshot.active_plan ? (
               <div className="field-document-empty"><Factory /><h2>{c.noPlan}</h2><p>{c.noPlanHint}</p></div>
             ) : canvasMode === "quality" ? (
@@ -2185,61 +2004,31 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
                 language={language}
                 onInteract={() => setManualPause(true)}
                 page={page}
-                zoom={zoom}
               />
             ) : (
               <DocumentEmptyState document={displayedDocument} language={language} />
             )}
           </div>
 
-          <footer className="field-material-footer">
+          <footer className={`field-material-footer${canvasMode !== "quality" && displayedDocument?.preview_url ? " has-page-nav" : ""}`}>
             <div className={documentsReady ? "is-ready" : "is-missing"}>
               <FileText aria-hidden="true" />
               <strong>{documentsReady ? c.materialReady : c.materialMissing}:</strong>
               <span>{c.workInstruction} {snapshot.documents.work_instruction?.ready ? <CheckCircle2 /> : <AlertTriangle />}</span>
               <span>{c.drawing} {snapshot.documents.drawing?.ready ? <CheckCircle2 /> : <AlertTriangle />}</span>
             </div>
+            {canvasMode !== "quality" && displayedDocument?.preview_url ? (
+              <nav aria-label={`${c.previousPage} / ${c.nextPage}`} className="field-document-page-nav">
+                <button aria-label={c.previousPage} disabled={page <= 1} onClick={() => { setManualPause(true); setPage((value) => Math.max(1, value - 1)); }} type="button"><ChevronLeft /></button>
+                <span>{page}{pageCount ? ` / ${pageCount}` : ""}</span>
+                <button aria-label={c.nextPage} disabled={!pageCount || page >= pageCount} onClick={() => { setManualPause(true); setPage((value) => value + 1); }} type="button"><ChevronRight /></button>
+              </nav>
+            ) : null}
             <button onClick={() => setAllMaterialsOpen(true)} type="button"><FolderOpen />{c.viewAll}<ChevronRight /></button>
           </footer>
         </section>
         </main>
       </div>
-
-      {displayControlsOpen ? (
-        <div aria-label={c.displayScale} className="field-display-controls-popover" role="dialog">
-          <header>
-            <MonitorCog aria-hidden="true" />
-            <div><strong>{c.displayScale}</strong><small>{c.displayScaleHint}</small></div>
-            <button aria-label={c.close} onClick={() => setDisplayControlsOpen(false)} type="button"><X /></button>
-          </header>
-          <div className="field-display-controls-scale" role="group" aria-label={c.displayScale}>
-            <button
-              aria-label={c.displayScaleDecrease}
-              disabled={displayScale <= minimumDisplayScale}
-              onClick={() => changeDisplayScale(-DISPLAY_SCALE_STEP)}
-              type="button"
-            ><Minus /></button>
-            <button
-              aria-label={c.displayScaleReset}
-              className={displayScalePreference.mode === "fit" ? "is-value is-fit" : "is-value"}
-              onClick={() => setDisplayScalePreference({ mode: "fit" })}
-              type="button"
-            >
-              <strong>{displayScale}%</strong><small>{c.screenFit}</small>
-            </button>
-            <button
-              aria-label={c.displayScaleIncrease}
-              disabled={displayScale >= maximumDisplayScale}
-              onClick={() => changeDisplayScale(DISPLAY_SCALE_STEP)}
-              type="button"
-            ><Plus /></button>
-          </div>
-          <button className="field-display-controls-fullscreen" onClick={() => void toggleFullscreen()} type="button">
-            {isFullscreen ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
-            <span>{isFullscreen ? c.exitFullscreen : c.enterFullscreen}</span>
-          </button>
-        </div>
-      ) : null}
 
       {toastMessage ? <div className="field-kanban-toast" role="status">{toastMessage}</div> : null}
       {transitionReview ? (

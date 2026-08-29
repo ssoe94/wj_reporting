@@ -772,6 +772,27 @@ class FieldDefectCheckpointTests(TestCase):
         )
         self.assertEqual(len(stored.payload["checkpoints"]), 1)
 
+    def test_anonymous_checkpoint_records_field_terminal_actor(self):
+        with patch(
+            "production.field_kanban._defect_checkpoint_context",
+            return_value=self._kanban_payload(
+                allocated_shots=10,
+                business_day_shots=10,
+            ),
+        ):
+            checkpoint, created = save_defect_checkpoint(
+                target_date=self.target_date,
+                machine_number=1,
+                event_key="defect:part-change:2026-08-24:1:101:gap",
+                trigger="part_change",
+                part_no="PART-A",
+                items=[],
+                user=None,
+            )
+
+        self.assertTrue(created)
+        self.assertEqual(checkpoint["completed_by"], "field-terminal")
+
     def test_checkpoint_context_queries_only_requested_machine(self):
         for machine_number in range(1, 18):
             ProductionPlan.objects.create(
@@ -1083,14 +1104,73 @@ class FieldKanbanPermissionTests(TestCase):
         client.force_authenticate(user)
         return client
 
-    def test_field_terminal_cannot_read_another_machine(self):
-        response = self._client_for(self.terminal).get(
-            "/api/production/field-kanban/",
-            {"date": "2026-08-24", "machine_number": 6},
+    def test_snapshot_is_public_includes_quality_and_ignores_stale_token(self):
+        with patch(
+            "production.field_kanban_views.build_field_kanban_snapshot",
+            return_value={
+                "quality": {
+                    "issues": [
+                        {"image_urls": ["https://cdn.example.test/quality.jpg"]}
+                    ]
+                },
+                "latest_confirmation": {
+                    "event_key": "2026-08-24:6:100:gap",
+                    "confirmed_by": "private-operator",
+                },
+            },
+        ) as build_snapshot:
+            response = APIClient().get(
+                "/api/production/field-kanban/",
+                {
+                    "date": "2026-08-24",
+                    "machine_number": 6,
+                    "include_quality": "true",
+                },
+                HTTP_AUTHORIZATION="Bearer stale-or-invalid-token",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(build_snapshot.call_args.kwargs["include_quality"])
+        self.assertEqual(
+            response.json()["quality"]["issues"][0]["image_urls"],
+            ["https://cdn.example.test/quality.jpg"],
+        )
+        self.assertNotIn("confirmed_by", response.json()["latest_confirmation"])
+
+    def test_field_defect_checkpoint_is_public_but_material_admin_is_not(self):
+        checkpoint = {
+            "event_key": "manual:2026-08-24:5:100",
+            "good_piece_qty": 18,
+        }
+        with patch(
+            "production.field_kanban_views.save_defect_checkpoint",
+            return_value=(checkpoint, True),
+        ) as save_checkpoint:
+            defect_response = APIClient().post(
+                "/api/production/field-kanban/defects/",
+                {
+                    "business_date": "2026-08-24",
+                    "machine_number": 5,
+                    "event_key": checkpoint["event_key"],
+                    "trigger": "manual",
+                    "items": [],
+                },
+                format="json",
+                HTTP_AUTHORIZATION="Bearer stale-or-invalid-token",
+            )
+        material_response = APIClient().post(
+            "/api/production/field-materials/",
+            {
+                "kind": "work_instruction",
+                "model_name": "MODEL-A",
+                "file": SimpleUploadedFile("work.pdf", b"%PDF-1.4\n"),
+            },
+            format="multipart",
         )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["code"], "field_terminal_machine_mismatch")
+        self.assertEqual(defect_response.status_code, 201)
+        self.assertIsNone(save_checkpoint.call_args.kwargs["user"])
+        self.assertIn(material_response.status_code, {401, 403})
 
     def test_snapshot_can_defer_quality_and_editor_can_save_defect(self):
         self.terminal.profile.can_edit_injection = True
@@ -1269,7 +1349,7 @@ class FieldKanbanPermissionTests(TestCase):
         )
         self.assertEqual(denied.status_code, 403)
 
-    def test_profile_missing_field_writes_fail_closed(self):
+    def test_profile_missing_material_admin_fails_closed(self):
         user = get_user_model().objects.create_user(username="profile-missing")
         user.profile.delete()
         user = get_user_model().objects.get(pk=user.pk)
@@ -1278,17 +1358,6 @@ class FieldKanbanPermissionTests(TestCase):
         material_read_response = client.get(
             "/api/production/field-materials/",
             {"date": "2026-08-24"},
-        )
-        defect_response = client.post(
-            "/api/production/field-kanban/defects/",
-            {
-                "business_date": "2026-08-24",
-                "machine_number": 1,
-                "event_key": "manual:2026-08-24:1:profile-missing",
-                "trigger": "manual",
-                "items": [],
-            },
-            format="json",
         )
         material_response = client.post(
             "/api/production/field-materials/",
@@ -1301,7 +1370,6 @@ class FieldKanbanPermissionTests(TestCase):
         )
 
         self.assertEqual(material_read_response.status_code, 403)
-        self.assertEqual(defect_response.status_code, 403)
         self.assertEqual(material_response.status_code, 403)
 
 
@@ -1381,6 +1449,51 @@ class FieldDowntimeConfirmationScopeTests(TestCase):
         )
         self.assertEqual(own_reset.status_code, 200)
         self.assertTrue(own_reset.json()["deleted"])
+
+    def test_public_field_confirmation_is_machine_filtered_and_writable(self):
+        public_client = APIClient()
+        read_response = public_client.get(
+            "/api/production/field-kanban/confirmations/",
+            {
+                "date": self.target_date.isoformat(),
+                "machine_number": 5,
+            },
+            HTTP_AUTHORIZATION="Bearer stale-or-invalid-token",
+        )
+        start = SHANGHAI_TZ.localize(datetime(2026, 8, 24, 12, 0))
+        create_response = public_client.post(
+            "/api/production/field-kanban/confirmations/",
+            {
+                "business_date": self.target_date.isoformat(),
+                "event_key": "2026-08-24:5:300:gap",
+                "machine_key": "5",
+                "machine_label": "MACHINE-5",
+                "detected_type": "mold_change",
+                "detected_start": start.isoformat(),
+                "detected_end": (start + timedelta(minutes=15)).isoformat(),
+                "resolution": "confirmed",
+                "reason_code": "mold_change",
+                "evidence": {},
+            },
+            format="json",
+            HTTP_AUTHORIZATION="Bearer stale-or-invalid-token",
+        )
+
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(
+            [row["event_key"] for row in read_response.json()["confirmations"]],
+            [self.own.event_key],
+        )
+        self.assertIsNone(
+            read_response.json()["confirmations"][0]["confirmed_by_name"]
+        )
+        self.assertEqual(create_response.status_code, 201)
+        self.assertIsNone(create_response.json()["confirmed_by_name"])
+        self.assertIsNone(
+            InjectionDowntimeConfirmation.objects.get(
+                event_key="2026-08-24:5:300:gap"
+            ).confirmed_by
+        )
 
 
 class FieldMaterialUploadTests(TestCase):

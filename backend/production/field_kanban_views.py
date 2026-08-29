@@ -5,6 +5,7 @@ import re
 
 import cloudinary.utils
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -12,7 +13,10 @@ from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from injection.permissions import DevelopmentPermission, InjectionPermission, QualityPermission
+from injection.permissions import DevelopmentPermission, InjectionPermission
+
+from .models import InjectionDowntimeConfirmation
+from .serializers import InjectionDowntimeConfirmationSerializer
 
 from .field_kanban import (
     FieldKanbanError,
@@ -100,36 +104,55 @@ def _query_bool(value, *, default: bool = True) -> bool:
 
 
 class FieldKanbanView(APIView):
-    permission_classes = [IsAuthenticated, InjectionPermission]
+    # The machine kanban is mounted on unattended shop-floor displays.  Keep
+    # this read-only snapshot public. Field-only mutations use separate,
+    # narrowly validated endpoints; document administration remains protected.
+    # Disabling authentication here also prevents a stale bearer token stored
+    # by an old terminal session from turning an otherwise public request into
+    # a 401.
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
         try:
             target_date = _target_date(request.query_params.get("date"))
             machine_number = _machine_number(request.query_params.get("machine_number"))
-            _enforce_terminal_machine_scope(request, machine_number)
-            include_quality = (
-                _query_bool(request.query_params.get("include_quality"))
-                and QualityPermission().has_permission(request, self)
+            snapshot = build_field_kanban_snapshot(
+                target_date,
+                machine_number,
+                include_quality=_query_bool(
+                    request.query_params.get("include_quality")
+                ),
             )
-            return Response(
-                build_field_kanban_snapshot(
-                    target_date,
-                    machine_number,
-                    include_quality=include_quality,
-                )
-            )
+
+            # Operator usernames are not needed by the display and should not
+            # be exposed through its public endpoint.  Copy the nested mapping
+            # so a cached snapshot is never mutated in place.
+            latest_confirmation = snapshot.get("latest_confirmation")
+            if isinstance(latest_confirmation, dict):
+                snapshot = dict(snapshot)
+                snapshot["latest_confirmation"] = {
+                    key: value
+                    for key, value in latest_confirmation.items()
+                    if key != "confirmed_by"
+                }
+
+            return Response(snapshot)
         except FieldKanbanError as exc:
             return _error_response(exc)
 
 
 class FieldDefectCheckpointView(APIView):
-    permission_classes = [IsAuthenticated, InjectionPermission, FieldWriteProfileRequired]
+    # This endpoint is intentionally limited to the validated field-checkpoint
+    # payload. It is public for unattended terminals; broader production edits
+    # and document administration remain authenticated below.
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         try:
             target_date = _target_date(request.data.get("business_date"))
             machine_number = _machine_number(request.data.get("machine_number"))
-            _enforce_terminal_machine_scope(request, machine_number)
             checkpoint, created = save_defect_checkpoint(
                 target_date=target_date,
                 machine_number=machine_number,
@@ -139,7 +162,7 @@ class FieldDefectCheckpointView(APIView):
                 plan_id=request.data.get("plan_id"),
                 part_no=request.data.get("part_no", ""),
                 sequence=request.data.get("sequence"),
-                user=request.user,
+                user=None,
             )
             return Response(
                 {"checkpoint": checkpoint, "created": created},
@@ -147,6 +170,100 @@ class FieldDefectCheckpointView(APIView):
             )
         except FieldKanbanError as exc:
             return _error_response(exc)
+
+
+def _field_machine_keys(machine_number: int) -> list[str]:
+    return [
+        str(machine_number),
+        f"{machine_number:02d}",
+        f"{machine_number}호기",
+        f"{machine_number}号机",
+    ]
+
+
+class FieldDowntimeConfirmationView(APIView):
+    """Read and save one machine's model-change decisions from a field panel."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    parser_classes = [JSONParser]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            target_date = _target_date(request.query_params.get("date"))
+            machine_number = _machine_number(
+                request.query_params.get("machine_number")
+            )
+        except FieldKanbanError as exc:
+            return _error_response(exc)
+
+        confirmations = InjectionDowntimeConfirmation.objects.filter(
+            business_date=target_date,
+            machine_key__in=_field_machine_keys(machine_number),
+        ).select_related("confirmed_by")
+        serialized = InjectionDowntimeConfirmationSerializer(
+            confirmations,
+            many=True,
+        ).data
+        for row in serialized:
+            row["confirmed_by_name"] = None
+        latest_updated_at = confirmations.order_by("-updated_at").values_list(
+            "updated_at",
+            flat=True,
+        ).first()
+        return Response(
+            {
+                "business_date": target_date.isoformat(),
+                "latest_updated_at": (
+                    latest_updated_at.isoformat() if latest_updated_at else None
+                ),
+                "confirmations": serialized,
+            }
+        )
+
+    def post(self, request, *args, **kwargs):
+        payload = request.data.copy()
+        if payload.pop("action", "confirm") != "confirm":
+            return Response(
+                {"detail": "Unsupported action."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            machine_number = _machine_number(payload.get("machine_key"))
+        except FieldKanbanError as exc:
+            return _error_response(exc)
+
+        event_key = str(payload.get("event_key") or "").strip()
+        if not event_key:
+            return Response(
+                {"detail": "event_key is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        existing = InjectionDowntimeConfirmation.objects.filter(
+            event_key=event_key,
+        ).first()
+        if existing and existing.machine_key not in _field_machine_keys(machine_number):
+            return Response(
+                {"detail": "The event belongs to another machine."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        serializer = InjectionDowntimeConfirmationSerializer(existing, data=payload)
+        serializer.is_valid(raise_exception=True)
+        confirmation = serializer.save(
+            confirmed_by=None,
+            confirmed_at=timezone.now(),
+        )
+        response_data = InjectionDowntimeConfirmationSerializer(confirmation).data
+        response_data["confirmed_by_name"] = None
+        return Response(
+            response_data,
+            status=(
+                status.HTTP_200_OK if existing else status.HTTP_201_CREATED
+            ),
+        )
 
 
 class FieldMaterialsView(APIView):

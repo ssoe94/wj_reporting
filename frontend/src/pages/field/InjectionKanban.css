@@ -18,7 +18,7 @@
   overscroll-behavior: none;
   color: var(--field-ink);
   background: #f6f8fb;
-  font-family: "Noto Sans SC", "Microsoft YaHei", "Noto Sans KR", "Apple SD Gothic Neo", Arial, sans-serif;
+  font-family: "Microsoft YaHei", "PingFang SC", "Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif;
   font-variant-numeric: tabular-nums;
 }
 
@@ -30,16 +30,13 @@
 }
 
 .field-kanban-stage {
-  --field-display-scale: 1;
   display: grid;
   grid-template-rows: 92px minmax(0, 1fr);
-  width: var(--field-layout-size, 100%);
-  height: var(--field-layout-size, 100%);
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  transform: scale(var(--field-display-scale));
-  transform-origin: top left;
 }
 
 .field-kanban button,
@@ -94,6 +91,7 @@
 }
 
 .field-kanban-brand strong {
+  font-size: 21px;
   font-size: clamp(21px, 1.5vw, 30px);
   font-weight: 950;
   letter-spacing: -.04em;
@@ -101,6 +99,7 @@
 
 .field-kanban-brand small {
   color: #1d2b45;
+  font-size: 14px;
   font-size: clamp(14px, 1vw, 20px);
   font-weight: 750;
 }
@@ -124,6 +123,7 @@
 
 .field-kanban-machine strong {
   overflow: hidden;
+  font-size: 27px;
   font-size: clamp(27px, 2vw, 38px);
   font-weight: 950;
   white-space: nowrap;
@@ -132,6 +132,7 @@
 
 .field-kanban-live {
   color: #079523;
+  font-size: 17px;
   font-size: clamp(17px, 1.35vw, 25px);
   white-space: nowrap;
 }
@@ -165,6 +166,7 @@
 }
 
 .field-kanban-clock strong {
+  font-size: 29px;
   font-size: clamp(29px, 2vw, 39px);
   font-weight: 950;
 }
@@ -172,6 +174,7 @@
 .field-kanban-clock span {
   margin-top: 5px;
   color: #172b4a;
+  font-size: 13px;
   font-size: clamp(13px, 1vw, 18px);
   font-weight: 750;
 }
@@ -200,25 +203,6 @@
 .field-kanban-header-actions > button svg {
   width: 25px;
   height: 25px;
-}
-
-.field-kanban-header-actions > .field-display-controls-trigger {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 5px;
-  width: 96px;
-  padding-inline: 12px;
-}
-
-.field-kanban-header-actions > .field-display-controls-trigger.is-open {
-  color: #fff;
-  border-color: #0754a8;
-  background: #0754a8;
-}
-
-.field-display-controls-trigger span {
-  font-size: 15px;
-  font-weight: 950;
 }
 
 .field-language-toggle {
@@ -274,6 +258,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 3px 12px;
+  font-size: 22px;
   font-size: clamp(22px, 1.55vw, 31px);
   font-weight: 900;
 }
@@ -288,6 +273,7 @@
 
 .field-shot-hero strong {
   margin-top: -3px;
+  font-size: 76px;
   font-size: clamp(76px, 7vw, 132px);
   font-weight: 950;
   line-height: .98;
@@ -317,6 +303,7 @@
 .field-part-summary span,
 .field-current-metrics span {
   color: #f2f7ff;
+  font-size: 16px;
   font-size: clamp(16px, 1.2vw, 23px);
   font-weight: 850;
 }
@@ -328,6 +315,7 @@
 .field-part-summary strong {
   overflow: hidden;
   margin-top: 8px;
+  font-size: 31px;
   font-size: clamp(31px, 2.8vw, 51px);
   font-weight: 950;
   line-height: 1;
@@ -360,6 +348,7 @@
 }
 
 .field-current-metrics span {
+  font-size: 13px;
   font-size: clamp(13px, .95vw, 18px);
   line-height: 1.25;
 }
@@ -367,6 +356,7 @@
 .field-current-metrics strong {
   margin-top: 8px;
   color: var(--field-cyan);
+  font-size: 31px;
   font-size: clamp(31px, 2.6vw, 48px);
   font-weight: 950;
   line-height: 1;
@@ -408,6 +398,7 @@
 
 .field-queue h2 {
   margin: 0 0 12px 7px;
+  font-size: 20px;
   font-size: clamp(20px, 1.4vw, 28px);
   font-weight: 950;
 }
@@ -427,6 +418,7 @@
   border: 1px solid #7ea1c8;
   border-radius: 7px;
   background: rgba(6, 44, 82, .78);
+  overflow: visible;
 }
 
 .field-queue-list article.is-current {
@@ -488,6 +480,7 @@
 }
 
 .field-queue-value small {
+  font-size: 14px;
   font-size: clamp(14px, .95vw, 18px);
   font-weight: 800;
   opacity: .9;
@@ -495,6 +488,7 @@
 
 .field-queue-copy strong {
   overflow: hidden;
+  font-size: 22px;
   font-size: clamp(22px, 1.55vw, 30px);
   font-weight: 950;
   line-height: 1.05;
@@ -523,6 +517,7 @@
   color: #dcecff;
   border: 1px solid rgba(255, 255, 255, .4);
   border-radius: 4px;
+  font-size: 11px;
   font-size: clamp(11px, .72vw, 14px);
   font-weight: 850;
   line-height: 1;
@@ -537,6 +532,7 @@
 
 .field-queue-value strong {
   overflow: hidden;
+  font-size: 21px;
   font-size: clamp(21px, 1.45vw, 28px);
   font-weight: 950;
   line-height: 1.05;
@@ -596,12 +592,14 @@
 }
 
 .field-queue.is-expanded .field-queue-value small {
+  font-size: 13px;
   font-size: clamp(13px, .82vw, 16px);
   line-height: 1.05;
 }
 
 .field-queue.is-expanded .field-queue-copy strong,
 .field-queue.is-expanded .field-queue-value strong {
+  font-size: 19px;
   font-size: clamp(19px, 1.25vw, 24px);
   line-height: 1.05;
 }
@@ -625,6 +623,7 @@
   gap: 13px;
   min-height: 86px;
   border-radius: 8px;
+  font-size: 21px;
   font-size: clamp(21px, 1.7vw, 33px);
   font-weight: 950;
   cursor: pointer;
@@ -678,6 +677,7 @@
   padding: 7px 20px;
   border-bottom: 1px solid #e1a120;
   background: #ffd05f;
+  font-size: 18px;
   font-size: clamp(18px, 1.3vw, 26px);
   font-weight: 900;
   text-align: center;
@@ -734,6 +734,7 @@
   border-bottom: 0;
   border-radius: 9px 9px 0 0;
   background: #f4f6f8;
+  font-size: 21px;
   font-size: clamp(21px, 1.55vw, 31px);
   font-weight: 900;
   line-height: 1.15;
@@ -742,106 +743,42 @@
   cursor: pointer;
 }
 
+.field-document-tabs button.is-work {
+  color: #24538b;
+  border-color: #b8cce7;
+  background: #eef5ff;
+}
+
+.field-document-tabs button.is-quality {
+  color: #17665c;
+  border-color: #abd8cf;
+  background: #edf9f6;
+}
+
+.field-document-tabs button.is-drawing {
+  color: #514a9d;
+  border-color: #c7c4e8;
+  background: #f2f1ff;
+}
+
 .field-document-tabs button.is-active {
   color: #fff;
-  border-color: #0754a8;
-  background: #0754a8;
+  box-shadow: inset 0 3px 0 rgba(255, 255, 255, .18);
+}
+
+.field-document-tabs button.is-work.is-active {
+  border-color: #2563a9;
+  background: #2563a9;
 }
 
 .field-document-tabs button.is-quality.is-active {
-  border-color: #b54708;
-  background: #c55a0a;
+  border-color: #0f766e;
+  background: #0f766e;
 }
 
-.field-cycle-nav {
-  display: flex;
-  align-items: center;
-  align-self: center;
-  justify-self: end;
-}
-
-.field-cycle-nav button {
-  display: grid;
-  width: 60px;
-  height: 60px;
-  place-items: center;
-  padding: 0;
-  color: #0b315b;
-  border: 1px solid #9fb2c7;
-  background: #fff;
-  cursor: pointer;
-}
-
-.field-cycle-nav button:first-child {
-  border-radius: 8px 0 0 8px;
-}
-
-.field-cycle-nav button:last-child {
-  margin-left: -1px;
-  border-radius: 0 8px 8px 0;
-}
-
-.field-cycle-nav button:disabled {
-  color: #9ca9b8;
-  background: #f3f5f7;
-  cursor: not-allowed;
-}
-
-.field-cycle-nav button svg {
-  width: 32px;
-  height: 32px;
-  stroke-width: 2.8;
-}
-
-.field-document-controls {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 16px 0;
-}
-
-.field-document-controls button,
-.field-document-controls a {
-  display: grid;
-  place-items: center;
-  min-width: 49px;
-  height: 56px;
-  color: #081427;
-  border: 1px solid #b7c2d0;
-  background: #fff;
-  cursor: pointer;
-}
-
-.field-document-controls button:disabled {
-  color: #9ca9b8;
-  background: #f3f5f7;
-  cursor: not-allowed;
-}
-
-.field-document-controls button:first-child {
-  border-radius: 7px 0 0 7px;
-}
-
-.field-document-controls a:last-child {
-  margin-left: 7px;
-  border-radius: 7px;
-}
-
-.field-document-controls svg {
-  width: 21px;
-  height: 21px;
-}
-
-.field-document-controls strong,
-.field-document-controls span {
-  display: grid;
-  place-items: center;
-  min-width: 57px;
-  height: 56px;
-  border-block: 1px solid #b7c2d0;
-  background: #fff;
-  font-size: 14px;
-  font-weight: 900;
+.field-document-tabs button.is-drawing.is-active {
+  border-color: #514a9d;
+  background: #514a9d;
 }
 
 .field-document-canvas {
@@ -923,6 +860,7 @@
 .field-document-load-state > strong,
 .field-document-load-state h2 {
   margin: 0;
+  font-size: 25px;
   font-size: clamp(25px, 2vw, 38px);
   font-weight: 950;
 }
@@ -930,6 +868,7 @@
 .field-document-load-state p {
   max-width: 720px;
   margin: 0;
+  font-size: 16px;
   font-size: clamp(16px, 1.15vw, 22px);
   font-weight: 750;
   line-height: 1.45;
@@ -1052,6 +991,7 @@
 .field-document-empty h2 {
   margin: 18px 0 0;
   color: #172a43;
+  font-size: 27px;
   font-size: clamp(27px, 2.1vw, 40px);
   font-weight: 950;
 }
@@ -1059,6 +999,7 @@
 .field-document-empty p {
   max-width: 650px;
   margin: 12px 0 0;
+  font-size: 16px;
   font-size: clamp(16px, 1.2vw, 22px);
   font-weight: 700;
 }
@@ -1094,6 +1035,7 @@
   min-width: 0;
   align-items: center;
   gap: 18px;
+  font-size: 15px;
   font-size: clamp(15px, 1.1vw, 22px);
   white-space: nowrap;
 }
@@ -1136,6 +1078,7 @@
   border: 2px solid #0754a8;
   border-radius: 8px;
   background: #fff;
+  font-size: 18px;
   font-size: clamp(18px, 1.35vw, 27px);
   font-weight: 950;
   cursor: pointer;
@@ -1166,7 +1109,7 @@
   gap: 8px 18px;
   padding: clamp(10px, .9vw, 16px) clamp(18px, 1.4vw, 28px);
   color: #fff;
-  background: linear-gradient(135deg, #69260f 0%, #8d3412 56%, #a84610 100%);
+  background: linear-gradient(135deg, #123d4b 0%, #125b60 56%, #0f766e 100%);
 }
 
 .field-quality-canvas__title {
@@ -1201,7 +1144,8 @@
 }
 
 .field-quality-canvas__eyebrow > span {
-  color: #fed7aa;
+  color: #b8f3e8;
+  font-size: 15px;
   font-size: clamp(15px, 1vw, 20px);
   font-weight: 900;
 }
@@ -1211,9 +1155,10 @@
   align-items: center;
   gap: 5px;
   padding: 5px 9px;
-  color: #7c2d12;
+  color: #115e59;
   border-radius: 999px;
-  background: #ffedd5;
+  background: #ccfbf1;
+  font-size: 12px;
   font-size: clamp(12px, .78vw, 15px);
   font-style: normal;
   font-weight: 900;
@@ -1235,8 +1180,8 @@
 }
 
 .field-quality-canvas__eyebrow em.is-history {
-  color: #7c2d12;
-  background: #ffedd5;
+  color: #115e59;
+  background: #ccfbf1;
 }
 
 .field-quality-canvas > header h2 {
@@ -1244,6 +1189,7 @@
   max-width: 62%;
   overflow: hidden;
   margin: 0;
+  font-size: 32px;
   font-size: clamp(32px, 2.2vw, 44px);
   font-weight: 950;
   line-height: 1;
@@ -1256,6 +1202,7 @@
   max-width: 48%;
   overflow: hidden;
   margin: 0;
+  font-size: 15px;
   font-size: clamp(15px, 1.05vw, 20px);
   font-weight: 800;
   white-space: nowrap;
@@ -1267,8 +1214,9 @@
   overflow: hidden;
   margin: 0;
   padding-left: 12px;
-  color: #ffedd5;
-  border-left: 1px solid rgba(254, 215, 170, .55);
+  color: #d7fff7;
+  border-left: 1px solid rgba(184, 243, 232, .55);
+  font-size: 14px;
   font-size: clamp(14px, .92vw, 18px);
   font-weight: 750;
   white-space: nowrap;
@@ -1285,12 +1233,14 @@
 }
 
 .field-quality-canvas__issue-position strong {
+  font-size: 32px;
   font-size: clamp(32px, 2.25vw, 46px);
   font-weight: 950;
 }
 
 .field-quality-canvas__issue-position span {
-  color: #fed7aa;
+  color: #b8f3e8;
+  font-size: 18px;
   font-size: clamp(18px, 1.3vw, 25px);
   font-weight: 900;
 }
@@ -1311,17 +1261,18 @@
   gap: 7px;
   min-height: 32px;
   padding: 4px 9px;
-  color: #4c1d08;
-  border: 1px solid rgba(255, 237, 213, .65);
+  color: #134e4a;
+  border: 1px solid rgba(204, 251, 241, .72);
   border-radius: 8px;
-  background: #fff7ed;
+  background: #f0fdfa;
   white-space: nowrap;
 }
 
 .field-quality-canvas__header-meta small {
   min-width: 0;
   overflow: hidden;
-  color: #9a3412;
+  color: #0f766e;
+  font-size: 11px;
   font-size: clamp(11px, .7vw, 14px);
   font-weight: 850;
   text-overflow: ellipsis;
@@ -1329,6 +1280,7 @@
 
 .field-quality-canvas__header-meta strong {
   overflow: hidden;
+  font-size: 14px;
   font-size: clamp(14px, .9vw, 18px);
   font-weight: 950;
   text-overflow: ellipsis;
@@ -1337,13 +1289,13 @@
 .field-quality-canvas__header-meta > span.is-section {
   color: #fff;
   border-color: rgba(255, 255, 255, .35);
-  background: rgba(76, 29, 8, .55);
+  background: rgba(8, 74, 78, .65);
 }
 
 .field-quality-canvas__header-meta > span.is-section small {
   max-width: 110px;
   overflow: hidden;
-  color: #fed7aa;
+  color: #b8f3e8;
   text-overflow: ellipsis;
 }
 
@@ -1361,7 +1313,7 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border: 3px solid #d96317;
+  border: 3px solid #2a9d8f;
   border-radius: 12px;
   background: #fff;
 }
@@ -1397,12 +1349,13 @@
   gap: 18px;
   min-height: 58px;
   padding: 6px 16px;
-  color: #7c2d12;
-  border-top: 1px solid #fdba74;
-  background: #fff7ed;
+  color: #115e59;
+  border-top: 1px solid #99d9ce;
+  background: #f0fdfa;
 }
 
 .field-quality-canvas__carousel-controls > strong {
+  font-size: 16px;
   font-size: clamp(16px, 1.05vw, 21px);
   font-weight: 950;
 }
@@ -1427,12 +1380,12 @@
   width: 30px;
   height: 8px;
   border-radius: 999px;
-  background: #d6a47e;
+  background: #9ccbc3;
 }
 
 .field-quality-canvas__carousel-controls button.is-active span {
   width: 38px;
-  background: #c2410c;
+  background: #0f766e;
 }
 
 .field-quality-canvas__empty {
@@ -1441,25 +1394,27 @@
   place-items: center;
   align-content: center;
   gap: 12px;
-  color: #6b361d;
-  border: 3px solid #d96317;
+  color: #134e4a;
+  border: 3px solid #2a9d8f;
   border-radius: 12px;
-  background: #fff7ed;
+  background: #f0fdfa;
   text-align: center;
 }
 
 .field-quality-canvas__empty svg {
   width: 78px;
   height: 78px;
-  color: #c55a0a;
+  color: #0f766e;
 }
 
 .field-quality-canvas__empty strong {
+  font-size: 26px;
   font-size: clamp(26px, 2vw, 40px);
   font-weight: 950;
 }
 
 .field-quality-canvas__empty span {
+  font-size: 15px;
   font-size: clamp(15px, 1vw, 20px);
   font-weight: 750;
 }
@@ -1473,145 +1428,6 @@
 
 .field-quality-canvas__empty > svg.is-spinning {
   animation: field-spin .9s linear infinite;
-}
-
-.field-display-controls-popover {
-  position: fixed;
-  z-index: 950;
-  top: clamp(84px, 9dvh, 112px);
-  right: 14px;
-  width: min(344px, calc(100vw - 28px));
-  padding: 14px;
-  color: #10213e;
-  border: 2px solid #90a4bd;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 20px 54px rgba(0, 22, 50, .28);
-}
-
-.field-display-controls-popover > header {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #d6dee8;
-}
-
-.field-display-controls-popover > header > svg {
-  width: 29px;
-  height: 29px;
-  color: #0754a8;
-}
-
-.field-display-controls-popover > header div {
-  display: grid;
-  gap: 3px;
-}
-
-.field-display-controls-popover > header strong {
-  font-size: 19px;
-  font-weight: 950;
-}
-
-.field-display-controls-popover > header small {
-  color: #53657a;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.35;
-}
-
-.field-display-controls-popover > header button {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  color: #31455e;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #f8fafc;
-  cursor: pointer;
-}
-
-.field-display-controls-popover > header button svg {
-  width: 22px;
-  height: 22px;
-}
-
-.field-display-controls-scale {
-  display: grid;
-  grid-template-columns: 64px 1fr 64px;
-  gap: 8px;
-  margin-top: 13px;
-}
-
-.field-display-controls-scale > button {
-  display: grid;
-  place-items: center;
-  min-height: 64px;
-  padding: 0;
-  color: #083f7d;
-  border: 2px solid #9aabc0;
-  border-radius: 10px;
-  background: #f8fafc;
-  cursor: pointer;
-}
-
-.field-display-controls-scale > button:disabled {
-  color: #9aa8b8;
-  background: #eef2f6;
-  cursor: not-allowed;
-}
-
-.field-display-controls-scale > button svg {
-  width: 30px;
-  height: 30px;
-  stroke-width: 3;
-}
-
-.field-display-controls-scale > .is-value {
-  gap: 1px;
-  color: #fff;
-  border-color: #0754a8;
-  background: #0754a8;
-}
-
-.field-display-controls-scale > .is-value.is-fit {
-  border-color: #07873e;
-  background: #07873e;
-}
-
-.field-display-controls-scale > .is-value strong {
-  font-size: 25px;
-  font-weight: 950;
-}
-
-.field-display-controls-scale > .is-value small {
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.field-display-controls-fullscreen {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 60px;
-  margin-top: 10px;
-  color: #fff;
-  border: 0;
-  border-radius: 9px;
-  background: #063b72;
-  font-size: 18px;
-  font-weight: 950;
-  cursor: pointer;
-}
-
-.field-display-controls-fullscreen svg {
-  width: 25px;
-  height: 25px;
 }
 
 .field-modal-backdrop {
@@ -1680,6 +1496,7 @@
 
 .field-modal__header h2 {
   margin: 0;
+  font-size: 27px;
   font-size: clamp(27px, 2.3vw, 43px);
   font-weight: 950;
   line-height: 1.1;
@@ -1687,6 +1504,7 @@
 
 .field-modal__header p {
   margin: 7px 0 0;
+  font-size: 15px;
   font-size: clamp(15px, 1.05vw, 20px);
   font-weight: 750;
 }
@@ -1747,6 +1565,7 @@
 
 .field-transition-summary strong {
   overflow: hidden;
+  font-size: 26px;
   font-size: clamp(26px, 2.1vw, 39px);
   font-weight: 950;
   white-space: nowrap;
@@ -1815,6 +1634,7 @@
   padding: 0 28px;
   border: 2px solid transparent;
   border-radius: 8px;
+  font-size: 19px;
   font-size: clamp(19px, 1.5vw, 29px);
   font-weight: 950;
   cursor: pointer;
@@ -1906,6 +1726,7 @@
   border: 2px solid #aebccc;
   border-radius: 7px;
   background: #fff;
+  font-size: 17px;
   font-size: clamp(17px, 1.15vw, 22px);
   font-weight: 950;
   cursor: pointer;
@@ -1964,6 +1785,7 @@
 .field-numpad-display output {
   grid-column: 2;
   grid-row: 1 / 3;
+  font-size: 41px;
   font-size: clamp(41px, 3.3vw, 62px);
   font-weight: 950;
   line-height: 1;
@@ -2030,6 +1852,7 @@
 
 .field-defect-summary-grid strong {
   color: #0a2f59;
+  font-size: 38px;
   font-size: clamp(38px, 3.2vw, 60px);
   font-weight: 950;
   line-height: 1;
@@ -2060,6 +1883,7 @@
   border: 1px solid #aebdcd;
   border-radius: 7px;
   background: #eef5fc;
+  font-size: 20px;
   font-size: clamp(20px, 1.5vw, 28px);
   font-weight: 850;
   text-align: center;
@@ -2175,7 +1999,7 @@
   padding: 40px;
   color: #17365c;
   background: #edf3f8;
-  font-family: "Noto Sans SC", "Microsoft YaHei", "Noto Sans KR", Arial, sans-serif;
+  font-family: "Microsoft YaHei", "PingFang SC", "Malgun Gothic", Arial, sans-serif;
   text-align: center;
 }
 
@@ -2214,1344 +2038,4 @@
 .field-kanban-state--error {
   color: #9f1725;
   background: #fff1f2;
-}
-
-@media (max-width: 1599px) and (max-height: 850px) {
-  .field-kanban-stage {
-    grid-template-rows: 78px minmax(0, 1fr);
-  }
-
-  .field-kanban-header {
-    grid-template-columns: minmax(250px, 1.05fr) minmax(215px, .9fr) minmax(170px, .72fr) minmax(190px, .68fr) auto;
-    height: 78px;
-  }
-
-  .field-kanban-main {
-    grid-template-columns: clamp(400px, 31.5vw, 505px) minmax(0, 1fr);
-    height: auto;
-  }
-
-  .field-kanban-brand {
-    gap: 9px;
-    padding: 7px 13px;
-  }
-
-  .field-kanban-brand img {
-    width: 63px;
-    height: 52px;
-  }
-
-  .field-kanban-brand strong {
-    font-size: 20px;
-  }
-
-  .field-kanban-brand small {
-    font-size: 13px;
-  }
-
-  .field-kanban-machine,
-  .field-kanban-live,
-  .field-kanban-clock {
-    gap: 8px;
-    padding: 5px 10px;
-  }
-
-  .field-kanban-machine svg {
-    width: 42px;
-    height: 42px;
-  }
-
-  .field-kanban-machine strong,
-  .field-kanban-clock strong {
-    font-size: 27px;
-  }
-
-  .field-kanban-live {
-    font-size: 16px;
-  }
-
-  .field-kanban-clock svg {
-    width: 27px;
-    height: 27px;
-  }
-
-  .field-kanban-clock span {
-    font-size: 14px;
-  }
-
-  .field-kanban-header-actions {
-    gap: 4px;
-    padding: 7px;
-  }
-
-  .field-kanban-header-actions > button {
-    width: 56px;
-    height: 56px;
-  }
-
-  .field-kanban-header-actions > .field-display-controls-trigger {
-    width: 90px;
-    padding-inline: 10px;
-  }
-
-  .field-display-controls-trigger span {
-    font-size: 14px;
-  }
-
-  .field-language-toggle {
-    height: 56px;
-  }
-
-  .field-language-toggle button {
-    min-width: 66px;
-    padding: 0 10px;
-    font-size: 17px;
-  }
-
-  .field-command-panel {
-    padding: 14px 16px;
-  }
-
-  .field-shot-hero {
-    padding-bottom: 10px;
-  }
-
-  .field-shot-hero span {
-    font-size: 20px;
-  }
-
-  .field-shot-hero strong {
-    font-size: clamp(65px, 6.6vw, 92px);
-  }
-
-  .field-part-summary {
-    padding: 12px 5px;
-  }
-
-  .field-part-summary span {
-    font-size: 16px;
-  }
-
-  .field-part-summary strong {
-    margin-top: 5px;
-    font-size: 30px;
-  }
-
-  .field-part-summary > div + div {
-    padding-left: 17px;
-  }
-
-  .field-current-metrics {
-    padding: 11px 0;
-  }
-
-  .field-current-metrics > div {
-    min-height: 64px;
-    padding: 0 9px;
-  }
-
-  .field-current-metrics span {
-    font-size: 14px;
-  }
-
-  .field-current-metrics strong {
-    font-size: 29px;
-  }
-
-  .field-current-metrics i {
-    height: 7px;
-    margin-top: 7px;
-  }
-
-  .field-queue {
-    padding-top: 9px;
-  }
-
-  .field-queue h2 {
-    margin-bottom: 7px;
-    font-size: 21px;
-  }
-
-  .field-queue-list {
-    gap: 7px;
-  }
-
-  .field-queue-list article {
-    min-height: 71px;
-    margin-left: 47px;
-  }
-
-  .field-queue-index {
-    left: -53px;
-    width: 40px;
-    height: 40px;
-    font-size: 21px;
-  }
-
-  .field-queue-flow {
-    top: calc(100% + 3.5px);
-    left: -33px;
-    width: 13px;
-    height: 13px;
-  }
-
-  .field-queue-copy,
-  .field-queue-value {
-    gap: 2px;
-    padding: 7px 10px;
-  }
-
-  .field-queue-value small {
-    font-size: 14px;
-  }
-
-  .field-queue-copy strong,
-  .field-queue-value strong {
-    font-size: 18px;
-  }
-
-  .field-queue-copy span {
-    font-size: 13px;
-  }
-
-  .field-queue.is-expanded .field-queue-list {
-    gap: 4px;
-  }
-
-  .field-queue.is-expanded .field-queue-list article {
-    min-height: 0;
-    margin-left: 40px;
-  }
-
-  .field-queue.is-expanded .field-queue-index {
-    left: -45px;
-    width: 38px;
-    height: 38px;
-    font-size: 20px;
-  }
-
-  .field-queue.is-expanded .field-queue-flow {
-    top: calc(100% + 3.5px);
-    left: -26px;
-    width: 9px;
-    height: 9px;
-  }
-
-  .field-queue.is-expanded .field-queue-copy,
-  .field-queue.is-expanded .field-queue-value {
-    padding: 3px 7px;
-  }
-
-  .field-queue.is-expanded .field-queue-value small {
-    font-size: 13px;
-  }
-
-  .field-queue.is-expanded .field-queue-copy strong {
-    font-size: 21px;
-  }
-
-  .field-queue.is-expanded .field-queue-value strong {
-    font-size: 20px;
-  }
-
-  .field-queue.is-expanded .field-queue-copy span {
-    display: block;
-    font-size: 14px;
-  }
-
-  .field-queue-meta time {
-    font-size: 11px;
-  }
-
-  .field-command-actions {
-    gap: 10px;
-    padding-top: 9px;
-  }
-
-  .field-command-actions button {
-    min-height: 67px;
-    gap: 8px;
-    border-width: 3px;
-    font-size: 21px;
-  }
-
-  .field-command-actions svg {
-    width: 29px;
-    height: 29px;
-  }
-
-  .field-content-panel {
-    grid-template-rows: 73px minmax(0, 1fr) 69px;
-  }
-
-  .field-content-panel.has-alert {
-    grid-template-rows: 42px 73px minmax(0, 1fr) 69px;
-  }
-
-  .field-alert-band {
-    gap: 8px;
-    padding: 4px 10px;
-    font-size: 17px;
-  }
-
-  .field-alert-band svg {
-    width: 23px;
-    height: 23px;
-  }
-
-  .field-document-toolbar {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 8px;
-    padding: 0 9px;
-  }
-
-  .field-document-tabs {
-    gap: 4px;
-    padding-top: 10px;
-  }
-
-  .field-document-tabs button {
-    min-width: 100px;
-    height: 63px;
-    padding: 0 8px;
-    font-size: 18px;
-  }
-
-  .field-cycle-nav button {
-    width: 52px;
-    height: 52px;
-  }
-
-  .field-cycle-nav button svg {
-    width: 28px;
-    height: 28px;
-  }
-
-  .field-document-controls {
-    padding: 8px 0;
-  }
-
-  .field-document-controls button,
-  .field-document-controls a {
-    min-width: 56px;
-    height: 56px;
-  }
-
-  .field-document-controls strong,
-  .field-document-controls span {
-    min-width: 42px;
-    height: 56px;
-  }
-
-  .field-material-footer {
-    grid-template-columns: 1fr minmax(260px, 37%);
-    gap: 10px;
-    padding: 7px 13px;
-  }
-
-  .field-material-footer > div {
-    gap: 10px;
-    font-size: 16px;
-  }
-
-  .field-material-footer > div > svg {
-    width: 31px;
-    height: 31px;
-  }
-
-  .field-material-footer span svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  .field-material-footer > button {
-    min-height: 56px;
-    gap: 9px;
-    padding: 0 14px;
-    font-size: 17px;
-  }
-
-  .field-quality-canvas > header {
-    gap: 5px 12px;
-    padding: 8px 14px;
-  }
-
-  .field-quality-canvas > header h2 {
-    font-size: 32px;
-  }
-
-  .field-quality-canvas__title {
-    gap: 3px 12px;
-  }
-
-  .field-quality-canvas__eyebrow {
-    gap: 7px;
-  }
-
-  .field-quality-canvas__eyebrow em {
-    padding: 3px 7px;
-  }
-
-  .field-quality-canvas__plan {
-    font-size: 14px;
-  }
-
-  .field-quality-canvas__headline {
-    font-size: 13px;
-  }
-
-  .field-quality-canvas__header-meta {
-    gap: 5px;
-  }
-
-  .field-quality-canvas__header-meta > span {
-    min-height: 28px;
-    padding: 2px 7px;
-  }
-
-  .field-quality-canvas__header-meta small {
-    font-size: 10px;
-  }
-
-  .field-quality-canvas__header-meta strong {
-    font-size: 13px;
-  }
-
-  .field-quality-canvas__body {
-    padding: 7px;
-  }
-
-  .field-quality-canvas__carousel-controls {
-    min-height: 44px;
-    padding-block: 1px;
-  }
-
-  .field-modal-backdrop {
-    padding: 14px;
-  }
-
-  .field-modal,
-  .field-modal--wide {
-    max-height: calc(100dvh - 28px);
-  }
-
-  .field-modal__header {
-    gap: 13px;
-    padding: 14px 19px;
-  }
-
-  .field-modal__icon {
-    width: 51px;
-    height: 51px;
-  }
-
-  .field-modal__icon svg {
-    width: 29px;
-    height: 29px;
-  }
-
-  .field-modal__header h2 {
-    font-size: 28px;
-  }
-
-  .field-modal__header p {
-    margin-top: 3px;
-    font-size: 14px;
-  }
-
-  .field-defect-layout {
-    grid-template-columns: minmax(0, 1.55fr) minmax(310px, .75fr);
-    gap: 13px;
-    padding: 13px 18px 0;
-  }
-
-  .field-defect-picker__header {
-    min-height: 56px;
-    font-size: 14px;
-  }
-
-  .field-defect-picker__header b {
-    font-size: 23px;
-  }
-
-  .field-defect-types {
-    gap: 7px;
-    padding: 9px;
-  }
-
-  .field-defect-types button {
-    min-height: 56px;
-    padding: 6px 9px;
-    font-size: 15px;
-  }
-
-  .field-defect-types button strong {
-    min-width: 31px;
-    height: 31px;
-    font-size: 14px;
-  }
-
-  .field-numpad-panel {
-    padding: 9px;
-  }
-
-  .field-numpad-display {
-    min-height: 73px;
-  }
-
-  .field-numpad-display output {
-    font-size: 42px;
-  }
-
-  .field-numpad {
-    gap: 6px;
-    margin-top: 7px;
-  }
-
-  .field-numpad button {
-    min-height: 56px;
-    font-size: 26px;
-  }
-
-  .field-modal__actions {
-    gap: 12px;
-    padding: 14px 18px 17px;
-  }
-
-  .field-touch-button {
-    min-height: 61px;
-    font-size: 20px;
-  }
-
-  .field-defect-summary-grid {
-    gap: 9px;
-    padding: 18px;
-  }
-
-  .field-defect-summary-grid > div {
-    min-height: 105px;
-    padding: 12px;
-  }
-
-  .field-defect-summary-grid span {
-    font-size: 15px;
-  }
-
-  .field-defect-summary-grid strong {
-    font-size: 38px;
-  }
-
-  .field-defect-formula {
-    margin: 0 18px;
-    padding: 12px;
-    font-size: 19px;
-  }
-}
-
-@media (max-width: 1180px) and (min-height: 851px) {
-  .field-kanban-stage {
-    grid-template-rows: 88px minmax(0, 1fr);
-  }
-
-  .field-kanban-header {
-    grid-template-columns: minmax(215px, 1fr) minmax(190px, .9fr) minmax(105px, .48fr) minmax(135px, .6fr) auto;
-    height: 88px;
-  }
-
-  .field-kanban-brand {
-    gap: 6px;
-    padding: 7px 6px;
-  }
-
-  .field-kanban-brand img {
-    width: 50px;
-    height: 48px;
-  }
-
-  .field-kanban-brand strong {
-    font-size: 19px;
-  }
-
-  .field-kanban-brand small {
-    font-size: 12px;
-  }
-
-  .field-kanban-machine,
-  .field-kanban-live,
-  .field-kanban-clock {
-    gap: 4px;
-    padding: 6px;
-  }
-
-  .field-kanban-machine svg {
-    width: 38px;
-    height: 38px;
-  }
-
-  .field-kanban-machine strong,
-  .field-kanban-clock strong {
-    font-size: 27px;
-  }
-
-  .field-kanban-live {
-    font-size: 17px;
-  }
-
-  .field-kanban-live span {
-    display: none;
-  }
-
-  .field-kanban-clock svg {
-    width: 28px;
-    height: 28px;
-  }
-
-  .field-kanban-clock span {
-    font-size: 14px;
-  }
-
-  .field-kanban-header-actions {
-    gap: 4px;
-    padding: 7px;
-  }
-
-  .field-kanban-header-actions > button {
-    width: 52px;
-    height: 56px;
-  }
-
-  .field-kanban-header-actions > .field-display-controls-trigger {
-    width: 86px;
-    padding-inline: 8px;
-  }
-
-  .field-language-toggle,
-  .field-language-toggle button {
-    height: 56px;
-  }
-
-  .field-language-toggle button {
-    min-width: 60px;
-    padding: 0 8px;
-    font-size: 17px;
-  }
-
-  .field-kanban-main {
-    grid-template-columns: minmax(360px, 36vw) minmax(0, 1fr);
-    height: auto;
-  }
-
-  .field-command-panel {
-    padding: 18px 16px;
-  }
-
-  .field-shot-hero span {
-    font-size: 24px;
-  }
-
-  .field-shot-hero strong {
-    font-size: 86px;
-  }
-
-  .field-part-summary {
-    padding-block: 16px;
-  }
-
-  .field-part-summary span,
-  .field-current-metrics span {
-    font-size: 16px;
-  }
-
-  .field-part-summary strong {
-    font-size: 24px;
-    letter-spacing: -.3px;
-  }
-
-  .field-current-metrics > div {
-    min-height: 82px;
-    padding-inline: 9px;
-  }
-
-  .field-current-metrics strong {
-    font-size: 32px;
-  }
-
-  .field-queue h2 {
-    font-size: 24px;
-  }
-
-  .field-queue-list article {
-    grid-template-columns: minmax(0, 1.35fr) minmax(120px, .75fr);
-    min-height: 110px;
-  }
-
-  .field-queue-copy,
-  .field-queue-value {
-    padding-inline: 7px;
-  }
-
-  .field-queue-value small {
-    font-size: 16px;
-  }
-
-  .field-queue-copy strong,
-  .field-queue-value strong {
-    font-size: 20px;
-  }
-
-  .field-queue-list article.is-current .field-queue-value strong {
-    overflow: visible;
-    font-size: 19px;
-    white-space: normal;
-    text-overflow: clip;
-  }
-
-  .field-queue-copy span {
-    font-size: 14px;
-  }
-
-  .field-command-actions button {
-    min-height: 78px;
-    font-size: 24px;
-  }
-
-  .field-content-panel {
-    grid-template-rows: 138px minmax(0, 1fr) 82px;
-  }
-
-  .field-content-panel.has-alert,
-  .field-content-panel.is-quality.has-alert {
-    grid-template-rows: 52px 138px minmax(0, 1fr) 82px;
-  }
-
-  .field-alert-band {
-    font-size: 20px;
-  }
-
-  .field-document-toolbar {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: 78px 60px;
-    gap: 1px 12px;
-    padding: 0 12px;
-  }
-
-  .field-document-toolbar.is-quality {
-    grid-template-rows: 78px 60px;
-  }
-
-  .field-document-tabs {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-    padding-top: 10px;
-  }
-
-  .field-document-tabs button,
-  .field-document-tabs button.is-quality {
-    min-width: 0;
-    height: 68px;
-    padding: 0 10px;
-    font-size: 20px;
-  }
-
-  .field-cycle-nav {
-    grid-column: 1;
-    grid-row: 2;
-    justify-self: start;
-  }
-
-  .field-document-controls {
-    grid-column: 2;
-    grid-row: 2;
-    justify-self: end;
-    padding: 2px 0;
-  }
-
-  .field-material-footer {
-    grid-template-columns: minmax(0, 1fr) minmax(245px, 40%);
-    gap: 10px;
-    padding: 8px 12px;
-  }
-
-  .field-material-footer > div {
-    gap: 10px;
-    font-size: 16px;
-  }
-
-  .field-material-footer > div > svg {
-    width: 32px;
-    height: 32px;
-  }
-
-  .field-material-footer > button {
-    min-height: 60px;
-    padding: 0 12px;
-    font-size: 18px;
-  }
-
-  .field-quality-canvas > header h2 {
-    font-size: 48px;
-  }
-
-  .field-quality-canvas__header-meta {
-    flex-wrap: wrap;
-    overflow: visible;
-  }
-
-  .field-quality-canvas__body {
-    padding: 14px;
-  }
-}
-
-/* Native 4:3 kiosk layout. Keep touch targets readable at 1024 × 768 instead
-   of fitting a desktop-width canvas with a transform. */
-@media (max-width: 1180px) and (max-height: 900px) {
-  .field-kanban-stage {
-    grid-template-rows: 68px minmax(0, 1fr);
-  }
-
-  .field-kanban-header {
-    grid-template-columns: 190px 185px 112px 150px minmax(0, 1fr);
-    height: 68px;
-  }
-
-  .field-kanban-brand {
-    gap: 7px;
-    min-height: 0;
-    padding: 4px 8px;
-  }
-
-  .field-kanban-brand img {
-    width: 48px;
-    height: 46px;
-  }
-
-  .field-kanban-brand span {
-    gap: 1px;
-  }
-
-  .field-kanban-brand strong {
-    font-size: 16px;
-  }
-
-  .field-kanban-brand small {
-    font-size: 10px;
-  }
-
-  .field-kanban-machine,
-  .field-kanban-live,
-  .field-kanban-clock {
-    gap: 5px;
-    padding: 4px 6px;
-  }
-
-  .field-kanban-machine svg {
-    width: 34px;
-    height: 34px;
-  }
-
-  .field-kanban-machine strong {
-    font-size: 21px;
-  }
-
-  .field-kanban-live {
-    font-size: 14px;
-  }
-
-  .field-kanban-live svg {
-    width: 19px;
-    height: 19px;
-  }
-
-  .field-kanban-live span {
-    display: none;
-  }
-
-  .field-kanban-clock {
-    gap: 7px;
-  }
-
-  .field-kanban-clock svg {
-    width: 23px;
-    height: 23px;
-  }
-
-  .field-kanban-clock strong {
-    font-size: 21px;
-  }
-
-  .field-kanban-clock span {
-    display: none;
-  }
-
-  .field-kanban-header-actions {
-    justify-content: flex-end;
-    gap: 3px;
-    padding: 4px;
-  }
-
-  .field-kanban-header-actions > button {
-    width: 44px;
-    height: 48px;
-  }
-
-  .field-kanban-header-actions > button svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  .field-kanban-header-actions > .field-display-controls-trigger {
-    width: 80px;
-    padding-inline: 7px;
-  }
-
-  .field-display-controls-trigger span {
-    font-size: 13px;
-  }
-
-  .field-language-toggle,
-  .field-language-toggle button {
-    height: 48px;
-  }
-
-  .field-language-toggle button {
-    min-width: 55px;
-    padding: 0 6px;
-    font-size: 15px;
-  }
-
-  .field-kanban-main {
-    grid-template-columns: minmax(330px, 34%) minmax(0, 1fr);
-    height: auto;
-  }
-
-  .field-command-panel {
-    padding: 8px 10px;
-  }
-
-  .field-shot-hero {
-    padding: 0 4px 7px;
-  }
-
-  .field-shot-hero span {
-    font-size: 17px;
-  }
-
-  .field-shot-hero strong {
-    margin-top: 0;
-    font-size: 55px;
-  }
-
-  .field-part-summary {
-    grid-template-columns: 34% 66%;
-    padding: 8px 4px;
-  }
-
-  .field-part-summary > div + div {
-    padding-left: 11px;
-  }
-
-  .field-part-summary span {
-    font-size: 13px;
-  }
-
-  .field-part-summary strong {
-    margin-top: 4px;
-    font-size: 22px;
-  }
-
-  .field-current-metrics {
-    padding: 7px 0;
-  }
-
-  .field-current-metrics > div {
-    min-height: 54px;
-    padding: 0 6px;
-  }
-
-  .field-current-metrics span {
-    font-size: 11px;
-    line-height: 1.15;
-  }
-
-  .field-current-metrics strong {
-    margin-top: 4px;
-    font-size: 23px;
-  }
-
-  .field-current-metrics i {
-    height: 6px;
-    margin-top: 5px;
-  }
-
-  .field-queue {
-    padding-top: 6px;
-  }
-
-  .field-queue h2 {
-    margin: 0 0 5px 4px;
-    font-size: 18px;
-  }
-
-  .field-queue-list,
-  .field-queue.is-expanded .field-queue-list {
-    gap: 4px;
-  }
-
-  .field-queue-list article,
-  .field-queue.is-expanded .field-queue-list article {
-    grid-template-columns: minmax(0, 1fr) 132px;
-    min-height: 0;
-    margin-left: 34px;
-  }
-
-  .field-queue-index,
-  .field-queue.is-expanded .field-queue-index {
-    left: -39px;
-    width: 30px;
-    height: 30px;
-    border-width: 2px;
-    font-size: 16px;
-  }
-
-  .field-queue-flow,
-  .field-queue.is-expanded .field-queue-flow {
-    top: calc(100% + 2px);
-    left: -24px;
-    width: 9px;
-    height: 9px;
-  }
-
-  .field-queue-copy,
-  .field-queue-value,
-  .field-queue.is-expanded .field-queue-copy,
-  .field-queue.is-expanded .field-queue-value {
-    gap: 1px;
-    padding: 3px 6px;
-  }
-
-  .field-queue-value small,
-  .field-queue.is-expanded .field-queue-value small {
-    font-size: 11px;
-  }
-
-  .field-queue-copy strong,
-  .field-queue-value strong,
-  .field-queue.is-expanded .field-queue-copy strong,
-  .field-queue.is-expanded .field-queue-value strong {
-    font-size: 16px;
-  }
-
-  .field-queue-copy span,
-  .field-queue.is-expanded .field-queue-copy span {
-    font-size: 11px;
-  }
-
-  .field-queue-meta {
-    gap: 4px;
-  }
-
-  .field-queue-meta time {
-    padding: 2px 3px;
-    font-size: 10px;
-  }
-
-  .field-command-actions {
-    gap: 7px;
-    padding-top: 7px;
-  }
-
-  .field-command-actions button {
-    min-height: 54px;
-    gap: 6px;
-    border-width: 3px;
-    font-size: 17px;
-  }
-
-  .field-command-actions svg {
-    width: 23px;
-    height: 23px;
-  }
-
-  .field-content-panel {
-    grid-template-rows: 104px minmax(0, 1fr) 56px;
-  }
-
-  .field-content-panel.has-alert {
-    grid-template-rows: 36px 104px minmax(0, 1fr) 56px;
-  }
-
-  .field-content-panel.is-quality {
-    grid-template-rows: 62px minmax(0, 1fr) 56px;
-  }
-
-  .field-content-panel.is-quality.has-alert {
-    grid-template-rows: 36px 62px minmax(0, 1fr) 56px;
-  }
-
-  .field-alert-band {
-    gap: 6px;
-    padding: 3px 8px;
-    font-size: 14px;
-  }
-
-  .field-alert-band svg {
-    width: 19px;
-    height: 19px;
-  }
-
-  .field-document-toolbar {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: 55px 49px;
-    gap: 0 8px;
-    padding: 0 8px;
-  }
-
-  .field-document-toolbar.is-quality {
-    grid-template-rows: 62px;
-  }
-
-  .field-document-tabs {
-    grid-column: 1;
-    grid-row: 1;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: end;
-    gap: 4px;
-    padding-top: 5px;
-  }
-
-  .field-document-tabs button,
-  .field-document-tabs button.is-quality {
-    min-width: 0;
-    width: 100%;
-    height: 50px;
-    padding: 0 5px;
-    font-size: 18px;
-  }
-
-  .field-cycle-nav {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .field-cycle-nav button {
-    width: 44px;
-    height: 44px;
-  }
-
-  .field-cycle-nav button svg {
-    width: 24px;
-    height: 24px;
-  }
-
-  .field-document-controls {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-self: end;
-    padding: 2px 0 3px;
-  }
-
-  .field-document-controls button,
-  .field-document-controls a {
-    min-width: 42px;
-    height: 43px;
-  }
-
-  .field-document-controls strong,
-  .field-document-controls span {
-    min-width: 45px;
-    height: 43px;
-    font-size: 12px;
-  }
-
-  .field-document-controls svg {
-    width: 19px;
-    height: 19px;
-  }
-
-  .field-material-footer {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px;
-    padding: 4px 8px;
-  }
-
-  .field-material-footer > div {
-    gap: 6px;
-    font-size: 12px;
-  }
-
-  .field-material-footer > div > svg {
-    width: 24px;
-    height: 24px;
-  }
-
-  .field-material-footer span svg {
-    width: 17px;
-    height: 17px;
-  }
-
-  .field-material-footer > button {
-    min-height: 46px;
-    gap: 5px;
-    padding: 0 9px;
-    border-width: 1px;
-    font-size: 13px;
-  }
-
-  .field-material-footer > button svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .field-quality-canvas {
-    min-height: 0;
-  }
-
-  .field-quality-canvas > header {
-    gap: 3px 8px;
-    padding: 6px 9px;
-  }
-
-  .field-quality-canvas__title {
-    gap: 3px;
-  }
-
-  .field-quality-canvas__heading {
-    gap: 8px;
-  }
-
-  .field-quality-canvas > header h2 {
-    max-width: 70%;
-    font-size: 30px;
-  }
-
-  .field-quality-canvas__eyebrow {
-    gap: 5px;
-  }
-
-  .field-quality-canvas__eyebrow > span {
-    font-size: 13px;
-  }
-
-  .field-quality-canvas__eyebrow em {
-    gap: 3px;
-    padding: 2px 5px;
-    font-size: 12px;
-  }
-
-  .field-quality-canvas__eyebrow em svg {
-    width: 13px;
-    height: 13px;
-  }
-
-  .field-quality-canvas__detail {
-    gap: 7px;
-  }
-
-  .field-quality-canvas__plan {
-    max-width: 42%;
-    font-size: 14px;
-  }
-
-  .field-quality-canvas__headline {
-    padding-left: 7px;
-    font-size: 13px;
-  }
-
-  .field-quality-canvas__issue-position {
-    min-width: 54px;
-  }
-
-  .field-quality-canvas__issue-position strong {
-    font-size: 28px;
-  }
-
-  .field-quality-canvas__issue-position span {
-    font-size: 15px;
-  }
-
-  .field-quality-canvas__header-meta {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
-  }
-
-  .field-quality-canvas__header-meta > span {
-    min-height: 24px;
-    gap: 4px;
-    padding: 2px 5px;
-    border-radius: 5px;
-  }
-
-  .field-quality-canvas__header-meta small {
-    font-size: 11px;
-  }
-
-  .field-quality-canvas__header-meta strong {
-    font-size: 13px;
-  }
-
-  .field-quality-canvas__body {
-    padding: 6px;
-  }
-
-  .field-quality-canvas__gallery,
-  .field-quality-canvas__empty {
-    border-width: 2px;
-    border-radius: 8px;
-  }
-
-  .field-quality-canvas__carousel-controls {
-    min-height: 40px;
-    gap: 8px;
-    padding: 2px 8px;
-  }
-
-  .field-quality-canvas__carousel-controls > strong {
-    font-size: 14px;
-  }
-
-  .field-quality-canvas__carousel-controls button {
-    width: 44px;
-    height: 44px;
-  }
-
-  .field-quality-canvas__carousel-controls button span {
-    width: 24px;
-    height: 6px;
-  }
-
-  .field-quality-canvas__carousel-controls button.is-active span {
-    width: 30px;
-  }
-
-  .field-quality-canvas__empty {
-    gap: 8px;
-    padding: 18px;
-  }
-
-  .field-quality-canvas__empty svg {
-    width: 54px;
-    height: 54px;
-  }
-
-  .field-quality-canvas__empty strong {
-    font-size: 24px;
-  }
-
-  .field-quality-canvas__empty span {
-    font-size: 14px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .field-kanban *,
-  .field-kanban *::before,
-  .field-kanban *::after {
-    scroll-behavior: auto !important;
-    transition: none !important;
-    animation: none !important;
-  }
 }

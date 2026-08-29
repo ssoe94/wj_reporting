@@ -408,7 +408,9 @@ export async function getFieldKanban(
     machine_number: String(machineNumber),
     include_quality: options.includeQuality === false ? "false" : "true",
   });
-  const response = await http.get<unknown>(`/production/field-kanban/?${params.toString()}`);
+  const response = await http.get<unknown>(`/production/field-kanban/?${params.toString()}`, {
+    skipAuth: true,
+  });
   return normalizeFieldKanbanResponse(response.data, date, machineNumber);
 }
 
@@ -425,6 +427,7 @@ export async function submitFieldDefects(payload: {
   const response = await http.post<{ checkpoint?: FieldDefectCheckpoint } | FieldDefectCheckpoint>(
     "/production/field-kanban/defects/",
     payload,
+    { skipAuth: true },
   );
   const candidate = asRecord(response.data);
   const checkpoint = asRecord(candidate.checkpoint || candidate);

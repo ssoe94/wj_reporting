@@ -2460,7 +2460,11 @@ def save_defect_checkpoint(
         context.get("counters", {}).get("business_day_shots")
     )
     cavity = max(1, _safe_int(plan.get("cavity"), 1))
-    username = str(getattr(user, "username", "") or getattr(user, "pk", "") or "unknown")
+    username = str(
+        "field-terminal"
+        if user is None
+        else getattr(user, "username", "") or getattr(user, "pk", "") or "unknown"
+    )
 
     snapshot_key = _defect_snapshot_key(target_date, machine_number)
     with transaction.atomic():

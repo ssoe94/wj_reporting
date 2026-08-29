@@ -25,6 +25,7 @@ from .views import (
 )
 from .field_kanban_views import (
     FieldDefectCheckpointView,
+    FieldDowntimeConfirmationView,
     FieldKanbanView,
     FieldMaterialConversionWebhookView,
     FieldMaterialPreviewRepairView,
@@ -37,6 +38,11 @@ urlpatterns = [
         'field-kanban/defects/',
         FieldDefectCheckpointView.as_view(),
         name='production-field-kanban-defects',
+    ),
+    path(
+        'field-kanban/confirmations/',
+        FieldDowntimeConfirmationView.as_view(),
+        name='production-field-kanban-confirmations',
     ),
     path('field-materials/', FieldMaterialsView.as_view(), name='production-field-materials'),
     path(

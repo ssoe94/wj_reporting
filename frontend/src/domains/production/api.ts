@@ -610,6 +610,7 @@ export async function getProductionPlanSummary(date: string) {
   }
   const response = await http.get<ProductionPlanSummaryResponse>(
     `/production/plan-summary/?date=${encodeURIComponent(date)}`,
+    { skipAuth: true },
   );
   return normalizeProductionPlanSummary(response.data, date);
 }
@@ -680,6 +681,33 @@ export async function saveInjectionDowntimeConfirmation(payload: SaveInjectionDo
   const response = await http.post<InjectionDowntimeConfirmation>(
     "/production/injection-downtime-confirmations/",
     { action: "confirm", ...payload },
+  );
+  return response.data;
+}
+
+export async function getFieldInjectionDowntimeConfirmations(date: string, machineNumber: number) {
+  const params = new URLSearchParams({
+    date,
+    machine_number: String(machineNumber),
+  });
+  const response = await http.get<InjectionDowntimeConfirmationResponse>(
+    `/production/field-kanban/confirmations/?${params.toString()}`,
+    { skipAuth: true },
+  );
+  return {
+    business_date: response.data?.business_date ?? date,
+    latest_updated_at: response.data?.latest_updated_at ?? null,
+    confirmations: asArray(response.data?.confirmations),
+  } satisfies InjectionDowntimeConfirmationResponse;
+}
+
+export async function saveFieldInjectionDowntimeConfirmation(
+  payload: SaveInjectionDowntimeConfirmationPayload,
+) {
+  const response = await http.post<InjectionDowntimeConfirmation>(
+    "/production/field-kanban/confirmations/",
+    { action: "confirm", ...payload },
+    { skipAuth: true },
   );
   return response.data;
 }

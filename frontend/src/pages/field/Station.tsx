@@ -83,7 +83,7 @@ export default function FieldStationPage() {
   if (station.type === 'injection') {
     return (
       <FieldRuntimeBoundary key={station.id}>
-        <InjectionKanban onBack={() => navigate('/field')} station={station} />
+        <InjectionKanban onBack={() => navigate(user ? '/field' : '/boards')} station={station} />
       </FieldRuntimeBoundary>
     );
   }

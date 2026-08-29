@@ -1,11 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import legacy from '@vitejs/plugin-legacy'
 import path from 'node:path'
 
 // https://vite.dev/config/
 export default defineConfig({
   base: '/',
-  plugins: [react()],
+  plugins: [
+    react(),
+    legacy({
+      targets: ['chrome >= 49', 'and_chr >= 49', 'firefox >= 68'],
+      modernPolyfills: true,
+      renderLegacyChunks: true,
+    }),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

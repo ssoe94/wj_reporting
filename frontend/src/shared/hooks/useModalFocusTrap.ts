@@ -33,6 +33,16 @@ function getFocusableElements(container: HTMLElement) {
     .filter((element) => element.tabIndex >= 0 && element.getAttribute("aria-hidden") !== "true");
 }
 
+function focusWithoutScroll(element: HTMLElement) {
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    // Android WebView and older Firefox versions only support focus() without
+    // an options object. A modal must remain operable when that overload is absent.
+    element.focus();
+  }
+}
+
 export function useModalFocusTrap<T extends HTMLElement>({
   enabled = true,
   initialFocusSelector = "[data-modal-initial-focus]",
@@ -69,7 +79,7 @@ export function useModalFocusTrap<T extends HTMLElement>({
       const target = preferred && preferred.tabIndex >= 0
         ? preferred
         : getFocusableElements(container)[0] ?? container;
-      target.focus({ preventScroll: true });
+      focusWithoutScroll(target);
     };
     const animationFrame = window.requestAnimationFrame(focusFirst);
 
@@ -85,17 +95,17 @@ export function useModalFocusTrap<T extends HTMLElement>({
       const focusable = getFocusableElements(container);
       if (focusable.length === 0) {
         event.preventDefault();
-        container.focus({ preventScroll: true });
+        focusWithoutScroll(container);
         return;
       }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       if (event.shiftKey && (document.activeElement === first || !container.contains(document.activeElement))) {
         event.preventDefault();
-        last.focus({ preventScroll: true });
+        focusWithoutScroll(last);
       } else if (!event.shiftKey && document.activeElement === last) {
         event.preventDefault();
-        first.focus({ preventScroll: true });
+        focusWithoutScroll(first);
       }
     };
     const handleFocusIn = (event: FocusEvent) => {
@@ -112,7 +122,7 @@ export function useModalFocusTrap<T extends HTMLElement>({
       delete container.dataset.modalFocusTrap;
       unlockBodyScroll();
       if (previousActiveElement?.isConnected) {
-        previousActiveElement.focus({ preventScroll: true });
+        focusWithoutScroll(previousActiveElement);
       }
     };
   }, [enabled, initialFocusSelector]);

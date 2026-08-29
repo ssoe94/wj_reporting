@@ -88,7 +88,9 @@ const queryClient = new QueryClient();
 
 function isPublicRoutePath(pathname: string) {
   const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  return normalizedPath === '/login'
+  const isPublicInjectionStation = /^\/field\/imm(?:0[1-9]|1[0-7])$/i.test(normalizedPath);
+  return isPublicInjectionStation
+    || normalizedPath === '/login'
     || normalizedPath === '/boards'
     || normalizedPath === '/boards/injection'
     || normalizedPath === '/boards/moulds'
@@ -792,7 +794,7 @@ function AppContent() {
             <Route path="/next/mes/monitoring" element={<Navigate to="/mes/monitoring" replace />} />
             <Route path="/next/inventory/raw-materials" element={<Navigate to="/sales/raw-materials" replace />} />
             <Route path="/field" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><FieldLauncherPage /></Suspense></PageTransition></PrivateRoute>} />
-            <Route path="/field/:stationId" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><FieldStationPage /></Suspense></PageTransition></PrivateRoute>} />
+            <Route path="/field/:stationId" element={<Suspense fallback={<RouteLoading />}><FieldStationPage /></Suspense>} />
             <Route path="/models" element={<PrivateRoute><PageTransition><ModelsPage /></PageTransition></PrivateRoute>} />
             <Route path="/development/field-materials" element={<PrivateRoute><PageTransition><Suspense fallback={<RouteLoading />}><FieldMaterialsPage /></Suspense></PageTransition></PrivateRoute>} />
             <Route path="/eco" element={<Navigate to="/eco2" replace />} />
