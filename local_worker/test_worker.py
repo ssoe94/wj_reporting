@@ -1373,7 +1373,7 @@ class LocalLlmReadinessTests(unittest.TestCase):
     def setUp(self):
         self.client = LocalLlmClient(
             "http://127.0.0.1:8080/v1",
-            "/private/models/Qwen3.5-35B-A3B-4bit",
+            "/private/models/Qwen3.6-35B-A3B-4bit",
         )
 
     def test_client_rejects_non_loopback_model_endpoint(self):
@@ -1385,9 +1385,9 @@ class LocalLlmReadinessTests(unittest.TestCase):
 
     def test_ready_requires_configured_model_or_basename(self):
         for model_id in [
-            "/private/models/Qwen3.5-35B-A3B-4bit",
-            "Qwen3.5-35B-A3B-4bit",
-            "/another/location/Qwen3.5-35B-A3B-4bit",
+            "/private/models/Qwen3.6-35B-A3B-4bit",
+            "Qwen3.6-35B-A3B-4bit",
+            "/another/location/Qwen3.6-35B-A3B-4bit",
         ]:
             with self.subTest(model_id=model_id), patch.object(
                 llm_client_module.requests,

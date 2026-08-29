@@ -266,7 +266,7 @@ test.describe('production dashboard operational scenario', () => {
     const unplannedKpi = page.getByRole('button', { name: /무계획가동/ });
     await expect(unplannedKpi.locator('.stat-card__value')).toContainText('18회 / 2대');
     await expect(page.getByRole('heading', { name: '일일 생산 브리핑' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Qwen 3.5' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Qwen 3.6' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Gemma 4' })).toBeVisible();
     await expect(page.getByText('선택한 모델이 아직 준비되지 않았습니다. Worker와 모델 서버 상태를 확인해 주세요.')).toBeVisible();
     await expect(page.getByText('기준일 2026-05-18 사출 완료율은 95%입니다.')).toHaveCount(0);

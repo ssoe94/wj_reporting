@@ -532,7 +532,7 @@ class LocalAiWorkerIntegrationTests(LiveServerTestCase):
 
             model_name = os.getenv(
                 'LOCAL_LLM_MODEL',
-                '/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit',
+                '/Users/macstudio_ted/Developer/local-ai/models/Qwen3.6-35B-A3B-4bit',
             )
             render_client = RenderClient(
                 api_base_url=f'{self.live_server_url}/api',
@@ -641,7 +641,7 @@ class LocalAiWorkerIntegrationTests(LiveServerTestCase):
 
             model_name = os.getenv(
                 'LOCAL_LLM_MODEL',
-                '/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit',
+                '/Users/macstudio_ted/Developer/local-ai/models/Qwen3.6-35B-A3B-4bit',
             )
             render_client = RenderClient(
                 api_base_url=f'{self.live_server_url}/api',

@@ -165,7 +165,7 @@ type ProductionAiChatLauncherDrag = {
 };
 
 const PRODUCTION_AI_MODEL_OPTIONS: Array<{ id: ProductionAiModelId; label: string }> = [
-  { id: "qwen35", label: "Qwen 3.5" },
+  { id: "qwen35", label: "Qwen 3.6" },
   { id: "gemma4_26b_a4b", label: "Gemma 4" },
 ];
 const GEMMA_READY_WORKER_VERSION = "production-ai-worker-v2-gemma1";

@@ -989,7 +989,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
             result_payload={
                 'llm_enabled': True,
                 'llm_ready': True,
-                'model_name': 'Qwen3.5-35B-A3B-4bit',
+                'model_name': 'Qwen3.6-35B-A3B-4bit',
                 'worker_version': 'production-ai-worker-v2-gemma1',
             },
             completed_at=completed_at or timezone.now(),

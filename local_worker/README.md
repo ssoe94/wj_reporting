@@ -76,7 +76,7 @@ AI_WORKER_USE_LLM=true AI_WORKER_TOKEN=change-me python worker.py --check-llm
 RENDER_API_BASE_URL=http://127.0.0.1:8000/api
 AI_WORKER_TOKEN=change-me
 LOCAL_LLM_BASE_URL=http://127.0.0.1:8080/v1
-LOCAL_LLM_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit
+LOCAL_LLM_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.6-35B-A3B-4bit
 LOCAL_QWEN38_BASE_URL=http://127.0.0.1:8082/v1
 LOCAL_QWEN38_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit
 LOCAL_GEMMA_BASE_URL=http://127.0.0.1:8081/v1

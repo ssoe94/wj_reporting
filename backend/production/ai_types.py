@@ -9,8 +9,9 @@ BriefSeverity = Literal["normal", "warning", "critical"]
 
 
 PRODUCTION_AI_MODELS = {
+    # `qwen35` is the deployed compatibility ID; port 8080 now serves Qwen 3.6.
     "qwen35": {
-        "label": "Qwen 3.5 35B-A3B",
+        "label": "Qwen 3.6 35B-A3B",
     },
     "gemma4_26b_a4b": {
         "label": "Gemma 4 26B-A4B",

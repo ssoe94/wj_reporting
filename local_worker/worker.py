@@ -41,6 +41,7 @@ HANDLERS = {
     "quality_image_analysis": quality_daily_attention_summary,
 }
 
+# Stable backend contract ID. Port 8080 currently serves the Qwen3.6 checkpoint.
 QWEN_MODEL_ID = "qwen35"
 QWEN38_MODEL_ID = "qwen38"
 GEMMA_MODEL_ID = "gemma4_26b_a4b"
@@ -1517,7 +1518,7 @@ def main() -> int:
     enqueue_periodic = truthy(os.getenv("AI_WORKER_ENQUEUE_PERIODIC", "true"))
     qwen_model = os.getenv(
         "LOCAL_LLM_MODEL",
-        "/Users/macstudio_ted/Developer/local-ai/models/Qwen3.5-35B-A3B-4bit",
+        "/Users/macstudio_ted/Developer/local-ai/models/Qwen3.6-35B-A3B-4bit",
     )
     qwen38_model = os.getenv(
         "LOCAL_QWEN38_MODEL",

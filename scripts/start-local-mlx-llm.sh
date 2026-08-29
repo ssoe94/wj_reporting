@@ -9,7 +9,7 @@ if [ ! -x "$LOCAL_AI_DIR/serve.sh" ]; then
   exit 1
 fi
 
-echo "Starting Qwen 3.5 MLX server"
+echo "Starting Qwen 3.6 MLX server"
 echo "  profile: ${LOCAL_AI_PROFILE:-quality}"
 echo "  url:     http://127.0.0.1:$MLX_PORT/v1"
 

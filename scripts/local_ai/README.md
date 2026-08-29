@@ -10,7 +10,7 @@ Daily quality summaries use the separately managed Qwen 3.8 endpoint on
 `127.0.0.1:8082`. These launch-agent scripts do not start, stop, or restart that
 protected runtime; they only let the outbound WJ Worker use it when available.
 
-The Worker advertises each local model only while its endpoint passes the exact-model readiness check. Qwen 3.5 remains the compatibility default for production analysis, while scheduled daily quality summaries explicitly request Qwen 3.8.
+The Worker advertises each local model only while its endpoint passes the exact-model readiness check. Qwen 3.6 is the current compatibility-default checkpoint for production analysis, while scheduled daily quality summaries explicitly request Qwen 3.8. The stable backend model ID remains `qwen35` until a coordinated API migration; it now resolves to the Qwen 3.6 checkpoint on port 8080.
 
 The Worker token is stored in macOS Keychain. It is never written to a plist, `.env`, frontend bundle, or repository file.
 
