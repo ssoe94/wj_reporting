@@ -625,13 +625,14 @@ def answer_from_intent(intent: dict[str, Any], context: dict[str, Any], language
         if limit == 1 or sort in {"ct_desc", "ct_asc"}:
             top = rows[0]
             if is_zh:
-                return f"最近60分钟 기준，{top['machine']} 的 C/T 为约 {top['ct']} 秒，当前推定 Part 为 {top['part_no']}（{top['model_name']}，{top['family']}），60分钟合模数 {top['shots']} 次。"
+                return f"最近60分钟内，{top['machine']} 的 C/T 约为 {top['ct']} 秒，当前推定 Part 为 {top['part_no']}（{top['model_name']}，{top['family']}），合模数为 {top['shots']} 次。"
             return f"최근 60분 기준 {top['machine']}의 평균 C/T는 약 {top['ct']}초입니다. 현재 추정 Part는 {top['part_no']} ({top['model_name']}, {top['family']})이고, 최근 60분 형합수는 {top['shots']}회입니다."
 
         average_ct = sum(row["ct"] for row in rows) / len(rows)
-        details = ", ".join(f"{row['machine']} {row['ct']}초" for row in rows[:limit])
         if is_zh:
-            return f"最近60分钟 기준 대상注塑机 {len(rows)}台의 평균 C/T는 약 {average_ct:.1f}초입니다. 明细: {details}。"
+            details = ", ".join(f"{row['machine']} {row['ct']}秒" for row in rows[:limit])
+            return f"最近60分钟内，目标注塑机共 {len(rows)} 台，平均 C/T 约为 {average_ct:.1f} 秒。明细：{details}。"
+        details = ", ".join(f"{row['machine']} {row['ct']}초" for row in rows[:limit])
         return f"최근 60분 기준 대상 사출기 {len(rows)}대의 평균 C/T는 약 {average_ct:.1f}초입니다. 설비별로는 {details}입니다."
 
     if intent.get("intent") == "production_output":
@@ -676,7 +677,7 @@ def answer_from_intent(intent: dict[str, Any], context: dict[str, Any], language
             running.append(machine)
         labels = ", ".join(machine["machine"] for machine in running[:17])
         if is_zh:
-            return f"最近60分钟 기준 현재 생산중인 사출기는 {len(running)}대입니다. 대상 설비: {labels or '-'}."
+            return f"根据最近60分钟的合模记录，当前生产中的注塑机共 {len(running)} 台。目标设备：{labels or '-'}。"
         return f"최근 60분 형합수 기준 현재 생산중인 사출기는 {len(running)}대입니다. 대상 설비는 {labels or '-'}입니다."
 
     if intent.get("intent") == "production_summary":
@@ -704,9 +705,10 @@ def answer_from_intent(intent: dict[str, Any], context: dict[str, Any], language
             key=lambda item: item["estimated_qty"],
             reverse=True,
         )[:4]
-        top_text = ", ".join(f"{item['machine']} {item['estimated_qty']:,}개" for item in top_machines if item["estimated_qty"] > 0) or "-"
         if is_zh:
+            top_text = ", ".join(f"{item['machine']} {item['estimated_qty']:,}个" for item in top_machines if item["estimated_qty"] > 0) or "-"
             return f"今天注塑进度约 {progress_rate:.0f}%，推定实绩 {estimated_qty:,} / 计划 {planned_qty:,} 个。最近60分钟运行设备 {len(running)}台，作业状态为完成 {completed}、进行中 {in_progress}、待开始 {pending}。主要生产设备: {top_text}。"
+        top_text = ", ".join(f"{item['machine']} {item['estimated_qty']:,}개" for item in top_machines if item["estimated_qty"] > 0) or "-"
         return f"오늘 사출 생산 진도는 약 {progress_rate:.0f}%입니다. 추정 실적은 {estimated_qty:,} / 계획 {planned_qty:,}개이고, 최근 60분 기준 가동 사출기는 {len(running)}대입니다. 작업 상태는 완료 {completed}건, 진행중 {in_progress}건, 대기 {pending}건이며, 상위 생산 설비는 {top_text}입니다."
 
     return None

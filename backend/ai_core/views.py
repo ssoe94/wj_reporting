@@ -19,10 +19,11 @@ from production.ai_retrievers import get_daily_production_context
 from production.ai_types import (
     DEFAULT_PRODUCTION_AI_MODEL_ID,
     PRODUCTION_AI_MODEL_IDS,
+    canonical_production_ai_model_id,
 )
 
 from .models import AiJob
-from .model_registry import QUALITY_DAILY_MODEL_ID
+from .model_registry import QUALITY_DAILY_MODEL_ID, SUPPORTED_AI_WORKER_VERSION
 from .quality_daily import (
     QUALITY_DAILY_MODE,
     QUALITY_DAILY_TRIGGER,
@@ -49,12 +50,12 @@ from .serializers import (
 
 
 AI_WORKER_HEARTBEAT_JOB_TYPE = 'worker_heartbeat'
-SUPPORTED_AI_WORKER_VERSION = 'production-ai-worker-v2'
 MANUAL_AI_JOB_COOLDOWN_SECONDS = 60
 AUTHORITATIVE_PRODUCTION_RESULT_FIELDS = (
     'answer',
     'severity',
     'facts',
+    'top_risks',
     'used_data',
     'calculation_basis',
     'data_freshness',
@@ -143,12 +144,19 @@ def normalize_language(value):
     return 'zh' if value == 'zh' else 'ko'
 
 
-def build_machine_analysis_payload(target_date, language, machine):
+def build_machine_analysis_payload(
+    target_date,
+    language,
+    machine,
+    model_id=DEFAULT_PRODUCTION_AI_MODEL_ID,
+):
     context = get_daily_production_context(target_date)
     context_pack = build_context_pack(context, language, question='production_machine_analysis')
     target = str(machine or '').strip()
     normalized_target = target.lower().replace(' ', '')
-    rows = context['injection'].get('machine_rows', []) + context['machining'].get('rows', [])
+    injection_rows = context['injection'].get('machine_rows', [])
+    machining_rows = context['machining'].get('rows', [])
+    rows = injection_rows + machining_rows
 
     def matches(row):
         candidates = [
@@ -163,18 +171,68 @@ def build_machine_analysis_payload(target_date, language, machine):
     target_row = next((row for row in rows if matches(row)), None) if normalized_target else None
     if target_row is None and rows:
         target_row = rows[0]
+    target_process = (
+        'injection'
+        if target_row is not None and any(row is target_row for row in injection_rows)
+        else 'machining'
+        if target_row is not None
+        else ''
+    )
 
     related_parts = []
     if target_row:
         related_parts = target_row.get('parts') or []
+    target_data_warnings = []
+    if target_process == 'injection':
+        row_warning = str((target_row or {}).get('data_warning') or '').strip()
+        if row_warning:
+            target_data_warnings.append(row_warning)
+        target_data_warnings.extend(
+            warning
+            for warning in context_pack.warnings
+            if warning in {
+                'injection_mes_data_missing',
+                'injection_mes_data_stale',
+            }
+            and warning not in target_data_warnings
+        )
+    elif target_process == 'machining' and 'machining_actual_missing' in context_pack.warnings:
+        target_data_warnings.append('machining_actual_missing')
+    if target_row and target_data_warnings:
+        # A plan row without a fresh capacity counter is useful for selecting
+        # the machine, but its zero actual/gap fields are not verified facts.
+        target_row = {
+            key: target_row[key]
+            for key in (
+                'machine',
+                'machine_name',
+                'machine_number',
+                'equipment_label',
+                'equipment_name',
+                'equipment_key',
+                'planned_qty',
+            )
+            if key in target_row
+        }
+        related_parts = []
 
     return {
         'source': 'production_machine_analysis',
         'date': target_date.isoformat(),
         'language': language,
-        'machine': target or target_row.get('machine') if target_row else target,
+        'model_id': model_id,
+        'process': target_process,
+        'machine': target or (
+            target_row.get('machine')
+            or target_row.get('equipment_label')
+            or target_row.get('equipment_name')
+            or target_row.get('equipment_key')
+            if target_row
+            else target
+        ),
         'target_row': target_row or {},
         'related_parts': related_parts[:20],
+        'target_data_warnings': target_data_warnings,
         'context_pack': context_pack.to_dict(),
     }
 
@@ -204,7 +262,12 @@ def build_job_input_payload(job_type, scope, supplied_payload):
         if not target_date:
             raise ValidationError({'scope': 'date must use YYYY-MM-DD.'})
         language = normalize_language(scope.get('language'))
-        return build_machine_analysis_payload(target_date, language, scope.get('machine') or '')
+        return build_machine_analysis_payload(
+            target_date,
+            language,
+            scope.get('machine') or '',
+            scope.get('model_id') or DEFAULT_PRODUCTION_AI_MODEL_ID,
+        )
 
     return {}
 
@@ -230,7 +293,8 @@ class AiJobListCreateView(APIView):
         serializer = AiJobCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         job_type = serializer.validated_data['job_type']
-        scope = serializer.validated_data.get('scope') or {}
+        scope = dict(serializer.validated_data.get('scope') or {})
+        scope['model_id'] = DEFAULT_PRODUCTION_AI_MODEL_ID
         active_statuses = [
             AiJob.STATUS_PENDING,
             AiJob.STATUS_CLAIMED,
@@ -300,10 +364,11 @@ class AiJobLatestView(APIView):
         if not parse_date(str(date_str)):
             raise ValidationError({'date': 'date must use YYYY-MM-DD.'})
         language = normalize_language(request.query_params.get('language'))
-        model_id = str(
+        requested_model_id = str(
             request.query_params.get('model_id') or DEFAULT_PRODUCTION_AI_MODEL_ID
         ).strip()
-        if model_id not in PRODUCTION_AI_MODEL_IDS:
+        model_id = canonical_production_ai_model_id(requested_model_id)
+        if model_id is None:
             raise ValidationError({'model_id': 'Unsupported local AI model.'})
 
         jobs = (
@@ -316,12 +381,7 @@ class AiJobLatestView(APIView):
                 scope__trigger='hourly',
             )
         )
-        if model_id == DEFAULT_PRODUCTION_AI_MODEL_ID:
-            jobs = jobs.filter(
-                Q(scope__model_id=model_id) | Q(scope__model_id__isnull=True)
-            )
-        else:
-            jobs = jobs.filter(scope__model_id=model_id)
+        jobs = jobs.filter(scope__model_id=model_id)
         job = jobs.order_by('-completed_at', '-id').first()
         return Response({'job': AiJobResultSerializer(job).data if job else None})
 
@@ -417,6 +477,10 @@ class AiWorkerStatusView(APIView):
             state = 'offline'
 
         heartbeat_result = heartbeat.result_payload if heartbeat else {}
+        heartbeat_worker_version = (
+            str(heartbeat_result.get('worker_version') or '') if heartbeat else ''
+        )
+        worker_compatible = heartbeat_worker_version == SUPPORTED_AI_WORKER_VERSION
         latest_analysis = (
             AiJob.objects
             .filter(
@@ -425,6 +489,7 @@ class AiWorkerStatusView(APIView):
                 created_by__isnull=True,
                 scope__trigger='hourly',
                 scope__language=language,
+                scope__model_id=DEFAULT_PRODUCTION_AI_MODEL_ID,
             )
             .order_by('-completed_at', '-id')
             .first()
@@ -438,12 +503,17 @@ class AiWorkerStatusView(APIView):
             'heartbeat_age_seconds': heartbeat_age_seconds,
             'stale_after_seconds': stale_after_seconds,
             'llm_enabled': heartbeat_result.get('llm_enabled') if heartbeat else None,
-            'llm_ready': heartbeat_result.get('llm_ready') if heartbeat else None,
+            'llm_ready': (
+                heartbeat_result.get('llm_ready') if heartbeat and worker_compatible else False
+            ),
             'model_name': display_model_name(heartbeat_result.get('model_name')),
-            'worker_version': heartbeat_result.get('worker_version', '') if heartbeat else '',
+            'worker_version': heartbeat_worker_version,
+            'worker_compatible': worker_compatible,
             'last_error': heartbeat_result.get('last_error', '') if heartbeat else '',
             'available_model_ids': (
-                heartbeat_result.get('available_model_ids', []) if heartbeat else []
+                heartbeat_result.get('available_model_ids', [])
+                if heartbeat and worker_compatible
+                else []
             ),
             'last_analysis_completed_at': latest_analysis.completed_at if latest_analysis else None,
             'last_analysis_model_name': display_model_name(latest_analysis.model_name) if latest_analysis else '',
@@ -574,26 +644,32 @@ class AiWorkerClaimView(APIView):
             AiJob.JOB_TYPE_PRODUCTION_MACHINE,
             AiJob.JOB_TYPE_QUALITY_IMAGE,
         ]
-        non_quality_job_types = [
+        production_job_types = [
             job_type for job_type in job_types
             if job_type != AiJob.JOB_TYPE_QUALITY_IMAGE
         ]
-        eligible_job_types = Q(job_type__in=non_quality_job_types)
-        if AiJob.JOB_TYPE_QUALITY_IMAGE in job_types:
-            eligible_job_types |= (
+        eligible_jobs = Q(pk__in=[])
+        if production_job_types and available_model_ids:
+            eligible_jobs |= Q(
+                job_type__in=production_job_types,
+                scope__model_id__in=available_model_ids,
+            )
+        if (
+            AiJob.JOB_TYPE_QUALITY_IMAGE in job_types
+            and QUALITY_DAILY_MODEL_ID in available_model_ids
+        ):
+            eligible_jobs |= (
                 Q(
                     job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
                     scope__mode=QUALITY_DAILY_MODE,
                     scope__trigger=QUALITY_DAILY_TRIGGER,
+                    scope__model_id=QUALITY_DAILY_MODEL_ID,
                 )
-                | (
-                    Q(
-                        job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
-                        scope__mode=QUALITY_REPORT_AUDIT_MODE,
-                        scope__trigger=QUALITY_REPORT_AUDIT_TRIGGER,
-                    )
-                    if QUALITY_DAILY_MODEL_ID in available_model_ids
-                    else Q(pk__in=[])
+                | Q(
+                    job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+                    scope__mode=QUALITY_REPORT_AUDIT_MODE,
+                    scope__trigger=QUALITY_REPORT_AUDIT_TRIGGER,
+                    scope__model_id=QUALITY_DAILY_MODEL_ID,
                 )
             )
         now = timezone.now()
@@ -610,7 +686,7 @@ class AiWorkerClaimView(APIView):
                 AiJob.objects
                 .select_for_update()
                 .filter(status=AiJob.STATUS_PENDING)
-                .filter(eligible_job_types)
+                .filter(eligible_jobs)
                 .annotate(
                     trigger_priority=Case(
                         When(
@@ -661,9 +737,8 @@ class AiWorkerJobTransitionView(APIView):
                 return self.fail(request, job)
             raise NotFound('Unknown transition.')
 
-    def assert_quality_audit_claim(self, job, payload):
-        if not is_quality_report_audit_job(job):
-            return
+    def assert_claim_lease(self, job, payload):
+        """Reject transitions from a Worker that no longer owns this claim."""
         worker_name = str(payload.get('worker_name') or '').strip()
         claim_timestamp = payload.get('claim_timestamp')
         if isinstance(claim_timestamp, str):
@@ -675,14 +750,11 @@ class AiWorkerJobTransitionView(APIView):
             or job.claimed_at is None
             or claim_timestamp != job.claimed_at
         ):
-            raise PermissionDenied('This audit lease belongs to another Worker claim.')
+            raise PermissionDenied('This job lease belongs to another Worker claim.')
 
     def start(self, request, job):
-        if is_quality_report_audit_job(job):
-            self.assert_quality_audit_claim(job, request.data)
-            if job.status != AiJob.STATUS_CLAIMED:
-                raise ValidationError({'detail': f'{job.status} audit job cannot be started.'})
-        if job.status not in [AiJob.STATUS_CLAIMED, AiJob.STATUS_PENDING]:
+        self.assert_claim_lease(job, request.data)
+        if job.status != AiJob.STATUS_CLAIMED:
             raise ValidationError({'detail': f'{job.status} job cannot be started.'})
         job.status = AiJob.STATUS_RUNNING
         job.started_at = timezone.now()
@@ -694,7 +766,7 @@ class AiWorkerJobTransitionView(APIView):
             raise ValidationError({'detail': f'{job.status} job cannot be completed.'})
         serializer = AiJobCompleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.assert_quality_audit_claim(job, serializer.validated_data)
+        self.assert_claim_lease(job, serializer.validated_data)
         if (
             is_quality_report_audit_job(job)
             and serializer.validated_data.get('prompt_version')
@@ -714,6 +786,10 @@ class AiWorkerJobTransitionView(APIView):
             )
         else:
             job.result_payload = restore_authoritative_production_result(job, worker_result)
+        scope = job.scope if isinstance(job.scope, dict) else {}
+        scope_model_id = str(scope.get('model_id') or '').strip()
+        if scope_model_id in PRODUCTION_AI_MODEL_IDS or scope_model_id == QUALITY_DAILY_MODEL_ID:
+            job.result_payload['model_id'] = scope_model_id
         job.model_name = serializer.validated_data.get('model_name') or ''
         job.prompt_version = serializer.validated_data.get('prompt_version') or ''
         job.error_message = ''
@@ -734,7 +810,7 @@ class AiWorkerJobTransitionView(APIView):
             raise ValidationError({'detail': f'{job.status} job cannot be failed.'})
         serializer = AiJobFailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.assert_quality_audit_claim(job, serializer.validated_data)
+        self.assert_claim_lease(job, serializer.validated_data)
         job.status = AiJob.STATUS_FAILED
         job.error_message = serializer.validated_data['error_message']
         job.model_name = serializer.validated_data.get('model_name') or ''

@@ -113,20 +113,6 @@ class LocalLlmClient:
             request_payload["enable_thinking"] = enable_thinking
             if enable_thinking and thinking_budget is not None:
                 request_payload["thinking_budget"] = max(1, int(thinking_budget))
-        elif self.model_family == "gemma4":
-            # Gemma's unbounded thinking mode can consume the whole completion
-            # budget before emitting the required JSON. The Worker needs a
-            # short auditable answer, so keep thinking disabled for both the
-            # first pass and repair pass.
-            request_payload.update({
-                "temperature": 0.2,
-                "top_k": 64,
-                "top_p": 0.95,
-                "max_tokens": 1800,
-            })
-            request_payload["chat_template_kwargs"] = {
-                "enable_thinking": False,
-            }
         if max_tokens is not None:
             request_payload["max_tokens"] = max(128, min(4096, int(max_tokens)))
         if json_schema is not None:

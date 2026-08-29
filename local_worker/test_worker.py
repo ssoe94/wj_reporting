@@ -41,6 +41,18 @@ except ImportError:
     )
 
 
+def structured_ko(
+    conclusion: str,
+    evidence: str = "검증된 생산 데이터 범위의 설명입니다.",
+    check: str = "관련 데이터 상태를 확인합니다.",
+) -> str:
+    return (
+        f"결론:\n{conclusion}\n\n"
+        f"판단 근거:\n- {evidence}\n\n"
+        f"확인할 항목:\n- {check}"
+    )
+
+
 class NormalizeResultTests(unittest.TestCase):
     def setUp(self):
         self.fallback = {
@@ -54,10 +66,11 @@ class NormalizeResultTests(unittest.TestCase):
         }
 
     def test_llm_can_rewrite_prose_but_not_authoritative_fields(self):
+        summary = structured_ko("사출의 계획 대비 부족 여부 확인이 필요합니다.")
         result = normalize_result(
             {
                 "title": "생산 분석",
-                "summary": "사출은 계획 대비 부족하여 확인이 필요합니다.",
+                "summary": summary,
                 "severity": "normal",
                 "top_issues": [{"label": "fabricated"}],
             },
@@ -66,7 +79,7 @@ class NormalizeResultTests(unittest.TestCase):
             self.fallback,
         )
 
-        self.assertEqual(result["summary"], "사출은 계획 대비 부족하여 확인이 필요합니다.")
+        self.assertEqual(result["summary"], summary)
         self.assertEqual(result["severity"], "warning")
         self.assertEqual(result["top_issues"], self.fallback["top_issues"])
         self.assertEqual(result["facts"], self.fallback["facts"])
@@ -77,8 +90,10 @@ class NormalizeResultTests(unittest.TestCase):
             {
                 "title": "생산 분석",
                 "summary": (
-                    "현재 생산 상태는 추가 확인이 필요합니다.\n"
-                    "- 검증되지 않은 수량은 999개입니다."
+                    "결론:\n현재 생산 상태는 추가 확인이 필요합니다.\n\n"
+                    "판단 근거:\n- 검증된 생산 데이터가 있습니다.\n"
+                    "- 검증되지 않은 수량은 999개입니다.\n\n"
+                    "확인할 항목:\n- 관련 데이터 상태를 확인합니다."
                 ),
             },
             self.fallback,
@@ -86,7 +101,8 @@ class NormalizeResultTests(unittest.TestCase):
             self.fallback,
         )
 
-        self.assertEqual(result["summary"], "현재 생산 상태는 추가 확인이 필요합니다.")
+        self.assertIn("현재 생산 상태는 추가 확인이 필요합니다.", result["summary"])
+        self.assertNotIn("999", result["summary"])
         self.assertTrue(result["llm_numeric_lines_pruned"])
         self.assertEqual(result["source"], "local_llm_rewrite")
 
@@ -100,10 +116,11 @@ class NormalizeResultTests(unittest.TestCase):
             )
 
     def test_invalid_numeric_title_is_replaced_without_discarding_safe_summary(self):
+        summary = structured_ko("현재 추세를 바탕으로 기준일 종료 예상 결과를 확인했습니다.")
         result = normalize_result(
             {
                 "title": "1, 9호기 형합 예상치 분석",
-                "summary": "현재 추세를 바탕으로 기준일 종료 예상 결과를 확인했습니다.",
+                "summary": summary,
             },
             self.fallback,
             "qwen-test",
@@ -111,9 +128,229 @@ class NormalizeResultTests(unittest.TestCase):
         )
 
         self.assertEqual(result["title"], "Deterministic analysis")
-        self.assertEqual(result["summary"], "현재 추세를 바탕으로 기준일 종료 예상 결과를 확인했습니다.")
+        self.assertEqual(result["summary"], summary)
         self.assertTrue(result["llm_title_fallback"])
-        self.assertEqual(result["source"], "local_llm_rewrite")
+
+    def test_safe_data_check_is_not_rejected_as_operational_directive(self):
+        summary = structured_ko("생산 계획 대비 실적 데이터 정합성을 우선 확인해야 합니다.")
+        result = normalize_result(
+            {
+                "title": "생산 분석",
+                "summary": summary,
+            },
+            self.fallback,
+            "qwen-test",
+            self.fallback,
+        )
+
+        self.assertEqual(
+            result["summary"],
+            summary,
+        )
+
+    def test_validation_word_does_not_open_a_clause_wide_directive_bypass(self):
+        unsafe_summaries = [
+            "결과 데이터 정합성을 검증해야 합니다.",
+            "금형을 분해하고 결과 데이터 정합성을 검증해야 합니다.",
+            "금형을 세척하고 결과 데이터 정합성을 검증해야 합니다.",
+            "금형을 윤활하고 결과 데이터를 확인해야 합니다.",
+            "필터를 교환하고 결과 데이터를 확인해야 합니다.",
+            "장비를 리셋하고 상태를 확인해야 합니다.",
+            "금형을 윤활한 후 결과 데이터를 확인해야 합니다.",
+            "생산 설정을 변경하고 결과 데이터 정합성을 검증해야 합니다.",
+            "작업 순서를 변경하고 결과 데이터 정합성을 검증해야 합니다.",
+            "需要验证数据一致性。",
+            "需要拆卸模具并验证数据一致性。",
+            "需要清洗模具并验证数据一致性。",
+            "需要润滑模具并确认数据。",
+            "需要关闭设备并确认状态。",
+            "需要调整生产条件并验证数据一致性。",
+            "需要绕过设备并验证数据一致性。",
+            "금형 윤활 및 결과 데이터 확인이 필요합니다.",
+            "필터 교환과 결과 데이터 확인이 필요합니다.",
+            "금형 윤활, 결과 데이터 확인이 필요합니다.",
+            "需要进行模具润滑及数据确认。",
+            "需要关闭设备后确认状态。",
+            "확인할 항목:\n- 금형 세척\n- 결과 데이터 확인",
+            "확인할 항목:\n- 금형 분해",
+            "확인할 항목:\n- 장비 리셋",
+            "需确认:\n- 清洗模具",
+            "需确认:\n- 关闭设备",
+            "확인할 항목:\n- 금형 코팅과 데이터 확인",
+            "확인할 항목:\n- 금형에 이형제 도포와 결과 확인",
+            "확인할 항목:\n- 밸브 개방/상태 확인",
+            "확인할 항목:\n- 노즐 퍼지·결과 확인",
+            "需确认:\n- 打开阀门/确认状态",
+            "확인할 항목:\n- 생산 데이터 확인/이력 조회",
+            "확인할 항목:\n- 생산 데이터 확인 조회",
+            "작업 제안:\n- 금형 코팅",
+            "**확인할 항목:**\n- 금형 코팅",
+            "需处理:\n- 停止生产线",
+            "**需确认:**\n- 打开阀门",
+            "확인할 항목:\n1. 금형을 닦고 결과를 확인해야 합니다.",
+            "확인할 항목:\n- 전원을 내리고 상태를 확인하세요.",
+            "확인할 항목:\n- 압력을 올리고 결과를 확인해야 합니다.",
+            "확인할 항목:\n- 설정값을 고치고 결과를 확인해야 합니다.",
+            "需确认:\n- 擦拭模具；确认结果。",
+            "需确认:\n- 切断电源再确认状态。",
+            "需确认:\n- 把压力调高再确认结果。",
+            "需确认:\n- 修改参数再确认结果。",
+            "결론: 상태 확인이 필요합니다. 확인할 항목: 금형을 닦고 결과를 확인해야 합니다.",
+            "## 확인할 항목:\n- 금형 코팅",
+            "확인할 항목 —\n- 금형 코팅",
+            "확인할 항목:\n- 세\u200b척 후 상태 확인",
+            "需确认:\n- 清\u200b洗后确认状态",
+            "확인할 항목:\n- 상태 확인; 이력 조회",
+            "확인할 항목:\n- 상태 확인 → 이력 조회",
+            "작업 제안\n- 볼트 조임",
+            "다음 조치\n- 냉각수 보충",
+            "확인 사항\n- 밸브 잠금",
+            "조치 사항\n1. 히터 켜기",
+            "需处理\n- 拧紧螺栓",
+            "下一步\n- 打开加热器",
+            "확인할 항목:\n- 볼트 조임 & 상태 확인",
+            "확인할 항목:\n- 벨트 장력 조정 | 상태 확인",
+            "확인할 항목:\n- 센서 재배치: 결과 확인",
+            "需确认:\n- 拧紧螺栓＆确认状态",
+            "需确认:\n- 调整皮带张力｜确认状态",
+            "需确认:\n- 重新放置传感器：确认结果",
+            "확인할 항목:\n- 센서 재배치. 결과 확인.",
+            "결론:\n데이터 확인이 필요합니다.\n\n판단 근거:\n- 계획 정보가 없습니다.\n\n작업 제안\n- 볼트 조임",
+            "결론:\n데이터 확인이 필요합니다.\n\n판단 근거:\n- 계획 정보가 없습니다.\n\n다음 조치\n- 냉각수 보충",
+            "결론:\n데이터 확인이 필요합니다.\n\n판단 근거:\n- 계획 정보가 없습니다.\n\n확인 사항\n- 밸브 잠금",
+            "결론:\n데이터 확인이 필요합니다.\n\n판단 근거:\n- 계획 정보가 없습니다.\n\n**다음 조치**\n- 히터 켜기",
+            "结论:\n需要确认数据。\n\n判断依据:\n- 缺少计划信息。\n\n需处理\n- 拧紧螺栓",
+            "결론:\n볼트 조임",
+            "볼트 조임",
+        ]
+
+        for summary in unsafe_summaries:
+            with self.subTest(summary=summary):
+                with self.assertRaisesRegex(ValueError, "unsupported claim"):
+                    normalize_result(
+                        {"title": "생산 분석", "summary": summary},
+                        self.fallback,
+                        "qwen-test",
+                        self.fallback,
+                    )
+
+    def test_next_action_section_accepts_only_single_information_checks(self):
+        result = normalize_result(
+            {
+                "title": "생산 분석",
+                "summary": (
+                    "결론:\n생산 상태는 추가 확인이 필요합니다.\n\n"
+                    "판단 근거:\n- 검증된 생산 계획이 있습니다.\n\n"
+                    "확인할 항목:\n- 생산 실적 데이터 확인\n- 최근 수집 이력 조회"
+                ),
+            },
+            self.fallback,
+            "qwen-test",
+            self.fallback,
+        )
+
+        self.assertIn("생산 실적 데이터 확인", result["summary"])
+        self.assertIn("최근 수집 이력 조회", result["summary"])
+
+    def test_safe_coordinated_data_subjects_are_not_treated_as_chained_actions(self):
+        conclusion = (
+            "사출 및 가공 생산 계획 데이터가 부재하여 완료율과 시간 진도 평가를 수행할 수 없습니다. "
+            "관련 계획 및 실적 데이터의 등록 여부를 확인해야 합니다."
+        )
+        summary = structured_ko(conclusion)
+
+        result = normalize_result(
+            {"title": "생산 분석", "summary": summary},
+            self.fallback,
+            "qwen-test",
+            self.fallback,
+        )
+
+        self.assertEqual(result["summary"], summary)
+
+    def test_safe_information_objects_can_share_one_check_action(self):
+        summary = (
+            "결론:\n생산 데이터 확인이 필요합니다.\n\n"
+            "판단 근거:\n- 등록 여부가 제공되지 않았습니다.\n\n"
+            "확인할 항목:\n"
+            "- 사출 MES 데이터와 생산 계획 등록 여부를 확인합니다.\n"
+            "- 가공 생산 계획 등록 여부를 확인합니다."
+        )
+
+        result = normalize_result(
+            {"title": "생산 분석", "summary": summary},
+            self.fallback,
+            "qwen-test",
+            self.fallback,
+        )
+
+        self.assertEqual(result["summary"], summary)
+
+    def test_safe_process_subjects_can_share_closed_information_checks(self):
+        summary = (
+            "결론:\n생산 계획 데이터 확인이 필요합니다.\n\n"
+            "판단 근거:\n- 검증된 계획 정보가 부족합니다.\n\n"
+            "확인할 항목:\n"
+            "- 사출 및 가공 생산 계획 데이터 등록 여부를 확인합니다.\n"
+            "- 사출 및 가공 실적 데이터 수집 상태를 점검합니다."
+        )
+
+        result = normalize_result(
+            {"title": "생산 분석", "summary": summary},
+            self.fallback,
+            "qwen-test",
+            self.fallback,
+        )
+
+        self.assertEqual(result["summary"], summary)
+
+    def test_empty_required_section_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unsupported claim"):
+            normalize_result(
+                {
+                    "title": "생산 분석",
+                    "summary": (
+                        "결론:\n\n"
+                        "판단 근거:\n- 검증된 계획 정보가 부족합니다.\n\n"
+                        "확인할 항목:\n- 생산 계획 데이터를 확인합니다."
+                    ),
+                },
+                self.fallback,
+                "qwen-test",
+                self.fallback,
+            )
+
+    def test_hourly_summary_rejects_unverified_root_cause_without_analysis_skill(self):
+        with self.assertRaisesRegex(ValueError, "unsupported claim"):
+            normalize_result(
+                {
+                    "title": "생산 분석",
+                    "summary": "금형 교체 때문에 생산이 지연되고 있습니다.",
+                },
+                self.fallback,
+                "qwen-test",
+                self.fallback,
+            )
+
+    def test_hourly_summary_rejects_stopped_claim_against_running_machine(self):
+        grounding = {
+            **self.fallback,
+            "tables": [{
+                "name": "injection_machine_progress",
+                "rows": [{"machine": "850T-1", "is_running": True, "planned_qty": 100}],
+            }],
+        }
+
+        with self.assertRaisesRegex(ValueError, "unsupported claim"):
+            normalize_result(
+                {
+                    "title": "생산 분석",
+                    "summary": "850T-1은 현재 정지 중입니다.",
+                },
+                self.fallback,
+                "qwen-test",
+                grounding,
+            )
 
 
 class ProductionDailyAnalysisTests(unittest.TestCase):
@@ -139,6 +376,91 @@ class ProductionDailyAnalysisTests(unittest.TestCase):
             [table["name"] for table in payload["tables"]],
             ["injection_machine_progress", "machining_line_progress"],
         )
+
+    def test_missing_plan_is_reported_as_evaluation_limit_not_no_delay(self):
+        job = {
+            "input_payload": {
+                "language": "ko",
+                "briefing": {
+                    "answer": "사출 계획이 없어 진도를 평가할 수 없습니다.",
+                    "warnings": ["injection_plan_missing", "machining_plan_missing"],
+                    "top_risks": [],
+                    "context_pack": {
+                        "warnings": ["injection_plan_missing", "machining_plan_missing"],
+                        "tables": [],
+                    },
+                },
+            },
+        }
+
+        result = production_daily_analysis.build_dummy_result(job)
+
+        self.assertEqual(result["top_issues"], [])
+        self.assertIn("평가할 수 없습니다", result["summary"])
+        self.assertNotIn("큰 지연 설비는", result["summary"])
+
+    def test_stale_mes_is_reported_as_evaluation_limit_not_no_delay(self):
+        job = {
+            "input_payload": {
+                "language": "ko",
+                "briefing": {
+                    "answer": "사출 MES 데이터가 오래되어 진도를 평가할 수 없습니다.",
+                    "warnings": ["injection_mes_data_stale"],
+                    "top_risks": [],
+                    "context_pack": {
+                        "warnings": ["injection_mes_data_stale"],
+                        "tables": [],
+                    },
+                },
+            },
+        }
+
+        result = production_daily_analysis.build_dummy_result(job)
+
+        self.assertEqual(result["top_issues"], [])
+        self.assertIn("평가할 수 없습니다", result["summary"])
+        self.assertNotIn("지연 항목이 없습니다", result["summary"])
+
+    def test_risk_candidates_expose_checks_without_unverified_causes(self):
+        job = {
+            "input_payload": {
+                "language": "ko",
+                "briefing": {
+                    "answer": "검증된 생산 브리핑",
+                    "severity": "warning",
+                    "top_risks": [{
+                        "type": "injection_machine_delay",
+                        "process": "injection",
+                        "label": "M1",
+                        "gap_qty": -20,
+                        "detail": "time-adjusted gap",
+                    }],
+                    "context_pack": {
+                        "warnings": [],
+                        "tables": [{
+                            "name": "injection_machine_progress",
+                            "rows": [{
+                                "machine": "M1",
+                                "planned_qty": 100,
+                                "actual_qty": 30,
+                                "expected_qty_by_time": 50,
+                                "gap_to_time_qty": -20,
+                                "gap_to_time_rate_pp": -20,
+                                "progress_rate": 30,
+                                "recent_60m_shots": 10,
+                            }],
+                        }],
+                    },
+                },
+            },
+        }
+
+        result = production_daily_analysis.build_dummy_result(job)
+
+        self.assertEqual(len(result["top_issues"]), 1)
+        self.assertEqual(result["top_issues"][0]["possible_causes"], [])
+        self.assertTrue(result["top_issues"][0]["recommended_actions"])
+        self.assertIn("Never state or imply a root cause", production_daily_analysis.SYSTEM_PROMPT)
 
 
 class GroundingValidationTests(unittest.TestCase):
@@ -229,6 +551,17 @@ class GroundingValidationTests(unittest.TestCase):
             summary_numbers_are_grounded(
                 "요청한 시간 구간의 설비 상태를 확인했습니다.",
                 self.grounding,
+            ),
+        )
+
+    def test_korean_subject_particle_before_time_is_not_misread_as_two_hours(self):
+        grounding = {
+            "target_row": {"machine": "850T-1", "progress_rate": 51.7},
+        }
+        self.assertTrue(
+            summary_numbers_are_grounded(
+                "850T-1의 실제 생산 진행률이 시간 경과 비율보다 낮게 나타났습니다.",
+                grounding,
             ),
         )
 
@@ -424,6 +757,123 @@ class ProductionMachineAnalysisTests(unittest.TestCase):
         self.assertEqual(result["warnings"], ["sample warning"])
         self.assertEqual(result["retrieval_trace"], [{"source": "production_context"}])
         self.assertEqual(result["target_machine"]["machine"], "850T-1")
+        self.assertTrue(result["top_issues"])
+        self.assertTrue(all(not issue["possible_causes"] for issue in result["top_issues"]))
+
+    def test_stale_mes_requires_refresh_check_without_current_idle_claim(self):
+        job = {
+            "scope": {"machine": "850T-1"},
+            "input_payload": {
+                "language": "ko",
+                "date": "2026-08-03",
+                "target_row": {
+                    "machine": "850T-1",
+                    "planned_qty": 100,
+                    "actual_qty": 50,
+                    "gap_qty": -50,
+                    "progress_rate": 50,
+                    "recent_60m_shots": 0,
+                },
+                "context_pack": {
+                    "warnings": ["injection_mes_data_stale"],
+                },
+            },
+        }
+
+        result = production_machine_analysis.build_dummy_result(job)
+
+        self.assertEqual(result["severity"], "warning")
+        self.assertNotIn("recent_idle", [issue["type"] for issue in result["top_issues"]])
+        self.assertNotIn("recent_no_shots", [issue["type"] for issue in result["top_issues"]])
+        self.assertIn("data_freshness_check", [issue["type"] for issue in result["top_issues"]])
+
+    def test_injection_missing_capacity_hides_unverified_zero_progress(self):
+        job = {
+            "scope": {"machine": "850T-1"},
+            "input_payload": {
+                "language": "ko",
+                "process": "injection",
+                "machine": "850T-1",
+                "target_data_warnings": ["injection_capacity_data_missing"],
+                "target_row": {
+                    "machine": "850T-1",
+                    "planned_qty": 100,
+                    "actual_qty": 0,
+                    "gap_qty": -100,
+                    "progress_rate": 0,
+                    "recent_60m_shots": 0,
+                },
+                "related_parts": [{"part_no": "PART-A", "estimated_qty": 0}],
+                "context_pack": {"warnings": ["injection_capacity_coverage_incomplete"]},
+            },
+        }
+
+        result = production_machine_analysis.build_dummy_result(job)
+        llm_payload = production_machine_analysis.build_llm_payload(job)
+
+        self.assertIn("평가할 수 없습니다", result["summary"])
+        self.assertNotIn("0 / 100", result["summary"])
+        self.assertEqual([issue["type"] for issue in result["top_issues"]], ["data_freshness_check"])
+        self.assertNotIn("actual_qty", result["target_machine"])
+        self.assertEqual(result["related_parts"], [])
+        self.assertNotIn("actual_qty", llm_payload["target_row"])
+        self.assertEqual(llm_payload["related_parts"], [])
+
+    def test_valid_machining_target_ignores_unrelated_injection_warning(self):
+        job = {
+            "scope": {"machine": "MC-A"},
+            "input_payload": {
+                "language": "ko",
+                "process": "machining",
+                "machine": "MC-A",
+                "target_data_warnings": [],
+                "target_row": {
+                    "equipment_label": "MC-A",
+                    "planned_qty": 100,
+                    "actual_qty": 80,
+                    "gap_qty": -20,
+                    "progress_rate": 80,
+                },
+                "context_pack": {"warnings": ["injection_mes_data_missing"]},
+            },
+        }
+
+        result = production_machine_analysis.build_dummy_result(job)
+        llm_payload = production_machine_analysis.build_llm_payload(job)
+
+        self.assertIn("80%", result["summary"])
+        self.assertNotIn("형합", result["summary"])
+        self.assertEqual(result["warnings"], [])
+        self.assertEqual(result["severity"], "warning")
+        self.assertNotIn("recent_no_shots", [issue["type"] for issue in result["top_issues"]])
+        self.assertEqual(result["target_machine"]["actual_qty"], 80)
+        self.assertEqual(llm_payload["target_row"]["actual_qty"], 80)
+
+    def test_missing_machining_actual_uses_machining_specific_limitation(self):
+        job = {
+            "scope": {"machine": "MC-A"},
+            "input_payload": {
+                "language": "ko",
+                "process": "machining",
+                "machine": "MC-A",
+                "target_data_warnings": ["machining_actual_missing"],
+                "target_row": {
+                    "equipment_label": "MC-A",
+                    "planned_qty": 100,
+                    "actual_qty": 0,
+                    "gap_qty": -100,
+                    "progress_rate": 0,
+                },
+                "context_pack": {"warnings": ["injection_mes_data_missing", "machining_actual_missing"]},
+            },
+        }
+
+        result = production_machine_analysis.build_dummy_result(job)
+
+        self.assertIn("확인된 가공 실적이 없어", result["summary"])
+        self.assertNotIn("MES 형합", result["summary"])
+        self.assertNotIn("actual_qty", result["target_machine"])
+        self.assertEqual([issue["type"] for issue in result["top_issues"]], ["data_freshness_check"])
 
 
 class ProductionAnalystSkillTests(unittest.TestCase):
@@ -696,6 +1146,8 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
         self.assertEqual(payload["verified_answer"], "1호기 종료 예상 형합수는 2,900회입니다.")
         self.assertEqual(payload["verified_facts"]["projected_total_shots"], 2900)
         self.assertEqual(payload["analysis_skill"]["name"], "production-analyst")
+        self.assertIn("exactly one non-mutating information check", production_question_analysis.SYSTEM_PROMPT)
+        self.assertIn("Do not use 검증/验证", payload["instruction"])
 
     def test_exact_skill_metric_sentence_is_allowed_but_numeric_rewrite_is_rejected(self):
         status_job = {
@@ -865,7 +1317,14 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
                 self.calls += 1
                 if self.calls == 1:
                     return {"title": "가동 현황", "summary": "최근 12시간 동안 가동된 사출기는 3대입니다."}
-                return {"title": "가동 현황", "summary": "최근 12시간 동안 가동된 사출기는 2대입니다."}
+                return {
+                    "title": "가동 현황",
+                    "summary": structured_ko(
+                        "최근 12시간 동안 가동된 사출기는 2대입니다.",
+                        evidence="검증된 MES 기록을 사용했습니다.",
+                        check="최신 MES 수집 상태를 확인합니다.",
+                    ),
+                }
 
         llm = SequencedLlm()
         result, _ = handle_job(
@@ -891,14 +1350,18 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
                 if self.calls == 1:
                     return {
                         "title": "형합 예상",
-                        "summary": (
-                            "1호기 종료 예상 형합수는 2,900회입니다.\n\n"
-                            "금형 온도 문제의 결과 생산이 늦습니다."
+                        "summary": structured_ko(
+                            "1호기 종료 예상 형합수는 2,900회입니다.",
+                            evidence="금형 온도 문제의 결과 생산이 늦습니다.",
                         ),
                     }
                 return {
                     "title": "형합 예상",
-                    "summary": "1호기 종료 예상 형합수는 2,900회입니다.",
+                    "summary": structured_ko(
+                        "1호기 종료 예상 형합수는 2,900회입니다.",
+                        evidence="검증된 형합 추세를 사용했습니다.",
+                        check="최신 MES 수집 상태를 확인합니다.",
+                    ),
                 }
 
         llm = SequencedLlm()
@@ -967,14 +1430,18 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
                 if self.calls == 1:
                     return {
                         "title": "가동 현황",
-                        "summary": (
-                            "MES 형합 기록이 없어 가동된 사출기 대수를 확인할 수 없습니다.\n\n"
-                            "가동된 사출기는 없습니다."
+                        "summary": structured_ko(
+                            "MES 형합 기록이 없어 가동된 사출기 대수를 확인할 수 없습니다.",
+                            evidence="가동된 사출기는 없습니다.",
                         ),
                     }
                 return {
                     "title": "가동 현황",
-                    "summary": "MES 형합 기록이 없어 가동된 사출기 대수를 확인할 수 없습니다.",
+                    "summary": structured_ko(
+                        "MES 형합 기록이 없어 가동된 사출기 대수를 확인할 수 없습니다.",
+                        evidence="MES 형합 기록이 제공되지 않았습니다.",
+                        check="MES 수집 상태를 확인합니다.",
+                    ),
                 }
 
         llm = SequencedLlm()
@@ -1013,7 +1480,9 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
                 self.calls += 1
                 return {
                     "title": "생산 설명",
-                    "summary": "일부 설비는 검증된 생산 흐름에 포함되어 있습니다.",
+                    "summary": structured_ko(
+                        "일부 설비는 검증된 생산 흐름에 포함되어 있습니다."
+                    ),
                 }
 
         llm = OneCallLlm()
@@ -1163,7 +1632,7 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
                     "결론\n32인치 생산 추이는 판단할 수 없습니다.\n\n"
                     "판단 근거\n1. 850T-1에서 PART-A 생산이 진행 중입니다.\n"
                     "2. 대상별 과거 데이터가 없습니다.\n\n"
-                    "확인할 항목\n- 대상별 시간 스냅샷을 수집해야 합니다."
+                    "확인할 항목\n- 대상별 시간 스냅샷 유무를 확인해야 합니다."
                 ),
             },
             {"title": "생산 현황", "answer": "검증된 답변"},
@@ -1181,7 +1650,11 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
             def structured_analysis(self, _system_prompt, _payload, **_kwargs):
                 return {
                     "title": "검증된 생산 추세 설명",
-                    "summary": "1호기 종료 예상 형합수는 2,900회입니다.",
+                    "summary": structured_ko(
+                        "1호기 종료 예상 형합수는 2,900회입니다.",
+                        evidence="검증된 형합 추세를 사용했습니다.",
+                        check="최신 MES 수집 상태를 확인합니다.",
+                    ),
                 }
 
         result, prompt_version = handle_job(
@@ -1194,10 +1667,10 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
 
         self.assertEqual(result["answer"], "1호기 종료 예상 형합수는 2,900회입니다.")
         self.assertEqual(result["facts"]["projected_total_shots"], 2900)
-        self.assertEqual(result["summary"], "1호기 종료 예상 형합수는 2,900회입니다.")
+        self.assertIn("1호기 종료 예상 형합수는 2,900회입니다.", result["summary"])
         self.assertEqual(result["source"], "local_llm_rewrite")
         self.assertEqual(result["llm_attempts"], 1)
-        self.assertEqual(prompt_version, "production-question-v7")
+        self.assertEqual(prompt_version, "production-question-v8")
 
     def test_grounding_rejection_is_repaired_with_qualitative_payload(self):
         class SequencedLlm:
@@ -1210,7 +1683,11 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
                     },
                     {
                         "title": "1호기 생산 추세",
-                        "summary": "1호기의 최근 측정 추세를 기준으로 예상 결과를 확인했습니다.",
+                        "summary": structured_ko(
+                            "1호기의 최근 측정 추세를 기준으로 예상 결과를 확인했습니다.",
+                            evidence="검증된 형합 추세를 사용했습니다.",
+                            check="최신 MES 수집 상태를 확인합니다.",
+                        ),
                     },
                 ])
 
@@ -1283,7 +1760,11 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
             def structured_analysis(self, _system_prompt, _payload, **_kwargs):
                 return {
                     "title": "32인치 모델 생산 상태",
-                    "summary": "32인치 모델은 현재 생산 진행 중입니다.",
+                    "summary": structured_ko(
+                        "32인치 모델은 현재 생산 진행 중입니다.",
+                        evidence="850T-1의 검증된 생산 상태를 사용했습니다.",
+                        check="최신 생산 이력을 조회합니다.",
+                    ),
                 }
 
         result, _ = handle_job(
@@ -1294,7 +1775,7 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
             fallback_to_deterministic=False,
         )
 
-        self.assertEqual(result["summary"], "32인치 모델은 현재 생산 진행 중입니다.")
+        self.assertIn("32인치 모델은 현재 생산 진행 중입니다.", result["summary"])
         self.assertEqual(result["source"], "local_llm_rewrite")
         self.assertFalse(result.get("llm_fallback", False))
 
@@ -1372,8 +1853,8 @@ class LocalLlmReadinessTests(unittest.TestCase):
 
     def setUp(self):
         self.client = LocalLlmClient(
-            "http://127.0.0.1:8080/v1",
-            "/private/models/Qwen3.6-35B-A3B-4bit",
+            "http://127.0.0.1:8082/v1",
+            "/private/models/Qwen3.8-27B-4bit",
         )
 
     def test_client_rejects_non_loopback_model_endpoint(self):
@@ -1385,9 +1866,9 @@ class LocalLlmReadinessTests(unittest.TestCase):
 
     def test_ready_requires_configured_model_or_basename(self):
         for model_id in [
-            "/private/models/Qwen3.6-35B-A3B-4bit",
-            "Qwen3.6-35B-A3B-4bit",
-            "/another/location/Qwen3.6-35B-A3B-4bit",
+            "/private/models/Qwen3.8-27B-4bit",
+            "Qwen3.8-27B-4bit",
+            "/another/location/Qwen3.8-27B-4bit",
         ]:
             with self.subTest(model_id=model_id), patch.object(
                 llm_client_module.requests,
@@ -1460,66 +1941,6 @@ class LocalLlmReadinessTests(unittest.TestCase):
         )
         self.assertEqual(result["selected_candidate_indices"], [0])
 
-    def test_gemma_disables_unbounded_thinking_to_preserve_final_json(self):
-        client = LocalLlmClient(
-            "http://127.0.0.1:8081/v1",
-            "/private/models/gemma-4-26b-a4b-it-4bit",
-            model_family="gemma4",
-        )
-        response = self.Response({
-            "choices": [{
-                "finish_reason": "stop",
-                "message": {"content": '{"title":"생산 분석","summary":"검증된 답변"}'},
-            }],
-        })
-        with patch.object(llm_client_module.requests, "post", return_value=response) as post:
-            result = client.structured_analysis(
-                "system",
-                {"question": "status"},
-                enable_thinking=True,
-                thinking_budget=384,
-            )
-
-        request_payload = post.call_args.kwargs["json"]
-        self.assertEqual(request_payload["messages"][0]["content"], "system")
-        self.assertEqual(
-            request_payload["chat_template_kwargs"],
-            {"enable_thinking": False},
-        )
-        self.assertEqual(request_payload["temperature"], 0.2)
-        self.assertEqual(request_payload["top_k"], 64)
-        self.assertEqual(request_payload["top_p"], 0.95)
-        self.assertEqual(request_payload["max_tokens"], 1800)
-        self.assertNotIn("enable_thinking", request_payload)
-        self.assertNotIn("thinking_budget", request_payload)
-        self.assertEqual(result["summary"], "검증된 답변")
-
-    def test_gemma_explicitly_disables_thinking_for_repair_request(self):
-        client = LocalLlmClient(
-            "http://127.0.0.1:8081/v1",
-            "/private/models/gemma-4-26b-a4b-it-4bit",
-            model_family="gemma4",
-        )
-        response = self.Response({
-            "choices": [{
-                "finish_reason": "stop",
-                "message": {"content": '{"title":"생산 분석","summary":"검증된 답변"}'},
-            }],
-        })
-        with patch.object(llm_client_module.requests, "post", return_value=response) as post:
-            client.structured_analysis(
-                "repair system",
-                {"question": "repair"},
-                enable_thinking=False,
-            )
-
-        request_payload = post.call_args.kwargs["json"]
-        self.assertEqual(request_payload["messages"][0]["content"], "repair system")
-        self.assertEqual(
-            request_payload["chat_template_kwargs"],
-            {"enable_thinking": False},
-        )
-
     def test_reasoning_content_is_never_used_as_the_final_answer(self):
         response = self.Response({
             "choices": [{
@@ -1562,7 +1983,7 @@ class RenderClientCompatibilityTests(unittest.TestCase):
         self.assertEqual(request.kwargs["json"]["worker_version"], worker_module.WORKER_VERSION)
         response.raise_for_status.assert_called_once_with()
 
-    def test_heartbeat_reports_each_ready_model_id(self):
+    def test_heartbeat_reports_only_qwen38_model_id(self):
         response = MagicMock()
         response.json.return_value = {"state": "online"}
         session = MagicMock()
@@ -1574,25 +1995,61 @@ class RenderClientCompatibilityTests(unittest.TestCase):
                 "mac-studio",
                 llm_enabled=True,
                 llm_ready=True,
-                available_model_ids=["qwen35", "gemma4_26b_a4b"],
+                available_model_ids=["qwen38"],
             )
 
         self.assertEqual(
             session.post.call_args.kwargs["json"]["available_model_ids"],
-            ["qwen35", "gemma4_26b_a4b"],
+            ["qwen38"],
+        )
+
+    def test_blank_optional_transition_fields_are_omitted(self):
+        response = MagicMock()
+        response.json.return_value = {}
+        session = MagicMock()
+        session.post.return_value = response
+
+        with patch.object(render_client_module.requests, "Session", return_value=session):
+            client = RenderClient("https://backend.example/api", "worker-token")
+            client.start_job(1)
+            client.complete_job(1, {"summary": "done"})
+            client.fail_job(1, "failed")
+
+        payloads = [call.kwargs["json"] for call in session.post.call_args_list]
+        self.assertEqual(payloads[0], {})
+        self.assertEqual(payloads[1], {"result_payload": {"summary": "done"}})
+        self.assertEqual(payloads[2], {"error_message": "failed"})
+
+    def test_transition_lease_fields_are_sent_when_present(self):
+        response = MagicMock()
+        response.json.return_value = {}
+        session = MagicMock()
+        session.post.return_value = response
+
+        with patch.object(render_client_module.requests, "Session", return_value=session):
+            client = RenderClient("https://backend.example/api", "worker-token")
+            client.complete_job(
+                1,
+                {"summary": "done"},
+                worker_name="mac-studio",
+                claim_timestamp="2026-08-29T10:00:00Z",
+            )
+
+        self.assertEqual(
+            session.post.call_args.kwargs["json"],
+            {
+                "result_payload": {"summary": "done"},
+                "worker_name": "mac-studio",
+                "claim_timestamp": "2026-08-29T10:00:00Z",
+            },
         )
 
 
 class WorkerRunReportingTests(unittest.TestCase):
-    def test_heartbeat_only_advertises_gemma_when_ready(self):
-        self.assertEqual(
-            worker_module.heartbeat_worker_version({worker_module.GEMMA_MODEL_ID: True}),
-            worker_module.GEMMA_READY_WORKER_VERSION,
-        )
-        self.assertEqual(
-            worker_module.heartbeat_worker_version({worker_module.GEMMA_MODEL_ID: False}),
-            worker_module.WORKER_VERSION,
-        )
+    def test_qwen38_is_the_only_supported_default_model(self):
+        self.assertEqual(worker_module.QWEN_MODEL_ID, "qwen38")
+        self.assertEqual(worker_module.QWEN38_MODEL_ID, "qwen38")
+        self.assertEqual(worker_module.SUPPORTED_MODEL_IDS, {"qwen38"})
 
     def test_health_check_requires_explicit_ok_status(self):
         self.assertTrue(worker_module.health_check_passed({"status": "ok"}))
@@ -1600,13 +2057,24 @@ class WorkerRunReportingTests(unittest.TestCase):
         self.assertFalse(worker_module.health_check_passed({"status": "ready"}))
         self.assertFalse(worker_module.health_check_passed({}))
 
+    def test_qwen38_checkpoint_configuration_rejects_retired_models(self):
+        self.assertTrue(worker_module.qwen38_checkpoint_configured(
+            "/private/models/Qwen3.8-27B-4bit",
+        ))
+        self.assertFalse(worker_module.qwen38_checkpoint_configured(
+            "/private/models/Qwen3.6-35B-A3B-4bit",
+        ))
+        self.assertFalse(worker_module.qwen38_checkpoint_configured(
+            "/private/models/gemma-4-26b-a4b-it-4bit",
+        ))
+
     @staticmethod
     def daily_job():
         return {
             "id": 7,
             "job_type": "production_daily_analysis",
-            "scope": {"trigger": "hourly", "language": "ko"},
-            "input_payload": {"briefing": {}},
+            "scope": {"trigger": "hourly", "language": "ko", "model_id": "qwen38"},
+            "input_payload": {"briefing": {}, "model_id": "qwen38"},
         }
 
     class Client:
@@ -1663,109 +2131,110 @@ class WorkerRunReportingTests(unittest.TestCase):
 
         self.assertEqual(client.claim_requests[0]["worker_version"], worker_module.WORKER_VERSION)
 
-    def test_selected_gemma_job_routes_to_gemma_client(self):
+    def test_qwen38_job_routes_to_the_single_configured_client(self):
         job = self.daily_job()
-        job["scope"]["model_id"] = worker_module.GEMMA_MODEL_ID
-        job["input_payload"]["model_id"] = worker_module.GEMMA_MODEL_ID
         client = self.Client(job)
         qwen_llm = object()
-        gemma_llm = object()
         targets = {
-            worker_module.QWEN_MODEL_ID: worker_module.LocalModelTarget(
-                worker_module.QWEN_MODEL_ID,
+            worker_module.QWEN38_MODEL_ID: worker_module.LocalModelTarget(
+                worker_module.QWEN38_MODEL_ID,
                 qwen_llm,
-                "/models/qwen",
-            ),
-            worker_module.GEMMA_MODEL_ID: worker_module.LocalModelTarget(
-                worker_module.GEMMA_MODEL_ID,
-                gemma_llm,
-                "/models/gemma",
+                "/models/qwen38",
             ),
         }
 
         with patch.object(
             worker_module,
             "handle_job",
-            return_value=({"model_name": "/models/gemma", "source": "local_llm_rewrite"}, "prompt-v1"),
+            return_value=({"model_name": "/models/qwen38", "source": "local_llm_rewrite"}, "prompt-v1"),
         ) as handle:
             run_once(
                 client,
                 "worker",
                 True,
                 qwen_llm,
-                "/models/qwen",
-                True,
-                False,
-                model_targets=targets,
-            )
-
-        self.assertIs(handle.call_args.args[2], gemma_llm)
-        self.assertEqual(handle.call_args.args[3], "/models/gemma")
-        completed_payload = client.completed[0][1]
-        self.assertEqual(completed_payload["result_payload"]["model_id"], worker_module.GEMMA_MODEL_ID)
-        self.assertEqual(completed_payload["model_name"], "/models/gemma")
-
-    def test_legacy_job_without_model_id_uses_qwen_default(self):
-        job = self.daily_job()
-        client = self.Client(job)
-        qwen_llm = object()
-        gemma_llm = object()
-        targets = {
-            worker_module.QWEN_MODEL_ID: worker_module.LocalModelTarget(
-                worker_module.QWEN_MODEL_ID,
-                qwen_llm,
-                "/models/qwen",
-            ),
-            worker_module.GEMMA_MODEL_ID: worker_module.LocalModelTarget(
-                worker_module.GEMMA_MODEL_ID,
-                gemma_llm,
-                "/models/gemma",
-            ),
-        }
-
-        with patch.object(
-            worker_module,
-            "handle_job",
-            return_value=({"model_name": "/models/qwen", "source": "local_llm_rewrite"}, "prompt-v1"),
-        ) as handle:
-            run_once(
-                client,
-                "worker",
-                True,
-                qwen_llm,
-                "/models/qwen",
+                "/models/qwen38",
                 True,
                 False,
                 model_targets=targets,
             )
 
         self.assertIs(handle.call_args.args[2], qwen_llm)
-        self.assertEqual(client.completed[0][1]["result_payload"]["model_id"], worker_module.QWEN_MODEL_ID)
+        self.assertEqual(handle.call_args.args[3], "/models/qwen38")
+        completed_payload = client.completed[0][1]
+        self.assertEqual(completed_payload["result_payload"]["model_id"], "qwen38")
+        self.assertEqual(completed_payload["model_name"], "/models/qwen38")
 
-    def test_unknown_model_id_is_failed_without_qwen_fallback(self):
+    def test_legacy_job_without_model_id_uses_qwen_default(self):
         job = self.daily_job()
-        job["scope"]["model_id"] = "untrusted-model"
+        job["scope"].pop("model_id")
+        job["input_payload"].pop("model_id")
+        client = self.Client(job)
+        qwen_llm = object()
+        targets = {
+            worker_module.QWEN38_MODEL_ID: worker_module.LocalModelTarget(
+                worker_module.QWEN38_MODEL_ID,
+                qwen_llm,
+                "/models/qwen38",
+            ),
+        }
+
+        with patch.object(
+            worker_module,
+            "handle_job",
+            return_value=({"model_name": "/models/qwen38", "source": "local_llm_rewrite"}, "prompt-v1"),
+        ) as handle:
+            run_once(
+                client,
+                "worker",
+                True,
+                qwen_llm,
+                "/models/qwen38",
+                True,
+                False,
+                model_targets=targets,
+            )
+
+        self.assertIs(handle.call_args.args[2], qwen_llm)
+        self.assertEqual(client.completed[0][1]["result_payload"]["model_id"], "qwen38")
+
+    def test_retired_and_unknown_model_ids_are_failed_without_qwen_fallback(self):
+        for model_id in ["qwen35", "gemma4_26b_a4b", "untrusted-model"]:
+            with self.subTest(model_id=model_id):
+                job = self.daily_job()
+                job["scope"]["model_id"] = model_id
+                job["input_payload"]["model_id"] = model_id
+                client = self.Client(job)
+
+                with patch.object(worker_module, "handle_job") as handle:
+                    run_once(client, "worker", True, object(), "/models/qwen38", True, False)
+
+                handle.assert_not_called()
+                self.assertFalse(client.completed)
+                self.assertEqual(client.failed[0][0], job["id"])
+                self.assertIn("Unsupported local AI model_id", client.failed[0][1])
+
+    def test_scope_and_payload_model_mismatch_is_failed(self):
+        job = self.daily_job()
+        job["input_payload"]["model_id"] = "qwen35"
         client = self.Client(job)
 
         with patch.object(worker_module, "handle_job") as handle:
-            run_once(client, "worker", True, object(), "/models/qwen", True, False)
+            run_once(client, "worker", True, object(), "/models/qwen38", True, False)
 
         handle.assert_not_called()
-        self.assertFalse(client.completed)
-        self.assertEqual(client.failed[0][0], job["id"])
-        self.assertIn("Unsupported local AI model_id", client.failed[0][1])
+        self.assertIn("model_id mismatch", client.failed[0][1])
 
     def test_unavailable_selected_model_fails_before_job_handler(self):
         job = self.daily_job()
-        job["scope"]["model_id"] = worker_module.GEMMA_MODEL_ID
         client = self.Client(job)
-        gemma_llm = MagicMock()
-        gemma_llm.is_ready.return_value = False
+        qwen38_llm = MagicMock()
+        qwen38_llm.is_ready.return_value = False
         targets = {
-            worker_module.GEMMA_MODEL_ID: worker_module.LocalModelTarget(
-                worker_module.GEMMA_MODEL_ID,
-                gemma_llm,
-                "/models/gemma",
+            worker_module.QWEN38_MODEL_ID: worker_module.LocalModelTarget(
+                worker_module.QWEN38_MODEL_ID,
+                qwen38_llm,
+                "/models/qwen38",
             ),
         }
 
@@ -1775,13 +2244,13 @@ class WorkerRunReportingTests(unittest.TestCase):
                 "worker",
                 True,
                 object(),
-                "/models/qwen",
+                "/models/qwen38",
                 True,
                 False,
                 model_targets=targets,
             )
 
-        gemma_llm.is_ready.assert_called_once_with(timeout=3)
+        qwen38_llm.is_ready.assert_called_once_with(timeout=3)
         handle.assert_not_called()
         self.assertFalse(client.completed)
         self.assertEqual(client.failed[0][0], job["id"])

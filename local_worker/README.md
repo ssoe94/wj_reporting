@@ -6,14 +6,16 @@ This worker runs on the Mac Studio and calls the Render backend using outbound H
 
 ```bash
 cd local_worker
-cp .env.example .env
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python worker.py --once
+AI_WORKER_TOKEN=change-me AI_WORKER_USE_LLM=false python worker.py --once
 ```
 
-`AI_WORKER_USE_LLM=false` keeps the worker in deterministic-analysis mode. Set it to `true` only when the configured OpenAI-compatible local LLM endpoints are running.
+`AI_WORKER_USE_LLM=false` is a connectivity-only mode: the Worker can enqueue
+periodic work and report that no model is ready, but it will not claim
+model-bound jobs. Set it to `true` only when the configured Qwen3.8-compatible
+endpoint is running.
 
 With `AI_WORKER_ENQUEUE_PERIODIC=true`, the worker asks the Render backend to ensure one Korean and one Chinese daily-analysis job exist for the current Asia/Shanghai hour. Repeated polling is idempotent within the hour.
 
@@ -51,16 +53,15 @@ was not recorded.
 
 For continuous Mac Studio operation, use the Keychain-backed launch agents in
 [`scripts/local_ai`](../scripts/local_ai/README.md). The launch agents keep the
-MLX server and Worker running without putting `AI_WORKER_TOKEN` in a plist or
-repository file.
+outbound Worker running without putting `AI_WORKER_TOKEN` in a plist or
+repository file. The Qwen3.8 MLX endpoint on port 8082 is managed separately.
 
 ## LLM mode
 
-Start a local OpenAI-compatible MLX server first:
+Confirm that the separately managed Qwen3.8 OpenAI-compatible endpoint is ready:
 
 ```bash
-cd ..
-./scripts/start-local-mlx-llm.sh
+curl -fsS http://127.0.0.1:8082/v1/models
 ```
 
 Then verify the endpoint:
@@ -75,14 +76,8 @@ AI_WORKER_USE_LLM=true AI_WORKER_TOKEN=change-me python worker.py --check-llm
 ```env
 RENDER_API_BASE_URL=http://127.0.0.1:8000/api
 AI_WORKER_TOKEN=change-me
-LOCAL_LLM_BASE_URL=http://127.0.0.1:8080/v1
-LOCAL_LLM_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.6-35B-A3B-4bit
-LOCAL_QWEN38_BASE_URL=http://127.0.0.1:8082/v1
-LOCAL_QWEN38_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit
-LOCAL_GEMMA_BASE_URL=http://127.0.0.1:8081/v1
-LOCAL_GEMMA_MODEL=/Users/macstudio_ted/Developer/local-ai/models/gemma-4-26b-a4b-it-4bit
-LOCAL_LLM_DEFAULT_MODEL_ID=qwen35
-LOCAL_VLM_MODEL=qwen3-vl:8b
+LOCAL_LLM_BASE_URL=http://127.0.0.1:8082/v1
+LOCAL_LLM_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit
 LOCAL_LLM_TIMEOUT_SECONDS=45
 WORKER_NAME=mac-studio-local-ai
 POLL_INTERVAL_SECONDS=5

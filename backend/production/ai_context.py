@@ -17,14 +17,28 @@ def iso_or_none(value: Any) -> str | None:
     return str(value)
 
 
-def build_process_summary(process: dict[str, Any], time_progress_rate: float | None) -> AiProcessSummary:
-    status = progress_status(float(process.get("progress_rate") or 0), time_progress_rate)
+def build_process_summary(
+    process: dict[str, Any],
+    time_progress_rate: float | None,
+    *,
+    data_available: bool = True,
+) -> AiProcessSummary:
+    planned_qty = int(process.get("planned_qty") or 0)
+    status = (
+        "data_unavailable"
+        if planned_qty > 0 and not data_available
+        else progress_status(
+            float(process.get("progress_rate") or 0),
+            None if planned_qty <= 0 else time_progress_rate,
+        )
+    )
     return AiProcessSummary(
         actual_qty=int(process.get("actual_qty") or 0),
-        planned_qty=int(process.get("planned_qty") or 0),
+        planned_qty=planned_qty,
         progress_rate=float(process.get("progress_rate") or 0),
-        time_progress_rate=time_progress_rate,
-        gap_qty=int(process.get("gap_qty") or 0),
+        time_progress_rate=time_progress_rate if data_available else None,
+        # A missing actual-data source is not a verified production gap.
+        gap_qty=int(process.get("gap_qty") or 0) if data_available else 0,
         status=status,
         active_equipment_count=int(process.get("active_equipment_count") or 0),
         running_equipment_count=int(process.get("running_equipment_count") or 0),
@@ -32,10 +46,35 @@ def build_process_summary(process: dict[str, Any], time_progress_rate: float | N
     )
 
 
-def build_top_risks(context: dict[str, Any], limit: int = 5) -> list[AiRiskItem]:
+def build_top_risks(
+    context: dict[str, Any],
+    limit: int = 5,
+    *,
+    warnings: list[str] | None = None,
+) -> list[AiRiskItem]:
     risks: list[AiRiskItem] = []
+    warning_codes = set(warnings or [])
+    injection_evaluation_limited = bool(
+        warning_codes.intersection({
+            "injection_mes_data_missing",
+            "injection_mes_data_stale",
+        })
+    )
+    machining_evaluation_limited = "machining_actual_missing" in warning_codes
+    injection_rows = (
+        []
+        if injection_evaluation_limited
+        else context["injection"].get("machine_rows", [])
+    )
+    machining_rows = (
+        []
+        if machining_evaluation_limited
+        else context["machining"].get("rows", [])
+    )
 
-    for row in context["injection"].get("machine_rows", []):
+    for row in injection_rows:
+        if row.get("data_warning"):
+            continue
         gap_to_time_rate_pp = float(row.get("gap_to_time_rate_pp") or 0)
         gap_qty = int(row.get("gap_to_time_qty") or 0)
         if gap_to_time_rate_pp >= -5 or gap_qty >= 0:
@@ -57,7 +96,7 @@ def build_top_risks(context: dict[str, Any], limit: int = 5) -> list[AiRiskItem]
     line_actuals: dict[str, int] = {}
     line_plans: dict[str, int] = {}
     line_details: dict[str, str] = {}
-    for row in context["machining"].get("rows", []):
+    for row in machining_rows:
         label = row.get("equipment_label") or row.get("equipment_name") or row.get("equipment_key") or "-"
         line_gaps[label] = line_gaps.get(label, 0) + int(row.get("gap_to_time_qty") or 0)
         line_actuals[label] = line_actuals.get(label, 0) + int(row.get("actual_qty") or 0)
@@ -126,22 +165,6 @@ def build_calculation_basis(language: str) -> list[str]:
 
 
 def build_context_pack(context: dict[str, Any], language: str, question: str = "daily_production_briefing") -> AiContextPack:
-    injection_summary = build_process_summary(
-        context["injection"],
-        float(context["injection"].get("time_progress_rate") or 0),
-    )
-    machining_summary = build_process_summary(
-        context["machining"],
-        float(context["machining"].get("time_progress_rate") or 0),
-    )
-    calculation_basis = build_calculation_basis(language)
-    last_plan_updated_at = max(
-        filter(None, [
-            context["injection"].get("last_plan_updated_at"),
-            context["machining"].get("last_plan_updated_at"),
-        ]),
-        default=None,
-    )
     now = timezone.now()
     current_business_date = (now.astimezone(SHANGHAI_TZ) - timedelta(hours=8)).date()
     latest_mes_time = context["injection"].get("latest_mes_time")
@@ -152,27 +175,83 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
             or now - latest_mes_time.astimezone(now.tzinfo) > timedelta(minutes=10)
         )
     )
+    warnings = []
+    injection_capacity_coverage_incomplete = bool(
+        context["injection"].get("planned_qty", 0) > 0
+        and context["injection"].get("capacity_coverage_complete") is False
+    )
+    if not latest_mes_time:
+        warnings.append("injection_mes_data_missing")
+    elif injection_is_stale:
+        warnings.append("injection_mes_data_stale")
+    elif injection_capacity_coverage_incomplete:
+        warnings.append("injection_capacity_coverage_incomplete")
+    if context["injection"].get("planned_qty", 0) <= 0:
+        warnings.append("injection_plan_missing")
+    if context["machining"].get("planned_qty", 0) <= 0:
+        warnings.append("machining_plan_missing")
+    elif context["machining"].get("actual_qty", 0) <= 0:
+        warnings.append("machining_actual_missing")
+
+    injection_evaluation_limited = bool(
+        {
+            "injection_mes_data_missing",
+            "injection_mes_data_stale",
+            "injection_capacity_coverage_incomplete",
+        }.intersection(warnings)
+    )
+    machining_evaluation_limited = "machining_actual_missing" in warnings
+    injection_summary = build_process_summary(
+        context["injection"],
+        float(context["injection"].get("time_progress_rate") or 0),
+        data_available=not injection_evaluation_limited,
+    )
+    machining_summary = build_process_summary(
+        context["machining"],
+        float(context["machining"].get("time_progress_rate") or 0),
+        data_available=not machining_evaluation_limited,
+    )
+    calculation_basis = build_calculation_basis(language)
+    last_plan_updated_at = max(
+        filter(None, [
+            context["injection"].get("last_plan_updated_at"),
+            context["machining"].get("last_plan_updated_at"),
+        ]),
+        default=None,
+    )
     data_freshness = AiDataFreshness(
         last_plan_updated_at=iso_or_none(last_plan_updated_at),
         last_mes_recorded_at=iso_or_none(context["injection"].get("latest_mes_time")),
         last_machining_reported_at=iso_or_none(context["machining"].get("latest_report_time")),
-        is_stale=injection_is_stale,
+        is_stale=injection_is_stale or injection_capacity_coverage_incomplete,
     )
-    warnings = []
-    if not context["injection"].get("latest_mes_time"):
-        warnings.append("injection_mes_data_missing")
-    elif injection_is_stale:
-        warnings.append("injection_mes_data_stale")
-    if context["injection"].get("planned_qty", 0) <= 0:
-        warnings.append("injection_plan_missing")
-    if context["machining"].get("planned_qty", 0) > 0 and context["machining"].get("actual_qty", 0) <= 0:
-        warnings.append("machining_actual_missing")
-
     facts = {
         "injection": injection_summary.to_dict(),
         "machining": machining_summary.to_dict(),
         "generated_at": timezone.now().isoformat(),
     }
+
+    globally_unavailable_injection = bool(
+        {"injection_mes_data_missing", "injection_mes_data_stale"}.intersection(warnings)
+    )
+    safe_injection_machine_rows = (
+        []
+        if globally_unavailable_injection
+        else [
+            row
+            for row in context["injection"].get("machine_rows", [])
+            if not row.get("data_warning")
+        ]
+    )
+    safe_injection_machine_labels = {
+        str(row.get("machine") or "")
+        for row in safe_injection_machine_rows
+    }
+    safe_injection_part_rows = [
+        row
+        for row in context["injection"].get("part_rows", [])
+        if str(row.get("machine") or "") in safe_injection_machine_labels
+    ]
 
     tables = [
         {
@@ -196,7 +275,7 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
                     "recent_60m_avg_ct_sec": row.get("recent_60m_avg_ct_sec"),
                     "is_running": row.get("is_running"),
                 }
-                for row in context["injection"].get("machine_rows", [])
+                for row in safe_injection_machine_rows
             ],
         },
         {
@@ -219,7 +298,7 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
                     "cavity": row.get("cavity"),
                     "status": row.get("status"),
                 }
-                for row in context["injection"].get("part_rows", [])
+                for row in safe_injection_part_rows
             ],
         },
         {
@@ -239,7 +318,11 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
                     "gap_to_time_rate_pp": row.get("gap_to_time_rate_pp"),
                     "progress_rate": row.get("progress_rate"),
                 }
-                for row in context["machining"].get("rows", [])
+                for row in (
+                    []
+                    if machining_evaluation_limited
+                    else context["machining"].get("rows", [])
+                )
             ],
         },
         {
@@ -266,7 +349,11 @@ def build_context_pack(context: dict[str, Any], language: str, question: str = "
                     "defect_qty": row.get("defect_qty"),
                     "status": row.get("status"),
                 }
-                for row in context["machining"].get("rows", [])
+                for row in (
+                    []
+                    if machining_evaluation_limited
+                    else context["machining"].get("rows", [])
+                )
             ],
         },
     ]

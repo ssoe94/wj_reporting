@@ -1094,6 +1094,17 @@ export async function installOperationalApiMocks(
         top_risks: [],
         used_data: [{ name: 'ProductionPlan', row_count: 1, filters: { plan_date: date } }],
         calculation_basis: ['기준일은 08:00 ~ 익일 08:00 기준입니다.'],
+        data_freshness: {
+          last_plan_updated_at: '2026-05-18T09:55:00+08:00',
+          last_mes_recorded_at: '2026-05-18T10:00:00+08:00',
+          last_machining_reported_at: null,
+          is_stale: false,
+        },
+        warnings: ['machining_plan_missing'],
+        retrieval_trace: [
+          'production.plan:date=2026-05-18',
+          'injection.mes:business_day=2026-05-18T08:00:00+08:00/2026-05-19T08:00:00+08:00',
+        ],
         context_pack: {
           question: 'daily_production_briefing',
           language: 'ko',
@@ -1108,18 +1119,115 @@ export async function installOperationalApiMocks(
     });
   });
 
+  await page.route('**/api/production/ai/ask/**', async (route) => {
+    await route.fulfill({
+      json: {
+        answer: '검증된 서버 계산 결과로 사출 완료율은 95%입니다.',
+        source: 'intent_calculated',
+        model_id: 'qwen38',
+        model_label: 'Qwen 3.8 27B',
+        intent: { intent: 'production_summary', filters: {} },
+        context: {
+          business_date: date,
+          range_start: '2026-05-18T08:00:00+08:00',
+          range_end: '2026-05-19T08:00:00+08:00',
+          recent_range_start: null,
+          recent_range_end: null,
+        },
+        facts: { injection: { actual_qty: 1632, planned_qty: 1712, progress_rate: 95 } },
+        used_data: [{ name: 'ProductionPlan', row_count: 1, filters: { plan_date: date } }],
+        calculation_basis: ['서버의 검증된 생산 지표 함수를 사용합니다.'],
+        data_freshness: {
+          last_plan_updated_at: '2026-05-18T09:55:00+08:00',
+          last_mes_recorded_at: '2026-05-18T10:00:00+08:00',
+          last_machining_reported_at: null,
+          is_stale: false,
+        },
+        warnings: ['ai_model_unavailable'],
+        retrieval_trace: ['production.plan:date=2026-05-18'],
+        job_id: null,
+        job_status: null,
+      },
+    });
+  });
+
   await page.route('**/api/ai/worker/status/**', async (route) => {
     await route.fulfill({
       json: {
+        state: 'offline',
         online: false,
+        worker_name: '',
+        last_heartbeat_at: null,
+        heartbeat_age_seconds: null,
+        stale_after_seconds: 180,
         llm_ready: false,
         worker_version: '',
         model_name: '',
+        available_model_ids: [],
+        last_analysis_completed_at: null,
+        last_analysis_model_name: '',
+        last_analysis_llm_fallback: null,
       },
     });
   });
 
   await page.route('**/api/ai/jobs/latest/**', async (route) => {
-    await route.fulfill({ json: { job: null } });
+    await route.fulfill({
+      json: {
+        job: {
+          id: 991,
+          job_type: 'production_daily_analysis',
+          status: 'completed',
+          scope: { date, language: 'ko', trigger: 'hourly', model_id: 'qwen38' },
+          result_payload: {
+            summary: '오래된 시간진도 요약은 표시되면 안 됩니다.',
+            source: 'local_llm_rewrite',
+            llm_fallback: false,
+            model_id: 'qwen38',
+            facts: {
+              injection: {
+                actual_qty: 1632,
+                planned_qty: 1712,
+                progress_rate: 95,
+                time_progress_rate: 9,
+                gap_qty: -80,
+                status: 'ahead',
+                active_equipment_count: 1,
+                running_equipment_count: 1,
+                total_equipment_count: 17,
+              },
+              machining: {
+                actual_qty: 0,
+                planned_qty: 0,
+                progress_rate: 0,
+                time_progress_rate: null,
+                gap_qty: 0,
+                status: 'no_plan',
+                active_equipment_count: 0,
+                running_equipment_count: 0,
+                total_equipment_count: 0,
+              },
+            },
+            top_risks: [],
+            warnings: ['machining_plan_missing'],
+            data_freshness: {
+              last_plan_updated_at: '2026-05-18T09:55:00+08:00',
+              last_mes_recorded_at: '2026-05-18T10:00:00+08:00',
+              last_machining_reported_at: null,
+              is_stale: false,
+            },
+          },
+          error_message: '',
+          claimed_by: 'mac-studio-local-ai',
+          claimed_at: '2026-05-18T09:59:00+08:00',
+          started_at: '2026-05-18T09:59:01+08:00',
+          completed_at: '2026-05-18T10:00:01+08:00',
+          model_name: '/models/Qwen3.8-27B-4bit',
+          prompt_version: 'production-daily-v3',
+          created_at: '2026-05-18T09:59:00+08:00',
+          updated_at: '2026-05-18T10:00:01+08:00',
+        },
+      },
+    });
   });
 }

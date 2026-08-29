@@ -30,7 +30,9 @@ class AiJobApiTests(APITestCase):
         job_id = create_response.data['id']
         self.assertEqual(create_response.data['status'], AiJob.STATUS_PENDING)
         self.assertEqual(create_response.data['scope']['trigger'], 'manual')
+        self.assertEqual(create_response.data['scope']['model_id'], 'qwen38')
         self.assertEqual(create_response.data['input_payload']['source'], 'production_ai_briefing')
+        self.assertEqual(create_response.data['input_payload']['model_id'], 'qwen38')
         self.assertNotEqual(
             create_response.data['input_payload']['briefing']['answer'],
             'untrusted client briefing',
@@ -43,6 +45,7 @@ class AiJobApiTests(APITestCase):
                 'worker_name': 'test-worker',
                 'worker_version': 'production-ai-worker-v2',
                 'limit': 1,
+                'available_model_ids': ['qwen38'],
             },
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
@@ -51,10 +54,14 @@ class AiJobApiTests(APITestCase):
         self.assertEqual(claim_response.status_code, 200)
         self.assertEqual(claim_response.data['jobs'][0]['id'], job_id)
         self.assertEqual(claim_response.data['jobs'][0]['status'], AiJob.STATUS_CLAIMED)
+        lease = {
+            'worker_name': 'test-worker',
+            'claim_timestamp': claim_response.data['jobs'][0]['claimed_at'],
+        }
 
         start_response = self.client.post(
             f'/api/ai/jobs/{job_id}/start/',
-            {},
+            lease,
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
         )
@@ -67,6 +74,7 @@ class AiJobApiTests(APITestCase):
                 'result_payload': {'summary': 'done'},
                 'model_name': 'dummy',
                 'prompt_version': 'test-v1',
+                **lease,
             },
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
@@ -125,12 +133,22 @@ class AiJobApiTests(APITestCase):
     def test_worker_claim_prioritizes_hourly_job_over_older_question(self):
         question_job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
-            scope={'date': '2026-05-15', 'language': 'ko', 'trigger': 'question'},
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'question',
+                'model_id': 'qwen38',
+            },
             created_by=self.user,
         )
         hourly_job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
-            scope={'date': '2026-05-15', 'language': 'ko', 'trigger': 'hourly'},
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'hourly',
+                'model_id': 'qwen38',
+            },
             created_by=None,
         )
 
@@ -141,6 +159,7 @@ class AiJobApiTests(APITestCase):
                 'worker_name': 'test-worker',
                 'worker_version': 'production-ai-worker-v2',
                 'limit': 1,
+                'available_model_ids': ['qwen38'],
             },
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
@@ -151,11 +170,143 @@ class AiJobApiTests(APITestCase):
         question_job.refresh_from_db()
         self.assertEqual(question_job.status, AiJob.STATUS_PENDING)
 
+    def test_claim_filters_all_model_jobs_by_advertised_capability(self):
+        qwen38_job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'hourly',
+                'model_id': 'qwen38',
+            },
+        )
+        retired_jobs = [
+            AiJob.objects.create(
+                job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                scope={
+                    'date': '2026-05-15',
+                    'language': 'ko',
+                    'trigger': 'hourly',
+                    **({'model_id': model_id} if model_id else {}),
+                },
+            )
+            for model_id in ['qwen35', 'gemma4_26b_a4b', None]
+        ]
+
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            '/api/ai/jobs/claim/',
+            {
+                'worker_name': 'qwen38-worker',
+                'worker_version': 'production-ai-worker-v2',
+                'limit': 10,
+                'available_model_ids': ['qwen38'],
+            },
+            format='json',
+            HTTP_X_AI_WORKER_TOKEN='test-worker-token',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([job['id'] for job in response.data['jobs']], [qwen38_job.id])
+        for retired_job in retired_jobs:
+            retired_job.refresh_from_db()
+            self.assertEqual(retired_job.status, AiJob.STATUS_PENDING)
+
+        qwen38_job.status = AiJob.STATUS_PENDING
+        qwen38_job.claimed_by = ''
+        qwen38_job.claimed_at = None
+        qwen38_job.save(update_fields=['status', 'claimed_by', 'claimed_at', 'updated_at'])
+        empty_capability = self.client.post(
+            '/api/ai/jobs/claim/',
+            {
+                'worker_name': 'no-model-worker',
+                'worker_version': 'production-ai-worker-v2',
+                'limit': 10,
+                'available_model_ids': [],
+            },
+            format='json',
+            HTTP_X_AI_WORKER_TOKEN='test-worker-token',
+        )
+        self.assertEqual(empty_capability.status_code, 200)
+        self.assertEqual(empty_capability.data['jobs'], [])
+
+    def test_reclaimed_job_rejects_the_previous_worker_lease(self):
+        job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'hourly',
+                'model_id': 'qwen38',
+            },
+        )
+        self.client.force_authenticate(user=None)
+
+        first_claim = self.client.post(
+            '/api/ai/jobs/claim/',
+            {
+                'worker_name': 'worker-a',
+                'worker_version': 'production-ai-worker-v2',
+                'available_model_ids': ['qwen38'],
+            },
+            format='json',
+            HTTP_X_AI_WORKER_TOKEN='test-worker-token',
+        )
+        old_claimed_at = first_claim.data['jobs'][0]['claimed_at']
+        AiJob.objects.filter(pk=job.pk).update(
+            status=AiJob.STATUS_PENDING,
+            claimed_by='',
+            claimed_at=None,
+            started_at=None,
+        )
+        second_claim = self.client.post(
+            '/api/ai/jobs/claim/',
+            {
+                'worker_name': 'worker-b',
+                'worker_version': 'production-ai-worker-v2',
+                'available_model_ids': ['qwen38'],
+            },
+            format='json',
+            HTTP_X_AI_WORKER_TOKEN='test-worker-token',
+        )
+        new_claimed_at = second_claim.data['jobs'][0]['claimed_at']
+
+        stale_start = self.client.post(
+            f'/api/ai/jobs/{job.id}/start/',
+            {'worker_name': 'worker-a', 'claim_timestamp': old_claimed_at},
+            format='json',
+            HTTP_X_AI_WORKER_TOKEN='test-worker-token',
+        )
+        self.assertEqual(stale_start.status_code, 403)
+
+        current_start = self.client.post(
+            f'/api/ai/jobs/{job.id}/start/',
+            {'worker_name': 'worker-b', 'claim_timestamp': new_claimed_at},
+            format='json',
+            HTTP_X_AI_WORKER_TOKEN='test-worker-token',
+        )
+        self.assertEqual(current_start.status_code, 200)
+
+        stale_complete = self.client.post(
+            f'/api/ai/jobs/{job.id}/complete/',
+            {
+                'result_payload': {'summary': 'stale result'},
+                'worker_name': 'worker-a',
+                'claim_timestamp': old_claimed_at,
+            },
+            format='json',
+            HTTP_X_AI_WORKER_TOKEN='test-worker-token',
+        )
+        self.assertEqual(stale_complete.status_code, 403)
+        job.refresh_from_db()
+        self.assertEqual(job.status, AiJob.STATUS_RUNNING)
+
     def test_hourly_completion_restores_server_authoritative_fields(self):
         authoritative = {
             'answer': 'server-owned briefing answer',
             'severity': 'warning',
             'facts': {'actual_qty': 120},
+            'top_risks': [{'type': 'delay', 'label': '1호기', 'gap_qty': -25}],
             'used_data': [{'name': 'production_plan', 'row_count': 2}],
             'calculation_basis': ['backend calculation'],
             'data_freshness': {'is_stale': False},
@@ -165,19 +316,31 @@ class AiJobApiTests(APITestCase):
         job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_RUNNING,
-            scope={'date': '2026-05-15', 'language': 'ko', 'trigger': 'hourly'},
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'hourly',
+                'model_id': 'qwen38',
+            },
             input_payload={'briefing': authoritative},
+            claimed_by='test-worker',
+            claimed_at=timezone.now(),
             created_by=None,
         )
         tampered = {
             'summary': 'worker-written prose',
+            'model_id': 'gemma4_26b_a4b',
             **{field: 'tampered' for field in authoritative},
         }
 
         self.client.force_authenticate(user=None)
         response = self.client.post(
             f'/api/ai/jobs/{job.id}/complete/',
-            {'result_payload': tampered},
+            {
+                'result_payload': tampered,
+                'worker_name': job.claimed_by,
+                'claim_timestamp': job.claimed_at.isoformat(),
+            },
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
         )
@@ -186,6 +349,7 @@ class AiJobApiTests(APITestCase):
         self.assertEqual(response.data['result_payload']['summary'], 'worker-written prose')
         for field, expected in authoritative.items():
             self.assertEqual(response.data['result_payload'][field], expected)
+        self.assertEqual(response.data['result_payload']['model_id'], 'qwen38')
 
     def test_question_completion_uses_deterministic_then_verified_context(self):
         deterministic = {
@@ -203,11 +367,18 @@ class AiJobApiTests(APITestCase):
         job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_CLAIMED,
-            scope={'date': '2026-05-15', 'language': 'ko', 'trigger': 'question'},
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'question',
+                'model_id': 'qwen38',
+            },
             input_payload={
                 'deterministic': deterministic,
                 'verified_context': verified_context,
             },
+            claimed_by='test-worker',
+            claimed_at=timezone.now(),
             created_by=self.user,
         )
         worker_result = {
@@ -224,7 +395,11 @@ class AiJobApiTests(APITestCase):
         self.client.force_authenticate(user=None)
         response = self.client.post(
             f'/api/ai/jobs/{job.id}/complete/',
-            {'result_payload': worker_result},
+            {
+                'result_payload': worker_result,
+                'worker_name': job.claimed_by,
+                'claim_timestamp': job.claimed_at.isoformat(),
+            },
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
         )
@@ -247,6 +422,8 @@ class AiJobApiTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['input_payload']['source'], 'production_machine_analysis')
         self.assertEqual(response.data['input_payload']['date'], '2026-05-15')
+        self.assertEqual(response.data['scope']['model_id'], 'qwen38')
+        self.assertEqual(response.data['input_payload']['model_id'], 'qwen38')
         self.assertIn('context_pack', response.data['input_payload'])
 
     def test_worker_periodic_enqueue_is_idempotent_within_hour(self):
@@ -267,14 +444,14 @@ class AiJobApiTests(APITestCase):
         )
 
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(first.data['created_count'], 4)
+        self.assertEqual(first.data['created_count'], 2)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.data['created_count'], 0)
         hourly_jobs = AiJob.objects.filter(scope__trigger='hourly')
-        self.assertEqual(hourly_jobs.count(), 4)
+        self.assertEqual(hourly_jobs.count(), 2)
         self.assertEqual(
             {job.scope['model_id'] for job in hourly_jobs},
-            {'qwen35', 'gemma4_26b_a4b'},
+            {'qwen38'},
         )
         self.assertTrue(all(job.input_payload['model_id'] == job.scope['model_id'] for job in hourly_jobs))
 
@@ -282,7 +459,12 @@ class AiJobApiTests(APITestCase):
         system_job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_COMPLETED,
-            scope={'date': '2026-05-15', 'language': 'ko', 'trigger': 'hourly'},
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'hourly',
+                'model_id': 'qwen38',
+            },
             result_payload={'summary': 'verified hourly result'},
         )
 
@@ -301,7 +483,12 @@ class AiJobApiTests(APITestCase):
         system_job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_COMPLETED,
-            scope={'date': '2026-05-15', 'language': 'ko', 'trigger': 'hourly'},
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'hourly',
+                'model_id': 'qwen38',
+            },
             result_payload={'summary': 'verified hourly result'},
             completed_at=timezone.now() - timedelta(minutes=1),
         )
@@ -323,43 +510,49 @@ class AiJobApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['job']['id'], system_job.id)
 
-    def test_latest_job_filters_hourly_analysis_by_model(self):
-        qwen_job = AiJob.objects.create(
+    def test_latest_job_returns_only_canonical_qwen38_history(self):
+        qwen38_job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_COMPLETED,
             scope={
                 'date': '2026-05-15',
                 'language': 'ko',
                 'trigger': 'hourly',
-                'model_id': 'qwen35',
+                'model_id': 'qwen38',
             },
-            result_payload={'summary': 'qwen summary', 'model_id': 'qwen35'},
+            result_payload={'summary': 'qwen38 summary', 'model_id': 'qwen38'},
+            completed_at=timezone.now() - timedelta(minutes=2),
         )
-        gemma_job = AiJob.objects.create(
+        AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_COMPLETED,
             scope={
                 'date': '2026-05-15',
                 'language': 'ko',
                 'trigger': 'hourly',
-                'model_id': 'gemma4_26b_a4b',
             },
-            result_payload={'summary': 'gemma summary', 'model_id': 'gemma4_26b_a4b'},
+            result_payload={'summary': 'newer model-less legacy result'},
+            completed_at=timezone.now(),
         )
 
-        qwen_response = self.client.get('/api/ai/jobs/latest/', {
+        qwen38_response = self.client.get('/api/ai/jobs/latest/', {
+            'date': '2026-05-15',
+            'language': 'ko',
+        })
+        alias_response = self.client.get('/api/ai/jobs/latest/', {
             'date': '2026-05-15',
             'language': 'ko',
             'model_id': 'qwen35',
         })
-        gemma_response = self.client.get('/api/ai/jobs/latest/', {
+        retired_response = self.client.get('/api/ai/jobs/latest/', {
             'date': '2026-05-15',
             'language': 'ko',
             'model_id': 'gemma4_26b_a4b',
         })
 
-        self.assertEqual(qwen_response.data['job']['id'], qwen_job.id)
-        self.assertEqual(gemma_response.data['job']['id'], gemma_job.id)
+        self.assertEqual(qwen38_response.data['job']['id'], qwen38_job.id)
+        self.assertEqual(alias_response.data['job']['id'], qwen38_job.id)
+        self.assertEqual(retired_response.status_code, 400)
 
     def test_worker_heartbeat_and_authenticated_status(self):
         self.client.force_authenticate(user=None)
@@ -369,23 +562,27 @@ class AiJobApiTests(APITestCase):
                 'worker_name': 'mac-studio-test',
                 'llm_enabled': True,
                 'llm_ready': True,
-                'model_name': '/private/models/Qwen3.5-test',
-                'worker_version': 'test-v1',
-                'available_model_ids': ['qwen35', 'qwen38', 'gemma4_26b_a4b'],
+                'model_name': '/private/models/Qwen3.8-test',
+                'worker_version': 'production-ai-worker-v2',
+                'available_model_ids': ['qwen38'],
             },
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
         )
         self.assertEqual(heartbeat_response.status_code, 200)
-        self.assertEqual(heartbeat_response.data['model_name'], 'Qwen3.5-test')
+        self.assertEqual(heartbeat_response.data['model_name'], 'Qwen3.8-test')
         self.assertEqual(
             heartbeat_response.data['available_model_ids'],
-            ['qwen35', 'qwen38', 'gemma4_26b_a4b'],
+            ['qwen38'],
         )
 
         second_heartbeat = self.client.post(
             '/api/ai/worker/heartbeat/',
-            {'worker_name': 'mac-studio-test', 'llm_ready': False},
+            {
+                'worker_name': 'mac-studio-test',
+                'llm_ready': False,
+                'worker_version': 'production-ai-worker-v2',
+            },
             format='json',
             HTTP_X_AI_WORKER_TOKEN='test-worker-token',
         )
@@ -395,9 +592,18 @@ class AiJobApiTests(APITestCase):
         AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_COMPLETED,
-            scope={'date': '2026-08-03', 'language': 'ko', 'trigger': 'hourly'},
-            result_payload={'summary': 'safe fallback', 'llm_fallback': True},
-            model_name='/private/models/Qwen3.5-hourly',
+            scope={
+                'date': '2026-08-03',
+                'language': 'ko',
+                'trigger': 'hourly',
+                'model_id': 'qwen38',
+            },
+            result_payload={
+                'summary': 'safe fallback',
+                'llm_fallback': True,
+                'model_id': 'qwen38',
+            },
+            model_name='/private/models/Qwen3.8-hourly',
             completed_at=timezone.now(),
             created_by=None,
         )
@@ -407,13 +613,40 @@ class AiJobApiTests(APITestCase):
         self.assertEqual(status_response.status_code, 200)
         self.assertEqual(status_response.data['state'], 'online')
         self.assertEqual(status_response.data['stale_after_seconds'], 300)
+        self.assertTrue(status_response.data['worker_compatible'])
         self.assertFalse(status_response.data['llm_ready'])
-        self.assertEqual(status_response.data['last_analysis_model_name'], 'Qwen3.5-hourly')
+        self.assertEqual(status_response.data['last_analysis_model_name'], 'Qwen3.8-hourly')
         self.assertTrue(status_response.data['last_analysis_llm_fallback'])
         self.assertIsNotNone(status_response.data['last_analysis_completed_at'])
         job_list = self.client.get('/api/ai/jobs/').data
         rows = job_list.get('results', []) if isinstance(job_list, dict) else job_list
         self.assertNotIn('worker_heartbeat', [row['job_type'] for row in rows])
+
+    def test_status_hides_models_from_incompatible_worker_version(self):
+        self.client.force_authenticate(user=None)
+        heartbeat = self.client.post(
+            '/api/ai/worker/heartbeat/',
+            {
+                'worker_name': 'legacy-worker',
+                'llm_enabled': True,
+                'llm_ready': True,
+                'model_name': '/private/models/Qwen3.8-27B-4bit',
+                'worker_version': 'production-ai-worker-v1',
+                'available_model_ids': ['qwen38'],
+            },
+            format='json',
+            HTTP_X_AI_WORKER_TOKEN='test-worker-token',
+        )
+        self.assertEqual(heartbeat.status_code, 200)
+
+        self.client.force_authenticate(self.user)
+        response = self.client.get('/api/ai/worker/status/', {'language': 'ko'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['state'], 'online')
+        self.assertFalse(response.data['worker_compatible'])
+        self.assertFalse(response.data['llm_ready'])
+        self.assertEqual(response.data['available_model_ids'], [])
 
     def test_worker_heartbeat_rejects_unknown_model_id(self):
         self.client.force_authenticate(user=None)
@@ -532,30 +765,43 @@ class LocalAiWorkerIntegrationTests(LiveServerTestCase):
 
             model_name = os.getenv(
                 'LOCAL_LLM_MODEL',
-                '/Users/macstudio_ted/Developer/local-ai/models/Qwen3.6-35B-A3B-4bit',
+                '/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit',
             )
             render_client = RenderClient(
                 api_base_url=f'{self.live_server_url}/api',
                 worker_token='integration-worker-token',
             )
             llm = LocalLlmClient(
-                base_url=os.getenv('LOCAL_LLM_BASE_URL', 'http://127.0.0.1:8080/v1'),
+                base_url=os.getenv('LOCAL_LLM_BASE_URL', 'http://127.0.0.1:8082/v1'),
                 model=model_name,
                 timeout=120,
             )
+            render_client.send_heartbeat(
+                'integration-test-worker',
+                llm_enabled=True,
+                llm_ready=True,
+                model_name=model_name,
+                worker_version='production-ai-worker-v2',
+                available_model_ids=['qwen38'],
+            )
 
             enqueue_result = render_client.enqueue_periodic_jobs(['ko'])
-            self.assertEqual(enqueue_result['created_count'], 2)
+            self.assertEqual(enqueue_result['created_count'], 1)
             self.assertEqual(render_client.enqueue_periodic_jobs(['ko'])['created_count'], 0)
 
             jobs = render_client.claim_jobs(
                 worker_name='integration-test-worker',
                 limit=1,
                 job_types=[AiJob.JOB_TYPE_PRODUCTION_DAILY],
+                available_model_ids=['qwen38'],
             )
             self.assertEqual(len(jobs), 1)
             job = jobs[0]
-            render_client.start_job(job['id'])
+            render_client.start_job(
+                job['id'],
+                worker_name='integration-test-worker',
+                claim_timestamp=job['claimed_at'],
+            )
 
             result, prompt_version = handle_job(
                 job,
@@ -574,6 +820,8 @@ class LocalAiWorkerIntegrationTests(LiveServerTestCase):
                 result_payload=result,
                 model_name=result['model_name'],
                 prompt_version=prompt_version,
+                worker_name='integration-test-worker',
+                claim_timestamp=job['claimed_at'],
             )
             self.assertEqual(completed['status'], AiJob.STATUS_COMPLETED)
 
@@ -624,6 +872,21 @@ class LocalAiWorkerIntegrationTests(LiveServerTestCase):
             )
             token_response.raise_for_status()
             auth_headers = {'Authorization': f"Bearer {token_response.json()['access']}"}
+            render_client = RenderClient(
+                api_base_url=f'{self.live_server_url}/api',
+                worker_token='integration-worker-token',
+            )
+            render_client.send_heartbeat(
+                'integration-question-worker',
+                llm_enabled=True,
+                llm_ready=True,
+                model_name=os.getenv(
+                    'LOCAL_LLM_MODEL',
+                    '/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit',
+                ),
+                worker_version='production-ai-worker-v2',
+                available_model_ids=['qwen38'],
+            )
             ask_response = requests.post(
                 f'{self.live_server_url}/api/production/ai/ask/',
                 json={
@@ -641,14 +904,10 @@ class LocalAiWorkerIntegrationTests(LiveServerTestCase):
 
             model_name = os.getenv(
                 'LOCAL_LLM_MODEL',
-                '/Users/macstudio_ted/Developer/local-ai/models/Qwen3.6-35B-A3B-4bit',
-            )
-            render_client = RenderClient(
-                api_base_url=f'{self.live_server_url}/api',
-                worker_token='integration-worker-token',
+                '/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit',
             )
             llm = LocalLlmClient(
-                base_url=os.getenv('LOCAL_LLM_BASE_URL', 'http://127.0.0.1:8080/v1'),
+                base_url=os.getenv('LOCAL_LLM_BASE_URL', 'http://127.0.0.1:8082/v1'),
                 model=model_name,
                 timeout=120,
             )
@@ -656,10 +915,15 @@ class LocalAiWorkerIntegrationTests(LiveServerTestCase):
                 worker_name='integration-question-worker',
                 limit=1,
                 job_types=[AiJob.JOB_TYPE_PRODUCTION_DAILY],
+                available_model_ids=['qwen38'],
             )
             self.assertEqual([job['id'] for job in jobs], [ask_payload['job_id']])
             job = jobs[0]
-            render_client.start_job(job['id'])
+            render_client.start_job(
+                job['id'],
+                worker_name='integration-question-worker',
+                claim_timestamp=job['claimed_at'],
+            )
             result, prompt_version = handle_job(
                 job,
                 use_llm=True,
@@ -677,6 +941,8 @@ class LocalAiWorkerIntegrationTests(LiveServerTestCase):
                 result_payload=result,
                 model_name=result['model_name'],
                 prompt_version=prompt_version,
+                worker_name='integration-question-worker',
+                claim_timestamp=job['claimed_at'],
             )
 
             detail_response = requests.get(

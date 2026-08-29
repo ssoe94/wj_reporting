@@ -468,7 +468,7 @@ export type ProductionPlanUploadResponse = {
   model_summary?: ProductionPlanSummaryBucket["model_summary"];
 };
 
-export type ProductionAiModelId = "qwen35" | "gemma4_26b_a4b";
+export type ProductionAiModelId = "qwen38";
 
 export type ProductionAiAskResponse = {
   answer: string;
@@ -503,7 +503,7 @@ export type ProductionAiBriefingResponse = {
       progress_rate: number;
       time_progress_rate: number | null;
       gap_qty: number;
-      status: "ahead" | "on_track" | "behind" | "no_plan";
+      status: "ahead" | "on_track" | "behind" | "no_plan" | "data_unavailable";
       active_equipment_count: number;
       running_equipment_count: number;
       total_equipment_count: number;
@@ -514,7 +514,7 @@ export type ProductionAiBriefingResponse = {
       progress_rate: number;
       time_progress_rate: number | null;
       gap_qty: number;
-      status: "ahead" | "on_track" | "behind" | "no_plan";
+      status: "ahead" | "on_track" | "behind" | "no_plan" | "data_unavailable";
       active_equipment_count: number;
       running_equipment_count: number;
       total_equipment_count: number;
@@ -561,6 +561,7 @@ export type AiWorkerStatus = {
   llm_ready: boolean | null;
   model_name: string;
   worker_version: string;
+  worker_compatible?: boolean;
   available_model_ids?: ProductionAiModelId[];
   last_analysis_completed_at: string | null;
   last_analysis_model_name: string;
@@ -990,7 +991,7 @@ export async function askProductionAi(
   question: string,
   language: "ko" | "zh",
   history: ProductionAiChatHistoryMessage[] = [],
-  modelId: ProductionAiModelId = "qwen35",
+  modelId: ProductionAiModelId = "qwen38",
 ) {
   const response = await http.post<ProductionAiAskResponse>(
     "/production/ai/ask/",
@@ -1020,7 +1021,7 @@ export async function getAiJob(jobId: number) {
 export async function getLatestAiJob(
   date: string,
   language: "ko" | "zh",
-  modelId: ProductionAiModelId = "qwen35",
+  modelId: ProductionAiModelId = "qwen38",
 ) {
   const response = await http.get<{ job: AiJob | null }>(
     `/ai/jobs/latest/?job_type=production_daily_analysis&date=${encodeURIComponent(date)}&language=${encodeURIComponent(language)}&model_id=${encodeURIComponent(modelId)}`,

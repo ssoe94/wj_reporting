@@ -360,7 +360,10 @@ def get_injection_summary(
     latest_mes_time = (
         InjectionMonitoringRecord.objects
         .filter(timestamp__gte=range_start, timestamp__lt=range_end)
-        .filter(Q(capacity__isnull=False) | Q(power_kwh__isnull=False) | Q(oil_temperature__isnull=False))
+        # Production output is derived only from the cumulative capacity
+        # counter. Power or temperature telemetry must not make a missing
+        # production counter look like a verified zero-output sample.
+        .filter(capacity__isnull=False)
         .aggregate(latest=Max("timestamp"))
         .get("latest")
     )
@@ -370,6 +373,8 @@ def get_injection_summary(
     # Counter queries use an exclusive end. Include the latest sample when the
     # selected business day is still in progress, without crossing 08:00.
     counter_end = min(range_end, reference_time + timedelta(microseconds=1))
+    now = timezone.now()
+    current_business_date = (now.astimezone(SHANGHAI_TZ) - timedelta(hours=8)).date()
 
     def sort_key(plan: ProductionPlan) -> tuple[int, int, int]:
         machine_number = parse_machine_number(plan.machine_name)
@@ -385,6 +390,30 @@ def get_injection_summary(
         if machine_number is None:
             continue
         monitor_name = machine_monitoring_name(machine_number)
+        machine_latest_capacity_time = (
+            InjectionMonitoringRecord.objects
+            .filter(
+                machine_name=monitor_name,
+                timestamp__gte=range_start,
+                timestamp__lt=counter_end,
+                capacity__isnull=False,
+            )
+            .aggregate(latest=Max("timestamp"))
+            .get("latest")
+        )
+        machine_capacity_is_stale = bool(
+            target_date == current_business_date
+            and (
+                not machine_latest_capacity_time
+                or now - machine_latest_capacity_time.astimezone(now.tzinfo) > timedelta(minutes=10)
+            )
+        )
+        machine_data_warning = (
+            "injection_capacity_data_missing"
+            if not machine_latest_capacity_time else
+            "injection_capacity_data_stale"
+            if machine_capacity_is_stale else None
+        )
         shot_count = sum_positive_monitoring_delta(monitor_name, "capacity", range_start, counter_end)
         recent_shots = sum_positive_monitoring_delta(monitor_name, "capacity", recent_start, counter_end)
         remaining_shots = shot_count
@@ -475,6 +504,9 @@ def get_injection_summary(
             "recent_60m_shots": recent_shots,
             "recent_60m_avg_ct_sec": round(3600 / recent_shots, 1) if recent_shots > 0 else None,
             "is_running": recent_shots > 0,
+            "latest_capacity_time": machine_latest_capacity_time,
+            "capacity_data_available": machine_data_warning is None,
+            "data_warning": machine_data_warning,
             "completed_count": completed_count,
             "in_progress_count": in_progress_count,
             "pending_count": pending_count,
@@ -503,7 +535,12 @@ def get_injection_summary(
         "monitoring_row_count": InjectionMonitoringRecord.objects.filter(
             timestamp__gte=range_start,
             timestamp__lt=range_end,
+            capacity__isnull=False,
         ).count(),
+        "capacity_coverage_complete": all(
+            not row.get("data_warning")
+            for row in machine_rows
+        ),
         "last_plan_updated_at": max(
             (plan.updated_at for plan in plans if plan.updated_at is not None),
             default=None,

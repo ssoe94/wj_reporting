@@ -9,7 +9,7 @@ except ImportError:
     from skills.production_analyst import build_skill_payload, insert_verified_metrics, prioritize_verified_rows
 
 
-PROMPT_VERSION = "production-question-v7"
+PROMPT_VERSION = "production-question-v8"
 ENABLE_THINKING = True
 THINKING_BUDGET = 384
 INITIAL_TIMEOUT_SECONDS = 100
@@ -45,6 +45,12 @@ Do not call a current target 미달, 낮은 수준, 부족, or delayed merely be
 For missing target history, ask to collect or retrieve target-level time snapshots; do not ask to reconfirm a metric
 already present in verified_evidence_sentences.
 Do not ask to reconfirm a verified current production or running status. Ask only for missing history, cause, or plan data.
+In 확인할 항목/需确认, every non-empty bullet must contain exactly one non-mutating information check.
+Use only 확인, 점검, 검토, or 조회 (确认、检查、审查、查询) as the action. Do not use 검증/验证.
+Never recommend or mention a physical operation, maintenance action, shutdown, reset, configuration change,
+or production-order change. Do not chain actions with commas, conjunctions, or before/after sequencing.
+When several data objects need checks, put each object in a separate bullet instead of joining them with 과/와/및
+or 和/与/及. Each bullet must still contain exactly one allowed information-check action.
 When analysis_skill.focus_identifiers is non-empty, discuss only rows sharing those identifiers.
 Do not cite an unrelated machine, line, Part, or model merely because it appears in the supplied tables.
 Reason internally, but never reveal private chain-of-thought. Show only an auditable evidence summary.
@@ -120,6 +126,9 @@ def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
             "start of the conclusion and write no other measurement or quantity. For context_grounded, write no "
             "measurement or quantity; the Worker will insert verified metrics. "
             "Only exact identifier digits may remain. "
+            "For every check item, use exactly one of 확인, 점검, 검토, 조회 (or 确认, 检查, 审查, 查询). "
+            "Do not use 검증/验证, physical or configuration actions, chained actions, or before/after sequencing. "
+            "Put different data objects in separate bullets; do not join them with 과/와/및 or 和/与/及. "
             "Use only facts present in verified_answer, verified_facts, verified_tables, or historical_snapshots."
         ),
     }

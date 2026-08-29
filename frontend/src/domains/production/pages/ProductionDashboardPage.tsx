@@ -21,6 +21,7 @@ import {
   getInjectionActivityConfirmations,
   getInjectionDowntimeConfirmations,
   getProductionMesReportStats,
+  getProductionAiBriefing,
   getProductionPlanSummary,
   getProductionStatus,
   resetInjectionActivityConfirmation,
@@ -31,6 +32,7 @@ import {
   type MachiningProvisionResponse,
   type MachiningProvisionRow,
   type ProductionAiAskResponse,
+  type ProductionAiBriefingResponse,
   type ProductionAiChatHistoryMessage,
   type ProductionAiModelId,
   type ProductionMesReportStatsResponse,
@@ -164,11 +166,8 @@ type ProductionAiChatLauncherDrag = {
   lastPosition: ProductionAiChatLauncherPosition | null;
 };
 
-const PRODUCTION_AI_MODEL_OPTIONS: Array<{ id: ProductionAiModelId; label: string }> = [
-  { id: "qwen35", label: "Qwen 3.6" },
-  { id: "gemma4_26b_a4b", label: "Gemma 4" },
-];
-const GEMMA_READY_WORKER_VERSION = "production-ai-worker-v2-gemma1";
+const PRODUCTION_AI_MODEL_ID: ProductionAiModelId = "qwen38";
+const PRODUCTION_AI_MODEL_LABEL = "Qwen 3.8 27B";
 const AI_CHAT_LAUNCHER_POSITION_KEY = "wj-production-ai-chat-launcher-position-v1";
 const AI_CHAT_LAUNCHER_MARGIN_PX = 8;
 const AI_CHAT_LAUNCHER_DRAG_THRESHOLD_PX = 5;
@@ -199,14 +198,13 @@ function persistAiChatLauncherPosition(position: ProductionAiChatLauncherPositio
   }
 }
 
-function getProductionAiModelLabel(modelId: ProductionAiModelId) {
-  return PRODUCTION_AI_MODEL_OPTIONS.find((option) => option.id === modelId)?.label ?? modelId;
+function getProductionAiModelLabel(_modelId: ProductionAiModelId) {
+  return PRODUCTION_AI_MODEL_LABEL;
 }
 
 function inferProductionAiModelId(modelName: string): ProductionAiModelId | null {
   const normalized = modelName.trim().toLowerCase();
-  if (normalized.includes("gemma")) return "gemma4_26b_a4b";
-  if (normalized.includes("qwen")) return "qwen35";
+  if (normalized.includes("qwen3.8") || normalized.includes("qwen38")) return "qwen38";
   return null;
 }
 
@@ -372,7 +370,7 @@ const pageCopy = {
   ko: {
     eyebrow: "Production",
     title: "생산 대시보드",
-    description: "생산 계획과 MES 실적을 비교하고, Qwen과 Gemma의 생산 브리핑을 제공합니다.",
+    description: "생산 계획과 MES 실적을 비교하고, 검증된 계산형 브리핑과 Qwen 3.8 보조 분석을 제공합니다.",
     loading: "생산 현황을 불러오는 중입니다.",
     productionDate: "기준일",
     productionDateHint: "오전 08:00 ~ 익일 08:00 기준",
@@ -389,11 +387,34 @@ const pageCopy = {
     recentRunning: "최근 60분 가동",
     localBrief: "AI BRIEFING",
     briefTitle: "일일 생산 브리핑",
-    briefModelSelect: "브리핑 모델 선택",
-    briefModelCompareHint: "동일한 검증 데이터를 요약한 모델별 브리핑을 비교합니다.",
-    briefLoading: "선택한 모델의 최신 생산 브리핑을 불러오는 중입니다.",
-    briefPending: "선택한 모델의 생산 브리핑을 준비하고 있습니다. 잠시 후 자동으로 표시됩니다.",
-    briefFailed: "선택한 모델의 최신 AI 브리핑이 안전 검증을 통과하지 못했습니다. 다음 자동 분석을 기다려 주세요.",
+    briefModelSelect: "AI 보조 서비스",
+    briefModelCompareHint: "검증된 수치는 항상 서버 계산 결과를 사용하며, Qwen은 설명만 보완합니다.",
+    briefLoading: "검증된 생산 브리핑을 불러오는 중입니다.",
+    briefPending: "생산 브리핑을 준비하고 있습니다.",
+    briefFailed: "검증된 생산 브리핑을 불러오지 못해 현재 화면 데이터로 대체했습니다.",
+    deterministicBriefTitle: "검증된 운영 브리핑",
+    deterministicSource: "계산형 RAG · 수치 검증 완료",
+    deterministicSourceLimited: "서버 계산 완료 · 데이터 확인 필요",
+    severityNormal: "정상",
+    severityWarning: "주의",
+    severityCritical: "긴급",
+    freshness: "사출 MES 최신성",
+    freshnessCurrent: "최신",
+    freshnessStale: "갱신 지연",
+    freshnessUnknown: "갱신 시각 없음",
+    planUpdatedAt: "계획 갱신",
+    mesUpdatedAt: "사출 MES",
+    machiningUpdatedAt: "가공 실적",
+    topRisks: "우선 확인 사항",
+    noTopRisks: "현재 계산 기준으로 우선 대응이 필요한 지연 항목은 없습니다.",
+    riskEvaluationLimited: "일부 공정의 계획 또는 최신 실적이 부족해 전체 우선 확인 대상을 완전히 평가할 수 없습니다.",
+    warningsTitle: "데이터 확인 사항",
+    evidenceTitle: "근거와 계산 기준",
+    usedDataTitle: "사용 데이터",
+    calculationBasisTitle: "계산 기준",
+    retrievalTraceTitle: "조회 경로",
+    screenFallbackTitle: "화면 데이터 기반 임시 브리핑",
+    workerEnhancementTitle: "Qwen 3.8 보조 분석",
     askAi: "AI 생산 어시스턴트",
     aiLauncherDragHint: "드래그해서 챗봇 버튼 위치를 옮길 수 있습니다.",
     closeAi: "AI 어시스턴트 닫기",
@@ -410,7 +431,7 @@ const pageCopy = {
     workerHeartbeat: "마지막 신호",
     workerLastAnalysis: "최근 분석 완료",
     workerModel: "모델",
-    workerJobTitle: "선택 모델의 최근 AI 브리핑",
+    workerJobTitle: "최근 Qwen 3.8 보조 분석",
     workerJobResult: "AI 요약",
     askingAi: "질문 전송 중",
     aiQuestionPlaceholder: "예: 오늘 사출 생산 진도는? / 최근 60분 C/T가 가장 긴 설비는? / 지금 추이대로 1, 9호기 예상 형합수는?",
@@ -426,9 +447,9 @@ const pageCopy = {
     aiQuestionTooLongTitle: "질문이 너무 깁니다",
     aiQuestionTooLong: "질문은 1,000자 이하로 줄여서 다시 입력해 주세요.",
     aiRequestRejectedTitle: "질문 확인 필요",
-    aiModelSelect: "답변 모델 선택",
-    aiModelCompareHint: "모델별 대화 기록을 분리하며, 선택 모델 연결은 질문 전에 확인합니다.",
-    aiSelectedModelUnavailable: "선택한 모델이 아직 준비되지 않았습니다. Worker와 모델 서버 상태를 확인해 주세요.",
+    aiModelSelect: "답변 서비스",
+    aiModelCompareHint: "Qwen 3.8이 검증된 생산 데이터에 근거해 설명합니다.",
+    aiSelectedModelUnavailable: "Qwen 3.8 보조 설명은 오프라인입니다. 생산 현황·진도 등 계산 가능한 질문은 계속 사용할 수 있습니다.",
     aiAnswerTitle: "답변",
     aiAnswerQueued: "답변 준비 중",
     aiAnswerRunning: "답변 작성 중",
@@ -583,7 +604,7 @@ const pageCopy = {
   zh: {
     eyebrow: "Production",
     title: "生产看板",
-    description: "对比生产计划与 MES 实绩，并提供 Qwen 与 Gemma 的生产简报。",
+    description: "对比生产计划与 MES 实绩，并提供经过验证的计算简报和 Qwen 3.8 辅助分析。",
     loading: "正在读取生产现况。",
     productionDate: "基准日",
     productionDateHint: "上午 08:00 ~ 次日 08:00 基准",
@@ -600,11 +621,34 @@ const pageCopy = {
     recentRunning: "最近 60 分钟运行",
     localBrief: "AI BRIEFING",
     briefTitle: "每日生产简报",
-    briefModelSelect: "选择简报模型",
-    briefModelCompareHint: "比较基于同一份已验证数据生成的模型简报。",
-    briefLoading: "正在加载所选模型的最新生产简报。",
-    briefPending: "所选模型的生产简报正在生成，完成后会自动显示。",
-    briefFailed: "所选模型的最新 AI 简报未通过安全验证，请等待下一次自动分析。",
+    briefModelSelect: "AI 辅助服务",
+    briefModelCompareHint: "所有已验证数值均来自服务器计算，Qwen 仅补充说明。",
+    briefLoading: "正在加载经过验证的生产简报。",
+    briefPending: "正在准备生产简报。",
+    briefFailed: "无法加载经过验证的生产简报，现以当前画面数据代替。",
+    deterministicBriefTitle: "已验证的运营简报",
+    deterministicSource: "计算型 RAG · 数值已验证",
+    deterministicSourceLimited: "服务器计算完成 · 需确认数据",
+    severityNormal: "正常",
+    severityWarning: "注意",
+    severityCritical: "紧急",
+    freshness: "注塑 MES 时效",
+    freshnessCurrent: "最新",
+    freshnessStale: "更新延迟",
+    freshnessUnknown: "无更新时间",
+    planUpdatedAt: "计划更新",
+    mesUpdatedAt: "注塑 MES",
+    machiningUpdatedAt: "加工实绩",
+    topRisks: "优先确认事项",
+    noTopRisks: "按当前计算基准，没有需要优先处理的延期项目。",
+    riskEvaluationLimited: "由于部分工序的计划或最新实绩不足，暂时无法完整评估全部优先确认对象。",
+    warningsTitle: "数据确认事项",
+    evidenceTitle: "依据与计算标准",
+    usedDataTitle: "使用数据",
+    calculationBasisTitle: "计算标准",
+    retrievalTraceTitle: "查询路径",
+    screenFallbackTitle: "基于画面数据的临时简报",
+    workerEnhancementTitle: "Qwen 3.8 辅助分析",
     askAi: "AI 生产助手",
     aiLauncherDragHint: "可拖动聊天按钮调整位置。",
     closeAi: "关闭 AI 助手",
@@ -621,7 +665,7 @@ const pageCopy = {
     workerHeartbeat: "最后心跳",
     workerLastAnalysis: "最近分析完成",
     workerModel: "模型",
-    workerJobTitle: "所选模型的最新 AI 简报",
+    workerJobTitle: "最近的 Qwen 3.8 辅助分析",
     workerJobResult: "AI 摘要",
     askingAi: "发送中",
     aiQuestionPlaceholder: "例：今天注塑生产进度？/ 最近60分钟 C/T 最长的设备？/ 按当前趋势，1、9号机结束时预计合模数？",
@@ -637,9 +681,9 @@ const pageCopy = {
     aiQuestionTooLongTitle: "问题内容过长",
     aiQuestionTooLong: "请将问题缩短至 1,000 个字符以内后重试。",
     aiRequestRejectedTitle: "请确认问题内容",
-    aiModelSelect: "选择回答模型",
-    aiModelCompareHint: "不同模型的对话记录会分开；提问前会检查所选模型的连接状态。",
-    aiSelectedModelUnavailable: "所选模型尚未就绪。请确认 Worker 和模型服务器状态。",
+    aiModelSelect: "回答服务",
+    aiModelCompareHint: "Qwen 3.8 根据已验证的生产数据进行说明。",
+    aiSelectedModelUnavailable: "Qwen 3.8 辅助说明处于离线状态，生产现况、进度等可计算问题仍可继续使用。",
     aiAnswerTitle: "回答",
     aiAnswerQueued: "准备回答中",
     aiAnswerRunning: "正在撰写回答",
@@ -949,6 +993,61 @@ function getStringField(source: Record<string, unknown>, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function getRecordField(source: Record<string, unknown>, key: string) {
+  const value = source[key];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function workerResultMatchesBriefing(
+  result: Record<string, unknown>,
+  briefing: ProductionAiBriefingResponse | undefined,
+) {
+  if (!briefing) return false;
+  const resultFreshness = getRecordField(result, "data_freshness");
+  const resultFacts = getRecordField(result, "facts");
+  const resultInjection = resultFacts ? getRecordField(resultFacts, "injection") : null;
+  const resultMachining = resultFacts ? getRecordField(resultFacts, "machining") : null;
+  const resultWarnings = result.warnings;
+  const resultTopRisks = result.top_risks;
+  if (
+    !resultFreshness
+    || !resultInjection
+    || !resultMachining
+    || !Array.isArray(resultWarnings)
+    || !Array.isArray(resultTopRisks)
+  ) return false;
+
+  const freshnessMatches = [
+    "last_plan_updated_at",
+    "last_mes_recorded_at",
+    "last_machining_reported_at",
+    "is_stale",
+  ].every((key) => (resultFreshness[key] ?? null) === (briefing.data_freshness[key as keyof typeof briefing.data_freshness] ?? null));
+  const processMatches = (
+    resultProcess: Record<string, unknown>,
+    currentProcess: ProductionAiBriefingResponse["facts"]["injection"],
+  ) => [
+    "actual_qty",
+    "planned_qty",
+    "progress_rate",
+    "time_progress_rate",
+    "gap_qty",
+    "status",
+    "active_equipment_count",
+    "running_equipment_count",
+    "total_equipment_count",
+  ].every(
+    (key) => resultProcess[key] === currentProcess[key as keyof typeof currentProcess],
+  );
+  return freshnessMatches
+    && processMatches(resultInjection, briefing.facts.injection)
+    && processMatches(resultMachining, briefing.facts.machining)
+    && JSON.stringify(resultWarnings) === JSON.stringify(briefing.warnings)
+    && JSON.stringify(resultTopRisks) === JSON.stringify(briefing.top_risks);
+}
+
 function getProductionAiApiError(error: unknown): ProductionAiApiError {
   if (!isAxiosError(error)) {
     return { status: null, code: "", detail: "" };
@@ -993,6 +1092,44 @@ function formatAiTimestamp(value: string | null | undefined, language: AppLangua
     second: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+const briefingWarningCopy: Record<AppLanguage, Record<string, string>> = {
+  ko: {
+    injection_mes_data_missing: "사출 MES 실적이 없어 사출 진행 판단이 제한됩니다.",
+    injection_mes_data_stale: "사출 MES 실적 갱신이 지연되고 있습니다.",
+    injection_capacity_coverage_incomplete: "일부 계획 설비의 사출 MES 형합 데이터가 없어 전체 진행 판단이 제한됩니다.",
+    injection_plan_missing: "사출 생산 계획이 없어 계획 대비 판단이 제한됩니다.",
+    machining_plan_missing: "가공 생산 계획이 없어 계획 대비 판단이 제한됩니다.",
+    machining_actual_missing: "가공 실적이 없어 가공 진행 판단이 제한됩니다.",
+    ai_model_unavailable: "Qwen 보조 설명은 사용할 수 없지만 검증된 계산 결과는 정상 표시됩니다.",
+    ai_question_enqueue_failed: "Qwen 보조 설명 요청을 등록하지 못했습니다.",
+  },
+  zh: {
+    injection_mes_data_missing: "无注塑 MES 实绩，注塑进度判断受限。",
+    injection_mes_data_stale: "注塑 MES 实绩更新延迟。",
+    injection_capacity_coverage_incomplete: "部分计划设备缺少注塑 MES 合模数据，整体进度判断受限。",
+    injection_plan_missing: "无注塑生产计划，无法充分判断计划达成情况。",
+    machining_plan_missing: "无加工生产计划，无法充分判断计划达成情况。",
+    machining_actual_missing: "无加工实绩，加工进度判断受限。",
+    ai_model_unavailable: "Qwen 辅助说明不可用，但已验证的计算结果仍正常显示。",
+    ai_question_enqueue_failed: "无法提交 Qwen 辅助说明请求。",
+  },
+};
+
+function localizeBriefingWarning(code: string, language: AppLanguage) {
+  const localized = briefingWarningCopy[language][code];
+  if (localized) return localized;
+  return language === "ko"
+    ? "일부 데이터의 최신성 또는 완전성을 추가로 확인해야 합니다."
+    : "部分数据的时效性或完整性需要进一步确认。";
+}
+
+function formatBriefingFilters(filters: Record<string, unknown>) {
+  return Object.entries(filters)
+    .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(", ");
 }
 
 function formatAiModelName(value: string | null | undefined) {
@@ -2346,6 +2483,44 @@ function buildProductionBriefContext(
   };
 }
 
+function buildScreenBriefingFallback(context: ProductionBriefContext, language: AppLanguage) {
+  const injectionRate = context.injectionPlanQty > 0
+    ? (context.actualInjectionOutput / context.injectionPlanQty) * 100
+    : null;
+  const machiningRate = context.machiningPlanQty > 0
+    ? (context.actualMachiningOutput / context.machiningPlanQty) * 100
+    : null;
+  const answer = language === "ko"
+    ? [
+      `사출은 추정 ${formatNumber(context.actualInjectionOutput)}개${injectionRate === null ? "" : `로 계획의 ${injectionRate.toFixed(1)}%`}입니다.`,
+      `가공은 ${formatNumber(context.actualMachiningOutput)}개${machiningRate === null ? "" : `로 계획의 ${machiningRate.toFixed(1)}%`}입니다.`,
+      `최근 60분 가동 설비는 ${context.runningMachineCount}대이며, 무계획 형합은 ${formatNumber(context.unplannedInjectionShots)}회입니다.`,
+    ].join(" ")
+    : [
+      `注塑估算产量为 ${formatNumber(context.actualInjectionOutput)} 个${injectionRate === null ? "" : `，完成计划的 ${injectionRate.toFixed(1)}%`}。`,
+      `加工实绩为 ${formatNumber(context.actualMachiningOutput)} 个${machiningRate === null ? "" : `，完成计划的 ${machiningRate.toFixed(1)}%`}。`,
+      `最近60分钟运行设备 ${context.runningMachineCount} 台，无计划合模 ${formatNumber(context.unplannedInjectionShots)} 次。`,
+    ].join("");
+  const risks: Array<{ label: string; detail: string }> = [];
+  if (context.unplannedInjectionShots > 0) {
+    risks.push({
+      label: language === "ko" ? "무계획 가동 확인" : "确认无计划运行",
+      detail: language === "ko"
+        ? `${context.unplannedInjectionMachineCount}대에서 ${formatNumber(context.unplannedInjectionShots)}회 형합이 기록되었습니다. Part No.와 작업 목적을 확인하세요.`
+        : `${context.unplannedInjectionMachineCount} 台设备记录了 ${formatNumber(context.unplannedInjectionShots)} 次合模，请确认 Part No. 与作业目的。`,
+    });
+  }
+  if (context.injectionPlanQty <= 0 || context.machiningPlanQty <= 0) {
+    risks.push({
+      label: language === "ko" ? "생산 계획 확인" : "确认生产计划",
+      detail: language === "ko"
+        ? "계획이 없는 공정은 진행률과 지연 여부를 판단할 수 없습니다. 기준일 계획 등록 여부를 확인하세요."
+        : "无计划的工序无法判断进度与延期情况，请确认基准日计划是否已登记。",
+    });
+  }
+  return { answer, risks };
+}
+
 function buildMachiningProgressPreview(
   planSummary: ProductionPlanSummaryResponse | undefined,
   machiningStats: ProductionMesReportStatsResponse | undefined,
@@ -2717,8 +2892,8 @@ export function ProductionDashboardPage() {
   const currentDate = getShanghaiBusinessDateString();
   const [businessDate, setBusinessDate] = useState(currentDate);
   const [isAiAskOpen, setIsAiAskOpen] = useState(false);
-  const [aiModelId, setAiModelId] = useState<ProductionAiModelId>("qwen35");
-  const [briefingModelId, setBriefingModelId] = useState<ProductionAiModelId>("qwen35");
+  const aiModelId = PRODUCTION_AI_MODEL_ID;
+  const briefingModelId = PRODUCTION_AI_MODEL_ID;
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiChatMessages, setAiChatMessages] = useState<ProductionAiChatMessage[]>([]);
   const [aiActiveRequest, setAiActiveRequest] = useState<ProductionAiActiveRequest | null>(null);
@@ -2819,6 +2994,13 @@ export function ProductionDashboardPage() {
     staleTime: 5 * 60_000,
   });
   const isCoreDashboardDataReady = Boolean(planSummaryQuery.data && mesQuery.data && machiningStatsQuery.data);
+  const productionAiBriefingQuery = useQuery({
+    queryKey: ["production", "ai-briefing", businessDate, language],
+    queryFn: () => getProductionAiBriefing(businessDate, language),
+    enabled: isCoreDashboardDataReady,
+    refetchInterval: isCurrentDate ? LIVE_DATA_REFRESH_INTERVAL_MS : false,
+    retry: 1,
+  });
   const latestAiJobQuery = useQuery({
     queryKey: ["ai-job", "latest", businessDate, language, briefingModelId],
     queryFn: () => getLatestAiJob(businessDate, language, briefingModelId),
@@ -3038,6 +3220,10 @@ export function ProductionDashboardPage() {
     ),
     [businessDate, language, machiningProvisionQuery.data, machiningStatsQuery.data, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
   );
+  const screenBriefingFallback = useMemo(
+    () => buildScreenBriefingFallback(briefContext, language),
+    [briefContext, language],
+  );
   const realtimeProgress = useMemo(
     () => buildRealtimeProgressSummary(planSummaryQuery.data, mesQuery.data, productionStatusQuery.data, businessDate, transitionAnalysis),
     [businessDate, mesQuery.data, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
@@ -3071,6 +3257,7 @@ export function ProductionDashboardPage() {
     () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),
     [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
   );
+  const productionAiBriefing = productionAiBriefingQuery.data;
   const latestAiJob = latestAiJobQuery.data ?? undefined;
   const latestAiJobResult = latestAiJob?.result_payload ?? {};
   const latestAiJobSummary = getStringField(latestAiJobResult, "summary").trim();
@@ -3084,30 +3271,47 @@ export function ProductionDashboardPage() {
       ? copy.workerOffline
       : copy.workerUnknown;
   const aiWorkerAvailableModelIds = (aiWorkerStatus?.available_model_ids ?? []).filter(
-    (modelId): modelId is ProductionAiModelId => modelId === "qwen35" || modelId === "gemma4_26b_a4b",
+    (modelId): modelId is ProductionAiModelId => modelId === PRODUCTION_AI_MODEL_ID,
   );
-  const workerHasExplicitModelReadiness = Array.isArray(aiWorkerStatus?.available_model_ids)
-    && (aiWorkerAvailableModelIds.length > 0 || aiWorkerStatus?.llm_ready === false);
-  const isAiModelAvailable = (modelId: ProductionAiModelId) => aiWorkerState === "online" && (
-    workerHasExplicitModelReadiness
+  const workerHasExplicitModelReadiness = Array.isArray(aiWorkerStatus?.available_model_ids);
+  const isAiModelAvailable = (modelId: ProductionAiModelId) => aiWorkerState === "online"
+    && aiWorkerStatus?.llm_ready === true
+    && (workerHasExplicitModelReadiness
       ? aiWorkerAvailableModelIds.includes(modelId)
-      : modelId === "qwen35"
-        ? aiWorkerStatus?.llm_ready === true
-        : aiWorkerStatus?.worker_version === GEMMA_READY_WORKER_VERSION
-  );
+      : inferProductionAiModelId(aiWorkerStatus?.model_name || "") === modelId);
   const aiSelectedModelIsAvailable = isAiModelAvailable(aiModelId);
   const briefingModelIsAvailable = isAiModelAvailable(briefingModelId);
   const latestAiJobResultModelId = getStringField(latestAiJobResult, "model_id");
-  const latestAiJobActualModelId = latestAiJobResultModelId === "qwen35"
-    || latestAiJobResultModelId === "gemma4_26b_a4b"
-    ? latestAiJobResultModelId
+  const latestAiJobActualModelId = latestAiJobResultModelId === PRODUCTION_AI_MODEL_ID
+    ? PRODUCTION_AI_MODEL_ID
     : inferProductionAiModelId(latestAiJob?.model_name || "");
   const latestAiJobUsedLocalLlm = latestAiJobSource === "local_llm_rewrite"
     && !latestAiJobUsedFallback
-    && latestAiJobActualModelId === briefingModelId;
+    && latestAiJob?.status === "completed"
+    && latestAiJobActualModelId === briefingModelId
+    && workerResultMatchesBriefing(latestAiJobResult, productionAiBriefing);
   const briefingModelStatusLabel = briefingModelIsAvailable
     ? `${getProductionAiModelLabel(briefingModelId)} · ${copy.workerModelReady}`
     : `${getProductionAiModelLabel(briefingModelId)} · ${copy.workerModelUnavailable}`;
+  const briefingSeverityLabel = productionAiBriefing?.severity === "critical"
+    ? copy.severityCritical
+    : productionAiBriefing?.severity === "warning"
+      ? copy.severityWarning
+      : copy.severityNormal;
+  const briefingWarningLabels = productionAiBriefing
+    ? [...new Set(productionAiBriefing.warnings.map((warning) => localizeBriefingWarning(warning, language)))]
+    : [];
+  const briefingRiskEvaluationLimited = productionAiBriefing?.warnings.some((warning) => [
+    "injection_mes_data_missing",
+    "injection_mes_data_stale",
+    "injection_capacity_coverage_incomplete",
+    "injection_plan_missing",
+    "machining_plan_missing",
+    "machining_actual_missing",
+  ].includes(warning)) ?? false;
+  const briefingSourceLabel = briefingRiskEvaluationLimited
+    ? copy.deterministicSourceLimited
+    : copy.deterministicSource;
   const aiQuestionJob = aiQuestionJobQuery.data;
   const aiQuestionJobStatus = aiQuestionJob?.status ?? (aiQuestionJobId !== null ? "pending" : null);
   const aiQuestionJobResult = aiQuestionJob?.result_payload ?? {};
@@ -3120,9 +3324,8 @@ export function ProductionDashboardPage() {
     : `${activeAiModelLabel} · ${copy.workerModelUnavailable}`;
   const aiQuestionJobModelName = aiQuestionJob?.model_name || getStringField(aiQuestionJobResult, "model_name");
   const aiQuestionJobResultModelId = getStringField(aiQuestionJobResult, "model_id");
-  const aiQuestionJobActualModelId = aiQuestionJobResultModelId === "qwen35"
-    || aiQuestionJobResultModelId === "gemma4_26b_a4b"
-    ? aiQuestionJobResultModelId
+  const aiQuestionJobActualModelId = aiQuestionJobResultModelId === PRODUCTION_AI_MODEL_ID
+    ? PRODUCTION_AI_MODEL_ID
     : inferProductionAiModelId(aiQuestionJobModelName);
   const aiQuestionJobModelMatchesRequest = !aiActiveRequest
     || aiQuestionJobActualModelId === aiActiveRequest.modelId;
@@ -3207,17 +3410,30 @@ export function ProductionDashboardPage() {
         return;
       }
       if (jobId === null) {
-        excludeAiQuestionFromHistory(request.requestId);
-        const questionWasUnsupported = payload.source === "deterministic_unhandled";
-        appendAiChatMessage({
-          id: `${request.requestId}-model-unavailable`,
-          role: "assistant",
-          content: questionWasUnsupported ? payload.answer : copy.aiQueueUnavailable,
-          label: questionWasUnsupported ? copy.aiRequestRejectedTitle : copy.aiQueueUnavailableTitle,
-          tone: "warning",
-          includeInHistory: false,
-          modelId: request.modelId,
-        });
+        const isDeterministicAnswer = payload.source === "calculated" || payload.source === "intent_calculated";
+        if (isDeterministicAnswer) {
+          appendAiChatMessage({
+            id: `${request.requestId}-deterministic-answer`,
+            role: "assistant",
+            content: payload.answer,
+            label: `${copy.aiAssistantAi} · ${copy.aiAnswerReady}`,
+            meta: [`${copy.aiSource}: ${copy.aiSourceVerified}`],
+            includeInHistory: true,
+            modelId: request.modelId,
+          });
+        } else {
+          excludeAiQuestionFromHistory(request.requestId);
+          const questionWasUnsupported = payload.source === "deterministic_unhandled";
+          appendAiChatMessage({
+            id: `${request.requestId}-model-unavailable`,
+            role: "assistant",
+            content: questionWasUnsupported ? payload.answer : copy.aiQueueUnavailable,
+            label: questionWasUnsupported ? copy.aiRequestRejectedTitle : copy.aiQueueUnavailableTitle,
+            tone: "warning",
+            includeInHistory: false,
+            modelId: request.modelId,
+          });
+        }
       }
       setAiQuestionJobId(jobId);
       if (jobId === null) {
@@ -3717,7 +3933,6 @@ export function ProductionDashboardPage() {
       !question
       || aiQuestionMutation.isPending
       || aiQuestionJobId !== null
-      || !aiSelectedModelIsAvailable
     ) return;
     const history = aiChatMessages
       .filter((message) => (
@@ -5138,23 +5353,15 @@ export function ProductionDashboardPage() {
                 <p className="panel-card__eyebrow">{copy.localBrief}</p>
                 <h3 className="panel__title">{copy.briefTitle}</h3>
               </div>
-              <fieldset className="production-ai-model-selector production-brief-model-selector">
-                <legend>{copy.briefModelSelect}</legend>
-                <div className="production-ai-model-selector__options">
-                  {PRODUCTION_AI_MODEL_OPTIONS.map((option) => (
-                    <button
-                      aria-pressed={briefingModelId === option.id}
-                      className={briefingModelId === option.id ? "is-active" : ""}
-                      key={option.id}
-                      onClick={() => setBriefingModelId(option.id)}
-                      type="button"
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+              <div className="production-ai-model-selector production-brief-model-selector">
+                <strong>{copy.briefModelSelect}</strong>
+                <div className="production-ai-worker-status__states">
+                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${briefingModelIsAvailable ? "ready" : "unavailable"}`}>
+                    {briefingModelStatusLabel}
+                  </span>
                 </div>
                 <p>{copy.briefModelCompareHint}</p>
-              </fieldset>
+              </div>
             </div>
 
             <div className="production-ai-worker-status">
@@ -5162,41 +5369,147 @@ export function ProductionDashboardPage() {
                 <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--${aiWorkerState}`}>
                   {aiWorkerStateLabel}
                 </span>
-                <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${briefingModelIsAvailable ? "ready" : "unavailable"}`}>
-                  {briefingModelStatusLabel}
-                </span>
               </div>
             </div>
 
             <div className="production-brief-panel__body">
-              {latestAiJobQuery.isLoading ? (
+              {productionAiBriefingQuery.isLoading ? (
                 <p>{copy.briefLoading}</p>
-              ) : !briefingModelIsAvailable ? (
-                <div className="notice notice--warning">{copy.aiSelectedModelUnavailable}</div>
-              ) : !latestAiJob ? (
-                <p>{copy.briefPending}</p>
-              ) : !latestAiJobUsedLocalLlm ? (
-                <div className="notice notice--warning">{copy.briefFailed}</div>
-              ) : (
-                <div className="production-ai-job production-ai-job--completed">
-                <div className="production-ai-job__header">
-                  <div>
-                    <strong>{copy.workerJobTitle}</strong>
-                    <span>
-                      {formatAiTimestamp(latestAiJob.completed_at, language)}
-                      {latestAiJob.model_name ? ` · ${formatAiModelName(latestAiJob.model_name)}` : ""}
+              ) : productionAiBriefing ? (
+                <article className={`production-ai-job production-ai-job--${productionAiBriefing.severity === "normal" ? "completed" : "failed"}`}>
+                  <div className="production-ai-job__header">
+                    <div>
+                      <strong>{copy.deterministicBriefTitle}</strong>
+                      <span>{briefingSourceLabel}</span>
+                    </div>
+                    <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${productionAiBriefing.severity === "normal" ? "ready" : "unavailable"}`}>
+                      {briefingSeverityLabel}
                     </span>
                   </div>
-                </div>
 
-                <div className="production-ai-job__result">
-                  <strong>{copy.workerJobResult}</strong>
-                  {latestAiJobSummary.split("\n\n").map((paragraph, index) => (
-                    <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
-                  ))}
-                </div>
-              </div>
+                  <div className="production-ai-job__result">
+                    {productionAiBriefing.answer.split("\n\n").map((paragraph, index) => (
+                      <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
+                    ))}
+                  </div>
+
+                  <div className="production-brief-evidence">
+                    <span>
+                      {copy.freshness}: {productionAiBriefing.data_freshness.last_mes_recorded_at
+                        ? productionAiBriefing.data_freshness.is_stale
+                          ? copy.freshnessStale
+                          : copy.freshnessCurrent
+                        : copy.freshnessUnknown}
+                    </span>
+                    <span>{copy.planUpdatedAt}: {formatAiTimestamp(productionAiBriefing.data_freshness.last_plan_updated_at, language)}</span>
+                    <span>{copy.mesUpdatedAt}: {formatAiTimestamp(productionAiBriefing.data_freshness.last_mes_recorded_at, language)}</span>
+                    <span>{copy.machiningUpdatedAt}: {formatAiTimestamp(productionAiBriefing.data_freshness.last_machining_reported_at, language)}</span>
+                    <span>{productionAiBriefing.top_risks.length} {copy.topRisks}</span>
+                  </div>
+
+                  <div className="production-ai-job__result">
+                    <strong>{copy.topRisks}</strong>
+                    {productionAiBriefing.top_risks.length ? (
+                      <div className="production-ai-job__issues">
+                        {productionAiBriefing.top_risks.map((risk, index) => (
+                          <article className="production-ai-job__issue" key={`${risk.type}-${risk.label}-${index}`}>
+                            <span>{risk.process === "injection" ? copy.injectionFacilities : copy.machiningFacilities}</span>
+                            <strong>{risk.label}</strong>
+                            <p>
+                              {language === "ko"
+                                ? `현재 시간 기준 ${formatNumber(Math.abs(risk.gap_qty))}개 부족${risk.detail ? ` · ${risk.detail}` : ""}`
+                                : `较当前时间基准少 ${formatNumber(Math.abs(risk.gap_qty))} 个${risk.detail ? ` · ${risk.detail}` : ""}`}
+                            </p>
+                          </article>
+                        ))}
+                      </div>
+                    ) : <p>{briefingRiskEvaluationLimited ? copy.riskEvaluationLimited : copy.noTopRisks}</p>}
+                  </div>
+
+                  {briefingWarningLabels.length ? (
+                    <div className="notice notice--warning">
+                      <strong>{copy.warningsTitle}</strong>
+                      <ul>
+                        {briefingWarningLabels.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  <details>
+                    <summary>{copy.evidenceTitle}</summary>
+                    <div className="production-ai-job__issues">
+                      <article className="production-ai-job__issue">
+                        <strong>{copy.usedDataTitle}</strong>
+                        {productionAiBriefing.used_data.map((item) => {
+                          const filters = formatBriefingFilters(item.filters);
+                          return (
+                            <p key={item.name}>
+                              {item.name}: {formatNumber(item.row_count)} {language === "ko" ? "행" : "条"}
+                              {filters ? ` · ${filters}` : ""}
+                            </p>
+                          );
+                        })}
+                      </article>
+                      <article className="production-ai-job__issue">
+                        <strong>{copy.calculationBasisTitle}</strong>
+                        {productionAiBriefing.calculation_basis.map((item, index) => (
+                          <p key={`${item.slice(0, 24)}-${index}`}>{item}</p>
+                        ))}
+                      </article>
+                      <article className="production-ai-job__issue">
+                        <strong>{copy.retrievalTraceTitle}</strong>
+                        {productionAiBriefing.retrieval_trace.map((item, index) => (
+                          <p key={`${item.slice(0, 24)}-${index}`}>{item}</p>
+                        ))}
+                      </article>
+                    </div>
+                  </details>
+                </article>
+              ) : (
+                <>
+                  <div className="notice notice--warning">{copy.briefFailed}</div>
+                  <article className="production-ai-job production-ai-job--failed">
+                    <div className="production-ai-job__header">
+                      <div>
+                        <strong>{copy.screenFallbackTitle}</strong>
+                        <span>{formatAiTimestamp(briefContext.latestUpdatedAt, language)}</span>
+                      </div>
+                    </div>
+                    <div className="production-ai-job__result">
+                      <p>{screenBriefingFallback.answer}</p>
+                    </div>
+                    {screenBriefingFallback.risks.length ? (
+                      <div className="production-ai-job__issues">
+                        {screenBriefingFallback.risks.map((risk) => (
+                          <article className="production-ai-job__issue" key={risk.label}>
+                            <strong>{risk.label}</strong>
+                            <p>{risk.detail}</p>
+                          </article>
+                        ))}
+                      </div>
+                    ) : null}
+                  </article>
+                </>
               )}
+
+              {latestAiJobUsedLocalLlm && latestAiJobSummary ? (
+                <article className="production-ai-job production-ai-job--completed">
+                  <div className="production-ai-job__header">
+                    <div>
+                      <strong>{copy.workerEnhancementTitle}</strong>
+                      <span>
+                        {formatAiTimestamp(latestAiJob?.completed_at, language)}
+                        {latestAiJob?.model_name ? ` · ${formatAiModelName(latestAiJob.model_name)}` : ""}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="production-ai-job__result">
+                    {latestAiJobSummary.split("\n\n").map((paragraph, index) => (
+                      <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
+                    ))}
+                  </div>
+                </article>
+              ) : null}
             </div>
           </section>
 
@@ -5792,23 +6105,15 @@ export function ProductionDashboardPage() {
             </div>
 
             <form className="production-ai-chat-drawer__footer" onSubmit={submitAiQuestion}>
-              <fieldset className="production-ai-model-selector" disabled={aiQuestionIsGenerating}>
-                <legend>{copy.aiModelSelect}</legend>
-                <div className="production-ai-model-selector__options">
-                  {PRODUCTION_AI_MODEL_OPTIONS.map((option) => (
-                    <button
-                      aria-pressed={aiModelId === option.id}
-                      className={aiModelId === option.id ? "is-active" : ""}
-                      key={option.id}
-                      onClick={() => setAiModelId(option.id)}
-                      type="button"
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+              <div className="production-ai-model-selector">
+                <strong>{copy.aiModelSelect}</strong>
+                <div className="production-ai-worker-status__states">
+                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${aiSelectedModelIsAvailable ? "ready" : "unavailable"}`}>
+                    {PRODUCTION_AI_MODEL_LABEL}
+                  </span>
                 </div>
                 <p>{aiSelectedModelIsAvailable ? copy.aiModelCompareHint : copy.aiSelectedModelUnavailable}</p>
-              </fieldset>
+              </div>
               <label className="production-ai-chat__visually-hidden" htmlFor="production-ai-chat-question">
                 {copy.aiInputLabel}
               </label>
@@ -5824,7 +6129,7 @@ export function ProductionDashboardPage() {
                 <span>{copy.aiQuestionScope}</span>
                 <button
                   className="button button--primary"
-                  disabled={!aiQuestion.trim() || aiQuestionMutation.isPending || aiQuestionJobId !== null || !aiSelectedModelIsAvailable}
+                  disabled={!aiQuestion.trim() || aiQuestionMutation.isPending || aiQuestionJobId !== null}
                   type="submit"
                 >
                   {aiQuestionMutation.isPending ? copy.askingAi : copy.aiSubmit}

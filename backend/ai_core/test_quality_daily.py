@@ -105,6 +105,55 @@ class DailyQualitySummaryTests(TestCase):
         self.assertEqual(completed_duplicate["status"], "exists")
         self.assertEqual(AiJob.objects.count(), 1)
 
+    def test_legacy_model_job_does_not_block_qwen38_enqueue(self):
+        self._plan(updated_at=self._local(6, 50))
+        seeded = enqueue_daily_quality_summary(self._local(7, 0))
+        seeded_job = seeded["job"]
+        legacy_scope = {**seeded_job.scope, "model_id": "qwen35"}
+        legacy_input = {**seeded_job.input_payload, "model_id": "qwen35"}
+        seeded_job.delete()
+        legacy_job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope=legacy_scope,
+            input_payload=legacy_input,
+        )
+
+        result = enqueue_daily_quality_summary(self._local(7, 1))
+
+        self.assertEqual(result["status"], "created")
+        self.assertEqual(result["job"].scope["model_id"], QUALITY_DAILY_MODEL_ID)
+        self.assertEqual(AiJob.objects.count(), 2)
+        legacy_job.refresh_from_db()
+        self.assertEqual(legacy_job.status, AiJob.STATUS_PENDING)
+
+    def test_legacy_completed_job_is_not_published_as_qwen38(self):
+        self._plan(updated_at=self._local(6, 50))
+        seeded = enqueue_daily_quality_summary(self._local(7, 0))
+        seeded_job = seeded["job"]
+        legacy_scope = {**seeded_job.scope, "model_id": "qwen35"}
+        legacy_input = {**seeded_job.input_payload, "model_id": "qwen35"}
+        seeded_job.delete()
+        AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            status=AiJob.STATUS_COMPLETED,
+            scope=legacy_scope,
+            input_payload=legacy_input,
+            result_payload={
+                "generation_source": "local_llm_rewrite",
+                "llm_fallback": False,
+                "source_plan_hash": legacy_scope["source_plan_hash"],
+                "source_evidence_hash": legacy_scope["source_evidence_hash"],
+            },
+            prompt_version=QUALITY_DAILY_EXPECTED_PROMPT_VERSION,
+            completed_at=self._local(7, 1),
+        )
+
+        public = quality_summary_for_overview(datetime(2026, 8, 12).date())
+
+        self.assertEqual(public["status"], "unavailable")
+        self.assertEqual(public["reason"], "not_generated")
+        self.assertIsNone(public["completed_at"])
+
     def test_no_plan_does_not_create_false_empty_summary(self):
         result = enqueue_daily_quality_summary(self._local(7, 30))
         page_report = quality_daily_report_for_page(
@@ -956,8 +1005,8 @@ class DailyQualitySummaryTests(TestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
-                "date": "2026-08-12",
                 "model_id": QUALITY_DAILY_MODEL_ID,
+                "date": "2026-08-12",
                 "source_plan_hash": input_payload["source_plan_hash"],
                 "source_evidence_hash": input_payload["source_evidence_hash"],
             },
@@ -1158,6 +1207,7 @@ class DailyQualitySummaryTests(TestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": "2026-08-12",
                 "source_plan_hash": input_payload["source_plan_hash"],
                 "source_evidence_hash": input_payload["source_evidence_hash"],
@@ -1377,10 +1427,10 @@ class DailyQualitySummaryTests(TestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": target_date.isoformat(),
                 "source_plan_hash": input_payload["source_plan_hash"],
                 "source_evidence_hash": input_payload["source_evidence_hash"],
-                "model_id": QUALITY_DAILY_MODEL_ID,
             },
             input_payload=input_payload,
         )
@@ -1638,6 +1688,7 @@ class DailyQualitySummaryTests(TestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": target_date.isoformat(),
                 "source_plan_hash": source["source_plan_hash"],
                 "source_evidence_hash": source["source_evidence_hash"],
@@ -1744,6 +1795,7 @@ class DailyQualitySummaryTests(TestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": target_date.isoformat(),
                 "source_plan_hash": source["source_plan_hash"],
                 "source_evidence_hash": source["source_evidence_hash"],
@@ -1847,6 +1899,7 @@ class DailyQualitySummaryTests(TestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": target_date.isoformat(),
                 "source_plan_hash": source["source_plan_hash"],
                 "source_evidence_hash": source["source_evidence_hash"],
@@ -1961,6 +2014,7 @@ class DailyQualitySummaryTests(TestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": target_date.isoformat(),
                 "source_plan_hash": source["source_plan_hash"],
                 "source_evidence_hash": source["source_evidence_hash"],
@@ -2041,6 +2095,7 @@ class DailyQualitySummaryTests(TestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": target_date.isoformat(),
                 "source_plan_hash": source["source_plan_hash"],
                 "source_evidence_hash": source["source_evidence_hash"],
@@ -2135,10 +2190,10 @@ class DailyQualityPageEndpointTests(APITestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": target_date.isoformat(),
                 "source_plan_hash": source["source_plan_hash"],
                 "source_evidence_hash": source["source_evidence_hash"],
-                "model_id": QUALITY_DAILY_MODEL_ID,
             },
         )
 
@@ -2219,6 +2274,7 @@ class DailyQualityPageEndpointTests(APITestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": target_date.isoformat(),
                 "source_plan_hash": source["source_plan_hash"],
                 "source_evidence_hash": source["source_evidence_hash"],
@@ -2311,6 +2367,7 @@ class DailyQualityPageEndpointTests(APITestCase):
             scope={
                 "mode": QUALITY_DAILY_MODE,
                 "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
                 "date": target_date.isoformat(),
                 "source_plan_hash": source["source_plan_hash"],
                 "source_evidence_hash": source["source_evidence_hash"],
@@ -2379,6 +2436,7 @@ class DailyQualityWorkerQueueTests(APITestCase):
                     AiJob.JOB_TYPE_PRODUCTION_DAILY,
                     AiJob.JOB_TYPE_QUALITY_IMAGE,
                 ],
+                "available_model_ids": [QUALITY_DAILY_MODEL_ID],
             },
             format="json",
             HTTP_X_AI_WORKER_TOKEN="test-worker-token",
@@ -2423,7 +2481,9 @@ class DailyQualityWorkerQueueTests(APITestCase):
         self.assertEqual(first_response.status_code, 200)
         self.assertEqual(first_response.data["jobs"][0]["id"], first_today.id)
         self.assertEqual(second_response.data["jobs"][0]["id"], second_today.id)
-        self.assertEqual(third_response.data["jobs"][0]["id"], yesterday_quality.id)
+        self.assertEqual(third_response.data["jobs"], [])
+        yesterday_quality.refresh_from_db()
+        self.assertEqual(yesterday_quality.status, AiJob.STATUS_PENDING)
 
     def test_daily_quality_job_is_claimed_before_hourly_analysis(self):
         legacy_quality = AiJob.objects.create(
@@ -2436,7 +2496,11 @@ class DailyQualityWorkerQueueTests(APITestCase):
         )
         hourly = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
-            scope={"trigger": "hourly", "date": "2026-08-12"},
+            scope={
+                "trigger": "hourly",
+                "date": "2026-08-12",
+                "model_id": QUALITY_DAILY_MODEL_ID,
+            },
         )
         quality = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
@@ -2459,6 +2523,7 @@ class DailyQualityWorkerQueueTests(APITestCase):
                     AiJob.JOB_TYPE_PRODUCTION_DAILY,
                     AiJob.JOB_TYPE_QUALITY_IMAGE,
                 ],
+                "available_model_ids": [QUALITY_DAILY_MODEL_ID],
             },
             format="json",
             HTTP_X_AI_WORKER_TOKEN="test-worker-token",
@@ -2480,6 +2545,7 @@ class DailyQualityWorkerQueueTests(APITestCase):
                 "worker_version": "production-ai-worker-v2",
                 "limit": 1,
                 "job_types": [AiJob.JOB_TYPE_QUALITY_IMAGE],
+                "available_model_ids": [QUALITY_DAILY_MODEL_ID],
             },
             format="json",
             HTTP_X_AI_WORKER_TOKEN="test-worker-token",

@@ -207,6 +207,7 @@ def enqueue_daily_quality_summary(
         "scope__mode": QUALITY_DAILY_MODE,
         "scope__trigger": QUALITY_DAILY_TRIGGER,
         "scope__date": target_date.isoformat(),
+        "scope__model_id": QUALITY_DAILY_MODEL_ID,
         "scope__source_plan_hash": source_plan_hash,
         "scope__source_evidence_hash": source_evidence_hash,
     }
@@ -256,6 +257,7 @@ def enqueue_daily_quality_summary(
         scope__mode=QUALITY_DAILY_MODE,
         scope__trigger=QUALITY_DAILY_TRIGGER,
         scope__date=target_date.isoformat(),
+        scope__model_id=QUALITY_DAILY_MODEL_ID,
         scope__source_plan_hash=source_plan_hash,
     ).exclude(scope__source_evidence_hash=source_evidence_hash)
     if prior_same_plan.exists():
@@ -1967,6 +1969,7 @@ def quality_summary_for_overview(target_date: date) -> dict[str, Any]:
         scope__mode=QUALITY_DAILY_MODE,
         scope__trigger=QUALITY_DAILY_TRIGGER,
         scope__date=target_date.isoformat(),
+        scope__model_id=QUALITY_DAILY_MODEL_ID,
     )
     exact = jobs.filter(scope__source_plan_hash=source_plan_hash)
     exact = exact.filter(scope__source_evidence_hash=source_evidence_hash)
@@ -2074,6 +2077,7 @@ def quality_daily_report_for_page(
             scope__mode=QUALITY_DAILY_MODE,
             scope__trigger=QUALITY_DAILY_TRIGGER,
             scope__date=target_date.isoformat(),
+            scope__model_id=QUALITY_DAILY_MODEL_ID,
         )
         exact = jobs.filter(
             scope__source_plan_hash=source_plan_hash,

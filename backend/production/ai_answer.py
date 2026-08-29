@@ -29,17 +29,33 @@ def status_text(status: str, language: str) -> str:
             "ahead": "快于时间基准",
             "on_track": "接近时间基准",
             "no_plan": "暂无计划基准",
+            "data_unavailable": "数据不足，无法评估",
         }.get(status, status)
     return {
         "behind": "지연",
         "ahead": "시간 기준보다 빠른",
         "on_track": "시간 기준과 유사한",
         "no_plan": "계획 기준 없음",
+        "data_unavailable": "데이터 부족으로 평가 불가",
     }.get(status, status)
 
 
-def risk_text(top_risks: list, language: str) -> str:
+def risk_text(top_risks: list, language: str, warnings: list[str] | None = None) -> str:
     if not top_risks:
+        data_limited = {
+            "injection_mes_data_missing",
+            "injection_mes_data_stale",
+            "injection_capacity_coverage_incomplete",
+            "injection_plan_missing",
+            "machining_plan_missing",
+            "machining_actual_missing",
+        }
+        if data_limited.intersection(warnings or []):
+            return (
+                "일부 공정의 계획 또는 실적 데이터가 부족해 전체 우선 확인 대상을 완전히 평가할 수 없습니다."
+                if language == "ko" else
+                "由于部分工序的计划或实绩数据不足，暂时无法完整评估全部优先确认对象。"
+            )
         return "우선 확인 대상은 없습니다." if language == "ko" else "暂无优先确认对象。"
     if language == "zh":
         items = ", ".join(f"{risk.label} {abs(risk.gap_qty):,}个不足" for risk in top_risks[:3])
@@ -52,45 +68,80 @@ def build_briefing_answer(context_pack, top_risks: list, language: str) -> str:
     facts = context_pack.facts
     injection = facts["injection"]
     machining = facts["machining"]
+    warning_codes = set(context_pack.warnings)
+    injection_data_unavailable = bool(
+        warning_codes.intersection({
+            "injection_mes_data_missing",
+            "injection_mes_data_stale",
+            "injection_capacity_coverage_incomplete",
+        })
+    )
+    machining_data_unavailable = "machining_actual_missing" in warning_codes
     injection_time_rate = injection.get("time_progress_rate")
     machining_time_rate = machining.get("time_progress_rate")
     injection_gap_to_time = (
         float(injection.get("progress_rate") or 0) - float(injection_time_rate)
-        if injection_time_rate is not None
+        if injection.get("planned_qty", 0) > 0 and injection_time_rate is not None
         else None
     )
 
     if language == "zh":
-        first = (
-            f"基准日 {context_pack.scope['business_date']} 注塑完成率为 {fmt_rate(injection['progress_rate'])}%"
-            f"（{fmt_num(injection['actual_qty'])} / {fmt_num(injection['planned_qty'])}个），"
-            f"时间基准为 {fmt_rate(injection_time_rate)}%，当前为{status_text(injection['status'], language)}状态。"
-        )
+        if injection.get("planned_qty", 0) <= 0:
+            first = f"基准日 {context_pack.scope['business_date']} 暂无注塑计划，无法评估完成率和时间进度。"
+        elif injection_data_unavailable:
+            first = (
+                f"基准日 {context_pack.scope['business_date']} 的注塑 MES 合模数据缺失或更新延迟，"
+                "当前无法可靠评估完成率和时间进度。请先确认最新合模数据。"
+            )
+        else:
+            first = (
+                f"基准日 {context_pack.scope['business_date']} 注塑完成率为 {fmt_rate(injection['progress_rate'])}%"
+                f"（{fmt_num(injection['actual_qty'])} / {fmt_num(injection['planned_qty'])}个），"
+                f"时间基准为 {fmt_rate(injection_time_rate)}%，当前为{status_text(injection['status'], language)}状态。"
+            )
         if injection_gap_to_time is not None:
             first += f" 与时间基准差异为 {fmt_rate(injection_gap_to_time)}%p。"
-        second = (
-            f"加工完成率为 {fmt_rate(machining['progress_rate'])}%"
-            f"（{fmt_num(machining['actual_qty'])} / {fmt_num(machining['planned_qty'])}个），"
-            f"时间基准为 {fmt_rate(machining_time_rate)}%，当前为{status_text(machining['status'], language)}状态，"
-            f"有实绩的加工线为 {fmt_num(machining['active_equipment_count'])} 条。"
-        )
-        third = risk_text(top_risks, language)
+        if machining.get("planned_qty", 0) <= 0:
+            second = "暂无加工计划，无法评估完成率和时间进度。"
+        elif machining_data_unavailable:
+            second = "暂无可验证的加工实绩，当前无法可靠评估完成率和时间进度。请先确认加工实绩登记。"
+        else:
+            second = (
+                f"加工完成率为 {fmt_rate(machining['progress_rate'])}%"
+                f"（{fmt_num(machining['actual_qty'])} / {fmt_num(machining['planned_qty'])}个），"
+                f"时间基准为 {fmt_rate(machining_time_rate)}%，当前为{status_text(machining['status'], language)}状态，"
+                f"有实绩的加工线为 {fmt_num(machining['active_equipment_count'])} 条。"
+            )
+        third = risk_text(top_risks, language, context_pack.warnings)
         return "\n\n".join([first, second, third])
 
-    first = (
-        f"기준일 {context_pack.scope['business_date']} 사출 완료율은 {fmt_rate(injection['progress_rate'])}%"
-        f"({fmt_num(injection['actual_qty'])} / {fmt_num(injection['planned_qty'])}개)이며, "
-        f"시간 기준 {fmt_rate(injection_time_rate)}% 대비 {status_text(injection['status'], language)} 상태입니다."
-    )
+    if injection.get("planned_qty", 0) <= 0:
+        first = f"기준일 {context_pack.scope['business_date']} 사출 계획이 없어 완료율과 시간 진도를 평가할 수 없습니다."
+    elif injection_data_unavailable:
+        first = (
+            f"기준일 {context_pack.scope['business_date']} 사출 MES 형합 데이터가 없거나 갱신이 지연되어 "
+            "현재 완료율과 시간 진도를 신뢰성 있게 평가할 수 없습니다. 최신 형합 데이터를 먼저 확인해 주세요."
+        )
+    else:
+        first = (
+            f"기준일 {context_pack.scope['business_date']} 사출 완료율은 {fmt_rate(injection['progress_rate'])}%"
+            f"({fmt_num(injection['actual_qty'])} / {fmt_num(injection['planned_qty'])}개)이며, "
+            f"시간 기준 {fmt_rate(injection_time_rate)}% 대비 {status_text(injection['status'], language)} 상태입니다."
+        )
     if injection_gap_to_time is not None:
         first += f" 시간 기준과의 차이는 {fmt_rate(injection_gap_to_time)}%p입니다."
-    second = (
-        f"가공 완료율은 {fmt_rate(machining['progress_rate'])}%"
-        f"({fmt_num(machining['actual_qty'])} / {fmt_num(machining['planned_qty'])}개)이고, "
-        f"시간 기준 {fmt_rate(machining_time_rate)}% 대비 {status_text(machining['status'], language)} 상태이며, "
-        f"실적 발생 라인은 {fmt_num(machining['active_equipment_count'])}개입니다."
-    )
-    third = risk_text(top_risks, language)
+    if machining.get("planned_qty", 0) <= 0:
+        second = "가공 계획이 없어 완료율과 시간 진도를 평가할 수 없습니다."
+    elif machining_data_unavailable:
+        second = "검증 가능한 가공 실적이 없어 현재 완료율과 시간 진도를 신뢰성 있게 평가할 수 없습니다. 가공 실적 등록 상태를 먼저 확인해 주세요."
+    else:
+        second = (
+            f"가공 완료율은 {fmt_rate(machining['progress_rate'])}%"
+            f"({fmt_num(machining['actual_qty'])} / {fmt_num(machining['planned_qty'])}개)이고, "
+            f"시간 기준 {fmt_rate(machining_time_rate)}% 대비 {status_text(machining['status'], language)} 상태이며, "
+            f"실적 발생 라인은 {fmt_num(machining['active_equipment_count'])}개입니다."
+        )
+    third = risk_text(top_risks, language, context_pack.warnings)
     return "\n\n".join([first, second, third])
 
 
@@ -98,12 +149,14 @@ def build_ai_briefing(target_date, language: str = "ko") -> AiBriefingPayload:
     normalized_language = "zh" if language == "zh" else "ko"
     daily_context = get_daily_production_context(target_date)
     context_pack = build_context_pack(daily_context, normalized_language)
-    top_risks = build_top_risks(daily_context)
+    top_risks = build_top_risks(daily_context, warnings=context_pack.warnings)
     used_data = build_used_data(daily_context)
     severity = status_severity(
         context_pack.facts["injection"]["status"],
         context_pack.facts["machining"]["status"],
     )
+    if severity == "normal" and context_pack.warnings:
+        severity = "warning"
     answer = build_briefing_answer(context_pack, top_risks, normalized_language)
 
     return AiBriefingPayload(

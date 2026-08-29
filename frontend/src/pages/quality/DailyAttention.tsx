@@ -1495,6 +1495,11 @@ export default function DailyAttentionPage() {
         scope: '分析范围：与所选生产计划料号前 9 位匹配的全部质量历史',
         executive: '执行摘要',
         executiveDescription: '面向交接班的结论优先简报',
+        shiftBriefing: '交接班执行确认简报',
+        shiftBriefingDescription: '仅显示通过服务器验证的历史依据与确认顺序，不表示当前正在发生不良，也不判定原因。',
+        historicalEvidenceBrief: '历史依据摘要',
+        serverPriorityOrder: '服务器验证顺序',
+        commonShiftChecks: '共通交接班确认',
         priorities: '今日优先确认',
         prioritiesDescription: '先比较前后 30 天的变化，再列出关联的当前计划机台与机种。点击对象可查看原始案例和全部照片。',
         plannedTarget: '计划对象',
@@ -1546,6 +1551,11 @@ export default function DailyAttentionPage() {
         scope: '분석 범위: 선택한 생산계획 품번 앞 9자리에 매칭되는 품질 전체 이력',
         executive: 'Executive Summary',
         executiveDescription: '교대 전 확인을 위한 결론 우선 브리핑',
+        shiftBriefing: '교대 실행 확인 브리핑',
+        shiftBriefingDescription: '서버 검증을 통과한 과거 이력 근거와 확인 순서만 표시하며, 현재 불량 발생이나 원인을 단정하지 않습니다.',
+        historicalEvidenceBrief: '과거 이력 근거 요약',
+        serverPriorityOrder: '서버 검증 순서',
+        commonShiftChecks: '공통 교대 확인',
         priorities: '오늘 우선확인',
         prioritiesDescription: '이전·최근 30일 변화를 먼저 비교하고, 이어서 연결된 오늘 계획 호기·모델을 표시합니다. 대상을 누르면 원문과 사진을 확인할 수 있습니다.',
         plannedTarget: '계획 대상',
@@ -1918,6 +1928,10 @@ export default function DailyAttentionPage() {
     setPrintSelection(null);
   };
 
+  const narrativeLanguage = lang === 'zh' ? 'zh' : 'ko';
+  const executiveSummarySegments = narrative?.executive_summary_segments ?? [];
+  const commonShiftChecks = narrative?.shift_checks[narrativeLanguage] ?? [];
+
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
       <section className="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -2052,6 +2066,68 @@ export default function DailyAttentionPage() {
                     );
                   })}
                 </div>
+
+                {narrative && (
+                  <section className="overflow-hidden rounded-2xl border border-blue-200 bg-white shadow-sm">
+                    <div className="border-b border-blue-100 bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-900 px-5 py-4 text-white sm:px-6">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-cyan-200 ring-1 ring-inset ring-white/15">
+                            <CheckCircle2 className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold text-white">{analysisCopy.shiftBriefing}</h3>
+                            <p className="mt-1 max-w-4xl text-xs leading-5 text-blue-100">{analysisCopy.shiftBriefingDescription}</p>
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-blue-100 ring-1 ring-inset ring-white/15">
+                          {analysisCopy.serverPriorityOrder}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-5 p-5 sm:p-6">
+                      <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                        <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-blue-700">{analysisCopy.historicalEvidenceBrief}</div>
+                        {executiveSummarySegments.length > 0 ? (
+                          <div className="grid gap-2 lg:grid-cols-3">
+                            {executiveSummarySegments.map((segment) => (
+                              <div key={segment.key} className="rounded-lg bg-white px-3 py-2.5 text-sm leading-6 text-slate-700 ring-1 ring-inset ring-blue-100">
+                                <div className="text-[11px] font-semibold text-slate-500">{localizedText(segment.label, lang)}</div>
+                                <p>
+                                  {segment.parts.map((part, index) => (
+                                    <span key={`${segment.key}-${index}`} className={part.strong ? 'font-bold text-slate-950' : undefined}>
+                                      {localizedText(part.text, lang)}
+                                    </span>
+                                  ))}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm leading-6 text-slate-700">{localizedText(narrative.executive_summary, lang)}</p>
+                        )}
+                      </div>
+
+                      {commonShiftChecks.length > 0 && (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                          <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                            <CheckCircle2 className="h-4 w-4" />
+                            {analysisCopy.commonShiftChecks}
+                          </div>
+                          <ul className="mt-2 space-y-1.5 text-xs leading-5 text-emerald-950/80">
+                            {commonShiftChecks.map((check, index) => (
+                              <li key={`shift-check-${index}`} className="flex gap-2">
+                                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                                <span>{check}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                )}
 
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

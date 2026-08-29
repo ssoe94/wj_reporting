@@ -4,21 +4,33 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 
-ProgressStatus = Literal["ahead", "on_track", "behind", "no_plan"]
+ProgressStatus = Literal["ahead", "on_track", "behind", "no_plan", "data_unavailable"]
 BriefSeverity = Literal["normal", "warning", "critical"]
 
 
 PRODUCTION_AI_MODELS = {
-    # `qwen35` is the deployed compatibility ID; port 8080 now serves Qwen 3.6.
-    "qwen35": {
-        "label": "Qwen 3.6 35B-A3B",
-    },
-    "gemma4_26b_a4b": {
-        "label": "Gemma 4 26B-A4B",
+    "qwen38": {
+        "label": "Qwen 3.8 27B",
     },
 }
 PRODUCTION_AI_MODEL_IDS = tuple(PRODUCTION_AI_MODELS)
-DEFAULT_PRODUCTION_AI_MODEL_ID = "qwen35"
+DEFAULT_PRODUCTION_AI_MODEL_ID = "qwen38"
+
+# Accept one deploy window of requests from the pre-consolidation frontend while
+# normalizing every newly created job to Qwen3.8. These aliases are input-only;
+# workers never advertise or claim the retired model IDs.
+PRODUCTION_AI_MODEL_ALIASES = {
+    "qwen35": DEFAULT_PRODUCTION_AI_MODEL_ID,
+}
+
+
+def canonical_production_ai_model_id(value: object) -> str | None:
+    """Resolve a supported request ID without relabelling retired model history."""
+    if not isinstance(value, str):
+        return None
+    model_id = value.strip()
+    canonical_model_id = PRODUCTION_AI_MODEL_ALIASES.get(model_id, model_id)
+    return canonical_model_id if canonical_model_id in PRODUCTION_AI_MODELS else None
 
 
 @dataclass

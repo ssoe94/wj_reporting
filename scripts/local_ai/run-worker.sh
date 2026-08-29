@@ -28,13 +28,8 @@ if [[ -z "${AI_WORKER_TOKEN:-}" ]]; then
 fi
 
 export RENDER_API_BASE_URL="${RENDER_API_BASE_URL:-https://wj-reporting-backend.onrender.com/api}"
-export LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-http://127.0.0.1:8080/v1}"
-export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/Qwen3.6-35B-A3B-4bit}"
-export LOCAL_QWEN38_BASE_URL="${LOCAL_QWEN38_BASE_URL:-http://127.0.0.1:8082/v1}"
-export LOCAL_QWEN38_MODEL="${LOCAL_QWEN38_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit}"
-export LOCAL_GEMMA_BASE_URL="${LOCAL_GEMMA_BASE_URL:-http://127.0.0.1:8081/v1}"
-export LOCAL_GEMMA_MODEL="${LOCAL_GEMMA_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/gemma-4-26b-a4b-it-4bit}"
-export LOCAL_LLM_DEFAULT_MODEL_ID="${LOCAL_LLM_DEFAULT_MODEL_ID:-qwen35}"
+export LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-http://127.0.0.1:8082/v1}"
+export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit}"
 export LOCAL_LLM_TIMEOUT_SECONDS="${LOCAL_LLM_TIMEOUT_SECONDS:-120}"
 export WORKER_NAME="${WORKER_NAME:-mac-studio-local-ai}"
 export POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-10}"
@@ -45,8 +40,9 @@ export PERIODIC_ENQUEUE_CHECK_SECONDS="${PERIODIC_ENQUEUE_CHECK_SECONDS:-60}"
 
 model_health_url="${LOCAL_LLM_BASE_URL%/}/models"
 for attempt in $(seq 1 90); do
-  if /usr/bin/curl -fsS -o /dev/null --connect-timeout 2 --max-time 5 "$model_health_url"; then
-    exec "$worker_python" "$worker_script"
+  if /usr/bin/curl -fsS --connect-timeout 2 --max-time 5 "$model_health_url" \
+    | "$worker_python" -c 'import json,sys; expected=sys.argv[1].replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]; payload=json.load(sys.stdin); ids=[str(row.get("id", "") if isinstance(row, dict) else row).replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] for row in payload.get("data", [])]; raise SystemExit(0 if expected in ids else 1)' "$LOCAL_LLM_MODEL"; then
+    exec "$worker_python" "$worker_script" "$@"
   fi
   if (( attempt % 15 == 0 )); then
     echo "Waiting for the default local AI server at $model_health_url ($attempt/90)" >&2
@@ -54,5 +50,5 @@ for attempt in $(seq 1 90); do
   /bin/sleep 2
 done
 
-echo "The default local AI server did not become ready within 180 seconds." >&2
+echo "The Qwen3.8 local AI server did not become ready within 180 seconds." >&2
 exit 69

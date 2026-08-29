@@ -440,8 +440,8 @@ test('priority evidence separates exact and related parts and shows every photo'
             priorities: [],
             repeated_issues: [
               {
-                metric_key: 'problem:burr_flash',
-                narrative: localized('버·플래시 반복 이력', '毛刺未去除重复履历'),
+                metric_key: 'problem:color_difference',
+                narrative: localized('색차 반복 이력', '色差重复履历'),
               },
               {
                 metric_key: 'problem:air_mark',
@@ -527,6 +527,12 @@ test('priority evidence separates exact and related parts and shows every photo'
   });
 
   await page.goto('/quality/daily-attention');
+  await page.locator('input[type="date"]').fill('2026-08-20');
+  await expect(page.getByRole('heading', { name: '교대 실행 확인 브리핑' })).toBeVisible();
+  await expect(page.getByText('과거 이력 근거 요약')).toBeVisible();
+  await expect(page.getByText('오늘 초점')).toBeVisible();
+  await expect(page.getByText('판단 근거')).toBeVisible();
+  await expect(page.getByText('다음 확인')).toBeVisible();
   await expect(page.getByText('Executive Summary', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '오늘 우선확인 4' })).toBeVisible();
   await expect(page.getByText('관련 계획 대상', { exact: true })).toHaveCount(4);
@@ -535,7 +541,7 @@ test('priority evidence separates exact and related parts and shows every photo'
     .getByRole('heading', { name: '오늘 우선확인 4' })
     .locator('xpath=ancestor::section[1]');
   await expect(prioritySection.locator('article h4').nth(0)).toHaveText('라벨 불량');
-  await expect(prioritySection.locator('article h4').nth(1)).toHaveText('버·플래시');
+  await expect(prioritySection.locator('article h4').nth(1)).toHaveText('색차');
   await expect(prioritySection.locator('article h4').nth(2)).toHaveText('가스 마크');
   await expect(prioritySection.locator('article h4').nth(3)).toHaveText('백화·백색 자국');
   await expect(prioritySection.locator('article h4')).toHaveCount(4);

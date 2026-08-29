@@ -25,6 +25,7 @@ from .models import (
 from injection.models import CycleTimeSetup, InjectionMonitoringRecord, PartSpec
 from assembly.models import AssemblyReport
 from ai_core.models import AiJob
+from ai_core.model_registry import SUPPORTED_AI_WORKER_VERSION
 
 from django.db.models import Sum, Q, Max
 from django.db.utils import DatabaseError, OperationalError, ProgrammingError, IntegrityError
@@ -50,7 +51,11 @@ from .ai_retrievers import (
     machine_label,
     parse_machine_number,
 )
-from .ai_types import DEFAULT_PRODUCTION_AI_MODEL_ID, PRODUCTION_AI_MODELS
+from .ai_types import (
+    DEFAULT_PRODUCTION_AI_MODEL_ID,
+    PRODUCTION_AI_MODELS,
+    canonical_production_ai_model_id,
+)
 from .counter_utils import calculate_cumulative_counter_delta
 from .cavity import (
     attach_cavity_meta,
@@ -80,13 +85,11 @@ class ActiveProductionAiQuestionError(APIException):
     default_code = 'ai_question_in_progress'
 
 
-GEMMA_READY_WORKER_VERSION = 'production-ai-worker-v2-gemma1'
-
-
 def is_production_ai_model_available(model_id, now=None):
     """Return whether the latest Worker heartbeat can safely serve the model."""
-    if model_id != 'gemma4_26b_a4b':
-        return True
+    canonical_model_id = canonical_production_ai_model_id(model_id)
+    if canonical_model_id is None:
+        return False
     try:
         heartbeat = (
             AiJob.objects
@@ -109,7 +112,17 @@ def is_production_ai_model_available(model_id, now=None):
     if heartbeat_age < 0 or heartbeat_age > stale_after_seconds:
         return False
     result = heartbeat.result_payload if isinstance(heartbeat.result_payload, dict) else {}
-    return result.get('worker_version') == GEMMA_READY_WORKER_VERSION
+    available_model_ids = {
+        str(value or '').strip()
+        for value in result.get('available_model_ids', [])
+        if str(value or '').strip()
+    }
+    return (
+        result.get('llm_enabled') is True
+        and result.get('llm_ready') is True
+        and result.get('worker_version') == SUPPORTED_AI_WORKER_VERSION
+        and canonical_model_id in available_model_ids
+    )
 
 
 def serialize_plan_for_log(plan):
@@ -346,10 +359,7 @@ class ProductionAiAskView(APIView):
     def normalize_model_id(raw_model_id):
         if raw_model_id is None:
             return DEFAULT_PRODUCTION_AI_MODEL_ID
-        if not isinstance(raw_model_id, str):
-            return None
-        model_id = raw_model_id.strip()
-        return model_id if model_id in PRODUCTION_AI_MODELS else None
+        return canonical_production_ai_model_id(raw_model_id)
 
     @staticmethod
     def normalize_conversation_history(raw_history):
@@ -379,6 +389,7 @@ class ProductionAiAskView(APIView):
                 scope__trigger='hourly',
                 scope__date=target_date.isoformat(),
                 scope__language=language,
+                scope__model_id=DEFAULT_PRODUCTION_AI_MODEL_ID,
             )
             .order_by('-completed_at', '-id')[:24]
         )
@@ -524,10 +535,10 @@ class ProductionAiAskView(APIView):
         )
 
     @staticmethod
-    def add_enqueue_warning(deterministic):
+    def add_warning(deterministic, warning_code):
         warnings = list(deterministic.get('warnings') or [])
-        if 'ai_question_enqueue_failed' not in warnings:
-            warnings.append('ai_question_enqueue_failed')
+        if warning_code not in warnings:
+            warnings.append(warning_code)
         deterministic['warnings'] = warnings
         return deterministic
 
@@ -559,13 +570,7 @@ class ProductionAiAskView(APIView):
         target_date = parse_date(date_str)
         if not target_date:
             return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
-        if not is_production_ai_model_available(model_id):
-            return Response({
-                'detail': 'The selected local AI model is not ready.',
-                'code': 'ai_model_unavailable',
-                'model_id': model_id,
-                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        model_available = is_production_ai_model_available(model_id)
 
         self.expire_stale_question_jobs(request.user)
         if self.has_active_question_job(request.user):
@@ -593,6 +598,13 @@ class ProductionAiAskView(APIView):
                     intent['filters']['lookback_explicit'] = True
                     break
         if intent.get('intent') == 'unknown':
+            if not model_available:
+                return Response({
+                    'detail': 'The local AI explanation service is not ready.',
+                    'code': 'ai_model_unavailable',
+                    'model_id': model_id,
+                    'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
+                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             daily_context = get_daily_production_context(target_date)
             verified_context = build_context_pack(
                 daily_context,
@@ -674,20 +686,27 @@ class ProductionAiAskView(APIView):
                 intent.get('filters', {}).get('lookback_minutes') or 60,
                 language,
             )
-            try:
-                job = self.enqueue_question_job(
-                    request,
-                    question,
-                    target_date,
-                    language,
-                    intent,
-                    deterministic,
-                    conversation_history=conversation_history,
-                    model_id=model_id,
-                )
-            except DatabaseError:
+            job = None
+            if model_available:
+                try:
+                    job = self.enqueue_question_job(
+                        request,
+                        question,
+                        target_date,
+                        language,
+                        intent,
+                        deterministic,
+                        conversation_history=conversation_history,
+                        model_id=model_id,
+                    )
+                except DatabaseError:
+                    deterministic = self.add_warning(
+                        deterministic,
+                        'ai_question_enqueue_failed',
+                    )
+            else:
                 job = None
-                deterministic = self.add_enqueue_warning(deterministic)
+                deterministic = self.add_warning(deterministic, 'ai_model_unavailable')
             facts = deterministic.get('facts') or {}
             return Response({
                 **deterministic,
@@ -712,20 +731,27 @@ class ProductionAiAskView(APIView):
                 intent.get('filters', {}).get('machine_numbers') or [],
                 language,
             )
-            try:
-                job = self.enqueue_question_job(
-                    request,
-                    question,
-                    target_date,
-                    language,
-                    intent,
-                    deterministic,
-                    conversation_history=conversation_history,
-                    model_id=model_id,
-                )
-            except DatabaseError:
+            job = None
+            if model_available:
+                try:
+                    job = self.enqueue_question_job(
+                        request,
+                        question,
+                        target_date,
+                        language,
+                        intent,
+                        deterministic,
+                        conversation_history=conversation_history,
+                        model_id=model_id,
+                    )
+                except DatabaseError:
+                    deterministic = self.add_warning(
+                        deterministic,
+                        'ai_question_enqueue_failed',
+                    )
+            else:
                 job = None
-                deterministic = self.add_enqueue_warning(deterministic)
+                deterministic = self.add_warning(deterministic, 'ai_model_unavailable')
             facts = deterministic.get('facts') or {}
             return Response({
                 **deterministic,
@@ -753,20 +779,27 @@ class ProductionAiAskView(APIView):
                 context,
                 language,
             )
-            try:
-                job = self.enqueue_question_job(
-                    request,
-                    question,
-                    target_date,
-                    language,
-                    intent,
-                    deterministic,
-                    conversation_history=conversation_history,
-                    model_id=model_id,
-                )
-            except DatabaseError:
+            job = None
+            if model_available:
+                try:
+                    job = self.enqueue_question_job(
+                        request,
+                        question,
+                        target_date,
+                        language,
+                        intent,
+                        deterministic,
+                        conversation_history=conversation_history,
+                        model_id=model_id,
+                    )
+                except DatabaseError:
+                    deterministic = self.add_warning(
+                        deterministic,
+                        'ai_question_enqueue_failed',
+                    )
+            else:
                 job = None
-                deterministic = self.add_enqueue_warning(deterministic)
+                deterministic = self.add_warning(deterministic, 'ai_model_unavailable')
             return Response({
                 **deterministic,
                 'source': 'intent_calculated',

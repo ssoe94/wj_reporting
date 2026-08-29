@@ -83,12 +83,14 @@ class RenderClient:
         worker_name: str = "",
         claim_timestamp: str = "",
     ) -> dict:
+        payload: dict = {}
+        if worker_name:
+            payload["worker_name"] = worker_name
+        if claim_timestamp:
+            payload["claim_timestamp"] = claim_timestamp
         response = self.session.post(
             f"{self.api_base_url}/ai/jobs/{job_id}/start/",
-            json={
-                "worker_name": worker_name,
-                "claim_timestamp": claim_timestamp,
-            },
+            json=payload,
             timeout=self.timeout,
         )
         response.raise_for_status()
@@ -103,15 +105,18 @@ class RenderClient:
         worker_name: str = "",
         claim_timestamp: str = "",
     ) -> dict:
+        payload = {"result_payload": result_payload}
+        if model_name:
+            payload["model_name"] = model_name
+        if prompt_version:
+            payload["prompt_version"] = prompt_version
+        if worker_name:
+            payload["worker_name"] = worker_name
+        if claim_timestamp:
+            payload["claim_timestamp"] = claim_timestamp
         response = self.session.post(
             f"{self.api_base_url}/ai/jobs/{job_id}/complete/",
-            json={
-                "result_payload": result_payload,
-                "model_name": model_name,
-                "prompt_version": prompt_version,
-                "worker_name": worker_name,
-                "claim_timestamp": claim_timestamp,
-            },
+            json=payload,
             timeout=self.timeout,
         )
         response.raise_for_status()
@@ -126,15 +131,18 @@ class RenderClient:
         worker_name: str = "",
         claim_timestamp: str = "",
     ) -> dict:
+        payload = {"error_message": error_message[:4000]}
+        if model_name:
+            payload["model_name"] = model_name
+        if prompt_version:
+            payload["prompt_version"] = prompt_version
+        if worker_name:
+            payload["worker_name"] = worker_name
+        if claim_timestamp:
+            payload["claim_timestamp"] = claim_timestamp
         response = self.session.post(
             f"{self.api_base_url}/ai/jobs/{job_id}/fail/",
-            json={
-                "error_message": error_message[:4000],
-                "model_name": model_name,
-                "prompt_version": prompt_version,
-                "worker_name": worker_name,
-                "claim_timestamp": claim_timestamp,
-            },
+            json=payload,
             timeout=self.timeout,
         )
         response.raise_for_status()

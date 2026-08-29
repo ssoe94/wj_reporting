@@ -15,7 +15,7 @@ from injection.models import InjectionMonitoringRecord
 
 from .mes_progress import get_business_date, is_machining_progress_report, normalize_mes_part_no
 from .counter_utils import calculate_cumulative_counter_delta
-from .ai_gateway import heuristic_intent_from_question
+from .ai_gateway import answer_from_intent, heuristic_intent_from_question
 from .ai_metrics import production_shift_window, project_end_of_business_day_shots
 from .ai_context import build_context_pack, build_top_risks
 from .ai_retrievers import (
@@ -914,6 +914,13 @@ class AiBriefingContractTests(DjangoTestCase):
             planned_quantity=80,
             sequence=1,
         )
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='power-only-no-capacity',
+            timestamp=pytz.timezone('Asia/Shanghai').localize(datetime(2026, 5, 18, 10, 0)),
+            power_kwh=12.5,
+            capacity=None,
+        )
 
         response = self.client.get('/api/production/ai/briefing/', {
             'date': target_date.isoformat(),
@@ -935,8 +942,25 @@ class AiBriefingContractTests(DjangoTestCase):
 
         self.assertEqual(payload['facts']['injection']['planned_qty'], 100)
         self.assertEqual(payload['facts']['machining']['planned_qty'], 80)
+        self.assertEqual(payload['facts']['injection']['status'], 'data_unavailable')
+        self.assertEqual(payload['facts']['machining']['status'], 'data_unavailable')
+        self.assertIsNone(payload['facts']['injection']['time_progress_rate'])
+        self.assertIsNone(payload['facts']['machining']['time_progress_rate'])
+        self.assertEqual(payload['facts']['injection']['gap_qty'], 0)
+        self.assertEqual(payload['facts']['machining']['gap_qty'], 0)
+        self.assertEqual(payload['top_risks'], [])
+        self.assertIn('injection_mes_data_missing', payload['warnings'])
+        self.assertIn('machining_actual_missing', payload['warnings'])
+        self.assertIn('평가할 수 없습니다', payload['answer'])
+        self.assertNotIn('0 / 100', payload['answer'])
+        self.assertNotIn('0 / 80', payload['answer'])
+        self.assertNotIn('지연 상태', payload['answer'])
         self.assertGreaterEqual(len(payload['used_data']), 3)
         self.assertTrue(any(item['name'] == 'ProductionPlan' for item in payload['used_data']))
+        self.assertEqual(
+            next(item['row_count'] for item in payload['used_data'] if item['name'] == 'InjectionMonitoringRecord'),
+            0,
+        )
         self.assertTrue(any('08:00' in item for item in payload['calculation_basis']))
 
         context_pack = payload['context_pack']
@@ -949,6 +973,53 @@ class AiBriefingContractTests(DjangoTestCase):
         table_names = {table['name'] for table in context_pack['tables']}
         self.assertIn('injection_part_progress', table_names)
         self.assertIn('machining_part_progress', table_names)
+
+    def test_partial_injection_capacity_coverage_suppresses_only_unverified_machine(self):
+        target_date = datetime(2026, 5, 18).date()
+        for sequence, machine_name, part_no in [
+            (1, '850T-1', 'PART-A'),
+            (2, '850T-2', 'PART-B'),
+        ]:
+            ProductionPlan.objects.create(
+                plan_date=target_date,
+                plan_type='injection',
+                machine_name=machine_name,
+                part_no=part_no,
+                planned_quantity=1000,
+                sequence=sequence,
+            )
+        tz = pytz.timezone('Asia/Shanghai')
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='partial-coverage-1',
+            timestamp=tz.localize(datetime(2026, 5, 18, 9, 0)),
+            capacity=100,
+        )
+        InjectionMonitoringRecord.objects.create(
+            machine_name='1호기',
+            device_code='partial-coverage-1',
+            timestamp=tz.localize(datetime(2026, 5, 18, 12, 0)),
+            capacity=200,
+        )
+
+        response = self.client.get('/api/production/ai/briefing/', {
+            'date': target_date.isoformat(),
+            'language': 'ko',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn('injection_capacity_coverage_incomplete', payload['warnings'])
+        self.assertNotIn('injection_mes_data_missing', payload['warnings'])
+        self.assertEqual(payload['facts']['injection']['status'], 'data_unavailable')
+        self.assertIn('평가할 수 없습니다', payload['answer'])
+        self.assertNotIn('0 / 2,000', payload['answer'])
+        self.assertEqual([risk['label'] for risk in payload['top_risks']], ['850T-1'])
+        injection_table = next(
+            table for table in payload['context_pack']['tables']
+            if table['name'] == 'injection_machine_progress'
+        )
+        self.assertEqual([row['machine'] for row in injection_table['rows']], ['850T-1'])
 
     def test_ai_briefing_uses_same_facts_for_korean_and_chinese(self):
         target_date = datetime(2026, 5, 18).date()
@@ -974,6 +1045,67 @@ class AiBriefingContractTests(DjangoTestCase):
         self.assertEqual(zh_response.status_code, 200)
         self.assertEqual(ko_response.json()['facts'], zh_response.json()['facts'])
 
+    def test_no_plan_is_not_evaluated_as_delay_in_both_languages(self):
+        for language in ['ko', 'zh']:
+            with self.subTest(language=language):
+                response = self.client.get('/api/production/ai/briefing/', {
+                    'date': '2026-05-18',
+                    'language': language,
+                })
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertEqual(payload['facts']['injection']['status'], 'no_plan')
+                self.assertEqual(payload['facts']['machining']['status'], 'no_plan')
+                self.assertEqual(payload['severity'], 'warning')
+                self.assertEqual(payload['top_risks'], [])
+                self.assertIn('injection_plan_missing', payload['warnings'])
+                self.assertIn('machining_plan_missing', payload['warnings'])
+                self.assertNotIn('0 / 0', payload['answer'])
+                self.assertNotIn('지연', payload['answer'])
+                self.assertNotIn('延迟', payload['answer'])
+
+
+class ProductionAiChinesePurityTests(TestCase):
+    def test_supported_deterministic_answers_contain_no_hangul(self):
+        context = {
+            'machines': [{
+                'machine': 'M1',
+                'machine_name': 'M1',
+                'machine_number': 1,
+                'is_running': True,
+                'recent_60m_avg_ct_sec': 12.5,
+                'recent_60m_shots': 120,
+                'current_part': {
+                    'part_no': 'PART-A',
+                    'model_name': 'MODEL-A',
+                    'product_family_name': 'BC',
+                    'product_family_code': 'BC',
+                },
+                'parts': [{
+                    'part_no': 'PART-A',
+                    'model_name': 'MODEL-A',
+                    'product_family_name': 'BC',
+                    'product_family_code': 'BC',
+                    'planned_qty': 100,
+                    'estimated_qty': 50,
+                    'status': 'in_progress',
+                }],
+            }],
+        }
+        intents = [
+            {'intent': 'injection_cycle_time', 'filters': {}, 'sort': 'ct_desc', 'limit': 1},
+            {'intent': 'injection_cycle_time', 'filters': {}, 'limit': 6},
+            {'intent': 'production_status', 'filters': {}},
+            {'intent': 'production_summary', 'filters': {}},
+        ]
+
+        for intent in intents:
+            with self.subTest(intent=intent['intent'], limit=intent.get('limit')):
+                answer = answer_from_intent(intent, context, 'zh')
+                self.assertTrue(answer)
+                self.assertFalse(any('\uac00' <= character <= '\ud7a3' for character in answer))
+
 
 class ProductionAiAskContractTests(DjangoTestCase):
     def setUp(self):
@@ -981,7 +1113,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
         self.user = get_user_model().objects.create_user(username='ai-ask-user', password='test-pass')
         self.client.force_authenticate(self.user)
 
-    def create_gemma_ready_heartbeat(self, completed_at=None):
+    def create_qwen38_ready_heartbeat(self, completed_at=None):
         heartbeat = AiJob.objects.create(
             job_type='worker_heartbeat',
             status=AiJob.STATUS_COMPLETED,
@@ -989,8 +1121,9 @@ class ProductionAiAskContractTests(DjangoTestCase):
             result_payload={
                 'llm_enabled': True,
                 'llm_ready': True,
-                'model_name': 'Qwen3.6-35B-A3B-4bit',
-                'worker_version': 'production-ai-worker-v2-gemma1',
+                'model_name': 'Qwen3.8-27B-4bit',
+                'worker_version': 'production-ai-worker-v2',
+                'available_model_ids': ['qwen38'],
             },
             completed_at=completed_at or timezone.now(),
         )
@@ -1000,6 +1133,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
         return heartbeat
 
     def test_question_defaults_to_qwen_model(self):
+        self.create_qwen38_ready_heartbeat()
         response = self.client.post('/api/production/ai/ask/', {
             'date': '2026-05-18',
             'language': 'ko',
@@ -1007,28 +1141,29 @@ class ProductionAiAskContractTests(DjangoTestCase):
         }, format='json')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['model_id'], 'qwen35')
+        self.assertEqual(response.json()['model_id'], 'qwen38')
         job = AiJob.objects.get(pk=response.json()['job_id'])
-        self.assertEqual(job.scope['model_id'], 'qwen35')
-        self.assertEqual(job.input_payload['model_id'], 'qwen35')
+        self.assertEqual(job.scope['model_id'], 'qwen38')
+        self.assertEqual(job.input_payload['model_id'], 'qwen38')
 
-    def test_question_preserves_selected_gemma_model(self):
-        self.create_gemma_ready_heartbeat()
+    def test_legacy_qwen35_request_is_normalized_to_qwen38(self):
+        self.create_qwen38_ready_heartbeat()
         response = self.client.post('/api/production/ai/ask/', {
             'date': '2026-05-18',
             'language': 'ko',
             'question': '오늘 생산량이 왜 낮고 무엇을 우선 개선해야 해?',
-            'model_id': 'gemma4_26b_a4b',
+            'model_id': 'qwen35',
         }, format='json')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['model_id'], 'gemma4_26b_a4b')
-        self.assertEqual(response.json()['model_label'], 'Gemma 4 26B-A4B')
+        self.assertEqual(response.json()['model_id'], 'qwen38')
+        self.assertEqual(response.json()['model_label'], 'Qwen 3.8 27B')
         job = AiJob.objects.get(pk=response.json()['job_id'])
-        self.assertEqual(job.scope['model_id'], 'gemma4_26b_a4b')
-        self.assertEqual(job.input_payload['model_id'], 'gemma4_26b_a4b')
+        self.assertEqual(job.scope['model_id'], 'qwen38')
+        self.assertEqual(job.input_payload['model_id'], 'qwen38')
 
-    def test_question_rejects_gemma_when_capable_worker_is_not_ready(self):
+    def test_question_rejects_retired_gemma_model(self):
+        self.create_qwen38_ready_heartbeat()
         response = self.client.post('/api/production/ai/ask/', {
             'date': '2026-05-18',
             'language': 'ko',
@@ -1036,25 +1171,47 @@ class ProductionAiAskContractTests(DjangoTestCase):
             'model_id': 'gemma4_26b_a4b',
         }, format='json')
 
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()['code'], 'ai_model_unavailable')
-        self.assertFalse(AiJob.objects.exists())
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['code'], 'invalid_ai_model')
+        self.assertEqual(response.json()['allowed_model_ids'], ['qwen38'])
+        self.assertFalse(
+            AiJob.objects.exclude(job_type='worker_heartbeat').exists()
+        )
 
-    def test_question_rejects_gemma_when_capable_worker_heartbeat_is_stale(self):
-        self.create_gemma_ready_heartbeat(timezone.now() - timedelta(minutes=10))
+    def test_unknown_question_rejects_stale_qwen38_worker(self):
+        self.create_qwen38_ready_heartbeat(timezone.now() - timedelta(minutes=10))
         response = self.client.post('/api/production/ai/ask/', {
             'date': '2026-05-18',
             'language': 'ko',
             'question': '오늘 생산량이 왜 낮아?',
-            'model_id': 'gemma4_26b_a4b',
         }, format='json')
 
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()['code'], 'ai_model_unavailable')
         self.assertEqual(AiJob.objects.filter(job_type='worker_heartbeat').count(), 1)
 
+    def test_unknown_question_rejects_incompatible_worker_version(self):
+        heartbeat = self.create_qwen38_ready_heartbeat()
+        heartbeat.result_payload = {
+            **heartbeat.result_payload,
+            'worker_version': 'production-ai-worker-v1',
+        }
+        heartbeat.save(update_fields=['result_payload', 'updated_at'])
+
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '오늘 생산량이 왜 낮아?',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['code'], 'ai_model_unavailable')
+        self.assertFalse(
+            AiJob.objects.exclude(job_type='worker_heartbeat').exists()
+        )
+
     def test_question_rejects_unknown_or_non_string_model(self):
-        for model_id in ['../../private/model', 'unknown-model', 123]:
+        for model_id in ['../../private/model', 'unknown-model', 'gemma4_26b_a4b', 123]:
             with self.subTest(model_id=model_id):
                 response = self.client.post('/api/production/ai/ask/', {
                     'date': '2026-05-18',
@@ -1213,6 +1370,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
                 )
 
     def test_active_machine_count_uses_reset_safe_mes_delta_across_business_boundary(self):
+        self.create_qwen38_ready_heartbeat()
         target_date = datetime(2026, 5, 18).date()
         tz = pytz.timezone('Asia/Shanghai')
         business_start = tz.localize(datetime(2026, 5, 18, 8, 0))
@@ -1352,11 +1510,17 @@ class ProductionAiAskContractTests(DjangoTestCase):
         self.assertIn('injection_capacity_data_stale', response.json()['warnings'])
 
     def test_unknown_question_queues_context_grounded_qwen_job(self):
+        self.create_qwen38_ready_heartbeat()
         completed_base = pytz.UTC.localize(datetime(2026, 5, 18, 1, 0))
         older_snapshot = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_COMPLETED,
-            scope={'trigger': 'hourly', 'date': '2026-05-18', 'language': 'ko'},
+            scope={
+                'trigger': 'hourly',
+                'date': '2026-05-18',
+                'language': 'ko',
+                'model_id': 'qwen38',
+            },
             result_payload={
                 'summary': 'This generated prose must not become memory.',
                 'facts': {'injection': {'actual_qty': 10}},
@@ -1368,7 +1532,12 @@ class ProductionAiAskContractTests(DjangoTestCase):
         newer_snapshot = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_COMPLETED,
-            scope={'trigger': 'hourly', 'date': '2026-05-18', 'language': 'ko'},
+            scope={
+                'trigger': 'hourly',
+                'date': '2026-05-18',
+                'language': 'ko',
+                'model_id': 'qwen38',
+            },
             result_payload={
                 'summary': 'This newer prose must also be excluded.',
                 'facts': {'injection': {'actual_qty': 20}},
@@ -1421,6 +1590,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
         ))
 
     def test_supported_question_uses_calculated_intent(self):
+        self.create_qwen38_ready_heartbeat()
         response = self.client.post('/api/production/ai/ask/', {
             'date': '2026-05-18',
             'language': 'ko',
@@ -1449,7 +1619,21 @@ class ProductionAiAskContractTests(DjangoTestCase):
             },
         )
 
+    def test_known_question_stays_available_when_worker_is_offline(self):
+        response = self.client.post('/api/production/ai/ask/', {
+            'date': '2026-05-18',
+            'language': 'ko',
+            'question': '오늘 생산 진도 어때?',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['source'], 'intent_calculated')
+        self.assertIsNone(response.json()['job_id'])
+        self.assertIn('ai_model_unavailable', response.json()['warnings'])
+        self.assertFalse(AiJob.objects.exists())
+
     def test_diagnostic_question_enqueues_context_grounded_job(self):
+        self.create_qwen38_ready_heartbeat()
         response = self.client.post('/api/production/ai/ask/', {
             'date': '2026-05-18',
             'language': 'ko',
@@ -1462,6 +1646,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
         self.assertEqual(job.input_payload['answer_mode'], 'context_grounded')
 
     def test_known_question_returns_calculated_answer_when_enqueue_fails(self):
+        self.create_qwen38_ready_heartbeat()
         with patch(
             'production.views.ProductionAiAskView.enqueue_question_job',
             side_effect=DatabaseError('queue unavailable'),
@@ -1479,6 +1664,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
         self.assertIn('ai_question_enqueue_failed', response.json()['warnings'])
 
     def test_unknown_question_returns_503_when_enqueue_fails(self):
+        self.create_qwen38_ready_heartbeat()
         with patch(
             'production.views.ProductionAiAskView.enqueue_question_job',
             side_effect=DatabaseError('queue unavailable'),
@@ -1539,6 +1725,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
         ]:
             with self.subTest(active_status=active_status):
                 AiJob.objects.all().delete()
+                self.create_qwen38_ready_heartbeat()
                 stale_job = AiJob.objects.create(
                     job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
                     status=active_status,
@@ -1564,6 +1751,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
                 self.assertEqual(stale_job.error_message, 'ai_question_active_timeout')
 
     def test_completed_question_job_does_not_block_next_question(self):
+        self.create_qwen38_ready_heartbeat()
         AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_COMPLETED,
@@ -1583,6 +1771,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
         self.assertIsNotNone(response.json()['job_id'])
 
     def test_other_users_active_question_does_not_block_question(self):
+        self.create_qwen38_ready_heartbeat()
         other_user = get_user_model().objects.create_user(
             username='other-production-ai-user',
             password='test-pass',
@@ -1626,6 +1815,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
             patch('production.ai_metrics.timezone.now', return_value=now),
             patch('production.ai_retrievers.timezone.now', return_value=now),
         ):
+            self.create_qwen38_ready_heartbeat(now)
             response = self.client.post('/api/production/ai/ask/', {
                 'date': target_date.isoformat(),
                 'language': 'ko',

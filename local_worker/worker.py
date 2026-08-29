@@ -41,12 +41,12 @@ HANDLERS = {
     "quality_image_analysis": quality_daily_attention_summary,
 }
 
-# Stable backend contract ID. Port 8080 currently serves the Qwen3.6 checkpoint.
-QWEN_MODEL_ID = "qwen35"
 QWEN38_MODEL_ID = "qwen38"
-GEMMA_MODEL_ID = "gemma4_26b_a4b"
-SUPPORTED_MODEL_IDS = {QWEN_MODEL_ID, QWEN38_MODEL_ID, GEMMA_MODEL_ID}
-GEMMA_READY_WORKER_VERSION = "production-ai-worker-v2-gemma1"
+QWEN38_CHECKPOINT_NAME = "Qwen3.8-27B-4bit"
+# Keep the generic name as a source-compatible alias without retaining a
+# retired backend ID. The outbound Worker serves one physical model only.
+QWEN_MODEL_ID = QWEN38_MODEL_ID
+SUPPORTED_MODEL_IDS = {QWEN38_MODEL_ID}
 
 REPAIR_SYSTEM_PROMPT = """You repair a manufacturing AI explanation that failed numeric grounding.
 Use only the supplied verified qualitative evidence, qualitative draft, and allowed exact identifiers.
@@ -72,6 +72,12 @@ cannot be determined and describe only the current snapshot. Do not call the tar
 improving, or worsening from one snapshot. Ask for target-level time snapshots when history is missing.
 When focus_identifiers is non-empty, do not cite unrelated machines, lines, Parts, or models.
 Do not ask to reconfirm a current production or running status already present in verified evidence.
+In 확인할 항목/需确认, every non-empty bullet must contain exactly one non-mutating information check.
+Use only 확인, 점검, 검토, or 조회 (确认、检查、审查、查询) as the action. Do not use 검증/验证.
+Never recommend or mention a physical operation, maintenance action, shutdown, reset, configuration change,
+or production-order change. Do not chain actions with commas, conjunctions, or before/after sequencing.
+Put different data objects in separate bullets; do not join them with 과/와/및 or 和/与/及.
+Every 판단 근거/判断依据 and 확인할 항목/需确认 item must start with the literal bullet prefix "- ".
 The summary must not contain these raw tokens: on_track, behind, ahead, no_plan, in_progress,
 pending, completed, is_running, true, false. Do not use vague quantifiers such as 일부 or 대부분;
 name the exact supplied identifiers instead.
@@ -114,30 +120,33 @@ class LocalModelTarget:
     model_name: str
 
 
-def requested_model_id(job: dict[str, Any], default_model_id: str = QWEN_MODEL_ID) -> str:
+def requested_model_id(job: dict[str, Any], default_model_id: str = QWEN38_MODEL_ID) -> str:
     scope = job.get("scope") if isinstance(job.get("scope"), dict) else {}
     input_payload = (
         job.get("input_payload")
         if isinstance(job.get("input_payload"), dict)
         else {}
     )
-    raw_model_id = scope.get("model_id") or input_payload.get("model_id") or default_model_id
+    scope_model_id = str(scope.get("model_id") or "").strip()
+    payload_model_id = str(input_payload.get("model_id") or "").strip()
+    if scope_model_id and payload_model_id and scope_model_id != payload_model_id:
+        raise ValueError(
+            "Local AI model_id mismatch between job scope and input payload."
+        )
+    raw_model_id = scope_model_id or payload_model_id or default_model_id
     model_id = str(raw_model_id or "").strip()
     if model_id not in SUPPORTED_MODEL_IDS:
         raise ValueError(f"Unsupported local AI model_id: {model_id or '<empty>'}")
     return model_id
 
 
-def heartbeat_worker_version(model_readiness: dict[str, bool]) -> str:
-    return (
-        GEMMA_READY_WORKER_VERSION
-        if model_readiness.get(GEMMA_MODEL_ID, False)
-        else WORKER_VERSION
-    )
-
-
 def health_check_passed(result: dict[str, Any]) -> bool:
     return str(result.get("status") or "").strip().lower() == "ok"
+
+
+def qwen38_checkpoint_configured(model_name: str) -> bool:
+    normalized = str(model_name or "").replace("\\", "/").rstrip("/")
+    return normalized.rsplit("/", 1)[-1] == QWEN38_CHECKPOINT_NAME
 
 
 def handler_for_job(job: dict):
@@ -163,6 +172,7 @@ NUMBER_TOKEN = re.compile(
 )
 # A decimal dot belongs to the number; any other dot may end a clause.
 CLAUSE_SPLIT = re.compile(r"(?:[\n!?。！？;；]+|(?<!\d)\.|\.(?!\d)|,(?=\s)|，)")
+SENTENCE_SPLIT = re.compile(r"(?:[\n!?。！？;；]+|(?<!\d)\.|\.(?!\d))")
 DATE_OR_TIME = re.compile(
     r"(?:\b\d{4}-\d{1,2}-\d{1,2}(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+\-]\d{2}:?\d{2})?)?\b"
     r"|\b\d{4}\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일\b"
@@ -249,8 +259,8 @@ RISK_ASSERTION = re.compile(
     r"故障|不良|不足|过热|過熱|堵塞|缺陷|异常|異常|下降|降低|不稳定|不穩定)"
 )
 CHECK_OR_INFORMATION_LIMITATION = re.compile(
-    r"(?:확인|점검|검토|조사|여부|가능성|데이터|자료|정보|이력|스냅샷|근거|"
-    r"确认|確認|检查|檢查|审查|審查|调查|調查|是否|可能性|数据|數據|资料|資料|信息|資訊|记录|記錄|依据|依據)"
+    r"(?:확인|점검|검토|조사|여부|가능성|데이터|자료|정보|이력|스냅샷|근거|증거|"
+    r"确认|確認|检查|檢查|审查|審查|调查|調查|是否|可能性|数据|數據|资料|資料|信息|資訊|记录|記錄|依据|依據|证据|證據)"
 )
 DIRECTIVE_MARKER = re.compile(
     r"(?:해야(?:\s*합니다)?|하십시오|하세요|세요|권장합니다|필요합니다|"
@@ -260,11 +270,62 @@ SAFE_ANALYSIS_ACTION = re.compile(
     r"(?:확인|검토|수집|조회|비교|점검|파악|기록|모니터링|추적|확보|요청|조사|분석|측정|"
     r"确认|確認|审查|審查|收集|查询|查詢|比较|比較|检查|檢查|掌握|记录|記錄|监控|監控|追踪|追蹤|获取|取得|请求|請求|调查|調查|分析|测量|測量)"
 )
+SAFE_NEXT_ACTION = re.compile(
+    r"(?:확인|점검|검토|조회|确认|確認|检查|檢查|审查|審查|查询|查詢)"
+)
+OPERATIONAL_MUTATION = re.compile(
+    r"(?:분해|해체|세척|청소|세정|닦|씻|윤활|교환|우회|수리|교체|재시작|재가동|리셋|초기화|"
+    r"조임|보충|잠금|켜기|끄기|재배치|(?:장력|설정값).{0,8}(?:조정|고치)|"
+    r"(?:금형|부품|표면).{0,8}(?:코팅|도포)|(?:노즐|배관).{0,8}퍼지|(?:밸브|밸브를)\s*개방|"
+    r"전원(?:을|를)?\s*(?:내리|올리|차단)|"
+    r"(?:장비|설비|기계)(?:를|을)?\s*(?:끄|종료|정지|차단)|폐기|증산|감산|추가\s*발주|"
+    r"인력\s*투입|(?:설정|조건|배치)(?:을|를)?\s*(?:변경|조정)|바꾸|"
+    r"작업\s*순서(?:를|을)?\s*(?:변경|조정)|"
+    r"(?:온도|압력|속도|출력).{0,8}(?:높이|낮추|변경|조정)|(?:정지|가동)시키|연락|문의|"
+    r"拆卸|拆解|清洗|清洁|清潔|擦拭|润滑|潤滑|上油|涂覆|塗覆|喷涂|噴塗|吹扫|吹掃|"
+    r"打开阀门|打開閥門|切断电源|切斷電源|停止生产线|停止生產線|修改参数|修改參數|校准|校準|"
+    r"拧紧|擰緊|锁定|鎖定|打开加热器|打開加熱器|重新放置|调高|調高|"
+    r"绕过|繞過|维修|維修|更换|更換|重启|重啟|"
+    r"重新启动|重新啟動|重置|复位|復位|关闭(?:设备|設備|机器|機器)|關閉(?:设备|設備|机器|機器)|报废|報廢|"
+    r"增产|增產|减产|減產|追加订购|追加訂購|投入人员|投入人員|"
+    r"(?:设置|設定|条件|條件|配置|人员配置|人員配置).{0,8}(?:更改|变更|變更|调整|調整)|"
+    r"(?:更改|变更|變更|调整|調整).{0,8}(?:生产设置|生產設定|生产条件|生產條件|人员配置|人員配置)|"
+    r"(?:温度|溫度|压力|壓力|速度|功率).{0,8}(?:提高|降低|更改|调整|調整)|联系|聯繫|询问|詢問)"
+)
+DIRECTIVE_SEQUENCE_MARKER = re.compile(
+    r"(?:[,，、/／·+＋;；&＆|｜:：()（）]|(?:->|→)|"
+    r"[가-힣A-Za-z0-9_-]{1,30}(?:하고|시키고|고)\s+|"
+    r"(?:한\s*)?(?:후|뒤|다음)(?:에)?|"
+    r"并|並|并且|並且|然后|然後|之后|之後|后|後|再|同时|同時)"
+)
+NEXT_ACTION_SEPARATOR = re.compile(
+    rf"(?:{DIRECTIVE_SEQUENCE_MARKER.pattern}|\s+및\s+|\s+(?:과|와)\s+|"
+    r"[가-힣A-Za-z0-9_-]{1,30}(?<!결)(?:과|와)\s+|及|以及|和|与|與)"
+)
+SAFE_INFORMATION_COORDINATION = re.compile(
+    r"((?:(?:MES|생산|가동|수집|등록)\s*)?"
+    r"(?:데이터|자료|정보|이력|로그|기록|계획|실적|상태|근거|스냅샷|여부))"
+    r"(?:(?:와|과)|\s+및)\s*|"
+    r"((?:MES\s*)?(?:数据|數據|资料|資料|信息|資訊|日志|日誌|记录|記錄|计划|計劃|实绩|實績|状态|狀態|依据|依據|快照|与否|與否))"
+    r"(?:和|与|與|及)\s*"
+)
+SAFE_PROCESS_COORDINATION = re.compile(
+    r"((?:사출\s+및\s+가공|가공\s+및\s+사출))"
+    r"(?=\s+(?:생산\s+)?(?:계획|실적|데이터|자료|정보|이력|로그|기록|상태|근거|스냅샷))|"
+    r"((?:注塑(?:和|与|與|及)加工|加工(?:和|与|與|及)注塑))"
+    r"(?=\s*(?:生产|生產)?(?:计划|計劃|实绩|實績|数据|數據|资料|資料|信息|資訊|记录|記錄|状态|狀態))"
+)
 NUMBERED_LIST_MARKER = re.compile(r"(?m)^([ \t]*)\d+[.)]\s+")
 SECTION_HEADING = re.compile(r"(?m)^(결론|판단 근거|확인할 항목|结论|判断依据|需确认)\s*:?\s*$")
-INLINE_SECTION_HEADING = re.compile(
-    r"(?m)^(결론|판단 근거|확인할 항목|结论|判断依据|需确认)\s*:\s*(?=\S)"
+MARKDOWN_SECTION_HEADING = re.compile(
+    r"(?m)^\s*(?:\*\*|__|#{1,6}\s*)?(결론|판단 근거|확인할 항목|结论|判断依据|需确认)"
+    r"\s*:?(?:\*\*|__)?\s*:?\s*$"
 )
+INLINE_SECTION_HEADING = re.compile(
+    r"(?m)(?<!\S)(결론|판단 근거|확인할 항목|结论|判断依据|需确认)\s*:\s*(?=\S)"
+)
+INVISIBLE_FORMAT_CHAR = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff]")
+KOREAN_SUBJECT_PARTICLE_TIME = re.compile(r"(?<=[가-힣])이\s+시간")
 EMPTY_REASONING_SECTION = re.compile(
     r"(?m)^(?:판단 근거|判断依据)\s*:\s*\n+(?=\s*(?:확인할 항목|需确认)\s*:)"
 )
@@ -300,6 +361,14 @@ NEGATIVE_EXISTENCE_CLAIM = re.compile(
 DATA_UNAVAILABLE_LIMITATION = re.compile(
     r"(?:기록|데이터|자료|정보|근거|확인할\s*수\s*없|판단할\s*수\s*없|"
     r"记录|記錄|数据|數據|资料|資料|信息|資訊|依据|依據|无法确认|無法確認|无法判断|無法判斷)"
+)
+CURRENT_STOPPED_ASSERTION = re.compile(
+    r"(?:정지\s*중|멈춰|멈춘|멈춤|미가동|가동\s*(?:중단|하지\s*않)|생산\s*중단|"
+    r"停机|停機|停止运行|停止運行|未运行|未運行)"
+)
+CURRENT_RUNNING_ASSERTION = re.compile(
+    r"(?:(?:현재|지금)\s*)?(?:가동|운전|생산)\s*(?:중|하고\s*있)|"
+    r"(?:正在|目前|当前).{0,10}(?:运行|運行|生产|生產)"
 )
 UNVERIFIED_CAUSE_SOURCE = re.compile(
     r"(?:원료|자재|인력|공급사|금형|설비|장비|작업자|압력|온도|실수|오류|"
@@ -679,7 +748,16 @@ def summary_numbers_are_grounded(summary: str, grounding: dict[str, Any]) -> boo
             continue
         if any(match.group(0) not in authoritative_date_times for match in DATE_OR_TIME.finditer(clause)):
             return False
-        if SPELLED_QUANTITY.search(clause) or ATTACHED_SPELLED_QUANTITY.search(clause):
+        # ``조회`` is the ordinary Korean word for an information lookup, but
+        # the generic quantity scanner can read it as ``조`` + ``회``. Screen a
+        # same-length semantic substitute so lookup actions are not pruned as
+        # an invented trillion-count quantity.
+        quantity_scan_clause = clause.replace("조회", "열람")
+        quantity_scan_clause = KOREAN_SUBJECT_PARTICLE_TIME.sub("이 기준", quantity_scan_clause)
+        if (
+            SPELLED_QUANTITY.search(quantity_scan_clause)
+            or ATTACHED_SPELLED_QUANTITY.search(quantity_scan_clause)
+        ):
             return False
         matched = _matched_identifiers(clause, records)
         numbers = _numbers_in_claim(clause, all_identifiers)
@@ -733,8 +811,14 @@ def _qualitative_text(value: Any, allowed_identifiers: set[str], language: str) 
             for span in _identifier_spans(text, identifier)
         )
         text = _replace_unprotected_matches(text, pattern, replacement, protected_spans)
+    lookup_placeholder = "__SAFE_LOOKUP_ACTION__"
+    time_relation_placeholder = "__SAFE_TIME_RELATION__"
+    text = text.replace("조회", lookup_placeholder)
+    text = KOREAN_SUBJECT_PARTICLE_TIME.sub(time_relation_placeholder, text)
     text = ATTACHED_SPELLED_QUANTITY.sub("관련 수량" if language == "ko" else "相关数量", text)
     text = SPELLED_QUANTITY.sub("관련 수량" if language == "ko" else "相关数量", text)
+    text = text.replace(time_relation_placeholder, "이 시간")
+    text = text.replace(lookup_placeholder, "조회")
     return " ".join(text.split())[:2000]
 
 
@@ -775,6 +859,45 @@ def _verified_exact_identifiers(grounding: Any) -> list[str]:
     return identifiers
 
 
+def _verified_machine_running_states(grounding: Any) -> dict[str, bool]:
+    """Collect exact machine identifiers with an explicitly supplied state."""
+    states: dict[str, bool] = {}
+
+    def add(identifier: Any, state: bool) -> None:
+        if isinstance(identifier, str) and identifier.strip():
+            states[identifier.strip().casefold()] = state
+
+    def visit(node: Any) -> None:
+        if isinstance(node, list):
+            for item in node:
+                visit(item)
+            return
+        if not isinstance(node, dict):
+            return
+        state = node.get("is_running")
+        if isinstance(state, bool):
+            for key in (
+                "machine",
+                "machine_name",
+                "equipment_label",
+                "equipment_name",
+                "equipment_key",
+            ):
+                add(node.get(key), state)
+            machine_number = _normalize_number(node.get("machine_number"))
+            if machine_number is not None and machine_number == machine_number.to_integral_value():
+                number = str(int(machine_number))
+                add(f"{number}호기", state)
+                add(f"{number}号机", state)
+                add(f"{number}號機", state)
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                visit(value)
+
+    visit(grounding)
+    return states
+
+
 def _prioritized_exact_identifiers(
     grounding: dict[str, Any],
     candidate_text: str,
@@ -811,7 +934,7 @@ def _verified_qualitative_evidence(
         if str(identifier).strip()
     }
     process_statuses: list[dict[str, str]] = []
-    facts = grounding.get("verified_facts")
+    facts = grounding.get("verified_facts") or grounding.get("facts")
     if isinstance(facts, dict) and not focus_keys:
         for process in PROCESS_ALIASES:
             process_fact = facts.get(process)
@@ -820,8 +943,17 @@ def _verified_qualitative_evidence(
                 process_statuses.append({"process": process, "status": status.strip()})
 
     row_statuses: list[dict[str, Any]] = []
-    tables = grounding.get("verified_tables")
-    if isinstance(tables, list):
+    raw_tables = grounding.get("verified_tables") or grounding.get("tables")
+    tables = list(raw_tables) if isinstance(raw_tables, list) else []
+    target_row = grounding.get("target_row")
+    if isinstance(target_row, dict):
+        process = str(grounding.get("process") or "production").strip().lower()
+        tables.append({"name": f"{process}_machine_progress", "rows": [target_row]})
+    related_parts = grounding.get("related_parts")
+    if isinstance(related_parts, list) and related_parts:
+        process = str(grounding.get("process") or "production").strip().lower()
+        tables.append({"name": f"{process}_part_progress", "rows": related_parts})
+    if tables:
         for table in tables:
             if not isinstance(table, dict):
                 continue
@@ -953,11 +1085,16 @@ def build_repair_payload(
         "instruction": (
             "한국어 JSON으로 결론, 판단 근거, 확인할 항목 순서의 구체적인 정성 설명만 반환하세요. "
             "검증된 상태와 정확한 설비 식별자를 우선 사용하고 원시 상태코드와 일부/대부분 표현은 쓰지 마세요. "
-            "검증 수치 표식은 문맥에 맞는 정성 표현으로 바꾸세요."
+            "검증 수치 표식은 문맥에 맞는 정성 표현으로 바꾸세요. "
+            "확인할 항목마다 확인, 점검, 검토, 조회 중 하나만 쓰고, 물리 조작·설정 변경·연결 동작은 쓰지 마세요. "
+            "서로 다른 데이터 대상은 과/와/및으로 묶지 말고 각각 별도 불릿으로 작성하세요."
+            " 판단 근거와 확인할 항목의 모든 항목은 반드시 '- '로 시작하세요."
             if language == "ko"
             else "仅返回按结论、判断依据、需确认顺序组织的具体中文 JSON 定性说明；"
             "优先使用已验证的状态和准确设备标识符，不得输出原始状态代码或模糊数量词；"
-            "将数值占位改为符合语境的定性表达。"
+            "将数值占位改为符合语境的定性表达；每个需确认项仅使用确认、检查、审查或查询之一，"
+            "不得包含物理操作、配置变更或串联动作；不同数据对象不得用和、与或及连接，应分别列项。"
+            " 判断依据和需确认中的每一项都必须以 '- ' 开头。"
         ),
     }
 
@@ -967,8 +1104,10 @@ def _summary_claims_are_safe(
     grounding: dict[str, Any],
     *,
     enforce_quality: bool,
+    require_sections: bool = False,
 ) -> bool:
-    text = str(summary or "")
+    text = INVISIBLE_FORMAT_CHAR.sub("", str(summary or ""))
+    machine_running_states = _verified_machine_running_states(grounding)
     verified_facts = grounding.get("verified_facts")
     missing_active_machine_data = (
         isinstance(verified_facts, dict)
@@ -987,12 +1126,129 @@ def _summary_claims_are_safe(
                 return False
     if RAW_STATUS_TOKEN.search(text):
         return False
+    # Physical/configuration actions are never an allowed model contribution,
+    # even when Qwen emits a bare bullet without a directive suffix. This is
+    # deliberately conservative: deterministic server prose remains the
+    # authoritative fallback when a factual sentence happens to mention one.
+    if OPERATIONAL_MUTATION.search(text):
+        return False
     if enforce_quality and VAGUE_QUANTIFIER.search(text) and _verified_exact_identifiers(grounding):
         return False
     if UNSUPPORTED_CAUSAL_ASSERTION.search(text) or UNSUPPORTED_OPERATIONAL_DIRECTIVE.search(text):
         return False
     if enforce_quality and REDUNDANT_STATUS_RECHECK.search(text):
         return False
+    # Preserve commas while screening each complete sentence. Otherwise an
+    # unsafe first fragment can be separated from a later "확인 필요" suffix
+    # and incorrectly inherit the suffix's safe-looking action.
+    for sentence in SENTENCE_SPLIT.split(text):
+        if DIRECTIVE_MARKER.search(sentence) and DIRECTIVE_SEQUENCE_MARKER.search(sentence):
+            return False
+
+    normalized_sections = MARKDOWN_SECTION_HEADING.sub(r"\1:", text)
+    normalized_sections = INLINE_SECTION_HEADING.sub(r"\n\1:\n", normalized_sections).strip()
+    section_lines = normalized_sections.splitlines()
+    current_section = ""
+    recognized_headings: list[str] = []
+    section_content_counts = {
+        "결론": 0,
+        "판단 근거": 0,
+        "확인할 항목": 0,
+        "结论": 0,
+        "判断依据": 0,
+        "需确认": 0,
+    }
+    saw_next_action_section = False
+    saw_next_action_item = False
+    for line_index, raw_line in enumerate(section_lines):
+        stripped = raw_line.strip()
+        heading_text = stripped.strip("*_# ")
+        heading = re.fullmatch(
+            r"(결론|판단 근거|확인할 항목|结论|判断依据|需确认)\s*(?::|：|—|–|-)?",
+            heading_text,
+        )
+        if heading:
+            current_section = heading.group(1)
+            recognized_headings.append(current_section)
+            saw_next_action_section = saw_next_action_section or current_section in {"확인할 항목", "需确认"}
+            continue
+        # The model contract has only the six headings above. Reject any
+        # alternate short heading instead of trying to infer whether a label
+        # such as "작업 제안" or "需处理" contains instructions.
+        if re.fullmatch(r"[^\n]{1,40}(?::|：|—|–)", heading_text):
+            return False
+        if not stripped:
+            continue
+        bullet = re.match(r"^(?:[-•*]|\d+[.)])\s+(.+)$", stripped)
+        if not bullet and len(heading_text) <= 40 and not re.search(r"[.!?。！？]$", heading_text):
+            next_nonempty = next(
+                (
+                    candidate.strip()
+                    for candidate in section_lines[line_index + 1:]
+                    if candidate.strip()
+                ),
+                "",
+            )
+            if re.match(r"^(?:[-•*]|\d+[.)])\s+", next_nonempty):
+                # A short label followed by bullets is a heading even when the
+                # model omitted punctuation. Only contract headings may own a
+                # list; do not inherit the previous evidence-section state.
+                return False
+        if bullet and not current_section:
+            # A bullet list without one of the contract headings is ambiguous:
+            # it may be a disguised action section such as "작업 제안".
+            return False
+        if current_section in section_content_counts:
+            section_content_counts[current_section] += 1
+        if current_section not in {"확인할 항목", "需确认"}:
+            continue
+        if not bullet:
+            return False
+        item = bullet.group(1).strip()
+        if not item:
+            continue
+        saw_next_action_item = True
+        item_without_terminal_period = re.sub(r"[.。]\s*$", "", item)
+        # Coordinating two verified information objects is still one lookup
+        # action (for example, "MES 데이터와 생산 계획 ... 확인").
+        # Remove only connectors attached to a closed list of information
+        # nouns before screening action separators. Physical-action nouns such
+        # as 코팅/도포/조임 remain visible and are rejected.
+        separator_scan_item = SAFE_PROCESS_COORDINATION.sub(
+            lambda match: f"{re.sub(r'(?:\s+및\s+|[和与與及])', ' ', match.group(1) or match.group(2))} ",
+            item_without_terminal_period,
+        )
+        separator_scan_item = SAFE_INFORMATION_COORDINATION.sub(
+            lambda match: f"{match.group(1) or match.group(2)} ",
+            separator_scan_item,
+        )
+        # The next-action section uses a closed grammar: every item must be a
+        # single, non-mutating information check. Unknown bare action nouns,
+        # chained actions, and maintenance instructions are rejected.
+        if (
+            OPERATIONAL_MUTATION.search(item)
+            or NEXT_ACTION_SEPARATOR.search(separator_scan_item)
+            or re.search(r"[.。]", separator_scan_item)
+            or len(SAFE_NEXT_ACTION.findall(item)) != 1
+        ):
+            return False
+    if saw_next_action_section and not saw_next_action_item:
+        return False
+    expected_ko = ["결론", "판단 근거", "확인할 항목"]
+    expected_zh = ["结论", "判断依据", "需确认"]
+    if (require_sections or recognized_headings) and (
+        recognized_headings != expected_ko and recognized_headings != expected_zh
+    ):
+        return False
+    if recognized_headings == expected_ko and any(
+        section_content_counts[heading] <= 0 for heading in expected_ko
+    ):
+        return False
+    if recognized_headings == expected_zh and any(
+        section_content_counts[heading] <= 0 for heading in expected_zh
+    ):
+        return False
+
     for clause in CLAUSE_SPLIT.split(text):
         if (
             UNVERIFIED_CAUSE_SOURCE.search(clause)
@@ -1007,8 +1263,35 @@ def _summary_claims_are_safe(
             return False
         if RISK_ASSERTION.search(clause) and not CHECK_OR_INFORMATION_LIMITATION.search(clause):
             return False
-        if DIRECTIVE_MARKER.search(clause) and not SAFE_ANALYSIS_ACTION.search(clause):
-            return False
+        if DIRECTIVE_MARKER.search(clause):
+            # A safe information-check verb must not launder a separate action
+            # in the same clause (for example, "lubricate and then confirm").
+            # Reject chained directives conservatively; the deterministic
+            # fallback remains available for genuinely safe multi-step prose.
+            if DIRECTIVE_SEQUENCE_MARKER.search(clause):
+                return False
+            if not SAFE_ANALYSIS_ACTION.search(clause):
+                return False
+        if not CHECK_OR_INFORMATION_LIMITATION.search(clause):
+            # A lack of recent shots is not proof that a machine is stopped.
+            # Accept a running/non-running assertion only for an exact machine
+            # whose verified row explicitly supplies the matching state.
+            if CURRENT_STOPPED_ASSERTION.search(clause):
+                matched_states = [
+                    state
+                    for identifier, state in machine_running_states.items()
+                    if _identifier_spans(clause, identifier)
+                ]
+                if not matched_states or not any(state is False for state in matched_states):
+                    return False
+            if CURRENT_RUNNING_ASSERTION.search(clause):
+                matched_states = [
+                    state
+                    for identifier, state in machine_running_states.items()
+                    if _identifier_spans(clause, identifier)
+                ]
+                if not matched_states or not any(matched_states):
+                    return False
     analysis_skill = grounding.get("analysis_skill")
     if not isinstance(analysis_skill, dict):
         return True
@@ -1169,8 +1452,10 @@ def normalize_result(
         title = fallback.get("title") or "Local AI Analysis"
     if not isinstance(summary, str) or not summary.strip():
         raise ValueError("LLM response did not contain a summary string.")
-    summary = NUMBERED_LIST_MARKER.sub(r"\1- ", summary.strip())
-    summary = INLINE_SECTION_HEADING.sub(r"\1:\n", summary)
+    summary = INVISIBLE_FORMAT_CHAR.sub("", summary.strip())
+    summary = NUMBERED_LIST_MARKER.sub(r"\1- ", summary)
+    summary = MARKDOWN_SECTION_HEADING.sub(r"\1:", summary)
+    summary = INLINE_SECTION_HEADING.sub(r"\n\1:\n", summary).strip()
     summary = SECTION_HEADING.sub(r"\1:", summary)[:2000]
     summary, schema_terms_normalized = naturalize_schema_terms(summary)
     authoritative_grounding = dict(grounding or {})
@@ -1205,7 +1490,12 @@ def normalize_result(
         title = fallback.get("title") or "Local AI Analysis"
     if not summary_numbers_are_grounded(summary, authoritative_grounding):
         raise LlmGroundingError("LLM prose introduced an unverified number.", candidate)
-    if authoritative_grounding.get("analysis_skill") and not summary_claims_are_safe(summary, authoritative_grounding):
+    if not _summary_claims_are_safe(
+        summary,
+        authoritative_grounding,
+        enforce_quality=False,
+        require_sections=True,
+    ):
         raise LlmGroundingError("LLM prose introduced an unsupported claim or identifier.", candidate)
 
     normalized = dict(fallback)
@@ -1378,7 +1668,7 @@ def run_once(
     enqueue_periodic: bool,
     report: RunOnceReport | None = None,
     model_targets: dict[str, LocalModelTarget] | None = None,
-    default_model_id: str = QWEN_MODEL_ID,
+    default_model_id: str = QWEN38_MODEL_ID,
     available_model_ids: list[str] | None = None,
 ) -> int:
     report = report if report is not None else RunOnceReport()
@@ -1516,22 +1806,11 @@ def main() -> int:
     use_llm = truthy(os.getenv("AI_WORKER_USE_LLM"))
     fallback_to_deterministic = truthy(os.getenv("AI_WORKER_FALLBACK_TO_DETERMINISTIC", "true"))
     enqueue_periodic = truthy(os.getenv("AI_WORKER_ENQUEUE_PERIODIC", "true"))
-    qwen_model = os.getenv(
-        "LOCAL_LLM_MODEL",
-        "/Users/macstudio_ted/Developer/local-ai/models/Qwen3.6-35B-A3B-4bit",
-    )
     qwen38_model = os.getenv(
-        "LOCAL_QWEN38_MODEL",
+        "LOCAL_LLM_MODEL",
         "/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit",
     )
-    gemma_model = os.getenv(
-        "LOCAL_GEMMA_MODEL",
-        "/Users/macstudio_ted/Developer/local-ai/models/gemma-4-26b-a4b-it-4bit",
-    )
-    default_model_id = os.getenv("LOCAL_LLM_DEFAULT_MODEL_ID", QWEN_MODEL_ID).strip()
-    if default_model_id not in SUPPORTED_MODEL_IDS:
-        print(f"Unsupported LOCAL_LLM_DEFAULT_MODEL_ID: {default_model_id}", file=sys.stderr)
-        return 2
+    default_model_id = QWEN38_MODEL_ID
     # Heartbeats share this single-threaded loop with inference. Keep the LLM timeout
     # below the backend's 180-second stale threshold, leaving time for API transitions.
     llm_timeout = min(120, max(5, int(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "45") or 45)))
@@ -1544,28 +1823,20 @@ def main() -> int:
     llm = None
     model_targets: dict[str, LocalModelTarget] = {}
     if use_llm:
-        qwen_llm = LocalLlmClient(
-            base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8080/v1"),
-            model=qwen_model,
-            timeout=llm_timeout,
-            model_family="qwen",
-        )
+        if not qwen38_checkpoint_configured(qwen38_model):
+            print(
+                f"LOCAL_LLM_MODEL must point to {QWEN38_CHECKPOINT_NAME}.",
+                file=sys.stderr,
+            )
+            return 2
         qwen38_llm = LocalLlmClient(
-            base_url=os.getenv("LOCAL_QWEN38_BASE_URL", "http://127.0.0.1:8082/v1"),
+            base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8082/v1"),
             model=qwen38_model,
             timeout=llm_timeout,
             model_family="qwen",
         )
-        gemma_llm = LocalLlmClient(
-            base_url=os.getenv("LOCAL_GEMMA_BASE_URL", "http://127.0.0.1:8081/v1"),
-            model=gemma_model,
-            timeout=llm_timeout,
-            model_family="gemma4",
-        )
         model_targets = {
-            QWEN_MODEL_ID: LocalModelTarget(QWEN_MODEL_ID, qwen_llm, qwen_model),
             QWEN38_MODEL_ID: LocalModelTarget(QWEN38_MODEL_ID, qwen38_llm, qwen38_model),
-            GEMMA_MODEL_ID: LocalModelTarget(GEMMA_MODEL_ID, gemma_llm, gemma_model),
         }
         llm = model_targets[default_model_id].client
 
@@ -1606,14 +1877,13 @@ def main() -> int:
                 for model_id, is_ready in model_readiness.items()
                 if is_ready
             ]
-            reported_worker_version = heartbeat_worker_version(model_readiness)
             try:
                 client.send_heartbeat(
                     worker_name,
                     llm_enabled=use_llm,
                     llm_ready=llm_ready,
                     model_name=default_target.model_name if default_target else "",
-                    worker_version=reported_worker_version,
+                    worker_version=WORKER_VERSION,
                     last_error=last_worker_error,
                     available_model_ids=last_available_model_ids,
                 )

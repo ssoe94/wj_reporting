@@ -251,7 +251,7 @@ test.describe('production dashboard operational scenario', () => {
     guard.assertClean();
   });
 
-  test('renders plan, MES progress, and the model-only AI briefing state', async ({ page }) => {
+  test('renders plan, MES progress, and deterministic AI briefing while the worker is offline', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);
     await installDevSession(page, 'ko');
@@ -266,10 +266,26 @@ test.describe('production dashboard operational scenario', () => {
     const unplannedKpi = page.getByRole('button', { name: /무계획가동/ });
     await expect(unplannedKpi.locator('.stat-card__value')).toContainText('18회 / 2대');
     await expect(page.getByRole('heading', { name: '일일 생산 브리핑' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Qwen 3.6' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Gemma 4' })).toBeVisible();
-    await expect(page.getByText('선택한 모델이 아직 준비되지 않았습니다. Worker와 모델 서버 상태를 확인해 주세요.')).toBeVisible();
-    await expect(page.getByText('기준일 2026-05-18 사출 완료율은 95%입니다.')).toHaveCount(0);
+    await expect(page.getByText('Qwen 3.8 27B · 로컬 모델 연결 안 됨')).toBeVisible();
+    await expect(page.getByText('Mac Studio Worker 오프라인')).toBeVisible();
+    await expect(page.getByText('Qwen 3.6')).toHaveCount(0);
+    await expect(page.getByText('Gemma 4')).toHaveCount(0);
+    await expect(page.getByText('기준일 2026-05-18 사출 완료율은 95%입니다.')).toBeVisible();
+    await expect(page.getByText('서버 계산 완료 · 데이터 확인 필요')).toBeVisible();
+    await expect(page.getByText('사출 MES 최신성: 최신')).toBeVisible();
+    await expect(page.getByText('가공 생산 계획이 없어 계획 대비 판단이 제한됩니다.')).toBeVisible();
+    await expect(page.getByText('오래된 시간진도 요약은 표시되면 안 됩니다.')).toHaveCount(0);
+    await page.getByRole('button', { name: /AI 생산 어시스턴트/ }).click();
+    const aiDialog = page.getByRole('dialog', { name: 'AI 생산 어시스턴트' });
+    await aiDialog.getByLabel('생산 데이터 질문 입력').fill('오늘 생산 진도 어때?');
+    await aiDialog.getByRole('button', { name: '질문하기' }).click();
+    await expect(aiDialog.getByText('검증된 서버 계산 결과로 사출 완료율은 95%입니다.')).toBeVisible();
+    await expect(aiDialog.getByText('출처: 검증된 생산 데이터')).toBeVisible();
+    await aiDialog.getByRole('button', { name: 'AI 어시스턴트 닫기' }).click();
+    await page.getByText('근거와 계산 기준').click();
+    await expect(page.getByText('사용 데이터')).toBeVisible();
+    await expect(page.getByText('ProductionPlan: 1 행')).toBeVisible();
+    await expect(page.getByText('조회 경로')).toBeVisible();
     await expect(page.getByRole('heading', { name: '실시간 프로그레스' })).toBeVisible();
     await expect(page.getByText('사출 실시간 진행')).toBeVisible();
     const mesOnlyMachine = page.locator('.production-progress-row').filter({ hasText: '850T-8' }).first();
@@ -310,8 +326,7 @@ test.describe('production dashboard operational scenario', () => {
     await manualDialog.getByRole('button', { name: '보정 저장' }).click();
     await expect(manualDialog).toBeHidden();
 
-    await expect(page.getByText('사용한 데이터')).toHaveCount(0);
-    await expect(page.getByText('계산 기준')).toHaveCount(0);
+    await expect(page.getByText('계산 기준', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: /850T-1 상세/ }).click();
     const detailDialog = page.getByRole('dialog');
