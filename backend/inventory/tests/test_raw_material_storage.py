@@ -1,8 +1,10 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 
 from inventory.models import (
     RawMaterialMESDataset,
@@ -126,6 +128,82 @@ class RawMaterialDatasetStorageTests(TestCase):
             [date(2026, 7, 14), date(2026, 7, 13)],
         )
 
+    def test_history_selects_metadata_before_hydrating_chosen_payloads(self):
+        save_mes_dataset(
+            RawMaterialMESDataset.KIND_INVENTORY,
+            [{"id": 1}],
+            warehouse_codes=("OLD",),
+            snapshot_date=date(2026, 7, 11),
+        )
+        previous = save_mes_dataset(
+            RawMaterialMESDataset.KIND_INVENTORY,
+            [{"id": 2}],
+            warehouse_codes=("RAW",),
+            snapshot_date=date(2026, 7, 12),
+        )
+        save_mes_dataset(
+            RawMaterialMESDataset.KIND_INVENTORY,
+            [{"id": 3}],
+            warehouse_codes=("RAW-A",),
+            snapshot_date=date(2026, 7, 13),
+        )
+        newest = save_mes_dataset(
+            RawMaterialMESDataset.KIND_INVENTORY,
+            [{"id": 4}],
+            warehouse_codes=("RAW-B",),
+            snapshot_date=date(2026, 7, 13),
+        )
+
+        with CaptureQueriesContext(connection) as queries:
+            history = load_inventory_history(limit=2)
+
+        self.assertEqual([dataset.id for dataset in history], [newest.id, previous.id])
+        self.assertEqual(len(queries), 2)
+        self.assertNotIn("payload", queries[0]["sql"].casefold())
+        self.assertIn("payload", queries[1]["sql"].casefold())
+
+    def test_history_reuses_a_matching_known_daily_dataset(self):
+        previous = save_mes_dataset(
+            RawMaterialMESDataset.KIND_INVENTORY,
+            [{"id": 10}],
+            snapshot_date=date(2026, 7, 13),
+        )
+        save_mes_dataset(
+            RawMaterialMESDataset.KIND_INVENTORY,
+            [{"id": 11}],
+            snapshot_date=date(2026, 7, 14),
+        )
+        known = load_inventory_dataset()
+
+        with CaptureQueriesContext(connection) as queries:
+            history = load_inventory_history(limit=2, known_datasets=(known,))
+
+        self.assertIs(history[0], known)
+        self.assertEqual(history[1].id, previous.id)
+        self.assertEqual(len(queries), 2)
+        self.assertNotIn("payload", queries[0]["sql"].casefold())
+        self.assertIn("payload", queries[1]["sql"].casefold())
+
+    def test_history_does_not_reuse_a_stale_known_dataset(self):
+        saved = save_mes_dataset(
+            RawMaterialMESDataset.KIND_INVENTORY,
+            [{"id": 20}],
+            snapshot_date=date(2026, 7, 14),
+        )
+        known = load_inventory_dataset()
+        RawMaterialMESDataset.objects.filter(pk=saved.id).update(
+            payload=[{"id": "21"}],
+            record_count=1,
+            refreshed_at=known.refreshed_at + timedelta(seconds=1),
+        )
+
+        with CaptureQueriesContext(connection) as queries:
+            history = load_inventory_history(limit=1, known_datasets=(known,))
+
+        self.assertIsNot(history[0], known)
+        self.assertEqual(history[0].rows, [{"id": "21"}])
+        self.assertEqual(len(queries), 2)
+
     def test_change_loader_matches_scope_and_smallest_sufficient_window(self):
         warehouse_id = BIG_MES_ID
         save_mes_dataset(
@@ -227,6 +305,56 @@ class RawMaterialDatasetStorageTests(TestCase):
         selected = load_change_dataset(("RAW",), (warehouse_id,), 7)
 
         self.assertEqual(selected.id, current.id)
+
+    def test_change_loader_selects_metadata_before_hydrating_one_payload(self):
+        warehouse_id = BIG_MES_ID
+        matching = save_mes_dataset(
+            RawMaterialMESDataset.KIND_CHANGE,
+            [{"id": 31}],
+            warehouse_codes=("RAW",),
+            warehouse_ids=(warehouse_id,),
+            lookback_days=30,
+            range_end=datetime(2026, 7, 14, 8, 0, tzinfo=SHANGHAI),
+        )
+        save_mes_dataset(
+            RawMaterialMESDataset.KIND_CHANGE,
+            [{"id": 32}],
+            warehouse_codes=("OTHER",),
+            warehouse_ids=(warehouse_id + 1,),
+            lookback_days=30,
+            range_end=datetime(2026, 7, 15, 8, 0, tzinfo=SHANGHAI),
+        )
+
+        with CaptureQueriesContext(connection) as queries:
+            selected = load_change_dataset(("RAW",), (warehouse_id,), 7)
+
+        self.assertEqual(selected.id, matching.id)
+        self.assertEqual(selected.rows, [{"id": "31"}])
+        self.assertEqual(len(queries), 2)
+        self.assertNotIn("payload", queries[0]["sql"].casefold())
+        self.assertIn("payload", queries[1]["sql"].casefold())
+
+        with CaptureQueriesContext(connection) as no_match_queries:
+            missing = load_change_dataset(("MISSING",), (warehouse_id,), 7)
+
+        self.assertIsNone(missing)
+        self.assertEqual(len(no_match_queries), 1)
+        self.assertNotIn("payload", no_match_queries[0]["sql"].casefold())
+
+    def test_fresh_load_is_independent_after_nested_row_mutation(self):
+        saved = save_mes_dataset(
+            RawMaterialMESDataset.KIND_INVENTORY,
+            [{"id": 40, "material": {"code": "RM-040"}}],
+            snapshot_date=date(2026, 7, 14),
+        )
+        first = load_inventory_dataset()
+
+        first.rows[0]["material"]["code"] = "MUTATED"
+
+        saved_model = RawMaterialMESDataset.objects.get(pk=saved.id)
+        second = load_inventory_dataset()
+        self.assertEqual(saved_model.payload[0]["material"]["code"], "RM-040")
+        self.assertEqual(second.rows[0]["material"]["code"], "RM-040")
 
     def test_staging_rows_are_converted_to_mes_shape_with_string_ids(self):
         updated_at = datetime(2026, 7, 14, 8, 15, tzinfo=SHANGHAI)

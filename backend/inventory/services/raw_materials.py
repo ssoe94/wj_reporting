@@ -1034,6 +1034,7 @@ def build_raw_material_overview(
         if code and code not in requested:
             requested.append(code)
 
+    stored_inventory = None
     if inventory_rows_override is not None:
         inventory_rows = [row for row in inventory_rows_override if isinstance(row, dict)]
         response["meta"]["data_mode"] = "daily_sync"
@@ -1063,7 +1064,6 @@ def build_raw_material_overview(
                 )
                 response["status"] = "partial"
     elif prefer_stored:
-        stored_inventory = None
         try:
             stored_inventory = load_inventory_dataset()
         except Exception:
@@ -1355,7 +1355,13 @@ def build_raw_material_overview(
     inventory_history = []
     if prefer_stored or persist:
         try:
-            inventory_history = load_inventory_history(limit=2)
+            known_datasets = (
+                (stored_inventory,) if stored_inventory is not None else ()
+            )
+            inventory_history = load_inventory_history(
+                limit=2,
+                known_datasets=known_datasets,
+            )
         except Exception:
             _append_warning(
                 warnings,

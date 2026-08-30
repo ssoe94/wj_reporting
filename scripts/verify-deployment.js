@@ -111,8 +111,8 @@ async function main() {
   
   results.push(await testEndpoint(
     `${FRONTEND_URL}/api/injection/reports/summary/?date=${TEST_DATE}`,
-    200,
-    'Reports Summary (via Proxy)'
+    401,
+    'Protected reports summary rejects anonymous access (via Proxy)'
   ));
   
   console.log('');

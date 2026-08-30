@@ -8,7 +8,6 @@ inventory when no durable MES dataset has been captured yet.
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import math
@@ -36,7 +35,7 @@ _VALID_KINDS = {
 
 @dataclass(frozen=True, slots=True)
 class StoredDataset:
-    """Immutable metadata plus a detached copy of a stored MES row set."""
+    """Immutable metadata plus request-owned rows decoded from stored JSON."""
 
     id: int
     kind: str
@@ -226,7 +225,10 @@ def _scope_key(
 
 def _to_stored_dataset(dataset: RawMaterialMESDataset) -> StoredDataset:
     payload = dataset.payload if isinstance(dataset.payload, list) else []
-    rows = copy.deepcopy([row for row in payload if isinstance(row, dict)])
+    # Django's JSONField decoder already creates a fresh object graph for every
+    # model load.  Keep a separate outer list without duplicating the entire
+    # nested payload again; callers never receive the ORM model itself.
+    rows = [row for row in payload if isinstance(row, dict)]
     return StoredDataset(
         id=dataset.pk,
         kind=dataset.kind,
@@ -338,7 +340,11 @@ def load_pending_inventory_dataset() -> StoredDataset | None:
     return _to_stored_dataset(dataset) if dataset is not None else None
 
 
-def load_inventory_history(limit: int = 2) -> list[StoredDataset]:
+def load_inventory_history(
+    limit: int = 2,
+    *,
+    known_datasets: Iterable[StoredDataset] = (),
+) -> list[StoredDataset]:
     """Return the newest distinct daily inventory datasets."""
     try:
         requested_limit = int(limit)
@@ -349,20 +355,50 @@ def load_inventory_history(limit: int = 2) -> list[StoredDataset]:
     if requested_limit == 0:
         return []
 
-    results: list[StoredDataset] = []
+    selected: list[tuple[int, date, datetime]] = []
     seen_dates: set[date] = set()
     queryset = RawMaterialMESDataset.objects.filter(
         kind=RawMaterialMESDataset.KIND_INVENTORY,
         capture_type=RawMaterialMESDataset.CAPTURE_DAILY,
         snapshot_date__isnull=False,
-    ).order_by("-snapshot_date", "-refreshed_at", "-pk")
-    for dataset in queryset.iterator(chunk_size=max(100, requested_limit * 4)):
-        if dataset.snapshot_date in seen_dates:
+    ).order_by("-snapshot_date", "-refreshed_at", "-pk").values_list(
+        "pk",
+        "snapshot_date",
+        "refreshed_at",
+    )
+    for dataset_id, snapshot_date, refreshed_at in queryset.iterator(
+        chunk_size=max(100, requested_limit * 4)
+    ):
+        if snapshot_date in seen_dates:
             continue
-        seen_dates.add(dataset.snapshot_date)
-        results.append(_to_stored_dataset(dataset))
-        if len(results) >= requested_limit:
+        seen_dates.add(snapshot_date)
+        selected.append((dataset_id, snapshot_date, refreshed_at))
+        if len(selected) >= requested_limit:
             break
+
+    known_by_identity = {
+        (dataset.id, dataset.refreshed_at): dataset
+        for dataset in known_datasets
+        if dataset.kind == RawMaterialMESDataset.KIND_INVENTORY
+        and dataset.capture_type == RawMaterialMESDataset.CAPTURE_DAILY
+        and dataset.snapshot_date is not None
+    }
+    missing_ids = [
+        dataset_id
+        for dataset_id, _snapshot_date, refreshed_at in selected
+        if (dataset_id, refreshed_at) not in known_by_identity
+    ]
+    hydrated_by_id = RawMaterialMESDataset.objects.in_bulk(missing_ids)
+
+    results: list[StoredDataset] = []
+    for dataset_id, _snapshot_date, refreshed_at in selected:
+        known = known_by_identity.get((dataset_id, refreshed_at))
+        if known is not None:
+            results.append(known)
+            continue
+        dataset = hydrated_by_id.get(dataset_id)
+        if dataset is not None:
+            results.append(_to_stored_dataset(dataset))
     return results
 
 
@@ -398,18 +434,24 @@ def load_change_dataset(
             "-refreshed_at",
             "-pk",
         )
+        .values_list("pk", "warehouse_codes", "warehouse_ids")
     )
     requested_codes = set(codes)
     requested_ids = set(ids)
-    for dataset in queryset.iterator(chunk_size=100):
-        dataset_codes = {str(value) for value in dataset.warehouse_codes or []}
-        dataset_ids = {str(value) for value in dataset.warehouse_ids or []}
+    selected_id: int | None = None
+    for dataset_id, warehouse_codes, warehouse_ids in queryset.iterator(chunk_size=100):
+        dataset_codes = {str(value) for value in warehouse_codes or []}
+        dataset_ids = {str(value) for value in warehouse_ids or []}
         if not requested_codes.issubset(dataset_codes) or not requested_ids.issubset(
             dataset_ids
         ):
             continue
-        return _to_stored_dataset(dataset)
-    return None
+        selected_id = dataset_id
+        break
+    if selected_id is None:
+        return None
+    dataset = RawMaterialMESDataset.objects.filter(pk=selected_id).first()
+    return _to_stored_dataset(dataset) if dataset is not None else None
 
 
 def _status_value(value: Any) -> str | int | None:
