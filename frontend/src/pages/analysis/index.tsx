@@ -88,16 +88,6 @@ export default function AnalysisPage() {
                   <DowntimeAnalysis />
                 </CardContent>
               </Card>
-
-              <Card>
-                <CardHeader>
-                  <h3 className="text-lg font-semibold">{t('spc_title')}</h3>
-                  <p className="text-sm text-gray-600">{t('spc_desc')}</p>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-gray-500 text-sm">{t('preparing')}</p>
-                </CardContent>
-              </Card>
             </section>
         )}
 
@@ -116,16 +106,6 @@ export default function AnalysisPage() {
                 </CardHeader>
                 <CardContent>
                   <AssemblyDashboard />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <h3 className="text-lg font-semibold">{t('spc_title')}</h3>
-                  <p className="text-sm text-gray-600">{t('spc_desc')}</p>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-gray-500 text-sm">{t('preparing')}</p>
                 </CardContent>
               </Card>
             </section>

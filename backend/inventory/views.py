@@ -16,7 +16,6 @@ from io import StringIO
 
 
 import time
-from django.core.cache import cache
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -54,7 +53,7 @@ class InventoryRefreshView(APIView):
         claimed, sync_state = claim_raw_material_sync("manual")
         if not claimed:
             return Response(
-                {"status": "running", "message": sync_state["message"]},
+                sync_state,
                 status=status.HTTP_409_CONFLICT,
             )
         try:
@@ -75,13 +74,20 @@ class InventoryRefreshView(APIView):
         return Response({'status': 'started'})
     
     def get(self, request):
-        # 진행 상황 조회
-        progress = cache.get('inventory_fetch_progress', {
-            'current': 0,
-            'total': 0,
-            'status': 'idle'
+        # The detached worker runs in another process, so process-local cache
+        # cannot be used as the source of truth. Poll the durable singleton.
+        from inventory.services.raw_material_sync import get_raw_material_sync_status
+
+        sync_state = get_raw_material_sync_status()
+        sync_status = sync_state.get("status", "idle")
+        return Response({
+            "current": 0,
+            "total": 0,
+            "status": "error" if sync_status == "failed" else sync_status,
+            "message": sync_state.get("message", ""),
+            "started_at": sync_state.get("started_at"),
+            "finished_at": sync_state.get("finished_at"),
         })
-        return Response(progress)
 
 
 class MESTokenTestView(APIView):
@@ -149,9 +155,14 @@ class MESTokenTestView(APIView):
 
 class ManualSnapshotView(APIView):
     """수동 일일 스냅샷 생성 테스트용 엔드포인트"""
-    permission_classes = []  # 인증 없이 접근 가능
-    
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Only staff users may create a manual snapshot."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         try:
             from django.core.management import call_command
             from io import StringIO

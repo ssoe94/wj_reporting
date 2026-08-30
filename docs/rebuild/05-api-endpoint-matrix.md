@@ -129,7 +129,7 @@
 | `/api/inventory/last-update/` | `GET` | helper | 인증 필요 | 최근 업데이트 시간 | 유지 |
 | `/api/inventory/status/` | `GET` | analytics | 인증 필요 | 재고 상태 | 유지 |
 | `/api/inventory/export/` | `GET` | export | 인증 필요 | 현재고 내보내기 | 유지 |
-| `/api/inventory/manual-snapshot/` | `POST` | action/debug | 현재 무인증 | 수동 스냅샷 테스트 | 운영 노출 재검토 |
+| `/api/inventory/manual-snapshot/` | `POST` | action/debug | 인증 + staff | 관리자 수동 스냅샷 생성 | staff 제한 유지 |
 | `/api/inventory/snapshot/create/` | `POST` | action | 인증 필요 | 스냅샷 생성 | 유지 |
 
 ### 6.2 Daily Report
@@ -203,7 +203,6 @@
 ### 9.2 공개/보안 재검토 대상
 
 - `/api/inventory/mes-test/`
-- `/api/inventory/manual-snapshot/`
 - `/api/injection/update-recent-snapshots/`
 - `/api/injection/update-recent-snapshots/status/`
 - 공개 permission으로 내려간 production 일부 조회 API

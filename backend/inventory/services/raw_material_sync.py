@@ -49,10 +49,32 @@ def _serialise_state(state: RawMaterialSyncState) -> dict[str, Any]:
 
 
 def get_raw_material_sync_status() -> dict[str, Any]:
-    state, _ = RawMaterialSyncState.objects.get_or_create(
-        pk=RawMaterialSyncState.SINGLETON_PK
-    )
-    return _serialise_state(state)
+    now = timezone.now()
+    with transaction.atomic():
+        RawMaterialSyncState.objects.get_or_create(
+            pk=RawMaterialSyncState.SINGLETON_PK
+        )
+        state = RawMaterialSyncState.objects.select_for_update().get(
+            pk=RawMaterialSyncState.SINGLETON_PK
+        )
+        is_stale = (
+            state.status == RawMaterialSyncState.STATUS_RUNNING
+            and (
+                state.started_at is None
+                or now - state.started_at >= SYNC_STALE_AFTER
+            )
+        )
+        if is_stale:
+            state.status = RawMaterialSyncState.STATUS_FAILED
+            state.message = (
+                "이전 MES 업데이트가 제한 시간을 초과해 중지되었습니다. "
+                "다시 실행해 주세요."
+            )
+            state.finished_at = now
+            state.save(
+                update_fields=["status", "message", "finished_at", "updated_at"]
+            )
+        return _serialise_state(state)
 
 
 def launch_claimed_raw_material_sync(

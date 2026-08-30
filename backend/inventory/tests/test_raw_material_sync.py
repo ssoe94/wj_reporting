@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -82,6 +82,22 @@ class RawMaterialSyncServiceTests(TestCase):
         self.assertIn("서버 부하", result["message"])
         state.refresh_from_db()
         self.assertEqual(state.status, RawMaterialSyncState.STATUS_COMPLETED)
+
+    def test_status_expires_a_stale_running_sync(self):
+        state = RawMaterialSyncState.objects.create(
+            pk=RawMaterialSyncState.SINGLETON_PK,
+            status=RawMaterialSyncState.STATUS_RUNNING,
+            trigger=RawMaterialSyncState.TRIGGER_MANUAL,
+            started_at=timezone.now() - timedelta(hours=4),
+        )
+
+        result = get_raw_material_sync_status()
+
+        state.refresh_from_db()
+        self.assertEqual(result["status"], RawMaterialSyncState.STATUS_FAILED)
+        self.assertEqual(state.status, RawMaterialSyncState.STATUS_FAILED)
+        self.assertIsNotNone(state.finished_at)
+        self.assertIn("제한 시간을 초과", result["message"])
 
     @patch("inventory.services.raw_material_sync.build_raw_material_overview")
     @patch("inventory.services.raw_material_sync.load_pending_inventory_dataset")
@@ -244,3 +260,72 @@ class RawMaterialSyncViewTests(TestCase):
         self.assertEqual(first.json()["status"], "started")
         launch_sync.assert_called_once()
         self.assertEqual(second.status_code, 409)
+
+    def test_legacy_inventory_refresh_reads_durable_sync_status(self):
+        RawMaterialSyncState.objects.create(
+            pk=RawMaterialSyncState.SINGLETON_PK,
+            status=RawMaterialSyncState.STATUS_RUNNING,
+            trigger=RawMaterialSyncState.TRIGGER_MANUAL,
+            message="durable progress",
+            started_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get("/api/inventory/refresh/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "running")
+        self.assertEqual(response.json()["message"], "durable progress")
+
+    def test_legacy_inventory_refresh_preserves_completed_cooldown_status(self):
+        now = timezone.now()
+        RawMaterialSyncState.objects.create(
+            pk=RawMaterialSyncState.SINGLETON_PK,
+            status=RawMaterialSyncState.STATUS_COMPLETED,
+            trigger=RawMaterialSyncState.TRIGGER_MANUAL,
+            message="completed",
+            started_at=now - timedelta(minutes=1),
+            finished_at=now,
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post("/api/inventory/refresh/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["status"], "cooldown")
+        self.assertIn("잠시 대기", response.json()["message"])
+
+    def test_legacy_inventory_refresh_preserves_failed_cooldown_status(self):
+        now = timezone.now()
+        RawMaterialSyncState.objects.create(
+            pk=RawMaterialSyncState.SINGLETON_PK,
+            status=RawMaterialSyncState.STATUS_FAILED,
+            trigger=RawMaterialSyncState.TRIGGER_MANUAL,
+            message="failed",
+            started_at=now - timedelta(minutes=1),
+            finished_at=now,
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post("/api/inventory/refresh/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["status"], "cooldown")
+        self.assertIn("잠시 대기", response.json()["message"])
+
+    @patch("django.core.management.call_command")
+    def test_manual_snapshot_requires_staff_authentication(self, call_command):
+        unauthenticated = self.client.post("/api/inventory/manual-snapshot/")
+        self.assertEqual(unauthenticated.status_code, 401)
+
+        ordinary = get_user_model().objects.create_user(
+            username="manual-snapshot-ordinary", password="unused"
+        )
+        self.client.force_authenticate(ordinary)
+        forbidden = self.client.post("/api/inventory/manual-snapshot/")
+        self.assertEqual(forbidden.status_code, 403)
+
+        self.client.force_authenticate(self.user)
+        accepted = self.client.post("/api/inventory/manual-snapshot/")
+        self.assertEqual(accepted.status_code, 200)
+        call_command.assert_called_once()

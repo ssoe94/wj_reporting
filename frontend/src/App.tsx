@@ -40,8 +40,6 @@ const ModelsPage = lazy(() => import('./pages/models'));
 const Eco2Page = lazy(() => import('./pages/eco2'));
 const AnalysisPage = lazy(() => import('./pages/analysis'));
 const AssemblyPage = lazy(() => import('./pages/assembly'));
-const SalesInventoryPage = lazy(() => import('./pages/sales/Inventory'));
-const OverviewPage = lazy(() => import('./pages/overview'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const InventoryStatusPage = lazy(() => import('./pages/sales/InventoryStatus'));
 const DailyReportPage = lazy(() => import('./pages/sales/DailyReport'));
@@ -179,7 +177,6 @@ function useNavItems() {
         label: t('nav_sales'),
         icon: Truck,
         children: [
-          { to: "/sales/inventory", label: t('nav_inventory_analysis'), icon: PackageSearch },
           { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
           { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
           { to: "/sales/raw-materials", label: t('nav_raw_material_management'), icon: Boxes },
@@ -261,7 +258,6 @@ function useNavItems() {
     label: t('nav_sales'),
     icon: Truck,
     children: [
-      { to: "/sales/inventory", label: t('nav_inventory_analysis'), icon: PackageSearch },
       { to: "/sales/daily-report", label: t('nav_daily_report'), icon: ClipboardList },
       { to: "/sales/inventory-status", label: t('nav_inventory_status'), icon: Boxes },
       { to: "/sales/raw-materials", label: t('nav_raw_material_management'), icon: Boxes },
@@ -827,7 +823,7 @@ function AppContent() {
             <Route path="/quality/daily-attention" element={<PrivateRoute><PageTransition><DailyAttentionPage /></PageTransition></PrivateRoute>} />
 
             {/* Sales */}
-            <Route path="/sales/inventory" element={<PrivateRoute><PageTransition><SalesInventoryPage /></PageTransition></PrivateRoute>} />
+            <Route path="/sales/inventory" element={<Navigate to="/sales/inventory-status" replace />} />
             {/* Inventory status */}
             <Route path="/sales/daily-report" element={<PrivateRoute><PageTransition><DailyReportPage /></PageTransition></PrivateRoute>} />
             <Route path="/sales/inventory-status" element={<PrivateRoute><PageTransition><InventoryStatusPage /></PageTransition></PrivateRoute>} />
@@ -838,9 +834,9 @@ function AppContent() {
             <Route path="/admin/user-management" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} />
             <Route path="/admin/user-approval" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} /> {/* Legacy URL compatibility */}
 
-            {/* Existing placeholders */}
-            <Route path="/overview" element={<PrivateRoute><PageTransition><OverviewPage /></PageTransition></PrivateRoute>} />
-            <Route path="/sales" element={<PrivateRoute><PageTransition><SalesInventoryPage /></PageTransition></PrivateRoute>} />
+            {/* Legacy placeholder URLs now lead to implemented pages. */}
+            <Route path="/overview" element={<Navigate to="/analysis" replace />} />
+            <Route path="/sales" element={<Navigate to="/sales/inventory-status" replace />} />
             </Routes>
           </Suspense>
         </AnimatePresence>

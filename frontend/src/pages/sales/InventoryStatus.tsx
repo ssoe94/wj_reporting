@@ -26,9 +26,13 @@ export default function InventoryStatusPage() {
   });
   const [sortField, setSortField] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const { data, isLoading } = useInventoryStatus(params);
+  const { data, isLoading, isError, refetch } = useInventoryStatus(params);
   const { data: warehouses = [] } = useWarehouses();
-  const { data: lastUpdate } = useLastUpdate();
+  const {
+    data: lastUpdate,
+    isError: isLastUpdateError,
+    isLoading: isLastUpdateLoading,
+  } = useLastUpdate();
 
   /* ---------- inventory refresh ---------- */
   const [updating, setUpdating] = useState(false);
@@ -38,43 +42,119 @@ export default function InventoryStatusPage() {
     status: string;
     page?: number;
   }>({ current: 0, total: 0, status: 'idle' });
+  const refreshPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshPollGenerationRef = useRef(0);
+  const refreshPollStartedAtRef = useRef(0);
+  const refreshPollFailuresRef = useRef(0);
+  const refreshMountedRef = useRef(true);
+
+  const clearRefreshPoll = () => {
+    if (refreshPollRef.current !== null) {
+      clearTimeout(refreshPollRef.current);
+      refreshPollRef.current = null;
+    }
+    refreshPollGenerationRef.current += 1;
+  };
+
+  useEffect(() => {
+    refreshMountedRef.current = true;
+    return () => {
+      refreshMountedRef.current = false;
+      if (refreshPollRef.current !== null) clearTimeout(refreshPollRef.current);
+      refreshPollGenerationRef.current += 1;
+    };
+  }, []);
+
+  const finishRefresh = (
+    generation: number,
+    tone: 'success' | 'error',
+    message: string,
+  ) => {
+    if (generation !== refreshPollGenerationRef.current) return;
+    clearRefreshPoll();
+    setUpdating(false);
+    setProgress({ current: 0, total: 0, status: 'idle' });
+    if (tone === 'success') {
+      toast.success(message);
+      void queryClient.invalidateQueries({ queryKey: ['inventories'] });
+      void queryClient.invalidateQueries({ queryKey: ['lastUpdate'] });
+    } else {
+      toast.error(message);
+    }
+  };
+
+  const startRefreshPolling = () => {
+    clearRefreshPoll();
+    const generation = refreshPollGenerationRef.current;
+    refreshPollStartedAtRef.current = Date.now();
+    refreshPollFailuresRef.current = 0;
+    setUpdating(true);
+    setProgress({ current: 0, total: 0, status: 'running' });
+    const scheduleNextPoll = () => {
+      if (generation !== refreshPollGenerationRef.current) return;
+      refreshPollRef.current = setTimeout(async () => {
+        refreshPollRef.current = null;
+        if (generation !== refreshPollGenerationRef.current) return;
+        if (Date.now() - refreshPollStartedAtRef.current > 15 * 60 * 1000) {
+          clearRefreshPoll();
+          setUpdating(false);
+          setProgress({ current: 0, total: 0, status: 'idle' });
+          toast.info('MES 업데이트는 백그라운드에서 계속됩니다. 잠시 후 화면을 다시 확인해주세요.');
+          return;
+        }
+        try {
+          const response = await api.get('/inventory/refresh/');
+          if (generation !== refreshPollGenerationRef.current) return;
+          refreshPollFailuresRef.current = 0;
+          setProgress(response.data);
+
+          if (response.data.status === 'completed') {
+            finishRefresh(generation, 'success', response.data.message || '재고 업데이트가 완료되었습니다.');
+            return;
+          }
+          if (['error', 'failed'].includes(response.data.status)) {
+            finishRefresh(generation, 'error', `재고 업데이트 실패: ${response.data.message || response.data.error || '알 수 없는 오류'}`);
+            return;
+          }
+        } catch {
+          if (generation !== refreshPollGenerationRef.current) return;
+          refreshPollFailuresRef.current += 1;
+          if (refreshPollFailuresRef.current >= 3) {
+            finishRefresh(generation, 'error', '업데이트 상태를 확인하지 못했습니다. 잠시 후 다시 확인해주세요.');
+            return;
+          }
+        }
+        scheduleNextPoll();
+      }, 2000);
+    };
+    scheduleNextPoll();
+  };
 
   const refreshInventory = async () => {
     if (updating) return;
+    const requestGeneration = refreshPollGenerationRef.current;
     setUpdating(true);
     setProgress({ current: 0, total: 0, status: 'starting' });
-    
+
     try {
-      // 업데이트 시작
       await api.post('/inventory/refresh/');
-      
-      // 진행 상황 폴링
-      const pollInterval = setInterval(async () => {
-        try {
-          const response = await api.get('/inventory/refresh/');
-          setProgress(response.data);
-          
-          if (response.data.status === 'completed') {
-            clearInterval(pollInterval);
-            setUpdating(false);
-            toast.success(`재고 업데이트 완료: ${response.data.total}개 항목`);
-            setProgress({ current: 0, total: 0, status: 'idle' });
-            
-            // 재고 업데이트 완료 후 관련 쿼리들을 무효화하여 데이터 다시 가져오기
-            queryClient.invalidateQueries({ queryKey: ['inventories'] });
-            queryClient.invalidateQueries({ queryKey: ['lastUpdate'] });
-          } else if (response.data.status === 'error') {
-            clearInterval(pollInterval);
-            setUpdating(false);
-            toast.error(`재고 업데이트 실패: ${response.data.error || '알 수 없는 오류'}`);
-            setProgress({ current: 0, total: 0, status: 'idle' });
-          }
-        } catch (err) {
-          console.error('Progress poll error:', err);
-        }
-      }, 1000); // 1초마다 폴링
-      
+      if (!refreshMountedRef.current || requestGeneration !== refreshPollGenerationRef.current) return;
+      startRefreshPolling();
     } catch (err: any) {
+      if (!refreshMountedRef.current || requestGeneration !== refreshPollGenerationRef.current) return;
+      if (err?.response?.status === 409) {
+        const conflictStatus = err.response?.data?.status;
+        const conflictMessage = err.response?.data?.message;
+        if (conflictStatus === 'running') {
+          toast.info(conflictMessage || '이미 실행 중인 MES 업데이트 상태를 이어서 확인합니다.');
+          startRefreshPolling();
+        } else {
+          toast.info(conflictMessage || '최근 MES 업데이트 후 잠시 기다렸다가 다시 시도해주세요.');
+          setUpdating(false);
+          setProgress({ current: 0, total: 0, status: 'idle' });
+        }
+        return;
+      }
       toast.error('재고 업데이트 실패');
       setUpdating(false);
       setProgress({ current: 0, total: 0, status: 'idle' });
@@ -264,6 +344,15 @@ export default function InventoryStatusPage() {
     <div className="w-full px-6 py-6 space-y-4">
       <h1 className="text-2xl font-bold mb-2">재고 상세 현황</h1>
 
+      {isError && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+          <span>저장된 재고 목록을 불러오지 못했습니다.</span>
+          <Button onClick={() => { void refetch(); }} size="sm" variant="ghost">
+            다시 불러오기
+          </Button>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex flex-wrap gap-4 items-start relative">
         {/* warehouse dropdown */}
@@ -382,9 +471,17 @@ export default function InventoryStatusPage() {
             <div className="text-xs text-gray-500 text-right">
               최근 업데이트: {format(new Date(lastUpdate.last_update), 'yyyy-MM-dd HH:mm:ss')}
             </div>
+          ) : isLastUpdateLoading ? (
+            <div className="text-xs text-gray-400 text-right">
+              업데이트 정보 불러오는 중...
+            </div>
+          ) : isLastUpdateError ? (
+            <div className="text-xs text-amber-700 text-right">
+              업데이트 시각 확인 불가
+            </div>
           ) : (
             <div className="text-xs text-gray-400 text-right">
-              업데이트 정보 로딩 중...
+              저장된 업데이트 기록 없음
             </div>
           )}
           <div className="flex gap-2">
@@ -592,6 +689,7 @@ export default function InventoryStatusPage() {
                   </div>
                 )}
                 {progress.status === 'starting' && '업데이트 시작 중...'}
+                {progress.status === 'running' && 'MES 재고와 변동 기록을 업데이트하는 중...'}
               </div>
               
               {progress.status === 'fetching' && (

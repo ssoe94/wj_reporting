@@ -129,7 +129,9 @@ type ProductionAiQuestionRequest = {
 type ProductionAiActiveRequest = Pick<
   ProductionAiQuestionRequest,
   "requestId" | "businessDate" | "language" | "modelId"
->;
+> & {
+  hasDeterministicAnswer: boolean;
+};
 
 type ProductionAiApiError = {
   status: number | null;
@@ -370,7 +372,7 @@ const pageCopy = {
   ko: {
     eyebrow: "Production",
     title: "생산 대시보드",
-    description: "생산 계획과 MES 실적을 비교하고, 검증된 계산형 브리핑과 Qwen 3.8 보조 분석을 제공합니다.",
+    description: "생산 계획과 MES 실적을 비교하고, 검증된 계산형 브리핑과 선택형 Qwen 3.8 보조 설명을 제공합니다.",
     loading: "생산 현황을 불러오는 중입니다.",
     productionDate: "기준일",
     productionDateHint: "오전 08:00 ~ 익일 08:00 기준",
@@ -387,7 +389,7 @@ const pageCopy = {
     recentRunning: "최근 60분 가동",
     localBrief: "AI BRIEFING",
     briefTitle: "일일 생산 브리핑",
-    briefModelSelect: "AI 보조 서비스",
+    briefModelSelect: "선택형 설명 보조",
     briefModelCompareHint: "검증된 수치는 항상 서버 계산 결과를 사용하며, Qwen은 설명만 보완합니다.",
     briefLoading: "검증된 생산 브리핑을 불러오는 중입니다.",
     briefPending: "생산 브리핑을 준비하고 있습니다.",
@@ -419,15 +421,15 @@ const pageCopy = {
     aiLauncherDragHint: "드래그해서 챗봇 버튼 위치를 옮길 수 있습니다.",
     closeAi: "AI 어시스턴트 닫기",
     aiAssistantTitle: "AI 생산 어시스턴트",
-    aiAssistantIntro: "선택한 로컬 모델이 현재 기준일의 검증된 생산 데이터와 저장된 시간별 분석 기록을 바탕으로 답합니다.",
+    aiAssistantIntro: "검증된 생산 데이터로 계산형 답변을 제공하며, Qwen 3.8은 연결된 경우에만 설명을 보완합니다.",
     aiAssistantUser: "나",
     aiAssistantAi: "생산 어시스턴트",
     aiInputLabel: "생산 데이터 질문 입력",
     workerOnline: "Mac Studio Worker 온라인",
     workerOffline: "Mac Studio Worker 오프라인",
     workerUnknown: "Worker 상태 확인 불가",
-    workerModelReady: "로컬 모델 준비됨",
-    workerModelUnavailable: "로컬 모델 연결 안 됨",
+    workerModelReady: "선택 설명 사용 가능",
+    workerModelUnavailable: "선택 설명 일시 중지",
     workerHeartbeat: "마지막 신호",
     workerLastAnalysis: "최근 분석 완료",
     workerModel: "모델",
@@ -447,9 +449,10 @@ const pageCopy = {
     aiQuestionTooLongTitle: "질문이 너무 깁니다",
     aiQuestionTooLong: "질문은 1,000자 이하로 줄여서 다시 입력해 주세요.",
     aiRequestRejectedTitle: "질문 확인 필요",
-    aiModelSelect: "답변 서비스",
-    aiModelCompareHint: "Qwen 3.8이 검증된 생산 데이터에 근거해 설명합니다.",
-    aiSelectedModelUnavailable: "Qwen 3.8 보조 설명은 오프라인입니다. 생산 현황·진도 등 계산 가능한 질문은 계속 사용할 수 있습니다.",
+    aiModelSelect: "답변 상태",
+    deterministicAnswerReady: "계산형 답변 사용 가능",
+    aiModelCompareHint: "Qwen 3.8이 검증된 생산 데이터에 근거해 설명을 보완합니다.",
+    aiSelectedModelUnavailable: "생산 현황·진도 등 계산형 답변은 정상입니다. Qwen 3.8 보조 설명만 일시 중지되었습니다.",
     aiAnswerTitle: "답변",
     aiAnswerQueued: "답변 준비 중",
     aiAnswerRunning: "답변 작성 중",
@@ -457,6 +460,7 @@ const pageCopy = {
     aiAnswerFailed: "답변 실패",
     aiAnswerQueuedHint: "생산 데이터를 확인해 답변을 작성하고 있습니다",
     aiAnswerQueuedFailedHint: "선택한 로컬 모델의 답변을 가져오지 못했습니다. 잠시 후 다시 질문해 주세요.",
+    aiOptionalExplanationFailedHint: "검증된 계산형 답변은 위에 표시했습니다. Qwen 3.8 보조 설명만 가져오지 못했습니다.",
     aiAnswerModelMismatchHint: "선택한 모델과 실제 실행 모델이 달라 답변을 표시하지 않았습니다. Worker 업데이트 상태를 확인해 주세요.",
     aiSubmit: "질문하기",
     progressEyebrow: "LIVE PROGRESS",
@@ -604,7 +608,7 @@ const pageCopy = {
   zh: {
     eyebrow: "Production",
     title: "生产看板",
-    description: "对比生产计划与 MES 实绩，并提供经过验证的计算简报和 Qwen 3.8 辅助分析。",
+    description: "对比生产计划与 MES 实绩，并提供经过验证的计算简报和可选的 Qwen 3.8 辅助说明。",
     loading: "正在读取生产现况。",
     productionDate: "基准日",
     productionDateHint: "上午 08:00 ~ 次日 08:00 基准",
@@ -621,7 +625,7 @@ const pageCopy = {
     recentRunning: "最近 60 分钟运行",
     localBrief: "AI BRIEFING",
     briefTitle: "每日生产简报",
-    briefModelSelect: "AI 辅助服务",
+    briefModelSelect: "可选说明辅助",
     briefModelCompareHint: "所有已验证数值均来自服务器计算，Qwen 仅补充说明。",
     briefLoading: "正在加载经过验证的生产简报。",
     briefPending: "正在准备生产简报。",
@@ -653,15 +657,15 @@ const pageCopy = {
     aiLauncherDragHint: "可拖动聊天按钮调整位置。",
     closeAi: "关闭 AI 助手",
     aiAssistantTitle: "AI 生产助手",
-    aiAssistantIntro: "所选本地模型会根据当前基准日的已验证生产数据和已保存的每小时分析记录回答。",
+    aiAssistantIntro: "系统先根据已验证生产数据提供计算型回答；Qwen 3.8 连接时仅补充说明。",
     aiAssistantUser: "我",
     aiAssistantAi: "生产助手",
     aiInputLabel: "输入生产数据问题",
     workerOnline: "Mac Studio Worker 在线",
     workerOffline: "Mac Studio Worker 离线",
     workerUnknown: "无法确认 Worker 状态",
-    workerModelReady: "本地模型已就绪",
-    workerModelUnavailable: "本地模型未连接",
+    workerModelReady: "可选说明可用",
+    workerModelUnavailable: "可选说明暂时停用",
     workerHeartbeat: "最后心跳",
     workerLastAnalysis: "最近分析完成",
     workerModel: "模型",
@@ -681,9 +685,10 @@ const pageCopy = {
     aiQuestionTooLongTitle: "问题内容过长",
     aiQuestionTooLong: "请将问题缩短至 1,000 个字符以内后重试。",
     aiRequestRejectedTitle: "请确认问题内容",
-    aiModelSelect: "回答服务",
-    aiModelCompareHint: "Qwen 3.8 根据已验证的生产数据进行说明。",
-    aiSelectedModelUnavailable: "Qwen 3.8 辅助说明处于离线状态，生产现况、进度等可计算问题仍可继续使用。",
+    aiModelSelect: "回答状态",
+    deterministicAnswerReady: "计算型回答可用",
+    aiModelCompareHint: "Qwen 3.8 根据已验证的生产数据补充说明。",
+    aiSelectedModelUnavailable: "生产现况、进度等计算型回答正常；仅 Qwen 3.8 辅助说明暂时停用。",
     aiAnswerTitle: "回答",
     aiAnswerQueued: "准备回答中",
     aiAnswerRunning: "正在撰写回答",
@@ -691,6 +696,7 @@ const pageCopy = {
     aiAnswerFailed: "回答失败",
     aiAnswerQueuedHint: "正在查看生产数据并撰写回答",
     aiAnswerQueuedFailedHint: "无法获取所选本地模型的回答。请稍后重新提问。",
+    aiOptionalExplanationFailedHint: "上方已显示经过验证的计算型回答；仅 Qwen 3.8 辅助说明未能获取。",
     aiAnswerModelMismatchHint: "所选模型与实际运行模型不一致，因此未显示该回答。请检查 Worker 更新状态。",
     aiSubmit: "提问",
     progressEyebrow: "LIVE PROGRESS",
@@ -3265,11 +3271,6 @@ export function ProductionDashboardPage() {
   const latestAiJobUsedFallback = latestAiJobResult.llm_fallback === true;
   const aiWorkerStatus = aiWorkerStatusQuery.isError ? undefined : aiWorkerStatusQuery.data;
   const aiWorkerState = aiWorkerStatus?.state ?? "unknown";
-  const aiWorkerStateLabel = aiWorkerState === "online"
-    ? copy.workerOnline
-    : aiWorkerState === "offline"
-      ? copy.workerOffline
-      : copy.workerUnknown;
   const aiWorkerAvailableModelIds = (aiWorkerStatus?.available_model_ids ?? []).filter(
     (modelId): modelId is ProductionAiModelId => modelId === PRODUCTION_AI_MODEL_ID,
   );
@@ -3375,6 +3376,7 @@ export function ProductionDashboardPage() {
         businessDate: request.businessDate,
         language: request.language,
         modelId: request.modelId,
+        hasDeterministicAnswer: false,
       });
       setAiQuestionJobId(null);
       appendAiChatMessage({
@@ -3409,31 +3411,32 @@ export function ProductionDashboardPage() {
         setAiActiveRequest((current) => current?.requestId === request.requestId ? null : current);
         return;
       }
-      if (jobId === null) {
-        const isDeterministicAnswer = payload.source === "calculated" || payload.source === "intent_calculated";
-        if (isDeterministicAnswer) {
-          appendAiChatMessage({
-            id: `${request.requestId}-deterministic-answer`,
-            role: "assistant",
-            content: payload.answer,
-            label: `${copy.aiAssistantAi} · ${copy.aiAnswerReady}`,
-            meta: [`${copy.aiSource}: ${copy.aiSourceVerified}`],
-            includeInHistory: true,
-            modelId: request.modelId,
-          });
-        } else {
-          excludeAiQuestionFromHistory(request.requestId);
-          const questionWasUnsupported = payload.source === "deterministic_unhandled";
-          appendAiChatMessage({
-            id: `${request.requestId}-model-unavailable`,
-            role: "assistant",
-            content: questionWasUnsupported ? payload.answer : copy.aiQueueUnavailable,
-            label: questionWasUnsupported ? copy.aiRequestRejectedTitle : copy.aiQueueUnavailableTitle,
-            tone: "warning",
-            includeInHistory: false,
-            modelId: request.modelId,
-          });
-        }
+      const isDeterministicAnswer = payload.source === "calculated" || payload.source === "intent_calculated";
+      if (isDeterministicAnswer) {
+        appendAiChatMessage({
+          id: `${request.requestId}-deterministic-answer`,
+          role: "assistant",
+          content: payload.answer,
+          label: `${copy.aiAssistantAi} · ${copy.aiAnswerReady}`,
+          meta: [`${copy.aiSource}: ${copy.aiSourceVerified}`],
+          includeInHistory: true,
+          modelId: request.modelId,
+        });
+        setAiActiveRequest((current) => current?.requestId === request.requestId
+          ? { ...current, hasDeterministicAnswer: true }
+          : current);
+      } else if (jobId === null) {
+        excludeAiQuestionFromHistory(request.requestId);
+        const questionWasUnsupported = payload.source === "deterministic_unhandled";
+        appendAiChatMessage({
+          id: `${request.requestId}-model-unavailable`,
+          role: "assistant",
+          content: questionWasUnsupported ? payload.answer : copy.aiQueueUnavailable,
+          label: questionWasUnsupported ? copy.aiRequestRejectedTitle : copy.aiQueueUnavailableTitle,
+          tone: "warning",
+          includeInHistory: false,
+          modelId: request.modelId,
+        });
       }
       setAiQuestionJobId(jobId);
       if (jobId === null) {
@@ -3582,13 +3585,17 @@ export function ProductionDashboardPage() {
           modelId: activeRequestModelId,
         });
       } else {
-        excludeAiQuestionFromHistory(activeRequestId);
+        if (!aiActiveRequest.hasDeterministicAnswer) {
+          excludeAiQuestionFromHistory(activeRequestId);
+        }
         appendAiChatMessage({
           id: `${activeRequestId}-model-error`,
           role: "assistant",
-          content: aiQuestionJobModelMatchesRequest
-            ? copy.aiAnswerQueuedFailedHint
-            : copy.aiAnswerModelMismatchHint,
+          content: aiActiveRequest.hasDeterministicAnswer
+            ? copy.aiOptionalExplanationFailedHint
+            : aiQuestionJobModelMatchesRequest
+              ? copy.aiAnswerQueuedFailedHint
+              : copy.aiAnswerModelMismatchHint,
           label: `${getProductionAiModelLabel(activeRequestModelId)} · ${copy.aiAnswerFailed}`,
           tone: "warning",
           includeInHistory: false,
@@ -3600,11 +3607,15 @@ export function ProductionDashboardPage() {
       return;
     }
     if (aiQuestionJob.status === "failed" || aiQuestionJob.status === "cancelled") {
-      excludeAiQuestionFromHistory(activeRequestId);
+      if (!aiActiveRequest.hasDeterministicAnswer) {
+        excludeAiQuestionFromHistory(activeRequestId);
+      }
       appendAiChatMessage({
         id: `${activeRequestId}-model-error`,
         role: "assistant",
-        content: copy.aiAnswerQueuedFailedHint,
+        content: aiActiveRequest.hasDeterministicAnswer
+          ? copy.aiOptionalExplanationFailedHint
+          : copy.aiAnswerQueuedFailedHint,
         label: `${getProductionAiModelLabel(activeRequestModelId)} · ${copy.aiAnswerFailed}`,
         tone: "warning",
         includeInHistory: false,
@@ -5366,8 +5377,8 @@ export function ProductionDashboardPage() {
 
             <div className="production-ai-worker-status">
               <div className="production-ai-worker-status__states" role="status">
-                <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--${aiWorkerState}`}>
-                  {aiWorkerStateLabel}
+                <span className="production-ai-worker-status__pill production-ai-worker-status__pill--llm-ready">
+                  {copy.deterministicAnswerReady}
                 </span>
               </div>
             </div>
@@ -6003,7 +6014,7 @@ export function ProductionDashboardPage() {
         aria-label={`${copy.askAi}. ${copy.aiLauncherDragHint}`}
         aria-expanded={isAiAskOpen}
         aria-haspopup="dialog"
-        className={`production-ai-chat-launcher production-ai-chat-launcher--${aiWorkerState === "online" && aiWorkerStatus?.llm_ready === true ? "ready" : aiWorkerState === "offline" || aiWorkerStatus?.llm_ready === false ? "warning" : "unknown"}${isAiChatLauncherDragging ? " is-dragging" : ""}`}
+        className={`production-ai-chat-launcher production-ai-chat-launcher--ready${isAiChatLauncherDragging ? " is-dragging" : ""}`}
         onClick={openAiChatFromLauncher}
         onLostPointerCapture={(event) => finishAiChatLauncherDrag(event, false)}
         onPointerCancel={(event) => finishAiChatLauncherDrag(event, false)}
@@ -6042,8 +6053,8 @@ export function ProductionDashboardPage() {
                 <p className="panel-card__eyebrow">AI ASSISTANT</p>
                 <h3>{copy.aiAssistantTitle}</h3>
                 <div className="production-ai-chat-drawer__states" role="status">
-                  <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--${aiWorkerState}`}>
-                    {aiWorkerStateLabel}
+                  <span className="production-ai-worker-status__pill production-ai-worker-status__pill--llm-ready">
+                    {copy.deterministicAnswerReady}
                   </span>
                   <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${activeAiModelIsAvailable ? "ready" : "unavailable"}`}>
                     {activeAiModelStatusLabel}
@@ -6108,8 +6119,13 @@ export function ProductionDashboardPage() {
               <div className="production-ai-model-selector">
                 <strong>{copy.aiModelSelect}</strong>
                 <div className="production-ai-worker-status__states">
+                  <span className="production-ai-worker-status__pill production-ai-worker-status__pill--llm-ready">
+                    {copy.deterministicAnswerReady}
+                  </span>
                   <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${aiSelectedModelIsAvailable ? "ready" : "unavailable"}`}>
-                    {PRODUCTION_AI_MODEL_LABEL}
+                    {aiSelectedModelIsAvailable
+                      ? `${PRODUCTION_AI_MODEL_LABEL} · ${copy.workerModelReady}`
+                      : `${PRODUCTION_AI_MODEL_LABEL} · ${copy.workerModelUnavailable}`}
                   </span>
                 </div>
                 <p>{aiSelectedModelIsAvailable ? copy.aiModelCompareHint : copy.aiSelectedModelUnavailable}</p>

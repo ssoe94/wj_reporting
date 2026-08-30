@@ -39,7 +39,8 @@ const pageCopy = {
     title: "원재료 관리",
     description: "매일 08:00 저장한 MES 재고로 24시간 변화와 최근 소요 흐름을 한 화면에서 검토합니다.",
     loading: "저장된 원재료 재고 보고서를 불러오는 중입니다.",
-    fetchError: "저장된 원재료 보고서를 불러오지 못했습니다. 권한 또는 동기화 상태를 확인해주세요.",
+    fetchError: "저장된 원재료 보고서를 불러오지 못했습니다. 다시 시도해도 계속되면 동기화 상태를 확인해주세요.",
+    fetchRetry: "다시 불러오기",
     partial: "일부 MES 데이터를 불러오지 못해 현재 확인 가능한 범위만 표시합니다.",
     selectionRequired: "원재료창고 설정을 확인해 주세요.",
     selectionHint: "원재료창고를 자동으로 확인하지 못했습니다. MES 원재료창고 ID 설정을 확인해 주세요.",
@@ -245,7 +246,8 @@ const pageCopy = {
     title: "原材料管理",
     description: "基于每日 08:00 保存的 MES 库存，查看 24 小时变化与近期消耗趋势。",
     loading: "正在读取已保存的原材料库存报告。",
-    fetchError: "无法读取已保存的原材料报告。请确认权限或同步状态。",
+    fetchError: "无法读取已保存的原材料报告。重试后若仍失败，请确认同步状态。",
+    fetchRetry: "重新加载",
     partial: "部分 MES 数据读取失败，当前仅显示可确认范围。",
     selectionRequired: "请确认原材料仓库设置。",
     selectionHint: "系统无法自动确认原材料仓库，请检查 MES 原材料仓库 ID 设置。",
@@ -1677,7 +1679,22 @@ export function RawMaterialManagementPage() {
     <section aria-busy={overviewQuery.isFetching || refreshMutation.isPending || syncRunning} className="page raw-material-page" data-testid="raw-material-page">
       <PageHeader eyebrow={copy.eyebrow} icon="inventory" title={copy.title} description={copy.description} />
 
-      <section aria-label={copy.statusToolbar} className="panel raw-status-toolbar">
+      {overviewQuery.isLoading && !data ? <LoadingBlock label={copy.loading} /> : null}
+      {overviewQuery.isError && !data ? (
+        <div className="notice notice--warning raw-overview-error" role="alert">
+          <span>{copy.fetchError}</span>
+          <button
+            className="button button--ghost"
+            onClick={() => { void overviewQuery.refetch(); }}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={16} />
+            {copy.fetchRetry}
+          </button>
+        </div>
+      ) : null}
+
+      {data ? <section aria-label={copy.statusToolbar} className="panel raw-status-toolbar">
         <div className="raw-status-scope">
           <div className="raw-status-item raw-status-item--warehouse">
             <Warehouse aria-hidden="true" size={18} />
@@ -1717,11 +1734,21 @@ export function RawMaterialManagementPage() {
             {refreshMutation.isPending || syncRunning ? copy.refreshing : copy.refresh}
           </button>
         </div>
-      </section>
+      </section> : null}
 
-      {overviewQuery.isLoading && !data ? <LoadingBlock label={copy.loading} /> : null}
-      {overviewQuery.isError && !data ? <div className="notice notice--warning" role="alert">{copy.fetchError}</div> : null}
-      {overviewQuery.isError && data ? <div className="notice notice--warning" role="alert">{copy.fetchError}</div> : null}
+      {overviewQuery.isError && data ? (
+        <div className="notice notice--warning raw-overview-error" role="alert">
+          <span>{copy.fetchError}</span>
+          <button
+            className="button button--ghost"
+            onClick={() => { void overviewQuery.refetch(); }}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={16} />
+            {copy.fetchRetry}
+          </button>
+        </div>
+      ) : null}
       {refreshMutation.isError ? <div className="notice notice--warning" role="alert">{copy.syncStartFailed}</div> : null}
       {syncRunning ? <div className="notice notice--neutral" role="status">{copy.syncRunning}</div> : null}
       {refreshMutation.submittedAt > 0 && syncStatus && isSyncComplete(syncStatus.status) ? (

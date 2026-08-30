@@ -251,7 +251,7 @@ test.describe('production dashboard operational scenario', () => {
     guard.assertClean();
   });
 
-  test('renders plan, MES progress, and deterministic AI briefing while the worker is offline', async ({ page }) => {
+  test('renders plan, MES progress, and deterministic AI briefing while the optional worker is offline', async ({ page }) => {
     const guard = installPageIssueGuard(page);
     await installOperationalApiMocks(page);
     await installDevSession(page, 'ko');
@@ -266,8 +266,8 @@ test.describe('production dashboard operational scenario', () => {
     const unplannedKpi = page.getByRole('button', { name: /무계획가동/ });
     await expect(unplannedKpi.locator('.stat-card__value')).toContainText('18회 / 2대');
     await expect(page.getByRole('heading', { name: '일일 생산 브리핑' })).toBeVisible();
-    await expect(page.getByText('Qwen 3.8 27B · 로컬 모델 연결 안 됨')).toBeVisible();
-    await expect(page.getByText('Mac Studio Worker 오프라인')).toBeVisible();
+    await expect(page.getByText('계산형 답변 사용 가능').first()).toBeVisible();
+    await expect(page.getByText('Qwen 3.8 27B · 선택 설명 일시 중지')).toBeVisible();
     await expect(page.getByText('Qwen 3.6')).toHaveCount(0);
     await expect(page.getByText('Gemma 4')).toHaveCount(0);
     await expect(page.getByText('기준일 2026-05-18 사출 완료율은 95%입니다.')).toBeVisible();
@@ -277,6 +277,8 @@ test.describe('production dashboard operational scenario', () => {
     await expect(page.getByText('오래된 시간진도 요약은 표시되면 안 됩니다.')).toHaveCount(0);
     await page.getByRole('button', { name: /AI 생산 어시스턴트/ }).click();
     const aiDialog = page.getByRole('dialog', { name: 'AI 생산 어시스턴트' });
+    await expect(aiDialog.getByText('계산형 답변 사용 가능').first()).toBeVisible();
+    await expect(aiDialog.getByText('Qwen 3.8 27B · 선택 설명 일시 중지').first()).toBeVisible();
     await aiDialog.getByLabel('생산 데이터 질문 입력').fill('오늘 생산 진도 어때?');
     await aiDialog.getByRole('button', { name: '질문하기' }).click();
     await expect(aiDialog.getByText('검증된 서버 계산 결과로 사출 완료율은 95%입니다.')).toBeVisible();
