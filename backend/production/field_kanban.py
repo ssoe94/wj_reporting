@@ -1603,6 +1603,26 @@ def _production_summary_payload(target_date: date) -> dict[str, Any]:
     return payload
 
 
+def _historical_machine_summary_payload(
+    target_date: date,
+    machine_number: int,
+) -> dict[str, Any]:
+    """Cache the deterministic MES allocation used by dated queue rows."""
+    cache_key = (
+        "field-kanban:historical-machine:v1:"
+        f"{target_date.isoformat()}:{machine_number}"
+    )
+    cached = cache.get(cache_key)
+    if isinstance(cached, dict):
+        return cached
+    payload = get_injection_summary(
+        target_date,
+        machine_numbers=[machine_number],
+    )
+    cache.set(cache_key, payload, timeout=5 * 60)
+    return payload
+
+
 def _machine_shot_payload(
     target_date: date,
     machine_number: int,
@@ -1818,7 +1838,7 @@ def _adjacent_machine_plan_parts(
     previous_limit: int,
     following_limit: int,
 ) -> tuple[list[tuple[date, dict[str, Any]]], list[tuple[date, dict[str, Any]]]]:
-    """Read only the nearest static plan rows; never recalculate adjacent MES days."""
+    """Read nearby plans and restore verified MES output for completed days."""
     previous_limit = max(0, previous_limit)
     following_limit = max(0, following_limit)
     if previous_limit == 0 and following_limit == 0:
@@ -1859,6 +1879,35 @@ def _adjacent_machine_plan_parts(
         )
     } if selected_dates else {}
 
+    historical_parts_by_plan_id: dict[int, dict[str, Any]] = {}
+    for historical_date in sorted({plan.plan_date for plan in previous_plans}):
+        try:
+            historical_summary = _historical_machine_summary_payload(
+                historical_date,
+                machine_number,
+            )
+        except Exception:
+            # The current-day Kanban must remain available even if one dated
+            # lookup fails. Manual execution rows below remain the fallback.
+            continue
+        historical_machine = next(
+            (
+                row
+                for row in historical_summary.get("machine_rows", [])
+                if _safe_int(row.get("machine_number"), -1) == machine_number
+            ),
+            None,
+        )
+        if (
+            not isinstance(historical_machine, dict)
+            or historical_machine.get("data_warning") == "injection_capacity_data_missing"
+        ):
+            continue
+        for part in historical_machine.get("parts", []):
+            plan_id = part.get("plan_id") if isinstance(part, dict) else None
+            if plan_id is not None:
+                historical_parts_by_plan_id[_safe_int(plan_id)] = part
+
     def plan_entry(plan: ProductionPlan) -> tuple[date, dict[str, Any]]:
         execution = execution_map.get(_execution_identity(
             plan.plan_date,
@@ -1867,7 +1916,22 @@ def _adjacent_machine_plan_parts(
             plan.lot_no,
             plan.sequence,
         ))
-        actual_qty = _safe_int(execution.actual_qty) if execution else 0
+        historical_part = historical_parts_by_plan_id.get(plan.id)
+        actual_qty = (
+            _safe_int(historical_part.get("estimated_qty"))
+            if historical_part is not None
+            else _safe_int(execution.actual_qty) if execution else 0
+        )
+        allocated_shots = (
+            _safe_int(historical_part.get("allocated_shots"))
+            if historical_part is not None
+            else 0
+        )
+        cavity = (
+            max(1, _safe_int(historical_part.get("cavity"), 1))
+            if historical_part is not None
+            else 1
+        )
         planned_qty = _safe_int(plan.planned_quantity)
         execution_status = str(execution.status or "") if execution else ""
         if plan.plan_date < target_date:
@@ -1886,12 +1950,18 @@ def _adjacent_machine_plan_parts(
             "lot_no": plan.lot_no or "",
             "planned_qty": planned_qty,
             "estimated_qty": actual_qty,
-            "allocated_shots": 0,
-            "cavity": 1,
+            "allocated_shots": allocated_shots,
+            "cavity": cavity,
             "progress_rate": (actual_qty / planned_qty * 100) if planned_qty > 0 else 0,
             "status": status,
-            "production_group_id": None,
-            "production_group_complete": True,
+            "production_group_id": (
+                historical_part.get("production_group_id")
+                if historical_part is not None else None
+            ),
+            "production_group_complete": (
+                bool(historical_part.get("production_group_complete", True))
+                if historical_part is not None else True
+            ),
         }
 
     return (

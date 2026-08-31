@@ -38,6 +38,7 @@ from .field_kanban import (
 )
 from .models import (
     InjectionDowntimeConfirmation,
+    ProductionExecution,
     ProductionPartCavity,
     ProductionPlan,
 )
@@ -196,6 +197,166 @@ class FieldKanbanSnapshotTests(TestCase):
         self.assertEqual(
             snapshot["next_plan"]["plan_date"],
             (target_date + timedelta(days=20)).isoformat(),
+        )
+
+    def test_queue_restores_previous_day_actual_quantity_from_mes(self):
+        previous_date = date(2026, 8, 28)
+        target_date = date(2026, 8, 31)
+        previous_plan = ProductionPlan.objects.create(
+            plan_date=previous_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-PREVIOUS",
+            model_name="MODEL-PREVIOUS",
+            planned_quantity=1930,
+            sequence=1,
+        )
+        current_plan = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-CURRENT",
+            model_name="MODEL-CURRENT",
+            planned_quantity=1930,
+            sequence=1,
+        )
+        ProductionPartCavity.objects.create(
+            part_no="PART-PREVIOUS",
+            cavity=2,
+            cavity_pattern="1x2",
+        )
+        previous_start = SHANGHAI_TZ.localize(datetime(2026, 8, 28, 8, 0))
+        for offset_minutes, capacity in [(-1, 100), (10, 900), (20, 1000)]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name="1호기",
+                device_code="field-kanban-machine-1",
+                timestamp=previous_start + timedelta(minutes=offset_minutes),
+                capacity=capacity,
+            )
+
+        self.assertFalse(
+            ProductionExecution.objects.filter(
+                plan_date=previous_date,
+                plan_type="injection",
+            ).exists()
+        )
+
+        snapshot = build_field_kanban_snapshot(
+            target_date,
+            1,
+            include_quality=False,
+            now=SHANGHAI_TZ.localize(datetime(2026, 8, 31, 14, 0)),
+            use_cache=False,
+        )
+
+        previous_row = next(
+            row for row in snapshot["queue"]
+            if row["plan_id"] == previous_plan.id
+        )
+        self.assertEqual(previous_row["actual_piece_qty"], 1800)
+        self.assertEqual(previous_row["allocated_shots"], 900)
+        self.assertEqual(previous_row["cavity"], 2)
+        self.assertEqual(previous_row["progress_rate"], 1800 / 1930 * 100)
+        self.assertEqual(previous_row["status"], "completed")
+        self.assertEqual(snapshot["active_plan"]["plan_id"], current_plan.id)
+
+    def test_queue_falls_back_to_manual_actual_when_previous_day_mes_is_missing(self):
+        previous_date = date(2026, 8, 28)
+        target_date = date(2026, 8, 31)
+        previous_plan = ProductionPlan.objects.create(
+            plan_date=previous_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-PREVIOUS",
+            model_name="MODEL-PREVIOUS",
+            planned_quantity=500,
+            sequence=1,
+        )
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-CURRENT",
+            model_name="MODEL-CURRENT",
+            planned_quantity=500,
+            sequence=1,
+        )
+        ProductionExecution.objects.create(
+            plan_date=previous_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-PREVIOUS",
+            lot_no=None,
+            sequence=1,
+            actual_qty=333,
+            status="completed",
+        )
+
+        snapshot = build_field_kanban_snapshot(
+            target_date,
+            1,
+            include_quality=False,
+            now=SHANGHAI_TZ.localize(datetime(2026, 8, 31, 14, 0)),
+            use_cache=False,
+        )
+
+        previous_row = next(
+            row for row in snapshot["queue"]
+            if row["plan_id"] == previous_plan.id
+        )
+        self.assertEqual(previous_row["actual_piece_qty"], 333)
+        self.assertEqual(previous_row["allocated_shots"], 0)
+        self.assertEqual(previous_row["status"], "completed")
+
+    def test_queue_maps_previous_day_mes_allocation_to_each_plan_id(self):
+        previous_date = date(2026, 8, 28)
+        target_date = date(2026, 8, 31)
+        previous_plans = [
+            ProductionPlan.objects.create(
+                plan_date=previous_date,
+                plan_type="injection",
+                machine_name="850T-1",
+                part_no=f"PART-{sequence}",
+                model_name=f"MODEL-{sequence}",
+                planned_quantity=100,
+                sequence=sequence,
+            )
+            for sequence in (1, 2)
+        ]
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-CURRENT",
+            model_name="MODEL-CURRENT",
+            planned_quantity=100,
+            sequence=1,
+        )
+        previous_start = SHANGHAI_TZ.localize(datetime(2026, 8, 28, 8, 0))
+        for offset_minutes, capacity in [(-1, 100), (10, 200), (20, 250)]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name="1호기",
+                device_code="field-kanban-machine-1",
+                timestamp=previous_start + timedelta(minutes=offset_minutes),
+                capacity=capacity,
+            )
+
+        snapshot = build_field_kanban_snapshot(
+            target_date,
+            1,
+            include_quality=False,
+            now=SHANGHAI_TZ.localize(datetime(2026, 8, 31, 14, 0)),
+            use_cache=False,
+        )
+
+        rows_by_id = {row["plan_id"]: row for row in snapshot["queue"]}
+        self.assertEqual(
+            [rows_by_id[plan.id]["actual_piece_qty"] for plan in previous_plans],
+            [100, 50],
+        )
+        self.assertEqual(
+            [rows_by_id[plan.id]["allocated_shots"] for plan in previous_plans],
+            [100, 50],
         )
 
     @patch("production.field_kanban.get_injection_machine_shot_context")

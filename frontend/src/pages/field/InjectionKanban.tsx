@@ -53,7 +53,6 @@ import { useModalFocusTrap } from "@/shared/hooks/useModalFocusTrap";
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
 
 import "./InjectionKanban.css";
-import "./InjectionKanban.layout.css";
 
 type FieldLanguage = "zh" | "ko";
 type CanvasMode = "work_instruction" | "drawing" | "quality";
@@ -157,12 +156,6 @@ const copy = {
     previousContent: "上一项资料",
     nextContent: "下一项资料",
     page: "页",
-    autoPlaying: "自动轮播中",
-    autoPaused: "轮播已暂停",
-    resume: "继续轮播",
-    pause: "暂停轮播",
-    instructionCycle: "指导书 60 秒",
-    qualityCycle: "每项品质Issue 30 秒",
     viewAll: "查看全部资料",
     materialReady: "资料完整",
     materialMissing: "资料待补充",
@@ -283,12 +276,6 @@ const copy = {
     previousContent: "이전 자료",
     nextContent: "다음 자료",
     page: "페이지",
-    autoPlaying: "자동 순환 중",
-    autoPaused: "자동 순환 일시정지",
-    resume: "순환 계속",
-    pause: "순환 정지",
-    instructionCycle: "작업지도서 60초",
-    qualityCycle: "품질 이슈별 30초",
     viewAll: "전체 자료 보기",
     materialReady: "자료 완비",
     materialMissing: "자료 보충 필요",
@@ -1350,25 +1337,27 @@ function QualityCanvas({
               </em>
             </div>
           </div>
+        </div>
+        <div className="field-quality-canvas__summary">
           <div className="field-quality-canvas__detail">
             <p className="field-quality-canvas__plan">
               {snapshot.active_plan?.part_no || "-"} · {snapshot.active_plan?.model_name || "-"}
             </p>
             <p className="field-quality-canvas__headline">{headline}</p>
           </div>
+          <div className="field-quality-canvas__header-meta">
+            <span><small>{c.historicalEvidence}</small><strong>{number(issue.evidence_count)} {c.records}</strong></span>
+            {sectionCounts.map((item) => (
+              <span className="is-section" key={item.section}>
+                <small>{item.section}</small><strong>{number(item.evidence_count)}</strong>
+              </span>
+            ))}
+            <span><small>{c.matchingReports}</small><strong>{number(snapshot.quality.matching_report_count)} {c.records}</strong></span>
+            <span><small>{c.latestReport}</small><strong>{formatShortDateTime(issue.latest_report_dt, language)}</strong></span>
+          </div>
         </div>
         <div className="field-quality-canvas__issue-position">
           <strong>{issueIndex + 1}</strong><span>/ {snapshot.quality.issues.length}</span>
-        </div>
-        <div className="field-quality-canvas__header-meta">
-          <span><small>{c.historicalEvidence}</small><strong>{number(issue.evidence_count)} {c.records}</strong></span>
-          {sectionCounts.map((item) => (
-            <span className="is-section" key={item.section}>
-              <small>{item.section}</small><strong>{number(item.evidence_count)}</strong>
-            </span>
-          ))}
-          <span><small>{c.matchingReports}</small><strong>{number(snapshot.quality.matching_report_count)} {c.records}</strong></span>
-          <span><small>{c.latestReport}</small><strong>{formatShortDateTime(issue.latest_report_dt, language)}</strong></span>
         </div>
       </header>
       <div className="field-quality-canvas__body">
@@ -1941,20 +1930,14 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
           aria-label={currentCanvasLabel}
           className={`field-content-panel${canvasMode === "quality" ? " is-quality" : ""}${alertText ? " has-alert" : ""}`}
         >
-          <div
-            aria-hidden={alertText ? undefined : true}
-            className={`field-alert-band field-alert-band--${alertTone}${alertText ? "" : " is-idle"}`}
-            role={alertText ? "status" : undefined}
-          >
-            {alertText ? (
-              <>
+          {alertText ? (
+            <div className={`field-alert-band field-alert-band--${alertTone}`} role="status">
               <AlertTriangle aria-hidden="true" />
               <strong>{alertText}</strong>
               {pendingPrompt?.due_at ? <span>{c.due} {formatShortDateTime(pendingPrompt.due_at, language)} {pendingPrompt.is_overdue ? `· ${c.overdue}` : ""}</span> : null}
               {!transitionDataReady && alertText !== c.confirmationDataPending ? <span>{c.confirmationDataPending}</span> : null}
-              </>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           <div className="field-document-toolbar">
             <div className="field-document-tabs" role="tablist" aria-label={c.allMaterials}>
               <button
