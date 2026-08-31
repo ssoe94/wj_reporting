@@ -555,6 +555,94 @@
   background: #e6ebf0;
 }
 
+.field-document-pan-zoom {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  -ms-touch-action: none;
+  touch-action: none;
+  user-select: none;
+}
+
+.field-document-pan-zoom__surface {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.field-document-pan-zoom__surface > * {
+  min-width: 0;
+  min-height: 0;
+}
+
+.field-document-zoom-controls {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  color: #eaf3ff;
+  border: 1px solid rgba(255, 255, 255, .68);
+  border-radius: 9px;
+  background: rgba(3, 47, 88, .92);
+  box-shadow: 0 6px 20px rgba(0, 22, 48, .28);
+}
+
+.field-document-zoom-controls button,
+.field-document-zoom-controls output {
+  display: flex;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+}
+
+.field-document-zoom-controls button {
+  padding: 0;
+  color: inherit;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, .2);
+  background: transparent;
+  cursor: pointer;
+}
+
+.field-document-zoom-controls button:first-child {
+  border-left: 0;
+}
+
+.field-document-zoom-controls button:disabled {
+  color: #849bb5;
+  cursor: default;
+}
+
+.field-document-zoom-controls button:not(:disabled):active {
+  background: rgba(255, 255, 255, .16);
+}
+
+.field-document-zoom-controls button svg {
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+}
+
+.field-document-zoom-controls output {
+  width: 62px;
+  border-left: 1px solid rgba(255, 255, 255, .2);
+  font-size: 14px;
+  font-weight: 900;
+}
+
 .field-pdf-preview.is-interaction-locked {
   pointer-events: none;
 }
@@ -658,6 +746,8 @@
   border: 0;
   background: linear-gradient(180deg, transparent 62%, rgba(0, 31, 64, .2));
   cursor: pointer;
+  -ms-touch-action: none;
+  touch-action: none;
 }
 
 .field-document-interaction-gate > span {
@@ -1956,11 +2046,11 @@
 .field-queue.is-expanded .field-queue-value {
   position: relative;
   flex: 0 0 44%;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  padding: 11px 4px 1px;
+  padding: 11px 8px 1px 4px;
   overflow: hidden;
-  text-align: center;
+  text-align: right;
 }
 
 .field-queue-value strong,
@@ -1974,7 +2064,7 @@
   letter-spacing: -.8px;
   line-height: 1;
   white-space: nowrap;
-  text-align: center;
+  text-align: right;
   text-overflow: ellipsis;
 }
 

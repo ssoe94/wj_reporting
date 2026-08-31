@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   PDFDocumentLoadingTask,
@@ -27,6 +28,8 @@ import {
   ShieldAlert,
   Triangle,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
@@ -59,6 +62,11 @@ type CanvasMode = "work_instruction" | "drawing" | "quality";
 
 const WORK_INSTRUCTION_DISPLAY_MS = 60_000;
 const QUALITY_PHOTO_DISPLAY_MS = 10_000;
+const QUALITY_PHOTO_LOAD_TIMEOUT_MS = 20_000;
+const DOCUMENT_ZOOM_MIN = 1;
+const DOCUMENT_ZOOM_MAX = 2.25;
+const DOCUMENT_ZOOM_STEP = 0.25;
+const DOCUMENT_HIGH_DETAIL_THRESHOLD = 1.5;
 
 type DefectRequest = {
   eventKey: string;
@@ -190,6 +198,10 @@ const copy = {
     missingMaterialAlert: "当前作业资料不完整，请联系开发团队补充",
     interactDocument: "操作文档",
     interactDocumentHint: "点击后暂停轮播，可缩放、翻页或滚动查看。",
+    documentZoom: "文档缩放",
+    zoomIn: "放大",
+    zoomOut: "缩小",
+    resetZoom: "适合屏幕",
     allMaterials: "当前作业资料",
     close: "关闭",
     transitionTitle: "请确认是否换型",
@@ -310,6 +322,10 @@ const copy = {
     missingMaterialAlert: "현재 작업 자료가 완비되지 않았습니다. 개발팀에 보충을 요청해 주세요",
     interactDocument: "문서 조작",
     interactDocumentHint: "누르면 자동 순환이 멈추며 확대·페이지 이동·스크롤을 사용할 수 있습니다.",
+    documentZoom: "문서 확대",
+    zoomIn: "확대",
+    zoomOut: "축소",
+    resetZoom: "화면 맞춤",
     allMaterials: "현재 작업 자료",
     close: "닫기",
     transitionTitle: "모델체인지 여부를 확인해 주세요",
@@ -540,7 +556,11 @@ function getReachableDocumentUrl(value: string | null | undefined) {
   }
 }
 
-function getCloudinaryPdfPageImageUrl(document: FieldDocument | null, page: number) {
+function getCloudinaryPdfPageImageUrl(
+  document: FieldDocument | null,
+  page: number,
+  highDetail = false,
+) {
   if (
     document?.preview_resource_type !== "image"
     || document.preview_format !== "pdf"
@@ -555,7 +575,10 @@ function getCloudinaryPdfPageImageUrl(document: FieldDocument | null, page: numb
     if (markerIndex < 0) return null;
     const prefix = parsed.pathname.slice(0, markerIndex + uploadMarker.length);
     const assetPath = parsed.pathname.slice(markerIndex + uploadMarker.length).replace(/\.pdf$/i, ".jpg");
-    parsed.pathname = `${prefix}pg_${Math.max(1, page)},w_1200,dpr_1.0,c_limit,q_auto:good,f_jpg/${assetPath}`;
+    // Automatic playback stays memory-conscious. An operator-requested zoom
+    // upgrades only the visible page to one additional fixed CDN derivative.
+    const profile = highDetail ? "dn_300,w_3200" : "dn_200,w_2000";
+    parsed.pathname = `${prefix}pg_${Math.max(1, page)},${profile},dpr_1.0,c_limit,q_auto:best,f_jpg/${assetPath}`;
     parsed.hash = "";
     return parsed.toString();
   } catch {
@@ -980,8 +1003,343 @@ function isPdfRenderCancellation(error: unknown) {
   return (error as { name?: string } | null)?.name === "RenderingCancelledException";
 }
 
+type DocumentView = {
+  scale: number;
+  x: number;
+  y: number;
+};
+
+type ClientPoint = {
+  x: number;
+  y: number;
+};
+
+function clampDocumentScale(value: number) {
+  return Math.min(DOCUMENT_ZOOM_MAX, Math.max(DOCUMENT_ZOOM_MIN, value));
+}
+
+function getPointCenter(points: ClientPoint[]) {
+  if (points.length < 2) return points[0] ?? { x: 0, y: 0 };
+  return {
+    x: (points[0].x + points[1].x) / 2,
+    y: (points[0].y + points[1].y) / 2,
+  };
+}
+
+function getPointDistance(points: ClientPoint[]) {
+  if (points.length < 2) return 0;
+  return Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+}
+
+function DocumentPanZoomViewport({
+  children,
+  controlsVisible,
+  language,
+  onZoomChange,
+  resetKey,
+}: {
+  children: ReactNode;
+  controlsVisible: boolean;
+  language: FieldLanguage;
+  onZoomChange?: (scale: number) => void;
+  resetKey: string;
+}) {
+  const c = copy[language];
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<DocumentView>({ scale: 1, x: 0, y: 0 });
+  const [view, setView] = useState<DocumentView>(viewRef.current);
+
+  const commitView = useCallback((candidate: DocumentView) => {
+    const viewport = viewportRef.current;
+    const scale = clampDocumentScale(candidate.scale);
+    const maxX = Math.max(0, ((viewport?.clientWidth ?? 0) * (scale - 1)) / 2);
+    const maxY = Math.max(0, ((viewport?.clientHeight ?? 0) * (scale - 1)) / 2);
+    const next = {
+      scale,
+      x: Math.min(maxX, Math.max(-maxX, scale === 1 ? 0 : candidate.x)),
+      y: Math.min(maxY, Math.max(-maxY, scale === 1 ? 0 : candidate.y)),
+    };
+    viewRef.current = next;
+    onZoomChange?.(next.scale);
+    setView((current) => (
+      current.scale === next.scale && current.x === next.x && current.y === next.y
+        ? current
+        : next
+    ));
+  }, [onZoomChange]);
+
+  const zoomAt = useCallback((nextScale: number, clientX?: number, clientY?: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const current = viewRef.current;
+    const scale = clampDocumentScale(nextScale);
+    const bounds = viewport.getBoundingClientRect();
+    const focalX = (clientX ?? bounds.left + bounds.width / 2) - bounds.left - bounds.width / 2;
+    const focalY = (clientY ?? bounds.top + bounds.height / 2) - bounds.top - bounds.height / 2;
+    commitView({
+      scale,
+      x: focalX - ((focalX - current.x) / current.scale) * scale,
+      y: focalY - ((focalY - current.y) / current.scale) * scale,
+    });
+  }, [commitView]);
+
+  useEffect(() => {
+    commitView({ scale: 1, x: 0, y: 0 });
+  }, [commitView, resetKey]);
+
+  useEffect(() => {
+    const keepInsideViewport = () => commitView(viewRef.current);
+    window.addEventListener("resize", keepInsideViewport);
+    return () => window.removeEventListener("resize", keepInsideViewport);
+  }, [commitView]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    type Gesture = {
+      distance: number;
+      points: ClientPoint[];
+      startView: DocumentView;
+    };
+
+    let gesture: Gesture | null = null;
+    let mouseActive = false;
+    const pointerPoints = new Map<number, ClientPoint>();
+    const isControlTarget = (target: EventTarget | null) => (
+      target instanceof Element && Boolean(target.closest(".field-document-zoom-controls"))
+    );
+    const startGesture = (points: ClientPoint[]) => {
+      gesture = points.length
+        ? {
+          distance: getPointDistance(points),
+          points: points.slice(0, 2),
+          startView: viewRef.current,
+        }
+        : null;
+    };
+    const moveGesture = (points: ClientPoint[]) => {
+      if (!gesture || !points.length) return;
+      if (points.length >= 2 && gesture.points.length >= 2) {
+        const viewportBounds = viewport.getBoundingClientRect();
+        const startCenter = getPointCenter(gesture.points);
+        const currentCenter = getPointCenter(points);
+        const startRelative = {
+          x: startCenter.x - viewportBounds.left - viewportBounds.width / 2,
+          y: startCenter.y - viewportBounds.top - viewportBounds.height / 2,
+        };
+        const currentRelative = {
+          x: currentCenter.x - viewportBounds.left - viewportBounds.width / 2,
+          y: currentCenter.y - viewportBounds.top - viewportBounds.height / 2,
+        };
+        const distance = getPointDistance(points);
+        const scale = clampDocumentScale(
+          gesture.startView.scale * (gesture.distance > 0 ? distance / gesture.distance : 1),
+        );
+        commitView({
+          scale,
+          x: currentRelative.x - ((startRelative.x - gesture.startView.x) / gesture.startView.scale) * scale,
+          y: currentRelative.y - ((startRelative.y - gesture.startView.y) / gesture.startView.scale) * scale,
+        });
+        return;
+      }
+      if (points.length === 1 && gesture.points.length === 1) {
+        commitView({
+          scale: gesture.startView.scale,
+          x: gesture.startView.x + points[0].x - gesture.points[0].x,
+          y: gesture.startView.y + points[0].y - gesture.points[0].y,
+        });
+      }
+    };
+    const normalizeWheelDelta = (event: WheelEvent) => {
+      if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY * 16;
+      if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) return event.deltaY * viewport.clientHeight;
+      return event.deltaY;
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (isControlTarget(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!controlsVisible) return;
+      const delta = normalizeWheelDelta(event);
+      if (!delta) return;
+      zoomAt(
+        viewRef.current.scale + (delta < 0 ? DOCUMENT_ZOOM_STEP : -DOCUMENT_ZOOM_STEP),
+        event.clientX,
+        event.clientY,
+      );
+    };
+    const onDoubleClick = (event: MouseEvent) => {
+      if (isControlTarget(event.target)) return;
+      event.preventDefault();
+      if (!controlsVisible) return;
+      zoomAt(
+        viewRef.current.scale >= DOCUMENT_ZOOM_MAX ? DOCUMENT_ZOOM_MIN : viewRef.current.scale + 0.5,
+        event.clientX,
+        event.clientY,
+      );
+    };
+    const onDragStart = (event: DragEvent) => event.preventDefault();
+
+    let passiveSupported = false;
+    try {
+      const passiveProbe = Object.defineProperty({}, "passive", {
+        get() {
+          passiveSupported = true;
+          return false;
+        },
+      });
+      const noop = () => undefined;
+      window.addEventListener("field-passive-probe", noop, passiveProbe);
+      window.removeEventListener("field-passive-probe", noop, passiveProbe);
+    } catch {
+      passiveSupported = false;
+    }
+    const activeListenerOptions: AddEventListenerOptions | boolean = passiveSupported
+      ? { passive: false }
+      : false;
+
+    viewport.addEventListener("wheel", onWheel, activeListenerOptions);
+    viewport.addEventListener("dblclick", onDoubleClick);
+    viewport.addEventListener("dragstart", onDragStart);
+
+    const supportsPointerEvents = typeof (window as Window & { PointerEvent?: typeof PointerEvent }).PointerEvent !== "undefined";
+    if (supportsPointerEvents) {
+      const onPointerDown = (event: PointerEvent) => {
+        if (isControlTarget(event.target)) return;
+        event.preventDefault();
+        if (!controlsVisible) return;
+        pointerPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        startGesture(Array.from(pointerPoints.values()));
+        try {
+          viewport.setPointerCapture(event.pointerId);
+        } catch {
+          // Pointer capture is optional on older Firefox implementations.
+        }
+      };
+      const onPointerMove = (event: PointerEvent) => {
+        if (!pointerPoints.has(event.pointerId)) return;
+        event.preventDefault();
+        pointerPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        moveGesture(Array.from(pointerPoints.values()));
+      };
+      const onPointerEnd = (event: PointerEvent) => {
+        if (!pointerPoints.has(event.pointerId)) return;
+        pointerPoints.delete(event.pointerId);
+        startGesture(Array.from(pointerPoints.values()));
+      };
+      viewport.addEventListener("pointerdown", onPointerDown);
+      viewport.addEventListener("pointermove", onPointerMove);
+      viewport.addEventListener("pointerup", onPointerEnd);
+      viewport.addEventListener("pointercancel", onPointerEnd);
+      return () => {
+        viewport.removeEventListener("wheel", onWheel, activeListenerOptions);
+        viewport.removeEventListener("dblclick", onDoubleClick);
+        viewport.removeEventListener("dragstart", onDragStart);
+        viewport.removeEventListener("pointerdown", onPointerDown);
+        viewport.removeEventListener("pointermove", onPointerMove);
+        viewport.removeEventListener("pointerup", onPointerEnd);
+        viewport.removeEventListener("pointercancel", onPointerEnd);
+      };
+    }
+
+    const getTouchPoints = (touches: TouchList) => Array.from(touches)
+      .slice(0, 2)
+      .map((touch) => ({ x: touch.clientX, y: touch.clientY }));
+    const onTouchStart = (event: TouchEvent) => {
+      if (isControlTarget(event.target)) return;
+      event.preventDefault();
+      if (!controlsVisible) return;
+      startGesture(getTouchPoints(event.touches));
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (isControlTarget(event.target)) return;
+      event.preventDefault();
+      if (!controlsVisible) return;
+      moveGesture(getTouchPoints(event.touches));
+    };
+    const onTouchEnd = (event: TouchEvent) => {
+      if (isControlTarget(event.target)) return;
+      event.preventDefault();
+      if (!controlsVisible) return;
+      startGesture(getTouchPoints(event.touches));
+    };
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0 || isControlTarget(event.target)) return;
+      event.preventDefault();
+      if (!controlsVisible) return;
+      mouseActive = true;
+      startGesture([{ x: event.clientX, y: event.clientY }]);
+    };
+    const onMouseMove = (event: MouseEvent) => {
+      if (!mouseActive) return;
+      event.preventDefault();
+      moveGesture([{ x: event.clientX, y: event.clientY }]);
+    };
+    const onMouseUp = () => {
+      mouseActive = false;
+      gesture = null;
+    };
+    viewport.addEventListener("touchstart", onTouchStart, activeListenerOptions);
+    viewport.addEventListener("touchmove", onTouchMove, activeListenerOptions);
+    viewport.addEventListener("touchend", onTouchEnd, activeListenerOptions);
+    viewport.addEventListener("touchcancel", onTouchEnd, activeListenerOptions);
+    viewport.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      viewport.removeEventListener("wheel", onWheel, activeListenerOptions);
+      viewport.removeEventListener("dblclick", onDoubleClick);
+      viewport.removeEventListener("dragstart", onDragStart);
+      viewport.removeEventListener("touchstart", onTouchStart, activeListenerOptions);
+      viewport.removeEventListener("touchmove", onTouchMove, activeListenerOptions);
+      viewport.removeEventListener("touchend", onTouchEnd, activeListenerOptions);
+      viewport.removeEventListener("touchcancel", onTouchEnd, activeListenerOptions);
+      viewport.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [commitView, controlsVisible, zoomAt]);
+
+  const isReset = view.scale === 1 && view.x === 0 && view.y === 0;
+  return (
+    <div className="field-document-pan-zoom" ref={viewportRef}>
+      <div
+        className="field-document-pan-zoom__surface"
+        style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})` }}
+      >
+        {children}
+      </div>
+      {controlsVisible ? (
+        <div aria-label={c.documentZoom} className="field-document-zoom-controls" role="group">
+          <button
+            aria-label={c.zoomOut}
+            disabled={view.scale <= DOCUMENT_ZOOM_MIN}
+            onClick={() => zoomAt(view.scale - DOCUMENT_ZOOM_STEP)}
+            type="button"
+          ><ZoomOut aria-hidden="true" /></button>
+          <output aria-live="polite">{Math.round(view.scale * 100)}%</output>
+          <button
+            aria-label={c.resetZoom}
+            disabled={isReset}
+            onClick={() => commitView({ scale: 1, x: 0, y: 0 })}
+            type="button"
+          ><RotateCcw aria-hidden="true" /></button>
+          <button
+            aria-label={c.zoomIn}
+            disabled={view.scale >= DOCUMENT_ZOOM_MAX}
+            onClick={() => zoomAt(view.scale + DOCUMENT_ZOOM_STEP)}
+            type="button"
+          ><ZoomIn aria-hidden="true" /></button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PdfCanvasPreview({
   attempt,
+  highDetail,
   interactionLocked,
   onLoadStateChange,
   page,
@@ -989,6 +1347,7 @@ function PdfCanvasPreview({
   url,
 }: {
   attempt: number;
+  highDetail: boolean;
   interactionLocked: boolean;
   onLoadStateChange: (state: "loading" | "ready" | "error") => void;
   page: number;
@@ -1097,7 +1456,8 @@ function PdfCanvasPreview({
         const cssViewport = nextPage.getViewport({ scale: cssScale });
         // Direct canvas rendering avoids holding a second base64 PNG copy in
         // memory. Capping DPR also protects low-memory Android kiosks.
-        const outputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1), 1.5);
+        const baseOutputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1), 1.5);
+        const outputScale = highDetail ? Math.min(baseOutputScale * 2, 3) : baseOutputScale;
         const renderViewport = nextPage.getViewport({ scale: cssScale * outputScale });
         const context = canvas.getContext("2d", { alpha: false });
         if (!context) throw new Error("PDF canvas is unavailable");
@@ -1127,7 +1487,7 @@ function PdfCanvasPreview({
       renderTask?.cancel();
       pdfPage?.cleanup();
     };
-  }, [containerSize.height, containerSize.width, onLoadStateChange, page, pdfDocument]);
+  }, [containerSize.height, containerSize.width, highDetail, onLoadStateChange, page, pdfDocument]);
 
   return (
     <div
@@ -1158,7 +1518,8 @@ function FieldDocumentPreview({
   onInteract: () => void;
 }) {
   const c = copy[language];
-  const pageImageUrl = getCloudinaryPdfPageImageUrl(document, page);
+  const [highDetail, setHighDetail] = useState(false);
+  const pageImageUrl = getCloudinaryPdfPageImageUrl(document, page, highDetail);
   const directImageUrl = isImagePreview(document.preview_url)
     ? getReachableDocumentUrl(document.preview_url)
     : null;
@@ -1167,6 +1528,13 @@ function FieldDocumentPreview({
   const sourceUrl = getReachableDocumentUrl(document.source_url);
   const [attempt, setAttempt] = useState(0);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const handleZoomChange = useCallback((scale: number) => {
+    if (scale >= DOCUMENT_HIGH_DETAIL_THRESHOLD) setHighDetail(true);
+  }, []);
+
+  useEffect(() => {
+    setHighDetail(false);
+  }, [document.id, document.preview_url, page]);
 
   useEffect(() => {
     if (imageUrl) {
@@ -1203,27 +1571,36 @@ function FieldDocumentPreview({
 
   return (
     <>
-      {imageUrl ? (
-        <div className={`field-document-image-preview${interactionLocked ? " is-interaction-locked" : ""}`}>
-          <img
-            alt={document.original_name || c.workInstruction}
-            decoding="async"
-            key={`${imageUrl}:${attempt}`}
-            onError={() => setLoadState("error")}
-            onLoad={() => setLoadState("ready")}
-            src={imageUrl}
+      <DocumentPanZoomViewport
+        controlsVisible={!interactionLocked && loadState === "ready"}
+        language={language}
+        onZoomChange={handleZoomChange}
+        resetKey={`${document.id}:${document.preview_url ?? ""}:${page}`}
+      >
+        {imageUrl ? (
+          <div className={`field-document-image-preview${interactionLocked ? " is-interaction-locked" : ""}`}>
+            <img
+              alt={document.original_name || c.workInstruction}
+              decoding="async"
+              draggable={false}
+              key={`${imageUrl}:${attempt}`}
+              onError={() => setLoadState("error")}
+              onLoad={() => setLoadState("ready")}
+              src={imageUrl}
+            />
+          </div>
+        ) : pdfUrl ? (
+          <PdfCanvasPreview
+            attempt={attempt}
+            highDetail={highDetail}
+            interactionLocked={interactionLocked}
+            onLoadStateChange={setLoadState}
+            page={page}
+            title={document.original_name || c.workInstruction}
+            url={pdfUrl}
           />
-        </div>
-      ) : pdfUrl ? (
-        <PdfCanvasPreview
-          attempt={attempt}
-          interactionLocked={interactionLocked}
-          onLoadStateChange={setLoadState}
-          page={page}
-          title={document.original_name || c.workInstruction}
-          url={pdfUrl}
-        />
-      ) : null}
+        ) : null}
+      </DocumentPanZoomViewport>
       <div
         aria-hidden={loadState !== "loading"}
         className={`field-document-load-state${loadState === "loading" ? "" : " is-hidden"}`}
@@ -1237,6 +1614,7 @@ function FieldDocumentPreview({
           aria-label={`${c.interactDocument}. ${c.interactDocumentHint}`}
           className="field-document-interaction-gate"
           onClick={onInteract}
+          onWheel={(event) => event.preventDefault()}
           type="button"
         >
           <span>
@@ -1254,39 +1632,70 @@ function QualityCanvas({
   snapshot,
   issueIndex,
   language,
-  isPageVisible,
   isLoading,
   hasError,
+  onIssueComplete,
+  rotationPaused,
   unavailableReason,
 }: {
   snapshot: FieldKanbanResponse;
   issueIndex: number;
   language: FieldLanguage;
-  isPageVisible: boolean;
   isLoading: boolean;
   hasError: boolean;
+  onIssueComplete: () => void;
+  rotationPaused: boolean;
   unavailableReason: string | null;
 }) {
   const c = copy[language];
   const issue = snapshot.quality.issues[issueIndex];
+  const issueKey = issue?.key ?? "";
   const images = getQualityIssueImages(issue);
   const imageSignature = images.join("|");
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [readyPhotoKey, setReadyPhotoKey] = useState("");
   const [failedPhotoUrls, setFailedPhotoUrls] = useState<Set<string>>(() => new Set());
   const displayImages = images.filter((imageUrl) => !failedPhotoUrls.has(imageUrl));
+  const activePhotoIndex = displayImages.length ? photoIndex % displayImages.length : 0;
+  const activePhotoUrl = displayImages[activePhotoIndex];
+  const activePhotoKey = activePhotoUrl ? `${issueKey}|${imageSignature}|${activePhotoUrl}` : "";
+  const photoReady = Boolean(activePhotoKey && readyPhotoKey === activePhotoKey);
+  const handleActivePhotoFailure = useCallback((photoUrl: string) => {
+    setFailedPhotoUrls((current) => new Set(current).add(photoUrl));
+    setReadyPhotoKey("");
+    if (activePhotoIndex >= displayImages.length - 1) {
+      onIssueComplete();
+      return;
+    }
+    // Removing the current item shifts the next valid photo into this slot.
+    setPhotoIndex(activePhotoIndex);
+  }, [activePhotoIndex, displayImages.length, onIssueComplete]);
 
   useEffect(() => {
     setPhotoIndex(0);
     setFailedPhotoUrls(new Set());
-  }, [issue?.key, imageSignature]);
+  }, [issueKey, imageSignature]);
 
   useEffect(() => {
-    if (!isPageVisible || displayImages.length <= 1) return;
+    if (rotationPaused || !issueKey || (displayImages.length > 0 && !photoReady)) return;
     const timer = window.setTimeout(() => {
-      setPhotoIndex((current) => (current + 1) % displayImages.length);
+      const currentIndex = displayImages.length ? photoIndex % displayImages.length : 0;
+      if (currentIndex + 1 < displayImages.length) {
+        setPhotoIndex(currentIndex + 1);
+        return;
+      }
+      onIssueComplete();
     }, QUALITY_PHOTO_DISPLAY_MS);
     return () => window.clearTimeout(timer);
-  }, [displayImages.length, imageSignature, isPageVisible, photoIndex]);
+  }, [displayImages.length, imageSignature, issueKey, onIssueComplete, photoIndex, photoReady, rotationPaused]);
+
+  useEffect(() => {
+    if (!activePhotoUrl || photoReady || rotationPaused) return;
+    const timer = window.setTimeout(() => {
+      handleActivePhotoFailure(activePhotoUrl);
+    }, QUALITY_PHOTO_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [activePhotoUrl, handleActivePhotoFailure, photoReady, rotationPaused]);
 
   if (!issue) {
     const permissionRequired = unavailableReason === "quality_permission_required" && !isLoading;
@@ -1313,8 +1722,6 @@ function QualityCanvas({
     : issue.section
       ? [{ section: issue.section, evidence_count: issue.evidence_count }]
       : [];
-  const activePhotoIndex = displayImages.length ? photoIndex % displayImages.length : 0;
-  const activePhotoUrl = displayImages[activePhotoIndex];
   const verificationLabel = getVerificationLabel(
     issue.verification_status,
     issue.verification_label,
@@ -1362,16 +1769,18 @@ function QualityCanvas({
       </header>
       <div className="field-quality-canvas__body">
         {displayImages.length && activePhotoUrl ? (
-          <section className="field-quality-canvas__gallery" aria-label={c.representativePhotos}>
+          <section
+            aria-busy={!photoReady}
+            aria-label={c.representativePhotos}
+            className="field-quality-canvas__gallery"
+          >
             <div className="field-quality-canvas__viewport">
-              <figure className="field-quality-canvas__active-photo" key={activePhotoUrl}>
+              <figure className="field-quality-canvas__active-photo" key={activePhotoKey}>
                 <img
                   alt={`${issue.label[language]} ${c.representativePhotos} ${activePhotoIndex + 1}`}
                   decoding="async"
-                  onError={() => {
-                    setFailedPhotoUrls((current) => new Set(current).add(activePhotoUrl));
-                    setPhotoIndex(0);
-                  }}
+                  onError={() => handleActivePhotoFailure(activePhotoUrl)}
+                  onLoad={() => setReadyPhotoKey(activePhotoKey)}
                   src={getOptimizedFieldImageUrl(activePhotoUrl)}
                 />
               </figure>
@@ -1385,7 +1794,10 @@ function QualityCanvas({
                     aria-selected={activePhotoIndex === index}
                     className={activePhotoIndex === index ? "is-active" : ""}
                     key={`${imageUrl}-selector`}
-                    onClick={() => setPhotoIndex(index)}
+                    onClick={() => {
+                      if (index === activePhotoIndex) return;
+                      setPhotoIndex(index);
+                    }}
                     role="tab"
                     type="button"
                   ><span /></button>
@@ -1474,6 +1886,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("work_instruction");
   const [qualityIndex, setQualityIndex] = useState(0);
   const [manualPause, setManualPause] = useState(false);
+  const [instructionCycleRevision, setInstructionCycleRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [transitionReview, setTransitionReview] = useState<InjectionTransitionEvent | null>(null);
   const [transitionWorkflow, setTransitionWorkflow] = useState<InjectionTransitionEvent | null>(null);
@@ -1617,14 +2030,14 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     setCanvasMode("work_instruction");
     setQualityIndex(0);
     setManualPause(false);
+    setInstructionCycleRevision(0);
     setPage(1);
   }, [planIdentity]);
 
   const modalOpen = Boolean(transitionReview || defectRequest || allMaterialsOpen);
   const qualityIssueCount = snapshot?.quality.issues.length ?? 0;
-  const activeQualityIssue = snapshot?.quality.issues[qualityIndex];
-  const activeQualityPhotoCount = getQualityIssueImages(activeQualityIssue).length;
-  const qualityIssueDisplayMs = Math.max(1, activeQualityPhotoCount) * QUALITY_PHOTO_DISPLAY_MS;
+  const qualityIssueCountRef = useRef(qualityIssueCount);
+  qualityIssueCountRef.current = qualityIssueCount;
   const rotationPaused = !isPageVisible || manualPause || modalOpen || canvasMode === "drawing" || !snapshot?.active_plan;
   useEffect(() => {
     if (canvasMode === "quality" && qualityIssueCount > 0 && qualityIndex >= qualityIssueCount) {
@@ -1633,27 +2046,28 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   }, [canvasMode, qualityIndex, qualityIssueCount]);
 
   useEffect(() => {
-    if (rotationPaused) return;
-    const delay = canvasMode === "quality" ? qualityIssueDisplayMs : WORK_INSTRUCTION_DISPLAY_MS;
+    if (rotationPaused || canvasMode !== "work_instruction") return;
     const timer = window.setTimeout(() => {
-      if (canvasMode === "work_instruction") {
-        if (qualityIssueCount > 0) {
-          setQualityIndex(0);
-          setCanvasMode("quality");
-        }
+      if (qualityIssueCountRef.current > 0) {
+        setQualityIndex(0);
+        setCanvasMode("quality");
         return;
       }
-      if (canvasMode === "quality") {
-        if (qualityIndex + 1 < qualityIssueCount) {
-          setQualityIndex((value) => value + 1);
-          return;
-        }
-        setQualityIndex(0);
-        setCanvasMode("work_instruction");
-      }
-    }, delay);
+      // No quality history yet: keep the instruction visible and check again
+      // after another full instruction interval without resetting on refetch.
+      setInstructionCycleRevision((value) => value + 1);
+    }, WORK_INSTRUCTION_DISPLAY_MS);
     return () => window.clearTimeout(timer);
-  }, [canvasMode, qualityIndex, qualityIssueCount, qualityIssueDisplayMs, rotationPaused]);
+  }, [canvasMode, instructionCycleRevision, planIdentity, rotationPaused]);
+
+  const completeQualityIssue = useCallback(() => {
+    if (qualityIndex + 1 < qualityIssueCount) {
+      setQualityIndex((value) => value + 1);
+      return;
+    }
+    setQualityIndex(0);
+    setCanvasMode("work_instruction");
+  }, [qualityIndex, qualityIssueCount]);
 
   const displayedDocument = canvasMode === "drawing"
     ? snapshot?.documents.drawing ?? null
@@ -1974,9 +2388,10 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
               <QualityCanvas
                 hasError={qualityQuery.isError}
                 isLoading={qualityQuery.isPending || (qualityQuery.isFetching && qualityIssueCount === 0)}
-                isPageVisible={isPageVisible}
                 issueIndex={qualityIndex}
                 language={language}
+                onIssueComplete={completeQualityIssue}
+                rotationPaused={rotationPaused}
                 snapshot={snapshot}
                 unavailableReason={snapshot.quality.unavailable_reason}
               />
