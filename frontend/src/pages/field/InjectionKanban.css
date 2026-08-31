@@ -3205,8 +3205,8 @@
   }
 }
 
-/* Short kiosk windows, including Android browser chrome left visible. */
-@media (max-height: 700px) {
+/* Short kiosk windows, including 1280x720 panels and Android browser chrome. */
+@media (max-height: 800px) {
   .field-kanban-header {
     flex-basis: 60px;
     height: 60px;
@@ -3303,9 +3303,23 @@
     margin-bottom: 4px;
   }
 
+  .field-queue-copy,
+  .field-queue.is-expanded .field-queue-copy {
+    flex-basis: 47%;
+    padding-right: 5px;
+    padding-left: 5px;
+  }
+
+  .field-queue-value,
+  .field-queue.is-expanded .field-queue-value {
+    flex-basis: 53%;
+    padding: 9px 2px 1px;
+  }
+
   .field-queue-value strong,
   .field-queue.is-expanded .field-queue-value strong {
-    font-size: 26px;
+    font-size: 27px;
+    letter-spacing: -1.2px;
   }
 
   .field-queue-copy strong,
