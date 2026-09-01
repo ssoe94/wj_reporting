@@ -67,6 +67,7 @@ const DOCUMENT_ZOOM_MIN = 1;
 const DOCUMENT_ZOOM_MAX = 2.25;
 const DOCUMENT_ZOOM_STEP = 0.25;
 const DOCUMENT_HIGH_DETAIL_THRESHOLD = 1.5;
+const DRAWING_PREVIEW_LONG_EDGE_PX = 3000;
 
 type DefectRequest = {
   eventKey: string;
@@ -556,7 +557,7 @@ function getReachableDocumentUrl(value: string | null | undefined) {
   }
 }
 
-function getCloudinaryPdfPageImageUrl(
+function getCloudinaryPdfPageImageUrls(
   document: FieldDocument | null,
   page: number,
   highDetail = false,
@@ -565,24 +566,47 @@ function getCloudinaryPdfPageImageUrl(
     document?.preview_resource_type !== "image"
     || document.preview_format !== "pdf"
     || !document.preview_url
-  ) return null;
+  ) return [];
 
   try {
     const parsed = new URL(document.preview_url, window.location.origin);
-    if (parsed.hostname !== "res.cloudinary.com") return null;
+    if (parsed.hostname !== "res.cloudinary.com") return [];
     const uploadMarker = "/image/upload/";
     const markerIndex = parsed.pathname.indexOf(uploadMarker);
-    if (markerIndex < 0) return null;
+    if (markerIndex < 0) return [];
     const prefix = parsed.pathname.slice(0, markerIndex + uploadMarker.length);
-    const assetPath = parsed.pathname.slice(markerIndex + uploadMarker.length).replace(/\.pdf$/i, ".jpg");
-    // Automatic playback stays memory-conscious. An operator-requested zoom
-    // upgrades only the visible page to one additional fixed CDN derivative.
-    const profile = highDetail ? "dn_300,w_3200" : "dn_200,w_2000";
-    parsed.pathname = `${prefix}pg_${Math.max(1, page)},${profile},dpr_1.0,c_limit,q_auto:best,f_jpg/${assetPath}`;
-    parsed.hash = "";
-    return parsed.toString();
+    const originalAssetPath = parsed.pathname.slice(markerIndex + uploadMarker.length);
+    const buildUrl = (profile: string, outputFormat: "jpg" | "png") => {
+      const next = new URL(parsed.toString());
+      const assetPath = originalAssetPath.replace(/\.pdf$/i, `.${outputFormat}`);
+      next.pathname = `${prefix}pg_${Math.max(1, page)},${profile}/${assetPath}`;
+      next.hash = "";
+      return next.toString();
+    };
+
+    if (document.kind === "drawing") {
+      // A single, lossless 3,000 px derivative keeps CAD text and dimensions
+      // readable without exposing or decoding the original A0 PDF in kiosks.
+      // The smaller JPEG is requested only if an older device cannot decode it.
+      return [
+        buildUrl(
+          `dn_300,w_${DRAWING_PREVIEW_LONG_EDGE_PX},h_${DRAWING_PREVIEW_LONG_EDGE_PX},dpr_1.0,c_limit,f_png`,
+          "png",
+        ),
+        buildUrl("dn_200,w_2000,h_2000,dpr_1.0,c_limit,q_auto:best,f_jpg", "jpg"),
+      ];
+    }
+
+    // Work instructions stay lightweight until the operator asks for detail.
+    const urls = highDetail
+      ? [
+        buildUrl("dn_300,w_3200,h_3200,dpr_1.0,c_limit,q_auto:best,f_jpg", "jpg"),
+        buildUrl("dn_200,w_2000,h_2000,dpr_1.0,c_limit,q_auto:best,f_jpg", "jpg"),
+      ]
+      : [buildUrl("dn_200,w_2000,h_2000,dpr_1.0,c_limit,q_auto:best,f_jpg", "jpg")];
+    return urls;
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -1519,18 +1543,35 @@ function FieldDocumentPreview({
 }) {
   const c = copy[language];
   const [highDetail, setHighDetail] = useState(false);
-  const pageImageUrl = getCloudinaryPdfPageImageUrl(document, page, highDetail);
+  const imageCandidateKey = `${document.id}:${document.preview_url ?? ""}`;
+  const [imageCandidateState, setImageCandidateState] = useState(() => ({
+    index: 0,
+    key: imageCandidateKey,
+  }));
+  const storedImageCandidateIndex = imageCandidateState.key === imageCandidateKey
+    ? imageCandidateState.index
+    : 0;
+  const pageImageUrls = getCloudinaryPdfPageImageUrls(document, page, highDetail);
   const directImageUrl = isImagePreview(document.preview_url)
     ? getReachableDocumentUrl(document.preview_url)
     : null;
-  const imageUrl = pageImageUrl || directImageUrl;
+  const imageCandidates = directImageUrl
+    ? [...pageImageUrls, directImageUrl].filter((url, index, urls) => urls.indexOf(url) === index)
+    : pageImageUrls;
+  const imageCandidateIndex = Math.min(
+    storedImageCandidateIndex,
+    Math.max(0, imageCandidates.length - 1),
+  );
+  const imageUrl = imageCandidates[imageCandidateIndex] || null;
   const pdfUrl = imageUrl ? null : getReachableDocumentUrl(document.preview_url);
   const sourceUrl = getReachableDocumentUrl(document.source_url);
   const [attempt, setAttempt] = useState(0);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const handleZoomChange = useCallback((scale: number) => {
-    if (scale >= DOCUMENT_HIGH_DETAIL_THRESHOLD) setHighDetail(true);
-  }, []);
+    if (document.kind !== "drawing" && scale >= DOCUMENT_HIGH_DETAIL_THRESHOLD) {
+      setHighDetail(true);
+    }
+  }, [document.kind]);
 
   useEffect(() => {
     setHighDetail(false);
@@ -1556,7 +1597,14 @@ function FieldDocumentPreview({
         <h2>{c.documentUnavailable}</h2>
         <p>{c.documentUnavailableHint}</p>
         <div>
-          <button onClick={() => setAttempt((current) => current + 1)} type="button">
+          <button
+            onClick={() => {
+              setImageCandidateState({ index: 0, key: imageCandidateKey });
+              setLoadState("loading");
+              setAttempt((current) => current + 1);
+            }}
+            type="button"
+          >
             <RotateCcw aria-hidden="true" />{c.documentRetry}
           </button>
           {sourceUrl ? (
@@ -1584,7 +1632,17 @@ function FieldDocumentPreview({
               decoding="async"
               draggable={false}
               key={`${imageUrl}:${attempt}`}
-              onError={() => setLoadState("error")}
+              onError={() => {
+                if (imageCandidateIndex + 1 < imageCandidates.length) {
+                  setImageCandidateState({
+                    index: imageCandidateIndex + 1,
+                    key: imageCandidateKey,
+                  });
+                  setLoadState("loading");
+                  return;
+                }
+                setLoadState("error");
+              }}
               onLoad={() => setLoadState("ready")}
               src={imageUrl}
             />

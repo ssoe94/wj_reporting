@@ -93,7 +93,10 @@ function fieldSnapshot(includeQuality: boolean) {
   };
 }
 
-async function installFieldMocks(page: Page) {
+async function installFieldMocks(
+  page: Page,
+  options: { failDrawing3000?: boolean; failInstruction3200?: boolean } = {},
+) {
   await page.addInitScript(() => {
     window.localStorage.setItem('wj-field-language', 'ko');
   });
@@ -128,7 +131,17 @@ async function installFieldMocks(page: Page) {
     await route.fulfill({ json: { confirmations: [] } });
   });
   await page.route('https://res.cloudinary.com/**', async (route) => {
-    const label = route.request().url().includes('drawing') ? 'DRAWING' : 'INSTRUCTION';
+    const requestUrl = route.request().url();
+    const isDrawing = requestUrl.includes('drawing');
+    if (options.failDrawing3000 && isDrawing && requestUrl.includes('w_3000')) {
+      await route.fulfill({ status: 503, body: 'drawing derivative unavailable' });
+      return;
+    }
+    if (options.failInstruction3200 && !isDrawing && requestUrl.includes('w_3200')) {
+      await route.fulfill({ status: 503, body: 'instruction derivative unavailable' });
+      return;
+    }
+    const label = isDrawing ? 'DRAWING' : 'INSTRUCTION';
     await route.fulfill({
       contentType: 'image/svg+xml',
       body: `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1500"><rect width="100%" height="100%" fill="white"/><text x="80" y="160" font-size="84">${label}</text></svg>`,
@@ -257,6 +270,87 @@ test.describe('field injection kanban', () => {
       && url.includes('q_auto:best')
       && url.includes('f_jpg')
     ))).toBe(true);
+  });
+
+  test('keeps drawings on one lossless 3000px derivative at every zoom level', async ({ page }) => {
+    const requestedCloudinaryUrls: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/drawing.')) requestedCloudinaryUrls.push(request.url());
+    });
+    await installFieldMocks(page);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto('/field/imm01');
+    await page.locator('.field-document-tabs .is-drawing').click();
+
+    const drawingImage = page.locator('.field-document-image-preview img');
+    await expect(drawingImage).toBeVisible();
+    const initialUrl = await drawingImage.getAttribute('src');
+    expect(initialUrl).toContain('dn_300');
+    expect(initialUrl).toContain('w_3000');
+    expect(initialUrl).toContain('h_3000');
+    expect(initialUrl).toContain('f_png');
+    expect(initialUrl).toContain('/drawing.png');
+
+    const interactionGate = page.locator('.field-document-interaction-gate');
+    if (await interactionGate.isVisible()) await interactionGate.click();
+    const zoomIn = page.getByRole('button', { name: '확대' });
+    for (let step = 0; step < 5; step += 1) await zoomIn.click();
+    await expect(page.locator('.field-document-zoom-controls output')).toHaveText('225%');
+    await expect(zoomIn).toBeDisabled();
+    await expect(drawingImage).toHaveAttribute('src', initialUrl!);
+
+    expect(requestedCloudinaryUrls.some((url) => url.includes('w_4096'))).toBe(false);
+    expect(requestedCloudinaryUrls.some((url) => url.includes('w_3200'))).toBe(false);
+  });
+
+  test('falls back safely when an older device cannot load the 3000px drawing', async ({ page }) => {
+    const requestedCloudinaryUrls: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/drawing.')) requestedCloudinaryUrls.push(request.url());
+    });
+    await installFieldMocks(page, { failDrawing3000: true });
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto('/field/imm01');
+    await page.locator('.field-document-tabs .is-drawing').click();
+
+    const drawingImage = page.locator('.field-document-image-preview img');
+    await expect(drawingImage).toBeVisible();
+    await expect(drawingImage).toHaveAttribute('src', /dn_200.*w_2000.*h_2000.*f_jpg.*drawing\.jpg/);
+    const failedPrimaryRequestCount = requestedCloudinaryUrls.filter((url) => (
+      url.includes('w_3000') && url.includes('h_3000') && url.includes('f_png')
+    )).length;
+    expect(failedPrimaryRequestCount).toBe(1);
+    expect(requestedCloudinaryUrls.some((url) => url.includes('w_2000') && url.includes('f_jpg'))).toBe(true);
+    await expect(page.locator('.field-document-load-state--error')).toHaveCount(0);
+
+    await page.getByRole('button', { name: '다음 페이지' }).click();
+    await expect(drawingImage).toHaveAttribute('src', /pg_2.*w_2000.*h_2000.*f_jpg.*drawing\.jpg/);
+    expect(requestedCloudinaryUrls.filter((url) => (
+      url.includes('w_3000') && url.includes('h_3000') && url.includes('f_png')
+    ))).toHaveLength(failedPrimaryRequestCount);
+  });
+
+  test('keeps work-instruction fallback valid when moving to the next page', async ({ page }) => {
+    const requestedCloudinaryUrls: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/instruction.')) requestedCloudinaryUrls.push(request.url());
+    });
+    await installFieldMocks(page, { failInstruction3200: true });
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto('/field/imm01');
+
+    const instructionImage = page.locator('.field-document-image-preview img');
+    await expect(instructionImage).toBeVisible();
+    await page.locator('.field-document-interaction-gate').click();
+    await page.getByRole('button', { name: '확대' }).click();
+    await page.getByRole('button', { name: '확대' }).click();
+    await expect(instructionImage).toHaveAttribute('src', /pg_1.*w_2000.*h_2000.*f_jpg.*instruction\.jpg/);
+    expect(requestedCloudinaryUrls.filter((url) => url.includes('w_3200'))).toHaveLength(1);
+
+    await page.getByRole('button', { name: '다음 페이지' }).click();
+    await expect(instructionImage).toHaveAttribute('src', /pg_2.*w_2000.*h_2000.*f_jpg.*instruction\.jpg/);
+    await expect(page.locator('.field-pdf-preview')).toHaveCount(0);
+    await expect(page.locator('.field-document-load-state--error')).toHaveCount(0);
   });
 
   test('supports the pre-PointerEvent Android touch fallback inside the document only', async ({ page, browserName }) => {
