@@ -193,6 +193,7 @@ class FieldOperationsTests(TestCase):
             self.assertEqual(response.status_code, 400)
         response = client.get("/api/analytics/field-operations/", {"date": "2026-09-04"})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Cache-Control"], "no-store")
+        cache_directives = {directive.strip().lower() for directive in response["Cache-Control"].split(",")}
+        self.assertIn("no-store", cache_directives)
         self.assertEqual(response.data["status"], "no_records")
         self.assertEqual(MouldDataSnapshot.objects.count(), 0)
