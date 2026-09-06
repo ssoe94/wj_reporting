@@ -34,6 +34,7 @@ export type FieldOperationsData = {
     invalid_document_count: number;
     invalid_checkpoint_count: number;
     duplicate_checkpoint_count: number;
+    excluded_by_reason?: Record<string, number>;
   };
   freshness: {
     generated_at: string | null;
@@ -65,7 +66,8 @@ export function getProcessEvidence(model: OverviewBoardModel, key: ProductionPro
   const missingMes = model.warnings.includes(`${key}_mes_data_missing`);
   const unavailable = missingMes || model.warnings.includes("production_context_unavailable")
     || !source || ["missing", "error", "unavailable", "unknown"].includes(source.status);
-  const canEvaluate = !unavailable && source?.status === "ok" && !source.stale
+  const capacityCoverageIncomplete = key === "injection" && process.capacityCoverageComplete === false;
+  const canEvaluate = !unavailable && !capacityCoverageIncomplete && source?.status === "ok" && !source.stale
     && !model.warnings.includes(`${key}_mes_data_stale`);
   const hasPlan = process.plannedQuantity !== null && process.plannedQuantity > 0;
   const actual = unavailable ? null : process.actualQuantity;
@@ -74,6 +76,7 @@ export function getProcessEvidence(model: OverviewBoardModel, key: ProductionPro
     source,
     unavailable,
     missingMes,
+    capacityCoverageIncomplete,
     canEvaluate,
     hasPlan,
     actual,
@@ -86,6 +89,7 @@ export function getProcessEvidence(model: OverviewBoardModel, key: ProductionPro
 export type EquipmentReason = "source" | "unplanned" | "unresolved" | "stopped" | "behind";
 
 export function getEquipmentReason(row: InjectionEquipmentRow): EquipmentReason | null {
+  if (row.capacityDataAvailable === false || row.dataWarning) return "source";
   if (!row.sourceStatus || ["missing", "stale", "error", "unavailable", "unknown"].includes(row.sourceStatus)) return "source";
   if (row.productionState === "running_without_plan") return "unplanned";
   if (row.productionState === "running_part_unresolved") return "unresolved";

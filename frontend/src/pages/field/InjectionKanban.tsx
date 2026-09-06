@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
+import PermissionLink from "@/components/common/PermissionLink";
+import { buildInjectionLink } from "@/domains/injection/workspace";
 import {
   getFieldKanban,
   submitFieldDefects,
@@ -2093,7 +2095,7 @@ function FieldClock({ language }: { language: FieldLanguage }) {
 }
 
 export default function InjectionKanban({ station, onBack }: { station: FieldStation; onBack: () => void }) {
-  const { logout, user } = useAuth();
+  const { logout, user, canAccessRoute } = useAuth();
   const queryClient = useQueryClient();
   const businessDate = useShanghaiBusinessDate();
   const machineNumber = Number(station.machineFilterValue);
@@ -2604,6 +2606,18 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
             <strong>{confirmationsQuery.isSuccess ? savedFieldRecords.length : "—"}</strong>
             <ChevronRight aria-hidden="true" />
           </button>
+          {user ? (
+            <nav aria-label={language === "zh" ? "管理查询" : "관리 조회"} className="flex flex-wrap gap-x-3 gap-y-2 px-1 text-xs font-semibold text-slate-600">
+              {canAccessRoute('/injection/dashboard') ? <PermissionLink
+                className="inline-flex items-center gap-1 underline underline-offset-4"
+                to={buildInjectionLink('/injection/dashboard', { date: businessDate, machineNumber }, 'field-records')}
+              >{language === "zh" ? "现场记录查询" : "현장 기록 조회"}<ExternalLink size={12} aria-hidden="true" /></PermissionLink> : null}
+              {canAccessRoute('/mes/monitoring') ? <PermissionLink
+                className="inline-flex items-center gap-1 underline underline-offset-4"
+                to={buildInjectionLink('/mes/monitoring', { date: businessDate, machineNumber })}
+              >{language === "zh" ? "设备趋势查询" : "설비 추이 조회"}<ExternalLink size={12} aria-hidden="true" /></PermissionLink> : null}
+            </nav>
+          ) : null}
         </aside>
 
         <section

@@ -184,6 +184,34 @@ class FieldOperationsTests(TestCase):
         response = APIClient().get("/api/analytics/field-operations/", {"date": "2026-09-04"})
         self.assertIn(response.status_code, [401, 403])
 
+    def test_machine_filter_scopes_totals_sources_coverage_and_exclusions(self):
+        self.save_document([self.checkpoint(defects=0)])
+        self.save_document([self.checkpoint(machine=2)], machine=2, schema_version="invalid")
+        result = build_field_operations(self.target_date, machine_number=1)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["scope"], {"kind": "machine", "machine_numbers": [1]})
+        self.assertEqual(result["summary"]["reported_defect_qty"], 0)
+        self.assertEqual(result["coverage"]["total_machine_count"], 1)
+        self.assertEqual(result["coverage"]["unrecorded_machine_count"], 0)
+        self.assertEqual(result["coverage"]["invalid_document_count"], 0)
+        self.assertEqual(result["used_data"][0]["document_count"], 1)
+        self.assertEqual([row["machine_number"] for row in result["machines"]], [1])
+        missing = build_field_operations(self.target_date, machine_number=3)
+        self.assertEqual(missing["status"], "no_records")
+        self.assertIsNone(missing["summary"]["reported_defect_qty"])
+        self.assertEqual(missing["coverage"]["total_machine_count"], 1)
+
+    def test_endpoint_rejects_invalid_machine_scope_instead_of_returning_fleet(self):
+        user = get_user_model().objects.create_user(username="field-machine-scope-test")
+        client = APIClient()
+        client.force_authenticate(user=user)
+        for machine in ["", "0", "18", "1.0", "-1", "all", "01", "1,2"]:
+            response = client.get("/api/analytics/field-operations/", {"date": "2026-09-04", "machine_number": machine})
+            self.assertEqual(response.status_code, 400, machine)
+        response = client.get("/api/analytics/field-operations/", {"date": "2026-09-04", "machine_number": "17"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["scope"]["machine_numbers"], [17])
+
     def test_endpoint_validates_date_and_returns_no_store_without_mutating(self):
         user = get_user_model().objects.create_user(username="field-analytics-test")
         client = APIClient()

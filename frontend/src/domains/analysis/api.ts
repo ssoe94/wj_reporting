@@ -11,7 +11,14 @@ export async function getAnalysisOverview(date: string, language: AppLanguage) {
   return result.model;
 }
 
-export async function getFieldOperations(date: string) {
-  const response = await http.get<unknown>("/analytics/field-operations/", { params: { date } });
-  return parseFieldOperations(response.data, date);
+export async function getFieldOperations(date: string, machineNumber?: number | null) {
+  const response = await http.get<unknown>("/analytics/field-operations/", {
+    params: { date, ...(machineNumber !== null && machineNumber !== undefined ? { machine_number: machineNumber } : {}) },
+  });
+  const data = parseFieldOperations(response.data, date);
+  if (machineNumber !== null && machineNumber !== undefined
+    && (data.machines.length !== 1 || data.machines[0].machine_number !== machineNumber || data.coverage.total_machine_count !== 1)) {
+    throw new Error("Field operation data belongs to a different equipment scope.");
+  }
+  return data;
 }

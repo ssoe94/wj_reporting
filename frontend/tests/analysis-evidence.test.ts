@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   getPriorityEquipment,
   getProcessEvidence,
+  getEquipmentReason,
   parseFieldOperations,
   type FieldOperationsData,
 } from "../src/domains/analysis/model.ts";
@@ -125,6 +126,37 @@ test("explicit stale flag overrides source status ok", () => {
   const model = overviewFixture();
   model.freshness.sources![0].stale = true;
   assertEvaluationHeld(model, "injection");
+});
+
+test("incomplete machine capacity coverage holds fleet progress despite fresh global activity", () => {
+  const model = overviewFixture();
+  model.processes.injection.capacityCoverageComplete = false;
+  model.processes.injection.actualQuantity = 30;
+  const result = assertEvaluationHeld(model, "injection");
+  assert.equal(result.capacityCoverageIncomplete, true);
+  assert.equal(result.actual, 30);
+  assert.equal(getProcessEvidence(model, "assembly").canEvaluate, true);
+});
+
+test("a missing or stale machine capacity source cannot become a stopped-machine judgment", () => {
+  const model = overviewFixture();
+  const row = model.equipment.injectionRows[0];
+  for (const warning of ["injection_capacity_data_missing", "injection_capacity_data_stale"]) {
+    row.capacityDataAvailable = false;
+    row.dataWarning = warning;
+    assert.equal(getEquipmentReason(row), "source");
+    assert.equal(getPriorityEquipment(model)[0].reason, "source");
+  }
+});
+
+test("verified zero capacity remains distinct from an unavailable machine", () => {
+  const model = overviewFixture();
+  model.processes.injection.capacityCoverageComplete = true;
+  model.equipment.injectionRows[0].capacityDataAvailable = true;
+  model.equipment.injectionRows[0].dataWarning = null;
+  assert.equal(getProcessEvidence(model, "injection").actual, 0);
+  assert.equal(getProcessEvidence(model, "injection").canEvaluate, true);
+  assert.equal(getEquipmentReason(model.equipment.injectionRows[0]), "stopped");
 });
 
 test("MES-stale warning overrides source status ok even without its stale flag", () => {

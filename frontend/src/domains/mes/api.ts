@@ -35,6 +35,21 @@ export type InjectionProductionMatrix = {
   power_kwh_matrix?: Record<string, number[]>;
   power_usage_matrix?: Record<string, number[]>;
   mes_source?: boolean;
+  counter_policy?: string;
+  power_counter_policy?: string;
+  source_window?: { start: string; end: string; timezone: string };
+  source_latest_at?: string | null;
+  generated_at?: string | null;
+  machine_sources?: Record<string, {
+    status: "ok" | "stale" | "missing";
+    latest_capacity_at: string | null;
+    sample_count: number;
+    observed_slot_count: number;
+    total_slot_count: number;
+  }>;
+  capacity_observed_matrix?: Record<string, boolean[]>;
+  stored_rollup_policy?: string;
+  warnings?: string[];
 };
 
 function asArray<T>(value: T[] | null | undefined): T[] {
@@ -75,6 +90,15 @@ function normalizeInjectionProductionMatrix(data: Partial<InjectionProductionMat
     power_kwh_matrix: data?.power_kwh_matrix ? asNumberArrayRecord(data.power_kwh_matrix) : undefined,
     power_usage_matrix: data?.power_usage_matrix ? asNumberArrayRecord(data.power_usage_matrix) : undefined,
     mes_source: data?.mes_source,
+    counter_policy: data?.counter_policy,
+    power_counter_policy: data?.power_counter_policy,
+    source_window: data?.source_window,
+    source_latest_at: data?.source_latest_at,
+    generated_at: data?.generated_at,
+    machine_sources: data?.machine_sources,
+    capacity_observed_matrix: data?.capacity_observed_matrix,
+    stored_rollup_policy: data?.stored_rollup_policy,
+    warnings: data?.warnings,
   };
 }
 
@@ -180,16 +204,17 @@ export async function getInjectionMonitoringDates() {
   };
 }
 
-export async function getInjectionUtilizationMatrix(columns = 336) {
+export async function getInjectionUtilizationMatrix(columns = 336, endDate?: string) {
   const params = new URLSearchParams({
     interval: "1hour",
     columns: String(columns),
   });
+  if (endDate) params.set("date", endDate);
   const response = await http.get<InjectionProductionMatrix>(
     mesEndpoint(`/injection/production-matrix/?${params.toString()}`),
     { skipAuth: true },
   );
-  return response.data;
+  return normalizeInjectionProductionMatrix(response.data);
 }
 
 export async function getInjectionEnergyMatrix(columns = 193) {

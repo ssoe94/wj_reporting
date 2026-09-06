@@ -45,6 +45,7 @@ const InventoryStatusPage = lazy(() => import('./pages/sales/InventoryStatus'));
 const DailyReportPage = lazy(() => import('./pages/sales/DailyReport'));
 const UserApproval = lazy(() => import('./pages/admin/UserApproval'));
 const QualityPage = lazy(() => import('./pages/quality'));
+const QualityAnalysisPage = lazy(() => import('./domains/quality/QualityAnalysisPage'));
 const DailyAttentionPage = lazy(() => import('./pages/quality/DailyAttention'));
 const AssemblyDashboardPage = lazy(() => import('./pages/assembly/Dashboard'));
 const InjectionDashboardPage = lazy(() => import('./pages/injection/Dashboard'));
@@ -118,7 +119,7 @@ function RouteLoading() {
 function InjectionLegacyRedirect() {
   const location = useLocation();
   const targetHash = location.hash === '#new' ? '#new' : '#records';
-  return <Navigate to={`/injection/dashboard${targetHash}`} replace />;
+  return <Navigate to={`/injection/dashboard${location.search}${targetHash}`} replace />;
 }
 
 function useNavItems() {
@@ -170,7 +171,7 @@ function useNavItems() {
         children: [
           { to: "/quality/daily-attention", label: t('nav_quality_daily_attention'), icon: ClipboardCheck },
           { to: "/quality#report", label: t('nav_quality_report'), icon: AlertTriangle },
-          { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
+          { to: "/quality/analysis", label: t('nav_quality_stats'), icon: BarChart3 },
         ],
       },
       {
@@ -251,7 +252,7 @@ function useNavItems() {
     children: [
       { to: "/quality/daily-attention", label: t('nav_quality_daily_attention'), icon: ClipboardCheck },
       { to: "/quality#report", label: t('nav_quality_report'), icon: AlertTriangle },
-      { to: "/quality#stats", label: t('nav_quality_stats'), icon: BarChart3 },
+      { to: "/quality/analysis", label: t('nav_quality_stats'), icon: BarChart3 },
     ],
   });
   navItems.push({
@@ -819,6 +820,7 @@ function AppContent() {
             <Route path="/assembly" element={<PrivateRoute><PageTransition><AssemblyPage /></PageTransition></PrivateRoute>} />
 
             {/* Quality single page */}
+            <Route path="/quality/analysis" element={<PrivateRoute><PageTransition><QualityAnalysisPage /></PageTransition></PrivateRoute>} />
             <Route path="/quality" element={<PrivateRoute><PageTransition><QualityPage /></PageTransition></PrivateRoute>} />
             <Route path="/quality/daily-attention" element={<PrivateRoute><PageTransition><DailyAttentionPage /></PageTransition></PrivateRoute>} />
 

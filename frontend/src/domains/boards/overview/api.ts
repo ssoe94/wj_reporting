@@ -124,6 +124,7 @@ function normalizeProcess(value: unknown, key: ProductionProcess["key"]): Produc
     remainingBusinessMinutes: firstNumber(source, ["remaining_business_minutes", "remaining_minutes"]),
     requiredQuantityPerHour: firstNumber(source, ["required_qty_per_hour", "required_quantity_per_hour"]),
     calculationBasis: firstString(source, ["calculation_basis"]),
+    capacityCoverageComplete: asNullableBoolean(firstValue(source, ["capacity_coverage_complete"])),
     reportingMix: reportingMix ? {
       effectiveActualQuantity: firstNumber(reportingMix, ["effective_actual_qty"]),
       mesConfirmedQuantity: firstNumber(reportingMix, ["mes_confirmed_qty", "mes_qty"]),
@@ -197,6 +198,9 @@ function normalizeInjectionEquipmentRows(value: unknown): InjectionEquipmentRow[
       resolvedCurrentPartCount: firstNumber(row, ["resolved_current_part_count"]),
       sourceStatus: firstString(row, ["source_status"]),
       sourceLatestAt: firstString(row, ["source_latest_at", "latest_at"]),
+      latestCapacityTime: firstString(row, ["latest_capacity_time"]),
+      capacityDataAvailable: asNullableBoolean(firstValue(row, ["capacity_data_available"])),
+      dataWarning: firstString(row, ["data_warning"]),
       activityWindowMinutes: firstNumber(row, ["activity_window_minutes"]),
     };
   });

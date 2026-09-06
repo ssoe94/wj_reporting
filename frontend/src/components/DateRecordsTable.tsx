@@ -15,10 +15,11 @@ import dayjs from 'dayjs';
 
 interface Props {
   date: string; // YYYY-MM-DD
+  machineNumber?: number | null;
 }
 
-export default function DateRecordsTable({ date }: Props) {
-  const { data: reportsData, isLoading } = useReports({ date });
+export default function DateRecordsTable({ date, machineNumber }: Props) {
+  const { data: reportsData, isLoading, isError, isFetching, refetch } = useReports({ date, machineNo: machineNumber });
   const { t, lang } = useLang();
   const list = React.useMemo(() => {
     const reportsArray: Report[] = Array.isArray(reportsData)
@@ -29,7 +30,7 @@ export default function DateRecordsTable({ date }: Props) {
       .slice()
       .sort((a: Report, b: Report) => {
         if (a.machine_no !== b.machine_no) return (a.machine_no ?? 0) - (b.machine_no ?? 0);
-        return a.start_datetime.localeCompare(b.start_datetime);
+        return (a.start_datetime ?? '').localeCompare(b.start_datetime ?? '');
       });
   }, [reportsData]);
 
@@ -103,6 +104,8 @@ export default function DateRecordsTable({ date }: Props) {
       await api.patch(`/injection/reports/${detail.id}/`, data);
       toast.success(t('update_success'));
       queryClient.invalidateQueries({ queryKey: ['reports'] });
+      queryClient.invalidateQueries({ queryKey: ['reports-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['report-dates'] });
       setEditing(false);
       setDetail(null);
     } catch {
@@ -118,6 +121,8 @@ export default function DateRecordsTable({ date }: Props) {
       await api.delete(`/injection/reports/${detail.id}/`);
       toast.success(t('delete_success') || '삭제되었습니다');
       queryClient.invalidateQueries({ queryKey: ['reports'] });
+      queryClient.invalidateQueries({ queryKey: ['reports-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['report-dates'] });
       setDetail(null);
     } catch {
       toast.error(t('delete_fail') || '삭제 실패');
@@ -136,6 +141,14 @@ export default function DateRecordsTable({ date }: Props) {
 
   if (!date) return null;
   if (isLoading) return <SkeletonTable />;
+  if (isError) return (
+    <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <p>{lang === 'zh' ? '手工日报查询失败，无法判断是否有记录。' : '수기일보를 불러오지 못해 기록 유무를 확인할 수 없습니다.'}</p>
+      <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={isFetching} onClick={() => void refetch()}>
+        {lang === 'zh' ? '重试' : '다시 조회'}
+      </Button>
+    </div>
+  );
   if (!list.length) return <p className="text-gray-500 text-sm">{t('no_record_on_date')}</p>;
 
   return (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
@@ -13,6 +13,7 @@ import type { PartSpec } from '../hooks/usePartSpecs';
 import machines from '../constants/machines';
 import api from '../lib/api';
 import { PlusCircle, Plus } from 'lucide-react';
+import { getShanghaiBusinessDateString } from '@/shared/utils/date';
 
 const REPORT_DATE_STORAGE_KEY = 'injection:lastReportDate';
 const safeGetStoredReportDate = () => {
@@ -49,11 +50,6 @@ const toLocalInput = (d: Date) => {
   return local.toISOString().slice(0, 16);
 };
 const nowStr = toLocalInput(roundTo5(new Date()));
-const getLocalDate = () => {
-  const d = new Date();
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-};
 const formatTime = (mins: number, _t: (k: string) => string, lang: string) => {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
@@ -65,11 +61,16 @@ const formatTime = (mins: number, _t: (k: string) => string, lang: string) => {
 
 interface RecordFormProps {
   onSaved?: (savedDate: string) => void; // 저장된 날짜를 전달받아 추가 동작 수행
+  reportDate?: string;
+  machineNumber?: number | null;
 }
 
-const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
+const RecordForm: React.FC<RecordFormProps> = ({ onSaved, reportDate, machineNumber }) => {
   const { t, lang } = useLang();
   const queryClient = useQueryClient();
+  const dirtyRef = useRef(false);
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const [productQuery, setProductQuery] = useState('');
   const [selectedModelDesc, setSelectedModelDesc] = useState<PartSpec | null>(null);
@@ -104,11 +105,11 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
 
   const [form, setForm] = useState(() => {
     const storedDate = safeGetStoredReportDate();
-    const initialDate = storedDate ?? getLocalDate();
+    const initialDate = reportDate ?? storedDate ?? getShanghaiBusinessDateString();
     safeSetStoredReportDate(initialDate);
     return {
       date: initialDate,
-      machineId: '',
+      machineId: machineNumber == null ? '' : String(machineNumber),
       model: '',
       type: '',
       partNo: '',
@@ -126,6 +127,22 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
       note: '',
     };
   });
+
+  useEffect(() => {
+    if (dirtyRef.current) return;
+    setForm(prev => ({
+      ...prev,
+      date: reportDate ?? prev.date,
+      machineId: machineNumber == null ? prev.machineId : String(machineNumber),
+    }));
+  }, [reportDate, machineNumber]);
+
+  const scopeDiffers = Boolean((reportDate && form.date !== reportDate)
+    || (machineNumber != null && form.machineId !== String(machineNumber)));
+  const applySelectedScope = () => {
+    setForm(prev => ({ ...prev, date: reportDate ?? prev.date, machineId: machineNumber == null ? prev.machineId : String(machineNumber) }));
+    if (reportDate) safeSetStoredReportDate(reportDate);
+  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
@@ -145,10 +162,11 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     return diffMs > 0 ? Math.floor(diffMs / 60000) : 0;
   };
   const totalMinutes = diffMinutes();
-  const runMinutes = totalMinutes && form.idle ? totalMinutes - Number(form.idle) : 0;
+  const runMinutes = Math.max(0, totalMinutes - Number(form.idle || 0));
 
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
+    if (submittingRef.current) return;
     const requiredErrors: string[] = [];
     if (!form.machineId) requiredErrors.push(t('select_machine') || '사출기를 선택하세요');
     if (!form.model.trim()) requiredErrors.push(t('enter_model') || '모델명을 입력하세요');
@@ -156,11 +174,19 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
     if (!form.plan) requiredErrors.push(t('enter_plan_qty') || '계획수량을 입력하세요');
     if (!form.actual) requiredErrors.push(t('enter_actual_qty') || '실제수량을 입력하세요');
     if (!form.start || !form.end) requiredErrors.push(t('enter_times') || '시작·종료 시간을 입력하세요');
+    if (![form.plan, form.actual, form.reportedDefect, form.realDefect, form.idle].every(value => Number.isInteger(Number(value || 0)) && Number(value || 0) >= 0)) {
+      requiredErrors.push(lang === 'zh' ? '数量与停机时间请输入非负整数。' : '수량과 부동시간은 0 이상의 정수로 입력하세요.');
+    }
+    if (new Date(form.end).getTime() < new Date(form.start).getTime() || Number(form.idle || 0) > totalMinutes) {
+      requiredErrors.push(lang === 'zh' ? '请确认起止时间及停机时间。' : '시작·종료 시각과 부동시간을 확인하세요.');
+    }
     if (requiredErrors.length) {
       toast.error(requiredErrors[0]);
       return;
     }
 
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       const machine = machines.find((m) => String(m.id) === form.machineId);
       const payload = {
@@ -176,7 +202,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
         start_datetime: form.start,
         end_datetime: form.end,
         total_time: totalMinutes,
-        operation_time: runMinutes,
+        idle_time: Number(form.idle || 0),
         part_no: form.partNo,
         note: form.note,
       };
@@ -190,6 +216,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
       ]);
 
       toast.success(t('update_success'));
+      dirtyRef.current = false;
 
       // 부모 컴포넌트에 저장된 날짜 전달
       if (onSaved) {
@@ -219,6 +246,9 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
       } else {
         toast.error(t('update_fail'));
       }
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -228,7 +258,14 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
   const goodCt = Number(form.actual) > 0 ? runSeconds / Number(form.actual) : 0;
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-y-6">
+    <form onSubmit={handleSubmit} onChangeCapture={() => { dirtyRef.current = true; }} className="flex flex-col gap-y-6">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+        <strong>{lang === 'zh' ? '填写对象' : '작성 대상'}: {form.date} · {form.machineId ? `${form.machineId}${lang === 'zh' ? '号机' : '호기'}` : (lang === 'zh' ? '请选择设备' : '설비를 선택하세요')}</strong>
+        {scopeDiffers ? <div role="status" className="mt-2 text-amber-800">
+          <p>{lang === 'zh' ? '填写对象与查询范围不同，已保留当前输入。请确认保存日期及设备。' : '조회 범위와 작성 대상이 다릅니다. 입력 내용은 보존했으니 저장할 날짜·설비를 확인하세요.'}</p>
+          <Button type="button" size="sm" variant="secondary" className="mt-2" onClick={applySelectedScope}>{lang === 'zh' ? '将此输入移到所选日期及设备' : '이 입력을 선택 날짜·설비로 옮기기'}</Button>
+        </div> : null}
+      </div>
       {/* ── (1) 상단: 보고일자 / 사출기 / 모델 검색 / Part No. ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {/* 보고일자 */}
@@ -685,6 +722,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onSaved }) => {
               <PermissionButton
                 permission="can_edit_injection"
                 type="submit"
+                disabled={submitting}
                 className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium transition-all duration-200 inline-flex items-center gap-2 whitespace-nowrap"
               >
                 <PlusCircle className="h-4 w-4 shrink-0" />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { AlertTriangle, CheckCircle2, Clock3, PauseCircle, Save } from 'lucide-react';
@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getProductionConsoleData, getProductionPlanItems, getProductionStatusData, upsertProductionExecution } from '@/lib/api';
 import { extractInjectionMachineInfo, getInjectionMachineOrder, getMachiningLineOrder } from '@/lib/productionUtils';
 import { getFieldStationById, matchesFieldStation } from '@/lib/fieldTerminal';
+import { useShanghaiBusinessDate } from '@/shared/hooks/useShanghaiBusinessDate';
 
 type PlanType = 'injection' | 'machining';
 type StatusType = 'pending' | 'running' | 'completed' | 'paused';
@@ -81,6 +82,8 @@ interface ProductionConsoleProps {
   kioskMode?: boolean;
   title?: string;
   subtitle?: string;
+  businessDate?: string;
+  onBusinessDateChange?: (date: string) => void;
 }
 
 interface TableRowView {
@@ -90,16 +93,6 @@ interface TableRowView {
   groupKey: string;
   groupLabel: string;
 }
-
-const getBusinessDateString = () => {
-  const now = new Date();
-  const businessDate = new Date(now);
-  if (businessDate.getHours() < 8) {
-    businessDate.setDate(businessDate.getDate() - 1);
-  }
-  const adjusted = new Date(businessDate.getTime() - businessDate.getTimezoneOffset() * 60000);
-  return adjusted.toISOString().slice(0, 10);
-};
 
 const statusTone: Record<StatusType, string> = {
   pending: 'bg-slate-100 text-slate-700',
@@ -165,19 +158,39 @@ const getMachineDisplayLabel = (planType: PlanType, row: ConsoleRow, t: (key: st
 
 export default function ProductionConsole({
   planType,
-  stationFilter = null,
+  stationFilter: requestedStationFilter = null,
   kioskMode = false,
   title,
   subtitle,
+  businessDate,
+  onBusinessDateChange,
 }: ProductionConsoleProps) {
-  const { t } = useLang();
+  const requestedMachineFilter = planType === 'injection' && requestedStationFilter
+    ? String(Number(requestedStationFilter.replace(/^imm/i, '')))
+    : requestedStationFilter;
+  const [stationFilter, setStationFilter] = useState(requestedMachineFilter);
+  const { t, lang } = useLang();
   const { hasPermission, user } = useAuth();
   const queryClient = useQueryClient();
-  const [selectedDate, setSelectedDate] = useState(getBusinessDateString);
+  const currentBusinessDate = useShanghaiBusinessDate();
+  const [localRequestedDate, setLocalRequestedDate] = useState<string | null>(null);
+  const requestedDate = businessDate ?? localRequestedDate ?? currentBusinessDate;
+  const [selectedDate, setSelectedDate] = useState(requestedDate);
   const [rows, setRows] = useState<ConsoleRow[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [dirtyMap, setDirtyMap] = useState<Record<string, boolean>>({});
+  const dirtyMapRef = useRef(dirtyMap);
+  const hasDirtyRows = Object.values(dirtyMap).some(Boolean);
+  useEffect(() => { dirtyMapRef.current = dirtyMap; }, [dirtyMap]);
+  useEffect(() => {
+    if ((requestedDate !== selectedDate || requestedMachineFilter !== stationFilter) && !hasDirtyRows && !savingKey) {
+      if (requestedDate !== selectedDate) setRows([]);
+      setDirtyMap({});
+      setSelectedDate(requestedDate);
+      setStationFilter(requestedMachineFilter);
+    }
+  }, [requestedDate, selectedDate, requestedMachineFilter, stationFilter, hasDirtyRows, savingKey]);
 
   const canEdit = Boolean(
     user?.is_staff ||
@@ -185,7 +198,7 @@ export default function ProductionConsole({
     (planType === 'injection' ? hasPermission('can_edit_injection') : hasPermission('can_edit_assembly')),
   );
 
-  const { data, isLoading } = useQuery<ConsoleResponse>({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery<ConsoleResponse>({
     queryKey: ['production-console', planType, selectedDate],
     queryFn: () => getProductionConsoleData(selectedDate, planType),
   });
@@ -207,14 +220,17 @@ export default function ProductionConsole({
   });
 
   useEffect(() => {
-    setRows(data?.rows ?? []);
+    setRows(current => (data?.rows ?? []).map(row => (
+      dirtyMapRef.current[row.key]
+        ? current.find(draft => draft.key === row.key && draft.plan_date === selectedDate) ?? row
+        : row
+    )));
     setSelectedKey((current) => {
       if (!data?.rows?.length) return null;
       if (current && data.rows.some((row) => row.key === current)) return current;
       return data.rows[0].key;
     });
-    setDirtyMap({});
-  }, [data]);
+  }, [data, selectedDate]);
 
   const visibleRows = useMemo(() => {
     if (!stationFilter) return rows;
@@ -470,9 +486,32 @@ export default function ProductionConsole({
         progress: `${liveSummary.achievementRate}%`,
       };
 
+  if (isLoading) return <Card><CardContent className="py-10 text-center text-slate-500">{lang === 'zh' ? '正在查询执行记录…' : '실행 기록을 불러오는 중…'}</CardContent></Card>;
+  if (isError) return (
+    <Card className="border-amber-200"><CardContent className="space-y-3 py-6 text-sm text-amber-900">
+      <p role="alert">{lang === 'zh' ? '执行记录查询失败，无法确认数量。未保存的输入仍保留在本页面。' : '실행 기록을 불러오지 못해 수량을 확인할 수 없습니다. 미저장 입력은 이 화면에 보존됩니다.'}</p>
+      <Button type="button" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>{lang === 'zh' ? '重试' : '다시 조회'}</Button>
+    </CardContent></Card>
+  );
+
+  const machineScopeLabel = (value: string | null) => value
+    ? `${value}${planType === 'injection' ? (lang === 'zh' ? '号机' : '호기') : (lang === 'zh' ? '线' : '라인')}`
+    : (lang === 'zh' ? '全部设备' : '전체 설비');
+  const pendingScopeNotice = requestedDate !== selectedDate || requestedMachineFilter !== stationFilter ? (
+    <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      <p>{lang === 'zh'
+        ? `当前编辑：${selectedDate} · ${machineScopeLabel(stationFilter)}。未保存输入仍显示在下方。保存后将切换至查询范围：${requestedDate} · ${machineScopeLabel(requestedMachineFilter)}。`
+        : `현재 작성: ${selectedDate} · ${machineScopeLabel(stationFilter)}. 미저장 입력은 아래에 보존됩니다. 저장을 마치면 조회 범위 ${requestedDate} · ${machineScopeLabel(requestedMachineFilter)}로 이동합니다.`}</p>
+      <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={Boolean(savingKey)} onClick={() => { setRows(data?.rows ?? []); setDirtyMap({}); }}>
+        {lang === 'zh' ? '放弃未保存输入并切换查询范围' : '미저장 입력을 버리고 조회 범위로 이동'}
+      </Button>
+    </div>
+  ) : null;
+
   if (kioskMode) {
     return (
       <div className="flex h-[calc(100vh-96px)] min-h-[820px] flex-col gap-2">
+        {pendingScopeNotice}
         <div className="grid grid-cols-3 gap-2">
           <div className="border-2 border-slate-300 bg-sky-50 px-4 py-3 text-center">
             <div className="text-lg font-bold text-slate-600">实绩</div>
@@ -693,6 +732,7 @@ export default function ProductionConsole({
 
   return (
     <div className={kioskMode ? 'space-y-4' : 'space-y-6'}>
+      {pendingScopeNotice}
       <Card className="border-blue-100 shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -706,7 +746,11 @@ export default function ProductionConsole({
               <Input
                 type="date"
                 value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
+                onChange={(event) => {
+                  if (!event.target.value) return;
+                  setLocalRequestedDate(event.target.value);
+                  onBusinessDateChange?.(event.target.value);
+                }}
                 className="w-[180px]"
               />
             </div>

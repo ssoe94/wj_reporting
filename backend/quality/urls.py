@@ -1,5 +1,6 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
+from .analysis_views import QualityAnalysisView
 from .views import (
     DailyQualityAttentionView,
     QualityClassificationAuditApplyColorView,
@@ -44,6 +45,7 @@ router.register(r'import-media', QualityImportMediaViewSet, basename='quality-im
 router.register(r'import-assets', QualityImportAssetViewSet, basename='quality-import-asset')
 
 urlpatterns = [
+    path('analysis/', QualityAnalysisView.as_view(), name='quality-analysis'),
     path('excel-import/', QualityExcelImportView.as_view(), name='quality-excel-import'),
     path(
         'excel-import/preview/',

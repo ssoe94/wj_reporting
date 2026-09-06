@@ -42,6 +42,14 @@ def parse_field_business_date(value: str | None) -> date:
         raise ValueError("date must use YYYY-MM-DD.") from exc
 
 
+def parse_field_machine_number(value: str | None) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"(?:[1-9]|1[0-7])", value):
+        raise ValueError("machine_number must be an integer from 1 to 17.")
+    return int(value)
+
+
 def _integer(value, *, positive=False) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("invalid_numeric_value")
@@ -152,9 +160,12 @@ def _exclude_overlapping_segments(checkpoints):
     return [row for row in checkpoints if row["event_key"] not in excluded], len(excluded)
 
 
-def build_field_operations(target_date: date) -> dict:
+def build_field_operations(target_date: date, machine_number: int | None = None) -> dict:
+    if machine_number is not None and (type(machine_number) is not int or not 1 <= machine_number <= 17):
+        raise ValueError("machine_number must be an integer from 1 to 17.")
+    machine_numbers = [machine_number] if machine_number is not None else list(range(1, 18))
     date_key = target_date.strftime("%Y%m%d")
-    snapshot_keys = {f"field-defects-v1-{date_key}-{number:02d}": number for number in range(1, 18)}
+    snapshot_keys = {f"field-defects-v1-{date_key}-{number:02d}": number for number in machine_numbers}
     documents = list(MouldDataSnapshot.objects.filter(snapshot_key__in=snapshot_keys).only(
         "snapshot_key", "payload", "refreshed_at", "last_error",
     ).order_by("snapshot_key"))
@@ -228,7 +239,7 @@ def build_field_operations(target_date: date) -> dict:
         "station_id": f"imm{number:02d}",
         "status": "reported" if by_machine[number] else "invalid" if number in invalid_machines else "no_records",
         **_totals(by_machine[number]),
-    } for number in range(1, 18)]
+    } for number in machine_numbers]
     defect_quantities = defaultdict(int)
     defect_checkpoints = defaultdict(int)
     for row in all_checkpoints:
@@ -240,13 +251,14 @@ def build_field_operations(target_date: date) -> dict:
     status = "partial" if warnings else "ok" if all_checkpoints else "no_records"
     if not all_checkpoints:
         warnings.add("no_valid_field_checkpoints")
-    if recorded_count < 17:
+    if recorded_count < len(machine_numbers):
         warnings.add("field_records_do_not_cover_all_machines")
     summary = {**_totals(all_checkpoints), "recorded_machine_count": recorded_count}
     start = datetime.combine(target_date, time(8), tzinfo=SHANGHAI)
     return {
         "schema_version": SCHEMA_VERSION,
         "business_date": target_date.isoformat(),
+        "scope": {"machine_numbers": machine_numbers, "kind": "machine" if len(machine_numbers) == 1 else "fleet"},
         "business_window": {"timezone": "Asia/Shanghai", "start": start.isoformat(), "end": (start + timedelta(days=1)).isoformat()},
         "status": status,
         "summary": summary,
@@ -254,14 +266,14 @@ def build_field_operations(target_date: date) -> dict:
         "defects": [{"code": code, "reported_defect_qty": quantity, "checkpoint_count": defect_checkpoints[code]}
                     for code, quantity in sorted(defect_quantities.items(), key=lambda item: (-item[1], item[0]))],
         "coverage": {
-            "total_machine_count": 17,
+            "total_machine_count": len(machine_numbers),
             "recorded_machine_count": recorded_count,
-            "unrecorded_machine_count": 17 - recorded_count,
+            "unrecorded_machine_count": len(machine_numbers) - recorded_count,
             "invalid_document_count": invalid_documents,
             "invalid_checkpoint_count": invalid_checkpoints,
             "duplicate_checkpoint_count": duplicate_checkpoints,
             "excluded_by_reason": dict(exclusions),
-            "basis": "Machines with at least one valid checkpoint; not planned-shift or inspection coverage.",
+            "basis": "Selected machines with at least one valid checkpoint; not planned-shift or inspection coverage.",
         },
         "freshness": {
             "generated_at": timezone.now().isoformat(),
@@ -272,7 +284,7 @@ def build_field_operations(target_date: date) -> dict:
         "used_data": [{
             "source": "injection.MouldDataSnapshot",
             "schema_version": SOURCE_SCHEMA,
-            "scope": "Selected business date, injection machines 1-17, persisted field defect checkpoints only.",
+            "scope": f"Selected business date, injection machines {','.join(map(str, machine_numbers))}, persisted field defect checkpoints only.",
             "document_count": len(documents),
             "valid_checkpoint_count": len(all_checkpoints),
         }],

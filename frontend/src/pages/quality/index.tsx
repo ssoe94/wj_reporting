@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { BrainCircuit, ClipboardList, FileText, History } from 'lucide-react';
 import { useLang } from '../../i18n';
@@ -20,7 +20,7 @@ export default function QualityPage() {
   const [historyScope, setHistoryScope] = useState<QualityReportHistoryScope | null>(null);
   const canEditQuality = Boolean(user?.is_staff || hasPermission('can_edit_quality'));
   const isReviewView = canEditQuality && location.hash === '#review';
-  const isHistoryView = !canEditQuality || location.hash === '#stats';
+  const isHistoryView = !canEditQuality || ['#stats', '#history'].includes(location.hash);
   const isWorkspaceView = canEditQuality && !isHistoryView && !isReviewView;
 
   useEffect(() => {
@@ -37,7 +37,7 @@ export default function QualityPage() {
 
   const openAllHistory = () => {
     setHistoryScope(null);
-    navigate('/quality#stats');
+    navigate('/quality#history');
   };
 
   const openClassificationReview = () => {
@@ -46,7 +46,7 @@ export default function QualityPage() {
 
   const openImportedReports = (scope: QualityReportHistoryScope) => {
     setHistoryScope(scope);
-    navigate('/quality#stats');
+    navigate('/quality#history');
   };
 
   return (
@@ -113,6 +113,8 @@ export default function QualityPage() {
           )}
         </nav>
       </header>
+
+      <div className="flex justify-end"><Link className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50" to="/quality/analysis">{lang === 'zh' ? '查看独立不良分析报告 →' : '불량 통계 분석 보고서 보기 →'}</Link></div>
 
       {canEditQuality && (
         <motion.div
