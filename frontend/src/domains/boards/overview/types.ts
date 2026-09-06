@@ -21,6 +21,7 @@ export type ProductionProcess = {
   remainingQuantity: number | null;
   remainingBusinessMinutes: number | null;
   requiredQuantityPerHour: number | null;
+  calculationBasis?: string | null;
   reportingMix: {
     effectiveActualQuantity: number | null;
     mesConfirmedQuantity: number | null;
@@ -30,6 +31,7 @@ export type ProductionProcess = {
     manualOpenSharePercent: number | null;
     manualOpenRowCount: number | null;
     dataQualityNote: string | null;
+    statusCounts?: { needsReview: number | null; manualMismatch: number | null };
   } | null;
 };
 
@@ -375,6 +377,12 @@ export type OverviewBoardModel = {
   businessDate: string;
   generatedAt: string | null;
   businessWindow: string | null;
+  businessWindowDetails?: {
+    timezone: string | null;
+    start: string | null;
+    end: string | null;
+    referenceTime: string | null;
+  };
   overallStatus: OverviewTone;
   processes: {
     injection: ProductionProcess;
@@ -400,6 +408,14 @@ export type OverviewBoardModel = {
     sourceCount: number;
     staleSourceCount: number;
     unavailableSourceCount: number;
+    sources?: Array<{
+      key: string;
+      status: string;
+      sourceLatestAt: string | null;
+      rowCount: number | null;
+      stale: boolean;
+      detail: string | null;
+    }>;
   };
   warnings: string[];
 };

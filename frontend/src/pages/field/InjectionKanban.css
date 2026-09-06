@@ -3648,6 +3648,68 @@
   }
 }
 
+.field-record-launcher {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid #a9bdd4;
+  border-radius: 8px;
+  color: #164873;
+  background: #eef4fa;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.field-record-launcher svg { width: 20px; height: 20px; }
+.field-record-launcher strong { margin: 0 8px; }
+
+.field-confirmation-form { padding: 0 26px 12px; }
+.field-confirmation-form label { display: block; margin-top: 16px; }
+.field-confirmation-form label > span { display: block; margin-bottom: 8px; font-size: 18px; font-weight: 800; color: #173c5e; }
+.field-confirmation-form small { margin-left: 8px; font-size: 13px; color: #536b82; }
+.field-confirmation-form select,
+.field-confirmation-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px;
+  border: 2px solid #a9bdd4;
+  border-radius: 6px;
+  color: #15334f;
+  background: #fff;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1.45;
+}
+.field-confirmation-form textarea { resize: vertical; }
+.field-confirmation-form textarea::placeholder { color: #5d7287; font-size: 15px; }
+.field-confirmation-form select:focus,
+.field-confirmation-form textarea:focus { outline: 3px solid #f0b629; outline-offset: 2px; }
+
+.field-records-body { padding: 18px 26px; color: #213e58; }
+.field-records-body section + section { margin-top: 26px; }
+.field-records-body h3 { margin: 0 0 12px; font-size: 20px; font-weight: 900; }
+.field-records-body section > p { margin: 10px 0; }
+.field-record-entry { margin-top: 12px; padding: 16px; border-left: 4px solid #2d658e; border-radius: 4px; background: #f0f5f9; }
+.field-record-entry--pending { border-left-color: #e6a31a; background: #fff8e7; }
+.field-record-entry > strong { display: block; font-size: 19px; }
+.field-record-entry p { margin: 8px 0; font-size: 15px; line-height: 1.55; }
+.field-record-entry small { color: #516a81; }
+.field-record-note { white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere; }
+.field-record-entry .field-touch-button { min-height: 48px; margin-top: 10px; padding: 8px 18px; font-size: 17px; }
+
+@media (max-width: 600px) {
+  .field-confirmation-form { padding: 0 16px 10px; }
+  .field-records-body { padding: 16px; }
+  .field-confirmation-form select,
+  .field-confirmation-form textarea { font-size: 16px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .field-kanban *,
   .field-kanban *::before,
