@@ -2,21 +2,21 @@
 
 작성일: 2026-09-06. Mac Studio에서 이번 변경을 검토하고 다음 개발을 이어가기 위한 문서다. 운영 생산 수치나 인증 정보는 포함하지 않는다.
 
-## 릴리스 식별 — 배포 담당자 최종 기입
+## 릴리스 식별과 배포 증빙
 
 | 항목 | 값 |
 | --- | --- |
 | 개발 브랜치 | `codex/injection-workspace-20260906` |
 | 배포 전 기준 커밋 | `fd92316` |
-| 변경 PR | **미기입 — 생성 후 링크 기록** |
-| 최종 검증 대상 SHA | **미기입 — 마지막 수정과 검증이 끝난 커밋 기록** |
-| main 반영 SHA | **미기입 — 실제 병합 후 기록** |
-| CI 실행 및 결과 | **미기입 — 실행 링크와 완료 상태 기록** |
-| 배포 실행 및 결과 | **미기입 — 배포 링크·완료 시각·실제 서비스 버전 기록** |
-| 전사 개발 방향 보고서 배포 위치 | **미기입 — 최종 HTML/공유 링크 기록** |
-| 배포 후 확인 | **미기입 — 수행한 조회와 남은 확인 항목 기록** |
+| 변경 PR | [PR #34](https://github.com/ssoe94/wj_reporting/pull/34) |
+| 기능 코드 스냅샷 | `f7f6ea21858eef322d4ee10c50da3473cc62afe0` (이후 인수 문서 보완) |
+| 최종 검증 대상 | PR #34의 마지막 head와 [Checks](https://github.com/ssoe94/wj_reporting/pull/34/checks) |
+| main 반영·배포 SHA | PR #34 본문의 최종 배포 증빙 및 병합 커밋 참조 |
+| 배포 실행 | [Test and Deploy](https://github.com/ssoe94/wj_reporting/actions/workflows/test-and-deploy.yml)의 해당 main SHA 실행 |
+| 보고서 URL | [회사 데이터·개발 방향 보고서](https://wj-reporting.onrender.com/reports/wj-development-review-20260906.html) |
+| 실제 서비스 버전 | [build-info.json](https://wj-reporting.onrender.com/build-info.json)의 commit 값과 main SHA 대조 |
 
-**문서 작성 시 PR 생성·병합·배포 성공을 확인하지 않았다.** 위 항목을 채우기 전에는 이 문서를 배포 완료 증빙으로 사용하지 않는다. 로컬 검증 결과와 실제 서비스 반영 여부는 별도다.
+최종 배포 성공 여부는 PR의 배포 증빙과 Actions 완료 상태로 확인한다. 이 문서의 로컬 검증 결과만으로 운영 반영을 판단하지 않는다. 배포 후 API·보고서·버전 확인 결과도 PR #34 본문에 남긴다.
 
 ## 읽을 문서
 
@@ -39,6 +39,7 @@
 | 관리자 실행 입력 | Shanghai 업무일과 공통 조회 범위를 사용한다. 미저장 행이 있으면 기존 작성 날짜·설비를 유지해 행이 숨지 않게 하고, 저장 또는 명시적 폐기 후 새 범위로 이동한다. |
 | `/mes/monitoring` | 설비 계측과 수집 근거에 집중한다. 날짜·설비 연결, 미관측 구간, 원천 상태를 보존하며 모호한 수치를 정상 실적으로 판단하지 않는다. |
 | 생산 원천·계수 | 설비별 capacity 근거를 overview까지 전달한다. 무계획 환산 불가와 미수집을 정상 0으로 표시하지 않는다. 표시 구간 안의 모든 샘플에 reset 정책을 적용하고, 관측된 0을 저장 rollup이 덮어쓰지 않게 한다. |
+| `/production/stats` | 계획과 저장 MES 신고의 원천별 수량·행 수·시각을 표시한다. 양쪽 자료 존재와 수량 일치를 구분하고, 신고 시각/저장 업무일 불일치에서는 차이 판단을 보류한다. |
 | `/quality/analysis` | 기존 `/quality#stats` 보고 이력과 별개의 불량 분석 화면이다. 신고 건수와 기록된 불량 수량, 기재율, 추세, 유형 Pareto, 설비·품번 집중도, 자료 보완 후보, 원본 조회와 CSV를 제공한다. |
 
 DB 마이그레이션과 운영 설정 변경은 없다. 이번 개발·검증에서 운영 원본 보고 이력, 현장 JSON, 수기일보, 확정 이력을 일괄 수정·삭제·재생성하지 않았다. 기존 입력·수정 업무 기능은 유지한다. 새 계수 정책에 맞춰 과거 저장 rollup을 일괄 재생성하는 작업도 수행하지 않았다.
@@ -66,10 +67,11 @@ DB 마이그레이션과 운영 설정 변경은 없다. 이번 개발·검증�
 | 품질 백엔드 | `backend/quality/test_analysis.py` 합성 테스트 13개 통과 로그 확인: 집계·범위·권한·상한·원천 우선순위 등 |
 | API 계약 연결 | 실제 백엔드 집계 함수로 만든 합성 품질 응답을 프런트 parser와 CSV에 통과시킴. 합성 원본 ID로 운영 원장을 조회하지 않음 |
 | 수기일보 query | API/React Query 경계만 합성 대체한 12개 로컬 검사 통과: 페이지 전체 조회, 모든 페이지 범위 유지, 잘못된 응답/범위와 반복 페이지 거부, 정상 0과 실패 구분 |
-| 루트 통합 프런트 회귀 | 84개 통과 결과 전달받음. 이후 추가 회귀가 반영되면 최종 검증 SHA 기준으로 건수 갱신 |
-| 루트 통합 백엔드 회귀 | injection·analytics·overview 38개 통과, quality 13개 별도 통과 결과 전달받음. 위 개별 모듈 결과와 중복되는 범위이므로 건수를 다시 합산하지 않음 |
+| 루트 통합 프런트 회귀 | 87개 통과. 보고 원장 13개 회귀에 빈 저장 그룹과 업무일 경계/시각 불일치 포함 |
+| 루트 통합 백엔드 회귀 | injection·analytics·overview·quality 합계 51개를 격리된 SQLite 설정에서 한 번에 실행해 통과. 위 개별 결과와 중복되므로 건수를 다시 합산하지 않음 |
 | 전사 개발 방향 HTML 보고서 | 표준 패키지의 validation/package/verification 통과 결과 전달받음. 15개 블록·차트 1개, 1440px/390px 검증, source dialog 키보드/메뉴 동작 검사 통과, 약 483KB. 앱 화면 QA와는 별도 결과 |
-| 최종 전체 lint·build·CI | **진행 중 — 배포 담당자가 명령, 결과, 검증 SHA 기입** |
+| 최종 전체 lint·build | 전체 빌드 통과, ESLint 오류 0개·기존 경고 31개. 마지막 수정 포함 |
+| CI·배포 | 위 PR Checks와 main Actions 및 PR 본문 최종 배포 증빙에서 확인 |
 
 저장소 루트에서 프런트 검증을 재현한다. 저장소에서 사용하는 Node 버전과 의존성을 먼저 맞춘다.
 
@@ -88,6 +90,7 @@ injection.test_report_scope
 injection.test_counter_contract
 injection.tests.InjectionEnergyMatrixTests
 injection.tests.InjectionMonitoringRollupTests
+production.test_overview_capacity
 quality.test_analysis
 ```
 
@@ -131,7 +134,7 @@ git log -1 --oneline
 
 `--ff-only`가 실패하면 로컬 main의 커밋과 원격 main이 갈라진 것이다. 로컬 변경과 커밋을 보존한 채 브랜치 차이를 검토한다. `git reset --hard`, 강제 push, `git clean`으로 맞추지 않는다. PR이 아직 main에 반영되지 않았다면 main을 완료 상태로 간주하지 말고 위 개발 브랜치의 변경만 별도로 검토한다.
 
-업데이트 뒤 표시된 SHA를 최상단 main 반영 SHA와 비교하고 의존성·검증을 수행한다. 후속 개발은 갱신된 main에서 별도 작업 브랜치로 시작한다. 브라우저/API 배포 반영 여부는 로컬 Git SHA와 별도로 확인한다.
+업데이트 뒤 표시된 SHA를 PR #34의 main 병합 SHA 및 실제 서비스 버전과 비교하고 의존성·검증을 수행한다. 후속 개발은 갱신된 main에서 별도 작업 브랜치로 시작한다. 브라우저/API 배포 반영 여부는 로컬 Git SHA와 별도로 확인한다.
 
 ## 다음 수집 계약의 우선순위
 
