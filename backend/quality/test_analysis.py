@@ -134,6 +134,116 @@ class QualityAnalysisCalculationsTests(SimpleTestCase):
             aggregate_quality_analysis([source_row(1), source_row(2), source_row(3)], filters())
 
 
+class QualityTypeParetoTests(SimpleTestCase):
+    def test_mixed_report_is_counted_once_per_type_with_an_occurrence_denominator(self):
+        result = aggregate_quality_analysis([
+            source_row(1, phenomenon="擦伤 黑点", defect_qty=3),
+            source_row(2, phenomenon="擦伤", defect_qty=2),
+            source_row(3, phenomenon="", defect_qty=None),
+            source_row(4, phenomenon="unrecognized synthetic observation", defect_qty=0),
+        ], filters())
+        self.assertEqual(result["schema_version"], "quality-analysis.v1")
+        self.assertEqual(result["type_pareto_summary"], {
+            "classified_report_count": 2, "excluded_report_count": 2,
+            "unclassified_report_count": 1, "missing_phenomenon_report_count": 1,
+            "multi_type_report_count": 1, "type_occurrence_count": 3,
+            "counting_policy": "unique_report_type", "quantity_policy": "not_attributed",
+        })
+        types = result["type_pareto"]
+        self.assertEqual([row["key"] for row in types], ["scratch_damage", "color_black_material"])
+        self.assertEqual([row["report_count"] for row in types], [2, 1])
+        self.assertEqual([row["share_of_type_occurrences_percent"] for row in types], [66.67, 33.33])
+        self.assertEqual([row["cumulative_type_share_percent"] for row in types], [66.67, 100])
+        self.assertEqual(types[0]["sample_report_ids"], [1, 2])
+        self.assertEqual(types[1]["sample_report_ids"], [1])
+        self.assertEqual({row["key"]: row["sample_report_ids"] for row in result["type_pareto_exclusions"]},
+                         {"missing": [3], "unclassified": [4]})
+        # Existing clients continue to reconcile their exclusive Pareto and
+        # all-report summary, trends and concentrations without double counting.
+        self.assertEqual(sum(row["report_count"] for row in result["pareto"]), 4)
+        self.assertEqual(sum(row["reported_defect_qty"] or 0 for row in result["pareto"]), 5)
+        self.assertEqual({row["key"] for row in result["pareto"]},
+                         {"multiple", "scratch_damage", "missing", "unclassified"})
+        self.assertEqual(result["summary"]["report_count"], 4)
+        self.assertEqual(result["trend"][0]["report_count"], 4)
+        self.assertEqual(sum(row["report_count"] for row in result["concentrations"]["machines"]["items"]), 4)
+
+    def test_all_unclassified_reports_produce_exclusions_without_a_pareto_or_rate(self):
+        result = aggregate_quality_analysis([
+            source_row(1, phenomenon="synthetic unrecognized"),
+            source_row(2, phenomenon="another synthetic unrecognized"),
+        ], filters())
+        self.assertEqual(result["type_pareto"], [])
+        self.assertEqual(result["type_pareto_summary"]["classified_report_count"], 0)
+        self.assertEqual(result["type_pareto_summary"]["excluded_report_count"], 2)
+        self.assertEqual(result["type_pareto_summary"]["unclassified_report_count"], 2)
+        self.assertEqual(result["type_pareto_summary"]["type_occurrence_count"], 0)
+        self.assertEqual(result["type_pareto_exclusions"][0]["sample_report_ids"], [1, 2])
+        self.assertEqual(result["summary"]["report_count"], 2)
+
+    def test_empty_window_retains_an_explicit_zero_count_contract(self):
+        result = aggregate_quality_analysis([], filters())
+        self.assertEqual(result["type_pareto"], [])
+        self.assertEqual(result["type_pareto_exclusions"], [])
+        for key, value in result["type_pareto_summary"].items():
+            if key.endswith("_count"):
+                self.assertEqual(value, 0, key)
+        self.assertEqual(result["status"], "no_records")
+        self.assertIsNone(result["summary"]["reported_defect_qty"])
+
+    def test_explicit_zero_quantity_does_not_remove_a_classified_report_or_attribute_pieces(self):
+        result = aggregate_quality_analysis([source_row(defect_qty=0)], filters())
+        self.assertEqual(result["summary"]["reported_defect_qty"], 0)
+        self.assertEqual(result["summary"]["zero_defect_report_count"], 1)
+        self.assertEqual(result["type_pareto_summary"]["classified_report_count"], 1)
+        row = result["type_pareto"][0]
+        self.assertEqual(row["report_count"], 1)
+        self.assertEqual(set(row), {"key", "label", "report_count", "sample_report_ids",
+                                  "share_of_type_occurrences_percent", "cumulative_type_share_percent"})
+        self.assertEqual(row["share_of_type_occurrences_percent"], 100)
+
+    def test_repeated_aliases_of_one_canonical_type_are_one_occurrence(self):
+        result = aggregate_quality_analysis([source_row(phenomenon="擦伤 划伤 스크래치 scratch 擦伤")], filters())
+        self.assertEqual(len(result["type_pareto"]), 1)
+        self.assertEqual(result["type_pareto"][0]["key"], "scratch_damage")
+        self.assertEqual(result["type_pareto"][0]["report_count"], 1)
+        self.assertEqual(result["type_pareto_summary"]["multi_type_report_count"], 0)
+        self.assertEqual(result["type_pareto_summary"]["type_occurrence_count"], 1)
+
+    def test_canonical_key_deduplication_does_not_depend_on_classifier_alias_output(self):
+        same_type = {"key": "scratch_damage", "label": {"ko": "합성", "zh": "合成"}}
+        with patch("quality.analysis._canonical_problem_types", return_value=[same_type, same_type]):
+            result = aggregate_quality_analysis([source_row()], filters())
+        self.assertEqual(result["type_pareto_summary"]["type_occurrence_count"], 1)
+        self.assertEqual(result["type_pareto_summary"]["multi_type_report_count"], 0)
+        self.assertEqual(result["type_pareto"][0]["sample_report_ids"], [1])
+
+    def test_each_type_and_exclusion_keeps_at_most_five_source_ids_without_deduplicating_incidents(self):
+        rows = [source_row(index, phenomenon="擦伤 黑点") for index in range(1, 8)]
+        rows += [source_row(index, phenomenon="") for index in range(8, 15)]
+        rows += [source_row(index, phenomenon="unrecognized synthetic") for index in range(15, 22)]
+        result = aggregate_quality_analysis(rows, filters())
+        self.assertEqual(result["type_pareto_summary"]["type_occurrence_count"], 14)
+        self.assertEqual(result["type_pareto_summary"]["classified_report_count"], 7)
+        self.assertEqual(result["type_pareto_summary"]["excluded_report_count"], 14)
+        for group in result["type_pareto"] + result["type_pareto_exclusions"]:
+            self.assertEqual(group["report_count"], 7)
+            self.assertEqual(len(group["sample_report_ids"]), 5)
+            self.assertEqual(len(set(group["sample_report_ids"])), 5)
+        self.assertEqual([row["key"] for row in result["type_pareto"]], ["color_black_material", "scratch_damage"])
+        self.assertEqual(result["summary"]["report_count"], 21)
+
+    def test_type_occurrences_and_exclusions_follow_the_selected_machine_scope(self):
+        result = aggregate_quality_analysis([
+            source_row(1, phenomenon="擦伤 黑点"),
+            source_row(2, phenomenon="", **{"excel_source__occurrence_location": "IMM02"}),
+        ], filters(machine_number=2))
+        self.assertEqual(result["summary"]["report_count"], 1)
+        self.assertEqual(result["type_pareto"], [])
+        self.assertEqual(result["type_pareto_summary"]["excluded_report_count"], 1)
+        self.assertEqual(result["type_pareto_exclusions"][0]["sample_report_ids"], [2])
+
+
 @override_settings(ROOT_URLCONF=__name__)
 class QualityAnalysisApiTests(TestCase):
     def report(self, **changes):
