@@ -45,6 +45,8 @@ import {
   getFieldInjectionDowntimeConfirmations,
   getProductionPlanSummary,
   saveFieldInjectionDowntimeConfirmation,
+  type InjectionDowntimeConfirmation,
+  type InjectionDowntimeReasonCode,
   type SaveInjectionDowntimeConfirmationPayload,
 } from "@/domains/production/api";
 import {
@@ -82,6 +84,23 @@ type DefectRequest = {
   sequence: number | null;
   dueAt?: string | null;
 };
+
+type FieldConfirmationDraft = { reasonCode: InjectionDowntimeReasonCode | ""; note: string };
+type TransitionWorkflow = { event: InjectionTransitionEvent; draft: FieldConfirmationDraft };
+const FIELD_NOTE_MAX_LENGTH = 240;
+const FIELD_STOP_REASONS: Array<{ code: InjectionDowntimeReasonCode; zh: string; ko: string }> = [
+  { code: "mold_change", zh: "换模", ko: "금형 교체" },
+  { code: "core_change", zh: "换镶件", ko: "코어 교체" },
+  { code: "tuning", zh: "调机 / 条件调整", ko: "조건 조정" },
+  { code: "mechanical_failure", zh: "设备故障", ko: "설비 고장" },
+  { code: "mold_issue", zh: "模具问题", ko: "금형 문제" },
+  { code: "material_wait", zh: "待料", ko: "자재 대기" },
+  { code: "quality_check", zh: "品质确认", ko: "품질 확인" },
+  { code: "planned_stop", zh: "计划停机", ko: "계획 정지" },
+  { code: "staffing", zh: "人员 / 交接", ko: "인원 / 교대" },
+  { code: "other", zh: "其他原因", ko: "기타 사유" },
+  { code: "not_stop", zh: "并未停机", ko: "정지 아님" },
+];
 
 const DEFECT_TYPES = [
   { code: "scratch", zh: "划伤", ko: "스크래치" },
@@ -205,8 +224,8 @@ const copy = {
     resetZoom: "适合屏幕",
     allMaterials: "当前作业资料",
     close: "关闭",
-    transitionTitle: "请确认是否换型",
-    transitionHint: "MES 停机区间与生产计划推定出以下变化。请按现场实际确认。",
+    transitionTitle: "停机 / 换型现场确认",
+    transitionHint: "以下为 MES 与计划推定的变化。请选择实际原因，并记录处理或交接事项。",
     from: "变更前",
     to: "变更后",
     detectedTime: "检测时间",
@@ -218,6 +237,29 @@ const copy = {
     confirmationFailed: "现场确认保存失败，请重试。",
     confirmationDataPending: "正在核对已确认的换型记录，暂不弹出重复确认。",
     noPendingChange: "当前没有待确认的换型候选。",
+    actualStopReason: "现场实际原因",
+    chooseStopReason: "请选择实际原因",
+    stopReasonRequired: "请先选择现场实际原因。",
+    handoverNote: "处理 / 交接备注",
+    handoverNoteHint: "记录已采取的措施或下一班需确认的事项；其他原因必须填写。",
+    handoverNoteRequired: "选择其他原因时，请填写处理或交接备注。",
+    handoverNoteTooLong: "备注最多 240 字。",
+    saveFieldRecord: "保存现场记录",
+    closeDefectsAndSave: "结清不良并保存",
+    recordSaved: "现场记录已保存，可在当日记录中查看。",
+    fieldRecords: "当日现场记录",
+    fieldRecordsHint: "仅显示本机当日停机 / 换型判定；不含全部不良记录。",
+    pendingRecords: "待确认换型候选",
+    savedRecords: "已保存的现场判定",
+    recordsEmpty: "当日尚无已保存的现场判定。",
+    recordsLoading: "正在读取现场记录…",
+    recordsFailed: "现场记录读取失败。已有记录可能不是最新，请重新读取。",
+    pendingUnknown: "候选或确认数据尚未核实，暂不能判断待确认数量。",
+    reviewRecord: "现场确认",
+    savedAt: "保存时间",
+    detectedDuration: "检测区间",
+    minutes: "分钟",
+    noHandoverNote: "未填写处理 / 交接备注",
     previousPlanIdentityMissing: "无法确认变更前的生产计划，请刷新数据后重试。",
     defectTitle: "输入不良类型与数量",
     defectShiftHint: "交接前请录入本生产区间的不良数量。",
@@ -329,8 +371,8 @@ const copy = {
     resetZoom: "화면 맞춤",
     allMaterials: "현재 작업 자료",
     close: "닫기",
-    transitionTitle: "모델체인지 여부를 확인해 주세요",
-    transitionHint: "MES 정지 구간과 생산계획을 기준으로 추정했습니다. 현장 상황대로 선택해 주세요.",
+    transitionTitle: "정지 / 모델체인지 현장 확인",
+    transitionHint: "MES와 계획으로 추정한 변화입니다. 실제 사유를 선택하고 조치나 인계 내용을 남겨 주세요.",
     from: "변경 전",
     to: "변경 후",
     detectedTime: "감지 시간",
@@ -342,6 +384,29 @@ const copy = {
     confirmationFailed: "현장 확인 저장에 실패했습니다. 다시 시도해 주세요.",
     confirmationDataPending: "기존 모델체인지 확인 이력을 대조 중입니다. 중복 팝업은 잠시 보류합니다.",
     noPendingChange: "현재 확인 대기 중인 모델체인지 후보가 없습니다.",
+    actualStopReason: "현장 실제 사유",
+    chooseStopReason: "실제 사유를 선택하세요",
+    stopReasonRequired: "현장 실제 사유를 먼저 선택해 주세요.",
+    handoverNote: "조치 / 인계 메모",
+    handoverNoteHint: "취한 조치나 다음 근무자가 확인할 내용을 적어 주세요. 기타 사유는 메모가 필요합니다.",
+    handoverNoteRequired: "기타 사유를 선택하면 조치 또는 인계 메모를 입력해 주세요.",
+    handoverNoteTooLong: "메모는 240자까지 입력할 수 있습니다.",
+    saveFieldRecord: "현장 기록 저장",
+    closeDefectsAndSave: "불량 마감 후 저장",
+    recordSaved: "현장 기록을 저장했습니다. 당일 기록에서 다시 볼 수 있습니다.",
+    fieldRecords: "당일 현장 기록",
+    fieldRecordsHint: "이 설비의 당일 정지 / 모델체인지 판정입니다. 전체 불량 기록은 포함하지 않습니다.",
+    pendingRecords: "미확인 모델체인지 후보",
+    savedRecords: "저장된 현장 판정",
+    recordsEmpty: "당일 저장된 현장 판정이 없습니다.",
+    recordsLoading: "현장 기록을 불러오는 중입니다.",
+    recordsFailed: "현장 기록 조회에 실패했습니다. 이전 기록일 수 있으니 다시 조회해 주세요.",
+    pendingUnknown: "후보 또는 확인 이력을 검증하지 못해 미확인 건수를 판단할 수 없습니다.",
+    reviewRecord: "현장 확인",
+    savedAt: "저장 시각",
+    detectedDuration: "감지 구간",
+    minutes: "분",
+    noHandoverNote: "조치 / 인계 메모 없음",
     previousPlanIdentityMissing: "변경 전 생산계획을 확인할 수 없습니다. 데이터를 새로 불러온 뒤 다시 시도해 주세요.",
     defectTitle: "불량 유형과 수량 입력",
     defectShiftHint: "교대 전에 이번 생산 구간의 불량 수량을 입력해 주세요.",
@@ -678,9 +743,15 @@ function getTransitionBusinessDate(event: InjectionTransitionEvent, fallback: st
 function buildConfirmationPayload(
   event: InjectionTransitionEvent,
   businessDate: string,
-  resolution: "confirmed" | "dismissed",
-  language: FieldLanguage,
+  draft: FieldConfirmationDraft,
 ): SaveInjectionDowntimeConfirmationPayload {
+  if (!draft.reasonCode || !FIELD_STOP_REASONS.some((reason) => reason.code === draft.reasonCode)) {
+    throw new Error("invalid_field_stop_reason");
+  }
+  const note = draft.note.trim();
+  if (note.length > FIELD_NOTE_MAX_LENGTH || (draft.reasonCode === "other" && !note)) {
+    throw new Error("invalid_field_stop_note");
+  }
   return {
     business_date: businessDate,
     event_key: event.eventKey,
@@ -690,11 +761,9 @@ function buildConfirmationPayload(
     detected_start: event.startTime,
     detected_end: event.endTime,
     duration_minutes: Math.max(0, Math.round(event.durationMinutes)),
-    resolution,
-    reason_code: resolution === "dismissed" ? "not_stop" : event.type === "core_change" ? "core_change" : "mold_change",
-    note: resolution === "dismissed"
-      ? (language === "zh" ? "现场确认：不是换型" : "현장 확인: 모델체인지 아님")
-      : (language === "zh" ? "现场触摸屏确认" : "현장 터치스크린 확인"),
+    resolution: draft.reasonCode === "not_stop" ? "dismissed" : "confirmed",
+    reason_code: draft.reasonCode,
+    note,
     evidence: {
       ...event.evidence,
       from_part_no: event.fromRecord?.part_no ?? "",
@@ -742,15 +811,17 @@ function TransitionModal({
   language,
   error,
   saving,
-  onConfirm,
-  onDismiss,
+  draft,
+  onDraftChange,
+  onSubmit,
 }: {
   event: InjectionTransitionEvent;
   language: FieldLanguage;
   error: string | null;
   saving: boolean;
-  onConfirm: () => void;
-  onDismiss: () => void;
+  draft: FieldConfirmationDraft;
+  onDraftChange: (draft: FieldConfirmationDraft) => void;
+  onSubmit: () => void;
 }) {
   const c = copy[language];
   return (
@@ -782,16 +853,100 @@ function TransitionModal({
         <Clock3 aria-hidden="true" />
         {c.detectedTime} {formatShortDateTime(event.startTime, language)} ~ {formatShortDateTime(event.endTime, language)}
       </p>
+      <div className="field-confirmation-form">
+        <label>
+          <span>{c.actualStopReason}</span>
+          <select
+            aria-required="true"
+            disabled={saving}
+            onChange={(event) => onDraftChange({ ...draft, reasonCode: event.target.value as FieldConfirmationDraft["reasonCode"] })}
+            value={draft.reasonCode}
+          >
+            <option value="">{c.chooseStopReason}</option>
+            {FIELD_STOP_REASONS.map((reason) => <option key={reason.code} value={reason.code}>{reason[language]}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>{c.handoverNote} <small>{draft.note.length} / {FIELD_NOTE_MAX_LENGTH}</small></span>
+          <textarea
+            aria-required={draft.reasonCode === "other"}
+            disabled={saving}
+            maxLength={FIELD_NOTE_MAX_LENGTH}
+            onChange={(event) => onDraftChange({ ...draft, note: event.target.value })}
+            placeholder={c.handoverNoteHint}
+            rows={3}
+            value={draft.note}
+          />
+        </label>
+      </div>
       {error ? <div className="field-modal__error" role="alert">{error}</div> : null}
-      <div className="field-modal__actions field-modal__actions--split">
-        <button className="field-touch-button field-touch-button--muted" disabled={saving} onClick={onDismiss} type="button">
-          <X aria-hidden="true" />
-          {saving ? c.saving : c.notChanged}
-        </button>
-        <button className="field-touch-button field-touch-button--warning" data-modal-initial-focus disabled={saving} onClick={onConfirm} type="button">
+      <div className="field-modal__actions">
+        <button className="field-touch-button field-touch-button--warning" disabled={saving} onClick={onSubmit} type="button">
           <ClipboardCheck aria-hidden="true" />
-          {c.yesChanged}
+          {saving ? c.saving : draft.reasonCode === "mold_change" || draft.reasonCode === "core_change" ? c.closeDefectsAndSave : c.saveFieldRecord}
         </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function FieldRecordsModal({
+  language, businessDate, machineNumber, records, pendingEvents, pendingReady,
+  loading, failed, refreshing, onRetry, onReview, onClose,
+}: {
+  language: FieldLanguage;
+  businessDate: string;
+  machineNumber: number;
+  records: InjectionDowntimeConfirmation[];
+  pendingEvents: InjectionTransitionEvent[];
+  pendingReady: boolean;
+  loading: boolean;
+  failed: boolean;
+  refreshing: boolean;
+  onRetry: () => void;
+  onReview: (event: InjectionTransitionEvent) => void;
+  onClose: () => void;
+}) {
+  const c = copy[language];
+  return (
+    <ModalShell label={c.fieldRecords} onEscape={onClose}>
+      <header className="field-modal__header">
+        <div>
+          <h2>{c.fieldRecords}</h2>
+          <p>{businessDate} · {String(machineNumber).padStart(2, "0")} · {c.fieldRecordsHint}</p>
+        </div>
+        <button aria-label={c.close} className="field-modal__close" onClick={onClose} type="button"><X /></button>
+      </header>
+      <div className="field-records-body">
+        {failed ? <p className="field-modal__error" role="alert">{c.recordsFailed}</p> : null}
+        <section>
+          <h3>{c.pendingRecords}{pendingReady ? ` · ${pendingEvents.length}` : ""}</h3>
+          {!pendingReady ? <p role="status">{c.pendingUnknown}</p> : pendingEvents.length ? pendingEvents.map((event) => (
+            <article className="field-record-entry field-record-entry--pending" key={event.eventKey}>
+              <strong>{getTransitionPart(event.fromRecord)} → {getTransitionPart(event.toRecord)}</strong>
+              <p>{formatShortDateTime(event.startTime, language)} · {Math.round(event.durationMinutes)} {c.minutes}</p>
+              <button className="field-touch-button field-touch-button--warning" onClick={() => onReview(event)} type="button">{c.reviewRecord}</button>
+            </article>
+          )) : <p>{c.noPendingChange}</p>}
+        </section>
+        <section>
+          <h3>{c.savedRecords}{!loading && !failed ? ` · ${records.length}` : ""}</h3>
+          {loading ? <p role="status">{c.recordsLoading}</p> : records.length ? records.map((record) => (
+            <article className="field-record-entry" key={record.event_key}>
+              <strong>{FIELD_STOP_REASONS.find((reason) => reason.code === record.reason_code)?.[language] ?? record.reason_code}</strong>
+              {typeof record.evidence.from_part_no === "string" || typeof record.evidence.to_part_no === "string" ? (
+                <p>{typeof record.evidence.from_part_no === "string" ? record.evidence.from_part_no || "-" : "-"} → {typeof record.evidence.to_part_no === "string" ? record.evidence.to_part_no || "-" : "-"}</p>
+              ) : null}
+              <p>{c.detectedDuration}: {formatShortDateTime(record.detected_start, language)} ~ {formatShortDateTime(record.detected_end, language)} · {record.duration_minutes} {c.minutes}</p>
+              <p className="field-record-note">{record.note || c.noHandoverNote}</p>
+              <small>{c.savedAt}: {formatShortDateTime(record.confirmed_at, language)}</small>
+            </article>
+          )) : !failed ? <p>{c.recordsEmpty}</p> : null}
+        </section>
+      </div>
+      <div className="field-modal__actions">
+        <button className="field-touch-button field-touch-button--muted" disabled={refreshing} onClick={onRetry} type="button"><RotateCcw />{refreshing ? c.recordsLoading : c.retry}</button>
+        <button className="field-touch-button field-touch-button--primary" onClick={onClose} type="button">{c.close}</button>
       </div>
     </ModalShell>
   );
@@ -816,6 +971,7 @@ function DefectModal({
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [selectedCode, setSelectedCode] = useState<string>(DEFECT_TYPES[0].code);
   const [checkpoint, setCheckpoint] = useState<FieldDefectCheckpoint | null>(null);
+  const defectSubmittingRef = useRef(false);
   const defectMutation = useMutation({
     mutationFn: submitFieldDefects,
   });
@@ -847,6 +1003,8 @@ function DefectModal({
   }
 
   async function submit() {
+    if (defectSubmittingRef.current || checkpoint) return;
+    defectSubmittingRef.current = true;
     try {
       const result = await defectMutation.mutateAsync({
         event_key: request.eventKey,
@@ -863,6 +1021,8 @@ function DefectModal({
       setCheckpoint(result.checkpoint);
     } catch {
       // React Query retains the error for the visible retry message below.
+    } finally {
+      defectSubmittingRef.current = false;
     }
   }
 
@@ -1947,13 +2107,16 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [instructionCycleRevision, setInstructionCycleRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [transitionReview, setTransitionReview] = useState<InjectionTransitionEvent | null>(null);
-  const [transitionWorkflow, setTransitionWorkflow] = useState<InjectionTransitionEvent | null>(null);
+  const [transitionWorkflow, setTransitionWorkflow] = useState<TransitionWorkflow | null>(null);
+  const [transitionDraft, setTransitionDraft] = useState<FieldConfirmationDraft>({ reasonCode: "", note: "" });
+  const confirmationSubmittingRef = useRef(false);
   const [defectRequest, setDefectRequest] = useState<DefectRequest | null>(null);
   const [resolvedEventKeys, setResolvedEventKeys] = useState<Set<string>>(() => new Set());
   const [resolvedPromptKeys, setResolvedPromptKeys] = useState<Set<string>>(() => new Set());
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [allMaterialsOpen, setAllMaterialsOpen] = useState(false);
+  const [fieldRecordsOpen, setFieldRecordsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const c = copy[language];
   const currentCanvasLabel = canvasMode === "work_instruction"
@@ -2028,27 +2191,36 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     retry: 1,
   });
   const confirmationMutation = useMutation({ mutationFn: saveFieldInjectionDowntimeConfirmation });
+  const transitionDataReady = coreKanbanReady && planQuery.isSuccess && matrixQuery.isSuccess && confirmationsQuery.isSuccess;
+  const savedFieldRecords = useMemo(() => [...(confirmationsQuery.data?.confirmations ?? [])]
+    .filter((record) => record.business_date === businessDate && [
+      String(machineNumber), String(machineNumber).padStart(2, "0"), `${machineNumber}호기`, `${machineNumber}号机`,
+    ].includes(record.machine_key))
+    .sort((left, right) => new Date(right.confirmed_at).getTime() - new Date(left.confirmed_at).getTime()),
+  [businessDate, confirmationsQuery.data?.confirmations, machineNumber]);
 
   const transitionAnalysis = useMemo(() => buildInjectionTransitionAnalysis(
     planQuery.data,
     matrixQuery.data,
     businessDate,
   ), [businessDate, matrixQuery.data, planQuery.data]);
-  const pendingTransition = useMemo(() => {
-    if (!canEnterDefects || !confirmationsQuery.isSuccess) return null;
+  const pendingTransitions = useMemo(() => {
+    if (!canEnterDefects || !transitionDataReady) return [];
     const confirmedKeys = new Set((confirmationsQuery.data?.confirmations ?? []).map((item) => item.event_key));
     return transitionAnalysis.events
       .filter((event) => event.machineKey === String(machineNumber))
       .filter((event) => event.type === "mold_change" || event.type === "core_change")
       .filter((event) => !confirmedKeys.has(event.eventKey) && !resolvedEventKeys.has(event.eventKey))
-      .sort((left, right) => new Date(right.startTime).getTime() - new Date(left.startTime).getTime())[0] ?? null;
-  }, [canEnterDefects, confirmationsQuery.data?.confirmations, confirmationsQuery.isSuccess, machineNumber, resolvedEventKeys, transitionAnalysis.events]);
+      .sort((left, right) => new Date(right.startTime).getTime() - new Date(left.startTime).getTime());
+  }, [canEnterDefects, confirmationsQuery.data?.confirmations, machineNumber, resolvedEventKeys, transitionAnalysis.events, transitionDataReady]);
+  const pendingTransition = pendingTransitions[0] ?? null;
 
   useEffect(() => {
-    if (!canEnterDefects || !pendingTransition || transitionReview || transitionWorkflow || defectRequest || allMaterialsOpen) return;
+    if (!canEnterDefects || !pendingTransition || transitionReview || transitionWorkflow || defectRequest || allMaterialsOpen || fieldRecordsOpen) return;
     setTransitionError(null);
+    setTransitionDraft({ reasonCode: "", note: "" });
     setTransitionReview(pendingTransition);
-  }, [allMaterialsOpen, canEnterDefects, defectRequest, pendingTransition, transitionReview, transitionWorkflow]);
+  }, [allMaterialsOpen, canEnterDefects, defectRequest, fieldRecordsOpen, pendingTransition, transitionReview, transitionWorkflow]);
 
   const snapshot = useMemo(() => {
     const base = snapshotQuery.data;
@@ -2065,7 +2237,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       || pendingPrompt.is_overdue
       || resolvedPromptKeys.has(pendingPrompt.event_key)
     ) return;
-    if (pendingTransition || transitionReview || transitionWorkflow || defectRequest || allMaterialsOpen) return;
+    if (pendingTransition || transitionReview || transitionWorkflow || defectRequest || allMaterialsOpen || fieldRecordsOpen) return;
     setDefectRequest({
       eventKey: pendingPrompt.event_key,
       trigger: pendingPrompt.trigger,
@@ -2079,7 +2251,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       sequence: pendingPrompt.sequence,
       dueAt: pendingPrompt.due_at,
     });
-  }, [allMaterialsOpen, canEnterDefects, defectRequest, pendingPrompt, pendingTransition, resolvedPromptKeys, snapshot, transitionReview, transitionWorkflow]);
+  }, [allMaterialsOpen, canEnterDefects, defectRequest, fieldRecordsOpen, pendingPrompt, pendingTransition, resolvedPromptKeys, snapshot, transitionReview, transitionWorkflow]);
 
   const planIdentity = snapshot?.active_plan
     ? `${snapshot.active_plan.plan_id ?? "-"}:${snapshot.active_plan.part_no}:${snapshot.active_plan.model_name}`
@@ -2092,7 +2264,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     setPage(1);
   }, [planIdentity]);
 
-  const modalOpen = Boolean(transitionReview || defectRequest || allMaterialsOpen);
+  const modalOpen = Boolean(transitionReview || defectRequest || allMaterialsOpen || fieldRecordsOpen);
   const qualityIssueCount = snapshot?.quality.issues.length ?? 0;
   const qualityIssueCountRef = useRef(qualityIssueCount);
   qualityIssueCountRef.current = qualityIssueCount;
@@ -2193,17 +2365,37 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     });
   }
 
-  async function dismissTransition() {
-    if (!transitionReview) return;
+  async function submitTransitionReview() {
+    if (!transitionReview || confirmationSubmittingRef.current) return;
     setTransitionError(null);
+    if (!transitionDraft.reasonCode || !FIELD_STOP_REASONS.some((reason) => reason.code === transitionDraft.reasonCode)) {
+      setTransitionError(c.stopReasonRequired);
+      return;
+    }
+    if (transitionDraft.reasonCode === "other" && !transitionDraft.note.trim()) {
+      setTransitionError(c.handoverNoteRequired);
+      return;
+    }
+    if (transitionDraft.note.trim().length > FIELD_NOTE_MAX_LENGTH) {
+      setTransitionError(c.handoverNoteTooLong);
+      return;
+    }
+    if (transitionDraft.reasonCode === "mold_change" || transitionDraft.reasonCode === "core_change") {
+      beginTransitionDefect();
+      return;
+    }
+    confirmationSubmittingRef.current = true;
     const transitionBusinessDate = getTransitionBusinessDate(transitionReview, businessDate);
     try {
-      await confirmationMutation.mutateAsync(buildConfirmationPayload(transitionReview, transitionBusinessDate, "dismissed", language));
+      await confirmationMutation.mutateAsync(buildConfirmationPayload(transitionReview, transitionBusinessDate, transitionDraft));
       setResolvedEventKeys((current) => new Set(current).add(transitionReview.eventKey));
       setTransitionReview(null);
+      setToastMessage(c.recordSaved);
       await queryClient.invalidateQueries({ queryKey: ["production", "injection-downtime-confirmations", transitionBusinessDate] });
     } catch (error) {
       setTransitionError(getErrorMessage(error, c.confirmationFailed));
+    } finally {
+      confirmationSubmittingRef.current = false;
     }
   }
 
@@ -2222,7 +2414,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       setTransitionError(c.previousPlanIdentityMissing);
       return;
     }
-    setTransitionWorkflow(event);
+    setTransitionWorkflow({ event, draft: { ...transitionDraft, note: transitionDraft.note.trim() } });
     setTransitionReview(null);
     setDefectRequest({
       eventKey: `defect:part-change:${event.eventKey}`,
@@ -2239,12 +2431,14 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   }
 
   async function completeDefect() {
-    if (!defectRequest) return;
+    if (!defectRequest || confirmationSubmittingRef.current) return;
+    confirmationSubmittingRef.current = true;
     setCompletionError(null);
     try {
       if (transitionWorkflow) {
-        await confirmationMutation.mutateAsync(buildConfirmationPayload(transitionWorkflow, defectRequest.businessDate, "confirmed", language));
-        setResolvedEventKeys((current) => new Set(current).add(transitionWorkflow.eventKey));
+        await confirmationMutation.mutateAsync(buildConfirmationPayload(transitionWorkflow.event, defectRequest.businessDate, transitionWorkflow.draft));
+        setResolvedEventKeys((current) => new Set(current).add(transitionWorkflow.event.eventKey));
+        setToastMessage(c.recordSaved);
         await queryClient.invalidateQueries({ queryKey: ["production", "injection-downtime-confirmations", defectRequest.businessDate] });
       } else if (defectRequest.source === "shift") {
         setResolvedPromptKeys((current) => new Set(current).add(defectRequest.eventKey));
@@ -2254,20 +2448,29 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       await queryClient.invalidateQueries({ queryKey: ["field-kanban", businessDate, machineNumber] });
     } catch (error) {
       setCompletionError(getErrorMessage(error, c.confirmationFailed));
+    } finally {
+      confirmationSubmittingRef.current = false;
     }
   }
 
   function openPendingTransition() {
-    if (!confirmationsQuery.isSuccess) {
+    if (!transitionDataReady) {
       setToastMessage(c.confirmationDataPending);
       return;
     }
     if (pendingTransition) {
       setTransitionError(null);
+      setTransitionDraft({ reasonCode: "", note: "" });
       setTransitionReview(pendingTransition);
     } else {
       setToastMessage(c.noPendingChange);
     }
+  }
+
+  function retryFieldRecords() {
+    void Promise.allSettled([
+      snapshotQuery.refetch(), planQuery.refetch(), matrixQuery.refetch(), confirmationsQuery.refetch(),
+    ]);
   }
 
   if (snapshotQuery.isLoading && !snapshot) {
@@ -2293,7 +2496,6 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
 
   if (!snapshot) return null;
 
-  const transitionDataReady = !canEnterDefects || confirmationsQuery.isSuccess;
   const alertTone = pendingTransition
     ? "warning"
     : pendingPrompt
@@ -2396,6 +2598,12 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
               <button className="is-defect" onClick={openManualDefect} type="button"><AlertTriangle />{c.inputDefect}</button>
             </section>
           ) : null}
+          <button className="field-record-launcher" onClick={() => setFieldRecordsOpen(true)} type="button">
+            <FileText aria-hidden="true" />
+            <span>{c.fieldRecords}</span>
+            <strong>{confirmationsQuery.isSuccess ? savedFieldRecords.length : "—"}</strong>
+            <ChevronRight aria-hidden="true" />
+          </button>
         </aside>
 
         <section
@@ -2489,12 +2697,34 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       {toastMessage ? <div className="field-kanban-toast" role="status">{toastMessage}</div> : null}
       {transitionReview ? (
         <TransitionModal
+          draft={transitionDraft}
           error={transitionError}
           event={transitionReview}
           language={language}
-          onConfirm={beginTransitionDefect}
-          onDismiss={() => void dismissTransition()}
+          onDraftChange={(draft) => { setTransitionDraft(draft); setTransitionError(null); }}
+          onSubmit={() => void submitTransitionReview()}
           saving={confirmationMutation.isPending}
+        />
+      ) : null}
+      {fieldRecordsOpen ? (
+        <FieldRecordsModal
+          businessDate={businessDate}
+          failed={confirmationsQuery.isError}
+          language={language}
+          loading={confirmationsQuery.isPending}
+          machineNumber={machineNumber}
+          onClose={() => setFieldRecordsOpen(false)}
+          onRetry={retryFieldRecords}
+          onReview={(event) => {
+            setFieldRecordsOpen(false);
+            setTransitionError(null);
+            setTransitionDraft({ reasonCode: "", note: "" });
+            setTransitionReview(event);
+          }}
+          pendingEvents={pendingTransitions}
+          pendingReady={transitionDataReady}
+          records={savedFieldRecords}
+          refreshing={snapshotQuery.isFetching || planQuery.isFetching || matrixQuery.isFetching || confirmationsQuery.isFetching}
         />
       ) : null}
       {defectRequest ? (

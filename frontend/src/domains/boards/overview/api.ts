@@ -123,10 +123,15 @@ function normalizeProcess(value: unknown, key: ProductionProcess["key"]): Produc
     remainingQuantity: firstNumber(source, ["remaining_qty", "remaining_quantity"]),
     remainingBusinessMinutes: firstNumber(source, ["remaining_business_minutes", "remaining_minutes"]),
     requiredQuantityPerHour: firstNumber(source, ["required_qty_per_hour", "required_quantity_per_hour"]),
+    calculationBasis: firstString(source, ["calculation_basis"]),
     reportingMix: reportingMix ? {
       effectiveActualQuantity: firstNumber(reportingMix, ["effective_actual_qty"]),
       mesConfirmedQuantity: firstNumber(reportingMix, ["mes_confirmed_qty", "mes_qty"]),
       manualOpenQuantity: firstNumber(reportingMix, ["manual_open_qty"]),
+      statusCounts: {
+        needsReview: firstNumber(asRecord(reportingMix.status_counts), ["needs_review"]),
+        manualMismatch: firstNumber(asRecord(reportingMix.status_counts), ["manual_mismatch"]),
+      },
       matchedManualQuantity: firstNumber(reportingMix, ["matched_manual_qty"]),
       reportedDefectQuantity: firstNumber(reportingMix, ["reported_defect_qty"]),
       manualOpenSharePercent: firstNumber(reportingMix, ["manual_open_share_percent"]),
@@ -804,6 +809,7 @@ function normalizeOverviewResponse(
   const freshness = asRecord(source.freshness);
   const freshnessSources = asRecord(freshness.sources);
   const freshnessStates = Object.values(freshnessSources).map(asRecord);
+  const businessWindow = asRecord(source.business_window);
 
   const attention = Array.isArray(source.attention)
     ? source.attention.map(normalizeAttention).filter((item): item is AttentionItem => item !== null)
@@ -838,6 +844,12 @@ function normalizeOverviewResponse(
     businessDate: firstString(source, ["business_date"]) ?? requestedDate,
     generatedAt: firstString(source, ["generated_at"]),
     businessWindow: firstString(source, ["business_window"]),
+    businessWindowDetails: {
+      timezone: firstString(businessWindow, ["timezone"]),
+      start: firstString(businessWindow, ["start"]),
+      end: firstString(businessWindow, ["end"]),
+      referenceTime: firstString(businessWindow, ["reference_time"]),
+    },
     overallStatus: normalizeTone(firstValue(overallStatus, ["code", "status", "tone"]) ?? source.overall_status),
     processes: {
       injection: injectionProcess,
@@ -881,6 +893,17 @@ function normalizeOverviewResponse(
         const status = firstString(state, ["status"])?.toLowerCase();
         return status === "error" || status === "missing";
       }).length,
+      sources: Object.entries(freshnessSources).map(([key, value]) => {
+        const state = asRecord(value);
+        return {
+          key,
+          status: firstString(state, ["status"]) ?? "unknown",
+          sourceLatestAt: firstString(state, ["source_latest_at"]),
+          rowCount: firstNumber(state, ["row_count"]),
+          stale: asBoolean(state.stale),
+          detail: firstString(state, ["detail"]),
+        };
+      }),
     },
     warnings: asStringArray(source.warnings),
   };
@@ -889,18 +912,25 @@ function normalizeOverviewResponse(
 export async function getOverviewBoard(
   businessDate: string,
   language: AppLanguage,
+  options: { allowDemo?: boolean } = {},
 ): Promise<OverviewBoardResult> {
   try {
     const response = await http.get<unknown>(OVERVIEW_BOARD_ENDPOINT, {
       params: { date: businessDate, lang: language },
       skipAuth: true,
     });
+    if (options.allowDemo === false) {
+      const source = asRecord(response.data);
+      if (source.schema_version !== "overview-board.v1" || source.business_date !== businessDate) {
+        throw new Error("Overview source schema or business date is invalid.");
+      }
+    }
     return {
       model: normalizeOverviewResponse(response.data, businessDate, language),
       mode: "live",
     };
   } catch (error) {
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV && options.allowDemo !== false) {
       return {
         model: createOverviewDemoModel(businessDate, language),
         mode: "demo",

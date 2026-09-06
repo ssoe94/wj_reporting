@@ -42,6 +42,7 @@ import {
   type SaveInjectionActivityConfirmationPayload,
 } from "@/domains/production/api";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
+import { buildCoreDashboardSources, getDashboardDataState } from "@/domains/production/dashboard-data-state";
 import {
   buildInjectionTransitionAnalysis,
   type InjectionTransitionAnalysis,
@@ -374,6 +375,20 @@ const pageCopy = {
     title: "생산 대시보드",
     description: "생산 계획과 MES 실적을 비교하고, 검증된 계산형 브리핑과 선택형 Qwen 3.8 보조 설명을 제공합니다.",
     loading: "생산 현황을 불러오는 중입니다.",
+    dataUnavailable: "생산 데이터를 확인할 수 없습니다.",
+    dataUnavailableHint: "필수 데이터 조회가 완료되지 않아 수치와 브리핑을 표시하지 않습니다. 조회 실패는 생산 실적 0건을 의미하지 않습니다.",
+    dataMissingSources: "확인하지 못한 데이터",
+    dataRefreshFailed: "갱신 실패 · 이전 조회 데이터 표시 중",
+    dataRefreshFailedHint: "아래 수치는 마지막 조회 결과입니다. 최신 현황 판단은 다시 조회한 뒤 진행하세요.",
+    dataLastLoaded: "마지막 조회 성공",
+    dataBriefingPaused: "필수 데이터 갱신에 실패해 최신 브리핑과 정상 여부 판단을 보류했습니다.",
+    dataRetry: "다시 조회",
+    dataRetrying: "다시 조회 중",
+    planDataSource: "생산 계획",
+    injectionDataSource: "사출 MES 실적",
+    machiningDataSource: "가공 MES 실적",
+    productionStatusDataSource: "생산 실행·품목별 실적 배분",
+    machiningProvisionDataSource: "가공 보정 실적",
     productionDate: "기준일",
     productionDateHint: "오전 08:00 ~ 익일 08:00 기준",
     injectionActualPlan: "사출 계획 및 실행율",
@@ -610,6 +625,20 @@ const pageCopy = {
     title: "生产看板",
     description: "对比生产计划与 MES 实绩，并提供经过验证的计算简报和可选的 Qwen 3.8 辅助说明。",
     loading: "正在读取生产现况。",
+    dataUnavailable: "无法确认生产数据。",
+    dataUnavailableHint: "必要数据尚未读取完成，暂不显示数值和简报。读取失败不代表生产实绩为 0。",
+    dataMissingSources: "尚未确认的数据",
+    dataRefreshFailed: "更新失败 · 正在显示上次读取的数据",
+    dataRefreshFailedHint: "以下数值来自上次成功读取的结果。请重新读取后再判断最新生产情况。",
+    dataLastLoaded: "上次读取成功",
+    dataBriefingPaused: "必要数据更新失败，暂缓显示最新简报和正常状态判断。",
+    dataRetry: "重新读取",
+    dataRetrying: "正在重新读取",
+    planDataSource: "生产计划",
+    injectionDataSource: "注塑 MES 实绩",
+    machiningDataSource: "加工 MES 实绩",
+    productionStatusDataSource: "生产执行与品项实绩分配",
+    machiningProvisionDataSource: "加工修正后实绩",
     productionDate: "基准日",
     productionDateHint: "上午 08:00 ~ 次日 08:00 基准",
     injectionActualPlan: "注塑计划及执行率",
@@ -2999,18 +3028,30 @@ export function ProductionDashboardPage() {
     retry: false,
     staleTime: 5 * 60_000,
   });
-  const isCoreDashboardDataReady = Boolean(planSummaryQuery.data && mesQuery.data && machiningStatsQuery.data);
+  const coreDashboardSources = buildCoreDashboardSources(
+    { planSummaryQuery, mesQuery, machiningStatsQuery, productionStatusQuery, machiningProvisionQuery },
+    {
+      planSummaryQuery: copy.planDataSource,
+      mesQuery: copy.injectionDataSource,
+      machiningStatsQuery: copy.machiningDataSource,
+      productionStatusQuery: copy.productionStatusDataSource,
+      machiningProvisionQuery: copy.machiningProvisionDataSource,
+    },
+  );
+  const coreDashboardState = getDashboardDataState(coreDashboardSources);
+  const isCoreDashboardDataReady = coreDashboardState.isReady;
+  const hasCoreRefreshError = coreDashboardState.hasRefreshError;
   const productionAiBriefingQuery = useQuery({
     queryKey: ["production", "ai-briefing", businessDate, language],
     queryFn: () => getProductionAiBriefing(businessDate, language),
-    enabled: isCoreDashboardDataReady,
+    enabled: isCoreDashboardDataReady && !hasCoreRefreshError,
     refetchInterval: isCurrentDate ? LIVE_DATA_REFRESH_INTERVAL_MS : false,
     retry: 1,
   });
   const latestAiJobQuery = useQuery({
     queryKey: ["ai-job", "latest", businessDate, language, briefingModelId],
     queryFn: () => getLatestAiJob(businessDate, language, briefingModelId),
-    enabled: isCoreDashboardDataReady,
+    enabled: isCoreDashboardDataReady && !hasCoreRefreshError,
     refetchInterval: isCurrentDate ? 30_000 : false,
     retry: false,
   });
@@ -3263,7 +3304,7 @@ export function ProductionDashboardPage() {
     () => buildMachiningProgressPreview(planSummaryQuery.data, machiningStatsQuery.data, machiningProvisionQuery.data),
     [machiningProvisionQuery.data, machiningStatsQuery.data, planSummaryQuery.data],
   );
-  const productionAiBriefing = productionAiBriefingQuery.data;
+  const productionAiBriefing = productionAiBriefingQuery.isError ? undefined : productionAiBriefingQuery.data;
   const latestAiJob = latestAiJobQuery.data ?? undefined;
   const latestAiJobResult = latestAiJob?.result_payload ?? {};
   const latestAiJobSummary = getStringField(latestAiJobResult, "summary").trim();
@@ -3961,8 +4002,13 @@ export function ProductionDashboardPage() {
     });
   }
 
-  const isInitialLoading = !isCoreDashboardDataReady && (planSummaryQuery.isFetching || mesQuery.isFetching || machiningStatsQuery.isFetching);
-  const isLiveDataRefreshing = isCoreDashboardDataReady && (productionStatusQuery.isFetching || machiningProvisionQuery.isFetching || mesQuery.isFetching);
+  const isInitialLoading = coreDashboardState.isInitialLoading;
+  const isCoreDataFetching = coreDashboardSources.some(({ query }) => query.isFetching);
+  const isLiveDataRefreshing = coreDashboardState.isRefreshing;
+
+  function retryCoreDashboardData() {
+    void Promise.allSettled(coreDashboardSources.map(({ query }) => query.refetch()));
+  }
   const injectionCompletionRate = briefContext.injectionPlanQty > 0
     ? (briefContext.actualInjectionOutput / briefContext.injectionPlanQty) * 100
     : 0;
@@ -5273,8 +5319,47 @@ export function ProductionDashboardPage() {
 
       {isInitialLoading ? <ProductionDashboardSkeleton copy={copy} /> : null}
 
-      {!isInitialLoading ? (
+      {!isCoreDashboardDataReady && !isInitialLoading ? (
+        <section className="panel">
+          <div className="notice notice--warning" role="alert">
+            <strong>{copy.dataUnavailable}</strong>
+            <p>{copy.dataUnavailableHint}</p>
+            <p>{copy.dataMissingSources}: {coreDashboardState.missingSources.map(({ label }) => label).join(" · ")}</p>
+          </div>
+          <label className="stat-card production-date-card">
+            <span className="stat-card__title">{copy.productionDate}</span>
+            <input
+              type="date"
+              value={businessDate}
+              max={currentDate}
+              onChange={(event) => setBusinessDate(event.target.value || currentDate)}
+            />
+            <span className="stat-card__hint">{copy.productionDateHint}</span>
+          </label>
+          <button className="button button--primary" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
+            {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
+          </button>
+        </section>
+      ) : null}
+
+      {isCoreDashboardDataReady ? (
         <>
+          {hasCoreRefreshError ? (
+            <div className="notice notice--warning" role="alert">
+              <strong>{copy.dataRefreshFailed}</strong>
+              <p>{copy.dataRefreshFailedHint}</p>
+              <ul>
+                {coreDashboardState.failedSources.map(({ label, query }) => (
+                  <li key={label}>
+                    {label} · {copy.dataLastLoaded}: {formatAiTimestamp(query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toISOString() : null, language)}
+                  </li>
+                ))}
+              </ul>
+              <button className="button button--ghost" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
+                {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
+              </button>
+            </div>
+          ) : null}
           <div className="stats-grid">
             <label className="stat-card production-date-card">
               <span className="stat-card__title">{copy.productionDate}</span>
@@ -5288,15 +5373,15 @@ export function ProductionDashboardPage() {
             </label>
             <StatCard
               hint={`${copy.planned} ${briefContext.plannedInjectionMachineCount}${copy.machineUnit} ${copy.completedRate} ${injectionCompletionRate.toFixed(1)}%`}
-              hintTone={injectionRateTone}
+              hintTone={hasCoreRefreshError ? "neutral" : injectionRateTone}
               isActive={activeKpiDetail === "injection"}
               onClick={() => toggleKpiDetail("injection")}
               title={copy.injectionActualPlan}
               value={`${formatNumber(briefContext.actualInjectionOutput)} / ${formatNumber(briefContext.injectionPlanQty)}`}
             />
             <StatCard
-              hint={unplannedKpiHint}
-              hintTone={briefContext.unplannedInjectionShots > 0 ? "negative" : "neutral"}
+              hint={hasCoreRefreshError ? copy.dataRefreshFailed : unplannedKpiHint}
+              hintTone={hasCoreRefreshError ? "neutral" : briefContext.unplannedInjectionShots > 0 ? "negative" : "neutral"}
               isActive={activeKpiDetail === "unplanned"}
               onClick={() => toggleKpiDetail("unplanned")}
               title={copy.unplannedShotSummary}
@@ -5377,14 +5462,16 @@ export function ProductionDashboardPage() {
 
             <div className="production-ai-worker-status">
               <div className="production-ai-worker-status__states" role="status">
-                <span className="production-ai-worker-status__pill production-ai-worker-status__pill--llm-ready">
-                  {copy.deterministicAnswerReady}
+                <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${hasCoreRefreshError ? "unavailable" : "ready"}`}>
+                  {hasCoreRefreshError ? copy.dataRefreshFailed : copy.deterministicAnswerReady}
                 </span>
               </div>
             </div>
 
             <div className="production-brief-panel__body">
-              {productionAiBriefingQuery.isLoading ? (
+              {hasCoreRefreshError ? (
+                <div className="notice notice--warning">{copy.dataBriefingPaused}</div>
+              ) : productionAiBriefingQuery.isLoading ? (
                 <p>{copy.briefLoading}</p>
               ) : productionAiBriefing ? (
                 <article className={`production-ai-job production-ai-job--${productionAiBriefing.severity === "normal" ? "completed" : "failed"}`}>
@@ -5503,7 +5590,7 @@ export function ProductionDashboardPage() {
                 </>
               )}
 
-              {latestAiJobUsedLocalLlm && latestAiJobSummary ? (
+              {!hasCoreRefreshError && latestAiJobUsedLocalLlm && latestAiJobSummary ? (
                 <article className="production-ai-job production-ai-job--completed">
                   <div className="production-ai-job__header">
                     <div>
