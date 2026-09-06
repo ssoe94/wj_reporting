@@ -70,8 +70,8 @@ Mac Studio의 같은 저장소에서 기존 작업 변경을 먼저 확인하고
 
 ```bash
 git status --short --branch
-git fetch origin
-git worktree add ../wj_reporting-review-20260906 -b review/dashboard-insights-20260906 origin/codex/dashboard-insights-review-20260906
+git fetch origin codex/dashboard-insights-review-20260906
+git worktree add ../wj_reporting-review-20260906 -b review/dashboard-insights-20260906 FETCH_HEAD
 ```
 
 새 작업 폴더를 Codex 프로젝트로 열고 다음 지시문으로 이어간다.
