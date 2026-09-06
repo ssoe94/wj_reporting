@@ -130,7 +130,7 @@ def _add_type_report(groups, key, label, report_id):
         group["sample_report_ids"].append(report_id)
 
 
-def aggregate_quality_analysis(rows, filters, *, generated_at=None):
+def aggregate_quality_analysis(rows, filters, *, generated_at=None, context_rows=None):
     """Aggregate projected source rows once, without serializers or per-row queries."""
     start, end = filters["start_date"], filters["end_date"]
     trend = {}
@@ -180,6 +180,9 @@ def aggregate_quality_analysis(rows, filters, *, generated_at=None):
             continue
         defect, inspection = _quantity(row.get("defect_qty")), _quantity(row.get("inspection_qty"))
         part = re.sub(r"\s+", "", _text(row.get("part_no"))).upper()
+        if context_rows is not None:
+            from .production_context import collect_context_row
+            context_rows.append(collect_context_row(row, report_at.astimezone(SHANGHAI), machine, part))
         phenomenon = _text(row.get("phenomenon"))
         section = _text(row.get("section")) or "unknown"
         _add(summary, row, defect)
@@ -332,7 +335,7 @@ def aggregate_quality_analysis(rows, filters, *, generated_at=None):
     }
 
 
-def build_quality_analysis(filters):
+def build_quality_analysis(filters, *, include_production_context=False):
     start = datetime.combine(filters["start_date"], time.min, tzinfo=SHANGHAI)
     end = datetime.combine(filters["end_date"] + timedelta(days=1), time.min, tzinfo=SHANGHAI)
     queryset = QualityReport.objects.filter(report_dt__gte=start, report_dt__lt=end)
@@ -344,5 +347,11 @@ def build_quality_analysis(filters):
         "id", "report_dt", "updated_at", "section", "part_no", "phenomenon", "judgement",
         "lot_qty", "inspection_qty", "defect_qty", "source_import_row__occurrence_location",
         "excel_source__occurrence_location",
+        "model", "source_import_row__id", "source_import_row__item_name", "excel_source__item_name", "excel_import_key",
     )[:MAX_SOURCE_ROWS + 1].iterator(chunk_size=1000)
-    return aggregate_quality_analysis(rows, filters)
+    context_rows = [] if include_production_context else None
+    result = aggregate_quality_analysis(rows, filters, context_rows=context_rows)
+    if include_production_context:
+        from .production_context import build_production_context
+        result["production_context"] = build_production_context(context_rows)
+    return result
