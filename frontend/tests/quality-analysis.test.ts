@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createQualityAnalysisCsv, parseQualityAnalysis, qualityCsvCell, qualityScopeParams, quantityCoverage, resolveQualityScope, validateQualityScope } from '../src/domains/quality/model.ts';
-import type { QualityAnalysis, QualityGroup, QualityScope } from '../src/domains/quality/model.ts';
+import type { QualityAnalysis, QualityGroup, QualityProductionContext, QualityProductionMatchCounts, QualityProductionShifts, QualityScope } from '../src/domains/quality/model.ts';
 // Synthetic evidence only: no API, production dataset or database access.
 const scope: QualityScope = { startDate: '2026-09-05', endDate: '2026-09-06', section: '', machineNumber: '' };
 function fixture(): QualityAnalysis {
@@ -390,4 +390,257 @@ test('CSV defaults to calendar display and retains every original daily row when
   assert.equal(shown[15], '"true"');
   assert.ok(defaultCsv.split('\r\n').filter(line => line.startsWith('"daily",')).every(line => line.endsWith('"true"')));
   assert.deepEqual(data, original);
+});
+
+function productionContext(data: QualityAnalysis): QualityProductionContext {
+  const basis = (overrides: Partial<QualityProductionMatchCounts>): QualityProductionMatchCounts => ({ production_record: 0, stored_plan: 0, recorded_only: 0, ambiguous: 0, unmatched: 0, not_injection: 0, ...overrides });
+  const model = { model_display: 'MODEL - B/C', part_no: 'PART1' };
+  const machineRows = data.concentrations.machines.items.map((row, index) => ({ ...row, ...model,
+    machine_number: index === 0 ? null : 1, match_basis_counts: index === 0 ? basis({ stored_plan: 1, recorded_only: 1 }) : basis({ production_record: 1 }),
+  }));
+  return {
+    schema_version: 'quality-production-context.v1', status: 'ready', policy: 'unique_dated_part_model_candidate_v1',
+    summary: { report_count: 3, production_record_match_count: 1, plan_match_count: 1, recorded_only_count: 1, ambiguous_count: 0, unmatched_count: 0, not_injection_count: 0, missing_model_count: 1 },
+    model_parts: { ...data.concentrations.parts, items: [{ ...data.concentrations.parts.items[0], ...model, label: model.model_display, machine_number: null, match_basis_counts: basis({ production_record: 1, stored_plan: 1, recorded_only: 1 }) }] },
+    machine_models: { ...data.concentrations.machines, items: machineRows },
+    limitations: ['Dated candidates do not establish production-time incident causation.'],
+  };
+}
+function productionShifts(): QualityProductionShifts {
+  return {
+    schema_version: 'quality-shifts.v1', status: 'ready', timezone: 'Asia/Shanghai', date_basis: 'production_business_day',
+    source: 'InjectionMonitoringRecord', report_source: 'QualityReport:LQC_INJ', source_status: { reports: 'ready', monitoring: 'ready' },
+    policy: 'observed_machine_shift_v1', max_gap_minutes: 10, expected_machine_count: 17,
+    days: [
+      { date: scope.startDate, report_count: 2, active_shift_count: 2, no_change_shift_count: 32, unknown_shift_count: 0, open_shift_count: 0, reports_per_shift: 1, reason: 'observed' },
+      { date: scope.endDate, report_count: 2, active_shift_count: 1, no_change_shift_count: 33, unknown_shift_count: 0, open_shift_count: 0, reports_per_shift: 2, reason: 'observed' },
+    ],
+    summary: { report_count: 4, active_shift_count: 3, no_change_shift_count: 65, unknown_shift_count: 0, open_shift_count: 0, reports_per_shift: 1.3333 },
+    limitations: ['Imported 08:00 timestamps cannot allocate reports to a day or night shift.'],
+  };
+}
+function withProductionEvidence() {
+  const data = withActivityCalendar(); data.production_context = productionContext(data); data.production_shifts = productionShifts();
+  return data;
+}
+
+test('model-first production groups preserve original report and quantity totals with exclusive source evidence', () => {
+  const data = parseQualityAnalysis(withProductionEvidence(), scope);
+  assert.equal(data.production_context?.model_parts.items[0].model_display, 'MODEL - B/C');
+  assert.equal(data.production_context?.model_parts.items[0].part_no, 'PART1');
+  assert.equal(data.production_context?.model_parts.items[0].reported_defect_qty, 4);
+  assert.deepEqual(data.production_context?.model_parts.items[0].sample_report_ids, [1, 2, 3]);
+  assert.equal(data.production_context?.summary.report_count, data.summary.report_count);
+  assert.equal(data.production_context?.summary.missing_model_count, 1);
+});
+
+test('missing display text and dated machine candidates do not rewrite the recorded-machine filter', () => {
+  const data = withProductionEvidence();
+  data.production_context!.model_parts.items[0].model_display = '';
+  data.production_context!.model_parts.items[0].part_no = '';
+  data.production_context!.machine_models.items[0].machine_number = 2;
+  const parsed = parseQualityAnalysis(data, scope);
+  assert.equal(parsed.production_context?.model_parts.items[0].model_display, '');
+  assert.equal(parsed.production_context?.machine_models.items[0].machine_number, 2);
+  assert.equal(parsed.concentrations.machines.items[0].key, 'unknown');
+});
+
+test('context partition errors invalidate only production context while activity and shifts remain usable', () => {
+  for (const change of [{ report_count: 4 }, { plan_match_count: 0 }, { missing_model_count: 4 }, { ambiguous_count: -1 }]) {
+    const source = withProductionEvidence(); Object.assign(source.production_context!.summary, change);
+    const original = structuredClone(source); const parsed = parseQualityAnalysis(source, scope);
+    assert.equal(parsed.production_context, undefined); assert.ok(parsed.warnings.includes('production_context_invalid'));
+    assert.equal(parsed.production_shifts?.summary.report_count, 4); assert.equal(parsed.activity_calendar?.days[0].can_collapse, true);
+    assert.deepEqual(parsed.summary, source.summary); assert.deepEqual(source, original);
+  }
+});
+
+test('production groups reject duplicate samples, invalid machines, allocations and quantity duplication', () => {
+  for (const change of [
+    (data: QualityAnalysis) => { data.production_context!.model_parts.items[0].match_basis_counts.production_record = 2; },
+    (data: QualityAnalysis) => { data.production_context!.model_parts.items[0].machine_number = 1; },
+    (data: QualityAnalysis) => { data.production_context!.machine_models.items[0].machine_number = 18; },
+    (data: QualityAnalysis) => { data.production_context!.machine_models.items[1].sample_report_ids = [1]; },
+    (data: QualityAnalysis) => { data.production_context!.machine_models.items[0].reported_defect_qty = 4; },
+    (data: QualityAnalysis) => { data.production_context!.model_parts.items[0].share_of_reports_percent = 99.99; },
+    (data: QualityAnalysis) => { data.production_context!.machine_models.items[0].key = '1'; },
+    (data: QualityAnalysis) => { data.production_context!.machine_models.items.reverse(); },
+    (data: QualityAnalysis) => { data.production_context!.machine_models.top_n = 5; },
+  ]) {
+    const data = withProductionEvidence(); change(data);
+    assert.equal(parseQualityAnalysis(data, scope).production_context, undefined);
+  }
+});
+
+test('unavailable production links retain recorded model groups without claiming candidate matches', () => {
+  const data = withProductionEvidence(); const context = data.production_context!;
+  context.status = 'unavailable';
+  Object.assign(context.summary, { production_record_match_count: 0, plan_match_count: 0, recorded_only_count: 3 });
+  for (const group of [context.model_parts, context.machine_models]) for (const row of group.items) {
+    Object.assign(row.match_basis_counts, { production_record: 0, stored_plan: 0, recorded_only: row.report_count });
+  }
+  assert.equal(parseQualityAnalysis(data, scope).production_context?.status, 'unavailable');
+  context.summary.production_record_match_count = 1; context.summary.recorded_only_count = 2;
+  assert.equal(parseQualityAnalysis(data, scope).production_context, undefined);
+});
+
+test('business-day injection report totals remain distinct from the core calendar-day report totals', () => {
+  const data = parseQualityAnalysis(withProductionEvidence(), scope);
+  assert.equal(data.summary.report_count, 3); assert.equal(data.production_shifts?.summary.report_count, 4);
+  assert.equal(data.production_shifts?.summary.active_shift_count, 3);
+  assert.equal(data.production_shifts?.summary.reports_per_shift, 1.3333);
+  assert.notEqual(data.production_shifts?.summary.reports_per_shift, 1.5);
+});
+
+test('shift reporting intensity is not capped at one report or one hundred percent', () => {
+  const data = withProductionEvidence(); const shifts = data.production_shifts!;
+  shifts.days[0].report_count = 402; shifts.days[0].reports_per_shift = 201;
+  shifts.summary.report_count = 404; shifts.summary.reports_per_shift = 134.6667;
+  assert.equal(parseQualityAnalysis(data, scope).production_shifts?.summary.reports_per_shift, 134.6667);
+});
+
+test('unknown or open shifts withhold the ratio while preserving observed counts and known reports', () => {
+  for (const key of ['unknown_shift_count', 'open_shift_count'] as const) {
+    const data = withProductionEvidence(); const shifts = data.production_shifts!;
+    shifts.days[0][key] = 1; shifts.days[0].no_change_shift_count -= 1; shifts.days[0].reports_per_shift = null;
+    shifts.summary[key] = 1; shifts.summary.no_change_shift_count -= 1; shifts.summary.reports_per_shift = null;
+    assert.equal(parseQualityAnalysis(data, scope).production_shifts?.summary.report_count, 4);
+    shifts.days[0].reports_per_shift = 1;
+    assert.equal(parseQualityAnalysis(data, scope).production_shifts, undefined);
+  }
+});
+
+test('zero reports with observed production are numeric zero, while no active shift has no ratio', () => {
+  const data = withProductionEvidence(); const shifts = data.production_shifts!;
+  shifts.days.forEach(day => { day.report_count = 0; day.reports_per_shift = 0; });
+  shifts.summary.report_count = 0; shifts.summary.reports_per_shift = 0;
+  assert.equal(parseQualityAnalysis(data, scope).production_shifts?.summary.reports_per_shift, 0);
+  for (const row of [...shifts.days, shifts.summary]) { row.no_change_shift_count += row.active_shift_count; row.active_shift_count = 0; row.reports_per_shift = null; }
+  assert.equal(parseQualityAnalysis(data, scope).production_shifts?.summary.reports_per_shift, null);
+});
+
+test('independent report-source failure retains monitoring evidence and never manufactures report zero', () => {
+  const data = withProductionEvidence(); const shifts = data.production_shifts!;
+  shifts.status = 'unavailable'; shifts.source_status.reports = 'unavailable';
+  for (const row of [...shifts.days, shifts.summary]) { row.report_count = null; row.reports_per_shift = null; }
+  const parsed = parseQualityAnalysis(data, scope);
+  assert.equal(parsed.production_shifts?.summary.report_count, null); assert.equal(parsed.production_shifts?.summary.active_shift_count, 3);
+  shifts.days[0].report_count = 0;
+  assert.equal(parseQualityAnalysis(data, scope).production_shifts, undefined);
+});
+
+test('independent monitoring-source failure retains report counts and exposes unknown shifts', () => {
+  const data = withProductionEvidence(); const shifts = data.production_shifts!;
+  shifts.status = 'unavailable'; shifts.source_status.monitoring = 'unavailable';
+  for (const row of [...shifts.days, shifts.summary]) {
+    row.unknown_shift_count = row.active_shift_count + row.no_change_shift_count;
+    row.active_shift_count = 0; row.no_change_shift_count = 0; row.reports_per_shift = null;
+  }
+  const parsed = parseQualityAnalysis(data, scope);
+  assert.equal(parsed.production_shifts?.summary.report_count, 4);
+  assert.equal(parsed.production_shifts?.summary.unknown_shift_count, 68);
+  assert.equal(parsed.production_shifts?.summary.reports_per_shift, null);
+});
+
+test('shift dates, source scope, machine balance, rounding and summary totals must reconcile', () => {
+  for (const change of [
+    (shifts: QualityProductionShifts) => { shifts.days.pop(); },
+    (shifts: QualityProductionShifts) => { shifts.days[0].date = scope.endDate; },
+    (shifts: QualityProductionShifts) => { shifts.expected_machine_count = 1; },
+    (shifts: QualityProductionShifts) => { shifts.days[0].active_shift_count += 1; },
+    (shifts: QualityProductionShifts) => { shifts.summary.report_count = 3; },
+    (shifts: QualityProductionShifts) => { shifts.summary.reports_per_shift = 1.5; },
+    (shifts: QualityProductionShifts) => { shifts.summary.reports_per_shift = 1.33333; },
+    (shifts: QualityProductionShifts) => { shifts.source_status.monitoring = 'unavailable'; },
+    (shifts: QualityProductionShifts) => { shifts.days[0].reason = ''; },
+    (shifts: QualityProductionShifts) => { Object.assign(shifts, { report_source: 'QualityReport:all' }); },
+    (shifts: QualityProductionShifts) => { Object.assign(shifts, { date_basis: 'calendar_day' }); },
+  ]) {
+    const source = withProductionEvidence(); change(source.production_shifts!);
+    const parsed = parseQualityAnalysis(source, scope);
+    assert.equal(parsed.production_shifts, undefined); assert.ok(parsed.warnings.includes('production_shifts_invalid'));
+    assert.ok(parsed.production_context); assert.ok(parsed.activity_calendar); assert.equal(parsed.summary.report_count, 3);
+  }
+});
+
+test('one selected machine contributes exactly two possible shifts per business day', () => {
+  const data = withProductionEvidence(); data.filters.machine_number = 1;
+  const shifts = data.production_shifts!; shifts.expected_machine_count = 1;
+  shifts.days[0].no_change_shift_count = 0; shifts.days[1].no_change_shift_count = 1;
+  shifts.summary.no_change_shift_count = 1;
+  const parsed = parseQualityAnalysis(data, { ...scope, machineNumber: '1' });
+  assert.equal(parsed.production_shifts?.summary.active_shift_count, 3);
+  assert.equal(parsed.production_shifts?.summary.no_change_shift_count, 1);
+  assert.equal(parsed.production_shifts?.summary.reports_per_shift, 1.3333);
+});
+
+test('unsupported quality sections retain balanced unknown shifts without presenting an injection ratio', () => {
+  const data = withProductionEvidence(); data.filters.section = 'IQC';
+  const shifts = data.production_shifts!; shifts.status = 'not_applicable';
+  shifts.source_status = { reports: 'unavailable', monitoring: 'unavailable' };
+  for (const row of [...shifts.days, shifts.summary]) {
+    row.report_count = null; row.unknown_shift_count = row.active_shift_count + row.no_change_shift_count;
+    row.active_shift_count = 0; row.no_change_shift_count = 0; row.reports_per_shift = null;
+  }
+  assert.equal(parseQualityAnalysis(data, { ...scope, section: 'IQC' }).production_shifts?.status, 'not_applicable');
+  data.filters.machine_number = 'unknown'; shifts.expected_machine_count = 0;
+  for (const row of [...shifts.days, shifts.summary]) row.unknown_shift_count = 0;
+  assert.equal(parseQualityAnalysis(data, { ...scope, section: 'IQC', machineNumber: 'unknown' }).production_shifts?.expected_machine_count, 0);
+});
+
+test('all auxiliary failures are isolated and missing old-server extensions need no invented fallback data', () => {
+  const original = fixture(); const old = parseQualityAnalysis(original, scope);
+  assert.equal(old.production_context, undefined); assert.equal(old.production_shifts, undefined);
+  assert.deepEqual(old.warnings, original.warnings);
+  const source = withProductionEvidence(); source.activity_calendar!.days = [];
+  assert.ok(parseQualityAnalysis(source, scope).production_context);
+  assert.ok(parseQualityAnalysis(source, scope).production_shifts);
+  Object.assign(source, { production_context: null, production_shifts: { limitations: null } });
+  const data = parseQualityAnalysis(source, scope);
+  assert.equal(data.summary.reported_defect_qty, 4);
+  assert.ok(['activity_calendar_invalid', 'production_context_invalid', 'production_shifts_invalid'].every(warning => data.warnings.includes(warning)));
+});
+
+test('CSV preserves model-source evidence and shift numerator, denominator and distinct date basis', () => {
+  const data = parseQualityAnalysis(withProductionEvidence(), scope);
+  const csv = createQualityAnalysisCsv(data, 'ko', { collapseInactiveDays: true });
+  const lines = csv.split('\r\n'); const header = lines.find(line => line.startsWith('"group",'))!.split(',');
+  const cell = (line: string, column: string) => line.split(',')[header.indexOf(`"${column}"`)];
+  const model = lines.find(line => line.startsWith('"production_model_parts",'))!;
+  assert.equal(cell(model, 'model_display'), '"MODEL - B/C"'); assert.equal(cell(model, 'part_no'), '"PART1"');
+  assert.equal(cell(model, 'production_record'), '"1"'); assert.equal(cell(model, 'stored_plan'), '"1"');
+  assert.equal(cell(model, 'share_denominator'), '"3"'); assert.equal(cell(model, 'row_date_basis'), '"report_dt_calendar_day"');
+  const shifts = lines.find(line => line.startsWith('"production_shifts_summary",'))!;
+  assert.equal(cell(shifts, 'report_count'), '"4"'); assert.equal(cell(shifts, 'active_shift_count'), '"3"');
+  assert.equal(cell(shifts, 'reports_per_shift'), '"1.3333"'); assert.equal(cell(shifts, 'row_date_basis'), '"production_business_day"');
+  assert.match(csv, /not a defect rate or percentage/);
+  assert.equal(lines.filter(line => line.startsWith('"daily",')).length, 2);
+  assert.equal(lines.filter(line => line.startsWith('"production_shifts_daily",')).length, 2);
+});
+
+test('CSV formula protection also covers model titles and parts, and invalid extensions have no numeric rows', () => {
+  const source = withProductionEvidence();
+  source.production_context!.model_parts.items[0].model_display = '=MODEL()';
+  source.production_context!.model_parts.items[0].part_no = '@PART';
+  const csv = createQualityAnalysisCsv(parseQualityAnalysis(source, scope), 'zh');
+  assert.match(csv, /'=MODEL\(\)/); assert.match(csv, /'@PART/);
+  source.production_shifts!.summary.report_count = 99;
+  const invalid = createQualityAnalysisCsv(parseQualityAnalysis(source, scope), 'ko');
+  assert.match(invalid, /"production_shifts_status","invalid"/);
+  assert.ok(!invalid.includes('"production_shifts_summary",'));
+  assert.match(createQualityAnalysisCsv(fixture(), 'ko'), /"production_context_status","not_provided"/);
+});
+
+test('CSV source-failure metadata accompanies blank unknown report and ratio cells', () => {
+  const data = withProductionEvidence(); const shifts = data.production_shifts!;
+  shifts.status = 'unavailable'; shifts.source_status.reports = 'unavailable';
+  for (const row of [...shifts.days, shifts.summary]) { row.report_count = null; row.reports_per_shift = null; }
+  const csv = createQualityAnalysisCsv(parseQualityAnalysis(data, scope), 'ko');
+  assert.match(csv, /"production_shifts_reports_source_status","unavailable"/);
+  assert.match(csv, /"production_shifts_monitoring_source_status","ready"/);
+  const lines = csv.split('\r\n'); const header = lines.find(line => line.startsWith('"group",'))!.split(',');
+  const row = lines.find(line => line.startsWith('"production_shifts_summary",'))!.split(',');
+  assert.equal(row[header.indexOf('"report_count"')], '""');
+  assert.equal(row[header.indexOf('"reports_per_shift"')], '""');
+  assert.equal(row[header.indexOf('"active_shift_count"')], '"3"');
 });
