@@ -19,8 +19,8 @@ export interface Report {
   part_no: string;
   note: string;
   machine_no: number;
-  start_datetime: string;
-  end_datetime: string;
+  start_datetime: string | null;
+  end_datetime: string | null;
   achievement_rate?: number; // optional calculated field
   cycle_time_deviation?: number | null; // optional analytics field
   // ...필드 계속
@@ -57,10 +57,10 @@ const normalizePage = <T,>(value: unknown): Paginated<T> => {
     }
   }
 
-  return emptyPage<T>();
+  throw new Error('Invalid injection report response');
 };
 
-export function useReports(filters: { date?: string } = {}): UseQueryResult<Paginated<Report>> {
+export function useReports(filters: { date?: string; machineNo?: number | null } = {}): UseQueryResult<Paginated<Report>> {
   return useQuery({
     queryKey: ['reports', filters],
     queryFn: async () => {
@@ -68,8 +68,31 @@ export function useReports(filters: { date?: string } = {}): UseQueryResult<Pagi
       if (filters.date) {
         params.append('date', filters.date);
       }
-      const response = await api.get<Paginated<Report>>(`/injection/reports/?${params.toString()}`);
-      return normalizePage<Report>(response.data);
+      if (filters.machineNo != null) params.append('machine_no', String(filters.machineNo));
+      const results: Report[] = [];
+      let url: string | null = `/injection/reports/?${params.toString()}`;
+      const visited = new Set<string>();
+      while (url) {
+        if (visited.has(url)) throw new Error('Repeated injection report page');
+        visited.add(url);
+        const response: AxiosResponse<Paginated<Report>> = await api.get(url);
+        const page = normalizePage<Report>(response.data);
+        if (page.results.some(row => (filters.date && row.date !== filters.date)
+          || (filters.machineNo != null && row.machine_no !== filters.machineNo))) {
+          throw new Error('Injection reports do not match the requested scope');
+        }
+        results.push(...page.results);
+        url = null;
+        if (page.next) {
+          const next = new URL(page.next, 'https://reports.invalid');
+          const path = next.pathname.replace(/^\/api\//, '/');
+          if (path !== '/injection/reports/') throw new Error('Invalid injection report page');
+          if (filters.date) next.searchParams.set('date', filters.date);
+          if (filters.machineNo != null) next.searchParams.set('machine_no', String(filters.machineNo));
+          url = `${path}${next.search}`;
+        }
+      }
+      return { count: results.length, next: null, previous: null, results };
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -107,12 +130,15 @@ export function useAllReports(): UseQueryResult<Report[]> {
   });
 }
 
-export function useReportDates() {
+export function useReportDates(machineNo?: number | null) {
   return useQuery({
-    queryKey: ['report-dates'],
+    queryKey: ['report-dates', machineNo ?? null],
     queryFn: async () => {
-      const response = await api.get<string[]>('/injection/reports/dates/');
-      return Array.isArray(response.data) ? response.data : [];
+      const response = await api.get<string[]>('/injection/reports/dates/', {
+        params: machineNo != null ? { machine_no: machineNo } : {},
+      });
+      if (!Array.isArray(response.data)) throw new Error('Invalid injection report dates');
+      return response.data;
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -127,22 +153,18 @@ export interface Summary {
   defect_rate: number; // percentage
 }
 
-export function useReportSummary(date?: string): UseQueryResult<Summary> {
+export function useReportSummary(date?: string, machineNo?: number | null): UseQueryResult<Summary> {
   return useQuery({
-    queryKey: ['reports-summary', date],
+    queryKey: ['reports-summary', date, machineNo ?? null],
     queryFn: async () => {
       const { data } = await api.get<Summary>(`/injection/reports/summary/`, {
-        params: date ? { date } : {},
+        params: { ...(date ? { date } : {}), ...(machineNo != null ? { machine_no: machineNo } : {}) },
       });
-      if (!data || typeof data !== 'object') {
-        return {
-          total_count: 0,
-          total_plan_qty: 0,
-          total_actual_qty: 0,
-          total_defect_qty: 0,
-          achievement_rate: 0,
-          defect_rate: 0,
-        };
+      if (!data || typeof data !== 'object' || ![
+        data.total_count, data.total_plan_qty, data.total_actual_qty,
+        data.total_defect_qty, data.achievement_rate, data.defect_rate,
+      ].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0)) {
+        throw new Error('Invalid injection report summary');
       }
       return data;
     },

@@ -544,6 +544,9 @@ def _process_summary(
         "running_equipment_count": _safe_int(source.get("running_equipment_count")),
         "total_equipment_count": _safe_int(source.get("total_equipment_count")),
         "plan_row_count": _safe_int(source.get("plan_row_count")),
+        # Canonical coverage concerns planned machines' capacity counters,
+        # independently of the fleet-wide recent-activity timestamp.
+        "capacity_coverage_complete": source.get("capacity_coverage_complete"),
         "calculation_basis": (
             "MES shot counter × cavity, allocated in production-plan sequence"
             if source_process == "injection"
@@ -2187,6 +2190,9 @@ def _build_equipment(
             "recent_60m_avg_ct_sec": round(float(recent_avg_ct), 1) if recent_avg_ct is not None else None,
             "source_status": activity_source_status,
             "source_latest_at": _iso(activity_source_latest_at),
+            "latest_capacity_time": _iso(row.get("latest_capacity_time")),
+            "capacity_data_available": row.get("capacity_data_available"),
+            "data_warning": row.get("data_warning"),
             "activity_window_minutes": activity_window_minutes,
             **pace,
             "current_parts": [
@@ -2238,6 +2244,11 @@ def _build_equipment(
             ),
             "source_status": activity_source_status,
             "source_latest_at": _iso(activity_source_latest_at),
+            # Recent activity proves shots, but this row has no canonical
+            # plan/cavity allocation or per-machine quantity assessment.
+            "latest_capacity_time": None,
+            "capacity_data_available": None,
+            "data_warning": None,
             "activity_window_minutes": activity_window_minutes,
             **pace,
             "current_parts": [],

@@ -226,6 +226,7 @@ export default function AnalysisDashboard() {
       <span>{tx("생산 기준 시각", "生产参考时间")}: {timestamp(overview.data?.businessWindowDetails?.referenceTime ?? overview.data?.generatedAt, lang)}</span></div>
       <div className="ui-segmented-control" role="group" aria-label={tx("보기 선택", "选择视图")}><button type="button" aria-pressed={view === "executive"} className={view === "executive" ? "is-active" : ""} onClick={() => setView("executive")}>{tx("경영 요약", "管理摘要")}</button><button type="button" aria-pressed={view === "operations"} className={view === "operations" ? "is-active" : ""} onClick={() => setView("operations")}>{tx("실무 확인", "现场核对")}</button></div>
     </div>
+    <p className="analysis-notice"><a className="analysis-link" href="/reports/wj-development-review-20260906.html" target="_blank" rel="noopener noreferrer">{tx("회사 데이터·개발 방향 검토 보고서 · 2026.09.06", "公司数据与开发方向评审报告 · 2026.09.06（韩文）")} <ArrowUpRight size={15} aria-hidden="true" /></a></p>
     <QueryState loading={overview.isPending} error={overview.isError} hasData={Boolean(overview.data)} onRetry={() => { void overview.refetch(); }} tx={tx} />
     {overview.data && <div className="analysis-production-sections"><ProductionSummary model={overview.data} refreshFailed={overview.isError} tx={tx} lang={lang} /><PrioritySection model={overview.data} historical={historical} refreshFailed={overview.isError} tx={tx} lang={lang} /></div>}
     <section className="analysis-panel" aria-labelledby="analysis-field-title"><div className="analysis-section-heading"><div><h2 id="analysis-field-title"><ClipboardCheck size={19} aria-hidden="true" />{tx("현장 입력과 신고 불량", "现场输入与不良申报")}</h2><p>{tx("현장 단말에서 저장한 구간 기록만 집계합니다. 생산 집계와 별도 원천입니다.", "仅汇总现场终端已保存的区间记录，与生产汇总来自不同数据源。")}</p></div></div>
@@ -235,9 +236,9 @@ export default function AnalysisDashboard() {
     {overview.data && <SourceSection model={overview.data} historical={historical} tx={tx} lang={lang} />}
     <section className="analysis-panel analysis-next"><details className="analysis-disclosure"><summary>{tx("더 나은 판단을 위해 연결할 데이터", "为改善判断需补充的数据")}</summary><dl>{collectionItems.map(([name, description]) => <div key={name}><dt>{name}</dt><dd>{description}</dd></div>)}</dl></details>
       <nav className="analysis-record-links" aria-label={tx("기존 상세 자료", "原有明细资料")}><span>{tx("상세 자료", "明细资料")}</span>
-        <PermissionLink className="analysis-link" to="/injection/dashboard#records">{tx("사출 수기일보", "注塑手工日报")}</PermissionLink>
+        <PermissionLink className="analysis-link" to={`/injection/dashboard?date=${date}#records`}>{tx("사출 수기일보", "注塑手工日报")}</PermissionLink>
         <PermissionLink className="analysis-link" to="/assembly#records">{tx("조립 보고", "组装报工")}</PermissionLink>
-        <PermissionLink className="analysis-link" to="/quality#stats">{tx("품질 검사", "质量检验")}</PermissionLink>
+        <PermissionLink className="analysis-link" to="/quality/analysis">{tx("불량 통계 분석", "不良统计分析")}</PermissionLink>
         <PermissionLink className="analysis-link" to="/sales/inventory-status">{tx("재고 상세", "库存明细")}</PermissionLink>
       </nav>
     </section>

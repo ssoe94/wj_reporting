@@ -48,6 +48,9 @@ jobs:
       - name: Lint legacy frontend
         run: npm --prefix frontend run lint
 
+      - name: Validate analytical state and scope contracts
+        run: node --experimental-strip-types --test frontend/tests/*.test.ts
+
       - name: Build production frontend bundle
         run: npm --prefix frontend run build
 

@@ -22,6 +22,8 @@ export type ProductionProcess = {
   remainingBusinessMinutes: number | null;
   requiredQuantityPerHour: number | null;
   calculationBasis?: string | null;
+  /** All planned machines have usable capacity evidence; null means not assessed. */
+  capacityCoverageComplete?: boolean | null;
   reportingMix: {
     effectiveActualQuantity: number | null;
     mesConfirmedQuantity: number | null;
@@ -66,6 +68,10 @@ export type InjectionEquipmentRow = {
   resolvedCurrentPartCount: number | null;
   sourceStatus: string | null;
   sourceLatestAt: string | null;
+  /** Per-machine quantity evidence, separate from fleet-wide recent activity. */
+  latestCapacityTime?: string | null;
+  capacityDataAvailable?: boolean | null;
+  dataWarning?: string | null;
   activityWindowMinutes: number | null;
 };
 

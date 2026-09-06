@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useSearchParams } from "react-router-dom";
+import { buildInjectionLink, resolveInjectionScope } from "@/domains/injection/workspace";
+import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
+import { getShanghaiBusinessDateString, getShanghaiDateString } from "@/shared/utils/date";
+import { coversMonitoringWindow, hasObservedCapacityInWindow, isMonitoringSlotInWindow, trimMonitoringSlots, getMonitoringCoverage, getMonitoringState, hasMonitoringMatrix, type MonitoringState } from "@/domains/mes/monitoring-state";
 import {
   type InjectionProductionMatrix,
   getInjectionMonitoringDates,
@@ -13,16 +18,15 @@ import {
   getInjectionDowntimeConfirmations,
   getProductionMesReportStats,
   getProductionPlanSummary,
-  getProductionStatus,
   resetInjectionDowntimeConfirmation,
   saveInjectionDowntimeConfirmation,
   type ProductionMesReportStatsResponse,
 } from "@/domains/production/api";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
 import { buildInjectionTransitionAnalysis } from "@/domains/production/injection-transition-analysis";
-import { buildRealtimeProgressSummary, type RealtimeProgressSummary } from "@/domains/production/realtime-progress";
 import { PageHeaderIcon } from "@/shared/components/PageHeader";
 import { useAuth } from "@/domains/auth/auth-context";
+import { isDevSessionActive } from "@/domains/auth/dev-session";
 import { type AppLanguage, useStoredLanguage } from "@/shared/i18n/language";
 
 type InjectionMachineRow = {
@@ -76,50 +80,14 @@ type HourlyTrendPoint = {
   endTime: Date;
   hour: number;
   isDayBreak: boolean;
-  output: number;
-  power: number;
+  output: number | null;
+  power: number | null;
   oilTemperature: number | null;
 };
 
 type HourlyTrendScale = {
   powerMax: number;
   oilMax: number;
-};
-
-type InjectionReceiptStatus = "matched" | "shortage" | "over" | "missing" | "receipt_only";
-type InjectionReceiptMatchMethod = "direct_part_no" | "model_candidate" | "equipment_corrected" | "unmatched";
-
-type InjectionReceiptComparisonRow = {
-  key: string;
-  machineKey: string;
-  machineLabel: string;
-  partNo: string;
-  modelName: string;
-  plannedQty: number;
-  estimatedQty: number;
-  allocatedShots: number;
-  receiptQty: number;
-  gapQty: number;
-  reportCount: number;
-  latestReportTime: string | null;
-  status: InjectionReceiptStatus;
-  sequence: number;
-  receiptPartNos: string[];
-  receiptEquipmentLabels: string[];
-  matchMethods: InjectionReceiptMatchMethod[];
-};
-
-type InjectionReceiptComparison = {
-  rows: InjectionReceiptComparisonRow[];
-  summary: {
-    plannedQty: number;
-    estimatedQty: number;
-    receiptQty: number;
-    gapQty: number;
-    matchedCount: number;
-    issueCount: number;
-    latestReportTime: string | null;
-  };
 };
 
 type MesInfoView = "production" | "inventory";
@@ -149,49 +117,49 @@ const pageCopy = {
     loadingData: "MES 데이터를 불러오는 중입니다.",
     backfillProgress: "보강 진행률",
     lastUpdated: "마지막 갱신",
-    activeMachines: "가동 설비",
-    todayOutput: "금일 총 생산량",
+    activeMachines: "최근 60분 형합 설비",
+    todayOutput: "선택일 추정 생산 / 계획 (ea)",
     recentOutput60: "최근 60분 형합수",
     recentAvgOil60: "최근 60분 평균 오일온도",
     avgOil: "평균 오일온도",
-    todayPowerUsage: "금일 총 전력 사용량",
+    todayPowerUsage: "선택일 전력 참고값",
     fleetProductionEyebrow: "INJECTION TOTAL",
-    fleetProductionTitle: "전체 사출기 총합 생산현황",
-    fleetProductionDescription: "기준일 08:00부터 현재까지 17대 사출기의 MES 형합수와 생산계획 기준 추정 실적을 합산합니다.",
+    fleetProductionTitle: "전체 설비 시간대 형합 참고",
+    fleetProductionDescription: "원시 계측 구간의 형합 합계입니다. 일일 ea 실적과 품목 배분은 공통 생산 집계를 기준으로 확인합니다.",
     fleetPlanProgress: "계획 진행률",
     fleetPlanGap: "계획 대비",
     fleetMachineSpread: "설비별 생산 분포",
-    fleetElapsedUph: "생산구간 UPH",
+    fleetElapsedUph: "생산구간 형합/시간",
     fleetMachineTotal: "총",
-    uph: "UPH",
+    uph: "형합/h",
     planShortage: "계획 대비 부족",
     planReady: "계획 수량 기준",
-    utilization24: "최근 24시간 가동률",
-    utilizationModalTitle: "가동률 상세 분석",
-    utilizationModalSubtitle: "날짜별 가동 기기 수와 가동률",
+    utilization24: "형합 기반 활동 비율 (24h)",
+    utilizationModalTitle: "형합 활동 상세 분석",
+    utilizationModalSubtitle: "날짜별 형합 설비 수와 활동 비율 · 근무 계획 미반영",
     utilizationPeriod: "분석 기간",
     utilizationStartDate: "시작일",
     utilizationEndDate: "종료일",
     recentTwoWeeks: "최근 2주",
-    utilizationRate: "가동률",
-    activeMachineCount: "가동 기기 수",
+    utilizationRate: "형합 기반 활동 비율",
+    activeMachineCount: "형합 설비 수",
     utilizationSavedAt: "저장 갱신",
     close: "닫기",
     previous60: "직전 60분 대비",
     previousDay: "전일 동시간 대비",
     noCompareData: "비교 데이터 부족",
-    injectionTitle: "사출기 실시간 현황",
+    injectionTitle: "사출기 시간대 신호",
     injectionHint: "1~17호기를 순서대로 확인하고, 선택한 호기의 24시간 추세를 분석합니다.",
     machineRailTitle: "설비 선택",
     machineRailHint: "호기를 선택하면 아래 요약과 추이 그래프가 해당 설비 기준으로 변경됩니다.",
     selectedMachine: "선택 설비",
-    shiftSummary: "금일 08:00 ~ 현재",
+    shiftSummary: "선택일 08:00 ~ 기준 시각",
     recentSummary: "최근 60분",
     trendTitle: "최근 24시간 추이",
-    trendHint: "10분 수집 데이터를 정시간 단위로 집계해 형합수, 전력, 오일온도 추세를 표시합니다.",
+    trendHint: "수집 구간을 정시간 단위로 집계합니다. 형합수는 관측 구간의 증가량이며 전력은 계기 누적값 차이에 따른 참고값입니다.",
     output: "형합수",
     cumulative: "누적",
-    todayCumulative: "금일 누적",
+    todayCumulative: "선택일 누적",
     oil: "오일온도",
     power: "전력",
     powerTotal: "누적 전력",
@@ -200,8 +168,8 @@ const pageCopy = {
     trendOutput: "정시간 형합수",
     trendPower: "전력 사용량",
     trendOil: "오일온도",
-    running: "가동",
-    idle: "대기",
+    running: "최근 형합 관측",
+    idle: "최근 형합 미관측",
     warning: "확인 필요",
     noData: "데이터 없음",
     fetchError: "MES 데이터를 불러오지 못했습니다.",
@@ -305,49 +273,49 @@ const pageCopy = {
     loadingData: "正在读取 MES 数据。",
     backfillProgress: "补采进度",
     lastUpdated: "最后更新",
-    activeMachines: "运行设备",
-    todayOutput: "今日总产量",
+    activeMachines: "近60分钟有合模设备",
+    todayOutput: "所选日估算产量 / 计划 (ea)",
     recentOutput60: "最近 60 分钟合模数",
     recentAvgOil60: "最近 60 分钟平均油温",
     avgOil: "平均油温",
-    todayPowerUsage: "今日总用电量",
+    todayPowerUsage: "所选日电力参考值",
     fleetProductionEyebrow: "INJECTION TOTAL",
-    fleetProductionTitle: "全部注塑机汇总生产状态",
-    fleetProductionDescription: "按基准日 08:00 至当前，汇总 17 台注塑机的 MES 合模数与生产计划推定实绩。",
+    fleetProductionTitle: "全部设备时段模次参考",
+    fleetProductionDescription: "原始观测区间模次合计。日实绩 ea 与品号分配以统一生产汇总为准。",
     fleetPlanProgress: "计划进度",
     fleetPlanGap: "计划对比",
     fleetMachineSpread: "设备产量分布",
-    fleetElapsedUph: "生产区间 UPH",
+    fleetElapsedUph: "生产区间模次/小时",
     fleetMachineTotal: "总",
-    uph: "UPH",
+    uph: "模次/h",
     planShortage: "计划差额",
     planReady: "按计划数量",
-    utilization24: "最近24小时运行率",
-    utilizationModalTitle: "运行率详细分析",
-    utilizationModalSubtitle: "按日期查看运行设备数与运行率",
+    utilization24: "合模活动比例 (24h)",
+    utilizationModalTitle: "合模活动详细分析",
+    utilizationModalSubtitle: "每日合模设备数与活动比例 · 未纳入工作计划",
     utilizationPeriod: "分析期间",
     utilizationStartDate: "开始日",
     utilizationEndDate: "结束日",
     recentTwoWeeks: "最近2周",
-    utilizationRate: "运行率",
-    activeMachineCount: "运行设备数",
+    utilizationRate: "合模活动比例",
+    activeMachineCount: "合模设备数",
     utilizationSavedAt: "保存更新",
     close: "关闭",
     previous60: "较前 60 分钟",
     previousDay: "较昨日同时段",
     noCompareData: "比较数据不足",
-    injectionTitle: "注塑机实时状态",
+    injectionTitle: "注塑机时段信号",
     injectionHint: "按 1~17 号设备顺序查看，并分析所选设备的 24 小时趋势。",
     machineRailTitle: "设备选择",
     machineRailHint: "选择设备后，下方摘要和趋势图会按该设备更新。",
     selectedMachine: "所选设备",
-    shiftSummary: "今日 08:00 ~ 当前",
+    shiftSummary: "所选日 08:00 ~ 参考时间",
     recentSummary: "最近 60 分钟",
     trendTitle: "最近 24 小时趋势",
-    trendHint: "将 10 分钟采集数据按整点汇总，显示合模数、电力、油温趋势。",
+    trendHint: "按整点汇总采集区间。模次为观测区间增量，电力为电表累计值差额的参考值。",
     output: "合模数",
     cumulative: "累计",
-    todayCumulative: "今日累计",
+    todayCumulative: "所选日累计",
     oil: "油温",
     power: "电力",
     powerTotal: "累计电力",
@@ -356,8 +324,8 @@ const pageCopy = {
     trendOutput: "整点合模数",
     trendPower: "电力使用量",
     trendOil: "油温",
-    running: "运行",
-    idle: "待机",
+    running: "近期观测到合模",
+    idle: "近期未观测到合模",
     warning: "需确认",
     noData: "无数据",
     fetchError: "无法读取 MES 数据。",
@@ -505,377 +473,28 @@ function compareStatusLabel(
   return copy.machiningMesOnly;
 }
 
-function normalizeComparisonPartNo(value: string | null | undefined) {
-  return normalizeComparisonIdentity(value);
-}
-
-function normalizeComparisonIdentity(value: string | number | null | undefined) {
-  return String(value ?? "").replace(/\s+/g, "").trim().toUpperCase();
-}
-
-function normalizeComparisonMachineKey(value: string | number | null | undefined) {
-  const text = String(value ?? "").trim();
-  if (!text) return "";
-  const suffixMatch = text.match(/-(\d+)\s*$/);
-  if (suffixMatch) return suffixMatch[1];
-  const koreanMatch = text.match(/(\d+)\s*호기/);
-  if (koreanMatch) return koreanMatch[1];
-  const leadingMatch = text.match(/^(\d+)(?:\D|$)/);
-  if (leadingMatch) return leadingMatch[1];
-  return text;
+function formatTonnage(value: string) {
+  return value.endsWith("T") ? value : `${value}T`;
 }
 
 function formatLocalizedMachineName(value: string, language: AppLanguage) {
   return language === "zh" ? value.replace(/호기/g, "号机") : value;
 }
 
-function injectionReceiptStatusLabel(status: InjectionReceiptStatus, copy: Record<string, string>) {
-  if (status === "matched") return copy.injectionReceiptMatched;
-  if (status === "shortage") return copy.injectionReceiptShortage;
-  if (status === "over") return copy.injectionReceiptOver;
-  if (status === "missing") return copy.injectionReceiptMissing;
-  return copy.injectionReceiptOnly;
-}
-
-function resolveInjectionReceiptStatus(estimatedQty: number, receiptQty: number): InjectionReceiptStatus {
-  if (estimatedQty > 0 && receiptQty > 0) {
-    if (Math.round(estimatedQty) === Math.round(receiptQty)) return "matched";
-    return receiptQty > estimatedQty ? "over" : "shortage";
-  }
-  if (estimatedQty > 0) return "missing";
-  return "receipt_only";
-}
-
-function expandSlashComparisonToken(token: string) {
-  const normalized = normalizeComparisonIdentity(token);
-  if (!normalized.includes("/")) return [normalized];
-  const parts = normalized.split("/").filter(Boolean);
-  if (parts.length < 2) return [normalized];
-
-  const expanded = new Set<string>([normalized, parts[0]]);
-  const base = parts[0];
-  for (const suffix of parts.slice(1)) {
-    if (!suffix) continue;
-    if (/[A-Z]/.test(suffix) && suffix.length >= base.length / 2) {
-      expanded.add(suffix);
-      continue;
-    }
-    const prefixLength = Math.max(0, base.length - suffix.length);
-    expanded.add(`${base.slice(0, prefixLength)}${suffix}`);
-  }
-
-  return [...expanded];
-}
-
-function isUsefulComparisonToken(token: string) {
-  const normalized = normalizeComparisonIdentity(token);
-  return normalized.length >= 4;
-}
-
-function getComparisonTokens(...values: Array<string | number | null | undefined>) {
-  const tokens = new Set<string>();
-
-  for (const value of values) {
-    const rawText = String(value ?? "").trim();
-    if (!rawText) continue;
-
-    const whole = normalizeComparisonIdentity(rawText);
-    if (isUsefulComparisonToken(whole)) tokens.add(whole);
-
-    const textTokens = rawText.toUpperCase().match(/[A-Z0-9][A-Z0-9._/-]*[A-Z0-9]/g) ?? [];
-    for (const token of textTokens) {
-      for (const expanded of expandSlashComparisonToken(token)) {
-        const normalized = normalizeComparisonIdentity(expanded);
-        if (isUsefulComparisonToken(normalized)) tokens.add(normalized);
-      }
-    }
-  }
-
-  return [...tokens];
-}
-
-function addReceiptPartNo(row: InjectionReceiptComparisonRow, partNo: string | null | undefined) {
-  const normalized = normalizeComparisonPartNo(partNo);
-  if (!normalized) return;
-  if (!row.receiptPartNos.some((item) => normalizeComparisonPartNo(item) === normalized)) {
-    row.receiptPartNos.push(String(partNo ?? "").trim() || normalized);
-  }
-}
-
-function addReceiptEquipmentLabel(row: InjectionReceiptComparisonRow, label: string | null | undefined) {
-  const normalized = String(label ?? "").trim();
-  if (!normalized) return;
-  if (!row.receiptEquipmentLabels.includes(normalized)) {
-    row.receiptEquipmentLabels.push(normalized);
-  }
-}
-
-function addReceiptMatchMethod(row: InjectionReceiptComparisonRow, method: InjectionReceiptMatchMethod) {
-  if (!row.matchMethods.includes(method)) {
-    row.matchMethods.push(method);
-  }
-}
-
-function receiptMatchMethodLabel(method: InjectionReceiptMatchMethod, copy: Record<string, string>) {
-  if (method === "direct_part_no") return copy.injectionReceiptDirectPartNo;
-  if (method === "model_candidate") return copy.injectionReceiptModelCandidate;
-  if (method === "equipment_corrected") return copy.injectionReceiptEquipmentCorrected;
-  return copy.injectionReceiptUnmatched;
-}
-
-function formatComparisonMachineLabel(
-  machineKey: string,
-  fallback: string | null | undefined,
-  machineRows: InjectionMachineRow[],
-) {
-  const machineNumber = Number(machineKey);
-  const machine = Number.isFinite(machineNumber)
-    ? machineRows.find((row) => row.machineNumber === machineNumber)
-    : undefined;
-  if (machine) {
-    return `${formatTonnage(machine.tonnage)}-${machine.machineNumber}`;
-  }
-  const fallbackText = String(fallback ?? "").trim();
-  return fallbackText || (machineKey ? `${machineKey}호기` : "-");
-}
-
-function registerCandidateIndex(
-  candidateIndex: Map<string, string | null>,
-  indexPrefix: string,
-  rowKey: string,
-  ...values: Array<string | number | null | undefined>
-) {
-  for (const token of getComparisonTokens(...values)) {
-    const candidateKey = `${indexPrefix}${token}`;
-    const existing = candidateIndex.get(candidateKey);
-    if (existing === undefined) {
-      candidateIndex.set(candidateKey, rowKey);
-    } else if (existing !== rowKey) {
-      candidateIndex.set(candidateKey, null);
-    }
-  }
-}
-
-function resolveCandidateIndex(
-  candidateIndex: Map<string, string | null>,
-  indexPrefix: string,
-  ...values: Array<string | number | null | undefined>
-) {
-  for (const token of getComparisonTokens(...values)) {
-    const rowKey = candidateIndex.get(`${indexPrefix}${token}`);
-    if (rowKey) return rowKey;
-  }
-  return null;
-}
-
-function buildInjectionReceiptComparison(
-  realtimeProgress: RealtimeProgressSummary,
-  reportStats: ProductionMesReportStatsResponse | undefined,
-  machineRows: InjectionMachineRow[],
-): InjectionReceiptComparison {
-  const rowsByKey = new Map<string, InjectionReceiptComparisonRow>();
-  const machineCandidateIndex = new Map<string, string | null>();
-  const globalCandidateIndex = new Map<string, string | null>();
-
-  for (const progressRow of realtimeProgress.rows) {
-    const machineKey = normalizeComparisonMachineKey(progressRow.key) || normalizeComparisonMachineKey(progressRow.label);
-    if (!machineKey) continue;
-    for (const segment of progressRow.segments) {
-      const partKey = normalizeComparisonPartNo(segment.partNo);
-      if (!partKey || partKey === "-") continue;
-      const key = `${machineKey}::${partKey}`;
-      const current = rowsByKey.get(key) ?? {
-        key,
-        machineKey,
-        machineLabel: formatComparisonMachineLabel(machineKey, progressRow.label, machineRows),
-        partNo: segment.partNo,
-        modelName: segment.modelName,
-        plannedQty: 0,
-        estimatedQty: 0,
-        allocatedShots: 0,
-        receiptQty: 0,
-        gapQty: 0,
-        reportCount: 0,
-        latestReportTime: null,
-        status: "missing" as InjectionReceiptStatus,
-        sequence: segment.sequence,
-        receiptPartNos: [],
-        receiptEquipmentLabels: [],
-        matchMethods: [],
-      };
-      current.plannedQty += Number(segment.plannedQty ?? 0);
-      current.estimatedQty += Number(segment.estimatedQty ?? 0);
-      current.allocatedShots += Number(segment.allocatedShots ?? 0);
-      current.sequence = Math.min(current.sequence, segment.sequence);
-      if (!current.modelName || current.modelName === "-") {
-        current.modelName = segment.modelName;
-      }
-      rowsByKey.set(key, current);
-      registerCandidateIndex(machineCandidateIndex, `${machineKey}::`, key, segment.partNo, segment.modelName);
-      registerCandidateIndex(globalCandidateIndex, "", key, segment.partNo, segment.modelName);
-    }
-  }
-
-  for (const reportRow of reportStats?.rows ?? []) {
-    const machineKey = (
-      normalizeComparisonMachineKey(reportRow.equipment_key)
-      || normalizeComparisonMachineKey(reportRow.equipment_name)
-      || normalizeComparisonMachineKey(reportRow.equipment_label)
-    );
-    const partKey = normalizeComparisonPartNo(reportRow.part_no);
-    if (!machineKey || !partKey) continue;
-    const directKey = `${machineKey}::${partKey}`;
-    const sameMachinePlanKey = resolveCandidateIndex(
-      machineCandidateIndex,
-      `${machineKey}::`,
-      reportRow.part_no,
-      reportRow.model_name,
-      ...(reportRow.mes_material_names ?? []),
-    );
-    const correctedMachinePlanKey = sameMachinePlanKey
-      ? null
-      : resolveCandidateIndex(
-        globalCandidateIndex,
-        "",
-        reportRow.part_no,
-        reportRow.model_name,
-        ...(reportRow.mes_material_names ?? []),
-      );
-    const key = rowsByKey.has(directKey)
-      ? directKey
-      : sameMachinePlanKey ?? correctedMachinePlanKey ?? directKey;
-    const current = rowsByKey.get(key) ?? {
-      key,
-      machineKey,
-      machineLabel: formatComparisonMachineLabel(machineKey, reportRow.equipment_label || reportRow.equipment_name, machineRows),
-      partNo: reportRow.part_no,
-      modelName: reportRow.model_name || "-",
-      plannedQty: Number(reportRow.planned_qty ?? 0),
-      estimatedQty: 0,
-      allocatedShots: 0,
-      receiptQty: 0,
-      gapQty: 0,
-      reportCount: 0,
-      latestReportTime: null,
-      status: "receipt_only" as InjectionReceiptStatus,
-      sequence: 9999,
-      receiptPartNos: [],
-      receiptEquipmentLabels: [],
-      matchMethods: [],
-    };
-    const hasReceipt = Number(reportRow.mes_qty ?? 0) > 0 || Number(reportRow.mes_report_count ?? 0) > 0;
-    if (hasReceipt) {
-      const sourceEquipmentLabel = formatComparisonMachineLabel(
-        machineKey,
-        reportRow.equipment_label || reportRow.equipment_name,
-        machineRows,
-      );
-      addReceiptPartNo(current, reportRow.part_no);
-      if (current.machineKey !== machineKey) {
-        addReceiptEquipmentLabel(current, sourceEquipmentLabel);
-      }
-      addReceiptMatchMethod(
-        current,
-        key === directKey && rowsByKey.has(directKey)
-          ? "direct_part_no"
-          : correctedMachinePlanKey
-            ? "equipment_corrected"
-            : sameMachinePlanKey
-            ? "model_candidate"
-            : "unmatched",
-      );
-    }
-    current.receiptQty += Number(reportRow.mes_qty ?? 0);
-    current.reportCount += Number(reportRow.mes_report_count ?? 0);
-    if (!current.plannedQty) {
-      current.plannedQty = Number(reportRow.planned_qty ?? 0);
-    }
-    if ((!current.modelName || current.modelName === "-") && reportRow.model_name) {
-      current.modelName = reportRow.model_name;
-    }
-    if (reportRow.latest_report_time && (!current.latestReportTime || reportRow.latest_report_time > current.latestReportTime)) {
-      current.latestReportTime = reportRow.latest_report_time;
-    }
-    rowsByKey.set(key, current);
-  }
-
-  const rows = [...rowsByKey.values()]
-    .map((row) => {
-      const roundedEstimated = Math.round(row.estimatedQty);
-      const roundedReceipt = Math.round(row.receiptQty);
-      const gapQty = roundedReceipt - roundedEstimated;
-      return {
-        ...row,
-        estimatedQty: roundedEstimated,
-        allocatedShots: Math.round(row.allocatedShots),
-        receiptQty: roundedReceipt,
-        gapQty,
-        status: resolveInjectionReceiptStatus(roundedEstimated, roundedReceipt),
-      };
-    })
-    .filter((row) => row.estimatedQty > 0 || row.receiptQty > 0)
-    .sort((left, right) => {
-      const leftMachine = Number(left.machineKey);
-      const rightMachine = Number(right.machineKey);
-      if (Number.isFinite(leftMachine) && Number.isFinite(rightMachine) && leftMachine !== rightMachine) {
-        return leftMachine - rightMachine;
-      }
-      if (left.sequence !== right.sequence) return left.sequence - right.sequence;
-      return left.partNo.localeCompare(right.partNo, "ko-KR", { numeric: true, sensitivity: "base" });
-    });
-
-  const latestReportTime = rows
-    .map((row) => row.latestReportTime)
-    .filter((value): value is string => Boolean(value))
-    .sort()
-    .at(-1) ?? null;
-  const estimatedQty = rows.reduce((sum, row) => sum + row.estimatedQty, 0);
-  const receiptQty = rows.reduce((sum, row) => sum + row.receiptQty, 0);
-  const matchedCount = rows.filter((row) => row.status === "matched").length;
-  const issueCount = rows.filter((row) => row.status !== "matched").length;
-
-  return {
-    rows,
-    summary: {
-      plannedQty: rows.reduce((sum, row) => sum + row.plannedQty, 0),
-      estimatedQty,
-      receiptQty,
-      gapQty: receiptQty - estimatedQty,
-      matchedCount,
-      issueCount,
-      latestReportTime,
-    },
-  };
-}
-
-function formatTonnage(value: string) {
-  return value.endsWith("T") ? value : `${value}T`;
-}
-
 function formatDateParam(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return getShanghaiDateString(value);
 }
 
 function startOfLocalDay(value: Date) {
-  const day = new Date(value);
-  day.setHours(0, 0, 0, 0);
-  return day;
+  return new Date(`${getShanghaiDateString(value)}T00:00:00+08:00`);
 }
 
 function startOfProductionDay(value: Date) {
-  const day = new Date(value);
-  day.setHours(8, 0, 0, 0);
-  if (value < day) {
-    day.setDate(day.getDate() - 1);
-  }
-  return day;
+  return new Date(`${getShanghaiBusinessDateString(value)}T08:00:00+08:00`);
 }
 
-function getCurrentProductionDate() {
-  return formatDateParam(startOfProductionDay(new Date()));
+function getShanghaiHour(value: Date) {
+  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", hour12: false }).format(value)) % 24;
 }
 
 function getBusinessDayStart(businessDate: string) {
@@ -894,9 +513,7 @@ function getBusinessDayReferenceEnd(businessDate: string, latestTime: Date | nul
 }
 
 function addDays(value: Date, days: number) {
-  const next = new Date(value);
-  next.setDate(next.getDate() + days);
-  return next;
+  return new Date(value.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
 function clampDateRangeColumns(startDate: string, latestTime: Date | null) {
@@ -913,6 +530,7 @@ function hoursBetween(startTime: Date, endTime: Date) {
 
 function formatDateTime(value: string, language: AppLanguage) {
   return new Intl.DateTimeFormat(language === "ko" ? "ko-KR" : "zh-CN", {
+    timeZone: "Asia/Shanghai",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -922,6 +540,7 @@ function formatDateTime(value: string, language: AppLanguage) {
 
 function formatHourLabel(value: Date, language: AppLanguage) {
   return new Intl.DateTimeFormat(language === "ko" ? "ko-KR" : "zh-CN", {
+    timeZone: "Asia/Shanghai",
     hour: "2-digit",
     hour12: false,
   }).format(value);
@@ -929,6 +548,7 @@ function formatHourLabel(value: Date, language: AppLanguage) {
 
 function formatShortDate(value: Date, language: AppLanguage) {
   return new Intl.DateTimeFormat(language === "ko" ? "ko-KR" : "zh-CN", {
+    timeZone: "Asia/Shanghai",
     month: "2-digit",
     day: "2-digit",
   }).format(value);
@@ -936,6 +556,7 @@ function formatShortDate(value: Date, language: AppLanguage) {
 
 function formatTooltipDate(value: Date, language: AppLanguage) {
   return new Intl.DateTimeFormat(language === "ko" ? "ko-KR" : "zh-CN", {
+    timeZone: "Asia/Shanghai",
     month: "long",
     day: "numeric",
   }).format(value);
@@ -943,6 +564,7 @@ function formatTooltipDate(value: Date, language: AppLanguage) {
 
 function formatTooltipTime(value: Date, language: AppLanguage) {
   return new Intl.DateTimeFormat(language === "ko" ? "ko-KR" : "zh-CN", {
+    timeZone: "Asia/Shanghai",
     hour: "numeric",
     minute: "2-digit",
     hour12: false,
@@ -950,15 +572,12 @@ function formatTooltipTime(value: Date, language: AppLanguage) {
 }
 
 function dateKey(value: Date) {
-  return `${value.getFullYear()}-${value.getMonth() + 1}-${value.getDate()}`;
+  return getShanghaiDateString(value);
 }
 
 function getShiftSectionInfo(value: Date, language: AppLanguage) {
-  const hour = value.getHours();
-  const ownerDate = new Date(value);
-  if (hour < 8) {
-    ownerDate.setDate(ownerDate.getDate() - 1);
-  }
+  const hour = getShanghaiHour(value);
+  const ownerDate = startOfProductionDay(value);
 
   const shift: "day" | "night" = hour >= 8 && hour < 20 ? "day" : "night";
   return {
@@ -989,7 +608,8 @@ function buildRows(data?: InjectionProductionMatrix, businessDate?: string): Inj
     const oilTemperature = nullableNumberAt(data.oil_temperature_matrix?.[key], latestIndex);
     const powerUsage = nullableNumberAt(data.power_usage_matrix?.[key], latestIndex);
     const powerTotal = nullableNumberAt(data.power_kwh_matrix?.[key], latestIndex);
-    const status = recentOutput > 0 ? "running" : "idle";
+    const source = data.machine_sources?.[key];
+    const status = source?.status !== "ok" ? "warning" : recentOutput > 0 ? "running" : "idle";
 
     return {
       machineNumber: machine.machine_number,
@@ -1009,17 +629,15 @@ function buildRows(data?: InjectionProductionMatrix, businessDate?: string): Inj
 
 function getLatestTime(data?: InjectionProductionMatrix) {
   const latestSlot = data?.time_slots?.at(-1);
-  return latestSlot ? new Date(latestSlot.time) : null;
+  if (!latestSlot) return null;
+  // Source slots are [start, end); include the final observed bucket, then cap by business day.
+  const minutes = latestSlot.interval_minutes ?? (data?.time_slots.length && data.time_slots.length > 1
+    ? (Date.parse(latestSlot.time) - Date.parse(data.time_slots[data.time_slots.length - 2].time)) / 60_000 : 2);
+  return new Date(Date.parse(latestSlot.time) + minutes * 60_000);
 }
 
 function getShiftStart(latestTime: Date | null) {
-  if (!latestTime) return null;
-  const shiftStart = new Date(latestTime);
-  shiftStart.setHours(8, 0, 0, 0);
-  if (latestTime < shiftStart) {
-    shiftStart.setDate(shiftStart.getDate() - 1);
-  }
-  return shiftStart;
+  return latestTime ? startOfProductionDay(latestTime) : null;
 }
 
 function findLastFiniteValueAtOrBefore(
@@ -1058,7 +676,7 @@ function buildCumulativePowerUsage(
   let hasUsage = false;
   (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
-    if (slotTime <= startTime || slotTime > endTime) return;
+    if (!isMonitoringSlotInWindow(slotTime.getTime(), startTime, endTime)) return;
 
     const currentValue = finiteNumberAt(powerTotalRow, index);
     if (currentValue === null) return;
@@ -1083,7 +701,7 @@ function buildFallbackPowerUsage(
   let hasUsage = false;
   (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
-    if (slotTime <= startTime || slotTime > endTime) return;
+    if (!isMonitoringSlotInWindow(slotTime.getTime(), startTime, endTime)) return;
 
     const powerValue = nullableNumberAt(powerUsageRow, index);
     if (powerValue !== null) {
@@ -1126,7 +744,7 @@ function buildPeriodSummary(
 
   (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
-    if (slotTime <= startTime || slotTime > endTime) return;
+    if (!isMonitoringSlotInWindow(slotTime.getTime(), startTime, endTime)) return;
 
     output += numberAt(productionRow, index);
 
@@ -1233,7 +851,7 @@ function buildMachineProductionWindow(
 
   (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
-    if (slotTime <= startTime || slotTime > endTime) return;
+    if (!isMonitoringSlotInWindow(slotTime.getTime(), startTime, endTime)) return;
 
     const slotOutput = numberAt(productionRow, index);
     if (slotOutput <= 0) return;
@@ -1299,7 +917,7 @@ function buildMachineUtilizationSummary(
 
   (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
-    if (slotTime <= startTime || slotTime > endTime) return;
+    if (!isMonitoringSlotInWindow(slotTime.getTime(), startTime, endTime)) return;
 
     const intervalMinutes = getSlotIntervalMinutes(data, index);
     totalMinutes += intervalMinutes;
@@ -1404,19 +1022,17 @@ function buildHourlyTrend(
   data: InjectionProductionMatrix | undefined,
   machineNumber: number,
   language: AppLanguage,
+  businessDate?: string,
 ): HourlyTrendPoint[] {
-  const latestTime = getLatestTime(data);
+  const rawLatestTime = getLatestTime(data);
+  const latestTime = businessDate && rawLatestTime ? getBusinessDayReferenceEnd(businessDate, rawLatestTime) : rawLatestTime;
   if (!data || !latestTime) return [];
 
-  const firstHour = new Date(latestTime);
-  firstHour.setMinutes(0, 0, 0);
-  firstHour.setHours(firstHour.getHours() - 23);
+  const firstHour = new Date(Math.floor((latestTime.getTime() - 1) / 3_600_000) * 3_600_000 - 23 * 3_600_000);
 
   return Array.from({ length: 24 }, (_, hourIndex) => {
-    const start = new Date(firstHour);
-    start.setHours(firstHour.getHours() + hourIndex);
-    const end = new Date(start);
-    end.setHours(start.getHours() + 1);
+    const start = new Date(firstHour.getTime() + hourIndex * 3_600_000);
+    const end = new Date(start.getTime() + 3_600_000);
 
     const summary = buildPeriodSummary(data, machineNumber, start, end);
     return {
@@ -1424,10 +1040,10 @@ function buildHourlyTrend(
       dateLabel: formatShortDate(start, language),
       startTime: start,
       endTime: end,
-      hour: start.getHours(),
-      isDayBreak: start.getHours() === 0,
-      output: summary.output,
-      power: summary.power ?? 0,
+      hour: getShanghaiHour(start),
+      isDayBreak: getShanghaiHour(start) === 0,
+      output: hasObservedCapacityInWindow(data, machineNumber, start, end) ? summary.output : null,
+      power: summary.power,
       oilTemperature: summary.oilTemperature,
     };
   });
@@ -1441,12 +1057,13 @@ function maxTrendValue(points: HourlyTrendPoint[], metric: keyof Pick<HourlyTren
 function buildFleetHourlyTrendScale(
   data: InjectionProductionMatrix | undefined,
   language: AppLanguage,
+  businessDate?: string,
 ): HourlyTrendScale {
   if (!data) {
     return { powerMax: 1, oilMax: 50 };
   }
 
-  const allPoints = data.machines.flatMap((machine) => buildHourlyTrend(data, machine.machine_number, language));
+  const allPoints = data.machines.flatMap((machine) => buildHourlyTrend(data, machine.machine_number, language, businessDate));
   return {
     powerMax: maxTrendValue(allPoints, "power"),
     oilMax: Math.max(50, maxTrendValue(allPoints, "oilTemperature")),
@@ -1490,13 +1107,19 @@ function CombinedTrendChart({
   const powerMax = Math.max(1, scale.powerMax);
   const oilMax = Math.max(50, scale.oilMax);
   const yFor = (value: number, max: number) => plotBottom - (value / max) * (plotBottom - plotTop);
-  const lineFor = (metric: "power" | "oilTemperature", max: number) =>
-    points
-      .map((point, index) => {
-        const value = Number(point[metric] ?? 0);
-        return `${index * xGap},${yFor(value, max)}`;
-      })
-      .join(" ");
+  const lineFor = (metric: "power" | "oilTemperature", max: number) => {
+    let hasPrevious = false;
+    return points.map((point, index) => {
+      const value = point[metric];
+      if (value === null || !Number.isFinite(value)) {
+        hasPrevious = false;
+        return "";
+      }
+      const command = hasPrevious ? "L" : "M";
+      hasPrevious = true;
+      return `${command}${index * xGap},${yFor(value, max)}`;
+    }).join(" ");
+  };
   const shiftSections = points.reduce<Array<{
     key: string;
     dateLabel: string;
@@ -1582,7 +1205,8 @@ function CombinedTrendChart({
           );
         })}
         {points.map((point, index) => {
-          const value = Number(point.output ?? 0);
+          if (point.output === null) return null;
+          const value = point.output;
           const barHeight = Math.max(value > 0 ? 2 : 0, (value / outputMax) * (plotBottom - plotTop));
           return (
             <rect
@@ -1596,11 +1220,11 @@ function CombinedTrendChart({
             />
           );
         })}
-        <polyline className="mes-combined-chart__power" points={lineFor("power", powerMax)} />
-        <polyline className="mes-combined-chart__oil" points={lineFor("oilTemperature", oilMax)} />
+        <path className="mes-combined-chart__power" d={lineFor("power", powerMax)} />
+        <path className="mes-combined-chart__oil" d={lineFor("oilTemperature", oilMax)} />
         {points.map((point, index) => (
           <g key={`dots-${point.dateLabel}-${point.label}-${index}`}>
-            <circle cx={index * xGap} cy={yFor(point.power, powerMax)} r="2.5" className="mes-combined-chart__power-dot" />
+            {point.power !== null && <circle cx={index * xGap} cy={yFor(point.power, powerMax)} r="2.5" className="mes-combined-chart__power-dot" />}
             {point.oilTemperature !== null && (
               <circle cx={index * xGap} cy={yFor(point.oilTemperature, oilMax)} r="2.5" className="mes-combined-chart__oil-dot" />
             )}
@@ -1630,7 +1254,7 @@ function CombinedTrendChart({
               {formatTooltipTime(hoveredPoint.point.startTime, language)} ~ {formatTooltipTime(hoveredPoint.point.endTime, language)}
             </em>
           </strong>
-          <span>{labels.output} {formatNumber(hoveredPoint.point.output)}</span>
+          <span>{labels.output} {hoveredPoint.point.output === null ? "—" : formatNumber(hoveredPoint.point.output)}</span>
           <span>{labels.power} {formatDecimal(hoveredPoint.point.power, 2)} kWh</span>
           <span>{labels.oil} {formatTemperature(hoveredPoint.point.oilTemperature)}</span>
         </div>
@@ -1780,6 +1404,49 @@ function SummaryMetricCard({
   );
 }
 
+function MonitoringStateNotice({ state, language, onRetry }: {
+  state: MonitoringState; language: AppLanguage; onRetry: () => void;
+}) {
+  if (state === "ready") return null;
+  const text = language === "ko" ? {
+    loading: "필요한 원천 자료를 불러오는 중입니다.",
+    error: "원천 조회 또는 갱신에 실패했습니다. 이전 자료로 현재 수량·정상·정지를 판정하지 않습니다.",
+    empty: "조회 범위에 확인 가능한 원천 자료가 없습니다. 생산 0 또는 정상 상태를 뜻하지 않습니다.",
+  } : {
+    loading: "正在获取所需数据源。",
+    error: "数据源查询或刷新失败，不用旧资料判断当前数量、正常或停机状态。",
+    empty: "查询范围内无可确认的源数据，不代表产量为0或状态正常。",
+  };
+  return <div className={`notice ${state === "error" ? "notice--warning" : "notice--neutral"}`} role="status">
+    <p>{text[state]}</p>
+    {state !== "loading" && <button className="button button--ghost" type="button" onClick={onRetry}>{language === "ko" ? "다시 조회" : "重新查询"}</button>}
+  </div>;
+}
+
+function MonitoringCoverageNotice({ data, machineNumber, language }: {
+  data: InjectionProductionMatrix | undefined; machineNumber?: number | null; language: AppLanguage;
+}) {
+  const coverage = getMonitoringCoverage(data, machineNumber ?? null);
+  const copy = language === "ko" ? {
+    unknown: "설비별 수집 범위를 확인할 수 없어 생산·가동 판단을 보류합니다.",
+    missing: "일부 설비의 형합 원천이 없거나 지연되었습니다. 누락을 정지나 생산 0으로 해석하지 마세요.",
+    policy: "이 자료의 형합수 집계 정책을 확인할 수 없어 파생 판단을 보류합니다.",
+    coverage: "형합 샘플이 있는 구간", note: "0은 수집 구간에서 확인된 증가량입니다. 수집 누락은 별도로 확인해야 하며, 정지 확정이나 계획 가동률이 아닙니다.",
+  } : {
+    unknown: "无法确认各设备采集范围，暂停生产与运行判断。",
+    missing: "部分设备合模数据缺失或延迟，请勿将缺失解释为停机或产量为0。",
+    policy: "无法确认该资料的模次汇总规则，暂停派生判断。",
+    coverage: "有合模样本的区间", note: "0表示采集区间内确认的增量。需另行核对采集缺失，不代表确认停机或计划开机率。",
+  };
+  const latestSource = machineNumber === null || machineNumber === undefined ? data?.source_latest_at : data?.machine_sources?.[String(machineNumber)]?.latest_capacity_at;
+  return <div className={`notice ${coverage.ready ? "notice--neutral" : "notice--warning"}`} role="status">
+    <p>{language === "ko" ? "저장된 형합 관측 최신" : "已存合模观测最新时间"}: {latestSource ? formatDateTime(latestSource, language) : "—"} · UTC+8</p>
+    {data?.source_window && <p>{language === "ko" ? "원천 조회 범위" : "源数据查询范围"}: {formatDateTime(data.source_window.start, language)} ~ {formatDateTime(data.source_window.end, language)} · UTC+8. {language === "ko" ? "아래 관측 구간 수는 조회 범위 기준이며, 일일 합계는 표시된 업무일로 제한합니다." : "下方观测区间数以查询范围为准，日合计限于所示业务日。"}</p>}
+    {!coverage.known ? <p>{copy.unknown}</p> : <><p>{coverage.policyUnverified ? copy.policy : coverage.ready ? copy.note : copy.missing}</p><p>{copy.coverage}: {formatNumber(coverage.observedSlots)} / {formatNumber(coverage.totalSlots)}</p></>}
+    <p>{language === "ko" ? "전력은 형합수와 별도 집계 정책입니다. 계기 리셋·결측 보정과 정확한 사용 시점이 검증되기 전에는 비용 또는 절감 성과로 판단하지 않습니다." : "电力与模次采用不同汇总规则。电表重置、缺失修正与准确使用时点验证前，不作为费用或节能成效判断。"}</p>
+  </div>;
+}
+
 function MesMonitoringSkeleton({ copy }: { copy: Record<string, string> }) {
   return (
     <>
@@ -1824,16 +1491,30 @@ export function MesMonitoringPage() {
   const [language] = useStoredLanguage();
   const { hasCapability } = useAuth();
   const [selectedInfoView, setSelectedInfoView] = useState<MesInfoView>("production");
-  const [selectedMachineNumber, setSelectedMachineNumber] = useState(1);
+  const [isMachiningOpen, setIsMachiningOpen] = useState(false);
+  const currentProductionDate = useShanghaiBusinessDate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const scope = resolveInjectionScope(searchParams.toString(), currentProductionDate);
+  const injectionDate = scope.date;
+  const selectedMachineNumber = scope.machineNumber;
+  const setInjectionDate = (date: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("date", date || currentProductionDate);
+    setSearchParams(next);
+  };
+  const setSelectedMachineNumber = (machine: number | null) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("date", injectionDate);
+    if (machine === null) next.delete("machine");
+    else next.set("machine", String(machine));
+    setSearchParams(next);
+  };
   const [snapshotJobId, setSnapshotJobId] = useState<string | null>(null);
   const [isUtilizationModalOpen, setIsUtilizationModalOpen] = useState(false);
-  const [injectionDate, setInjectionDate] = useState(() => getCurrentProductionDate());
-  const [hasUserSelectedInjectionDate, setHasUserSelectedInjectionDate] = useState(false);
   const [utilizationStartDate, setUtilizationStartDate] = useState(() => formatDateParam(addDays(new Date(), -13)));
   const [utilizationEndDate, setUtilizationEndDate] = useState(() => formatDateParam(new Date()));
   const copy = pageCopy[language];
   const queryClient = useQueryClient();
-  const currentProductionDate = getCurrentProductionDate();
   const isCurrentInjectionDate = injectionDate === currentProductionDate;
   const isProductionInfoView = selectedInfoView === "production";
 
@@ -1850,13 +1531,6 @@ export function MesMonitoringPage() {
     enabled: isProductionInfoView,
     staleTime: 5 * 60 * 1000,
   });
-
-  useEffect(() => {
-    if (hasUserSelectedInjectionDate) return;
-    const availableDates = monitoringDatesQuery.data?.dates ?? [];
-    if (!availableDates.length || availableDates.includes(injectionDate)) return;
-    setInjectionDate(availableDates[0]);
-  }, [hasUserSelectedInjectionDate, injectionDate, monitoringDatesQuery.data?.dates]);
 
   const updateMutation = useMutation({
     mutationFn: requestInjectionSnapshotUpdate,
@@ -1877,18 +1551,18 @@ export function MesMonitoringPage() {
   const machiningStatsQuery = useQuery({
     queryKey: ["production-mes-report-stats", "machining", injectionDate],
     queryFn: () => getProductionMesReportStats(injectionDate, "machining"),
-    enabled: isProductionInfoView && Boolean(injectionDate),
-    refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
+    enabled: isProductionInfoView && isMachiningOpen && Boolean(injectionDate),
+    refetchInterval: isProductionInfoView && isMachiningOpen && isCurrentInjectionDate ? 60_000 : false,
   });
 
   const utilizationColumns = useMemo(
-    () => clampDateRangeColumns(utilizationStartDate, getLatestTime(injectionQuery.data) ?? new Date()),
-    [injectionQuery.data, utilizationStartDate],
+    () => clampDateRangeColumns(utilizationStartDate, getBusinessDayEnd(utilizationEndDate)),
+    [utilizationEndDate, utilizationStartDate],
   );
 
   const utilizationQuery = useQuery({
-    queryKey: ["mes", "injection-utilization-matrix", utilizationColumns],
-    queryFn: () => getInjectionUtilizationMatrix(utilizationColumns),
+    queryKey: ["mes", "injection-utilization-matrix", utilizationColumns, utilizationEndDate],
+    queryFn: () => getInjectionUtilizationMatrix(utilizationColumns, utilizationEndDate < currentProductionDate ? utilizationEndDate : undefined),
     enabled: isProductionInfoView && isUtilizationModalOpen,
     staleTime: 5 * 60 * 1000,
   });
@@ -1902,17 +1576,14 @@ export function MesMonitoringPage() {
   }, [queryClient, updateStatusQuery.data?.status]);
 
   const machineRows = useMemo(() => buildRows(injectionQuery.data, injectionDate), [injectionDate, injectionQuery.data]);
-  const latestSlot = injectionQuery.data?.time_slots?.at(-1);
   const latestTime = getLatestTime(injectionQuery.data);
   const dayStart = useMemo(() => getBusinessDayStart(injectionDate), [injectionDate]);
   const referenceEndTime = useMemo(
     () => getBusinessDayReferenceEnd(injectionDate, latestTime),
     [injectionDate, latestTime],
   );
-  const defaultUtilizationEndDate = latestTime ? formatDateParam(latestTime) : formatDateParam(new Date());
-  const defaultUtilizationStartDate = latestTime
-    ? formatDateParam(addDays(latestTime, -13))
-    : formatDateParam(addDays(new Date(), -13));
+  const defaultUtilizationEndDate = injectionDate;
+  const defaultUtilizationStartDate = formatDateParam(addDays(getBusinessDayStart(injectionDate), -13));
   useEffect(() => {
     if (!isUtilizationModalOpen) return;
     setUtilizationStartDate(defaultUtilizationStartDate);
@@ -1921,12 +1592,6 @@ export function MesMonitoringPage() {
   const planDate = injectionDate;
   const nextPlanDate = formatDateParam(addDays(new Date(`${planDate}T08:00:00+08:00`), 1));
   const secondNextPlanDate = formatDateParam(addDays(new Date(`${planDate}T08:00:00+08:00`), 2));
-  const injectionReportStatsQuery = useQuery({
-    queryKey: ["production-mes-report-stats", "injection", planDate],
-    queryFn: () => getProductionMesReportStats(planDate, "injection"),
-    enabled: isProductionInfoView && Boolean(planDate),
-    refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
-  });
   const planSummaryQuery = useQuery({
     queryKey: ["production-plan-summary", planDate],
     queryFn: () => getProductionPlanSummary(planDate),
@@ -1941,12 +1606,6 @@ export function MesMonitoringPage() {
     queryKey: ["production-plan-summary", secondNextPlanDate],
     queryFn: () => getProductionPlanSummary(secondNextPlanDate),
     enabled: isProductionInfoView && Boolean(secondNextPlanDate),
-  });
-  const productionStatusQuery = useQuery({
-    queryKey: ["production-status", planDate],
-    queryFn: () => getProductionStatus(planDate),
-    enabled: isProductionInfoView && Boolean(planDate),
-    refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
   });
   const downtimeConfirmationsQuery = useQuery({
     queryKey: ["production", "injection-downtime-confirmations", planDate],
@@ -1967,8 +1626,8 @@ export function MesMonitoringPage() {
       queryKey: ["production", "injection-downtime-confirmations", planDate],
     }),
   });
-  const selectedMachine = machineRows.find((row) => row.machineNumber === selectedMachineNumber) ?? machineRows[0];
-  const selectedMachineKey = selectedMachine?.machineNumber ?? selectedMachineNumber;
+  const selectedMachine = machineRows.find((row) => row.machineNumber === selectedMachineNumber);
+  const selectedMachineKey = selectedMachine?.machineNumber ?? selectedMachineNumber ?? 1;
   const shiftSummary = useMemo(
     () => buildPeriodSummary(injectionQuery.data, selectedMachineKey, dayStart, referenceEndTime),
     [dayStart, injectionQuery.data, referenceEndTime, selectedMachineKey],
@@ -1983,12 +1642,12 @@ export function MesMonitoringPage() {
     );
   }, [injectionQuery.data, referenceEndTime, selectedMachineKey]);
   const hourlyTrend = useMemo(
-    () => buildHourlyTrend(injectionQuery.data, selectedMachineKey, language),
-    [injectionQuery.data, language, selectedMachineKey],
+    () => buildHourlyTrend(injectionQuery.data, selectedMachineKey, language, injectionDate),
+    [injectionDate, injectionQuery.data, language, selectedMachineKey],
   );
   const fleetHourlyTrendScale = useMemo(
-    () => buildFleetHourlyTrendScale(injectionQuery.data, language),
-    [injectionQuery.data, language],
+    () => buildFleetHourlyTrendScale(injectionQuery.data, language, injectionDate),
+    [injectionDate, injectionQuery.data, language],
   );
   const utilizationMatrix = utilizationQuery.data;
   const dailyUtilizationPoints = useMemo(
@@ -2051,35 +1710,22 @@ export function MesMonitoringPage() {
     () => buildFleetUtilizationSummary(injectionQuery.data, utilizationStart, referenceEndTime),
     [injectionQuery.data, referenceEndTime, utilizationStart],
   );
-  const injectionPlanQty = useMemo(() => {
-    const dailyTotal = planSummaryQuery.data?.injection.daily_totals.find((item) => item.date === planDate);
-    if (dailyTotal) return dailyTotal.plan_qty;
-    return planSummaryQuery.data?.injection.records.reduce((sum, record) => sum + Number(record.planned_quantity ?? 0), 0) ?? 0;
-  }, [planDate, planSummaryQuery.data]);
+  const transitionMatrix = useMemo(
+    () => trimMonitoringSlots(injectionQuery.data, getBusinessDayStart(planDate), getBusinessDayEnd(planDate)),
+    [injectionQuery.data, planDate],
+  );
   const transitionAnalysis = useMemo(
     () => buildInjectionTransitionAnalysis(
       planSummaryQuery.data,
-      injectionQuery.data,
+      transitionMatrix,
       planDate,
       undefined,
       [nextPlanSummaryQuery.data, secondNextPlanSummaryQuery.data].filter(
         (summary): summary is NonNullable<typeof summary> => Boolean(summary),
       ),
     ),
-    [injectionQuery.data, nextPlanSummaryQuery.data, planDate, planSummaryQuery.data, secondNextPlanSummaryQuery.data],
+    [transitionMatrix, nextPlanSummaryQuery.data, planDate, planSummaryQuery.data, secondNextPlanSummaryQuery.data],
   );
-  const realtimeProgress = useMemo(
-    () => buildRealtimeProgressSummary(planSummaryQuery.data, injectionQuery.data, productionStatusQuery.data, planDate, transitionAnalysis),
-    [injectionQuery.data, planDate, planSummaryQuery.data, productionStatusQuery.data, transitionAnalysis],
-  );
-  const injectionReceiptComparison = useMemo(
-    () => buildInjectionReceiptComparison(realtimeProgress, injectionReportStatsQuery.data, machineRows),
-    [injectionReportStatsQuery.data, machineRows, realtimeProgress],
-  );
-  const todayProductionQty = realtimeProgress.estimatedQty;
-  const todayProductionPlanQty = realtimeProgress.plannedQty || injectionPlanQty;
-  const fleetProgressRate = todayProductionPlanQty > 0 ? (todayProductionQty / todayProductionPlanQty) * 100 : 0;
-  const fleetProgressWidth = Math.max(0, Math.min(100, fleetProgressRate));
   const summary = useMemo(() => {
     const runningRows = machineRows.filter((row) => row.status === "running");
 
@@ -2102,16 +1748,14 @@ export function MesMonitoringPage() {
     ? fleetProductionWindow.output / fleetProductionWindow.activeHours
     : 0;
   const maxMachineShiftOutput = Math.max(1, ...machineRows.map((row) => row.shiftOutput));
-  const todayPlanGap = todayProductionQty - todayProductionPlanQty;
-  const utilizationTone =
-    utilization24.rate === null ? "neutral" : utilization24.rate >= 70 ? "up" : utilization24.rate >= 40 ? "info" : "down";
-  const recentOutputDelta = recentFleetSummary.output - previousRecentFleetSummary.output;
+  const utilizationTone = "neutral";
+  const recentOutputDelta = coversMonitoringWindow(injectionQuery.data, previousRecentStart, referenceEndTime) ? recentFleetSummary.output - previousRecentFleetSummary.output : null;
   const recentOilDelta =
-    recentFleetSummary.oilTemperature !== null && previousRecentFleetSummary.oilTemperature !== null
+    coversMonitoringWindow(injectionQuery.data, previousRecentStart, referenceEndTime) && recentFleetSummary.oilTemperature !== null && previousRecentFleetSummary.oilTemperature !== null
       ? recentFleetSummary.oilTemperature - previousRecentFleetSummary.oilTemperature
       : null;
   const todayPowerDelta =
-    todayFleetSummary.power !== null && previousDayFleetSummary.power !== null
+    coversMonitoringWindow(injectionQuery.data, previousDayStart, previousDayEnd) && todayFleetSummary.power !== null && previousDayFleetSummary.power !== null
       ? todayFleetSummary.power - previousDayFleetSummary.power
       : null;
   const isInitialMesLoading = isProductionInfoView && !injectionQuery.data && injectionQuery.isFetching;
@@ -2127,6 +1771,22 @@ export function MesMonitoringPage() {
     .sort()
     .at(-1);
   const monitoringDates = monitoringDatesQuery.data?.dates ?? [];
+  const matrixState = getMonitoringState([injectionQuery], hasMonitoringMatrix(injectionQuery.data));
+  const hasLivePlanSource = !isDevSessionActive() || import.meta.env.VITE_USE_REMOTE_PRODUCTION_API === "true";
+  const hasProductionEvidence = hasMonitoringMatrix(injectionQuery.data) && hasLivePlanSource;
+  const planQueries = [planSummaryQuery, nextPlanSummaryQuery, secondNextPlanSummaryQuery];
+  const transitionState = getMonitoringState([injectionQuery, ...planQueries], hasProductionEvidence);
+  const machiningState = getMonitoringState([machiningStatsQuery]);
+  const utilizationState = getMonitoringState([utilizationQuery], hasMonitoringMatrix(utilizationQuery.data) && dailyUtilizationPoints.length > 0);
+  const fleetCoverage = getMonitoringCoverage(injectionQuery.data);
+  const selectedCoverage = getMonitoringCoverage(injectionQuery.data, selectedMachineNumber);
+  const utilizationCoverage = getMonitoringCoverage(utilizationQuery.data);
+  const transitionCoverage = getMonitoringCoverage(transitionMatrix, selectedMachineNumber);
+  const retryFleet = () => {
+    void injectionQuery.refetch();
+    for (const query of planQueries) void query.refetch();
+  };
+
 
   useEffect(() => {
     if (!dailyUtilizationPoints.length || !latestTime) return;
@@ -2166,6 +1826,13 @@ export function MesMonitoringPage() {
             <span>{copy.inventoryInfo}</span>
           </div>
         </div>
+        <nav className="mes-monitor-panel__actions" aria-label={language === "ko" ? "사출 업무 연결" : "注塑工作入口"}>
+          <Link className="button button--ghost" to={buildInjectionLink("/injection/dashboard", scope, "overview")}>{language === "ko" ? "생산 관리" : "生产管理"}</Link>
+          <Link className="button button--ghost" to={buildInjectionLink("/injection/dashboard", scope, "field-records")}>{language === "ko" ? "선택일 현장 기록" : "所选日现场记录"}</Link>
+          {selectedMachineNumber !== null && <Link className="button button--ghost" to={`/field/imm${String(selectedMachineNumber).padStart(2, "0")}`}>{language === "ko" ? "현재 현장 입력" : "当前现场输入"}</Link>}
+        </nav>
+        <p className="plan-dashboard__meta">{injectionDate} · Asia/Shanghai 08:00 → {language === "ko" ? "다음 날" : "次日"} 08:00 · UTC+8</p>
+        <p className="plan-dashboard__meta">{language === "ko" ? "위 시간대 요약은 전체 설비 기준이며, 아래 상세 설비 선택은 시간대 신호와 정지 확인 목록에 적용합니다. 현장 입력 링크는 현재 업무일로 이동합니다." : "上方时段摘要为全部设备范围，下方详细设备选择应用于时段信号与停机核对列表。现场输入入口打开当前业务日。"}</p>
         <div className="mes-hero-panel__control">
           <div className={`mes-hero-panel__field-row${isProductionInfoView ? "" : " mes-hero-panel__field-row--single"}`}>
             <label className="mes-source-select">
@@ -2188,9 +1855,9 @@ export function MesMonitoringPage() {
                   type="date"
                   value={injectionDate}
                   list="mes-monitoring-dates"
+                  max={currentProductionDate}
                   onChange={(event) => {
-                    setHasUserSelectedInjectionDate(true);
-                    setInjectionDate(event.target.value || getCurrentProductionDate());
+                    setInjectionDate(event.target.value);
                   }}
                 />
                 <datalist id="mes-monitoring-dates">
@@ -2209,6 +1876,10 @@ export function MesMonitoringPage() {
           <MesMonitoringSkeleton copy={copy} />
         ) : (
         <>
+          <h3 className="panel__title">{language === "ko" ? "전체 설비 요약" : "全部设备摘要"}</h3>
+          <MonitoringStateNotice state={matrixState} language={language} onRetry={retryFleet} />
+          {matrixState === "ready" && <MonitoringCoverageNotice data={injectionQuery.data} language={language} />}
+          {matrixState === "ready" && fleetCoverage.ready && <>
           <div className="mes-stats-grid">
             <SummaryMetricCard
               title={copy.activeMachines}
@@ -2219,16 +1890,16 @@ export function MesMonitoringPage() {
               actionLabel={copy.utilizationModalTitle}
             />
             <SummaryMetricCard
-              title={copy.todayOutput}
-              value={`${formatNumber(todayProductionQty)} / ${formatNumber(todayProductionPlanQty)}`}
-              delta={copy.planReady}
-              deltaTone={todayPlanGap >= 0 ? "up" : "down"}
+              title={language === "ko" ? "선택일 관측 형합 합계 (shot)" : "所选日观测模次合计 (shot)"}
+              value={formatNumber(todayFleetSummary.output)}
+              delta={language === "ko" ? "시간대 원천 참고값 · 일일 ea 실적과 구분" : "时段源数据参考值 · 与日实绩 ea 区分"}
+              deltaTone="neutral"
             />
             <SummaryMetricCard
               title={copy.recentOutput60}
               value={formatNumber(recentFleetSummary.output)}
-              delta={`${copy.previous60} ${formatSignedNumber(recentOutputDelta)}`}
-              deltaTone={recentOutputDelta > 0 ? "up" : recentOutputDelta < 0 ? "down" : "neutral"}
+              delta={recentOutputDelta === null ? copy.noCompareData : `${copy.previous60} ${formatSignedNumber(recentOutputDelta)}`}
+              deltaTone={recentOutputDelta === null ? "neutral" : recentOutputDelta > 0 ? "up" : recentOutputDelta < 0 ? "down" : "neutral"}
             />
             <SummaryMetricCard
               title={copy.recentAvgOil60}
@@ -2259,25 +1930,14 @@ export function MesMonitoringPage() {
                 <h3 className="panel__title">{copy.fleetProductionTitle}</h3>
                 <p>{copy.fleetProductionDescription}</p>
               </div>
-              <div className="mes-fleet-production-card__total">
-                <span>{copy.fleetPlanProgress}</span>
-                <strong>{formatPercent(fleetProgressRate)}</strong>
-              </div>
             </div>
-
             <div className="mes-fleet-production-card__body">
               <div className="mes-fleet-production-card__progress">
-                <div>
-                  <strong>{formatNumber(todayProductionQty)} / {formatNumber(todayProductionPlanQty)}</strong>
-                  <span className={todayPlanGap >= 0 ? "mes-fleet-production-card__gap mes-fleet-production-card__gap--up" : "mes-fleet-production-card__gap mes-fleet-production-card__gap--down"}>
-                    {copy.fleetPlanGap} {formatSignedQty(todayPlanGap)}
-                  </span>
-                </div>
-                <div className="mes-fleet-progress-bar" aria-label={copy.fleetPlanProgress}>
-                  <span style={{ width: `${fleetProgressWidth}%` }} />
-                </div>
+                <strong>{formatNumber(todayFleetSummary.output)} shot</strong>
+                <p>{language === "ko" ? "선택일 08:00 이상, 다음 날 08:00 미만의 관측 구간만 합산합니다. 품목·Cavity를 배분한 일일 ea 실적은 생산 관리의 공통 집계를 확인하세요." : "仅合计所选日08:00（含）至次日08:00（不含）的观测区间。按品号、穴数分配的日实绩 ea 请查看生产管理的统一汇总。"}</p>
+                <Link className="button button--ghost" to={buildInjectionLink("/injection/dashboard", scope, "overview")}>{language === "ko" ? "일일 ea 실적 · 공통 집계" : "日实绩 ea · 统一汇总"}</Link>
+                <Link className="button button--ghost" to={`/production/stats?date=${encodeURIComponent(injectionDate)}&plan_type=injection`}>{language === "ko" ? "MES 보고 원장 · 전체 설비" : "MES 报工台账 · 全部设备"}</Link>
               </div>
-
               <div className="mes-fleet-production-metrics">
                 <div>
                   <span>{copy.activeMachines}</span>
@@ -2301,7 +1961,7 @@ export function MesMonitoringPage() {
             <div className="mes-fleet-machine-spread">
               <div className="mes-fleet-machine-spread__header">
                 <span>{copy.fleetMachineSpread}</span>
-                <em>{copy.lastUpdated}: {latestSlot ? formatDateTime(latestSlot.time, language) : copy.noData}</em>
+                <em>{copy.lastUpdated}: {injectionQuery.data?.source_latest_at ? formatDateTime(injectionQuery.data.source_latest_at, language) : copy.noData}</em>
               </div>
               <div className="mes-fleet-machine-spread__grid">
                 {machineRows.map((row) => {
@@ -2322,129 +1982,7 @@ export function MesMonitoringPage() {
             </div>
           </section>
 
-          <section className="panel mes-monitor-panel mes-injection-receipt-panel">
-            <div className="mes-monitor-panel__header">
-              <div>
-                <p className="panel-card__eyebrow">Injection MES</p>
-                <h3 className="panel__title">{copy.injectionReceiptTitle}</h3>
-                <p className="mes-injection-receipt-panel__hint">{copy.injectionReceiptBody}</p>
-              </div>
-              <div className="mes-monitor-panel__actions">
-                <span>
-                  {copy.injectionReceiptLatest}:{" "}
-                  {injectionReceiptComparison.summary.latestReportTime
-                    ? formatDateTime(injectionReceiptComparison.summary.latestReportTime, language)
-                    : copy.noData}
-                </span>
-              </div>
-            </div>
-
-            <div className="mes-injection-receipt-summary">
-              <div>
-                <span>{copy.injectionReceiptEstimated}</span>
-                <strong>{formatNumber(injectionReceiptComparison.summary.estimatedQty)}</strong>
-              </div>
-              <div>
-                <span>{copy.injectionReceiptReported}</span>
-                <strong>{formatNumber(injectionReceiptComparison.summary.receiptQty)}</strong>
-              </div>
-              <div>
-                <span>{copy.injectionReceiptGap}</span>
-                <strong className={injectionReceiptComparison.summary.gapQty >= 0 ? "is-up" : "is-down"}>
-                  {formatSignedQty(injectionReceiptComparison.summary.gapQty)}
-                </strong>
-              </div>
-              <div>
-                <span>{copy.injectionReceiptIssue}</span>
-                <strong>{formatNumber(injectionReceiptComparison.summary.issueCount)}</strong>
-              </div>
-            </div>
-
-            {injectionReportStatsQuery.isError ? (
-              <div className="notice notice--warning">{copy.fetchError}</div>
-            ) : injectionReportStatsQuery.isLoading && !injectionReportStatsQuery.data ? (
-              <div className="notice notice--neutral">{copy.loadingData}</div>
-            ) : injectionReceiptComparison.rows.length ? (
-              <div className="mes-injection-receipt-table-wrap">
-                <table className="mes-injection-receipt-table">
-                  <thead>
-                    <tr>
-                      <th>{copy.injectionReceiptMachine}</th>
-                      <th>{copy.injectionReceiptPartNo}</th>
-                      <th>{copy.injectionReceiptModel}</th>
-                      <th>{copy.injectionReceiptPlan}</th>
-                      <th>{copy.injectionReceiptEstimated}</th>
-                      <th>{copy.injectionReceiptReported}</th>
-                      <th>{copy.injectionReceiptGap}</th>
-                      <th>{copy.injectionReceiptStatus}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {injectionReceiptComparison.rows.map((row) => {
-                      const progressRate = row.plannedQty > 0 ? Math.min(100, (row.estimatedQty / row.plannedQty) * 100) : 0;
-                      const alternateReceiptPartNos = row.receiptPartNos.filter(
-                        (partNo) => normalizeComparisonPartNo(partNo) !== normalizeComparisonPartNo(row.partNo),
-                      );
-                      return (
-                        <tr key={row.key}>
-                          <td>
-                            <div className="mes-injection-receipt-machine">
-                              <span>{row.machineLabel}</span>
-                              <small>{language === "ko" ? `${row.machineKey}호기` : `${row.machineKey}号机`}</small>
-                            </div>
-                          </td>
-                          <td>
-                            <div className="mes-injection-receipt-part">
-                              <span>{row.partNo}</span>
-                              {alternateReceiptPartNos.length ? (
-                                <small>
-                                  {copy.injectionReceiptSourcePartNo} {alternateReceiptPartNos.join(", ")}
-                                </small>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td>{row.modelName || "-"}</td>
-                          <td>{formatNumber(row.plannedQty)}</td>
-                          <td>
-                            <div className="mes-injection-receipt-progress">
-                              <span>{formatNumber(row.estimatedQty)}</span>
-                              <div>
-                                <i style={{ width: `${progressRate}%` }} />
-                              </div>
-                              <small>{copy.outputQty} {formatNumber(row.allocatedShots)}</small>
-                            </div>
-                          </td>
-                          <td>{formatNumber(row.receiptQty)}</td>
-                          <td className={row.gapQty >= 0 ? "is-up" : "is-down"}>{formatSignedQty(row.gapQty)}</td>
-                          <td>
-                            <div className="mes-injection-receipt-status-cell">
-                              <span className={`mes-injection-receipt-status mes-injection-receipt-status--${row.status}`}>
-                                {injectionReceiptStatusLabel(row.status, copy)}
-                              </span>
-                              <small>{copy.machiningReports} {formatNumber(row.reportCount)}</small>
-                              {row.matchMethods.length ? (
-                                <small>
-                                  {copy.injectionReceiptMatchBy}{" "}
-                                  {row.matchMethods.map((method) => receiptMatchMethodLabel(method, copy)).join(", ")}
-                                </small>
-                              ) : null}
-                              {row.receiptEquipmentLabels.length ? (
-                                <small>
-                                  {copy.injectionReceiptSourceMachine} {row.receiptEquipmentLabels.join(", ")}
-                                </small>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="notice notice--neutral">{copy.injectionReceiptEmpty}</div>
-            )}
-          </section>
+          </>}
 
           <section className="panel mes-monitor-panel">
             <div className="mes-monitor-panel__header">
@@ -2455,7 +1993,7 @@ export function MesMonitoringPage() {
               <div className="mes-monitor-panel__actions">
                 <span>
                   {copy.lastUpdated}:{" "}
-                  {latestSlot ? formatDateTime(latestSlot.time, language) : copy.noData}
+                  {injectionQuery.data?.source_latest_at ? formatDateTime(injectionQuery.data.source_latest_at, language) : copy.noData}
                 </span>
                 {isCurrentInjectionDate ? (
                   <button
@@ -2480,13 +2018,15 @@ export function MesMonitoringPage() {
               </div>
             )}
 
-            {injectionQuery.isError ? (
-              <div className="notice notice--warning">{copy.fetchError}</div>
+            {(updateMutation.isError || updateStatusQuery.isError || updateStatusQuery.data?.status === "failed") && <p className="notice notice--warning">{language === "ko" ? "보강 수집에 실패했거나 진행 상태를 확인할 수 없습니다. 저장된 자료의 원천 시각을 확인하세요." : "补采失败或无法确认进度，请核对已保存资料的源数据时间。"}</p>}
+            {matrixState !== "ready" ? (
+              <MonitoringStateNotice state={matrixState} language={language} onRetry={() => { void injectionQuery.refetch(); }} />
             ) : (
               <>
                 <div className="mes-machine-rail__header">
                   <div>
-                    <h4>{copy.machineRailTitle}</h4>
+                    <h4>{language === "ko" ? "상세 설비 선택" : "详细设备选择"}</h4>
+                    <button className="button button--ghost" type="button" onClick={() => setSelectedMachineNumber(null)}>{language === "ko" ? "전체 설비 보기" : "查看全部设备"}</button>
                     <p>{copy.machineRailHint}</p>
                   </div>
                   {selectedMachine && (
@@ -2502,19 +2042,21 @@ export function MesMonitoringPage() {
                       key={row.machineNumber}
                       type="button"
                       className={`mes-machine-tile mes-machine-tile--${row.status} ${
-                        selectedMachineKey === row.machineNumber ? "mes-machine-tile--active" : ""
+                        selectedMachineNumber === row.machineNumber ? "mes-machine-tile--active" : ""
                       }`}
                       onClick={() => setSelectedMachineNumber(row.machineNumber)}
                     >
                       <span className="mes-machine-tile__name">{row.machineNumber}</span>
                       <span className="mes-machine-tile__ton">{formatTonnage(row.tonnage)}</span>
-                      <strong>{formatNumber(row.shiftOutput)}</strong>
-                      <small>{formatTemperature(row.oilTemperature)}</small>
+                      <strong>{row.status === "warning" ? "—" : formatNumber(row.shiftOutput)}</strong>
+                      <small>{row.status === "warning" ? copy.warning : formatTemperature(row.oilTemperature)}</small>
                     </button>
                   ))}
                 </div>
 
-                {selectedMachine && (
+                {selectedMachineNumber === null && <p className="notice notice--neutral">{language === "ko" ? "설비를 선택하면 해당 설비의 시간대 형합·전력·오일온도를 확인할 수 있습니다." : "选择设备后，可查看该设备各时段合模、电力及油温。"}</p>}
+                {selectedMachine && <MonitoringCoverageNotice data={injectionQuery.data} machineNumber={selectedMachineNumber} language={language} />}
+                {selectedMachine && selectedCoverage.ready && (
                   <div className="mes-live-layout">
                     <div className="mes-summary-column">
                       <article className="mes-period-card">
@@ -2590,6 +2132,8 @@ export function MesMonitoringPage() {
             )}
           </section>
 
+          <MonitoringStateNotice state={transitionState} language={language} onRetry={retryFleet} />
+          {transitionState === "ready" && transitionCoverage.ready && !transitionCoverage.hasGaps ? (
           <InjectionTransitionPanel
             analysis={transitionAnalysis}
             canConfirm={hasCapability("injection.write")}
@@ -2597,11 +2141,19 @@ export function MesMonitoringPage() {
             confirmations={downtimeConfirmationsQuery.data?.confirmations}
             copy={copy}
             language={language}
+            machineKey={selectedMachineNumber}
             mode="review"
             onResetConfirmation={(eventKey) => resetDowntimeConfirmationMutation.mutateAsync(eventKey)}
             onSaveConfirmation={(payload) => saveDowntimeConfirmationMutation.mutateAsync(payload)}
           />
 
+          ) : transitionState === "ready" ? <p className="notice notice--warning">{language === "ko" ? "형합 관측 구간이 부족하거나 지연되어 자동 정지·전환 판정을 보류합니다. 선택일의 현장 확정 기록은 생산 관리에서 확인하세요." : "合模观测区间不足或延迟，暂停自动停机、换模判断。所选日现场确认记录请在生产管理中查看。"}</p> : null}
+
+          <details className="panel" onToggle={(event) => setIsMachiningOpen(event.currentTarget.open)}>
+            <summary>{language === "ko" ? "가공 생산보고 · 펼쳐서 조회" : "加工报工 · 展开查询"}</summary>
+            {isMachiningOpen && <>
+            <MonitoringStateNotice state={machiningState} language={language} onRetry={() => { void machiningStatsQuery.refetch(); }} />
+            {machiningState === "ready" && <>
           <div className="mes-stats-grid">
             <SummaryMetricCard
               title={copy.machiningTotalPlan}
@@ -2617,14 +2169,14 @@ export function MesMonitoringPage() {
             />
             <SummaryMetricCard
               title={copy.machiningAchievement}
-              value={formatPercent(machiningStats?.summary.achievement_rate ?? 0)}
+              value={formatPercent((machiningStats?.summary.total_planned ?? 0) > 0 ? machiningStats?.summary.achievement_rate ?? null : null)}
               delta={`${copy.machiningMatched} ${formatNumber(machiningStats?.summary.matched_rows ?? 0)}`}
               deltaTone="neutral"
             />
             <SummaryMetricCard
               title={copy.machiningGap}
-              value={formatSignedQty(machiningStats?.summary.gap_qty ?? 0)}
-              delta={copy.previousDay}
+              value={(machiningStats?.summary.total_planned ?? 0) > 0 ? formatSignedQty(machiningStats?.summary.gap_qty ?? 0) : "—"}
+              delta={copy.fleetPlanGap}
               deltaTone={machiningGapTone}
             />
             <SummaryMetricCard
@@ -2708,6 +2260,9 @@ export function MesMonitoringPage() {
               <div className="notice notice--neutral">{copy.machiningEmpty}</div>
             )}
           </section>
+            </>}
+            </>}
+          </details>
         </>
         )
       ) : (
@@ -2717,8 +2272,9 @@ export function MesMonitoringPage() {
             {copy.inventoryTitle}
           </h3>
           <p>
-            {copy.inventoryBody}
+            {language === "ko" ? "현재 재고와 입출고는 재고 상세 화면에서 확인합니다." : "当前库存与出入库请在库存明细页面查看。"}
           </p>
+          <Link className="button button--primary" to="/sales/inventory-status">{language === "ko" ? "재고 상세 열기" : "打开库存明细"}</Link>
         </section>
       )}
       {isUtilizationModalOpen ? (
@@ -2785,7 +2341,11 @@ export function MesMonitoringPage() {
               </button>
             </div>
 
-            {isUtilizationAnalysisLoading ? (
+            {utilizationState !== "ready" ? (
+              <MonitoringStateNotice state={utilizationState} language={language} onRetry={() => { void utilizationQuery.refetch(); }} />
+            ) : !utilizationCoverage.ready ? (
+              <MonitoringCoverageNotice data={utilizationQuery.data} language={language} />
+            ) : isUtilizationAnalysisLoading ? (
               <div className="mes-utilization-loading">
                 <span className="mes-skeleton-line mes-skeleton-line--wide" />
                 <span className="mes-skeleton-chart__box" />
@@ -2799,12 +2359,12 @@ export function MesMonitoringPage() {
                     <strong>{formatPercent(selectedUtilizationSummary.rate)}</strong>
                   </div>
                   <div>
-                    <span>{copy.activeMachineCount}</span>
-                    <strong>{formatNumber(selectedUtilizationSummary.activeMachines)}</strong>
+                    <span>{language === "ko" ? "기간 일평균 형합 설비 수" : "期间日均合模设备数"}</span>
+                    <strong>{formatDecimal(selectedUtilizationSummary.activeMachines, 1)}</strong>
                   </div>
                   <div>
                     <span>{copy.utilizationSavedAt}</span>
-                    <strong>{latestTime ? formatDateTime(latestTime.toISOString(), language) : copy.noData}</strong>
+                    <strong>{utilizationQuery.data?.source_latest_at ? formatDateTime(utilizationQuery.data.source_latest_at, language) : copy.noData}</strong>
                   </div>
                 </div>
 

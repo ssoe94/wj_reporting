@@ -221,11 +221,20 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
     queryset = InjectionReport.objects.all()
     serializer_class = InjectionReportSerializer
 
+    def _filter_machine(self, queryset):
+        machine_no = self.request.query_params.get('machine_no')
+        if machine_no is None:
+            return queryset
+        if not re.fullmatch(r'(?:[1-9]|1[0-7])', machine_no):
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'machine_no': 'Must be an integer from 1 to 17.'})
+        return queryset.filter(machine_no=int(machine_no))
+
     def get_queryset(self):
         """
         날짜 필터링을 지원하는 queryset 반환
         """
-        queryset = super().get_queryset()
+        queryset = self._filter_machine(super().get_queryset())
         
         # 날짜 필터링
         date_str = self.request.query_params.get('date')
@@ -239,7 +248,7 @@ class InjectionReportViewSet(viewsets.ModelViewSet):
         """
         Returns a list of distinct dates for which there are reports.
         """
-        dates = InjectionReport.objects.values_list('date', flat=True).distinct().order_by('-date')
+        dates = self._filter_machine(InjectionReport.objects.all()).values_list('date', flat=True).distinct().order_by('-date')
         return Response(list(dates))
 
     @action(detail=False, methods=['get'])

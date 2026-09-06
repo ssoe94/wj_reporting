@@ -17,6 +17,7 @@ from django.db.models import Q
 from django.db.models.functions import TruncHour
 from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
 from injection.models import InjectionMonitoringRecord, InjectionMonitoringRollup, adjust_monitoring_capacity
+from production.counter_utils import calculate_counter_increment
 
 
 # BLACKLAKE API 鞐旊摐韽澑韸?
@@ -390,9 +391,9 @@ class MESResourceService:
         """
         Store bucketed shot counts before compacting raw monitoring records.
 
-        The source counter is cumulative, so positive deltas are assigned to
-        the bucket containing the later sample timestamp. This preserves hourly
-        production volume even when old minute-level snapshots are compacted.
+        The source counter is cumulative. Positive deltas are distributed across
+        the elapsed interval between samples in proportion to bucket overlap.
+        This estimates when the output occurred; it is not measured run time.
         """
         if bucket_minutes <= 0 or start_time >= end_time:
             return 0
@@ -411,6 +412,7 @@ class MESResourceService:
                     timestamp__gte=start_time,
                     timestamp__lt=end_time,
                     capacity__isnull=False,
+                    capacity__gte=0,
                 )
                 .order_by('timestamp')
             )
@@ -423,6 +425,7 @@ class MESResourceService:
                     machine_name=machine_name,
                     timestamp__lt=start_time,
                     capacity__isnull=False,
+                    capacity__gte=0,
                 )
                 .order_by('-timestamp')
                 .first()
@@ -455,13 +458,13 @@ class MESResourceService:
                     previous_power = bucket.get('max_power_kwh')
                     bucket['max_power_kwh'] = max(float(previous_power), record.power_kwh) if previous_power is not None else record.power_kwh
 
-                if prev_capacity is not None and record.capacity is not None and record.capacity >= prev_capacity:
-                    delta = record.capacity - prev_capacity
+                if prev_capacity is not None and record.capacity is not None:
+                    delta = calculate_counter_increment(prev_capacity, record.capacity)
                     if delta > 0:
                         if prev_time is not None:
                             interval_start = max(prev_time.astimezone(cst), start_time)
                             interval_end = record.timestamp.astimezone(cst)
-                            interval_minutes = max(1.0, (interval_end - interval_start).total_seconds() / 60)
+                            interval_minutes = max(0.0, (interval_end - interval_start).total_seconds() / 60)
                             cursor = interval_start
                             while cursor < interval_end:
                                 target_bucket_start = self._floor_bucket_start(cursor, bucket_minutes)
@@ -518,6 +521,8 @@ class MESResourceService:
         actual_matrix: Dict[str, List[float]],
         source_time_slots: List[Dict],
         bucket_minutes: int = 30,
+        provenance: Optional[Dict[str, Any]] = None,
+        observed_matrix: Optional[Dict[str, List[bool]]] = None,
     ) -> Tuple[List[Dict], Dict[str, List[float]], bool]:
         cst = pytz.timezone('Asia/Shanghai')
         if bucket_minutes <= 0:
@@ -546,6 +551,7 @@ class MESResourceService:
             datetime.fromisoformat(slot['time']): index
             for index, slot in enumerate(rollup_slots)
         }
+        observed_buckets = set()
 
         for machine_num in machine_numbers:
             row = actual_matrix.get(str(machine_num), [])
@@ -555,11 +561,16 @@ class MESResourceService:
                 target_index = bucket_index.get(bucket_start)
                 if target_index is not None:
                     rollup_matrix[str(machine_num)][target_index] += float(row[slot_index] if slot_index < len(row) else 0)
+                    observations = (observed_matrix or {}).get(str(machine_num), [])
+                    if slot_index < len(observations) and observations[slot_index]:
+                        observed_buckets.add((str(machine_num), target_index))
 
         rollups = InjectionMonitoringRollup.objects.filter(
+            machine_name__in=[f'{number}호기' for number in machine_numbers],
             bucket_minutes=bucket_minutes,
             bucket_start__gte=first_bucket,
-            bucket_start__lt=end_time,
+            # A stored total cannot be split reliably at a partial display edge.
+            bucket_start__lte=end_time - timedelta(minutes=bucket_minutes),
         )
         has_rollup_source = rollups.exists()
         if has_rollup_source:
@@ -572,8 +583,10 @@ class MESResourceService:
                 if machine_num in machine_numbers and target_index is not None:
                     machine_key = str(machine_num)
                     raw_bucket_value = float(rollup_matrix[machine_key][target_index] or 0)
-                    if raw_bucket_value <= 0:
+                    if raw_bucket_value <= 0 and (machine_key, target_index) not in observed_buckets:
                         rollup_matrix[machine_key][target_index] = round(float(rollup.shot_count or 0), 3)
+                        if provenance is not None:
+                            provenance['stored_bucket_count'] = provenance.get('stored_bucket_count', 0) + 1
 
         return rollup_slots, rollup_matrix, has_rollup_source
 
@@ -711,6 +724,13 @@ class MESResourceService:
         temperature_matrix: Dict[str, List[float]] = {}
         power_matrix: Dict[str, List[float]] = {}
         power_usage_matrix: Dict[str, List[float]] = {}
+        capacity_observed_matrix: Dict[str, List[bool]] = {}
+        machine_sources: Dict[str, Dict[str, Any]] = {}
+        generated_at = datetime.now(cst)
+        current_business_date = (generated_at - timedelta(hours=8)).date()
+        historical = reference_time is not None and (
+            reference_time.astimezone(cst) - timedelta(hours=8, microseconds=1)
+        ).date() < current_business_date
 
         start_of_first_slot = datetime.fromisoformat(time_slots[0]['time'])
         last_slot = time_slots[-1]
@@ -786,10 +806,27 @@ class MESResourceService:
 
         for machine_num in machine_numbers:
             slot_records = {}
+            slot_capacity_values: Dict[str, List[float]] = {}
+            capacity_records = []
             for r in records_by_machine[machine_num]:
                 slot_index = bisect_right(slot_starts, r.timestamp) - 1
                 if 0 <= slot_index < len(slot_keys):
                     slot_records[slot_keys[slot_index]] = r
+                    if r.capacity is not None and r.capacity >= 0:
+                        slot_capacity_values.setdefault(slot_keys[slot_index], []).append(r.capacity)
+                        capacity_records.append(r)
+
+            observed_slots = [bool(slot_capacity_values.get(key)) for key in slot_keys]
+            latest_capacity_at = capacity_records[-1].timestamp if capacity_records else None
+            source_stale = bool(latest_capacity_at and not historical and generated_at - latest_capacity_at > timedelta(minutes=10))
+            capacity_observed_matrix[str(machine_num)] = observed_slots
+            machine_sources[str(machine_num)] = {
+                'status': 'missing' if latest_capacity_at is None else 'stale' if source_stale else 'ok',
+                'latest_capacity_at': latest_capacity_at.isoformat() if latest_capacity_at else None,
+                'sample_count': len(capacity_records),
+                'observed_slot_count': sum(observed_slots),
+                'total_slot_count': len(time_slots),
+            }
 
             cum_row: List[float] = []
             act_row: List[float] = []
@@ -808,11 +845,8 @@ class MESResourceService:
                 slot_time_iso = slot['time']
                 record = slot_records.get(slot_time_iso)
 
-                cum_val = (
-                    record.capacity
-                    if record and record.capacity is not None and record.capacity >= 0
-                    else None
-                )
+                capacity_values = slot_capacity_values.get(slot_time_iso, [])
+                cum_val = capacity_values[-1] if capacity_values else None
                 t_val = record.oil_temperature if record and record.oil_temperature is not None else 0.0
                 p_val = (
                     record.power_kwh
@@ -821,7 +855,12 @@ class MESResourceService:
                 )
 
                 # 鞁滉皠雼?靸濎偘霟夓潃 頇曥爼霅?雸勳爜臧?臧勳潣 彀澊搿?瓿勳偘頃╇媹雼?
-                act_val = (cum_val - prev_confirmed_cum) if (cum_val is not None and prev_confirmed_cum is not None and cum_val >= prev_confirmed_cum) else 0.0
+                # Bucket deltas after processing all raw samples. Taking only
+                # the last counter loses any reset inside a chart interval.
+                act_val = 0.0
+                for capacity in capacity_values:
+                    act_val += calculate_counter_increment(prev_confirmed_cum, capacity)
+                    prev_confirmed_cum = capacity
                 power_act_val = (p_val - prev_confirmed_power) if (p_val is not None and prev_confirmed_power is not None and p_val >= prev_confirmed_power) else 0.0
                 
                 # 頇旊┐鞐?響滌嫓霅?雸勳爜 靸濎偘霟? 順勳灛 鞀’鞐?雿办澊韯瓣皜 鞐嗢溂氅?鞚挫爠 臧掛潉 靷毄頃╇媹雼?
@@ -876,6 +915,7 @@ class MESResourceService:
             for num, info in machine_info_map.items() if num in machine_numbers
         ]
         rollup_bucket_minutes = 30
+        rollup_provenance = {}
         rollup_slots, rollup_matrix, has_rollups = self._build_bucket_rollup_matrix(
             start_of_first_slot,
             end_of_last_slot,
@@ -883,10 +923,27 @@ class MESResourceService:
             actual_matrix,
             time_slots,
             bucket_minutes=rollup_bucket_minutes,
+            provenance=rollup_provenance,
+            observed_matrix=capacity_observed_matrix,
         )
 
         return {
             'timestamp': now.isoformat(),
+            'generated_at': generated_at.isoformat(),
+            'source_latest_at': max((row['latest_capacity_at'] for row in machine_sources.values() if row['latest_capacity_at']), default=None),
+            'source_window': {'start': start_of_first_slot.isoformat(), 'end': end_of_last_slot.isoformat(), 'timezone': 'Asia/Shanghai'},
+            'machine_sources': machine_sources,
+            'capacity_observed_matrix': capacity_observed_matrix,
+            'counter_policy': 'reset-aware-v1',
+            'power_counter_policy': 'nondecreasing-endpoint-v1',
+            'stored_rollup_policy': 'unversioned' if rollup_provenance else 'not_used',
+            'warnings': ['stored_rollup_counter_policy_unversioned'] if rollup_provenance else [],
+            'calculation_basis': {
+                'actual_production_matrix': 'Reset-aware positive counter deltas from all observed raw samples in each display slot; first reading without a baseline adds no shots.',
+                'power_usage_matrix': 'Existing nondecreasing endpoint differences; the shot-counter reset policy does not apply to energy.',
+                'capacity_observed_matrix': 'True when the display slot contains at least one nonnegative capacity sample; not complete sampler coverage or verified run time.',
+                'stored_rollups': 'Stored fallback buckets have no formula version. Only complete buckets without raw capacity observations are reused. Previously saved buckets have not been rebuilt and may use the older reset policy.',
+            },
             'time_slots': time_slots,
             'rollup_time_slots': rollup_slots,
             'rollup_bucket_minutes': rollup_bucket_minutes,
