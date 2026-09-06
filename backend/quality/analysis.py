@@ -123,6 +123,13 @@ def _concentration(groups, total):
             "other_report_count": sum(item["report_count"] for item in items[TOP_N:])}
 
 
+def _add_type_report(groups, key, label, report_id):
+    group = groups.setdefault(key, {"label": label, "report_count": 0, "sample_report_ids": []})
+    group["report_count"] += 1
+    if len(group["sample_report_ids"]) < SAMPLE_IDS:
+        group["sample_report_ids"].append(report_id)
+
+
 def aggregate_quality_analysis(rows, filters, *, generated_at=None):
     """Aggregate projected source rows once, without serializers or per-row queries."""
     start, end = filters["start_date"], filters["end_date"]
@@ -132,6 +139,13 @@ def aggregate_quality_analysis(rows, filters, *, generated_at=None):
         trend[day.isoformat()] = _bucket()
         day += timedelta(days=1)
     pareto, machines, parts, sections = {}, {}, {}, {}
+    type_groups, type_exclusions = {}, {}
+    type_summary = {
+        "classified_report_count": 0, "excluded_report_count": 0,
+        "unclassified_report_count": 0, "missing_phenomenon_report_count": 0,
+        "multi_type_report_count": 0, "type_occurrence_count": 0,
+        "counting_policy": "unique_report_type", "quantity_policy": "not_attributed",
+    }
     machine_options = defaultdict(int)
     duplicate_keys = defaultdict(int)
     summary = {**_bucket(), "inspection_quantity_record_count": 0, "recorded_inspection_qty": None,
@@ -187,6 +201,25 @@ def aggregate_quality_analysis(rows, filters, *, generated_at=None):
         quality["unassigned_machine_count"] += int(machine is None)
 
         types = _canonical_problem_types(phenomenon)
+        # A report can describe several types, but multiple aliases of the same
+        # canonical type are one report/type occurrence. This additive view is
+        # count-only: a report's defect quantity has no supported type split.
+        distinct_types = {item["key"]: item for item in types if item["key"] not in {"missing", "unclassified"}}
+        if distinct_types:
+            type_summary["classified_report_count"] += 1
+            type_summary["multi_type_report_count"] += int(len(distinct_types) > 1)
+            type_summary["type_occurrence_count"] += len(distinct_types)
+            for key, item in distinct_types.items():
+                _add_type_report(type_groups, key, item["label"], row["id"])
+        else:
+            excluded = types[0]
+            key = excluded["key"]
+            type_summary["excluded_report_count"] += 1
+            type_summary["missing_phenomenon_report_count" if key == "missing" else "unclassified_report_count"] += 1
+            _add_type_report(type_exclusions, key, excluded["label"], row["id"])
+
+        # Keep the original exclusive Pareto and its quantity allocation intact
+        # while old and new frontend releases can coexist during deployment.
         if len(types) > 1:
             kind, label = "multiple", {"ko": "복합 유형", "zh": "复合类型"}
             quality["multi_type_count"] += 1
@@ -224,6 +257,16 @@ def aggregate_quality_analysis(rows, filters, *, generated_at=None):
     for item in pareto_items:
         cumulative += item["report_count"]
         item["cumulative_report_share_percent"] = round(cumulative / total * 100, 2) if total else 0
+    type_items = []
+    cumulative = 0
+    type_total = type_summary["type_occurrence_count"]
+    for key, group in sorted(type_groups.items(), key=lambda item: (-item[1]["report_count"], item[0])):
+        cumulative += group["report_count"]
+        type_items.append({
+            "key": key, **group,
+            "share_of_type_occurrences_percent": round(group["report_count"] / type_total * 100, 2),
+            "cumulative_type_share_percent": round(cumulative / type_total * 100, 2),
+        })
     warnings = []
     for field, code in (
         ("missing_defect_qty_count", "defect_quantity_incomplete"),
@@ -248,6 +291,9 @@ def aggregate_quality_analysis(rows, filters, *, generated_at=None):
         "trend": [{"date": key, **{k: v for k, v in value.items() if k != "sample_report_ids"}}
                   for key, value in trend.items()],
         "pareto": pareto_items,
+        "type_pareto": type_items,
+        "type_pareto_summary": type_summary,
+        "type_pareto_exclusions": [{"key": key, **group} for key, group in sorted(type_exclusions.items())],
         "concentrations": {"machines": _concentration(machines, total),
                            "parts": _concentration(parts, total), "sections": _concentration(sections, total)},
         "data_quality": quality,
@@ -273,10 +319,13 @@ def aggregate_quality_analysis(rows, filters, *, generated_at=None):
             "Duplicate candidates remain in all totals until a human verifies distinct incidents or duplicates.",
             "No-record dates mean no recorded incidents, not confirmed zero defects or completed inspection.",
             "Missing quantities remain unknown; reported quantity sums cover only records with a valid nonnegative integer quantity.",
+            "Type Pareto counts report/type occurrences, not defective pieces; report quantities are not attributed to individual types.",
         ],
         "calculation_basis": [
             "Date = report_dt in Asia/Shanghai, calendar day 00:00 to next day 00:00; this is not the MES 08:00 business day.",
-            "Pareto is ordered by report count; each report belongs to exactly one bucket, with multiple matched types grouped as multiple.",
+            "Legacy pareto is ordered by report count; each report belongs to exactly one bucket, with multiple matched types grouped as multiple.",
+            "type_pareto counts each distinct canonical type once per report; missing and unclassified reports are excluded with separate evidence.",
+            "Type Pareto shares and cumulative shares use the sum of all classified report/type occurrences, which can exceed the number of classified reports.",
             "Concentration shares use all selected report counts; only the top 20 groups are returned with other_report_count.",
             "Duplicate candidates share date, section, exact normalized part and phenomenon, recorded location, quantities and judgement; this is not confirmed identity.",
         ],
