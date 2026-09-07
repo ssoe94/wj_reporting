@@ -339,6 +339,7 @@ class AdminUserCreateSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     profile = UserProfileSerializer(read_only=True) # 기존 중첩 프로필 유지
     is_staff = serializers.BooleanField(read_only=True)
+    is_superuser = serializers.BooleanField(read_only=True)
     groups = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
     is_using_temp_password = serializers.SerializerMethodField()
@@ -348,7 +349,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'is_staff', 'groups',
+            'is_staff', 'is_superuser', 'groups',
             'permissions',
             'is_using_temp_password', 'password_reset_required',
             'profile',
