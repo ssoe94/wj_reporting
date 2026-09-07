@@ -1,0 +1,308 @@
+/* One 570 × 235 px content region at the board's 1920 × 1080 reference size. */
+.content {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.3rem;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  color: #173d61;
+  font-family: inherit;
+  font-optical-sizing: auto;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.content *,
+.content *::before,
+.content *::after {
+  box-sizing: border-box;
+}
+
+.content p {
+  margin: 0;
+}
+
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  min-width: 0;
+  gap: 0.5rem;
+  color: #60778e;
+  font-size: 0.7rem;
+  line-height: 1.15;
+}
+
+.heading strong {
+  color: #284b6d;
+  font-weight: 650;
+}
+
+.heading > span {
+  flex: 0 0 auto;
+  font-size: 0.65rem;
+}
+
+.today {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  min-height: 0;
+  gap: 0.38rem;
+}
+
+.lane {
+  --lane-color: #1260b6;
+  display: grid;
+  grid-template-rows: 1.6rem 0.25rem 0.87rem minmax(0.9rem, 1fr);
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  gap: 0.15rem;
+}
+
+.lane[data-code="CSKD"] {
+  --lane-color: #078c55;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: 3.15rem minmax(0, 1fr) minmax(4.4rem, auto);
+  align-items: baseline;
+  min-width: 0;
+  gap: 0.45rem;
+}
+
+.code {
+  color: var(--lane-color);
+  font-size: 0.94rem;
+  font-weight: 720;
+  line-height: 1.15;
+}
+
+.quantity {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 0.27rem;
+  white-space: nowrap;
+}
+
+.quantity > strong {
+  color: #163d64;
+  font-size: 1.3rem;
+  font-weight: 740;
+  line-height: 1.1;
+}
+
+.quantity > span {
+  color: #91a2b2;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.quantity > b {
+  color: #526e88;
+  font-size: 1.02rem;
+  font-weight: 550;
+  line-height: 1.1;
+}
+
+.quantity > small {
+  color: #60778e;
+  font-size: 0.65rem;
+  font-weight: 550;
+}
+
+.rate {
+  justify-self: end;
+  color: var(--lane-color);
+  font-size: 1.23rem;
+  font-weight: 730;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.rate[data-state="no-plan"],
+.rate[data-state="unknown"] {
+  color: #60778e;
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+.progress {
+  width: 100%;
+  min-width: 0;
+  height: 0.25rem;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e1e9f0;
+}
+
+.progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--lane-color);
+}
+
+.progress[data-state="unknown"] {
+  background: #edf1f5;
+}
+
+.secondary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.38rem;
+  min-width: 0;
+  overflow: hidden;
+  color: #60778e;
+  font-size: 0.67rem;
+  font-weight: 550;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.secondary > span {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.secondary > span + span::before {
+  margin-right: 0.38rem;
+  color: #a7b6c4;
+  content: "·";
+}
+
+.secondary > span[data-tone="attention"] {
+  color: #b05b15;
+}
+
+.priority {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 0.4rem;
+  overflow: hidden;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.priority > span {
+  flex: 0 0 auto;
+  color: #b05b15;
+  font-size: 0.67rem;
+  font-weight: 600;
+}
+
+.priority > strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #284b6d;
+  font-size: 0.74rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+}
+
+.priority > small {
+  flex: 1 2 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #6b8094;
+  font-size: 0.67rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.priorityEmpty {
+  min-width: 0;
+  overflow: hidden;
+  color: #6b8094;
+  font-size: 0.67rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparisons {
+  display: grid;
+  grid-template-rows: repeat(2, 0.95rem);
+  min-width: 0;
+  gap: 0.14rem;
+  padding-top: 0.22rem;
+  border-top: 1px solid #dce5ed;
+}
+
+.period {
+  display: grid;
+  grid-template-columns: 3.15rem repeat(2, minmax(0, 1fr));
+  align-items: baseline;
+  min-width: 0;
+  gap: 0.45rem;
+  line-height: 1.15;
+}
+
+.periodLabel {
+  min-width: 0;
+  overflow: hidden;
+  color: #60778e;
+  font-size: 0.71rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.periodMetric {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.periodMetric b {
+  min-width: 2.15rem;
+  color: #1260b6;
+  font-size: 0.66rem;
+  font-weight: 650;
+}
+
+.periodMetric[data-code="CSKD"] b {
+  color: #078c55;
+}
+
+.periodMetric strong {
+  color: #284b6d;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.lane[data-density="compact"] .quantity {
+  gap: 0.18rem;
+}
+
+.lane[data-density="compact"] .quantity > strong {
+  font-size: 1.06rem;
+}
+
+.lane[data-density="compact"] .quantity > b {
+  font-size: 0.88rem;
+}
+
+@media (prefers-contrast: more) {
+  .secondary,
+  .priorityEmpty,
+  .periodLabel,
+  .heading {
+    color: #334e68;
+  }
+
+  .progress {
+    outline: 1px solid #60778e;
+  }
+}

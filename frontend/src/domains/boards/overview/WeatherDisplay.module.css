@@ -1,0 +1,60 @@
+.weather {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 1fr) minmax(0, 1.12fr);
+  grid-template-rows: var(--hero-rows);
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+  row-gap: var(--hero-row-gap);
+  column-gap: 0.2rem;
+  padding: 0 0 0 0.45rem;
+}
+
+.place { grid-column: 1; grid-row: 2; display: flex; align-items: center; gap: 0.2rem; color: #587391; font-size: 0.78rem; font-weight: 600; line-height: 1; white-space: nowrap; }
+.place svg { width: 0.85rem; height: 0.85rem; }
+.visual {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+}
+.condition {
+  position: absolute;
+  z-index: 1;
+  bottom: 0.12rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 100%;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 0.75rem;
+  background: rgba(248, 252, 255, 0.86);
+  box-shadow: 0 0.12rem 0.48rem rgba(33, 76, 117, 0.1), inset 0 1px 0 #fff;
+  backdrop-filter: blur(8px);
+  color: #315373;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  text-align: center;
+  white-space: nowrap;
+}
+.temperature { grid-column: 1; grid-row: 3; display: flex; align-items: baseline; align-self: end; color: #1260b6; font-size: 2.85rem; font-weight: 800; line-height: 1; letter-spacing: -0.05em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.temperature small { margin-left: 0.12rem; color: #587391; font-size: 0.85rem; font-weight: 600; letter-spacing: 0; }
+.observation { grid-column: 1; grid-row: 4; align-self: center; color: #587391; font-size: var(--hero-caption-size); font-weight: 600; line-height: 1; letter-spacing: 0; white-space: nowrap; }
+.weather[data-stale="true"] .observation { color: #a35109; }
+.artwork { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; padding: 0; }
+.artwork img { width: 100%; height: 100%; max-height: 8.6rem; object-fit: contain; }
+.weather[data-phase="night"]:not([data-weather="clear"]) .artwork img { filter: brightness(0.83) saturate(0.86); }
+.artwork > svg { width: 4.4rem; height: 4.4rem; color: #8a9eb1; stroke-width: 1; }
+.weather[data-weather="unknown"] .temperature { color: #587391; }
+
+@media (prefers-reduced-transparency: reduce) {
+  .condition { background: #f8fcff; backdrop-filter: none; }
+}
+
+@media (prefers-contrast: more) {
+  .condition { border-color: #587391; background: #fff; box-shadow: none; }
+}
