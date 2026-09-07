@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -159,3 +160,57 @@ class FactExceptionEvent(models.Model):
 
     def __str__(self):
         return f'{self.business_date} {self.exception_type} {self.equipment_label or self.part_no}'
+
+
+class DevelopmentTask(models.Model):
+    """Private delivery checklist; deliberately separate from production facts."""
+
+    slug = models.SlugField(max_length=100, unique=True)
+    title = models.CharField(max_length=200)
+    title_zh = models.CharField(max_length=200, blank=True, default='')
+    objective = models.TextField()
+    phase = models.PositiveSmallIntegerField(default=1)
+    priority = models.CharField(max_length=2, default='P1')
+    status = models.CharField(max_length=20, default='planned', db_index=True)
+    owner = models.CharField(max_length=200, blank=True, default='')
+    due_date = models.DateField(null=True, blank=True)
+    dependencies = models.JSONField(default=list)
+    requirements = models.JSONField(default=list)
+    checklist = models.JSONField(default=list)
+    locations = models.JSONField(default=list)
+    completion_note = models.TextField(blank=True, default='')
+    verification_note = models.TextField(blank=True, default='')
+    release_state = models.CharField(max_length=20, default='unreleased')
+    sort_order = models.PositiveIntegerField(default=10)
+    version = models.PositiveIntegerField(default=1)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.title
+
+
+class DevelopmentTaskHistory(models.Model):
+    """Append-only through the API; snapshots preserve completion/reopening evidence."""
+
+    task = models.ForeignKey(DevelopmentTask, on_delete=models.PROTECT, related_name='history')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    actor_label = models.CharField(max_length=200)
+    action = models.CharField(max_length=20)
+    changed_fields = models.JSONField(default=list)
+    change_note = models.TextField(blank=True, default='')
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-id']
+
+    def __str__(self):
+        return f'{self.task_id} {self.action} {self.actor_label}'

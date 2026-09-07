@@ -35,6 +35,9 @@ import PasswordChangeModal from './components/PasswordChangeModal';
 import PageTransition from './components/common/PageTransition';
 import { NavigationTree } from './components/layout/NavigationTree';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
+import { canManageDevelopmentTasks, DEVELOPMENT_TASK_PATH } from './domains/auth/development-task-access';
+
+const DevelopmentTasksPage = lazy(() => import('./pages/development/DevelopmentTasksPage'));
 
 const ModelsPage = lazy(() => import('./pages/models'));
 const Eco2Page = lazy(() => import('./pages/eco2'));
@@ -127,10 +130,16 @@ function useNavItems() {
   const { user, hasPermission } = useAuth();
   const canViewFieldMaterials = Boolean(user && (user.is_staff || hasPermission('can_view_development')));
   const canEditFieldMaterials = Boolean(user && (user.is_staff || hasPermission('can_edit_development')));
+  const taskNavigation = canManageDevelopmentTasks(user) ? [{
+    label: lang === 'ko' ? '개발 계획 관리' : '开发计划管理',
+    icon: ClipboardCheck,
+    children: [{ to: DEVELOPMENT_TASK_PATH, label: lang === 'ko' ? '개발 과제' : '开发任务', icon: ClipboardList }],
+  }] : [];
 
   // Staff users see the full navigation tree.
   if (user?.is_staff) {
     return [
+      ...taskNavigation,
       {
         label: t('nav_overview'),
         icon: FileChartPie,
@@ -207,7 +216,7 @@ function useNavItems() {
   }
 
   // Regular users get the same sections, trimmed by permission-aware links.
-  const navItems = [];
+  const navItems = [...taskNavigation];
 
   navItems.push({
     label: t('nav_overview'),
@@ -463,7 +472,8 @@ function AppContent() {
   const isFieldRoute = pathname === '/field' || pathname.startsWith('/field/');
   const isStandaloneBoardRoute = isInjectionBoardRoute || isMouldRoute || isEnergyBoardRoute || isOverviewBoardRoute || isFieldRoute;
   let breadcrumbLabel = t('brand');
-  if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
+  if (pathname === DEVELOPMENT_TASK_PATH) breadcrumbLabel = lang === 'ko' ? '개발 과제' : '开发任务';
+  else if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
   else if (pathname.startsWith('/assembly')) breadcrumbLabel = t('brand_machining');
   else if (pathname.startsWith('/boards')) breadcrumbLabel = lang === 'ko' ? '현황판' : '看板中心';
   else if (pathname.startsWith('/production')) breadcrumbLabel = t('nav_production');
@@ -833,6 +843,7 @@ function AppContent() {
             <Route path="/inventory/raw-materials" element={<Navigate to="/sales/raw-materials" replace />} />
 
             {/* Admin routes */}
+            <Route path={DEVELOPMENT_TASK_PATH} element={<PrivateRoute><PageTransition><DevelopmentTasksPage /></PageTransition></PrivateRoute>} />
             <Route path="/admin/user-management" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} />
             <Route path="/admin/user-approval" element={<PrivateRoute><PageTransition><UserApproval /></PageTransition></PrivateRoute>} /> {/* Legacy URL compatibility */}
 
