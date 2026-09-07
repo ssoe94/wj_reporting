@@ -909,3 +909,139 @@ final result: passed
 - P3: the QA document uses realistic mock content. Final legibility still depends on the page composition of each uploaded production PDF and the PDF preview supplied for PPT/PPTX sources.
 
 final result: passed
+
+---
+
+# 크리스털 공정·정면 날씨 그래픽 검증
+
+final result: passed
+
+## 비교 대상과 상태
+
+- 선택 시안: `/Users/macstudio_ted/.codex/generated_images/01a07933-19b3-7fc0-9dac-65bc7a1d4708/exec-8ac752da-aef7-4965-be21-86e6a7c8b653.png`.
+- 시안 크기: 1536×1024 픽셀의 사출·조립 비교 그림. 웹 화면이나 CSS viewport를 나타내는 시안은 아니다.
+- 구현: `http://127.0.0.1:5188/boards/overview?weather=clear&phase=day&ai=ready&lang=zh`.
+- 전체 구현 캡처: `/tmp/wj-overview-board-qa/10-crystal-applied.jpg` (1943×1257 픽셀).
+- 중앙 헤더 확대 캡처: `/tmp/wj-overview-board-qa/11-crystal-weather-final.jpg` (약 639×356 픽셀, 브라우저 DOM 헤더 영역).
+- 실제 CSS viewport: 1943×1257, devicePixelRatio 1. 별도의 다운샘플링이나 밀도 보정은 하지 않았다.
+- 상태: 중국어, 맑음/주간, 합성 DEMO 자료와 합성 AI ready 결과. 전체 캡처는 그림을 일시정지한 상태이며 확인 후 재개했다. 운영 데이터를 캡처하거나 AI 수신 성공으로 간주하지 않는다.
+
+같은 비교 입력에 선택 시안과 전체 구현 캡처를 함께 열어 비교했다. 시안은 두 그림의 크게 확대된 비교 보드이고 실제 화면은 3×3 데이터 보드이므로 전체 프레임을 1:1로 비교하지 않았다. 공정 그림의 정면 시점, 오른쪽의 높은 장치, 유리 재질, 파랑·초록 구분과 수평 바닥선이 비교 범위다. 그림을 약 7rem 슬롯에 재구성한 것은 의도한 차이다. 시안의 제목·배경·바닥 반사는 UI에 옮기지 않았다.
+
+## 결과
+
+현재 요청 범위에 남은 P0/P1/P2 차이는 없다. 선택 시안의 사출·조립 방향과 재질이 실제 카드에서도 구별되며, 날씨 구체는 눈높이 정면과 얇은 수평 받침을 사용한다. 숫자가 주인 기존 정보 계층을 유지한다.
+
+| 필수 검토 영역 | 확인 결과 |
+| --- | --- |
+| 글꼴·문자 | 기존 한국어/중국어 글꼴, 굵기와 숫자 크기를 유지했다. 두 언어에서 날짜·위치 및 시각·기온의 행이 일치한다. 최종 분수 확대 비율에서 top·bottom 차이는 0.02px 미만이다. 한국어 긴 날짜와 −18.8°C가 겹치지 않는다. |
+| 간격·배치 | 기존 3×3 구조와 제목 중앙 정렬을 유지했다. 시계–가운데 기상 정보–오른쪽 글로브 구도이며, 그림은 다른 행을 침범하지 않는다. 공정 두 그림의 보이는 바닥선을 맞췄다. |
+| 색상 | 사출 파랑·조립 초록과 기존 경고 색의 의미를 유지했다. 투명 테두리와 서리 유리 면이 밝은 카드에서 식별된다. 글로브의 날씨별 명암은 다르지만 공통 크리스털 형태와 받침을 유지한다. |
+| 이미지 | 개별 새 PNG를 실제 알파가 있는 무손실 WebP로 인코딩했다. 8장 모두 1254×1254이며 모든 알파·보이는 RGB 픽셀이 원본과 동일한 것을 독립 확인했다. 스트레칭·잘라내기·배경 사각형·체크무늬가 없다. 원본 시안을 잘라낸 이미지가 아니라 작은 카드에 맞춘 같은 콘셉트의 재제작이다. |
+| 문구·데이터 | 이번 그림 변경으로 데이터·번역 문구·계산식·API·AI 채택 조건을 변경하지 않았다. 비교 시안의 ‘크리스털’ 등 설명 문구를 운영 UI에 추가하지 않았다. |
+
+중앙 헤더는 맑음, 맑은 밤, 흐림, 비/야간, 눈, 뇌우의 실제 브라우저 영역을 확대해 각각 확인했다. 헤더 확대는 시간·기온 정렬과 글로브의 받침·투명 배경을 점검하는 데 사용했다. 전체 캡처에서는 두 공정 그림의 방향·바닥선·크기와 숫자 공간을 확인했다.
+
+## 비교·보정 이력
+
+- 최종 비교 전, 두 공정 PNG의 투명 여백 차이를 확인했다. 같은 이미지 박스만 사용하면 실제 바닥선이 달라지므로 사출 그림에 `top: 0.78rem`을 적용했다. 원본 이미지 자체는 편집하지 않았다.
+- 보정 후 `/tmp/wj-overview-board-qa/10-crystal-applied.jpg`를 선택 시안과 한 입력에서 비교했고, 이 비교에서는 추가 P0/P1/P2 수정이 발견되지 않았다.
+- 기존 흐림 전용 패딩은 새 정면 자산에 필요하지 않아 제거했다. 6종 헤더를 실제 표시 크기에서 다시 확인했다.
+
+## 동작·코드 검증
+
+- `node --test tests/overview-presentation.test.ts`: 5개 통과.
+- 변경 페이지와 `WeatherDisplay.tsx`의 ESLint 통과.
+- `npm run build`: TypeScript, Vite production, legacy CSS build 통과. 큰 JS 청크에 대한 기존 경고는 남아 있다.
+- 클릭으로 그림 3개가 모두 paused 상태가 되는 것을 확인하고 Enter로 재개했다. 12초 반복 애니메이션, `prefers-reduced-motion` 분기와 버튼 비활성 처리는 유지했다.
+- 브라우저에서 현재 표시되는 이미지 3장의 로딩 성공 확인. 마지막 브라우저 오류 로그는 비어 있었다.
+- 로컬 fixture는 기존 화면을 사용하는 합성 검증 서버이며 운영 서버나 API를 대체하지 않는다.
+
+## 자산 원본 추적
+
+다음 PNG를 시각적으로 검토한 뒤 크기 변경 없는 무손실 형식 변환만 수행했다. 이미지 생성 서비스 원본은 저장소 외부에 보존하며 최종 WebP는 `frontend/src/assets`에 있다.
+
+| 최종 자산 | 생성 PNG 원본 절대 경로 |
+| --- | --- |
+| overview-injection-crystal.webp | `/Users/macstudio_ted/.codex/generated_images/01a07933-19b3-7fc0-9dac-65bc7a1d4708/exec-d0ee0b9b-dd05-4435-bf03-c4dfbd2f26ac.png` |
+| overview-assembly-crystal.webp | `/Users/macstudio_ted/.codex/generated_images/01a07968-4f04-7df0-89d3-1ff9f4296a9c/exec-180da7ce-5f86-4d89-ba24-4258e216c323.png` |
+| overview-weather-clear-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07959-d958-79e0-8a58-91146e7fbd4e/exec-dde09198-b7f0-4933-8cc5-f7eab552507a.png` |
+| overview-weather-night-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07959-d958-79e0-8a58-91146e7fbd4e/exec-3d104e48-fe35-4043-a9bf-058d5910492a.png` |
+| overview-weather-cloudy-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07998-ddeb-7f81-b58c-a139bd16ef92/exec-ae7a5466-a49a-4faf-8310-6fe3240c327d.png` |
+| overview-weather-rain-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07998-ddeb-7f81-b58c-a139bd16ef92/exec-a357fc0c-fd79-4669-8cd0-debfe2d2afad.png` |
+| overview-weather-snow-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07968-4f04-7df0-89d3-1ff9f4296a9c/exec-4834ef67-d732-4644-8271-44ac497da6dc.png` |
+| overview-weather-thunder-front.webp | `/Users/macstudio_ted/.codex/generated_images/01a07998-ddeb-7f81-b58c-a139bd16ef92/exec-7590ba9c-3e2d-4bbd-bcf5-d9025bab03a5.png` |
+
+## 완료 체크리스트와 남은 범위
+
+- [x] 선택한 크리스털 공정 2종 적용 및 시점·바닥선 통일.
+- [x] 정면 크리스털 날씨 6종 적용 및 한국어/중국어 표시 확인.
+- [x] 기존 레이아웃, 숫자, 데이터 계약, 그래픽 일시정지 유지.
+- [x] 시안/구현 비교, 빌드와 단위 검사, 브라우저 오류 확인.
+- [ ] 운영 배포와 실제 대형 현황판에서의 시청 거리 확인은 별도 단계다. 4K 기기의 실측 검증은 하지 않았다.
+
+후속 보완(P3): 8개 자산 총 9.34 MiB이며 처음에는 공정 2장과 해당 날씨 1장만 요청한다. 느린 현장 회선의 첫 로딩 시간은 운영 배포 이후 확인할 수 있다. 원본 충실도를 유지하는 이번 적용 이후, 필요하면 작은 표시 크기에 맞춘 제공 해상도를 별도로 검토한다.
+
+---
+
+# 날씨 상태와 시각 설명의 수평 정렬 — 2026-09-07 후속 검증
+
+final result: passed
+
+## 비교 근거
+
+- 사용자 화면: `/var/folders/vh/jb7m4x251z7bhnszypqrhydm0000gn/T/codex-clipboard-30084aea-a016-4a3a-bebd-75f3333687f1.png` (658×370). 변경 전 헤더이며 요청 문장이 변경 방향을 지정한다.
+- 한국어 수정 헤더: `/tmp/wj-overview-board-qa/12-weather-row-ko.jpg` (632×352).
+- 중국어 수정 헤더: `/tmp/wj-overview-board-qa/13-weather-row-zh.jpg`.
+- 전체 화면: `/tmp/wj-overview-board-qa/14-weather-row-final-full.jpg` (1920×1080).
+- 실제 viewport 1920×1080 CSS px, devicePixelRatio 1. 헤더는 실제 DOM 영역으로 잘라 캡처했다. 사용자 이미지에는 외부 여백이 포함돼 있으므로 크기가 다른 프레임의 픽셀 일치로 평가하지 않았다.
+- 사용자 화면과 한국어 수정 헤더를 같은 비교 입력에서 열었다. 날짜·기온·맑음 상태는 같은 내용이며 현재 시계·관측 시각과 애니메이션 프레임은 시간 경과로 달라진다. 합성 DEMO 자료를 사용했다.
+
+## 요청에 따른 의도한 차이
+
+날씨 상태를 기온 오른쪽과 글로브 왼쪽 사이에 배치했다. 글로브에 가까운 우측 정렬로 관계를 드러내며 긴 상태는 자연스럽게 두 줄로 표시한다. 관측 시각은 현재 시각 설명과 같은 행에 놓고 두 설명의 크기·굵기·색을 통일했다. 전체 3×3 구조, 제목 중앙 정렬, 공정·날씨 이미지, 색상과 데이터는 그대로 유지한다.
+
+## 필수 표면 검토
+
+- 글꼴: 한국어와 중국어 모두 날짜/위치, 시각/기온의 top·bottom이 동일하다. 두 설명은 13.44px(0.7rem), 굵기 600, line-height 1로 동일하며 top 191.828125px, bottom 205.265625px로 일치한다. 상태는 0.88rem/650으로 기온보다 보조적인 위계다.
+- 간격·레이아웃: 두 영역이 같은 grid 행 정의를 공유한다. 글로브는 전체 세로 영역을 차지하며, 상태는 기온과 같은 수치 행에서 글로브 바로 왼쪽에 붙는다. 추가 상자나 구분선을 넣지 않았다.
+- 색상: 기존 남색 글자, 파란 기온, 회청색 설명을 유지했다. 지연된 관측 시각은 기존 주황색 경고를 유지한다.
+- 이미지: 기존 크리스털 파일을 그대로 사용한다. 글로브는 contain 비율을 유지하고 전체 형태가 보인다. 배경 사각형이나 잘림이 없다.
+- 문구·데이터: 번역 문구·온도·관측 시각의 정의와 미수신/미확인 처리를 변경하지 않았다. 미수신은 온도와 기상 수치를 ‘—’로, 미확인은 수신된 온도와 중립 아이콘을 그대로 표시한다.
+
+## 검증 결과 및 한계
+
+- 한국어/중국어 맑음, 한국어 ‘구름 조금’과 −18.8°C 및 이전 관측, 날씨 미수신, 상태 미확인을 브라우저에서 확인했다. 긴 상태는 두 줄이고 각 날씨 자식 요소의 수평 overflow가 없다.
+- 첫 수정 후 비교에서 추가 P0/P1/P2 문제는 발견되지 않았다. 글로브 옆 상태와 기온 아래 설명이 사용자의 요청대로 구분된다.
+- `eslint src/domains/boards/overview/WeatherDisplay.tsx` 및 `npm run build` 통과. 기존 큰 JS 청크 경고만 남아 있다. 간단한 배치 변경이므로 구현을 되풀이하는 새 단위 검사는 추가하지 않았다.
+- 마지막 브라우저 오류 로그 없음. 운영 배포 및 4K 현황판 실기 검증은 이번 범위에 포함하지 않았다.
+- 다음 단계는 이 헤더 배치의 사용자 확인 후 기존 종합현황판 개선분과 함께 배포하는 것이다.
+
+---
+
+# 글로브 아래 중앙의 반투명 캡션 — 2026-09-07 최종 피드백
+
+final result: passed
+
+## 기준과 비교
+
+- 사용자 최종 지시: 반투명 캡션을 한 행으로 글로브 아랫부분에 가운데 맞춤한다. 앞선 기온 옆 날씨 상태 배치를 대체하는 요청이다.
+- 변경 전 헤더: `/tmp/wj-overview-board-qa/12-weather-row-ko.jpg` (632×352).
+- 최종 헤더: `/tmp/wj-overview-board-qa/17-weather-caption-bottom-final.jpg`.
+- 최종 전체 화면: `/tmp/wj-overview-board-qa/18-weather-caption-bottom-full.jpg` (1943×1257).
+- 변경 전후 한국어 맑음 헤더를 같은 비교 입력에서 확인했다. 각각 1920×1080 및 1943×1257 CSS viewport, DPR 1이며 프레임 배율 차이는 의도한 레이아웃 차이로 평가하지 않았다. 날짜·기온·기상 상태가 동일한 합성 DEMO이며 현재 시각과 애니메이션 프레임은 다르다.
+
+## 구현 및 시각 검토
+
+- `WeatherDisplay.tsx`에서 그림과 날씨 상태를 하나의 시각 영역으로 묶었다. CSS 두 열은 기온 정보와 글로브로 구성하고, 캡션은 글로브 아래쪽의 중앙에 고정했다.
+- 글꼴: 0.8rem/600의 한 줄 캡션. ‘구름 조금’, ‘날씨 미수신’은 줄바꿈이나 수평 넘침 없이 읽힌다. 기존 숫자와 한국어·중국어 폰트는 그대로다.
+- 간격: 최종 DOM에서 캡션과 이미지의 가로 중심이 모두 1178.71875px로 일치한다. 현재 시각 설명과 관측 시각도 top 276.109375px, bottom 289.703125px로 일치한다.
+- 색상: 옅은 흰색·청색 반투명 표면과 기존 회청색 글자, 작은 모서리·그림자로 크리스털 하단과 연결했다. 투명도 감소 설정에서는 불투명 배경을, 대비 증가 설정에서는 선명한 테두리를 사용한다.
+- 이미지: 기존 크리스털 자산을 그대로 사용했다. 중간 확인에서 grid 자식 이미지가 프레임보다 높게 계산되는 현상을 발견해, 고정 영역 안의 flex 정렬로 수정했다. 이후 computed image/frame 높이가 모두 154.594px인 것을 확인했고 최종 캡처를 다시 비교했다. 의도한 1.012배 미세 애니메이션 외의 확대나 자르기는 없다.
+- 내용: 날씨·관측 값과 미수신 처리를 바꾸지 않았다. 캡션은 상태 표시이며 버튼이나 새로운 조작을 추가하지 않는다.
+
+## 완료와 남은 범위
+
+- 한국어 맑음·긴 상태와 음수 기온·지연 관측·미수신, 중국어 맑은 밤을 확인했다. 기존 애니메이션과 움직임 감소 처리를 유지한다.
+- WeatherDisplay ESLint 및 최종 `npm run build` 통과. 마지막 브라우저 오류 로그 없음. 기존 큰 JS 청크 경고는 남아 있다.
+- 시안 대비 남은 P0/P1/P2 문제 없음. 운영 배포와 실제 현황판 시청 거리 검증은 별도 단계다.

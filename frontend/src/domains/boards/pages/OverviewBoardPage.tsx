@@ -43,18 +43,9 @@ import {
   YAxis,
 } from "recharts";
 
-import assemblyConveyorIcon from "@/assets/overview-assembly-conveyor-icon.png";
-import injectionProcessIcon from "@/assets/overview-injection-process-icon.png";
-import weatherOrbClearDay from "@/assets/weather-orb-clear-day.webp";
-import weatherOrbClearNight from "@/assets/weather-orb-clear-night.webp";
-import weatherOrbCloudyDay from "@/assets/weather-orb-cloudy-day.webp";
-import weatherOrbCloudyNight from "@/assets/weather-orb-cloudy-night.webp";
-import weatherOrbRainDay from "@/assets/weather-orb-rain-day.webp";
-import weatherOrbRainNight from "@/assets/weather-orb-rain-night.webp";
-import weatherOrbSnowDay from "@/assets/weather-orb-snow-day.webp";
-import weatherOrbSnowNight from "@/assets/weather-orb-snow-night.webp";
-import weatherOrbThunderDay from "@/assets/weather-orb-thunder-day.webp";
-import weatherOrbThunderNight from "@/assets/weather-orb-thunder-night.webp";
+import assemblyConveyorIcon from "@/assets/overview-assembly-crystal.webp";
+import injectionProcessIcon from "@/assets/overview-injection-crystal.webp";
+import artworkStyles from "../overview/OverviewArtwork.module.css";
 import { getOverviewBoard } from "@/domains/boards/overview/api";
 import type {
   AttentionItem,
@@ -72,34 +63,20 @@ import type {
 import { useStoredLanguage, type AppLanguage } from "@/shared/i18n/language";
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
 import { useRetainedValue } from "@/shared/hooks/useRetainedValue";
+import { QualityAiBriefingContent, QualityHistoryBriefingContent } from "../overview/QualityBriefingContent";
+import { OutboundPerformanceContent, type OutboundLanePresentation, type OutboundPeriodPresentation } from "../overview/OutboundPerformanceContent";
+import { useBoardRem } from "../overview/useBoardRem";
+import { WeatherDisplay } from "../overview/WeatherDisplay";
+import { canShowQualityAi, getBriefingDuration, getNumberDensity } from "../overview/presentation";
 import styles from "./OverviewBoardPage.module.css";
 
 const QUALITY_WINDOW_SIZE = 1;
 const QUALITY_AI_WINDOW_SIZE = 1;
-const QUALITY_ROTATION_MS = 12_000;
 const MACHINE_WINDOW_SIZE = 3;
 const MACHINE_ROTATION_MS = 10_000;
 const ATTENTION_WINDOW_SIZE = 3;
 const ATTENTION_ROTATION_MS = 10_000;
 
-type WeatherOrbCategory = "clear" | "cloudy" | "rain" | "snow" | "thunder";
-
-const WEATHER_ORB_ASSETS: Record<"day" | "night", Record<WeatherOrbCategory, string>> = {
-  day: {
-    clear: weatherOrbClearDay,
-    cloudy: weatherOrbCloudyDay,
-    rain: weatherOrbRainDay,
-    snow: weatherOrbSnowDay,
-    thunder: weatherOrbThunderDay,
-  },
-  night: {
-    clear: weatherOrbClearNight,
-    cloudy: weatherOrbCloudyNight,
-    rain: weatherOrbRainNight,
-    snow: weatherOrbSnowNight,
-    thunder: weatherOrbThunderNight,
-  },
-};
 const OUTBOUND_PRIORITY_ROTATION_MS = 9_000;
 const MACHINE_TONNAGE_BY_NUMBER: Readonly<Record<number, string>> = {
   1: "850T", 2: "850T", 3: "1300T", 4: "1400T", 5: "1400T", 6: "2500T",
@@ -128,6 +105,7 @@ const COPY = {
     exitFullscreen: "전체 화면 종료",
     fullscreenUnavailable: "이 브라우저에서는 전체 화면을 지원하지 않습니다.",
     refreshBoard: "새로고침",
+    refreshFailed: "갱신 실패 · 이전 수신 데이터",
     refreshingBoard: "새로고침 중",
     currentTime: "북경 현재 시각",
     nanjingWeather: "난징",
@@ -203,14 +181,14 @@ const COPY = {
     exactPartMatch: "품번 정확 일치",
     historicalDisclaimer: "과거 이력 · 현재 불량 아님",
     noQualityData: "현재 생산 품번과 일치하는 최근 품질 이력이 없습니다.",
-    qualityAiDaily: "Qwen 3.8 일일 품질 요약",
-    qualityAiPending: "Qwen 3.8 생성 중",
-    qualityAiStale: "Qwen 3.8 갱신 대기",
-    qualityAiUnavailable: "Qwen 3.8 미수신",
-    qualityAiNoPlan: "Qwen 3.8 분석 대상 없음",
-    qualityAiFailed: "Qwen 3.8 생성 실패",
-    qualityAiDisconnected: "Qwen 3.8 연결 불가",
-    qualityAiRetry: "Qwen 3.8 결과 재생성 대기",
+    qualityAiDaily: "AI 품질 브리핑",
+    qualityAiPending: "AI 분석 중",
+    qualityAiStale: "AI 갱신 대기",
+    qualityAiUnavailable: "AI 미수신",
+    qualityAiNoPlan: "AI 분석 대상 없음",
+    qualityAiFailed: "AI 생성 실패",
+    qualityAiDisconnected: "AI 연결 불가",
+    qualityAiRetry: "AI 재생성 대기",
     qualityAiGenerated: "생성",
     qualityAiProblemTypes: "반복 문제 유형",
     qualityAiProblemLocationPair: "문제유형 · 발생위치",
@@ -227,12 +205,12 @@ const COPY = {
     allHistoryReports: "전체 이력 {count}건",
     previousQualityPage: "이전 품질 이력",
     nextQualityPage: "다음 품질 이력",
-    previousQualityAiPage: "이전 Qwen 3.8 품질 주의",
-    nextQualityAiPage: "다음 Qwen 3.8 품질 주의",
+    previousQualityAiPage: "이전 AI 품질 주의",
+    nextQualityAiPage: "다음 AI 품질 주의",
     pauseRotation: "품질 이력 자동 전환 일시정지",
     resumeRotation: "품질 이력 자동 전환 재생",
-    pauseQualityAiRotation: "Qwen 3.8 품질 주의 자동 전환 일시정지",
-    resumeQualityAiRotation: "Qwen 3.8 품질 주의 자동 전환 재생",
+    pauseQualityAiRotation: "AI 품질 주의 자동 전환 일시정지",
+    resumeQualityAiRotation: "AI 품질 주의 자동 전환 재생",
     inventory: "출고 실행 · JIT / CSKD",
     outboundToday: "오늘 출고단 상세",
     outboundActualTarget: "실적 / 목표",
@@ -327,6 +305,7 @@ const COPY = {
     exitFullscreen: "退出全屏",
     fullscreenUnavailable: "此浏览器不支持全屏显示。",
     refreshBoard: "刷新",
+    refreshFailed: "刷新失败 · 保留上次数据",
     refreshingBoard: "正在刷新",
     currentTime: "北京时间",
     nanjingWeather: "南京",
@@ -402,14 +381,14 @@ const COPY = {
     exactPartMatch: "零件号精确匹配",
     historicalDisclaimer: "历史记录 · 非当前不良",
     noQualityData: "近期没有与当前生产零件号精确匹配的品质记录。",
-    qualityAiDaily: "Qwen 3.8 每日品质摘要",
-    qualityAiPending: "Qwen 3.8 生成中",
-    qualityAiStale: "Qwen 3.8 待更新",
-    qualityAiUnavailable: "Qwen 3.8 未接收",
-    qualityAiNoPlan: "Qwen 3.8 无分析对象",
-    qualityAiFailed: "Qwen 3.8 生成失败",
-    qualityAiDisconnected: "Qwen 3.8 无法连接",
-    qualityAiRetry: "Qwen 3.8 结果待重新生成",
+    qualityAiDaily: "AI 品质简报",
+    qualityAiPending: "AI 生成中",
+    qualityAiStale: "AI 待更新",
+    qualityAiUnavailable: "AI 未接收",
+    qualityAiNoPlan: "AI 无分析对象",
+    qualityAiFailed: "AI 生成失败",
+    qualityAiDisconnected: "AI 无法连接",
+    qualityAiRetry: "AI 结果待重新生成",
     qualityAiGenerated: "生成",
     qualityAiProblemTypes: "重复问题类型",
     qualityAiProblemLocationPair: "问题类型 · 发生位置",
@@ -426,12 +405,12 @@ const COPY = {
     allHistoryReports: "全部历史 {count} 件",
     previousQualityPage: "上一页品质记录",
     nextQualityPage: "下一页品质记录",
-    previousQualityAiPage: "上一项 Qwen 3.8 品质注意",
-    nextQualityAiPage: "下一项 Qwen 3.8 品质注意",
+    previousQualityAiPage: "上一项 AI 品质注意",
+    nextQualityAiPage: "下一项 AI 品质注意",
     pauseRotation: "暂停品质记录自动切换",
     resumeRotation: "继续品质记录自动切换",
-    pauseQualityAiRotation: "暂停 Qwen 3.8 品质注意自动切换",
-    resumeQualityAiRotation: "继续 Qwen 3.8 品质注意自动切换",
+    pauseQualityAiRotation: "暂停 AI 品质注意自动切换",
+    resumeQualityAiRotation: "继续 AI 品质注意自动切换",
     inventory: "出库执行 · JIT / CSKD",
     outboundToday: "今日出库单明细",
     outboundActualTarget: "实发 / 应发",
@@ -583,22 +562,6 @@ function getWeatherConditionLabel(conditionCode: string, language: AppLanguage) 
     thunder: copy.weatherThunder,
   };
   return labels[conditionCode] ?? copy.weatherUnknown;
-}
-
-function getWeatherOrbCategory(conditionCode: string): WeatherOrbCategory {
-  if (conditionCode === "clear") return "clear";
-  if (conditionCode === "rain" || conditionCode === "heavy_rain") return "rain";
-  if (conditionCode === "snow") return "snow";
-  if (conditionCode === "thunder") return "thunder";
-  return "cloudy";
-}
-
-function getWeatherOrbAsset(conditionCode: string, dayPhase: "day" | "night") {
-  const category = getWeatherOrbCategory(conditionCode);
-  return {
-    category,
-    src: WEATHER_ORB_ASSETS[dayPhase][category],
-  };
 }
 
 function formatShanghaiTime(value: string | null) {
@@ -769,11 +732,11 @@ function ProductionCard({
       <div className={styles.productionPrimary}>
         <div className={styles.productionIdentity}>
           <div className={`${styles.productionAsset} ${isInjection ? styles.injectionAsset : styles.assemblyAsset}`}>
-            <img alt="" aria-hidden="true" src={isInjection ? injectionProcessIcon : assemblyConveyorIcon} />
+            <img className={artworkStyles.animated} alt="" aria-hidden="true" src={isInjection ? injectionProcessIcon : assemblyConveyorIcon} />
           </div>
           <dl className={styles.productionNumbers}>
-            <div><dt>{copy.plan}</dt><dd>{formatInteger(process.plannedQuantity, language)}</dd></div>
-            <div><dt>{copy.actual}</dt><dd>{formatInteger(process.actualQuantity, language)}</dd></div>
+            <div><dt>{copy.plan}</dt><dd data-density={getNumberDensity(formatInteger(process.plannedQuantity, language))}>{formatInteger(process.plannedQuantity, language)}</dd></div>
+            <div><dt>{copy.actual}</dt><dd data-density={getNumberDensity(formatInteger(process.actualQuantity, language))}>{formatInteger(process.actualQuantity, language)}</dd></div>
           </dl>
         </div>
         <div className={styles.paceComparison}>
@@ -1122,37 +1085,20 @@ function QualityHistorySlide({
         item.reportCount === null ? "—" : formatInteger(item.reportCount, language),
       )
     : replaceCount(copy.recentReports, historyWindowDays, item.reportCount);
-  return (
-    <article className={`${styles.qualitySlide} ${styles.qualityHistorySlide}`}>
-      <header className={styles.qualitySlideHeader}>
-        <div className={styles.qualitySlideMachine} title={item.machineLabel}>
-          <strong>{machineIdentity.machineLabel}</strong>
-          {machineIdentity.tonnageLabel ? <small>{machineIdentity.tonnageLabel}</small> : null}
-        </div>
-        <div className={styles.qualitySlideModel} title={`${item.modelLabel}${item.partNumber ? ` · ${item.partNumber}` : ""}`}>
-          <span>{copy.qualityModelLabel}</span>
-          <strong>{item.modelLabel}</strong>
-          <small>{copy.qualityPartLabel} {item.partNumber ?? "—"}</small>
-        </div>
-        <span className={styles.qualitySlideStatus} data-state={aiStatusState} role="status">{aiStatusLabel}</span>
-      </header>
-      <div className={styles.qualitySlideNarrative}>
-        <span><Clock3 aria-hidden="true" />{copy.qualityHistorySummary}</span>
-        <strong title={`${historyLabel} · ${phenomena}`}>{historyLabel} · {phenomena}</strong>
-      </div>
-      <div className={styles.qualitySlideDetails}>
-        <article>
-          <span>{copy.qualityHistoryPhenomena}</span>
-          <strong title={phenomena}>{phenomena}</strong>
-        </article>
-        <article className={styles.qualityHistoryEvidence}>
-          <span>{copy.qualityHistoryEvidence}</span>
-          <strong>{historyLabel}</strong>
-          <small>{copy.qualityLatest} {formatShortDate(item.latestReportDate)} · {copy.exactPartMatch}</small>
-        </article>
-      </div>
-    </article>
-  );
+  return <QualityHistoryBriefingContent
+    language={language}
+    machineLabel={machineIdentity.machineLabel}
+    machineTitle={item.machineLabel}
+    tonnageLabel={machineIdentity.tonnageLabel}
+    modelLabel={item.modelLabel}
+    partLabel={item.partNumber ?? "—"}
+    historyLabel={historyLabel}
+    phenomena={phenomena}
+    latestLabel={`${copy.qualityLatest} ${formatShortDate(item.latestReportDate)}`}
+    matchLabel={copy.exactPartMatch}
+    aiStatusLabel={aiStatusLabel}
+    aiStatusState={aiStatusState}
+  />;
 }
 
 function QualityAiSlide({
@@ -1178,55 +1124,29 @@ function QualityAiSlide({
   const problemTypes = formatQualityAiRankedLabels(item.problemTypes, language) || "—";
   const problemLocationPairs = formatQualityAiProblemLocationPairs(item.problemLocationPairs, language) || "—";
   const checkpoints = item.checkpoints[language].filter(Boolean);
-  const checkpointLabel = checkpoints.join(" · ") || "—";
   const evidenceLabel = copy.qualityAiEvidence.replace(
     "{count}",
     item.matchingReportCount === null ? "—" : formatInteger(item.matchingReportCount, language),
   );
 
-  return (
-    <article className={`${styles.qualitySlide} ${styles.qualityAiSlide}`}>
-      <header className={styles.qualitySlideHeader}>
-        <div className={styles.qualitySlideMachine} title={machineLabel}>
-          <strong>{machineIdentity.machineLabel}</strong>
-          {machineIdentity.tonnageLabel ? <small>{machineIdentity.tonnageLabel}</small> : null}
-        </div>
-        <div className={styles.qualitySlideModel} title={`${modelTitle} · ${partTitle}`}>
-          <span>{copy.qualityModelLabel}</span>
-          <strong>{modelLabel}</strong>
-          <small>{copy.qualityPartLabel} {partLabel}</small>
-        </div>
-        <span className={styles.qualitySlideStatus}><Sparkles aria-hidden="true" />{copy.qualityAiDaily}</span>
-      </header>
-      <div className={styles.qualitySlideNarrative}>
-        <span><Sparkles aria-hidden="true" />{copy.qualityHistorySummary}</span>
-        <strong title={headline}>{headline}</strong>
-      </div>
-      <div className={styles.qualitySlideDetails}>
-        <article className={styles.qualityAiGrounding} title={`${copy.qualityAiProblemTypes}: ${problemTypes} · ${copy.qualityAiProblemLocationPair}: ${problemLocationPairs}`}>
-          <div>
-            <span>{copy.qualityAiProblemTypes}</span>
-            <strong>{problemTypes}</strong>
-          </div>
-          <div>
-            <span>{copy.qualityAiProblemLocationPair}</span>
-            <strong>{problemLocationPairs}</strong>
-          </div>
-        </article>
-        <article className={styles.qualityAiCheckpoint} title={checkpointLabel}>
-          <span><CheckCircle2 aria-hidden="true" />{copy.qualityAiCheck}</span>
-          <strong>{checkpointLabel}</strong>
-          <small>{evidenceLabel} · {copy.qualityLatest} {formatShortDate(item.latestReportAt)}</small>
-        </article>
-      </div>
-      <footer className={styles.qualitySlideFooter}>
-        <span>{copy.qualityAiGenerated} {formatShortDate(generatedAt)} {formatShanghaiTime(generatedAt)}</span>
-        {totalEvidenceCount === null ? null : (
-          <span>{copy.qualityAiEvidence.replace("{count}", formatInteger(totalEvidenceCount, language))}</span>
-        )}
-      </footer>
-    </article>
-  );
+  return <QualityAiBriefingContent
+    language={language}
+    machineLabel={machineIdentity.machineLabel}
+    machineTitle={machineLabel}
+    tonnageLabel={machineIdentity.tonnageLabel}
+    modelLabel={modelLabel}
+    modelTitle={modelTitle}
+    partLabel={partLabel}
+    partTitle={partTitle}
+    headline={headline}
+    problemTypes={problemTypes}
+    problemLocationPairs={problemLocationPairs}
+    checkpoints={checkpoints}
+    evidenceLabel={evidenceLabel}
+    latestLabel={`${copy.qualityLatest} ${formatShortDate(item.latestReportAt)}`}
+    generatedLabel={`${copy.qualityAiGenerated} ${formatShortDate(generatedAt)} ${formatShanghaiTime(generatedAt)}`}
+    totalEvidenceLabel={totalEvidenceCount === null ? null : copy.qualityAiEvidence.replace("{count}", formatInteger(totalEvidenceCount, language))}
+  />;
 }
 
 function QualityPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
@@ -1240,14 +1160,7 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
   const qualityAi = model.quality.aiSummary;
   const qualityBusinessDate = model.quality.businessDate ?? model.businessDate;
   const qualityAiSummaryText = getQualityAiText(qualityAi?.summary ?? null, language);
-  const showQualityAi = qualityAi?.status === "ready"
-    && qualityAi.businessDate === qualityBusinessDate
-    && qualityAi.modelId === "qwen38"
-    && qualityAi.schemaVersion === "quality-daily-attention-ai.v1"
-    && !qualityAi.llmFallback
-    && Boolean(qualityAi.sourcePlanHash)
-    && Boolean(qualityAi.sourceEvidenceHash)
-    && Boolean(qualityAiSummaryText);
+  const showQualityAi = canShowQualityAi(qualityAi, qualityBusinessDate, language);
   const qualityAiItems = useMemo(
     () => showQualityAi ? [...(qualityAi?.attentionItems ?? [])] : [],
     [qualityAi?.attentionItems, showQualityAi],
@@ -1260,6 +1173,14 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
     () => getCircularWindow(qualityAiItems, startIndex, QUALITY_AI_WINDOW_SIZE),
     [qualityAiItems, startIndex],
   );
+  const readingText = showQualityAi
+    ? [qualityAiSummaryText, ...visibleQualityAiItems.flatMap((item) => [
+        getQualityAiText(item.headline, language), ...item.checkpoints[language],
+        formatQualityAiRankedLabels(item.problemTypes, language),
+        formatQualityAiProblemLocationPairs(item.problemLocationPairs, language),
+      ])].filter(Boolean).join(" ")
+    : visibleItems.flatMap((item) => [item.modelLabel, ...item.phenomena]).join(" ");
+  const rotationDuration = getBriefingDuration(readingText);
   const activeItemCount = showQualityAi ? qualityAiItems.length : qualityItems.length;
   const activeWindowSize = showQualityAi ? QUALITY_AI_WINDOW_SIZE : QUALITY_WINDOW_SIZE;
   const positionCount = activeItemCount > activeWindowSize ? activeItemCount : 1;
@@ -1300,9 +1221,9 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
     const timer = window.setInterval(() => {
       setRollDirection(1);
       setStartIndex((current) => (current + 1) % positionCount);
-    }, QUALITY_ROTATION_MS);
+    }, rotationDuration);
     return () => window.clearInterval(timer);
-  }, [autoPaused, positionCount]);
+  }, [autoPaused, positionCount, rotationDuration, startIndex]);
 
   const moveWindow = (step: number) => {
     setRollDirection(step >= 0 ? 1 : -1);
@@ -1430,7 +1351,7 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
   );
 }
 
-function OutboundTodayLane({
+function presentOutboundLane({
   code,
   metric,
   detail,
@@ -1442,7 +1363,7 @@ function OutboundTodayLane({
   detail: OutboundTodayDetailSummary;
   priorityItem: OutboundPriorityItem | null;
   language: AppLanguage;
-}) {
+}): OutboundLanePresentation {
   const copy = COPY[language];
   const noPlan = metric.targetQuantity === 0;
   const progressWidth = metric.completionRate === null ? 0 : Math.max(0, Math.min(100, metric.completionRate));
@@ -1461,76 +1382,43 @@ function OutboundTodayLane({
     priority?.materialCode,
     priorityDescription,
   ].filter(Boolean).join(" · ");
-  return (
-    <article className={`${styles.outboundLane} ${code === "CSKD" ? styles.cskdLane : ""}`} title={laneTitle}>
-      <b className={styles.outboundCode}>{code}<small>{formatInteger(metric.orderCount, language)} {language === "ko" ? "단" : "单"}</small></b>
-      <div className={styles.outboundLaneValue}>
-        <span>{copy.outboundActualTarget}</span>
-        <strong>{formatInteger(metric.fulfilledQuantity, language)}<small>/ {formatInteger(metric.targetQuantity, language)} {quantityUnit}</small></strong>
-      </div>
-      <div className={styles.outboundLaneMeta}>
-        {detailAvailable ? (
-          <>
-            <span><b>{copy.outboundPendingItems}</b> {formatInteger(detail.pendingLineCount, language)}{language === "ko" ? "품목" : "行"}</span>
-            <span><b>{copy.outboundRemainingQuantity}</b> <strong>{formatInteger(detail.remainingQuantity, language)} {detailUnit}</strong></span>
-            {detail.overLineCount !== null && detail.overLineCount > 0
-              ? <span className={styles.outboundOverMeta}><b>{copy.outboundOverQuantity}</b> {formatInteger(detail.overLineCount, language)} / +{formatInteger(detail.overQuantity, language)}</span>
-              : null}
-          </>
-        ) : <span>{copy.outboundDetailUnavailable}</span>}
-      </div>
-      <div className={`${styles.outboundPriority} ${priority ? "" : styles.outboundPriorityEmpty}`}>
-        {priority ? (
-          <>
-            <span>{copy.outboundPriorityModel} {formatShanghaiTime(priority.planTime)}</span>
-            <strong>{priority.materialCode}</strong>
-            <em>{priorityDescription ?? ""}</em>
-            <b aria-label={copy.outboundActualTarget} title={copy.outboundActualTarget}>{formatInteger(priority.fulfilledQuantity, language)}<small>/ {formatInteger(priority.targetQuantity, language)} {priority.unit ?? detailUnit}</small></b>
-            <i>{copy.outboundRemainingQuantity} {formatInteger(priority.remainingQuantity, language)}</i>
-          </>
-        ) : <span>{detailAvailable && detail.pendingLineCount === 0 ? copy.outboundNoPending : copy.outboundDetailUnavailable}</span>}
-      </div>
-      <em className={styles.outboundRate}>{noPlan ? copy.outboundNoPlan : formatPercent(metric.completionRate)}</em>
-      <div
-        aria-label={`${code} ${copy.completion}`}
-        aria-valuemax={Math.max(100, metric.completionRate ?? 100)}
-        aria-valuemin={0}
-        aria-valuenow={metric.completionRate ?? undefined}
-        aria-valuetext={noPlan ? copy.outboundNoPlan : formatPercent(metric.completionRate)}
-        className={styles.outboundProgress}
-        role="progressbar"
-      >
-        <span style={{ width: `${progressWidth}%` }} />
-      </div>
-    </article>
-  );
+  const secondaryItems: OutboundLanePresentation["secondaryItems"][number][] = detailAvailable
+    ? [
+      { text: `${copy.outboundPendingItems} ${formatInteger(detail.pendingLineCount, language)}${language === "ko" ? "품목" : "行"}` },
+      { text: `${copy.outboundRemainingQuantity} ${formatInteger(detail.remainingQuantity, language)} ${detailUnit}` },
+    ]
+    : [{ text: copy.outboundDetailUnavailable }];
+  if (detailAvailable && detail.overLineCount !== null && detail.overLineCount > 0) {
+    secondaryItems.push({ text: `${copy.outboundOverQuantity} ${formatInteger(detail.overLineCount, language)} / +${formatInteger(detail.overQuantity, language)}`, tone: "attention" });
+  }
+  return {
+    code, title: laneTitle,
+    fulfilledLabel: formatInteger(metric.fulfilledQuantity, language),
+    targetLabel: formatInteger(metric.targetQuantity, language),
+    unitLabel: quantityUnit,
+    rateLabel: noPlan ? copy.outboundNoPlan : formatPercent(metric.completionRate),
+    noPlan, completionRate: metric.completionRate, progressWidth,
+    progressMax: Math.max(100, metric.completionRate ?? 100),
+    secondaryItems,
+    priority: priority ? {
+      timeLabel: `${copy.outboundPriorityModel} ${formatShanghaiTime(priority.planTime)}`,
+      materialCode: priority.materialCode,
+      description: priorityDescription,
+      title: `${laneTitle} · ${copy.outboundActualTarget} ${formatInteger(priority.fulfilledQuantity, language)} / ${formatInteger(priority.targetQuantity, language)} ${priority.unit ?? detailUnit} · ${copy.outboundRemainingQuantity} ${formatInteger(priority.remainingQuantity, language)}`,
+    } : null,
+    priorityEmptyLabel: detailAvailable && detail.pendingLineCount === 0 ? copy.outboundNoPending : copy.outboundDetailUnavailable,
+  };
 }
 
-function OutboundPeriodComparison({
-  label,
-  period,
-  language,
-}: {
-  label: string;
-  period: OutboundPerformancePeriod;
-  language: AppLanguage;
-}) {
+function presentOutboundPeriod(label: string, period: OutboundPerformancePeriod, language: AppLanguage): OutboundPeriodPresentation {
   const copy = COPY[language];
-  return (
-    <article className={styles.outboundPeriod}>
-      <header><strong>{period.label ?? label}</strong><span>{copy.completedPeriod}</span></header>
-      {(["JIT", "CSKD"] as const).map((code) => {
-        const metric = code === "JIT" ? period.jit : period.cskd;
-        return (
-          <div key={code}>
-            <b>{code}</b>
-            <strong>{metric.targetQuantity === 0 ? copy.outboundNoPlan : formatPercent(metric.completionRate)}</strong>
-            <span>{formatInteger(metric.fulfilledQuantity, language)} / {formatInteger(metric.targetQuantity, language)}</span>
-          </div>
-        );
-      })}
-    </article>
-  );
+  const presentMetric = (metric: OutboundPerformanceMetric) => ({
+    rateLabel: metric.targetQuantity === 0 ? copy.outboundNoPlan : formatPercent(metric.completionRate),
+    title: `${copy.outboundActualTarget} ${formatInteger(metric.fulfilledQuantity, language)} / ${formatInteger(metric.targetQuantity, language)} ${metric.unit ?? "EA"} · ${copy.completedPeriod}`,
+  });
+  const jit = presentMetric(period.jit);
+  const cskd = presentMetric(period.cskd);
+  return { label, title: `${period.label ?? label} · ${copy.completedPeriod} · JIT ${jit.title} · CSKD ${cskd.title}`, jit, cskd };
 }
 
 function InventoryPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
@@ -1577,33 +1465,24 @@ function InventoryPanel({ model, language }: { model: OverviewBoardModel; langua
             <div><strong>{copy.outboundUnavailable}</strong><span>{copy.outboundUnavailableDescription}</span></div>
           </div>
         ) : (
-          <>
-          <div className={styles.outboundToday}>
-            <div className={styles.outboundSectionLabel}><strong>{copy.outboundToday}</strong><span>{copy.outboundDetailBasis}</span></div>
-            <OutboundTodayLane
-              code="JIT"
-              detail={outbound.todayDetailSummary.jit}
-              language={language}
-              metric={outbound.periods.today.jit}
-              priorityItem={pendingPriorityItems.jit.length > 0
-                ? pendingPriorityItems.jit[priorityIndex % pendingPriorityItems.jit.length]
-                : null}
-            />
-            <OutboundTodayLane
-              code="CSKD"
-              detail={outbound.todayDetailSummary.cskd}
-              language={language}
-              metric={outbound.periods.today.cskd}
-              priorityItem={pendingPriorityItems.cskd.length > 0
-                ? pendingPriorityItems.cskd[priorityIndex % pendingPriorityItems.cskd.length]
-                : null}
-            />
-          </div>
-          <div className={styles.outboundComparisons}>
-            <OutboundPeriodComparison label={copy.previousWeek} language={language} period={outbound.periods.previousWeek} />
-            <OutboundPeriodComparison label={copy.previousMonth} language={language} period={outbound.periods.previousMonth} />
-          </div>
-          </>
+          <OutboundPerformanceContent
+            language={language}
+            todayLabel={copy.outboundToday}
+            actualTargetLabel={copy.outboundActualTarget}
+            completionLabel={copy.completion}
+            basisLabel={copy.outboundDetailBasis}
+            lanes={([
+              ["JIT", outbound.periods.today.jit, outbound.todayDetailSummary.jit, pendingPriorityItems.jit],
+              ["CSKD", outbound.periods.today.cskd, outbound.todayDetailSummary.cskd, pendingPriorityItems.cskd],
+            ] as const).map(([code, metric, detail, priorities]) => presentOutboundLane({
+              code, metric, detail, language,
+              priorityItem: priorities.length > 0 ? priorities[priorityIndex % priorities.length] : null,
+            })) as [OutboundLanePresentation, OutboundLanePresentation]}
+            periods={[
+              presentOutboundPeriod(copy.previousWeek, outbound.periods.previousWeek, language),
+              presentOutboundPeriod(copy.previousMonth, outbound.periods.previousMonth, language),
+            ]}
+          />
         )}
       </div>
       <footer className={styles.outboundFooter} title={measurementDetails}>
@@ -1624,6 +1503,7 @@ function InventoryPanel({ model, language }: { model: OverviewBoardModel; langua
 
 function EnergyPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
   const copy = COPY[language];
+  const rem = useBoardRem();
   const chartData = model.energy.hourlyTrend;
   const hasTrend = chartData.some((point) => (
     point.usageKwh !== null
@@ -1650,16 +1530,16 @@ function EnergyPanel({ model, language }: { model: OverviewBoardModel; language:
           <div className={styles.energyTrendHeading}><strong>{copy.energyTrendTitle}</strong><span>{copy.energyTrendSubtitle}</span></div>
           {hasTrend ? (
             <ResponsiveContainer height="100%" width="100%">
-              <ComposedChart data={chartData} margin={{ top: 0, right: 4, bottom: -8, left: -12 }}>
+              <ComposedChart data={chartData} margin={{ top: 0, right: 0.3 * rem, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke="#dce5ee" strokeDasharray="3 5" vertical={false} />
-                <XAxis axisLine={{ stroke: "#9eb0c7" }} dataKey="label" fontSize="0.56rem" interval={3} tickLine={false} />
-                <YAxis axisLine={false} domain={[0, "auto"]} fontSize="0.56rem" tickLine={false} width={38} />
+                <XAxis axisLine={{ stroke: "#9eb0c7" }} dataKey="label" fontSize="0.64rem" height={1.25 * rem} interval={3} tickLine={false} />
+                <YAxis axisLine={false} domain={[0, "auto"]} fontSize="0.64rem" tickLine={false} width={2.5 * rem} />
                 <Tooltip formatter={(value, name) => [`${formatDecimal(Number(value), 1)} kWh`, name]} />
-                <Legend align="right" height={18} iconSize={8} verticalAlign="top" wrapperStyle={{ fontSize: "0.54rem" }} />
-                <Bar barSize={9} dataKey="usageKwh" fill="#8db7df" isAnimationActive={false} name={copy.hourlyEnergy} radius={[3, 3, 0, 0]} />
-                <Line connectNulls={false} dataKey="movingAverage8hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage8h} stroke="#155fb2" strokeWidth={2.4} type="monotone" />
-                <Line connectNulls={false} dataKey="movingAverage12hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage12h} stroke="#657d96" strokeDasharray="6 4" strokeWidth={2.1} type="monotone" />
-                <Line connectNulls={false} dataKey="movingAverage24hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage24h} stroke="#d88718" strokeDasharray="2 4" strokeWidth={2.2} type="monotone" />
+                <Legend align="right" height={1.2 * rem} iconSize={0.45 * rem} verticalAlign="top" wrapperStyle={{ fontSize: "0.62rem" }} />
+                <Bar barSize={0.45 * rem} dataKey="usageKwh" fill="#8db7df" isAnimationActive={false} name={copy.hourlyEnergy} radius={[3, 3, 0, 0]} />
+                <Line connectNulls={false} dataKey="movingAverage8hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage8h} stroke="#155fb2" strokeWidth={0.13 * rem} type="monotone" />
+                <Line connectNulls={false} dataKey="movingAverage12hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage12h} stroke="#657d96" strokeDasharray="6 4" strokeWidth={0.11 * rem} type="monotone" />
+                <Line connectNulls={false} dataKey="movingAverage24hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage24h} stroke="#d88718" strokeDasharray="2 4" strokeWidth={0.12 * rem} type="monotone" />
               </ComposedChart>
             </ResponsiveContainer>
           ) : <p className={styles.panelEmpty}>{copy.noEnergyTrend}</p>}
@@ -1671,6 +1551,7 @@ function EnergyPanel({ model, language }: { model: OverviewBoardModel; language:
 
 function MouldPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
   const copy = COPY[language];
+  const rem = useBoardRem();
   const trend = model.moulds.serviceTrend;
   const statusRows = [
     { key: "total", label: copy.managedMoulds, value: model.moulds.total, icon: PackageOpen, tone: "blue" },
@@ -1737,13 +1618,13 @@ function MouldPanel({ model, language }: { model: OverviewBoardModel; language: 
                 role="img"
               >
                 <ResponsiveContainer height="100%" width="100%">
-                  <ComposedChart data={trendData} margin={{ top: 5, right: 2, bottom: -6, left: -28 }}>
+                  <ComposedChart data={trendData} margin={{ top: 0.25 * rem, right: 0.15 * rem, bottom: 0, left: 0 }}>
                     <CartesianGrid stroke="#dfe8f1" strokeDasharray="3 4" vertical={false} />
-                    <XAxis axisLine={{ stroke: "#a7b7c8" }} dataKey="label" fontSize="0.52rem" interval={0} tickLine={false} />
-                    <YAxis allowDecimals={false} axisLine={false} fontSize="0.5rem" tickLine={false} width={34} />
+                    <XAxis axisLine={{ stroke: "#a7b7c8" }} dataKey="label" fontSize="0.59rem" height={1.15 * rem} interval={0} tickLine={false} />
+                    <YAxis allowDecimals={false} axisLine={false} fontSize="0.59rem" tickLine={false} width={1.3 * rem} />
                     <Tooltip formatter={(value, name) => [`${formatInteger(Number(value), language)}${copy.mouldRecordUnit}`, name]} />
-                    <Bar barSize={17} dataKey="maintenance" fill="#2d78bd" isAnimationActive={false} name={copy.maintenanceMoulds} radius={[0, 0, 2, 2]} stackId="service" />
-                    <Bar barSize={17} dataKey="repair" fill="#e68825" isAnimationActive={false} name={copy.repairMoulds} radius={[3, 3, 0, 0]} stackId="service" />
+                    <Bar barSize={0.88 * rem} dataKey="maintenance" fill="#2d78bd" isAnimationActive={false} name={copy.maintenanceMoulds} radius={[0, 0, 2, 2]} stackId="service" />
+                    <Bar barSize={0.88 * rem} dataKey="repair" fill="#e68825" isAnimationActive={false} name={copy.repairMoulds} radius={[3, 3, 0, 0]} stackId="service" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -1792,16 +1673,26 @@ function HeaderPanel({
   language,
   mode,
   isRefreshing,
+  refreshFailed,
   onRefresh,
   onToggleLanguage,
+  artworkPaused,
+  onToggleArtwork,
 }: {
   model: OverviewBoardModel;
   language: AppLanguage;
   mode: "live" | "demo";
   isRefreshing: boolean;
+  refreshFailed: boolean;
   onRefresh: () => void;
   onToggleLanguage: () => void;
+  artworkPaused: boolean;
+  onToggleArtwork: () => void;
 }) {
+  const reducedMotion = usePrefersReducedMotion();
+  const artworkLabel = language === "ko"
+    ? reducedMotion ? "그래픽 정지 · 기기 설정" : artworkPaused ? "그래픽 움직임 재개" : "그래픽 움직임 일시정지"
+    : reducedMotion ? "动效已关闭 · 系统设置" : artworkPaused ? "恢复图形动效" : "暂停图形动效";
   const copy = COPY[language];
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const [currentTime, setCurrentTime] = useState(() => new Date().toISOString());
@@ -1816,10 +1707,9 @@ function HeaderPanel({
       ? replaceSingleCount(copy.unavailableSources, model.freshness.unavailableSourceCount)
       : null,
   ].filter((item): item is string => Boolean(item));
-  const freshnessLabel = model.freshnessLabel ?? (freshnessParts.length > 0 ? freshnessParts.join(" · ") : null);
+  const sourceFreshness = model.freshnessLabel ?? (freshnessParts.length > 0 ? freshnessParts.join(" · ") : null);
+  const freshnessLabel = [refreshFailed ? copy.refreshFailed : null, sourceFreshness].filter(Boolean).join(" · ");
   const weather = model.weather;
-  const weatherAvailable = weather.status !== "unavailable" && weather.temperatureC !== null;
-  const weatherOrb = getWeatherOrbAsset(weather.conditionCode, weather.dayPhase);
   const fullscreenSupported = typeof document.documentElement.requestFullscreen === "function";
   const fullscreenLabel = isFullscreen ? copy.exitFullscreen : copy.enterFullscreen;
 
@@ -1883,24 +1773,9 @@ function HeaderPanel({
             <RefreshCw aria-hidden="true" className={isRefreshing ? styles.refreshingIcon : undefined} />
           </button>
         </div>
-        {mode === "demo" ? <div className={styles.demoBadge}><Radio aria-hidden="true" />{copy.demo}</div> : null}
       </div>
       <div className={styles.headerContent}>
         <div className={styles.headerHero}>
-          <AnimatePresence initial={false} mode="sync">
-            <motion.img
-              alt=""
-              animate={{ opacity: 0.9 }}
-              aria-hidden="true"
-              className={styles.weatherOrbAsset}
-              data-weather-art={`${weatherOrb.category}-${weather.dayPhase}`}
-              exit={{ opacity: 0 }}
-              initial={{ opacity: 0 }}
-              key={`${weatherOrb.category}-${weather.dayPhase}`}
-              src={weatherOrb.src}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-            />
-          </AnimatePresence>
           <div className={styles.brandSummary}>
             <p className={styles.businessDate}><CalendarDays aria-hidden="true" />{formatBusinessDate(model.businessDate, language)}</p>
             <p className={styles.businessTime}>
@@ -1911,16 +1786,7 @@ function HeaderPanel({
               <small>{copy.currentTime}</small>
             </p>
           </div>
-          <section className={`${styles.weatherCard} ${weather.isStale ? styles.weatherStale : ""}`} title={weather.isStale ? copy.weatherStale : weather.attribution}>
-            <div className={styles.weatherPrimary}>
-              <div className={styles.weatherIdentity}>
-                <span><MapPin aria-hidden="true" />{copy.nanjingWeather}</span>
-                <strong>{getWeatherConditionLabel(weather.conditionCode, language)}</strong>
-              </div>
-              <strong className={styles.weatherTemperature}>{weatherAvailable ? `${formatDecimal(weather.temperatureC, 1)}°C` : "—"}</strong>
-            </div>
-            {weather.isStale ? <div className={styles.weatherSource}><em>{copy.weatherStale}</em></div> : null}
-          </section>
+          <WeatherDisplay weather={weather} language={language} conditionLabel={getWeatherConditionLabel(weather.conditionCode, language)} />
         </div>
         <div className={styles.headerMetrics}>
           <div className={styles.headerPaceSummary}>
@@ -1929,8 +1795,8 @@ function HeaderPanel({
             <article><Factory aria-hidden="true" /><span>{copy.runningMachines}</span><strong>{formatInteger(model.equipment.injectionOee.runningMachineCount, language)} / {formatInteger(model.equipment.injectionOee.totalEquipmentCount, language)}</strong></article>
           </div>
           <div className={styles.weatherMetrics}>
-            <article><Droplets aria-hidden="true" /><span>{copy.humidity}</span><strong>{weather.relativeHumidityPercent === null ? "—" : `${formatDecimal(weather.relativeHumidityPercent, 0)}%`}</strong></article>
-            <article><Wind aria-hidden="true" /><span>{copy.wind}</span><strong>{weather.windSpeedMps === null ? "—" : `${formatDecimal(weather.windSpeedMps, 1)} m/s`}</strong></article>
+            <article><Droplets aria-hidden="true" /><span>{copy.humidity}</span><strong>{weather.status === "unavailable" || weather.relativeHumidityPercent === null ? "—" : `${formatDecimal(weather.relativeHumidityPercent, 0)}%`}</strong></article>
+            <article><Wind aria-hidden="true" /><span>{copy.wind}</span><strong>{weather.status === "unavailable" || weather.windSpeedMps === null ? "—" : `${formatDecimal(weather.windSpeedMps, 1)} m/s`}</strong></article>
           </div>
         </div>
         <div className={styles.statusStrip}>
@@ -1939,7 +1805,13 @@ function HeaderPanel({
           <span className={styles.attentionStatus}><AlertTriangle aria-hidden="true" />{copy.checks} <strong>{formatInteger(model.attention.length, language)}</strong></span>
           <span><ShieldCheck aria-hidden="true" />{copy.qualityHistoryCount} <strong>{formatInteger(model.quality.items.length, language)}</strong></span>
         </div>
-        {freshnessLabel ? <small className={styles.freshness}><TimerReset aria-hidden="true" />{copy.sourceFreshness} · {freshnessLabel}</small> : null}
+        <div className={styles.freshnessRow}>
+          <button className={styles.artworkToggle} aria-label={artworkLabel} title={artworkLabel} aria-pressed={artworkPaused || reducedMotion} disabled={reducedMotion} onClick={onToggleArtwork} type="button">
+            {artworkPaused || reducedMotion ? <CirclePlay aria-hidden="true" /> : <CirclePause aria-hidden="true" />}
+            {language === "ko" ? "그래픽" : "图形动效"}
+          </button>
+          {freshnessLabel || mode === "demo" ? <small className={`${styles.freshness} ${refreshFailed ? styles.freshnessWarning : ""}`} role={refreshFailed ? "status" : undefined}><TimerReset aria-hidden="true" />{mode === "demo" ? <b className={styles.demoLabel}>{copy.demo}</b> : null}{copy.sourceFreshness} · {freshnessLabel || "—"}</small> : null}
+        </div>
       </div>
     </header>
   );
@@ -1947,6 +1819,7 @@ function HeaderPanel({
 
 export function OverviewBoardPage() {
   const [language, setLanguage] = useStoredLanguage();
+  const [artworkPaused, setArtworkPaused] = useState(false);
   const [languageAnnouncement, setLanguageAnnouncement] = useState("");
   const businessDate = useShanghaiBusinessDate();
   const query = useQuery({
@@ -1987,15 +1860,18 @@ export function OverviewBoardPage() {
 
   const { model, mode } = visibleData;
   return (
-    <main className={styles.page} data-mode={mode} data-testid="overview-board-page">
+    <main className={styles.page} lang={language} data-mode={mode} data-art-motion={artworkPaused ? "paused" : "running"} data-testid="overview-board-page">
       <ProductionCard kind="injection" language={language} process={model.processes.injection} />
       <HeaderPanel
         isRefreshing={query.isFetching}
+        refreshFailed={query.isError}
         language={language}
         mode={mode}
         model={model}
         onRefresh={() => void query.refetch()}
         onToggleLanguage={toggleLanguage}
+        artworkPaused={artworkPaused}
+        onToggleArtwork={() => setArtworkPaused((paused) => !paused)}
       />
       <ProductionCard kind="assembly" language={language} process={model.processes.assembly} />
       <EquipmentPanel language={language} model={model} />

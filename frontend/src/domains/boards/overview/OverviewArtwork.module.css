@@ -1,0 +1,18 @@
+/* The artwork moves independently of the production data and never indicates machine activity. */
+.animated {
+  animation: objectBreathe 12s ease-in-out infinite;
+  transform-origin: 50% 80%;
+}
+
+[data-art-motion="paused"] .animated {
+  animation-play-state: paused;
+}
+
+@keyframes objectBreathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-0.08rem) scale(1.012); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animated { animation: none; }
+}
