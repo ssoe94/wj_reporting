@@ -24,7 +24,6 @@ import {
   ShieldCheck,
   Signal,
   Sparkles,
-  TimerReset,
   TrendingDown,
   Workflow,
   Wind,
@@ -67,6 +66,9 @@ import { QualityAiBriefingContent, QualityHistoryBriefingContent } from "../over
 import { OutboundPerformanceContent, type OutboundLanePresentation, type OutboundPeriodPresentation } from "../overview/OutboundPerformanceContent";
 import { useBoardRem } from "../overview/useBoardRem";
 import { WeatherDisplay } from "../overview/WeatherDisplay";
+import { BoardThemeLogo } from "../overview/BoardThemeLogo";
+import { useBoardTheme } from "../overview/useBoardTheme";
+import type { BoardTheme } from "../overview/theme";
 import { canShowQualityAi, getBriefingDuration, getNumberDensity } from "../overview/presentation";
 import styles from "./OverviewBoardPage.module.css";
 
@@ -105,7 +107,7 @@ const COPY = {
     exitFullscreen: "전체 화면 종료",
     fullscreenUnavailable: "이 브라우저에서는 전체 화면을 지원하지 않습니다.",
     refreshBoard: "새로고침",
-    refreshFailed: "갱신 실패 · 이전 수신 데이터",
+    refreshFailed: "갱신 실패 · 이전 수신 데이터 · 다시 시도",
     refreshingBoard: "새로고침 중",
     currentTime: "북경 현재 시각",
     nanjingWeather: "난징",
@@ -293,9 +295,6 @@ const COPY = {
     retry: "다시 불러오기",
     loading: "통합 현황 데이터를 불러오는 중입니다.",
     demo: "DEMO",
-    sourceFreshness: "데이터 최신성",
-    staleSources: "지연 {count}",
-    unavailableSources: "미수신 {count}",
   },
   zh: {
     title: "WJ 综合运营中心",
@@ -305,7 +304,7 @@ const COPY = {
     exitFullscreen: "退出全屏",
     fullscreenUnavailable: "此浏览器不支持全屏显示。",
     refreshBoard: "刷新",
-    refreshFailed: "刷新失败 · 保留上次数据",
+    refreshFailed: "刷新失败 · 保留上次数据 · 点击重试",
     refreshingBoard: "正在刷新",
     currentTime: "北京时间",
     nanjingWeather: "南京",
@@ -493,9 +492,6 @@ const COPY = {
     retry: "重新读取",
     loading: "正在读取综合运营数据。",
     demo: "DEMO",
-    sourceFreshness: "数据时效",
-    staleSources: "延迟 {count}",
-    unavailableSources: "未接收 {count}",
   },
 } as const;
 
@@ -597,10 +593,6 @@ function replaceCount(template: string, days: number, count: number | null) {
   return template
     .replace("{days}", String(days))
     .replace("{count}", count === null ? "—" : String(count));
-}
-
-function replaceSingleCount(template: string, count: number) {
-  return template.replace("{count}", String(count));
 }
 
 function getQualityAiText(value: QualityAiLocalizedText | null, language: AppLanguage) {
@@ -717,7 +709,7 @@ function ProductionCard({
 }) {
   const copy = COPY[language];
   const isInjection = kind === "injection";
-  const color = isInjection ? "#1260b6" : "#078c55";
+  const color = isInjection ? "var(--blue)" : "var(--green)";
   const pace = getProcessPace(process);
   const paceTone = pace.status === "behind" ? styles.paceBehind : pace.status === "ahead" ? styles.paceAhead : styles.paceOnTrack;
   return (
@@ -741,7 +733,7 @@ function ProductionCard({
         </div>
         <div className={styles.paceComparison}>
           <PaceBar color={color} label={copy.completion} value={pace.completion} />
-          <PaceBar color="#6c8198" label={copy.timeProgress} value={pace.time} />
+          <PaceBar color="var(--board-chart-time, #6c8198)" label={copy.timeProgress} value={pace.time} />
           <div className={`${styles.paceDelta} ${paceTone}`}>
             <GitCompareArrows aria-hidden="true" />
             <span>{copy.paceGap}</span>
@@ -1531,15 +1523,15 @@ function EnergyPanel({ model, language }: { model: OverviewBoardModel; language:
           {hasTrend ? (
             <ResponsiveContainer height="100%" width="100%">
               <ComposedChart data={chartData} margin={{ top: 0, right: 0.3 * rem, bottom: 0, left: 0 }}>
-                <CartesianGrid stroke="#dce5ee" strokeDasharray="3 5" vertical={false} />
-                <XAxis axisLine={{ stroke: "#9eb0c7" }} dataKey="label" fontSize="0.64rem" height={1.25 * rem} interval={3} tickLine={false} />
+                <CartesianGrid stroke="var(--board-chart-grid, #dce5ee)" strokeDasharray="3 5" vertical={false} />
+                <XAxis axisLine={{ stroke: "var(--board-chart-axis, #9eb0c7)" }} dataKey="label" fontSize="0.64rem" height={1.25 * rem} interval={3} tickLine={false} />
                 <YAxis axisLine={false} domain={[0, "auto"]} fontSize="0.64rem" tickLine={false} width={2.5 * rem} />
                 <Tooltip formatter={(value, name) => [`${formatDecimal(Number(value), 1)} kWh`, name]} />
                 <Legend align="right" height={1.2 * rem} iconSize={0.45 * rem} verticalAlign="top" wrapperStyle={{ fontSize: "0.62rem" }} />
-                <Bar barSize={0.45 * rem} dataKey="usageKwh" fill="#8db7df" isAnimationActive={false} name={copy.hourlyEnergy} radius={[3, 3, 0, 0]} />
-                <Line connectNulls={false} dataKey="movingAverage8hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage8h} stroke="#155fb2" strokeWidth={0.13 * rem} type="monotone" />
-                <Line connectNulls={false} dataKey="movingAverage12hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage12h} stroke="#657d96" strokeDasharray="6 4" strokeWidth={0.11 * rem} type="monotone" />
-                <Line connectNulls={false} dataKey="movingAverage24hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage24h} stroke="#d88718" strokeDasharray="2 4" strokeWidth={0.12 * rem} type="monotone" />
+                <Bar barSize={0.45 * rem} dataKey="usageKwh" fill="var(--board-chart-blue-soft, #8db7df)" isAnimationActive={false} name={copy.hourlyEnergy} radius={[3, 3, 0, 0]} />
+                <Line connectNulls={false} dataKey="movingAverage8hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage8h} stroke="var(--board-chart-blue, #155fb2)" strokeWidth={0.13 * rem} type="monotone" />
+                <Line connectNulls={false} dataKey="movingAverage12hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage12h} stroke="var(--board-chart-time, #657d96)" strokeDasharray="6 4" strokeWidth={0.11 * rem} type="monotone" />
+                <Line connectNulls={false} dataKey="movingAverage24hKwh" dot={false} isAnimationActive={false} name={copy.movingAverage24h} stroke="var(--board-chart-orange, #d88718)" strokeDasharray="2 4" strokeWidth={0.12 * rem} type="monotone" />
               </ComposedChart>
             </ResponsiveContainer>
           ) : <p className={styles.panelEmpty}>{copy.noEnergyTrend}</p>}
@@ -1619,12 +1611,12 @@ function MouldPanel({ model, language }: { model: OverviewBoardModel; language: 
               >
                 <ResponsiveContainer height="100%" width="100%">
                   <ComposedChart data={trendData} margin={{ top: 0.25 * rem, right: 0.15 * rem, bottom: 0, left: 0 }}>
-                    <CartesianGrid stroke="#dfe8f1" strokeDasharray="3 4" vertical={false} />
-                    <XAxis axisLine={{ stroke: "#a7b7c8" }} dataKey="label" fontSize="0.59rem" height={1.15 * rem} interval={0} tickLine={false} />
+                    <CartesianGrid stroke="var(--board-chart-grid, #dfe8f1)" strokeDasharray="3 4" vertical={false} />
+                    <XAxis axisLine={{ stroke: "var(--board-chart-axis, #a7b7c8)" }} dataKey="label" fontSize="0.59rem" height={1.15 * rem} interval={0} tickLine={false} />
                     <YAxis allowDecimals={false} axisLine={false} fontSize="0.59rem" tickLine={false} width={1.3 * rem} />
                     <Tooltip formatter={(value, name) => [`${formatInteger(Number(value), language)}${copy.mouldRecordUnit}`, name]} />
-                    <Bar barSize={0.88 * rem} dataKey="maintenance" fill="#2d78bd" isAnimationActive={false} name={copy.maintenanceMoulds} radius={[0, 0, 2, 2]} stackId="service" />
-                    <Bar barSize={0.88 * rem} dataKey="repair" fill="#e68825" isAnimationActive={false} name={copy.repairMoulds} radius={[3, 3, 0, 0]} stackId="service" />
+                    <Bar barSize={0.88 * rem} dataKey="maintenance" fill="var(--board-chart-blue, #2d78bd)" isAnimationActive={false} name={copy.maintenanceMoulds} radius={[0, 0, 2, 2]} stackId="service" />
+                    <Bar barSize={0.88 * rem} dataKey="repair" fill="var(--board-chart-orange, #e68825)" isAnimationActive={false} name={copy.repairMoulds} radius={[3, 3, 0, 0]} stackId="service" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -1671,47 +1663,34 @@ function MouldPanel({ model, language }: { model: OverviewBoardModel; language: 
 function HeaderPanel({
   model,
   language,
+  theme,
+  onToggleTheme,
   mode,
   isRefreshing,
   refreshFailed,
   onRefresh,
   onToggleLanguage,
-  artworkPaused,
-  onToggleArtwork,
 }: {
   model: OverviewBoardModel;
   language: AppLanguage;
+  theme: BoardTheme;
+  onToggleTheme: () => void;
   mode: "live" | "demo";
   isRefreshing: boolean;
   refreshFailed: boolean;
   onRefresh: () => void;
   onToggleLanguage: () => void;
-  artworkPaused: boolean;
-  onToggleArtwork: () => void;
 }) {
-  const reducedMotion = usePrefersReducedMotion();
-  const artworkLabel = language === "ko"
-    ? reducedMotion ? "그래픽 정지 · 기기 설정" : artworkPaused ? "그래픽 움직임 재개" : "그래픽 움직임 일시정지"
-    : reducedMotion ? "动效已关闭 · 系统设置" : artworkPaused ? "恢复图形动效" : "暂停图形动效";
   const copy = COPY[language];
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const [currentTime, setCurrentTime] = useState(() => new Date().toISOString());
   const statusCopy = model.overallStatus === "normal" ? copy.normal : copy.attention;
   const injectionPace = getProcessPace(model.processes.injection);
   const assemblyPace = getProcessPace(model.processes.assembly);
-  const freshnessParts = [
-    model.freshness.staleSourceCount > 0
-      ? replaceSingleCount(copy.staleSources, model.freshness.staleSourceCount)
-      : null,
-    model.freshness.unavailableSourceCount > 0
-      ? replaceSingleCount(copy.unavailableSources, model.freshness.unavailableSourceCount)
-      : null,
-  ].filter((item): item is string => Boolean(item));
-  const sourceFreshness = model.freshnessLabel ?? (freshnessParts.length > 0 ? freshnessParts.join(" · ") : null);
-  const freshnessLabel = [refreshFailed ? copy.refreshFailed : null, sourceFreshness].filter(Boolean).join(" · ");
   const weather = model.weather;
   const fullscreenSupported = typeof document.documentElement.requestFullscreen === "function";
   const fullscreenLabel = isFullscreen ? copy.exitFullscreen : copy.enterFullscreen;
+  const refreshLabel = isRefreshing ? copy.refreshingBoard : refreshFailed ? copy.refreshFailed : copy.refreshBoard;
 
   useEffect(() => {
     const syncFullscreenState = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -1745,7 +1724,7 @@ function HeaderPanel({
   return (
     <header className={`${styles.card} ${styles.headerCard}`}>
       <div className={styles.brandRow}>
-        <img alt="WJ" src="/logo-transparent.png" />
+        <BoardThemeLogo theme={theme} language={language} onToggle={onToggleTheme} />
         <h1>
           <button aria-label={copy.titleToggle} className={styles.titleButton} onClick={onToggleLanguage} type="button">
             <strong>{copy.title}</strong>
@@ -1764,14 +1743,16 @@ function HeaderPanel({
           </button>
           <button
             aria-busy={isRefreshing}
-            aria-label={isRefreshing ? copy.refreshingBoard : copy.refreshBoard}
+            aria-label={refreshLabel}
+            data-refresh-failed={refreshFailed && !isRefreshing}
             disabled={isRefreshing}
             onClick={onRefresh}
-            title={isRefreshing ? copy.refreshingBoard : copy.refreshBoard}
+            title={refreshLabel}
             type="button"
           >
             <RefreshCw aria-hidden="true" className={isRefreshing ? styles.refreshingIcon : undefined} />
           </button>
+          <span className={styles.srAnnouncement} role="status">{refreshFailed && !isRefreshing ? copy.refreshFailed : ""}</span>
         </div>
       </div>
       <div className={styles.headerContent}>
@@ -1800,17 +1781,10 @@ function HeaderPanel({
           </div>
         </div>
         <div className={styles.statusStrip}>
-          <span><Clock3 aria-hidden="true" />{formatShanghaiTime(model.generatedAt)} {copy.generatedAt}</span>
+          <span>{mode === "demo" ? <b className={styles.demoLabel}>{copy.demo}</b> : <Clock3 aria-hidden="true" />}{formatShanghaiTime(model.generatedAt)} {copy.generatedAt}</span>
           <span className={model.overallStatus === "normal" ? styles.normalStatus : styles.attentionStatus}><CheckCircle2 aria-hidden="true" />{copy.operatingStatus} <strong>{statusCopy}</strong></span>
           <span className={styles.attentionStatus}><AlertTriangle aria-hidden="true" />{copy.checks} <strong>{formatInteger(model.attention.length, language)}</strong></span>
           <span><ShieldCheck aria-hidden="true" />{copy.qualityHistoryCount} <strong>{formatInteger(model.quality.items.length, language)}</strong></span>
-        </div>
-        <div className={styles.freshnessRow}>
-          <button className={styles.artworkToggle} aria-label={artworkLabel} title={artworkLabel} aria-pressed={artworkPaused || reducedMotion} disabled={reducedMotion} onClick={onToggleArtwork} type="button">
-            {artworkPaused || reducedMotion ? <CirclePlay aria-hidden="true" /> : <CirclePause aria-hidden="true" />}
-            {language === "ko" ? "그래픽" : "图形动效"}
-          </button>
-          {freshnessLabel || mode === "demo" ? <small className={`${styles.freshness} ${refreshFailed ? styles.freshnessWarning : ""}`} role={refreshFailed ? "status" : undefined}><TimerReset aria-hidden="true" />{mode === "demo" ? <b className={styles.demoLabel}>{copy.demo}</b> : null}{copy.sourceFreshness} · {freshnessLabel || "—"}</small> : null}
         </div>
       </div>
     </header>
@@ -1819,7 +1793,7 @@ function HeaderPanel({
 
 export function OverviewBoardPage() {
   const [language, setLanguage] = useStoredLanguage();
-  const [artworkPaused, setArtworkPaused] = useState(false);
+  const { theme, toggleTheme } = useBoardTheme();
   const [languageAnnouncement, setLanguageAnnouncement] = useState("");
   const businessDate = useShanghaiBusinessDate();
   const query = useQuery({
@@ -1840,7 +1814,7 @@ export function OverviewBoardPage() {
 
   if (query.isPending && !visibleData) {
     return (
-      <main className={styles.statePage} role="status">
+      <main className={styles.statePage} data-board-theme={theme} role="status">
         <img alt="WJ" src="/logo-transparent.png" />
         <span className={styles.stateSpinner} aria-hidden="true" />
         <p>{copy.loading}</p>
@@ -1850,7 +1824,7 @@ export function OverviewBoardPage() {
 
   if (!visibleData) {
     return (
-      <main className={styles.statePage} role="alert">
+      <main className={styles.statePage} data-board-theme={theme} role="alert">
         <AlertTriangle aria-hidden="true" />
         <h1>{copy.dataUnavailable}</h1>
         <button onClick={() => void query.refetch()} type="button">{copy.retry}</button>
@@ -1860,18 +1834,18 @@ export function OverviewBoardPage() {
 
   const { model, mode } = visibleData;
   return (
-    <main className={styles.page} lang={language} data-mode={mode} data-art-motion={artworkPaused ? "paused" : "running"} data-testid="overview-board-page">
+    <main className={styles.page} lang={language} data-board-theme={theme} data-mode={mode} data-testid="overview-board-page">
       <ProductionCard kind="injection" language={language} process={model.processes.injection} />
       <HeaderPanel
         isRefreshing={query.isFetching}
         refreshFailed={query.isError}
         language={language}
+        theme={theme}
+        onToggleTheme={toggleTheme}
         mode={mode}
         model={model}
         onRefresh={() => void query.refetch()}
         onToggleLanguage={toggleLanguage}
-        artworkPaused={artworkPaused}
-        onToggleArtwork={() => setArtworkPaused((paused) => !paused)}
       />
       <ProductionCard kind="assembly" language={language} process={model.processes.assembly} />
       <EquipmentPanel language={language} model={model} />

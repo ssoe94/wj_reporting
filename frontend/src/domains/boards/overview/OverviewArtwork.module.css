@@ -4,10 +4,6 @@
   transform-origin: 50% 80%;
 }
 
-[data-art-motion="paused"] .animated {
-  animation-play-state: paused;
-}
-
 @keyframes objectBreathe {
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-0.08rem) scale(1.012); }
