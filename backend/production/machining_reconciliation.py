@@ -323,6 +323,7 @@ def build_machining_provision_payload(business_date: Any, days: int = 3) -> dict
     mes_records = list(
         ProductionMesReportRecord.objects
         .filter(business_date=business_day, plan_type="machining")
+        .defer("raw_payload")
         .order_by("report_time", "id")
     )
     mes_qty_by_part: dict[str, int] = defaultdict(int)

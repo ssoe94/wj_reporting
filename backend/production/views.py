@@ -1272,7 +1272,12 @@ class ProductionOverviewBoardView(APIView):
             )
 
         language = 'zh' if request.query_params.get('lang') == 'zh' else 'ko'
-        response = Response(build_overview_board_snapshot(target_date, language=language))
+        scope = request.query_params.get('scope', 'full')
+        if scope not in {'full', 'production'}:
+            return Response({"detail": "Invalid scope. Use full or production."}, status=status.HTTP_400_BAD_REQUEST)
+        # Preserve the existing full snapshot contract for wall clients.
+        options = {'scope': scope} if scope == 'production' else {}
+        response = Response(build_overview_board_snapshot(target_date, language=language, **options))
         response['Cache-Control'] = 'no-store'
         response['Pragma'] = 'no-cache'
         return response
