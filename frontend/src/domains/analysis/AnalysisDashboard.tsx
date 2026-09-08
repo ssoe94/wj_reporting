@@ -1,17 +1,22 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowUpRight, CalendarDays, ChartNoAxesCombined, ClipboardCheck, Database, Factory, RefreshCw } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useLang } from "@/i18n";
 import { PageContainer, PageHeader } from "@/components/layout/PageLayout";
 import PermissionLink from "@/components/common/PermissionLink";
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
 import type { OverviewBoardModel } from "@/domains/boards/overview/types";
-import { getAnalysisOverview, getFieldOperations } from "./api";
+import { getAnalysisOverview, getAnalysisSources, getFieldOperations } from "./api";
 import { getFieldStationPath, getPriorityEquipment, getProcessEvidence, resolveAnalysisDate } from "./model";
 import type { EquipmentReason, FieldOperationsData } from "./model";
 import "./analysis.css";
+
+const ProductionComparisonChart = lazy(() => import("./ProductionComparisonChart").catch(() => ({
+  default: ({ lang }: { lang: string }) => <p className="analysis-notice" role="status">
+    {lang === "zh" ? "图表未能加载，请查看上方数值。" : "차트를 불러오지 못했습니다. 위 수치로 확인해 주세요."}
+  </p>,
+})));
 
 type Translate = (ko: string, zh: string) => string;
 type CopyProps = { tx: Translate; lang: string };
@@ -73,13 +78,9 @@ function ProductionSummary({ model, refreshFailed, tx, lang }: CopyProps & { mod
       </article>
     ))}</div>
     {chartRows.length > 0 && <div className="analysis-chart" role="img" aria-label={tx("위 표의 공정별 계획과 관측 실적 비교, 단위 ea", "上表各工序计划与观测实绩对比，单位 ea")}>
-      <ResponsiveContainer width="100%" height={235}><BarChart data={chartRows} margin={{ top: 18, right: 8, left: 8, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e8edf5" /><XAxis dataKey="name" tickLine={false} axisLine={false} />
-        <YAxis tickFormatter={(value: number) => quantity(value, lang)} tickLine={false} axisLine={false} width={70} />
-        <Tooltip formatter={(value: number) => `${quantity(value, lang)} ea`} /><Legend />
-        <Bar dataKey="plan" name={tx("계획", "计划")} fill="#a6b8d2" maxBarSize={72} radius={[5, 5, 0, 0]} isAnimationActive={false} />
-        <Bar dataKey="actual" name={tx("관측 실적", "观测实绩")} fill="#3771df" maxBarSize={72} radius={[5, 5, 0, 0]} isAnimationActive={false} />
-      </BarChart></ResponsiveContainer>
+      <Suspense fallback={<div style={{ height: 235 }} role="status">{tx("차트 준비 중", "正在准备图表")}</div>}>
+        <ProductionComparisonChart rows={chartRows} lang={lang} />
+      </Suspense>
     </div>}
     <p className="analysis-caption">{tx("계획이 있고 실적을 확인할 수 있는 공정만 차트에 표시합니다. 계획 달성은 OEE 성능이나 검사 합격률이 아닙니다.", "图表仅显示有计划且实绩可用的工序。计划达成率不是 OEE 性能或检验合格率。")}</p>
   </section>;
@@ -146,7 +147,10 @@ function FieldSection({ data, expanded, historical, tx, lang }: CopyProps & { da
   </>;
 }
 
-function SourceSection({ model, historical, tx, lang }: CopyProps & { model: OverviewBoardModel; historical: boolean }) {
+function SourceSection({ model, historical, tx, lang, additional = false }: CopyProps & { model: OverviewBoardModel; historical: boolean; additional?: boolean }) {
+  const titleId = additional ? "analysis-additional-source-title" : "analysis-source-title";
+  const visibleSources = (model.freshness.sources ?? []).filter((source) => !additional
+    || !["injection_production", "assembly_production", "injection_activity"].includes(source.key));
   const warningLabels: Record<string, string> = {
     injection_mes_data_missing: tx("사출 MES 실적이 없어 생산 달성 판단을 보류합니다.", "缺少注塑 MES 实绩，暂停生产达成判断。"),
     injection_mes_data_stale: tx("사출 MES 갱신이 지연되어 마지막 관측값만 참고합니다.", "注塑 MES 更新延迟，仅参考最近观测值。"),
@@ -170,11 +174,11 @@ function SourceSection({ model, historical, tx, lang }: CopyProps & { model: Ove
     inventory: tx("재고", "库存"), weather: tx("날씨", "天气"), moulds: tx("금형", "模具"), mould: tx("금형", "模具"),
     energy: tx("에너지", "能源"), shipping: tx("출하 스냅샷", "出货快照"), outbound: tx("출고", "出库"),
   };
-  return <section className="analysis-panel" aria-labelledby="analysis-source-title">
-    <div className="analysis-section-heading"><div><h2 id="analysis-source-title"><Database size={19} aria-hidden="true" />{tx("수집 상태와 해석 범위", "采集状态与解释范围")}</h2>
+  return <section className="analysis-panel" aria-labelledby={titleId}>
+    <div className="analysis-section-heading"><div><h2 id={titleId}><Database size={19} aria-hidden="true" />{additional ? tx("부가 원천 수집 상태", "附加数据源采集状态") : tx("수집 상태와 해석 범위", "采集状态与解释范围")}</h2>
       <p>{tx("응답 행 수는 수집 범위의 단서이며 생산량·불량 건수·완전성을 뜻하지 않습니다.", "响应行数是采集范围的线索，不代表产量、不良件数或完整性。")}</p></div></div>
     {historical && <p className="analysis-notice analysis-notice--warning">{tx("과거일 조회에도 재고·날씨·금형 등 부가 자료는 현재 또는 최근 스냅샷이 섞일 수 있습니다. 당시 상태로 해석하지 마세요.", "查询历史日期时，库存、天气、模具等附加资料可能仍为当前或最近快照，请勿解读为当时状态。")}</p>}
-    <div className="analysis-source-grid">{(model.freshness.sources ?? []).map((source) => <article className="analysis-source" key={source.key}>
+    <div className="analysis-source-grid">{visibleSources.map((source) => <article className="analysis-source" key={source.key}>
       <div className="analysis-card-top"><h3>{names[source.key] ?? source.key}</h3><span className={`analysis-badge ${source.status !== "ok" || source.stale ? "analysis-badge--warning" : ""}`}>
         {source.stale || source.status === "stale" ? tx("지연", "延迟") : source.status === "ok" ? tx("응답 확인", "响应可用") : source.status === "missing" ? tx("자료 없음", "无资料") : source.status === "no_resolved_current_parts" ? tx("품번 연결 없음", "无品号关联") : source.status === "partial" ? tx("부분 자료", "部分资料") : tx("확인 필요", "需要核对")}
       </span></div><p>{timestamp(source.sourceLatestAt, lang)} · UTC+8</p><p className="analysis-caption">{tx("응답 행 수", "响应行数")}: {quantity(source.rowCount, lang)}</p>
@@ -194,13 +198,21 @@ export default function AnalysisDashboard() {
   const date = resolveAnalysisDate(searchParams.get("date"), currentDate);
   const historical = date !== currentDate;
   const [view, setView] = useState<"executive" | "operations">("executive");
+  const [showAdditionalSources, setShowAdditionalSources] = useState(false);
   const overview = useQuery({
-    queryKey: ["analysis-overview", date, lang], queryFn: () => getAnalysisOverview(date, lang),
+    queryKey: ["analysis-production-overview", date, lang], queryFn: ({ signal }) => getAnalysisOverview(date, lang, signal),
     staleTime: 30_000, retry: 1, refetchInterval: historical ? false : 60_000, refetchOnWindowFocus: false,
   });
   const field = useQuery({
-    queryKey: ["analysis-field-operations", date], queryFn: () => getFieldOperations(date),
+    queryKey: ["analysis-field-operations", date], queryFn: ({ signal }) => getFieldOperations(date, undefined, signal),
     staleTime: 30_000, retry: 1, refetchInterval: historical ? false : 60_000, refetchOnWindowFocus: false,
+  });
+  const sources = useQuery({
+    queryKey: ["analysis-additional-sources", date, lang],
+    queryFn: ({ signal }) => getAnalysisSources(date, lang, signal),
+    enabled: showAdditionalSources,
+    staleTime: 30_000, retry: 1, refetchOnWindowFocus: false,
+    refetchInterval: showAdditionalSources && !historical ? 60_000 : false,
   });
   const setDate = (value: string) => {
     if (!value) return;
@@ -208,7 +220,7 @@ export default function AnalysisDashboard() {
     next.set("date", resolveAnalysisDate(value, currentDate));
     setSearchParams(next);
   };
-  const refreshing = overview.isFetching || field.isFetching;
+  const refreshing = overview.isFetching || field.isFetching || (showAdditionalSources && sources.isFetching);
   const collectionItems = [
     [tx("근무 계획", "工作计划"), tx("휴일·설비별 교대·계획정지 시간을 연결해야 가동률과 계획 대비 속도를 비교할 수 있습니다.", "关联休息日、各设备班次和计划停机时间后，才能比较开机率与计划速度。")],
     [tx("품질과 OEE", "质量与 OEE"), tx("검사 대상 수량, 검사 확정 양품, 표준 CT·Cavity의 유효일이 필요합니다. 현재 신고 불량만으로 합격률을 만들지 않습니다.", "需要受检数量、检验确认良品及标准 CT、穴数的有效日期，不以现有不良申报推算合格率。")],
@@ -221,7 +233,7 @@ export default function AnalysisDashboard() {
       description={tx("생산 진도와 현장 기록을 같은 업무일로 연결해 다음 확인을 정합니다.", "以同一业务日连接生产进度与现场记录，明确下一步核对。")}
       actions={<div className="analysis-date-controls"><label><CalendarDays size={16} aria-hidden="true" /><span className="analysis-sr-only">{tx("업무일", "业务日")}</span><input aria-label={tx("업무일", "业务日")} type="date" value={date} max={currentDate} onChange={(event) => setDate(event.target.value)} /></label>
         <button type="button" className="analysis-button" onClick={() => setDate(currentDate)}>{tx("오늘", "今天")}</button>
-        <button type="button" className="analysis-button" disabled={refreshing} onClick={() => { void overview.refetch(); void field.refetch(); }} aria-label={tx("자료 새로고침", "刷新数据")}><RefreshCw size={16} className={refreshing ? "analysis-spin" : ""} aria-hidden="true" /></button></div>} />
+        <button type="button" className="analysis-button" disabled={refreshing} onClick={() => { void overview.refetch(); void field.refetch(); if (showAdditionalSources) void sources.refetch(); }} aria-label={tx("자료 새로고침", "刷新数据")}><RefreshCw size={16} className={refreshing ? "analysis-spin" : ""} aria-hidden="true" /></button></div>} />
     <div className="analysis-context"><div><strong>{date}</strong><span>{tx("중국 업무일 08:00 → 다음 날 08:00 · UTC+8", "中国业务日 08:00 → 次日08:00 · UTC+8")}</span>
       <span>{tx("생산 기준 시각", "生产参考时间")}: {timestamp(overview.data?.businessWindowDetails?.referenceTime ?? overview.data?.generatedAt, lang)}</span></div>
       <div className="ui-segmented-control" role="group" aria-label={tx("보기 선택", "选择视图")}><button type="button" aria-pressed={view === "executive"} className={view === "executive" ? "is-active" : ""} onClick={() => setView("executive")}>{tx("경영 요약", "管理摘要")}</button><button type="button" aria-pressed={view === "operations"} className={view === "operations" ? "is-active" : ""} onClick={() => setView("operations")}>{tx("실무 확인", "现场核对")}</button></div>
@@ -233,7 +245,18 @@ export default function AnalysisDashboard() {
       <QueryState loading={field.isPending} error={field.isError} hasData={Boolean(field.data)} onRetry={() => { void field.refetch(); }} tx={tx} />
       {field.data && <FieldSection data={field.data} expanded={view === "operations"} historical={historical} tx={tx} lang={lang} />}
     </section>
-    {overview.data && <SourceSection model={overview.data} historical={historical} tx={tx} lang={lang} />}
+    {overview.data && <SourceSection model={overview.data} historical={false} tx={tx} lang={lang} />}
+    <section className="analysis-panel">
+      <button type="button" className="analysis-text-button" aria-expanded={showAdditionalSources} aria-controls="analysis-additional-sources"
+        onClick={() => setShowAdditionalSources((current) => !current)}>
+        {showAdditionalSources ? tx("부가 원천 상태 접기", "收起附加数据源状态") : tx("품질·에너지·재고·금형·날씨 원천 상태 보기", "查看品质、能源、库存、模具和天气数据源状态")}
+      </button>
+      <p className="analysis-caption">{tx("생산과 MES 원천을 먼저 표시합니다. 부가 원천은 펼칠 때 조회합니다.", "优先显示生产与 MES 数据源，展开时再查询附加数据源。")}</p>
+      <div id="analysis-additional-sources" hidden={!showAdditionalSources}>{showAdditionalSources && <>
+        <QueryState loading={sources.isPending} error={sources.isError} hasData={Boolean(sources.data)} onRetry={() => { void sources.refetch(); }} tx={tx} />
+        {sources.data && <SourceSection model={sources.data} historical={historical} tx={tx} lang={lang} additional />}
+      </>}</div>
+    </section>
     <section className="analysis-panel analysis-next"><details className="analysis-disclosure"><summary>{tx("더 나은 판단을 위해 연결할 데이터", "为改善判断需补充的数据")}</summary><dl>{collectionItems.map(([name, description]) => <div key={name}><dt>{name}</dt><dd>{description}</dd></div>)}</dl></details>
       <nav className="analysis-record-links" aria-label={tx("기존 상세 자료", "原有明细资料")}><span>{tx("상세 자료", "明细资料")}</span>
         <PermissionLink className="analysis-link" to={`/injection/dashboard?date=${date}#records`}>{tx("사출 수기일보", "注塑手工日报")}</PermissionLink>

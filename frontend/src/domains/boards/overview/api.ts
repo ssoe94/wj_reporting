@@ -913,15 +913,33 @@ function normalizeOverviewResponse(
   };
 }
 
+export async function getProductionOverview(
+  businessDate: string,
+  language: AppLanguage,
+  signal?: AbortSignal,
+): Promise<OverviewBoardModel> {
+  const response = await http.get<unknown>(OVERVIEW_BOARD_ENDPOINT, {
+    params: { date: businessDate, lang: language, scope: "production" },
+    skipAuth: true,
+    signal,
+  });
+  const source = asRecord(response.data);
+  if (source.schema_version !== "production-overview.v1" || source.business_date !== businessDate) {
+    throw new Error("Production overview source schema or business date is invalid.");
+  }
+  return normalizeOverviewResponse(response.data, businessDate, language);
+}
+
 export async function getOverviewBoard(
   businessDate: string,
   language: AppLanguage,
-  options: { allowDemo?: boolean } = {},
+  options: { allowDemo?: boolean; signal?: AbortSignal } = {},
 ): Promise<OverviewBoardResult> {
   try {
     const response = await http.get<unknown>(OVERVIEW_BOARD_ENDPOINT, {
       params: { date: businessDate, lang: language },
       skipAuth: true,
+      signal: options.signal,
     });
     if (options.allowDemo === false) {
       const source = asRecord(response.data);

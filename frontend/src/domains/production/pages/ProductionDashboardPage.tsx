@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { isAxiosError } from "axios";
 import { GripVertical, MessageCircle, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { injectionFleetMatrixQueryOptions } from "@/domains/mes/injection-matrix-query";
 import {
   getInjectionProductionMatrix,
   getInjectionProductionMatrixForDate,
@@ -3018,12 +3019,12 @@ export function ProductionDashboardPage() {
     retry: false,
   });
   const mesQuery = useQuery({
-    queryKey: ["mes", "production-dashboard-matrix", businessDate, isCurrentDate],
+    ...injectionFleetMatrixQueryOptions(businessDate, isCurrentDate),
     queryFn: () => (isCurrentDate ? getInjectionProductionMatrix() : getInjectionProductionMatrixForDate(businessDate)),
     refetchInterval: liveDataRefetchInterval,
   });
   const previousMesQuery = useQuery({
-    queryKey: ["mes", "production-dashboard-matrix", previousBusinessDate, "ma-history"],
+    ...injectionFleetMatrixQueryOptions(previousBusinessDate, false),
     queryFn: () => getInjectionProductionMatrixForDate(previousBusinessDate),
     retry: false,
     staleTime: 5 * 60_000,
