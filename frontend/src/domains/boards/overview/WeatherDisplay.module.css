@@ -12,10 +12,17 @@
 
 .place { grid-column: 1; grid-row: 2; display: flex; align-items: center; gap: 0.2rem; color: var(--board-muted, #587391); font-size: 0.78rem; font-weight: 600; line-height: 1; white-space: nowrap; }
 .place svg { width: 0.85rem; height: 0.85rem; }
+.place,
+.temperature,
+.observation {
+  position: relative;
+  left: var(--hero-info-offset, 0);
+}
 .visual {
   grid-column: 2;
   grid-row: 1 / -1;
   position: relative;
+  left: var(--hero-globe-offset, 0);
   display: grid;
   min-width: 0;
   min-height: 0;

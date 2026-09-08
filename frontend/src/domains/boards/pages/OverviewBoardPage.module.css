@@ -2293,6 +2293,8 @@
   --hero-row-gap: 0.32rem;
   --hero-rows: minmax(0, 1fr) var(--hero-label-row) var(--hero-value-row) var(--hero-detail-row) minmax(0, 1fr);
   --hero-caption-size: 0.7rem;
+  --hero-info-offset: 0.55rem;
+  --hero-globe-offset: -0.3rem;
   position: relative;
   min-height: 0;
   align-self: stretch;
@@ -2308,6 +2310,7 @@
 
 .brandSummary {
   position: relative;
+  left: var(--hero-info-offset);
   z-index: 2;
   grid-template-rows: var(--hero-rows);
   align-content: stretch;
