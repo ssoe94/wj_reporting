@@ -10,7 +10,7 @@
   padding: 0 0 0 0.45rem;
 }
 
-.place { grid-column: 1; grid-row: 2; display: flex; align-items: center; gap: 0.2rem; color: #587391; font-size: 0.78rem; font-weight: 600; line-height: 1; white-space: nowrap; }
+.place { grid-column: 1; grid-row: 2; display: flex; align-items: center; gap: 0.2rem; color: var(--board-muted, #587391); font-size: 0.78rem; font-weight: 600; line-height: 1; white-space: nowrap; }
 .place svg { width: 0.85rem; height: 0.85rem; }
 .visual {
   grid-column: 2;
@@ -28,12 +28,12 @@
   transform: translateX(-50%);
   max-width: 100%;
   padding: 0.25rem 0.7rem;
-  border: 1px solid rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--board-border, rgba(255, 255, 255, 0.92));
   border-radius: 0.75rem;
-  background: rgba(248, 252, 255, 0.86);
-  box-shadow: 0 0.12rem 0.48rem rgba(33, 76, 117, 0.1), inset 0 1px 0 #fff;
+  background: var(--board-glass, rgba(248, 252, 255, 0.86));
+  box-shadow: 0 0.12rem 0.48rem var(--board-shadow, rgba(33, 76, 117, 0.1)), inset 0 1px 0 var(--board-surface, #fff);
   backdrop-filter: blur(8px);
-  color: #315373;
+  color: var(--board-text, #315373);
   font-size: 0.8rem;
   font-weight: 600;
   line-height: 1.2;
@@ -41,20 +41,20 @@
   text-align: center;
   white-space: nowrap;
 }
-.temperature { grid-column: 1; grid-row: 3; display: flex; align-items: baseline; align-self: end; color: #1260b6; font-size: 2.85rem; font-weight: 800; line-height: 1; letter-spacing: -0.05em; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.temperature small { margin-left: 0.12rem; color: #587391; font-size: 0.85rem; font-weight: 600; letter-spacing: 0; }
-.observation { grid-column: 1; grid-row: 4; align-self: center; color: #587391; font-size: var(--hero-caption-size); font-weight: 600; line-height: 1; letter-spacing: 0; white-space: nowrap; }
-.weather[data-stale="true"] .observation { color: #a35109; }
+.temperature { grid-column: 1; grid-row: 3; display: flex; align-items: baseline; align-self: end; color: var(--board-blue, #1260b6); font-size: 2.85rem; font-weight: 800; line-height: 1; letter-spacing: -0.05em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.temperature small { margin-left: 0.12rem; color: var(--board-muted, #587391); font-size: 0.85rem; font-weight: 600; letter-spacing: 0; }
+.observation { grid-column: 1; grid-row: 4; align-self: center; color: var(--board-muted, #587391); font-size: var(--hero-caption-size); font-weight: 600; line-height: 1; letter-spacing: 0; white-space: nowrap; }
+.weather[data-stale="true"] .observation { color: var(--board-orange, #a35109); }
 .artwork { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; padding: 0; }
-.artwork img { width: 100%; height: 100%; max-height: 8.6rem; object-fit: contain; }
+.artwork img { width: 100%; height: 100%; object-fit: contain; }
 .weather[data-phase="night"]:not([data-weather="clear"]) .artwork img { filter: brightness(0.83) saturate(0.86); }
-.artwork > svg { width: 4.4rem; height: 4.4rem; color: #8a9eb1; stroke-width: 1; }
-.weather[data-weather="unknown"] .temperature { color: #587391; }
+.artwork > svg { width: 4.4rem; height: 4.4rem; color: var(--board-muted, #8a9eb1); stroke-width: 1; }
+.weather[data-weather="unknown"] .temperature { color: var(--board-muted, #587391); }
 
 @media (prefers-reduced-transparency: reduce) {
-  .condition { background: #f8fcff; backdrop-filter: none; }
+  .condition { background: var(--board-surface-muted, #f8fcff); backdrop-filter: none; }
 }
 
 @media (prefers-contrast: more) {
-  .condition { border-color: #587391; background: #fff; box-shadow: none; }
+  .condition { border-color: var(--board-border-strong, #587391); background: var(--board-surface, #fff); box-shadow: none; }
 }

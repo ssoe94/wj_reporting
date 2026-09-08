@@ -1,9 +1,9 @@
 /* The board scales rem with its 16:9 canvas; ~570 × 210 px at 1920 × 1080. */
 .briefing {
-  --briefing-accent: #1260b6;
-  --briefing-ink: #173d61;
-  --briefing-muted: #56718c;
-  --briefing-tint: #eef5fb;
+  --briefing-accent: var(--board-blue, #1260b6);
+  --briefing-ink: var(--board-text, #173d61);
+  --briefing-muted: var(--board-muted, #56718c);
+  --briefing-tint: var(--board-blue-surface, #eef5fb);
   display: grid;
   grid-template-rows: 2.3rem 2.75rem minmax(0, 1fr) 0.72rem;
   gap: 0.22rem;
@@ -13,18 +13,18 @@
   min-height: 0;
   padding: 0.36rem 0.48rem;
   overflow: hidden;
-  border: 1px solid #cadbe9;
+  border: 1px solid var(--board-border, #cadbe9);
   border-left: 0.2rem solid var(--briefing-accent);
   border-radius: 0.52rem;
-  background: #ffffff;
+  background: var(--board-surface-raised, #ffffff);
   color: var(--briefing-ink);
   font-family: inherit;
   font-optical-sizing: auto;
 }
 
 .briefing[data-mode="history"] {
-  --briefing-accent: #637b91;
-  --briefing-tint: #f2f5f8;
+  --briefing-accent: var(--board-muted, #637b91);
+  --briefing-tint: var(--board-surface-muted, #f2f5f8);
 }
 
 .briefing *,
@@ -64,7 +64,7 @@
 }
 
 .machine strong {
-  color: #082653;
+  color: var(--board-heading, #082653);
   font-size: 1.32rem;
   font-weight: 780;
   letter-spacing: -0.035em;
@@ -80,7 +80,7 @@
 
 .product {
   padding-left: 0.48rem;
-  border-left: 1px solid #d8e2ec;
+  border-left: 1px solid var(--board-border, #d8e2ec);
 }
 
 .product > strong {
@@ -103,7 +103,7 @@
   align-items: center;
   gap: 0.2rem;
   padding: 0.22rem 0.35rem;
-  border: 1px solid #c9dbe9;
+  border: 1px solid var(--board-border, #c9dbe9);
   border-radius: 0.32rem;
   background: var(--briefing-tint);
   color: var(--briefing-accent);
@@ -178,7 +178,7 @@
 
 .details > section + section {
   padding-left: 0.55rem;
-  border-left: 1px solid #d8e2ec;
+  border-left: 1px solid var(--board-border, #d8e2ec);
 }
 
 .detailHeading {
@@ -296,7 +296,7 @@
 
 .historyStatus[data-state="pending"],
 .historyStatus[data-state="stale"] {
-  color: #a55614;
+  color: var(--board-orange, #a55614);
 }
 
 .historyStatus[data-state="pending"]::before,
@@ -305,7 +305,7 @@
   height: 0.24rem;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #d96805;
+  background: var(--board-orange, #d96805);
   content: "";
 }
 
@@ -320,13 +320,13 @@
 
 @media (prefers-contrast: more) {
   .briefing {
-    --briefing-muted: #334e68;
-    border-color: #637b91;
+    --briefing-muted: var(--board-text-high-contrast, #334e68);
+    border-color: var(--board-border-strong, #637b91);
   }
 
   .mode,
   .product,
   .details > section + section {
-    border-color: #637b91;
+    border-color: var(--board-border-strong, #637b91);
   }
 }
