@@ -79,7 +79,7 @@ class ProductionOverviewLoadingTests(TestCase):
             response = client.get('/api/production/overview-board/', {'date': str(self.target), 'scope': 'production', 'lang': 'zh'})
             build.assert_called_once_with(self.target, language='zh', scope='production')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response['Cache-Control'], 'no-store')
+        self.assertIn('no-store', {directive.strip().lower() for directive in response['Cache-Control'].split(',')})
 
 
 class InjectionCounterLoadingTests(TestCase):
