@@ -13,7 +13,7 @@ from typing import Any, List, Dict, Optional, Callable, Tuple
 from datetime import datetime, timedelta
 from django.core.cache import cache
 from django.db import connection
-from django.db.models import Q
+from django.db.models import Q, Subquery
 from django.db.models.functions import TruncHour
 from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
 from injection.models import InjectionMonitoringRecord, InjectionMonitoringRollup, adjust_monitoring_capacity
@@ -709,8 +709,11 @@ class MESResourceService:
         if not machine_numbers:
             raise ValueError('At least one valid injection machine is required.')
         cst = pytz.timezone('Asia/Shanghai')
-        latest_record = InjectionMonitoringRecord.objects.order_by('-timestamp').first()
-        latest_time = reference_time or (latest_record.timestamp.astimezone(cst) if latest_record else datetime.now(cst))
+        latest_timestamp = (
+            InjectionMonitoringRecord.objects.order_by('-timestamp')
+            .values_list('timestamp', flat=True).first()
+        )
+        latest_time = reference_time or (latest_timestamp.astimezone(cst) if latest_timestamp else datetime.now(cst))
         use_exact_latest = reference_time is None and latest_time.minute % 10 != 0
         time_slots = self._build_time_slots(
             interval_type=interval_type,
@@ -747,7 +750,9 @@ class MESResourceService:
             machine_name__in=machine_names,
             timestamp__gte=start_of_first_slot,
             timestamp__lt=end_of_last_slot,
-        ).order_by('machine_name', 'timestamp')
+        ).only(
+            'machine_name', 'timestamp', 'capacity', 'oil_temperature', 'power_kwh',
+        ).order_by('machine_name', 'timestamp', 'pk')
         for record in db_records:
             try:
                 machine_num = int(record.machine_name.replace('호기', '').strip())
@@ -756,53 +761,35 @@ class MESResourceService:
             if machine_num in records_by_machine:
                 records_by_machine[machine_num].append(record)
 
-        baseline_queryset = InjectionMonitoringRecord.objects.filter(
-            machine_name__in=machine_names,
-            timestamp__lt=start_of_first_slot,
+        baseline_queryset = InjectionMonitoringRecord.objects.filter(timestamp__lt=start_of_first_slot)
+        # Select at most one valid baseline per machine and counter in SQL.
+        # Iterating the historical queryset, even with a Python break, first
+        # hydrated every earlier sample and was unbounded when power was absent.
+        baseline_ids = Q(pk__in=[])
+        for machine_name in machine_names:
+            for field in ('capacity', 'power_kwh'):
+                latest_baseline = baseline_queryset.filter(
+                    machine_name=machine_name,
+                    **{f'{field}__isnull': False, f'{field}__gte': 0},
+                ).order_by('-timestamp', '-pk').values('pk')[:1]
+                baseline_ids |= Q(pk=Subquery(latest_baseline))
+        baseline_records = (
+            InjectionMonitoringRecord.objects.filter(baseline_ids)
+            .only('machine_name', 'timestamp', 'capacity', 'power_kwh')
+            .order_by('machine_name', '-timestamp', '-pk')
         )
-        if len(machine_numbers) == 1:
-            machine_num = machine_numbers[0]
-            baseline_capacity_by_machine[machine_num] = (
-                baseline_queryset
-                .filter(capacity__isnull=False, capacity__gte=0)
-                .order_by('-timestamp')
-                .first()
-            )
-            baseline_power_by_machine[machine_num] = (
-                baseline_queryset
-                .filter(power_kwh__isnull=False, power_kwh__gte=0)
-                .order_by('-timestamp')
-                .first()
-            )
-        else:
-            baseline_records = baseline_queryset.filter(
-                Q(capacity__isnull=False) | Q(power_kwh__isnull=False)
-            ).order_by('machine_name', '-timestamp')
-            for record in baseline_records:
-                try:
-                    machine_num = int(record.machine_name.replace('호기', '').strip())
-                except (TypeError, ValueError):
-                    continue
-                if machine_num not in records_by_machine:
-                    continue
-                if (
-                    record.capacity is not None
-                    and record.capacity >= 0
-                    and baseline_capacity_by_machine[machine_num] is None
-                ):
-                    baseline_capacity_by_machine[machine_num] = record
-                if (
-                    record.power_kwh is not None
-                    and record.power_kwh >= 0
-                    and baseline_power_by_machine[machine_num] is None
-                ):
-                    baseline_power_by_machine[machine_num] = record
-                if all(
-                    baseline_capacity_by_machine[number] is not None
-                    and baseline_power_by_machine[number] is not None
-                    for number in machine_numbers
-                ):
-                    break
+        for record in baseline_records:
+            machine_num = int(record.machine_name.replace('호기', '').strip())
+            if (
+                record.capacity is not None and record.capacity >= 0
+                and baseline_capacity_by_machine[machine_num] is None
+            ):
+                baseline_capacity_by_machine[machine_num] = record
+            if (
+                record.power_kwh is not None and record.power_kwh >= 0
+                and baseline_power_by_machine[machine_num] is None
+            ):
+                baseline_power_by_machine[machine_num] = record
 
         for machine_num in machine_numbers:
             slot_records = {}
@@ -889,17 +876,24 @@ class MESResourceService:
 
         # --- Machine Info and Final Response ---
         now = datetime.now(cst)
-        all_machine_nos = sorted(set(list(range(1, 18)) + [int(m) for m in cumulative_matrix.keys()]))
-        
+        latest_report_ids = Q(pk__in=[])
+        for machine_no in machine_numbers:
+            latest_report = (
+                InjectionReport.objects.filter(machine_no=machine_no, tonnage__isnull=False)
+                .exclude(tonnage='').order_by('-date', '-id').values('pk')[:1]
+            )
+            latest_report_ids |= Q(pk=Subquery(latest_report))
+        tonnage_by_machine = dict(
+            InjectionReport.objects.filter(latest_report_ids).order_by().values_list('machine_no', 'tonnage')
+        )
         machine_info_map = {}
-        for machine_no in all_machine_nos:
-            recent_report = InjectionReport.objects.filter(machine_no=machine_no, tonnage__isnull=False).exclude(tonnage='').order_by('-date', '-id').first()
+        for machine_no in machine_numbers:
             default_tonnage_map = {
                 1: '850T', 2: '850T', 3: '1300T', 4: '1400T', 5: '1400T', 6: '2500T',
                 7: '1300T', 8: '850T', 9: '850T', 10: '650T', 11: '550T', 12: '550T',
                 13: '450T', 14: '850T', 15: '650T', 16: '1050T', 17: '1200T'
             }
-            tonnage = recent_report.tonnage if recent_report else default_tonnage_map.get(machine_no, f'{machine_no * 50}T')
+            tonnage = tonnage_by_machine.get(machine_no, default_tonnage_map.get(machine_no, f'{machine_no * 50}T'))
             machine_info_map[machine_no] = {
                 'name': f'{machine_no}호기',
                 'tonnage': tonnage

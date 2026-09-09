@@ -2511,7 +2511,11 @@ def _fallback_context(target_date: date) -> dict[str, Any]:
     }
 
 
-def build_overview_board_snapshot(target_date: date, *, language: str = "ko") -> dict[str, Any]:
+def build_overview_board_snapshot(
+    target_date: date, *, language: str = "ko", scope: str = "full",
+) -> dict[str, Any]:
+    if scope not in {"full", "production"}:
+        raise ValueError("Unknown overview scope")
     language = "zh" if language == "zh" else "ko"
     warnings: list[str] = []
     traces: list[dict[str, Any]] = []
@@ -2593,6 +2597,40 @@ def build_overview_board_snapshot(target_date: date, *, language: str = "ko") ->
         assembly=assembly,
     )
     warnings.extend(production_warnings)
+
+    # Analysis needs the canonical production calculation, not the wall's
+    # inventory, power history, mould payloads or external weather request.
+    # Return before loading those sources; this is not a cached/stale shortcut.
+    if scope == "production":
+        sources = {
+            "injection_production": injection_source,
+            "assembly_production": assembly_source,
+            "injection_activity": _source_state(
+                status=("missing" if injection_activity.get("latest_mes_time") is None
+                        else "stale" if injection_activity.get("is_stale") else "ok"),
+                latest_at=injection_activity.get("latest_mes_time"),
+                row_count=len(injection_activity.get("rows") or []),
+                stale=bool(injection_activity.get("is_stale")),
+            ),
+        }
+        generated_at = timezone.now().isoformat()
+        return {
+            "schema_version": "production-overview.v1",
+            "language": language,
+            "business_date": target_date.isoformat(),
+            "generated_at": generated_at,
+            "business_window": {
+                "timezone": "Asia/Shanghai",
+                "start": _iso(context.get("range_start")),
+                "end": _iso(context.get("range_end")),
+                "reference_time": _iso(reference_time),
+            },
+            "processes": processes,
+            "equipment": _build_equipment(injection, assembly, injection_activity=injection_activity),
+            "freshness": {"generated_at": generated_at, "sources": sources},
+            "warnings": sorted(set(warnings)),
+            "retrieval_trace": traces,
+        }
 
     quality_target_date = current_quality_analysis_date(target_date)
     try:

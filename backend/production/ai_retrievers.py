@@ -5,7 +5,7 @@ from datetime import timedelta
 from itertools import groupby
 from typing import Any
 
-from django.db.models import Max, Q
+from django.db.models import Max, Q, Subquery
 from django.utils import timezone
 
 from injection.models import InjectionMonitoringRecord
@@ -335,6 +335,47 @@ def cavity_map_for_plans(plans: list[ProductionPlan]) -> dict[str, dict[str, Any
     return get_cavity_meta_map(ProductionPartCavity, part_nos)
 
 
+def _injection_counter_windows(machine_names, range_start, recent_start, counter_end):
+    """Read each machine's capacity samples once for both production windows.
+
+    Scalar indexed lookups select only the latest baseline IDs; no historical
+    payload is hydrated. Keep the existing counter reducer and window bounds.
+    """
+    names = sorted(set(machine_names))
+    if not names:
+        return {}
+    baseline_filter = Q(pk__in=[])
+    for name in names:
+        latest = (InjectionMonitoringRecord.objects
+                  .filter(machine_name=name, timestamp__lt=range_start, capacity__isnull=False)
+                  .order_by("-timestamp").values("pk")[:1])
+        baseline_filter |= Q(pk=Subquery(latest))
+    baselines = dict(InjectionMonitoringRecord.objects.filter(baseline_filter)
+                     .values_list("machine_name", "capacity"))
+    samples = {name: [] for name in names}
+    for name, timestamp, capacity in (InjectionMonitoringRecord.objects
+            .filter(machine_name__in=names, timestamp__gte=range_start,
+                    timestamp__lt=counter_end, capacity__isnull=False)
+            .order_by("timestamp").values_list("machine_name", "timestamp", "capacity")):
+        samples[name].append((timestamp, capacity))
+    result = {}
+    for name, rows in samples.items():
+        baseline = baselines.get(name)
+        recent_baseline = baseline
+        recent_values = []
+        for timestamp, capacity in rows:
+            if timestamp < recent_start:
+                recent_baseline = capacity
+            else:
+                recent_values.append(capacity)
+        result[name] = {
+            "shots": calculate_cumulative_counter_delta((value for _, value in rows), baseline=baseline),
+            "recent_shots": calculate_cumulative_counter_delta(recent_values, baseline=recent_baseline),
+            "latest": rows[-1][0] if rows else None,
+        }
+    return result
+
+
 def get_injection_summary(
     target_date: Any,
     *,
@@ -381,6 +422,11 @@ def get_injection_summary(
         return (machine_number or 999, int(plan.sequence or 0), int(plan.id or 0))
 
     sorted_plans = sorted(plans, key=sort_key)
+    counter_windows = _injection_counter_windows(
+        [machine_monitoring_name(number) for plan in sorted_plans
+         if (number := parse_machine_number(plan.machine_name)) is not None],
+        range_start, recent_start, counter_end,
+    )
     machine_rows = []
     part_rows = []
 
@@ -390,17 +436,8 @@ def get_injection_summary(
         if machine_number is None:
             continue
         monitor_name = machine_monitoring_name(machine_number)
-        machine_latest_capacity_time = (
-            InjectionMonitoringRecord.objects
-            .filter(
-                machine_name=monitor_name,
-                timestamp__gte=range_start,
-                timestamp__lt=counter_end,
-                capacity__isnull=False,
-            )
-            .aggregate(latest=Max("timestamp"))
-            .get("latest")
-        )
+        machine_counters = counter_windows[monitor_name]
+        machine_latest_capacity_time = machine_counters["latest"]
         machine_capacity_is_stale = bool(
             target_date == current_business_date
             and (
@@ -414,8 +451,8 @@ def get_injection_summary(
             "injection_capacity_data_stale"
             if machine_capacity_is_stale else None
         )
-        shot_count = sum_positive_monitoring_delta(monitor_name, "capacity", range_start, counter_end)
-        recent_shots = sum_positive_monitoring_delta(monitor_name, "capacity", recent_start, counter_end)
+        shot_count = machine_counters["shots"]
+        recent_shots = machine_counters["recent_shots"]
         remaining_shots = shot_count
         planned_qty = 0
         capped_actual_qty = 0
