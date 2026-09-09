@@ -6,7 +6,7 @@ import type {
   ProductionPlanUploadResponse,
 } from "@/domains/production/api";
 import { getSeoulDateString } from "@/shared/utils/date";
-import * as XLSX from "xlsx";
+import type { WorkSheet } from "xlsx";
 
 const today = getSeoulDateString();
 const yesterday = new Date(`${today}T00:00:00+09:00`);
@@ -153,7 +153,7 @@ function createEmptyPlanEntry() {
   } satisfies Record<PlanType, ProductionPlanRecord[]>;
 }
 
-function readSheetRows(sheet: XLSX.WorkSheet) {
+function readSheetRows(sheet: WorkSheet, XLSX: typeof import("xlsx")) {
   const ref = sheet["!ref"];
   if (!ref) return [];
 
@@ -196,7 +196,7 @@ function resolveLatestDateSheetName(sheetNames: string[], targetDate: string) {
 }
 
 async function parseProductionPlanWorkbook(file: File, planType: PlanType, targetDate: string) {
-  const buffer = await file.arrayBuffer();
+  const [buffer, XLSX] = await Promise.all([file.arrayBuffer(), import("xlsx")]);
   const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
   const latestDateSheet = resolveLatestDateSheetName(workbook.SheetNames, targetDate);
   if (!latestDateSheet) {
@@ -209,7 +209,7 @@ async function parseProductionPlanWorkbook(file: File, planType: PlanType, targe
     throw new Error(`${sheetName} 시트를 읽을 수 없습니다.`);
   }
 
-  const sheetRows = readSheetRows(sheet);
+  const sheetRows = readSheetRows(sheet, XLSX);
   const headers = sheetRows[2] ?? [];
   const rows = sheetRows.slice(3);
   const dayColumns = extractDayColumns(headers);

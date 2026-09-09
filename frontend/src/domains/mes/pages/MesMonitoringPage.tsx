@@ -5,6 +5,7 @@ import { buildInjectionLink, resolveInjectionScope } from "@/domains/injection/w
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
 import { getShanghaiBusinessDateString, getShanghaiDateString } from "@/shared/utils/date";
 import { coversMonitoringWindow, hasObservedCapacityInWindow, isMonitoringSlotInWindow, trimMonitoringSlots, getMonitoringCoverage, getMonitoringState, hasMonitoringMatrix, type MonitoringState } from "@/domains/mes/monitoring-state";
+import { INJECTION_MATRIX_QUERY_PREFIX, injectionFleetMatrixQueryOptions } from "@/domains/mes/injection-matrix-query";
 import {
   type InjectionProductionMatrix,
   getInjectionMonitoringDates,
@@ -1519,7 +1520,7 @@ export function MesMonitoringPage() {
   const isProductionInfoView = selectedInfoView === "production";
 
   const injectionQuery = useQuery({
-    queryKey: ["mes", "injection-production-matrix", injectionDate, isCurrentInjectionDate],
+    ...injectionFleetMatrixQueryOptions(injectionDate, isCurrentInjectionDate),
     queryFn: () => (isCurrentInjectionDate ? getInjectionProductionMatrix() : getInjectionProductionMatrixForDate(injectionDate)),
     enabled: isProductionInfoView,
     refetchInterval: isProductionInfoView && isCurrentInjectionDate ? 60_000 : false,
@@ -1570,7 +1571,7 @@ export function MesMonitoringPage() {
   useEffect(() => {
     const status = updateStatusQuery.data?.status;
     if (status === "completed" || status === "skipped" || status === "failed") {
-      void queryClient.invalidateQueries({ queryKey: ["mes", "injection-production-matrix"] });
+      void queryClient.invalidateQueries({ queryKey: INJECTION_MATRIX_QUERY_PREFIX });
       window.setTimeout(() => setSnapshotJobId(null), 2000);
     }
   }, [queryClient, updateStatusQuery.data?.status]);

@@ -1,12 +1,5 @@
 import { http } from "@/shared/api/http";
 import { isDevSessionActive } from "@/domains/auth/dev-session";
-import {
-  getMockPlanDates,
-  getMockPlanItems,
-  getMockPlanSummary,
-  mockUploadProductionPlanFile,
-  mockUpdateProductionPlanItem,
-} from "@/domains/production/mock-production";
 
 const USE_REMOTE_PRODUCTION_API = import.meta.env.VITE_USE_REMOTE_PRODUCTION_API === "true";
 
@@ -596,6 +589,7 @@ export type CreateAiJobPayload = {
 
 export async function getProductionPlanDates() {
   if (shouldUseMockProductionApi()) {
+    const { getMockPlanDates } = await import("./mock-production");
     return getMockPlanDates();
   }
   const response = await http.get<ProductionPlanDatesResponse>("/production/plan-dates/");
@@ -607,6 +601,7 @@ export async function getProductionPlanDates() {
 
 export async function getProductionPlanSummary(date: string) {
   if (shouldUseMockProductionApi()) {
+    const { getMockPlanSummary } = await import("./mock-production");
     return getMockPlanSummary(date);
   }
   const response = await http.get<ProductionPlanSummaryResponse>(
@@ -831,6 +826,7 @@ export async function createMachiningManualReport(payload: CreateMachiningManual
 
 export async function getProductionPlanItems(date: string, planType: PlanType) {
   if (shouldUseMockProductionApi()) {
+    const { getMockPlanItems } = await import("./mock-production");
     return getMockPlanItems(date, planType);
   }
 
@@ -862,6 +858,7 @@ export async function getProductionPlanItems(date: string, planType: PlanType) {
 
 export async function uploadProductionPlanFile(file: File, planType: PlanType, targetDate: string) {
   if (shouldUseMockProductionApi()) {
+    const { mockUploadProductionPlanFile } = await import("./mock-production");
     return mockUploadProductionPlanFile(file, planType, targetDate);
   }
 
@@ -921,6 +918,7 @@ export async function updateProductionPlanItem(
   updates: ProductionPlanUpdatePayload,
 ) {
   if (shouldUseMockProductionApi()) {
+    const { mockUpdateProductionPlanItem } = await import("./mock-production");
     return mockUpdateProductionPlanItem(date, planType, id, updates);
   }
 
