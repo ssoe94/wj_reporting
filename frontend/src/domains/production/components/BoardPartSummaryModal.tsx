@@ -50,7 +50,7 @@ export function BoardPartSummaryModal({ partNo, businessDate, machines, language
               <LineChart data={trend.points} margin={{ top: 22, right: 55, bottom: 15, left: 10 }}>
                 <CartesianGrid stroke="#dce6ec" vertical={false} />
                 <XAxis dataKey="business_date" tickFormatter={(value: string) => value.slice(5)} tick={{ fontSize: 12 }} minTickGap={28} tickLine={false} />
-                <YAxis width={50} domain={[Math.max(0, (trend.minimum ?? 0) - padding), (trend.maximum ?? 0) + padding]} tick={{ fontSize: 12 }} tickFormatter={(value: number) => `${value}s`} tickLine={false} axisLine={false} />
+                <YAxis width={50} domain={[Math.max(0, (trend.minimum ?? 0) - padding), (trend.maximum ?? 0) + padding]} tick={{ fontSize: 12 }} tickFormatter={(value: number) => `${value.toFixed(1).replace(/\.0$/, "")}s`} tickLine={false} axisLine={false} />
                 <Tooltip formatter={(value: number) => [ct(value), text.ct]} labelFormatter={(label) => `${text.date} ${label}`} />
                 <Line type="monotone" dataKey="cycle_time_seconds" stroke="#087da5" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false} />
                 {trend.maximumPoint && <ReferenceDot x={trend.maximumPoint.business_date} y={trend.maximum!} r={4} fill="#087da5" stroke="white" label={{ value: (trend.minimum === trend.maximum ? `${language === "ko" ? "최고·최저" : "最高·最低"} ${trend.maximum!.toFixed(1)}${language === "ko" ? "초" : "秒"}` : secondsLabel(trend.maximum!, true)), position: "top", fontSize: 12, fill: "#12526b" }} />}
