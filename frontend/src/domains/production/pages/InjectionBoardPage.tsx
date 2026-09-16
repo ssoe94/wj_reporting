@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useState } from "react";
+import { isBoardMachineStale, summarizeBoardAvailability } from "@/domains/production/board-availability";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -69,6 +70,7 @@ type BoardMachine = {
   tone: BoardTone;
   currentCycleTimeSec: number | null;
   activePart: string;
+  activePartNumbers: string[];
   activeModel: string;
   activeFamily: string;
   timelineSegments: BoardTimelineSegment[];
@@ -162,7 +164,7 @@ const boardCopy = {
     remainingShots: "잔여 형합",
     loading: "사출 현황을 불러오는 중입니다.",
     error: "현황 데이터를 불러오지 못했습니다. 1분 후 다시 시도합니다.",
-    staleBanner: "MES 데이터가 5분 이상 갱신되지 않았습니다. 현장 상태를 직접 확인해 주세요.",
+    staleBanner: "일부 설비의 수집 데이터가 없거나 5분 이상 지연됐습니다. 해당 설비의 가동·정지 판단은 보류합니다.",
   },
   zh: {
     eyebrow: "INJECTION LIVE BOARD",
@@ -251,7 +253,7 @@ const boardCopy = {
     remainingShots: "剩余模次",
     loading: "正在读取注塑运行状态。",
     error: "无法读取看板数据，将在1分钟后重试。",
-    staleBanner: "MES数据已超过5分钟未更新，请直接确认现场状态。",
+    staleBanner: "部分设备的采集数据缺失或延迟超过5分钟，暂不判定其运行或停机状态。",
   },
 } satisfies Record<AppLanguage, Record<string, string>>;
 
@@ -575,18 +577,19 @@ function buildBoardTimelines(
 
 function getActiveProduct(row: RealtimeProgressRow | undefined, fallback: string, noPlan: string) {
   if (!row?.segments.length) {
-    return { part: row?.isRunning ? fallback : noPlan, model: "", family: "" };
+    return { part: row?.isRunning ? fallback : noPlan, partNumbers: [], model: "", family: "" };
   }
   const activeSegment = row.segments.find((segment) => segment.status === "in_progress")
     ?? row.segments.find((segment) => segment.status === "pending")
     ?? row.segments.at(-1);
-  if (!activeSegment) return { part: fallback, model: "", family: "" };
+  if (!activeSegment) return { part: fallback, partNumbers: [], model: "", family: "" };
 
   const paired = activeSegment.shotGroupKey
     ? row.segments.filter((segment) => segment.shotGroupKey === activeSegment.shotGroupKey)
     : [activeSegment];
   return {
     part: paired.map((segment) => segment.partNo).filter(Boolean).join(" + ") || fallback,
+    partNumbers: [...new Set(paired.map((segment) => segment.partNo).filter(Boolean))],
     model: [...new Set(paired.map((segment) => segment.modelName).filter((value) => value && value !== "-"))].join(" + "),
     family: [...new Set(paired.map((segment) => formatProductFamily(segment.productFamilyCode)).filter(Boolean))].join(" + "),
   };
@@ -645,9 +648,10 @@ function buildBoardMachines(
       machineNumber,
       tonnage: getTonnage(mesMachine?.tonnage || row?.label || mesMachine?.display_name),
       row,
-      tone: getTone(row, elapsedRate, isStale),
+      tone: getTone(row, elapsedRate, isStale || isBoardMachineStale(mesData?.machine_sources, machineNumber, Date.now())),
       currentCycleTimeSec,
       activePart: activeProduct.part,
+      activePartNumbers: activeProduct.partNumbers,
       activeModel: activeProduct.model,
       activeFamily: activeProduct.family,
       timelineSegments: buildMachineTimeline(
@@ -894,7 +898,6 @@ function MachineBoardCard({
   const row = machine.row;
   const historyLabel = language === "ko" ? "C/T 이력" : "C/T 历史";
   const machineHistoryUrl = `/mes/monitoring?date=${businessDate}&machine=${machine.machineNumber}#cycle-time-history`;
-  const partHistoryUrl = `/mes/monitoring?date=${businessDate}&part_no=${encodeURIComponent(machine.activePart)}#cycle-time-history`;
 
   return (
     <article className={`injection-board-card injection-board-card--${machine.tone}`} data-machine={machine.machineNumber}>
@@ -910,8 +913,11 @@ function MachineBoardCard({
         className="injection-board-card__part"
         title={[machine.activePart, machine.activeModel, machine.activeFamily].filter(Boolean).join(" · ")}
       >
-        <strong>{!isVisitorMode && row?.hasPlan && machine.activePart !== copy.noPart
-          ? <Link className="injection-board-card__history-link" to={partHistoryUrl} aria-label={`${machine.activePart} · ${historyLabel}`}>{machine.activePart}</Link>
+        <strong>{!isVisitorMode && row?.hasPlan && machine.activePartNumbers.length
+          ? machine.activePartNumbers.map((partNo, index) => <Fragment key={partNo}>
+            {index > 0 ? " + " : null}
+            <Link className="injection-board-card__history-link" to={`/mes/monitoring?date=${businessDate}&part_no=${encodeURIComponent(partNo)}#cycle-time-history`} aria-label={`${partNo} · ${historyLabel}`}>{partNo}</Link>
+          </Fragment>)
           : machine.activePart}</strong>
         {machine.activeModel ? <span>{machine.activeModel}</span> : null}
         {machine.activeFamily ? <em>{machine.activeFamily}</em> : null}
@@ -1254,10 +1260,9 @@ export function InjectionBoardPage() {
     () => buildBoardMachines(businessDate, summary, mesData, elapsedRate, isStale, copy.noPart, copy.noPlan),
     [businessDate, copy.noPart, copy.noPlan, elapsedRate, isStale, mesData, summary],
   );
-  const plannedRunningCount = machines.filter((machine) => machine.row?.hasPlan && machine.row.isRunning).length;
-  const unplannedRunningCount = machines.filter((machine) => !machine.row?.hasPlan && machine.row?.isRunning).length;
-  const totalRunningCount = plannedRunningCount + unplannedRunningCount;
-  const idleMachineCount = Math.max(0, MACHINE_COUNT - totalRunningCount);
+  const { plannedRunningCount, unplannedRunningCount, totalRunningCount, idleMachineCount, staleMachineCount } = summarizeBoardAvailability(machines);
+  const staleMachineLabels = machines.filter((machine) => machine.tone === "stale")
+    .map((machine) => `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`).join(", ");
   const stoppedCount = machines.filter((machine) => machine.tone === "stopped").length;
   const warningCount = machines.filter((machine) => machine.tone === "warning").length;
   const plannedMachineCount = machines.filter((machine) => machine.row?.hasPlan).length;
@@ -1409,7 +1414,7 @@ export function InjectionBoardPage() {
         </div>
       </header>
 
-      {isStale ? <div className="injection-board__stale-banner">{copy.staleBanner}</div> : null}
+      {staleMachineCount > 0 ? <div className="injection-board__stale-banner">{copy.staleBanner} {staleMachineLabels} ({staleMachineCount}{copy.machines})</div> : null}
       {isError ? <div className="injection-board__error">{copy.error}</div> : null}
 
       <section className="injection-board__grid" aria-busy={isLoading}>
