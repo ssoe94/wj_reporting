@@ -9,6 +9,8 @@ test('trend preserves missing dates and sorts chronologically without changing t
   assert.deepEqual(result.points.map(p => p.cycle_time_seconds), [60, null, 80]);
   assert.equal(result.minimum, 60);
   assert.equal(result.maximum, 80);
+  assert.equal(result.minimumPoint?.business_date, '2026-09-14');
+  assert.equal(result.maximumPoint?.business_date, '2026-09-16');
   assert.equal(result.latest?.business_date, '2026-09-16');
   assert.equal(input[0].business_date, '2026-09-16');
 });
@@ -18,6 +20,7 @@ test('latest metric identifies the actual recorded date without relabeling it as
   assert.equal(result.latest?.business_date, '2026-09-14');
   assert.equal(result.latest?.cycle_time_seconds, 91.4);
   assert.equal(result.minimum, result.maximum);
+  assert.equal(result.minimumPoint?.business_date, result.maximumPoint?.business_date);
 });
 
 test('empty and invalid measurements do not become zero-valued chart points or range metrics', () => {

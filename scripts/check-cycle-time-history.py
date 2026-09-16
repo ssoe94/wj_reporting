@@ -28,4 +28,4 @@ if '--make-migrations' in sys.argv:
     call_command('makemigrations', 'injection', name='cycle_time_history')
 else:
     call_command('makemigrations', 'injection', check=True, dry_run=True)
-    raise SystemExit(DiscoverRunner(verbosity=2).run_tests(['injection.test_cycle_time_history']))
+    raise SystemExit(DiscoverRunner(verbosity=2).run_tests(['injection.test_cycle_time_history', 'injection.test_rollup_retention']))

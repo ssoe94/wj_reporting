@@ -1,9 +1,11 @@
+import { boardPartQueryOptions } from "../board-part-api";
+import { BOARD_PART_STALE_MS, prefetchBoardParts } from "../board-part-prefetch";
 import { BoardPartSummaryModal } from "../components/BoardPartSummaryModal";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { isBoardMachineStale, summarizeBoardAvailability } from "@/domains/production/board-availability";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Factory, History, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
 import {
@@ -1142,6 +1144,7 @@ function PreviousDaySummary({
 }
 
 export function InjectionBoardPage() {
+  const queryClient = useQueryClient();
   const [summaryPartNo, setSummaryPartNo] = useState<string | null>(null);
   const [language, setLanguage] = useStoredLanguage();
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
@@ -1264,6 +1267,15 @@ export function InjectionBoardPage() {
     () => buildBoardMachines(businessDate, summary, mesData, elapsedRate, isStale, copy.noPart, copy.noPlan),
     [businessDate, copy.noPart, copy.noPlan, elapsedRate, isStale, mesData, summary],
   );
+  const visiblePartKey = JSON.stringify([...new Set(machines.flatMap(machine => machine.activePartNumbers))].sort());
+  useEffect(() => {
+    let cancelled = false;
+    const warm = () => prefetchBoardParts(JSON.parse(visiblePartKey) as string[],
+      part => queryClient.prefetchQuery(boardPartQueryOptions(part, businessDate)), () => cancelled);
+    void warm();
+    const timer = window.setInterval(() => { if (!document.hidden) void warm(); }, BOARD_PART_STALE_MS);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [businessDate, queryClient, visiblePartKey]);
   const { plannedRunningCount, unplannedRunningCount, totalRunningCount, idleMachineCount, staleMachineCount } = summarizeBoardAvailability(machines);
   const staleMachineLabels = machines.filter((machine) => machine.tone === "stale")
     .map((machine) => `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`).join(", ");

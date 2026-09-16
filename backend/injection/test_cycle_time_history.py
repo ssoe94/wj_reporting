@@ -453,10 +453,10 @@ class PublicBoardPartSummaryTests(TestCase):
 
     def test_anonymous_fixed_range_and_summary_only_with_weighted_missing_days(self):
         sample = {'summary': {'cycle_time_seconds': 75}, 'daily': [
-            {'business_date': str(DAY), 'machine_number': 11, 'cycle_time_seconds': 60, 'shot_count': 3, 'positive_interval_seconds': 180, 'parts': [{'lot_no': 'PRIVATE-LOT'}]},
-            {'business_date': str(DAY), 'machine_number': 12, 'cycle_time_seconds': 120, 'shot_count': 1, 'positive_interval_seconds': 120},
+            {'business_date': str(DAY), 'machine_number': 11, 'cycle_time_seconds': 60, 'shot_count': 3, 'positive_interval_seconds': 180, 'parts': [{'part_no': 'PART-A', 'cycle_time_seconds': 60, 'shot_count': 3, 'positive_interval_seconds': 180, 'lot_no': 'PRIVATE-LOT'}]},
+            {'business_date': str(DAY), 'machine_number': 12, 'cycle_time_seconds': 120, 'shot_count': 1, 'positive_interval_seconds': 120, 'parts': [{'part_no': 'PART-A', 'cycle_time_seconds': 120, 'shot_count': 1, 'positive_interval_seconds': 120}]},
         ], 'hourly': [{'device_code': 'PRIVATE-DEVICE', 'revision': 9}]}
-        with patch('injection.cycle_time_history_views.business_date_at', return_value=DAY), patch('injection.cycle_time_history_views.read_cycle_time_history', return_value=sample) as reader:
+        with patch('injection.cycle_time_history_views.business_date_at', return_value=DAY), patch('injection.board_cycle_summary.read_cycle_time_history', return_value=sample) as reader:
             response = self.client.get(self.endpoint, {'part_no': 'PART-A'}, HTTP_AUTHORIZATION='Bearer expired')
             self.assertEqual(response.status_code, 200)
             body = response.json()
@@ -466,11 +466,11 @@ class PublicBoardPartSummaryTests(TestCase):
             self.assertEqual(body['daily'][-1]['machine_numbers'], [11,12])
             self.assertIsNone(body['daily'][0]['cycle_time_seconds'])
             self.assertNotIn('PRIVATE', response.content.decode())
-            reader.assert_called_once_with(DAY-timedelta(days=29), DAY, part_no='PART-A', hourly_details=False)
+            reader.assert_called_once_with(DAY-timedelta(days=29), DAY, hourly_details=False)
             self.client.get(self.endpoint, {'part_no': 'PART-A'})
             self.assertEqual(reader.call_count, 1)
             self.client.get(self.endpoint, {'part_no': 'PART-B'})
-            self.assertEqual(reader.call_count, 2)
+            self.assertEqual(reader.call_count, 1)
 
     def test_public_slice_cannot_query_all_parts_or_expand_dates_or_write(self):
         for params in ({}, {'part_no': ' '}, {'part_no': 'A'*101}, {'part_no': 'A', 'start_date': '2020-01-01'}, {'part_no': 'A', 'machine_number': 12}):
@@ -489,3 +489,20 @@ class PublicBoardPartSummaryTests(TestCase):
         self.assertEqual(response.json()['daily'][-1]['cycle_time_seconds'], 60)
         self.assertEqual(response.json()['daily'][-1]['machine_numbers'], [12])
         self.assertNotIn('BOARD-DEVICE', response.content.decode())
+
+    def test_shared_summary_matches_part_reader_across_machines_and_lots(self):
+        from .board_cycle_summary import read_board_part_summary
+        for machine, capacity, lot in [(11, 2, 'LOT-A'), (12, 4, 'LOT-B')]:
+            ProductionPlan.objects.create(plan_date=DAY, plan_type='injection', machine_name=f'{machine}호기',
+                part_no='SAME-PART', lot_no=lot, planned_quantity=100, sequence=1)
+            for minute, count in [(0, 0), (2, capacity), (4, capacity*2)]:
+                InjectionMonitoringRecord.objects.create(machine_name=f'{machine}호기', device_code=f'DEV-{machine}',
+                    timestamp=START+timedelta(minutes=minute), capacity=count)
+        archive_cycle_time_range(DAY, DAY, now=END+timedelta(minutes=10))
+        before = read_cycle_time_history(DAY-timedelta(days=29), DAY, part_no='SAME-PART', hourly_details=False)
+        after = read_board_part_summary('same-part', DAY)
+        self.assertEqual(after['cycle_time_seconds'], before['summary']['cycle_time_seconds'])
+        self.assertEqual(after['daily'][-1]['cycle_time_seconds'], 40)
+        self.assertEqual(after['daily'][-1]['machine_numbers'], [11, 12])
+        self.assertIsNone(after['daily'][0]['cycle_time_seconds'])
+        self.assertNotIn('LOT-', str(after))
