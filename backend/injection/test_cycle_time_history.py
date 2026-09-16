@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from production.models import ProductionExecution, ProductionPartCavity, ProductionPlan
@@ -46,6 +46,16 @@ class CycleTimeEvidenceTests(TestCase):
         archive_cycle_time_range(DAY, DAY, now=END + timedelta(minutes=10))
         bucket = InjectionCycleTimeBucket.objects.get(bucket_start=START)
         self.assertEqual(bucket.payload.get('_codec'), 'ct-zlib-json-v1')
+        self.assertEqual(self.history()['summary']['cycle_time_seconds'], 60)
+
+    @override_settings(DEBUG=True)
+    def test_compaction_does_not_accumulate_bulk_sql_in_memory(self):
+        from django.db import connection
+        self.sample(0, 0)
+        self.sample(2, 2)
+        self.archive()
+        call_command('compact_cycle_time_history', apply=True, batch_size=1, stdout=StringIO())
+        self.assertLess(len(connection.queries), 20)
         self.assertEqual(self.history()['summary']['cycle_time_seconds'], 60)
 
     def test_compression_is_lossless_and_detects_corruption(self):

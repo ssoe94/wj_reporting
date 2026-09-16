@@ -2,7 +2,7 @@
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connection, transaction
+from django.db import connection, reset_queries, transaction
 from django.utils import timezone
 
 from injection.cycle_time_codec import pack, serialized, unpack
@@ -70,6 +70,8 @@ class Command(BaseCommand):
                     seen += len(rows)
                     changed += len(updates)
                     last_id = rows[-1].pk
+                # A DEBUG-enabled maintenance process must not retain every bulk SQL statement.
+                reset_queries()
                 if seen % 10000 == 0:
                     self.stdout.write(f'{model.__name__}: scanned={seen} changed={changed}')
                     self.stdout.flush()

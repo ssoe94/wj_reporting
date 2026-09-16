@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
+from django.db import reset_queries
 
 from injection.cycle_time_history import archive_cycle_time_range, business_date_at
 
@@ -31,5 +32,6 @@ class Command(BaseCommand):
             result = archive_cycle_time_range(current, current, machine=options['machine_number'], compact=options['compact'])
             for key in totals:
                 totals[key] += result[key]
+            reset_queries()
             current += timedelta(days=1)
         self.stdout.write(self.style.SUCCESS(str(totals)))
