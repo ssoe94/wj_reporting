@@ -6,6 +6,7 @@ import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate"
 import { getShanghaiBusinessDateString, getShanghaiDateString } from "@/shared/utils/date";
 import { coversMonitoringWindow, hasObservedCapacityInWindow, isMonitoringSlotInWindow, trimMonitoringSlots, getMonitoringCoverage, getMonitoringState, hasMonitoringMatrix, type MonitoringState } from "@/domains/mes/monitoring-state";
 import { INJECTION_MATRIX_QUERY_PREFIX, injectionFleetMatrixQueryOptions } from "@/domains/mes/injection-matrix-query";
+import { CycleTimeHistoryPanel } from "@/domains/mes/components/CycleTimeHistoryPanel";
 import {
   type InjectionProductionMatrix,
   getInjectionMonitoringDates,
@@ -1501,11 +1502,14 @@ export function MesMonitoringPage() {
   const setInjectionDate = (date: string) => {
     const next = new URLSearchParams(searchParams);
     next.set("date", date || currentProductionDate);
+    next.delete("ct_start");
+    next.delete("ct_end");
     setSearchParams(next);
   };
   const setSelectedMachineNumber = (machine: number | null) => {
     const next = new URLSearchParams(searchParams);
     next.set("date", injectionDate);
+    next.delete("part_no");
     if (machine === null) next.delete("machine");
     else next.set("machine", String(machine));
     setSearchParams(next);
@@ -1871,6 +1875,14 @@ export function MesMonitoringPage() {
           </div>
         </div>
       </section>
+
+      {isProductionInfoView && <CycleTimeHistoryPanel
+        date={injectionDate}
+        currentDate={currentProductionDate}
+        machineNumber={selectedMachineNumber}
+        language={language}
+        onMachineChange={setSelectedMachineNumber}
+      />}
 
       {isProductionInfoView ? (
         isInitialMesLoading ? (

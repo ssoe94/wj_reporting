@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Factory, History, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { reloadAfterAuthRefreshSettles } from "@/domains/auth/auth-refresh";
@@ -891,6 +892,9 @@ function MachineBoardCard({
 }) {
   const copy = boardCopy[language];
   const row = machine.row;
+  const historyLabel = language === "ko" ? "C/T 이력" : "C/T 历史";
+  const machineHistoryUrl = `/mes/monitoring?date=${businessDate}&machine=${machine.machineNumber}#cycle-time-history`;
+  const partHistoryUrl = `/mes/monitoring?date=${businessDate}&part_no=${encodeURIComponent(machine.activePart)}#cycle-time-history`;
 
   return (
     <article className={`injection-board-card injection-board-card--${machine.tone}`} data-machine={machine.machineNumber}>
@@ -906,7 +910,9 @@ function MachineBoardCard({
         className="injection-board-card__part"
         title={[machine.activePart, machine.activeModel, machine.activeFamily].filter(Boolean).join(" · ")}
       >
-        <strong>{machine.activePart}</strong>
+        <strong>{!isVisitorMode && row?.hasPlan && machine.activePart !== copy.noPart
+          ? <Link className="injection-board-card__history-link" to={partHistoryUrl} aria-label={`${machine.activePart} · ${historyLabel}`}>{machine.activePart}</Link>
+          : machine.activePart}</strong>
         {machine.activeModel ? <span>{machine.activeModel}</span> : null}
         {machine.activeFamily ? <em>{machine.activeFamily}</em> : null}
       </div>
@@ -921,7 +927,7 @@ function MachineBoardCard({
                 ? `${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MIN_MULTIPLIER).toFixed(1)}–${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MAX_MULTIPLIER).toFixed(1)}s`
                 : `${machine.currentCycleTimeSec.toFixed(1)}s`}
           </strong>
-          {!isVisitorMode ? <small>{copy.recentCt}</small> : null}
+          {!isVisitorMode ? <small>{copy.recentCt} · <Link className="injection-board-card__history-link" to={machineHistoryUrl} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>{historyLabel}</Link></small> : null}
         </div>
         <div>
           <span>{copy.progress}</span>

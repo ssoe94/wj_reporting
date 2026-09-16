@@ -12,7 +12,7 @@ from bisect import bisect_right
 from typing import Any, List, Dict, Optional, Callable, Tuple
 from datetime import datetime, timedelta
 from django.core.cache import cache
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import Q, Subquery
 from django.db.models.functions import TruncHour
 from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
@@ -1082,6 +1082,8 @@ class MESResourceService:
             self.upsert_monitoring_rollups(rollup_start, rollup_end, bucket_minutes=5)
             self.upsert_monitoring_rollups(rollup_start, rollup_end, bucket_minutes=30)
             self.upsert_monitoring_rollups(rollup_start, rollup_end, bucket_minutes=60)
+            from .cycle_time_history import archive_cycle_time_window
+            archive_cycle_time_window(rollup_start, rollup_end)
             self.compact_monitoring_records(retention_hours=168, hours_to_compact=2)
             return {"status": "completed", "timestamp": now.isoformat(), "records_saved": records_count}
 
@@ -1184,6 +1186,8 @@ class MESResourceService:
             self.upsert_monitoring_rollups(range_start, range_end, bucket_minutes=5)
             self.upsert_monitoring_rollups(range_start, range_end, bucket_minutes=30)
             self.upsert_monitoring_rollups(range_start, range_end, bucket_minutes=60)
+            from .cycle_time_history import archive_cycle_time_window
+            archive_cycle_time_window(range_start - timedelta(minutes=5), range_end + timedelta(minutes=5))
             self.compact_monitoring_records(retention_hours=168, hours_to_compact=6)
             logger.info(f"Finished update for recent {hours_to_update} hours.")
             return {
@@ -1195,6 +1199,7 @@ class MESResourceService:
         finally:
             self._release_snapshot_update_lock(lock_token)
 
+    @transaction.atomic
     def compact_monitoring_records(self, retention_hours: int = 168, hours_to_compact: int = 2) -> None:
         """
         Keep detailed snapshots for the last retention_hours and compact older data.
@@ -1213,8 +1218,16 @@ class MESResourceService:
             timestamp__gte=compact_start,
             timestamp__lt=compact_before
         )
-        if not candidates.exists():
+        # Lock only the raw versions being compacted and delete only this ID set.
+        # A concurrent backfill insertion must survive until it is archived too.
+        candidate_ids = list(candidates.select_for_update().order_by('id').values_list('id', flat=True))
+        if not candidate_ids:
             return
+        candidates = candidates.filter(id__in=candidate_ids)
+
+        # Fail closed: do not discard raw evidence if the durable C/T archive fails.
+        from .cycle_time_history import archive_cycle_time_window
+        archive_cycle_time_window(compact_start, compact_before)
 
         self.upsert_monitoring_rollups(compact_start, compact_before, bucket_minutes=5)
         self.upsert_monitoring_rollups(compact_start, compact_before, bucket_minutes=30)
