@@ -26,6 +26,7 @@ class CycleTimeEvidenceTests(TestCase):
             timestamp=START + timedelta(minutes=minute), capacity=counter)
 
     def archive(self, **kwargs):
+        kwargs.setdefault("compact", False)  # Exercise legacy compatibility throughout the evidence suite.
         return archive_cycle_time_range(DAY, DAY, now=END + timedelta(minutes=10), **kwargs)
 
     def history(self, **kwargs):
@@ -38,6 +39,14 @@ class CycleTimeEvidenceTests(TestCase):
     def execution(self, part='PART-A', start=0, end=60, **kwargs):
         return ProductionExecution.objects.create(plan_date=DAY, plan_type='injection', machine_name='12호기',
             part_no=part, start_datetime=START+timedelta(minutes=start), end_datetime=START+timedelta(minutes=end), **kwargs)
+
+    def test_collector_defaults_to_compressed_hourly_rows(self):
+        self.sample(0, 0)
+        self.sample(2, 2)
+        archive_cycle_time_range(DAY, DAY, now=END + timedelta(minutes=10))
+        bucket = InjectionCycleTimeBucket.objects.get(bucket_start=START)
+        self.assertEqual(bucket.payload.get('_codec'), 'ct-zlib-json-v1')
+        self.assertEqual(self.history()['summary']['cycle_time_seconds'], 60)
 
     def test_compression_is_lossless_and_detects_corruption(self):
         source = {'part_no': '75NAN080', 'machine': '12호기', 'nullable': None,
