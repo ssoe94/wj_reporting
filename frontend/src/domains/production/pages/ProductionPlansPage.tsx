@@ -1,3 +1,4 @@
+import { buildCavityEditPartNos } from "../cavity-edit-payload";
 import { refreshPlanQueriesAfterSave } from "../plan-save-refresh";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
@@ -1274,9 +1275,7 @@ export function ProductionPlansPage() {
     if (cavityState) {
       const originalPartNo = getNormalizedPartNo(record);
       const editedPartNo = editDraft.part_no.trim().toUpperCase();
-      const partNos = [...new Set(cavityState.partNos.map((partNo) => (
-        partNo === originalPartNo ? editedPartNo : partNo
-      )).filter(Boolean))];
+      const partNos = buildCavityEditPartNos(originalPartNo, editedPartNo, cavityState.partNos);
       cavityUpdate = {
         recordKey,
         partNos,
