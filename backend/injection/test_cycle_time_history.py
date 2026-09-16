@@ -87,6 +87,7 @@ class CycleTimeEvidenceTests(TestCase):
         output = StringIO()
         call_command('compact_cycle_time_history', apply=True, stdout=output)
         self.assertIn("'changed': 0", output.getvalue())
+        self.assertIn("'scanned': 0", output.getvalue())
         self.assertEqual(self.archive(compact=True)['unchanged'], 24)
         ProductionPlan.objects.all().delete()
         InjectionMonitoringRecord.objects.exclude(timestamp=START).delete()

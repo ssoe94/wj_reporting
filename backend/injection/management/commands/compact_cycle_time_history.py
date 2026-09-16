@@ -46,7 +46,8 @@ class Command(BaseCommand):
                             raise CommandError('Paused: live collection freshness guard')
                     query = model.objects.filter(pk__gt=last_id, pk__lte=final_id).order_by('pk').only('pk', *fields)
                     if options['apply']:
-                        query = query.select_for_update()
+                        # Resume by scanning only rows with at least one plain field.
+                        query = query.exclude(**{f'{field}__has_key': '_codec' for field in fields}).select_for_update()
                     rows = list(query[:min(options['batch_size'], remaining)])
                     if not rows:
                         break
