@@ -441,3 +441,51 @@ class CycleTimeAccessTests(TestCase):
         self.user.is_active=False
         self.user.save()
         self.assertEqual(self.client.get(self.endpoint).status_code,403)
+
+
+class PublicBoardPartSummaryTests(TestCase):
+    endpoint = '/api/injection/board-part-cycle-time/'
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.client = APIClient()
+
+    def test_anonymous_fixed_range_and_summary_only_with_weighted_missing_days(self):
+        sample = {'summary': {'cycle_time_seconds': 75}, 'daily': [
+            {'business_date': str(DAY), 'machine_number': 11, 'cycle_time_seconds': 60, 'shot_count': 3, 'positive_interval_seconds': 180, 'parts': [{'lot_no': 'PRIVATE-LOT'}]},
+            {'business_date': str(DAY), 'machine_number': 12, 'cycle_time_seconds': 120, 'shot_count': 1, 'positive_interval_seconds': 120},
+        ], 'hourly': [{'device_code': 'PRIVATE-DEVICE', 'revision': 9}]}
+        with patch('injection.cycle_time_history_views.business_date_at', return_value=DAY), patch('injection.cycle_time_history_views.read_cycle_time_history', return_value=sample) as reader:
+            response = self.client.get(self.endpoint, {'part_no': 'PART-A'}, HTTP_AUTHORIZATION='Bearer expired')
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(set(body), {'part_no', 'start_date', 'end_date', 'cycle_time_seconds', 'daily'})
+            self.assertEqual(len(body['daily']), 30)
+            self.assertEqual(body['daily'][-1]['cycle_time_seconds'], 75)
+            self.assertEqual(body['daily'][-1]['machine_numbers'], [11,12])
+            self.assertIsNone(body['daily'][0]['cycle_time_seconds'])
+            self.assertNotIn('PRIVATE', response.content.decode())
+            reader.assert_called_once_with(DAY-timedelta(days=29), DAY, part_no='PART-A', hourly_details=False)
+            self.client.get(self.endpoint, {'part_no': 'PART-A'})
+            self.assertEqual(reader.call_count, 1)
+            self.client.get(self.endpoint, {'part_no': 'PART-B'})
+            self.assertEqual(reader.call_count, 2)
+
+    def test_public_slice_cannot_query_all_parts_or_expand_dates_or_write(self):
+        for params in ({}, {'part_no': ' '}, {'part_no': 'A'*101}, {'part_no': 'A', 'start_date': '2020-01-01'}, {'part_no': 'A', 'machine_number': 12}):
+            self.assertEqual(self.client.get(self.endpoint, params).status_code, 400)
+        self.assertEqual(self.client.post(self.endpoint, {'part_no':'A'}).status_code, 405)
+        self.assertIn(self.client.get('/api/injection/cycle-time-history/').status_code, (401,403))
+
+    def test_anonymous_reads_real_archive_without_disclosing_detailed_rows(self):
+        ProductionPlan.objects.create(plan_date=DAY, plan_type='injection', machine_name='12호기', part_no='BOARD-PART', planned_quantity=100, sequence=1)
+        for minute, capacity in [(0,0),(2,2),(4,4)]:
+            InjectionMonitoringRecord.objects.create(machine_name='12호기', device_code='BOARD-DEVICE', timestamp=START+timedelta(minutes=minute), capacity=capacity)
+        archive_cycle_time_range(DAY, DAY, now=END+timedelta(minutes=10))
+        with patch('injection.cycle_time_history_views.business_date_at', return_value=DAY):
+            response = self.client.get(self.endpoint, {'part_no':'BOARD-PART'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['daily'][-1]['cycle_time_seconds'], 60)
+        self.assertEqual(response.json()['daily'][-1]['machine_numbers'], [12])
+        self.assertNotIn('BOARD-DEVICE', response.content.decode())

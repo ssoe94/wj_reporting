@@ -1,3 +1,4 @@
+import { BoardPartSummaryModal } from "../components/BoardPartSummaryModal";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { isBoardMachineStale, summarizeBoardAvailability } from "@/domains/production/board-availability";
 import { createPortal } from "react-dom";
@@ -884,11 +885,13 @@ function ProductionTimeline({
 }
 
 function MachineBoardCard({
+  onPartSummary,
   businessDate,
   isVisitorMode,
   machine,
   language,
 }: {
+  onPartSummary: (partNo: string) => void;
   businessDate: string;
   isVisitorMode: boolean;
   machine: BoardMachine;
@@ -916,7 +919,7 @@ function MachineBoardCard({
         <strong>{!isVisitorMode && row?.hasPlan && machine.activePartNumbers.length
           ? machine.activePartNumbers.map((partNo, index) => <Fragment key={partNo}>
             {index > 0 ? " + " : null}
-            <Link className="injection-board-card__history-link" to={`/mes/monitoring?date=${businessDate}&part_no=${encodeURIComponent(partNo)}#cycle-time-history`} aria-label={`${partNo} · ${historyLabel}`}>{partNo}</Link>
+            <button type="button" className="injection-board-card__history-link injection-board-card__part-button" onClick={() => onPartSummary(partNo)} aria-haspopup="dialog" aria-label={`${partNo} · ${language === "ko" ? "C/T 요약" : "C/T 概览"}`}>{partNo}</button>
           </Fragment>)
           : machine.activePart}</strong>
         {machine.activeModel ? <span>{machine.activeModel}</span> : null}
@@ -1139,6 +1142,7 @@ function PreviousDaySummary({
 }
 
 export function InjectionBoardPage() {
+  const [summaryPartNo, setSummaryPartNo] = useState<string | null>(null);
   const [language, setLanguage] = useStoredLanguage();
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [isVisitorMode, setIsVisitorMode] = useState(false);
@@ -1474,6 +1478,7 @@ export function InjectionBoardPage() {
 
         {machines.map((machine) => (
           <MachineBoardCard
+            onPartSummary={setSummaryPartNo}
             businessDate={businessDate}
             isVisitorMode={isVisitorMode}
             key={machine.machineNumber}
@@ -1483,6 +1488,14 @@ export function InjectionBoardPage() {
         ))}
       </section>
 
+      {summaryPartNo && !isVisitorMode ? <BoardPartSummaryModal
+        key={summaryPartNo}
+        partNo={summaryPartNo}
+        businessDate={businessDate}
+        language={language}
+        onClose={() => setSummaryPartNo(null)}
+        machines={machines.filter((machine) => machine.activePartNumbers.includes(summaryPartNo)).map((machine) => ({ machineNumber: machine.machineNumber, model: machine.activeModel, cycleTime: machine.currentCycleTimeSec, stale: machine.tone === "stale" }))}
+      /> : null}
       {showBlockingLoading ? <div className="injection-board__loading">{copy.loading}</div> : null}
       {isPreviousSummaryOpen ? (
         <PreviousDaySummary
