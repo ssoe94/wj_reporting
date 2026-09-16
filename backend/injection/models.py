@@ -586,3 +586,42 @@ class MouldUsageConfirmation(models.Model):
 
     def __str__(self):
         return f"{self.mould_instance_id} - {self.milestone_shots:,} Shot"
+
+
+class InjectionCycleTimeBucket(models.Model):
+    """Durable estimated C/T evidence; independent of raw and plan retention."""
+
+    device_code = models.CharField(max_length=100)
+    machine_number = models.PositiveSmallIntegerField(db_index=True)
+    machine_name = models.CharField(max_length=100)
+    business_date = models.DateField(db_index=True)
+    bucket_start = models.DateTimeField()
+    calculation_version = models.CharField(max_length=64)
+    revision = models.PositiveIntegerField(default=1)
+    source_hash = models.CharField(max_length=64)
+    payload = models.JSONField(default=dict)
+    summary = models.JSONField(default=dict)
+    source_day_sample_count = models.PositiveIntegerField(default=0)
+    source_preservation_note = models.CharField(max_length=64, blank=True, default='')
+    archived_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['device_code', 'bucket_start'], name='inj_ct_device_hour_uniq')]
+        indexes = [models.Index(fields=['business_date', 'machine_number'], name='inj_ct_date_machine_idx')]
+        ordering = ['bucket_start', 'machine_number', 'device_code']
+
+
+class InjectionCycleTimeRevision(models.Model):
+    """Append-only prior/current evidence snapshots, never tied to a production plan FK."""
+
+    bucket = models.ForeignKey(InjectionCycleTimeBucket, on_delete=models.PROTECT, related_name='revisions')
+    revision = models.PositiveIntegerField()
+    source_hash = models.CharField(max_length=64)
+    calculation_version = models.CharField(max_length=64)
+    payload = models.JSONField(default=dict)
+    reason = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['bucket', 'revision'], name='inj_ct_bucket_revision_uniq')]
+        ordering = ['bucket_id', 'revision']

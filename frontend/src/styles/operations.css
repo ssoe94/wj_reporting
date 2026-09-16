@@ -9619,6 +9619,20 @@ select {
   white-space: nowrap;
 }
 
+.injection-board-card__history-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.injection-board-card__history-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .injection-board-card__metrics span,
 .injection-board-card__progress-head span,
 .injection-board-card footer span {
