@@ -49,6 +49,16 @@ def run_snapshot():
         result = mes_service.update_hourly_snapshot_from_mes()
         logger.info(f"Interval snapshot update completed. Result: {result}")
         logger.info("=" * 80)
+        # Run bounded retention after collection; maintenance failure must not
+        # turn a successful live snapshot into a failed collection.
+        try:
+            from datetime import timedelta
+            from injection.rollup_retention import compact_five_minute_rollups, retention_cutoff
+            cutoff = retention_cutoff()
+            retention = compact_five_minute_rollups(cutoff - timedelta(hours=2), cutoff, apply=True, max_hours=2)
+            logger.info("Five-minute rollup retention: %s", retention)
+        except Exception:
+            logger.exception("Rollup retention deferred; live snapshot is saved.")
         logger.info("CRON JOB COMPLETED SUCCESSFULLY")
         logger.info("=" * 80)
     except Exception as e:

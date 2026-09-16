@@ -1,9 +1,9 @@
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { boardPartTrend, type BoardPartDay } from "../board-part-trend";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, ReferenceDot, Tooltip, XAxis, YAxis } from "recharts";
+import { boardPartTrend } from "../board-part-trend";
 import { useId } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { http } from "@/shared/api/http";
+import { boardPartQueryOptions } from "../board-part-api";
 import { useModalFocusTrap } from "@/shared/hooks/useModalFocusTrap";
 import type { AppLanguage } from "@/shared/i18n/language";
 import "./board-part-summary.css";
@@ -22,12 +22,10 @@ export function BoardPartSummaryModal({ partNo, businessDate, machines, language
   const text = copy[language];
   const titleId = useId();
   const ref = useModalFocusTrap<HTMLDivElement>({ onEscape: onClose });
-  const query = useQuery({
-    queryKey: ["board-part-cycle-time", partNo, businessDate],
-    queryFn: async ({ signal }) => (await http.get<{ start_date: string; end_date: string; cycle_time_seconds: number | null; daily: BoardPartDay[] }>(`/injection/board-part-cycle-time/?${new URLSearchParams({ part_no: partNo })}`, { signal })).data,
-    staleTime: 60_000, retry: 1,
-  });
+  const query = useQuery(boardPartQueryOptions(partNo, businessDate));
   const trend = boardPartTrend(query.data?.daily ?? []);
+  const padding = Math.max(5, ((trend.maximum ?? 0) - (trend.minimum ?? 0)) * 0.25);
+  const secondsLabel = (value: number, maximum: boolean) => `${language === "ko" ? (maximum ? "최고" : "최저") : (maximum ? "最高" : "最低")} ${value.toFixed(1)}${language === "ko" ? "초" : "秒"}`;
   return createPortal(<div className="board-part-summary-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div ref={ref} className="board-part-summary" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
       <header><div><span>{text.title}</span><h2 id={titleId}>{partNo}</h2></div><button type="button" onClick={onClose} data-modal-initial-focus>{text.close} ×</button></header>
@@ -41,20 +39,22 @@ export function BoardPartSummaryModal({ partNo, businessDate, machines, language
       </section>
       <section aria-label={text.history}>
         <h3>{text.history} <small>{query.data ? `${query.data.start_date} ~ ${query.data.end_date}` : ""}</small></h3>
-        {query.isPending ? <p role="status">{text.loading}</p> : query.isError ? <div role="alert"><p>{text.error}</p><button type="button" onClick={() => { void query.refetch(); }}>{text.retry}</button></div> : query.data?.daily.some((day) => day.machine_numbers.length) ? <>
+        {query.isPending ? <p role="status">{text.loading}</p> : query.isError && !query.data ? <div role="alert"><p>{text.error}</p><button type="button" onClick={() => { void query.refetch(); }}>{text.retry}</button></div> : query.data?.daily.some((day) => day.machine_numbers.length) ? <>
           <div className="board-part-summary__stats">
             <div><span>{text.average}</span><strong>{ct(query.data.cycle_time_seconds)}</strong></div>
             <div><span>{text.latest}</span><strong>{ct(trend.latest?.cycle_time_seconds ?? null)}</strong><small>{trend.latest?.business_date ?? "—"}</small></div>
             <div><span>{text.range}</span><strong className="board-part-summary__range">{trend.minimum === null ? "—" : `${trend.minimum.toFixed(1)}–${trend.maximum?.toFixed(1)}s`}</strong></div>
           </div>
           {trend.latest ? <div className="board-part-summary__chart" role="img" aria-label={`${text.graph}. ${text.graphHint}`}>
-            <ResponsiveContainer width="100%" height={190}>
-              <LineChart data={trend.points} margin={{ top: 12, right: 15, bottom: 0, left: 0 }}>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={trend.points} margin={{ top: 22, right: 55, bottom: 15, left: 10 }}>
                 <CartesianGrid stroke="#dce6ec" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 12 }} minTickGap={28} tickLine={false} />
-                <YAxis width={50} domain={["auto", "auto"]} tick={{ fontSize: 12 }} tickFormatter={(value: number) => `${value}s`} tickLine={false} axisLine={false} />
+                <XAxis dataKey="business_date" tickFormatter={(value: string) => value.slice(5)} tick={{ fontSize: 12 }} minTickGap={28} tickLine={false} />
+                <YAxis width={50} domain={[Math.max(0, (trend.minimum ?? 0) - padding), (trend.maximum ?? 0) + padding]} tick={{ fontSize: 12 }} tickFormatter={(value: number) => `${value}s`} tickLine={false} axisLine={false} />
                 <Tooltip formatter={(value: number) => [ct(value), text.ct]} labelFormatter={(label) => `${text.date} ${label}`} />
-                <Line type="linear" dataKey="cycle_time_seconds" stroke="#087da5" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="cycle_time_seconds" stroke="#087da5" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false} />
+                {trend.maximumPoint && <ReferenceDot x={trend.maximumPoint.business_date} y={trend.maximum!} r={4} fill="#087da5" stroke="white" label={{ value: (trend.minimum === trend.maximum ? `${language === "ko" ? "최고·최저" : "最高·最低"} ${trend.maximum!.toFixed(1)}${language === "ko" ? "초" : "秒"}` : secondsLabel(trend.maximum!, true)), position: "top", fontSize: 12, fill: "#12526b" }} />}
+                {trend.minimumPoint && trend.minimum !== trend.maximum && <ReferenceDot x={trend.minimumPoint.business_date} y={trend.minimum!} r={4} fill="#087da5" stroke="white" label={{ value: secondsLabel(trend.minimum!, false), position: "bottom", fontSize: 12, fill: "#12526b" }} />}
               </LineChart>
             </ResponsiveContainer>
           </div> : <p role="status">{text.noChart}</p>}

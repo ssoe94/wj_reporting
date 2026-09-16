@@ -17,7 +17,7 @@
 .board-part-summary__stats span, .board-part-summary__stats small { display: block; font-size: 12px; color: #506b7c; }
 .board-part-summary__stats strong { display: block; margin: 4px 0; font-size: 25px; font-variant-numeric: tabular-nums; }
 .board-part-summary__stats .board-part-summary__range { font-size: 20px; }
-.board-part-summary__chart { width: 100%; min-width: 0; height: 190px; }
+.board-part-summary__chart { width: 100%; min-width: 0; height: 220px; }
 .board-part-summary .board-part-summary__graph-hint { margin: 0 0 8px; font-size: 12px; }
 .board-part-summary__table { overflow: auto; max-height: 168px; }
 .board-part-summary thead { position: sticky; top: 0; }
