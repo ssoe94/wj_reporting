@@ -57,7 +57,7 @@ export function BoardPartSummaryModal({ partNo, businessDate, machines, language
                 <Line type="linear" dataKey="cycle_time_seconds" stroke="#087da5" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
-          </div> : <p role="status">{text.noChart}</p>
+          </div> : <p role="status">{text.noChart}</p>}
           <p className="board-part-summary__graph-hint">{text.graphHint}</p>
           <div className="board-part-summary__table" tabIndex={0} role="region" aria-label={text.history}><table><thead><tr><th>{text.date}</th><th>{text.ct}</th><th>{text.machines}</th></tr></thead><tbody>{[...query.data.daily].reverse().map((day) => <tr key={day.business_date}><td>{day.business_date.slice(5)}</td><td>{ct(day.cycle_time_seconds)}</td><td>{day.machine_numbers.map((number) => `${number}${text.machine}`).join(", ") || "—"}</td></tr>)}</tbody></table></div>
           <p>{text.estimate}</p>
