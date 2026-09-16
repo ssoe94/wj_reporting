@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 from production.models import ProductionExecution, ProductionPartCavity, ProductionPlan
 from .cycle_time_history import (TZ, archive_cycle_time_range, business_start,
                                 read_cycle_time_history)
+from .cycle_time_codec import pack, unpack, serialized
 from .models import InjectionCycleTimeBucket, InjectionCycleTimeRevision, InjectionMonitoringRecord
 
 DAY = date(2026, 9, 14)
@@ -37,6 +38,61 @@ class CycleTimeEvidenceTests(TestCase):
     def execution(self, part='PART-A', start=0, end=60, **kwargs):
         return ProductionExecution.objects.create(plan_date=DAY, plan_type='injection', machine_name='12호기',
             part_no=part, start_datetime=START+timedelta(minutes=start), end_datetime=START+timedelta(minutes=end), **kwargs)
+
+    def test_compression_is_lossless_and_detects_corruption(self):
+        source = {'part_no': '75NAN080', 'machine': '12호기', 'nullable': None,
+                  'samples': [[index, index * 1.25] for index in range(100)]}
+        encoded = pack(source)
+        self.assertLess(len(serialized(encoded)), len(serialized(source)))
+        self.assertEqual(unpack(encoded), source)
+        self.assertEqual(pack(encoded), encoded)
+        damaged = {**encoded, 'sha256': '0' * 64}
+        with self.assertRaises(ValueError):
+            unpack(damaged)
+
+    def test_existing_history_compacts_without_changing_results_or_revisions(self):
+        self.plan()
+        for minute in range(0, 61, 2):
+            self.sample(minute, minute)
+        self.archive()
+        before = self.history(part_no='PART-A')
+        saved = list(InjectionCycleTimeBucket.objects.values_list('pk', 'source_hash', 'revision', 'archived_at'))
+        revisions = list(InjectionCycleTimeRevision.objects.values_list('pk', 'source_hash', 'revision', 'created_at'))
+        plain = list(InjectionCycleTimeBucket.objects.values_list('payload', flat=True))
+        call_command('compact_cycle_time_history', stdout=StringIO())
+        self.assertEqual(list(InjectionCycleTimeBucket.objects.values_list('payload', flat=True)), plain)
+        call_command('compact_cycle_time_history', apply=True, batch_size=7, stdout=StringIO())
+        self.assertEqual(self.history(part_no='PART-A'), before)
+        self.assertEqual(list(InjectionCycleTimeBucket.objects.values_list('pk', 'source_hash', 'revision', 'archived_at')), saved)
+        self.assertEqual(list(InjectionCycleTimeRevision.objects.values_list('pk', 'source_hash', 'revision', 'created_at')), revisions)
+        output = StringIO()
+        call_command('compact_cycle_time_history', apply=True, stdout=output)
+        self.assertIn("'changed': 0", output.getvalue())
+        self.assertEqual(self.archive(compact=True)['unchanged'], 24)
+        ProductionPlan.objects.all().delete()
+        InjectionMonitoringRecord.objects.exclude(timestamp=START).delete()
+        self.archive(compact=True)
+        after = self.history(part_no='PART-A')
+        self.assertEqual(after['summary']['cycle_time_seconds'], before['summary']['cycle_time_seconds'])
+        self.assertEqual(after['parts'][0]['part_no'], 'PART-A')
+
+    def test_new_compressed_rows_support_corrections_and_mixed_format_reads(self):
+        self.plan()
+        self.sample(0, 0)
+        record = self.sample(2, 2)
+        self.archive(compact=True)
+        before = self.history(machine=12)
+        self.assertEqual(before['summary']['cycle_time_seconds'], 60)
+        record.capacity = 4
+        record.save()
+        self.archive(compact=True)
+        bucket = InjectionCycleTimeBucket.objects.get(bucket_start=START)
+        self.assertEqual(unpack(bucket.revisions.get(revision=1).payload)['shot_count'], 2)
+        self.assertEqual(unpack(bucket.revisions.get(revision=2).payload)['shot_count'], 4)
+        self.assertEqual(self.history(machine=12)['summary']['cycle_time_seconds'], 30)
+        bucket.summary = unpack(bucket.summary)
+        bucket.save(update_fields=['summary'])
+        self.assertEqual(self.history(machine=12)['summary']['cycle_time_seconds'], 30)
 
     def test_positive_observed_time_excludes_flat_intervals_and_is_weighted(self):
         for minute, count in [(0,100), (2,104), (4,104), (6,106), (8,114)]:
