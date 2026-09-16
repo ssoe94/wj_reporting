@@ -6799,6 +6799,21 @@ select {
   background: rgba(248, 253, 255, 0.96);
 }
 
+.schedule-job__edit .button:disabled {
+  cursor: not-allowed;
+}
+
+.schedule-job__edit .button[aria-busy="true"] {
+  cursor: wait;
+}
+
+.cavity-inline-editor__inputs label {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 4px;
+}
+
 .cavity-inline-editor__inputs input {
   width: 30px;
   height: 24px;
