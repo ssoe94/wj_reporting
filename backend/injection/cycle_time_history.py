@@ -474,14 +474,14 @@ def _read_hour_stream(query, part_no):
             yield source, hour
 
 
-def read_cycle_time_history(start_date, end_date, *, machine=None, part_no=None):
+def read_cycle_time_history(start_date, end_date, *, machine=None, part_no=None, hourly_details=True):
     """Read compact summaries in a stream; a GET never creates an archive."""
     part_no = normalized_part(part_no) or None
     query = InjectionCycleTimeBucket.objects.filter(business_date__gte=start_date, business_date__lte=end_date).only(
         'summary', 'revision', 'archived_at', 'calculation_version', 'source_preservation_note')
     if machine is not None:
         query = query.filter(machine_number=machine)
-    include_hourly = bool(machine or part_no) and (end_date - start_date).days < 31
+    include_hourly = hourly_details and bool(machine or part_no) and (end_date - start_date).days < 31
     hours, day_groups, source_days, all_parts = [], {}, {}, {}
     summary = _new_metrics()
     for source, hour in _read_hour_stream(query, part_no):

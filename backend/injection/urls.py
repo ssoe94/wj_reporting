@@ -18,7 +18,7 @@ from .mould_views import (
     MouldUsageConfirmationView,
 )
 
-from .cycle_time_history_views import CycleTimeHistoryView
+from .cycle_time_history_views import CycleTimeHistoryView, BoardPartCycleTimeSummaryView
 
 router = DefaultRouter()
 router.register(r'reports', InjectionReportViewSet)
@@ -32,6 +32,7 @@ router.register(r'setup', CycleTimeSetupViewSet)
 router.register(r'test-records', CycleTimeTestRecordViewSet)
 
 urlpatterns = [
+    path('board-part-cycle-time/', BoardPartCycleTimeSummaryView.as_view(), name='board-part-cycle-time'),
     path('cycle-time-history/', CycleTimeHistoryView.as_view(), name='cycle-time-history'),
     path('', include(router.urls)),
     path('moulds/board/', MouldBoardView.as_view(), name='mould-board'),

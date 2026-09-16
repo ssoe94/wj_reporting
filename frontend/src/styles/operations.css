@@ -9627,6 +9627,10 @@ select {
   text-decoration-thickness: 1px;
 }
 
+.injection-board-card__part-button {
+  border: 0; padding: 0; background: transparent; font: inherit; text-align: inherit; cursor: pointer;
+}
+
 .injection-board-card__history-link:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 2px;
