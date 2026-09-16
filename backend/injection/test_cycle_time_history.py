@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from production.models import ProductionExecution, ProductionPartCavity, ProductionPlan
@@ -26,6 +26,7 @@ class CycleTimeEvidenceTests(TestCase):
             timestamp=START + timedelta(minutes=minute), capacity=counter)
 
     def archive(self, **kwargs):
+        kwargs.setdefault("compact", False)  # Exercise legacy compatibility throughout the evidence suite.
         return archive_cycle_time_range(DAY, DAY, now=END + timedelta(minutes=10), **kwargs)
 
     def history(self, **kwargs):
@@ -38,6 +39,24 @@ class CycleTimeEvidenceTests(TestCase):
     def execution(self, part='PART-A', start=0, end=60, **kwargs):
         return ProductionExecution.objects.create(plan_date=DAY, plan_type='injection', machine_name='12호기',
             part_no=part, start_datetime=START+timedelta(minutes=start), end_datetime=START+timedelta(minutes=end), **kwargs)
+
+    def test_collector_defaults_to_compressed_hourly_rows(self):
+        self.sample(0, 0)
+        self.sample(2, 2)
+        archive_cycle_time_range(DAY, DAY, now=END + timedelta(minutes=10))
+        bucket = InjectionCycleTimeBucket.objects.get(bucket_start=START)
+        self.assertEqual(bucket.payload.get('_codec'), 'ct-zlib-json-v1')
+        self.assertEqual(self.history()['summary']['cycle_time_seconds'], 60)
+
+    @override_settings(DEBUG=True)
+    def test_compaction_does_not_accumulate_bulk_sql_in_memory(self):
+        from django.db import connection
+        self.sample(0, 0)
+        self.sample(2, 2)
+        self.archive()
+        call_command('compact_cycle_time_history', apply=True, batch_size=1, stdout=StringIO())
+        self.assertLess(len(connection.queries), 20)
+        self.assertEqual(self.history()['summary']['cycle_time_seconds'], 60)
 
     def test_compression_is_lossless_and_detects_corruption(self):
         source = {'part_no': '75NAN080', 'machine': '12호기', 'nullable': None,
@@ -68,6 +87,7 @@ class CycleTimeEvidenceTests(TestCase):
         output = StringIO()
         call_command('compact_cycle_time_history', apply=True, stdout=output)
         self.assertIn("'changed': 0", output.getvalue())
+        self.assertIn("'scanned': 0", output.getvalue())
         self.assertEqual(self.archive(compact=True)['unchanged'], 24)
         ProductionPlan.objects.all().delete()
         InjectionMonitoringRecord.objects.exclude(timestamp=START).delete()

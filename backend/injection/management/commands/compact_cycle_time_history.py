@@ -2,7 +2,7 @@
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connection, transaction
+from django.db import connection, reset_queries, transaction
 from django.utils import timezone
 
 from injection.cycle_time_codec import pack, serialized, unpack
@@ -46,7 +46,8 @@ class Command(BaseCommand):
                             raise CommandError('Paused: live collection freshness guard')
                     query = model.objects.filter(pk__gt=last_id, pk__lte=final_id).order_by('pk').only('pk', *fields)
                     if options['apply']:
-                        query = query.select_for_update()
+                        # Resume by scanning only rows with at least one plain field.
+                        query = query.exclude(**{f'{field}__has_key': '_codec' for field in fields}).select_for_update()
                     rows = list(query[:min(options['batch_size'], remaining)])
                     if not rows:
                         break
@@ -70,6 +71,8 @@ class Command(BaseCommand):
                     seen += len(rows)
                     changed += len(updates)
                     last_id = rows[-1].pk
+                # A DEBUG-enabled maintenance process must not retain every bulk SQL statement.
+                reset_queries()
                 if seen % 10000 == 0:
                     self.stdout.write(f'{model.__name__}: scanned={seen} changed={changed}')
                     self.stdout.flush()

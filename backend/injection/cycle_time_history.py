@@ -265,7 +265,7 @@ def _build_device_day(day, device, number, records, plans, executions, now):
 
 
 @transaction.atomic
-def archive_cycle_time_range(start_date, end_date, *, machine=None, now=None, compact=False):
+def archive_cycle_time_range(start_date, end_date, *, machine=None, now=None, compact=True):
     """Explicit writer used only by collectors, compaction and the backfill command.
 
     Revisions are idempotent and serialized on PostgreSQL. Never replace dense
