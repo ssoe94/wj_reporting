@@ -1,3 +1,4 @@
+import { refreshPlanQueriesAfterSave } from "../plan-save-refresh";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -274,6 +275,9 @@ const pageCopy = {
     save: "저장",
     cancel: "취소",
     cavitySettings: "캐비티 및 동시생산",
+    partsCount: "동시생산 품목 수",
+    cavityCount: "품목당 캐비티 수",
+    partNoRequired: "Part No.를 입력해야 저장할 수 있습니다. 품번이 없는 계획은 담당자에게 정확한 품번을 확인해주세요.",
     rowUpdateError: "작업 지시를 저장하지 못했습니다. 입력값을 확인한 뒤 다시 시도해주세요.",
     lineRow: "라인/행",
     unsetMachine: "미지정 설비",
@@ -376,6 +380,9 @@ const pageCopy = {
     save: "保存",
     cancel: "取消",
     cavitySettings: "型腔及共同生产",
+    partsCount: "共同生产品目数",
+    cavityCount: "每个品目的型腔数",
+    partNoRequired: "请输入 Part No. 后保存。计划没有品号时，请向负责人确认准确的品号。",
     rowUpdateError: "无法保存作业指示，请检查输入内容后重试。",
     lineRow: "产线/行",
     unsetMachine: "未指定设备",
@@ -1067,7 +1074,7 @@ export function ProductionPlansPage() {
 
       return updatedPlan;
     },
-    onSuccess: async (updatedPlan, variables) => {
+    onSuccess: (updatedPlan, variables) => {
       setEditingRowId(null);
       setRowEditError("");
       if (variables.cavityUpdate) {
@@ -1112,12 +1119,7 @@ export function ProductionPlansPage() {
         );
       }
 
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["production"] }),
-        queryClient.invalidateQueries({ queryKey: ["production-plan-summary"] }),
-        queryClient.invalidateQueries({ queryKey: ["production", "plan-change-logs"] }),
-        queryClient.invalidateQueries({ queryKey: ["production-mes-report-stats"] }),
-      ]);
+      refreshPlanQueriesAfterSave(queryClient);
     },
     onError: (error) => {
       setRowEditError(getErrorMessage(error, copy.rowUpdateError));
@@ -1607,28 +1609,34 @@ export function ProductionPlansPage() {
     return (
       <div className="cavity-inline-editor">
         <div className="cavity-inline-editor__inputs" aria-label={copy.cavity}>
-          <input
-            aria-label={`${copy.cavity} part count`}
-            inputMode="numeric"
-            min="1"
-            onChange={(event) => {
-              const nextParts = normalizeCavityNumber(event.target.value);
-              const nextCount = Math.max(1, Number(nextParts) || 1);
-              updateCavityDraft(recordKey, {
-                parts: nextParts,
-                partners: draft.partners.slice(0, Math.max(0, nextCount - 1)),
-              }, draft);
-            }}
-            value={draft.parts}
-          />
-          <span>x</span>
-          <input
-            aria-label={`${copy.cavity} count`}
-            inputMode="numeric"
-            min="1"
-            onChange={(event) => updateCavityDraft(recordKey, { cavity: normalizeCavityNumber(event.target.value) }, draft)}
-            value={draft.cavity}
-          />
+          <label>
+            <span>{copy.partsCount}</span>
+            <input
+              aria-label={`${copy.cavity} part count`}
+              inputMode="numeric"
+              min="1"
+              onChange={(event) => {
+                const nextParts = normalizeCavityNumber(event.target.value);
+                const nextCount = Math.max(1, Number(nextParts) || 1);
+                updateCavityDraft(recordKey, {
+                  parts: nextParts,
+                  partners: draft.partners.slice(0, Math.max(0, nextCount - 1)),
+                }, draft);
+              }}
+              value={draft.parts}
+            />
+          </label>
+          <span aria-hidden="true">×</span>
+          <label>
+            <span>{copy.cavityCount}</span>
+            <input
+              aria-label={`${copy.cavity} count`}
+              inputMode="numeric"
+              min="1"
+              onChange={(event) => updateCavityDraft(recordKey, { cavity: normalizeCavityNumber(event.target.value) }, draft)}
+              value={draft.cavity}
+            />
+          </label>
         </div>
         {requiredPartners > 0 ? (
           <label className="cavity-inline-editor__partner">
@@ -1987,6 +1995,9 @@ export function ProductionPlansPage() {
                 </button>
               </div>
             </div>
+            {!editDraft.part_no.trim() ? (
+              <p className="schedule-job__edit-error" role="alert">{copy.partNoRequired}</p>
+            ) : null}
             {rowEditError ? <p className="schedule-job__edit-error" role="alert">{rowEditError}</p> : null}
           </div>
         ) : (
