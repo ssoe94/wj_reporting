@@ -19,6 +19,7 @@ from django.utils import timezone
 from production.cavity import build_cavity_plan_groups, default_cavity_meta, get_cavity_meta_map
 from production.counter_utils import calculate_counter_increment
 from production.models import ProductionExecution, ProductionPartCavity, ProductionPlan
+from .cycle_time_codec import pack, unpack
 from .models import InjectionCycleTimeBucket, InjectionCycleTimeRevision, InjectionMonitoringRecord
 
 TZ = ZoneInfo('Asia/Shanghai')
@@ -264,7 +265,7 @@ def _build_device_day(day, device, number, records, plans, executions, now):
 
 
 @transaction.atomic
-def archive_cycle_time_range(start_date, end_date, *, machine=None, now=None):
+def archive_cycle_time_range(start_date, end_date, *, machine=None, now=None, compact=False):
     """Explicit writer used only by collectors, compaction and the backfill command.
 
     Revisions are idempotent and serialized on PostgreSQL. Never replace dense
@@ -281,12 +282,12 @@ def archive_cycle_time_range(start_date, end_date, *, machine=None, now=None):
     counts = dict(created=0, revised=0, unchanged=0, preserved=0)
     current = start_date
     while current <= end_date:
-        _archive_day(current, machine, now, counts)
+        _archive_day(current, machine, now, counts, compact)
         current += timedelta(days=1)
     return counts
 
 
-def _archive_day(day, machine, now, counts):
+def _archive_day(day, machine, now, counts, compact):
     start, end = business_start(day), business_start(day) + timedelta(days=1)
     # One day plus boundary neighbours. A remote old baseline cannot establish C/T.
     records = list(InjectionMonitoringRecord.objects.filter(
@@ -294,6 +295,8 @@ def _archive_day(day, machine, now, counts):
         timestamp__lte=min(end + timedelta(seconds=MAX_INTERVAL_SECONDS), now),
     ).order_by('device_code', 'timestamp', 'id'))
     existing = list(InjectionCycleTimeBucket.objects.select_for_update().filter(business_date=day))
+    for saved in existing:
+        saved.payload = unpack(saved.payload)
     existing_by_key = {(row.device_code, row.bucket_start): row for row in existing}
     plan_rows = list(ProductionPlan.objects.filter(plan_date=day, plan_type='injection').order_by('sequence', 'id'))
     cavity_map = get_cavity_meta_map(ProductionPartCavity, {normalized_part(row.part_no) for row in plan_rows})
@@ -361,8 +364,8 @@ def _archive_day(day, machine, now, counts):
                 counts['unchanged'] += 1
                 continue
             if old:
-                old.payload, old.source_hash, old.calculation_version = payload, source_hash, VERSION
-                old.summary, old.source_day_sample_count = summary, day_sample_count
+                old.payload, old.source_hash, old.calculation_version = (pack(payload) if compact else payload), source_hash, VERSION
+                old.summary, old.source_day_sample_count = (pack(summary) if compact else summary), day_sample_count
                 old.source_preservation_note = ''
                 old.machine_number, old.machine_name = payload['machine_number'], payload['machine_name']
                 old.revision += 1
@@ -373,12 +376,12 @@ def _archive_day(day, machine, now, counts):
                 bucket = InjectionCycleTimeBucket.objects.create(
                     device_code=device, machine_number=number, machine_name=payload['machine_name'],
                     business_date=day, bucket_start=bucket_start, calculation_version=VERSION,
-                    source_hash=source_hash, payload=payload, summary=summary, source_day_sample_count=day_sample_count,
+                    source_hash=source_hash, payload=pack(payload) if compact else payload, summary=pack(summary) if compact else summary, source_day_sample_count=day_sample_count,
                 )
                 reason = 'initial_archive'
                 counts['created'] += 1
             InjectionCycleTimeRevision.objects.create(bucket=bucket, revision=bucket.revision,
-                source_hash=source_hash, calculation_version=VERSION, payload=payload, reason=reason)
+                source_hash=source_hash, calculation_version=VERSION, payload=pack(payload) if compact else payload, reason=reason)
 
 
 def archive_cycle_time_window(start_time, end_time):
@@ -436,7 +439,12 @@ def _finish_parts(parts):
 def _read_hour_stream(query, part_no):
     # A changed device mapping must not silently blend simultaneous counters.
     key = lambda row: (row.summary['bucket_start'], row.summary['machine_number'])
-    for _, grouped in groupby(query.iterator(chunk_size=500), key=key):
+    def decoded_rows():
+        for row in query.iterator(chunk_size=500):
+            row.summary = unpack(row.summary)
+            yield row
+
+    for _, grouped in groupby(decoded_rows(), key=key):
         rows = list(grouped)
         ambiguous = sum((row.summary.get('observed_seconds') or 0) > 0 for row in rows) > 1
         for index, row in enumerate(rows):

@@ -13,6 +13,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--start-date', help='Inclusive Shanghai 08:00 business date (YYYY-MM-DD).')
         parser.add_argument('--end-date', help='Inclusive Shanghai 08:00 business date (defaults to today).')
+        parser.add_argument('--compact', action='store_true', help='Use compressed hourly storage after all readers support it.')
         parser.add_argument('--machine-number', type=int, choices=range(1, 18))
 
     def handle(self, *args, **options):
@@ -27,7 +28,7 @@ class Command(BaseCommand):
         totals = dict(created=0, revised=0, unchanged=0, preserved=0)
         current = start
         while current <= end:
-            result = archive_cycle_time_range(current, current, machine=options['machine_number'])
+            result = archive_cycle_time_range(current, current, machine=options['machine_number'], compact=options['compact'])
             for key in totals:
                 totals[key] += result[key]
             current += timedelta(days=1)
