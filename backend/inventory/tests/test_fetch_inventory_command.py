@@ -242,6 +242,62 @@ class FetchInventoryCommandTests(TestCase):
         )
         self.assertEqual(RawMaterialMESDataset.objects.count(), 0)
 
+    @patch("inventory.management.commands.fetch_inventory.time.sleep")
+    @patch("inventory.management.commands.fetch_inventory.call_inventory_list")
+    def test_total_change_restarts_pagination_and_imports_only_the_stable_pass(
+        self, inventory_call, sleep
+    ):
+        drifting_page = [mes_inventory_row(index) for index in range(100)]
+        stable_first = [mes_inventory_row(200 + index) for index in range(100)]
+        stable_second = [mes_inventory_row(300 + index) for index in range(51)]
+        inventory_call.side_effect = [
+            {"data": {"list": drifting_page, "total": 150}},
+            {"data": {"list": drifting_page[:50], "total": 151}},
+            {"data": {"list": stable_first, "total": 151}},
+            {"data": {"list": stable_second, "total": 151}},
+        ]
+
+        call_command("fetch_inventory", stdout=StringIO(), stderr=StringIO())
+
+        self.assertEqual(
+            inventory_call.call_args_list,
+            [
+                call(page=1, size=100),
+                call(page=2, size=100),
+                call(page=1, size=100),
+                call(page=2, size=100),
+            ],
+        )
+        sleep.assert_called_once()
+        # Nothing from the discarded pass may leak into the replacement.
+        self.assertEqual(StagingInventory.objects.count(), 151)
+        self.assertFalse(
+            StagingInventory.objects.filter(material_code="RM-000").exists()
+        )
+        self.assertEqual(RawMaterialMESDataset.objects.get().record_count, 151)
+
+    @patch("inventory.management.commands.fetch_inventory.time.sleep")
+    @patch("inventory.management.commands.fetch_inventory.call_inventory_list")
+    def test_persistent_total_change_gives_up_and_preserves_last_good_data(
+        self, inventory_call, sleep
+    ):
+        page = [mes_inventory_row(index) for index in range(100)]
+        totals = iter(range(150, 200))
+        inventory_call.side_effect = lambda **kwargs: {
+            "data": {"list": page, "total": next(totals)}
+        }
+
+        with self.assertRaises(CommandError) as raised:
+            call_command("fetch_inventory", stdout=StringIO(), stderr=StringIO())
+
+        self.assertIn("total changed during pagination", str(raised.exception))
+        self.assertEqual(inventory_call.call_count, 8)
+        self.assertEqual(sleep.call_count, 3)
+        self.assertTrue(
+            StagingInventory.objects.filter(pk=self.old_inventory.pk).exists()
+        )
+        self.assertEqual(RawMaterialMESDataset.objects.count(), 0)
+
     @patch("inventory.management.commands.fetch_inventory.call_inventory_list")
     def test_empty_mes_result_does_not_erase_existing_inventory(self, inventory_call):
         inventory_call.return_value = {"data": {"list": [], "total": 0}}

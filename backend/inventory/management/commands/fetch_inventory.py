@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import json
+import time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
@@ -17,12 +18,21 @@ from inventory.services.raw_material_storage import save_mes_dataset
 
 PAGE_SIZE = 100
 MAX_PAGES = 500
+# MES has no snapshot-consistent read. Stock moving at the 08:00 shift change
+# can alter the declared total mid-pagination, so a drifting pass is discarded
+# and restarted a bounded number of times instead of failing the whole day.
+MAX_PAGINATION_ATTEMPTS = 4
+PAGINATION_RETRY_DELAY_SECONDS = 15
 PROGRESS_CACHE_KEY = "inventory_fetch_progress"
 PROGRESS_CACHE_TTL = 600
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 BUSINESS_DAY_START_HOUR = 8
 QUANTITY_QUANTUM = Decimal("0.0001")
 MAX_QUANTITY_ABS = Decimal("10000000000000000")
+
+
+class InventoryTotalChanged(RuntimeError):
+    """The MES inventory changed while it was being paginated."""
 
 
 class Command(BaseCommand):
@@ -55,11 +65,8 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        page = 1
         pending_rows = []
         pending_objects = []
-        seen_pages = set()
-        authoritative_total = None
 
         self.stdout.write(
             "Full synchronization with MES (credential values are not logged)..."
@@ -67,64 +74,26 @@ class Command(BaseCommand):
         self._set_progress(current=0, total=0, status="initializing")
 
         try:
-            while True:
-                items, staging_objects, page_total = self._fetch_and_validate_page(page)
-                if page_total is not None:
-                    if authoritative_total is None:
-                        authoritative_total = page_total
-                    elif authoritative_total != page_total:
-                        raise RuntimeError(
-                            "MES inventory total changed during pagination; the snapshot was not replaced"
-                        )
-                fingerprint = hashlib.sha256(
-                    json.dumps(
-                        items,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                        default=str,
-                    ).encode("utf-8")
-                ).hexdigest()
-                if items and fingerprint in seen_pages:
-                    raise RuntimeError(
-                        f"Page {page} repeated an earlier MES page; stopped to limit upstream load"
-                    )
-                seen_pages.add(fingerprint)
-                pending_rows.extend(items)
-                pending_objects.extend(staging_objects)
-                fetched_count = len(pending_objects)
-
-                self.stdout.write(
-                    f"Page {page}: validated {len(staging_objects)} items "
-                    f"(total: {fetched_count})"
-                )
-                self._set_progress(
-                    current=fetched_count,
-                    total=fetched_count,
-                    status="fetching",
-                    page=page,
-                )
-
-                if authoritative_total is not None:
-                    if fetched_count > authoritative_total:
-                        raise RuntimeError(
-                            "MES returned more inventory rows than its declared total"
-                        )
-                    if fetched_count == authoritative_total:
-                        break
-                if len(items) < PAGE_SIZE:
-                    if (
-                        authoritative_total is not None
-                        and fetched_count < authoritative_total
-                    ):
-                        raise RuntimeError(
-                            "MES pagination ended before the declared inventory total was received"
-                        )
+            for attempt in range(1, MAX_PAGINATION_ATTEMPTS + 1):
+                # Rows from a drifting pass are never mixed into the next one.
+                pending_rows = []
+                pending_objects = []
+                try:
+                    self._fetch_all_pages(pending_rows, pending_objects)
                     break
-                if page >= MAX_PAGES:
-                    raise RuntimeError(
-                        f"Inventory pagination reached the {MAX_PAGES}-page safety limit"
+                except InventoryTotalChanged:
+                    if attempt == MAX_PAGINATION_ATTEMPTS:
+                        raise
+                    delay = PAGINATION_RETRY_DELAY_SECONDS * attempt
+                    self.stdout.write(
+                        self.style.WARNING(
+                            "MES inventory total changed during pagination; "
+                            f"restarting in {delay}s "
+                            f"(attempt {attempt + 1}/{MAX_PAGINATION_ATTEMPTS})"
+                        )
                     )
-                page += 1
+                    self._set_progress(current=0, total=0, status="retrying")
+                    time.sleep(delay)
 
             source_latest_at = max(
                 (item.updated_at for item in pending_objects),
@@ -189,6 +158,71 @@ class Command(BaseCommand):
                 f"Imported {imported_count} rows to staging inventory"
             )
         )
+
+    def _fetch_all_pages(self, pending_rows, pending_objects):
+        """Run one complete pagination pass with a stable declared total."""
+        page = 1
+        seen_pages = set()
+        authoritative_total = None
+
+        while True:
+            items, staging_objects, page_total = self._fetch_and_validate_page(page)
+            if page_total is not None:
+                if authoritative_total is None:
+                    authoritative_total = page_total
+                elif authoritative_total != page_total:
+                    raise InventoryTotalChanged(
+                        "MES inventory total changed during pagination; the snapshot was not replaced"
+                    )
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    items,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ).encode("utf-8")
+            ).hexdigest()
+            if items and fingerprint in seen_pages:
+                raise RuntimeError(
+                    f"Page {page} repeated an earlier MES page; stopped to limit upstream load"
+                )
+            seen_pages.add(fingerprint)
+            pending_rows.extend(items)
+            pending_objects.extend(staging_objects)
+            fetched_count = len(pending_objects)
+
+            self.stdout.write(
+                f"Page {page}: validated {len(staging_objects)} items "
+                f"(total: {fetched_count})"
+            )
+            self._set_progress(
+                current=fetched_count,
+                total=fetched_count,
+                status="fetching",
+                page=page,
+            )
+
+            if authoritative_total is not None:
+                if fetched_count > authoritative_total:
+                    raise RuntimeError(
+                        "MES returned more inventory rows than its declared total"
+                    )
+                if fetched_count == authoritative_total:
+                    return
+            if len(items) < PAGE_SIZE:
+                if (
+                    authoritative_total is not None
+                    and fetched_count < authoritative_total
+                ):
+                    raise RuntimeError(
+                        "MES pagination ended before the declared inventory total was received"
+                    )
+                return
+            if page >= MAX_PAGES:
+                raise RuntimeError(
+                    f"Inventory pagination reached the {MAX_PAGES}-page safety limit"
+                )
+            page += 1
 
     def _fetch_and_validate_page(self, page):
         # call_inventory_list owns the bounded HTTP retry policy.  Retrying the
