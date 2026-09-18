@@ -5,7 +5,7 @@ not assert that a planned objective has been implemented or deployed. This
 catalog does not authorize collection, schema changes, or production changes.
 """
 
-CATALOG_VERSION = '2026-09-07'
+CATALOG_VERSION = '2026-09-18'
 
 INITIAL_TASKS = [
     {
@@ -26,12 +26,12 @@ INITIAL_TASKS = [
         'checklist': [
             {'id': 'baseline-source-state', 'text': '실제 업무 사례에서 원천 실패와 정상 0·미기록이 구분되는지 확인한다.', 'done': False},
             {'id': 'baseline-scope', 'text': '선택한 날짜·설비 범위가 화면 이동과 CSV에 유지되는지 확인한다.', 'done': False},
-            {'id': 'baseline-quality', 'text': 'Pareto·모델 연결·건/시프트의 의미와 원본 연결을 품질 담당자가 확인한다.', 'done': False},
+            {'id': 'baseline-quality', 'text': 'Pareto·모델 연결과 가동일·1만 샷 기준 정규화의 의미, 원본 연결을 품질 담당자가 확인한다.', 'done': False},
             {'id': 'baseline-release', 'text': '코드 반영·서비스 버전·현장 인수 결과를 각각 기록한다.', 'done': False},
         ],
         'locations': [
             {'kind': 'screen', 'url': '/injection/dashboard', 'label': '기존 참고 · 사출 실적과 원천 확인'},
-            {'kind': 'screen', 'url': '/quality/analysis', 'label': '기존 참고 · 품질 Pareto·모델 연결·시프트 신고 빈도'},
+            {'kind': 'screen', 'url': '/quality/analysis', 'label': '기존 참고 · 품질 Pareto와 모델 연결'},
             {'kind': 'code', 'url': 'https://github.com/ssoe94/wj_reporting/blob/4e58afff/frontend/src/domains/injection/InjectionEvidencePanel.tsx', 'label': '기존 참고 · 사출 원천 패널 코드'},
             {'kind': 'code', 'url': 'https://github.com/ssoe94/wj_reporting/blob/4e58afff/backend/quality/production_context.py', 'label': '기존 참고 · 품질 생산 후보 연결 코드'},
             {'kind': 'doc', 'url': 'https://github.com/ssoe94/wj_reporting/blob/4e58afff/docs/reviews/2026-09-07-quality-production-context.md', 'label': '기존 참고 · 품질 생산 연결 검증 기록'},
@@ -43,30 +43,54 @@ INITIAL_TASKS = [
     },
     {
         'slug': 'quality-trend-retained-dates',
-        'title': '품질 추세에 남은 날짜의 근거 표시',
-        'title_zh': '显示质量趋势保留日期的依据',
-        'objective': '접은 날짜와 근거 부족으로 유지한 날짜를 사용자가 구분한다. 일요일·공휴일·신고 0건만으로 무생산을 확정하지 않는다.',
+        'title': '품질 추세 보존 날짜 표시 (대체됨)',
+        'title_zh': '显示质量趋势保留日期（已被取代）',
+        'objective': '접은 날짜와 유지 사유를 화면에 표시하려던 접근이다. 2026-09-17 결정으로 /quality/analysis가 가동일 보고서로 재구성되면서 대체되었다. 이 접근을 다시 진행하지 않는다. 후속 확인은 quality-operating-day-report에서 한다.',
+        'phase': 0,
+        'priority': 'P1',
+        'status': 'blocked',
+        'owner': '개발 / 품질 (역할 제안)',
+        'dependencies': ['analysis-baseline'],
+        'requirements': [],
+        'checklist': [],
+        'locations': [],
+        'completion_note': '대체된 접근이므로 남은 작업이 없다. activity_calendar.py·production_shifts.py와 프런트엔드 trend.ts·createQualityAnalysisCsv는 제거되었고 복원하지 않는다.',
+        'verification_note': '이 접근의 코드는 서비스에 반영된 적이 없다. 이전 로컬 검토 기록은 제거된 구현을 대상으로 한 것이므로 현행 화면의 근거가 아니다.',
+        'release_state': 'unreleased',
+        'sort_order': 20,
+    },
+    {
+        'slug': 'quality-operating-day-report',
+        'title': '품질 보고서 가동일 판정 확인',
+        'title_zh': '确认质量报告的运行日判定',
+        'objective': 'MES 샷이 08:00 영업일 기준 100샷에 도달한 날짜만 가동일로 보고되는지 확인한다. 수집 공백을 휴무로 보고하지 않고, 최신 저장 보고 이후 날짜를 무결점일로 세지 않으며, 분모가 화면에 표시된 날짜와 일치하는지 확인한다.',
         'phase': 0,
         'priority': 'P1',
         'status': 'review',
         'owner': '개발 / 품질 (역할 제안)',
         'dependencies': ['analysis-baseline'],
         'requirements': [
-            {'id': 'trend-calendar', 'kind': 'mes', 'text': '기존 activity_calendar의 판정 사유와 관측 설비 수를 실제 조회 범위에서 확인한다.', 'status': 'needed', 'evidence': ''},
-            {'id': 'trend-dates', 'kind': 'human', 'text': '2026-08-16·08-23의 실제 API 판정과 업무 해석을 확인한다. 근거가 부족하면 날짜를 유지한다.', 'status': 'needed', 'evidence': ''},
-            {'id': 'trend-release', 'kind': 'decision', 'text': '별도 작업 트리의 변경을 검토하고 통합 및 서비스 반영 범위를 정한다.', 'status': 'needed', 'evidence': ''},
+            {'id': 'report-shots', 'kind': 'mes', 'text': '실제 조회 범위에서 날짜별 08:00 영업일 샷 합계를 확인하고 100샷 임계값 판정과 대조한다. 2026-08-16·08-23을 사례로 포함한다.', 'status': 'needed', 'evidence': ''},
+            {'id': 'report-gap', 'kind': 'mes', 'text': '카운터가 한 번도 표본되지 않은 날짜만 저장된 사출 계획으로 대체되는지, 수집 공백이 휴무로 보고되지 않는지 확인한다.', 'status': 'needed', 'evidence': ''},
+            {'id': 'report-pending', 'kind': 'human', 'text': '최신 저장 품질 보고 이후 날짜가 무결점일이 아니라 미입력으로 제외되는지 품질 담당자가 확인한다.', 'status': 'needed', 'evidence': ''},
+            {'id': 'report-release', 'kind': 'decision', 'text': '서비스 반영 범위와 현장 인수 담당을 정한다.', 'status': 'needed', 'evidence': ''},
         ],
         'checklist': [
-            {'id': 'trend-reasons', 'text': '접은 날짜 목록과 유지 사유가 선택 범위에 맞게 표시되는지 확인한다.', 'done': False},
-            {'id': 'trend-originals', 'text': '원본 일별 행·CSV·기간 합계가 보존되는지 확인한다.', 'done': False},
-            {'id': 'trend-failure', 'text': '보조 자료 실패 시 날짜를 임의로 제외하지 않는지 확인한다.', 'done': False},
-            {'id': 'trend-handoff', 'text': '통합·서비스 반영·현장 확인 결과를 각각 기록한다.', 'done': False},
+            {'id': 'report-denominator', 'text': '비가동·미입력 날짜의 샷이 샷 합계·설비별 표·모든 비율에서 제외되는지 확인한다.', 'done': False},
+            {'id': 'report-normalization', 'text': '가동일수와 1만 사출 샷 기준 정규화 값이 표시된 날짜 범위와 맞는지 확인한다.', 'done': False},
+            {'id': 'report-scope', 'text': '접은 날짜 목록·유지 사유·데이터 완전성 패널·설비별 시프트 비율이 화면에 없는지 확인한다.', 'done': False},
+            {'id': 'report-csv', 'text': '보고서 CSV가 화면에 표시된 날짜와 같은 범위를 내보내는지 확인한다.', 'done': False},
+            {'id': 'report-handoff', 'text': '서비스 반영과 현장 확인 결과를 각각 기록한다.', 'done': False},
         ],
-        'locations': [],
-        'completion_note': 'wj_reporting-quality-trend-display 작업 트리에 로컬 변경이 있으며 현재 서버에는 미반영이다. QualityAnalysisPage.tsx·trend.ts와 검토 문서가 미커밋 상태다.',
-        'verification_note': '로컬 검토 문서에는 테스트 69개·focused ESLint·빌드 및 합성 화면 검증 통과가 기록되어 있다. 운영 배포와 두 날짜의 실제 API 판정은 확인하지 않았다.',
-        'release_state': 'unreleased',
-        'sort_order': 20,
+        'locations': [
+            {'kind': 'screen', 'url': '/quality/analysis', 'label': '대상 화면 · 가동일 보고서'},
+            {'kind': 'code', 'url': 'https://github.com/ssoe94/wj_reporting/blob/ebb363f7/backend/quality/report_insights.py', 'label': '구현 · 가동일 판정과 집계'},
+            {'kind': 'doc', 'url': 'https://github.com/ssoe94/wj_reporting/blob/ebb363f7/AGENTS.md', 'label': '계약 · 자료와 계산 규칙'},
+        ],
+        'completion_note': '가동일 보고서 구현이 ebb363f7에 있다. 서비스 반영과 현장 인수는 확인되지 않았으며 별도로 기록한다.',
+        'verification_note': '판정 규칙의 단위 검증은 backend/quality/test_report_insights.py에 있다. 실제 MES 조회 범위에서의 날짜 판정과 운영 반영은 확인하지 않았다.',
+        'release_state': 'code_available',
+        'sort_order': 25,
     },
     {
         'slug': 'observation-evidence-design',
@@ -91,8 +115,8 @@ INITIAL_TASKS = [
             {'id': 'evidence-lifecycle', 'text': '저장·재조회·압축 전후 비교와 실패 시 근거 보존 절차를 검토한다.', 'done': False},
         ],
         'locations': [
-            {'kind': 'screen', 'url': '/quality/analysis', 'label': '기존 참고 · 현재 날짜·시프트 표시'},
-            {'kind': 'code', 'url': 'https://github.com/ssoe94/wj_reporting/blob/4e58afff/backend/quality/activity_calendar.py', 'label': '기존 참고 · 현행 달력일 판정 기준'},
+            {'kind': 'screen', 'url': '/quality/analysis', 'label': '기존 참고 · 현재 가동일 판정 표시'},
+            {'kind': 'code', 'url': 'https://github.com/ssoe94/wj_reporting/blob/ebb363f7/backend/quality/report_insights.py', 'label': '기존 참고 · 현행 가동일 판정 기준'},
             {'kind': 'code', 'url': 'https://github.com/ssoe94/wj_reporting/blob/4e58afff/backend/injection/mes_service.py', 'label': '기존 참고 · 현행 수집·압축 경로'},
         ],
         'completion_note': '',
@@ -125,7 +149,7 @@ INITIAL_TASKS = [
         'locations': [
             {'kind': 'screen', 'url': '/mes/monitoring', 'label': '기존 참고 · 형합 관측 조회'},
             {'kind': 'code', 'url': 'https://github.com/ssoe94/wj_reporting/blob/4e58afff/backend/injection/mes_service.py', 'label': '기존 참고 · 확장 검토 대상 수집·압축 경로'},
-            {'kind': 'code', 'url': 'https://github.com/ssoe94/wj_reporting/blob/4e58afff/backend/quality/production_shifts.py', 'label': '기존 참고 · 현행 시프트 판정 소비 경로'},
+            {'kind': 'code', 'url': 'https://github.com/ssoe94/wj_reporting/blob/ebb363f7/backend/quality/report_insights.py', 'label': '기존 참고 · 현행 가동일 판정 소비 경로'},
         ],
         'completion_note': '',
         'verification_note': '압축 전 관측 근거 보존은 계획 단계다. 기존 rollup 0이나 시간별 동일 계수로 삭제된 원시 관측을 복원하지 않는다.',
@@ -250,7 +274,7 @@ INITIAL_TASKS = [
             {'id': 'inspection-times', 'text': '보고일시와 실제 발생일시를 구분한다.', 'done': False},
             {'id': 'inspection-normal', 'text': '정상 검사 포함 여부와 검사 유형을 확인한다.', 'done': False},
             {'id': 'inspection-dedup', 'text': '같은 LOT·개체의 재검사 중복을 설명한다.', 'done': False},
-            {'id': 'inspection-metric-boundary', 'text': '모집단 검증 전 건/시프트를 불량률·PPM으로 바꾸지 않는다.', 'done': False},
+            {'id': 'inspection-metric-boundary', 'text': '모집단 검증 전 건/가동일·1만 샷을 불량률·PPM으로 바꾸지 않는다.', 'done': False},
         ],
         'locations': [
             {'kind': 'screen', 'url': '/quality', 'label': '기존 참고 · 품질 원장'},
