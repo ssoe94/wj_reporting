@@ -9,15 +9,19 @@ from rest_framework.test import APITestCase
 
 from ai_core.models import AiJob
 from ai_core.quality_report_audit import (
+    QUALITY_REPORT_AUDIT_MODE,
     QUALITY_REPORT_AUDIT_PROMPT_VERSION,
+    QUALITY_REPORT_AUDIT_TRIGGER,
     QUALITY_REPORT_AUDIT_WORKER_SCHEMA_VERSION,
 )
 from injection.models import PartSpec
 from production.models import ProductionPlan
 
 from .classification_audit import (
+    QUALITY_REPORT_AUDIT_BACKLOG_LIMIT,
     _exact_part_consensus,
     build_quality_report_audit_input,
+    enqueue_quality_report_audit,
     enqueue_stale_quality_report_audits,
     taxonomy_candidates,
 )
@@ -446,11 +450,67 @@ class QualityClassificationAuditApiTests(APITestCase):
                 phenomenon="色差",
             )
         enqueue_stale_quality_report_audits(limit=50)
+        AiJob.objects.filter(scope__trigger=QUALITY_REPORT_AUDIT_TRIGGER).update(
+            status=AiJob.STATUS_COMPLETED,
+        )
 
-        with self.assertNumQueries(3):
+        # backlog count + reports + part specs + existing jobs
+        with self.assertNumQueries(4):
             result = enqueue_stale_quality_report_audits(limit=5)
 
         self.assertEqual(result["created_count"], 0)
+        self.assertNotIn("skipped_reason", result)
+
+    def test_bulk_audit_enqueue_waits_behind_a_pending_backlog(self):
+        reports = [
+            QualityReport.objects.create(
+                report_dt=timezone.now(),
+                section="LQC_INJ",
+                model="24G411",
+                part_no=f"ACQ30776{500 + index}",
+                phenomenon="色差",
+            )
+            for index in range(QUALITY_REPORT_AUDIT_BACKLOG_LIMIT + 2)
+        ]
+        for report in reports[:QUALITY_REPORT_AUDIT_BACKLOG_LIMIT]:
+            AiJob.objects.create(
+                job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+                status=AiJob.STATUS_PENDING if report.pk % 2 else AiJob.STATUS_CLAIMED,
+                scope={
+                    "mode": QUALITY_REPORT_AUDIT_MODE,
+                    "trigger": QUALITY_REPORT_AUDIT_TRIGGER,
+                    "report_id": report.pk,
+                    "source_revision": "stale-revision",
+                    "model_id": "qwen38",
+                },
+            )
+
+        periodic = enqueue_stale_quality_report_audits(bounded_scan=True)
+        bulk = enqueue_stale_quality_report_audits(limit=100)
+
+        self.assertEqual(periodic["created_count"], 0)
+        self.assertEqual(periodic["skipped_reason"], "audit_backlog")
+        self.assertEqual(periodic["backlog_count"], QUALITY_REPORT_AUDIT_BACKLOG_LIMIT)
+        self.assertEqual(bulk["created_count"], 0)
+        self.assertEqual(bulk["skipped_reason"], "audit_backlog")
+
+        # Explicit per-report requests (create/update hook, "analyse this
+        # report") keep working while the backlog drains.
+        explicit = enqueue_stale_quality_report_audits(
+            limit=5,
+            report_ids=[reports[-1].pk],
+        )
+        self.assertEqual(explicit["created_count"], 1)
+        self.assertNotIn("skipped_reason", explicit)
+        _, created = enqueue_quality_report_audit(reports[-2])
+        self.assertTrue(created)
+
+        AiJob.objects.filter(scope__source_revision="stale-revision").update(
+            status=AiJob.STATUS_COMPLETED,
+        )
+        drained = enqueue_stale_quality_report_audits(bounded_scan=True)
+        self.assertNotIn("skipped_reason", drained)
+        self.assertGreater(drained["created_count"], 0)
 
     def test_viewer_can_read_queue_but_cannot_enqueue_or_write_master_colour(self):
         viewer = get_user_model().objects.create_user(username="audit-viewer")

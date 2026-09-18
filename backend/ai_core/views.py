@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from django.conf import settings
@@ -22,8 +23,30 @@ from production.ai_types import (
     canonical_production_ai_model_id,
 )
 
+from .deep_analysis import (
+    DEEP_ANALYSIS_JOB_TIMEOUT_SECONDS,
+    DEEP_ANALYSIS_TRIGGER_MANUAL,
+    build_deep_analysis_input,
+    deep_analysis_period_for_end,
+    deep_analysis_scope,
+    enqueue_weekly_deep_analysis,
+    is_deep_analysis_job,
+    normalize_deep_analysis_kind,
+    normalize_deep_analysis_language,
+    restore_authoritative_deep_analysis_result,
+)
 from .models import AiJob
-from .model_registry import QUALITY_DAILY_MODEL_ID, SUPPORTED_AI_WORKER_VERSION
+from .model_registry import (
+    AI_MODEL_TIERS,
+    DEEP_ANALYSIS_MODEL_ID,
+    LOCAL_AI_MODEL_ID,
+    QUALITY_DAILY_MODEL_ID,
+    SUPPORTED_AI_WORKER_VERSION,
+    display_model_name,
+    is_supported_worker_version,
+    model_display_name,
+    worker_tier_for_model_ids,
+)
 from .quality_daily import (
     QUALITY_DAILY_MODE,
     QUALITY_DAILY_TRIGGER,
@@ -48,6 +71,8 @@ from .serializers import (
     AiWorkerHeartbeatSerializer,
 )
 
+
+logger = logging.getLogger(__name__)
 
 AI_WORKER_HEARTBEAT_JOB_TYPE = 'worker_heartbeat'
 MANUAL_AI_JOB_COOLDOWN_SECONDS = 60
@@ -82,6 +107,8 @@ def visible_jobs_for_user(user):
         .filter(
             Q(created_by=user)
             | Q(created_by__isnull=True, scope__trigger='hourly')
+            # Deep analysis results are shared panels, not personal answers.
+            | Q(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS)
         )
         .exclude(job_type=AI_WORKER_HEARTBEAT_JOB_TYPE)
     )
@@ -122,8 +149,8 @@ def ai_worker_heartbeat_stale_seconds():
     return max(30, int(getattr(settings, 'AI_WORKER_HEARTBEAT_STALE_SECONDS', 300) or 300))
 
 
-def display_model_name(value):
-    return str(value or '').replace('\\', '/').rsplit('/', 1)[-1][:128]
+# ``display_model_name`` now lives in model_registry; the import above keeps
+# ``ai_core.views.display_model_name`` working for existing callers.
 
 
 def current_business_scope(now=None):
@@ -269,7 +296,40 @@ def build_job_input_payload(job_type, scope, supplied_payload):
             scope.get('model_id') or DEFAULT_PRODUCTION_AI_MODEL_ID,
         )
 
+    if job_type == AiJob.JOB_TYPE_DEEP_ANALYSIS:
+        period_start = parse_date(str(scope.get('period_start') or ''))
+        period_end = parse_date(str(scope.get('period_end') or ''))
+        if not period_start or not period_end:
+            raise ValidationError({'scope': 'period_start and period_end must use YYYY-MM-DD.'})
+        return build_deep_analysis_input(
+            scope.get('kind'),
+            scope.get('language'),
+            period_start,
+            period_end,
+        )
+
     return {}
+
+
+def build_manual_deep_analysis_scope(scope):
+    """Resolve a staff request (kind, language, optional date = period end)."""
+    kind = normalize_deep_analysis_kind(scope.get('kind'))
+    if kind is None:
+        raise ValidationError({'scope': 'Unsupported deep analysis kind.'})
+    language = normalize_deep_analysis_language(scope.get('language'))
+    business_date, _ = current_business_scope()
+    date_str = scope.get('date') or business_date.isoformat()
+    period_end = parse_date(str(date_str))
+    if not period_end:
+        raise ValidationError({'scope': 'date must use YYYY-MM-DD.'})
+    period_start, period_end = deep_analysis_period_for_end(period_end)
+    return deep_analysis_scope(
+        kind,
+        language,
+        period_start,
+        period_end,
+        trigger=DEEP_ANALYSIS_TRIGGER_MANUAL,
+    )
 
 
 class AiJobListCreateView(APIView):
@@ -294,7 +354,12 @@ class AiJobListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         job_type = serializer.validated_data['job_type']
         scope = dict(serializer.validated_data.get('scope') or {})
-        scope['model_id'] = DEFAULT_PRODUCTION_AI_MODEL_ID
+        if job_type == AiJob.JOB_TYPE_DEEP_ANALYSIS:
+            if not request.user.is_staff:
+                raise PermissionDenied('Only staff can request a deep analysis.')
+            scope = build_manual_deep_analysis_scope(scope)
+        else:
+            scope['model_id'] = DEFAULT_PRODUCTION_AI_MODEL_ID
         active_statuses = [
             AiJob.STATUS_PENDING,
             AiJob.STATUS_CLAIMED,
@@ -356,6 +421,8 @@ class AiJobLatestView(APIView):
 
     def get(self, request, *args, **kwargs):
         job_type = request.query_params.get('job_type') or AiJob.JOB_TYPE_PRODUCTION_DAILY
+        if job_type == AiJob.JOB_TYPE_DEEP_ANALYSIS:
+            return self.get_latest_deep_analysis(request)
         if job_type not in [AiJob.JOB_TYPE_PRODUCTION_DAILY, AiJob.JOB_TYPE_PRODUCTION_MACHINE]:
             raise ValidationError({'job_type': 'Unsupported AI job type.'})
 
@@ -384,6 +451,48 @@ class AiJobLatestView(APIView):
         jobs = jobs.filter(scope__model_id=model_id)
         job = jobs.order_by('-completed_at', '-id').first()
         return Response({'job': AiJobResultSerializer(job).data if job else None})
+
+    def get_latest_deep_analysis(self, request):
+        kind = normalize_deep_analysis_kind(request.query_params.get('kind'))
+        if kind is None:
+            raise ValidationError({'kind': 'Unsupported deep analysis kind.'})
+        language = normalize_deep_analysis_language(request.query_params.get('language'))
+        model_id = str(request.query_params.get('model_id') or DEEP_ANALYSIS_MODEL_ID).strip()
+        if model_id not in AI_MODEL_TIERS:
+            raise ValidationError({'model_id': 'Unsupported AI model.'})
+
+        jobs = visible_jobs_for_user(request.user).filter(
+            job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS,
+            scope__kind=kind,
+            scope__language=language,
+            scope__model_id=model_id,
+        )
+        job = (
+            jobs.filter(status=AiJob.STATUS_COMPLETED)
+            .order_by('-completed_at', '-id')
+            .first()
+        )
+        pending_job = (
+            jobs.filter(status__in=[
+                AiJob.STATUS_PENDING,
+                AiJob.STATUS_CLAIMED,
+                AiJob.STATUS_RUNNING,
+            ])
+            .order_by('-created_at', '-id')
+            .first()
+        )
+        # A failure newer than the last completed result is surfaced so the
+        # panel can say the latest attempt was rejected instead of silently
+        # showing stale data.
+        failed_jobs = jobs.filter(status=AiJob.STATUS_FAILED)
+        if job is not None:
+            failed_jobs = failed_jobs.filter(id__gt=job.pk)
+        failed_job = failed_jobs.order_by('-id').first()
+        return Response({
+            'job': AiJobResultSerializer(job).data if job else None,
+            'pending_job': AiJobResultSerializer(pending_job).data if pending_job else None,
+            'failed_job': AiJobResultSerializer(failed_job).data if failed_job else None,
+        })
 
 
 class AiWorkerHeartbeatView(APIView):
@@ -456,31 +565,85 @@ class AiWorkerHeartbeatView(APIView):
 class AiWorkerStatusView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, *args, **kwargs):
-        language = normalize_language(request.query_params.get('language'))
-        heartbeat = (
-            AiJob.objects
-            .filter(job_type=AI_WORKER_HEARTBEAT_JOB_TYPE)
-            .order_by('-completed_at', '-id')
-            .first()
-        )
-        stale_after_seconds = ai_worker_heartbeat_stale_seconds()
-        heartbeat_time = heartbeat.completed_at if heartbeat else None
+    @staticmethod
+    def describe_heartbeat(heartbeat, *, now, stale_after_seconds):
+        """One ``workers[]`` entry; tier comes from the advertised model ids."""
+        result = heartbeat.result_payload if isinstance(heartbeat.result_payload, dict) else {}
+        scope = heartbeat.scope if isinstance(heartbeat.scope, dict) else {}
+        heartbeat_time = heartbeat.completed_at
         heartbeat_age_seconds = None
         if heartbeat_time:
-            heartbeat_age_seconds = max(0, int((timezone.now() - heartbeat_time).total_seconds()))
+            heartbeat_age_seconds = max(0, int((now - heartbeat_time).total_seconds()))
         if heartbeat_age_seconds is None:
             state = 'unknown'
         elif heartbeat_age_seconds <= stale_after_seconds:
             state = 'online'
         else:
             state = 'offline'
-
-        heartbeat_result = heartbeat.result_payload if heartbeat else {}
-        heartbeat_worker_version = (
-            str(heartbeat_result.get('worker_version') or '') if heartbeat else ''
+        worker_version = str(result.get('worker_version') or '')
+        worker_compatible = is_supported_worker_version(worker_version)
+        advertised_model_ids = [
+            str(value or '').strip()
+            for value in (result.get('available_model_ids') or [])
+            if str(value or '').strip()
+        ]
+        primary_model_id = next(
+            (model_id for model_id in advertised_model_ids if model_id in AI_MODEL_TIERS),
+            '',
         )
-        worker_compatible = heartbeat_worker_version == SUPPORTED_AI_WORKER_VERSION
+        return {
+            'tier': worker_tier_for_model_ids(advertised_model_ids),
+            'worker_name': str(scope.get('worker_name') or heartbeat.claimed_by or ''),
+            'state': state,
+            'online': state == 'online',
+            'last_heartbeat_at': heartbeat_time,
+            'heartbeat_age_seconds': heartbeat_age_seconds,
+            'llm_enabled': result.get('llm_enabled'),
+            'llm_ready': result.get('llm_ready') if worker_compatible else False,
+            'model_name': display_model_name(result.get('model_name')),
+            'model_display_name': model_display_name(primary_model_id, result.get('model_name')),
+            'worker_version': worker_version,
+            'worker_compatible': worker_compatible,
+            'last_error': result.get('last_error', ''),
+            'available_model_ids': advertised_model_ids if worker_compatible else [],
+            'advertised_model_ids': advertised_model_ids,
+        }
+
+    def get(self, request, *args, **kwargs):
+        language = normalize_language(request.query_params.get('language'))
+        now = timezone.now()
+        stale_after_seconds = ai_worker_heartbeat_stale_seconds()
+        heartbeats = list(
+            AiJob.objects
+            .filter(job_type=AI_WORKER_HEARTBEAT_JOB_TYPE)
+            .order_by('-completed_at', '-id')
+        )
+        workers = [
+            self.describe_heartbeat(
+                heartbeat,
+                now=now,
+                stale_after_seconds=stale_after_seconds,
+            )
+            for heartbeat in heartbeats
+        ]
+        # Top-level fields describe the local tier: the freshest heartbeat that
+        # advertises the local model, else the freshest local-tier worker.
+        local_worker = next(
+            (worker for worker in workers if LOCAL_AI_MODEL_ID in worker['advertised_model_ids']),
+            None,
+        ) or next(
+            (worker for worker in workers if worker['tier'] == 'local'),
+            None,
+        )
+        for worker in workers:
+            worker.pop('advertised_model_ids', None)
+
+        heartbeat = local_worker
+        state = heartbeat['state'] if heartbeat else 'unknown'
+        heartbeat_time = heartbeat['last_heartbeat_at'] if heartbeat else None
+        heartbeat_age_seconds = heartbeat['heartbeat_age_seconds'] if heartbeat else None
+        heartbeat_worker_version = heartbeat['worker_version'] if heartbeat else ''
+        worker_compatible = heartbeat['worker_compatible'] if heartbeat else False
         latest_analysis = (
             AiJob.objects
             .filter(
@@ -498,28 +661,34 @@ class AiWorkerStatusView(APIView):
         return Response({
             'state': state,
             'online': state == 'online',
-            'worker_name': heartbeat.scope.get('worker_name', '') if heartbeat else '',
+            'tier': 'local',
+            'worker_name': heartbeat['worker_name'] if heartbeat else '',
             'last_heartbeat_at': heartbeat_time,
             'heartbeat_age_seconds': heartbeat_age_seconds,
             'stale_after_seconds': stale_after_seconds,
-            'llm_enabled': heartbeat_result.get('llm_enabled') if heartbeat else None,
-            'llm_ready': (
-                heartbeat_result.get('llm_ready') if heartbeat and worker_compatible else False
+            'llm_enabled': heartbeat['llm_enabled'] if heartbeat else None,
+            'llm_ready': heartbeat['llm_ready'] if heartbeat else False,
+            'model_name': heartbeat['model_name'] if heartbeat else '',
+            'model_display_name': (
+                heartbeat['model_display_name']
+                if heartbeat
+                else model_display_name(LOCAL_AI_MODEL_ID)
             ),
-            'model_name': display_model_name(heartbeat_result.get('model_name')),
             'worker_version': heartbeat_worker_version,
             'worker_compatible': worker_compatible,
-            'last_error': heartbeat_result.get('last_error', '') if heartbeat else '',
-            'available_model_ids': (
-                heartbeat_result.get('available_model_ids', [])
-                if heartbeat and worker_compatible
-                else []
-            ),
+            'last_error': heartbeat['last_error'] if heartbeat else '',
+            'available_model_ids': heartbeat['available_model_ids'] if heartbeat else [],
             'last_analysis_completed_at': latest_analysis.completed_at if latest_analysis else None,
             'last_analysis_model_name': display_model_name(latest_analysis.model_name) if latest_analysis else '',
+            'last_analysis_model_display_name': (
+                model_display_name(DEFAULT_PRODUCTION_AI_MODEL_ID, latest_analysis.model_name)
+                if latest_analysis
+                else ''
+            ),
             'last_analysis_llm_fallback': (
                 analysis_result.get('llm_fallback') is True if latest_analysis else None
             ),
+            'workers': workers,
         })
 
 
@@ -605,6 +774,14 @@ class AiWorkerPeriodicEnqueueView(APIView):
         )
         created_count += int(quality_audit_enqueue.get('created_count') or 0)
 
+        try:
+            deep_analysis_enqueue = enqueue_weekly_deep_analysis(languages=tuple(normalized_languages))
+        except Exception as exc:  # noqa: BLE001 - the hourly rows above are already committed
+            # A failing weekly pack build must not turn every periodic call into a 500.
+            logger.exception('Weekly deep analysis enqueue failed')
+            deep_analysis_enqueue = {'error': f'{exc.__class__.__name__}: {exc}'[:300]}
+        created_count += int(deep_analysis_enqueue.get('created_count') or 0)
+
         return Response({
             'schedule_slot': schedule_slot,
             'created_count': created_count,
@@ -617,6 +794,7 @@ class AiWorkerPeriodicEnqueueView(APIView):
                 'job': AiJobResultSerializer(quality_job).data if quality_job else None,
             },
             'quality_report_audit': quality_audit_enqueue,
+            'deep_analysis': deep_analysis_enqueue,
         })
 
 
@@ -632,7 +810,7 @@ class AiWorkerClaimView(APIView):
         available_model_ids = set(
             serializer.validated_data.get('available_model_ids') or []
         )
-        if worker_version != SUPPORTED_AI_WORKER_VERSION:
+        if not is_supported_worker_version(worker_version):
             return Response({
                 'detail': 'This AI Worker version is not supported.',
                 'code': 'unsupported_worker_version',
@@ -643,7 +821,9 @@ class AiWorkerClaimView(APIView):
             AiJob.JOB_TYPE_PRODUCTION_DAILY,
             AiJob.JOB_TYPE_PRODUCTION_MACHINE,
             AiJob.JOB_TYPE_QUALITY_IMAGE,
+            AiJob.JOB_TYPE_DEEP_ANALYSIS,
         ]
+        # Production and deep analysis jobs are routed purely by scope.model_id.
         production_job_types = [
             job_type for job_type in job_types
             if job_type != AiJob.JOB_TYPE_QUALITY_IMAGE
@@ -676,10 +856,16 @@ class AiWorkerClaimView(APIView):
         local_today = now.astimezone(SHANGHAI_TZ).date().isoformat()
         stale_before = now - timedelta(seconds=ai_job_timeout_seconds())
 
+        deep_stale_before = now - timedelta(
+            seconds=max(ai_job_timeout_seconds(), DEEP_ANALYSIS_JOB_TIMEOUT_SECONDS)
+        )
+
         with transaction.atomic():
             AiJob.objects.filter(
                 status__in=[AiJob.STATUS_CLAIMED, AiJob.STATUS_RUNNING],
-                updated_at__lt=stale_before,
+            ).filter(
+                Q(updated_at__lt=stale_before) & ~Q(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS)
+                | Q(updated_at__lt=deep_stale_before, job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS)
             ).update(status=AiJob.STATUS_PENDING, claimed_by='', claimed_at=None, started_at=None)
 
             queryset = (
@@ -688,6 +874,9 @@ class AiWorkerClaimView(APIView):
                 .filter(status=AiJob.STATUS_PENDING)
                 .filter(eligible_jobs)
                 .annotate(
+                    # 0 today's daily attention · 1 other daily attention ·
+                    # 2 interactive question · 3 hourly briefing · 4 manual ·
+                    # 5 weekly/deep · 6 photo audits; FIFO inside each rank.
                     trigger_priority=Case(
                         When(
                             scope__trigger=QUALITY_DAILY_TRIGGER,
@@ -695,8 +884,12 @@ class AiWorkerClaimView(APIView):
                             then=Value(0),
                         ),
                         When(scope__trigger=QUALITY_DAILY_TRIGGER, then=Value(1)),
-                        When(scope__trigger='hourly', then=Value(2)),
-                        default=Value(3),
+                        When(scope__trigger='question', then=Value(2)),
+                        When(scope__trigger='hourly', then=Value(3)),
+                        When(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS, then=Value(5)),
+                        When(scope__trigger='weekly', then=Value(5)),
+                        When(scope__trigger=QUALITY_REPORT_AUDIT_TRIGGER, then=Value(6)),
+                        default=Value(4),
                         output_field=IntegerField(),
                     )
                 )
@@ -784,13 +977,19 @@ class AiWorkerJobTransitionView(APIView):
                 job,
                 worker_result,
             )
+        elif is_deep_analysis_job(job):
+            job.result_payload = restore_authoritative_deep_analysis_result(job, worker_result)
         else:
             job.result_payload = restore_authoritative_production_result(job, worker_result)
         scope = job.scope if isinstance(job.scope, dict) else {}
         scope_model_id = str(scope.get('model_id') or '').strip()
-        if scope_model_id in PRODUCTION_AI_MODEL_IDS or scope_model_id == QUALITY_DAILY_MODEL_ID:
+        if (
+            scope_model_id in PRODUCTION_AI_MODEL_IDS
+            or scope_model_id == QUALITY_DAILY_MODEL_ID
+            or scope_model_id in AI_MODEL_TIERS
+        ):
             job.result_payload['model_id'] = scope_model_id
-        job.model_name = serializer.validated_data.get('model_name') or ''
+        job.model_name = display_model_name(serializer.validated_data.get('model_name'))
         job.prompt_version = serializer.validated_data.get('prompt_version') or ''
         job.error_message = ''
         job.completed_at = timezone.now()
@@ -813,7 +1012,7 @@ class AiWorkerJobTransitionView(APIView):
         self.assert_claim_lease(job, serializer.validated_data)
         job.status = AiJob.STATUS_FAILED
         job.error_message = serializer.validated_data['error_message']
-        job.model_name = serializer.validated_data.get('model_name') or ''
+        job.model_name = display_model_name(serializer.validated_data.get('model_name'))
         job.prompt_version = serializer.validated_data.get('prompt_version') or ''
         job.completed_at = timezone.now()
         job.save(update_fields=[
