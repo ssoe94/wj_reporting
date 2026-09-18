@@ -11,7 +11,7 @@ const image = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="640" height="480" fill="#f4f4f1"/><rect x="120" y="100" width="400" height="280" rx="36" fill="#fff" stroke="#64748b" stroke-width="8"/></svg>',
 );
 
-test('Qwen review keeps exact Part No and separates visual white from the defect category', async ({ page }) => {
+test('AI classification review keeps exact Part No and separates visual white from the defect category', async ({ page }) => {
   const guard = installPageIssueGuard(page);
   await installDevSession(page, 'ko');
   let reviewedPayload: Record<string, unknown> | null = null;
@@ -76,7 +76,10 @@ test('Qwen review keeps exact Part No and separates visual white from the defect
   await page.goto('/quality#review');
   await expect(page.getByRole('heading', { name: 'AI 분류 검토' })).toBeVisible();
   await expect(page.getByText('ACQ30726701').first()).toBeVisible();
-  await expect(page.getByText('사진상 제품 본체색').first()).toBeVisible();
+  await expect(page.getByText('AI 제안', { exact: true })).toBeVisible();
+  await expect(page.getByText('AI 사진상 제품 본체색').first()).toBeVisible();
+  await expect(page.getByText('사전과 AI 분류 불일치')).toBeVisible();
+  await expect(page.getByText(/Qwen/)).toHaveCount(0);
   await expect(page.getByText('백색 · 100%')).toBeVisible();
   await expect(page.getByText('앞 9자리만 같은 다른 품번은 일치도에 포함하지 않습니다.')).toBeVisible();
   await expect(page.getByRole('article').getByText('表面色差需要调整')).toBeVisible();

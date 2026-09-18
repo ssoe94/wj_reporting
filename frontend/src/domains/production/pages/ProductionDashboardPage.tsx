@@ -42,6 +42,14 @@ import {
   type ProductionStatusResponse,
   type SaveInjectionActivityConfirmationPayload,
 } from "@/domains/production/api";
+import { DeepAnalysisPanel } from "@/domains/ai/DeepAnalysisPanel";
+import {
+  describeAiModel,
+  getAiTierLabel,
+  getAiWorkerLabel,
+  withAiModelName,
+} from "@/domains/ai/model-labels";
+import { useAuth } from "@/contexts/AuthContext";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
 import { buildCoreDashboardSources, getDashboardDataState } from "@/domains/production/dashboard-data-state";
 import {
@@ -170,8 +178,8 @@ type ProductionAiChatLauncherDrag = {
   lastPosition: ProductionAiChatLauncherPosition | null;
 };
 
+// Routine (local tier) model id sent with ask/latest requests; the display name comes from server data.
 const PRODUCTION_AI_MODEL_ID: ProductionAiModelId = "qwen38";
-const PRODUCTION_AI_MODEL_LABEL = "Qwen 3.8 27B";
 const AI_CHAT_LAUNCHER_POSITION_KEY = "wj-production-ai-chat-launcher-position-v1";
 const AI_CHAT_LAUNCHER_MARGIN_PX = 8;
 const AI_CHAT_LAUNCHER_DRAG_THRESHOLD_PX = 5;
@@ -202,14 +210,20 @@ function persistAiChatLauncherPosition(position: ProductionAiChatLauncherPositio
   }
 }
 
-function getProductionAiModelLabel(_modelId: ProductionAiModelId) {
-  return PRODUCTION_AI_MODEL_LABEL;
+/** Model id of a job as persisted by the server (result payload first, then scope). */
+function getAiJobModelId(job: { scope?: Record<string, unknown>; result_payload?: Record<string, unknown> } | null | undefined) {
+  const fromResult = getStringField(job?.result_payload ?? {}, "model_id");
+  if (fromResult) return fromResult;
+  return getStringField(job?.scope ?? {}, "model_id");
 }
 
-function inferProductionAiModelId(modelName: string): ProductionAiModelId | null {
-  const normalized = modelName.trim().toLowerCase();
-  if (normalized.includes("qwen3.8") || normalized.includes("qwen38")) return "qwen38";
-  return null;
+/** Display name of the model that produced a job, from server data only. */
+function getAiJobModelDisplayName(job: { model_name?: string; model_display_name?: string; scope?: Record<string, unknown>; result_payload?: Record<string, unknown> } | null | undefined) {
+  return describeAiModel({
+    modelId: getAiJobModelId(job),
+    modelName: job?.model_name || getStringField(job?.result_payload ?? {}, "model_name"),
+    modelDisplayName: job?.model_display_name,
+  }).displayName;
 }
 
 type InjectionActivityConfirmationForm = {
@@ -374,7 +388,7 @@ const pageCopy = {
   ko: {
     eyebrow: "Production",
     title: "생산 대시보드",
-    description: "생산 계획과 MES 실적을 비교하고, 검증된 계산형 브리핑과 선택형 Qwen 3.8 보조 설명을 제공합니다.",
+    description: "생산 계획과 MES 실적을 비교하고, 검증된 계산형 브리핑과 선택형 AI 보조 설명을 제공합니다.",
     loading: "생산 현황을 불러오는 중입니다.",
     dataUnavailable: "생산 데이터를 확인할 수 없습니다.",
     dataUnavailableHint: "필수 데이터 조회가 완료되지 않아 수치와 브리핑을 표시하지 않습니다. 조회 실패는 생산 실적 0건을 의미하지 않습니다.",
@@ -406,9 +420,8 @@ const pageCopy = {
     localBrief: "AI BRIEFING",
     briefTitle: "일일 생산 브리핑",
     briefModelSelect: "선택형 설명 보조",
-    briefModelCompareHint: "검증된 수치는 항상 서버 계산 결과를 사용하며, Qwen은 설명만 보완합니다.",
+    briefModelCompareHint: "검증된 수치는 항상 서버 계산 결과를 사용하며, AI는 설명만 보완합니다.",
     briefLoading: "검증된 생산 브리핑을 불러오는 중입니다.",
-    briefPending: "생산 브리핑을 준비하고 있습니다.",
     briefFailed: "검증된 생산 브리핑을 불러오지 못해 현재 화면 데이터로 대체했습니다.",
     deterministicBriefTitle: "검증된 운영 브리핑",
     deterministicSource: "계산형 RAG · 수치 검증 완료",
@@ -432,25 +445,17 @@ const pageCopy = {
     calculationBasisTitle: "계산 기준",
     retrievalTraceTitle: "조회 경로",
     screenFallbackTitle: "화면 데이터 기반 임시 브리핑",
-    workerEnhancementTitle: "Qwen 3.8 보조 분석",
     askAi: "AI 생산 어시스턴트",
     aiLauncherDragHint: "드래그해서 챗봇 버튼 위치를 옮길 수 있습니다.",
     closeAi: "AI 어시스턴트 닫기",
     aiAssistantTitle: "AI 생산 어시스턴트",
-    aiAssistantIntro: "검증된 생산 데이터로 계산형 답변을 제공하며, Qwen 3.8은 연결된 경우에만 설명을 보완합니다.",
+    aiAssistantIntro: "검증된 생산 데이터로 계산형 답변을 제공하며, AI 보조 설명은 AI 워커가 연결된 경우에만 추가됩니다.",
     aiAssistantUser: "나",
     aiAssistantAi: "생산 어시스턴트",
     aiInputLabel: "생산 데이터 질문 입력",
-    workerOnline: "Mac Studio Worker 온라인",
-    workerOffline: "Mac Studio Worker 오프라인",
-    workerUnknown: "Worker 상태 확인 불가",
     workerModelReady: "선택 설명 사용 가능",
     workerModelUnavailable: "선택 설명 일시 중지",
-    workerHeartbeat: "마지막 신호",
-    workerLastAnalysis: "최근 분석 완료",
     workerModel: "모델",
-    workerJobTitle: "최근 Qwen 3.8 보조 분석",
-    workerJobResult: "AI 요약",
     askingAi: "질문 전송 중",
     aiQuestionPlaceholder: "예: 오늘 사출 생산 진도는? / 최근 60분 C/T가 가장 긴 설비는? / 지금 추이대로 1, 9호기 예상 형합수는?",
     aiQuestionScope: "검증된 생산 데이터 · 시간별 분석 기록 기반",
@@ -467,17 +472,17 @@ const pageCopy = {
     aiRequestRejectedTitle: "질문 확인 필요",
     aiModelSelect: "답변 상태",
     deterministicAnswerReady: "계산형 답변 사용 가능",
-    aiModelCompareHint: "Qwen 3.8이 검증된 생산 데이터에 근거해 설명을 보완합니다.",
-    aiSelectedModelUnavailable: "생산 현황·진도 등 계산형 답변은 정상입니다. Qwen 3.8 보조 설명만 일시 중지되었습니다.",
+    aiModelCompareHint: "AI가 검증된 생산 데이터에 근거해 설명을 보완합니다.",
+    aiSelectedModelUnavailable: "생산 현황·진도 등 계산형 답변은 정상입니다. AI 보조 설명만 일시 중지되었습니다.",
     aiAnswerTitle: "답변",
     aiAnswerQueued: "답변 준비 중",
     aiAnswerRunning: "답변 작성 중",
     aiAnswerReady: "답변 완료",
     aiAnswerFailed: "답변 실패",
     aiAnswerQueuedHint: "생산 데이터를 확인해 답변을 작성하고 있습니다",
-    aiAnswerQueuedFailedHint: "선택한 로컬 모델의 답변을 가져오지 못했습니다. 잠시 후 다시 질문해 주세요.",
-    aiOptionalExplanationFailedHint: "검증된 계산형 답변은 위에 표시했습니다. Qwen 3.8 보조 설명만 가져오지 못했습니다.",
-    aiAnswerModelMismatchHint: "선택한 모델과 실제 실행 모델이 달라 답변을 표시하지 않았습니다. Worker 업데이트 상태를 확인해 주세요.",
+    aiAnswerQueuedFailedHint: "AI 보조 설명 답변을 가져오지 못했습니다. 잠시 후 다시 질문해 주세요.",
+    aiOptionalExplanationFailedHint: "검증된 계산형 답변은 위에 표시했습니다. AI 보조 설명만 가져오지 못했습니다.",
+    aiAnswerModelMismatchHint: "요청한 모델과 실제 실행 모델이 달라 답변을 표시하지 않았습니다. AI 워커 업데이트 상태를 확인해 주세요.",
     aiSubmit: "질문하기",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "실시간 프로그레스",
@@ -624,7 +629,7 @@ const pageCopy = {
   zh: {
     eyebrow: "Production",
     title: "生产看板",
-    description: "对比生产计划与 MES 实绩，并提供经过验证的计算简报和可选的 Qwen 3.8 辅助说明。",
+    description: "对比生产计划与 MES 实绩，并提供经过验证的计算简报和可选的 AI 辅助说明。",
     loading: "正在读取生产现况。",
     dataUnavailable: "无法确认生产数据。",
     dataUnavailableHint: "必要数据尚未读取完成，暂不显示数值和简报。读取失败不代表生产实绩为 0。",
@@ -656,9 +661,8 @@ const pageCopy = {
     localBrief: "AI BRIEFING",
     briefTitle: "每日生产简报",
     briefModelSelect: "可选说明辅助",
-    briefModelCompareHint: "所有已验证数值均来自服务器计算，Qwen 仅补充说明。",
+    briefModelCompareHint: "所有已验证数值均来自服务器计算，AI 仅补充说明。",
     briefLoading: "正在加载经过验证的生产简报。",
-    briefPending: "正在准备生产简报。",
     briefFailed: "无法加载经过验证的生产简报，现以当前画面数据代替。",
     deterministicBriefTitle: "已验证的运营简报",
     deterministicSource: "计算型 RAG · 数值已验证",
@@ -682,25 +686,17 @@ const pageCopy = {
     calculationBasisTitle: "计算标准",
     retrievalTraceTitle: "查询路径",
     screenFallbackTitle: "基于画面数据的临时简报",
-    workerEnhancementTitle: "Qwen 3.8 辅助分析",
     askAi: "AI 生产助手",
     aiLauncherDragHint: "可拖动聊天按钮调整位置。",
     closeAi: "关闭 AI 助手",
     aiAssistantTitle: "AI 生产助手",
-    aiAssistantIntro: "系统先根据已验证生产数据提供计算型回答；Qwen 3.8 连接时仅补充说明。",
+    aiAssistantIntro: "系统先根据已验证生产数据提供计算型回答；AI 辅助说明仅在 AI 处理端连接时补充。",
     aiAssistantUser: "我",
     aiAssistantAi: "生产助手",
     aiInputLabel: "输入生产数据问题",
-    workerOnline: "Mac Studio Worker 在线",
-    workerOffline: "Mac Studio Worker 离线",
-    workerUnknown: "无法确认 Worker 状态",
     workerModelReady: "可选说明可用",
     workerModelUnavailable: "可选说明暂时停用",
-    workerHeartbeat: "最后心跳",
-    workerLastAnalysis: "最近分析完成",
     workerModel: "模型",
-    workerJobTitle: "最近的 Qwen 3.8 辅助分析",
-    workerJobResult: "AI 摘要",
     askingAi: "发送中",
     aiQuestionPlaceholder: "例：今天注塑生产进度？/ 最近60分钟 C/T 最长的设备？/ 按当前趋势，1、9号机结束时预计合模数？",
     aiQuestionScope: "基于已验证生产数据与每小时分析记录",
@@ -717,17 +713,17 @@ const pageCopy = {
     aiRequestRejectedTitle: "请确认问题内容",
     aiModelSelect: "回答状态",
     deterministicAnswerReady: "计算型回答可用",
-    aiModelCompareHint: "Qwen 3.8 根据已验证的生产数据补充说明。",
-    aiSelectedModelUnavailable: "生产现况、进度等计算型回答正常；仅 Qwen 3.8 辅助说明暂时停用。",
+    aiModelCompareHint: "AI 根据已验证的生产数据补充说明。",
+    aiSelectedModelUnavailable: "生产现况、进度等计算型回答正常；仅 AI 辅助说明暂时停用。",
     aiAnswerTitle: "回答",
     aiAnswerQueued: "准备回答中",
     aiAnswerRunning: "正在撰写回答",
     aiAnswerReady: "回答完成",
     aiAnswerFailed: "回答失败",
     aiAnswerQueuedHint: "正在查看生产数据并撰写回答",
-    aiAnswerQueuedFailedHint: "无法获取所选本地模型的回答。请稍后重新提问。",
-    aiOptionalExplanationFailedHint: "上方已显示经过验证的计算型回答；仅 Qwen 3.8 辅助说明未能获取。",
-    aiAnswerModelMismatchHint: "所选模型与实际运行模型不一致，因此未显示该回答。请检查 Worker 更新状态。",
+    aiAnswerQueuedFailedHint: "无法获取 AI 辅助说明回答。请稍后重新提问。",
+    aiOptionalExplanationFailedHint: "上方已显示经过验证的计算型回答；仅 AI 辅助说明未能获取。",
+    aiAnswerModelMismatchHint: "请求的模型与实际运行模型不一致，因此未显示该回答。请检查 AI 处理端更新状态。",
     aiSubmit: "提问",
     progressEyebrow: "LIVE PROGRESS",
     progressTitle: "实时进度",
@@ -1138,8 +1134,8 @@ const briefingWarningCopy: Record<AppLanguage, Record<string, string>> = {
     injection_plan_missing: "사출 생산 계획이 없어 계획 대비 판단이 제한됩니다.",
     machining_plan_missing: "가공 생산 계획이 없어 계획 대비 판단이 제한됩니다.",
     machining_actual_missing: "가공 실적이 없어 가공 진행 판단이 제한됩니다.",
-    ai_model_unavailable: "Qwen 보조 설명은 사용할 수 없지만 검증된 계산 결과는 정상 표시됩니다.",
-    ai_question_enqueue_failed: "Qwen 보조 설명 요청을 등록하지 못했습니다.",
+    ai_model_unavailable: "AI 보조 설명은 사용할 수 없지만 검증된 계산 결과는 정상 표시됩니다.",
+    ai_question_enqueue_failed: "AI 보조 설명 요청을 등록하지 못했습니다.",
   },
   zh: {
     injection_mes_data_missing: "无注塑 MES 实绩，注塑进度判断受限。",
@@ -1148,8 +1144,8 @@ const briefingWarningCopy: Record<AppLanguage, Record<string, string>> = {
     injection_plan_missing: "无注塑生产计划，无法充分判断计划达成情况。",
     machining_plan_missing: "无加工生产计划，无法充分判断计划达成情况。",
     machining_actual_missing: "无加工实绩，加工进度判断受限。",
-    ai_model_unavailable: "Qwen 辅助说明不可用，但已验证的计算结果仍正常显示。",
-    ai_question_enqueue_failed: "无法提交 Qwen 辅助说明请求。",
+    ai_model_unavailable: "AI 辅助说明不可用，但已验证的计算结果仍正常显示。",
+    ai_question_enqueue_failed: "无法提交 AI 辅助说明请求。",
   },
 };
 
@@ -1166,15 +1162,6 @@ function formatBriefingFilters(filters: Record<string, unknown>) {
     .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(", ");
-}
-
-function formatAiModelName(value: string | null | undefined) {
-  const segments = String(value ?? "")
-    .trim()
-    .replace(/\\/g, "/")
-    .split("/")
-    .filter(Boolean);
-  return segments.length ? segments[segments.length - 1] : "-";
 }
 
 function getLatestTime(data?: InjectionProductionMatrix) {
@@ -2924,6 +2911,8 @@ function ProductionDashboardSkeleton({ copy }: { copy: Record<string, string> })
 
 export function ProductionDashboardPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const canRequestDeepAnalysis = Boolean(user?.is_staff);
   const [language] = useStoredLanguage();
   const currentDate = getShanghaiBusinessDateString();
   const [businessDate, setBusinessDate] = useState(currentDate);
@@ -3313,29 +3302,35 @@ export function ProductionDashboardPage() {
   const latestAiJobUsedFallback = latestAiJobResult.llm_fallback === true;
   const aiWorkerStatus = aiWorkerStatusQuery.isError ? undefined : aiWorkerStatusQuery.data;
   const aiWorkerState = aiWorkerStatus?.state ?? "unknown";
+  // The top-level status fields describe the local tier; `workers[]` lists every tier.
   const aiWorkerAvailableModelIds = (aiWorkerStatus?.available_model_ids ?? []).filter(
     (modelId): modelId is ProductionAiModelId => modelId === PRODUCTION_AI_MODEL_ID,
   );
-  const workerHasExplicitModelReadiness = Array.isArray(aiWorkerStatus?.available_model_ids);
   const isAiModelAvailable = (modelId: ProductionAiModelId) => aiWorkerState === "online"
     && aiWorkerStatus?.llm_ready === true
-    && (workerHasExplicitModelReadiness
-      ? aiWorkerAvailableModelIds.includes(modelId)
-      : inferProductionAiModelId(aiWorkerStatus?.model_name || "") === modelId);
+    && aiWorkerAvailableModelIds.includes(modelId);
   const aiSelectedModelIsAvailable = isAiModelAvailable(aiModelId);
   const briefingModelIsAvailable = isAiModelAvailable(briefingModelId);
-  const latestAiJobResultModelId = getStringField(latestAiJobResult, "model_id");
-  const latestAiJobActualModelId = latestAiJobResultModelId === PRODUCTION_AI_MODEL_ID
-    ? PRODUCTION_AI_MODEL_ID
-    : inferProductionAiModelId(latestAiJob?.model_name || "");
+  const localAiWorkerEntry = aiWorkerStatus?.workers?.find((worker) => worker.tier === "local"
+    || worker.available_model_ids?.includes(PRODUCTION_AI_MODEL_ID));
+  // Show the model name only when the worker has reported one; never guess from copy.
+  const localAiModelDisplayName = describeAiModel({
+    modelId: aiWorkerAvailableModelIds[0] ?? localAiWorkerEntry?.available_model_ids?.[0] ?? null,
+    modelName: aiWorkerStatus?.model_name || localAiWorkerEntry?.model_name,
+    modelDisplayName: aiWorkerStatus?.model_display_name || localAiWorkerEntry?.model_display_name,
+  }).displayName;
+  const localAiWorkerLabel = withAiModelName(getAiWorkerLabel(language), localAiModelDisplayName);
+  const localAiTierLabel = getAiTierLabel("local", language);
+  const latestAiJobActualModelId = getAiJobModelId(latestAiJob);
   const latestAiJobUsedLocalLlm = latestAiJobSource === "local_llm_rewrite"
     && !latestAiJobUsedFallback
     && latestAiJob?.status === "completed"
     && latestAiJobActualModelId === briefingModelId
     && workerResultMatchesBriefing(latestAiJobResult, productionAiBriefing);
+  const latestAiJobModelDisplayName = getAiJobModelDisplayName(latestAiJob);
   const briefingModelStatusLabel = briefingModelIsAvailable
-    ? `${getProductionAiModelLabel(briefingModelId)} · ${copy.workerModelReady}`
-    : `${getProductionAiModelLabel(briefingModelId)} · ${copy.workerModelUnavailable}`;
+    ? `${localAiWorkerLabel} · ${copy.workerModelReady}`
+    : `${localAiWorkerLabel} · ${copy.workerModelUnavailable}`;
   const briefingSeverityLabel = productionAiBriefing?.severity === "critical"
     ? copy.severityCritical
     : productionAiBriefing?.severity === "warning"
@@ -3360,16 +3355,12 @@ export function ProductionDashboardPage() {
   const aiQuestionJobResult = aiQuestionJob?.result_payload ?? {};
   const aiQuestionJobSource = getStringField(aiQuestionJobResult, "source");
   const activeAiModelId = aiActiveRequest?.modelId ?? aiModelId;
-  const activeAiModelLabel = getProductionAiModelLabel(activeAiModelId);
   const activeAiModelIsAvailable = isAiModelAvailable(activeAiModelId);
   const activeAiModelStatusLabel = activeAiModelIsAvailable
-    ? `${activeAiModelLabel} · ${copy.workerModelReady}`
-    : `${activeAiModelLabel} · ${copy.workerModelUnavailable}`;
-  const aiQuestionJobModelName = aiQuestionJob?.model_name || getStringField(aiQuestionJobResult, "model_name");
-  const aiQuestionJobResultModelId = getStringField(aiQuestionJobResult, "model_id");
-  const aiQuestionJobActualModelId = aiQuestionJobResultModelId === PRODUCTION_AI_MODEL_ID
-    ? PRODUCTION_AI_MODEL_ID
-    : inferProductionAiModelId(aiQuestionJobModelName);
+    ? `${localAiWorkerLabel} · ${copy.workerModelReady}`
+    : `${localAiWorkerLabel} · ${copy.workerModelUnavailable}`;
+  const aiQuestionJobModelDisplayName = getAiJobModelDisplayName(aiQuestionJob);
+  const aiQuestionJobActualModelId = getAiJobModelId(aiQuestionJob);
   const aiQuestionJobModelMatchesRequest = !aiActiveRequest
     || aiQuestionJobActualModelId === aiActiveRequest.modelId;
   const aiQuestionJobUsedLocalLlm = aiQuestionJobSource === "local_llm_rewrite"
@@ -3444,7 +3435,7 @@ export function ProductionDashboardPage() {
           id: `${request.requestId}-model-mismatch`,
           role: "assistant",
           content: copy.aiAnswerModelMismatchHint,
-          label: `${getProductionAiModelLabel(request.modelId)} · ${copy.aiAnswerFailed}`,
+          label: `${localAiTierLabel} · ${copy.aiAnswerFailed}`,
           tone: "warning",
           includeInHistory: false,
           modelId: request.modelId,
@@ -3610,18 +3601,15 @@ export function ProductionDashboardPage() {
     const activeRequestModelId = aiActiveRequest.modelId;
     if (aiQuestionJob.status === "completed") {
       const summary = getStringField(aiQuestionJob.result_payload ?? {}, "summary").trim();
-      const modelLabel = aiQuestionJobModelName
-        ? formatAiModelName(aiQuestionJobModelName)
-        : getProductionAiModelLabel(activeRequestModelId);
       if (aiQuestionJobUsedLocalLlm && summary) {
         appendAiChatMessage({
           id: `${activeRequestId}-model-answer`,
           role: "assistant",
           content: summary,
-          label: `${modelLabel || getProductionAiModelLabel(activeRequestModelId)} · ${copy.aiAnswerReady}`,
+          label: `${localAiTierLabel} · ${copy.aiAnswerReady}`,
           meta: [
             `${copy.aiSource}: ${copy.aiSourceVerified}`,
-            `${copy.workerModel}: ${modelLabel}`,
+            ...(aiQuestionJobModelDisplayName ? [`${copy.workerModel}: ${aiQuestionJobModelDisplayName}`] : []),
           ],
           includeInHistory: true,
           modelId: activeRequestModelId,
@@ -3638,7 +3626,7 @@ export function ProductionDashboardPage() {
             : aiQuestionJobModelMatchesRequest
               ? copy.aiAnswerQueuedFailedHint
               : copy.aiAnswerModelMismatchHint,
-          label: `${getProductionAiModelLabel(activeRequestModelId)} · ${copy.aiAnswerFailed}`,
+          label: `${localAiTierLabel} · ${copy.aiAnswerFailed}`,
           tone: "warning",
           includeInHistory: false,
           modelId: activeRequestModelId,
@@ -3658,7 +3646,7 @@ export function ProductionDashboardPage() {
         content: aiActiveRequest.hasDeterministicAnswer
           ? copy.aiOptionalExplanationFailedHint
           : copy.aiAnswerQueuedFailedHint,
-        label: `${getProductionAiModelLabel(activeRequestModelId)} · ${copy.aiAnswerFailed}`,
+        label: `${localAiTierLabel} · ${copy.aiAnswerFailed}`,
         tone: "warning",
         includeInHistory: false,
         modelId: activeRequestModelId,
@@ -3669,12 +3657,13 @@ export function ProductionDashboardPage() {
   }, [
     aiActiveRequest,
     aiQuestionJob,
+    aiQuestionJobModelDisplayName,
     aiQuestionJobModelMatchesRequest,
-    aiQuestionJobModelName,
     aiQuestionJobUsedLocalLlm,
     businessDate,
     copy,
     language,
+    localAiTierLabel,
   ]);
 
   useEffect(() => {
@@ -5595,10 +5584,9 @@ export function ProductionDashboardPage() {
                 <article className="production-ai-job production-ai-job--completed">
                   <div className="production-ai-job__header">
                     <div>
-                      <strong>{copy.workerEnhancementTitle}</strong>
+                      <strong>{localAiTierLabel}</strong>
                       <span>
-                        {formatAiTimestamp(latestAiJob?.completed_at, language)}
-                        {latestAiJob?.model_name ? ` · ${formatAiModelName(latestAiJob.model_name)}` : ""}
+                        {withAiModelName(formatAiTimestamp(latestAiJob?.completed_at, language), latestAiJobModelDisplayName)}
                       </span>
                     </div>
                   </div>
@@ -5611,6 +5599,8 @@ export function ProductionDashboardPage() {
               ) : null}
             </div>
           </section>
+
+          <DeepAnalysisPanel canRequest={canRequestDeepAnalysis} kind="production_weekly" language={language} />
 
           <section className="panel production-progress-panel">
             <div className="production-progress-panel__header">
@@ -6167,9 +6157,7 @@ export function ProductionDashboardPage() {
                   key={message.id}
                 >
                   <div className="production-ai-chat-message__header">
-                    <strong>{message.label || (message.role === "user"
-                      ? `${copy.aiAssistantUser} · ${getProductionAiModelLabel(message.modelId ?? activeAiModelId)}`
-                      : copy.aiAssistantAi)}</strong>
+                    <strong>{message.label || (message.role === "user" ? copy.aiAssistantUser : copy.aiAssistantAi)}</strong>
                   </div>
                   {message.content.split("\n\n").map((paragraph, index) => (
                     <p key={`${message.id}-${index}`}>{paragraph}</p>
@@ -6186,7 +6174,7 @@ export function ProductionDashboardPage() {
               {aiQuestionIsGenerating ? (
                 <article className="production-ai-chat-message production-ai-chat-message--assistant production-ai-chat-message--pending">
                   <div className="production-ai-chat-message__header">
-                    <strong>{activeAiModelLabel} · {copy.aiAnswerTitle}</strong>
+                    <strong>{copy.aiAssistantAi} · {copy.aiAnswerTitle}</strong>
                     <span aria-live="polite" role="status">
                       {aiQuestionMutation.isPending ? copy.aiAnswerQueued : aiQuestionJobStatusLabel}
                     </span>
@@ -6212,8 +6200,8 @@ export function ProductionDashboardPage() {
                   </span>
                   <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${aiSelectedModelIsAvailable ? "ready" : "unavailable"}`}>
                     {aiSelectedModelIsAvailable
-                      ? `${PRODUCTION_AI_MODEL_LABEL} · ${copy.workerModelReady}`
-                      : `${PRODUCTION_AI_MODEL_LABEL} · ${copy.workerModelUnavailable}`}
+                      ? `${localAiWorkerLabel} · ${copy.workerModelReady}`
+                      : `${localAiWorkerLabel} · ${copy.workerModelUnavailable}`}
                   </span>
                 </div>
                 <p>{aiSelectedModelIsAvailable ? copy.aiModelCompareHint : copy.aiSelectedModelUnavailable}</p>

@@ -71,6 +71,96 @@ export async function expectNoUndefinedOrNaN(page: Page) {
   expect(bodyText).not.toMatch(/\bNaN\b/i);
 }
 
+/**
+ * Mocks the deep-analysis (expert tier) queue reads: one completed `deep_analysis` job per kind/language
+ * and a `pending_job` of null. Register before any broader `**\/api/ai/jobs/latest/**` route so that route
+ * can `fallback()` to this one for `job_type=deep_analysis`.
+ */
+export async function installDeepAnalysisMocks(
+  page: Page,
+  options: { pendingJobStatus?: 'pending' | 'claimed' | 'running' } = {},
+) {
+  await page.route('**/api/ai/jobs/latest/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get('job_type') !== 'deep_analysis') {
+      await route.fallback();
+      return;
+    }
+    const kind = url.searchParams.get('kind') === 'quality_weekly' ? 'quality_weekly' : 'production_weekly';
+    const language = url.searchParams.get('language') === 'zh' ? 'zh' : 'ko';
+    const isProduction = kind === 'production_weekly';
+    await route.fulfill({
+      json: {
+        job: {
+          id: isProduction ? 1201 : 1202,
+          job_type: 'deep_analysis',
+          status: 'completed',
+          scope: {
+            kind,
+            language,
+            period_start: '2026-05-11',
+            period_end: '2026-05-17',
+            trigger: 'weekly',
+            model_id: 'claude',
+          },
+          result_payload: {
+            schema_version: 'deep-analysis.v1',
+            source: 'claude_desktop_review',
+            model_id: 'claude',
+            kind,
+            language,
+            period: { start: '2026-05-11', end: '2026-05-17', day_count: 7, timezone: 'Asia/Shanghai' },
+            summary: isProduction
+              ? '주간 사출 완료율은 95%로 계획 대비 안정적이었습니다.'
+              : '주간 품질 이력에서 반복 유형 3건이 확인되었습니다.',
+            findings: [
+              {
+                title: isProduction ? '사출 완료율 유지' : '반복 유형 집중',
+                statement: isProduction ? '5월 15일 사출 완료율 95%가 주간 최고치입니다.' : '색차 이력이 3건으로 가장 많습니다.',
+                evidence_refs: [isProduction ? '2026-05-15:injection.completion_rate' : '2026-05-15:quality.problem_type.color_difference'],
+              },
+            ],
+            actions: ['다음 주 첫 교대에서 계획 대비 진도를 확인하세요.'],
+            caveats: ['수치는 서버 계산 결과이며 AI가 재계산하지 않았습니다.'],
+            llm_fallback: false,
+            llm_fallback_code: null,
+          },
+          error_message: '',
+          claimed_by: 'mac-studio-claude-desktop',
+          claimed_at: '2026-05-18T08:05:00+08:00',
+          started_at: '2026-05-18T08:05:01+08:00',
+          completed_at: '2026-05-18T08:09:00+08:00',
+          model_name: 'claude',
+          model_display_name: 'Claude',
+          prompt_version: 'deep-analysis-v1',
+          created_at: '2026-05-18T08:00:00+08:00',
+          updated_at: '2026-05-18T08:09:00+08:00',
+        },
+        pending_job: options.pendingJobStatus
+          ? {
+            id: isProduction ? 1301 : 1302,
+            job_type: 'deep_analysis',
+            status: options.pendingJobStatus,
+            scope: { kind, language, period_start: '2026-05-18', period_end: '2026-05-24', trigger: 'weekly', model_id: 'claude' },
+            result_payload: {},
+            error_message: '',
+            claimed_by: options.pendingJobStatus === 'pending' ? null : 'mac-studio-claude-desktop',
+            claimed_at: null,
+            started_at: null,
+            completed_at: null,
+            model_name: '',
+            model_display_name: 'Claude',
+            prompt_version: '',
+            created_at: '2026-05-25T08:00:00+08:00',
+            updated_at: '2026-05-25T08:00:00+08:00',
+          }
+          : null,
+        failed_job: null,
+      },
+    });
+  });
+}
+
 export async function installOperationalApiMocks(
   page: Page,
   options: { unplannedRunning?: boolean; completedStopped?: boolean } = {},
@@ -1156,6 +1246,7 @@ export async function installOperationalApiMocks(
       json: {
         state: 'offline',
         online: false,
+        tier: 'local',
         worker_name: '',
         last_heartbeat_at: null,
         heartbeat_age_seconds: null,
@@ -1163,15 +1254,56 @@ export async function installOperationalApiMocks(
         llm_ready: false,
         worker_version: '',
         model_name: '',
+        // Mirrors the backend: the registry display name for the local tier even without a heartbeat.
+        model_display_name: 'Qwen 3.8 27B',
         available_model_ids: [],
         last_analysis_completed_at: null,
         last_analysis_model_name: '',
+        last_analysis_model_display_name: '',
         last_analysis_llm_fallback: null,
+        workers: [
+          {
+            tier: 'local',
+            worker_name: 'mac-studio-local-ai',
+            state: 'offline',
+            online: false,
+            model_name: 'Qwen3.8-27B-4bit',
+            model_display_name: 'Qwen 3.8 27B',
+            available_model_ids: [],
+            advertised_model_ids: ['qwen38'],
+            llm_ready: false,
+            worker_version: 'production-ai-worker-v2',
+            worker_compatible: true,
+            last_heartbeat_at: '2026-05-17T10:00:00+08:00',
+            heartbeat_age_seconds: 86400,
+          },
+          {
+            tier: 'deep',
+            worker_name: 'mac-studio-claude-desktop',
+            state: 'offline',
+            online: false,
+            model_name: '',
+            model_display_name: 'Claude',
+            available_model_ids: [],
+            advertised_model_ids: ['claude'],
+            llm_ready: null,
+            worker_version: 'production-ai-worker-v2',
+            worker_compatible: true,
+            last_heartbeat_at: null,
+            heartbeat_age_seconds: null,
+          },
+        ],
       },
     });
   });
 
+  await installDeepAnalysisMocks(page);
+
   await page.route('**/api/ai/jobs/latest/**', async (route) => {
+    if (route.request().url().includes('job_type=deep_analysis')) {
+      await route.fallback();
+      return;
+    }
     await route.fulfill({
       json: {
         job: {
