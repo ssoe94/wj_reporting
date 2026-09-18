@@ -208,6 +208,8 @@ def aggregate_quality_analysis(rows, filters, *, generated_at=None, context_rows
         # canonical type are one report/type occurrence. This additive view is
         # count-only: a report's defect quantity has no supported type split.
         distinct_types = {item["key"]: item for item in types if item["key"] not in {"missing", "unclassified"}}
+        if context_rows is not None:
+            context_rows[-1]["types"] = [(key, item["label"]) for key, item in distinct_types.items()]
         if distinct_types:
             type_summary["classified_report_count"] += 1
             type_summary["multi_type_report_count"] += int(len(distinct_types) > 1)
@@ -335,7 +337,17 @@ def aggregate_quality_analysis(rows, filters, *, generated_at=None, context_rows
     }
 
 
-def build_quality_analysis(filters, *, include_production_context=False):
+def _previous_period(filters):
+    """Equal-length period ending the day before the selection, for bounded ranges only."""
+    from .report_insights import MAX_COMPARISON_DAYS
+    length = (filters["end_date"] - filters["start_date"]).days + 1
+    if length > MAX_COMPARISON_DAYS or filters["start_date"].toordinal() <= length:
+        return None
+    return {**filters, "start_date": filters["start_date"] - timedelta(days=length),
+            "end_date": filters["start_date"] - timedelta(days=1)}
+
+
+def build_quality_analysis(filters, *, include_production_context=False, include_report=False):
     start = datetime.combine(filters["start_date"], time.min, tzinfo=SHANGHAI)
     end = datetime.combine(filters["end_date"] + timedelta(days=1), time.min, tzinfo=SHANGHAI)
     queryset = QualityReport.objects.filter(report_dt__gte=start, report_dt__lt=end)
@@ -349,9 +361,16 @@ def build_quality_analysis(filters, *, include_production_context=False):
         "excel_source__occurrence_location",
         "model", "source_import_row__id", "source_import_row__item_name", "excel_source__item_name", "excel_import_key",
     )[:MAX_SOURCE_ROWS + 1].iterator(chunk_size=1000)
-    context_rows = [] if include_production_context else None
+    context_rows = [] if include_production_context or include_report else None
     result = aggregate_quality_analysis(rows, filters, context_rows=context_rows)
     if include_production_context:
         from .production_context import build_production_context
         result["production_context"] = build_production_context(context_rows)
+    if include_report:
+        from .report_insights import build_quality_report
+        previous = _previous_period(filters)
+        if previous:
+            earlier = build_quality_analysis(previous)
+            previous = {**previous, "report_count": earlier["summary"]["report_count"], "type_pareto": earlier["type_pareto"]}
+        result["report"] = build_quality_report(context_rows, filters, previous=previous)
     return result
