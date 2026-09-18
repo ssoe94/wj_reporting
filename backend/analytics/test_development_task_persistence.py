@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 
+from .development_task_catalog import INITIAL_TASKS
 from .development_task_views import DevelopmentTaskDetailView, DevelopmentTaskInitializeView, DevelopmentTaskListView
 from .models import DevelopmentTask, DevelopmentTaskHistory
 from .test_development_task_contract import example_task
@@ -74,14 +75,14 @@ class DevelopmentTaskPersistenceTests(TestCase):
         self.assertFalse(response.data['read_only'])
         response = self.request(DevelopmentTaskInitializeView, 'post')
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(len(response.data['tasks']), 10)
+        self.assertEqual(len(response.data['tasks']), len(INITIAL_TASKS))
         task = response.data['tasks'][0]
         self.assertEqual(self.patch(task, owner='수동 지정 담당').status_code, 200)
         response = self.request(DevelopmentTaskInitializeView, 'post')
-        self.assertEqual(len(response.data['tasks']), 10)
+        self.assertEqual(len(response.data['tasks']), len(INITIAL_TASKS))
         self.assertFalse(response.data['needs_initialization'])
         self.assertEqual(DevelopmentTask.objects.get(slug=task['slug']).owner, '수동 지정 담당')
-        self.assertEqual(DevelopmentTaskHistory.objects.count(), 11)
+        self.assertEqual(DevelopmentTaskHistory.objects.count(), len(INITIAL_TASKS) + 1)
 
     def test_save_survives_fresh_request_and_history_has_server_actor_and_snapshots(self):
         task = self.create()

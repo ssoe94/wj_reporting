@@ -99,12 +99,17 @@ def attribute_shots(rows, first_day, last_day):
 
 
 def _load_shots(machines, first_day, last_day):
-    """Return (shots, observed) for the whole span in one projected query."""
+    """Return (shots, observed) for the whole span in one projected query.
+
+    The ordering matches the (machine_name, timestamp) index so the source
+    streams instead of sorting; each device's own samples stay in ascending
+    order within its machine, which is all the attribution needs.
+    """
     start, end = _business_start(first_day), _business_start(last_day) + timedelta(days=1)
     rows = InjectionMonitoringRecord.objects.filter(
         machine_name__in=[f"{machine}호기" for machine in machines],
         timestamp__gte=start - MAX_ATTRIBUTION_GAP, timestamp__lte=end, capacity__isnull=False,
-    ).order_by("machine_name", "device_code", "timestamp").values(
+    ).order_by("machine_name", "timestamp").values(
         "machine_name", "device_code", "timestamp", "capacity",
     )[:MAX_MONITORING_ROWS + 1].iterator(chunk_size=2000)
     return attribute_shots(rows, first_day, last_day)

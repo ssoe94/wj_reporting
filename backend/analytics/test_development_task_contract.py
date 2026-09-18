@@ -87,7 +87,7 @@ class DevelopmentTaskContractTests(SimpleTestCase):
 
     def test_entire_catalog_is_valid_and_preserves_unverified_work(self):
         by_slug = {item['slug']: item for item in INITIAL_TASKS}
-        self.assertEqual(len(by_slug), 10)
+        self.assertEqual(len(by_slug), 11)
         for item in INITIAL_TASKS:
             serializer = DevelopmentTaskInputSerializer(data=item)
             self.assertTrue(serializer.is_valid(), (item['slug'], serializer.errors))
@@ -95,5 +95,8 @@ class DevelopmentTaskContractTests(SimpleTestCase):
             self.assertTrue(all(not entry['done'] for entry in item['checklist']))
             self.assertTrue(set(item['dependencies']) <= set(by_slug))
             self.assertNotIn(item['slug'], item['dependencies'])
-        self.assertEqual(by_slug['quality-trend-retained-dates']['release_state'], 'unreleased')
-        self.assertEqual(by_slug['quality-trend-retained-dates']['locations'], [])
+        superseded = by_slug['quality-trend-retained-dates']
+        self.assertEqual(superseded['release_state'], 'unreleased')
+        self.assertEqual(superseded['locations'], [])
+        self.assertEqual((superseded['requirements'], superseded['checklist']), ([], []))
+        self.assertEqual(by_slug['quality-operating-day-report']['release_state'], 'code_available')

@@ -45,6 +45,13 @@ class OperatingCalendarTests(SimpleTestCase):
         shots, _ = attribute_shots([sample(9, 100), sample(40, 900), sample(41, 850)], MONDAY, MONDAY + timedelta(days=2))
         self.assertEqual(sum(sum(day.values()) for day in shots.values()), 0)
 
+    def test_interleaved_devices_keep_their_own_counter_sequence(self):
+        rows = sorted([sample(9, 0), sample(10, 400), sample(11, 900),
+                       sample(9, 50, machine=2), sample(10, 50, machine=2), sample(11, 250, machine=2)],
+                      key=lambda row: (row["machine_name"], row["timestamp"]))
+        shots, _ = attribute_shots(rows, MONDAY, MONDAY)
+        self.assertEqual({name: round(value) for name, value in shots[MONDAY].items()}, {"1호기": 900, "2호기": 200})
+
     def test_machine_three_uses_the_shared_capacity_factor(self):
         shots, _ = attribute_shots([sample(9, 0, machine=3), sample(10, 100, machine=3)], MONDAY, MONDAY)
         self.assertEqual(shots[MONDAY]["3호기"], 50)
