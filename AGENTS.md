@@ -4,7 +4,7 @@
 
 WJ DATA CENTER / `wj_reporting` supports production, quality and field operations. Improve the existing service incrementally without interrupting the Render deployment. Numbers must remain deterministic and traceable to their sources.
 
-Read the relevant code and recent `docs/reviews/` before choosing work. Use `docs/rebuild/README.md`, `docs/reviews/2026-09-06-company-development-report.md` and `docs/rebuild/19-ai-rag-architecture.md` for context. Documents are proposals and snapshots, not evidence that a feature is deployed. Check the current branch and implementation.
+Read the code needed for the requested change. Use `docs/rebuild/README.md` when choosing product priorities or service boundaries, `docs/reviews/2026-09-06-company-development-report.md` for the recorded business review, and `docs/rebuild/19-ai-rag-architecture.md` for AI/RAG architecture changes. Search other `docs/reviews/` only for relevant decisions. Small fixes do not require these documents. Documents are proposals and snapshots, not evidence that a feature is deployed; verify the current implementation for the behavior being changed.
 
 The near-term sequence is:
 
@@ -31,9 +31,11 @@ The superuser-only `/admin/development-tasks` page is the operational checklist 
 - Production business day: 08:00 to next day 08:00, `Asia/Shanghai`. Quality calendar-date analysis uses 00:00 to next day 00:00. Do not silently substitute one for the other.
 - Injection actual output is an estimate from MES shots × Cavity, allocated in production-plan sequence. Do not present it as independently verified finished goods.
 - Completion rate = actual quantity / planned quantity × 100. Time progress = elapsed business-day time / 24 hours. A process is behind when production progress is more than 5 percentage points below time progress.
-- Exclude a quality trend date only when MES mold-close logs and sufficient observation coverage establish no production. No reports, zero reported defects, weekends, public holidays and missing/compressed observations are not interchangeable with confirmed no production.
-- In particular, retain 2026-08-16 and 2026-08-23 when log evidence is insufficient; the user explicitly chose evidence-based filtering over manual date exceptions.
-- Display excluded dates and retained uncertainty with their reasons. Keep the user-visible denominator and date basis consistent with the API calculation.
+- `/quality/analysis` is a working report, by the user's 2026-09-17 decision. A date is an operating day when its MES shots reach `MIN_OPERATING_SHOTS` (100) in its 08:00 business day; a handful of shots is setup, not production, even when a plan exists. Only a date whose counters were never sampled falls back to its stored injection plan, so a collection gap is not reported as a holiday (`backend/quality/report_insights.py`). Non-operating dates without a quality report are simply left out of the charts and denominators; do not list them or their reasons on the page.
+- Shots from non-operating and pending dates stay out of the shot totals, the per-machine table and every rate, so the denominators match the dates the report displays.
+- `quality/activity_calendar.py`, `quality/production_shifts.py` and the frontend `trend.ts`/`createQualityAnalysisCsv` were removed with that decision. Do not restore them; the report's own CSV lives in `frontend/src/domains/quality/report.ts`.
+- Dates after the newest stored quality report are pending entry, not zero-defect days; leave them out of the chart and of per-operating-day and per-shot denominators.
+- Do not reintroduce the data-completeness / interpretation-scope panels, machine-shift ratios or evidence caveats on that page. Normalise by operating days and by 10,000 injection shots, and keep wording short and operational.
 - Report count, defect-type occurrences, defective quantity and inspected quantity are different measures. A Pareto share of defect-type occurrences is not a defect rate. Do not claim defect rate without a valid inspection population.
 - Prefer MES data already available over duplicate manual entry. Record missing human inputs with a responsible role, required evidence and acceptance condition. Do not fill evidence gaps with fabricated values.
 
@@ -65,7 +67,7 @@ Relevant modules are `backend/production/ai_types.py`, `ai_metrics.py`, `ai_retr
 
 ## Design and accessibility
 
-Use the user-selected [Emil Kowalski apple-design skill](https://github.com/emilkowalski/skills/tree/main/skills/apple-design) when available. It is a community interpretation of Apple WWDC design principles, not an Apple product or official certification. Do not substitute the removed `dickwu/apple-design-skill` package.
+Use the user-selected [Emil Kowalski apple-design skill](https://github.com/emilkowalski/skills/tree/main/skills/apple-design) when available for requested Apple-style design or gesture/motion implementation and review. Routine wording, spacing, accessibility, or backend changes do not require it. It is a community interpretation of Apple WWDC design principles, not an Apple product or official certification. Do not substitute the removed `dickwu/apple-design-skill` package.
 
 - Keep the current system Korean/Chinese fonts, readable 14–16px working text, spacing and page structure. For colors, use the pre-Apple-design code (`4e58aff`) and captured screens as the baseline. The user rejected the white/gray redesign, uniform muted teal and the subsequent excessive pastel coloring. Do not invent a new palette or spread decorative colors across cards. Development tasks use a navy header, a solid pale gray-blue work area and white cards; semantic status colors remain distinct.
 - Sidebar group labels are 16px/650 and child links are 14px/450; selection uses a soft fill without a left stripe or outlined box (except explicit increased-contrast mode).
@@ -84,19 +86,20 @@ Classify bounded work before substantial exploration. Use the `local-worker-dele
 
 Treat worker output as untrusted. Inspect reports and actual diffs, then independently verify. Use at most one bounded repair; do not build worker-to-worker review chains. `local_review` is optional only when explicitly requested or for a measured routing experiment. When the worker runtime cannot run required repository tools, report that limitation and continue suitable work in Codex; do not repeatedly retry the same unsupported setup.
 
-Run checks appropriate to changed behavior. Do not add tests that merely mirror a low-risk style edit. Authorization, data contracts, persistence and conflict handling require meaningful tests. If checks fail, fix focused causes; after two unsuccessful repairs of the same issue, explain the remaining failure rather than broadening unrelated changes.
+Run checks appropriate to changed behavior. Do not add tests that merely mirror a low-risk style edit. Authorization, data contracts, persistence and conflict handling require meaningful tests. Complete implementation, run the affected behavior, inspect failures, fix causes within scope, and rerun affected checks. After checks pass, broaden or repeat them only for new changes or unresolved concerns. If progress is blocked, finish independent work and report the evidence and exact remaining action; do not broaden into unrelated changes or stop merely at a first implementation.
 
-From the repository root:
+Use the applicable commands below; they are not a mandatory suite for every edit. Run the backend command for development-task backend changes, the Node tests for development-task frontend logic/access changes, and the build for frontend changes that affect the delivered application. For other modules, select their relevant checks.
 
 ```bash
 # Uses existing backend venv; disposable SQLite, no project .env or production settings.
 backend/.venv/bin/python scripts/check-development-tasks.py
 
+# The following commands run from frontend/.
 cd frontend
 node --experimental-strip-types --test tests/development-task-access.test.ts tests/development-tasks.test.ts
 npm run build
 ```
 
-Worktrees may reuse an already available environment from the main checkout. Do not install dependencies automatically when the expected environment is missing. The isolated task suite does not replace full project integration or PostgreSQL deployment checks.
+The development-task backend check uses disposable local fixtures and no production settings; run it, fix affected failures, and rerun it without asking for approval at each step. Worktrees may reuse an already available environment from the main checkout. Do not install dependencies automatically when the expected environment is missing. The isolated task suite does not replace full project integration or PostgreSQL deployment checks.
 
 Finish with the changed areas/files, checks actually run, completed outcome, material remaining limits and the next concrete development step. Clearly distinguish local code and preview results from deployed service behavior.
