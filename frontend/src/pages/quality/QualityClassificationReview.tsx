@@ -184,7 +184,7 @@ const CONFIDENCE_LABELS: Record<string, LocalizedText> = {
 
 const REVIEW_REASON_LABELS: Record<string, LocalizedText> = {
   dictionary_unclassified: { ko: '사전 미분류', zh: '词典未分类' },
-  classification_disagreement: { ko: '사전과 Qwen 분류 불일치', zh: '词典与 Qwen 分类不一致' },
+  classification_disagreement: { ko: '사전과 AI 분류 불일치', zh: '词典与 AI 分类不一致' },
   low_confidence: { ko: '낮은 분류 신뢰도', zh: '分类置信度低' },
   needs_new_category: { ko: '새 분류 후보 필요', zh: '需要新增分类候选' },
   master_color_missing: { ko: '마스터 색상 미등록', zh: '主数据颜色未登记' },
@@ -263,18 +263,18 @@ export default function QualityClassificationReview() {
 
   const copy = useMemo(() => (lang === 'zh'
     ? {
-        title: 'AI 分类审核', subtitle: 'Qwen3.8 同时核对原文、照片与完整料号。',
+        title: 'AI 分类审核', subtitle: 'AI 核对报告原文与照片，服务器按完整料号关联结果。',
         start: '添加接下来100份分析', refresh: '刷新', attention: '待关注', all: '全部',
         search: '搜索报告', searchPlaceholder: '完整料号、机种、原文、分类或颜色',
         empty: '没有符合当前条件的报告。', select: '请选择左侧报告。',
-        raw: '报告原文', dictionary: '当前词典分类', qwen: 'Qwen 建议',
-        photos: '原始照片', noPhoto: '无照片', productColor: 'Qwen 照片推测产品本体色',
+        raw: '报告原文', dictionary: '当前词典分类', aiSuggestion: 'AI 建议',
+        photos: '原始照片', noPhoto: '无照片', productColor: 'AI 照片推测产品本体色',
         masterColor: '品目主数据颜色', consensus: '同一完整料号的人工确认颜色',
         exactWarning: '颜色只与报告中的完整料号精确关联。前9位相同的其他料号不参与一致度。',
         visualWarning: '白印、发白、反光或曝光过度不代表产品本体为白色。无法确认时必须选择“无法判断”。',
         categoryDecision: '不良分类确认', colorDecision: '产品颜色确认',
         colorConfirm: '我已直接查看照片并确认产品本体颜色',
-        qwenEvidence: '照片判断依据', usedEvidence: '颜色依据', needsCategory: 'Qwen 判断当前候选词典中没有合适分类。请人工选择或保留为词典待补。',
+        aiEvidence: '照片判断依据', usedEvidence: '颜色依据', needsCategory: 'AI 判断当前候选词典中没有合适分类。请人工选择或保留为词典待补。',
         note: '审核备注', saveReview: '保存审核', reject: '驳回建议', keepGap: '保留为词典待补', enqueueOne: '分析此报告',
         applyMaster: '创建新的颜色主数据版本', confirmMaster: '已确认照片中的产品本体颜色',
         effective: '生效日期', saved: '已保存。', queued: '已加入分析队列。', applied: '已创建新的颜色主数据版本。', failed: '处理失败，请重试。',
@@ -283,18 +283,18 @@ export default function QualityClassificationReview() {
         previous: '上一页', next: '下一页', closeImage: '关闭大图',
       }
     : {
-        title: 'AI 분류 검토', subtitle: 'Qwen3.8이 원문·사진·전체 품번을 함께 대조합니다.',
+        title: 'AI 분류 검토', subtitle: 'AI가 보고 원문과 사진을 대조하고, 서버가 전체 품번으로 결과를 연결합니다.',
         start: '다음 100건 분석 추가', refresh: '새로고침', attention: '확인 필요', all: '전체',
         search: '보고서 검색', searchPlaceholder: '전체 품번·모델·원문·분류·색상 검색',
         empty: '현재 조건에 맞는 보고가 없습니다.', select: '왼쪽에서 보고서를 선택하세요.',
-        raw: '보고 원문', dictionary: '현재 사전 분류', qwen: 'Qwen 제안',
-        photos: '원본 사진', noPhoto: '사진 없음', productColor: 'Qwen 사진상 제품 본체색',
+        raw: '보고 원문', dictionary: '현재 사전 분류', aiSuggestion: 'AI 제안',
+        photos: '원본 사진', noPhoto: '사진 없음', productColor: 'AI 사진상 제품 본체색',
         masterColor: '품목 마스터 색상', consensus: '동일 전체 품번의 사람 승인 색상',
         exactWarning: '색상은 보고서의 전체 Part No.에만 정확 매칭합니다. 앞 9자리만 같은 다른 품번은 일치도에 포함하지 않습니다.',
         visualWarning: '백색 자국(白印)·백화·반사·과노출은 제품 본체가 백색이라는 뜻이 아닙니다. 확신할 수 없으면 판정 불가로 둡니다.',
         categoryDecision: '불량 분류 확정', colorDecision: '제품 색상 확정',
         colorConfirm: '사진을 직접 보고 제품 본체색을 확인했습니다',
-        qwenEvidence: '사진 판단 근거', usedEvidence: '색상 근거', needsCategory: 'Qwen이 현재 사전 후보에서 맞는 분류를 찾지 못했습니다. 직접 선택하거나 사전 보완 대상으로 남기세요.',
+        aiEvidence: '사진 판단 근거', usedEvidence: '색상 근거', needsCategory: 'AI가 현재 사전 후보에서 맞는 분류를 찾지 못했습니다. 직접 선택하거나 사전 보완 대상으로 남기세요.',
         note: '검토 메모', saveReview: '검토 저장', reject: '제안 반려', keepGap: '사전 보완 대상으로 남기기', enqueueOne: '이 보고 분석',
         applyMaster: '새 색상 마스터 버전 생성', confirmMaster: '사진의 제품 본체 색상을 직접 확인했습니다',
         effective: '유효 시작일', saved: '저장했습니다.', queued: '분석 대기열에 추가했습니다.', applied: '새 색상 마스터 버전을 생성했습니다.', failed: '처리하지 못했습니다. 다시 시도하세요.',
@@ -346,11 +346,11 @@ export default function QualityClassificationReview() {
 
   useEffect(() => {
     if (!selected) return;
-    const qwenKeys = selected.result?.qwen_classification?.candidate_selections?.map((row) => row.key) ?? [];
-    const hasAvailableQwenResult = selected.result?.available === true;
+    const aiKeys = selected.result?.qwen_classification?.candidate_selections?.map((row) => row.key) ?? [];
+    const hasAvailableAiResult = selected.result?.available === true;
     setSelectedCategoryKeys(
       selected.result?.review?.category_keys
-      ?? (hasAvailableQwenResult ? qwenKeys : deterministicLeafKeys(selected.deterministic_classification)),
+      ?? (hasAvailableAiResult ? aiKeys : deterministicLeafKeys(selected.deterministic_classification)),
     );
     setSelectedColorKey(
       selected.result?.review?.product_color_key
@@ -411,12 +411,12 @@ export default function QualityClassificationReview() {
 
   const saveReview = async (rejected = false) => {
     if (!selected?.job) return;
-    const qwenKeys = selected.result?.qwen_classification?.candidate_selections?.map((row) => row.key).sort() ?? [];
+    const aiKeys = selected.result?.qwen_classification?.candidate_selections?.map((row) => row.key).sort() ?? [];
     const chosen = [...selectedCategoryKeys].sort();
-    const qwenColor = selected.result?.product_color_suggestion?.suggested_color_key ?? 'undetermined';
+    const aiColor = selected.result?.product_color_suggestion?.suggested_color_key ?? 'undetermined';
     const approvedColor = colorConfirmed ? selectedColorKey : null;
-    const classificationMatches = JSON.stringify(qwenKeys) === JSON.stringify(chosen);
-    const colorMatches = approvedColor === null || approvedColor === qwenColor;
+    const classificationMatches = JSON.stringify(aiKeys) === JSON.stringify(chosen);
+    const colorMatches = approvedColor === null || approvedColor === aiColor;
     const action = rejected
       ? 'rejected'
       : (classificationMatches && colorMatches ? 'accepted' : 'overridden');
@@ -548,7 +548,7 @@ export default function QualityClassificationReview() {
             <div className="space-y-2">
               {data?.results.map((row) => {
                 const selectedRow = row.report.id === selectedReportId;
-                const qwenLabels = row.result?.qwen_classification?.candidate_selections?.map((term) => localized(term.label, lang)).filter(Boolean) ?? [];
+                const aiLabels = row.result?.qwen_classification?.candidate_selections?.map((term) => localized(term.label, lang)).filter(Boolean) ?? [];
                 return (
                           <button key={row.report.id} type="button" aria-pressed={selectedRow} onClick={() => chooseReport(row.report.id)} className={`w-full rounded-xl border p-3 text-left transition ${selectedRow ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-100' : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50'}`}>
                     <div className="flex items-center justify-between gap-2">
@@ -559,7 +559,7 @@ export default function QualityClassificationReview() {
                     <div className="text-xs font-medium text-slate-600">{row.report.model || '-'}</div>
                     <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-700">{row.report.phenomenon || '-'}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {(qwenLabels.length ? qwenLabels : row.deterministic_classification.map((term) => taxonomyLabel(term, lang))).map((label) => (
+                      {(aiLabels.length ? aiLabels : row.deterministic_classification.map((term) => taxonomyLabel(term, lang))).map((label) => (
                         <span key={label} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{label}</span>
                       ))}
                       {row.report.image_refs.length > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700"><Camera className="h-3 w-3" />{row.report.image_refs.length}</span>}
@@ -625,7 +625,7 @@ export default function QualityClassificationReview() {
                   <div className="mt-3 flex flex-wrap gap-2">{selected.deterministic_classification.map((term) => <span key={term.key} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-700 ring-1 ring-blue-200">{taxonomyLabel(term, lang)}</span>)}</div>
                 </section>
                 <section className="rounded-xl border border-violet-200 bg-violet-50/60 p-4">
-                  <h4 className="flex items-center gap-2 text-sm font-bold text-violet-950"><Sparkles className="h-4 w-4" />{copy.qwen}</h4>
+                  <h4 className="flex items-center gap-2 text-sm font-bold text-violet-950"><Sparkles className="h-4 w-4" />{copy.aiSuggestion}</h4>
                   {selected.result?.available ? (
                     <>
                       <div className="mt-3 flex flex-wrap gap-2">{selected.result.qwen_classification?.candidate_selections?.map((term) => <span key={term.key} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-violet-700 ring-1 ring-violet-200">{localized(term.label, lang)}</span>)}</div>
@@ -646,7 +646,7 @@ export default function QualityClassificationReview() {
                 <p className="mt-3 rounded-lg bg-white/80 px-3 py-2 text-xs font-semibold leading-5 text-cyan-900">{copy.exactWarning}</p>
                 {(selected.result?.image_observations?.length || selected.result?.review_reason_codes?.length) ? (
                   <div className="mt-3 rounded-lg border border-cyan-100 bg-white/80 p-3">
-                    <div className="text-xs font-bold text-cyan-950">{copy.qwenEvidence}</div>
+                    <div className="text-xs font-bold text-cyan-950">{copy.aiEvidence}</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {Array.from(new Set(selected.result.image_observations?.flatMap((row) => row.uncertainty_codes) ?? [])).map((code) => (
                         <span key={`uncertainty-${code}`} className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">{localized(UNCERTAINTY_LABELS[code], lang) || code}</span>

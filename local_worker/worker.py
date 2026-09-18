@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import re
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -21,7 +23,11 @@ try:
         quality_daily_attention_summary,
         quality_report_taxonomy_audit,
     )
-    from .llm_client import LocalLlmClient
+    from .llm_client import (
+        DEFAULT_LLM_TIMEOUT_SECONDS,
+        LocalLlmClient,
+        MAX_LLM_TIMEOUT_SECONDS,
+    )
     from .render_client import RenderClient, WORKER_VERSION
 except ImportError:
     from job_handlers import (
@@ -31,7 +37,11 @@ except ImportError:
         quality_daily_attention_summary,
         quality_report_taxonomy_audit,
     )
-    from llm_client import LocalLlmClient
+    from llm_client import (
+        DEFAULT_LLM_TIMEOUT_SECONDS,
+        LocalLlmClient,
+        MAX_LLM_TIMEOUT_SECONDS,
+    )
     from render_client import RenderClient, WORKER_VERSION
 
 
@@ -118,6 +128,181 @@ class LocalModelTarget:
     model_id: str
     client: LocalLlmClient | None
     model_name: str
+
+
+def display_model_name(value: Any) -> str:
+    """Checkpoint basename reported to the backend (never the local path)."""
+    return str(value or "").replace("\\", "/").rstrip("/").rsplit("/", 1)[-1][:128]
+
+
+DEFAULT_GENERATION_LOCK_PATH = "~/.local/share/codex-local-worker/state/generation.lock"
+DEFAULT_GENERATION_LOCK_WAIT_SECONDS = 90
+GENERATION_LOCK_POLL_SECONDS = 0.5
+
+
+class GenerationLock:
+    """Bounded advisory ``flock`` shared with the coding-delegation gateway.
+
+    The model server runs one sequence at a time. Holding the same lock file
+    the gateway uses while a job is processed keeps the two clients from
+    queueing behind each other and burning leases. An empty path disables
+    the lock (``acquire`` always succeeds).
+    """
+
+    def __init__(self, path: str | None, wait_seconds: float = DEFAULT_GENERATION_LOCK_WAIT_SECONDS):
+        cleaned = str(path or "").strip()
+        self.path = Path(cleaned).expanduser() if cleaned else None
+        self.wait_seconds = max(0.0, float(wait_seconds))
+        self._handle = None
+
+    @property
+    def enabled(self) -> bool:
+        return self.path is not None
+
+    @property
+    def held(self) -> bool:
+        return self._handle is not None
+
+    def acquire(self, wait_seconds: float | None = None) -> bool:
+        if self.path is None:
+            return True
+        if self._handle is not None:
+            return True
+        budget = self.wait_seconds if wait_seconds is None else max(0.0, float(wait_seconds))
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        handle = open(self.path, "a+")
+        deadline = time.monotonic() + budget
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (BlockingIOError, OSError):
+                if time.monotonic() >= deadline:
+                    handle.close()
+                    return False
+                time.sleep(min(GENERATION_LOCK_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+                continue
+            self._handle = handle
+            return True
+
+    def release(self) -> None:
+        handle = self._handle
+        self._handle = None
+        if handle is None:
+            return
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
+
+class WorkerState:
+    """State handed between the main loop and the heartbeat thread under a lock."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.last_error = ""
+        self.generation_in_flight = False
+        self.llm_ready = False
+        self.available_model_ids: list[str] = []
+        self.last_heartbeat_error = ""
+
+    def set_error(self, message: str) -> None:
+        with self._lock:
+            self.last_error = str(message or "")[:500]
+
+    def set_generation_in_flight(self, value: bool) -> None:
+        with self._lock:
+            self.generation_in_flight = bool(value)
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "last_error": self.last_error,
+                "generation_in_flight": self.generation_in_flight,
+                "llm_ready": self.llm_ready,
+                "available_model_ids": list(self.available_model_ids),
+            }
+
+    def record_readiness(self, llm_ready: bool, available_model_ids: list[str]) -> None:
+        with self._lock:
+            self.llm_ready = bool(llm_ready)
+            self.available_model_ids = list(available_model_ids)
+
+    def clear_error_if_unchanged(self, sent_error: str) -> None:
+        with self._lock:
+            if self.last_error == sent_error:
+                self.last_error = ""
+
+
+class HeartbeatThread(threading.Thread):
+    """Daemon thread that owns its own Render session and posts heartbeats.
+
+    The ``/models`` readiness probe (3 s) is skipped while the main loop has
+    a generation in flight; the last known readiness is reported instead so
+    a busy model never looks offline.
+    """
+
+    def __init__(
+        self,
+        *,
+        client: RenderClient,
+        state: WorkerState,
+        worker_name: str,
+        interval_seconds: float,
+        llm_enabled: bool,
+        model_targets: dict[str, LocalModelTarget],
+        default_model_id: str,
+        model_name: str,
+        stop_event: threading.Event | None = None,
+    ) -> None:
+        super().__init__(name="wj-ai-worker-heartbeat", daemon=True)
+        self.client = client
+        self.state = state
+        self.worker_name = worker_name
+        self.interval_seconds = max(1.0, float(interval_seconds))
+        self.llm_enabled = llm_enabled
+        self.model_targets = dict(model_targets)
+        self.default_model_id = default_model_id
+        self.model_name = model_name
+        self.stop_event = stop_event or threading.Event()
+
+    def probe_readiness(self) -> tuple[bool, list[str]]:
+        snapshot = self.state.snapshot()
+        if snapshot["generation_in_flight"]:
+            return snapshot["llm_ready"], snapshot["available_model_ids"]
+        readiness = {
+            model_id: bool(target.client and target.client.is_ready(timeout=3))
+            for model_id, target in self.model_targets.items()
+        }
+        llm_ready = readiness.get(self.default_model_id, False)
+        available = [model_id for model_id, ready in readiness.items() if ready]
+        self.state.record_readiness(llm_ready, available)
+        return llm_ready, available
+
+    def run_cycle(self) -> bool:
+        llm_ready, available = self.probe_readiness()
+        last_error = self.state.snapshot()["last_error"]
+        try:
+            self.client.send_heartbeat(
+                self.worker_name,
+                llm_enabled=self.llm_enabled,
+                llm_ready=llm_ready,
+                model_name=self.model_name,
+                worker_version=WORKER_VERSION,
+                last_error=last_error,
+                available_model_ids=available,
+            )
+        except Exception as exc:
+            print(f"worker heartbeat failed: {exc}", file=sys.stderr)
+            return False
+        self.state.clear_error_if_unchanged(last_error)
+        return True
+
+    def run(self) -> None:
+        # main() sends the first heartbeat synchronously before starting the
+        # thread so the first claim already knows the advertised model ids.
+        while not self.stop_event.wait(self.interval_seconds):
+            self.run_cycle()
 
 
 def requested_model_id(job: dict[str, Any], default_model_id: str = QWEN38_MODEL_ID) -> str:
@@ -1065,23 +1250,10 @@ def build_repair_payload(
             "target_level_history_unavailable",
         })
     )
+    # Per-language instruction first (static per language), verified evidence
+    # next, and the rejected draft last so repeated repairs share a prefix.
     return {
         "language": language,
-        "question_topic": _qualitative_text(question, allowed_identifiers, language),
-        "qualitative_draft": {
-            "title": _qualitative_text(candidate.get("title"), allowed_identifiers, language),
-            "summary": "" if discard_rejected_summary else _qualitative_text(
-                candidate.get("summary"),
-                allowed_identifiers,
-                language,
-            ),
-        },
-        "verified_qualitative_evidence": _verified_qualitative_evidence(
-            grounding,
-            exact_identifiers,
-            language,
-        ),
-        "allowed_exact_identifiers": exact_identifiers,
         "instruction": (
             "한국어 JSON으로 결론, 판단 근거, 확인할 항목 순서의 구체적인 정성 설명만 반환하세요. "
             "검증된 상태와 정확한 설비 식별자를 우선 사용하고 원시 상태코드와 일부/대부분 표현은 쓰지 마세요. "
@@ -1096,6 +1268,21 @@ def build_repair_payload(
             "不得包含物理操作、配置变更或串联动作；不同数据对象不得用和、与或及连接，应分别列项。"
             " 判断依据和需确认中的每一项都必须以 '- ' 开头。"
         ),
+        "verified_qualitative_evidence": _verified_qualitative_evidence(
+            grounding,
+            exact_identifiers,
+            language,
+        ),
+        "allowed_exact_identifiers": exact_identifiers,
+        "question_topic": _qualitative_text(question, allowed_identifiers, language),
+        "qualitative_draft": {
+            "title": _qualitative_text(candidate.get("title"), allowed_identifiers, language),
+            "summary": "" if discard_rejected_summary else _qualitative_text(
+                candidate.get("summary"),
+                allowed_identifiers,
+                language,
+            ),
+        },
     }
 
 
@@ -1432,6 +1619,9 @@ def naturalize_schema_terms(summary: str) -> tuple[str, bool]:
 def classify_llm_error(exc: Exception) -> str:
     if isinstance(exc, LlmGroundingError):
         return "grounding_rejected"
+    explicit_code = getattr(exc, "fallback_code", None)
+    if isinstance(explicit_code, str) and explicit_code.strip():
+        return explicit_code.strip()
     name = exc.__class__.__name__.lower()
     message = str(exc).lower()
     if "timeout" in name or "timed out" in message or "timeout" in message:
@@ -1579,11 +1769,14 @@ def handle_job(
                 normalized["llm_attempted"] = True
                 normalized.setdefault("llm_attempts", 1)
                 return normalized, handler.PROMPT_VERSION
+            # Envelope order is the prompt order: static keys first (job_type,
+            # schema), handler payload next, variable scope (date/slot/trigger)
+            # last so the automatic prefix cache reuses the static head.
             result = llm.structured_analysis(handler.SYSTEM_PROMPT, {
                 "job_type": job_type,
-                "scope": job.get("scope") or {},
-                "input_payload": llm_payload,
                 "required_output_schema": required_output_schema,
+                "input_payload": llm_payload,
+                "scope": job.get("scope") or {},
             }, **llm_options)
             first_candidate = dict(result or {})
             if hasattr(handler, "normalize_llm_result"):
@@ -1609,11 +1802,11 @@ def handle_job(
                     repair_options["timeout_seconds"] = max(1, int(repair_timeout))
                 result = llm.structured_analysis(REPAIR_SYSTEM_PROMPT, {
                     "job_type": job_type,
-                    "input_payload": repair_payload,
                     "required_output_schema": {
                         "title": "string",
                         "summary": "string",
                     },
+                    "input_payload": repair_payload,
                 }, **repair_options)
                 normalized = normalize_result(result, deterministic, model_name, grounding_payload)
                 normalized["llm_repaired"] = True
@@ -1675,8 +1868,11 @@ def run_once(
     model_targets: dict[str, LocalModelTarget] | None = None,
     default_model_id: str = QWEN38_MODEL_ID,
     available_model_ids: list[str] | None = None,
+    generation_lock: GenerationLock | None = None,
+    state: WorkerState | None = None,
 ) -> int:
     report = report if report is not None else RunOnceReport()
+    # Periodic enqueue is a backend-only call; it never waits for the model lock.
     if enqueue_periodic:
         try:
             client.enqueue_periodic_jobs()
@@ -1691,16 +1887,57 @@ def run_once(
             for model_id, target in model_targets.items()
             if use_llm and target.client is not None
         ] if model_targets is not None else []
-    jobs = client.claim_jobs(
-        worker_name,
-        limit=1,
-        job_types=list(HANDLERS.keys()),
-        worker_version=WORKER_VERSION,
-        available_model_ids=claim_model_ids,
-    )
-    if not jobs:
+    if generation_lock is not None and not generation_lock.acquire():
+        # Another client (the coding-delegation gateway) is generating on the
+        # shared model. Skip this poll without claiming so no lease burns.
+        report.add("generation lock busy; claim skipped")
         return 0
+    try:
+        jobs = client.claim_jobs(
+            worker_name,
+            limit=1,
+            job_types=list(HANDLERS.keys()),
+            worker_version=WORKER_VERSION,
+            available_model_ids=claim_model_ids,
+        )
+        if not jobs:
+            return 0
+        if state is not None:
+            state.set_generation_in_flight(True)
+        try:
+            _process_claimed_jobs(
+                client,
+                jobs,
+                worker_name,
+                use_llm,
+                llm,
+                model_name,
+                fallback_to_deterministic,
+                report,
+                model_targets,
+                default_model_id,
+            )
+        finally:
+            if state is not None:
+                state.set_generation_in_flight(False)
+        return len(jobs)
+    finally:
+        if generation_lock is not None:
+            generation_lock.release()
 
+
+def _process_claimed_jobs(
+    client: RenderClient,
+    jobs: list[dict],
+    worker_name: str,
+    use_llm: bool,
+    llm: LocalLlmClient | None,
+    model_name: str,
+    fallback_to_deterministic: bool,
+    report: RunOnceReport,
+    model_targets: dict[str, LocalModelTarget] | None,
+    default_model_id: str,
+) -> None:
     for job in jobs:
         job_id = int(job["id"])
         claim_timestamp = str(job.get("claimed_at") or "")
@@ -1711,7 +1948,8 @@ def run_once(
             and getattr(handler, "ALLOW_UNAVAILABLE_MODEL_FALLBACK", False)
         )
         selected_llm = llm
-        selected_model_name = model_name
+        # The backend only ever sees the checkpoint basename, never the local path.
+        selected_model_name = display_model_name(model_name)
         selected_model_id = default_model_id
         model_unavailable_error = ""
         try:
@@ -1726,7 +1964,7 @@ def run_once(
                     model_unavailable_error = f"Local AI model is not configured: {selected_model_id}"
                 else:
                     selected_llm = target.client
-                    selected_model_name = target.model_name
+                    selected_model_name = display_model_name(target.model_name)
             job_use_llm = use_llm
             if use_llm and not model_unavailable_error:
                 if selected_llm is None:
@@ -1770,7 +2008,7 @@ def run_once(
             client.complete_job(
                 job_id,
                 result_payload=result,
-                model_name=result.get("model_name") or selected_model_name,
+                model_name=display_model_name(result.get("model_name") or selected_model_name),
                 prompt_version=prompt_version,
                 worker_name=worker_name,
                 claim_timestamp=claim_timestamp,
@@ -1790,7 +2028,6 @@ def run_once(
             except Exception as fail_exc:
                 report.add(f"ai job {job_id} fail transition failed: {fail_exc}", failure=True)
             print(message, file=sys.stderr)
-    return len(jobs)
 
 
 def main() -> int:
@@ -1816,9 +2053,15 @@ def main() -> int:
         "/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit",
     )
     default_model_id = QWEN38_MODEL_ID
-    # Heartbeats share this single-threaded loop with inference. Keep the LLM timeout
-    # below the backend's 180-second stale threshold, leaving time for API transitions.
-    llm_timeout = min(120, max(5, int(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "45") or 45)))
+    # Heartbeats run on their own thread, so inference no longer has to finish
+    # inside the backend's stale threshold (AI_WORKER_HEARTBEAT_STALE_SECONDS,
+    # default 300 s). The ceiling is the backend job lease (600 s); each call
+    # uses min(configured, prompt-size estimate) - see LocalLlmClient.
+    llm_timeout = resolve_llm_timeout_seconds(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS"))
+    generation_lock = GenerationLock(
+        os.getenv("LOCAL_LLM_LOCK_PATH", DEFAULT_GENERATION_LOCK_PATH),
+        resolve_lock_wait_seconds(os.getenv("LOCAL_LLM_LOCK_WAIT_SECONDS")),
+    )
 
     if not worker_token:
         print("AI_WORKER_TOKEN is required.", file=sys.stderr)
@@ -1864,67 +2107,78 @@ def main() -> int:
         return 0
 
     next_periodic_check = 0.0
-    next_heartbeat = 0.0
-    last_worker_error = ""
-    last_available_model_ids: list[str] = []
     default_target = model_targets.get(default_model_id)
-    while True:
-        monotonic_now = time.monotonic()
-        should_enqueue_periodic = enqueue_periodic and monotonic_now >= next_periodic_check
-        if monotonic_now >= next_heartbeat:
-            model_readiness = {
-                model_id: bool(target.client and target.client.is_ready(timeout=3))
-                for model_id, target in model_targets.items()
-            }
-            llm_ready = model_readiness.get(default_model_id, False)
-            last_available_model_ids = [
-                model_id
-                for model_id, is_ready in model_readiness.items()
-                if is_ready
-            ]
+    reported_model_name = display_model_name(default_target.model_name) if default_target else ""
+    state = WorkerState()
+    # The heartbeat thread owns a separate RenderClient (requests.Session is
+    # not thread-safe) and shares readiness/last_error with the loop via state.
+    heartbeat = HeartbeatThread(
+        client=RenderClient(api_base_url=api_base_url, worker_token=worker_token),
+        state=state,
+        worker_name=worker_name,
+        interval_seconds=heartbeat_interval,
+        llm_enabled=use_llm,
+        model_targets=model_targets,
+        default_model_id=default_model_id,
+        model_name=reported_model_name,
+    )
+    heartbeat.run_cycle()
+    if not args.once:
+        heartbeat.start()
+    try:
+        while True:
+            monotonic_now = time.monotonic()
+            should_enqueue_periodic = enqueue_periodic and monotonic_now >= next_periodic_check
             try:
-                client.send_heartbeat(
+                run_report = RunOnceReport()
+                run_once(
+                    client,
                     worker_name,
-                    llm_enabled=use_llm,
-                    llm_ready=llm_ready,
-                    model_name=default_target.model_name if default_target else "",
-                    worker_version=WORKER_VERSION,
-                    last_error=last_worker_error,
-                    available_model_ids=last_available_model_ids,
+                    use_llm,
+                    llm,
+                    default_target.model_name if default_target else "",
+                    fallback_to_deterministic,
+                    should_enqueue_periodic,
+                    report=run_report,
+                    model_targets=model_targets if use_llm else None,
+                    default_model_id=default_model_id,
+                    available_model_ids=state.snapshot()["available_model_ids"],
+                    generation_lock=generation_lock,
+                    state=state,
                 )
-                last_worker_error = ""
+                if run_report.messages:
+                    state.set_error(run_report.summary())
+                if args.once and run_report.had_failure:
+                    return 1
             except Exception as exc:
-                print(f"worker heartbeat failed: {exc}", file=sys.stderr)
-            next_heartbeat = monotonic_now + heartbeat_interval
-        try:
-            run_report = RunOnceReport()
-            run_once(
-                client,
-                worker_name,
-                use_llm,
-                llm,
-                default_target.model_name if default_target else "",
-                fallback_to_deterministic,
-                should_enqueue_periodic,
-                report=run_report,
-                model_targets=model_targets if use_llm else None,
-                default_model_id=default_model_id,
-                available_model_ids=last_available_model_ids,
-            )
-            if run_report.messages:
-                last_worker_error = run_report.summary()
-            if args.once and run_report.had_failure:
-                return 1
-        except Exception as exc:
-            last_worker_error = str(exc)[:500]
-            print(f"worker polling failed: {exc}", file=sys.stderr)
+                state.set_error(str(exc)[:500])
+                print(f"worker polling failed: {exc}", file=sys.stderr)
+                if args.once:
+                    return 1
+            if should_enqueue_periodic:
+                next_periodic_check = monotonic_now + periodic_check_interval
             if args.once:
-                return 1
-        if should_enqueue_periodic:
-            next_periodic_check = monotonic_now + periodic_check_interval
-        if args.once:
-            return 0
-        time.sleep(poll_interval)
+                return 0
+            time.sleep(poll_interval)
+    finally:
+        heartbeat.stop_event.set()
+
+
+def resolve_llm_timeout_seconds(raw_value: str | None) -> int:
+    """LOCAL_LLM_TIMEOUT_SECONDS honoured between 5 s and 600 s (default 240)."""
+    try:
+        configured = int(str(raw_value or "").strip() or DEFAULT_LLM_TIMEOUT_SECONDS)
+    except ValueError:
+        configured = DEFAULT_LLM_TIMEOUT_SECONDS
+    return min(MAX_LLM_TIMEOUT_SECONDS, max(5, configured))
+
+
+def resolve_lock_wait_seconds(raw_value: str | None) -> float:
+    try:
+        configured = float(str(raw_value or "").strip() or DEFAULT_GENERATION_LOCK_WAIT_SECONDS)
+    except ValueError:
+        configured = float(DEFAULT_GENERATION_LOCK_WAIT_SECONDS)
+    return max(0.0, configured)
 
 
 if __name__ == "__main__":

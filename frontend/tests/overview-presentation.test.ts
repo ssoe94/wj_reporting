@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canShowQualityAi, getBriefingDuration, getDisplayTextLength, getNumberDensity, getWeatherPresentation } from "../src/domains/boards/overview/presentation.ts";
+import { canShowQualityAi, getBriefingDuration, getDisplayTextLength, getNumberDensity, getQualityAiModelDisplayName, getWeatherPresentation } from "../src/domains/boards/overview/presentation.ts";
 import type { QualityAiSummary, WeatherStatus } from "../src/domains/boards/overview/types.ts";
 
 const weather: WeatherStatus = {
@@ -45,6 +45,13 @@ test("AI display preserves every evidence, date, model and language requirement"
   }
   assert.equal(canShowQualityAi(null, "2026-09-07", "ko"), false);
   assert.equal(canShowQualityAi({ ...ai, summary: { ko: "확인", zh: null } }, "2026-09-07", "zh"), false);
+});
+
+test("AI badge model name is resolved from the persisted model id, never hard-coded", () => {
+  assert.equal(getQualityAiModelDisplayName(ai), "Qwen 3.8 27B");
+  assert.equal(getQualityAiModelDisplayName({ ...ai, modelId: "claude" }), "Claude");
+  assert.equal(getQualityAiModelDisplayName({ ...ai, modelId: null }), "");
+  assert.equal(getQualityAiModelDisplayName(null), "");
 });
 
 test("dense bilingual briefings receive a bounded reading interval without changing text", () => {

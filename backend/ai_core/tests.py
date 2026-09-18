@@ -3,6 +3,7 @@ import sys
 import unittest
 from datetime import timedelta
 from pathlib import Path
+from unittest import mock
 
 import requests
 from django.contrib.auth import get_user_model
@@ -130,17 +131,8 @@ class AiJobApiTests(APITestCase):
         response = self.client.post('/api/ai/jobs/claim/', {'worker_name': 'test-worker'}, format='json')
         self.assertEqual(response.status_code, 403)
 
-    def test_worker_claim_prioritizes_hourly_job_over_older_question(self):
-        question_job = AiJob.objects.create(
-            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
-            scope={
-                'date': '2026-05-15',
-                'language': 'ko',
-                'trigger': 'question',
-                'model_id': 'qwen38',
-            },
-            created_by=self.user,
-        )
+    def test_worker_claim_prioritizes_interactive_question_over_older_hourly_job(self):
+        # Priority contract (2026-09-18): question (2) outranks hourly (3).
         hourly_job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             scope={
@@ -150,6 +142,16 @@ class AiJobApiTests(APITestCase):
                 'model_id': 'qwen38',
             },
             created_by=None,
+        )
+        question_job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+            scope={
+                'date': '2026-05-15',
+                'language': 'ko',
+                'trigger': 'question',
+                'model_id': 'qwen38',
+            },
+            created_by=self.user,
         )
 
         self.client.force_authenticate(user=None)
@@ -166,9 +168,9 @@ class AiJobApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([job['id'] for job in response.data['jobs']], [hourly_job.id])
-        question_job.refresh_from_db()
-        self.assertEqual(question_job.status, AiJob.STATUS_PENDING)
+        self.assertEqual([job['id'] for job in response.data['jobs']], [question_job.id])
+        hourly_job.refresh_from_db()
+        self.assertEqual(hourly_job.status, AiJob.STATUS_PENDING)
 
     def test_claim_filters_all_model_jobs_by_advertised_capability(self):
         qwen38_job = AiJob.objects.create(
@@ -430,23 +432,30 @@ class AiJobApiTests(APITestCase):
         self.client.force_authenticate(user=None)
         headers = {'HTTP_X_AI_WORKER_TOKEN': 'test-worker-token'}
 
-        first = self.client.post(
-            '/api/ai/jobs/enqueue-periodic/',
-            {'languages': ['ko', 'zh']},
-            format='json',
-            **headers,
-        )
-        second = self.client.post(
-            '/api/ai/jobs/enqueue-periodic/',
-            {'languages': ['ko', 'zh']},
-            format='json',
-            **headers,
-        )
+        # Weekly deep analysis has its own timing tests; keep this one about
+        # the hourly slot regardless of the weekday the suite runs on.
+        with mock.patch(
+            'ai_core.views.enqueue_weekly_deep_analysis',
+            return_value={'due': False, 'created_count': 0},
+        ):
+            first = self.client.post(
+                '/api/ai/jobs/enqueue-periodic/',
+                {'languages': ['ko', 'zh']},
+                format='json',
+                **headers,
+            )
+            second = self.client.post(
+                '/api/ai/jobs/enqueue-periodic/',
+                {'languages': ['ko', 'zh']},
+                format='json',
+                **headers,
+            )
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(first.data['created_count'], 2)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.data['created_count'], 0)
+        self.assertIn('deep_analysis', first.data)
         hourly_jobs = AiJob.objects.filter(scope__trigger='hourly')
         self.assertEqual(hourly_jobs.count(), 2)
         self.assertEqual(

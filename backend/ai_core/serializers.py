@@ -1,11 +1,23 @@
 from rest_framework import serializers
 
-from .model_registry import AI_WORKER_CAPABILITY_MODEL_IDS
+from .deep_analysis import (
+    DEEP_ANALYSIS_KINDS,
+    normalize_deep_analysis_kind,
+    normalize_deep_analysis_language,
+)
+from .model_registry import AI_WORKER_CAPABILITY_MODEL_IDS, model_display_name
 from .models import AiJob
+
+
+def job_model_display_name(job):
+    """Registry name for scope.model_id, else the checkpoint basename."""
+    scope = job.scope if isinstance(job.scope, dict) else {}
+    return model_display_name(scope.get('model_id'), job.model_name)
 
 
 class AiJobSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
+    model_display_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AiJob
@@ -22,6 +34,7 @@ class AiJobSerializer(serializers.ModelSerializer):
             'started_at',
             'completed_at',
             'model_name',
+            'model_display_name',
             'prompt_version',
             'created_by',
             'created_by_name',
@@ -39,6 +52,7 @@ class AiJobSerializer(serializers.ModelSerializer):
             'started_at',
             'completed_at',
             'model_name',
+            'model_display_name',
             'prompt_version',
             'created_by',
             'created_by_name',
@@ -52,9 +66,14 @@ class AiJobSerializer(serializers.ModelSerializer):
             return None
         return getattr(user, 'username', None) or getattr(user, 'email', None) or str(user)
 
+    def get_model_display_name(self, obj):
+        return job_model_display_name(obj)
+
 
 class AiJobResultSerializer(serializers.ModelSerializer):
     """Small, read-only payload for dashboard status/result polling."""
+
+    model_display_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AiJob
@@ -70,10 +89,14 @@ class AiJobResultSerializer(serializers.ModelSerializer):
             'started_at',
             'completed_at',
             'model_name',
+            'model_display_name',
             'prompt_version',
             'created_at',
             'updated_at',
         ]
+
+    def get_model_display_name(self, obj):
+        return job_model_display_name(obj)
 
 
 class AiJobCreateSerializer(serializers.Serializer):
@@ -81,11 +104,13 @@ class AiJobCreateSerializer(serializers.Serializer):
     ALLOWED_SCOPE_FIELDS = {
         AiJob.JOB_TYPE_PRODUCTION_DAILY: {'date', 'language', 'trigger'},
         AiJob.JOB_TYPE_PRODUCTION_MACHINE: {'date', 'language', 'machine', 'trigger'},
+        AiJob.JOB_TYPE_DEEP_ANALYSIS: {'date', 'language', 'kind', 'trigger'},
     }
 
     job_type = serializers.ChoiceField(choices=[
         AiJob.JOB_TYPE_PRODUCTION_DAILY,
         AiJob.JOB_TYPE_PRODUCTION_MACHINE,
+        AiJob.JOB_TYPE_DEEP_ANALYSIS,
     ])
     scope = serializers.JSONField(required=False)
 
@@ -120,6 +145,15 @@ class AiJobCreateSerializer(serializers.Serializer):
         if isinstance(machine, str) and len(machine.strip()) > 128:
             raise serializers.ValidationError({'scope': 'machine must be 128 characters or fewer.'})
 
+        if job_type == AiJob.JOB_TYPE_DEEP_ANALYSIS:
+            kind = normalize_deep_analysis_kind(scope.get('kind'))
+            if kind is None:
+                raise serializers.ValidationError({
+                    'scope': f"kind must be one of: {', '.join(DEEP_ANALYSIS_KINDS)}.",
+                })
+            scope['kind'] = kind
+            scope['language'] = normalize_deep_analysis_language(scope.get('language'))
+
         scope['trigger'] = 'manual'
         attrs['scope'] = scope
         return attrs
@@ -133,6 +167,7 @@ class AiJobClaimSerializer(serializers.Serializer):
             AiJob.JOB_TYPE_PRODUCTION_DAILY,
             AiJob.JOB_TYPE_PRODUCTION_MACHINE,
             AiJob.JOB_TYPE_QUALITY_IMAGE,
+            AiJob.JOB_TYPE_DEEP_ANALYSIS,
         ]),
         required=False,
         allow_empty=False,

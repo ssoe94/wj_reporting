@@ -49,6 +49,9 @@ SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 QUALITY_REPORT_AUDIT_SCAN_LIMIT = 5
 QUALITY_REPORT_AUDIT_SCAN_WINDOW = 100
 QUALITY_REPORT_AUDIT_MAX_MANUAL_BATCH = 200
+# Bulk enqueue (periodic scan, "next N" batch) waits while this many audit
+# jobs are still pending/claimed; explicit per-report requests bypass it.
+QUALITY_REPORT_AUDIT_BACKLOG_LIMIT = 10
 QUALITY_REPORT_AUDIT_MAX_PAGE_SIZE = 50
 QUALITY_REPORT_AUDIT_REVIEW_ACTIONS = frozenset({
     "accepted",
@@ -369,6 +372,15 @@ def enqueue_quality_report_audit(
     return job, True
 
 
+def pending_quality_report_audit_count() -> int:
+    return AiJob.objects.filter(
+        job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+        status__in=[AiJob.STATUS_PENDING, AiJob.STATUS_CLAIMED],
+        scope__mode=QUALITY_REPORT_AUDIT_MODE,
+        scope__trigger=QUALITY_REPORT_AUDIT_TRIGGER,
+    ).count()
+
+
 def enqueue_stale_quality_report_audits(
     *,
     limit: int = QUALITY_REPORT_AUDIT_SCAN_LIMIT,
@@ -377,6 +389,20 @@ def enqueue_stale_quality_report_audits(
     bounded_scan: bool = False,
 ) -> dict[str, Any]:
     limit = max(1, min(int(limit or 1), QUALITY_REPORT_AUDIT_MAX_MANUAL_BATCH))
+    if report_ids is None:
+        backlog_count = pending_quality_report_audit_count()
+        if backlog_count >= QUALITY_REPORT_AUDIT_BACKLOG_LIMIT:
+            return {
+                "created_count": 0,
+                "created_job_ids": [],
+                "examined_count": 0,
+                "total_report_count": None,
+                "eligible_count": 0,
+                "remaining_count": 0,
+                "skipped_reason": "audit_backlog",
+                "backlog_count": backlog_count,
+                "backlog_limit": QUALITY_REPORT_AUDIT_BACKLOG_LIMIT,
+            }
     queryset = QualityReport.objects.order_by("-report_dt", "-id")
     if report_ids is not None:
         ids = [value for value in report_ids if type(value) is int and value > 0]

@@ -1,5 +1,7 @@
 # Render + Mac Studio 로컬 AI Worker 계획
 
+> 이 문서는 2026-05-18의 1단계 계획이다. 구현된 설계(작업 큐 엔드포인트, `qwen38` routine tier, Claude deep tier, 생성 락과 타임아웃)는 `docs/ai/2026-09-18-ai-tiers-and-neutral-labels.md`와 `local_worker/README.md`를 본다.
+
 ## 1. 목적
 
 WJ Reporting의 운영 사이트는 계속 Render에 둔다. 프런트엔드, Django 백엔드, PostgreSQL은 Render에서 운영하고, Mac Studio는 로컬 AI 연산 Worker로만 사용한다.

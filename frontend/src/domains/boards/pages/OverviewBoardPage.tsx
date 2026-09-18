@@ -69,7 +69,7 @@ import { WeatherDisplay } from "../overview/WeatherDisplay";
 import { BoardThemeLogo } from "../overview/BoardThemeLogo";
 import { useBoardTheme } from "../overview/useBoardTheme";
 import type { BoardTheme } from "../overview/theme";
-import { canShowQualityAi, getBriefingDuration, getNumberDensity } from "../overview/presentation";
+import { canShowQualityAi, getBriefingDuration, getNumberDensity, getQualityAiModelDisplayName } from "../overview/presentation";
 import styles from "./OverviewBoardPage.module.css";
 
 const QUALITY_WINDOW_SIZE = 1;
@@ -1097,11 +1097,13 @@ function QualityAiSlide({
   item,
   language,
   generatedAt,
+  modelDisplayName,
   totalEvidenceCount,
 }: {
   item: QualityAiAttentionItem;
   language: AppLanguage;
   generatedAt: string | null;
+  modelDisplayName: string;
   totalEvidenceCount: number | null;
 }) {
   const copy = COPY[language];
@@ -1137,6 +1139,7 @@ function QualityAiSlide({
     evidenceLabel={evidenceLabel}
     latestLabel={`${copy.qualityLatest} ${formatShortDate(item.latestReportAt)}`}
     generatedLabel={`${copy.qualityAiGenerated} ${formatShortDate(generatedAt)} ${formatShanghaiTime(generatedAt)}`}
+    modelDisplayName={modelDisplayName}
     totalEvidenceLabel={totalEvidenceCount === null ? null : copy.qualityAiEvidence.replace("{count}", formatInteger(totalEvidenceCount, language))}
   />;
 }
@@ -1266,6 +1269,7 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
                         item={item}
                         key={item.sourceKey}
                         language={language}
+                        modelDisplayName={getQualityAiModelDisplayName(qualityAi)}
                         totalEvidenceCount={qualityAi?.totals?.matchedReportCount ?? null}
                       />
                     ))

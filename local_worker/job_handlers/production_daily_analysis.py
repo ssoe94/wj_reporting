@@ -4,7 +4,18 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-PROMPT_VERSION = "production-daily-v4"
+PROMPT_VERSION = "production-daily-v5"
+
+# Static instruction placed at the head of the user payload so the automatic
+# prefix cache can reuse it; language-independent data follows, and the
+# language-dependent draft comes last (the hourly ko/zh pair shares one snapshot).
+PAYLOAD_INSTRUCTION = (
+    "Return concise Korean JSON if language is ko, Chinese JSON if language is zh. "
+    "The summary must contain zero measurement values or quantities; do not repeat any count, "
+    "rate, percentage, date, time, duration, output, plan, actual, or threshold. "
+    "Only exact identifier digits may remain."
+    " Use exactly the three required sections and put each evidence/check item in its own bullet."
+)
 
 
 SYSTEM_PROMPT = """You are a manufacturing production analyst.
@@ -63,24 +74,20 @@ def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
             "rows": (table.get("rows") or [])[:10],
         })
 
+    # Key order is the prompt order: static instruction, language-independent
+    # snapshot data, then language-dependent text.
     return {
-        "language": payload.get("language") or "ko",
+        "instruction": PAYLOAD_INSTRUCTION,
         "date": payload.get("date"),
-        "draft_summary": (briefing.get("answer") or "")[:700],
         "severity": briefing.get("severity"),
         "facts": briefing.get("facts") or {},
         "top_risks": briefing.get("top_risks") or [],
         "used_data": briefing.get("used_data") or [],
-        "calculation_basis": (briefing.get("calculation_basis") or [])[:5],
         "warnings": context_pack.get("warnings") or [],
         "tables": compact_tables[:2],
-        "instruction": (
-            "Return concise Korean JSON if language is ko, Chinese JSON if language is zh. "
-            "The summary must contain zero measurement values or quantities; do not repeat any count, "
-            "rate, percentage, date, time, duration, output, plan, actual, or threshold. "
-            "Only exact identifier digits may remain."
-            " Use exactly the three required sections and put each evidence/check item in its own bullet."
-        ),
+        "language": payload.get("language") or "ko",
+        "calculation_basis": (briefing.get("calculation_basis") or [])[:5],
+        "draft_summary": (briefing.get("answer") or "")[:700],
     }
 
 

@@ -461,7 +461,26 @@ export type ProductionPlanUploadResponse = {
   model_summary?: ProductionPlanSummaryBucket["model_summary"];
 };
 
-export type ProductionAiModelId = "qwen38";
+export type ProductionAiModelId = "qwen38" | "claude";
+
+export type ProductionAiModelTier = "local" | "deep";
+
+/** One entry of `GET /ai/worker/status/` `workers[]` (one per worker_name; tier from advertised model ids). */
+export type AiWorkerTierStatus = {
+  tier: ProductionAiModelTier | "unknown";
+  worker_name: string;
+  state: "unknown" | "online" | "offline";
+  online?: boolean;
+  model_name: string;
+  model_display_name?: string;
+  available_model_ids?: ProductionAiModelId[];
+  advertised_model_ids?: string[];
+  llm_ready?: boolean | null;
+  worker_version?: string;
+  worker_compatible?: boolean;
+  last_heartbeat_at: string | null;
+  heartbeat_age_seconds: number | null;
+};
 
 export type ProductionAiAskResponse = {
   answer: string;
@@ -544,26 +563,37 @@ export type ProductionAiBriefingResponse = {
 
 export type AiJobStatus = "pending" | "claimed" | "running" | "completed" | "failed" | "cancelled";
 
+/** Top-level fields describe the local (routine) tier; `workers[]` lists every tier. */
 export type AiWorkerStatus = {
   state: "unknown" | "online" | "offline";
   online: boolean;
+  tier?: ProductionAiModelTier;
   worker_name: string;
   last_heartbeat_at: string | null;
   heartbeat_age_seconds: number | null;
   stale_after_seconds: number;
   llm_ready: boolean | null;
   model_name: string;
+  model_display_name?: string;
   worker_version: string;
   worker_compatible?: boolean;
   available_model_ids?: ProductionAiModelId[];
+  workers?: AiWorkerTierStatus[];
   last_analysis_completed_at: string | null;
   last_analysis_model_name: string;
+  last_analysis_model_display_name?: string;
   last_analysis_llm_fallback: boolean | null;
 };
 
+export type AiJobType =
+  | "production_daily_analysis"
+  | "production_machine_analysis"
+  | "production_question_analysis"
+  | "deep_analysis";
+
 export type AiJob = {
   id: number;
-  job_type: "production_daily_analysis" | "production_machine_analysis" | "production_question_analysis";
+  job_type: AiJobType;
   status: AiJobStatus;
   scope: Record<string, unknown>;
   input_payload?: Record<string, unknown>;
@@ -574,6 +604,7 @@ export type AiJob = {
   started_at: string | null;
   completed_at: string | null;
   model_name: string;
+  model_display_name?: string;
   prompt_version: string;
   created_by?: number | null;
   created_by_name?: string | null;
@@ -585,6 +616,31 @@ export type CreateAiJobPayload = {
   job_type: AiJob["job_type"];
   scope?: Record<string, unknown>;
   input_payload?: Record<string, unknown>;
+};
+
+export type DeepAnalysisKind = "production_weekly" | "quality_weekly";
+
+export type DeepAnalysisFinding = {
+  title: string;
+  statement: string;
+  evidence_refs: string[];
+};
+
+/** `result_payload` of a completed `deep_analysis` job (schema `deep-analysis.v1`). */
+export type DeepAnalysisResultPayload = {
+  schema_version?: string;
+  source?: string;
+  model_id?: string;
+  kind?: DeepAnalysisKind;
+  language?: "ko" | "zh";
+  period?: { start?: string | null; end?: string | null; period_start?: string | null; period_end?: string | null };
+  summary?: string;
+  findings?: DeepAnalysisFinding[];
+  actions?: string[];
+  caveats?: string[];
+  llm_fallback?: boolean;
+  llm_fallback_code?: string | null;
+  llm_review_summary?: unknown;
 };
 
 export async function getProductionPlanDates() {
@@ -1031,6 +1087,36 @@ export async function getAiWorkerStatus(language: "ko" | "zh") {
   const response = await http.get<AiWorkerStatus>(
     `/ai/worker/status/?language=${encodeURIComponent(language)}`,
   );
+  return response.data;
+}
+
+export const DEEP_ANALYSIS_MODEL_ID: ProductionAiModelId = "claude";
+
+export type LatestDeepAnalysis = {
+  /** Newest completed job for the kind/language, or null when none exists yet. */
+  job: AiJob | null;
+  /** Newest pending/claimed/running job, when the server reports one. */
+  pendingJob: AiJob | null;
+  /** A failed attempt newer than `job`, if any (the latest request was rejected). */
+  failedJob: AiJob | null;
+};
+
+export async function fetchLatestDeepAnalysis(kind: DeepAnalysisKind, language: "ko" | "zh"): Promise<LatestDeepAnalysis> {
+  const response = await http.get<{ job: AiJob | null; pending_job?: AiJob | null; failed_job?: AiJob | null }>(
+    `/ai/jobs/latest/?job_type=deep_analysis&kind=${encodeURIComponent(kind)}&language=${encodeURIComponent(language)}&model_id=${encodeURIComponent(DEEP_ANALYSIS_MODEL_ID)}`,
+  );
+  return {
+    job: response.data.job ?? null,
+    pendingJob: response.data.pending_job ?? null,
+    failedJob: response.data.failed_job ?? null,
+  };
+}
+
+/** Staff-only manual request; `date` (period end) is optional. Subject to the manual rate limit (429). */
+export async function requestDeepAnalysis(kind: DeepAnalysisKind, language: "ko" | "zh", date?: string) {
+  const scope: Record<string, unknown> = { kind, language };
+  if (date) scope.date = date;
+  const response = await http.post<AiJob>("/ai/jobs/", { job_type: "deep_analysis", scope });
   return response.data;
 }
 

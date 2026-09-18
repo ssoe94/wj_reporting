@@ -1,4 +1,5 @@
 import { CheckCircle2, Clock3, Sparkles } from "lucide-react";
+import { withAiModelName } from "@/domains/ai/model-labels";
 import type { AppLanguage } from "@/shared/i18n/language";
 import styles from "./QualityBriefingContent.module.css";
 
@@ -7,13 +8,20 @@ const LABELS = {
     ai: "AI 품질 브리핑", history: "이력 기반 참고", model: "현재 생산 모델", part: "품번",
     summary: "핵심 요약", historySummary: "품질 이력 요약", phenomena: "과거 품질 현상",
     problemTypes: "반복 유형", problemLocations: "유형·위치", check: "확인 포인트", evidence: "이력 근거",
+    aiSource: "AI 요약",
   },
   zh: {
     ai: "AI 品质简报", history: "历史参考", model: "当前生产型号", part: "零件号",
     summary: "核心摘要", historySummary: "品质历史摘要", phenomena: "历史品质现象",
     problemTypes: "重复类型", problemLocations: "类型·位置", check: "确认要点", evidence: "历史依据",
+    aiSource: "AI 摘要",
   },
 };
+
+/** Footer source badge: "AI 요약 · {model display name}", or "AI 요약" alone when the model is unknown. */
+function getQualityAiSourceLabel(language: AppLanguage, modelDisplayName: string | null | undefined) {
+  return withAiModelName(LABELS[language].aiSource, modelDisplayName);
+}
 
 export interface QualityBriefingIdentity {
   machineLabel: string;
@@ -34,6 +42,8 @@ export interface QualityAiBriefingContentProps extends QualityBriefingIdentity {
   evidenceLabel: string;
   latestLabel: string;
   generatedLabel: string;
+  /** Display name of the model that produced the summary (from `summary.modelId` through the registry). */
+  modelDisplayName?: string | null;
   totalEvidenceLabel?: string | null;
 }
 
@@ -73,6 +83,7 @@ export function QualityAiBriefingContent(props: QualityAiBriefingContentProps) {
   const checkpointText = props.checkpoints.filter(Boolean).join(" · ") || "—";
   const dense = props.headline.length + props.problemTypes.length + props.problemLocationPairs.length + checkpointText.length > 260;
   const evidenceTitle = `${props.evidenceLabel} · ${props.latestLabel}`;
+  const sourceLabel = getQualityAiSourceLabel(props.language, props.modelDisplayName);
   return <article className={styles.briefing} data-mode="ai" data-density={dense ? "compact" : "regular"} lang={props.language}>
     <BriefingIdentity language={props.language} mode="ai" identity={props} />
     <section className={styles.narrative} aria-label={labels.summary}>
@@ -91,7 +102,7 @@ export function QualityAiBriefingContent(props: QualityAiBriefingContentProps) {
       </section>
     </div>
     <footer className={styles.footer}>
-      <span title={`Qwen 3.8 · ${props.generatedLabel}`}><b>Qwen 3.8</b><span>{props.generatedLabel}</span></span>
+      <span title={`${sourceLabel} · ${props.generatedLabel}`}><b>{sourceLabel}</b><span>{props.generatedLabel}</span></span>
       {props.totalEvidenceLabel && <span title={props.totalEvidenceLabel}>{props.totalEvidenceLabel}</span>}
     </footer>
   </article>;

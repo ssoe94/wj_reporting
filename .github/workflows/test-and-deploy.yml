@@ -69,7 +69,12 @@ jobs:
         run: python manage.py test --no-input
 
       - name: Run local AI worker tests
-        run: python -m unittest local_worker.test_worker
+        run: >-
+          python -m unittest
+          local_worker.test_worker
+          local_worker.test_quality_daily_attention
+          local_worker.test_quality_report_taxonomy_audit
+          local_worker.test_claude_bridge
 
   deploy-main:
     name: Deploy production from main

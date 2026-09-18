@@ -54,5 +54,5 @@ render_plist "$script_dir/$worker_label.plist.template" "$worker_target"
 /bin/launchctl bootstrap "gui/$user_id" "$worker_target"
 /bin/launchctl kickstart -k "gui/$user_id/$worker_label"
 
-echo "Installed and started $worker_label for the externally managed Qwen3.8 runtime."
+echo "Installed and started $worker_label for the externally managed local AI model runtime."
 echo "Logs: $log_dir"

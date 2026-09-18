@@ -2991,6 +2991,56 @@ select {
   line-height: 1.45;
 }
 
+/* Deep analysis panel reuses the briefing panel and AI job card styles; only list and
+   evidence-reference chips need their own rules. */
+.deep-analysis-panel .production-ai-job__issue {
+  min-height: 0;
+}
+
+.deep-analysis-panel__hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.deep-analysis-panel__refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.deep-analysis-panel__refs code {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(0, 142, 195, 0.08);
+  color: #006ea0;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.deep-analysis-panel__list {
+  margin: 0;
+  padding-left: 1.2em;
+  color: #263f52;
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.deep-analysis-panel__list li + li {
+  margin-top: 4px;
+}
+
+.deep-analysis-panel .notice--neutral strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #006ea0;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
 .production-progress-panel {
   display: grid;
   gap: 12px;

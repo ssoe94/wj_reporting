@@ -6,11 +6,13 @@ class AiJob(models.Model):
     JOB_TYPE_PRODUCTION_DAILY = 'production_daily_analysis'
     JOB_TYPE_PRODUCTION_MACHINE = 'production_machine_analysis'
     JOB_TYPE_QUALITY_IMAGE = 'quality_image_analysis'
+    JOB_TYPE_DEEP_ANALYSIS = 'deep_analysis'
 
     JOB_TYPE_CHOICES = [
         (JOB_TYPE_PRODUCTION_DAILY, 'Production Daily Analysis'),
         (JOB_TYPE_PRODUCTION_MACHINE, 'Production Machine Analysis'),
         (JOB_TYPE_QUALITY_IMAGE, 'Quality Image Analysis'),
+        (JOB_TYPE_DEEP_ANALYSIS, 'Deep Analysis'),
     ]
 
     STATUS_PENDING = 'pending'

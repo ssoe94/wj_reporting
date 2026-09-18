@@ -1435,7 +1435,7 @@ def _report_selector_payload(
 def _report_selector_llm_payload(
     selector_payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """Return the bounded ranking view sent to Qwen.
+    """Return the bounded ranking view sent to the local AI model.
 
     ``selector_payload`` is also the authoritative restoration catalog and can
     contain hundreds of evidence keys.  The model selects list indexes only,
@@ -1536,13 +1536,13 @@ def _report_selector_llm_payload(
         })
 
     return {
+        "required_output_schema": REPORT_SELECTOR_OUTPUT_SCHEMA,
         "history_coverage": _clean_text(
             selector_payload.get("history_coverage"), limit=40
         ),
         "repeated_candidates": repeated,
         "accelerating_candidates": accelerating,
         "affected_target_candidates": targets,
-        "required_output_schema": REPORT_SELECTOR_OUTPUT_SCHEMA,
     }
 
 
@@ -1584,7 +1584,7 @@ def _report_from_key_selections(
     selector_payload: dict[str, Any],
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ValueError("Qwen 3.8 report selector must return an object.")
+        raise ValueError("AI model report selector must return an object.")
 
     metric_index = _metric_index(grounding.get("report_metrics") or {})
 
@@ -1631,7 +1631,7 @@ def _report_from_key_selections(
             if len(result) >= limit:
                 break
         if candidates and not result:
-            raise ValueError(f"Qwen 3.8 did not select a valid {candidate_name} index.")
+            raise ValueError(f"AI model did not select a valid {candidate_name} index.")
         return result
 
     repeated_issues = selected_metrics(
@@ -1696,7 +1696,7 @@ def _report_from_key_selections(
         if len(affected_targets) >= 5:
             break
     if eligible_target_count and not affected_targets:
-        raise ValueError("Qwen 3.8 did not select a valid affected target index.")
+        raise ValueError("AI model did not select a valid affected target index.")
 
     base = _fallback_report(grounding, [])
     return {
@@ -1995,7 +1995,7 @@ def analyze_with_llm(
     model_name: str,
     deterministic: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run bounded key-selection requests without letting Qwen calculate or narrate.
+    """Run bounded key-selection requests without letting the AI model calculate or narrate.
 
     The per-model chunks select server-classified metric/evidence pairs. A final
     compact selector connects and orders only eligible verified metric/source
@@ -2067,15 +2067,17 @@ def analyze_with_llm(
             continue
 
         attempted += 1
+        # Static schema first so the prompt prefix is shared by every chunk
+        # call; the per-target keys follow.
         chunk_payload = {
-            "source_key": item["source_key"],
+            "required_output_schema": MODEL_CHUNK_OUTPUT_SCHEMA,
+            "issue_candidates": issue_candidates,
+            "omitted_phenomenon_count": max(0, len(phenomena) - len(bounded_phenomena)),
             "machine_name": item.get("machine_name"),
             "part_prefix": item.get("part_prefix"),
             "model_names": (item.get("model_names") or [])[:4],
             "part_nos": (item.get("part_nos") or [])[:4],
-            "issue_candidates": issue_candidates,
-            "omitted_phenomenon_count": max(0, len(phenomena) - len(bounded_phenomena)),
-            "required_output_schema": MODEL_CHUNK_OUTPUT_SCHEMA,
+            "source_key": item["source_key"],
         }
         selected_issues: list[dict[str, Any]] | None = None
         last_error: Exception | None = None
@@ -2092,7 +2094,7 @@ def analyze_with_llm(
                     json_object=True,
                 )
                 if not isinstance(chunk, dict):
-                    raise ValueError("Qwen 3.8 model chunk must return an object.")
+                    raise ValueError("AI model chunk must return an object.")
                 selected_issues = _normalize_candidate_index_selections(
                     chunk.get("selected_candidate_indices"),
                     issue_candidates,
@@ -2117,7 +2119,7 @@ def analyze_with_llm(
 
     if completed == 0:
         raise ValueError(
-            "Qwen 3.8 did not complete any model chunk: "
+            "AI model did not complete any model chunk: "
             + "; ".join(failed_chunks)[:500]
         )
 

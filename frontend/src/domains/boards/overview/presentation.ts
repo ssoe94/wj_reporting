@@ -1,3 +1,5 @@
+// Relative import with extension keeps this module runnable under node --test without the Vite alias.
+import { describeAiModel } from "../../ai/model-labels.ts";
 import type { QualityAiSummary, WeatherStatus } from "./types";
 
 export type WeatherArtwork = "clear" | "cloudy" | "rain" | "snow" | "thunder";
@@ -25,6 +27,11 @@ export function canShowQualityAi(summary: QualityAiSummary | null, businessDate:
     && Boolean(summary.sourcePlanHash)
     && Boolean(summary.sourceEvidenceHash)
     && Boolean(summary.summary?.[language]?.trim());
+}
+
+/** Display name for the badge on AI slides, resolved from the persisted model id; empty when unknown. */
+export function getQualityAiModelDisplayName(summary: QualityAiSummary | null) {
+  return describeAiModel({ modelId: summary?.modelId ?? null }).displayName;
 }
 
 /** CJK glyphs occupy more width than Latin letters; code points keep emoji intact. */

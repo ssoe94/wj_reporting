@@ -22,6 +22,8 @@ import {
 import dayjs from 'dayjs';
 
 import api from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { DeepAnalysisPanel } from '../../domains/ai/DeepAnalysisPanel';
 import { useLang } from '../../i18n';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -1470,6 +1472,8 @@ function buildPrintDocumentHtml(params: {
 
 export default function DailyAttentionPage() {
   const { t, lang } = useLang();
+  const { user } = useAuth();
+  const canRequestDeepAnalysis = Boolean(user?.is_staff);
   const [targetDate, setTargetDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, Record<string, boolean>>>({});
   const [printSelection, setPrintSelection] = useState<PrintSelectionState | null>(null);
@@ -1532,7 +1536,7 @@ export default function DailyAttentionPage() {
         rawDescription: '以下保留现有机台、料号、照片及原始记录，可用于追溯分析依据。',
         noCurrentDefect: '本报告基于历史质量记录与当前生产计划的匹配结果，不表示当前正在发生不良。',
         noReport: 'AI 报告尚不可用。下方继续显示现有计划与原始历史记录。',
-        noNarrative: 'Qwen 3.8 摘要暂不可用，当前显示可审计的数据分析结果。',
+        noNarrative: 'AI 摘要暂不可用，当前显示可审计的数据分析结果。',
         noMetrics: '没有可展示的分类指标。',
         noTargets: '当前计划中没有达到重复依据标准的有效历史信号。',
         trendRule: '仅当数量和占比同时增加时标记为“增加”',
@@ -1588,7 +1592,7 @@ export default function DailyAttentionPage() {
         rawDescription: '아래에는 기존 설비·품번별 사진과 원본 기록을 보존해 분석 근거를 추적할 수 있습니다.',
         noCurrentDefect: '이 보고서는 과거 품질 이력과 현재 생산계획의 매칭 결과이며, 현재 불량 발생을 의미하지 않습니다.',
         noReport: 'AI 분석 보고서를 아직 사용할 수 없습니다. 아래 기존 계획 및 원본 이력은 계속 제공합니다.',
-        noNarrative: 'Qwen 3.8 요약을 사용할 수 없어 감사 가능한 데이터 분석 결과를 표시합니다.',
+        noNarrative: 'AI 요약을 사용할 수 없어 감사 가능한 데이터 분석 결과를 표시합니다.',
         noMetrics: '표시할 분류 지표가 없습니다.',
         noTargets: '현재 계획에서 반복 근거 기준을 충족한 유효 역사 신호가 없습니다.',
         trendRule: '건수와 비중이 함께 증가한 경우에만 ‘증가’로 표시',
@@ -2498,6 +2502,8 @@ export default function DailyAttentionPage() {
               </div>
             )}
           </section>
+
+          <DeepAnalysisPanel canRequest={canRequestDeepAnalysis} kind="quality_weekly" language={narrativeLanguage} />
 
           <div className="flex items-start gap-3 px-1">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">

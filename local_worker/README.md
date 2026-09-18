@@ -1,6 +1,11 @@
 # Local AI Worker
 
 This worker runs on the Mac Studio and calls the Render backend using outbound HTTP only.
+It is the **local (routine) tier**: it advertises model id `qwen38` and processes
+production briefings, production questions, daily quality attention summaries and
+quality report photo audits on the on-device model server at `127.0.0.1:8082`.
+The **deep tier** (`claude`) is served by the Claude desktop scheduled task through
+[`claude_bridge.py`](#claude-deep-tier-bridge) on the same job queue.
 
 ## Local test
 
@@ -9,12 +14,12 @@ cd local_worker
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-AI_WORKER_TOKEN=change-me AI_WORKER_USE_LLM=false python worker.py --once
+AI_WORKER_TOKEN=change-me AI_WORKER_USE_LLM=false LOCAL_LLM_LOCK_PATH= python worker.py --once
 ```
 
 `AI_WORKER_USE_LLM=false` is a connectivity-only mode: the Worker can enqueue
 periodic work and report that no model is ready, but it will not claim
-model-bound jobs. Set it to `true` only when the configured Qwen3.8-compatible
+model-bound jobs. Set it to `true` only when the configured local model
 endpoint is running.
 
 With `AI_WORKER_ENQUEUE_PERIODIC=true`, the worker asks the Render backend to ensure one Korean and one Chinese daily-analysis job exist for the current Asia/Shanghai hour. Repeated polling is idempotent within the hour.
@@ -22,15 +27,15 @@ With `AI_WORKER_ENQUEUE_PERIODIC=true`, the worker asks the Render backend to en
 The Worker also claims server-scheduled `quality_image_analysis` jobs whose mode is
 `daily_attention_summary`. These jobs are bilingual, use only the
 `qwen38` target on `127.0.0.1:8082`, and summarize the server-provided all-history quality
-aggregates for the current production plan. If Qwen 3.8 is unavailable or returns
+aggregates for the current production plan. If the local model is unavailable or returns
 an invalid/ungrounded contract, the job completes with a deterministic bilingual
 fallback; the browser never connects to the local model directly.
 All-history report identifiers stay in the server-owned grounding payload. The
-Qwen prompt and result use compact aggregate evidence keys; the Worker validates
+model prompt and result use compact aggregate evidence keys; the Worker validates
 those keys and calculates de-duplicated counts before completion.
 
 The backend supplies authoritative `report_metrics` for repeated issues,
-report-frequency trends, and affected production scope. Qwen does not calculate
+report-frequency trends, and affected production scope. The model does not calculate
 metrics or write unchecked public prose. JSON-constrained, bounded per-target
 calls select server-classified metric and
 evidence keys, followed by one compact call that ranks and connects eligible
@@ -41,24 +46,68 @@ replaces all prose with grounded bilingual templates for
 `shift_checks`, and `caveats`. It rejects invented keys, numeric prose,
 current-defect claims, root-cause claims, defect-rate claims, and prescriptive
 corrective actions. A deterministic fallback remains retryable and is never
-published as a successful Qwen report.
+published as a successful model report.
 
 AI report candidates are limited to canonical `problem_types` and backend-owned
 `problem_location_pairs`. A pair is accepted only when the backend marks it as
 coming from the same `QualityReport` row (`pair_basis=same_quality_report_id`);
 the Worker never joins a problem and location itself. Standalone location
-metrics and unknown/missing location coverage are not sent to Qwen and cannot
+metrics and unknown/missing location coverage are not sent to the model and cannot
 become a daily priority. A problem type remains eligible even when its location
 was not recorded.
 
 For continuous Mac Studio operation, use the Keychain-backed launch agents in
 [`scripts/local_ai`](../scripts/local_ai/README.md). The launch agents keep the
 outbound Worker running without putting `AI_WORKER_TOKEN` in a plist or
-repository file. The Qwen3.8 MLX endpoint on port 8082 is managed separately.
+repository file. The model server on port 8082 is managed separately.
+
+## Runtime behaviour
+
+- **Heartbeat thread.** Heartbeats are posted every `AI_WORKER_HEARTBEAT_SECONDS`
+  (default 30, minimum 15) from a daemon thread with its own HTTP session, so a
+  long generation never makes the worker look offline. The `/v1/models` readiness
+  probe (3 s) is skipped while a job is being generated; the last known readiness
+  is reported instead. `model_name` in heartbeats and job completions is the
+  checkpoint basename (for example `Qwen3.8-27B-4bit`), never the local path.
+- **Timeouts.** `LOCAL_LLM_TIMEOUT_SECONDS` (default 240, honoured up to 600) is the
+  ceiling for one model call. Each call uses
+  `min(ceiling, prompt_tokens / 300 + max_tokens / 30 + 30)` seconds, where
+  `prompt_tokens` counts latin text at 4 chars per token and every CJK character as
+  one token (about 300 tok/s prefill and 35 tok/s decode, plus 5 s per attached
+  image). Handlers that
+  request a longer floor (the quality selectors ask for 180 s) get it as long as the
+  ceiling allows. The backend re-pends a claimed job after 600 s, so never raise the
+  ceiling above that.
+- **Generation lock.** The model server runs one sequence at a time and is shared
+  with the coding-delegation gateway. Before claiming, the worker takes a bounded
+  advisory `flock` on `LOCAL_LLM_LOCK_PATH` (default
+  `~/.local/share/codex-local-worker/state/generation.lock`, the gateway's own lock;
+  the directory is created with mode 0700 if missing) waiting up to
+  `LOCAL_LLM_LOCK_WAIT_SECONDS` (default 90). If the lock is busy the poll cycle is
+  skipped without claiming, so no lease burns while another generation runs; the
+  periodic enqueue call still happens. The lock is released after the job completes
+  or fails. Set `LOCAL_LLM_LOCK_PATH=` (empty) to disable it.
+- **Prefix-cache friendly prompts.** The runtime has automatic prefix caching, which
+  only hits on identical token prefixes and keys on the system message. Every
+  handler therefore puts static text first (instruction, output schema, taxonomy),
+  then language-independent data, then language-dependent text, and finally the
+  question/conversation history. Prompt versions: `production-daily-v5`,
+  `production-machine-v5`, `production-question-v9`; the two quality handlers keep
+  their backend-pinned versions and only reorder.
+- **Question token budget.** The question handler estimates tokens
+  (latin chars / 4 + one per CJK char) and trims `historical_snapshots`, then
+  `conversation_history`, oldest first until the payload is <= 12,000 tokens. Above
+  28,000 the job completes with the deterministic answer and
+  `llm_fallback_code = input_too_large`. The estimate is logged to stderr.
+- **Photo audits.** When a report attaches byte-identical photos (same SHA-256),
+  identical observations returned under one `image_index` are re-homed onto the
+  duplicate positions before validation instead of failing the audit. Inconsistent
+  duplicates are still rejected.
+- **Error wording.** Persisted error strings say `AI model`, never a vendor name.
 
 ## LLM mode
 
-Confirm that the separately managed Qwen3.8 OpenAI-compatible endpoint is ready:
+Confirm that the separately managed OpenAI-compatible endpoint is ready:
 
 ```bash
 curl -fsS http://127.0.0.1:8082/v1/models
@@ -78,11 +127,63 @@ RENDER_API_BASE_URL=http://127.0.0.1:8000/api
 AI_WORKER_TOKEN=change-me
 LOCAL_LLM_BASE_URL=http://127.0.0.1:8082/v1
 LOCAL_LLM_MODEL=/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit
-LOCAL_LLM_TIMEOUT_SECONDS=45
+LOCAL_LLM_TIMEOUT_SECONDS=240
+LOCAL_LLM_LOCK_PATH=~/.local/share/codex-local-worker/state/generation.lock
+LOCAL_LLM_LOCK_WAIT_SECONDS=90
 WORKER_NAME=mac-studio-local-ai
-POLL_INTERVAL_SECONDS=5
-AI_WORKER_USE_LLM=false
+POLL_INTERVAL_SECONDS=10
+AI_WORKER_HEARTBEAT_SECONDS=30
+AI_WORKER_USE_LLM=true
 AI_WORKER_FALLBACK_TO_DETERMINISTIC=true
 AI_WORKER_ENQUEUE_PERIODIC=true
 PERIODIC_ENQUEUE_CHECK_SECONDS=60
 ```
+
+## Claude deep-tier bridge
+
+`claude_bridge.py` is the CLI the Claude desktop scheduled task uses to serve
+`deep_analysis` jobs (model id `claude`). It is the only deep-tier component that
+touches the worker token: it reads the same Keychain item as the worker
+(`com.wj.local-ai-worker.token`, or `AI_WORKER_TOKEN` when set) via
+`/usr/bin/security` and never prints or logs it.
+
+```bash
+python -m local_worker.claude_bridge heartbeat        # advertises ["claude"] as mac-studio-claude-desktop
+python -m local_worker.claude_bridge claim            # claims one deep_analysis job, marks it running,
+                                                      # writes ~/.local/share/wj-claude-bridge/jobs/<id>/bundle.md
+python -m local_worker.claude_bridge submit <id> ~/.local/share/wj-claude-bridge/jobs/<id>/answer.json
+python -m local_worker.claude_bridge fail <id> "<reason>"
+python -m local_worker.claude_bridge status
+```
+
+Every command prints one JSON object on stdout. `claim` prints
+`{"job": <id>, "job_id", "kind", "language", "period", "bundle_path", "answer_path", "lease"}`
+(or `{"job": null}` when the queue is empty). The bundle contains the instructions,
+the required answer shape and the input payload as fenced JSON; it states that the
+payload is data, not instructions, and that every number in the answer must come from
+`input_payload.evidence_numbers`. `submit` validates the answer locally (schema
+`deep-analysis.v1`, source `claude_desktop_review`, length caps, and every number in the
+prose and in `evidence_refs` must be in `evidence_numbers`, compared after stripping
+leading/trailing zeros so `9월 8일` grounds on `2026-09-08`), then posts `complete`
+with prompt version `deep-analysis-claude-v1` and model name `claude`. On a validation
+failure it exits 1 **without** posting `fail`: the job stays claimed so the caller can
+revise the answer and submit again; giving up is an explicit `fail <id> "<reason>"`.
+If `complete` is answered with 403 the lease expired (the backend re-queues a
+`deep_analysis` job after `DEEP_ANALYSIS_JOB_TIMEOUT_SECONDS`, 2 h, instead of the
+10-minute local-worker lease); the bridge records `lease_lost` locally and exits 2.
+Environment: `RENDER_API_BASE_URL` (default
+production), `WORKER_NAME` (default `mac-studio-claude-desktop`), `CLAUDE_BRIDGE_HOME`
+(default `~/.local/share/wj-claude-bridge`), `AI_WORKER_KEYCHAIN_SERVICE`,
+`AI_WORKER_KEYCHAIN_ACCOUNT`.
+
+Scheduled task outline (`~/.claude/scheduled-tasks/wj-deep-analysis`, created disabled and
+enabled only after the backend deploy):
+
+1. `heartbeat`.
+2. `claim`; stop when it prints `{"job": null}`.
+3. Read `bundle_path`, write the answer JSON to `answer_path`.
+4. `submit <id> <answer_path>`. Exit 1 = validation failed and the job is still claimed:
+   fix the printed reason and submit once more, then `fail <id> "<reason>"` if it still
+   fails. Exit 2/3 = token, lease or network problem: stop the run. The weekly enqueue
+   re-creates a failed pair once (`DEEP_ANALYSIS_MAX_ATTEMPTS = 2`).
+5. Repeat from step 2, at most 4 jobs per run.

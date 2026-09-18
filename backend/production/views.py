@@ -25,7 +25,11 @@ from .models import (
 from injection.models import CycleTimeSetup, InjectionMonitoringRecord, PartSpec
 from assembly.models import AssemblyReport
 from ai_core.models import AiJob
-from ai_core.model_registry import SUPPORTED_AI_WORKER_VERSION
+from ai_core.model_registry import (
+    AI_MODEL_TIERS,
+    is_supported_worker_version,
+    model_display_name,
+)
 
 from django.db.models import Sum, Q, Max
 from django.db.utils import DatabaseError, OperationalError, ProgrammingError, IntegrityError
@@ -86,43 +90,49 @@ class ActiveProductionAiQuestionError(APIException):
 
 
 def is_production_ai_model_available(model_id, now=None):
-    """Return whether the latest Worker heartbeat can safely serve the model."""
+    """Return whether any fresh, compatible Worker heartbeat advertises the model."""
     canonical_model_id = canonical_production_ai_model_id(model_id)
+    if canonical_model_id is None:
+        requested = str(model_id or '').strip() if isinstance(model_id, str) else ''
+        canonical_model_id = requested if requested in AI_MODEL_TIERS else None
     if canonical_model_id is None:
         return False
     try:
-        heartbeat = (
+        heartbeats = list(
             AiJob.objects
             .filter(
                 job_type='worker_heartbeat',
                 status=AiJob.STATUS_COMPLETED,
             )
             .order_by('-completed_at', '-id')
-            .first()
         )
     except DatabaseError:
-        return False
-    if not heartbeat or not heartbeat.completed_at:
         return False
     stale_after_seconds = max(
         30,
         int(getattr(settings, 'AI_WORKER_HEARTBEAT_STALE_SECONDS', 300) or 300),
     )
-    heartbeat_age = ((now or timezone.now()) - heartbeat.completed_at).total_seconds()
-    if heartbeat_age < 0 or heartbeat_age > stale_after_seconds:
-        return False
-    result = heartbeat.result_payload if isinstance(heartbeat.result_payload, dict) else {}
-    available_model_ids = {
-        str(value or '').strip()
-        for value in result.get('available_model_ids', [])
-        if str(value or '').strip()
-    }
-    return (
-        result.get('llm_enabled') is True
-        and result.get('llm_ready') is True
-        and result.get('worker_version') == SUPPORTED_AI_WORKER_VERSION
-        and canonical_model_id in available_model_ids
-    )
+    reference_time = now or timezone.now()
+    for heartbeat in heartbeats:
+        if not heartbeat.completed_at:
+            continue
+        heartbeat_age = (reference_time - heartbeat.completed_at).total_seconds()
+        if heartbeat_age < 0 or heartbeat_age > stale_after_seconds:
+            continue
+        result = heartbeat.result_payload if isinstance(heartbeat.result_payload, dict) else {}
+        available_model_ids = {
+            str(value or '').strip()
+            for value in result.get('available_model_ids', [])
+            if str(value or '').strip()
+        }
+        if (
+            result.get('llm_enabled') is True
+            and result.get('llm_ready') is True
+            and is_supported_worker_version(result.get('worker_version'))
+            and canonical_model_id in available_model_ids
+        ):
+            return True
+    return False
 
 
 def serialize_plan_for_log(plan):
@@ -603,7 +613,7 @@ class ProductionAiAskView(APIView):
                     'detail': 'The local AI explanation service is not ready.',
                     'code': 'ai_model_unavailable',
                     'model_id': model_id,
-                    'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
+                    'model_label': model_display_name(model_id),
                 }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             daily_context = get_daily_production_context(target_date)
             verified_context = build_context_pack(
@@ -667,7 +677,7 @@ class ProductionAiAskView(APIView):
                 ),
                 'source': 'ai_queued',
                 'model_id': model_id,
-                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
+                'model_label': model_display_name(model_id),
                 'intent': intent,
                 'context': {
                     'business_date': verified_context.get('scope', {}).get('business_date'),
@@ -712,7 +722,7 @@ class ProductionAiAskView(APIView):
                 **deterministic,
                 'source': 'intent_calculated',
                 'model_id': model_id,
-                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
+                'model_label': model_display_name(model_id),
                 'intent': intent,
                 'context': {
                     'business_date': facts.get('business_date'),
@@ -757,7 +767,7 @@ class ProductionAiAskView(APIView):
                 **deterministic,
                 'source': 'intent_calculated',
                 'model_id': model_id,
-                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
+                'model_label': model_display_name(model_id),
                 'intent': intent,
                 'context': {
                     'business_date': facts.get('business_date'),
@@ -804,7 +814,7 @@ class ProductionAiAskView(APIView):
                 **deterministic,
                 'source': 'intent_calculated',
                 'model_id': model_id,
-                'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
+                'model_label': model_display_name(model_id),
                 'intent': intent,
                 'context': {
                     'business_date': context['business_date'],
@@ -826,7 +836,7 @@ class ProductionAiAskView(APIView):
             ),
             'source': 'deterministic_unhandled',
             'model_id': model_id,
-            'model_label': PRODUCTION_AI_MODELS[model_id]['label'],
+            'model_label': model_display_name(model_id),
             'intent': intent,
             'context': {
                 'business_date': context['business_date'],

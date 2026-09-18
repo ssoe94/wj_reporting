@@ -18,7 +18,7 @@ The superuser-only `/admin/development-tasks` page is the operational checklist 
 
 ## Scope and authorization
 
-- Use a `codex/` worktree for substantial changes. Inspect `git status --short` first and preserve unrelated user changes. Keep `main` available for human review.
+- Use an isolated worktree on an agent-prefixed branch (`codex/<topic>-<YYYYMMDD>` or `claude/<topic>-<YYYYMMDD>`) for substantial changes. Inspect `git status --short` first and preserve unrelated user changes. Keep `main` available for human review.
 - Work on the modules required by the current request. The P1 AI module list below is guidance for AI changes, not a global ban on quality, administration, UX or other authorized development.
 - Do not commit, push, create PRs, merge or deploy unless the user requests it.
 - Do not touch production secrets, `.env` files, credentials or deployment settings. Read-only MES integration must use existing authorized interfaces; do not invent credentials or connect a preview to production data.
@@ -60,10 +60,12 @@ P1 calculation-based RAG remains the first AI priority. Production numbers come 
 Relevant modules are `backend/production/ai_types.py`, `ai_metrics.py`, `ai_retrievers.py`, `ai_context.py`, `ai_answer.py`, and `ai_gateway.py` when the ask flow needs cleanup. Wire endpoints in existing production views/URLs. Verify the current implementation rather than relying on this list as proof of completion.
 
 - Never let an LLM calculate production numbers or generate/execute free-form SQL.
-- Do not connect production frontend behavior directly to Mac Studio, MLX or a local LLM.
+- Do not connect production frontend behavior directly to Mac Studio, MLX or a local LLM. "Directly" means the browser never calls the Mac: it talks only to the Render backend, which hands LLM work to workers through the outbound-polling `ai_core` job queue.
 - Defer document RAG, pgvector/Qdrant and vector databases until the deterministic P1 path and evidence contracts are stable.
 - Deterministic responses include `answer`, `facts`, `used_data`, `calculation_basis`, `data_freshness`, `warnings` and `retrieval_trace`.
 - Keep the briefing below the dashboard's top summary and preserve its deterministic fallback when the endpoint fails.
+
+The AI runtime is tiered (design: `docs/ai/2026-09-18-ai-tiers-and-neutral-labels.md`). The routine tier is the on-device `qwen38` worker (`local_worker/`), which claims hourly briefings, interactive questions, daily quality attention and classification audits from `backend/ai_core`. The deep tier is `claude`: `deep_analysis` jobs (weekly production/quality packs built server-side by `backend/ai_core/deep_analysis.py`) are claimed through the same queue by a Claude desktop scheduled task via `local_worker/claude_bridge.py`; production data for those jobs is sent to Anthropic. Both tiers follow the same grounding rules: the server builds the input, the model only explains it, every number in the result must appear in the server-provided evidence, and server-owned facts are restored on completion. UI copy is model-neutral and shows the model name from server data (`model_display_name`, `frontend/src/domains/ai/model-labels.ts`); persisted identifiers (`qwen38`, `local_llm_rewrite`, `qwen_classification`, prompt versions, `claimed_by` names) stay unchanged because renaming them would orphan history.
 
 ## Design and accessibility
 
@@ -82,9 +84,11 @@ Use the user-selected [Emil Kowalski apple-design skill](https://github.com/emil
 
 ## Delegation and verification
 
-Classify bounded work before substantial exploration. Use the `local-worker-delegation` skill when available: one supervised Qwen3.8 worker, fast for input-heavy deterministic investigation/tests/docs and deep for bounded multi-file implementation. Keep architecture, ambiguity, auth/security, schemas, migrations, critical data contracts and final integration in Codex. Worker writes require an isolated worktree. Never let a worker push, deploy, change production data/credentials or perform broad deletion.
+Classify bounded work before substantial exploration. Use the `local-worker-delegation` skill when available: one supervised Qwen3.8 worker, fast for input-heavy deterministic investigation/tests/docs and deep for bounded multi-file implementation. Keep architecture, ambiguity, auth/security, schemas, migrations, critical data contracts and final integration in the master agent (Codex or Claude). Worker writes require an isolated worktree. Never let a worker push, deploy, change production data/credentials or perform broad deletion.
 
-Treat worker output as untrusted. Inspect reports and actual diffs, then independently verify. Use at most one bounded repair; do not build worker-to-worker review chains. `local_review` is optional only when explicitly requested or for a measured routing experiment. When the worker runtime cannot run required repository tools, report that limitation and continue suitable work in Codex; do not repeatedly retry the same unsupported setup.
+Handoff rules aligned with the machine policy: pass `repository` as the git top level of a work tree under an allowed root (`git -C <path> rev-parse --show-toplevel`); for non-git input such as exported reports or log dumps use `local_digest` with explicit absolute file paths instead; leave `timeout_sec` and `runtime_profile` at their defaults. The local model serves one sequence at a time machine-wide, shared by Codex sessions, Claude sessions and the WJ production worker; the production worker takes the coding gateway's generation lock (`LOCAL_LLM_LOCK_PATH`) before claiming a job, so a `busy` result or a production-job fallback during a long delegation is expected contention. Continue directly on `busy`. Claude sessions may use the `local-scout` (read-only investigation/digest, background) and `local-builder` (bounded implementation in an isolated worktree with verification) subagents, which wrap the same tools under the same rules.
+
+Treat worker output as untrusted. Inspect reports and actual diffs, then independently verify. Use at most one bounded repair; do not build worker-to-worker review chains. `local_review` is optional only when explicitly requested or for a measured routing experiment. When the worker runtime cannot run required repository tools, report that limitation and continue suitable work in the master agent; do not repeatedly retry the same unsupported setup.
 
 Run checks appropriate to changed behavior. Do not add tests that merely mirror a low-risk style edit. Authorization, data contracts, persistence and conflict handling require meaningful tests. Complete implementation, run the affected behavior, inspect failures, fix causes within scope, and rerun affected checks. After checks pass, broaden or repeat them only for new changes or unresolved concerns. If progress is blocked, finish independent work and report the evidence and exact remaining action; do not broaden into unrelated changes or stop merely at a first implementation.
 

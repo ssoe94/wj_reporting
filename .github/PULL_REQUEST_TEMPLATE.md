@@ -13,6 +13,7 @@
 - [ ] 백엔드 테스트 통과
 - [ ] 한국어/중국어 전환 확인
 - [ ] `/production` 및 `/mes/monitoring` 확인
+- [ ] AI 변경 시: `local_worker` 테스트 통과, AI 문구 모델 중립 유지, Mac Studio 워커/브리지 재배포 필요 여부 기재
 
 ## 운영 데이터 영향
 

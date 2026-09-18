@@ -30,7 +30,12 @@ fi
 export RENDER_API_BASE_URL="${RENDER_API_BASE_URL:-https://wj-reporting-backend.onrender.com/api}"
 export LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-http://127.0.0.1:8082/v1}"
 export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-/Users/macstudio_ted/Developer/local-ai/models/Qwen3.8-27B-4bit}"
-export LOCAL_LLM_TIMEOUT_SECONDS="${LOCAL_LLM_TIMEOUT_SECONDS:-120}"
+# Ceiling for one model call (5..600); each call uses min(ceiling, size estimate).
+export LOCAL_LLM_TIMEOUT_SECONDS="${LOCAL_LLM_TIMEOUT_SECONDS:-240}"
+# Advisory flock shared with the coding-delegation gateway on the same model
+# server. Set LOCAL_LLM_LOCK_PATH to an empty string to disable.
+export LOCAL_LLM_LOCK_PATH="${LOCAL_LLM_LOCK_PATH-$HOME/.local/share/codex-local-worker/state/generation.lock}"
+export LOCAL_LLM_LOCK_WAIT_SECONDS="${LOCAL_LLM_LOCK_WAIT_SECONDS:-90}"
 export WORKER_NAME="${WORKER_NAME:-mac-studio-local-ai}"
 export POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-10}"
 export AI_WORKER_USE_LLM="${AI_WORKER_USE_LLM:-true}"
@@ -50,5 +55,5 @@ for attempt in $(seq 1 90); do
   /bin/sleep 2
 done
 
-echo "The Qwen3.8 local AI server did not become ready within 180 seconds." >&2
+echo "The local AI model server did not become ready within 180 seconds." >&2
 exit 69

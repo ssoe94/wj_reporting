@@ -1,19 +1,55 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
+import sys
 from typing import Any
 
 try:
+    from ..llm_client import estimate_prompt_tokens
     from ..skills.production_analyst import build_skill_payload, insert_verified_metrics, prioritize_verified_rows
 except ImportError:
+    from llm_client import estimate_prompt_tokens
     from skills.production_analyst import build_skill_payload, insert_verified_metrics, prioritize_verified_rows
 
 
-PROMPT_VERSION = "production-question-v8"
+PROMPT_VERSION = "production-question-v9"
 ENABLE_THINKING = True
 THINKING_BUDGET = 384
 INITIAL_TIMEOUT_SECONDS = 100
 REPAIR_TIMEOUT_SECONDS = 45
+# Token budget for the user payload (estimated: latin chars / 4 + CJK chars).
+# historical_snapshots, then conversation_history, are trimmed oldest-first
+# until the estimate fits; above the hard limit the job falls back with
+# llm_fallback_code=input_too_large instead of overflowing the 32K context.
+PROMPT_TOKEN_BUDGET = 12_000
+PROMPT_TOKEN_HARD_LIMIT = 28_000
+MAX_HISTORICAL_SNAPSHOTS = 24
+MAX_CONVERSATION_TURNS = 8
+
+PAYLOAD_INSTRUCTION = (
+    "Return specific but compact Korean JSON if language is ko, Chinese JSON if language is zh. "
+    "Structure summary as conclusion, two or three evidence bullets, then one or two items to check. "
+    "Do not expose private reasoning; provide only the evidence-backed final explanation. "
+    "Do not perform arithmetic. For verified_answer_rewrite, copy verified_answer verbatim once at the "
+    "start of the conclusion and write no other measurement or quantity. For context_grounded, write no "
+    "measurement or quantity; the Worker will insert verified metrics. "
+    "Only exact identifier digits may remain. "
+    "For every check item, use exactly one of 확인, 점검, 검토, 조회 (or 确认, 检查, 审查, 查询). "
+    "Do not use 검증/验证, physical or configuration actions, chained actions, or before/after sequencing. "
+    "Put different data objects in separate bullets; do not join them with 과/와/및 or 和/与/及. "
+    "Use only facts present in verified_answer, verified_facts, verified_tables, or historical_snapshots."
+)
+
+
+class InputTooLargeError(ValueError):
+    """The question payload cannot be trimmed under the hard token limit."""
+
+    fallback_code = "input_too_large"
+
+
+def estimate_payload_tokens(payload: dict[str, Any]) -> int:
+    return estimate_prompt_tokens(json.dumps(payload, ensure_ascii=False, default=str))
 
 
 SYSTEM_PROMPT = """You are a manufacturing production analyst.
@@ -90,11 +126,53 @@ def _deterministic_payload(job: dict[str, Any]) -> dict[str, Any]:
     return deterministic if isinstance(deterministic, dict) else {}
 
 
-def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
+def _assemble_payload(
+    payload: dict[str, Any],
+    deterministic: dict[str, Any],
+    verified_context: dict[str, Any],
+    compact_tables: list[dict[str, Any]],
+    historical_snapshots: list[Any],
+    conversation_history: list[Any],
+) -> dict[str, Any]:
+    # Key order is the prompt order (prefix-cache friendly): static instruction,
+    # language-independent verified data, language-dependent text, and finally
+    # the question-dependent skill block, conversation history and question.
+    llm_payload: dict[str, Any] = {
+        "instruction": PAYLOAD_INSTRUCTION,
+        "answer_mode": payload.get("answer_mode") or "verified_answer_rewrite",
+        "date": payload.get("date"),
+        "scope": verified_context.get("scope") or {},
+        "verified_tables": compact_tables,
+        "historical_snapshots": historical_snapshots,
+        "verified_facts": deterministic.get("facts") or verified_context.get("facts") or {},
+        "data_freshness": deterministic.get("data_freshness") or verified_context.get("data_freshness") or {},
+        "warnings": deterministic.get("warnings") or verified_context.get("warnings") or [],
+        "language": "zh" if payload.get("language") == "zh" else "ko",
+        "calculation_basis": deterministic.get("calculation_basis") or verified_context.get("calculation_basis") or [],
+        "verified_answer": deterministic.get("answer") or "",
+        "intent": payload.get("intent") or {},
+        "conversation_history": conversation_history,
+        "question": payload.get("question") or "",
+    }
+    llm_payload["analysis_skill"] = build_skill_payload(llm_payload)
+    # Re-insert so the skill block (question-dependent) sits before the
+    # conversation history and question in the serialized prompt.
+    llm_payload["conversation_history"] = llm_payload.pop("conversation_history")
+    llm_payload["question"] = llm_payload.pop("question")
+    return llm_payload
+
+
+def build_budgeted_llm_payload(job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int]]:
+    """Return the prompt payload trimmed to the token budget plus budget metrics."""
     payload = job.get("input_payload") or {}
     deterministic = _deterministic_payload(job)
     verified_context = payload.get("verified_context") or {}
-    conversation_history = (payload.get("conversation_history") or [])[-8:]
+    conversation_history = list(
+        (payload.get("conversation_history") or [])[-MAX_CONVERSATION_TURNS:]
+    )
+    historical_snapshots = list(
+        (verified_context.get("historical_snapshots") or [])[-MAX_HISTORICAL_SNAPSHOTS:]
+    )
     question_context = " ".join([
         str(payload.get("question") or ""),
         *(str(item.get("content") or "") for item in conversation_history if isinstance(item, dict)),
@@ -103,36 +181,51 @@ def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
         verified_context.get("tables") or [],
         question_context,
     )
-    llm_payload = {
-        "language": "zh" if payload.get("language") == "zh" else "ko",
-        "date": payload.get("date"),
-        "question": payload.get("question") or "",
-        "conversation_history": conversation_history,
-        "answer_mode": payload.get("answer_mode") or "verified_answer_rewrite",
-        "intent": payload.get("intent") or {},
-        "verified_answer": deterministic.get("answer") or "",
-        "verified_facts": deterministic.get("facts") or verified_context.get("facts") or {},
-        "verified_tables": compact_tables,
-        "historical_snapshots": (verified_context.get("historical_snapshots") or [])[-24:],
-        "scope": verified_context.get("scope") or {},
-        "calculation_basis": deterministic.get("calculation_basis") or verified_context.get("calculation_basis") or [],
-        "data_freshness": deterministic.get("data_freshness") or verified_context.get("data_freshness") or {},
-        "warnings": deterministic.get("warnings") or verified_context.get("warnings") or [],
-        "instruction": (
-            "Return specific but compact Korean JSON if language is ko, Chinese JSON if language is zh. "
-            "Structure summary as conclusion, two or three evidence bullets, then one or two items to check. "
-            "Do not expose private reasoning; provide only the evidence-backed final explanation. "
-            "Do not perform arithmetic. For verified_answer_rewrite, copy verified_answer verbatim once at the "
-            "start of the conclusion and write no other measurement or quantity. For context_grounded, write no "
-            "measurement or quantity; the Worker will insert verified metrics. "
-            "Only exact identifier digits may remain. "
-            "For every check item, use exactly one of 확인, 점검, 검토, 조회 (or 确认, 检查, 审查, 查询). "
-            "Do not use 검증/验证, physical or configuration actions, chained actions, or before/after sequencing. "
-            "Put different data objects in separate bullets; do not join them with 과/와/및 or 和/与/及. "
-            "Use only facts present in verified_answer, verified_facts, verified_tables, or historical_snapshots."
-        ),
+    metrics = {
+        "snapshots_supplied": len(historical_snapshots),
+        "history_supplied": len(conversation_history),
     }
-    llm_payload["analysis_skill"] = build_skill_payload(llm_payload)
+    while True:
+        llm_payload = _assemble_payload(
+            payload,
+            deterministic,
+            verified_context,
+            compact_tables,
+            historical_snapshots,
+            conversation_history,
+        )
+        estimate = estimate_payload_tokens(llm_payload)
+        if estimate <= PROMPT_TOKEN_BUDGET:
+            break
+        if historical_snapshots:
+            historical_snapshots = historical_snapshots[1:]
+            continue
+        if conversation_history:
+            conversation_history = conversation_history[1:]
+            continue
+        break
+    metrics.update({
+        "estimated_tokens": estimate,
+        "snapshots_kept": len(historical_snapshots),
+        "history_kept": len(conversation_history),
+    })
+    if estimate > PROMPT_TOKEN_HARD_LIMIT:
+        raise InputTooLargeError(
+            "Question payload is too large for the AI model context "
+            f"(estimated {estimate} tokens, limit {PROMPT_TOKEN_HARD_LIMIT})."
+        )
+    return llm_payload, metrics
+
+
+def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
+    llm_payload, metrics = build_budgeted_llm_payload(job)
+    print(
+        "production question prompt estimate: "
+        f"{metrics['estimated_tokens']} tokens "
+        f"(historical_snapshots {metrics['snapshots_supplied']}->{metrics['snapshots_kept']}, "
+        f"conversation_history {metrics['history_supplied']}->{metrics['history_kept']})",
+        file=sys.stderr,
+    )
     return llm_payload
 
 
@@ -145,8 +238,12 @@ def enrich_summary(summary: str, llm_payload: dict[str, Any]) -> str:
 
 
 def build_grounding_payload(job: dict[str, Any]) -> dict[str, Any]:
-    """Return authoritative evidence only, excluding user-authored chat text."""
-    llm_payload = build_llm_payload(job)
+    """Return authoritative evidence only, excluding user-authored chat text.
+
+    Built from the same trimmed payload that is sent to the model so grounding
+    validation sees exactly the evidence the model saw.
+    """
+    llm_payload, _metrics = build_budgeted_llm_payload(job)
     return {
         "date": llm_payload.get("date"),
         "verified_answer": llm_payload.get("verified_answer"),
