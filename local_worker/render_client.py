@@ -7,10 +7,23 @@ WORKER_VERSION = "production-ai-worker-v2"
 
 
 class RenderClient:
-    def __init__(self, api_base_url: str, worker_token: str, timeout: int = 30):
+    """Outbound Render API client.
+
+    Each instance owns one ``requests.Session``; sessions are not thread-safe,
+    so every thread (main loop, heartbeat thread, bridge CLI) builds its own
+    client. ``session`` may be injected for tests.
+    """
+
+    def __init__(
+        self,
+        api_base_url: str,
+        worker_token: str,
+        timeout: int = 30,
+        session: requests.Session | None = None,
+    ):
         self.api_base_url = api_base_url.rstrip("/")
         self.timeout = timeout
-        self.session = requests.Session()
+        self.session = session if session is not None else requests.Session()
         self.session.headers.update({
             "Content-Type": "application/json",
             "X-AI-WORKER-TOKEN": worker_token,

@@ -4,7 +4,17 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-PROMPT_VERSION = "production-machine-v4"
+PROMPT_VERSION = "production-machine-v5"
+
+# Static instruction at the head of the user payload (prefix-cache friendly);
+# language-independent target data follows and the language comes last.
+PAYLOAD_INSTRUCTION = (
+    "Return concise Korean JSON if language is ko, Chinese JSON if language is zh. "
+    "The summary must contain zero measurement values or quantities; do not repeat any count, "
+    "rate, percentage, date, time, duration, output, plan, actual, or threshold. "
+    "Only exact identifier digits may remain."
+    " Use exactly the three required sections and put each evidence/check item in its own bullet."
+)
 
 
 SYSTEM_PROMPT = """You are a manufacturing machine analyst.
@@ -100,7 +110,7 @@ def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
     warnings = _target_warnings(payload, context_pack.get("warnings") or [], process)
     data_limited = bool(DATA_LIMITING_WARNINGS.intersection(warnings))
     return {
-        "language": payload.get("language") or "ko",
+        "instruction": PAYLOAD_INSTRUCTION,
         "date": payload.get("date"),
         "machine": payload.get("machine"),
         "process": process,
@@ -108,14 +118,8 @@ def build_llm_payload(job: dict[str, Any]) -> dict[str, Any]:
         "related_parts": [] if data_limited else (payload.get("related_parts") or [])[:10],
         "facts": context_pack.get("facts") or {},
         "warnings": warnings,
+        "language": payload.get("language") or "ko",
         "calculation_basis": context_pack.get("calculation_basis") or [],
-        "instruction": (
-            "Return concise Korean JSON if language is ko, Chinese JSON if language is zh. "
-            "The summary must contain zero measurement values or quantities; do not repeat any count, "
-            "rate, percentage, date, time, duration, output, plan, actual, or threshold. "
-            "Only exact identifier digits may remain."
-            " Use exactly the three required sections and put each evidence/check item in its own bullet."
-        ),
     }
 
 

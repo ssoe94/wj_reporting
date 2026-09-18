@@ -1,3 +1,8 @@
+import fcntl
+import json
+import os
+import tempfile
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -1670,7 +1675,7 @@ class ProductionQuestionAnalysisTests(unittest.TestCase):
         self.assertIn("1호기 종료 예상 형합수는 2,900회입니다.", result["summary"])
         self.assertEqual(result["source"], "local_llm_rewrite")
         self.assertEqual(result["llm_attempts"], 1)
-        self.assertEqual(prompt_version, "production-question-v8")
+        self.assertEqual(prompt_version, "production-question-v9")
 
     def test_grounding_rejection_is_repaired_with_qualitative_payload(self):
         class SequencedLlm:
@@ -2160,10 +2165,11 @@ class WorkerRunReportingTests(unittest.TestCase):
             )
 
         self.assertIs(handle.call_args.args[2], qwen_llm)
-        self.assertEqual(handle.call_args.args[3], "/models/qwen38")
+        # Only the checkpoint basename is handed to handlers and the backend.
+        self.assertEqual(handle.call_args.args[3], "qwen38")
         completed_payload = client.completed[0][1]
         self.assertEqual(completed_payload["result_payload"]["model_id"], "qwen38")
-        self.assertEqual(completed_payload["model_name"], "/models/qwen38")
+        self.assertEqual(completed_payload["model_name"], "qwen38")
 
     def test_legacy_job_without_model_id_uses_qwen_default(self):
         job = self.daily_job()
@@ -2295,11 +2301,452 @@ class WorkerRunReportingTests(unittest.TestCase):
                     "AI_WORKER_TOKEN": "test-token",
                     "AI_WORKER_USE_LLM": "false",
                     "AI_WORKER_ENQUEUE_PERIODIC": "false",
+                    "LOCAL_LLM_LOCK_PATH": "",
                 },
                 clear=False,
             ),
         ):
             self.assertEqual(worker_module.main(), 1)
+        # --once sends one synchronous heartbeat (basename model name, no thread).
+        self.assertEqual(len(client.heartbeats), 1)
+        self.assertEqual(client.heartbeats[0]["model_name"], "")
+
+
+class WorkerRuntimeTests(unittest.TestCase):
+    """Heartbeat thread, timeouts, generation lock, prompt ordering, token budget."""
+
+    class Client(WorkerRunReportingTests.Client):
+        pass
+
+    @staticmethod
+    def daily_job():
+        return WorkerRunReportingTests.daily_job()
+
+    # -- timeouts --------------------------------------------------------
+    def test_configured_timeout_is_honoured_up_to_600_with_default_240(self):
+        self.assertEqual(worker_module.resolve_llm_timeout_seconds(None), 240)
+        self.assertEqual(worker_module.resolve_llm_timeout_seconds(""), 240)
+        self.assertEqual(worker_module.resolve_llm_timeout_seconds("300"), 300)
+        self.assertEqual(worker_module.resolve_llm_timeout_seconds("600"), 600)
+        self.assertEqual(worker_module.resolve_llm_timeout_seconds("900"), 600)
+        self.assertEqual(worker_module.resolve_llm_timeout_seconds("1"), 5)
+        self.assertEqual(worker_module.resolve_llm_timeout_seconds("junk"), 240)
+
+    def test_per_call_timeout_is_min_of_configured_and_size_estimate(self):
+        client = LocalLlmClient("http://127.0.0.1:8082/v1", "/models/Qwen3.8-27B-4bit", timeout=240)
+        # 3,000 prompt tokens / 300 + 1200 / 30 + 30 = 10 + 40 + 30 = 80 s
+        self.assertAlmostEqual(client.call_timeout_seconds(3_000, 1200), 80.0)
+        # 30,000 tokens -> 100 + 40 + 30 = 170 s, still under the ceiling
+        self.assertAlmostEqual(client.call_timeout_seconds(30_000, 1200), 170.0)
+        # 150,000 tokens -> 570 s estimate is capped by the configured ceiling
+        self.assertAlmostEqual(client.call_timeout_seconds(150_000, 1200), 240.0)
+        # A handler floor (quality selectors ask for 180 s) is honoured under the ceiling
+        self.assertAlmostEqual(client.call_timeout_seconds(750, 256, requested_seconds=180), 180.0)
+        self.assertAlmostEqual(client.call_timeout_seconds(750, 256, requested_seconds=900), 240.0)
+        # Images add prefill time
+        self.assertAlmostEqual(client.call_timeout_seconds(0, 384, image_count=3), 12.8 + 30 + 15)
+
+    def test_per_call_timeout_counts_cjk_prompt_chars_as_tokens(self):
+        client = LocalLlmClient("http://127.0.0.1:8082/v1", "/models/Qwen3.8-27B-4bit", timeout=600)
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [{"finish_reason": "stop", "message": {"content": '{"status":"ok"}'}}],
+        }
+        with patch.object(llm_client_module.requests, "post", return_value=response) as post:
+            client.structured_analysis("system", {"task": "사" * 12_000}, max_tokens=300)
+        # 12,000 CJK chars are ~12,000 tokens (40 s prefill), not 12,000 / 4 chars
+        # -> 40 + 10 + 30 = 80 s; the character-based estimate would have given ~50 s.
+        self.assertAlmostEqual(post.call_args.kwargs["timeout"], 80.0, delta=1.0)
+
+    def test_client_ceiling_is_capped_at_600_and_requests_use_estimate(self):
+        client = LocalLlmClient("http://127.0.0.1:8082/v1", "/models/Qwen3.8-27B-4bit", timeout=900)
+        self.assertEqual(client.timeout, 600)
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [{"finish_reason": "stop", "message": {"content": '{"status":"ok"}'}}],
+        }
+        with patch.object(llm_client_module.requests, "post", return_value=response) as post:
+            client.structured_analysis("system", {"task": "x" * 1200}, max_tokens=300)
+        # prompt tokens: ("system" + json ~ 1,220 latin chars) / 4 ~ 305 -> ~1 s; 300/30 = 10; +30
+        self.assertAlmostEqual(post.call_args.kwargs["timeout"], 41.0, delta=0.5)
+        self.assertEqual(post.call_args.kwargs["json"]["max_tokens"], 300)
+
+    def test_token_estimate_counts_cjk_chars_individually(self):
+        estimate = llm_client_module.estimate_prompt_tokens
+        self.assertEqual(estimate("abcdefgh"), 2)
+        self.assertEqual(estimate("사출기"), 3)
+        self.assertEqual(estimate("注塑机 abcd"), 3 + 1)
+        self.assertEqual(estimate(""), 0)
+
+    # -- heartbeat thread -------------------------------------------------
+    def _heartbeat(self, client, state, ready=True):
+        llm = MagicMock()
+        llm.is_ready.return_value = ready
+        targets = {
+            "qwen38": worker_module.LocalModelTarget("qwen38", llm, "/models/Qwen3.8-27B-4bit"),
+        }
+        thread = worker_module.HeartbeatThread(
+            client=client,
+            state=state,
+            worker_name="worker",
+            interval_seconds=30,
+            llm_enabled=True,
+            model_targets=targets,
+            default_model_id="qwen38",
+            model_name=worker_module.display_model_name("/models/Qwen3.8-27B-4bit"),
+        )
+        return thread, llm
+
+    def test_heartbeat_cycle_probes_readiness_and_reports_basename(self):
+        client = self.Client()
+        state = worker_module.WorkerState()
+        state.set_error("previous poll failed")
+        thread, llm = self._heartbeat(client, state)
+
+        self.assertTrue(thread.run_cycle())
+
+        llm.is_ready.assert_called_once_with(timeout=3)
+        payload = client.heartbeats[0]
+        self.assertTrue(payload["llm_ready"])
+        self.assertEqual(payload["available_model_ids"], ["qwen38"])
+        self.assertEqual(payload["model_name"], "Qwen3.8-27B-4bit")
+        self.assertEqual(payload["worker_version"], worker_module.WORKER_VERSION)
+        self.assertEqual(payload["last_error"], "previous poll failed")
+        self.assertEqual(state.snapshot()["last_error"], "")
+        self.assertEqual(state.snapshot()["available_model_ids"], ["qwen38"])
+        self.assertTrue(thread.daemon)
+
+    def test_heartbeat_skips_models_probe_while_generation_is_in_flight(self):
+        client = self.Client()
+        state = worker_module.WorkerState()
+        thread, llm = self._heartbeat(client, state)
+        thread.run_cycle()
+        llm.is_ready.reset_mock()
+        llm.is_ready.return_value = False  # would report offline if probed
+
+        state.set_generation_in_flight(True)
+        thread.run_cycle()
+
+        llm.is_ready.assert_not_called()
+        self.assertTrue(client.heartbeats[1]["llm_ready"])
+        self.assertEqual(client.heartbeats[1]["available_model_ids"], ["qwen38"])
+        state.set_generation_in_flight(False)
+        thread.run_cycle()
+        llm.is_ready.assert_called_once_with(timeout=3)
+        self.assertFalse(client.heartbeats[2]["llm_ready"])
+
+    def test_heartbeat_thread_runs_cycles_until_stopped_with_its_own_client(self):
+        client = self.Client()
+        state = worker_module.WorkerState()
+        thread, _llm = self._heartbeat(client, state)
+        thread.interval_seconds = 0.01
+        thread.start()
+        deadline = threading.Event()
+        for _ in range(200):
+            if client.heartbeats:
+                break
+            deadline.wait(0.01)
+        thread.stop_event.set()
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertGreaterEqual(len(client.heartbeats), 1)
+
+    def test_heartbeat_failure_keeps_last_error_for_the_next_cycle(self):
+        client = self.Client()
+        client.send_heartbeat = MagicMock(side_effect=RuntimeError("backend down"))
+        state = worker_module.WorkerState()
+        state.set_error("job 1 failed")
+        thread, _llm = self._heartbeat(client, state)
+
+        self.assertFalse(thread.run_cycle())
+        self.assertEqual(state.snapshot()["last_error"], "job 1 failed")
+
+    def test_state_error_updates_between_heartbeats_are_not_cleared_by_a_stale_send(self):
+        client = self.Client()
+        state = worker_module.WorkerState()
+        state.set_error("first")
+        thread, _llm = self._heartbeat(client, state)
+        original_send = client.send_heartbeat
+
+        def send_and_update(worker_name, **payload):
+            state.set_error("second")
+            return original_send(worker_name, **payload)
+
+        client.send_heartbeat = send_and_update
+        thread.run_cycle()
+        self.assertEqual(state.snapshot()["last_error"], "second")
+
+    # -- generation lock --------------------------------------------------
+    def test_disabled_lock_always_acquires(self):
+        lock = worker_module.GenerationLock("", 1)
+        self.assertFalse(lock.enabled)
+        self.assertTrue(lock.acquire())
+        lock.release()
+
+    def test_lock_directory_is_created_private_and_lock_is_released_after_job(self):
+        with tempfile.TemporaryDirectory() as root:
+            lock_path = os.path.join(root, "state", "generation.lock")
+            lock = worker_module.GenerationLock(lock_path, 1)
+            client = self.Client(self.daily_job())
+            state = worker_module.WorkerState()
+
+            processed = run_once(
+                client, "worker", False, None, "model", True, True,
+                generation_lock=lock, state=state,
+            )
+
+            self.assertEqual(processed, 1)
+            self.assertEqual(oct(os.stat(os.path.dirname(lock_path)).st_mode & 0o777), oct(0o700))
+            self.assertFalse(lock.held)
+            self.assertFalse(state.snapshot()["generation_in_flight"])
+            self.assertEqual(len(client.completed), 1)
+            # The lock is free again: another process can take it immediately.
+            with open(lock_path, "a+") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def test_busy_lock_skips_claim_but_still_enqueues_periodic_jobs(self):
+        with tempfile.TemporaryDirectory() as root:
+            lock_path = os.path.join(root, "generation.lock")
+            with open(lock_path, "a+") as other_process:
+                fcntl.flock(other_process.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                lock = worker_module.GenerationLock(lock_path, 0.2)
+                client = self.Client(self.daily_job())
+                client.enqueue_periodic_jobs = MagicMock(return_value={})
+                report = RunOnceReport()
+
+                processed = run_once(
+                    client, "worker", False, None, "model", True, True,
+                    report=report, generation_lock=lock,
+                )
+
+                self.assertEqual(processed, 0)
+                client.enqueue_periodic_jobs.assert_called_once_with()
+                self.assertEqual(client.claim_requests, [])
+                self.assertFalse(client.completed)
+                self.assertFalse(report.had_failure)
+                self.assertIn("generation lock busy", report.summary())
+                self.assertFalse(lock.held)
+
+    def test_lock_is_released_when_claim_raises(self):
+        with tempfile.TemporaryDirectory() as root:
+            lock = worker_module.GenerationLock(os.path.join(root, "generation.lock"), 1)
+            client = self.Client()
+            client.claim_jobs = MagicMock(side_effect=RuntimeError("claim unavailable"))
+            with self.assertRaisesRegex(RuntimeError, "claim unavailable"):
+                run_once(client, "worker", False, None, "model", True, False, generation_lock=lock)
+            self.assertFalse(lock.held)
+
+    def test_generation_in_flight_flag_is_set_while_jobs_are_processed(self):
+        client = self.Client(self.daily_job())
+        state = worker_module.WorkerState()
+        seen = []
+
+        def handle(*_args, **_kwargs):
+            seen.append(state.snapshot()["generation_in_flight"])
+            return {"model_name": "deterministic-local-worker", "source": "deterministic"}, "prompt-v1"
+
+        with patch.object(worker_module, "handle_job", side_effect=handle):
+            run_once(client, "worker", False, None, "model", True, False, state=state)
+
+        self.assertEqual(seen, [True])
+        self.assertFalse(state.snapshot()["generation_in_flight"])
+
+    # -- basename model names ---------------------------------------------
+    def test_display_model_name_returns_checkpoint_basename(self):
+        self.assertEqual(
+            worker_module.display_model_name("/Users/me/models/Qwen3.8-27B-4bit"),
+            "Qwen3.8-27B-4bit",
+        )
+        self.assertEqual(worker_module.display_model_name("C:\\models\\Qwen3.8-27B-4bit/"), "Qwen3.8-27B-4bit")
+        self.assertEqual(worker_module.display_model_name(""), "")
+
+    def test_complete_and_fail_report_checkpoint_basename(self):
+        job = self.daily_job()
+        llm = MagicMock()
+        llm.is_ready.return_value = True
+        targets = {
+            "qwen38": worker_module.LocalModelTarget("qwen38", llm, "/models/Qwen3.8-27B-4bit"),
+        }
+        client = self.Client(job)
+        with patch.object(
+            worker_module, "handle_job",
+            return_value=({"source": "local_llm_rewrite"}, "prompt-v1"),
+        ) as handle:
+            run_once(client, "worker", True, llm, "/models/Qwen3.8-27B-4bit", True, False, model_targets=targets)
+        self.assertEqual(handle.call_args.args[3], "Qwen3.8-27B-4bit")
+        self.assertEqual(client.completed[0][1]["model_name"], "Qwen3.8-27B-4bit")
+
+        failing = self.Client(job)
+        with patch.object(worker_module, "handle_job", side_effect=RuntimeError("boom")):
+            run_once(failing, "worker", True, llm, "/models/Qwen3.8-27B-4bit", True, False, model_targets=targets)
+        self.assertEqual(failing.failed[0][0], job["id"])
+
+    # -- prompt ordering and versions ------------------------------------
+    def test_production_prompt_versions_were_bumped_for_prefix_cache_ordering(self):
+        self.assertEqual(production_daily_analysis.PROMPT_VERSION, "production-daily-v5")
+        self.assertEqual(production_machine_analysis.PROMPT_VERSION, "production-machine-v5")
+        self.assertEqual(production_question_analysis.PROMPT_VERSION, "production-question-v9")
+
+    def test_envelope_puts_static_keys_first_and_scope_last(self):
+        class RecordingLlm:
+            def __init__(self):
+                self.payloads = []
+
+            def structured_analysis(self, _system_prompt, payload, **_kwargs):
+                self.payloads.append(payload)
+                return {
+                    "title": "일일 생산 분석",
+                    "summary": structured_ko("검증된 생산 데이터 범위의 설명입니다."),
+                }
+
+        llm = RecordingLlm()
+        job = self.daily_job()
+        job["scope"] = {"trigger": "hourly", "language": "ko", "model_id": "qwen38", "date": "2026-09-18"}
+        handle_job(job, use_llm=True, llm=llm, model_name="qwen-test", fallback_to_deterministic=True)
+
+        self.assertEqual(
+            list(llm.payloads[0].keys()),
+            ["job_type", "required_output_schema", "input_payload", "scope"],
+        )
+        self.assertEqual(llm.payloads[0]["scope"]["date"], "2026-09-18")
+
+    def test_daily_payload_orders_instruction_then_shared_data_then_language(self):
+        job = self.daily_job()
+        job["input_payload"] = {
+            "language": "zh",
+            "date": "2026-09-18",
+            "briefing": {"answer": "草稿", "severity": "warning", "facts": {"a": 1}, "calculation_basis": ["基准"]},
+        }
+        keys = list(production_daily_analysis.build_llm_payload(job).keys())
+        self.assertEqual(keys[0], "instruction")
+        self.assertLess(keys.index("facts"), keys.index("language"))
+        self.assertLess(keys.index("tables"), keys.index("language"))
+        self.assertEqual(keys[-3:], ["language", "calculation_basis", "draft_summary"])
+
+    def test_machine_payload_orders_instruction_first_and_language_last(self):
+        job = {
+            "job_type": "production_machine_analysis",
+            "input_payload": {"language": "ko", "date": "2026-09-18", "machine": "1", "context_pack": {}},
+        }
+        keys = list(production_machine_analysis.build_llm_payload(job).keys())
+        self.assertEqual(keys[0], "instruction")
+        self.assertEqual(keys[-2:], ["language", "calculation_basis"])
+        self.assertLess(keys.index("facts"), keys.index("language"))
+
+    def test_question_payload_ends_with_skill_history_and_question(self):
+        job = {
+            "job_type": "production_daily_analysis",
+            "input_payload": {
+                "source": "production_ai_question",
+                "language": "ko",
+                "date": "2026-09-18",
+                "question": "1호기 상태는?",
+                "conversation_history": [{"role": "user", "content": "이전 질문"}],
+                "verified_context": {"tables": [], "historical_snapshots": [{"facts": {"x": 1}}]},
+            },
+        }
+        payload = production_question_analysis.build_llm_payload(job)
+        keys = list(payload.keys())
+        self.assertEqual(keys[0], "instruction")
+        self.assertEqual(keys[-3:], ["analysis_skill", "conversation_history", "question"])
+        self.assertLess(keys.index("verified_tables"), keys.index("language"))
+        self.assertLess(keys.index("historical_snapshots"), keys.index("verified_answer"))
+        self.assertEqual(payload["question"], "1호기 상태는?")
+        grounding = production_question_analysis.build_grounding_payload(job)
+        self.assertEqual(grounding["historical_snapshots"], payload["historical_snapshots"])
+
+    def test_repair_payload_puts_instruction_before_evidence_and_draft(self):
+        job = self.daily_job()
+        job["input_payload"]["language"] = "ko"
+        repair = build_repair_payload(job, {"title": "t", "summary": "s"}, {"facts": {}})
+        keys = list(repair.keys())
+        self.assertEqual(keys[:2], ["language", "instruction"])
+        self.assertEqual(keys[-1], "qualitative_draft")
+
+    # -- question token budget --------------------------------------------
+    @staticmethod
+    def _question_job(snapshots, history):
+        return {
+            "job_type": "production_daily_analysis",
+            "input_payload": {
+                "source": "production_ai_question",
+                "language": "ko",
+                "date": "2026-09-18",
+                "question": "1호기 추세는?",
+                "conversation_history": history,
+                "verified_context": {
+                    "tables": [],
+                    "historical_snapshots": snapshots,
+                },
+            },
+        }
+
+    def test_budget_trims_oldest_snapshots_first_then_history(self):
+        big = "x" * 4000  # ~1,000 estimated tokens each
+        snapshots = [{"slot": index, "facts": {"blob": big}} for index in range(16)]
+        # History alone exceeds the budget, so every snapshot goes first and
+        # then the oldest turns are dropped.
+        history = [{"role": "user", "content": big * 2} for _ in range(8)]
+        job = self._question_job(snapshots, history)
+
+        with patch("sys.stderr"):
+            payload, metrics = production_question_analysis.build_budgeted_llm_payload(job)
+
+        self.assertLessEqual(metrics["estimated_tokens"], production_question_analysis.PROMPT_TOKEN_BUDGET)
+        self.assertEqual(metrics["snapshots_supplied"], 16)
+        self.assertEqual(metrics["snapshots_kept"], 0)
+        self.assertEqual(metrics["history_supplied"], 8)
+        self.assertLess(metrics["history_kept"], 8)
+        self.assertGreater(metrics["history_kept"], 0)
+        # The newest history turns survive.
+        self.assertEqual(payload["conversation_history"], history[-metrics["history_kept"]:])
+        self.assertEqual(payload["historical_snapshots"], [])
+
+    def test_budget_keeps_newest_snapshots_when_a_partial_trim_suffices(self):
+        big = "x" * 4000
+        snapshots = [{"slot": index, "facts": {"blob": big}} for index in range(14)]
+        job = self._question_job(snapshots, [])
+        payload, metrics = production_question_analysis.build_budgeted_llm_payload(job)
+        self.assertLessEqual(metrics["estimated_tokens"], 12_000)
+        self.assertGreater(metrics["snapshots_kept"], 0)
+        self.assertLess(metrics["snapshots_kept"], 14)
+        self.assertEqual(payload["historical_snapshots"], snapshots[-metrics["snapshots_kept"]:])
+        # Grounding sees the same trimmed evidence.
+        grounding = production_question_analysis.build_grounding_payload(job)
+        self.assertEqual(grounding["historical_snapshots"], payload["historical_snapshots"])
+
+    def test_budget_logs_the_estimate(self):
+        job = self._question_job([], [])
+        with patch("sys.stderr") as stderr:
+            production_question_analysis.build_llm_payload(job)
+        logged = "".join(str(call.args[0]) for call in stderr.write.call_args_list)
+        self.assertIn("production question prompt estimate:", logged)
+        self.assertIn("tokens", logged)
+
+    def test_oversized_untrimmable_question_falls_back_with_input_too_large(self):
+        job = self._question_job([], [])
+        job["input_payload"]["verified_context"]["tables"] = [{
+            "name": "injection_machine_progress",
+            "columns": ["machine", "blob"],
+            "rows": [{"machine": f"{index}호기", "blob": "y" * 2600} for index in range(50)],
+        }]
+        with self.assertRaises(production_question_analysis.InputTooLargeError):
+            production_question_analysis.build_llm_payload(job)
+
+        class NeverCalledLlm:
+            def structured_analysis(self, *_args, **_kwargs):
+                raise AssertionError("model must not be called for oversized input")
+
+        result, prompt_version = handle_job(
+            job, use_llm=True, llm=NeverCalledLlm(), model_name="qwen-test", fallback_to_deterministic=True,
+        )
+        self.assertTrue(result["llm_fallback"])
+        self.assertEqual(result["llm_fallback_code"], "input_too_large")
+        self.assertIn("too large", result["llm_error"])
+        self.assertEqual(prompt_version, "production-question-v9")
 
 
 if __name__ == "__main__":
