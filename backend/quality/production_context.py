@@ -158,6 +158,7 @@ def _aggregate(rows, actual, planned, *, status="ready", failure=None):
     summary = {"report_count": len(rows), **{field: 0 for field in SUMMARY_FIELDS.values()}, "missing_model_count": 0}
     for row in rows:
         machine, basis = _resolve(row, actual, planned)
+        row["resolved_machine"] = machine
         summary[SUMMARY_FIELDS[basis]] += 1
         summary["missing_model_count"] += int(not row["model"])
         for groups, grouping_machine in ((model_parts, None), (machine_models, machine)):

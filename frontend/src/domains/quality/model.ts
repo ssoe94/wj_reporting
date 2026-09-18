@@ -1,4 +1,5 @@
-import { getQualityTrendOmittedDates } from './trend.ts';
+import { parseQualityReport } from './report.ts';
+import type { QualityReport } from './report.ts';
 
 export type QualityLanguage = 'ko' | 'zh';
 export type LocalizedLabel = { ko: string; zh: string };
@@ -18,16 +19,6 @@ export interface QualityTypeParetoSummary {
   classified_report_count: number; excluded_report_count: number; unclassified_report_count: number;
   missing_phenomenon_report_count: number; multi_type_report_count: number; type_occurrence_count: number;
   counting_policy: 'unique_report_type'; quantity_policy: 'not_attributed';
-}
-export interface QualityActivityDay {
-  date: string; status: 'no_change' | 'activity' | 'unknown'; reason: string;
-  can_collapse: boolean; observed_machine_count: number;
-}
-export interface QualityActivityCalendar {
-  schema_version: 'quality-activity.v1'; status: 'ready' | 'not_applicable' | 'unavailable';
-  source: 'InjectionMonitoringRecord'; timezone: 'Asia/Shanghai'; date_basis: 'calendar_day';
-  policy: 'continuous_constant_capacity_v1'; max_gap_minutes: 10;
-  expected_machine_count: number; days: QualityActivityDay[];
 }
 export interface QualityConcentration { items: QualityGroup[]; total_group_count: number; top_n: number; other_report_count: number }
 export interface QualityProductionMatchCounts {
@@ -50,28 +41,14 @@ export interface QualityProductionContext {
   model_parts: QualityProductionConcentration; machine_models: QualityProductionConcentration;
   limitations: string[];
 }
-export interface QualityProductionShiftCounts {
-  report_count: number | null; active_shift_count: number; no_change_shift_count: number;
-  unknown_shift_count: number; open_shift_count: number; reports_per_shift: number | null;
-}
-export interface QualityProductionShiftDay extends QualityProductionShiftCounts { date: string; reason: string }
-export interface QualityProductionShifts {
-  schema_version: 'quality-shifts.v1'; status: 'ready' | 'not_applicable' | 'unavailable';
-  timezone: 'Asia/Shanghai'; date_basis: 'production_business_day';
-  source: 'InjectionMonitoringRecord'; report_source: 'QualityReport:LQC_INJ';
-  source_status: { reports: 'ready' | 'unavailable'; monitoring: 'ready' | 'unavailable' };
-  policy: 'observed_machine_shift_v1'; max_gap_minutes: 10; expected_machine_count: number;
-  days: QualityProductionShiftDay[]; summary: QualityProductionShiftCounts; limitations: string[];
-}
 export interface QualityAnalysis {
   schema_version: 'quality-analysis.v1';
   status: 'ok' | 'partial' | 'no_records';
   filters: { start_date: string; end_date: string; section: string | null; machine_number: string | number | null; timezone: string; date_basis: string };
   summary: QualityQuantities & { inspection_quantity_record_count: number; recorded_inspection_qty: number | null; zero_defect_report_count: number; latest_report_at: string | null };
   trend: Array<QualityQuantities & { date: string }>;
-  activity_calendar?: QualityActivityCalendar;
   production_context?: QualityProductionContext;
-  production_shifts?: QualityProductionShifts;
+  report?: QualityReport;
   pareto: QualityPareto[];
   type_pareto: QualityTypePareto[];
   type_pareto_summary: QualityTypeParetoSummary;
@@ -122,7 +99,6 @@ export function qualityScopeParams(scope: QualityScope) {
   return params;
 }
 export function qualityLabel(value: string | LocalizedLabel, language: QualityLanguage) { return typeof value === 'string' ? value : value[language]; }
-export function quantityCoverage(summary: QualityQuantities) { return summary.report_count > 0 ? summary.defect_quantity_record_count / summary.report_count * 100 : null; }
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid_quality_analysis');
@@ -216,35 +192,10 @@ function validateTypePareto(data: Record<string, unknown>, reportCount: number) 
     || exclusions.some((row, index) => index > 0 && exclusions[index - 1].key > row.key)
     || exclusions.reduce((sum, row) => sum + row.report_count, 0) !== summary.excluded_report_count) throw new Error('quality_type_exclusions_do_not_reconcile');
 }
-function validateActivityCalendar(value: unknown, trend: QualityAnalysis['trend'], expected: QualityScope) {
-  const calendar = object(value);
-  const expectedMachines = expected.machineNumber === 'unknown' ? 0 : expected.machineNumber ? 1 : 17;
-  const supported = (!expected.section || expected.section === 'LQC_INJ') && expected.machineNumber !== 'unknown';
-  if (calendar.schema_version !== 'quality-activity.v1' || !['ready', 'not_applicable', 'unavailable'].includes(String(calendar.status))
-    || calendar.source !== 'InjectionMonitoringRecord' || calendar.timezone !== 'Asia/Shanghai' || calendar.date_basis !== 'calendar_day'
-    || calendar.policy !== 'continuous_constant_capacity_v1' || calendar.max_gap_minutes !== 10
-    || calendar.expected_machine_count !== expectedMachines || (supported && calendar.status === 'not_applicable')
-    || (!supported && calendar.status !== 'not_applicable')) throw new Error('invalid_quality_activity_calendar');
-  const days = array(calendar.days);
-  if (days.length !== trend.length) throw new Error('incomplete_quality_activity_calendar');
-  days.forEach((value, index) => {
-    const day = object(value); const reportDay = trend[index];
-    text(day.reason); integer(day.observed_machine_count);
-    if (day.date !== reportDay.date || !day.reason || !['no_change', 'activity', 'unknown'].includes(String(day.status))
-      || typeof day.can_collapse !== 'boolean' || day.observed_machine_count > expectedMachines
-      || (calendar.status !== 'ready' && (day.status !== 'unknown' || day.can_collapse || day.observed_machine_count !== 0))
-      || (day.status === 'no_change' && (calendar.status !== 'ready' || day.observed_machine_count !== expectedMachines))
-      || (day.status === 'activity' && day.observed_machine_count === 0)
-      || (day.can_collapse && (calendar.status !== 'ready' || day.status !== 'no_change' || expectedMachines === 0
-        || day.observed_machine_count !== expectedMachines || reportDay.report_count !== 0 || reportDay.reported_defect_qty !== null))) throw new Error('invalid_quality_activity_day');
-  });
-  return calendar as unknown as QualityActivityCalendar;
-}
 const PRODUCTION_MATCH_FIELDS = {
   production_record: 'production_record_match_count', stored_plan: 'plan_match_count', recorded_only: 'recorded_only_count',
   ambiguous: 'ambiguous_count', unmatched: 'unmatched_count', not_injection: 'not_injection_count',
 } as const;
-const SHIFT_COUNT_FIELDS = ['active_shift_count', 'no_change_shift_count', 'unknown_shift_count', 'open_shift_count'] as const;
 
 function validateProductionContext(value: unknown, core: QualityQuantities) {
   const context = object(value); const summary = object(context.summary);
@@ -296,50 +247,6 @@ function validateProductionContext(value: unknown, core: QualityQuantities) {
   return context as unknown as QualityProductionContext;
 }
 
-function validateProductionShifts(value: unknown, trend: QualityAnalysis['trend'], expected: QualityScope) {
-  const shifts = object(value); const sourceStatus = object(shifts.source_status);
-  const expectedMachines = expected.machineNumber === 'unknown' ? 0 : expected.machineNumber ? 1 : 17;
-  const supported = (!expected.section || expected.section === 'LQC_INJ') && expected.machineNumber !== 'unknown';
-  for (const key of ['reports', 'monitoring']) if (!['ready', 'unavailable'].includes(String(sourceStatus[key]))) throw new Error('invalid_quality_shift_source');
-  if (shifts.schema_version !== 'quality-shifts.v1' || !['ready', 'not_applicable', 'unavailable'].includes(String(shifts.status))
-    || shifts.timezone !== 'Asia/Shanghai' || shifts.date_basis !== 'production_business_day'
-    || shifts.source !== 'InjectionMonitoringRecord' || shifts.report_source !== 'QualityReport:LQC_INJ'
-    || shifts.policy !== 'observed_machine_shift_v1' || shifts.max_gap_minutes !== 10 || shifts.expected_machine_count !== expectedMachines
-    || (!supported && shifts.status !== 'not_applicable') || (supported && shifts.status === 'not_applicable')
-    || (shifts.status === 'ready') !== (sourceStatus.reports === 'ready' && sourceStatus.monitoring === 'ready')
-    || (shifts.status === 'not_applicable' && (sourceStatus.reports !== 'unavailable' || sourceStatus.monitoring !== 'unavailable'))) throw new Error('invalid_quality_production_shifts');
-  function counts(value: unknown, totalShifts: number) {
-    const row = object(value);
-    if (row.report_count !== null) integer(row.report_count);
-    for (const key of SHIFT_COUNT_FIELDS) integer(row[key]);
-    if (SHIFT_COUNT_FIELDS.reduce((sum, key) => sum + Number(row[key]), 0) !== totalShifts
-      || (sourceStatus.reports === 'ready') !== (row.report_count !== null)
-      || (sourceStatus.monitoring !== 'ready' && (row.active_shift_count !== 0 || row.no_change_shift_count !== 0))) throw new Error('invalid_quality_shift_balance');
-    const canCalculate = shifts.status === 'ready' && row.report_count !== null && row.unknown_shift_count === 0 && row.open_shift_count === 0 && Number(row.active_shift_count) > 0;
-    if (!canCalculate) {
-      if (row.reports_per_shift !== null) throw new Error('unverified_quality_shift_rate');
-    } else {
-      const ratio = Number(row.report_count) / Number(row.active_shift_count);
-      if (typeof row.reports_per_shift !== 'number' || !Number.isFinite(row.reports_per_shift) || row.reports_per_shift < 0
-        || Math.abs(row.reports_per_shift - ratio) > 0.00005000001
-        || Math.abs(row.reports_per_shift * 10000 - Math.round(row.reports_per_shift * 10000)) > 0.000001) throw new Error('invalid_quality_shift_rate');
-    }
-    return row as unknown as QualityProductionShiftCounts;
-  }
-  const days = array(shifts.days);
-  if (days.length !== trend.length) throw new Error('incomplete_quality_shift_dates');
-  const parsedDays = days.map((value, index) => {
-    const day = object(value); text(day.reason);
-    if (day.date !== trend[index].date || !day.reason) throw new Error('invalid_quality_shift_date');
-    return counts(day, expectedMachines * 2);
-  });
-  const summary = counts(shifts.summary, expectedMachines * 2 * trend.length);
-  for (const key of SHIFT_COUNT_FIELDS) if (parsedDays.reduce((sum, row) => sum + row[key], 0) !== summary[key]) throw new Error('quality_shift_totals_do_not_reconcile');
-  const expectedReports = parsedDays.some(row => row.report_count === null) ? null : parsedDays.reduce((sum, row) => sum + (row.report_count ?? 0), 0);
-  if (summary.report_count !== expectedReports) throw new Error('quality_shift_reports_do_not_reconcile');
-  array(shifts.limitations).forEach(text);
-  return shifts as unknown as QualityProductionShifts;
-}
 export function parseQualityAnalysis(value: unknown, expected: QualityScope): QualityAnalysis {
   const data = object(value); const filters = object(data.filters);
   if (data.schema_version !== 'quality-analysis.v1' || filters.start_date !== expected.startDate || filters.end_date !== expected.endDate
@@ -378,9 +285,8 @@ export function parseQualityAnalysis(value: unknown, expected: QualityScope): Qu
   for (const key of ['warnings', 'limitations', 'calculation_basis']) array(data[key]).forEach(text);
   const result = { ...data, warnings: [...data.warnings as string[]] } as unknown as QualityAnalysis;
   const auxiliaryChecks = {
-    activity_calendar: () => validateActivityCalendar(data.activity_calendar, trend, expected),
     production_context: () => validateProductionContext(data.production_context, summary),
-    production_shifts: () => validateProductionShifts(data.production_shifts, trend, expected),
+    report: () => parseQualityReport(data.report, trend),
   };
   for (const [field, validate] of Object.entries(auxiliaryChecks)) {
     if (data[field] === undefined) continue;
@@ -393,100 +299,4 @@ export function parseQualityAnalysis(value: unknown, expected: QualityScope): Qu
     }
   }
   return result;
-}
-
-export function qualityCsvCell(value: string | number | null | undefined) {
-  const original = value == null ? '' : String(value);
-  const safe = typeof value === 'string' && /^[\s\uFEFF]*[=+\-@]/.test(original) ? `'${original}` : original;
-  return `"${safe.replace(/"/g, '""')}"`;
-}
-export function createQualityAnalysisCsv(data: QualityAnalysis, language: QualityLanguage, options: { collapseInactiveDays?: boolean } = {}) {
-  const types = data.type_pareto_summary;
-  const collapsedDates = new Set(getQualityTrendOmittedDates(data.trend, data.activity_calendar, options.collapseInactiveDays ?? false));
-  const activityDays = new Map(data.activity_calendar?.days.map(day => [day.date, day]) ?? []);
-  const activityInvalid = data.warnings.includes('activity_calendar_invalid');
-  const context = data.production_context;
-  const shifts = data.production_shifts;
-  const rows: Array<Array<string | number | null>> = [
-    ['source', 'QualityReport / /api/quality/analysis/'], ['start_date', data.filters.start_date], ['end_date_inclusive', data.filters.end_date],
-    ['date_basis', 'report_dt / Asia/Shanghai / 00:00 to next day 00:00'], ['section', data.filters.section || 'all'], ['machine_number', data.filters.machine_number ?? 'all'],
-    ['generated_at', data.freshness.generated_at], ['latest_updated_at', data.freshness.latest_updated_at],
-    ['trend_collapse_inactive_days_requested', String(options.collapseInactiveDays ?? false)],
-    ['trend_display_mode', collapsedDates.size ? 'confirmed_no_change_dates_collapsed' : 'calendar'],
-    ['trend_displayed_date_count', data.trend.length - collapsedDates.size], ['trend_collapsed_date_count', collapsedDates.size],
-    ['trend_raw_daily_rows_retained', 'true'], ['trend_activity_status', data.activity_calendar?.status ?? (activityInvalid ? 'invalid' : 'not_provided')],
-    ['trend_activity_warning', activityInvalid ? 'activity_calendar_invalid' : 'none'],
-    ['trend_activity_source', data.activity_calendar?.source ?? 'not_provided'],
-    ['trend_activity_policy', data.activity_calendar?.policy ?? 'not_provided'],
-    ['trend_activity_expected_machine_count', data.activity_calendar?.expected_machine_count ?? null],
-    ['trend_activity_max_gap_minutes', data.activity_calendar?.max_gap_minutes ?? null],
-    ['trend_activity_basis', 'Injection capacity logs only; no_change is not a confirmed holiday or proof of no quality incidents. All raw daily rows are retained.'],
-    ['production_context_status', context?.status ?? (data.warnings.includes('production_context_invalid') ? 'invalid' : 'not_provided')],
-    ['production_context_policy', context?.policy ?? 'not_provided'],
-    ['production_context_basis', 'Model labels come from the recorded model and item name. Production-record or stored-plan links are dated candidates, not confirmed incident causation. Group shares use all selected calendar-day reports.'],
-    ['production_context_missing_model_basis', 'missing_model_count counts blank QualityReport.model, even when an item name is present.'],
-    ['production_shifts_status', shifts?.status ?? (data.warnings.includes('production_shifts_invalid') ? 'invalid' : 'not_provided')],
-    ['production_shifts_policy', shifts?.policy ?? 'not_provided'],
-    ['production_shifts_monitoring_source', shifts?.source ?? 'not_provided'],
-    ['production_shifts_report_source', shifts?.report_source ?? 'not_provided'],
-    ['production_shifts_reports_source_status', shifts?.source_status.reports ?? 'not_provided'],
-    ['production_shifts_monitoring_source_status', shifts?.source_status.monitoring ?? 'not_provided'],
-    ['production_shifts_expected_machine_count', shifts?.expected_machine_count ?? null],
-    ['production_shifts_max_gap_minutes', shifts?.max_gap_minutes ?? null],
-    ['production_shifts_date_basis', 'LQC_INJ report_dt and injection logs / Asia/Shanghai / 08:00 to next day 08:00; differs from the core calendar-day report window.'],
-    ['production_shifts_ratio_basis', 'Reports per observed active machine-shift, not a defect rate or percentage. A machine-shift is 08:00-20:00 or 20:00-next 08:00. Imported 08:00 report timestamps do not establish the incident shift. Unknown or open shifts withhold the ratio.'],
-    ['quantity_basis', 'Recorded defect quantity only; null means no known quantity. Type rows have no attributed quantity. Counts are reports, not defective pieces.'],
-    ['share_denominator_reports', data.summary.report_count], ['share_denominator_type_occurrences', types.type_occurrence_count],
-    ['type_pareto_counting_policy', types.counting_policy], ['type_pareto_quantity_policy', types.quantity_policy],
-    ['classified_report_count', types.classified_report_count], ['excluded_report_count', types.excluded_report_count],
-    ['unclassified_report_count', types.unclassified_report_count], ['missing_phenomenon_report_count', types.missing_phenomenon_report_count],
-    ['multi_type_report_count', types.multi_type_report_count],
-    ['share_basis', 'Concentrations use all selected reports; type Pareto uses unique report-type occurrences. A multi-type report appears once per matched type; type counts are not distinct report totals.'],
-    ['duplicate_policy', 'Potential duplicates retained; no automatic exclusion.'],
-    ['inspection_quantity_record_count', data.summary.inspection_quantity_record_count], ['recorded_inspection_qty_not_unique_units', data.summary.recorded_inspection_qty],
-    ['rate_policy', 'No overall defect rate; inspection and defect denominator alignment is not established.'], [],
-    ['group', 'key', 'label', 'report_count', 'defect_quantity_record_count', 'reported_defect_qty', 'share_of_reports_percent', 'share_of_type_occurrences_percent', 'cumulative_type_share_percent', 'share_denominator', 'sample_report_ids', 'activity_status', 'activity_reason', 'observed_machine_count', 'can_collapse', 'displayed_in_trend',
-      'model_display', 'part_no', 'machine_number', ...Object.keys(PRODUCTION_MATCH_FIELDS), ...SHIFT_COUNT_FIELDS, 'reports_per_shift', 'shift_reason', 'row_date_basis'],
-    ['summary', '', '', data.summary.report_count, data.summary.defect_quantity_record_count, data.summary.reported_defect_qty, null, null, null, null, ''],
-  ];
-  for (const row of data.trend) {
-    const activity = activityDays.get(row.date);
-    rows.push(['daily', row.date, '', row.report_count, row.defect_quantity_record_count, row.reported_defect_qty, null, null, null, null, '',
-      activity?.status ?? 'unknown', activity?.reason ?? (activityInvalid ? 'activity_calendar_invalid' : 'activity_calendar_not_provided'), activity?.observed_machine_count ?? null,
-      String(activity?.can_collapse ?? false), String(!collapsedDates.has(row.date))]);
-  }
-  for (const row of data.type_pareto) rows.push(['type_pareto', row.key, qualityLabel(row.label, language), row.report_count, null, null, null, row.share_of_type_occurrences_percent, row.cumulative_type_share_percent, types.type_occurrence_count, row.sample_report_ids.join('|')]);
-  for (const row of data.type_pareto_exclusions) rows.push(['type_pareto_exclusion', row.key, qualityLabel(row.label, language), row.report_count, null, null, null, null, null, null, row.sample_report_ids.join('|')]);
-  for (const name of ['machines', 'parts', 'sections'] as const) {
-    const concentration = data.concentrations[name];
-    for (const row of concentration.items) rows.push([name, row.key, qualityLabel(row.label, language), row.report_count, row.defect_quantity_record_count, row.reported_defect_qty, row.share_of_reports_percent, null, null, data.summary.report_count, row.sample_report_ids.join('|')]);
-    if (concentration.other_report_count) rows.push([`${name}_other_groups`, '', `Groups beyond top ${concentration.top_n}`, concentration.other_report_count, null, null, null, null, null, null, '']);
-  }
-  if (context) {
-    for (const [key, value] of Object.entries(context.summary)) rows.push(['production_context_summary', key, '', value]);
-    for (const name of ['model_parts', 'machine_models'] as const) {
-      const concentration = context[name];
-      for (const row of concentration.items) rows.push([
-        `production_${name}`, row.key, qualityLabel(row.label, language), row.report_count, row.defect_quantity_record_count, row.reported_defect_qty,
-        row.share_of_reports_percent, null, null, data.summary.report_count, row.sample_report_ids.join('|'), null, null, null, null, null,
-        row.model_display, row.part_no, row.machine_number, ...Object.keys(PRODUCTION_MATCH_FIELDS).map(key => row.match_basis_counts[key as keyof QualityProductionMatchCounts]),
-        null, null, null, null, null, null, 'report_dt_calendar_day',
-      ]);
-      if (concentration.other_report_count) rows.push([`production_${name}_other_groups`, '', `Groups beyond top ${concentration.top_n}`, concentration.other_report_count]);
-    }
-    for (const limitation of context.limitations) rows.push(['production_context_limitation', limitation]);
-  }
-  if (shifts) {
-    const addShiftRow = (kind: string, key: string, row: QualityProductionShiftCounts, reason: string) => rows.push([
-      kind, key, '', row.report_count, null, null, null, null, null, null, '', null, null, null, null, null,
-      null, null, null, null, null, null, null, null, null,
-      ...SHIFT_COUNT_FIELDS.map(field => row[field]), row.reports_per_shift, reason, 'production_business_day',
-    ]);
-    addShiftRow('production_shifts_summary', '', shifts.summary, shifts.status);
-    for (const day of shifts.days) addShiftRow('production_shifts_daily', day.date, day, day.reason);
-    for (const limitation of shifts.limitations) rows.push(['production_shifts_limitation', limitation]);
-  }
-  for (const [key, value] of Object.entries(data.data_quality)) rows.push(['data_quality', key, '', value]);
-  for (const limitation of data.limitations) rows.push(['limitation', limitation]);
-  return `\uFEFF${rows.map(row => row.map(qualityCsvCell).join(',')).join('\r\n')}\r\n`;
 }

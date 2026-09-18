@@ -1057,3 +1057,59 @@
     min-width: 0;
   }
 }
+
+/* Report layout: summary highlights, period deltas and weekly table */
+.qa-highlights h2 {
+  margin:0 0 10px;
+  font-size:16px
+}
+
+.qa-highlights ul {
+  margin:0;
+  padding-left:20px;
+  list-style:disc;
+  display:grid;
+  gap:7px;
+  font-size:14px;
+  line-height:1.65;
+  color:#2b3f5c
+}
+
+.qa-delta {
+  display:inline-flex;
+  align-items:center;
+  gap:2px;
+  margin-left:4px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  color:var(--wj-muted)
+}
+
+/* More reports is worse: a rise is a warning, a fall is an improvement. */
+.qa-delta--up {
+  color:#b4472d
+}
+
+.qa-delta--down {
+  color:#23785a
+}
+
+.qa-metrics article>strong.qa-metric-text {
+  font-size:22px;
+  letter-spacing:-.3px;
+  line-height:1.35;
+  margin:11px 0 10px;
+  overflow-wrap:anywhere
+}
+
+.qa-week-table {
+  margin-top:14px
+}
+
+.qa-types>.qa-panel .qa-scroll {
+  max-height:330px
+}
+
+.qa-report-basis {
+  margin:4px 2px 0
+}
