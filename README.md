@@ -33,9 +33,11 @@
 ```
 production-site/
 ├── frontend/           # React + Vite Frontend
-├── backend/            # Django REST API
-├── scripts/            # Deployment & Verification Scripts
+├── backend/            # Django REST API (incl. ai_core job queue)
+├── local_worker/       # On-device AI worker + Claude deep-tier bridge (Mac Studio)
+├── scripts/            # Deployment & Verification Scripts (scripts/local_ai: worker launchd ops)
 ├── tests/              # E2E Tests
+├── docs/               # Design docs, reviews, AI runtime design (docs/ai)
 └── .github/            # GitHub Actions Workflows
 ```
 
@@ -138,7 +140,17 @@ Images are stored in Cloudinary.
 - **Dashboard**: Real-time overview of key metrics.
 - **Responsive Design**: Optimized for desktop and tablet use.
 
-## 10. Git Status & Deployment Info
+## 10. AI Services
+
+Production numbers are always computed by the backend; language models only explain server-verified facts. The browser talks only to the Render backend and never to a model host.
+
+- **Queue API** (`backend/ai_core`, `/api/ai/...`): `jobs/`, `jobs/latest/`, `jobs/<id>/`, `jobs/<id>/cancel/` for authenticated users; `jobs/claim/`, `jobs/<id>/start|complete|fail/`, `jobs/enqueue-periodic/`, `worker/heartbeat/`, `worker/status/` for workers authenticated with `X-AI-WORKER-TOKEN`. Workers poll outbound; nothing on Render reaches into the Mac.
+- **Routine tier (local worker)**: `local_worker/worker.py` runs on the Mac Studio as launchd agent `com.wj.local-ai-worker` (`scripts/local_ai/`) against the on-device `qwen38` model, handling hourly production briefings, interactive questions, daily quality attention and classification audits with deterministic fallbacks.
+- **Deep tier (Claude desktop)**: `deep_analysis` jobs (weekly production/quality packs built by `backend/ai_core/deep_analysis.py`) are claimed from the same queue by a Claude desktop scheduled task through `local_worker/claude_bridge.py`; results are validated for grounding before completion. Production data for these jobs is sent to Anthropic.
+- **Labels**: UI wording is model-neutral; the displayed model name comes from server data (`model_display_name` from `backend/ai_core/model_registry.py`, rendered via `frontend/src/domains/ai/model-labels.ts`). Persisted ids such as `qwen38` are stable identifiers, not display strings.
+- **Docs**: `docs/ai/2026-09-18-ai-tiers-and-neutral-labels.md` (design), `local_worker/README.md` (worker and bridge), `scripts/local_ai/README.md` (Mac Studio operations), `AGENTS.md` / `CLAUDE.md` (agent policy).
+
+## 11. Git Status & Deployment Info
 *(As of 2026-01-06)*
 
 - **Current Branch**: `main`

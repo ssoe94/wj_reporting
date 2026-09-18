@@ -39,6 +39,16 @@
   - **인증/권한**: `injection/models.py` (`UserProfile`, `UserRegistrationRequest`) - RBAC 및 가입 승인
   - **제품 마스터**: `injection/models.py` (`Product`) - 완제품/반제품 파트넘버 맵핑
 
+### 🤖 AI 서비스 (AI Services)
+- **Backend App**: `ai_core` (`AiJob` 작업 큐, `/api/ai/...`), `production/ai_*.py` (결정형 브리핑·질의 계산)
+- **Worker**: `local_worker/` — Mac Studio에서 Render 백엔드를 outbound로 폴링하는 로컬 워커(`worker.py`)와 Claude deep tier 브리지(`claude_bridge.py`)
+- **구조**: 브라우저는 Render 백엔드만 호출한다. 백엔드가 작업을 큐에 넣고, 워커가 `X-AI-WORKER-TOKEN`으로 `jobs/claim/`·`start|complete|fail/`·`worker/heartbeat/`를 호출한다. 생산 수치는 항상 서버가 계산하고, 모델은 검증된 사실만 설명한다.
+- **계층**:
+  - routine tier — 온디바이스 `qwen38` 워커: 시간별 생산 브리핑, 대화형 질문, 품질 일일 주의 보고, 분류 감사(결정형 fallback 포함)
+  - deep tier — `claude`: 주간 `deep_analysis` 작업을 같은 큐에서 Claude 데스크톱 예약 작업이 claim하고, 결과는 근거 숫자 검증 후 완료 처리된다. 이 작업의 운영 데이터는 Anthropic으로 전송된다.
+- **표시 이름**: UI 문구는 모델 중립이며 모델명은 서버 데이터(`model_display_name`, `backend/ai_core/model_registry.py`)에서 `frontend/src/domains/ai/model-labels.ts`를 통해 표시한다. 저장된 식별자(`qwen38`, `local_llm_rewrite`, prompt version)는 변경하지 않는다.
+- **문서**: `docs/ai/2026-09-18-ai-tiers-and-neutral-labels.md`, `local_worker/README.md`, `scripts/local_ai/README.md`
+
 ## 2. 명명 규칙 (Nomenclature)
 
 ### Backend (Django)

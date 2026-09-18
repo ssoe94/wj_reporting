@@ -1,5 +1,7 @@
 # Codex Worktree Nightly Plan
 
+> **Superseded (2026-09-18).** 이 문서의 전제는 더 이상 유효하지 않다. Mac Studio 로컬 AI Worker(`local_worker/`, `backend/ai_core` 작업 큐)와 Qwen 3.8(`qwen38`) 경로는 이미 운영에 반영되었고, `ai_core` 마이그레이션도 추가되었다. 마스터 에이전트는 Codex 또는 Claude 중 어느 쪽이어도 되며, 브랜치는 `codex/<topic>-<YYYYMMDD>` 또는 `claude/<topic>-<YYYYMMDD>`를 사용한다. 현재 설계와 단계별 AI 런타임(로컬 routine tier + Claude deep tier)은 `docs/ai/2026-09-18-ai-tiers-and-neutral-labels.md`를, 살아 있는 에이전트 규칙은 `AGENTS.md`를 본다. 아래 본문은 2026-05-15 계획의 기록으로만 남긴다.
+
 ## 전제
 
 Cloud task는 이번 단계에서 사용하지 않는다.
