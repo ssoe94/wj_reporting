@@ -34,7 +34,11 @@ export function QualityProductionConcentrations({ data, lang, tx, onSources }: C
 export function QualityProductionIntensity({ report, series, lang, tx }: Copy & { report: QualityReport; series: QualityReportTrendPoint[] }) {
   const { summary, machines, min_operating_shots: minimum } = report.operations;
   if (report.operations.status !== 'ready' || !report.operations.injection_scope || !summary.shot_count) return null;
-  const ranked = [...machines].sort((a, b) => (b.reports_per_10k_shots ?? -1) - (a.reports_per_10k_shots ?? -1) || b.report_count - a.report_count);
+  // A machine with no linked report has nothing to compare; keep it out of the
+  // table so zero rows are not read as zero defects.
+  const ranked = machines.filter(row => row.report_count > 0)
+    .sort((a, b) => (b.reports_per_10k_shots ?? -1) - (a.reports_per_10k_shots ?? -1) || b.report_count - a.report_count);
+  const unlinked = machines.filter(row => row.report_count === 0 && row.shot_count > 0);
   const shotName = tx('사출 쇼트 수', '注塑模次'); const machineCountName = tx('가동 설비 수', '运行设备数');
   return <section className="qa-panel">
     <div className="qa-section-heading"><div><h2>{tx('생산량 대비 사출 신고', '注塑报告与产量对比')}</h2><p>{tx('MES 형합(쇼트) 수 기준 · 많이 생산한 날과 설비를 같은 잣대로 비교', '以 MES 模次为基准 · 用同一尺度比较产量不同的日期与设备')}</p></div></div>
@@ -56,10 +60,11 @@ export function QualityProductionIntensity({ report, series, lang, tx }: Copy & 
         <Line yAxisId="machines" type="linear" dataKey="running_machine_count" name={machineCountName} stroke="#2979a2" strokeWidth={2} dot={series.length <= 60 ? { r: 2 } : false} isAnimationActive={false} />
       </ComposedChart>
     </ResponsiveContainer></div>
-    {ranked.some(row => row.report_count > 0) && <div className="qa-table-wrap"><table className="qa-table"><thead><tr><th>{tx('설비', '设备')}</th><th>{tx('가동일', '运行天数')}</th><th>{tx('쇼트 수', '模次')}</th><th>{tx('사출 신고', '注塑报告')}</th><th>{tx('1만 쇼트당 신고', '每万模次报告')}</th></tr></thead>
+    {ranked.length > 0 && <div className="qa-table-wrap"><table className="qa-table"><thead><tr><th>{tx('설비', '设备')}</th><th>{tx('가동일', '运行天数')}</th><th>{tx('쇼트 수', '模次')}</th><th>{tx('사출 신고', '注塑报告')}</th><th>{tx('1만 쇼트당 신고', '每万模次报告')}</th></tr></thead>
       <tbody>{ranked.map(row => <tr key={row.machine_number}><th scope="row">{machineName(row.machine_number)}</th><td>{number(row.running_day_count, lang)}</td><td>{number(row.shot_count, lang)}</td><td>{number(row.report_count, lang)}</td><td><strong>{number(row.reports_per_10k_shots, lang, 2)}</strong></td></tr>)}</tbody></table></div>}
-    <p className="qa-caption">{ranked.some(row => row.report_count > 0)
+    <p className="qa-caption">{ranked.length
       ? tx('설비별 신고는 신고서에 설비가 적혀 있거나 당일 생산 기록으로 설비가 하나로 확인되는 건만 집계합니다.', '各设备报告仅统计报告中已填写设备，或可由当日生产记录唯一确认设备的条目。')
-      : tx('신고서에 설비가 적힌 건이 없어 설비별 비교는 표시하지 않습니다.', '报告中没有填写设备的条目，因此不显示各设备对比。')}</p>
+      : tx('신고서에서 설비를 확인할 수 있는 건이 없어 설비별 비교는 표시하지 않습니다.', '没有可确认设备的报告，因此不显示各设备对比。')}
+      {unlinked.length > 0 && ' ' + tx(`나머지 ${unlinked.length}대(쇼트 ${number(unlinked.reduce((sum, row) => sum + row.shot_count, 0), lang)})는 연결된 신고가 없어 표에 넣지 않았습니다. 불량이 없었다는 뜻은 아닙니다.`, `其余 ${unlinked.length} 台（模次 ${number(unlinked.reduce((sum, row) => sum + row.shot_count, 0), lang)}）没有关联报告，未列入表中，并不代表没有不良。`)}</p>
   </section>;
 }
