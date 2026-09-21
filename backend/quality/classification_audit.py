@@ -663,7 +663,8 @@ def approved_quality_report_classifications(
         scope__trigger=QUALITY_REPORT_AUDIT_TRIGGER,
         scope__taxonomy_version=INJECTION_TERMINOLOGY_VERSION,
         scope__report_id__in=list(report_revisions),
-    ).order_by("-id")
+        result_payload__review__status__in=["accepted", "overridden"],
+    ).only("id", "scope", "result_payload").order_by("-id")
     overrides: dict[int, list[dict[str, Any]]] = {}
     revision_rows: list[dict[str, Any]] = []
     for job in jobs:

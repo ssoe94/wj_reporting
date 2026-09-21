@@ -201,3 +201,25 @@ The Korean desktop and Chinese mobile browser checks use local fixture APIs only
 PostgreSQL advisory locking was reviewed in code; the executed database tests use
 isolated SQLite. Actual scheduled result publication still requires deployed
 end-to-end acceptance.
+
+## Release acceptance and query repair (2026-09-21)
+
+The approved implementation reached main and the deployed UI. Production job
+9913 (Korean, 2026-09-14 through 2026-09-20) returned
+`accepted_explanation=true`, `server_status=completed`, and `llm_fallback=false`;
+the production dashboard visibly displayed that ChatGPT result. Local Qwen jobs
+also returned server-accepted `llm_success` after the worker update.
+
+Release smoke checks exposed repeated backend timeouts. At 17:44:08 Shanghai,
+Render's application stack showed periodic enqueue calling the quality deep pack,
+then `approved_quality_report_classifications`, waiting in the database query and
+ending in Gunicorn's `handle_abort`, a 500 response, and worker replacement. The
+query loaded every matching audit job including large unused input payloads,
+then discarded unreviewed results in Python. The repair applies the same human
+review-status predicate in SQL and selects only the identifier, scope and result.
+Current report revision validation and newest-valid-reviewed-result selection
+remain unchanged. It does not change database schema, server timeouts, credentials
+or deployment settings. The local polling worker was temporarily paused to avoid
+repeated failing enqueue requests during repair; it must be resumed after the
+corrected backend is verified. Passing local checks alone does not establish the
+repair's production performance or the next scheduled run.

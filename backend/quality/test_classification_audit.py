@@ -2,7 +2,10 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import override_settings
+from django.db import connection
+from django.db.models.signals import post_init
+from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -20,6 +23,7 @@ from production.models import ProductionPlan
 from .classification_audit import (
     QUALITY_REPORT_AUDIT_BACKLOG_LIMIT,
     _exact_part_consensus,
+    approved_quality_report_classifications,
     build_quality_report_audit_input,
     enqueue_quality_report_audit,
     enqueue_stale_quality_report_audits,
@@ -27,6 +31,7 @@ from .classification_audit import (
 )
 from .daily_attention import build_daily_quality_attention
 from .models import QualityReport
+from .injection_terminology import INJECTION_TERMINOLOGY_VERSION
 
 
 @override_settings(AI_WORKER_TOKEN="test-worker-token")
@@ -629,3 +634,86 @@ class QualityClassificationAuditApiTests(APITestCase):
             ["black_dot"],
         )
         self.assertNotEqual(before_hash, after["source_evidence_hash"])
+
+
+class ApprovedQualityClassificationQueryTests(TestCase):
+    def test_only_reviewed_rows_are_loaded_without_audit_input_and_latest_current_wins(self):
+        reports = [
+            QualityReport.objects.create(
+                report_dt=timezone.now(), section="LQC_INJ",
+                part_no=f"QUERYTEST{index}", phenomenon="色差",
+                image1=f"https://res.cloudinary.com/example/image/upload/v123/report-{index}.jpg",
+            )
+            for index in range(4)
+        ]
+        revisions = {
+            report.pk: build_quality_report_audit_input(report)[0]["report_source_revision"]
+            for report in reports
+        }
+
+        def audit(report, review_status, category, *, stale=False):
+            return AiJob.objects.create(
+                job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+                status=AiJob.STATUS_COMPLETED,
+                scope={
+                    "mode": QUALITY_REPORT_AUDIT_MODE,
+                    "trigger": QUALITY_REPORT_AUDIT_TRIGGER,
+                    "taxonomy_version": INJECTION_TERMINOLOGY_VERSION,
+                    "report_id": report.pk,
+                },
+                input_payload={"large_unused_audit_input": "x" * 32768},
+                result_payload={"review": {
+                    "status": review_status,
+                    "report_source_revision": "stale" if stale else revisions[report.pk],
+                    "category_keys": [category],
+                    "reviewed_at": timezone.now().isoformat(),
+                }},
+            )
+
+        accepted = audit(reports[0], "accepted", "color_difference")
+        unreviewed = audit(reports[0], "pending", "whitening")
+        stale_newer = audit(reports[0], "accepted", "whitening", stale=True)
+        older_valid = audit(reports[1], "accepted", "color_difference")
+        overridden = audit(reports[1], "overridden", "whitening")
+        stale_only = audit(reports[2], "overridden", "color_difference", stale=True)
+        unreviewed_only = audit(reports[3], "pending", "whitening")
+        missing_review = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            status=AiJob.STATUS_COMPLETED,
+            scope=dict(unreviewed_only.scope),
+            input_payload={"large_unused_audit_input": "x" * 32768},
+            result_payload={},
+        )
+
+        loaded_jobs = {}
+
+        def capture_loaded_job(sender, instance, **kwargs):
+            loaded_jobs[instance.pk] = instance.get_deferred_fields()
+
+        post_init.connect(capture_loaded_job, sender=AiJob, weak=False)
+        try:
+            with CaptureQueriesContext(connection) as queries:
+                classifications, revision_rows = approved_quality_report_classifications(reports)
+        finally:
+            post_init.disconnect(capture_loaded_job, sender=AiJob)
+
+        self.assertEqual(set(classifications), {reports[0].pk, reports[1].pk})
+        self.assertEqual([row["key"] for row in classifications[reports[0].pk]], ["color_difference"])
+        self.assertEqual([row["key"] for row in classifications[reports[1].pk]], ["whitening"])
+        rows_by_report = {row["report_id"]: row for row in revision_rows}
+        self.assertEqual(rows_by_report[reports[0].pk]["job_id"], accepted.pk)
+        self.assertEqual(rows_by_report[reports[0].pk]["review_status"], "accepted")
+        self.assertEqual(rows_by_report[reports[1].pk]["job_id"], overridden.pk)
+        self.assertEqual(rows_by_report[reports[1].pk]["review_status"], "overridden")
+        self.assertEqual(set(loaded_jobs), {
+            accepted.pk, stale_newer.pk, older_valid.pk, overridden.pk, stale_only.pk,
+        })
+        for ignored in (unreviewed, unreviewed_only, missing_review):
+            self.assertNotIn(ignored.pk, loaded_jobs)
+        self.assertTrue(all("input_payload" in deferred for deferred in loaded_jobs.values()))
+        audit_queries = [row["sql"] for row in queries if 'FROM "ai_core_aijob"' in row["sql"]]
+        self.assertEqual(len(audit_queries), 1)
+        projection = audit_queries[0].split(" FROM ", 1)[0]
+        self.assertNotIn('"input_payload"', projection)
+        self.assertIn('"scope"', projection)
+        self.assertIn('"result_payload"', projection)

@@ -24,7 +24,12 @@ import django
 django.setup()
 from django.urls import include, path
 urls = types.ModuleType('isolated_ai_urls')
-urls.urlpatterns = [path('api/ai/', include('ai_core.urls')), path('api/production/', include('production.urls'))]
+urls.urlpatterns = [
+    path('api/ai/', include('ai_core.urls')),
+    path('api/production/', include('production.urls')),
+    path('api/quality/', include('quality.urls')),
+    path('api/injection/', include('injection.urls')),
+]
 sys.modules[urls.__name__] = urls
 from django.test.runner import DiscoverRunner
 raise SystemExit(DiscoverRunner(verbosity=1).run_tests(sys.argv[1:] or ['ai_core.test_deep_analysis', 'ai_core.tests']))
