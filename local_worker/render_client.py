@@ -53,10 +53,23 @@ class RenderClient:
         response.raise_for_status()
         return response.json().get("jobs", [])
 
-    def enqueue_periodic_jobs(self, languages: list[str] | None = None) -> dict:
+    def get_deep_analysis_config(self) -> dict:
+        response = self.session.get(
+            f"{self.api_base_url}/ai/worker/deep-analysis-config/",
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def enqueue_periodic_jobs(
+        self, languages: list[str] | None = None, job_types: list[str] | None = None,
+    ) -> dict:
+        payload = {"languages": languages or ["ko", "zh"]}
+        if job_types is not None:
+            payload["job_types"] = job_types
         response = self.session.post(
             f"{self.api_base_url}/ai/jobs/enqueue-periodic/",
-            json={"languages": languages or ["ko", "zh"]},
+            json=payload,
             timeout=self.timeout,
         )
         response.raise_for_status()

@@ -75,6 +75,8 @@ jobs:
           local_worker.test_quality_daily_attention
           local_worker.test_quality_report_taxonomy_audit
           local_worker.test_claude_bridge
+          local_worker.test_chatgpt_bridge
+          local_worker.test_worker_launcher
 
   deploy-main:
     name: Deploy production from main

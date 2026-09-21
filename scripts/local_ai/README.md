@@ -2,12 +2,22 @@
 
 WJ Reporting uses one outbound `launchd` service after login:
 
-- `com.wj.local-ai-worker`: waits for the model server's `/v1/models` response, polls the Render backend, ensures hourly jobs exist, and submits results.
+- `com.wj.local-ai-worker`: starts immediately, reports model readiness through heartbeats, polls the Render backend, ensures hourly jobs exist, and submits results.
 
 The on-device model server (MLX, OpenAI-compatible) is managed separately at
-`127.0.0.1:8082`. These scripts do not start, stop, or restart that protected
-runtime. The Worker advertises `qwen38` only when `/v1/models` reports the
-exact configured checkpoint (`Qwen3.8-27B-4bit`).
+`127.0.0.1:8082`. At worker launch, a background `local-coder start` bootstraps
+this existing owned runtime after login or reboot. It is idempotent, never stops
+or restarts an existing server, and receives no Worker token. Custom model
+endpoints are not bootstrapped. Set `AI_WORKER_AUTOSTART_RUNTIME=false` to opt out;
+`LOCAL_AI_RUNTIME_REPO` and `LOCAL_AI_UV_BIN` override the existing manager and uv
+paths. A missing/failed manager leaves the worker running to report readiness.
+This is one start attempt per worker launch, not a periodic model watchdog.
+The Worker advertises `qwen38` only when `/v1/models` reports the
+exact configured checkpoint (`Qwen3.8-27B-4bit`). If the endpoint is unavailable,
+the worker keeps reporting its status and skips claims until readiness returns.
+Completion logs carry a UTC timestamp and use the server's accepted payload to
+distinguish `llm_success`, `deterministic_fallback`, `server_rejected`, and
+`deterministic`. Missing acceptance evidence is logged as `acceptance_unknown`.
 
 Production explanations, production questions, daily quality summaries, and
 quality report audits all use the single canonical local model ID `qwen38`.
@@ -107,3 +117,5 @@ disabled and enable it after the backend deploy):
 Environment for the task: `RENDER_API_BASE_URL` (defaults to production),
 `WORKER_NAME` (default `mac-studio-claude-desktop`), optional `CLAUDE_BRIDGE_HOME`,
 `AI_WORKER_KEYCHAIN_SERVICE`, `AI_WORKER_KEYCHAIN_ACCOUNT`.
+
+Runtime bootstrap uses `uv run --no-sync`: it reuses the installed manager environment and does not install or update dependencies at worker startup.

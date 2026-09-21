@@ -31,10 +31,10 @@ from .deep_analysis import (
     build_deep_analysis_input,
     canonical_number_token,
     collect_evidence_numbers,
-    enqueue_weekly_deep_analysis,
-    previous_week_period,
+    enqueue_daily_deep_analysis,
+    daily_deep_analysis_period,
     restore_authoritative_deep_analysis_result,
-    weekly_deep_analysis_due,
+    daily_deep_analysis_due,
 )
 from .model_registry import (
     AI_MODEL_DISPLAY_NAMES,
@@ -61,7 +61,7 @@ def shanghai(year, month, day, hour=0, minute=0):
     return SHANGHAI_TZ.localize(datetime(year, month, day, hour, minute))
 
 
-def deep_scope(kind='production_weekly', language='ko', trigger='weekly', period_end=date(2026, 9, 13)):
+def deep_scope(kind='production_weekly', language='ko', trigger='manual', period_end=date(2026, 9, 13)):
     return {
         'kind': kind,
         'language': language,
@@ -97,10 +97,10 @@ def create_heartbeat(worker_name, model_ids, *, model_name, version=SUPPORTED_AI
 class ModelRegistryTests(TestCase):
     def test_registry_constants_match_the_contract(self):
         self.assertEqual(LOCAL_AI_MODEL_ID, 'qwen38')
-        self.assertEqual(DEEP_ANALYSIS_MODEL_ID, 'claude')
-        self.assertEqual(AI_MODEL_TIERS, {'qwen38': 'local', 'claude': 'deep'})
-        self.assertEqual(AI_MODEL_DISPLAY_NAMES, {'qwen38': 'Qwen 3.8 27B', 'claude': 'Claude'})
-        self.assertEqual(AI_WORKER_CAPABILITY_MODEL_IDS, ('qwen38', 'claude'))
+        self.assertEqual(DEEP_ANALYSIS_MODEL_ID, 'chatgpt')
+        self.assertEqual(AI_MODEL_TIERS, {'qwen38': 'local', 'chatgpt': 'deep', 'claude': 'deep'})
+        self.assertEqual(AI_MODEL_DISPLAY_NAMES, {'qwen38': 'Qwen 3.8 27B', 'chatgpt': 'ChatGPT', 'claude': 'Claude'})
+        self.assertEqual(AI_WORKER_CAPABILITY_MODEL_IDS, ('qwen38', 'chatgpt'))
         self.assertEqual(SUPPORTED_AI_WORKER_VERSION, 'production-ai-worker-v2')
         self.assertIn(SUPPORTED_AI_WORKER_VERSION, SUPPORTED_AI_WORKER_VERSIONS)
         self.assertTrue(is_supported_worker_version('production-ai-worker-v2'))
@@ -111,11 +111,11 @@ class ModelRegistryTests(TestCase):
         self.assertEqual(display_model_name('/private/models/Qwen3.8-27B-4bit'), 'Qwen3.8-27B-4bit')
         self.assertEqual(display_model_name('C:\\models\\Qwen3.8'), 'Qwen3.8')
         self.assertEqual(model_display_name('qwen38', '/private/models/Qwen3.8-27B-4bit'), 'Qwen 3.8 27B')
-        self.assertEqual(model_display_name('claude'), 'Claude')
+        self.assertEqual(model_display_name('chatgpt'), 'ChatGPT')
         self.assertEqual(model_display_name('unknown-id', '/models/Other-7B'), 'Other-7B')
         self.assertEqual(model_display_name(None, ''), '')
         self.assertEqual(worker_tier_for_model_ids(['qwen38']), 'local')
-        self.assertEqual(worker_tier_for_model_ids(['claude']), 'deep')
+        self.assertEqual(worker_tier_for_model_ids(['chatgpt']), 'deep')
         self.assertEqual(worker_tier_for_model_ids([]), 'local')
         # Compatibility re-export for existing callers.
         self.assertIs(ai_views.display_model_name, display_model_name)
@@ -169,165 +169,92 @@ class EvidenceNumberTests(TestCase):
             self.assertIn(token, payload['evidence_numbers'])
 
 
-class WeeklyScheduleTests(TestCase):
-    def test_due_only_from_monday_08_shanghai(self):
-        self.assertFalse(weekly_deep_analysis_due(shanghai(2026, 9, 14, 7, 59)))  # Monday
-        self.assertTrue(weekly_deep_analysis_due(shanghai(2026, 9, 14, 8, 0)))
-        self.assertTrue(weekly_deep_analysis_due(shanghai(2026, 9, 16, 12, 0)))  # catch-up on Wednesday
-        # Sunday night is still "due" for the week that started the previous
-        # Monday; its period is the week before that, already created.
-        self.assertTrue(weekly_deep_analysis_due(shanghai(2026, 9, 13, 23, 30)))
-        self.assertEqual(
-            previous_week_period(shanghai(2026, 9, 13, 23, 30)),
-            (date(2026, 8, 31), date(2026, 9, 6)),
-        )
+class DailyScheduleTests(TestCase):
+    def test_every_day_after_nine_and_closed_business_date(self):
+        for day in (14, 15, 19, 20):
+            self.assertFalse(daily_deep_analysis_due(shanghai(2026, 9, day, 8, 59)))
+            self.assertTrue(daily_deep_analysis_due(shanghai(2026, 9, day, 9)))
+        self.assertEqual(daily_deep_analysis_period(shanghai(2026, 9, 21, 7, 59)),
+                         (date(2026, 9, 13), date(2026, 9, 19)))
+        self.assertEqual(daily_deep_analysis_period(shanghai(2026, 9, 21, 8)),
+                         (date(2026, 9, 14), date(2026, 9, 20)))
 
-    def test_period_is_previous_monday_to_sunday(self):
-        self.assertEqual(
-            previous_week_period(shanghai(2026, 9, 16, 12, 0)),
-            (date(2026, 9, 7), date(2026, 9, 13)),
-        )
-        self.assertEqual(
-            previous_week_period(shanghai(2026, 9, 14, 0, 30)),
-            (date(2026, 9, 7), date(2026, 9, 13)),
-        )
-
-    @mock.patch('ai_core.deep_analysis.build_deep_analysis_input')
-    def test_weekly_enqueue_is_idempotent_and_bounded_per_call(self, build_input):
-        build_input.side_effect = lambda kind, language, start, end: {
-            'schema_version': DEEP_ANALYSIS_INPUT_SCHEMA_VERSION,
-            'kind': kind,
-            'language': language,
-            'period': {'start': start.isoformat(), 'end': end.isoformat()},
-            'evidence_numbers': [],
-        }
-        before = enqueue_weekly_deep_analysis(shanghai(2026, 9, 14, 7, 30))
+    @mock.patch('ai_core.deep_analysis.build_deep_analysis_input', return_value={'evidence_numbers': []})
+    def test_daily_enqueue_bounded_idempotent_and_independent_of_claude(self, build_input):
+        AiJob.objects.create(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS,
+            scope={**deep_scope(period_end=date(2026, 9, 20)), 'model_id': 'claude'},
+            status=AiJob.STATUS_COMPLETED)
+        before = enqueue_daily_deep_analysis(shanghai(2026, 9, 21, 8, 59))
         self.assertFalse(before['due'])
-        self.assertEqual(AiJob.objects.filter(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS).count(), 0)
-
-        first = enqueue_weekly_deep_analysis(shanghai(2026, 9, 14, 8, 0))
-        self.assertTrue(first['due'])
+        first = enqueue_daily_deep_analysis(shanghai(2026, 9, 21, 9))
         self.assertEqual(first['created_count'], 1)
         self.assertEqual(len(first['pending_pairs']), 3)
-        self.assertEqual((first['period_start'], first['period_end']), ('2026-09-07', '2026-09-13'))
-
-        rest = enqueue_weekly_deep_analysis(shanghai(2026, 9, 14, 8, 5), max_jobs_per_call=10)
+        rest = enqueue_daily_deep_analysis(shanghai(2026, 9, 21, 9, 5), max_jobs_per_call=4)
         self.assertEqual(rest['created_count'], 3)
-        again = enqueue_weekly_deep_analysis(shanghai(2026, 9, 15, 9, 0), max_jobs_per_call=10)
+        again = enqueue_daily_deep_analysis(shanghai(2026, 9, 21, 23), max_jobs_per_call=4)
         self.assertEqual(again['created_count'], 0)
         self.assertEqual(len(again['existing_job_ids']), 4)
+        for job in AiJob.objects.filter(scope__model_id='chatgpt'):
+            self.assertEqual(job.scope['trigger'], 'daily')
+            self.assertEqual(job.scope['period_start'], '2026-09-14')
+            self.assertEqual(job.scope['period_end'], '2026-09-20')
+        next_day = enqueue_daily_deep_analysis(shanghai(2026, 9, 22, 9), max_jobs_per_call=4)
+        self.assertEqual(next_day['created_count'], 4)
+        self.assertEqual(next_day['period_end'], '2026-09-21')
 
-        jobs = AiJob.objects.filter(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS)
-        self.assertEqual(jobs.count(), 4)
-        self.assertEqual(
-            {(job.scope['kind'], job.scope['language']) for job in jobs},
-            {
-                ('production_weekly', 'ko'), ('production_weekly', 'zh'),
-                ('quality_weekly', 'ko'), ('quality_weekly', 'zh'),
-            },
-        )
-        for job in jobs:
-            self.assertEqual(job.scope['trigger'], 'weekly')
-            self.assertEqual(job.scope['model_id'], 'claude')
-            self.assertEqual(job.scope['period_start'], '2026-09-07')
-            self.assertEqual(job.scope['period_end'], '2026-09-13')
-            self.assertIsNone(job.created_by)
-            self.assertEqual(job.input_payload['kind'], job.scope['kind'])
-
-        # A new week creates the next period without touching the old one.
-        next_week = enqueue_weekly_deep_analysis(shanghai(2026, 9, 21, 8, 0), max_jobs_per_call=10)
-        self.assertEqual(next_week['created_count'], 4)
-        self.assertEqual((next_week['period_start'], next_week['period_end']), ('2026-09-14', '2026-09-20'))
-
-    @mock.patch('ai_core.deep_analysis.build_deep_analysis_input')
-    def test_weekly_enqueue_retries_a_failed_pair_once(self, build_input):
-        build_input.side_effect = lambda kind, language, start, end: {'kind': kind, 'language': language, 'evidence_numbers': []}
-        enqueue_weekly_deep_analysis(shanghai(2026, 9, 14, 8, 0), max_jobs_per_call=10)
-        pair = AiJob.objects.filter(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS, scope__kind='production_weekly', scope__language='ko')
-        first = pair.get()
-        AiJob.objects.filter(pk=first.pk).update(status=AiJob.STATUS_FAILED, error_message='Bridge validation failed')
-
-        retry = enqueue_weekly_deep_analysis(shanghai(2026, 9, 14, 9, 0), max_jobs_per_call=10)
-        self.assertEqual(retry['created_count'], 1)
-        self.assertEqual(pair.count(), 2)
-        second = pair.order_by('-id').first()
-        self.assertEqual(second.status, AiJob.STATUS_PENDING)
-
-        # A second failure is final: no third attempt for the same period.
-        AiJob.objects.filter(pk=second.pk).update(status=AiJob.STATUS_FAILED)
-        final = enqueue_weekly_deep_analysis(shanghai(2026, 9, 15, 9, 0), max_jobs_per_call=10)
+    @mock.patch('ai_core.deep_analysis.build_deep_analysis_input', return_value={'evidence_numbers': []})
+    def test_one_retry_for_failed_pair_per_day(self, build_input):
+        now = shanghai(2026, 9, 21, 9)
+        enqueue_daily_deep_analysis(now, max_jobs_per_call=4)
+        pair = AiJob.objects.filter(scope__kind='production_weekly', scope__language='ko')
+        pair.update(status=AiJob.STATUS_FAILED)
+        self.assertEqual(enqueue_daily_deep_analysis(now, max_jobs_per_call=4)['created_count'], 1)
+        pair.update(status=AiJob.STATUS_FAILED)
+        final = enqueue_daily_deep_analysis(now, max_jobs_per_call=4)
         self.assertEqual(final['created_count'], 0)
-        self.assertIn(second.pk, final['existing_job_ids'])
         self.assertEqual(pair.count(), 2)
+
+
+class DailyRetryMaskingTests(TestCase):
+    @mock.patch('ai_core.deep_analysis.build_deep_analysis_input', return_value={})
+    def test_failed_manual_retry_cannot_mask_completed_or_active_daily_pair(self, build_input):
+        for status in (AiJob.STATUS_COMPLETED, AiJob.STATUS_PENDING):
+            AiJob.objects.all().delete()
+            scope = deep_scope(trigger='daily', period_end=date(2026, 9, 20))
+            first = AiJob.objects.create(job_type='deep_analysis', status=status, scope=scope)
+            AiJob.objects.create(job_type='deep_analysis', status=AiJob.STATUS_FAILED,
+                                 scope={**scope, 'trigger':'manual'})
+            result = enqueue_daily_deep_analysis(shanghai(2026, 9, 21, 9), languages=('ko',))
+            self.assertIn(first.pk, result['existing_job_ids'])
+            self.assertEqual(AiJob.objects.filter(scope__kind='production_weekly').count(), 2)
+            self.assertEqual(AiJob.objects.get(pk=result['created_job_ids'][0]).scope['kind'], 'quality_weekly')
 
 
 class DeepAnalysisInputTests(TestCase):
     def setUp(self):
         cache.clear()
 
-    def test_production_weekly_prefers_completed_hourly_snapshot(self):
-        briefing = {
-            'answer': 'prose that must not be copied',
-            'severity': 'warning',
-            'facts': {'injection': {'actual_qty': 1234, 'planned_qty': 2000, 'progress_rate': 61.7}},
-            'top_risks': [{'type': 'machine_gap', 'label': '850T-1', 'gap_qty': -321}],
-            'used_data': [{'name': 'ProductionPlan', 'row_count': 9}],
-            'calculation_basis': ['x'],
-            'data_freshness': {'is_stale': False, 'last_mes_recorded_at': '2026-09-09T07:55:00+08:00'},
-            'warnings': ['injection_mes_data_stale'],
-            'retrieval_trace': ['production.plan:date=2026-09-09'],
-        }
-        older = AiJob.objects.create(
+    def test_production_pack_rebuilds_closed_records_instead_of_partial_hourly_snapshot(self):
+        AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
             status=AiJob.STATUS_COMPLETED,
-            scope={'date': '2026-09-09', 'language': 'ko', 'trigger': 'hourly', 'model_id': 'qwen38'},
-            input_payload={'briefing': {**briefing, 'facts': {'injection': {'actual_qty': 1}}}},
-            completed_at=timezone.now() - timedelta(hours=2),
-        )
-        newest = AiJob.objects.create(
-            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
-            status=AiJob.STATUS_COMPLETED,
-            scope={'date': '2026-09-09', 'language': 'ko', 'trigger': 'hourly', 'model_id': 'qwen38'},
-            input_payload={'briefing': briefing},
-            completed_at=timezone.now() - timedelta(hours=1),
-        )
-        AiJob.objects.create(  # other language must not be used
-            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
-            status=AiJob.STATUS_COMPLETED,
-            scope={'date': '2026-09-10', 'language': 'zh', 'trigger': 'hourly', 'model_id': 'qwen38'},
-            input_payload={'briefing': briefing},
+            scope={'date': '2026-09-20', 'language': 'ko', 'trigger': 'hourly', 'model_id': 'qwen38'},
+            input_payload={'briefing': {'facts': {'injection': {'actual_qty': 1}}}},
             completed_at=timezone.now(),
         )
-
-        payload = build_deep_analysis_input('production_weekly', 'ko', date(2026, 9, 7), date(2026, 9, 13))
-
-        self.assertEqual(payload['schema_version'], DEEP_ANALYSIS_INPUT_SCHEMA_VERSION)
-        self.assertEqual(payload['kind'], 'production_weekly')
-        self.assertEqual(payload['language'], 'ko')
-        self.assertEqual(payload['model_id'], 'claude')
-        self.assertEqual(payload['period']['start'], '2026-09-07')
-        self.assertEqual(payload['period']['end'], '2026-09-13')
+        briefing = {'answer': 'omit prose', 'facts': {'injection': {'actual_qty': 1234}},
+                    'severity': 'warning', 'top_risks': [], 'warnings': [], 'data_freshness': {}}
+        with mock.patch('ai_core.deep_analysis.build_ai_briefing') as build:
+            build.return_value.to_dict.return_value = briefing
+            payload = build_deep_analysis_input('production_weekly', 'ko', date(2026, 9, 14), date(2026, 9, 20))
+        self.assertEqual(build.call_count, 7)
+        self.assertEqual(payload['model_id'], 'chatgpt')
         self.assertEqual(payload['period']['day_count'], 7)
-        self.assertEqual([day['date'] for day in payload['days']], [
-            f'2026-09-{day:02d}' for day in range(7, 14)
-        ])
-        snapshot_day = payload['days'][2]
-        self.assertEqual(snapshot_day['source'], 'hourly_job')
-        self.assertEqual(snapshot_day['job_id'], newest.id)
-        self.assertNotEqual(snapshot_day['job_id'], older.id)
-        self.assertEqual(set(snapshot_day['briefing']), {'facts', 'severity', 'top_risks', 'warnings', 'data_freshness'})
-        self.assertEqual(snapshot_day['briefing']['facts']['injection']['actual_qty'], 1234)
-        self.assertNotIn('answer', snapshot_day['briefing'])
-        for other_day in (payload['days'][0], payload['days'][3]):
-            self.assertEqual(other_day['source'], 'briefing')
-            self.assertIn('facts', other_day['briefing'])
-            self.assertIn('severity', other_day['briefing'])
-        for key in ('completion_rate', 'time_progress', 'behind_rule'):
-            self.assertIn(key, payload['metric_definitions'])
-        self.assertTrue(payload['constraints'])
-        for token in ('1234', '2000', '61.7', '321', '850'):
-            self.assertIn(token, payload['evidence_numbers'])
-        self.assertEqual(payload['excluded_dates'], [])
+        self.assertEqual(payload['period']['basis'], 'production_business_day_08_to_08')
+        self.assertEqual(payload['days'][-1]['source'], 'briefing')
+        self.assertEqual(payload['days'][-1]['briefing']['facts']['injection']['actual_qty'], 1234)
+        self.assertNotIn('answer', payload['days'][-1]['briefing'])
+        self.assertIn('1234', payload['evidence_numbers'])
 
     def test_quality_weekly_reduces_daily_attention_to_counts_and_shares(self):
         ProductionPlan.objects.create(
@@ -404,7 +331,7 @@ class DeepAnalysisResultContractTests(TestCase):
         result = {
             'schema_version': DEEP_ANALYSIS_RESULT_SCHEMA_VERSION,
             'source': DEEP_ANALYSIS_RESULT_SOURCE,
-            'model_id': 'claude',
+            'model_id': 'chatgpt',
             'summary': '주간 사출 실적 1,234개, 완료율 61.7%로 마감했습니다.',
             'findings': [{
                 'title': '완료율 61%대',
@@ -433,7 +360,7 @@ class DeepAnalysisResultContractTests(TestCase):
         self.assertEqual(result['language'], 'ko')
         self.assertEqual(result['period']['start'], '2026-09-07')
         self.assertEqual(result['period']['end'], '2026-09-13')
-        self.assertEqual(result['model_id'], 'claude')
+        self.assertEqual(result['model_id'], 'chatgpt')
         self.assertEqual(result['source'], DEEP_ANALYSIS_RESULT_SOURCE)
         self.assertEqual(result['grounding']['ungrounded_numbers'], [])
         self.assertNotIn('llm_review_summary', result)
@@ -569,14 +496,14 @@ class DeepAnalysisApiTests(APITestCase):
             'period_start': '2026-09-07',
             'period_end': '2026-09-13',
             'trigger': 'manual',
-            'model_id': 'claude',
+            'model_id': 'chatgpt',
         })
-        self.assertEqual(created.data['model_display_name'], 'Claude')
+        self.assertEqual(created.data['model_display_name'], 'ChatGPT')
         self.assertEqual(created.data['input_payload']['evidence_numbers'], [])
         self.assertEqual(second.status_code, 429)
         self.assertEqual(second.data['code'], 'manual_ai_job_rate_limited')
 
-    def test_manual_deep_analysis_date_defaults_to_current_business_date(self):
+    def test_manual_deep_analysis_date_defaults_to_last_closed_business_date(self):
         self.client.force_authenticate(self.staff)
         with mock.patch('ai_core.views.build_deep_analysis_input', return_value={}), \
                 mock.patch('ai_core.views.current_business_scope', return_value=(date(2026, 9, 18), 'slot')):
@@ -585,10 +512,10 @@ class DeepAnalysisApiTests(APITestCase):
                 'scope': {'kind': 'production_weekly', 'language': 'ko'},
             }, format='json')
         self.assertEqual(created.status_code, 201, created.data)
-        self.assertEqual(created.data['scope']['period_start'], '2026-09-12')
-        self.assertEqual(created.data['scope']['period_end'], '2026-09-18')
+        self.assertEqual(created.data['scope']['period_start'], '2026-09-11')
+        self.assertEqual(created.data['scope']['period_end'], '2026-09-17')
 
-    def test_claim_routes_deep_jobs_by_advertised_claude_capability(self):
+    def test_claim_routes_deep_jobs_by_advertised_chatgpt_capability(self):
         deep_job = AiJob.objects.create(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS, scope=deep_scope())
         hourly_job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
@@ -599,15 +526,15 @@ class DeepAnalysisApiTests(APITestCase):
         self.assertEqual([job['id'] for job in local_default.data['jobs']], [hourly_job.id])
 
         AiJob.objects.filter(pk=hourly_job.pk).update(status=AiJob.STATUS_PENDING, claimed_by='', claimed_at=None)
-        deep_only = self.claim('mac-studio-claude-desktop', ['claude'], job_types=['deep_analysis'], limit=10)
+        deep_only = self.claim('mac-studio-chatgpt-desktop', ['chatgpt'], job_types=['deep_analysis'], limit=10)
         self.assertEqual([job['id'] for job in deep_only.data['jobs']], [deep_job.id])
         self.assertEqual(deep_only.data['jobs'][0]['status'], AiJob.STATUS_CLAIMED)
-        self.assertEqual(deep_only.data['jobs'][0]['model_display_name'], 'Claude')
+        self.assertEqual(deep_only.data['jobs'][0]['model_display_name'], 'ChatGPT')
         hourly_job.refresh_from_db()
         self.assertEqual(hourly_job.status, AiJob.STATUS_PENDING)
 
         AiJob.objects.filter(pk=deep_job.pk).update(status=AiJob.STATUS_PENDING, claimed_by='', claimed_at=None)
-        deep_without_capability = self.claim('mac-studio-claude-desktop', ['qwen38'], job_types=['deep_analysis'])
+        deep_without_capability = self.claim('mac-studio-chatgpt-desktop', ['qwen38'], job_types=['deep_analysis'])
         self.assertEqual(deep_without_capability.data['jobs'], [])
 
     def test_deep_jobs_keep_their_lease_past_the_local_worker_timeout(self):
@@ -615,7 +542,7 @@ class DeepAnalysisApiTests(APITestCase):
             job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS,
             status=AiJob.STATUS_RUNNING,
             scope=deep_scope(),
-            claimed_by='mac-studio-claude-desktop',
+            claimed_by='mac-studio-chatgpt-desktop',
             claimed_at=timezone.now(),
         )
         local_job = AiJob.objects.create(
@@ -631,7 +558,7 @@ class DeepAnalysisApiTests(APITestCase):
         deep_job.refresh_from_db()
         local_job.refresh_from_db()
         self.assertEqual(deep_job.status, AiJob.STATUS_RUNNING)
-        self.assertEqual(deep_job.claimed_by, 'mac-studio-claude-desktop')
+        self.assertEqual(deep_job.claimed_by, 'mac-studio-chatgpt-desktop')
         self.assertEqual(local_job.status, AiJob.STATUS_CLAIMED)  # re-queued and claimed again
 
         # Past the deep-tier timeout it is re-queued like any other job.
@@ -678,14 +605,14 @@ class DeepAnalysisApiTests(APITestCase):
 
         claimed = []
         for _ in range(len(expected_order) + 1):
-            response = self.claim('dual-tier-worker', ['qwen38', 'claude'], limit=1)
+            response = self.claim('dual-tier-worker', ['qwen38', 'chatgpt'], limit=1)
             self.assertEqual(response.status_code, 200)
             claimed.extend(job['id'] for job in response.data['jobs'])
         self.assertEqual(claimed, expected_order)
 
-    def complete(self, job, result_payload, model_name='/Users/x/claude-desktop'):
+    def complete(self, job, result_payload, model_name='/Users/x/chatgpt-desktop'):
         job.status = AiJob.STATUS_RUNNING
-        job.claimed_by = 'mac-studio-claude-desktop'
+        job.claimed_by = 'mac-studio-chatgpt-desktop'
         job.claimed_at = timezone.now()
         job.save(update_fields=['status', 'claimed_by', 'claimed_at', 'updated_at'])
         self.client.force_authenticate(user=None)
@@ -717,7 +644,7 @@ class DeepAnalysisApiTests(APITestCase):
         accepted = self.complete(job, {
             'schema_version': DEEP_ANALYSIS_RESULT_SCHEMA_VERSION,
             'source': DEEP_ANALYSIS_RESULT_SOURCE,
-            'model_id': 'claude',
+            'model_id': 'chatgpt',
             'summary': '완료율 61.7%로 마감.',
             'findings': [],
             'actions': [],
@@ -727,9 +654,9 @@ class DeepAnalysisApiTests(APITestCase):
         self.assertEqual(accepted.status_code, 200, accepted.data)
         self.assertEqual(accepted.data['result_payload']['summary'], '완료율 61.7%로 마감.')
         self.assertFalse(accepted.data['result_payload']['llm_fallback'])
-        self.assertEqual(accepted.data['result_payload']['model_id'], 'claude')
-        self.assertEqual(accepted.data['model_name'], 'claude-desktop')
-        self.assertEqual(accepted.data['model_display_name'], 'Claude')
+        self.assertEqual(accepted.data['result_payload']['model_id'], 'chatgpt')
+        self.assertEqual(accepted.data['model_name'], 'chatgpt-desktop')
+        self.assertEqual(accepted.data['model_display_name'], 'ChatGPT')
 
         rejected_job = AiJob.objects.create(
             job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS,
@@ -739,7 +666,7 @@ class DeepAnalysisApiTests(APITestCase):
         rejected = self.complete(rejected_job, {
             'schema_version': DEEP_ANALYSIS_RESULT_SCHEMA_VERSION,
             'source': DEEP_ANALYSIS_RESULT_SOURCE,
-            'model_id': 'claude',
+            'model_id': 'chatgpt',
             'summary': '完成率 61.7%，比上周高 4 个百分点。',
             'findings': [],
             'actions': [],
@@ -791,7 +718,7 @@ class DeepAnalysisApiTests(APITestCase):
             status=AiJob.STATUS_COMPLETED,
             scope=deep_scope(trigger='manual'),
             result_payload={'summary': 'newest'},
-            model_name='claude-desktop',
+            model_name='chatgpt-desktop',
             completed_at=timezone.now() - timedelta(hours=1),
             created_by=self.staff,
         )
@@ -823,7 +750,7 @@ class DeepAnalysisApiTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['job']['id'], newest.id)
         self.assertNotEqual(response.data['job']['id'], older.id)
-        self.assertEqual(response.data['job']['model_display_name'], 'Claude')
+        self.assertEqual(response.data['job']['model_display_name'], 'ChatGPT')
         self.assertNotIn('input_payload', response.data['job'])
         self.assertEqual(response.data['pending_job']['id'], pending.id)
         self.assertIsNone(response.data['failed_job'])
@@ -842,7 +769,7 @@ class DeepAnalysisApiTests(APITestCase):
         self.assertEqual(with_failure.data['job']['id'], newest.id)
 
         explicit_model = self.client.get('/api/ai/jobs/latest/', {
-            'job_type': 'deep_analysis', 'kind': 'production_weekly', 'language': 'ko', 'model_id': 'claude',
+            'job_type': 'deep_analysis', 'kind': 'production_weekly', 'language': 'ko', 'model_id': 'chatgpt',
         })
         self.assertEqual(explicit_model.data['job']['id'], newest.id)
         missing_kind = self.client.get('/api/ai/jobs/latest/', {'job_type': 'deep_analysis'})
@@ -852,23 +779,23 @@ class DeepAnalysisApiTests(APITestCase):
         })
         self.assertEqual(bad_model.status_code, 400)
 
-    def test_heartbeat_accepts_claude_capability(self):
+    def test_heartbeat_accepts_chatgpt_capability(self):
         self.client.force_authenticate(user=None)
         response = self.client.post(
             '/api/ai/worker/heartbeat/',
             {
-                'worker_name': 'mac-studio-claude-desktop',
+                'worker_name': 'mac-studio-chatgpt-desktop',
                 'llm_enabled': True,
                 'llm_ready': True,
-                'model_name': 'claude-desktop',
+                'model_name': 'chatgpt-desktop',
                 'worker_version': 'production-ai-worker-v2',
-                'available_model_ids': ['claude'],
+                'available_model_ids': ['chatgpt'],
             },
             format='json',
             **WORKER_HEADERS,
         )
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data['available_model_ids'], ['claude'])
+        self.assertEqual(response.data['available_model_ids'], ['chatgpt'])
 
     def test_status_describes_local_tier_at_top_level_and_lists_both_workers(self):
         create_heartbeat(
@@ -877,8 +804,8 @@ class DeepAnalysisApiTests(APITestCase):
             age=timedelta(seconds=40),
         )
         create_heartbeat(
-            'mac-studio-claude-desktop', ['claude'],
-            model_name='claude-desktop',
+            'mac-studio-chatgpt-desktop', ['chatgpt'],
+            model_name='chatgpt-desktop',
             age=timedelta(seconds=5),  # fresher, but not the local tier
         )
 
@@ -895,12 +822,12 @@ class DeepAnalysisApiTests(APITestCase):
         self.assertTrue(response.data['worker_compatible'])
         self.assertTrue(response.data['llm_ready'])
         workers = {worker['worker_name']: worker for worker in response.data['workers']}
-        self.assertEqual(set(workers), {'mac-studio-local-ai', 'mac-studio-claude-desktop'})
+        self.assertEqual(set(workers), {'mac-studio-local-ai', 'mac-studio-chatgpt-desktop'})
         self.assertEqual(workers['mac-studio-local-ai']['tier'], 'local')
-        self.assertEqual(workers['mac-studio-claude-desktop']['tier'], 'deep')
-        self.assertEqual(workers['mac-studio-claude-desktop']['model_display_name'], 'Claude')
-        self.assertEqual(workers['mac-studio-claude-desktop']['available_model_ids'], ['claude'])
-        self.assertEqual(workers['mac-studio-claude-desktop']['state'], 'online')
+        self.assertEqual(workers['mac-studio-chatgpt-desktop']['tier'], 'deep')
+        self.assertEqual(workers['mac-studio-chatgpt-desktop']['model_display_name'], 'ChatGPT')
+        self.assertEqual(workers['mac-studio-chatgpt-desktop']['available_model_ids'], ['chatgpt'])
+        self.assertEqual(workers['mac-studio-chatgpt-desktop']['state'], 'online')
         for worker in workers.values():
             for key in ('state', 'online', 'model_name', 'last_heartbeat_at', 'heartbeat_age_seconds',
                         'worker_version', 'worker_compatible', 'llm_ready'):
@@ -909,8 +836,8 @@ class DeepAnalysisApiTests(APITestCase):
     def test_status_falls_back_to_freshest_local_tier_worker_and_marks_stale_deep_worker(self):
         create_heartbeat('legacy-local', [], model_name='Local-7B', age=timedelta(seconds=30))
         create_heartbeat(
-            'mac-studio-claude-desktop', ['claude'],
-            model_name='claude-desktop',
+            'mac-studio-chatgpt-desktop', ['chatgpt'],
+            model_name='chatgpt-desktop',
             age=timedelta(minutes=20),
         )
         self.client.force_authenticate(self.user)
@@ -918,8 +845,8 @@ class DeepAnalysisApiTests(APITestCase):
         self.assertEqual(response.data['worker_name'], 'legacy-local')
         self.assertEqual(response.data['model_display_name'], 'Local-7B')
         workers = {worker['worker_name']: worker for worker in response.data['workers']}
-        self.assertEqual(workers['mac-studio-claude-desktop']['state'], 'offline')
-        self.assertFalse(workers['mac-studio-claude-desktop']['online'])
+        self.assertEqual(workers['mac-studio-chatgpt-desktop']['state'], 'offline')
+        self.assertFalse(workers['mac-studio-chatgpt-desktop']['online'])
 
     def test_status_without_heartbeat_reports_registry_display_name(self):
         self.client.force_authenticate(self.user)
@@ -930,21 +857,21 @@ class DeepAnalysisApiTests(APITestCase):
 
     def test_production_model_availability_considers_every_fresh_heartbeat(self):
         create_heartbeat('mac-studio-local-ai', ['qwen38'], model_name='Qwen3.8-27B-4bit', age=timedelta(seconds=60))
-        create_heartbeat('mac-studio-claude-desktop', ['claude'], model_name='claude-desktop', age=timedelta(seconds=1))
+        create_heartbeat('mac-studio-chatgpt-desktop', ['chatgpt'], model_name='chatgpt-desktop', age=timedelta(seconds=1))
 
         self.assertTrue(is_production_ai_model_available('qwen38'))
-        self.assertTrue(is_production_ai_model_available('claude'))
+        self.assertTrue(is_production_ai_model_available('chatgpt'))
         self.assertFalse(is_production_ai_model_available('gpt'))
 
         AiJob.objects.filter(scope__worker_name='mac-studio-local-ai').update(
             completed_at=timezone.now() - timedelta(minutes=10),
         )
         self.assertFalse(is_production_ai_model_available('qwen38'))
-        self.assertTrue(is_production_ai_model_available('claude'))
+        self.assertTrue(is_production_ai_model_available('chatgpt'))
 
-    def test_periodic_enqueue_creates_weekly_deep_jobs_when_due(self):
+    def test_periodic_enqueue_creates_daily_deep_jobs_when_due(self):
         with mock.patch('ai_core.deep_analysis.build_deep_analysis_input', return_value={'evidence_numbers': []}), \
-                mock.patch('ai_core.views.timezone.now', return_value=shanghai(2026, 9, 14, 8, 30)):
+                mock.patch('ai_core.views.timezone.now', return_value=shanghai(2026, 9, 14, 9, 30)):
             self.client.force_authenticate(user=None)
             response = self.client.post(
                 '/api/ai/jobs/enqueue-periodic/',
@@ -962,9 +889,9 @@ class DeepAnalysisApiTests(APITestCase):
         self.assertEqual(deep_jobs.get().scope['language'], 'ko')
         self.assertEqual(response.data['created_count'], 1 + 1)  # one hourly ko + one deep
 
-    def test_periodic_enqueue_survives_a_failing_weekly_pack_build(self):
+    def test_periodic_enqueue_survives_a_failing_daily_pack_build(self):
         with mock.patch('ai_core.deep_analysis.build_deep_analysis_input', side_effect=RuntimeError('mes down')), \
-                mock.patch('ai_core.views.timezone.now', return_value=shanghai(2026, 9, 14, 8, 30)), \
+                mock.patch('ai_core.views.timezone.now', return_value=shanghai(2026, 9, 14, 9, 30)), \
                 self.assertLogs('ai_core.views', level='ERROR'):
             self.client.force_authenticate(user=None)
             response = self.client.post(
@@ -977,3 +904,98 @@ class DeepAnalysisApiTests(APITestCase):
         self.assertIn('RuntimeError: mes down', response.data['deep_analysis']['error'])
         self.assertEqual(response.data['created_count'], 1)  # the hourly job was still created
         self.assertEqual(AiJob.objects.filter(job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS).count(), 0)
+
+
+    def test_readiness_is_worker_authenticated_and_read_only(self):
+        before = AiJob.objects.count()
+        self.client.force_authenticate(self.staff)
+        url = '/api/ai/worker/deep-analysis-config/'
+        denied = self.client.get(url)
+        self.assertEqual(denied.status_code, 403)
+        accepted = self.client.get(url, **WORKER_HEADERS)
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(accepted.data['model_id'], 'chatgpt')
+        self.assertEqual(accepted.data['cadence'], 'daily')
+        self.assertEqual(accepted.data['schedule']['hour'], 9)
+        self.assertEqual(AiJob.objects.count(), before)
+
+    def test_deep_only_enqueue_never_schedules_local_jobs(self):
+        with mock.patch('ai_core.deep_analysis.build_deep_analysis_input', return_value={}), \
+             mock.patch('ai_core.views.timezone.now', return_value=shanghai(2026, 9, 21, 9)), \
+             mock.patch('ai_core.views.enqueue_daily_quality_summary') as quality:
+            self.client.force_authenticate(None)
+            result = self.client.post('/api/ai/jobs/enqueue-periodic/',
+                {'languages': ['ko'], 'job_types': ['deep_analysis']}, format='json', **WORKER_HEADERS)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.data['deep_analysis']['model_id'], 'chatgpt')
+        self.assertEqual(result.data['deep_analysis']['cadence'], 'daily')
+        self.assertEqual(AiJob.objects.count(), 1)
+        self.assertEqual(AiJob.objects.get().job_type, 'deep_analysis')
+        quality.assert_not_called()
+
+    def test_manual_rejects_open_day_and_retired_model(self):
+        self.client.force_authenticate(self.staff)
+        with mock.patch('ai_core.views.current_business_scope', return_value=(date(2026, 9, 21), 'slot')):
+            for scope in (
+                {'kind':'production_weekly', 'date':'2026-09-21'},
+                {'kind':'production_weekly', 'model_id':'claude'},
+                {'kind':'production_weekly', 'date':'2026-09-22'},
+            ):
+                response = self.client.post('/api/ai/jobs/', {'job_type':'deep_analysis', 'scope':scope}, format='json')
+                self.assertEqual(response.status_code, 400, response.data)
+        self.assertFalse(AiJob.objects.exists())
+
+    def test_legacy_result_identity_and_history_survive_current_provider_pending(self):
+        legacy = AiJob.objects.create(job_type='deep_analysis', status=AiJob.STATUS_COMPLETED,
+            scope={**deep_scope(), 'model_id':'claude'}, completed_at=timezone.now(),
+            input_payload={'kind':'production_weekly', 'language':'ko', 'evidence_numbers':[]})
+        answer = {'schema_version':'deep-analysis.v1', 'source':'claude_desktop_review',
+                  'model_id':'claude', 'summary':'과거 근거 검토', 'findings':[], 'actions':[], 'caveats':[]}
+        restored = restore_authoritative_deep_analysis_result(legacy, answer)
+        self.assertFalse(restored['llm_fallback'])
+        self.assertEqual(restored['model_id'], 'claude')
+        self.assertEqual(restored['source'], 'claude_desktop_review')
+        pending = AiJob.objects.create(job_type='deep_analysis', scope=deep_scope())
+        self.client.force_authenticate(self.user)
+        response = self.client.get('/api/ai/jobs/latest/', {'job_type':'deep_analysis', 'kind':'production_weekly'})
+        self.assertEqual(response.data['job']['id'], legacy.pk)
+        self.assertEqual(response.data['job']['model_display_name'], 'Claude')
+        self.assertEqual(response.data['pending_job']['id'], pending.pk)
+        self.assertEqual(response.data['model_id'], 'chatgpt')
+        current_only = self.client.get('/api/ai/jobs/latest/',
+            {'job_type':'deep_analysis', 'kind':'production_weekly', 'model_id':'chatgpt'})
+        self.assertIsNone(current_only.data['job'])
+
+    def test_claim_skips_superseded_daily_period_without_changing_history(self):
+        old = AiJob.objects.create(job_type='deep_analysis', scope=deep_scope(trigger='daily', period_end=date(2026,9,19)))
+        current = AiJob.objects.create(job_type='deep_analysis', scope=deep_scope(trigger='daily', period_end=date(2026,9,20)))
+        with mock.patch('ai_core.views.timezone.now', return_value=shanghai(2026,9,21,9)):
+            response = self.claim('chatgpt-worker', ['chatgpt'], job_types=['deep_analysis'])
+        self.assertEqual([job['id'] for job in response.data['jobs']], [current.pk])
+        old.refresh_from_db()
+        self.assertEqual(old.status, AiJob.STATUS_PENDING)
+
+    def test_status_separates_last_ai_success_from_newer_fallback(self):
+        scope = {'trigger':'hourly', 'language':'ko', 'model_id':'qwen38'}
+        success = AiJob.objects.create(job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+            status=AiJob.STATUS_COMPLETED, scope=scope,
+            completed_at=timezone.now()-timedelta(hours=1),
+            result_payload={'source':'local_llm_rewrite'})
+        latest = AiJob.objects.create(job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+            status=AiJob.STATUS_COMPLETED, scope=scope, completed_at=timezone.now(),
+            result_payload={'source':'local_llm_rewrite', 'llm_fallback':True, 'llm_fallback_code':'grounding_rejected'})
+        self.client.force_authenticate(self.user)
+        result = self.client.get('/api/ai/worker/status/')
+        self.assertEqual(result.data['last_successful_analysis_at'], success.completed_at)
+        self.assertEqual(result.data['last_analysis_completed_at'], latest.completed_at)
+        self.assertTrue(result.data['last_analysis_llm_fallback'])
+        self.assertEqual(result.data['last_analysis_fallback_code'], 'grounding_rejected')
+        self.assertEqual(result.data['last_analysis_source'], 'local_llm_rewrite')
+
+
+    def test_retired_claude_worker_cannot_claim_new_work(self):
+        job = AiJob.objects.create(job_type='deep_analysis', scope={**deep_scope(), 'model_id':'claude'})
+        response = self.claim('retired-claude-worker', ['claude'], job_types=['deep_analysis'])
+        self.assertEqual(response.status_code, 400)
+        job.refresh_from_db()
+        self.assertEqual(job.status, AiJob.STATUS_PENDING)

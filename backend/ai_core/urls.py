@@ -6,6 +6,7 @@ from .views import (
     AiJobLatestView,
     AiJobListCreateView,
     AiWorkerClaimView,
+    AiWorkerDeepAnalysisConfigView,
     AiWorkerHeartbeatView,
     AiWorkerJobTransitionView,
     AiWorkerPeriodicEnqueueView,
@@ -21,6 +22,7 @@ urlpatterns = [
     path('jobs/claim/', AiWorkerClaimView.as_view(), name='ai-worker-job-claim'),
     path('jobs/enqueue-periodic/', AiWorkerPeriodicEnqueueView.as_view(), name='ai-worker-periodic-enqueue'),
     path('worker/heartbeat/', AiWorkerHeartbeatView.as_view(), name='ai-worker-heartbeat'),
+    path('worker/deep-analysis-config/', AiWorkerDeepAnalysisConfigView.as_view(), name='ai-worker-deep-analysis-config'),
     path('worker/status/', AiWorkerStatusView.as_view(), name='ai-worker-status'),
     path(
         'jobs/<int:pk>/start/',

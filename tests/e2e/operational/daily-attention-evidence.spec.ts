@@ -19,7 +19,7 @@ const localized = (ko: string, zh: string) => ({ ko, zh });
 test('priority evidence separates exact and related parts and shows every photo', async ({ page }) => {
   const guard = installPageIssueGuard(page);
   await installDevSession(page, 'ko');
-  // A weekly job that is queued but not yet claimed (deep-tier worker offline).
+  // A daily job that is queued but not yet claimed (deep-tier worker offline).
   await installDeepAnalysisMocks(page, { pendingJobStatus: 'pending' });
 
   const metric = {
@@ -539,7 +539,7 @@ test('priority evidence separates exact and related parts and shows every photo'
   await expect(page.getByText('Executive Summary', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '오늘 우선확인 4' })).toBeVisible();
   const deepAnalysisPanel = page.getByRole('region', { name: 'AI 심층 분석' });
-  await expect(deepAnalysisPanel.getByRole('heading', { name: 'AI 심층 분석 · Claude' })).toBeVisible();
+  await expect(deepAnalysisPanel.getByRole('heading', { name: 'AI 심층 분석 · ChatGPT' })).toBeVisible();
   await expect(deepAnalysisPanel.getByText('주간 품질 이력에서 반복 유형 3건이 확인되었습니다.')).toBeVisible();
   // Queued is not "generating": the last completed result stays visible and staff can still request.
   await expect(deepAnalysisPanel.getByRole('status').filter({ hasText: '심층 분석 대기 중' })).toBeVisible();

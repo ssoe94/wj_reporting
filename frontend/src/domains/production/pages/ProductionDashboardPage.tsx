@@ -47,8 +47,10 @@ import {
   describeAiModel,
   getAiTierLabel,
   getAiWorkerLabel,
+  getAiWorkerStateLabel,
   withAiModelName,
 } from "@/domains/ai/model-labels";
+import { describeLocalAiHistory } from "@/domains/ai/local-ai-history";
 import { useAuth } from "@/contexts/AuthContext";
 import { InjectionTransitionPanel } from "@/domains/production/components/InjectionTransitionPanel";
 import { buildCoreDashboardSources, getDashboardDataState } from "@/domains/production/dashboard-data-state";
@@ -454,6 +456,9 @@ const pageCopy = {
     aiAssistantAi: "생산 어시스턴트",
     aiInputLabel: "생산 데이터 질문 입력",
     workerModelReady: "선택 설명 사용 가능",
+    workerLatestAttempt: "최근 자동 브리핑 처리",
+    workerLastSuccessful: "마지막 AI 설명 성공",
+    workerNoSuccessfulRecord: "확인된 성공 기록 없음",
     workerModelUnavailable: "선택 설명 일시 중지",
     workerModel: "모델",
     askingAi: "질문 전송 중",
@@ -695,6 +700,9 @@ const pageCopy = {
     aiAssistantAi: "生产助手",
     aiInputLabel: "输入生产数据问题",
     workerModelReady: "可选说明可用",
+    workerLatestAttempt: "最近自动简报处理",
+    workerLastSuccessful: "最近 AI 说明成功",
+    workerNoSuccessfulRecord: "暂无已确认的成功记录",
     workerModelUnavailable: "可选说明暂时停用",
     workerModel: "模型",
     askingAi: "发送中",
@@ -3328,9 +3336,11 @@ export function ProductionDashboardPage() {
     && latestAiJobActualModelId === briefingModelId
     && workerResultMatchesBriefing(latestAiJobResult, productionAiBriefing);
   const latestAiJobModelDisplayName = getAiJobModelDisplayName(latestAiJob);
-  const briefingModelStatusLabel = briefingModelIsAvailable
-    ? `${localAiWorkerLabel} · ${copy.workerModelReady}`
-    : `${localAiWorkerLabel} · ${copy.workerModelUnavailable}`;
+  const briefingWorkerStateLabel = getAiWorkerStateLabel(aiWorkerState, language, localAiModelDisplayName);
+  const briefingModelStatusLabel = `${briefingWorkerStateLabel} · ${briefingModelIsAvailable ? copy.workerModelReady : copy.workerModelUnavailable}`;
+  const localAiHistory = describeLocalAiHistory(aiWorkerStatus, language);
+  const localAiHistoryClass = localAiHistory.state === "success" ? " production-ai-worker-status__pill--llm-ready"
+    : localAiHistory.state === "fallback" ? " production-ai-worker-status__pill--llm-unavailable" : "";
   const briefingSeverityLabel = productionAiBriefing?.severity === "critical"
     ? copy.severityCritical
     : productionAiBriefing?.severity === "warning"
@@ -5455,7 +5465,22 @@ export function ProductionDashboardPage() {
                 <span className={`production-ai-worker-status__pill production-ai-worker-status__pill--llm-${hasCoreRefreshError ? "unavailable" : "ready"}`}>
                   {hasCoreRefreshError ? copy.dataRefreshFailed : copy.deterministicAnswerReady}
                 </span>
+                <span className={`production-ai-worker-status__pill${localAiHistoryClass}`}>
+                  {localAiHistory.label}{localAiHistory.reason ? ` · ${localAiHistory.reason}` : ""}
+                </span>
               </div>
+              {aiWorkerStatus ? (
+                <dl className="production-ai-worker-status__meta">
+                  <div>
+                    <dt>{copy.workerLatestAttempt}</dt>
+                    <dd>{withAiModelName(formatAiTimestamp(aiWorkerStatus.last_analysis_completed_at, language), aiWorkerStatus.last_analysis_model_display_name)}</dd>
+                  </div>
+                  <div>
+                    <dt>{copy.workerLastSuccessful}</dt>
+                    <dd>{aiWorkerStatus.last_successful_analysis_at ? formatAiTimestamp(aiWorkerStatus.last_successful_analysis_at, language) : copy.workerNoSuccessfulRecord}</dd>
+                  </div>
+                </dl>
+              ) : null}
             </div>
 
             <div className="production-brief-panel__body">

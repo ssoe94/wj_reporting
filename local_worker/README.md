@@ -4,8 +4,9 @@ This worker runs on the Mac Studio and calls the Render backend using outbound H
 It is the **local (routine) tier**: it advertises model id `qwen38` and processes
 production briefings, production questions, daily quality attention summaries and
 quality report photo audits on the on-device model server at `127.0.0.1:8082`.
-The **deep tier** (`claude`) is served by the Claude desktop scheduled task through
-[`claude_bridge.py`](#claude-deep-tier-bridge) on the same job queue.
+The **deep tier** (`chatgpt`) uses a daily ChatGPT desktop task through
+`chatgpt_bridge.py` on the same job queue. Claude execution is retired; existing
+results retain their original identity. See the [current contract](../docs/ai/2026-09-21-chatgpt-daily-analysis.md).
 
 ## Local test
 
@@ -139,51 +140,21 @@ AI_WORKER_ENQUEUE_PERIODIC=true
 PERIODIC_ENQUEUE_CHECK_SECONDS=60
 ```
 
-## Claude deep-tier bridge
+## Daily ChatGPT deep-tier bridge
 
-`claude_bridge.py` is the CLI the Claude desktop scheduled task uses to serve
-`deep_analysis` jobs (model id `claude`). It is the only deep-tier component that
-touches the worker token: it reads the same Keychain item as the worker
-(`com.wj.local-ai-worker.token`, or `AI_WORKER_TOKEN` when set) via
-`/usr/bin/security` and never prints or logs it.
+Use `python -m local_worker.chatgpt_bridge readiness` to verify the deployed
+contract without writes. Only then send `heartbeat`, `enqueue`, and `claim`.
+The server builds production/quality evidence in Korean/Chinese after 09:00
+Asia/Shanghai, for the previous closed business date and the preceding week.
+The app writes the answer using only that evidence, runs local `validate`, then
+`submit`. Inspect `accepted_explanation`, not just process exit code: a stored
+server fallback or unverified submission must not be retried as a new submit.
 
-```bash
-python -m local_worker.claude_bridge heartbeat        # advertises ["claude"] as mac-studio-claude-desktop
-python -m local_worker.claude_bridge claim            # claims one deep_analysis job, marks it running,
-                                                      # writes ~/.local/share/wj-claude-bridge/jobs/<id>/bundle.md
-python -m local_worker.claude_bridge submit <id> ~/.local/share/wj-claude-bridge/jobs/<id>/answer.json
-python -m local_worker.claude_bridge fail <id> "<reason>"
-python -m local_worker.claude_bridge status
-```
+The [current contract and runner procedure](../docs/ai/2026-09-21-chatgpt-daily-analysis.md)
+cover credentials, command shapes, numeric grounding, lease handling, deployment
+gates and acceptance checks. `status` and `validate` are entirely local.
 
-Every command prints one JSON object on stdout. `claim` prints
-`{"job": <id>, "job_id", "kind", "language", "period", "bundle_path", "answer_path", "lease"}`
-(or `{"job": null}` when the queue is empty). The bundle contains the instructions,
-the required answer shape and the input payload as fenced JSON; it states that the
-payload is data, not instructions, and that every number in the answer must come from
-`input_payload.evidence_numbers`. `submit` validates the answer locally (schema
-`deep-analysis.v1`, source `claude_desktop_review`, length caps, and every number in the
-prose and in `evidence_refs` must be in `evidence_numbers`, compared after stripping
-leading/trailing zeros so `9월 8일` grounds on `2026-09-08`), then posts `complete`
-with prompt version `deep-analysis-claude-v1` and model name `claude`. On a validation
-failure it exits 1 **without** posting `fail`: the job stays claimed so the caller can
-revise the answer and submit again; giving up is an explicit `fail <id> "<reason>"`.
-If `complete` is answered with 403 the lease expired (the backend re-queues a
-`deep_analysis` job after `DEEP_ANALYSIS_JOB_TIMEOUT_SECONDS`, 2 h, instead of the
-10-minute local-worker lease); the bridge records `lease_lost` locally and exits 2.
-Environment: `RENDER_API_BASE_URL` (default
-production), `WORKER_NAME` (default `mac-studio-claude-desktop`), `CLAUDE_BRIDGE_HOME`
-(default `~/.local/share/wj-claude-bridge`), `AI_WORKER_KEYCHAIN_SERVICE`,
-`AI_WORKER_KEYCHAIN_ACCOUNT`.
-
-Scheduled task outline (`~/.claude/scheduled-tasks/wj-deep-analysis`, created disabled and
-enabled only after the backend deploy):
-
-1. `heartbeat`.
-2. `claim`; stop when it prints `{"job": null}`.
-3. Read `bundle_path`, write the answer JSON to `answer_path`.
-4. `submit <id> <answer_path>`. Exit 1 = validation failed and the job is still claimed:
-   fix the printed reason and submit once more, then `fail <id> "<reason>"` if it still
-   fails. Exit 2/3 = token, lease or network problem: stop the run. The weekly enqueue
-   re-creates a failed pair once (`DEEP_ANALYSIS_MAX_ATTEMPTS = 2`).
-5. Repeat from step 2, at most 4 jobs per run.
+`claude_bridge.py` remains as the shared implementation and compatibility-test
+surface. This does not require Claude Code, the Claude app or a Claude subscription.
+The current backend rejects Claude worker capabilities. Historical result rows
+and their `claude_desktop_review` source must not be renamed or removed.

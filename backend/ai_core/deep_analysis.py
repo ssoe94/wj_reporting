@@ -1,4 +1,4 @@
-"""Deep-tier (expert) analysis jobs: server-built weekly input packs, weekly
+"""Deep-tier (expert) analysis jobs: server-built rolling input packs, daily
 scheduling and the result contract enforced on completion.
 
 The deep tier never calculates production or quality numbers.  Every number
@@ -9,23 +9,23 @@ the reviewer may use is already in ``input_payload`` and listed in
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from production.ai_answer import build_ai_briefing
 from production.ai_metrics import SHANGHAI_TZ
 from quality.daily_attention import build_daily_quality_attention
 
-from .model_registry import DEEP_ANALYSIS_MODEL_ID, LOCAL_AI_MODEL_ID
+from .model_registry import DEEP_ANALYSIS_MODEL_ID
 from .models import AiJob
 
 
 DEEP_ANALYSIS_INPUT_SCHEMA_VERSION = "deep-analysis-input.v1"
 DEEP_ANALYSIS_RESULT_SCHEMA_VERSION = "deep-analysis.v1"
-DEEP_ANALYSIS_RESULT_SOURCE = "claude_desktop_review"
+DEEP_ANALYSIS_RESULT_SOURCE = "chatgpt_desktop_review"
 
 DEEP_ANALYSIS_KIND_PRODUCTION_WEEKLY = "production_weekly"
 DEEP_ANALYSIS_KIND_QUALITY_WEEKLY = "quality_weekly"
@@ -34,12 +34,12 @@ DEEP_ANALYSIS_KINDS = (
     DEEP_ANALYSIS_KIND_QUALITY_WEEKLY,
 )
 DEEP_ANALYSIS_LANGUAGES = ("ko", "zh")
-DEEP_ANALYSIS_TRIGGER_WEEKLY = "weekly"
+DEEP_ANALYSIS_TRIGGER_DAILY = "daily"
 DEEP_ANALYSIS_TRIGGER_MANUAL = "manual"
 DEEP_ANALYSIS_PERIOD_DAYS = 7
-WEEKLY_DEEP_ANALYSIS_ENQUEUE_HOUR = 8  # Asia/Shanghai, first business day of the week
-DEEP_ANALYSIS_MAX_ATTEMPTS = 2  # weekly enqueue re-creates a failed pair once
-# A deep job is worked interactively by the Claude desktop task, far slower
+DAILY_DEEP_ANALYSIS_ENQUEUE_HOUR = 9  # Asia/Shanghai, after the 08:00 close
+DEEP_ANALYSIS_MAX_ATTEMPTS = 2  # daily enqueue re-creates a failed pair once
+# A deep job is worked interactively by the ChatGPT desktop task, far slower
 # than the 10-minute local-worker lease; the claim view uses this instead.
 DEEP_ANALYSIS_JOB_TIMEOUT_SECONDS = 2 * 60 * 60
 
@@ -90,22 +90,27 @@ def _local_now(now: datetime | None = None) -> datetime:
     return value.astimezone(SHANGHAI_TZ)
 
 
-def previous_week_period(now: datetime | None = None) -> tuple[date, date]:
-    """Previous Monday..Sunday relative to the Shanghai local date."""
-    local_date = _local_now(now).date()
-    this_monday = local_date - timedelta(days=local_date.weekday())
-    return this_monday - timedelta(days=7), this_monday - timedelta(days=1)
+def latest_completed_business_date(now: datetime | None = None) -> date:
+    """Never include the business date whose 08:00 close is still in the future."""
+    return (_local_now(now) - timedelta(hours=8)).date() - timedelta(days=1)
 
 
-def weekly_deep_analysis_due(now: datetime | None = None) -> bool:
-    """True from Monday 08:00 Asia/Shanghai onward (catch-up later in the week is
-    harmless because enqueue is idempotent per period)."""
-    local_now = _local_now(now)
-    this_monday = local_now.date() - timedelta(days=local_now.date().weekday())
-    threshold = SHANGHAI_TZ.localize(
-        datetime.combine(this_monday, time(WEEKLY_DEEP_ANALYSIS_ENQUEUE_HOUR, 0))
-    )
-    return local_now >= threshold
+def daily_deep_analysis_period(now: datetime | None = None) -> tuple[date, date]:
+    return deep_analysis_period_for_end(latest_completed_business_date(now))
+
+
+def daily_deep_analysis_due(now: datetime | None = None) -> bool:
+    return _local_now(now).hour >= DAILY_DEEP_ANALYSIS_ENQUEUE_HOUR
+
+
+def deep_analysis_schedule() -> dict[str, Any]:
+    return {
+        "cadence": "daily",
+        "hour": DAILY_DEEP_ANALYSIS_ENQUEUE_HOUR,
+        "timezone": "Asia/Shanghai",
+        "context_days": DEEP_ANALYSIS_PERIOD_DAYS,
+        "date_basis": "previous_completed_business_day",
+    }
 
 
 # --------------------------------------------------------------------------
@@ -201,23 +206,6 @@ def _period_dates(period_start: date, period_end: date) -> list[date]:
     ]
 
 
-def _latest_completed_hourly_job(target_date: date, language: str) -> AiJob | None:
-    return (
-        AiJob.objects
-        .filter(
-            job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
-            status=AiJob.STATUS_COMPLETED,
-            created_by__isnull=True,
-            scope__trigger="hourly",
-            scope__date=target_date.isoformat(),
-            scope__language=language,
-            scope__model_id=LOCAL_AI_MODEL_ID,
-        )
-        .order_by("-completed_at", "-id")
-        .first()
-    )
-
-
 def _briefing_subset(briefing: dict[str, Any]) -> dict[str, Any]:
     return {
         field: briefing.get(field)
@@ -227,20 +215,8 @@ def _briefing_subset(briefing: dict[str, Any]) -> dict[str, Any]:
 
 
 def _production_day(target_date: date, language: str) -> dict[str, Any]:
-    job = _latest_completed_hourly_job(target_date, language)
-    if job is not None:
-        input_payload = job.input_payload if isinstance(job.input_payload, dict) else {}
-        briefing = input_payload.get("briefing")
-        if isinstance(briefing, dict) and briefing:
-            return {
-                "date": target_date.isoformat(),
-                "source": "hourly_job",
-                "job_id": job.pk,
-                "snapshot_completed_at": (
-                    job.completed_at.isoformat() if job.completed_at else None
-                ),
-                "briefing": _briefing_subset(briefing),
-            }
+    # Rebuild from stored MES/plan records after close. The last hourly AI
+    # snapshot may precede the 08:00 close or collector recovery by hours.
     briefing = build_ai_briefing(target_date, language).to_dict()
     return {
         "date": target_date.isoformat(),
@@ -417,7 +393,7 @@ def build_deep_analysis_input(
 
     payload: dict[str, Any] = {
         "schema_version": DEEP_ANALYSIS_INPUT_SCHEMA_VERSION,
-        "source": "deep_analysis_weekly_pack",
+        "source": "deep_analysis_daily_pack",
         "kind": normalized_kind,
         "language": language,
         "model_id": DEEP_ANALYSIS_MODEL_ID,
@@ -482,19 +458,27 @@ def _deep_analysis_jobs_for_period(kind: str, language: str, period_end: date):
             scope__kind=kind,
             scope__language=language,
             scope__period_end=period_end.isoformat(),
+            scope__model_id=DEEP_ANALYSIS_MODEL_ID,
         )
         .exclude(status=AiJob.STATUS_CANCELLED)
     )
 
 
 def _existing_deep_analysis_job(kind: str, language: str, period_end: date) -> AiJob | None:
-    """The job that makes a new weekly job unnecessary, or ``None``.
+    """The job that makes a new daily job unnecessary, or ``None``.
 
     A failed attempt (validation rejected, bridge gave up) is retried once:
     the pair is treated as "existing" only while it has a live/completed job
     or has already failed ``DEEP_ANALYSIS_MAX_ATTEMPTS`` times.
     """
     jobs = _deep_analysis_jobs_for_period(kind, language, period_end)
+    # A failed manual rerun cannot invalidate an already completed review or
+    # another active claim for this date/provider pair.
+    live = jobs.filter(status__in=[
+        AiJob.STATUS_PENDING, AiJob.STATUS_CLAIMED, AiJob.STATUS_RUNNING, AiJob.STATUS_COMPLETED,
+    ]).order_by("-id").first()
+    if live is not None:
+        return live
     newest = jobs.order_by("-id").first()
     if newest is None:
         return None
@@ -505,22 +489,25 @@ def _existing_deep_analysis_job(kind: str, language: str, period_end: date) -> A
     return None
 
 
-def enqueue_weekly_deep_analysis(
+def enqueue_daily_deep_analysis(
     now: datetime | None = None,
     *,
     languages: tuple[str, ...] = DEEP_ANALYSIS_LANGUAGES,
     max_jobs_per_call: int = 1,
 ) -> dict[str, Any]:
-    """Create the weekly deep analysis jobs for the previous Monday..Sunday.
+    """Create one daily review per kind/language for the latest closed date.
 
-    Idempotent per (kind, language, period_end).  At most ``max_jobs_per_call``
+    Idempotent per (model, kind, language, period_end).  At most ``max_jobs_per_call``
     packs are built per call so the periodic worker request stays short; the
     remaining jobs are created by the following calls.
     """
-    due = weekly_deep_analysis_due(now)
-    period_start, period_end = previous_week_period(now)
+    due = daily_deep_analysis_due(now)
+    period_start, period_end = daily_deep_analysis_period(now)
     response: dict[str, Any] = {
         "due": due,
+        "model_id": DEEP_ANALYSIS_MODEL_ID,
+        "cadence": "daily",
+        "schedule": deep_analysis_schedule(),
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
         "created_count": 0,
@@ -546,10 +533,15 @@ def enqueue_weekly_deep_analysis(
                 language,
                 period_start,
                 period_end,
-                trigger=DEEP_ANALYSIS_TRIGGER_WEEKLY,
+                trigger=DEEP_ANALYSIS_TRIGGER_DAILY,
             )
             input_payload = build_deep_analysis_input(kind, language, period_start, period_end)
             with transaction.atomic():
+                # A row lock cannot lock a not-yet-existing daily pair. Use a
+                # transaction lock before rechecking on the production DB.
+                if connection.vendor == "postgresql":
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [731940219])
                 existing = _existing_deep_analysis_job(kind, language, period_end)
                 if existing is not None:
                     response["existing_job_ids"].append(existing.pk)
@@ -655,7 +647,7 @@ def restore_authoritative_deep_analysis_result(
 
     result: dict[str, Any] = {
         "schema_version": DEEP_ANALYSIS_RESULT_SCHEMA_VERSION,
-        "source": DEEP_ANALYSIS_RESULT_SOURCE,
+        "source": ("claude_desktop_review" if scope.get("model_id") == "claude" else DEEP_ANALYSIS_RESULT_SOURCE),
         "model_id": str(scope.get("model_id") or DEEP_ANALYSIS_MODEL_ID),
         "kind": input_payload.get("kind") or scope.get("kind"),
         "language": input_payload.get("language") or scope.get("language"),
@@ -694,7 +686,7 @@ def restore_authoritative_deep_analysis_result(
         fallback_code = str(worker.get("llm_fallback_code") or "worker_fallback")[:64]
     elif (
         worker.get("schema_version") != DEEP_ANALYSIS_RESULT_SCHEMA_VERSION
-        or worker.get("source") != DEEP_ANALYSIS_RESULT_SOURCE
+        or worker.get("source") != result["source"]
         or str(worker.get("model_id") or "") != result["model_id"]
     ):
         fallback_code = "schema_rejected"

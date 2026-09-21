@@ -9,7 +9,9 @@ from production.ai_types import PRODUCTION_AI_MODEL_IDS
 
 
 LOCAL_AI_MODEL_ID = "qwen38"          # routine tier, on-device worker
-DEEP_ANALYSIS_MODEL_ID = "claude"      # expert tier, Claude desktop scheduled task
+DEEP_ANALYSIS_MODEL_ID = "chatgpt"     # daily ChatGPT desktop analysis
+LEGACY_DEEP_ANALYSIS_MODEL_ID = "claude"
+DEEP_ANALYSIS_MODEL_IDS = (DEEP_ANALYSIS_MODEL_ID, LEGACY_DEEP_ANALYSIS_MODEL_ID)
 
 AI_MODEL_TIER_LOCAL = "local"
 AI_MODEL_TIER_DEEP = "deep"
@@ -17,10 +19,12 @@ AI_MODEL_TIER_DEEP = "deep"
 AI_MODEL_TIERS = {
     LOCAL_AI_MODEL_ID: AI_MODEL_TIER_LOCAL,
     DEEP_ANALYSIS_MODEL_ID: AI_MODEL_TIER_DEEP,
+    LEGACY_DEEP_ANALYSIS_MODEL_ID: AI_MODEL_TIER_DEEP,
 }
 AI_MODEL_DISPLAY_NAMES = {
     LOCAL_AI_MODEL_ID: "Qwen 3.8 27B",
-    DEEP_ANALYSIS_MODEL_ID: "Claude",
+    DEEP_ANALYSIS_MODEL_ID: "ChatGPT",
+    LEGACY_DEEP_ANALYSIS_MODEL_ID: "Claude",
 }
 
 # The daily quality summary and the photo audit stay on the local tier.
@@ -61,7 +65,7 @@ def model_tier(model_id):
 def worker_tier_for_model_ids(model_ids):
     """A worker advertising the deep model is the deep tier; everything else is local."""
     advertised = {str(value or "").strip() for value in (model_ids or [])}
-    if DEEP_ANALYSIS_MODEL_ID in advertised:
+    if advertised.intersection(DEEP_ANALYSIS_MODEL_IDS):
         return AI_MODEL_TIER_DEEP
     return AI_MODEL_TIER_LOCAL
 

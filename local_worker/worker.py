@@ -282,6 +282,8 @@ class HeartbeatThread(threading.Thread):
     def run_cycle(self) -> bool:
         llm_ready, available = self.probe_readiness()
         last_error = self.state.snapshot()["last_error"]
+        if self.llm_enabled and not llm_ready and not last_error:
+            last_error = "Local AI model is unavailable; waiting for the configured model endpoint."
         try:
             self.client.send_heartbeat(
                 self.worker_name,
@@ -1887,6 +1889,10 @@ def run_once(
             for model_id, target in model_targets.items()
             if use_llm and target.client is not None
         ] if model_targets is not None else []
+    if use_llm and available_model_ids is not None and not claim_model_ids:
+        # An explicit readiness snapshot with no models must not consume a
+        # backend lease or wait for a shared generation lock during an outage.
+        return 0
     if generation_lock is not None and not generation_lock.acquire():
         # Another client (the coding-delegation gateway) is generating on the
         # shared model. Skip this poll without claiming so no lease burns.
@@ -2005,7 +2011,7 @@ def _process_claimed_jobs(
                 fallback_message = f"ai job {job_id} LLM fallback [{fallback_code}]: {result['llm_error']}"
                 report.add(fallback_message)
                 print(fallback_message, file=sys.stderr)
-            client.complete_job(
+            completed_job = client.complete_job(
                 job_id,
                 result_payload=result,
                 model_name=display_model_name(result.get("model_name") or selected_model_name),
@@ -2013,7 +2019,32 @@ def _process_claimed_jobs(
                 worker_name=worker_name,
                 claim_timestamp=claim_timestamp,
             )
-            print(f"completed ai job {job_id} with {selected_model_id}")
+            # Completion may replace an otherwise successful local candidate
+            # with a server-validated fallback. Log the accepted payload, never
+            # infer acceptance from the candidate sent to the server.
+            accepted = completed_job.get("result_payload") if isinstance(completed_job, dict) else None
+            accepted_status = completed_job.get("status", "") if isinstance(completed_job, dict) else ""
+            accepted_payload = accepted if isinstance(accepted, dict) else {}
+            accepted_source = accepted_payload.get("source") or accepted_payload.get("generation_source") or ""
+            if not isinstance(accepted, dict) or not accepted or accepted_status != "completed":
+                outcome = "acceptance_unknown"
+            elif accepted.get("available") is False or accepted_source == "unavailable":
+                outcome = "server_rejected"
+            elif accepted.get("llm_fallback") is True:
+                outcome = "deterministic_fallback"
+            elif accepted_source in {"local_llm_rewrite", "local_qwen38_multimodal"}:
+                outcome = "llm_success"
+            elif accepted_source == "deterministic":
+                outcome = "deterministic"
+            else:
+                outcome = "acceptance_unknown"
+            completed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            print(
+                f"{completed_at} completed ai job {job_id} with {selected_model_id} "
+                f"outcome={outcome} status={accepted_status} source={accepted_source} "
+                f"fallback_code={accepted_payload.get('llm_fallback_code') or accepted_payload.get('reason') or ''}",
+                flush=True,
+            )
         except Exception as exc:
             message = f"ai job {job_id} failed: {exc}"
             report.add(message, failure=True)

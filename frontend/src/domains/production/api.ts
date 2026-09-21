@@ -1,4 +1,7 @@
 import { http } from "@/shared/api/http";
+import { deepAnalysisRequestScope, latestDeepAnalysisPath, type DeepAnalysisKind, type DeepAnalysisSchedule } from "@/domains/ai/deep-analysis";
+export { DEEP_ANALYSIS_MODEL_ID } from "@/domains/ai/model-labels";
+export type { DeepAnalysisKind, DeepAnalysisSchedule } from "@/domains/ai/deep-analysis";
 import { isDevSessionActive } from "@/domains/auth/dev-session";
 
 const USE_REMOTE_PRODUCTION_API = import.meta.env.VITE_USE_REMOTE_PRODUCTION_API === "true";
@@ -461,7 +464,7 @@ export type ProductionPlanUploadResponse = {
   model_summary?: ProductionPlanSummaryBucket["model_summary"];
 };
 
-export type ProductionAiModelId = "qwen38" | "claude";
+export type ProductionAiModelId = "qwen38" | "claude" | "chatgpt";
 
 export type ProductionAiModelTier = "local" | "deep";
 
@@ -583,6 +586,9 @@ export type AiWorkerStatus = {
   last_analysis_model_name: string;
   last_analysis_model_display_name?: string;
   last_analysis_llm_fallback: boolean | null;
+  last_analysis_fallback_code?: string | null;
+  last_analysis_source?: string | null;
+  last_successful_analysis_at?: string | null;
 };
 
 export type AiJobType =
@@ -617,8 +623,6 @@ export type CreateAiJobPayload = {
   scope?: Record<string, unknown>;
   input_payload?: Record<string, unknown>;
 };
-
-export type DeepAnalysisKind = "production_weekly" | "quality_weekly";
 
 export type DeepAnalysisFinding = {
   title: string;
@@ -1090,8 +1094,6 @@ export async function getAiWorkerStatus(language: "ko" | "zh") {
   return response.data;
 }
 
-export const DEEP_ANALYSIS_MODEL_ID: ProductionAiModelId = "claude";
-
 export type LatestDeepAnalysis = {
   /** Newest completed job for the kind/language, or null when none exists yet. */
   job: AiJob | null;
@@ -1099,23 +1101,27 @@ export type LatestDeepAnalysis = {
   pendingJob: AiJob | null;
   /** A failed attempt newer than `job`, if any (the latest request was rejected). */
   failedJob: AiJob | null;
+  /** Server-reported daily scheduling policy, absent on older servers. */
+  schedule: DeepAnalysisSchedule | null;
+  modelId: string | null;
 };
 
 export async function fetchLatestDeepAnalysis(kind: DeepAnalysisKind, language: "ko" | "zh"): Promise<LatestDeepAnalysis> {
-  const response = await http.get<{ job: AiJob | null; pending_job?: AiJob | null; failed_job?: AiJob | null }>(
-    `/ai/jobs/latest/?job_type=deep_analysis&kind=${encodeURIComponent(kind)}&language=${encodeURIComponent(language)}&model_id=${encodeURIComponent(DEEP_ANALYSIS_MODEL_ID)}`,
+  const response = await http.get<{ job: AiJob | null; pending_job?: AiJob | null; failed_job?: AiJob | null; schedule?: DeepAnalysisSchedule | null; model_id?: string | null }>(
+    latestDeepAnalysisPath(kind, language),
   );
   return {
     job: response.data.job ?? null,
     pendingJob: response.data.pending_job ?? null,
     failedJob: response.data.failed_job ?? null,
+    schedule: response.data.schedule ?? null,
+    modelId: response.data.model_id ?? null,
   };
 }
 
 /** Staff-only manual request; `date` (period end) is optional. Subject to the manual rate limit (429). */
 export async function requestDeepAnalysis(kind: DeepAnalysisKind, language: "ko" | "zh", date?: string) {
-  const scope: Record<string, unknown> = { kind, language };
-  if (date) scope.date = date;
+  const scope = deepAnalysisRequestScope(kind, language, date);
   const response = await http.post<AiJob>("/ai/jobs/", { job_type: "deep_analysis", scope });
   return response.data;
 }

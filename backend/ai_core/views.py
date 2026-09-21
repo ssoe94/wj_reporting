@@ -29,7 +29,12 @@ from .deep_analysis import (
     build_deep_analysis_input,
     deep_analysis_period_for_end,
     deep_analysis_scope,
-    enqueue_weekly_deep_analysis,
+    enqueue_daily_deep_analysis,
+    deep_analysis_schedule,
+    latest_completed_business_date,
+    DEEP_ANALYSIS_INPUT_SCHEMA_VERSION,
+    DEEP_ANALYSIS_RESULT_SCHEMA_VERSION,
+    DEEP_ANALYSIS_RESULT_SOURCE,
     is_deep_analysis_job,
     normalize_deep_analysis_kind,
     normalize_deep_analysis_language,
@@ -39,6 +44,7 @@ from .models import AiJob
 from .model_registry import (
     AI_MODEL_TIERS,
     DEEP_ANALYSIS_MODEL_ID,
+    DEEP_ANALYSIS_MODEL_IDS,
     LOCAL_AI_MODEL_ID,
     QUALITY_DAILY_MODEL_ID,
     SUPPORTED_AI_WORKER_VERSION,
@@ -318,10 +324,13 @@ def build_manual_deep_analysis_scope(scope):
         raise ValidationError({'scope': 'Unsupported deep analysis kind.'})
     language = normalize_deep_analysis_language(scope.get('language'))
     business_date, _ = current_business_scope()
-    date_str = scope.get('date') or business_date.isoformat()
+    last_closed_date = business_date - timedelta(days=1)
+    date_str = scope.get('date') or last_closed_date.isoformat()
     period_end = parse_date(str(date_str))
     if not period_end:
         raise ValidationError({'scope': 'date must use YYYY-MM-DD.'})
+    if period_end > last_closed_date:
+        raise ValidationError({'scope': 'Deep analysis requires a completed business date.'})
     period_start, period_end = deep_analysis_period_for_end(period_end)
     return deep_analysis_scope(
         kind,
@@ -457,23 +466,29 @@ class AiJobLatestView(APIView):
         if kind is None:
             raise ValidationError({'kind': 'Unsupported deep analysis kind.'})
         language = normalize_deep_analysis_language(request.query_params.get('language'))
-        model_id = str(request.query_params.get('model_id') or DEEP_ANALYSIS_MODEL_ID).strip()
-        if model_id not in AI_MODEL_TIERS:
+        model_id = str(request.query_params.get('model_id') or '').strip()
+        if model_id and model_id not in DEEP_ANALYSIS_MODEL_IDS:
             raise ValidationError({'model_id': 'Unsupported AI model.'})
 
         jobs = visible_jobs_for_user(request.user).filter(
             job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS,
             scope__kind=kind,
             scope__language=language,
-            scope__model_id=model_id,
+            scope__model_id__in=[model_id] if model_id else DEEP_ANALYSIS_MODEL_IDS,
         )
         job = (
             jobs.filter(status=AiJob.STATUS_COMPLETED)
             .order_by('-completed_at', '-id')
             .first()
         )
+        active_jobs = jobs.filter(scope__model_id=model_id or DEEP_ANALYSIS_MODEL_ID)
+        # Missed daily runs do not create a backlog that hides today's report.
+        active_jobs = active_jobs.exclude(
+            scope__trigger='daily',
+            scope__period_end__lt=latest_completed_business_date().isoformat(),
+        )
         pending_job = (
-            jobs.filter(status__in=[
+            active_jobs.filter(status__in=[
                 AiJob.STATUS_PENDING,
                 AiJob.STATUS_CLAIMED,
                 AiJob.STATUS_RUNNING,
@@ -484,7 +499,7 @@ class AiJobLatestView(APIView):
         # A failure newer than the last completed result is surfaced so the
         # panel can say the latest attempt was rejected instead of silently
         # showing stale data.
-        failed_jobs = jobs.filter(status=AiJob.STATUS_FAILED)
+        failed_jobs = active_jobs.filter(status=AiJob.STATUS_FAILED)
         if job is not None:
             failed_jobs = failed_jobs.filter(id__gt=job.pk)
         failed_job = failed_jobs.order_by('-id').first()
@@ -492,6 +507,8 @@ class AiJobLatestView(APIView):
             'job': AiJobResultSerializer(job).data if job else None,
             'pending_job': AiJobResultSerializer(pending_job).data if pending_job else None,
             'failed_job': AiJobResultSerializer(failed_job).data if failed_job else None,
+            'model_id': DEEP_ANALYSIS_MODEL_ID,
+            'schedule': deep_analysis_schedule(),
         })
 
 
@@ -657,6 +674,20 @@ class AiWorkerStatusView(APIView):
             .order_by('-completed_at', '-id')
             .first()
         )
+        last_success = (
+            AiJob.objects.filter(
+                job_type=AiJob.JOB_TYPE_PRODUCTION_DAILY,
+                status=AiJob.STATUS_COMPLETED,
+                created_by__isnull=True,
+                scope__trigger='hourly',
+                scope__language=language,
+                scope__model_id=DEFAULT_PRODUCTION_AI_MODEL_ID,
+                result_payload__source='local_llm_rewrite',
+            ).filter(
+                Q(result_payload__llm_fallback=False)
+                | Q(result_payload__llm_fallback__isnull=True)
+            ).order_by('-completed_at', '-id').first()
+        )
         analysis_result = latest_analysis.result_payload if latest_analysis else {}
         return Response({
             'state': state,
@@ -679,6 +710,9 @@ class AiWorkerStatusView(APIView):
             'last_error': heartbeat['last_error'] if heartbeat else '',
             'available_model_ids': heartbeat['available_model_ids'] if heartbeat else [],
             'last_analysis_completed_at': latest_analysis.completed_at if latest_analysis else None,
+            'last_successful_analysis_at': last_success.completed_at if last_success else None,
+            'last_analysis_fallback_code': analysis_result.get('llm_fallback_code') or '',
+            'last_analysis_source': analysis_result.get('source') or '',
             'last_analysis_model_name': display_model_name(latest_analysis.model_name) if latest_analysis else '',
             'last_analysis_model_display_name': (
                 model_display_name(DEFAULT_PRODUCTION_AI_MODEL_ID, latest_analysis.model_name)
@@ -710,6 +744,22 @@ class AiJobCancelView(APIView):
         return Response(AiJobSerializer(job).data)
 
 
+class AiWorkerDeepAnalysisConfigView(APIView):
+    """Read-only capability gate for the app before it touches the job queue."""
+    authentication_classes = []
+    permission_classes = [HasWorkerToken]
+
+    def get(self, request):
+        return Response({
+            'model_id': DEEP_ANALYSIS_MODEL_ID,
+            'cadence': 'daily',
+            'schedule': deep_analysis_schedule(),
+            'input_schema_version': DEEP_ANALYSIS_INPUT_SCHEMA_VERSION,
+            'result_schema_version': DEEP_ANALYSIS_RESULT_SCHEMA_VERSION,
+            'result_source': DEEP_ANALYSIS_RESULT_SOURCE,
+        })
+
+
 class AiWorkerPeriodicEnqueueView(APIView):
     authentication_classes = []
     permission_classes = [HasWorkerToken]
@@ -723,6 +773,15 @@ class AiWorkerPeriodicEnqueueView(APIView):
             language = normalize_language(value)
             if language not in normalized_languages:
                 normalized_languages.append(language)
+
+        # App scheduling is independent of local model readiness and never
+        # enqueues local/photo jobs just to obtain a deep-analysis bundle.
+        job_types = request.data.get('job_types')
+        if job_types is not None:
+            if job_types != [AiJob.JOB_TYPE_DEEP_ANALYSIS]:
+                raise ValidationError({'job_types': 'Only [deep_analysis] is supported.'})
+            deep = enqueue_daily_deep_analysis(languages=tuple(normalized_languages))
+            return Response({'created_count': deep['created_count'], 'deep_analysis': deep})
 
         target_date, schedule_slot = current_business_scope()
         jobs = []
@@ -775,10 +834,10 @@ class AiWorkerPeriodicEnqueueView(APIView):
         created_count += int(quality_audit_enqueue.get('created_count') or 0)
 
         try:
-            deep_analysis_enqueue = enqueue_weekly_deep_analysis(languages=tuple(normalized_languages))
+            deep_analysis_enqueue = enqueue_daily_deep_analysis(languages=tuple(normalized_languages))
         except Exception as exc:  # noqa: BLE001 - the hourly rows above are already committed
-            # A failing weekly pack build must not turn every periodic call into a 500.
-            logger.exception('Weekly deep analysis enqueue failed')
+            # A failing daily pack build must not turn every periodic call into a 500.
+            logger.exception('Daily deep analysis enqueue failed')
             deep_analysis_enqueue = {'error': f'{exc.__class__.__name__}: {exc}'[:300]}
         created_count += int(deep_analysis_enqueue.get('created_count') or 0)
 
@@ -873,6 +932,11 @@ class AiWorkerClaimView(APIView):
                 .select_for_update()
                 .filter(status=AiJob.STATUS_PENDING)
                 .filter(eligible_jobs)
+                .exclude(
+                    job_type=AiJob.JOB_TYPE_DEEP_ANALYSIS,
+                    scope__trigger='daily',
+                    scope__period_end__lt=latest_completed_business_date(now).isoformat(),
+                )
                 .annotate(
                     # 0 today's daily attention · 1 other daily attention ·
                     # 2 interactive question · 3 hourly briefing · 4 manual ·

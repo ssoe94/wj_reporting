@@ -234,6 +234,30 @@ def _result(observations):
     }
 
 
+class ReviewReasonValidationTests(unittest.TestCase):
+    def test_duplicate_known_codes_preserve_every_distinct_reason_once(self):
+        candidate = _result([])
+        candidate["evidence_basis"] = ["report_text"]
+        candidate["review_reason_codes"] = ["low_confidence", "no_usable_image", "low_confidence"]
+        result = handler._validate_model_result(candidate, candidate_count=2, image_count=0)
+        self.assertEqual(result["review_reason_codes"], ["low_confidence", "no_usable_image"])
+        self.assertEqual(candidate["review_reason_codes"], ["low_confidence", "no_usable_image", "low_confidence"])
+
+    def test_unknown_missing_and_unbounded_review_reasons_still_fail(self):
+        for codes, reason in [
+            (["invented_reason"], "unsupported code"),
+            (None, "expected an array"),
+            ("low_confidence", "expected an array"),
+            (["low_confidence"] * 9, "too many codes"),
+        ]:
+            with self.subTest(codes=codes):
+                candidate = _result([])
+                candidate["evidence_basis"] = ["report_text"]
+                candidate["review_reason_codes"] = codes
+                with self.assertRaisesRegex(ValueError, reason):
+                    handler._validate_model_result(candidate, candidate_count=2, image_count=0)
+
+
 class DuplicateObservationReconciliationTests(unittest.TestCase):
     SAME = "a" * 64
     OTHER = "b" * 64

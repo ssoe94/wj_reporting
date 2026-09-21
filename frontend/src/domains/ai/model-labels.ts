@@ -1,23 +1,25 @@
 import type { AppLanguage } from "@/shared/i18n/language";
 
 /**
- * Model-neutral AI labels. Persisted identifiers (`qwen38`, `claude`) never change;
+ * Model-neutral AI labels. Persisted identifiers (`qwen38`, `claude`, `chatgpt`) never change;
  * every user-visible model name comes from server data through this module so a
  * model change is not a bilingual copy sweep.
  */
 export type AiModelTier = "local" | "deep" | "unknown";
 
 export const LOCAL_AI_MODEL_ID = "qwen38";
-export const DEEP_ANALYSIS_MODEL_ID = "claude";
+export const DEEP_ANALYSIS_MODEL_ID = "chatgpt";
 
 export const AI_MODEL_DISPLAY_NAMES: Record<string, string> = {
   [LOCAL_AI_MODEL_ID]: "Qwen 3.8 27B",
-  [DEEP_ANALYSIS_MODEL_ID]: "Claude",
+  [DEEP_ANALYSIS_MODEL_ID]: "ChatGPT",
+  claude: "Claude",
 };
 
 export const AI_MODEL_TIERS: Record<string, AiModelTier> = {
   [LOCAL_AI_MODEL_ID]: "local",
   [DEEP_ANALYSIS_MODEL_ID]: "deep",
+  claude: "deep",
 };
 
 export type AiModelDescription = {

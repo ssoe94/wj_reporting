@@ -43,17 +43,33 @@ export AI_WORKER_FALLBACK_TO_DETERMINISTIC="${AI_WORKER_FALLBACK_TO_DETERMINISTI
 export AI_WORKER_ENQUEUE_PERIODIC="${AI_WORKER_ENQUEUE_PERIODIC:-true}"
 export PERIODIC_ENQUEUE_CHECK_SECONDS="${PERIODIC_ENQUEUE_CHECK_SECONDS:-60}"
 
-model_health_url="${LOCAL_LLM_BASE_URL%/}/models"
-for attempt in $(seq 1 90); do
-  if /usr/bin/curl -fsS --connect-timeout 2 --max-time 5 "$model_health_url" \
-    | "$worker_python" -c 'import json,sys; expected=sys.argv[1].replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]; payload=json.load(sys.stdin); ids=[str(row.get("id", "") if isinstance(row, dict) else row).replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] for row in payload.get("data", [])]; raise SystemExit(0 if expected in ids else 1)' "$LOCAL_LLM_MODEL"; then
-    exec "$worker_python" "$worker_script" "$@"
+# One start-only bootstrap restores the owned model after login/reboot. The
+# manager's start command is idempotent and never stops an existing server.
+# Keep it in the background so model loading cannot suppress worker heartbeats.
+runtime_repo="${LOCAL_AI_RUNTIME_REPO:-/Users/macstudio_ted/Documents/Codex/2026-08-16/codex-master-local-ai-worker-hybrid/codex-local-worker}"
+runtime_uv="${LOCAL_AI_UV_BIN:-/opt/homebrew/bin/uv}"
+flag_enabled() {
+  case "$1" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+if flag_enabled "${AI_WORKER_AUTOSTART_RUNTIME:-true}" \
+  && flag_enabled "$AI_WORKER_USE_LLM" \
+  && [[ "${LOCAL_LLM_BASE_URL%/}" == "http://127.0.0.1:8082/v1" ]]; then
+  if [[ -x "$runtime_uv" && -f "$runtime_repo/pyproject.toml" && -f "$runtime_repo/config/worker.toml" ]]; then
+    (
+      if ! /usr/bin/env -u AI_WORKER_TOKEN "$runtime_uv" run --no-sync --directory "$runtime_repo" local-coder start >/dev/null; then
+        echo "Local AI runtime start failed; worker heartbeats continue." >&2
+      fi
+    ) &
+  else
+    echo "Local AI runtime manager unavailable; worker heartbeats continue." >&2
   fi
-  if (( attempt % 15 == 0 )); then
-    echo "Waiting for the default local AI server at $model_health_url ($attempt/90)" >&2
-  fi
-  /bin/sleep 2
-done
+fi
 
-echo "The local AI model server did not become ready within 180 seconds." >&2
-exit 69
+# Readiness belongs to the Python worker: it keeps sending heartbeats when the
+# separately managed model is unavailable, and claims only ready model work.
+# Starting here must not turn a model outage into a silent worker restart loop.
+export PYTHONUNBUFFERED=1
+exec "$worker_python" "$worker_script" "$@"

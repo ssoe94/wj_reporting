@@ -268,12 +268,12 @@ test.describe('production dashboard operational scenario', () => {
     await expect(page.getByRole('heading', { name: '일일 생산 브리핑' })).toBeVisible();
     await expect(page.getByText('계산형 답변 사용 가능').first()).toBeVisible();
     // Neutral worker wording; the model name comes from the status payload's model_display_name.
-    await expect(page.getByText('AI 워커 · Qwen 3.8 27B · 선택 설명 일시 중지')).toBeVisible();
+    await expect(page.getByText('AI 워커 오프라인 · Qwen 3.8 27B · 선택 설명 일시 중지')).toBeVisible();
     await expect(page.getByText('Mac Studio')).toHaveCount(0);
     await expect(page.getByText('Qwen 3.6')).toHaveCount(0);
     await expect(page.getByText('Gemma 4')).toHaveCount(0);
     const deepAnalysisPanel = page.getByRole('region', { name: 'AI 심층 분석' });
-    await expect(deepAnalysisPanel.getByRole('heading', { name: 'AI 심층 분석 · Claude' })).toBeVisible();
+    await expect(deepAnalysisPanel.getByRole('heading', { name: 'AI 심층 분석 · ChatGPT' })).toBeVisible();
     await expect(deepAnalysisPanel.getByText('주간 사출 완료율은 95%로 계획 대비 안정적이었습니다.')).toBeVisible();
     await expect(deepAnalysisPanel.getByText('2026-05-15:injection.completion_rate')).toBeVisible();
     await expect(deepAnalysisPanel.getByRole('button', { name: '심층 분석 요청' })).toBeEnabled();

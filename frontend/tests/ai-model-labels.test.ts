@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AI_MODEL_DISPLAY_NAMES,
+  DEEP_ANALYSIS_MODEL_ID,
   describeAiModel,
   displayAiModelName,
   getAiTierLabel,
@@ -12,8 +13,10 @@ import {
 } from "../src/domains/ai/model-labels.ts";
 
 test("registry maps persisted model ids to display names and tiers", () => {
-  assert.deepEqual(AI_MODEL_DISPLAY_NAMES, { qwen38: "Qwen 3.8 27B", claude: "Claude" });
+  assert.deepEqual(AI_MODEL_DISPLAY_NAMES, { qwen38: "Qwen 3.8 27B", chatgpt: "ChatGPT", claude: "Claude" });
   assert.deepEqual(describeAiModel({ modelId: "qwen38" }), { displayName: "Qwen 3.8 27B", tier: "local" });
+  assert.equal(DEEP_ANALYSIS_MODEL_ID, "chatgpt");
+  assert.deepEqual(describeAiModel({ modelId: "chatgpt" }), { displayName: "ChatGPT", tier: "deep" });
   assert.deepEqual(describeAiModel({ modelId: "claude" }), { displayName: "Claude", tier: "deep" });
 });
 

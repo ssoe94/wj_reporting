@@ -104,7 +104,7 @@ class AiJobCreateSerializer(serializers.Serializer):
     ALLOWED_SCOPE_FIELDS = {
         AiJob.JOB_TYPE_PRODUCTION_DAILY: {'date', 'language', 'trigger'},
         AiJob.JOB_TYPE_PRODUCTION_MACHINE: {'date', 'language', 'machine', 'trigger'},
-        AiJob.JOB_TYPE_DEEP_ANALYSIS: {'date', 'language', 'kind', 'trigger'},
+        AiJob.JOB_TYPE_DEEP_ANALYSIS: {'date', 'language', 'kind', 'trigger', 'model_id'},
     }
 
     job_type = serializers.ChoiceField(choices=[
@@ -146,6 +146,9 @@ class AiJobCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({'scope': 'machine must be 128 characters or fewer.'})
 
         if job_type == AiJob.JOB_TYPE_DEEP_ANALYSIS:
+            from .model_registry import DEEP_ANALYSIS_MODEL_ID
+            if scope.get('model_id', DEEP_ANALYSIS_MODEL_ID) != DEEP_ANALYSIS_MODEL_ID:
+                raise serializers.ValidationError({'scope': 'New deep analysis requests use ChatGPT.'})
             kind = normalize_deep_analysis_kind(scope.get('kind'))
             if kind is None:
                 raise serializers.ValidationError({

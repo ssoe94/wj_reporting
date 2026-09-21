@@ -2108,7 +2108,7 @@ class WorkerRunReportingTests(unittest.TestCase):
             if self.complete_error:
                 raise self.complete_error
             self.completed.append((job_id, payload))
-            return {}
+            return {"status": "completed", "result_payload": payload["result_payload"]}
 
         def fail_job(self, job_id, error_message, **_payload):
             self.failed.append((job_id, error_message))
@@ -2261,6 +2261,75 @@ class WorkerRunReportingTests(unittest.TestCase):
         self.assertFalse(client.completed)
         self.assertEqual(client.failed[0][0], job["id"])
         self.assertIn("Local AI model is unavailable", client.failed[0][1])
+
+    def test_unavailable_readiness_skips_claim_and_lock_but_keeps_periodic_enqueue(self):
+        client = self.Client(self.daily_job())
+        client.enqueue_periodic_jobs = MagicMock(return_value={})
+        generation_lock = MagicMock()
+
+        processed = run_once(
+            client, "worker", True, object(), "model", True, True,
+            available_model_ids=[], generation_lock=generation_lock,
+        )
+
+        self.assertEqual(processed, 0)
+        client.enqueue_periodic_jobs.assert_called_once()
+        generation_lock.acquire.assert_not_called()
+        self.assertEqual(client.claim_requests, [])
+        self.assertEqual(client.completed, [])
+
+    def test_completion_log_distinguishes_model_success_from_fallback(self):
+        for result, outcome in [
+            ({"source": "local_llm_rewrite", "llm_attempted": True}, "llm_success"),
+            ({"source": "local_llm_guarded_fallback", "llm_fallback": True,
+              "llm_fallback_code": "invalid_response"}, "deterministic_fallback"),
+            ({"source": "deterministic"}, "deterministic"),
+        ]:
+            with self.subTest(outcome=outcome):
+                client = self.Client(self.daily_job())
+                with (
+                    patch.object(worker_module, "handle_job", return_value=(result, "test-v1")),
+                    patch("builtins.print") as output,
+                ):
+                    run_once(client, "worker", False, None, "model", True, False)
+                completion = output.call_args.args[0]
+                self.assertIn(f"outcome={outcome}", completion)
+                self.assertIn(f"source={result['source']}", completion)
+                self.assertRegex(completion, r"^\d{4}-\d{2}-\d{2}T.*\+00:00 completed ai job 7")
+                self.assertTrue(output.call_args.kwargs["flush"])
+
+    def test_completion_log_uses_server_result_and_never_assumes_acceptance(self):
+        candidate = {"source": "local_llm_rewrite", "llm_attempted": True}
+        cases = [
+            ({"status": "completed", "result_payload": {
+                "available": False, "source": "unavailable", "reason": "invalid_worker_result",
+            }}, "server_rejected", "source=unavailable"),
+            ({"status": "completed", "result_payload": {
+                "generation_source": "local_llm_rewrite", "llm_fallback": True,
+                "llm_fallback_code": "server_safety_rejected",
+            }}, "deterministic_fallback", "fallback_code=server_safety_rejected"),
+            ({"status": "completed", "result_payload": {
+                "available": True, "source": "local_qwen38_multimodal",
+            }}, "llm_success", "source=local_qwen38_multimodal"),
+            ({"status": "completed", "result_payload": {
+                "generation_source": "local_llm_rewrite", "llm_fallback": False,
+            }}, "llm_success", "source=local_llm_rewrite"),
+            ({}, "acceptance_unknown", "source="),
+            ({"status": "completed", "result_payload": {}}, "acceptance_unknown", "source="),
+            ({"status": "running", "result_payload": candidate}, "acceptance_unknown", "status=running"),
+        ]
+        for server_response, outcome, detail in cases:
+            with self.subTest(server_response=server_response):
+                client = self.Client(self.daily_job())
+                client.complete_job = MagicMock(return_value=server_response)
+                with (
+                    patch.object(worker_module, "handle_job", return_value=(dict(candidate), "test-v1")),
+                    patch("builtins.print") as output,
+                ):
+                    run_once(client, "worker", False, None, "model", True, False)
+                completion = output.call_args.args[0]
+                self.assertIn(f"outcome={outcome}", completion)
+                self.assertIn(detail, completion)
 
     def test_complete_failure_marks_job_failed_and_is_reported(self):
         client = self.Client(self.daily_job(), complete_error=RuntimeError("complete unavailable"))
@@ -2417,6 +2486,22 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertEqual(state.snapshot()["last_error"], "")
         self.assertEqual(state.snapshot()["available_model_ids"], ["qwen38"])
         self.assertTrue(thread.daemon)
+
+    def test_heartbeat_reports_model_outage_until_readiness_recovers(self):
+        client = self.Client()
+        state = worker_module.WorkerState()
+        thread, llm = self._heartbeat(client, state, ready=False)
+
+        thread.run_cycle()
+        thread.run_cycle()
+        for payload in client.heartbeats:
+            self.assertFalse(payload["llm_ready"])
+            self.assertEqual(payload["available_model_ids"], [])
+            self.assertIn("model is unavailable", payload["last_error"])
+        llm.is_ready.return_value = True
+        thread.run_cycle()
+        self.assertTrue(client.heartbeats[-1]["llm_ready"])
+        self.assertEqual(client.heartbeats[-1]["last_error"], "")
 
     def test_heartbeat_skips_models_probe_while_generation_is_in_flight(self):
         client = self.Client()

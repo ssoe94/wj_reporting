@@ -91,6 +91,8 @@ export async function installDeepAnalysisMocks(
     const isProduction = kind === 'production_weekly';
     await route.fulfill({
       json: {
+        model_id: 'chatgpt',
+        schedule: { cadence: 'daily', hour: 9, timezone: 'Asia/Shanghai', context_days: 7, date_basis: 'previous_completed_business_day' },
         job: {
           id: isProduction ? 1201 : 1202,
           job_type: 'deep_analysis',
@@ -111,17 +113,21 @@ export async function installDeepAnalysisMocks(
             language,
             period: { start: '2026-05-11', end: '2026-05-17', day_count: 7, timezone: 'Asia/Shanghai' },
             summary: isProduction
-              ? '주간 사출 완료율은 95%로 계획 대비 안정적이었습니다.'
-              : '주간 품질 이력에서 반복 유형 3건이 확인되었습니다.',
+              ? (language === 'ko' ? '주간 사출 완료율은 95%로 계획 대비 안정적이었습니다.' : '每周注塑完成率为 95%，与计划相比保持稳定。')
+              : (language === 'ko' ? '주간 품질 이력에서 반복 유형 3건이 확인되었습니다.' : '每周质量记录中发现 3 个重复类型。'),
             findings: [
               {
-                title: isProduction ? '사출 완료율 유지' : '반복 유형 집중',
-                statement: isProduction ? '5월 15일 사출 완료율 95%가 주간 최고치입니다.' : '색차 이력이 3건으로 가장 많습니다.',
+                title: isProduction
+                  ? (language === 'ko' ? '사출 완료율 유지' : '注塑完成率保持稳定')
+                  : (language === 'ko' ? '반복 유형 집중' : '重复类型集中'),
+                statement: isProduction
+                  ? (language === 'ko' ? '5월 15일 사출 완료율 95%가 주간 최고치입니다.' : '5 月 15 日注塑完成率为 95%，是当周最高值。')
+                  : (language === 'ko' ? '색차 이력이 3건으로 가장 많습니다.' : '色差记录最多，共 3 条。'),
                 evidence_refs: [isProduction ? '2026-05-15:injection.completion_rate' : '2026-05-15:quality.problem_type.color_difference'],
               },
             ],
-            actions: ['다음 주 첫 교대에서 계획 대비 진도를 확인하세요.'],
-            caveats: ['수치는 서버 계산 결과이며 AI가 재계산하지 않았습니다.'],
+            actions: [language === 'ko' ? '다음 주 첫 교대에서 계획 대비 진도를 확인하세요.' : '请在下周首个班次检查计划完成进度。'],
+            caveats: [language === 'ko' ? '수치는 서버 계산 결과이며 AI가 재계산하지 않았습니다.' : '数值由服务器计算，AI 未重新计算。'],
             llm_fallback: false,
             llm_fallback_code: null,
           },
@@ -141,15 +147,15 @@ export async function installDeepAnalysisMocks(
             id: isProduction ? 1301 : 1302,
             job_type: 'deep_analysis',
             status: options.pendingJobStatus,
-            scope: { kind, language, period_start: '2026-05-18', period_end: '2026-05-24', trigger: 'weekly', model_id: 'claude' },
+            scope: { kind, language, period_start: '2026-05-12', period_end: '2026-05-18', trigger: 'daily', model_id: 'chatgpt' },
             result_payload: {},
             error_message: '',
-            claimed_by: options.pendingJobStatus === 'pending' ? null : 'mac-studio-claude-desktop',
+            claimed_by: options.pendingJobStatus === 'pending' ? null : 'mac-studio-chatgpt-desktop',
             claimed_at: null,
             started_at: null,
             completed_at: null,
             model_name: '',
-            model_display_name: 'Claude',
+            model_display_name: 'ChatGPT',
             prompt_version: '',
             created_at: '2026-05-25T08:00:00+08:00',
             updated_at: '2026-05-25T08:00:00+08:00',

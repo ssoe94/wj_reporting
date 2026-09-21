@@ -11,6 +11,7 @@ import {
   type DeepAnalysisResultPayload,
 } from "@/domains/production/api";
 import { describeAiModel, getAiTierLabel, withAiModelName } from "@/domains/ai/model-labels";
+import { describeDeepAnalysisSchedule } from "@/domains/ai/deep-analysis";
 import type { AppLanguage } from "@/shared/i18n/language";
 
 const DEEP_ANALYSIS_REFRESH_INTERVAL_MS = 60_000;
@@ -29,7 +30,6 @@ const COPY = {
     actions: "권장 조치",
     caveats: "해석 유의사항",
     none: "아직 생성된 심층 분석이 없습니다.",
-    noneHint: "주간 심층 분석은 매주 첫 영업일에 자동으로 요청됩니다.",
     queued: "심층 분석 대기 중",
     queuedHint: "요청이 대기열에 등록되어 있습니다. 심층 분석 워커가 연결되면 처리되며, 완료되면 자동으로 표시됩니다.",
     generating: "심층 분석 생성 중",
@@ -60,7 +60,6 @@ const COPY = {
     actions: "建议措施",
     caveats: "解读注意",
     none: "尚未生成深度分析。",
-    noneHint: "每周深度分析会在每周第一个工作日自动请求。",
     queued: "深度分析排队中",
     queuedHint: "请求已进入队列，深度分析处理端连接后开始处理，完成后将自动显示。",
     generating: "深度分析生成中",
@@ -143,7 +142,7 @@ export type DeepAnalysisPanelProps = {
   kind: DeepAnalysisKind;
   language: AppLanguage;
   canRequest: boolean;
-  /** Optional period end (YYYY-MM-DD) for a manual request; defaults to the previous full week. */
+  /** Optional period end (YYYY-MM-DD) for a manual request; defaults to the previous completed business day with seven days of context. */
   date?: string;
 };
 
@@ -223,6 +222,9 @@ export function DeepAnalysisPanel({ kind, language, canRequest, date }: DeepAnal
     }).displayName
     : "";
   const tierLabel = getAiTierLabel("deep", language);
+  const schedule = latestQuery.data?.schedule;
+  const scheduleHint = describeDeepAnalysisSchedule(schedule, language);
+  const currentModelDisplayName = describeAiModel({ modelId: latestQuery.data?.modelId }).displayName;
   const isFallback = completedJob !== null && result.llm_fallback === true;
   const fallbackCode = readString(result.llm_fallback_code);
   const fallbackReason = fallbackCode ? (copy.fallbackReasons[fallbackCode] ?? fallbackCode) : "";
@@ -240,7 +242,8 @@ export function DeepAnalysisPanel({ kind, language, canRequest, date }: DeepAnal
       <div className="production-brief-panel__header">
         <div>
           <p className="panel-card__eyebrow">{copy.eyebrow}</p>
-          <h3 className="panel__title">{withAiModelName(tierLabel, modelDisplayName)}</h3>
+          <h3 className="panel__title">{withAiModelName(tierLabel, currentModelDisplayName)}</h3>
+          {scheduleHint ? <p className="deep-analysis-panel__hint">{scheduleHint}</p> : null}
         </div>
         <div className="production-ai-worker-status__states">
           {stateLabel ? (
@@ -281,10 +284,7 @@ export function DeepAnalysisPanel({ kind, language, canRequest, date }: DeepAnal
           latestQuery.isError ? (
             <div className="notice notice--warning">{copy.loadFailed}</div>
           ) : latestQuery.isLoading ? null : (
-            <>
-              <p>{copy.none}</p>
-              <span className="deep-analysis-panel__hint">{copy.noneHint}</span>
-            </>
+            <p>{copy.none}</p>
           )
         ) : null}
 

@@ -435,7 +435,7 @@ class AiJobApiTests(APITestCase):
         # Weekly deep analysis has its own timing tests; keep this one about
         # the hourly slot regardless of the weekday the suite runs on.
         with mock.patch(
-            'ai_core.views.enqueue_weekly_deep_analysis',
+            'ai_core.views.enqueue_daily_deep_analysis',
             return_value={'due': False, 'created_count': 0},
         ):
             first = self.client.post(
