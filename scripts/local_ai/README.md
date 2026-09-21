@@ -21,8 +21,8 @@ distinguish `llm_success`, `deterministic_fallback`, `server_rejected`, and
 
 Production explanations, production questions, daily quality summaries, and
 quality report audits all use the single canonical local model ID `qwen38`.
-Weekly deep analysis jobs use model ID `claude` and are served by the Claude
-desktop scheduled task through `local_worker/claude_bridge.py` (see below).
+Daily deep-analysis jobs use model ID `chatgpt` and are served at 09:00
+Asia/Shanghai through `local_worker/chatgpt_bridge.py` (see below).
 
 The Worker token is stored in macOS Keychain. It is never written to a plist, `.env`, frontend bundle, or repository file.
 
@@ -81,41 +81,25 @@ the Keychain token:
 ./scripts/local_ai/install-launch-agents.sh --uninstall
 ```
 
-## Claude deep-tier bridge and scheduled task
+## Daily ChatGPT bridge and scheduled task
 
-`python -m local_worker.claude_bridge` (run from the repository root with the
-backend virtualenv) serves `deep_analysis` jobs for model id `claude`. It reads
-the same Keychain token item as the Worker and never prints it.
+Use `python -m local_worker.chatgpt_bridge` from the repository root with the
+existing backend virtualenv. The app automation runs daily at 09:00 Asia/Shanghai
+and checks the deployed contract before any heartbeat or queue operation.
 
 ```bash
-cd /path/to/wj_reporting
-backend/.venv/bin/python -m local_worker.claude_bridge heartbeat
-backend/.venv/bin/python -m local_worker.claude_bridge claim
-backend/.venv/bin/python -m local_worker.claude_bridge submit <id> ~/.local/share/wj-claude-bridge/jobs/<id>/answer.json
-backend/.venv/bin/python -m local_worker.claude_bridge fail <id> "<reason>"
-backend/.venv/bin/python -m local_worker.claude_bridge status
+backend/.venv/bin/python -m local_worker.chatgpt_bridge readiness
+backend/.venv/bin/python -m local_worker.chatgpt_bridge status
 ```
 
-`claim` marks the job running, writes `~/.local/share/wj-claude-bridge/jobs/<id>/bundle.md`
-(instructions plus the input payload as fenced JSON) and prints the bundle path, job id,
-kind, language and lease as JSON. `submit` validates the answer locally (schema, length
-caps, every number must be in `input_payload.evidence_numbers`) and posts `complete`
-with prompt version `deep-analysis-claude-v1`; on a validation failure it exits 1 and
-leaves the job claimed so the answer can be revised and submitted again (`fail <id>
-"<reason>"` gives up explicitly).
+The authorized runner then uses `heartbeat`, `enqueue`, `claim`, `validate` and
+`submit`, processing at most four jobs per run. Treat `accepted_explanation=true`
+as success; HTTP success or exit zero alone is insufficient. Never resubmit or
+fail an already submitted job. See the [complete bridge and acceptance contract](../../docs/ai/2026-09-21-chatgpt-daily-analysis.md)
+for commands, evidence rules and failure handling.
 
-Scheduled task outline (`~/.claude/scheduled-tasks/wj-deep-analysis`; create it
-disabled and enable it after the backend deploy):
-
-1. Run `heartbeat`.
-2. Run `claim`; if it prints `{"job": null}` stop.
-3. Read the bundle, write `answer.json` in the required shape (all numbers from the payload).
-4. Run `submit <id> <answer.json>`; on exit 1 fix the printed reason and submit once
-   more, then `fail` the job if it is still rejected.
-5. Repeat from step 2 while `claim` returns a job, at most 4 jobs per run.
-
-Environment for the task: `RENDER_API_BASE_URL` (defaults to production),
-`WORKER_NAME` (default `mac-studio-claude-desktop`), optional `CLAUDE_BRIDGE_HOME`,
-`AI_WORKER_KEYCHAIN_SERVICE`, `AI_WORKER_KEYCHAIN_ACCOUNT`.
+The Claude scheduled task is retired and must remain disabled. Its shared bridge
+module is retained for implementation compatibility and historical records; the
+current deployment does not accept Claude worker capabilities.
 
 Runtime bootstrap uses `uv run --no-sync`: it reuses the installed manager environment and does not install or update dependencies at worker startup.
