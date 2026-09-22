@@ -215,6 +215,105 @@ class KoreanQuantityAndIdentifierRegressionTests(unittest.TestCase):
                 self.assertEqual(raised.exception.reason_code, "action_format")
 
 
+class KoreanRunningNegationRegressionTests(unittest.TestCase):
+    def normalize(self, conclusion, states):
+        # planned_qty=1 only registers these synthetic exact identifiers in
+        # numeric grounding; is_running is the sole state assertion evidence.
+        grounding = {
+            "tables": [{"rows": [
+                {"machine": identifier, "planned_qty": 1, "is_running": state}
+                for identifier, state in states.items()
+            ]}],
+        }
+        summary = structured_ko("최신 MES 수집 이력을 조회합니다.", conclusion=conclusion)
+        result = normalize_result(
+            {"title": "설비 상태", "summary": summary},
+            {"title": "설비 상태", "summary": "검증된 설비 상태입니다."},
+            "synthetic-model", grounding,
+        )
+        self.assertEqual(result["summary"], summary)
+        self.assertFalse(result.get("llm_numeric_lines_pruned", False))
+        return result
+
+    def test_running_negation_is_supported_by_explicit_false_state(self):
+        for predicate in ("가동", "운전", "생산"):
+            for negation in ("중이 아닙니다.", "중이지 않습니다."):
+                with self.subTest(predicate=predicate, negation=negation):
+                    self.normalize(
+                        f"850T-14는 현재 {predicate} {negation}", {"850T-14": False},
+                    )
+
+    def test_running_negation_rejects_true_or_unknown_state(self):
+        for predicate in ("가동", "운전", "생산"):
+            for negation in ("중이 아닙니다.", "중이지 않습니다."):
+                for state in (True, None):
+                    with self.subTest(predicate=predicate, negation=negation, state=state):
+                        with self.assertRaises(LlmGroundingError) as raised:
+                            self.normalize(
+                                f"850T-14는 현재 {predicate} {negation}", {"850T-14": state},
+                            )
+                        self.assertEqual(raised.exception.reason_code, "unsupported_claim")
+
+    def test_affirmative_running_still_requires_explicit_true_state(self):
+        for predicate in ("가동", "운전", "생산"):
+            conclusion = f"850T-14는 현재 {predicate} 중입니다."
+            with self.subTest(predicate=predicate, state=True):
+                self.normalize(conclusion, {"850T-14": True})
+            for state in (False, None):
+                with self.subTest(predicate=predicate, state=state):
+                    with self.assertRaises(LlmGroundingError) as raised:
+                        self.normalize(conclusion, {"850T-14": state})
+                    self.assertEqual(raised.exception.reason_code, "unsupported_claim")
+
+    def test_shared_predicate_requires_every_listed_machine_to_match(self):
+        for connector in (", ", " 및 "):
+            for expected, predicate in (
+                (False, "가동 중이 아닙니다."),
+                (False, "운전 중이지 않습니다."),
+                (True, "가동 중입니다."),
+            ):
+                conclusion = f"850T-14{connector}550T-12는 현재 {predicate}"
+                for first, second in ((False, False), (False, True), (True, False), (True, True)):
+                    with self.subTest(
+                        connector=connector, predicate=predicate, states=(first, second),
+                    ):
+                        states = {"850T-14": first, "550T-12": second}
+                        if first is expected and second is expected:
+                            self.normalize(conclusion, states)
+                        else:
+                            with self.assertRaises(LlmGroundingError) as raised:
+                                self.normalize(conclusion, states)
+                            self.assertEqual(raised.exception.reason_code, "unsupported_claim")
+
+    def test_repair_excerpts_with_nonrunning_evidence_and_report_lookups_pass(self):
+        # The supplied job-9989 repair excerpts are assembled into the required
+        # sections; this is not represented as the complete captured response.
+        summary = (
+            "결론:\n사출과 가공 생산 진행률은 시간 기준에 미달합니다.\n\n"
+            "판단 근거:\n- 850T-14는 현재 가동 중이 아닙니다.\n\n"
+            "확인할 항목:\n"
+            "- 850T-14의 생산 보고 이력을 조회합니다.\n"
+            "- A라인의 생산 보고 이력을 조회합니다.\n"
+            "- B라인의 생산 보고 이력을 조회합니다."
+        )
+        grounding = {
+            "facts": {"injection": {"status": "behind"}, "machining": {"status": "behind"}},
+            "tables": [{"rows": [
+                {"machine": "850T-14", "planned_qty": 1, "is_running": False},
+                {"line": "A라인", "planned_qty": 1},
+                {"line": "B라인", "planned_qty": 1},
+            ]}],
+        }
+        result = normalize_result(
+            {"title": "생산 브리핑", "summary": summary},
+            {"title": "생산 브리핑", "summary": "검증된 생산 현황입니다."},
+            "synthetic-model", grounding,
+        )
+        self.assertEqual(result["summary"], summary)
+        self.assertEqual(result["source"], "local_llm_rewrite")
+        self.assertFalse(result.get("llm_numeric_lines_pruned", False))
+
+
 class ScriptedLlm:
     """In-process response/exception sequence; never contacts a runtime."""
 

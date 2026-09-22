@@ -586,6 +586,7 @@ DATA_UNAVAILABLE_LIMITATION = re.compile(
 )
 CURRENT_STOPPED_ASSERTION = re.compile(
     r"(?:정지\s*중|멈춰|멈춘|멈춤|미가동|가동\s*(?:중단|하지\s*않)|생산\s*중단|"
+    r"(?:가동|운전|생산)\s*중(?:이(?:지)?)?\s*(?:아니|아닙|아님|아닌|아닐|않)|"
     r"停机|停機|停止运行|停止運行|未运行|未運行)"
 )
 CURRENT_RUNNING_ASSERTION = re.compile(
