@@ -123,6 +123,32 @@ AI_WORKER_USE_LLM=true AI_WORKER_TOKEN=change-me python worker.py --check-llm
 
 `AI_WORKER_FALLBACK_TO_DETERMINISTIC=true` lets the worker complete a job with deterministic analysis if the local LLM fails or returns invalid JSON. Set it to `false` when testing strict LLM failures.
 
+### Automatic prose correction
+
+Production explanations pass the same deterministic checks on the first answer
+and on one bounded repair. The repair receives the actual `validation_feedback`
+reason and a bounded qualitative excerpt, plus verified evidence and status
+phrasing translated from backend status codes. It never changes its own rules.
+
+Korean production words (`모두`, `가공`, `조회`) are protected from being parsed
+as quantities inside a word; actual quantities next to them remain checked.
+Commas/conjunctions between exact, server-supplied identifiers may form a single
+information lookup. Physical actions, multiple chained actions and question
+scope expansion remain rejected.
+
+`llm_validation_failures` records each rejected attempt's rule, excerpt and
+post-normalization prose. On fallback, `llm_review_summary` retains the first
+candidate and `llm_review_last_summary` retains an actually received repair
+candidate. A timeout has no invented second candidate. These bounded diagnostic
+fields are not accepted explanations. Section errors use
+`response_format_rejected`; other evidence/action failures retain
+`grounding_rejected`. Historical result and model identifiers remain unchanged.
+
+The captured job-9980 prose and negative cases run in CI through
+`local_worker.test_grounding_regressions`, preventing the verified false
+positives from returning. If repair still fails, the server-calculated briefing
+remains available; automatic repair is not a guarantee of model acceptance.
+
 ```env
 RENDER_API_BASE_URL=http://127.0.0.1:8000/api
 AI_WORKER_TOKEN=change-me

@@ -72,6 +72,7 @@ jobs:
         run: >-
           python -m unittest
           local_worker.test_worker
+          local_worker.test_grounding_regressions
           local_worker.test_quality_daily_attention
           local_worker.test_quality_report_taxonomy_audit
           local_worker.test_claude_bridge

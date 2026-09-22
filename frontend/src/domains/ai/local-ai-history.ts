@@ -41,11 +41,13 @@ const STATE_LABELS: Record<AppLanguage, Record<LocalAiAnalysisState, string>> = 
 
 const FALLBACK_REASONS: Record<AppLanguage, Record<string, string>> = {
   ko: {
-    grounding_rejected: "수치 검증 실패", llm_disabled: "AI 사용 중지", model_unavailable: "모델 연결 불가",
+    grounding_rejected: "설명 근거·형식 검증 실패", response_format_rejected: "설명 형식 검증 실패",
+    llm_disabled: "AI 사용 중지", model_unavailable: "모델 연결 불가",
     timeout: "AI 응답 시간 초과", invalid_response: "응답 형식 오류", model_error: "모델 처리 오류",
   },
   zh: {
-    grounding_rejected: "数值校验失败", llm_disabled: "AI 已停用", model_unavailable: "无法连接模型",
+    grounding_rejected: "说明依据·格式校验失败", response_format_rejected: "说明格式校验失败",
+    llm_disabled: "AI 已停用", model_unavailable: "无法连接模型",
     timeout: "AI 响应超时", invalid_response: "响应格式错误", model_error: "模型处理错误",
   },
 };

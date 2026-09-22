@@ -57,8 +57,12 @@ QWEN38_CHECKPOINT_NAME = "Qwen3.8-27B-4bit"
 # retired backend ID. The outbound Worker serves one physical model only.
 QWEN_MODEL_ID = QWEN38_MODEL_ID
 SUPPORTED_MODEL_IDS = {QWEN38_MODEL_ID}
+PROSE_VALIDATION_VERSION = "production-prose-v2"
 
-REPAIR_SYSTEM_PROMPT = """You repair a manufacturing AI explanation that failed numeric grounding.
+REPAIR_SYSTEM_PROMPT = """You repair a manufacturing AI explanation that failed validation.
+Use validation_feedback to fix the specific rejected rule; do not assume every failure is numeric.
+Prefer supplied verified_status_sentences for the conclusion and status evidence. Name the
+process or exact equipment instead of making a generic claim about all or major equipment.
 Use only the supplied verified qualitative evidence, qualitative draft, and allowed exact identifiers.
 Do not add facts, calculations, causes, priorities, counts, or majority claims.
 Remove every measurement value and quantity, including counts, rates, percentages, dates, times,
@@ -97,9 +101,28 @@ Return valid JSON only with string keys title and summary. Do not use markdown."
 class LlmGroundingError(ValueError):
     """Raised when otherwise structured LLM prose fails deterministic grounding."""
 
-    def __init__(self, message: str, candidate: dict[str, Any] | None = None):
+    def __init__(
+        self, message: str, candidate: dict[str, Any] | None = None,
+        *, reason_code: str = "grounding_rejected", rejected_text: str = "",
+        normalized_summary: str = "",
+    ):
         super().__init__(message)
         self.candidate = dict(candidate or {})
+        self.reason_code = reason_code
+        self.rejected_text = rejected_text[:500]
+        self.normalized_summary = normalized_summary[:2000]
+
+
+REPAIR_FEEDBACK = {
+    "unverified_number": "Remove unverified quantities. Retain qualitative evidence and exact identifiers.",
+    "empty_after_numeric_pruning": "All usable content was removed. Write qualitative evidence without measurements.",
+    "section_format": "Use exactly the three required headings in order, with non-empty content in every section.",
+    "action_format": "Use a bullet for each information lookup with one check verb. Split distinct actions into separate bullets.",
+    "operational_action": "Remove physical operations, maintenance and configuration changes. Use information lookups only.",
+    "unsupported_claim": "Remove unsupported causes, risks or equipment states. State only supplied evidence or an information check.",
+    "raw_status": "Translate the supplied status into natural language instead of raw schema tokens.",
+    "scope_or_history": "Respect the supplied focus and history limitations. Do not infer a trend from one snapshot.",
+}
 
 
 @dataclass(frozen=True)
@@ -460,6 +483,10 @@ SAFE_ANALYSIS_ACTION = re.compile(
 SAFE_NEXT_ACTION = re.compile(
     r"(?:확인|점검|검토|조회|确认|確認|检查|檢查|审查|審查|查询|查詢)"
 )
+INFORMATION_CHECK_NOUN = re.compile(
+    r"(?:확인|점검|검토|조회)\s*(?:기록|이력|결과|여부|항목|내역)|"
+    r"(?:确认|確認|检查|檢查|审查|審查|查询|查詢)(?:记录|紀錄|記錄|結果|结果|历史|歷史)"
+)
 OPERATIONAL_MUTATION = re.compile(
     r"(?:분해|해체|세척|청소|세정|닦|씻|윤활|교환|우회|수리|교체|재시작|재가동|리셋|초기화|"
     r"조임|보충|잠금|켜기|끄기|재배치|(?:장력|설정값).{0,8}(?:조정|고치)|"
@@ -491,7 +518,7 @@ NEXT_ACTION_SEPARATOR = re.compile(
 )
 SAFE_INFORMATION_COORDINATION = re.compile(
     r"((?:(?:MES|생산|가동|수집|등록)\s*)?"
-    r"(?:데이터|자료|정보|이력|로그|기록|계획|실적|상태|근거|스냅샷|여부))"
+    r"(?:데이터|자료|정보|이력|로그|기록|계획|실적|상태|근거|스냅샷|여부|시각|일시|시점|진행률|완료율|수량))"
     r"(?:(?:와|과)|\s+및)\s*|"
     r"((?:MES\s*)?(?:数据|數據|资料|資料|信息|資訊|日志|日誌|记录|記錄|计划|計劃|实绩|實績|状态|狀態|依据|依據|快照|与否|與否))"
     r"(?:和|与|與|及)\s*"
@@ -939,7 +966,7 @@ def summary_numbers_are_grounded(summary: str, grounding: dict[str, Any]) -> boo
         # the generic quantity scanner can read it as ``조`` + ``회``. Screen a
         # same-length semantic substitute so lookup actions are not pruned as
         # an invented trillion-count quantity.
-        quantity_scan_clause = clause.replace("조회", "열람")
+        quantity_scan_clause = _protect_quantity_words(clause)
         quantity_scan_clause = KOREAN_SUBJECT_PARTICLE_TIME.sub("이 기준", quantity_scan_clause)
         if (
             SPELLED_QUANTITY.search(quantity_scan_clause)
@@ -961,6 +988,19 @@ def summary_numbers_are_grounded(summary: str, grounding: dict[str, Any]) -> boo
         if canonical_clause not in authoritative_claim_clauses:
             return False
     return True
+
+
+# These ordinary production words contain syllables that are also Korean
+# numerals (조+회, 가+공, 모+두). Protect the whole lexical word during the
+# quantity scan, not its surrounding clause: 모두두대/가공 두 라인 must still
+# fail. Use the same protection during repair so normal evidence is not erased.
+QUANTITY_WORDS = {"조회": "열람", "가공": "제작", "모두": "함께"}
+
+
+def _protect_quantity_words(text: str) -> str:
+    for word, substitute in QUANTITY_WORDS.items():
+        text = text.replace(word, substitute)
+    return text
 
 
 def _replace_unprotected_matches(
@@ -998,14 +1038,16 @@ def _qualitative_text(value: Any, allowed_identifiers: set[str], language: str) 
             for span in _identifier_spans(text, identifier)
         )
         text = _replace_unprotected_matches(text, pattern, replacement, protected_spans)
-    lookup_placeholder = "__SAFE_LOOKUP_ACTION__"
+    word_placeholders = {word: f"__SAFE_WORD_{index}__" for index, word in enumerate(QUANTITY_WORDS)}
     time_relation_placeholder = "__SAFE_TIME_RELATION__"
-    text = text.replace("조회", lookup_placeholder)
+    for word, placeholder in word_placeholders.items():
+        text = text.replace(word, placeholder)
     text = KOREAN_SUBJECT_PARTICLE_TIME.sub(time_relation_placeholder, text)
     text = ATTACHED_SPELLED_QUANTITY.sub("관련 수량" if language == "ko" else "相关数量", text)
     text = SPELLED_QUANTITY.sub("관련 수량" if language == "ko" else "相关数量", text)
     text = text.replace(time_relation_placeholder, "이 시간")
-    text = text.replace(lookup_placeholder, "조회")
+    for word, placeholder in word_placeholders.items():
+        text = text.replace(placeholder, word)
     return " ".join(text.split())[:2000]
 
 
@@ -1121,6 +1163,7 @@ def _verified_qualitative_evidence(
         if str(identifier).strip()
     }
     process_statuses: list[dict[str, str]] = []
+    status_sentences: list[str] = []
     facts = grounding.get("verified_facts") or grounding.get("facts")
     if isinstance(facts, dict) and not focus_keys:
         for process in PROCESS_ALIASES:
@@ -1128,6 +1171,17 @@ def _verified_qualitative_evidence(
             status = process_fact.get("status") if isinstance(process_fact, dict) else None
             if isinstance(status, str) and status.strip():
                 process_statuses.append({"process": process, "status": status.strip()})
+                # Translate only backend-calculated progress states; never
+                # calculate a status or infer a cause from quantities here.
+                descriptions = {
+                    "behind": ("생산 진행률은 시간 기준에 미달합니다.", "生产进度低于时间基准。"),
+                    "on_track": ("생산 진행률은 시간 기준과 유사합니다.", "生产进度与时间基准相近。"),
+                    "ahead": ("생산 진행률은 시간 기준보다 앞서 있습니다.", "生产进度超前于时间基准。"),
+                }
+                if status.strip() in descriptions:
+                    index = 1 if language == "zh" else 0
+                    label = PROCESS_ALIASES[process][2 if language == "zh" else 1]
+                    status_sentences.append(f"{label} {descriptions[status.strip()][index]}")
 
     row_statuses: list[dict[str, Any]] = []
     raw_tables = grounding.get("verified_tables") or grounding.get("tables")
@@ -1201,6 +1255,7 @@ def _verified_qualitative_evidence(
         }
     return {
         "process_statuses": process_statuses,
+        "verified_status_sentences": status_sentences,
         "equipment_and_part_statuses": row_statuses,
         "warnings": warnings,
         "data_is_stale": data_is_stale if isinstance(data_is_stale, bool) else None,
@@ -1212,6 +1267,7 @@ def build_repair_payload(
     job: dict[str, Any],
     candidate: dict[str, Any],
     grounding: dict[str, Any],
+    failure: LlmGroundingError | None = None,
 ) -> dict[str, Any]:
     """Build a qualitative-only retry payload without authoritative measurements."""
     language = "zh" if (job.get("input_payload") or {}).get("language") == "zh" else "ko"
@@ -1277,6 +1333,16 @@ def build_repair_payload(
         ),
         "allowed_exact_identifiers": exact_identifiers,
         "question_topic": _qualitative_text(question, allowed_identifiers, language),
+        "validation_feedback": {
+            "reason_code": failure.reason_code if failure else "grounding_rejected",
+            "instruction": REPAIR_FEEDBACK.get(
+                failure.reason_code if failure else "grounding_rejected",
+                "Use only verified evidence and the required three sections.",
+            ),
+            "rejected_excerpt": _qualitative_text(
+                failure.rejected_text if failure else "", allowed_identifiers, language,
+            ),
+        },
         "qualitative_draft": {
             "title": _qualitative_text(candidate.get("title"), allowed_identifiers, language),
             "summary": "" if discard_rejected_summary else _qualitative_text(
@@ -1288,13 +1354,79 @@ def build_repair_payload(
     }
 
 
+def _mask_verified_identifier_lists(text: str, grounding: dict[str, Any]) -> str:
+    """Ignore list punctuation only between adjacent, exact server identifiers.
+
+    This changes the scanner's view, never the model's displayed prose. A comma
+    joining actions or an unverified name stays visible to the action checks.
+    """
+    spans = sorted({
+        span for identifier in _verified_exact_identifiers(grounding)
+        for span in _identifier_spans(text, identifier)
+    }, key=lambda span: (span[0], -span[1]))
+    non_overlapping = []
+    for span in spans:
+        if not non_overlapping or span[0] >= non_overlapping[-1][1]:
+            non_overlapping.append(span)
+    replacements = []
+    for previous, following in zip(non_overlapping, non_overlapping[1:]):
+        start, end = previous[1], following[0]
+        if re.fullmatch(r"\s*(?:[,，、]|및|과|와|和|与|與|及)\s*", text[start:end]):
+            replacements.append((start, end))
+    for start, end in reversed(replacements):
+        text = text[:start] + " " + text[end:]
+    return text
+
+
+def _unsupported_running_statement(text: str, states: dict[str, bool]) -> str:
+    """Bind each operation-state predicate to its own preceding subjects.
+
+    Preserve commas between subjects: one running machine cannot vouch for a
+    stopped machine in the same list. Separate predicates in a sentence still
+    have separate subjects (A is running and B is stopped).
+    """
+    for sentence in SENTENCE_SPLIT.split(text):
+        assertions = [(m.start(), m.end(), False) for m in CURRENT_STOPPED_ASSERTION.finditer(sentence)]
+        assertions.extend(
+            (m.start(), m.end(), True) for m in CURRENT_RUNNING_ASSERTION.finditer(sentence)
+            if not any(m.start() < end and m.end() > start for start, end, _ in assertions)
+        )
+        assertions.sort()
+        boundaries = list(CLAUSE_SPLIT.finditer(sentence))
+        previous_end = 0
+        for index, (start, end, expected) in enumerate(assertions):
+            # Chinese can place the subject inside the matched construction
+            # (目前850T-1正在运行), so include this predicate's complete span.
+            subjects = sentence[previous_end:end]
+            # A later independent data/check clause must not exempt an earlier
+            # state assertion. Keep subject lists intact, but scope limitation
+            # wording to the clause containing this particular predicate.
+            clause_start = max([previous_end] + [m.end() for m in boundaries if m.end() <= start])
+            next_predicate = assertions[index + 1][0] if index + 1 < len(assertions) else len(sentence)
+            clause_end = min([next_predicate] + [m.start() for m in boundaries if m.start() >= end])
+            if CHECK_OR_INFORMATION_LIMITATION.search(sentence[clause_start:clause_end]):
+                previous_end = end
+                continue
+            matched = [state for identifier, state in states.items() if _identifier_spans(subjects, identifier)]
+            if not matched or not all(state is expected for state in matched):
+                return sentence
+            previous_end = end
+    return ""
+
+
 def _summary_claims_are_safe(
     summary: str,
     grounding: dict[str, Any],
     *,
     enforce_quality: bool,
     require_sections: bool = False,
+    rejection: list[dict[str, str]] | None = None,
 ) -> bool:
+    def reject(code: str, excerpt: str) -> bool:
+        if rejection is not None:
+            rejection.append({"reason_code": code, "rejected_text": excerpt[:500]})
+        return False
+
     text = INVISIBLE_FORMAT_CHAR.sub("", str(summary or ""))
     machine_running_states = _verified_machine_running_states(grounding)
     verified_facts = grounding.get("verified_facts")
@@ -1306,33 +1438,38 @@ def _summary_claims_are_safe(
     if missing_active_machine_data:
         for clause in CLAUSE_SPLIT.split(text):
             if MISSING_ACTIVE_MACHINE_ZERO_CLAIM.search(clause):
-                return False
+                return reject("unsupported_claim", clause)
             if (
                 ACTIVE_MACHINE_SUBJECT.search(clause)
                 and NEGATIVE_EXISTENCE_CLAIM.search(clause)
                 and not DATA_UNAVAILABLE_LIMITATION.search(clause)
             ):
-                return False
+                return reject("unsupported_claim", clause)
     if RAW_STATUS_TOKEN.search(text):
-        return False
+        return reject("raw_status", text)
     # Physical/configuration actions are never an allowed model contribution,
     # even when Qwen emits a bare bullet without a directive suffix. This is
     # deliberately conservative: deterministic server prose remains the
     # authoritative fallback when a factual sentence happens to mention one.
     if OPERATIONAL_MUTATION.search(text):
-        return False
+        return reject("operational_action", text)
     if enforce_quality and VAGUE_QUANTIFIER.search(text) and _verified_exact_identifiers(grounding):
-        return False
+        return reject("unsupported_claim", text)
     if UNSUPPORTED_CAUSAL_ASSERTION.search(text) or UNSUPPORTED_OPERATIONAL_DIRECTIVE.search(text):
-        return False
+        return reject("unsupported_claim", text)
+    unsupported_state = _unsupported_running_statement(text, machine_running_states)
+    if unsupported_state:
+        return reject("unsupported_claim", unsupported_state)
     if enforce_quality and REDUNDANT_STATUS_RECHECK.search(text):
-        return False
+        return reject("unsupported_claim", text)
     # Preserve commas while screening each complete sentence. Otherwise an
     # unsafe first fragment can be separated from a later "확인 필요" suffix
     # and incorrectly inherit the suffix's safe-looking action.
     for sentence in SENTENCE_SPLIT.split(text):
-        if DIRECTIVE_MARKER.search(sentence) and DIRECTIVE_SEQUENCE_MARKER.search(sentence):
-            return False
+        if DIRECTIVE_MARKER.search(sentence) and DIRECTIVE_SEQUENCE_MARKER.search(
+            _mask_verified_identifier_lists(sentence, grounding)
+        ):
+            return reject("action_format", sentence)
 
     normalized_sections = MARKDOWN_SECTION_HEADING.sub(r"\1:", text)
     normalized_sections = INLINE_SECTION_HEADING.sub(r"\n\1:\n", normalized_sections).strip()
@@ -1365,7 +1502,7 @@ def _summary_claims_are_safe(
         # alternate short heading instead of trying to infer whether a label
         # such as "작업 제안" or "需处理" contains instructions.
         if re.fullmatch(r"[^\n]{1,40}(?::|：|—|–)", heading_text):
-            return False
+            return reject("section_format", raw_line)
         if not stripped:
             continue
         bullet = re.match(r"^(?:[-•*]|\d+[.)])\s+(.+)$", stripped)
@@ -1382,17 +1519,17 @@ def _summary_claims_are_safe(
                 # A short label followed by bullets is a heading even when the
                 # model omitted punctuation. Only contract headings may own a
                 # list; do not inherit the previous evidence-section state.
-                return False
+                return reject("section_format", raw_line)
         if bullet and not current_section:
             # A bullet list without one of the contract headings is ambiguous:
             # it may be a disguised action section such as "작업 제안".
-            return False
+            return reject("section_format", raw_line)
         if current_section in section_content_counts:
             section_content_counts[current_section] += 1
         if current_section not in {"확인할 항목", "需确认"}:
             continue
         if not bullet:
-            return False
+            return reject("action_format", raw_line)
         item = bullet.group(1).strip()
         if not item:
             continue
@@ -1410,7 +1547,7 @@ def _summary_claims_are_safe(
                 match.group(1) or match.group(2),
             )
             + " ",
-            item_without_terminal_period,
+            _mask_verified_identifier_lists(item_without_terminal_period, grounding),
         )
         separator_scan_item = SAFE_INFORMATION_COORDINATION.sub(
             lambda match: f"{match.group(1) or match.group(2)} ",
@@ -1423,25 +1560,28 @@ def _summary_claims_are_safe(
             OPERATIONAL_MUTATION.search(item)
             or NEXT_ACTION_SEPARATOR.search(separator_scan_item)
             or re.search(r"[.。]", separator_scan_item)
-            or len(SAFE_NEXT_ACTION.findall(item)) != 1
+            or (
+                len(SAFE_NEXT_ACTION.findall(item)) != 1
+                and len(SAFE_NEXT_ACTION.findall(INFORMATION_CHECK_NOUN.sub("기록", item))) != 1
+            )
         ):
-            return False
+            return reject("action_format", item)
     if saw_next_action_section and not saw_next_action_item:
-        return False
+        return reject("section_format", text)
     expected_ko = ["결론", "판단 근거", "확인할 항목"]
     expected_zh = ["结论", "判断依据", "需确认"]
     if (require_sections or recognized_headings) and (
         recognized_headings != expected_ko and recognized_headings != expected_zh
     ):
-        return False
+        return reject("section_format", text)
     if recognized_headings == expected_ko and any(
         section_content_counts[heading] <= 0 for heading in expected_ko
     ):
-        return False
+        return reject("section_format", text)
     if recognized_headings == expected_zh and any(
         section_content_counts[heading] <= 0 for heading in expected_zh
     ):
-        return False
+        return reject("section_format", text)
 
     for clause in CLAUSE_SPLIT.split(text):
         if (
@@ -1454,47 +1594,27 @@ def _summary_claims_are_safe(
             # effect, reject it unless it is explicitly framed as something
             # to verify. This avoids depending on an open-ended Korean/Chinese
             # causal-verb allow-list.
-            return False
+            return reject("unsupported_claim", clause)
         if RISK_ASSERTION.search(clause) and not CHECK_OR_INFORMATION_LIMITATION.search(clause):
-            return False
+            return reject("unsupported_claim", clause)
         if DIRECTIVE_MARKER.search(clause):
             # A safe information-check verb must not launder a separate action
             # in the same clause (for example, "lubricate and then confirm").
             # Reject chained directives conservatively; the deterministic
             # fallback remains available for genuinely safe multi-step prose.
             if DIRECTIVE_SEQUENCE_MARKER.search(clause):
-                return False
+                return reject("action_format", clause)
             if not SAFE_ANALYSIS_ACTION.search(clause):
-                return False
-        if not CHECK_OR_INFORMATION_LIMITATION.search(clause):
-            # A lack of recent shots is not proof that a machine is stopped.
-            # Accept a running/non-running assertion only for an exact machine
-            # whose verified row explicitly supplies the matching state.
-            if CURRENT_STOPPED_ASSERTION.search(clause):
-                matched_states = [
-                    state
-                    for identifier, state in machine_running_states.items()
-                    if _identifier_spans(clause, identifier)
-                ]
-                if not matched_states or not any(state is False for state in matched_states):
-                    return False
-            if CURRENT_RUNNING_ASSERTION.search(clause):
-                matched_states = [
-                    state
-                    for identifier, state in machine_running_states.items()
-                    if _identifier_spans(clause, identifier)
-                ]
-                if not matched_states or not any(matched_states):
-                    return False
+                return reject("operational_action", clause)
     analysis_skill = grounding.get("analysis_skill")
     if not isinstance(analysis_skill, dict):
         return True
     limitations = set(analysis_skill.get("limitations") or [])
     if limitations.intersection({"historical_snapshots_unavailable", "target_level_history_unavailable"}):
         if not TREND_TERM.search(text) or not UNAVAILABLE_TREND.search(text):
-            return False
+            return reject("scope_or_history", text)
         if UNSUPPORTED_TARGET_TREND.search(text):
-            return False
+            return reject("scope_or_history", text)
     focus_identifiers = {
         str(identifier).strip().casefold()
         for identifier in analysis_skill.get("focus_identifiers") or []
@@ -1505,7 +1625,7 @@ def _summary_claims_are_safe(
             if identifier.casefold() in focus_identifiers:
                 continue
             if _identifier_spans(text, identifier.casefold()):
-                return False
+                return reject("scope_or_history", text)
     return True
 
 
@@ -1620,6 +1740,8 @@ def naturalize_schema_terms(summary: str) -> tuple[str, bool]:
 
 def classify_llm_error(exc: Exception) -> str:
     if isinstance(exc, LlmGroundingError):
+        if exc.reason_code == "section_format":
+            return "response_format_rejected"
         return "grounding_rejected"
     explicit_code = getattr(exc, "fallback_code", None)
     if isinstance(explicit_code, str) and explicit_code.strip():
@@ -1681,19 +1803,29 @@ def normalize_result(
         raise LlmGroundingError(
             "LLM prose introduced an unverified number and had no grounded answer after safety pruning.",
             candidate,
+            reason_code="empty_after_numeric_pruning", normalized_summary=summary,
         )
     title_was_replaced = not summary_numbers_are_grounded(title, authoritative_grounding)
     if title_was_replaced:
         title = fallback.get("title") or "Local AI Analysis"
     if not summary_numbers_are_grounded(summary, authoritative_grounding):
-        raise LlmGroundingError("LLM prose introduced an unverified number.", candidate)
+        raise LlmGroundingError(
+            "LLM prose introduced an unverified number.", candidate,
+            reason_code="unverified_number", rejected_text=summary, normalized_summary=summary,
+        )
+    rejection: list[dict[str, str]] = []
     if not _summary_claims_are_safe(
         summary,
         authoritative_grounding,
         enforce_quality=False,
         require_sections=True,
+        rejection=rejection,
     ):
-        raise LlmGroundingError("LLM prose introduced an unsupported claim or identifier.", candidate)
+        detail = rejection[0]
+        raise LlmGroundingError(
+            f"LLM prose introduced an unsupported claim or identifier. [{detail['reason_code']}]", candidate,
+            **detail, normalized_summary=summary,
+        )
 
     normalized = dict(fallback)
     normalized.update({
@@ -1702,6 +1834,7 @@ def normalize_result(
         "model_name": model_name,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source": "local_llm_rewrite",
+        "llm_validation_version": PROSE_VALIDATION_VERSION,
     })
     if title_was_replaced:
         normalized["llm_title_fallback"] = True
@@ -1738,6 +1871,15 @@ def handle_job(
         first_candidate: dict[str, Any] = {}
         attempts = 0
         initial_grounding_rejected = False
+        validation_failures: list[dict[str, Any]] = []
+
+        def record_rejection(exc: LlmGroundingError) -> None:
+            validation_failures.append({
+                "attempt": attempts,
+                "reason_code": exc.reason_code,
+                "rejected_text": exc.rejected_text,
+                "normalized_summary": exc.normalized_summary,
+            })
         try:
             llm_payload = handler.build_llm_payload(job) if hasattr(handler, "build_llm_payload") else (job.get("input_payload") or {})
             grounding_payload = (
@@ -1794,14 +1936,16 @@ def handle_job(
                 return normalized, handler.PROMPT_VERSION
             try:
                 normalized = normalize_result(result, deterministic, model_name, grounding_payload)
-            except LlmGroundingError:
+            except LlmGroundingError as exc:
                 initial_grounding_rejected = True
+                record_rejection(exc)
                 attempts = 2
-                repair_payload = build_repair_payload(job, first_candidate, grounding_payload)
+                repair_payload = build_repair_payload(job, first_candidate, grounding_payload, exc)
                 repair_options: dict[str, Any] = {}
                 repair_timeout = getattr(handler, "REPAIR_TIMEOUT_SECONDS", None)
                 if repair_timeout is not None:
                     repair_options["timeout_seconds"] = max(1, int(repair_timeout))
+                result = {}  # A failed generation must not masquerade as a second candidate.
                 result = llm.structured_analysis(REPAIR_SYSTEM_PROMPT, {
                     "job_type": job_type,
                     "required_output_schema": {
@@ -1812,6 +1956,7 @@ def handle_job(
                 }, **repair_options)
                 normalized = normalize_result(result, deterministic, model_name, grounding_payload)
                 normalized["llm_repaired"] = True
+                normalized["llm_validation_failures"] = validation_failures
             if hasattr(handler, "enrich_summary"):
                 enriched_summary = handler.enrich_summary(normalized["summary"], llm_payload)
                 if not summary_numbers_are_grounded(enriched_summary, grounding_payload):
@@ -1826,10 +1971,15 @@ def handle_job(
             if not fallback_to_deterministic:
                 raise
             fallback_code = classify_llm_error(exc)
+            if isinstance(exc, LlmGroundingError):
+                record_rejection(exc)
             deterministic["llm_fallback"] = True
             deterministic["llm_attempted"] = True
             deterministic["llm_attempts"] = attempts
             deterministic["llm_fallback_code"] = fallback_code
+            deterministic["llm_validation_version"] = PROSE_VALIDATION_VERSION
+            if validation_failures:
+                deterministic["llm_validation_failures"] = validation_failures
             if initial_grounding_rejected:
                 deterministic["llm_initial_grounding_rejected"] = True
             deterministic["llm_error"] = str(exc)[:500]
@@ -1842,6 +1992,13 @@ def handle_job(
                 deterministic["llm_review_title"] = review_title.strip()[:200]
             if isinstance(review_summary, str) and review_summary.strip():
                 deterministic["llm_review_summary"] = review_summary.strip()[:2000]
+            # Preserve the final generated candidate as well as the historical
+            # first-draft fields. These are diagnostic prose, not an accepted answer.
+            if attempts > 1 and isinstance(result, dict):
+                for key, limit in (("title", 200), ("summary", 2000)):
+                    value = result.get(key)
+                    if isinstance(value, str) and value.strip():
+                        deterministic[f"llm_review_last_{key}"] = value.strip()[:limit]
             return deterministic, handler.PROMPT_VERSION
 
     if getattr(handler, "REQUIRE_LLM_FOR_READY_RESULT", False):

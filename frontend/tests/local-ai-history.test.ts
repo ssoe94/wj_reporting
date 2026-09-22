@@ -33,6 +33,22 @@ test("latest real success requires explicit model provenance and no fallback", (
   }), "unverified");
 });
 
+test("fallback reasons distinguish grounding checks from response format checks in both languages", () => {
+  for (const [code, ko, zh] of [
+    ["grounding_rejected", "설명 근거·형식 검증 실패", "说明依据·格式校验失败"],
+    ["response_format_rejected", "설명 형식 검증 실패", "说明格式校验失败"],
+  ] as const) {
+    const history = {
+      last_analysis_completed_at: latest,
+      last_analysis_llm_fallback: true,
+      last_analysis_fallback_code: code,
+    };
+    assert.equal(describeLocalAiHistory(history, "ko").reason, ko);
+    assert.equal(describeLocalAiHistory(history, "zh").reason, zh);
+    assert.equal(describeLocalAiHistory({ ...history, last_analysis_llm_fallback: false }, "ko").reason, "");
+  }
+});
+
 test("unavailable, absent and malformed history remain distinct from confirmed success", () => {
   assert.equal(getLocalAiAnalysisState(undefined), "unknown");
   assert.equal(getLocalAiAnalysisState({ last_analysis_completed_at: null }), "none");
@@ -41,6 +57,6 @@ test("unavailable, absent and malformed history remain distinct from confirmed s
   }), "unverified");
   assert.equal(describeLocalAiHistory({
     last_analysis_completed_at: latest, last_analysis_llm_fallback: false,
-    last_analysis_source: "local_llm_rewrite", last_analysis_source: "local_llm_rewrite", last_analysis_fallback_code: "timeout",
+    last_analysis_source: "local_llm_rewrite", last_analysis_fallback_code: "timeout",
   }, "ko").reason, "");
 });
