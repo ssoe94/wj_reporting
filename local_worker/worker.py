@@ -487,6 +487,14 @@ INFORMATION_CHECK_NOUN = re.compile(
     r"(?:확인|점검|검토|조회)\s*(?:기록|이력|결과|여부|항목|내역)|"
     r"(?:确认|確認|检查|檢查|审查|審查|查询|查詢)(?:记录|紀錄|記錄|結果|结果|历史|歷史)"
 )
+# In a report noun phrase, 보고 is not the connective verb 보다 + 고.
+# Require both the report type and a following information noun so a real
+# sequence such as "화면을 보고 기록을 확인" remains visible to the gate.
+INFORMATION_REPORT_NOUN = re.compile(
+    r"(?<![가-힣A-Za-z])((?:생산|실적|검사|품질|작업|MES)\s+)보고"
+    r"(?=\s+(?:누락|내역|기록|이력|상태|여부|시각|일시|시점|내용|결과|자료|데이터)"
+    r"(?:에서|으로|[은는이가을를의도만])?(?:\s|[.。]|$))"
+)
 OPERATIONAL_MUTATION = re.compile(
     r"(?:분해|해체|세척|청소|세정|닦|씻|윤활|교환|우회|수리|교체|재시작|재가동|리셋|초기화|"
     r"조임|보충|잠금|켜기|끄기|재배치|(?:장력|설정값).{0,8}(?:조정|고치)|"
@@ -1378,6 +1386,10 @@ def _mask_verified_identifier_lists(text: str, grounding: dict[str, Any]) -> str
     return text
 
 
+def _action_sequence_scan(text: str) -> str:
+    return INFORMATION_REPORT_NOUN.sub(r"\1기록", text)
+
+
 def _unsupported_running_statement(text: str, states: dict[str, bool]) -> str:
     """Bind each operation-state predicate to its own preceding subjects.
 
@@ -1467,7 +1479,7 @@ def _summary_claims_are_safe(
     # and incorrectly inherit the suffix's safe-looking action.
     for sentence in SENTENCE_SPLIT.split(text):
         if DIRECTIVE_MARKER.search(sentence) and DIRECTIVE_SEQUENCE_MARKER.search(
-            _mask_verified_identifier_lists(sentence, grounding)
+            _action_sequence_scan(_mask_verified_identifier_lists(sentence, grounding))
         ):
             return reject("action_format", sentence)
 
@@ -1558,7 +1570,7 @@ def _summary_claims_are_safe(
         # chained actions, and maintenance instructions are rejected.
         if (
             OPERATIONAL_MUTATION.search(item)
-            or NEXT_ACTION_SEPARATOR.search(separator_scan_item)
+            or NEXT_ACTION_SEPARATOR.search(_action_sequence_scan(separator_scan_item))
             or re.search(r"[.。]", separator_scan_item)
             or (
                 len(SAFE_NEXT_ACTION.findall(item)) != 1
@@ -1602,7 +1614,7 @@ def _summary_claims_are_safe(
             # in the same clause (for example, "lubricate and then confirm").
             # Reject chained directives conservatively; the deterministic
             # fallback remains available for genuinely safe multi-step prose.
-            if DIRECTIVE_SEQUENCE_MARKER.search(clause):
+            if DIRECTIVE_SEQUENCE_MARKER.search(_action_sequence_scan(clause)):
                 return reject("action_format", clause)
             if not SAFE_ANALYSIS_ACTION.search(clause):
                 return reject("operational_action", clause)

@@ -142,6 +142,28 @@ class KoreanQuantityAndIdentifierRegressionTests(unittest.TestCase):
             self.normalize(structured_ko("생산 데이터 확인 및 조회"))
         self.assertEqual(raised.exception.reason_code, "action_format")
 
+    def test_production_report_noun_allows_a_single_information_check(self):
+        for check in (
+            "가공 A라인의 실적 보고 누락 여부를 확인합니다.",
+            "가공 A라인의 실적 보고 누락 여부를 조회합니다.",
+        ):
+            with self.subTest(check=check):
+                summary = structured_ko(check)
+                result = self.normalize(summary)
+                self.assertEqual(result["summary"], summary)
+                self.assertFalse(result.get("llm_numeric_lines_pruned", False))
+
+    def test_report_noun_exception_does_not_allow_sequential_looking_actions(self):
+        for check in (
+            "화면을 보고 기록을 확인합니다.",
+            "생산 현황을 보고 기록을 확인합니다.",
+            "실적 보고를 읽고 기록을 확인합니다.",
+        ):
+            with self.subTest(check=check):
+                with self.assertRaises(LlmGroundingError) as raised:
+                    self.normalize(structured_ko(check))
+                self.assertEqual(raised.exception.reason_code, "action_format")
+
     def test_unknown_identifier_cannot_borrow_a_verified_prefix_or_list_separator(self):
         for summary in (
             structured_ko("550T-12, 850T-20의 생산 실적 조회"),
