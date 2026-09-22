@@ -121,6 +121,7 @@ REPAIR_FEEDBACK = {
     "operational_action": "Remove physical operations, maintenance and configuration changes. Use information lookups only.",
     "unsupported_claim": "Remove unsupported causes, risks or equipment states. State only supplied evidence or an information check.",
     "raw_status": "Translate the supplied status into natural language instead of raw schema tokens.",
+    "invalid_identifier": "Use only allowed_exact_identifiers. Never copy redacted identifier fragments; omit an unknown identifier.",
     "scope_or_history": "Respect the supplied focus and history limitations. Do not infer a trend from one snapshot.",
 }
 
@@ -645,6 +646,14 @@ TRUSTED_PROSE_KEYS = {
     "verified_answer",
     "verified_evidence_sentences",
 }
+TRUSTED_MACHINE_IDENTIFIER = re.compile(
+    r"(?<!\d)\d+\s*(?:호기|号机|號機)|(?<![A-Za-z0-9])\d{3,4}T-\d+(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+REDACTED_IDENTIFIER = re.compile(
+    r"(?:검증\s*수치|已验证数值)[A-Za-z_-]+(?:검증\s*수치|已验证数值)|"
+    r"[A-Za-z][A-Za-z0-9_-]*(?:검증\s*수치|已验证数值)"
+)
 
 
 def _normalize_number(value: Any) -> Decimal | None:
@@ -854,8 +863,6 @@ def _collect_trusted_prose_records(grounding: Any, records: list[GroundingRecord
         return
     known_identifiers = _known_identifiers(records)
     known_identifiers.update(alias.casefold() for aliases in PROCESS_ALIASES.values() for alias in aliases)
-    machine_identifier = re.compile(r"(?<!\d)\d+\s*(?:호기|号机|號機)|(?<![A-Za-z0-9])\d{3,4}T-\d+(?![A-Za-z0-9])", re.IGNORECASE)
-
     for key in TRUSTED_PROSE_KEYS:
         value = grounding.get(key)
         if not isinstance(value, str):
@@ -871,7 +878,7 @@ def _collect_trusted_prose_records(grounding: Any, records: list[GroundingRecord
                 for identifier in known_identifiers
                 if _identifier_spans(clause, identifier)
             }
-            for match in machine_identifier.finditer(clause):
+            for match in TRUSTED_MACHINE_IDENTIFIER.finditer(clause):
                 identifiers[match.group(0).replace(" ", "").casefold()] = 3
             if identifiers:
                 max_specificity = max(identifiers.values())
@@ -1094,6 +1101,15 @@ def _verified_exact_identifiers(grounding: Any) -> list[str]:
                 visit(value)
 
     visit(grounding)
+    # Legacy verified-answer jobs have no equipment table. Use the same
+    # server-prose identifier grammar as numeric grounding; never inspect the
+    # question, conversation history, or model candidate for trusted names.
+    if isinstance(grounding, dict):
+        for key in sorted(TRUSTED_PROSE_KEYS):
+            prose = grounding.get(key)
+            if isinstance(prose, str):
+                for match in TRUSTED_MACHINE_IDENTIFIER.finditer(prose):
+                    add(match.group(0))
     return identifiers
 
 
@@ -1441,6 +1457,8 @@ def _summary_claims_are_safe(
         return False
 
     text = INVISIBLE_FORMAT_CHAR.sub("", str(summary or ""))
+    if REDACTED_IDENTIFIER.search(text):
+        return reject("invalid_identifier", text)
     machine_running_states = _verified_machine_running_states(grounding)
     verified_facts = grounding.get("verified_facts")
     missing_active_machine_data = (
@@ -1818,7 +1836,9 @@ def normalize_result(
             candidate,
             reason_code="empty_after_numeric_pruning", normalized_summary=summary,
         )
-    title_was_replaced = not summary_numbers_are_grounded(title, authoritative_grounding)
+    title_was_replaced = bool(REDACTED_IDENTIFIER.search(title)) or not summary_numbers_are_grounded(
+        title, authoritative_grounding,
+    )
     if title_was_replaced:
         title = fallback.get("title") or "Local AI Analysis"
     if not summary_numbers_are_grounded(summary, authoritative_grounding):

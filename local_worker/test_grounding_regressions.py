@@ -10,9 +10,9 @@ import copy
 import unittest
 
 try:
-    from .worker import LlmGroundingError, handle_job, normalize_result, summary_numbers_are_grounded
+    from .worker import LlmGroundingError, build_repair_payload, handle_job, normalize_result, summary_numbers_are_grounded
 except ImportError:
-    from worker import LlmGroundingError, handle_job, normalize_result, summary_numbers_are_grounded
+    from worker import LlmGroundingError, build_repair_payload, handle_job, normalize_result, summary_numbers_are_grounded
 
 
 ORIGINAL_9980_SUMMARY = (
@@ -509,6 +509,73 @@ class MachineStateListGroundingRegressionTests(unittest.TestCase):
                 self.assertEqual(result["source"], "local_llm_rewrite")
                 with self.assertRaises(LlmGroundingError):
                     self.normalize_states((False, False), conclusion=text)
+
+
+class TrustedProseRepairIdentifierRegressionTests(unittest.TestCase):
+    def test_server_answer_only_identifiers_survive_repair_in_both_languages(self):
+        identifiers = ("650T-10", "850T-1", "550T-12", "450T-13")
+        for language in ("ko", "zh"):
+            with self.subTest(language=language):
+                unit = "개" if language == "ko" else "件"
+                grounding = {
+                    "verified_facts": {"metric": "recent_production"},
+                    "verified_answer": ", ".join(
+                        f"{identifier} {quantity}{unit}"
+                        for identifier, quantity in zip(identifiers, (12, 15, 18, 21))
+                    ),
+                }
+                checks = "\n- ".join(
+                    f"{identifier}의 최근 생산 이력을 확인하세요."
+                    if language == "ko" else f"查询{identifier}的最近生产记录。"
+                    for identifier in identifiers
+                )
+                summary = structured_ko(checks) if language == "ko" else structured_zh(checks)
+                # This job shape deliberately has no verified_tables: exact
+                # machine names exist only in the server's trusted answer.
+                self.assertTrue(summary_numbers_are_grounded(summary, grounding))
+                repair = build_repair_payload(
+                    {"input_payload": {"language": language}},
+                    {"title": "Production", "summary": summary},
+                    grounding,
+                )
+                self.assertEqual(
+                    {value.casefold() for value in repair["allowed_exact_identifiers"]},
+                    {value.casefold() for value in identifiers},
+                )
+                for identifier in identifiers:
+                    self.assertIn(identifier, repair["qualitative_draft"]["summary"])
+                self.assertNotIn("검증 수치", repair["qualitative_draft"]["summary"])
+                self.assertNotIn("已验证数值", repair["qualitative_draft"]["summary"])
+
+    def test_question_and_history_prose_cannot_supply_repair_identifiers(self):
+        repair = build_repair_payload(
+            {"input_payload": {"language": "ko", "question": "999T-99의 상태는?"}},
+            {"summary": "999T-99, 888T-88, 650T-10의 이력 확인"},
+            {
+                "verified_answer": "650T-10 12개",
+                "question": "999T-99의 상태는?",
+                "conversation_history": [{"summary": "888T-88 18개", "content": "888T-88의 기록"}],
+            },
+        )
+        self.assertEqual(
+            {value.casefold() for value in repair["allowed_exact_identifiers"]},
+            {"650t-10"},
+        )
+
+    def test_corrupted_identifier_placeholders_are_rejected_in_both_languages(self):
+        for summary in (
+            structured_ko("검증 수치T-검증 수치의 최근 생산 이력을 확인하세요."),
+            structured_zh("查询已验证数值T-已验证数值的最近生产记录。"),
+        ):
+            with self.subTest(summary=summary):
+                with self.assertRaises(LlmGroundingError) as raised:
+                    normalize_result(
+                        {"title": "Production", "summary": summary},
+                        {"summary": "서버에서 검증한 생산 현황입니다."},
+                        "synthetic-model",
+                        {"verified_answer": "650T-10 12개"},
+                    )
+                self.assertEqual(raised.exception.reason_code, "invalid_identifier")
 
 
 if __name__ == "__main__":
