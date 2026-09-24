@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import date, timedelta
+from itertools import islice
 import hashlib
 import json
 import re
@@ -53,6 +54,8 @@ QUALITY_REPORT_AUDIT_MAX_MANUAL_BATCH = 200
 # jobs are still pending/claimed; explicit per-report requests bypass it.
 QUALITY_REPORT_AUDIT_BACKLOG_LIMIT = 10
 QUALITY_REPORT_AUDIT_MAX_PAGE_SIZE = 50
+QUALITY_REPORT_AUDIT_QUEUE_BATCH_SIZE = 500
+QUALITY_REPORT_AUDIT_SPEC_CACHE_SIZE = 2_000
 QUALITY_REPORT_AUDIT_REVIEW_ACTIONS = frozenset({
     "accepted",
     "overridden",
@@ -168,6 +171,31 @@ def _part_spec_lookup(reports: Iterable[QualityReport]) -> dict[str, list[PartSp
     return dict(result)
 
 
+def _cached_part_spec_lookup(
+    reports: Iterable[QualityReport],
+    cache: dict[str, list[PartSpec]],
+) -> dict[str, list[PartSpec]]:
+    """Resolve only unseen full part numbers while scanning a queue request."""
+    normalized_part_nos = {
+        normalized
+        for report in reports
+        if (normalized := normalize_part_no(report.part_no))
+    }
+    missing = normalized_part_nos.difference(cache)
+    for part_no in missing:
+        cache[part_no] = []
+    if missing:
+        rows = _normalized_part_spec_queryset(missing).only(
+            "id", "part_no", "model_code", "color", "valid_from"
+        ).order_by("part_no", "-valid_from", "-id")
+        for row in rows:
+            cache[normalize_part_no(row.part_no)].append(row)
+    result = {part_no: cache[part_no] for part_no in normalized_part_nos}
+    while len(cache) > QUALITY_REPORT_AUDIT_SPEC_CACHE_SIZE:
+        cache.pop(next(iter(cache)))
+    return result
+
+
 def _select_part_spec(
     report: QualityReport,
     specs_by_part: dict[str, list[PartSpec]] | None = None,
@@ -242,13 +270,12 @@ def _report_image_refs(report: QualityReport) -> list[dict[str, Any]]:
     return result
 
 
-def build_quality_report_audit_input(
+def _build_quality_report_audit_base(
     report: QualityReport,
     *,
     specs_by_part: dict[str, list[PartSpec]] | None = None,
 ) -> tuple[dict[str, Any], str]:
     part_spec = _select_part_spec(report, specs_by_part)
-    deterministic = _canonical_problem_types(report.phenomenon)
     raw_context = {
         "phenomenon": str(report.phenomenon or ""),
         "disposition": str(report.disposition or ""),
@@ -280,8 +307,6 @@ def build_quality_report_audit_input(
         },
         "raw_text_sha256": raw_text_sha256,
         "part_spec": part_spec,
-        "deterministic_classification": deterministic,
-        "taxonomy_candidates": taxonomy_candidates(),
     }
     report_revision_material = {
         "schema": QUALITY_REPORT_AUDIT_SOURCE,
@@ -314,6 +339,19 @@ def build_quality_report_audit_input(
             separators=(",", ":"),
         ).encode("utf-8")
     ).hexdigest()
+    return payload, source_revision
+
+
+def build_quality_report_audit_input(
+    report: QualityReport,
+    *,
+    specs_by_part: dict[str, list[PartSpec]] | None = None,
+) -> tuple[dict[str, Any], str]:
+    payload, source_revision = _build_quality_report_audit_base(
+        report, specs_by_part=specs_by_part
+    )
+    payload["deterministic_classification"] = _canonical_problem_types(report.phenomenon)
+    payload["taxonomy_candidates"] = taxonomy_candidates()
     return payload, source_revision
 
 
@@ -508,10 +546,12 @@ def _latest_jobs_by_current_revision(
 ) -> tuple[dict[int, tuple[dict[str, Any], str]], dict[int, AiJob]]:
     snapshots: dict[int, tuple[dict[str, Any], str]] = {}
     for report in reports:
-        snapshots[report.pk] = build_quality_report_audit_input(
+        snapshots[report.pk] = _build_quality_report_audit_base(
             report,
             specs_by_part=specs_by_part,
         )
+    if not snapshots:
+        return snapshots, {}
     jobs = AiJob.objects.filter(
         job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
         scope__mode=QUALITY_REPORT_AUDIT_MODE,
@@ -520,6 +560,9 @@ def _latest_jobs_by_current_revision(
         scope__source_revision__in=[
             source_revision for _payload, source_revision in snapshots.values()
         ],
+    ).only(
+        "id", "status", "scope", "result_payload", "model_name",
+        "prompt_version", "created_at", "completed_at", "error_message",
     ).order_by("-id")
     current: dict[int, AiJob] = {}
     for job in jobs:
@@ -549,13 +592,12 @@ def _job_queue_status(job: AiJob | None) -> str:
     return "needs_review" if result.get("review_required") else "matched"
 
 
-def _exact_part_consensus(
+def _accumulate_exact_part_consensus(
     current_jobs: dict[int, AiJob],
-) -> dict[str, dict[str, Any]]:
-    counts_by_part: dict[str, Counter[str]] = defaultdict(Counter)
-    report_ids_by_part: dict[str, set[int]] = defaultdict(set)
-    reviewed_counts_by_part: Counter[str] = Counter()
-    for report_id, job in current_jobs.items():
+    counts_by_part: dict[str, Counter[str]],
+    latest_job_ids_by_part: dict[str, dict[str, int]],
+) -> None:
+    for job in current_jobs.values():
         if job.status != AiJob.STATUS_COMPLETED:
             continue
         result = job.result_payload if isinstance(job.result_payload, dict) else {}
@@ -570,19 +612,32 @@ def _exact_part_consensus(
         reviewed_color = str(review.get("product_color_key") or "")
         if reviewed_color in {"", "other", "undetermined"}:
             continue
-        color_key = reviewed_color
-        reviewed_counts_by_part[part_no] += 1
-        counts_by_part[part_no][color_key] += 1
-        report_ids_by_part[part_no].add(report_id)
+        counts_by_part[part_no][reviewed_color] += 1
+        latest_for_part = latest_job_ids_by_part.setdefault(part_no, {})
+        latest_for_part[reviewed_color] = max(
+            latest_for_part.get(reviewed_color, 0), job.pk or 0
+        )
+
+
+def _consensus_from_counts(
+    counts_by_part: dict[str, Counter[str]],
+    latest_job_ids_by_part: dict[str, dict[str, int]],
+) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for part_no, counts in counts_by_part.items():
         total = sum(counts.values())
-        top_key, top_count = counts.most_common(1)[0]
+        top_key = max(
+            counts,
+            key=lambda color: (
+                counts[color], latest_job_ids_by_part.get(part_no, {}).get(color, 0)
+            ),
+        )
+        top_count = counts[top_key]
         result[part_no] = {
             "exact_part_no": part_no,
-            "report_count": len(report_ids_by_part[part_no]),
+            "report_count": total,
             "assessable_photo_report_count": total,
-            "reviewed_report_count": reviewed_counts_by_part[part_no],
+            "reviewed_report_count": total,
             "qwen_high_confidence_report_count": 0,
             "dominant_color_key": top_key,
             "dominant_color_label": deepcopy(QUALITY_BODY_COLOR_LABELS[top_key]),
@@ -592,6 +647,15 @@ def _exact_part_consensus(
             "confidence_basis": "human_reviewed_only",
         }
     return result
+
+
+def _exact_part_consensus(
+    current_jobs: dict[int, AiJob],
+) -> dict[str, dict[str, Any]]:
+    counts_by_part: dict[str, Counter[str]] = defaultdict(Counter)
+    latest_job_ids_by_part: dict[str, dict[str, int]] = {}
+    _accumulate_exact_part_consensus(current_jobs, counts_by_part, latest_job_ids_by_part)
+    return _consensus_from_counts(counts_by_part, latest_job_ids_by_part)
 
 
 def _reviewed_classifications(category_keys: list[str]) -> list[dict[str, Any]]:
@@ -712,10 +776,11 @@ def quality_report_audit_queue(
     queryset = QualityReport.objects.order_by("-report_dt", "-id")
     if report_id is not None:
         queryset = queryset.filter(pk=report_id)
-    reports = list(queryset)
-    specs_by_part = _part_spec_lookup(reports)
-    snapshots, current_jobs = _latest_jobs_by_current_revision(reports, specs_by_part)
-    consensus = _exact_part_consensus(current_jobs)
+    queryset = queryset.only(
+        "id", "report_dt", "updated_at", "section", "model", "part_no",
+        "phenomenon", "disposition", "action_result", "image1", "image2",
+        "image3", "image4", "image5",
+    )
     search_value = str(search or "").strip().casefold()
 
     def matches_search(row: dict[str, Any]) -> bool:
@@ -796,59 +861,81 @@ def quality_report_audit_queue(
         values.extend([reviewed_color, *reviewed_color_label.values()])
         return search_value in " ".join(str(value or "") for value in values).casefold()
 
-    stats = Counter()
+    stats: Counter[str] = Counter()
     rows: list[dict[str, Any]] = []
-    for report in reports:
-        input_payload, source_revision = snapshots[report.pk]
-        job = current_jobs.get(report.pk)
-        queue_status = _job_queue_status(job)
-        stats[queue_status] += 1
-        stats["total"] += 1
-        if input_payload["report"]["image_refs"]:
-            stats["with_images"] += 1
-        if status_filter == "attention" and queue_status in {"matched", "reviewed"}:
-            continue
-        if status_filter not in {"", "all", "attention"} and queue_status != status_filter:
-            continue
-        result = (
-            deepcopy(job.result_payload)
-            if job is not None and isinstance(job.result_payload, dict)
-            else None
-        )
-        row = {
-            "report": input_payload["report"],
-            "source_revision": source_revision,
-            "deterministic_classification": input_payload["deterministic_classification"],
-            "taxonomy_candidates": [
-                {
-                    "key": candidate.get("key"),
-                    "parent_key": candidate.get("parent_key"),
-                    "label": deepcopy(candidate.get("label") or {}),
-                }
-                for candidate in input_payload["taxonomy_candidates"]
-                if isinstance(candidate, dict)
-            ],
-            "part_spec": input_payload["part_spec"],
-            "queue_status": queue_status,
-            "job": ({
-                "id": job.pk,
-                "status": job.status,
-                "model_name": job.model_name,
-                "prompt_version": job.prompt_version,
-                "created_at": job.created_at.isoformat(),
-                "completed_at": job.completed_at.isoformat() if job.completed_at else None,
-                "error_message": job.error_message,
-            } if job is not None else None),
-            "result": result,
-            "exact_part_consensus": consensus.get(
-                normalize_part_no(input_payload["report"]["part_no"])
-            ),
-        }
-        if matches_search(row):
-            rows.append(row)
-    total_filtered = len(rows)
+    total_filtered = 0
     start = (page - 1) * page_size
     end = start + page_size
+    counts_by_part: dict[str, Counter[str]] = defaultdict(Counter)
+    latest_job_ids_by_part: dict[str, dict[str, int]] = {}
+    spec_cache: dict[str, list[PartSpec]] = {}
+    search_candidates = taxonomy_candidates() if search_value else []
+    public_candidates: list[dict[str, Any]] | None = None
+    stream = queryset.iterator(chunk_size=QUALITY_REPORT_AUDIT_QUEUE_BATCH_SIZE)
+    while reports := list(islice(stream, QUALITY_REPORT_AUDIT_QUEUE_BATCH_SIZE)):
+        specs_by_part = _cached_part_spec_lookup(reports, spec_cache)
+        snapshots, current_jobs = _latest_jobs_by_current_revision(reports, specs_by_part)
+        _accumulate_exact_part_consensus(current_jobs, counts_by_part, latest_job_ids_by_part)
+        for report in reports:
+            input_payload, source_revision = snapshots[report.pk]
+            job = current_jobs.get(report.pk)
+            queue_status = _job_queue_status(job)
+            stats[queue_status] += 1
+            stats["total"] += 1
+            if input_payload["report"]["image_refs"]:
+                stats["with_images"] += 1
+            if status_filter == "attention" and queue_status in {"matched", "reviewed"}:
+                continue
+            if status_filter not in {"", "all", "attention"} and queue_status != status_filter:
+                continue
+            result = job.result_payload if job is not None and isinstance(job.result_payload, dict) else None
+            if search_value:
+                search_row = {
+                    "report": input_payload["report"],
+                    "part_spec": input_payload["part_spec"],
+                    "queue_status": queue_status,
+                    "deterministic_classification": _canonical_problem_types(report.phenomenon),
+                    "taxonomy_candidates": search_candidates,
+                    "result": result,
+                }
+                if not matches_search(search_row):
+                    continue
+            if start <= total_filtered < end:
+                if public_candidates is None:
+                    candidates = search_candidates or taxonomy_candidates()
+                    public_candidates = [
+                        {
+                            "key": candidate.get("key"),
+                            "parent_key": candidate.get("parent_key"),
+                            "label": deepcopy(candidate.get("label") or {}),
+                        }
+                        for candidate in candidates
+                        if isinstance(candidate, dict)
+                    ]
+                rows.append({
+                    "report": input_payload["report"],
+                    "source_revision": source_revision,
+                    "deterministic_classification": _canonical_problem_types(report.phenomenon),
+                    "taxonomy_candidates": public_candidates,
+                    "part_spec": input_payload["part_spec"],
+                    "queue_status": queue_status,
+                    "job": ({
+                        "id": job.pk,
+                        "status": job.status,
+                        "model_name": job.model_name,
+                        "prompt_version": job.prompt_version,
+                        "created_at": job.created_at.isoformat(),
+                        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+                        "error_message": job.error_message,
+                    } if job is not None else None),
+                    "result": deepcopy(result),
+                })
+            total_filtered += 1
+    consensus = _consensus_from_counts(counts_by_part, latest_job_ids_by_part)
+    for row in rows:
+        row["exact_part_consensus"] = consensus.get(
+            normalize_part_no(row["report"]["part_no"])
+        )
     return {
         "count": total_filtered,
         "page": page,
@@ -856,7 +943,7 @@ def quality_report_audit_queue(
         "next_page": page + 1 if end < total_filtered else None,
         "previous_page": page - 1 if page > 1 else None,
         "stats": dict(stats),
-        "results": rows[start:end],
+        "results": rows,
         "taxonomy_version": INJECTION_TERMINOLOGY_VERSION,
         "color_match_policy": "normalized_full_part_no_only",
     }

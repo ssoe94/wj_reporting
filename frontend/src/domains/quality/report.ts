@@ -101,16 +101,27 @@ export interface QualityReportTrendPoint { date: string; value: number | null; a
 export function getReportTrendSeries(data: Pick<QualityAnalysis, 'trend'> & { report?: QualityReport }, metric: 'reports' | 'quantity'): QualityReportTrendPoint[] {
   const days = new Map(data.report?.operations.days.map(day => [day.date, day]) ?? []);
   const ready = data.report?.operations.status === 'ready';
-  const shown = data.trend.filter(row => days.get(row.date)?.displayed ?? true);
+  // Without the MES calendar, a blank date has unknown operating and entry
+  // status. Only dates with a stored report can safely appear in the preview.
+  const shown = data.trend.filter(row => data.report ? days.get(row.date)?.displayed ?? true : row.report_count > 0);
   return shown.map((row, index) => {
     const window = shown.slice(Math.max(0, index - 6), index + 1).map(item => metric === 'reports' ? item.report_count : item.reported_defect_qty);
-    const known = window.length === 7 && window.every(value => value !== null);
+    const known = Boolean(data.report) && window.length === 7 && window.every(value => value !== null);
     const day = days.get(row.date);
     return {
       date: row.date, value: metric === 'reports' ? row.report_count : row.reported_defect_qty,
       average: known ? (window as number[]).reduce((sum, value) => sum + value, 0) / 7 : null,
       shot_count: ready && day ? day.shot_count : null, running_machine_count: ready && day ? day.running_machine_count : null,
     };
+  });
+}
+
+/** The injection comparison chart omits setup and plan-only days without injection reports. */
+export function getProductionIntensitySeries(report: QualityReport, series: QualityReportTrendPoint[]) {
+  const days = new Map(report.operations.days.map(day => [day.date, day]));
+  return series.filter(point => {
+    const day = days.get(point.date);
+    return day?.displayed && (day.shot_count >= report.operations.min_operating_shots || day.injection_report_count > 0);
   });
 }
 
@@ -186,6 +197,7 @@ export function createQualityReportCsv(data: QualityAnalysis & { report?: Qualit
   const rows: Array<Array<string | number | null>> = [
     [ko ? '불량 분석 보고서' : '不良分析报告', `${data.filters.start_date} ~ ${data.filters.end_date}`, data.filters.section || (ko ? '전체 부문' : '全部部门'), data.filters.machine_number ?? (ko ? '전체 설비' : '全部设备')], [],
     [ko ? '요약' : '汇总'],
+    [ko ? '생산량 연계 지표' : '产量关联指标', report ? (ko ? '포함' : '已包含') : (ko ? '미포함' : '未包含')],
     [ko ? '신고 건수' : '报告条数', data.summary.report_count], [ko ? '기록 불량 수량' : '记录不良数量', data.summary.reported_defect_qty],
     [ko ? '조업일' : '生产日', summary?.operating_day_count ?? null], [ko ? '조업일당 신고' : '每生产日报告', summary?.reports_per_operating_day ?? null],
     [ko ? '사출 쇼트 수' : '注塑模次', summary?.shot_count ?? null], [ko ? '사출 1만 쇼트당 신고' : '注塑每万模次报告', summary?.injection_reports_per_10k_shots ?? null],
@@ -197,7 +209,7 @@ export function createQualityReportCsv(data: QualityAnalysis & { report?: Qualit
   const days = new Map(report?.operations.days.map(day => [day.date, day]) ?? []);
   for (const row of data.trend) {
     const day = days.get(row.date);
-    if (day && !day.displayed) continue;
+    if (day ? !day.displayed : !report && row.report_count === 0) continue;
     rows.push([row.date, row.report_count, row.reported_defect_qty, day?.planned_quantity ?? null, day?.shot_count ?? null, day?.running_machine_count ?? null]);
   }
   rows.push([], [ko ? '불량 유형' : '不良类型', ko ? '신고' : '报告', ko ? '비중 %' : '占比 %', ko ? '누적 %' : '累计 %', ko ? '직전 기간' : '上一期间']);

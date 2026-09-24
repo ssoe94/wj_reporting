@@ -11,4 +11,6 @@ class QualityAnalysisView(APIView):
 
     def get(self, request):
         filters = parse_analysis_filters(request.query_params)
+        if request.query_params.get("core_only") == "1":
+            return Response(build_quality_analysis(filters))
         return Response(build_quality_analysis(filters, include_production_context=True, include_report=True))

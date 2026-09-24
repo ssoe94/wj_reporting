@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -29,6 +30,7 @@ from .classification_audit import (
     enqueue_stale_quality_report_audits,
     taxonomy_candidates,
 )
+from . import classification_audit as audit_module
 from .daily_attention import build_daily_quality_attention
 from .models import QualityReport
 from .injection_terminology import INJECTION_TERMINOLOGY_VERSION
@@ -192,6 +194,131 @@ class QualityClassificationAuditApiTests(APITestCase):
         self.assertEqual(by_colour.status_code, 200, by_colour.data)
         self.assertEqual(by_defect.data["count"], 1)
         self.assertEqual(by_colour.data["count"], 1)
+
+    def test_queue_batches_keep_global_counts_page_order_and_exact_part_consensus(self):
+        reports = [
+            QualityReport.objects.create(
+                report_dt=self.report.report_dt + timedelta(minutes=index + 1),
+                section="LQC_INJ",
+                model="24G411",
+                part_no="OTHER30776399" if index == 3 else "TEST30776301",
+                phenomenon="色差",
+            )
+            for index in range(6)
+        ]
+
+        def add_job(report, status, result_payload, *, revision=None):
+            current_revision = revision or build_quality_report_audit_input(report)[1]
+            return AiJob.objects.create(
+                job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+                status=status,
+                scope={
+                    "mode": QUALITY_REPORT_AUDIT_MODE,
+                    "trigger": QUALITY_REPORT_AUDIT_TRIGGER,
+                    "report_id": report.pk,
+                    "source_revision": current_revision,
+                },
+                result_payload=result_payload,
+                input_payload={"large_unused_input": "x" * 16_384},
+            )
+
+        def reviewed(color):
+            return {
+                "available": True,
+                "review": {
+                    "status": "accepted",
+                    "exact_part_no": "TEST30776301",
+                    "product_color_key": color,
+                },
+            }
+
+        add_job(reports[0], AiJob.STATUS_COMPLETED, {
+            "available": True, "review_required": False,
+        })
+        # A newer stale job must not hide the older job for the current revision.
+        add_job(reports[0], AiJob.STATUS_FAILED, {}, revision="stale-revision")
+        add_job(reports[1], AiJob.STATUS_COMPLETED, reviewed("black"))
+        add_job(reports[2], AiJob.STATUS_FAILED, {})
+        add_job(reports[3], AiJob.STATUS_PENDING, {})
+        # The newest reviewed job belongs to the oldest report, so batch order
+        # must not decide a tied colour consensus.
+        add_job(self.report, AiJob.STATUS_COMPLETED, reviewed("white"))
+
+        loaded_jobs = []
+        loaded_reports = []
+
+        def capture_job(sender, instance, **kwargs):
+            loaded_jobs.append(instance.get_deferred_fields())
+
+        def capture_report(sender, instance, **kwargs):
+            loaded_reports.append(instance.get_deferred_fields())
+
+        post_init.connect(capture_job, sender=AiJob, weak=False)
+        post_init.connect(capture_report, sender=QualityReport, weak=False)
+        try:
+            with patch.object(audit_module, "QUALITY_REPORT_AUDIT_QUEUE_BATCH_SIZE", 3), \
+                    patch.object(audit_module, "_latest_jobs_by_current_revision", wraps=audit_module._latest_jobs_by_current_revision) as batches, \
+                    patch.object(audit_module, "_canonical_problem_types", wraps=audit_module._canonical_problem_types) as classify, \
+                    patch.object(audit_module, "taxonomy_candidates", wraps=audit_module.taxonomy_candidates) as taxonomy:
+                first = self.client.get(reverse("quality-classification-audit"), {
+                    "status": "attention", "page": 1, "page_size": 2,
+                })
+        finally:
+            post_init.disconnect(capture_job, sender=AiJob)
+            post_init.disconnect(capture_report, sender=QualityReport)
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(first.data["count"], 4)
+        self.assertEqual(first.data["stats"], {
+            "total": 7, "with_images": 1, "unprocessed": 2,
+            "pending": 1, "failed": 1, "matched": 1, "reviewed": 2,
+        })
+        self.assertEqual(
+            [row["report"]["id"] for row in first.data["results"]],
+            [reports[5].pk, reports[4].pk],
+        )
+        self.assertEqual(first.data["next_page"], 2)
+        self.assertIsNone(first.data["previous_page"])
+        self.assertEqual(
+            first.data["results"][0]["exact_part_consensus"]["color_counts"],
+            {"black": 1, "white": 1},
+        )
+        self.assertEqual(
+            first.data["results"][0]["exact_part_consensus"]["dominant_color_key"],
+            "white",
+        )
+        self.assertEqual([len(call.args[0]) for call in batches.call_args_list], [3, 3, 1])
+        self.assertEqual(classify.call_count, 2)
+        self.assertEqual(taxonomy.call_count, 1)
+        self.assertTrue(loaded_jobs)
+        self.assertTrue(all("input_payload" in deferred for deferred in loaded_jobs))
+        self.assertTrue(loaded_reports)
+        self.assertTrue(all("excel_source" in deferred for deferred in loaded_reports))
+
+        second = self.client.get(reverse("quality-classification-audit"), {
+            "status": "attention", "page": 2, "page_size": 2,
+        })
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertEqual(second.data["count"], 4)
+        self.assertEqual(
+            [row["report"]["id"] for row in second.data["results"]],
+            [reports[3].pk, reports[2].pk],
+        )
+        self.assertEqual(second.data["previous_page"], 1)
+        self.assertIsNone(second.data["next_page"])
+
+        searched = self.client.get(reverse("quality-classification-audit"), {
+            "status": "attention", "search": "TEST30776301", "page_size": 2,
+        })
+        self.assertEqual(searched.status_code, 200, searched.data)
+        self.assertEqual(searched.data["count"], 3)
+        self.assertEqual(searched.data["stats"], first.data["stats"])
+
+        all_reports = self.client.get(reverse("quality-classification-audit"), {
+            "status": "all", "page_size": 2,
+        })
+        self.assertEqual(all_reports.status_code, 200, all_reports.data)
+        self.assertEqual(all_reports.data["count"], 7)
 
     def test_category_only_review_keeps_unresolved_colour_in_attention_queue(self):
         job = self._enqueue_and_complete()

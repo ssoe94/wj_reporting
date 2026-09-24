@@ -41,7 +41,7 @@ export function QualityProductionIntensity({ report, series, lang, tx }: Copy & 
   const unlinked = machines.filter(row => row.report_count === 0 && row.shot_count > 0);
   const shotName = tx('사출 쇼트 수', '注塑模次'); const machineCountName = tx('가동 설비 수', '运行设备数');
   return <section className="qa-panel">
-    <div className="qa-section-heading"><div><h2>{tx('생산량 대비 사출 신고', '注塑报告与产量对比')}</h2><p>{tx('MES 형합(쇼트) 수 기준 · 많이 생산한 날과 설비를 같은 잣대로 비교', '以 MES 模次为基准 · 用同一尺度比较产量不同的日期与设备')}</p></div></div>
+    <div className="qa-section-heading"><div><h2>{tx('생산량 대비 사출 신고', '注塑报告与产量对比')}</h2><p>{tx(`MES 형합(쇼트) 수 기준 · ${minimum}쇼트 미만이며 사출 신고가 없는 날은 그래프에서 제외`, `以 MES 模次为基准 · 图表排除少于 ${minimum} 模次且没有注塑报告的日期`)}</p></div></div>
     <div className="qa-shift-metrics">
       <article><span>{tx('사출 1만 쇼트당 신고', '注塑每万模次报告')}</span><strong>{number(summary.injection_reports_per_10k_shots, lang, 2)}<small>{tx('건', '条')}</small></strong><p>{number(summary.injection_report_count, lang)}{tx('건', '条')} ÷ {number(summary.shot_count / 10000, lang, 1)}{tx('만 쇼트', '万模次')}</p></article>
       <article><span>{tx('기간 사출 쇼트 수', '期间注塑模次')}</span><strong>{number(summary.shot_count, lang)}<small>{tx('쇼트', '模次')}</small></strong><p>{tx('조업일 평균', '生产日平均')} {number(summary.operating_day_count ? summary.shot_count / summary.operating_day_count : null, lang)}</p></article>
