@@ -302,3 +302,25 @@ class QualityAnalysisApiTests(TestCase):
         self.assertEqual(client.get(endpoint).status_code, 200)
         self.assertEqual(QualityReport.objects.count(), 0)
         self.assertEqual(client.post(endpoint, {}).status_code, 405)
+
+    def test_core_only_keeps_scoped_analysis_without_loading_report_sources(self):
+        self.report(section="LQC_INJ", defect_qty=0)
+        self.report(section="OQC", defect_qty=10)
+        user = get_user_model().objects.create_user(username="synthetic-core-reader")
+        UserProfile.objects.filter(user=user).update(can_view_quality=True)
+        client = APIClient()
+        client.force_authenticate(get_user_model().objects.get(pk=user.pk))
+        endpoint = "/api/quality/analysis/?start_date=2026-09-04&end_date=2026-09-04&section=LQC_INJ&core_only=1"
+        with patch("quality.production_context.build_production_context", side_effect=AssertionError("production context loaded")), \
+             patch("quality.report_insights.build_quality_report", side_effect=AssertionError("report loaded")):
+            response = client.get(endpoint)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["summary"]["report_count"], 1)
+        self.assertEqual(response.data["summary"]["reported_defect_qty"], 0)
+        self.assertEqual(response.data["filters"]["section"], "LQC_INJ")
+        self.assertNotIn("production_context", response.data)
+        self.assertNotIn("report", response.data)
+        self.assertEqual(client.get(endpoint.replace("section=LQC_INJ", "section=invalid")).status_code, 400)
+        UserProfile.objects.filter(user=user).update(can_view_quality=False)
+        client.force_authenticate(get_user_model().objects.get(pk=user.pk))
+        self.assertEqual(client.get(endpoint).status_code, 403)

@@ -20,7 +20,7 @@ The superuser-only `/admin/development-tasks` page is the operational checklist 
 
 - Use an isolated worktree on an agent-prefixed branch (`codex/<topic>-<YYYYMMDD>` or `claude/<topic>-<YYYYMMDD>`) for substantial changes. Inspect `git status --short` first and preserve unrelated user changes. Keep `main` available for human review.
 - Work on the modules required by the current request. The P1 AI module list below is guidance for AI changes, not a global ban on quality, administration, UX or other authorized development.
-- Do not commit, push, create PRs, merge or deploy unless the user requests it.
+- For a user-requested live fix or release, review and check the change, then commit, push, open and merge a PR, and deploy through CI without repeated approval. Verify the deployed commit and affected behavior. Otherwise keep work local.
 - Do not touch production secrets, `.env` files, credentials or deployment settings. Read-only MES integration must use existing authorized interfaces; do not invent credentials or connect a preview to production data.
 - User-authorized persistent features may include narrowly scoped additive models and migrations. Review migration operations and test in an isolated local database. Do not rewrite applied migrations, drop/rename existing data or perform production migrations without explicit authorization.
 - Separate implementing a migration from applying it to the live service. If a remaining action needs production access or a destructive schema change, first finish the reviewable local implementation and explain the exact remaining action.

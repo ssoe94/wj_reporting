@@ -2,8 +2,10 @@ import { http } from '@/shared/api/http';
 import { parseQualityAnalysis, qualityScopeParams } from './model';
 import type { QualityScope } from './model';
 
-export async function getQualityAnalysis(scope: QualityScope) {
-  const response = await http.get<unknown>(`/quality/analysis/?${qualityScopeParams(scope)}`);
+export async function getQualityAnalysis(scope: QualityScope, coreOnly = false) {
+  const params = qualityScopeParams(scope);
+  if (coreOnly) params.set('core_only', '1');
+  const response = await http.get<unknown>(`/quality/analysis/?${params}`);
   return parseQualityAnalysis(response.data, scope);
 }
 export interface QualitySourceReport {

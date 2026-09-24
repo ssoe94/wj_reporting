@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildQualityHighlights, createQualityReportCsv, getReportTrendSeries, parseQualityReport, percentChange } from '../src/domains/quality/report.ts';
+import { buildQualityHighlights, createQualityReportCsv, getProductionIntensitySeries, getReportTrendSeries, parseQualityReport, percentChange } from '../src/domains/quality/report.ts';
 import type { QualityReport, QualityReportDay, QualityReportTotals } from '../src/domains/quality/report.ts';
 import type { QualityAnalysis } from '../src/domains/quality/model.ts';
 
@@ -86,8 +86,27 @@ test('an unknown quantity inside the window withholds the quantity average', () 
   assert.equal(series[6].average, null);
 });
 
-test('old servers without the extension keep every calendar date', () => {
-  assert.equal(getReportTrendSeries(analysis(null), 'reports').length, counts.length);
+test('the injection comparison chart omits small-shot days without injection reports', () => {
+  const extension = report();
+  Object.assign(extension.operations.days[1], { shot_count: 20, operating: true, displayed: true, report_count: 0, injection_report_count: 0 });
+  Object.assign(extension.operations.days[3], { shot_count: 20, operating: false, displayed: true, report_count: 1, injection_report_count: 1 });
+  Object.assign(extension.operations.days[4], { shot_count: 0, operating: true, displayed: true, report_count: 0, injection_report_count: 0 });
+  const series = getReportTrendSeries(analysis(extension), 'reports');
+  const shown = getProductionIntensitySeries(extension, series).map(point => point.date);
+  assert.ok(!shown.includes(date(1)));
+  assert.ok(!shown.includes(date(4)));
+  assert.ok(shown.includes(date(3)));
+  assert.ok(shown.includes(date(2)));
+});
+
+test('the early report preview shows only recorded dates and withholds operating-day averages', () => {
+  const series = getReportTrendSeries(analysis(null), 'reports');
+  assert.deepEqual(series.map(row => row.date), counts.map((count, index) => count > 0 ? date(index) : null).filter(Boolean));
+  assert.ok(series.every(row => row.average === null && row.shot_count === null));
+  const csv = createQualityReportCsv(analysis(null), 'ko');
+  assert.ok(csv.includes('"생산량 연계 지표","미포함"'));
+  assert.ok(!csv.includes(`"${date(4)}","0"`));
+  assert.ok(csv.includes(`"${date(9)}","5"`));
   assert.deepEqual(buildQualityHighlights(analysis(null), 'ko').length, 2);
 });
 

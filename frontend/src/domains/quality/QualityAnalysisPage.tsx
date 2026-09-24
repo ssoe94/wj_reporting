@@ -10,7 +10,7 @@ import { getShanghaiDateString } from '@/shared/utils/date';
 import { getQualityAnalysis, getQualitySourceReport } from './api';
 import { defaultQualityScope, QUALITY_SECTIONS, qualityLabel, qualityScopeParams, resolveQualityScope, SECTION_LABELS, validateQualityScope } from './model';
 import type { QualityAnalysis, QualityConcentration, QualityLanguage, QualityScope, QualityTypeEvidence } from './model';
-import { buildQualityHighlights, createQualityReportCsv, getReportTrendSeries, percentChange } from './report';
+import { buildQualityHighlights, createQualityReportCsv, getProductionIntensitySeries, getReportTrendSeries, percentChange } from './report';
 import { QualityProductionConcentrations, QualityProductionIntensity } from './QualityProductionInsights';
 import './quality-analysis.css';
 
@@ -56,8 +56,9 @@ function SectionShare({ data, lang, tx, onSources }: Copy & { data: QualityConce
 function Trend({ data, lang, tx }: Copy & { data: QualityAnalysis }) {
   const [metric, setMetric] = useState<'reports' | 'quantity'>('reports');
   const series = getReportTrendSeries(data, metric);
+  const preview = !data.report;
   const pending = data.report?.operations.days.filter(day => day.pending).length ?? 0;
-  const hidden = data.trend.length - series.length - pending;
+  const hidden = preview ? 0 : data.trend.length - series.length - pending;
   const unit = metric === 'reports' ? tx('건', '条') : tx('개', '个');
   const dailyName = metric === 'reports' ? tx('일별 신고', '每日报告') : tx('일별 기록 불량수', '每日记录不良数');
   const averageName = tx('최근 7조업일 평균', '最近7个生产日均值');
@@ -65,13 +66,13 @@ function Trend({ data, lang, tx }: Copy & { data: QualityAnalysis }) {
   const showShots = weekly.some(week => week.injection_reports_per_10k_shots !== null);
   return <section className="qa-panel">
     <div className="qa-section-heading">
-      <div><h2>{tx('기간 추세', '期间趋势')}</h2><p>{tx(`${series.length}일 표시`, `显示 ${series.length} 天`)}{hidden > 0 ? tx(` · 작업이 없던 ${hidden}일 제외`, ` · 已排除无作业的 ${hidden} 天`) : ''}{pending > 0 && data.report?.operations.reported_through ? tx(` · 신고 입력은 ${data.report.operations.reported_through.slice(5)}까지`, ` · 报告已录入至 ${data.report.operations.reported_through.slice(5)}`) : ''} · {tx('단위', '单位')} {unit}</p></div>
+      <div><h2>{tx('기간 추세', '期间趋势')}</h2><p>{preview ? tx(`신고가 기록된 ${series.length}일 표시 · 조업일 자료 미표시`, `显示有报告的 ${series.length} 天 · 暂不显示生产日数据`) : tx(`${series.length}일 표시`, `显示 ${series.length} 天`)}{hidden > 0 ? tx(` · 작업이 없던 ${hidden}일 제외`, ` · 已排除无作业的 ${hidden} 天`) : ''}{pending > 0 && data.report?.operations.reported_through ? tx(` · 신고 입력은 ${data.report.operations.reported_through.slice(5)}까지`, ` · 报告已录入至 ${data.report.operations.reported_through.slice(5)}`) : ''} · {tx('단위', '单位')} {unit}</p></div>
       <div className="qa-segments" aria-label={tx('추세 지표', '趋势指标')}>
         <button type="button" aria-pressed={metric === 'reports'} onClick={() => setMetric('reports')}>{tx('건수', '条数')}</button>
         <button type="button" aria-pressed={metric === 'quantity'} onClick={() => setMetric('quantity')}>{tx('수량', '数量')}</button>
       </div>
     </div>
-    {series.length > 0 ? <div className="qa-chart" role="img" aria-label={tx(`조업일별 ${dailyName}와 ${averageName}`, `各生产日${dailyName}与${averageName}`)}>
+    {series.length > 0 ? <div className="qa-chart" role="img" aria-label={preview ? tx(`신고가 기록된 날의 ${dailyName}`, `有报告日期的${dailyName}`) : tx(`조업일별 ${dailyName}와 ${averageName}`, `各生产日${dailyName}与${averageName}`)}>
       <ResponsiveContainer width="100%" height={320}>
         <ComposedChart key={data.filters.start_date + data.filters.end_date + metric} data={series} margin={{ top: 12, right: 20, left: 0, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7edf4" />
@@ -80,11 +81,11 @@ function Trend({ data, lang, tx }: Copy & { data: QualityAnalysis }) {
           <Tooltip labelFormatter={label => String(label)} formatter={(value: number, name: string) => [quantity(value, lang, name === averageName ? 1 : 0) + ' ' + unit, name]} />
           <Legend iconSize={12} wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
           <Bar dataKey="value" name={dailyName} fill="#8fb0e6" maxBarSize={28} radius={[3, 3, 0, 0]} isAnimationActive={false} />
-          <Line type="monotone" dataKey="average" name={averageName} stroke="#b76a20" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} connectNulls={false} isAnimationActive={false} />
+          {!preview && <Line type="monotone" dataKey="average" name={averageName} stroke="#b76a20" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} connectNulls={false} isAnimationActive={false} />}
           {series.length > 45 && <Brush dataKey="date" height={24} travellerWidth={10} stroke="#a7bad2" fill="#f7f9fc" tickFormatter={(value: string) => value.slice(5)} />}
         </ComposedChart>
       </ResponsiveContainer>
-    </div> : <p className="qa-empty">{tx('이 기간에는 조업일과 신고가 없습니다.', '此期间没有生产日及报告。')}</p>}
+    </div> : <p className="qa-empty">{preview ? tx('이 기간에 기록된 신고가 없습니다.', '此期间没有已记录的报告。') : tx('이 기간에는 조업일과 신고가 없습니다.', '此期间没有生产日及报告。')}</p>}
     {weekly.length > 0 && <div className="qa-table-wrap qa-week-table"><table className="qa-table">
       <thead><tr><th>{tx('주간', '周')}</th><th>{tx('조업일', '生产日')}</th><th>{tx('신고', '报告')}</th><th>{tx('조업일당 신고', '每生产日报告')}</th>{showShots && <th>{tx('사출 1만 쇼트당', '注塑每万模次')}</th>}<th>{tx('최다 유형', '最多类型')}</th></tr></thead>
       <tbody>{weekly.map(week => <tr key={week.week_start}><th scope="row">{week.week_start.slice(5)} ~ {week.week_end.slice(5)}</th><td>{quantity(week.operating_day_count, lang)}</td><td>{quantity(week.report_count, lang)}</td><td><strong>{quantity(week.reports_per_operating_day, lang, 1, true)}</strong></td>{showShots && <td>{quantity(week.injection_reports_per_10k_shots, lang, 2, true)}</td>}<td>{week.top_type ? `${qualityLabel(week.top_type.label, lang)} · ${week.top_type.report_count}${tx('건', '条')}` : '—'}</td></tr>)}</tbody>
@@ -147,8 +148,14 @@ export default function QualityAnalysisPage() {
   const [filterError, setFilterError] = useState(false);
   const [source, setSource] = useState<{ ids: number[]; title: string } | null>(null);
   useEffect(() => { setDraft({ startDate: scope.startDate, endDate: scope.endDate, section: scope.section, machineNumber: scope.machineNumber }); setFilterError(false); setSource(null); }, [scope.startDate, scope.endDate, scope.section, scope.machineNumber]);
-  const query = useQuery({ queryKey: ['quality-analysis', scope.startDate, scope.endDate, scope.section, scope.machineNumber], queryFn: () => getQualityAnalysis(scope), enabled: !urlError, staleTime: 60_000 });
-  const data = !urlError && query.isSuccess ? query.data : undefined;
+  const scopeKey = [scope.startDate, scope.endDate, scope.section, scope.machineNumber];
+  const coreQuery = useQuery({ queryKey: ['quality-analysis-core', ...scopeKey], queryFn: () => getQualityAnalysis(scope, true), enabled: !urlError, staleTime: 60_000, refetchOnWindowFocus: false });
+  const detailQuery = useQuery({ queryKey: ['quality-analysis-detail', ...scopeKey, coreQuery.dataUpdatedAt], queryFn: () => getQualityAnalysis(scope), enabled: !urlError && coreQuery.isSuccess && !coreQuery.isFetching, staleTime: 60_000, refetchOnWindowFocus: false, retry: 1 });
+  const detailCurrent = detailQuery.isSuccess && detailQuery.dataUpdatedAt >= coreQuery.dataUpdatedAt;
+  const data = !urlError ? detailCurrent ? detailQuery.data : coreQuery.isSuccess ? coreQuery.data : undefined : undefined;
+  const detailLoading = Boolean(data && !detailCurrent && !detailQuery.isError);
+  const detailUnavailable = Boolean(data && (detailQuery.isError || (detailCurrent && !detailQuery.data.report)));
+  const refresh = () => void coreQuery.refetch();
   const scopeChanged = draft.startDate !== scope.startDate || draft.endDate !== scope.endDate || draft.section !== scope.section || draft.machineNumber !== scope.machineNumber;
   const applyFilters = (event: React.FormEvent) => {
     event.preventDefault();
@@ -168,11 +175,14 @@ export default function QualityAnalysisPage() {
   const topType = data?.type_pareto[0];
   const highlights = data ? buildQualityHighlights(data, lang) : [];
   return <main className="quality-analysis">
-    <header className="qa-header"><div className="qa-title"><span><BarChart3 size={21} /></span><div><h1>{tx('불량 분석 보고서', '不良分析报告')}</h1><p>{tx('품질 신고의 추세·유형·품목과 생산량 대비 현황', '品质报告的趋势、类型、品项及与产量的对比')}</p></div></div><div className="qa-header-actions"><PermissionLink className="qa-button qa-button--quiet" to="/quality#history"><FileText size={15} />{tx('전체 보고 이력', '全部报告履历')}</PermissionLink><button type="button" className="qa-button qa-button--quiet" disabled={query.isFetching || urlError} onClick={() => void query.refetch()}><RefreshCw size={15} />{tx('새로고침', '刷新')}</button><button type="button" className="qa-button" disabled={!data} onClick={exportCsv}><Download size={15} />{tx('보고서 CSV', '报告 CSV')}</button></div></header>
+    <header className="qa-header"><div className="qa-title"><span><BarChart3 size={21} /></span><div><h1>{tx('불량 분석 보고서', '不良分析报告')}</h1><p>{tx('품질 신고의 추세·유형·품목과 생산량 대비 현황', '品质报告的趋势、类型、品项及与产量的对比')}</p></div></div><div className="qa-header-actions"><PermissionLink className="qa-button qa-button--quiet" to="/quality#history"><FileText size={15} />{tx('전체 보고 이력', '全部报告履历')}</PermissionLink><button type="button" className="qa-button qa-button--quiet" disabled={coreQuery.isFetching || detailQuery.isFetching || urlError} onClick={refresh}><RefreshCw size={15} />{tx('새로고침', '刷新')}</button><button type="button" className="qa-button" disabled={!data || coreQuery.isError} onClick={exportCsv}><Download size={15} />{data?.report ? tx('보고서 CSV', '报告 CSV') : tx('신고 분석 CSV', '报告分析 CSV')}</button></div></header>
     <form className="qa-filters" onSubmit={applyFilters}><label>{tx('시작일', '开始日期')}<input type="date" value={draft.startDate} max={today} required onChange={event => setDraft(prev => ({ ...prev, startDate: event.target.value }))} /></label><label>{tx('종료일', '结束日期')}<input type="date" value={draft.endDate} max={today} required onChange={event => setDraft(prev => ({ ...prev, endDate: event.target.value }))} /></label><label>{tx('검사 부문 / 공정', '检验部门 / 工序')}<select value={draft.section} onChange={event => setDraft(prev => ({ ...prev, section: event.target.value }))}><option value="">{tx('전체', '全部')}</option>{QUALITY_SECTIONS.map(section => <option key={section} value={section}>{SECTION_LABELS[section][lang]}</option>)}</select></label><label>{tx('설비', '设备')}<select value={draft.machineNumber} onChange={event => setDraft(prev => ({ ...prev, machineNumber: event.target.value }))}><option value="">{tx('전체', '全部')}</option>{Array.from({ length: 17 }, (_, index) => String(index + 1)).map(number => <option key={number} value={number}>IMM{number.padStart(2, '0')}</option>)}<option value="unknown">{tx('설비 미기재', '设备未填写')}</option></select></label><button type="submit" className="qa-button">{tx('조회 적용', '应用查询')}</button><button type="button" className="qa-button qa-button--quiet" onClick={() => { const next = defaultQualityScope(today); setDraft(next); setSearchParams(qualityScopeParams(next)); setSource(null); }}>{tx('최근 30일', '最近30天')}</button>{scopeChanged && <p>{tx('필터 변경 후 조회 적용을 눌러 주세요.', '修改筛选后请点击应用查询。')}</p>}</form>
     {(filterError || urlError) && <div role="alert" className="qa-notice qa-notice--warning">{tx('날짜 순서와 조회 조건을 확인하세요. 미래 날짜를 제외한 최대 366일을 선택할 수 있습니다.', '请检查日期顺序及查询条件，可选择不含未来日期的最多366天。')}</div>}
-    {!urlError && query.isPending && <div className="qa-loading" role="status"><Activity size={22} /><p>{tx('보고서를 집계하고 있습니다…', '正在汇总报告…')}</p></div>}
-    {!urlError && query.isError && <div role="alert" className="qa-notice qa-notice--warning"><AlertTriangle size={20} /><div><strong>{tx('보고서를 불러오지 못했습니다.', '未能加载报告。')}</strong><p>{tx('잠시 후 새로고침하거나 기간을 좁혀 다시 조회해 주세요.', '请稍后刷新，或缩小期间后重新查询。')}</p></div></div>}
+    {!urlError && !data && coreQuery.isPending && <div className="qa-loading" role="status"><Activity size={22} /><p>{tx('불량 신고를 집계하고 있습니다…', '正在汇总不良报告…')}</p></div>}
+    {!urlError && !data && coreQuery.isError && <div role="alert" className="qa-notice qa-notice--warning"><AlertTriangle size={20} /><div><strong>{tx('보고서를 불러오지 못했습니다.', '未能加载报告。')}</strong><p>{tx('잠시 후 새로고침하거나 기간을 좁혀 다시 조회해 주세요.', '请稍后刷新，或缩小期间后重新查询。')}</p></div></div>}
+    {data && coreQuery.isError && <div role="alert" className="qa-notice qa-notice--warning"><AlertTriangle size={18} /><span>{tx('새로고침에 실패해 이전 집계를 표시하고 있습니다. 다시 조회해 주세요.', '刷新失败，当前显示的是上次汇总结果。请重试。')}</span></div>}
+    {detailLoading && <div role="status" className="qa-notice"><Activity size={18} /><span>{tx('불량 신고 분석을 먼저 표시했습니다. 생산량 비교와 조업일 지표를 집계하고 있습니다…', '已先显示不良报告分析，正在汇总产量对比和生产日指标…')}</span></div>}
+    {detailUnavailable && <div role="alert" className="qa-notice qa-notice--warning"><AlertTriangle size={18} /><div>{tx('불량 신고 분석은 표시 중입니다. 생산량 비교와 조업일 지표를 불러오지 못했습니다.', '不良报告分析已显示，但产量对比和生产日指标未能加载。')}<button type="button" className="qa-link" disabled={detailQuery.isFetching} onClick={() => void detailQuery.refetch()}>{tx('다시 조회', '重试')}</button></div></div>}
     {data && <>
       <div className="qa-applied-scope"><strong>{scope.startDate} → {scope.endDate}</strong><span>{selectedSection} · {selectedMachine}</span><span>{tx('최근 신고 반영', '最近报告更新')} {moment(data.freshness.latest_updated_at, lang)}</span></div>
       <section className="qa-metrics" aria-label={tx('기간 요약', '期间汇总')}>
@@ -187,7 +197,7 @@ export default function QualityAnalysisPage() {
         <Types data={data} lang={lang} tx={tx} onSources={onSources} />
         {data.production_context && <QualityProductionConcentrations data={data.production_context} lang={lang} tx={tx} onSources={onSources} />}
         <Recurring data={data} lang={lang} tx={tx} onSources={onSources} />
-        {data.report && <QualityProductionIntensity report={data.report} series={getReportTrendSeries(data, 'reports')} lang={lang} tx={tx} />}
+        {data.report && <QualityProductionIntensity report={data.report} series={getProductionIntensitySeries(data.report, getReportTrendSeries(data, 'reports'))} lang={lang} tx={tx} />}
         {!scope.section && <SectionShare data={data.concentrations.sections} lang={lang} tx={tx} onSources={onSources} />}
       </>}
       <p className="qa-caption qa-report-basis">{tx(`기준: 신고는 보고일. 조업일은 MES 쇼트가 ${minimumShots}회 이상 기록된 날(08시~익일 08시)이며, 쇼트 기록이 전혀 없는 날만 사출 계획으로 대신합니다. 불량 수량은 신고서에 적힌 수량의 합계입니다.`, `口径：报告按报告日期。生产日为 MES 模次达到 ${minimumShots} 次以上的日期（08时~次日08时）；仅在完全没有模次记录时改用注塑计划判断。不良数量为报告中所填数量的合计。`)} · {tx('집계', '汇总')} {moment(data.freshness.generated_at, lang)}</p>

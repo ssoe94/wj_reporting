@@ -22,6 +22,7 @@ import {
   X,
   ZoomIn,
 } from 'lucide-react';
+import axios from 'axios';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -230,6 +231,24 @@ function queueStatusClass(status: string): string {
   return 'bg-slate-100 text-slate-600 ring-slate-200';
 }
 
+function queueLoadErrorMessage(caught: unknown, lang: string): string {
+  const zh = lang === 'zh';
+  const generic = zh ? '无法加载分类审核报告。请重试。' : '분류 검토 보고서를 불러오지 못했습니다. 다시 시도하세요.';
+  if (!axios.isAxiosError(caught)) return generic;
+
+  if (caught.code === 'ECONNABORTED' || caught.code === 'ETIMEDOUT') {
+    return zh ? '加载分类审核报告超时。请稍后重试。' : '분류 검토 보고서 응답 시간이 초과됐습니다. 잠시 후 다시 시도하세요.';
+  }
+  const status = caught.response?.status;
+  if (status === 401 || status === 403) {
+    return zh ? `无法访问分类审核报告（HTTP ${status}）。请确认登录状态和权限。` : `분류 검토 보고서에 접근할 수 없습니다(HTTP ${status}). 로그인 상태와 권한을 확인하세요.`;
+  }
+  if (status !== undefined) {
+    return zh ? `无法加载分类审核报告（HTTP ${status}）。请稍后重试。` : `분류 검토 보고서를 불러오지 못했습니다(HTTP ${status}). 잠시 후 다시 시도하세요.`;
+  }
+  return zh ? '无法连接服务器，分类审核报告未加载。请重试。' : '서버에 연결하지 못해 분류 검토 보고서를 불러오지 못했습니다. 다시 시도하세요.';
+}
+
 export default function QualityClassificationReview() {
   const { lang } = useLang();
   const { hasPermission, user } = useAuth();
@@ -251,6 +270,7 @@ export default function QualityClassificationReview() {
   const [loading, setLoading] = useState(true);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState('');
+  const [queueError, setQueueError] = useState('');
   const [notice, setNotice] = useState('');
   const [selectedCategoryKeys, setSelectedCategoryKeys] = useState<string[]>([]);
   const [selectedColorKey, setSelectedColorKey] = useState<string>('undetermined');
@@ -265,6 +285,7 @@ export default function QualityClassificationReview() {
     ? {
         title: 'AI 分类审核', subtitle: 'AI 核对报告原文与照片，服务器按完整料号关联结果。',
         start: '添加接下来100份分析', refresh: '刷新', attention: '待关注', all: '全部',
+        retry: '重新加载', loadUnavailable: '报告尚未加载。',
         search: '搜索报告', searchPlaceholder: '完整料号、机种、原文、分类或颜色',
         empty: '没有符合当前条件的报告。', select: '请选择左侧报告。',
         raw: '报告原文', dictionary: '当前词典分类', aiSuggestion: 'AI 建议',
@@ -285,6 +306,7 @@ export default function QualityClassificationReview() {
     : {
         title: 'AI 분류 검토', subtitle: 'AI가 보고 원문과 사진을 대조하고, 서버가 전체 품번으로 결과를 연결합니다.',
         start: '다음 100건 분석 추가', refresh: '새로고침', attention: '확인 필요', all: '전체',
+        retry: '다시 불러오기', loadUnavailable: '보고서를 아직 불러오지 못했습니다.',
         search: '보고서 검색', searchPlaceholder: '전체 품번·모델·원문·분류·색상 검색',
         empty: '현재 조건에 맞는 보고가 없습니다.', select: '왼쪽에서 보고서를 선택하세요.',
         raw: '보고 원문', dictionary: '현재 사전 분류', aiSuggestion: 'AI 제안',
@@ -306,6 +328,7 @@ export default function QualityClassificationReview() {
   const loadQueue = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     setError('');
+    setQueueError('');
     try {
       const params: Record<string, string | number> = {
         status: statusFilter,
@@ -318,17 +341,21 @@ export default function QualityClassificationReview() {
         params.status = 'all';
       }
       const response = await api.get<AuditQueue>('/quality/classification-audit/', { params });
+      if (!response.data || !Array.isArray(response.data.results) || !response.data.stats || typeof response.data.stats !== 'object') {
+        throw new Error('Invalid classification audit response');
+      }
       setData(response.data);
       setSelectedReportId((current) => {
         if (current && response.data.results.some((row) => row.report.id === current)) return current;
         return response.data.results[0]?.report.id ?? null;
       });
-    } catch {
-      setError(copy.failed);
+    } catch (caught) {
+      if (!quiet) setData(null);
+      setQueueError(queueLoadErrorMessage(caught, lang));
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [copy.failed, deepLinkReportId, page, searchQuery, statusFilter]);
+  }, [deepLinkReportId, lang, page, searchQuery, statusFilter]);
 
   useEffect(() => { void loadQueue(); }, [loadQueue]);
 
@@ -511,12 +538,13 @@ export default function QualityClassificationReview() {
           {['total', 'with_images', 'unprocessed', 'pending', 'needs_review', 'matched', 'reviewed'].map((key) => (
             <div key={key} className="rounded-xl border border-white bg-white/80 px-3 py-2 shadow-sm">
               <div className="text-[11px] font-semibold text-slate-500">{statusLabel(key)}</div>
-              <div className="mt-0.5 text-lg font-bold text-slate-950">{data?.stats[key] ?? 0}</div>
+              <div className="mt-0.5 text-lg font-bold text-slate-950">{data ? (data.stats[key] ?? 0) : '—'}</div>
             </div>
           ))}
         </div>
       </div>
 
+      {queueError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700"><span>{queueError}</span><button type="button" onClick={() => void loadQueue()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm font-semibold text-rose-800 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{copy.retry}</button></div>}
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</div>}
       {notice && <div role="status" aria-live="polite" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</div>}
 
@@ -531,7 +559,7 @@ export default function QualityClassificationReview() {
                 </button>
               ))}
               </div>
-              <span className="text-xs font-semibold text-slate-500">{data?.count ?? 0}</span>
+              <span className="text-xs font-semibold text-slate-500">{data?.count ?? '—'}</span>
             </div>
             <form onSubmit={submitSearch} className="flex gap-2" role="search">
               <label className="relative min-w-0 flex-1">
@@ -544,6 +572,7 @@ export default function QualityClassificationReview() {
           </div>
           <div className="max-h-[min(52dvh,520px)] overflow-y-auto p-2 xl:max-h-[720px]">
             {loading && !data ? <div className="flex justify-center p-10"><Loader2 className="h-6 w-6 animate-spin text-indigo-600" /></div> : null}
+            {!loading && !data && queueError ? <p className="p-8 text-center text-sm text-slate-500">{copy.loadUnavailable}</p> : null}
             {!loading && data?.results.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">{copy.empty}</p> : null}
             <div className="space-y-2">
               {data?.results.map((row) => {
@@ -577,7 +606,7 @@ export default function QualityClassificationReview() {
         </aside>
 
         <article ref={detailRef} tabIndex={-1} className="min-w-0 scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 sm:p-5">
-          {!selected ? <div className="flex min-h-[500px] items-center justify-center text-sm text-slate-500">{copy.select}</div> : (
+          {!selected ? <div className="flex min-h-[500px] items-center justify-center text-sm text-slate-500">{!data && queueError ? copy.loadUnavailable : copy.select}</div> : (
             <div className="space-y-5">
               <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
