@@ -3,6 +3,7 @@ import { BOARD_PART_STALE_MS, prefetchBoardParts } from "../board-part-prefetch"
 import { BoardPartSummaryModal } from "../components/BoardPartSummaryModal";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { isBoardMachineStale, summarizeBoardAvailability } from "@/domains/production/board-availability";
+import { getBoardCycleTime, getBoardTone, type BoardTone } from "@/domains/production/board-machine-status";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -64,8 +65,6 @@ type BoardTimelineSegment = {
   color?: string;
 };
 
-type BoardTone = "running" | "warning" | "stopped" | "overproducing" | "completed" | "unplanned" | "idle" | "stale";
-
 type BoardMachine = {
   machineNumber: number;
   tonnage: string;
@@ -126,27 +125,28 @@ const boardCopy = {
     timeProgress: "시간 기준",
     progressGap: "진도 차이",
     noIssue: "이상 없음",
-    running: "가동 중",
+    running: "최근 형합 관측",
     plannedRunning: "정상 가동",
     plannedEquipment: "계획 설비",
     plannedMachines: "가동 계획",
     unplannedRunning: "계획 외 가동",
     warning: "진도 확인",
-    stopped: "계획 설비 정지",
+    stopped: "금형 교체 추정",
+    signal: "형합 신호 확인",
     changeoverEstimate: "금형 교체 추정",
     newRunEstimate: "모델 전환 추정·현장 확인",
     overproducing: "초과 생산 중",
     completed: "생산 완료",
-    stoppedMachines: "정지 설비",
+    statusCheckMachines: "상태 확인 설비",
     completedMachines: "완료 설비",
-    idle: "비가동",
+    idle: "형합 미관측",
     stale: "데이터 지연",
     machines: "대",
     shots: "회",
     totalPlan: "계획",
     totalActual: "실적",
     completion: "완료율",
-    plannedStops: "계획정지",
+    statusChecks: "상태확인",
     ctWarnings: "C/T 주의",
     rateWarnings: "진도주의",
     unplanned: "계획없음",
@@ -217,27 +217,28 @@ const boardCopy = {
     timeProgress: "时间进度",
     progressGap: "进度差异",
     noIssue: "无异常",
-    running: "运行中",
+    running: "近期合模已观测",
     plannedRunning: "按计划运行",
     plannedEquipment: "计划设备",
     plannedMachines: "运行计划",
     unplannedRunning: "计划外运行",
     warning: "进度待确认",
-    stopped: "计划设备停机",
+    stopped: "推测正在换模",
+    signal: "合模信号待核实",
     changeoverEstimate: "推测正在换模",
     newRunEstimate: "推测已换型·待现场确认",
     overproducing: "超额生产中",
     completed: "生产完成",
-    stoppedMachines: "停机设备",
+    statusCheckMachines: "状态待确认设备",
     completedMachines: "完成设备",
-    idle: "未运行",
+    idle: "未观测到合模",
     stale: "数据延迟",
     machines: "台",
     shots: "模次",
     totalPlan: "计划",
     totalActual: "实绩",
     completion: "完成率",
-    plannedStops: "计划停机",
+    statusChecks: "状态待确认",
     ctWarnings: "周期注意",
     rateWarnings: "进度注意",
     unplanned: "无计划",
@@ -618,25 +619,11 @@ function getActiveProduct(row: RealtimeProgressRow | undefined, fallback: string
   };
 }
 
-function getTone(
-  row: RealtimeProgressRow | undefined,
-  elapsedRate: number,
-  isStale: boolean,
-): BoardTone {
-  if (isStale) return "stale";
-  if (!row) return "idle";
-  if (row.transition?.phase === "changeover") return "stopped";
-  if (!row.hasPlan) return row.isRunning ? "unplanned" : "idle";
-  if (row.progressRate >= 99.9) return row.isRunning ? "overproducing" : "completed";
-  if (!row.isRunning) return "stopped";
-  if (row.progressRate + 5 < elapsedRate) return "warning";
-  return "running";
-}
-
 function getStatusLabel(tone: BoardTone, copy: typeof boardCopy.ko) {
   return {
     running: copy.plannedRunning,
     warning: copy.warning,
+    signal: copy.signal,
     stopped: copy.stopped,
     overproducing: copy.overproducing,
     completed: copy.completed,
@@ -666,13 +653,14 @@ function buildBoardMachines(
     const machineNumber = index + 1;
     const row = rowsByMachine.get(machineNumber);
     const mesMachine = mesMachines.get(machineNumber);
-    const currentCycleTimeSec = row?.expectedCycleTimeSec ?? null;
+    const tone = getBoardTone(row, elapsedRate, isStale || isBoardMachineStale(mesData?.machine_sources, machineNumber, Date.now()));
+    const currentCycleTimeSec = getBoardCycleTime(row, tone);
     const activeProduct = getActiveProduct(row, noPartText, noPlanText);
     return {
       machineNumber,
       tonnage: getTonnage(mesMachine?.tonnage || row?.label || mesMachine?.display_name),
       row,
-      tone: getTone(row, elapsedRate, isStale || isBoardMachineStale(mesData?.machine_sources, machineNumber, Date.now())),
+      tone,
       currentCycleTimeSec,
       activePart: activeProduct.part,
       activePartNumbers: activeProduct.partNumbers,
@@ -1305,11 +1293,11 @@ export function InjectionBoardPage() {
   const { plannedRunningCount, unplannedRunningCount, totalRunningCount, idleMachineCount, staleMachineCount } = summarizeBoardAvailability(machines);
   const staleMachineLabels = machines.filter((machine) => machine.tone === "stale")
     .map((machine) => `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`).join(", ");
-  const stoppedCount = machines.filter((machine) => machine.tone === "stopped").length;
+  const statusCheckCount = machines.filter((machine) => machine.tone === "stopped" || machine.tone === "signal").length;
   const warningCount = machines.filter((machine) => machine.tone === "warning").length;
   const plannedMachineCount = machines.filter((machine) => machine.row?.hasPlan).length;
-  const stoppedMachineLabels = machines
-    .filter((machine) => machine.tone === "stopped")
+  const statusCheckMachineLabels = machines
+    .filter((machine) => machine.tone === "stopped" || machine.tone === "signal")
     .map((machine) => `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`)
     .join(", ");
   const unplannedMachineLabels = machines
@@ -1473,7 +1461,7 @@ export function InjectionBoardPage() {
             <span>{copy.unplannedRunning}<strong>{unplannedRunningCount}{copy.machines}</strong></span>
             <span>{copy.idle}<strong>{idleMachineCount}{copy.machines}</strong></span>
           </div>
-          <footer><span>{copy.stoppedMachines}</span><strong>{stoppedMachineLabels || copy.noIssue}</strong></footer>
+          <footer><span>{copy.statusCheckMachines}</span><strong>{statusCheckMachineLabels || copy.noIssue}</strong></footer>
         </article>
 
         <article className="injection-board-summary injection-board-summary--plan">
@@ -1501,10 +1489,10 @@ export function InjectionBoardPage() {
             <em>{copy.managementRequired}</em>
           </header>
           <div className="injection-board-summary__hero">
-            <strong>{stoppedCount + warningCount + unplannedRunningCount}{copy.machines}</strong><span>{copy.managementRequired}</span>
+            <strong>{statusCheckCount + warningCount + unplannedRunningCount}{copy.machines}</strong><span>{copy.managementRequired}</span>
           </div>
           <div className="injection-board-summary__metrics">
-            <span>{copy.plannedStops}<strong>{stoppedCount}{copy.machines}</strong></span>
+            <span>{copy.statusChecks}<strong>{statusCheckCount}{copy.machines}</strong></span>
             <span>{copy.rateWarnings}<strong>{warningCount}{copy.machines}</strong></span>
             <span>{copy.unplanned}<strong>{unplannedRunningCount}{copy.machines}</strong></span>
           </div>
