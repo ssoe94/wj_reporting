@@ -53,6 +53,19 @@ import {
 import { getOverviewBoard } from "@/domains/boards/overview/api";
 import { useStoredLanguage } from "@/shared/i18n/language";
 import { getShanghaiBusinessDateString } from "@/shared/utils/date";
+import {
+  activityEvidenceBasis,
+  assessOpenPlanGroup,
+  assessPlannedMould,
+  canCarryoverModel,
+  chooseMachineEvidence,
+  commonPrefixLength,
+  machineCardModel,
+  machineIdentityEvidenceStatus,
+  mergedActivityBasis,
+  modelCodeRelation,
+  normalizedModelCode,
+} from "@/domains/moulds/machine-plan-comparison";
 import injectionMachineGraphic from "@/assets/injection-machine-card.png";
 import styles from "./MouldManagementPage.module.css";
 
@@ -91,6 +104,8 @@ const COPY = {
     tonnage: "TON",
     currentMould: "장착 금형",
     productionModel: "생산 중 모델",
+    productionOrPlanModel: "생산/계획 모델",
+    plannedProductionModel: "생산계획 모델",
     productionModelDate: "생산 기준",
     mouldModel: "금형 모델",
     modelMatch: "일치",
@@ -100,6 +115,14 @@ const COPY = {
     modelConfirmedMatch: "현황판 판정 · 일치",
     modelConfirmedMismatch: "현황판 판정 · 불일치",
     modelPlanned: "다음 계획",
+    plannedMatch: "계획 모델 일치",
+    plannedReview: "계획 대조 필요",
+    plannedMismatch: "계획 모델 불일치",
+    plannedMouldMissing: "계획 있음 · 금형 미지정",
+    machineIdentityMismatch: "설비 정보 불일치",
+    machineIdentityMismatchHint: "생산 자료의 설비명과 MES 금형 위치의 톤수가 다릅니다. 설비 기준정보를 확인해야 합니다.",
+    machineIdentityUnknown: "설비 식별 확인 필요",
+    machineIdentityUnknownHint: "생산 자료의 원본 설비명 또는 금형 위치의 톤수를 확인할 수 없어 자동 비교를 보류합니다.",
     modelRecent: "최근 생산 실적",
     modelStale: "최근 생산 오래됨",
     modelAmbiguous: "복수 생산",
@@ -234,6 +257,8 @@ const COPY = {
     unusedSixMonths: "6개월 이상 미사용",
     unusedTwelveMonths: "12개월 이상 미사용",
     usageCheckpoint: "형합수 점검",
+    checkpointCells: "점검",
+    coordinateUnit: "칸",
     checkpointRequired: "금형부 확인 필요",
     checkpointConfirmed: "확인 완료",
     confirmCheckpoint: "점검 확인",
@@ -250,6 +275,12 @@ const COPY = {
     shortConfirmedMatch: "판정일치",
     shortConfirmedMismatch: "판정불일치",
     shortPlanned: "계획 대기",
+    shortPlannedMatch: "계획일치",
+    shortPlannedReview: "계획확인",
+    shortPlannedMismatch: "계획불일치",
+    shortPlannedMouldMissing: "금형미지정",
+    shortMachineIdentityMismatch: "설비불일치",
+    shortMachineIdentityUnknown: "설비확인",
     shortRecent: "최근 실적",
     shortStale: "데이터 지연",
     shortAmbiguous: "복수생산",
@@ -290,6 +321,8 @@ const COPY = {
     tonnage: "TON",
     currentMould: "安装模具",
     productionModel: "在产型号",
+    productionOrPlanModel: "生产/计划型号",
+    plannedProductionModel: "生产计划型号",
     productionModelDate: "生产基准",
     mouldModel: "模具型号",
     modelMatch: "一致",
@@ -299,6 +332,14 @@ const COPY = {
     modelConfirmedMatch: "看板判定 · 一致",
     modelConfirmedMismatch: "看板判定 · 不一致",
     modelPlanned: "下一计划",
+    plannedMatch: "计划型号一致",
+    plannedReview: "计划需核对",
+    plannedMismatch: "计划型号不一致",
+    plannedMouldMissing: "有计划 · 未指定模具",
+    machineIdentityMismatch: "设备信息不一致",
+    machineIdentityMismatchHint: "生产数据中的设备名与 MES 模具位置的吨位不一致，请核对设备主数据。",
+    machineIdentityUnknown: "需核对设备标识",
+    machineIdentityUnknownHint: "无法确认生产数据中的原始设备名或模具位置吨位，已暂缓自动对照。",
     modelRecent: "最近生产实绩",
     modelStale: "最近生产过旧",
     modelAmbiguous: "多项生产",
@@ -433,6 +474,8 @@ const COPY = {
     unusedSixMonths: "超过6个月未使用",
     unusedTwelveMonths: "超过12个月未使用",
     usageCheckpoint: "合模次数点检",
+    checkpointCells: "待检",
+    coordinateUnit: "格",
     checkpointRequired: "模具部门待确认",
     checkpointConfirmed: "已确认",
     confirmCheckpoint: "确认点检",
@@ -449,6 +492,12 @@ const COPY = {
     shortConfirmedMatch: "判定一致",
     shortConfirmedMismatch: "判定不一致",
     shortPlanned: "计划待机",
+    shortPlannedMatch: "计划一致",
+    shortPlannedReview: "计划待核",
+    shortPlannedMismatch: "计划不符",
+    shortPlannedMouldMissing: "模具未指定",
+    shortMachineIdentityMismatch: "设备不符",
+    shortMachineIdentityUnknown: "设备待核",
     shortRecent: "最近实绩",
     shortStale: "数据延迟",
     shortAmbiguous: "多项生产",
@@ -468,6 +517,8 @@ type ProductionEvidence = "active_estimate" | "carryover_plan" | "last_output" |
 type ProductionMode = "single" | "multi_cavity";
 type MachineProductionLink = {
   date: string;
+  sourceMachineName: string;
+  secondarySourceMachineName?: string;
   isRunning: boolean;
   model: string;
   partNo: string;
@@ -497,7 +548,6 @@ type ModelRecommendation = {
   matchLevel: "exact" | "family";
   score: number;
 };
-type ModelRelation = "exact" | "family" | "different" | "unknown";
 type ModelValidation =
   | "match"
   | "confirmed_match"
@@ -508,6 +558,12 @@ type ModelValidation =
   | "no_production"
   | "mould_missing"
   | "planned"
+  | "planned_match"
+  | "planned_review"
+  | "planned_mismatch"
+  | "planned_mould_missing"
+  | "machine_identity_conflict"
+  | "machine_identity_unknown"
   | "recent_output"
   | "stale"
   | "ambiguous"
@@ -583,7 +639,7 @@ function groupProductionParts(parts: ProductionStatusPart[]): ProductionStatusPa
   return [...groups.values()];
 }
 
-function selectProductionPart(machine: ProductionStatusMachine): ProductionPartSelection | undefined {
+function selectProductionPart(machine: ProductionStatusMachine, preferOpenPlan = false): ProductionPartSelection | undefined {
   const inProgress = machine.is_running === false
     ? []
     : machine.parts.filter(productionPartInProgress);
@@ -613,6 +669,24 @@ function selectProductionPart(machine: ProductionStatusMachine): ProductionPartS
       groupId: text(activeGroup[0].production_group_id, text(activeGroup[0].cavity_group, "")),
       candidateCount: 1,
     };
+  }
+
+  if (preferOpenPlan) {
+    const openGroups = groupProductionParts(machine.parts.filter((part) => (
+      part.planned_quantity > part.actual_quantity && part.status !== "completed"
+    )));
+    const nextOpen = openGroups[0];
+    if (nextOpen?.length) {
+      const assessment = assessOpenPlanGroup(nextOpen);
+      return {
+        part: nextOpen[0],
+        parts: nextOpen,
+        basis: assessment.unambiguous ? "planned_only" : "ambiguous",
+        mode: assessment.multiCavity ? "multi_cavity" : "single",
+        groupId: text(nextOpen[0].production_group_id, text(nextOpen[0].cavity_group, "")),
+        candidateCount: 1,
+      };
+    }
   }
 
   const completedGroups = groupProductionParts(machine.parts.filter((part) => part.actual_quantity > 0));
@@ -669,16 +743,22 @@ function productionMachineWithPlanMetadata(machine: ProductionStatusMachine, pla
   };
 }
 
-function buildMachineProductionLinks(machines: ProductionStatusMachine[], date: string, planRecords: ProductionPlanRecord[] = []) {
+function buildMachineProductionLinks(
+  machines: ProductionStatusMachine[],
+  date: string,
+  planRecords: ProductionPlanRecord[] = [],
+  preferOpenPlan = false,
+) {
   const links = new Map<number, MachineProductionLink>();
   machines.forEach((machine) => {
     const machineNumber = productionMachineNumber(machine.machine_name);
     const enrichedMachine = productionMachineWithPlanMetadata(machine, planRecords);
-    const selection = selectProductionPart(enrichedMachine);
+    const selection = selectProductionPart(enrichedMachine, preferOpenPlan);
     if (!machineNumber) return;
     if (!selection) {
       links.set(machineNumber, {
         date,
+        sourceMachineName: machine.machine_name,
         isRunning: Boolean(machine.is_running),
         model: "",
         partNo: "-",
@@ -699,8 +779,11 @@ function buildMachineProductionLinks(machines: ProductionStatusMachine[], date: 
     const partNos = [...new Set(parts.map((item) => text(item.part_no, "")).filter((value) => value && value !== "-"))];
     links.set(machineNumber, {
       date,
+      sourceMachineName: machine.machine_name,
       isRunning: Boolean(machine.is_running),
-      model: text(part.model_name, ""),
+      model: basis === "ambiguous"
+        ? [...new Set(parts.map((item) => text(item.model_name, "")).filter(Boolean))].join(" / ")
+        : text(part.model_name, ""),
       partNo: text(part.part_no),
       partNos,
       parts,
@@ -723,8 +806,10 @@ function buildFallbackMachineProductionLinks(board: MouldBoard | undefined) {
   board?.moulds.forEach((mould) => {
     const machineNumber = mould.location.machineNumber;
     if (!machineNumber || !mould.model) return;
+    const slot = board.machines.find((machine) => machine.number === machineNumber);
     links.set(machineNumber, {
       date,
+      sourceMachineName: slot?.tonnage ? `${slot.tonnage.replace(/T$/i, "")}T-${machineNumber}` : "",
       isRunning: true,
       model: machineNumber % 4 === 0 ? `${mould.model}X` : `${mould.model}-QA`,
       partNo: `QA-${String(machineNumber).padStart(2, "0")}`,
@@ -743,46 +828,6 @@ function buildFallbackMachineProductionLinks(board: MouldBoard | undefined) {
   return links;
 }
 
-function normalizedModelCode(value: string): string | null {
-  const normalized = value.normalize("NFKC").trim().toUpperCase().replace(/\s+/g, "");
-  if (!normalized || !/^[A-Z0-9][A-Z0-9._/-]*$/.test(normalized)) return null;
-  if (!/[A-Z]/.test(normalized) || !/\d/.test(normalized)) return null;
-  return normalized;
-}
-
-function leadingModelSize(code: string): string | null {
-  return code.match(/^(\d{2,3})(?=[A-Z])/)?.[1] ?? null;
-}
-
-function commonPrefixLength(left: string, right: string): number {
-  const limit = Math.min(left.length, right.length);
-  let index = 0;
-  while (index < limit && left[index] === right[index]) index += 1;
-  return index;
-}
-
-function modelCodeRelation(leftValue: string, rightValue: string): ModelRelation {
-  const left = normalizedModelCode(leftValue);
-  const right = normalizedModelCode(rightValue);
-  if (!left || !right) return "unknown";
-
-  const leftBase = left.split(/[._/-]/, 1)[0];
-  const rightBase = right.split(/[._/-]/, 1)[0];
-  if (leftBase === rightBase) return "exact";
-
-  const leftSize = leadingModelSize(leftBase);
-  const rightSize = leadingModelSize(rightBase);
-  if (leftSize && rightSize) {
-    if (leftSize === rightSize) return "family";
-    return "different";
-  }
-
-  const sharedLength = commonPrefixLength(leftBase, rightBase);
-  const shared = leftBase.slice(0, sharedLength);
-  if (sharedLength >= 4 && /[A-Z]/.test(shared) && /\d/.test(shared)) return "family";
-  return "unknown";
-}
-
 function productionAgeDays(date: string): number {
   const reference = new Date(`${getShanghaiBusinessDateString()}T00:00:00Z`).getTime();
   const source = new Date(`${date}T00:00:00Z`).getTime();
@@ -790,9 +835,32 @@ function productionAgeDays(date: string): number {
   return Math.max(0, Math.floor((reference - source) / 86_400_000));
 }
 
-function modelValidation(moulds: MouldRecord[], production: MachineProductionLink | undefined): ModelValidation {
+function modelValidation(
+  moulds: MouldRecord[],
+  production: MachineProductionLink | undefined,
+  machineNumber: number,
+  tonnage: string,
+): ModelValidation {
   if (moulds.length > 1) return "conflict";
-  if (!production || !production.isRunning) return "no_production";
+  if (!production) return "no_production";
+  if (production.basis === "planned_only" && production.date === getShanghaiBusinessDateString() && production.model) {
+    const assessment = assessPlannedMould(moulds[0], production, machineNumber, tonnage);
+    return {
+      match: "planned_match" as const,
+      review: "planned_review" as const,
+      mismatch: "planned_mismatch" as const,
+      mould_missing: "planned_mould_missing" as const,
+      machine_identity_conflict: "machine_identity_conflict" as const,
+      machine_identity_unknown: "machine_identity_unknown" as const,
+    }[assessment];
+  }
+  if (production.isRunning || production.date === getShanghaiBusinessDateString()) {
+    const identity = machineIdentityEvidenceStatus(production, machineNumber, tonnage);
+    if (identity === "conflict") return "machine_identity_conflict";
+    if (identity === "unknown" && production.isRunning) return "machine_identity_unknown";
+  }
+  if (production.basis === "ambiguous" && production.date === getShanghaiBusinessDateString()) return "ambiguous";
+  if (!production.isRunning) return "no_production";
   const mould = moulds[0];
   if (!mould) return "mould_missing";
   if (production.basis === "ambiguous") return "ambiguous";
@@ -818,6 +886,12 @@ function validationLabel(validation: ModelValidation, copy: Copy) {
     no_production: copy.noProductionModel,
     mould_missing: copy.mouldNotMounted,
     planned: copy.modelPlanned,
+    planned_match: copy.plannedMatch,
+    planned_review: copy.plannedReview,
+    planned_mismatch: copy.plannedMismatch,
+    planned_mould_missing: copy.plannedMouldMissing,
+    machine_identity_conflict: copy.machineIdentityMismatch,
+    machine_identity_unknown: copy.machineIdentityUnknown,
     recent_output: copy.modelRecent,
     stale: copy.modelStale,
     ambiguous: copy.modelAmbiguous,
@@ -837,6 +911,12 @@ function validationShortLabel(validation: ModelValidation, copy: Copy) {
     no_production: copy.shortNoProduction,
     mould_missing: copy.shortMouldMissing,
     planned: copy.shortPlanned,
+    planned_match: copy.shortPlannedMatch,
+    planned_review: copy.shortPlannedReview,
+    planned_mismatch: copy.shortPlannedMismatch,
+    planned_mould_missing: copy.shortPlannedMouldMissing,
+    machine_identity_conflict: copy.shortMachineIdentityMismatch,
+    machine_identity_unknown: copy.shortMachineIdentityUnknown,
     recent_output: copy.shortRecent,
     stale: copy.shortStale,
     ambiguous: copy.shortAmbiguous,
@@ -856,6 +936,12 @@ function validationClass(validation: ModelValidation) {
     no_production: styles.validationIdle,
     mould_missing: styles.validationUnknown,
     planned: styles.validationPlanned,
+    planned_match: styles.validationPlanned,
+    planned_review: styles.validationPlanned,
+    planned_mismatch: styles.validationMismatch,
+    planned_mould_missing: styles.validationUnknown,
+    machine_identity_conflict: styles.validationConflict,
+    machine_identity_unknown: styles.validationUnknown,
     recent_output: styles.validationPlanned,
     stale: styles.validationUnknown,
     ambiguous: styles.validationUnknown,
@@ -1102,7 +1188,12 @@ async function getLatestMachineProductionEvidence(referenceDate: string) {
   const plannedLinks = new Map<number, MachineProductionLink>();
   recentStatuses.forEach((item) => {
     if (!item) return;
-    buildMachineProductionLinks(item.status.injection, item.date, item.planRecords).forEach((link, machineNumber) => {
+    buildMachineProductionLinks(
+      item.status.injection,
+      item.date,
+      item.planRecords,
+      item.date === referenceDate,
+    ).forEach((link, machineNumber) => {
       if (!link.model) return;
       if (link.basis === "planned_only") {
         if (!plannedLinks.has(machineNumber)) plannedLinks.set(machineNumber, link);
@@ -1112,8 +1203,11 @@ async function getLatestMachineProductionEvidence(referenceDate: string) {
     });
   });
   const result = new Map<number, MachineProductionLink>();
-  plannedLinks.forEach((link, machineNumber) => result.set(machineNumber, { ...link, isRunning: false }));
-  actualLinks.forEach((link, machineNumber) => result.set(machineNumber, { ...link, isRunning: false }));
+  const machineNumbers = new Set([...plannedLinks.keys(), ...actualLinks.keys()]);
+  machineNumbers.forEach((machineNumber) => {
+    const link = chooseMachineEvidence(plannedLinks.get(machineNumber), actualLinks.get(machineNumber), referenceDate);
+    if (link) result.set(machineNumber, { ...link, isRunning: false });
+  });
   return result;
 }
 
@@ -1144,12 +1238,13 @@ async function getCurrentMachineActivityLinks(referenceDate: string) {
     const currentModel = currentModels[0] ?? "";
     result.set(machineNumber, {
       date: referenceDate,
+      sourceMachineName: activity.label,
       isRunning: true,
       model: currentModel,
       partNo: currentPartNos[0] ?? "-",
       partNos: currentPartNos,
       parts: [],
-      basis: currentModels.length > 1 ? "ambiguous" : "active_estimate",
+      basis: activityEvidenceBasis(currentModels.length, activity.currentPartResolutionStatus),
       mode: currentPartNos.length > 1 ? "multi_cavity" : "single",
       cavityPattern: "",
       cavityGroup: "",
@@ -1169,21 +1264,25 @@ function mergeMachineProductionLinks(
   const result = new Map(evidence);
   currentActivity.forEach((activity, machineNumber) => {
     const currentEvidence = evidence.get(machineNumber);
-    const carryoverEvidence = !activity.model
-      && currentEvidence?.model
-      && productionAgeDays(currentEvidence.date) <= 3
+    const carryoverEvidence = canCarryoverModel(activity, currentEvidence) ? currentEvidence : undefined;
+    const sameDayEvidence = currentEvidence?.date === activity.date
+      && (!activity.model || !currentEvidence.model
+        || activity.model.normalize("NFKC").trim().toUpperCase() === currentEvidence.model.normalize("NFKC").trim().toUpperCase())
       ? currentEvidence
       : undefined;
-    const sameDayEvidence = currentEvidence?.date === activity.date ? currentEvidence : undefined;
     const metadataEvidence = carryoverEvidence ?? sameDayEvidence;
     result.set(machineNumber, {
       ...activity,
       date: carryoverEvidence?.date ?? activity.date,
+      sourceMachineName: activity.sourceMachineName,
+      secondarySourceMachineName: currentEvidence?.date === activity.date
+        ? currentEvidence.sourceMachineName
+        : undefined,
       model: carryoverEvidence?.model ?? activity.model,
       partNo: carryoverEvidence?.partNo ?? activity.partNo,
       partNos: carryoverEvidence?.partNos.length ? carryoverEvidence.partNos : activity.partNos,
       parts: metadataEvidence?.parts ?? activity.parts,
-      basis: carryoverEvidence ? "carryover_plan" : activity.basis,
+      basis: mergedActivityBasis(activity.basis, carryoverEvidence?.basis) as ProductionEvidence,
       mode: carryoverEvidence?.mode ?? activity.mode,
       cavityPattern: metadataEvidence?.cavityPattern ?? activity.cavityPattern,
       cavityGroup: metadataEvidence?.cavityGroup ?? activity.cavityGroup,
@@ -1785,8 +1884,7 @@ export function MouldManagementPage() {
     ? zones.filter((zone) => zone.code === focusedZone)
     : zones.filter((zone) => zone.code !== "S");
   const zoneSummaries = useMemo(() => {
-    const zoneOrder = new Map(["A", "B", "C", "S"].map((code, index) => [code, index]));
-    const previewColumnCount = STORAGE_TOPOLOGY.C.columns;
+    const zoneOrder = new Map(["C", "B", "A", "S"].map((code, index) => [code, index]));
     return zones.map((zone) => {
       const cells = zone.rows.flatMap((row) => row.cells);
       const previewRows: CoordinateCell[][] = zone.code === "C"
@@ -1796,13 +1894,12 @@ export function MouldManagementPage() {
             .filter((cell): cell is CoordinateCell => Boolean(cell))
         ))
         : zone.rows.map((row) => row.cells);
-      const previewCells: Array<CoordinateCell | null> = previewRows.flatMap((row) => [
-        ...row,
-        ...Array.from({ length: Math.max(0, previewColumnCount - row.length) }, () => null),
-      ]);
+      const previewColumnCount = previewRows[0]?.length ?? zone.columns;
+      const previewCells = previewRows.flat();
       let occupied = 0;
       let mouldRecords = 0;
       let conflicts = 0;
+      let reviewDue = 0;
       let inactiveSix = 0;
       let inactiveTwelve = 0;
       const matchingCoordinates: string[] = [];
@@ -1816,6 +1913,7 @@ export function MouldManagementPage() {
         if (recordCount > 0) occupied += 1;
         mouldRecords += recordCount;
         if ((records?.length ?? 0) > 1) conflicts += 1;
+        if (records?.some((mould) => mould.confirmationRequired)) reviewDue += 1;
         if (search.trim() && matchingRecords.length) {
           matchingCoordinates.push(location.code);
           matchingMoulds += matchingRecords.length;
@@ -1830,12 +1928,14 @@ export function MouldManagementPage() {
       return {
         zone,
         cells,
+        previewColumnCount,
         previewCells,
         occupied,
         capacity: cells.length,
         mouldRecords,
         empty: Math.max(0, cells.length - occupied),
         conflicts,
+        reviewDue,
         inactiveSix,
         inactiveTwelve,
         fillRate: cells.length ? Math.round((occupied / cells.length) * 100) : 0,
@@ -1885,13 +1985,24 @@ export function MouldManagementPage() {
       : productionLinksQuery.isSuccess
         ? "ready"
         : "loading";
-  const verificationAutomaticResult: ModelValidation = productionStatusState === "loading"
+  const hasCurrentPlanEvidence = (production: MachineProductionLink | undefined) => Boolean(
+    productionEvidenceQuery.isSuccess
+    && production?.basis === "planned_only"
+    && production.date === productionBusinessDate,
+  );
+  const verificationPlanReady = hasCurrentPlanEvidence(verificationProduction);
+  const verificationAutomaticResult: ModelValidation = productionStatusState === "loading" && !verificationPlanReady
     ? "loading"
-    : productionStatusState === "unavailable"
+    : productionStatusState === "unavailable" && !verificationPlanReady
       ? "stale"
       : verificationMachine && (verificationMachine.conflict || verificationMachine.mouldCount > 1)
         ? "conflict"
-        : modelValidation(verificationMoulds, verificationProduction);
+        : modelValidation(
+          verificationMoulds,
+          verificationProduction,
+          verificationMachine?.number ?? 0,
+          verificationMachine?.tonnage ?? "",
+        );
   const verificationRuleLookup = machineValidationRuleLookup(verificationMould, verificationProduction);
   const verificationRule = verificationRuleLookup
     ? machineValidationRules.get(verificationRuleLookup.mapKey)
@@ -1903,7 +2014,7 @@ export function MouldManagementPage() {
     && verificationProduction.model
     && ["review", "mismatch", "unknown"].includes(verificationAutomaticResult),
   );
-  const verificationCandidates = verificationAutomaticResult === "mould_missing"
+  const verificationCandidates = ["mould_missing", "planned_mould_missing"].includes(verificationAutomaticResult)
     ? modelRecommendations(board, verificationProduction)
     : [];
   const machineOverviewItems = (board?.machines ?? []).map((machine) => {
@@ -1913,26 +2024,28 @@ export function MouldManagementPage() {
     const mounted = mountedMoulds.length === 1 ? mountedMoulds[0] : undefined;
     const productionLink = productionLinks.get(machine.number);
     const machineHasConflict = machine.conflict || machine.mouldCount > 1 || mountedMoulds.length > 1;
-    const automaticValidation: ModelValidation = productionStatusState === "loading"
+    const planReady = hasCurrentPlanEvidence(productionLink);
+    const automaticValidation: ModelValidation = productionStatusState === "loading" && !planReady
       ? "loading"
-      : productionStatusState === "unavailable"
+      : productionStatusState === "unavailable" && !planReady
         ? "stale"
         : machineHasConflict
           ? "conflict"
-          : modelValidation(mountedMoulds, productionLink);
+          : modelValidation(mountedMoulds, productionLink, machine.number, machine.tonnage);
     const ruleLookup = machineValidationRuleLookup(mounted, productionLink);
     const rule = ruleLookup ? machineValidationRules.get(ruleLookup.mapKey) : undefined;
     const validation = resolveValidationRule(automaticValidation, rule);
-    const activeProductionModel = productionLink?.isRunning && ["active_estimate", "carryover_plan"].includes(productionLink.basis) && productionAgeDays(productionLink.date) <= 3
-      ? text(productionLink.model)
-      : "-";
-    const recommendations = automaticValidation === "mould_missing"
+    const cardModel = machineCardModel(productionLink, productionBusinessDate);
+    const activeProductionModel = cardModel?.model ?? "-";
+    const productionModelLabel = cardModel?.planned ? copy.plannedProductionModel : copy.productionModel;
+    const recommendations = ["mould_missing", "planned_mould_missing"].includes(automaticValidation)
       ? modelRecommendations(board, productionLink)
       : [];
     const machineSearchText = [
       machineDisplayLabel(machine.number, machine.tonnage, language),
       ...mountedMoulds.flatMap((item) => [item.mouldCode, item.assetCode, item.name, item.model, item.drawingNo]),
       activeProductionModel,
+      productionModelLabel,
       ...(productionLink?.partNos ?? []),
       ...recommendations.flatMap((item) => [item.mould.mouldCode, item.candidateModel, item.mould.location.code]),
       validationShortLabel(validation, copy),
@@ -1950,6 +2063,7 @@ export function MouldManagementPage() {
       validation,
       rule,
       activeProductionModel,
+      productionModelLabel,
       recommendations,
       visible,
       selected: mountedMoulds.some((item) => item.instanceId === selectedInstanceId),
@@ -2157,11 +2271,11 @@ export function MouldManagementPage() {
             </div>
             {machineViewMode === "graphic" ? (
               <div className={styles.machineGraphicGrid}>
-                {machineOverviewItems.map(({ machine, mountedMoulds, mounted, productionLink, validation, activeProductionModel, recommendations, visible, selected }) => (
+                {machineOverviewItems.map(({ machine, mountedMoulds, mounted, productionLink, validation, activeProductionModel, productionModelLabel, recommendations, visible, selected }) => (
                   <button
                     aria-expanded={verificationMachineNumber === machine.number}
                     aria-haspopup="dialog"
-                    aria-label={`${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${copy.productionModel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
+                    aria-label={`${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${productionModelLabel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
                     className={`${styles.machineGraphicCard} ${productionStatusState === "ready" && productionLink?.isRunning ? styles.machineRunning : productionStatusState === "ready" ? styles.machineStopped : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                     key={machine.number}
                     onClick={() => setVerificationMachineNumber(machine.number)}
@@ -2174,7 +2288,7 @@ export function MouldManagementPage() {
                     <span className={styles.machineGraphicBody}>
                       <span className={styles.machineGraphicArt}><img alt="" aria-hidden="true" src={injectionMachineGraphic} /></span>
                       <span className={styles.machineGraphicInfo}>
-                        <small>{copy.productionModel}</small>
+                        <small>{productionModelLabel}</small>
                         <strong title={activeProductionModel === "-" ? undefined : activeProductionModel}>{activeProductionModel}</strong>
                         {productionLink?.mode === "multi_cavity" && activeProductionModel !== "-" ? (
                           <em>{productionLink.partNos.length} {copy.partCount} · {copy.cavityProduction}</em>
@@ -2195,14 +2309,14 @@ export function MouldManagementPage() {
             ) : (
               <div className={styles.machineTable}>
                 <div className={styles.machineTableHeader} aria-hidden="true">
-                  <span>{copy.machine}</span><span>{copy.currentMould}</span><span>{copy.productionModel}</span><span>{copy.status}</span>
+                  <span>{copy.machine}</span><span>{copy.currentMould}</span><span>{copy.productionOrPlanModel}</span><span>{copy.status}</span>
                 </div>
                 <div className={styles.machineRows}>
-                  {machineOverviewItems.map(({ machine, mountedMoulds, mounted, productionLink, validation, activeProductionModel, recommendations, visible, selected }) => (
+                  {machineOverviewItems.map(({ machine, mountedMoulds, mounted, productionLink, validation, activeProductionModel, productionModelLabel, recommendations, visible, selected }) => (
                     <button
                       aria-expanded={verificationMachineNumber === machine.number}
                       aria-haspopup="dialog"
-                      aria-label={`${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${copy.productionModel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
+                      aria-label={`${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${productionModelLabel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
                       className={`${styles.machineRow} ${productionStatusState === "ready" && productionLink?.isRunning ? styles.machineRunning : productionStatusState === "ready" ? styles.machineStopped : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                       key={machine.number}
                       onClick={() => setVerificationMachineNumber(machine.number)}
@@ -2223,7 +2337,7 @@ export function MouldManagementPage() {
                         ) : null}
                       </span>
                       <span className={styles.machineProductionCell}>
-                        <small>{copy.productionModel}</small>
+                        <small>{productionModelLabel}</small>
                         <strong title={activeProductionModel === "-" ? undefined : activeProductionModel}>{activeProductionModel}</strong>
                         {productionLink?.mode === "multi_cavity" && activeProductionModel !== "-" ? <em>{productionLink.partNos.length} {copy.partCount}</em> : null}
                       </span>
@@ -2273,7 +2387,7 @@ export function MouldManagementPage() {
                       const hasSearchMatch = summary.matchingCoordinates.length > 0;
                       return (
                         <button
-                          aria-label={`${zoneLabel}, ${copy.occupiedCells} ${summary.occupied}/${summary.capacity}, ${copy.mouldRecords} ${summary.mouldRecords}, ${searchActive ? `${copy.searchResults} ${summary.matchingMoulds}${copy.listCount}, ` : ""}${copy.focusZone}`}
+                          aria-label={`${zoneLabel}, ${copy.occupiedCells} ${summary.occupied}/${summary.capacity}, ${copy.mouldRecords} ${summary.mouldRecords}, ${summary.reviewDue ? `${copy.usageLegend} ${summary.reviewDue}${copy.coordinateUnit}, ` : ""}${searchActive ? `${copy.searchResults} ${summary.matchingMoulds}${copy.listCount}, ` : ""}${copy.focusZone}`}
                           className={`${styles.zoneSummaryCard} ${zoneStyle} ${searchActive ? styles.zoneSummaryCardSearching : ""} ${hasSearchMatch ? styles.zoneSummaryCardMatched : ""}`}
                           key={zone.code}
                           onClick={() => setFocusedZone(zone.code)}
@@ -2287,11 +2401,19 @@ export function MouldManagementPage() {
                               <span className={styles.zoneSummaryMonogram}>{zone.code}</span>
                               <span>
                                 <strong>{zoneLabel}</strong>
-                                <small>{copy.zoneOverviewHint}</small>
+                                <small>{copy.occupiedCells} {summary.occupied}/{summary.capacity}</small>
                               </span>
                             </span>
-                            <span className={styles.zoneSummaryAction}>
-                              <Expand aria-hidden="true" size={18} />
+                            <span className={styles.zoneSummaryControls}>
+                              {summary.reviewDue ? (
+                                <span className={styles.zoneSummaryAlert} title={copy.usageLegend}>
+                                  <AlertTriangle aria-hidden="true" size={15} />
+                                  {copy.checkpointCells} <strong>{summary.reviewDue}{copy.coordinateUnit}</strong>
+                                </span>
+                              ) : null}
+                              <span className={styles.zoneSummaryAction}>
+                                <Expand aria-hidden="true" size={18} />
+                              </span>
                             </span>
                           </span>
 
@@ -2299,21 +2421,20 @@ export function MouldManagementPage() {
                             <span
                               aria-hidden="true"
                               className={styles.zonePreviewMap}
+                              style={{ "--zone-preview-columns": summary.previewColumnCount } as CSSProperties}
                             >
-                              {summary.previewCells.map((cell, index) => {
-                                if (!cell) {
-                                  return <i className={styles.zonePreviewSpacer} key={`spacer-${index}`} />;
-                                }
+                              {summary.previewCells.map((cell) => {
                                 const { location } = cell;
                                 const records = mouldsByLocation.get(locationGroupKey(location));
                                 const recordCount = records?.length ?? location.mouldCount;
                                 const conflict = (records?.length ?? 0) > 1;
+                                const reviewDue = Boolean(records?.some((mould) => mould.confirmationRequired));
                                 const inactiveTwelve = records?.some((mould) => mould.inactivityTier === "twelve_months");
                                 const inactiveSix = !inactiveTwelve && records?.some((mould) => mould.inactivityTier === "six_months");
                                 const searchMatch = searchActive && Boolean(records?.some((mould) => visibleIds.has(mould.instanceId)));
                                 return (
                                   <i
-                                    className={`${styles.zonePreviewCell} ${recordCount ? styles.zonePreviewOccupied : styles.zonePreviewEmpty} ${inactiveSix ? styles.zonePreviewInactiveSix : ""} ${inactiveTwelve ? styles.zonePreviewInactiveTwelve : ""} ${conflict ? styles.zonePreviewConflict : ""} ${searchActive && !searchMatch ? styles.zonePreviewFiltered : ""} ${searchMatch ? styles.zonePreviewMatch : ""}`}
+                                    className={`${styles.zonePreviewCell} ${recordCount ? styles.zonePreviewOccupied : styles.zonePreviewEmpty} ${inactiveSix ? styles.zonePreviewInactiveSix : ""} ${inactiveTwelve ? styles.zonePreviewInactiveTwelve : ""} ${conflict ? styles.zonePreviewConflict : ""} ${reviewDue ? styles.zonePreviewAlert : ""} ${searchActive && !searchMatch ? styles.zonePreviewFiltered : ""} ${searchMatch ? styles.zonePreviewMatch : ""}`}
                                     key={location.code}
                                   />
                                 );
@@ -2321,7 +2442,7 @@ export function MouldManagementPage() {
                             </span>
                             <span className={styles.zoneSummaryOccupancy}>
                               <strong>{summary.fillRate}%</strong>
-                              <small>{copy.occupiedCells}</small>
+                              <small>{zone.code === "C" ? copy.occupiedCells : `${summary.occupied}/${summary.capacity}`}</small>
                               <span aria-hidden="true"><i /></span>
                             </span>
                           </span>
@@ -2409,11 +2530,19 @@ export function MouldManagementPage() {
                               const visible = occupants.length ? occupants.some((item) => visibleIds.has(item.instanceId)) : filter === "all" && !search.trim();
                               const conflict = occupants.length > 1;
                               const occupantCodes = occupants.map((item) => item.mouldCode).join(", ");
+                              const reviewDueMoulds = occupants.filter((item) => item.confirmationRequired);
+                              const reviewMilestone = reviewDueMoulds[0]?.shotMilestone ?? 0;
+                              const reviewMilestones = [...new Set(reviewDueMoulds
+                                .filter((item) => item.shotMilestone > 0)
+                                .map((item) => milestoneLabel(item.shotMilestone, language)))].join(" / ");
+                              const reviewDescription = reviewDueMoulds.length
+                                ? `${reviewMilestones ? `${reviewMilestones} Shot · ` : ""}${copy.checkpointRequired}`
+                                : "";
                               return (
                                 <button
-                                  aria-label={occupant ? `${location.code}, ${conflict ? `${copy.conflict} ${occupants.length}${copy.listCount}, ${occupantCodes}` : occupant.mouldCode}${!conflict && inactivityLabel(occupant, copy) ? `, ${inactivityLabel(occupant, copy)}` : ""}${!conflict && occupant.confirmationRequired ? `, ${milestoneLabel(occupant.shotMilestone, language)} Shot ${copy.checkpointRequired}` : ""}` : `${location.code}, ${copy.emptyCell}`}
+                                  aria-label={occupant ? `${location.code}, ${conflict ? `${copy.conflict} ${occupants.length}${copy.listCount}, ${occupantCodes}` : occupant.mouldCode}${!conflict && inactivityLabel(occupant, copy) ? `, ${inactivityLabel(occupant, copy)}` : ""}${reviewDescription ? `, ${reviewDescription}` : ""}` : `${location.code}, ${copy.emptyCell}`}
                                   aria-pressed={selected}
-                                  className={`${styles.coordinateCell} ${occupant ? styles.occupiedCell : ""} ${occupant ? usageVisualClass(occupant) : ""} ${selected ? styles.selectedCell : ""} ${conflict ? styles.conflictCell : ""} ${visible ? "" : styles.filteredOut}`}
+                                  className={`${styles.coordinateCell} ${occupant ? styles.occupiedCell : ""} ${occupant ? usageVisualClass(occupant) : ""} ${reviewDueMoulds.length ? styles.usageReviewDue : ""} ${selected ? styles.selectedCell : ""} ${conflict ? styles.conflictCell : ""} ${visible ? "" : styles.filteredOut}`}
                                   disabled={!occupant}
                                   key={location.code}
                                   onClick={() => {
@@ -2424,16 +2553,15 @@ export function MouldManagementPage() {
                                     if (conflict) openConflictList(canonicalStorageCoordinate(location) ?? location.code);
                                     else if (occupant) selectMould(occupant.instanceId);
                                   }}
-                                  title={occupant ? conflict ? `${location.code} · ${copy.conflict} ${occupants.length}${copy.listCount} · ${occupantCodes}` : `${occupant.mouldCode} · ${occupant.name}${inactivityLabel(occupant, copy) ? ` · ${inactivityLabel(occupant, copy)}` : ""}` : copy.emptyCell}
+                                  title={occupant ? `${conflict ? `${location.code} · ${copy.conflict} ${occupants.length}${copy.listCount} · ${occupantCodes}` : `${occupant.mouldCode} · ${occupant.name}${inactivityLabel(occupant, copy) ? ` · ${inactivityLabel(occupant, copy)}` : ""}`}${reviewDescription ? ` · ${reviewDescription}` : ""}` : copy.emptyCell}
                                   type="button"
                                 >
                                   <span className={styles.coordinateTopline}>
                                     <span className={styles.coordinateCode}>{location.code}</span>
-                                    {conflict ? (
-                                      <span className={styles.cellConflictBadge}>{occupants.length}</span>
-                                    ) : occupant?.confirmationRequired ? (
-                                      <span className={`${styles.cellUsageBadge} ${focusedZone ? styles.cellUsageBadgeExpanded : ""}`} title={`${milestoneLabel(occupant.shotMilestone, language)} Shot · ${copy.checkpointRequired}`}>
-                                        {focusedZone ? `${milestoneLabel(occupant.shotMilestone, language)}!` : "!"}
+                                    {conflict ? <span className={styles.cellConflictBadge}>{occupants.length}</span> : null}
+                                    {reviewDueMoulds.length ? (
+                                      <span className={`${styles.cellUsageBadge} ${focusedZone ? styles.cellUsageBadgeExpanded : ""} ${conflict ? styles.cellUsageBadgeConflict : ""}`} title={reviewDescription}>
+                                        {focusedZone && reviewMilestone > 0 ? `${milestoneLabel(reviewMilestone, language)}!` : "!"}
                                       </span>
                                     ) : null}
                                   </span>
@@ -2538,7 +2666,9 @@ export function MouldManagementPage() {
                 )) : <><strong>{copy.unassigned}</strong><span>-</span></>}
               </article>
               <article>
-                <small>{copy.expectedModel}</small>
+                <small>{verificationProduction?.basis === "planned_only" && verificationProduction.date === productionBusinessDate
+                  ? copy.plannedProductionModel
+                  : copy.expectedModel}</small>
                 <strong>{verificationProduction?.model || copy.noProductionModel}</strong>
                 <span>{verificationProduction?.date || "-"}</span>
                 {verificationProduction?.partNos.length ? (
@@ -2555,7 +2685,15 @@ export function MouldManagementPage() {
             <div className={`${styles.verificationResult} ${validationClass(verificationResult)}`}>
               <strong>{validationLabel(verificationResult, copy)}</strong>
               {verificationResult === "conflict" ? <span>{copy.conflictNeedsMesFix}</span> : null}
-              {verificationResult === "mould_missing" ? <span>{copy.paperworkRequired}</span> : null}
+              {verificationResult === "machine_identity_conflict" ? (
+                <span>{copy.machineIdentityMismatchHint} {[
+                  verificationProduction?.sourceMachineName,
+                  verificationProduction?.secondarySourceMachineName,
+                  machineDisplayLabel(verificationMachine.number, verificationMachine.tonnage, language),
+                ].filter(Boolean).join(" / ")}</span>
+              ) : null}
+              {verificationResult === "machine_identity_unknown" ? <span>{copy.machineIdentityUnknownHint}</span> : null}
+              {["mould_missing", "planned_mould_missing"].includes(verificationResult) ? <span>{copy.paperworkRequired}</span> : null}
               {verificationAutomaticResult === "mismatch" && !verificationRule ? <span>{copy.modelMismatchNeedsMesFix}</span> : null}
               {verificationCanDecide && !verificationRule ? <span>{copy.decisionRuleNotice}</span> : null}
             </div>
@@ -2568,7 +2706,7 @@ export function MouldManagementPage() {
                 </span>
               </div>
             ) : null}
-            {!verificationMoulds.length && verificationResult === "mould_missing" ? (
+            {!verificationMoulds.length && ["mould_missing", "planned_mould_missing"].includes(verificationResult) ? (
               <div className={styles.verificationCandidates}>
                 <h3><MapPin aria-hidden="true" size={20} />{copy.storageCandidate}</h3>
                 <p>{copy.suggestionOnly}</p>
@@ -2582,7 +2720,7 @@ export function MouldManagementPage() {
               </div>
             ) : null}
             <footer>
-              {verificationMould ? <button className={styles.secondaryVerificationAction} onClick={() => selectMould(verificationMould.instanceId)} type="button">{copy.openMouldDetail}</button> : <span>{verificationResult === "mould_missing" ? copy.paperworkRequired : copy.noInstalledMouldDetail}</span>}
+              {verificationMould ? <button className={styles.secondaryVerificationAction} onClick={() => selectMould(verificationMould.instanceId)} type="button">{copy.openMouldDetail}</button> : <span>{["mould_missing", "planned_mould_missing"].includes(verificationResult) ? copy.paperworkRequired : copy.noInstalledMouldDetail}</span>}
               {verificationCanDecide ? (
                 <div className={styles.machineDecisionActions}>
                   {verificationRule ? (
