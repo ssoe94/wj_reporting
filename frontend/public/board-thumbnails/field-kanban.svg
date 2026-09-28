@@ -21,108 +21,108 @@
 <text x="1058.0" y="172" fill="#ad6a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">자료 누락</text>
 <rect x="1126" y="153" width="116" height="28" rx="14" fill="#f5f8fa" stroke="none" stroke-width="1"/>
 <text x="1184.0" y="172" fill="#80909c" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">계획 없음</text>
-<rect x="32" y="219" width="127" height="150" rx="11" fill="#dcefe4" stroke="#14814b" stroke-width="2"/>
-<rect x="135" y="230" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
-<text x="95" y="287" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">01</text>
-<text x="95" y="307" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="95" y="335" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="95" y="355" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="169" y="219" width="127" height="150" rx="11" fill="#dcefe4" stroke="#14814b" stroke-width="2"/>
-<rect x="272" y="230" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
-<text x="232" y="287" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">02</text>
-<text x="232" y="307" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="232" y="335" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="232" y="355" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="306" y="219" width="127" height="150" rx="11" fill="#fff3d9" stroke="#a66a10" stroke-width="2"/>
-<rect x="409" y="230" width="10" height="10" rx="5" fill="#a66a10" stroke="none" stroke-width="1"/>
-<text x="369" y="287" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">03</text>
-<text x="369" y="307" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="369" y="335" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="369" y="355" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="443" y="219" width="127" height="150" rx="11" fill="#edf1f4" stroke="#788a9b" stroke-width="2"/>
-<rect x="546" y="230" width="10" height="10" rx="5" fill="#788a9b" stroke="none" stroke-width="1"/>
-<text x="506" y="287" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">04</text>
-<text x="506" y="307" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="506" y="335" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">계획 없음</text>
-<text x="506" y="355" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="580" y="219" width="127" height="150" rx="11" fill="#dcefe4" stroke="#14814b" stroke-width="2"/>
-<rect x="683" y="230" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
-<text x="643" y="287" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">05</text>
-<text x="643" y="307" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="643" y="335" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="643" y="355" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="717" y="219" width="127" height="150" rx="11" fill="#dcefe4" stroke="#14814b" stroke-width="2"/>
-<rect x="820" y="230" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
-<text x="780" y="287" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">06</text>
-<text x="780" y="307" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="780" y="335" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="780" y="355" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="854" y="219" width="127" height="150" rx="11" fill="#fff3d9" stroke="#a66a10" stroke-width="2"/>
-<rect x="957" y="230" width="10" height="10" rx="5" fill="#a66a10" stroke="none" stroke-width="1"/>
-<text x="917" y="287" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">07</text>
-<text x="917" y="307" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="917" y="335" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="917" y="355" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="991" y="219" width="127" height="150" rx="11" fill="#edf1f4" stroke="#788a9b" stroke-width="2"/>
-<rect x="1094" y="230" width="10" height="10" rx="5" fill="#788a9b" stroke="none" stroke-width="1"/>
-<text x="1054" y="287" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">08</text>
-<text x="1054" y="307" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="1054" y="335" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">계획 없음</text>
-<text x="1054" y="355" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="1128" y="219" width="127" height="150" rx="11" fill="#dcefe4" stroke="#14814b" stroke-width="2"/>
-<rect x="1231" y="230" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
-<text x="1191" y="287" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">09</text>
-<text x="1191" y="307" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="1191" y="335" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="1191" y="355" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="32" y="386" width="127" height="150" rx="11" fill="#dcefe4" stroke="#14814b" stroke-width="2"/>
-<rect x="135" y="397" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
-<text x="95" y="454" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">10</text>
-<text x="95" y="474" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="95" y="502" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="95" y="522" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="169" y="386" width="127" height="150" rx="11" fill="#fff3d9" stroke="#a66a10" stroke-width="2"/>
-<rect x="272" y="397" width="10" height="10" rx="5" fill="#a66a10" stroke="none" stroke-width="1"/>
-<text x="232" y="454" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">11</text>
-<text x="232" y="474" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="232" y="502" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="232" y="522" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="306" y="386" width="127" height="150" rx="11" fill="#edf1f4" stroke="#788a9b" stroke-width="2"/>
-<rect x="409" y="397" width="10" height="10" rx="5" fill="#788a9b" stroke="none" stroke-width="1"/>
-<text x="369" y="454" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">12</text>
-<text x="369" y="474" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="369" y="502" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">계획 없음</text>
-<text x="369" y="522" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="443" y="386" width="127" height="150" rx="11" fill="#dcefe4" stroke="#14814b" stroke-width="2"/>
-<rect x="546" y="397" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
-<text x="506" y="454" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">13</text>
-<text x="506" y="474" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="506" y="502" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="506" y="522" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="580" y="386" width="127" height="150" rx="11" fill="#dcefe4" stroke="#14814b" stroke-width="2"/>
-<rect x="683" y="397" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
-<text x="643" y="454" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">14</text>
-<text x="643" y="474" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="643" y="502" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="643" y="522" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="717" y="386" width="127" height="150" rx="11" fill="#fff3d9" stroke="#a66a10" stroke-width="2"/>
-<rect x="820" y="397" width="10" height="10" rx="5" fill="#a66a10" stroke="none" stroke-width="1"/>
-<text x="780" y="454" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">15</text>
-<text x="780" y="474" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="780" y="502" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="780" y="522" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="854" y="386" width="127" height="150" rx="11" fill="#edf1f4" stroke="#788a9b" stroke-width="2"/>
-<rect x="957" y="397" width="10" height="10" rx="5" fill="#788a9b" stroke="none" stroke-width="1"/>
-<text x="917" y="454" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">16</text>
-<text x="917" y="474" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="917" y="502" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">계획 없음</text>
-<text x="917" y="522" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
-<rect x="991" y="386" width="127" height="150" rx="11" fill="#dcefe4" stroke="#14814b" stroke-width="2"/>
-<rect x="1094" y="397" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
-<text x="1054" y="454" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="41" font-weight="900" text-anchor="middle">17</text>
-<text x="1054" y="474" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="850" text-anchor="middle">호기</text>
-<text x="1054" y="502" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">오늘 계획</text>
-<text x="1054" y="522" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">자료 상태</text>
+<rect x="32" y="219" width="190" height="106" rx="11" fill="#edf1f4" stroke="#788a9b" stroke-width="2"/>
+<rect x="201" y="229" width="10" height="10" rx="5" fill="#788a9b" stroke="none" stroke-width="1"/>
+<text x="127" y="266" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">01</text>
+<text x="127" y="283" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="127" y="302" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">계획 없음</text>
+<text x="127" y="318" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">계획 없음</text>
+<rect x="236" y="219" width="190" height="106" rx="11" fill="#fff3d9" stroke="#a66a10" stroke-width="2"/>
+<rect x="405" y="229" width="10" height="10" rx="5" fill="#a66a10" stroke="none" stroke-width="1"/>
+<text x="331" y="266" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">02</text>
+<text x="331" y="283" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="331" y="302" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="331" y="318" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 누락</text>
+<rect x="440" y="219" width="190" height="106" rx="11" fill="#fff3d9" stroke="#a66a10" stroke-width="2"/>
+<rect x="609" y="229" width="10" height="10" rx="5" fill="#a66a10" stroke="none" stroke-width="1"/>
+<text x="535" y="266" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">03</text>
+<text x="535" y="283" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="535" y="302" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="535" y="318" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 누락</text>
+<rect x="644" y="219" width="190" height="106" rx="11" fill="#e4f4ea" stroke="#14814b" stroke-width="2"/>
+<rect x="813" y="229" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
+<text x="739" y="266" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">04</text>
+<text x="739" y="283" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="739" y="302" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="739" y="318" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 완비</text>
+<rect x="848" y="219" width="190" height="106" rx="11" fill="#edf1f4" stroke="#788a9b" stroke-width="2"/>
+<rect x="1017" y="229" width="10" height="10" rx="5" fill="#788a9b" stroke="none" stroke-width="1"/>
+<text x="943" y="266" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">05</text>
+<text x="943" y="283" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="943" y="302" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">계획 없음</text>
+<text x="943" y="318" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">계획 없음</text>
+<rect x="1052" y="219" width="190" height="106" rx="11" fill="#fff3d9" stroke="#a66a10" stroke-width="2"/>
+<rect x="1221" y="229" width="10" height="10" rx="5" fill="#a66a10" stroke="none" stroke-width="1"/>
+<text x="1147" y="266" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">06</text>
+<text x="1147" y="283" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="1147" y="302" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="1147" y="318" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 누락</text>
+<rect x="32" y="331" width="190" height="106" rx="11" fill="#edf1f4" stroke="#788a9b" stroke-width="2"/>
+<rect x="201" y="341" width="10" height="10" rx="5" fill="#788a9b" stroke="none" stroke-width="1"/>
+<text x="127" y="378" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">07</text>
+<text x="127" y="395" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="127" y="414" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">계획 없음</text>
+<text x="127" y="430" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">계획 없음</text>
+<rect x="236" y="331" width="190" height="106" rx="11" fill="#fff3d9" stroke="#a66a10" stroke-width="2"/>
+<rect x="405" y="341" width="10" height="10" rx="5" fill="#a66a10" stroke="none" stroke-width="1"/>
+<text x="331" y="378" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">08</text>
+<text x="331" y="395" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="331" y="414" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="331" y="430" fill="#a66a10" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 누락</text>
+<rect x="440" y="331" width="190" height="106" rx="11" fill="#e4f4ea" stroke="#14814b" stroke-width="2"/>
+<rect x="609" y="341" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
+<text x="535" y="378" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">09</text>
+<text x="535" y="395" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="535" y="414" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="535" y="430" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 완비</text>
+<rect x="644" y="331" width="190" height="106" rx="11" fill="#e4f4ea" stroke="#14814b" stroke-width="2"/>
+<rect x="813" y="341" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
+<text x="739" y="378" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">10</text>
+<text x="739" y="395" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="739" y="414" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="739" y="430" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 완비</text>
+<rect x="848" y="331" width="190" height="106" rx="11" fill="#e4f4ea" stroke="#14814b" stroke-width="2"/>
+<rect x="1017" y="341" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
+<text x="943" y="378" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">11</text>
+<text x="943" y="395" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="943" y="414" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="943" y="430" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 완비</text>
+<rect x="1052" y="331" width="190" height="106" rx="11" fill="#e4f4ea" stroke="#14814b" stroke-width="2"/>
+<rect x="1221" y="341" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
+<text x="1147" y="378" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">12</text>
+<text x="1147" y="395" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="1147" y="414" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="1147" y="430" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 완비</text>
+<rect x="32" y="443" width="190" height="106" rx="11" fill="#edf1f4" stroke="#788a9b" stroke-width="2"/>
+<rect x="201" y="453" width="10" height="10" rx="5" fill="#788a9b" stroke="none" stroke-width="1"/>
+<text x="127" y="490" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">13</text>
+<text x="127" y="507" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="127" y="526" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">계획 없음</text>
+<text x="127" y="542" fill="#788a9b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">계획 없음</text>
+<rect x="236" y="443" width="190" height="106" rx="11" fill="#e4f4ea" stroke="#14814b" stroke-width="2"/>
+<rect x="405" y="453" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
+<text x="331" y="490" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">14</text>
+<text x="331" y="507" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="331" y="526" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="331" y="542" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 완비</text>
+<rect x="440" y="443" width="190" height="106" rx="11" fill="#e4f4ea" stroke="#14814b" stroke-width="2"/>
+<rect x="609" y="453" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
+<text x="535" y="490" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">15</text>
+<text x="535" y="507" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="535" y="526" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="535" y="542" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 완비</text>
+<rect x="644" y="443" width="190" height="106" rx="11" fill="#e4f4ea" stroke="#14814b" stroke-width="2"/>
+<rect x="813" y="453" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
+<text x="739" y="490" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">16</text>
+<text x="739" y="507" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="739" y="526" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="739" y="542" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 완비</text>
+<rect x="848" y="443" width="190" height="106" rx="11" fill="#e4f4ea" stroke="#14814b" stroke-width="2"/>
+<rect x="1017" y="453" width="10" height="10" rx="5" fill="#14814b" stroke="none" stroke-width="1"/>
+<text x="943" y="490" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="36" font-weight="900" text-anchor="middle">17</text>
+<text x="943" y="507" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="850" text-anchor="middle">호기</text>
+<text x="943" y="526" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="800" text-anchor="middle">오늘 계획</text>
+<text x="943" y="542" fill="#14814b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">자료 완비</text>
 <rect x="14" y="592" width="674" height="114" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
 <text x="32" y="628" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="22" font-weight="850" text-anchor="start">현장 자료 통합 관리</text>
 <text x="32" y="661" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="16" font-weight="600" text-anchor="start">작업지도서 · 도면 · 품질Issue</text>

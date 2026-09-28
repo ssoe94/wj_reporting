@@ -134,7 +134,7 @@ export function BoardHubPage() {
     {
       key: "field",
       href: "/field",
-      image: "/board-thumbnails/field-kanban.svg?v=20260928",
+      image: "/board-thumbnails/field-kanban.svg?v=20260928-2",
       title: copy.fieldTitle,
       description: copy.fieldDescription,
       meta: copy.fieldMeta,

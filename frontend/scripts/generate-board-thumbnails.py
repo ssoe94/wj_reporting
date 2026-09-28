@@ -257,17 +257,26 @@ def field():
     s.text(33, 200, "1–17호기 · 누르면 현장 터치스크린 열기", 15, MUTED)
     for i, (label, color) in enumerate((("자료 완비", "#168251"), ("자료 누락", "#ad6a10"), ("계획 없음", "#80909c"))):
         s.pill(874 + i * 126, 153, 116, label, "#f5f8fa", color)
-    for idx in range(17):
-        row, col = divmod(idx, 9)
-        x, y = 32 + col * 137, 219 + row * 167
-        tone = "#dcefe4" if idx % 4 in (0, 1) else "#fff3d9" if idx % 4 == 2 else "#edf1f4"
-        color = "#14814b" if idx % 4 in (0, 1) else "#a66a10" if idx % 4 == 2 else "#788a9b"
-        s.rect(x, y, 127, 150, tone, color, 11, 2)
-        s.rect(x + 103, y + 11, 10, 10, color, radius=5)
-        s.text(x + 63, y + 68, f"{idx + 1:02}", 41, color, 900, "middle")
-        s.text(x + 63, y + 88, "호기", 13, color, 850, "middle")
-        s.text(x + 63, y + 116, "오늘 계획" if idx % 4 != 3 else "계획 없음", 13, color, 800, "middle")
-        s.text(x + 63, y + 136, "자료 상태", 12, color, 700, "middle")
+    states = (
+        "no-plan", "missing", "missing", "complete", "no-plan", "missing",
+        "no-plan", "missing", "complete", "complete", "complete", "complete",
+        "no-plan", "complete", "complete", "complete", "complete",
+    )
+    colors = {
+        "no-plan": ("#edf1f4", "#788a9b", "계획 없음"),
+        "missing": ("#fff3d9", "#a66a10", "자료 누락"),
+        "complete": ("#e4f4ea", "#14814b", "자료 완비"),
+    }
+    for idx, state in enumerate(states):
+        row, col = divmod(idx, 6)
+        x, y = 32 + col * 204, 219 + row * 112
+        tone, color, label = colors[state]
+        s.rect(x, y, 190, 106, tone, color, 11, 2)
+        s.rect(x + 169, y + 10, 10, 10, color, radius=5)
+        s.text(x + 95, y + 47, f"{idx + 1:02}", 36, color, 900, "middle")
+        s.text(x + 95, y + 64, "호기", 12, color, 850, "middle")
+        s.text(x + 95, y + 83, "오늘 계획" if state != "no-plan" else "계획 없음", 12, color, 800, "middle")
+        s.text(x + 95, y + 99, label, 11, color, 700, "middle")
     s.panel(14, 592, 674, 114)
     s.text(32, 628, "현장 자료 통합 관리", 22, INK, 850)
     s.text(32, 661, "작업지도서 · 도면 · 품질Issue", 16, MUTED)
