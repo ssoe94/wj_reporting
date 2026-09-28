@@ -140,7 +140,6 @@
 }
 
 .narrative > strong,
-.evidenceLine > strong,
 .details p {
   display: -webkit-box;
   min-width: 0;
@@ -156,6 +155,158 @@
   letter-spacing: -0.018em;
   line-height: 1.18;
   -webkit-line-clamp: 2;
+}
+
+.horizontalReading {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.horizontalViewport {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  color: var(--briefing-ink, var(--board-blue, #245a91));
+  scrollbar-color: var(--board-border-strong, #8aaed2) transparent;
+  scrollbar-width: thin;
+  white-space: nowrap;
+}
+
+.horizontalReading[data-overflow="true"] .horizontalViewport {
+  padding-right: 2.35rem;
+}
+
+.horizontalViewport::-webkit-scrollbar {
+  height: 0.2rem;
+}
+
+.horizontalViewport::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: var(--board-border-strong, #8aaed2);
+}
+
+.horizontalViewport > strong {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.horizontalReading[data-variant="headline"] .horizontalViewport > strong {
+  font-size: 0.9rem;
+  font-weight: 720;
+  letter-spacing: -0.018em;
+  line-height: 1.18;
+}
+
+.horizontalReading[data-variant="ribbon"] .horizontalViewport {
+  color: var(--board-blue, #245a91);
+}
+
+.horizontalReading[data-variant="ribbon"] .horizontalViewport > strong {
+  font-size: 0.73rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.scrollButton {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  width: 1.08rem;
+  height: 1.24rem;
+  place-items: center;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid var(--board-border-strong, #8aaed2);
+  border-radius: 0.25rem;
+  background: var(--briefing-tint, var(--board-blue-surface, #eef5fb));
+  color: var(--briefing-accent, var(--board-blue, #245a91));
+  cursor: pointer;
+}
+
+.scrollButton svg {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.scrollLeft { right: 1.14rem; }
+.scrollRight { right: 0; }
+
+.horizontalViewport:focus-visible,
+.scrollButton:focus-visible,
+.flowViewport:focus-visible {
+  outline: 2px solid var(--briefing-accent, var(--board-blue, #245a91));
+  outline-offset: 1px;
+}
+
+.flowViewport {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--briefing-ink, var(--board-blue, #245a91));
+  scrollbar-color: var(--board-border-strong, #8aaed2) transparent;
+  scrollbar-width: thin;
+  white-space: nowrap;
+}
+
+.flowViewport::-webkit-scrollbar {
+  height: 0.2rem;
+}
+
+.flowTrack {
+  display: inline-flex;
+  width: max-content;
+  max-width: none;
+}
+
+.flowViewport[data-flowing="true"] .flowTrack {
+  animation-name: flowTypes;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.flowItem {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding-right: 2.4rem;
+}
+
+.flowViewport[data-flowing="false"] .flowItem {
+  padding-right: 0;
+}
+
+.flowItem > strong {
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+@keyframes flowTypes {
+  to { transform: translateX(-50%); }
+}
+
+.flowViewport:focus {
+  overflow-x: auto;
+}
+
+.flowViewport:focus .flowTrack {
+  animation: none;
+}
+
+.flowViewport:focus .flowCopy {
+  display: none;
+}
+
+@media (hover: hover) {
+  .flowViewport:hover { overflow-x: auto; }
+  .flowViewport:hover .flowTrack { animation: none; }
+  .flowViewport:hover .flowCopy { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flowViewport { overflow-x: auto; }
+  .flowTrack { animation: none !important; }
+  .flowCopy { display: none; }
 }
 
 .details {
@@ -229,17 +380,6 @@
   white-space: nowrap;
 }
 
-.evidenceLine > strong {
-  font-size: 0.76rem;
-  font-weight: 650;
-  line-height: 1.2;
-  -webkit-line-clamp: 1;
-}
-
-.locationLine > strong {
-  -webkit-line-clamp: 2;
-}
-
 .checkpoint .detailHeading {
   color: var(--briefing-accent);
 }
@@ -309,12 +449,13 @@
   content: "";
 }
 
-.briefing[data-density="compact"] .narrative > strong {
+.briefing[data-density="compact"] .narrative > strong,
+.briefing[data-density="compact"] .horizontalReading[data-variant="headline"] .horizontalViewport > strong {
   font-size: 0.85rem;
 }
 
 .briefing[data-density="compact"] .details p,
-.briefing[data-density="compact"] .evidenceLine > strong {
+.briefing[data-density="compact"] .flowItem > strong {
   font-size: 0.73rem;
 }
 

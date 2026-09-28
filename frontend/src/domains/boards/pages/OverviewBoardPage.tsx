@@ -62,7 +62,7 @@ import type {
 import { useStoredLanguage, type AppLanguage } from "@/shared/i18n/language";
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
 import { useRetainedValue } from "@/shared/hooks/useRetainedValue";
-import { QualityAiBriefingContent, QualityHistoryBriefingContent } from "../overview/QualityBriefingContent";
+import { HorizontalReadingText, QualityAiBriefingContent, QualityHistoryBriefingContent } from "../overview/QualityBriefingContent";
 import { OutboundPerformanceContent, type OutboundLanePresentation, type OutboundPeriodPresentation } from "../overview/OutboundPerformanceContent";
 import { useBoardRem } from "../overview/useBoardRem";
 import { WeatherDisplay } from "../overview/WeatherDisplay";
@@ -613,26 +613,6 @@ function formatQualityAiRankedLabels(
     .join(" · ");
 }
 
-function formatQualityAiProblemLocationPairs(
-  values: QualityAiAttentionItem["problemLocationPairs"],
-  language: AppLanguage,
-) {
-  return values
-    .map((item) => {
-      const problem = getQualityAiText(item.problemLabel, language);
-      const location = getQualityAiText(item.locationLabel, language);
-      const verifiedLabel = problem && location
-        ? `${problem} · ${location}`
-        : getQualityAiText(item.label, language);
-      if (!verifiedLabel) return null;
-      return item.count === null
-        ? verifiedLabel
-        : `${verifiedLabel} ${formatInteger(item.count, language)}`;
-    })
-    .filter((item): item is string => Boolean(item))
-    .join(" · ");
-}
-
 function formatQualityAiListPreview(values: string[], language: AppLanguage, fallback = "—") {
   const normalizedValues = values.map((value) => value.trim()).filter(Boolean);
   if (normalizedValues.length === 0) return fallback;
@@ -1116,7 +1096,6 @@ function QualityAiSlide({
   const modelTitle = item.modelNames.filter(Boolean).join(" · ") || "—";
   const partTitle = item.partNumbers.filter(Boolean).join(" · ") || item.partPrefix || "—";
   const problemTypes = formatQualityAiRankedLabels(item.problemTypes, language) || "—";
-  const problemLocationPairs = formatQualityAiProblemLocationPairs(item.problemLocationPairs, language) || "—";
   const checkpoints = item.checkpoints[language].filter(Boolean);
   const evidenceLabel = copy.qualityAiEvidence.replace(
     "{count}",
@@ -1134,7 +1113,6 @@ function QualityAiSlide({
     partTitle={partTitle}
     headline={headline}
     problemTypes={problemTypes}
-    problemLocationPairs={problemLocationPairs}
     checkpoints={checkpoints}
     evidenceLabel={evidenceLabel}
     latestLabel={`${copy.qualityLatest} ${formatShortDate(item.latestReportAt)}`}
@@ -1172,7 +1150,6 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
     ? [qualityAiSummaryText, ...visibleQualityAiItems.flatMap((item) => [
         getQualityAiText(item.headline, language), ...item.checkpoints[language],
         formatQualityAiRankedLabels(item.problemTypes, language),
-        formatQualityAiProblemLocationPairs(item.problemLocationPairs, language),
       ])].filter(Boolean).join(" ")
     : visibleItems.flatMap((item) => [item.modelLabel, ...item.phenomena]).join(" ");
   const rotationDuration = getBriefingDuration(readingText);
@@ -1246,10 +1223,10 @@ function QualityPanel({ model, language }: { model: OverviewBoardModel; language
       </header>
       {showQualityAi ? (
         <div className={`${styles.qualityViewport} ${styles.qualityAiViewport}`}>
-          <p className={styles.qualityAiRibbon} title={qualityAiSummaryText ?? undefined}>
+          <div className={styles.qualityAiRibbon}>
             <Sparkles aria-hidden="true" />
-            <span>{qualityAiSummaryText}</span>
-          </p>
+            <HorizontalReadingText text={qualityAiSummaryText ?? "—"} label={copy.qualityAiDaily} language={language} variant="ribbon" />
+          </div>
           <div className={styles.qualitySlideStage}>
             <AnimatePresence custom={rollDirection} initial={false} mode="sync">
               <motion.div
