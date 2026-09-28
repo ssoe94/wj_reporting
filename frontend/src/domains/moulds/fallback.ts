@@ -92,6 +92,8 @@ const FALLBACK_MACHINES: MouldMachineSlot[] = Array.from({ length: 17 }, (_, ind
     locationCode: `#${number}-${sourceTonnage}`,
     label: `${number}호기`,
     tonnage,
+    sourceTonnage,
+    displayTonnage: number === 7 ? "1800T" : tonnage,
     mouldCount: 0,
     conflict: false,
   };

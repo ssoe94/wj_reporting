@@ -83,6 +83,10 @@ class MESResourceService:
                 '16': '1050T-16',
                 '17': '1200T-17',
             }
+        # The temporary 1800T MES rename was reverted. Physical display tonnage
+        # is separate from the process resource key, including old overrides.
+        if self.device_code_map.get('7') == '1800T-7':
+            self.device_code_map['7'] = '1300T-7'
 
     def _map_machine_to_device_code(self, machine_number: int) -> str:
         key = str(machine_number)
@@ -932,7 +936,7 @@ class MESResourceService:
         for machine_no in machine_numbers:
             default_tonnage_map = {
                 1: '850T', 2: '850T', 3: '1300T', 4: '1400T', 5: '1400T', 6: '2500T',
-                7: '1800T', 8: '850T', 9: '850T', 10: '650T', 11: '550T', 12: '550T',
+                7: '1300T', 8: '850T', 9: '850T', 10: '650T', 11: '550T', 12: '550T',
                 13: '450T', 14: '850T', 15: '650T', 16: '1050T', 17: '1200T'
             }
             tonnage = display_tonnage(

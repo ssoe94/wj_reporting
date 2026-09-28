@@ -145,3 +145,37 @@ class MatrixLoadingTests(TestCase):
         listed = next(row for row in MachineListView().get(None).data['machines'] if row['machine_number'] == 7)
         self.assertEqual(listed['tonnage'], '1800T')
         self.assertEqual(listed['display_name'], '7호기 - 1800T')
+
+    def test_machine_7_collects_restored_mes_code_and_keeps_temporary_rename_history(self):
+        with patch('injection.mes_service.MES_DEVICE_CODE_MAP', ''):
+            service = MESResourceService()
+
+        requested_codes = []
+
+        def fetch(*, device_code, **_kwargs):
+            requested_codes.append(device_code)
+            return {'list': [{}]} if device_code == '1300T-7' else {'list': []}
+
+        self.sample(self.start - timedelta(minutes=1), 100, machine=7, device='1800T-7')
+        with patch.object(service, 'get_resource_monitoring_data', side_effect=fetch), patch.object(
+            service, '_parse_raw_records', return_value=([(int(self.start.timestamp() * 1000), 102)], [], []),
+        ):
+            service._update_single_hour_snapshot(self.start)
+
+        self.assertIn('1300T-7', requested_codes)
+        self.assertNotIn('1800T-7', requested_codes)
+        self.assertTrue(InjectionMonitoringRecord.objects.filter(
+            machine_name='7호기', device_code='1300T-7', timestamp=self.start, capacity=102,
+        ).exists())
+        self.sample(self.start + timedelta(minutes=1), 105, machine=7, device='1300T-7')
+
+        result = self.matrix([7])
+        self.assertEqual(result['actual_production_matrix']['7'], [3, 0])
+        self.assertEqual(result['machine_sources']['7']['status'], 'ok')
+        self.assertEqual(result['machines'][0]['tonnage'], '1800T')
+
+    def test_temporary_machine_7_override_cannot_select_the_retired_mes_key(self):
+        with patch('injection.mes_service.MES_DEVICE_CODE_MAP', '6:2500T-6,7:1800T-7'):
+            service = MESResourceService()
+        self.assertEqual(service._map_machine_to_device_code(7), '1300T-7')
+        self.assertEqual(service._map_machine_to_device_code(6), '2500T-6')

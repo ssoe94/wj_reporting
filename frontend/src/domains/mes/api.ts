@@ -188,6 +188,15 @@ export async function getInjectionProductionMatrix(machineNumber?: number) {
   return fetchInjectionProductionMatrix(undefined, machineNumber);
 }
 
+/** Small read-only window for per-machine coverage on the mould board. */
+export async function getInjectionActivityCoverage() {
+  const response = await http.get<InjectionProductionMatrix>(
+    mesEndpoint("/injection/production-matrix/?interval=10min&columns=2"),
+    { skipAuth: true },
+  );
+  return normalizeInjectionProductionMatrix(response.data);
+}
+
 export async function getInjectionProductionMatrixForDate(date: string) {
   return fetchInjectionProductionMatrix(date);
 }

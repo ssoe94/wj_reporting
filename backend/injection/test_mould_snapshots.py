@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 from injection.models import MouldDataSnapshot, MouldUsageConfirmation
 from injection.mould_snapshots import (
     BOARD_SNAPSHOT_KEY,
+    decorate_board_payload,
     decorate_detail_payload,
     detail_snapshot_key,
     last_production_at,
@@ -39,6 +40,35 @@ def detail_payload(*, shot_count=245_000):
 
 
 class MouldSnapshotUsageTests(TestCase):
+    def test_cached_board_refreshes_machine_display_and_alias_counts_without_rewriting_sources(self):
+        payload = {
+            'moulds': [
+                {'instance_id': '1', 'summary_category': 'machine', 'location': {'code': '#7-1300T', 'kind': 'machine', 'machine_number': 7}},
+                {'instance_id': '2', 'summary_category': 'unknown', 'location': {'code': '#7-1800T', 'kind': 'unknown', 'machine_number': 7}},
+            ],
+            'machines': [{'number': 7, 'tonnage': '1300T', 'label': '7호기1300T'}],
+            'locations': [
+                {'code': '#7-1300T', 'kind': 'machine', 'conflict': False},
+                {'code': '#7-1800T', 'kind': 'unknown', 'conflict': False},
+            ],
+            'summary': {'total': 2, 'mounted': 1, 'unknown': 1, 'conflicts': 0},
+            'data_freshness': {'fetched_at': '2026-09-28T09:00:00+08:00'},
+        }
+        result = decorate_board_payload(payload)
+        machine = next(row for row in result['machines'] if row['number'] == 7)
+        self.assertEqual(machine['tonnage'], '1800T')
+        self.assertEqual(machine['source_tonnage'], '1300T')
+        self.assertEqual(machine['display_tonnage'], '1800T')
+        self.assertEqual(machine['mould_count'], 2)
+        self.assertTrue(machine['conflict'])
+        self.assertNotIn('mould_instance_ids', machine)
+        self.assertNotIn('device_code', machine)
+        self.assertEqual(result['summary'], {'total': 2, 'mounted': 2, 'unknown': 0, 'conflicts': 1})
+        self.assertEqual(result['moulds'][1]['location']['code'], '#7-1800T')
+        self.assertEqual(result['data_freshness'], payload['data_freshness'])
+        self.assertEqual(payload['moulds'][1]['location']['kind'], 'unknown')
+        self.assertNotIn('display_tonnage', payload['machines'][0])
+
     def test_last_production_uses_monthly_period_not_generic_record_timestamp(self):
         result = last_production_at([
             {
@@ -165,7 +195,7 @@ class MouldSnapshotUsageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['data_freshness']['status'], 'snapshot')
-        machine = response.json()['machines'][0]
+        machine = next(row for row in response.json()['machines'] if row['number'] == 7)
         self.assertEqual(machine['tonnage'], '1800T')
         self.assertEqual(machine['label'], '7호기 1800T')
         self.assertEqual(machine['location_code'], '#7-1300T')

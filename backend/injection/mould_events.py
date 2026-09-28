@@ -39,6 +39,23 @@ MACHINE_LOCATION_CODES = frozenset(
     }
 )
 
+# Machine 7's MES key remains 1300T. A temporary MES rename is retained only
+# as a historical alias; it must never select a different process resource.
+MACHINE_LOCATION_ALIASES = {"#7-1800T": "#7-1300T"}
+
+
+def canonical_machine_location(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    canonical = MACHINE_LOCATION_ALIASES.get(value, value)
+    return canonical if canonical in MACHINE_LOCATION_CODES else None
+
+
+def _same_location(left: str | None, right: str | None) -> bool:
+    return (canonical_machine_location(left) or left) == (
+        canonical_machine_location(right) or right
+    )
+
 # WJ storage cells currently use either a zone/row/slot label (``C9-18``) or
 # a zone/ordinal label (``A-1``).  Matching is intentionally strict: a value
 # outside these known grammars remains unknown until it is explicitly mapped.
@@ -161,7 +178,7 @@ def classify_location(value: Any) -> str:
 
     candidates = _location_candidates(value)
     for candidate in candidates:
-        if candidate in MACHINE_LOCATION_CODES:
+        if canonical_machine_location(candidate) is not None:
             return "machine"
     for candidate in candidates:
         if _STORAGE_LOCATION_RE.fullmatch(candidate):
@@ -270,7 +287,7 @@ def _build_transition(
 
     if from_location is None and to_location is None:
         return None, [f"missing_location_values:{source_id}"]
-    if from_location == to_location:
+    if _same_location(from_location, to_location):
         return None, [f"same_location_ignored:{source_id}"]
 
     from_kind = classify_location(from_location)
@@ -423,7 +440,7 @@ def normalize_position_history(
 
     if transitions and normalized_current is not None:
         latest_to = transitions[-1]["to_location"]
-        if latest_to != normalized_current:
+        if not _same_location(latest_to, normalized_current):
             warnings.append("history_current_location_mismatch")
 
     if not transitions:
@@ -457,6 +474,7 @@ def normalize_position_history(
 
 __all__ = [
     "MACHINE_LOCATION_CODES",
+    "canonical_machine_location",
     "classify_location",
     "normalize_location",
     "normalize_position_history",

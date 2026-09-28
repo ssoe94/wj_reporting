@@ -49,7 +49,11 @@ export function plannedMouldRelation(mouldModel: string, drawingNo: string, plan
   if (!planned) return "unknown";
   const mouldCode = normalizedModelCode(mouldModel);
   const planCode = normalizedModelCode(plannedModel);
+  const drawingCode = normalizedModelCode(drawingNo);
   if (mouldCode && planCode && mouldCode === planCode) return "exact";
+  // MES often stores the product type (e.g. 托盘) as the model and JF2 as the drawing.
+  // A conflicting structured model still needs review even when its drawing matches.
+  if (drawingCode && planCode && drawingCode === planCode) return mouldCode ? "family" : "exact";
   if (comparableText(drawingNo) === planned) return "family";
   const modelRelation = modelCodeRelation(mouldModel, plannedModel);
   const drawingRelation = modelCodeRelation(drawingNo, plannedModel);
@@ -64,11 +68,10 @@ export function machineIdentityStatus(sourceMachineName: string, machineNumber: 
   if (!boardTonnage) return "unknown";
   if (Number(match[2]) !== machineNumber) return "conflict";
   const sourceTonnage = Number(match[1]);
-  // Machine 7's MES code is 1300T-7 while its displayed physical rating is 1800T.
-  if (machineNumber === 7) {
-    return boardTonnage === 1800 && (sourceTonnage === 1300 || sourceTonnage === 1800) ? "match" : "conflict";
-  }
-  return sourceTonnage === boardTonnage ? "match" : "conflict";
+  // Process comparisons use the MES rating; older clients may supply the display rating.
+  const knownMachineSevenAlias = machineNumber === 7
+    && [1300, 1800].includes(sourceTonnage) && [1300, 1800].includes(boardTonnage);
+  return sourceTonnage === boardTonnage || knownMachineSevenAlias ? "match" : "conflict";
 }
 
 export function machineIdentityConflict(sourceMachineName: string, machineNumber: number, tonnage: string): boolean {
@@ -152,16 +155,74 @@ export function assessPlannedMould(
   return "review";
 }
 
-export function machineCardModel(
-  production: { date: string; basis: string; isRunning: boolean; model: string } | undefined,
+export type ModelValidation =
+  | "match" | "confirmed_match" | "review" | "mismatch" | "confirmed_mismatch"
+  | "unknown" | "no_production" | "mould_missing" | "planned" | "planned_match"
+  | "planned_review" | "planned_mismatch" | "planned_mould_missing"
+  | "machine_identity_conflict" | "machine_identity_unknown" | "recent_output"
+  | "stale" | "activity_unknown" | "ambiguous" | "conflict" | "loading";
+
+export function assessMachineMould(
+  moulds: Array<{ model: string; drawingNo: string }>,
+  production: { date: string; basis: string; isRunning: boolean; model: string; sourceMachineName: string; secondarySourceMachineName?: string; sourceStatus?: string } | undefined,
+  machineNumber: number,
+  tonnage: string,
   referenceDate: string,
-): { model: string; planned: boolean } | null {
+): ModelValidation {
+  if (moulds.length > 1) return "conflict";
+  if (!production) return "no_production";
+  if (production.basis === "planned_only" && production.date === referenceDate && production.model) {
+    const assessment = assessPlannedMould(moulds[0], production, machineNumber, tonnage);
+    return ({ match: "planned_match", review: "planned_review", mismatch: "planned_mismatch",
+      mould_missing: "planned_mould_missing", machine_identity_conflict: "machine_identity_conflict",
+      machine_identity_unknown: "machine_identity_unknown" } as const)[assessment];
+  }
+  if (production.isRunning || production.date === referenceDate) {
+    const identity = machineIdentityEvidenceStatus(production, machineNumber, tonnage);
+    if (identity === "conflict") return "machine_identity_conflict";
+    if (identity === "unknown" && production.isRunning) return "machine_identity_unknown";
+  }
+  if (production.basis === "ambiguous" && production.date === referenceDate) return "ambiguous";
+  if (production.sourceStatus && production.sourceStatus !== "ok") return "activity_unknown";
+  if (!production.isRunning) return "no_production";
+  if (!moulds[0]) return "mould_missing";
+  if (production.basis === "ambiguous") return "ambiguous";
+  if (production.basis === "planned_only") return "planned";
+  if (production.basis === "last_output") return "recent_output";
+  const age = (Date.parse(`${referenceDate}T00:00:00Z`) - Date.parse(`${production.date}T00:00:00Z`)) / 86_400_000;
+  if (!Number.isFinite(age) || age < 0 || age > 3) return "stale";
+  const relation = plannedMouldRelation(moulds[0].model, moulds[0].drawingNo, production.model);
+  return relation === "exact" ? "match" : relation === "family" ? "review" : relation === "different" ? "mismatch" : "unknown";
+}
+
+export function canApplyModelValidation(automatic: ModelValidation): boolean {
+  return ["review", "mismatch", "unknown", "planned_review", "planned_mismatch"].includes(automatic);
+}
+
+export function applyModelValidationRule(automatic: ModelValidation, decision: "match" | "mismatch" | undefined): ModelValidation {
+  // A new automatic identifier match must not erase an existing field rejection.
+  if (decision === "mismatch" && automatic === "match") return "confirmed_mismatch";
+  if (decision === "mismatch" && automatic === "planned_match") return "planned_mismatch";
+  if (!decision || !canApplyModelValidation(automatic)) return automatic;
+  if (automatic.startsWith("planned_")) return decision === "match" ? "planned_match" : "planned_mismatch";
+  return decision === "match" ? "confirmed_match" : "confirmed_mismatch";
+}
+
+export function machineCardModel(
+  production: { date: string; basis: string; isRunning: boolean; model: string; sourceStatus?: string } | undefined,
+  referenceDate: string,
+): { model: string; planned: boolean; recent?: boolean; date?: string } | null {
   if (!production?.model) return null;
   if (production.basis === "planned_only" && production.date === referenceDate) {
     return { model: production.model, planned: true };
   }
-  if (!production.isRunning || !["active_estimate", "carryover_plan"].includes(production.basis)) return null;
   const age = (Date.parse(`${referenceDate}T00:00:00Z`) - Date.parse(`${production.date}T00:00:00Z`)) / 86_400_000;
+  if ((!production.isRunning || (production.sourceStatus && production.sourceStatus !== "ok"))
+    && ["active_estimate", "carryover_plan", "last_output"].includes(production.basis)
+    && Number.isFinite(age) && age >= 0 && age <= 7) {
+    return { model: production.model, planned: false, recent: true, date: production.date };
+  }
+  if (!production.isRunning || !["active_estimate", "carryover_plan"].includes(production.basis)) return null;
   return Number.isFinite(age) && age >= 0 && age <= 3
     ? { model: production.model, planned: false }
     : null;
