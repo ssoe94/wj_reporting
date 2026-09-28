@@ -5985,6 +5985,7 @@
   color: #143c55;
   font-size: clamp(1.3rem, 1.5vw, 1.8rem);
   font-weight: 950;
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.055em;
 }
 
@@ -6149,6 +6150,7 @@
   color: #102f45;
   font-size: clamp(0.7rem, 0.7vw, 0.84rem);
   font-weight: 900;
+  font-variant-numeric: tabular-nums;
 }
 
 .zoneSummaryAges {
@@ -6531,7 +6533,7 @@
     "map footer";
   grid-template-columns: minmax(0, 1.65fr) minmax(180px, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: 7px 12px;
+  gap: 6px 12px;
 }
 
 .zoneSummaryCard.zoneC .zoneSummaryTopline { grid-area: top; }
@@ -6651,6 +6653,17 @@
   }
 
   .zoneSummaryCard.zoneA { --zone-preview-max-width: 124px; }
+  .zoneSummaryCard.zoneA.zoneSummaryCardSearching .zonePreviewMap {
+    width: 84px;
+    height: 84px;
+    grid-auto-rows: minmax(0, 1fr);
+  }
+
+  .zoneSummaryCard.zoneA.zoneSummaryCardSearching .zonePreviewCell {
+    height: 100%;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
   .zoneSummaryCard.zoneB { --zone-preview-max-width: 190px; }
   .zoneSummaryCard.zoneS { --zone-preview-max-width: 164px; }
 }
@@ -6666,15 +6679,17 @@
 .zoneSummaryCard.zoneC .zoneSummaryOccupancy {
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 2px 8px;
+  gap: 3px 10px;
 }
 
 .zoneSummaryCard.zoneC .zoneSummaryOccupancy > strong {
-  font-size: clamp(2rem, 2vw, 3rem);
+  font-size: clamp(2rem, 2.5vw, 4.5rem);
+  letter-spacing: -0.04em;
 }
 
 .zoneSummaryCard.zoneC .zoneSummaryOccupancy > small {
-  font-size: clamp(0.875rem, 0.8vw, 1rem);
+  font-size: clamp(0.875rem, 0.9vw, 1.25rem);
+  font-weight: 750;
 }
 
 .zoneSummaryCard.zoneC .zoneSummaryOccupancy > span {
@@ -6685,6 +6700,80 @@
 
 .zoneSummaryCard.zoneC .zoneSummaryMetrics {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(6px, 0.5vw, 12px);
+}
+
+.zoneSummaryCard.zoneC .zoneSummaryMetrics > span {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px clamp(8px, 0.8vw, 20px);
+  border-color: #cbd9e2;
+  background: #f5f8fa;
+}
+
+.zoneSummaryCard.zoneC .zoneSummaryMetrics small {
+  flex-shrink: 0;
+  color: #435d6f;
+  font-size: clamp(0.8125rem, 0.8vw, 1.125rem);
+  font-weight: 750;
+}
+
+.zoneSummaryCard.zoneC .zoneSummaryMetrics strong {
+  flex-shrink: 0;
+  font-size: clamp(1.5rem, 1.85vw, 3rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+}
+
+.zoneSummaryCard.zoneC .zoneMetricDenominator {
+  margin-left: 3px;
+  color: #506879;
+  font-size: 0.62em;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.zoneSummaryCard.zoneC .zoneSummaryAges {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(6px, 0.5vw, 12px);
+  min-height: 0;
+  padding: 0;
+  border-top: 0;
+}
+
+.zoneSummaryCard.zoneC .zoneSummaryAges > span {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr) auto;
+  gap: 5px;
+  align-self: stretch;
+  padding: 5px 6px;
+  border-radius: 7px;
+  background: #edf2f5;
+  white-space: normal;
+}
+
+.zoneSummaryCard.zoneC .zoneSummaryAgeLabel {
+  min-width: 0;
+  font-size: clamp(0.75rem, 0.72vw, 1rem);
+  line-height: 1.25;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.zoneSummaryCard.zoneC .zoneSummaryAges strong {
+  margin: 0;
+  font-size: clamp(1rem, 1.1vw, 1.625rem);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.zoneSummaryCard.zoneC .zoneSummaryAges i {
+  width: 6px;
+  height: 6px;
 }
 
 .zoneSummaryMetrics {

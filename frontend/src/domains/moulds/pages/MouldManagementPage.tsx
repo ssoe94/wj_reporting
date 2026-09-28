@@ -184,6 +184,7 @@ const COPY = {
     sZoneHint: "별도 보관 위치를 확대해 확인합니다.",
     storedCount: "보관",
     occupiedCells: "사용 좌표",
+    occupancyRate: "보관 점유율",
     mouldRecords: "금형",
     dataIssues: "데이터 이슈",
     duplicateLocations: "중복 좌표",
@@ -401,6 +402,7 @@ const COPY = {
     sZoneHint: "放大查看独立存放位置。",
     storedCount: "存放",
     occupiedCells: "已用坐标",
+    occupancyRate: "库位占用率",
     mouldRecords: "模具",
     dataIssues: "数据问题",
     duplicateLocations: "重复坐标",
@@ -2442,13 +2444,13 @@ export function MouldManagementPage() {
                             </span>
                             <span className={styles.zoneSummaryOccupancy}>
                               <strong>{summary.fillRate}%</strong>
-                              <small>{zone.code === "C" ? copy.occupiedCells : `${summary.occupied}/${summary.capacity}`}</small>
+                              <small>{zone.code === "C" ? copy.occupancyRate : `${summary.occupied}/${summary.capacity}`}</small>
                               <span aria-hidden="true"><i /></span>
                             </span>
                           </span>
 
                           <span className={styles.zoneSummaryMetrics}>
-                            <span><small>{copy.occupiedCells}</small><strong>{summary.occupied}/{summary.capacity}</strong></span>
+                            <span><small>{copy.occupiedCells}</small><strong>{summary.occupied}<span className={styles.zoneMetricDenominator}>/{summary.capacity}</span></strong></span>
                             <span><small>{copy.mouldRecords}</small><strong>{summary.mouldRecords}</strong></span>
                             <span><small>{copy.emptyCells}</small><strong>{summary.empty}</strong></span>
                             <span><small>{copy.conflictCount}</small><strong>{summary.conflicts}</strong></span>
@@ -2466,8 +2468,8 @@ export function MouldManagementPage() {
                             </span>
                           ) : (
                             <span className={styles.zoneSummaryAges}>
-                              <span><i className={styles.zoneAgeSix} />{copy.unusedSixMonths}<strong>{summary.inactiveSix}</strong></span>
-                              <span><i className={styles.zoneAgeTwelve} />{copy.unusedTwelveMonths}<strong>{summary.inactiveTwelve}</strong></span>
+                              <span><i className={styles.zoneAgeSix} /><span className={styles.zoneSummaryAgeLabel}>{copy.unusedSixMonths}</span><strong>{summary.inactiveSix}</strong></span>
+                              <span><i className={styles.zoneAgeTwelve} /><span className={styles.zoneSummaryAgeLabel}>{copy.unusedTwelveMonths}</span><strong>{summary.inactiveTwelve}</strong></span>
                             </span>
                           )}
                         </button>
