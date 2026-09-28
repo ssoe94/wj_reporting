@@ -9599,7 +9599,7 @@ select {
 }
 
 .injection-board-card--stopped,
-.injection-board-card--counter_issue {
+.injection-board-card--shot_issue {
   border-color: #d43c2c;
   border-left-color: #a72c20;
   background: #fff0ed;
@@ -9670,7 +9670,7 @@ select {
 .injection-board-card--running .injection-board-card__header em { background: #008449; color: #ffffff; }
 .injection-board-card--warning .injection-board-card__header em { background: #c47e00; color: #ffffff; }
 .injection-board-card--stopped .injection-board-card__header em,
-.injection-board-card--counter_issue .injection-board-card__header em { background: #c43324; color: #ffffff; }
+.injection-board-card--shot_issue .injection-board-card__header em { background: #c43324; color: #ffffff; }
 .injection-board-card--overproducing .injection-board-card__header em { background: #6244b8; color: #ffffff; }
 .injection-board-card--completed .injection-board-card__header em { background: #07798d; color: #ffffff; }
 .injection-board-card--unplanned .injection-board-card__header em { background: #086fb5; color: #ffffff; }
@@ -9799,7 +9799,7 @@ select {
 .injection-board-card--running .injection-board-card__track > span { background: #008f4f; }
 .injection-board-card--warning .injection-board-card__track > span { background: #dca21d; }
 .injection-board-card--stopped .injection-board-card__track > span,
-.injection-board-card--counter_issue .injection-board-card__track > span { background: #d6533b; }
+.injection-board-card--shot_issue .injection-board-card__track > span { background: #d6533b; }
 .injection-board-card--overproducing .injection-board-card__track > span { background: #7254c7; }
 .injection-board-card--completed .injection-board-card__track > span { background: #178d9e; }
 .injection-board-card--unplanned .injection-board-card__track > span { background: #1686c0; }

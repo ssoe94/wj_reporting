@@ -11,17 +11,17 @@ const planned = {
   recentCycleTimeSec: 1200,
 };
 
-test("a fresh but unchanged counter flags the MES record without declaring a physical stop", () => {
+test("missing observed shots flag a production issue without diagnosing its cause", () => {
   const tone = getBoardTone(planned, 50, false);
-  assert.equal(tone, "counter_issue");
+  assert.equal(tone, "shot_issue");
   assert.equal(getBoardCycleTime(planned, tone), null);
   assert.equal(getBoardTone(planned, 50, true), "stale");
 });
 
-test("sparse counter changes keep a visible record alert and hide the misleading cycle time", () => {
+test("sparse observed shots keep a visible production alert and hide the misleading cycle time", () => {
   const sparse = { ...planned, isRunning: true };
   const tone = getBoardTone(sparse, 50, false);
-  assert.equal(tone, "counter_issue");
+  assert.equal(tone, "shot_issue");
   assert.equal(getBoardCycleTime(sparse, tone), null);
   const normal = { ...sparse, recentCycleTimeSec: 90 };
   assert.equal(getBoardTone(normal, 50, false), "warning");
