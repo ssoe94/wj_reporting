@@ -1082,6 +1082,8 @@ class DailyQualitySummaryTests(TestCase):
         self.assertNotIn("disposition", public_json)
         self.assertNotIn("images", public_json)
         self.assertNotIn('"report"', public_json)
+        self.assertNotIn("외관", public["attention_items"][0]["headline"]["ko"])
+        self.assertIn("과거 품질 보고 1건 중 백화·백색 자국 기록이 1건", public["attention_items"][0]["headline"]["ko"])
 
         rejected = restore_authoritative_quality_result(job, {
             "source": "local_llm_rewrite",
@@ -1138,6 +1140,93 @@ class DailyQualitySummaryTests(TestCase):
             mixed_claim_rejected["llm_fallback_code"],
             "server_safety_rejected",
         )
+
+    def test_overview_attention_copy_uses_only_each_plan_prefix_reports(self):
+        self._plan(machine="850T-1")
+        second_plan = self._plan(machine="850T-2")
+        ProductionPlan.objects.filter(pk=second_plan.pk).update(part_no="XYZ987654-X")
+        for prefix, report_count in (("ABC123456", 2), ("XYZ987654", 3)):
+            for days_ago in range(1, report_count + 1):
+                QualityReport.objects.create(
+                    report_dt=self._local(7, 0) - timedelta(days=days_ago),
+                    section="LQC_INJ",
+                    model="MODEL-A",
+                    part_no=f"{prefix}-R",
+                    judgement="NG",
+                    phenomenon="버",
+                )
+
+        target_date = datetime(2026, 8, 12).date()
+        source = build_daily_quality_attention_ai_input(
+            target_date, model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        metric = next(
+            row for row in source["report_metrics"]["problem_types"]
+            if row["label"]["ko"] == "버·플래시"
+        )
+        self.assertEqual(metric["evidence_count"], 5)
+        evidence_by_key = {
+            row["evidence_key"]: row for row in source["evidence_catalog"]
+        }
+        selected_items = []
+        for item in source["items"]:
+            evidence_keys = {
+                row["evidence_key"]
+                for row in evidence_by_key[item["evidence_key"]]["phenomena"]
+            }
+            selected_items.append({
+                "source_key": item["source_key"],
+                "headline": {"ko": "과거 이력 확인", "zh": "确认历史记录"},
+                "checkpoints": {
+                    "ko": ["기록 내용을 확인하세요."],
+                    "zh": ["请确认记录内容。"],
+                },
+                "problem_types": [] if item["part_prefix"] == "XYZ987654" else [{
+                    "metric_key": metric["metric_key"],
+                    "source_evidence_keys": sorted(
+                        evidence_keys & set(metric["source_evidence_keys"])
+                    ),
+                }],
+            })
+        job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
+                "date": target_date.isoformat(),
+                "source_plan_hash": source["source_plan_hash"],
+                "source_evidence_hash": source["source_evidence_hash"],
+            },
+            input_payload=source,
+        )
+        restored = restore_authoritative_quality_result(job, {
+            "source": "local_llm_rewrite",
+            "summary": {"ko": "과거 이력 확인", "zh": "确认历史记录"},
+            "attention_items": selected_items,
+        })
+        self.assertFalse(restored["llm_fallback"])
+        job.status = AiJob.STATUS_COMPLETED
+        job.result_payload = restored
+        job.completed_at = timezone.now()
+        job.prompt_version = QUALITY_DAILY_EXPECTED_PROMPT_VERSION
+        job.save(update_fields=[
+            "status", "result_payload", "completed_at", "prompt_version", "updated_at",
+        ])
+
+        public = quality_summary_for_overview(target_date)
+        self.assertEqual(public["status"], "ready")
+        by_prefix = {
+            row["part_prefix"]: row for row in public["attention_items"]
+        }
+        self.assertEqual(set(by_prefix), {"ABC123456", "XYZ987654"})
+        for prefix, count in (("ABC123456", 2), ("XYZ987654", 3)):
+            row = by_prefix[prefix]
+            self.assertIn(f"과거 품질 보고 {count}건", row["headline"]["ko"])
+            self.assertIn(f"버·플래시 기록이 {count}건", row["headline"]["ko"])
+            self.assertIn(f"共{count}条", row["headline"]["zh"])
+            self.assertIn("버·플래시", row["checkpoints"]["ko"][0])
+            self.assertNotIn("서버가 연결한", row["checkpoints"]["ko"][0])
 
     def test_overview_state_requires_completed_exact_plan_hash(self):
         plan = self._plan()

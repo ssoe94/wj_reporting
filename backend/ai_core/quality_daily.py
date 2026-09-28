@@ -561,6 +561,142 @@ def _authoritative_attention_checkpoints() -> dict[str, list[str]]:
     }
 
 
+def _overview_attention_copy(
+    source_item: dict[str, Any],
+    evidence: dict[str, Any],
+    report_metrics: dict[str, Any],
+    problem_groups: list[dict[str, Any]],
+) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """Describe one plan target using only its verified historical reports.
+
+    Report metrics span all planned part prefixes, so their aggregate counts
+    cannot be used as counts for an individual wall-board card. Intersect
+    canonical metric evidence with this prefix's report IDs. Worker selections
+    may rank a verified type, but missing selections do not erase server facts.
+    """
+
+    target_report_ids = {
+        ref.get("report_id")
+        for ref in evidence.get("report_refs") or []
+        if isinstance(ref, dict) and isinstance(ref.get("report_id"), int)
+    }
+    report_ids_by_key = {
+        str(row.get("evidence_key")): {
+            report_id
+            for report_id in row.get("report_ids") or []
+            if isinstance(report_id, int) and report_id in target_report_ids
+        }
+        for row in evidence.get("phenomena") or []
+        if isinstance(row, dict) and row.get("evidence_key")
+    }
+    canonical_labels_by_key: dict[str, set[tuple[str, str]]] = {}
+    canonical_reports_by_label: dict[tuple[str, str], set[int]] = {}
+    for group_name in ("problem_types", "problem_location_pairs"):
+        for metric in report_metrics.get(group_name) or []:
+            if not isinstance(metric, dict):
+                continue
+            metric_key = str(metric.get("metric_key") or "")
+            if group_name == "problem_types":
+                if (
+                    not metric_key.startswith("problem:")
+                    or metric_key == "problem:missing"
+                    or metric_key.startswith("problem:unclassified")
+                    or metric.get("classification_basis") in {
+                        "missing_recorded_phenomenon",
+                        "unclassified_recorded_text_hash",
+                        "unclassified",
+                    }
+                ):
+                    continue
+                label = _metric_template_label(metric)
+            else:
+                if (
+                    not metric_key.startswith("pair:")
+                    or metric.get("dimension") != "problem_location_pair"
+                    or metric.get("classification_basis")
+                    != "canonical_problem_explicit_location_pair_v1"
+                    or metric.get("pair_basis") != "same_quality_report_id"
+                ):
+                    continue
+                label = _bilingual(metric.get("problem_label"))
+            if not label["ko"] or not label["zh"]:
+                continue
+            for key in metric.get("source_evidence_keys") or []:
+                evidence_key = str(key)
+                label_pair = (label["ko"], label["zh"])
+                canonical_labels_by_key.setdefault(evidence_key, set()).add(label_pair)
+                canonical_reports_by_label.setdefault(label_pair, set()).update(
+                    report_ids_by_key.get(evidence_key, set())
+                )
+
+    primary: tuple[dict[str, str], int] | None = None
+    for group in problem_groups:
+        if not isinstance(group, dict):
+            continue
+        label = _bilingual(group.get("label"))
+        label_pair = (label["ko"], label["zh"])
+        keys = [str(key) for key in group.get("source_evidence_keys") or []]
+        if (
+            not all(label_pair)
+            or not keys
+            or any(label_pair not in canonical_labels_by_key.get(key, set()) for key in keys)
+        ):
+            continue
+        related_ids = {
+            report_id
+            for key in keys
+            for report_id in report_ids_by_key.get(key, set())
+        }
+        restored_ids = {
+            report_id
+            for report_id in group.get("source_report_ids") or []
+            if isinstance(report_id, int)
+        }
+        count = len(restored_ids & related_ids & target_report_ids)
+        if count:
+            primary = (label, len(canonical_reports_by_label[label_pair]))
+            break
+
+    if primary is None:
+        ranked = sorted(
+            (
+                (label_pair, report_ids)
+                for label_pair, report_ids in canonical_reports_by_label.items()
+                if report_ids
+            ),
+            key=lambda row: (-len(row[1]), row[0][0]),
+        )
+        if ranked:
+            label_pair, report_ids = ranked[0]
+            primary = ({"ko": label_pair[0], "zh": label_pair[1]}, len(report_ids))
+
+    total = len(target_report_ids) or max(
+        0, int(source_item.get("matching_report_count") or 0)
+    )
+    if primary:
+        label, count = primary
+        return (
+            {
+                "ko": f"연결된 과거 품질 보고 {total}건 중 {label['ko']} 기록이 {count}건입니다.",
+                "zh": f"关联的历史品质报告共{total}条，其中{label['zh']}记录{count}条。",
+            },
+            {
+                "ko": [f"교대 전 {label['ko']} 과거 보고와 해당 품번의 검사 기준을 확인하세요."],
+                "zh": [f"交接班前请核对{label['zh']}的历史报告及该品号的检验标准。"],
+            },
+        )
+    return (
+        {
+            "ko": f"이 계획에 연결된 과거 품질 보고 {total}건은 현상 원문 확인이 필요합니다.",
+            "zh": f"该计划关联的{total}条历史品质报告需核对现象原文。",
+        },
+        {
+            "ko": ["교대 전 연결된 보고의 현상 원문과 검사 기준을 확인하세요."],
+            "zh": ["交接班前请核对关联报告中的现象原文和检验标准。"],
+        },
+    )
+
+
 def _compact_public_revision(
     source_plan_hash: str | None,
     source_evidence_hash: str | None,
@@ -1833,8 +1969,8 @@ def _public_completed_result(
         or terminology_mismatch
     )
     public_items = []
-    valid_source_keys = {
-        str(item.get("source_key"))
+    source_items = {
+        str(item.get("source_key")): item
         for item in (
             job.input_payload.get("items")
             if isinstance(job.input_payload, dict)
@@ -1842,10 +1978,25 @@ def _public_completed_result(
         ) or []
         if isinstance(item, dict) and item.get("source_key")
     }
+    evidence_catalog = {
+        str(item.get("evidence_key")): item
+        for item in (
+            job.input_payload.get("evidence_catalog")
+            if isinstance(job.input_payload, dict)
+            else []
+        ) or []
+        if isinstance(item, dict) and item.get("evidence_key")
+    }
+    report_metrics = (
+        job.input_payload.get("report_metrics")
+        if isinstance(job.input_payload, dict)
+        and isinstance(job.input_payload.get("report_metrics"), dict)
+        else {}
+    )
     for item in result.get("attention_items") or []:
         if (
             not isinstance(item, dict)
-            or str(item.get("source_key") or "") not in valid_source_keys
+            or str(item.get("source_key") or "") not in source_items
         ):
             continue
         public_items.append({
@@ -1866,8 +2017,16 @@ def _public_completed_result(
                 "locations",
             )
         })
-        public_items[-1]["headline"] = _authoritative_attention_headline()
-        public_items[-1]["checkpoints"] = _authoritative_attention_checkpoints()
+        source_item = source_items[str(item["source_key"])]
+        evidence = evidence_catalog.get(str(source_item.get("evidence_key") or ""), {})
+        headline, checkpoints = _overview_attention_copy(
+            source_item,
+            evidence,
+            report_metrics,
+            item.get("problem_types") or [],
+        )
+        public_items[-1]["headline"] = headline
+        public_items[-1]["checkpoints"] = checkpoints
         for group_key in ("problem_types",):
             public_items[-1][group_key] = [
                 {

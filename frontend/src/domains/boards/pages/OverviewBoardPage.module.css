@@ -1407,10 +1407,9 @@
   flex: 0 0 auto;
 }
 
-.qualityAiRibbon > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.qualityAiRibbon > div {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .qualitySlideStage {
