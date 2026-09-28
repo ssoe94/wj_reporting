@@ -69,7 +69,8 @@ class MESResourceService:
                 '4': '1400T-4',
                 '5': '1400T-5',
                 '6': '2500T-6',
-                '7': '1800T-7',
+                # The MES telemetry identity stays 1300T-7; physical tonnage is 1800T.
+                '7': '1300T-7',
                 '8': '850T-8',
                 '9': '850T-9',
                 '10': '650T-10',

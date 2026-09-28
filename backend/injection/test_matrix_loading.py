@@ -110,7 +110,7 @@ class MatrixLoadingTests(TestCase):
 
         self.assertEqual([(row['machine_number'], row['tonnage']) for row in result['machines']], [(1, '900T'), (2, '850T')])
 
-    def test_machine_7_rename_collects_new_mes_code_and_keeps_old_history(self):
+    def test_machine_7_collects_stable_mes_code_and_displays_physical_tonnage(self):
         with patch('injection.mes_service.MES_DEVICE_CODE_MAP', ''):
             service = MESResourceService()
 
@@ -118,7 +118,7 @@ class MatrixLoadingTests(TestCase):
 
         def fetch(*, device_code, **_kwargs):
             requested_codes.append(device_code)
-            return {'list': [{}]} if device_code == '1800T-7' else {'list': []}
+            return {'list': [{}]} if device_code == '1300T-7' else {'list': []}
 
         self.sample(self.start - timedelta(minutes=1), 100, machine=7, device='1300T-7')
         with patch.object(service, 'get_resource_monitoring_data', side_effect=fetch), patch.object(
@@ -126,14 +126,14 @@ class MatrixLoadingTests(TestCase):
         ):
             service._update_single_hour_snapshot(self.start)
 
-        self.assertIn('1800T-7', requested_codes)
-        self.assertNotIn('1300T-7', requested_codes)
+        self.assertIn('1300T-7', requested_codes)
+        self.assertNotIn('1800T-7', requested_codes)
         self.assertTrue(InjectionMonitoringRecord.objects.filter(
-            machine_name='7호기', device_code='1800T-7', timestamp=self.start, capacity=102,
+            machine_name='7호기', device_code='1300T-7', timestamp=self.start, capacity=102,
         ).exists())
-        self.sample(self.start + timedelta(minutes=1), 105, machine=7, device='1800T-7')
+        self.sample(self.start + timedelta(minutes=1), 105, machine=7, device='1300T-7')
 
         result = self.matrix([7])
-        self.assertEqual(result['actual_production_matrix']['7'], [3, 0])
+        self.assertEqual(result['actual_production_matrix']['7'], [5, 0])
         self.assertEqual(result['machine_sources']['7']['status'], 'ok')
         self.assertEqual(result['machines'][0]['tonnage'], '1800T')
