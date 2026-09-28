@@ -132,7 +132,7 @@ const boardCopy = {
     unplannedRunning: "계획 외 가동",
     warning: "진도 확인",
     stopped: "금형 교체 추정",
-    counterIssue: "MES 형합수 이상",
+    shotIssue: "형합 실적 이상",
     changeoverEstimate: "금형 교체 추정",
     newRunEstimate: "모델 전환 추정·현장 확인",
     overproducing: "초과 생산 중",
@@ -153,7 +153,7 @@ const boardCopy = {
     currentCt: "현재 C/T",
     recentCt: "최근 60분 기준",
     recentShots: "최근 60분 형합",
-    mesRecord: "MES 기록",
+    checkEquipment: "설비 상태 확인",
     visitorCt: "C/T 범위",
     enableVisitorMode: "방문객 모드 켜기",
     disableVisitorMode: "방문객 모드 끄기",
@@ -226,7 +226,7 @@ const boardCopy = {
     unplannedRunning: "计划外运行",
     warning: "进度待确认",
     stopped: "推测正在换模",
-    counterIssue: "MES合模计数异常",
+    shotIssue: "合模次数异常",
     changeoverEstimate: "推测正在换模",
     newRunEstimate: "推测已换型·待现场确认",
     overproducing: "超额生产中",
@@ -247,7 +247,7 @@ const boardCopy = {
     currentCt: "当前周期",
     recentCt: "最近60分钟基准",
     recentShots: "最近60分钟合模",
-    mesRecord: "MES记录",
+    checkEquipment: "核查设备状态",
     visitorCt: "周期范围",
     enableVisitorMode: "开启访客模式",
     disableVisitorMode: "关闭访客模式",
@@ -627,7 +627,7 @@ function getStatusLabel(tone: BoardTone, copy: typeof boardCopy.ko) {
   return {
     running: copy.plannedRunning,
     warning: copy.warning,
-    counter_issue: copy.counterIssue,
+    shot_issue: copy.shotIssue,
     stopped: copy.stopped,
     overproducing: copy.overproducing,
     completed: copy.completed,
@@ -926,7 +926,7 @@ function MachineBoardCard({
         </div>
         <em>{row?.transition?.phase === "changeover"
           ? copy.changeoverEstimate
-          : machine.tone !== "counter_issue" && row?.transition?.phase === "new_running" && row.transition.confirmation_status === "pending"
+          : machine.tone !== "shot_issue" && row?.transition?.phase === "new_running" && row.transition.confirmation_status === "pending"
             ? copy.newRunEstimate
             : getStatusLabel(machine.tone, copy)}</em>
       </header>
@@ -947,9 +947,9 @@ function MachineBoardCard({
 
       <div className="injection-board-card__metrics">
         <div>
-          <span>{machine.tone === "counter_issue" ? copy.recentShots : isVisitorMode ? copy.visitorCt : copy.currentCt}</span>
-          <strong className={isVisitorMode && machine.tone !== "counter_issue" ? "injection-board-card__ct-range" : undefined}>
-            {machine.tone === "counter_issue"
+          <span>{machine.tone === "shot_issue" ? copy.recentShots : isVisitorMode ? copy.visitorCt : copy.currentCt}</span>
+          <strong className={isVisitorMode && machine.tone !== "shot_issue" ? "injection-board-card__ct-range" : undefined}>
+            {machine.tone === "shot_issue"
               ? `${formatNumber(row?.recentShots ?? 0)}${copy.shots}`
               : machine.currentCycleTimeSec === null
                 ? "-"
@@ -957,7 +957,7 @@ function MachineBoardCard({
                   ? `${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MIN_MULTIPLIER).toFixed(1)}–${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MAX_MULTIPLIER).toFixed(1)}s`
                   : `${machine.currentCycleTimeSec.toFixed(1)}s`}
           </strong>
-          {!isVisitorMode ? <small>{machine.tone === "counter_issue" ? copy.mesRecord : copy.recentCt} · <Link className="injection-board-card__history-link" to={machineHistoryUrl} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>{historyLabel}</Link></small> : null}
+          {!isVisitorMode ? <small>{machine.tone === "shot_issue" ? copy.checkEquipment : copy.recentCt} · <Link className="injection-board-card__history-link" to={machineHistoryUrl} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>{historyLabel}</Link></small> : null}
         </div>
         <div>
           <span>{copy.progress}</span>
@@ -1299,11 +1299,11 @@ export function InjectionBoardPage() {
   const { plannedRunningCount, unplannedRunningCount, totalRunningCount, idleMachineCount, staleMachineCount } = summarizeBoardAvailability(machines);
   const staleMachineLabels = machines.filter((machine) => machine.tone === "stale")
     .map((machine) => `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`).join(", ");
-  const statusCheckCount = machines.filter((machine) => machine.tone === "stopped" || machine.tone === "counter_issue").length;
+  const statusCheckCount = machines.filter((machine) => machine.tone === "stopped" || machine.tone === "shot_issue").length;
   const warningCount = machines.filter((machine) => machine.tone === "warning").length;
   const plannedMachineCount = machines.filter((machine) => machine.row?.hasPlan).length;
   const statusCheckMachineLabels = machines
-    .filter((machine) => machine.tone === "stopped" || machine.tone === "counter_issue")
+    .filter((machine) => machine.tone === "stopped" || machine.tone === "shot_issue")
     .map((machine) => `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`)
     .join(", ");
   const unplannedMachineLabels = machines
