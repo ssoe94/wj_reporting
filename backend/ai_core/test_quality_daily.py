@@ -1227,6 +1227,89 @@ class DailyQualitySummaryTests(TestCase):
             self.assertIn(f"共{count}条", row["headline"]["zh"])
             self.assertIn("버·플래시", row["checkpoints"]["ko"][0])
             self.assertNotIn("서버가 연결한", row["checkpoints"]["ko"][0])
+            self.assertEqual(
+                [(group["label"]["ko"], group["count"]) for group in row["problem_types"]],
+                [("버·플래시", count)],
+            )
+            self.assertTrue(all(
+                key.startswith(f"{prefix}:")
+                for group in row["problem_types"]
+                for key in group["source_evidence_keys"]
+            ))
+
+    def test_overview_type_counts_match_headline_when_worker_selects_subset(self):
+        self._plan()
+        target_date = datetime(2026, 8, 12).date()
+        for index, phenomenon in enumerate(
+            ["버"] * 2 + ["플래시"] * 9 + ["버, 스크래치"]
+        ):
+            QualityReport.objects.create(
+                report_dt=self._local(7, 0) - timedelta(days=index + 1),
+                section="LQC_INJ",
+                model="MODEL-A",
+                part_no=f"ABC123456-R{index}",
+                judgement="NG",
+                phenomenon=phenomenon,
+            )
+
+        source = build_daily_quality_attention_ai_input(
+            target_date, model_id=QUALITY_DAILY_MODEL_ID,
+        )
+        item = source["items"][0]
+        metrics = {
+            row["canonical_key"]: row
+            for row in source["report_metrics"]["problem_types"]
+            if row.get("canonical_key")
+        }
+        self.assertEqual(metrics["burr_flash"]["evidence_count"], 12)
+        self.assertEqual(metrics["scratch_damage"]["evidence_count"], 1)
+        evidence = next(
+            row for row in source["evidence_catalog"]
+            if row["evidence_key"] == item["evidence_key"]
+        )
+        selected_key = next(
+            row["evidence_key"] for row in evidence["phenomena"]
+            if row["text"] == "버"
+        )
+        job = AiJob.objects.create(
+            job_type=AiJob.JOB_TYPE_QUALITY_IMAGE,
+            scope={
+                "mode": QUALITY_DAILY_MODE,
+                "trigger": QUALITY_DAILY_TRIGGER,
+                "model_id": QUALITY_DAILY_MODEL_ID,
+                "date": target_date.isoformat(),
+                "source_plan_hash": source["source_plan_hash"],
+                "source_evidence_hash": source["source_evidence_hash"],
+            },
+            input_payload=source,
+        )
+        restored = restore_authoritative_quality_result(job, {
+            "source": "local_llm_rewrite",
+            "summary": {"ko": "과거 이력 확인", "zh": "确认历史记录"},
+            "attention_items": [{
+                "source_key": item["source_key"],
+                "problem_types": [{
+                    "metric_key": metrics["burr_flash"]["metric_key"],
+                    "source_evidence_keys": [selected_key],
+                }],
+            }],
+        })
+        self.assertFalse(restored["llm_fallback"])
+        self.assertEqual(restored["attention_items"][0]["problem_types"][0]["count"], 2)
+        job.status = AiJob.STATUS_COMPLETED
+        job.result_payload = restored
+        job.completed_at = timezone.now()
+        job.prompt_version = QUALITY_DAILY_EXPECTED_PROMPT_VERSION
+        job.save(update_fields=[
+            "status", "result_payload", "completed_at", "prompt_version", "updated_at",
+        ])
+
+        public_item = quality_summary_for_overview(target_date)["attention_items"][0]
+        self.assertIn("과거 품질 보고 12건 중 버·플래시 기록이 12건", public_item["headline"]["ko"])
+        self.assertEqual(
+            [(group["label"]["ko"], group["count"]) for group in public_item["problem_types"]],
+            [("버·플래시", 12), ("스크래치·찍힘", 1)],
+        )
 
     def test_overview_state_requires_completed_exact_plan_hash(self):
         plan = self._plan()

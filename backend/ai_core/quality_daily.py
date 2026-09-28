@@ -566,7 +566,7 @@ def _overview_attention_copy(
     evidence: dict[str, Any],
     report_metrics: dict[str, Any],
     problem_groups: list[dict[str, Any]],
-) -> tuple[dict[str, str], dict[str, list[str]]]:
+) -> tuple[dict[str, str], dict[str, list[str]], list[dict[str, Any]]]:
     """Describe one plan target using only its verified historical reports.
 
     Report metrics span all planned part prefixes, so their aggregate counts
@@ -591,6 +591,7 @@ def _overview_attention_copy(
     }
     canonical_labels_by_key: dict[str, set[tuple[str, str]]] = {}
     canonical_reports_by_label: dict[tuple[str, str], set[int]] = {}
+    canonical_keys_by_label: dict[tuple[str, str], set[str]] = {}
     for group_name in ("problem_types", "problem_location_pairs"):
         for metric in report_metrics.get(group_name) or []:
             if not isinstance(metric, dict):
@@ -623,11 +624,13 @@ def _overview_attention_copy(
                 continue
             for key in metric.get("source_evidence_keys") or []:
                 evidence_key = str(key)
+                report_ids = report_ids_by_key.get(evidence_key, set())
+                if not report_ids:
+                    continue
                 label_pair = (label["ko"], label["zh"])
                 canonical_labels_by_key.setdefault(evidence_key, set()).add(label_pair)
-                canonical_reports_by_label.setdefault(label_pair, set()).update(
-                    report_ids_by_key.get(evidence_key, set())
-                )
+                canonical_keys_by_label.setdefault(label_pair, set()).add(evidence_key)
+                canonical_reports_by_label.setdefault(label_pair, set()).update(report_ids)
 
     primary: tuple[dict[str, str], int] | None = None
     for group in problem_groups:
@@ -673,6 +676,47 @@ def _overview_attention_copy(
     total = len(target_report_ids) or max(
         0, int(source_item.get("matching_report_count") or 0)
     )
+    # The restored worker groups assign each report to only one label.  The
+    # wall board describes each type's independent report frequency, including
+    # reports that mention more than one type and canonical keys the worker
+    # did not select.
+    ranked_labels = sorted(
+        (
+            label_pair for label_pair, report_ids in canonical_reports_by_label.items()
+            if report_ids
+        ),
+        key=lambda label_pair: (
+            -len(canonical_reports_by_label[label_pair]), label_pair[0]
+        ),
+    )
+    if primary:
+        primary_pair = (primary[0]["ko"], primary[0]["zh"])
+        if primary_pair in ranked_labels:
+            ranked_labels.remove(primary_pair)
+            ranked_labels.insert(0, primary_pair)
+    public_problem_types = [
+        {
+            "label": {"ko": label_pair[0], "zh": label_pair[1]},
+            "count": len(canonical_reports_by_label[label_pair]),
+            "source_evidence_keys": sorted(canonical_keys_by_label[label_pair]),
+        }
+        for label_pair in ranked_labels
+    ]
+    unknown_keys = sorted(
+        key for key, report_ids in report_ids_by_key.items()
+        if report_ids and key not in canonical_labels_by_key
+    )
+    unknown_report_ids = {
+        report_id
+        for key in unknown_keys
+        for report_id in report_ids_by_key[key]
+    }
+    if unknown_report_ids:
+        public_problem_types.append({
+            "label": dict(QUALITY_UNKNOWN_PROBLEM_TYPE),
+            "count": len(unknown_report_ids),
+            "source_evidence_keys": unknown_keys,
+        })
     if primary:
         label, count = primary
         return (
@@ -684,6 +728,7 @@ def _overview_attention_copy(
                 "ko": [f"교대 전 {label['ko']} 과거 보고와 해당 품번의 검사 기준을 확인하세요."],
                 "zh": [f"交接班前请核对{label['zh']}的历史报告及该品号的检验标准。"],
             },
+            public_problem_types,
         )
     return (
         {
@@ -694,6 +739,7 @@ def _overview_attention_copy(
             "ko": ["교대 전 연결된 보고의 현상 원문과 검사 기준을 확인하세요."],
             "zh": ["交接班前请核对关联报告中的现象原文和检验标准。"],
         },
+        public_problem_types,
     )
 
 
@@ -2019,7 +2065,7 @@ def _public_completed_result(
         })
         source_item = source_items[str(item["source_key"])]
         evidence = evidence_catalog.get(str(source_item.get("evidence_key") or ""), {})
-        headline, checkpoints = _overview_attention_copy(
+        headline, checkpoints, problem_types = _overview_attention_copy(
             source_item,
             evidence,
             report_metrics,
@@ -2027,16 +2073,7 @@ def _public_completed_result(
         )
         public_items[-1]["headline"] = headline
         public_items[-1]["checkpoints"] = checkpoints
-        for group_key in ("problem_types",):
-            public_items[-1][group_key] = [
-                {
-                    "label": group.get("label"),
-                    "count": group.get("count"),
-                    "source_evidence_keys": list(group.get("source_evidence_keys") or []),
-                }
-                for group in item.get(group_key) or []
-                if isinstance(group, dict)
-            ]
+        public_items[-1]["problem_types"] = problem_types
         public_items[-1]["locations"] = []
         public_items[-1]["problem_location_pairs"] = [
             {
