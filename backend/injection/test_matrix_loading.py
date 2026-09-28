@@ -8,6 +8,7 @@ from django.test.utils import CaptureQueriesContext
 
 from .mes_service import MESResourceService, mes_service
 from .models import InjectionMonitoringRecord, InjectionReport
+from .views import MachineListView
 
 
 class MatrixLoadingTests(TestCase):
@@ -132,8 +133,15 @@ class MatrixLoadingTests(TestCase):
             machine_name='7호기', device_code='1300T-7', timestamp=self.start, capacity=102,
         ).exists())
         self.sample(self.start + timedelta(minutes=1), 105, machine=7, device='1300T-7')
+        InjectionReport.objects.create(
+            date=self.start.date(), machine_no=7, tonnage='1300T', model='QA', section='C/A',
+            plan_qty=1, actual_qty=1, reported_defect=0, actual_defect=0,
+        )
 
         result = self.matrix([7])
         self.assertEqual(result['actual_production_matrix']['7'], [5, 0])
         self.assertEqual(result['machine_sources']['7']['status'], 'ok')
         self.assertEqual(result['machines'][0]['tonnage'], '1800T')
+        listed = next(row for row in MachineListView().get(None).data['machines'] if row['machine_number'] == 7)
+        self.assertEqual(listed['tonnage'], '1800T')
+        self.assertEqual(listed['display_name'], '7호기 - 1800T')

@@ -1376,6 +1376,8 @@ function getMachineNumberFromName(value: string | null | undefined) {
 
 function getQuickPlanMachineName(row: RealtimeProgressRow, mesData?: InjectionProductionMatrix) {
   const machineNumber = Number(row.key || getMachineNumberFromName(row.label));
+  // The MES resource identity remains stable when the physical tonnage label changes.
+  if (machineNumber === 7) return "1300T-7";
   const machine = Number.isFinite(machineNumber)
     ? mesData?.machines?.find((item) => item.machine_number === machineNumber)
     : undefined;

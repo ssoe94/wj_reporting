@@ -16,6 +16,7 @@ from django.db import connection, transaction
 from django.db.models import Q, Subquery
 from django.db.models.functions import TruncHour
 from inventory.mes import get_access_token, MES_BASE_URL, MES_ROUTE_BASE
+from injection.machine_display import display_tonnage
 from injection.models import InjectionMonitoringRecord, InjectionMonitoringRollup, adjust_monitoring_capacity
 from production.counter_utils import calculate_counter_increment
 
@@ -934,7 +935,10 @@ class MESResourceService:
                 7: '1800T', 8: '850T', 9: '850T', 10: '650T', 11: '550T', 12: '550T',
                 13: '450T', 14: '850T', 15: '650T', 16: '1050T', 17: '1200T'
             }
-            tonnage = tonnage_by_machine.get(machine_no, default_tonnage_map.get(machine_no, f'{machine_no * 50}T'))
+            tonnage = display_tonnage(
+                machine_no,
+                tonnage_by_machine.get(machine_no, default_tonnage_map.get(machine_no, f'{machine_no * 50}T')),
+            )
             machine_info_map[machine_no] = {
                 'name': f'{machine_no}호기',
                 'tonnage': tonnage

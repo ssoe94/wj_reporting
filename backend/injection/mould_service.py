@@ -34,6 +34,7 @@ from .mould_events import (
     normalize_location,
     normalize_position_history,
 )
+from .machine_display import display_tonnage
 
 
 MOULD_OBJECT_CODE = "MOLD001__c"
@@ -1311,12 +1312,13 @@ def _machine_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         if match is None:
             continue
         number = int(match.group("number"))
-        tonnage = match.group("tonnage")
+        source_tonnage = match.group("tonnage")
+        tonnage = display_tonnage(number, source_tonnage)
         occupants = _unique_location_occupants(by_location.get(location_code, []))
         machines.append(
             {
                 "number": number,
-                "device_code": f"{tonnage}-{number}",
+                "device_code": f"{source_tonnage}-{number}",
                 "location_code": location_code,
                 "label": f"{number}호기 {tonnage}",
                 "tonnage": tonnage,

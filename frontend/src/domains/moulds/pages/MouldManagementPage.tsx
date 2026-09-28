@@ -811,7 +811,7 @@ function buildFallbackMachineProductionLinks(board: MouldBoard | undefined) {
     const slot = board.machines.find((machine) => machine.number === machineNumber);
     links.set(machineNumber, {
       date,
-      sourceMachineName: slot?.tonnage ? `${slot.tonnage.replace(/T$/i, "")}T-${machineNumber}` : "",
+      sourceMachineName: slot?.deviceCode ?? "",
       isRunning: true,
       model: machineNumber % 4 === 0 ? `${mould.model}X` : `${mould.model}-QA`,
       partNo: `QA-${String(machineNumber).padStart(2, "0")}`,

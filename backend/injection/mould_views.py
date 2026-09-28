@@ -30,6 +30,7 @@ from .mould_service import (
     unavailable_board_payload,
     unavailable_detail_payload,
 )
+from .machine_display import display_tonnage
 from .mould_snapshots import (
     BOARD_SNAPSHOT_KEY,
     SHOT_MILESTONE_SIZE,
@@ -282,10 +283,15 @@ def _project_mould(value: Any) -> dict[str, Any]:
 
 def _project_board_payload(payload: Any) -> dict[str, Any]:
     source = _mapping(payload)
+    machines = _project_rows(source.get("machines"), _MACHINE_FIELDS)
+    for machine in machines:
+        if machine.get("number") == 7:
+            machine["tonnage"] = display_tonnage(7, machine.get("tonnage"))
+            machine["label"] = f"7호기 {machine['tonnage']}"
     return {
         "summary": _project_fields(source.get("summary"), _SUMMARY_FIELDS),
         "locations": _project_rows(source.get("locations"), _LOCATION_FIELDS),
-        "machines": _project_rows(source.get("machines"), _MACHINE_FIELDS),
+        "machines": machines,
         "moulds": [
             _project_mould(item)
             for item in source.get("moulds", [])
@@ -495,7 +501,7 @@ class MouldBoardView(APIView):
                         BOARD_SNAPSHOT_KEY,
                         _refresh_board_snapshot,
                     )
-                payload = decorate_board_payload(snapshot.payload)
+                payload = decorate_board_payload(_project_board_payload(snapshot.payload))
                 payload = mark_snapshot_freshness(
                     payload,
                     snapshot,
@@ -505,7 +511,7 @@ class MouldBoardView(APIView):
         cache_key = _public_cache_key("board", quick_search.casefold())
         cached_payload = cache.get(cache_key)
         if isinstance(cached_payload, Mapping):
-            return _no_store_response(dict(cached_payload))
+            return _no_store_response(_project_board_payload(cached_payload))
         try:
             payload = build_mould_board(quick_search=quick_search)
         except MouldServiceError as exc:
