@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -118,6 +119,10 @@ const pageCopy = {
     uploadConverting: "PPT 원본을 업로드했습니다. 현장용 미리보기를 변환하고 있습니다.",
     uploadConversionFailed: "PPT 원본은 저장했지만 자동 변환을 시작하지 못했습니다. 같은 자료를 PDF로 저장한 뒤 PDF 한 파일로 다시 올려 주세요.",
     uploadError: "현장 자료 업로드에 실패했습니다.",
+    uploadTooLarge: "파일이 저장소 허용 용량을 초과했습니다. 용량을 확인하고 관리자에게 문의해 주세요.",
+    uploadTimeout: "업로드 응답 시간이 초과됐습니다. 자료 목록을 새로고침해 등록 여부를 확인해 주세요.",
+    uploadNetwork: "서버와 연결이 끊어졌습니다. 자료 목록을 새로고침해 등록 여부를 확인한 뒤 다시 시도해 주세요.",
+    uploadServiceError: "자료 저장 서비스를 이용할 수 없습니다. 자료 목록을 새로고침해 등록 여부를 확인하고 관리자에게 문의해 주세요.",
     invalidDrawing: "도면은 PDF 파일만 선택해 주세요.",
     invalidInstruction: "작업지도서는 PDF, PPT, PPTX 파일만 선택해 주세요.",
     pptWarning: "PPT/PPTX는 업로드 후 현장용 화면으로 자동 변환됩니다.",
@@ -212,6 +217,10 @@ const pageCopy = {
     uploadConverting: "PPT 原件已上传，正在生成现场预览。",
     uploadConversionFailed: "PPT 原件已保存，但无法启动自动转换。请将同一资料另存为 PDF 后，仅上传该 PDF 文件。",
     uploadError: "现场资料上传失败。",
+    uploadTooLarge: "文件超过存储服务允许的大小。请确认文件大小并联系管理员。",
+    uploadTimeout: "上传响应超时。请刷新资料列表，先确认是否已经保存。",
+    uploadNetwork: "与服务器的连接已中断。请刷新资料列表，确认是否已保存后再重试。",
+    uploadServiceError: "资料存储服务暂时不可用。请刷新资料列表确认是否已保存，并联系管理员。",
     invalidDrawing: "图纸只能选择 PDF 文件。",
     invalidInstruction: "作业指导书只能选择 PDF、PPT 或 PPTX 文件。",
     pptWarning: "PPT/PPTX 上传后会自动转换为现场画面。",
@@ -384,14 +393,36 @@ function mergeProductionStatus(
   });
 }
 
-function getErrorMessage(error: unknown, fallback: string) {
+type UploadErrorMessages = {
+  uploadTooLarge: string;
+  uploadTimeout: string;
+  uploadNetwork: string;
+  uploadServiceError: string;
+};
+
+function isSafeErrorDetail(value: unknown): value is string {
+  return typeof value === "string"
+    && value.trim().length > 0
+    && value.length <= 500
+    && !/^\s*</.test(value)
+    && !/<(?:!doctype|html|head|body|title|script)\b/i.test(value);
+}
+
+function getErrorMessage(error: unknown, fallback: string, uploadMessages?: UploadErrorMessages) {
   if (!error || typeof error !== "object") return fallback;
   const data = (error as { response?: { data?: unknown } }).response?.data;
-  if (typeof data === "string" && data.trim()) return data;
+  if (uploadMessages && axios.isAxiosError(error)) {
+    const code = data && typeof data === "object" ? (data as { code?: unknown }).code : undefined;
+    if (error.response?.status === 413 || code === "file_too_large") return uploadMessages.uploadTooLarge;
+    if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") return uploadMessages.uploadTimeout;
+    if (!error.response && (error.request || error.code === "ERR_NETWORK")) return uploadMessages.uploadNetwork;
+    if ([502, 503, 504].includes(error.response?.status ?? 0)) return uploadMessages.uploadServiceError;
+  }
+  if (isSafeErrorDetail(data)) return data.trim();
   if (data && typeof data === "object") {
     const detail = (data as { detail?: unknown; error?: unknown }).detail
       ?? (data as { error?: unknown }).error;
-    if (typeof detail === "string" && detail.trim()) return detail;
+    if (isSafeErrorDetail(detail)) return detail.trim();
   }
   return fallback;
 }
@@ -777,7 +808,7 @@ function UploadDialog({
       setSuccess(uploadedDocument?.conversion_status === "pending" ? c.uploadConverting : c.uploadSuccess);
       window.setTimeout(onClose, uploadedDocument?.conversion_status === "pending" ? 1_200 : 700);
     } catch (error) {
-      setLocalError(getErrorMessage(error, c.uploadError));
+      setLocalError(getErrorMessage(error, c.uploadError, c));
     }
   }
 

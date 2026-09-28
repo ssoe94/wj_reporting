@@ -590,6 +590,7 @@ export async function uploadFieldMaterial(input: {
   if (input.previewPdf) form.append("preview_pdf", input.previewPdf);
   const response = await http.post<unknown>("/production/field-materials/", form, {
     headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120_000,
   });
   const root = asRecord(response.data);
   return normalizeDocument(root.document || root, input.kind);
