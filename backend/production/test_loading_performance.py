@@ -114,9 +114,12 @@ class InjectionCounterLoadingTests(TestCase):
         names = [f'{number}호기' for number in range(1, 6)]
         result = _injection_counter_windows(names, self.start, recent, end)
         for name in names:
-            self.assertEqual(result[name], self.reference(name, recent, end), name)
+            original_contract = {key: result[name][key] for key in ('shots', 'recent_shots', 'latest')}
+            self.assertEqual(original_contract, self.reference(name, recent, end), name)
         self.assertEqual(result['1호기']['shots'], 29)
         self.assertEqual(result['1호기']['recent_shots'], 9)
+        self.assertEqual(result['1호기']['baseline'], 90)
+        self.assertEqual([value for _, value in result['1호기']['samples']], [100, 110, 5, 9])
 
     def test_query_budget_is_two_for_one_or_seventeen_machines(self):
         for machine in range(1, 18):
