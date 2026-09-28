@@ -1,4 +1,3 @@
-import { type MouseEvent } from "react";
 import { ArrowUpRight, Boxes, Factory, LayoutGrid, LogIn, Monitor, Radio, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -10,7 +9,7 @@ const COPY = {
   ko: {
     eyebrow: "WJ DISPLAY CENTER",
     title: "현황판",
-    description: "운영 현황을 큰 화면에 맞춘 전용 보드로 확인합니다. 카드를 누르면 새 전체 화면 창으로 열립니다.",
+    description: "운영 현황을 큰 화면에 맞춘 전용 보드로 확인합니다. 카드를 누르면 해당 현황판으로 이동합니다.",
     count: "운영 현황판 5개",
     publicAccess: "공개 현황판 4개 · 현장 칸반 로그인 필요",
     login: "관리 화면 로그인",
@@ -39,7 +38,7 @@ const COPY = {
   zh: {
     eyebrow: "WJ DISPLAY CENTER",
     title: "看板中心",
-    description: "通过适配大屏的专用看板查看运营现状。点击卡片即可在新的全屏窗口中打开。",
+    description: "通过适配大屏的专用看板查看运营现状。点击卡片即可进入对应看板。",
     count: "5 个运营看板",
     publicAccess: "4 个公开看板 · 现场看板需登录",
     login: "登录管理页面",
@@ -77,18 +76,6 @@ type BoardCard = {
   icon: typeof Factory;
   protected?: boolean;
 };
-
-function openBoard(event: MouseEvent<HTMLAnchorElement>, board: BoardCard) {
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-  event.preventDefault();
-  const popup = window.open(
-    board.href,
-    `wj-${board.key}-board`,
-    "popup=yes,width=1920,height=1080,resizable=yes,scrollbars=yes",
-  );
-  if (popup) popup.focus();
-  else window.location.assign(board.href);
-}
 
 export function BoardHubPage() {
   const { isAuthenticated } = useAuth();
@@ -180,9 +167,6 @@ export function BoardHubPage() {
               className={styles.boardCard}
               href={board.href}
               key={board.key}
-              onClick={(event) => openBoard(event, board)}
-              rel="noopener"
-              target="_blank"
             >
               <figure className={styles.thumbnail}>
                 <img alt={`${board.title} ${copy.preview}`} src={board.image} />
