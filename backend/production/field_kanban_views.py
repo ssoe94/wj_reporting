@@ -302,7 +302,7 @@ class FieldDowntimeConfirmationView(APIView):
         transition = machine_row.get("transition") if isinstance(machine_row, dict) else None
         if (
             not isinstance(transition, dict)
-            or transition.get("phase") not in {"changeover", "new_running"}
+            or transition.get("phase") != "new_running"
             or transition.get("from_plan_id") != from_plan_id
             or transition.get("to_plan_id") != to_plan_id
         ):

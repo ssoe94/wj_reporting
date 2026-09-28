@@ -1902,6 +1902,28 @@ class FieldTransitionStartConfirmationTests(TestCase):
         self.existing.refresh_from_db()
         self.assertNotIn("transition_start_at", self.existing.evidence)
 
+    @patch("production.field_kanban_views.get_injection_summary")
+    def test_cannot_confirm_a_start_before_mes_infers_a_stable_restart(self, summary):
+        summary.return_value = {"machine_rows": [{
+            **self.summary["machine_rows"][0],
+            "transition": {**self.summary["machine_rows"][0]["transition"], "phase": "changeover"},
+        }]}
+        response = self.client.post(
+            "/api/production/field-kanban/confirmations/",
+            {
+                "action": "confirm_transition_start",
+                "business_date": "2026-09-28",
+                "machine_number": 4,
+                "from_plan_id": 101,
+                "to_plan_id": 102,
+                "start_at": "2026-09-28T19:14:00+08:00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.existing.refresh_from_db()
+        self.assertNotIn("transition_start_at", self.existing.evidence)
+
 
 class FieldMaterialUploadTests(TestCase):
     def setUp(self):
