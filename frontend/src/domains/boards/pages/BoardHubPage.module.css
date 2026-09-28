@@ -208,21 +208,19 @@
 
 .thumbnail figcaption {
   position: absolute;
-  top: 14px;
-  left: 14px;
+  right: 12px;
+  bottom: 12px;
   display: inline-flex;
-  min-height: 32px;
+  min-height: 28px;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.62);
+  padding: 0 9px;
+  border: 1px solid rgba(81, 145, 194, 0.28);
   border-radius: 999px;
-  background: rgba(15, 91, 69, 0.82);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.92);
+  color: #285d80;
   font-size: 0.65rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  box-shadow: 0 6px 18px rgba(13, 58, 47, 0.18);
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(29, 75, 107, 0.12);
   backdrop-filter: blur(10px);
 }
 

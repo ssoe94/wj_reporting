@@ -15,7 +15,7 @@ const COPY = {
     publicAccess: "공개 현황판 4개 · 현장 칸반 로그인 필요",
     login: "관리 화면 로그인",
     dashboard: "관리 화면으로",
-    live: "LIVE",
+    previewBadge: "화면 예시",
     publicLink: "공개 링크",
     protectedLink: "로그인 필요",
     open: "현황판 열기",
@@ -27,11 +27,11 @@ const COPY = {
     injectionDescription: "17대 사출기의 계획, 생산 진도와 최근 C/T를 한 화면에서 확인합니다.",
     injectionMeta: "17대 사출기 · 1분 자동 갱신",
     mouldTitle: "금형 실시간 현황판",
-    mouldDescription: "금형의 장착 설비와 Blacklake 기준 A/B/C 보관 위치를 터치로 확인합니다.",
-    mouldMeta: "장착 설비 · A/B/C 보관 위치",
+    mouldDescription: "금형의 장착 설비와 Blacklake 기준 A/B/C/S 보관 위치를 터치로 확인합니다.",
+    mouldMeta: "장착 설비 · A/B/C/S 보관 위치",
     energyTitle: "사출 전력 사용 현황판",
     energyDescription: "17대 사출기의 시간대별 사용량과 전일·7일 평균, 설비별 에너지 효율을 비교합니다.",
-    energyMeta: "전력 사용량 · 전일/7일 비교 · 1분 갱신",
+    energyMeta: "전력 사용량 · 전일/7일 비교 · 10분 갱신",
     fieldTitle: "현장 칸반",
     fieldDescription: "사출기 1~17호기를 선택하면 해당 설비의 작업지도서·도면·품질Issue 화면을 HD 전체화면으로 엽니다.",
     fieldMeta: "사출 1~17호기 · 터치스크린 전용",
@@ -44,7 +44,7 @@ const COPY = {
     publicAccess: "4 个公开看板 · 现场看板需登录",
     login: "登录管理页面",
     dashboard: "返回管理页面",
-    live: "LIVE",
+    previewBadge: "画面示意",
     publicLink: "公开链接",
     protectedLink: "需要登录",
     open: "打开看板",
@@ -56,11 +56,11 @@ const COPY = {
     injectionDescription: "在一个屏幕中查看 17 台注塑机的计划、生产进度和最近 C/T。",
     injectionMeta: "17 台注塑机 · 每分钟刷新",
     mouldTitle: "模具实时看板",
-    mouldDescription: "通过触控查看模具安装设备及基于 Blacklake 的 A/B/C 存放位置。",
-    mouldMeta: "安装设备 · A/B/C 存放位置",
+    mouldDescription: "通过触控查看模具安装设备及基于 Blacklake 的 A/B/C/S 存放位置。",
+    mouldMeta: "安装设备 · A/B/C/S 存放位置",
     energyTitle: "注塑用电现状看板",
     energyDescription: "比较17台注塑机分时用电、前日与7日平均，以及设备能效。",
-    energyMeta: "用电量 · 前日/7日比较 · 每分钟刷新",
+    energyMeta: "用电量 · 前日/7日比较 · 每10分钟刷新",
     fieldTitle: "现场看板",
     fieldDescription: "选择 1~17 号注塑机后，以 HD 全屏打开该设备的作业指导书、图纸和品质Issue。",
     fieldMeta: "1~17 号注塑机 · 触摸屏专用",
@@ -98,7 +98,7 @@ export function BoardHubPage() {
     {
       key: "overview",
       href: "/boards/overview",
-      image: "/board-thumbnails/overview-board.svg",
+      image: "/board-thumbnails/overview-board.svg?v=20260928",
       title: copy.overviewTitle,
       description: copy.overviewDescription,
       meta: copy.overviewMeta,
@@ -107,7 +107,7 @@ export function BoardHubPage() {
     {
       key: "injection",
       href: "/boards/injection",
-      image: "/board-thumbnails/injection-board.png",
+      image: "/board-thumbnails/injection-board.svg?v=20260928",
       title: copy.injectionTitle,
       description: copy.injectionDescription,
       meta: copy.injectionMeta,
@@ -116,7 +116,7 @@ export function BoardHubPage() {
     {
       key: "mould",
       href: "/boards/moulds",
-      image: "/board-thumbnails/mould-board.png",
+      image: "/board-thumbnails/mould-board.svg?v=20260928",
       title: copy.mouldTitle,
       description: copy.mouldDescription,
       meta: copy.mouldMeta,
@@ -125,7 +125,7 @@ export function BoardHubPage() {
     {
       key: "energy",
       href: "/boards/energy",
-      image: "/board-thumbnails/energy-board.svg",
+      image: "/board-thumbnails/energy-board.svg?v=20260928",
       title: copy.energyTitle,
       description: copy.energyDescription,
       meta: copy.energyMeta,
@@ -134,7 +134,7 @@ export function BoardHubPage() {
     {
       key: "field",
       href: "/field",
-      image: "/board-thumbnails/field-kanban.png",
+      image: "/board-thumbnails/field-kanban.svg?v=20260928",
       title: copy.fieldTitle,
       description: copy.fieldDescription,
       meta: copy.fieldMeta,
@@ -186,7 +186,7 @@ export function BoardHubPage() {
             >
               <figure className={styles.thumbnail}>
                 <img alt={`${board.title} ${copy.preview}`} src={board.image} />
-                <figcaption><Radio aria-hidden="true" size={15} />{copy.live}</figcaption>
+                <figcaption>{copy.previewBadge}</figcaption>
               </figure>
               <div className={styles.cardBody}>
                 <div className={styles.cardHeading}>
