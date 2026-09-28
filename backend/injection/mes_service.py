@@ -69,7 +69,7 @@ class MESResourceService:
                 '4': '1400T-4',
                 '5': '1400T-5',
                 '6': '2500T-6',
-                '7': '1300T-7',
+                '7': '1800T-7',
                 '8': '850T-8',
                 '9': '850T-9',
                 '10': '650T-10',
@@ -433,10 +433,11 @@ class MESResourceService:
 
             prev_capacity = baseline.capacity if baseline else None
             prev_time = baseline.timestamp if baseline else None
-            grouped: Dict[datetime, Dict[str, Any]] = {}
+            prev_device_code = baseline.device_code if baseline else None
+            grouped: Dict[tuple[datetime, str], Dict[str, Any]] = {}
 
             def ensure_grouped_bucket(bucket_start: datetime, record: InjectionMonitoringRecord, start_capacity: Optional[float]) -> Dict[str, Any]:
-                return grouped.setdefault(bucket_start, {
+                return grouped.setdefault((bucket_start, record.device_code), {
                     'machine_name': record.machine_name,
                     'device_code': record.device_code,
                     'shot_count': 0.0,
@@ -448,6 +449,11 @@ class MESResourceService:
                 })
 
             for record in records:
+                if record.device_code != prev_device_code:
+                    # A renamed MES resource starts a new counter series. The
+                    # first reading is evidence of collection, not output.
+                    prev_capacity = None
+                    prev_time = None
                 bucket_start = self._floor_bucket_start(record.timestamp, bucket_minutes)
                 bucket = ensure_grouped_bucket(bucket_start, record, prev_capacity)
                 bucket['sample_count'] = int(bucket['sample_count'] or 0) + 1
@@ -493,8 +499,9 @@ class MESResourceService:
 
                 prev_capacity = record.capacity
                 prev_time = record.timestamp
+                prev_device_code = record.device_code
 
-            for bucket_start, values in grouped.items():
+            for (bucket_start, _device_code), values in grouped.items():
                 InjectionMonitoringRollup.objects.update_or_create(
                     device_code=str(values['device_code']),
                     bucket_start=bucket_start,
@@ -523,6 +530,7 @@ class MESResourceService:
         bucket_minutes: int = 30,
         provenance: Optional[Dict[str, Any]] = None,
         observed_matrix: Optional[Dict[str, List[bool]]] = None,
+        observed_device_matrix: Optional[Dict[str, List[set[str]]]] = None,
     ) -> Tuple[List[Dict], Dict[str, List[float]], bool]:
         cst = pytz.timezone('Asia/Shanghai')
         if bucket_minutes <= 0:
@@ -552,6 +560,7 @@ class MESResourceService:
             for index, slot in enumerate(rollup_slots)
         }
         observed_buckets = set()
+        observed_device_buckets = set()
 
         for machine_num in machine_numbers:
             row = actual_matrix.get(str(machine_num), [])
@@ -564,6 +573,12 @@ class MESResourceService:
                     observations = (observed_matrix or {}).get(str(machine_num), [])
                     if slot_index < len(observations) and observations[slot_index]:
                         observed_buckets.add((str(machine_num), target_index))
+                    devices = (observed_device_matrix or {}).get(str(machine_num), [])
+                    if slot_index < len(devices):
+                        observed_device_buckets.update(
+                            (str(machine_num), target_index, device_code)
+                            for device_code in devices[slot_index]
+                        )
 
         rollups = InjectionMonitoringRollup.objects.filter(
             machine_name__in=[f'{number}호기' for number in machine_numbers],
@@ -574,6 +589,7 @@ class MESResourceService:
         )
         has_rollup_source = rollups.exists()
         if has_rollup_source:
+            filled_from_rollups = set()
             for rollup in rollups:
                 try:
                     machine_num = int(rollup.machine_name.replace('호기', '').strip())
@@ -583,8 +599,16 @@ class MESResourceService:
                 if machine_num in machine_numbers and target_index is not None:
                     machine_key = str(machine_num)
                     raw_bucket_value = float(rollup_matrix[machine_key][target_index] or 0)
-                    if raw_bucket_value <= 0 and (machine_key, target_index) not in observed_buckets:
-                        rollup_matrix[machine_key][target_index] = round(float(rollup.shot_count or 0), 3)
+                    key = (machine_key, target_index)
+                    if observed_device_matrix is not None:
+                        use_rollup = (machine_key, target_index, rollup.device_code) not in observed_device_buckets
+                    else:
+                        use_rollup = key not in observed_buckets and (raw_bucket_value <= 0 or key in filled_from_rollups)
+                    if use_rollup:
+                        rollup_matrix[machine_key][target_index] = round(
+                            raw_bucket_value + float(rollup.shot_count or 0), 3,
+                        )
+                        filled_from_rollups.add(key)
                         if provenance is not None:
                             provenance['stored_bucket_count'] = provenance.get('stored_bucket_count', 0) + 1
 
@@ -728,6 +752,7 @@ class MESResourceService:
         power_matrix: Dict[str, List[float]] = {}
         power_usage_matrix: Dict[str, List[float]] = {}
         capacity_observed_matrix: Dict[str, List[bool]] = {}
+        capacity_observed_device_matrix: Dict[str, List[set[str]]] = {}
         machine_sources: Dict[str, Dict[str, Any]] = {}
         generated_at = datetime.now(cst)
         current_business_date = (generated_at - timedelta(hours=8)).date()
@@ -751,7 +776,7 @@ class MESResourceService:
             timestamp__gte=start_of_first_slot,
             timestamp__lt=end_of_last_slot,
         ).only(
-            'machine_name', 'timestamp', 'capacity', 'oil_temperature', 'power_kwh',
+            'machine_name', 'device_code', 'timestamp', 'capacity', 'oil_temperature', 'power_kwh',
         ).order_by('machine_name', 'timestamp', 'pk')
         for record in db_records:
             try:
@@ -775,7 +800,7 @@ class MESResourceService:
                 baseline_ids |= Q(pk=Subquery(latest_baseline))
         baseline_records = (
             InjectionMonitoringRecord.objects.filter(baseline_ids)
-            .only('machine_name', 'timestamp', 'capacity', 'power_kwh')
+            .only('machine_name', 'device_code', 'timestamp', 'capacity', 'power_kwh')
             .order_by('machine_name', '-timestamp', '-pk')
         )
         for record in baseline_records:
@@ -793,20 +818,24 @@ class MESResourceService:
 
         for machine_num in machine_numbers:
             slot_records = {}
-            slot_capacity_values: Dict[str, List[float]] = {}
+            slot_capacity_values: Dict[str, List[tuple[str, float]]] = {}
             capacity_records = []
             for r in records_by_machine[machine_num]:
                 slot_index = bisect_right(slot_starts, r.timestamp) - 1
                 if 0 <= slot_index < len(slot_keys):
                     slot_records[slot_keys[slot_index]] = r
                     if r.capacity is not None and r.capacity >= 0:
-                        slot_capacity_values.setdefault(slot_keys[slot_index], []).append(r.capacity)
+                        slot_capacity_values.setdefault(slot_keys[slot_index], []).append((r.device_code, r.capacity))
                         capacity_records.append(r)
 
             observed_slots = [bool(slot_capacity_values.get(key)) for key in slot_keys]
             latest_capacity_at = capacity_records[-1].timestamp if capacity_records else None
             source_stale = bool(latest_capacity_at and not historical and generated_at - latest_capacity_at > timedelta(minutes=10))
             capacity_observed_matrix[str(machine_num)] = observed_slots
+            capacity_observed_device_matrix[str(machine_num)] = [
+                {device_code for device_code, _capacity in slot_capacity_values.get(key, [])}
+                for key in slot_keys
+            ]
             machine_sources[str(machine_num)] = {
                 'status': 'missing' if latest_capacity_at is None else 'stale' if source_stale else 'ok',
                 'latest_capacity_at': latest_capacity_at.isoformat() if latest_capacity_at else None,
@@ -824,8 +853,10 @@ class MESResourceService:
             record_before_first_slot = baseline_capacity_by_machine[machine_num]
             record_before_first_slot_power = baseline_power_by_machine[machine_num]
             prev_confirmed_cum = record_before_first_slot.capacity if record_before_first_slot else None
+            prev_capacity_device_code = record_before_first_slot.device_code if record_before_first_slot else None
             prev_display_cum = prev_confirmed_cum if prev_confirmed_cum is not None else 0.0
             prev_confirmed_power = record_before_first_slot_power.power_kwh if record_before_first_slot_power else None
+            prev_power_device_code = record_before_first_slot_power.device_code if record_before_first_slot_power else None
             prev_display_power = prev_confirmed_power if prev_confirmed_power is not None else 0.0
 
             for slot in time_slots:
@@ -833,7 +864,7 @@ class MESResourceService:
                 record = slot_records.get(slot_time_iso)
 
                 capacity_values = slot_capacity_values.get(slot_time_iso, [])
-                cum_val = capacity_values[-1] if capacity_values else None
+                cum_val = capacity_values[-1][1] if capacity_values else None
                 t_val = record.oil_temperature if record and record.oil_temperature is not None else 0.0
                 p_val = (
                     record.power_kwh
@@ -845,10 +876,18 @@ class MESResourceService:
                 # Bucket deltas after processing all raw samples. Taking only
                 # the last counter loses any reset inside a chart interval.
                 act_val = 0.0
-                for capacity in capacity_values:
+                for device_code, capacity in capacity_values:
+                    if device_code != prev_capacity_device_code:
+                        prev_confirmed_cum = None
                     act_val += calculate_counter_increment(prev_confirmed_cum, capacity)
                     prev_confirmed_cum = capacity
-                power_act_val = (p_val - prev_confirmed_power) if (p_val is not None and prev_confirmed_power is not None and p_val >= prev_confirmed_power) else 0.0
+                    prev_capacity_device_code = device_code
+                power_act_val = (
+                    p_val - prev_confirmed_power
+                    if p_val is not None and prev_confirmed_power is not None
+                    and record.device_code == prev_power_device_code and p_val >= prev_confirmed_power
+                    else 0.0
+                )
                 
                 # 頇旊┐鞐?響滌嫓霅?雸勳爜 靸濎偘霟? 順勳灛 鞀’鞐?雿办澊韯瓣皜 鞐嗢溂氅?鞚挫爠 臧掛潉 靷毄頃╇媹雼?
                 display_cum = cum_val if cum_val is not None else prev_display_cum
@@ -867,6 +906,7 @@ class MESResourceService:
                     prev_confirmed_cum = cum_val
                 if p_val is not None:
                     prev_confirmed_power = p_val
+                    prev_power_device_code = record.device_code
 
             cumulative_matrix[str(machine_num)] = cum_row
             actual_matrix[str(machine_num)] = act_row
@@ -890,7 +930,7 @@ class MESResourceService:
         for machine_no in machine_numbers:
             default_tonnage_map = {
                 1: '850T', 2: '850T', 3: '1300T', 4: '1400T', 5: '1400T', 6: '2500T',
-                7: '1300T', 8: '850T', 9: '850T', 10: '650T', 11: '550T', 12: '550T',
+                7: '1800T', 8: '850T', 9: '850T', 10: '650T', 11: '550T', 12: '550T',
                 13: '450T', 14: '850T', 15: '650T', 16: '1050T', 17: '1200T'
             }
             tonnage = tonnage_by_machine.get(machine_no, default_tonnage_map.get(machine_no, f'{machine_no * 50}T'))
@@ -919,6 +959,7 @@ class MESResourceService:
             bucket_minutes=rollup_bucket_minutes,
             provenance=rollup_provenance,
             observed_matrix=capacity_observed_matrix,
+            observed_device_matrix=capacity_observed_device_matrix,
         )
 
         return {
