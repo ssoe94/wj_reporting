@@ -1,6 +1,6 @@
 import type { RealtimeProgressRow } from "./realtime-progress";
 
-export type BoardTone = "running" | "warning" | "signal" | "stopped" | "overproducing" | "completed" | "unplanned" | "idle" | "stale";
+export type BoardTone = "running" | "warning" | "counter_issue" | "stopped" | "overproducing" | "completed" | "unplanned" | "idle" | "stale";
 
 type MachineEvidence = Pick<RealtimeProgressRow,
   "hasPlan" | "isRunning" | "progressRate" | "transition" | "expectedCycleTimeSec" | "recentCycleTimeSec"
@@ -12,8 +12,10 @@ export function getBoardTone(row: MachineEvidence | undefined, elapsedRate: numb
   if (row.transition?.phase === "changeover") return "stopped";
   if (!row.hasPlan) return row.isRunning ? "unplanned" : "idle";
   if (row.progressRate >= 99.9) return row.isRunning ? "overproducing" : "completed";
-  // A fresh, unchanged MES counter does not prove that the physical machine stopped.
-  if (!row.isRunning) return "signal";
+  // A fresh but unchanged or implausibly sparse MES counter needs a visible
+  // record alert. Neither case proves that the physical machine stopped.
+  if (!row.isRunning || (row.expectedCycleTimeSec && row.recentCycleTimeSec
+    && row.recentCycleTimeSec > row.expectedCycleTimeSec * 3)) return "counter_issue";
   if (row.progressRate + 5 < elapsedRate) return "warning";
   return "running";
 }
@@ -21,7 +23,7 @@ export function getBoardTone(row: MachineEvidence | undefined, elapsedRate: numb
 export function getBoardCycleTime(row: MachineEvidence | undefined, tone: BoardTone): number | null {
   const cycleTime = row?.expectedCycleTimeSec;
   if (!cycleTime || !Number.isFinite(cycleTime) || cycleTime <= 0) return null;
-  if (tone === "stale" || tone === "signal" || tone === "stopped" || tone === "idle" || tone === "completed") return null;
+  if (tone === "stale" || tone === "counter_issue" || tone === "stopped" || tone === "idle" || tone === "completed") return null;
   // The active-slot estimate excludes long zero-counter gaps; such a value is
   // misleading when the observed hour contains far fewer shots than it implies.
   if (row?.recentCycleTimeSec && row.recentCycleTimeSec > cycleTime * 3) return null;
