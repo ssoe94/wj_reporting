@@ -167,6 +167,7 @@ const copy = {
     workInstruction: "作业指导书",
     drawing: "图纸",
     qualityHistory: "品质",
+    defectTypes: "不良类型",
     noPlan: "本机当前没有生产计划",
     noPlanHint: "计划下发后，这里会自动显示对应型号、品号和现场资料。",
     noDocument: "尚未补充对应资料",
@@ -314,6 +315,7 @@ const copy = {
     workInstruction: "작업지도서",
     drawing: "도면",
     qualityHistory: "품질",
+    defectTypes: "불량 유형",
     noPlan: "현재 이 설비의 생산계획이 없습니다",
     noPlanHint: "계획이 배포되면 모델, 품번, 현장 자료가 자동으로 표시됩니다.",
     noDocument: "해당 자료가 아직 없습니다",
@@ -1855,6 +1857,7 @@ function QualityCanvas({
   isLoading,
   hasError,
   onIssueComplete,
+  onIssueSelect,
   rotationPaused,
   unavailableReason,
 }: {
@@ -1864,6 +1867,7 @@ function QualityCanvas({
   isLoading: boolean;
   hasError: boolean;
   onIssueComplete: () => void;
+  onIssueSelect: (index: number) => void;
   rotationPaused: boolean;
   unavailableReason: string | null;
 }) {
@@ -1880,6 +1884,13 @@ function QualityCanvas({
   const activePhotoUrl = displayImages[activePhotoIndex];
   const activePhotoKey = activePhotoUrl ? `${issueKey}|${imageSignature}|${activePhotoUrl}` : "";
   const photoReady = Boolean(activePhotoKey && readyPhotoKey === activePhotoKey);
+  const selectIssue = (index: number) => {
+    if (index === issueIndex) return;
+    setPhotoIndex(0);
+    setReadyPhotoKey("");
+    setFailedPhotoUrls(new Set());
+    onIssueSelect(index);
+  };
   const handleActivePhotoFailure = useCallback((photoUrl: string) => {
     setFailedPhotoUrls((current) => new Set(current).add(photoUrl));
     setReadyPhotoKey("");
@@ -1987,6 +1998,30 @@ function QualityCanvas({
           <strong>{issueIndex + 1}</strong><span>/ {snapshot.quality.issues.length}</span>
         </div>
       </header>
+      {snapshot.quality.issues.length > 1 ? (
+        <div className="field-quality-canvas__type-nav">
+          <strong>{c.defectTypes}</strong>
+          <div aria-label={c.defectTypes} role="group">
+            {snapshot.quality.issues.map((item, index) => {
+              const label = item.label[language] || item.key;
+              return (
+                <button
+                  aria-label={`${c.defectTypes} ${index + 1}/${snapshot.quality.issues.length}: ${label}`}
+                  aria-pressed={index === issueIndex}
+                  className={index === issueIndex ? "is-active" : ""}
+                  key={item.key}
+                  onClick={() => selectIssue(index)}
+                  title={label}
+                  type="button"
+                >
+                  <span className="field-quality-canvas__type-number">{index + 1}</span>
+                  <span className="field-quality-canvas__type-name">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
       <div className="field-quality-canvas__body">
         {displayImages.length && activePhotoUrl ? (
           <section
@@ -2671,6 +2706,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
                 issueIndex={qualityIndex}
                 language={language}
                 onIssueComplete={completeQualityIssue}
+                onIssueSelect={setQualityIndex}
                 rotationPaused={rotationPaused}
                 snapshot={snapshot}
                 unavailableReason={snapshot.quality.unavailable_reason}

@@ -1033,6 +1033,56 @@
   text-overflow: ellipsis;
 }
 
+.field-quality-canvas__type-nav {
+  color: #134e4a;
+  border-bottom: 1px solid #99d9ce;
+  background: #f0fdfa;
+}
+
+.field-quality-canvas__type-nav > strong {
+  white-space: nowrap;
+  font-weight: 900;
+}
+
+.field-quality-canvas__type-nav button {
+  color: #134e4a;
+  border: 1px solid #9ccbc3;
+  border-radius: 8px;
+  background: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.field-quality-canvas__type-nav button.is-active {
+  color: #fff;
+  border-color: #0f766e;
+  background: #0f766e;
+}
+
+.field-quality-canvas__type-nav button:not(.is-active):active {
+  background: #ccfbf1;
+}
+
+.field-quality-canvas__type-nav button.is-active:active {
+  background: #115e59;
+}
+
+.field-quality-canvas__type-nav button:focus-visible {
+  outline: 3px solid #f0b629;
+  outline-offset: 2px;
+}
+
+.field-quality-canvas__type-number {
+  border-radius: 50%;
+  background: #d7f4ed;
+  text-align: center;
+}
+
+.field-quality-canvas__type-nav button.is-active .field-quality-canvas__type-number {
+  color: #0f766e;
+  background: #fff;
+}
+
 .field-quality-canvas__body {
   overflow: hidden;
   background: #ebeef2;
@@ -2576,6 +2626,56 @@
   font-size: 13px;
 }
 
+.field-quality-canvas__type-nav {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 6px 10px;
+}
+
+.field-quality-canvas__type-nav > strong {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.field-quality-canvas__type-nav > div {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.field-quality-canvas__type-nav button {
+  display: flex;
+  flex: 1 0 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 7px;
+  font-size: 14px;
+}
+
+.field-quality-canvas__type-number {
+  display: inline-flex;
+  flex: 0 0 23px;
+  width: 23px;
+  height: 23px;
+  align-items: center;
+  justify-content: center;
+}
+
+.field-quality-canvas__type-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .field-quality-canvas__body {
   flex: 1 1 auto;
   min-height: 0;
@@ -3579,6 +3679,11 @@
 }
 
 @media (max-width: 900px) {
+  .field-quality-canvas__type-nav > strong,
+  .field-quality-canvas__type-name {
+    display: none;
+  }
+
   .field-kanban-brand {
     flex-basis: 9%;
   }
