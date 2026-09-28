@@ -2088,7 +2088,7 @@ class ProductionMatrixView(generics.GenericAPIView):
             # 기본 매핑: 번호별 톤수
             default_tonnage_map = {
                 1: '850T', 2: '850T', 3: '1300T', 4: '1400T', 5: '1400T', 6: '2500T',
-                7: '1300T', 8: '850T', 9: '850T', 10: '650T', 11: '550T', 12: '550T',
+                7: '1800T', 8: '850T', 9: '850T', 10: '650T', 11: '550T', 12: '550T',
                 13: '450T', 14: '850T', 15: '650T', 16: '1050T', 17: '1200T'
             }
             tonnage = recent_report.tonnage if recent_report else default_tonnage_map.get(machine_no, f'{machine_no * 50}T')

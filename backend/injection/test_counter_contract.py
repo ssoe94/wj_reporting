@@ -23,9 +23,9 @@ class MonitoringCounterContractTests(TestCase):
     now = zone.localize(datetime(2026, 9, 6, 12, 0))
     start = zone.localize(datetime(2026, 9, 4, 8, 10))
 
-    def sample(self, moment, capacity=None, machine=1, **values):
+    def sample(self, moment, capacity=None, machine=1, device=None, **values):
         return InjectionMonitoringRecord.objects.create(
-            machine_name=f'{machine}호기', device_code=f'test-{machine}',
+            machine_name=f'{machine}호기', device_code=device or f'test-{machine}',
             timestamp=moment, capacity=capacity, **values,
         )
 
@@ -55,6 +55,50 @@ class MonitoringCounterContractTests(TestCase):
         self.reset_samples()
         mes_service.upsert_monitoring_rollups(self.start, self.start + timedelta(minutes=20), bucket_minutes=5)
         self.assertAlmostEqual(sum(InjectionMonitoringRollup.objects.values_list('shot_count', flat=True)), 19)
+
+    def test_device_rename_starts_new_counter_baseline_for_matrix_and_rollups(self):
+        old, new = '1300T-7', '1800T-7'
+        self.sample(self.start - timedelta(minutes=1), 1000, machine=7, device=old, power_kwh=500)
+        self.sample(self.start + timedelta(minutes=1), 1002, machine=7, device=old, power_kwh=502)
+        self.sample(self.start + timedelta(minutes=2), 100, machine=7, device=new, power_kwh=600)
+        self.sample(self.start + timedelta(minutes=3), 103, machine=7, device=new, power_kwh=603)
+
+        result = self.matrix(self.start + timedelta(minutes=10), machines=[7])
+        self.assertEqual(result['actual_production_matrix']['7'], [5, 0])
+        self.assertEqual(result['power_usage_matrix']['7'], [0, 0])
+
+        mes_service.upsert_monitoring_rollups(
+            self.start - timedelta(minutes=5), self.start + timedelta(minutes=10), bucket_minutes=5,
+        )
+        rollups = InjectionMonitoringRollup.objects.filter(machine_name='7호기')
+        self.assertAlmostEqual(sum(rollups.values_list('shot_count', flat=True)), 5)
+        self.assertEqual(set(rollups.values_list('device_code', flat=True)), {old, new})
+
+    def test_stored_rollups_from_two_device_codes_sum_for_one_machine(self):
+        bucket_start = self.start.replace(minute=0)
+        for device_code, shots in [('1300T-7', 2), ('1800T-7', 3)]:
+            InjectionMonitoringRollup.objects.create(
+                machine_name='7호기', device_code=device_code,
+                bucket_start=bucket_start, bucket_minutes=30, shot_count=shots,
+            )
+
+        result = self.matrix(self.start + timedelta(minutes=10), machines=[7], columns=3)
+        self.assertEqual(result['rollup_production_matrix']['7'], [5])
+
+    def test_new_raw_does_not_suppress_old_device_stored_rollup(self):
+        bucket_start = self.start.replace(minute=0)
+        self.sample(self.start, 100, machine=7, device='1800T-7')
+        self.sample(self.start + timedelta(minutes=1), 103, machine=7, device='1800T-7')
+        for device_code, shots in [('1300T-7', 2), ('1800T-7', 99)]:
+            InjectionMonitoringRollup.objects.create(
+                machine_name='7호기', device_code=device_code,
+                bucket_start=bucket_start, bucket_minutes=30, shot_count=shots,
+            )
+
+        result = self.matrix(self.start + timedelta(minutes=10), machines=[7], columns=3)
+        self.assertEqual(result['actual_production_matrix']['7'], [0, 3, 0])
+        self.assertEqual(result['rollup_production_matrix']['7'], [5])
+        self.assertEqual(result['stored_rollup_policy'], 'unversioned')
 
     def test_rollup_writer_skips_negative_samples_like_the_raw_matrix(self):
         self.sample(self.start - timedelta(minutes=1), 10)
