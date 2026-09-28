@@ -103,8 +103,8 @@ class AnalyticsProductionMartTests(TestCase):
             process='injection',
         )
         self.assertEqual(injection_daily.planned_qty, 70)
-        self.assertEqual(injection_daily.actual_qty, 50)
-        self.assertEqual(injection_daily.gap_qty, -20)
+        self.assertEqual(injection_daily.actual_qty, 40)
+        self.assertEqual(injection_daily.gap_qty, -30)
         self.assertEqual(injection_daily.status, 'behind')
         self.assertEqual(injection_daily.source_row_counts['monitoring_row_count'], 2)
         self.assertTrue(injection_daily.calculation_basis)
@@ -114,8 +114,8 @@ class AnalyticsProductionMartTests(TestCase):
             process='injection',
             equipment_key='1',
         )
-        self.assertEqual(equipment.actual_qty, 50)
-        self.assertEqual(equipment.completed_count, 1)
+        self.assertEqual(equipment.actual_qty, 40)
+        self.assertEqual(equipment.completed_count, 0)
         self.assertEqual(equipment.in_progress_count, 1)
 
         part_rows = MartPartDailyProgress.objects.filter(
@@ -124,11 +124,11 @@ class AnalyticsProductionMartTests(TestCase):
         ).order_by('sequence')
         self.assertEqual(part_rows.count(), 2)
         self.assertEqual(part_rows[0].part_no, 'PART-A')
-        self.assertEqual(part_rows[0].actual_qty, 30)
-        self.assertEqual(part_rows[0].status, 'completed')
+        self.assertEqual(part_rows[0].actual_qty, 40)
+        self.assertEqual(part_rows[0].status, 'in_progress')
         self.assertEqual(part_rows[1].part_no, 'PART-B')
-        self.assertEqual(part_rows[1].actual_qty, 20)
-        self.assertEqual(part_rows[1].status, 'in_progress')
+        self.assertEqual(part_rows[1].actual_qty, 0)
+        self.assertEqual(part_rows[1].status, 'pending')
 
         exception_types = set(FactExceptionEvent.objects.values_list('exception_type', flat=True))
         self.assertIn('production_behind_schedule', exception_types)
@@ -149,7 +149,7 @@ class AnalyticsProductionMartTests(TestCase):
         self.assertTrue(payload['freshness']['is_persisted'])
         self.assertEqual(payload['scope']['business_date'], self.target_date.isoformat())
         daily_by_process = {row['process']: row for row in payload['daily']}
-        self.assertEqual(daily_by_process['injection']['actual_qty'], 50)
+        self.assertEqual(daily_by_process['injection']['actual_qty'], 40)
         self.assertEqual(daily_by_process['machining']['planned_qty'], 130)
         self.assertTrue(payload['used_data'])
         self.assertTrue(payload['calculation_basis'])

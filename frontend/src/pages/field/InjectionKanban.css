@@ -3796,6 +3796,54 @@
 .field-confirmation-form select:focus,
 .field-confirmation-form textarea:focus { outline: 3px solid #f0b629; outline-offset: 2px; }
 
+.field-transition-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #d6ba78;
+  color: #533b12;
+  background: #fff5dc;
+}
+.field-transition-status--running { border-bottom-color: #8dc9bf; color: #10564f; background: #eaf9f5; }
+.field-transition-status--running.is-confirmed { border-bottom-color: #c9d7e6; color: #164873; background: #edf4fb; }
+.field-transition-status > svg { width: 25px; height: 25px; flex: 0 0 auto; }
+.field-transition-status > div { flex: 1 1 auto; min-width: 0; }
+.field-transition-status strong,
+.field-transition-status span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field-transition-status strong { font-size: 18px; font-weight: 900; }
+.field-transition-status span { margin-top: 2px; font-size: 14px; font-weight: 650; }
+.field-transition-status button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #4d9b91;
+  border-radius: 7px;
+  color: #07534a;
+  background: #fff;
+  font-size: 15px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.field-transition-status button svg { width: 19px; height: 19px; margin-right: 6px; }
+.field-transition-start-form input {
+  width: 100%;
+  min-height: 54px;
+  padding: 11px;
+  border: 2px solid #a9bdd4;
+  border-radius: 6px;
+  color: #15334f;
+  background: #fff;
+  font: inherit;
+  font-size: 18px;
+}
+.field-transition-start-form input:focus { outline: 3px solid #f0b629; outline-offset: 2px; }
+
 .field-records-body { padding: 18px 26px; color: #213e58; }
 .field-records-body section + section { margin-top: 26px; }
 .field-records-body h3 { margin: 0 0 12px; font-size: 20px; font-weight: 900; }
@@ -3813,6 +3861,10 @@
   .field-records-body { padding: 16px; }
   .field-confirmation-form select,
   .field-confirmation-form textarea { font-size: 16px; }
+  .field-transition-status { flex-wrap: wrap; gap: 8px; padding: 8px; }
+  .field-transition-status > div { flex-basis: calc(100% - 40px); }
+  .field-transition-status button { margin-left: 33px; }
+  .field-transition-start-form input { font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
