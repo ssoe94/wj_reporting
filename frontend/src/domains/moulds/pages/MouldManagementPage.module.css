@@ -6645,6 +6645,16 @@
 .zoneSummaryCard.zoneB { --zone-preview-max-width: 160px; }
 .zoneSummaryCard.zoneS { --zone-preview-max-width: 128px; }
 
+@media (min-width: 981px) and (max-width: 1699px) {
+  .zoneSummaryCard:not(.zoneC) .zoneSummaryVisual {
+    justify-content: center;
+  }
+
+  .zoneSummaryCard.zoneA { --zone-preview-max-width: 124px; }
+  .zoneSummaryCard.zoneB { --zone-preview-max-width: 190px; }
+  .zoneSummaryCard.zoneS { --zone-preview-max-width: 164px; }
+}
+
 .zoneSummaryCard.zoneC .zonePreviewMap {
   width: 100%;
   height: 100%;
