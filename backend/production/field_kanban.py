@@ -496,6 +496,16 @@ def _upload_field_document(uploaded: Any, *, kind: str, extension: str, filename
             "public_id": public_id,
             "resource_type": resource_type,
         }])
+        # Cloudinary's per-asset limit can be lower than our request limit.
+        # Return a distinct, safe error instead of hiding a rejected file as a
+        # transient storage outage. Never echo Cloudinary's raw exception: it
+        # can contain storage account details.
+        if re.search(r"file\s+size\s+too\s+large", str(exc), re.IGNORECASE):
+            raise FieldKanbanError(
+                "The document exceeds the storage file size limit.",
+                code="document_storage_file_too_large",
+                status_code=413,
+            ) from exc
         raise FieldKanbanError(
             "The document storage service is unavailable.",
             code="document_storage_unavailable",

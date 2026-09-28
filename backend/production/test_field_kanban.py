@@ -2876,6 +2876,29 @@ class FieldMaterialUploadTests(TestCase):
             {"resource_type": "image", "invalidate": True},
         )
 
+    @patch("production.field_kanban.cloudinary.uploader.destroy")
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_storage_file_size_rejection_returns_413_without_publishing(self, upload, destroy):
+        upload.side_effect = Exception(
+            "File size too large. Got 11685756. Maximum is 10485760."
+        )
+
+        with self.assertRaises(FieldKanbanError) as rejected:
+            save_field_material(
+                kind="drawing",
+                part_no="ACQ30154848",
+                model_name="27G440A-BB.AMIEMKN",
+                revision="",
+                source_file=SimpleUploadedFile("acq30154801.pdf", b"%PDF-1.7\n"),
+                preview_pdf=None,
+                user=self.user,
+            )
+
+        self.assertEqual(rejected.exception.code, "document_storage_file_too_large")
+        self.assertEqual(rejected.exception.status_code, 413)
+        self.assertFalse(MouldDataSnapshot.objects.filter(snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY).exists())
+        destroy.assert_called_once()
+
 
 class FieldKanbanQueueQueryRegressionTests(TestCase):
     def setUp(self):
