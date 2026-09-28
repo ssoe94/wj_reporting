@@ -28,6 +28,7 @@ from .field_kanban import (
     _machine_shot_payload,
     _pending_shift_prompt,
     _quality_summary,
+    _select_active_plan,
     apply_field_material_conversion_notification,
     build_field_kanban_snapshot,
     build_field_material_readiness,
@@ -81,6 +82,15 @@ def _stored_document(
 class FieldKanbanSnapshotTests(TestCase):
     def setUp(self):
         cache.clear()
+
+    def test_confirmed_early_change_keeps_new_plan_active_despite_old_shortfall(self):
+        parts = [
+            {"plan_id": 101, "status": "in_progress", "part_no": "OLD"},
+            {"plan_id": 102, "status": "in_progress", "part_no": "NEW"},
+        ]
+        active_index, active = _select_active_plan(parts, preferred_plan_id=102)
+        self.assertEqual(active_index, 1)
+        self.assertEqual(active["part_no"], "NEW")
 
     def test_reset_safe_shots_drive_current_and_next_plan_payload(self):
         target_date = date(2026, 8, 24)
@@ -309,7 +319,7 @@ class FieldKanbanSnapshotTests(TestCase):
         self.assertEqual(previous_row["allocated_shots"], 0)
         self.assertEqual(previous_row["status"], "completed")
 
-    def test_queue_maps_previous_day_mes_allocation_to_each_plan_id(self):
+    def test_queue_keeps_previous_day_shots_on_old_model_without_observed_changeover(self):
         previous_date = date(2026, 8, 28)
         target_date = date(2026, 8, 31)
         previous_plans = [
@@ -353,11 +363,11 @@ class FieldKanbanSnapshotTests(TestCase):
         rows_by_id = {row["plan_id"]: row for row in snapshot["queue"]}
         self.assertEqual(
             [rows_by_id[plan.id]["actual_piece_qty"] for plan in previous_plans],
-            [100, 50],
+            [150, 0],
         )
         self.assertEqual(
             [rows_by_id[plan.id]["allocated_shots"] for plan in previous_plans],
-            [100, 50],
+            [150, 0],
         )
 
     @patch("production.field_kanban.get_injection_machine_shot_context")
@@ -1742,6 +1752,155 @@ class FieldDowntimeConfirmationScopeTests(TestCase):
                 event_key="2026-08-24:5:300:gap"
             ).confirmed_by
         )
+
+
+class FieldTransitionStartConfirmationTests(TestCase):
+    def setUp(self):
+        self.target_date = date(2026, 9, 28)
+        self.stopped_at = SHANGHAI_TZ.localize(datetime(2026, 9, 28, 18, 0))
+        self.latest_at = SHANGHAI_TZ.localize(datetime(2026, 9, 28, 19, 20))
+        self.client = APIClient()
+        self.existing = InjectionDowntimeConfirmation.objects.create(
+            business_date=self.target_date,
+            event_key="2026-09-28:4:29844840:gap",
+            machine_key="4",
+            machine_label="4호기",
+            detected_type="mold_change",
+            detected_start=self.stopped_at,
+            detected_end=self.stopped_at + timedelta(minutes=14),
+            duration_minutes=14,
+            resolution="confirmed",
+            reason_code="mold_change",
+            evidence={"from_part_no": "ACQ30055208", "to_part_no": "ACQ30844709"},
+        )
+        self.summary = {"machine_rows": [{
+            "machine_number": 4,
+            "machine": "1400T-4",
+            "latest_capacity_time": self.latest_at,
+            "transition": {
+                "phase": "new_running",
+                "from_plan_id": 101,
+                "to_plan_id": 102,
+                "stopped_at": self.stopped_at.isoformat(),
+                "estimated_start_at": SHANGHAI_TZ.localize(datetime(2026, 9, 28, 19, 12)).isoformat(),
+            },
+            "parts": [
+                {"plan_id": 101, "part_no": "ACQ30055208"},
+                {"plan_id": 102, "part_no": "ACQ30844709"},
+            ],
+        }]}
+
+    @patch("production.field_kanban_views.get_injection_summary")
+    def test_corrected_start_reuses_stop_record_and_preserves_original_gap(self, summary):
+        summary.return_value = self.summary
+        response = self.client.post(
+            "/api/production/field-kanban/confirmations/",
+            {
+                "action": "confirm_transition_start",
+                "business_date": "2026-09-28",
+                "machine_number": 4,
+                "from_plan_id": 101,
+                "to_plan_id": 102,
+                "start_at": "2026-09-28T19:14:00+08:00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.existing.refresh_from_db()
+        self.assertEqual(InjectionDowntimeConfirmation.objects.count(), 1)
+        self.assertEqual(self.existing.detected_end, self.stopped_at + timedelta(minutes=14))
+        self.assertEqual(self.existing.evidence["transition_start_at"], "2026-09-28T19:14:00+08:00")
+        self.assertEqual(self.existing.evidence["transition_stopped_at"], "2026-09-28T18:00:00+08:00")
+        self.assertEqual(self.existing.evidence["from_plan_id"], 101)
+        self.assertEqual(self.existing.evidence["to_plan_id"], 102)
+        overwrite = self.client.post(
+            "/api/production/field-kanban/confirmations/",
+            {
+                "business_date": "2026-09-28",
+                "event_key": self.existing.event_key,
+                "machine_key": "4",
+                "machine_label": "4호기",
+                "detected_type": "mold_change",
+                "detected_start": self.stopped_at.isoformat(),
+                "detected_end": (self.stopped_at + timedelta(minutes=14)).isoformat(),
+                "resolution": "confirmed",
+                "reason_code": "mold_change",
+                "evidence": {},
+            },
+            format="json",
+        )
+        self.assertEqual(overwrite.status_code, 400)
+        self.existing.refresh_from_db()
+        self.assertEqual(self.existing.evidence["transition_start_at"], "2026-09-28T19:14:00+08:00")
+
+    def test_generic_public_confirmation_cannot_forge_transition_boundary(self):
+        response = self.client.post(
+            "/api/production/field-kanban/confirmations/",
+            {
+                "business_date": "2026-09-28",
+                "event_key": "2026-09-28:4:forged",
+                "machine_key": "4",
+                "machine_label": "4호기",
+                "detected_type": "mold_change",
+                "detected_start": self.stopped_at.isoformat(),
+                "detected_end": (self.stopped_at + timedelta(minutes=14)).isoformat(),
+                "resolution": "confirmed",
+                "reason_code": "mold_change",
+                "evidence": {
+                    "from_plan_id": 101,
+                    "to_plan_id": 102,
+                    "transition_start_at": "2026-09-28T19:14:00+08:00",
+                    "transition_start_source": "field_confirmation",
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(InjectionDowntimeConfirmation.objects.filter(event_key="2026-09-28:4:forged").exists())
+
+    @patch("production.field_kanban_views.get_injection_summary")
+    def test_start_confirmation_creates_server_owned_event_without_prior_stop_record(self, summary):
+        self.existing.delete()
+        summary.return_value = self.summary
+        response = self.client.post(
+            "/api/production/field-kanban/confirmations/",
+            {
+                "action": "confirm_transition_start",
+                "business_date": "2026-09-28",
+                "machine_number": 4,
+                "from_plan_id": 101,
+                "to_plan_id": 102,
+                "start_at": "2026-09-28T19:14:00+08:00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        created = InjectionDowntimeConfirmation.objects.get()
+        self.assertEqual(created.event_key, "2026-09-28:4:101:102:transition")
+        self.assertEqual(created.detected_start, self.stopped_at)
+        self.assertEqual(created.resolution, "confirmed")
+        self.assertEqual(created.evidence["transition_stopped_at"], "2026-09-28T18:00:00+08:00")
+
+    @patch("production.field_kanban_views.get_injection_summary")
+    def test_rejects_start_after_latest_observed_mes_sample(self, summary):
+        summary.return_value = self.summary
+        response = self.client.post(
+            "/api/production/field-kanban/confirmations/",
+            {
+                "action": "confirm_transition_start",
+                "business_date": "2026-09-28",
+                "machine_number": 4,
+                "from_plan_id": 101,
+                "to_plan_id": 102,
+                "start_at": "2026-09-28T19:30:00+08:00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.existing.refresh_from_db()
+        self.assertNotIn("transition_start_at", self.existing.evidence)
 
 
 class FieldMaterialUploadTests(TestCase):

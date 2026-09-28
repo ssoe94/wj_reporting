@@ -1323,6 +1323,8 @@ class ProductionStatusView(APIView):
                 'total_actual': int(row.get('actual_qty') or 0),
                 'progress': float(row.get('progress_rate') or 0),
                 'shot_count': int(row.get('shot_count') or 0),
+                'unattributed_shots': int(row.get('unattributed_shots') or 0),
+                'transition': row.get('transition'),
                 'recent_60m_shots': int(row.get('recent_60m_shots') or 0),
                 'is_running': bool(row.get('is_running')),
                 'parts': [
@@ -1332,6 +1334,7 @@ class ProductionStatusView(APIView):
                         'model_name': part.get('model_name'),
                         'planned_quantity': int(part.get('planned_qty') or 0),
                         'actual_quantity': int(part.get('estimated_qty') or 0),
+                        'allocated_shots': int(part.get('allocated_shots') or 0),
                         'progress': float(part.get('progress_rate') or 0),
                         'sequence': int(part.get('sequence') or 0),
                         'lot_no': part.get('lot_no'),

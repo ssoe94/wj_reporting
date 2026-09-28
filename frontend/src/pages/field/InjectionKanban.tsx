@@ -36,6 +36,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import PermissionLink from "@/components/common/PermissionLink";
 import { buildInjectionLink } from "@/domains/injection/workspace";
 import {
+  confirmFieldTransitionStart,
   getFieldKanban,
   submitFieldDefects,
   type FieldDefectCheckpoint,
@@ -59,6 +60,7 @@ import { type FieldStation } from "@/lib/fieldTerminal";
 import { useModalFocusTrap } from "@/shared/hooks/useModalFocusTrap";
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
 import { getCloudinaryPdfPageImageUrls, getImageCandidateKey } from "./documentPreviewUrls";
+import { fromShanghaiDateTimeInput, toShanghaiDateTimeInput } from "./transitionStartTime";
 
 import "./InjectionKanban.css";
 
@@ -217,6 +219,21 @@ const copy = {
     stationSelect: "工位选择",
     logout: "登出",
     changeDetected: "检测到品号 / 型号变更，请现场确认",
+    changeoverTitle: "换模·调机中",
+    previousProductionEnded: "上一型号最后生产约",
+    nextModelPlanned: "下一型号待生产",
+    setupShots: "调机合模",
+    restartEstimated: "下一型号约 {time} 开始生产（系统推定）",
+    restartConfirmed: "下一型号生产开始时间已确认：{time}",
+    confirmRestartTime: "确认开始时间",
+    editRestartTime: "修改开始时间",
+    restartTimeTitle: "确认下一型号生产开始时间",
+    restartTimeHint: "型号已根据 MES 自动切换。请核对实际开始生产的时间；此确认不会阻止现场显示。",
+    restartTimeLabel: "实际生产开始时间（上海时间）",
+    restartTimeRequired: "请选择有效的生产开始时间。",
+    restartTimeFailed: "开始时间保存失败，请重试。",
+    restartTimeSaved: "实际生产开始时间已保存。",
+    cancel: "取消",
     defectDue: "不良录入时间已到，请先完成录入",
     missingMaterialAlert: "当前作业资料不完整，请联系开发团队补充",
     interactDocument: "操作文档",
@@ -365,6 +382,21 @@ const copy = {
     stationSelect: "설비 선택",
     logout: "로그아웃",
     changeDetected: "품번 / 모델 변경 후보가 감지되었습니다. 현장 확인이 필요합니다",
+    changeoverTitle: "금형 교체·조건 조정 중",
+    previousProductionEnded: "이전 모델 마지막 생산 추정",
+    nextModelPlanned: "다음 모델 예정",
+    setupShots: "조건 조정 형합",
+    restartEstimated: "{time}쯤 다음 모델 생산 시작 추정",
+    restartConfirmed: "다음 모델 생산 시작 확인: {time}",
+    confirmRestartTime: "시작 시각 확인",
+    editRestartTime: "시작 시각 수정",
+    restartTimeTitle: "다음 모델 생산 시작 시각 확인",
+    restartTimeHint: "MES 신호로 모델은 자동 전환되었습니다. 실제 생산 시작 시각을 확인해 주세요. 확인 전에도 현장 화면은 계속 표시됩니다.",
+    restartTimeLabel: "실제 생산 시작 시각 (상하이 시간)",
+    restartTimeRequired: "올바른 생산 시작 시각을 선택해 주세요.",
+    restartTimeFailed: "생산 시작 시각 저장에 실패했습니다. 다시 시도해 주세요.",
+    restartTimeSaved: "실제 생산 시작 시각을 저장했습니다.",
+    cancel: "취소",
     defectDue: "불량 입력 시간이 되었습니다. 먼저 입력을 완료해 주세요",
     missingMaterialAlert: "현재 작업 자료가 완비되지 않았습니다. 개발팀에 보충을 요청해 주세요",
     interactDocument: "문서 조작",
@@ -2098,6 +2130,9 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   const [resolvedEventKeys, setResolvedEventKeys] = useState<Set<string>>(() => new Set());
   const [resolvedPromptKeys, setResolvedPromptKeys] = useState<Set<string>>(() => new Set());
   const [transitionError, setTransitionError] = useState<string | null>(null);
+  const [transitionStartOpen, setTransitionStartOpen] = useState(false);
+  const [transitionStartDraft, setTransitionStartDraft] = useState("");
+  const [transitionStartError, setTransitionStartError] = useState<string | null>(null);
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [allMaterialsOpen, setAllMaterialsOpen] = useState(false);
   const [fieldRecordsOpen, setFieldRecordsOpen] = useState(false);
@@ -2175,6 +2210,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     retry: 1,
   });
   const confirmationMutation = useMutation({ mutationFn: saveFieldInjectionDowntimeConfirmation });
+  const transitionStartMutation = useMutation({ mutationFn: confirmFieldTransitionStart });
   const transitionDataReady = coreKanbanReady && planQuery.isSuccess && matrixQuery.isSuccess && confirmationsQuery.isSuccess;
   const savedFieldRecords = useMemo(() => [...(confirmationsQuery.data?.confirmations ?? [])]
     .filter((record) => record.business_date === businessDate && [
@@ -2199,13 +2235,6 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
   }, [canEnterDefects, confirmationsQuery.data?.confirmations, machineNumber, resolvedEventKeys, transitionAnalysis.events, transitionDataReady]);
   const pendingTransition = pendingTransitions[0] ?? null;
 
-  useEffect(() => {
-    if (!canEnterDefects || !pendingTransition || transitionReview || transitionWorkflow || defectRequest || allMaterialsOpen || fieldRecordsOpen) return;
-    setTransitionError(null);
-    setTransitionDraft({ reasonCode: "", note: "" });
-    setTransitionReview(pendingTransition);
-  }, [allMaterialsOpen, canEnterDefects, defectRequest, fieldRecordsOpen, pendingTransition, transitionReview, transitionWorkflow]);
-
   const snapshot = useMemo(() => {
     const base = snapshotQuery.data;
     if (!base) return undefined;
@@ -2221,7 +2250,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       || pendingPrompt.is_overdue
       || resolvedPromptKeys.has(pendingPrompt.event_key)
     ) return;
-    if (pendingTransition || transitionReview || transitionWorkflow || defectRequest || allMaterialsOpen || fieldRecordsOpen) return;
+    if (pendingTransition || transitionReview || transitionWorkflow || transitionStartOpen || defectRequest || allMaterialsOpen || fieldRecordsOpen) return;
     setDefectRequest({
       eventKey: pendingPrompt.event_key,
       trigger: pendingPrompt.trigger,
@@ -2235,7 +2264,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       sequence: pendingPrompt.sequence,
       dueAt: pendingPrompt.due_at,
     });
-  }, [allMaterialsOpen, canEnterDefects, defectRequest, fieldRecordsOpen, pendingPrompt, pendingTransition, resolvedPromptKeys, snapshot, transitionReview, transitionWorkflow]);
+  }, [allMaterialsOpen, canEnterDefects, defectRequest, fieldRecordsOpen, pendingPrompt, pendingTransition, resolvedPromptKeys, snapshot, transitionReview, transitionStartOpen, transitionWorkflow]);
 
   const planIdentity = snapshot?.active_plan
     ? `${snapshot.active_plan.plan_id ?? "-"}:${snapshot.active_plan.part_no}:${snapshot.active_plan.model_name}`
@@ -2248,7 +2277,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     setPage(1);
   }, [planIdentity]);
 
-  const modalOpen = Boolean(transitionReview || defectRequest || allMaterialsOpen || fieldRecordsOpen);
+  const modalOpen = Boolean(transitionReview || transitionStartOpen || defectRequest || allMaterialsOpen || fieldRecordsOpen);
   const qualityIssueCount = snapshot?.quality.issues.length ?? 0;
   const qualityIssueCountRef = useRef(qualityIssueCount);
   qualityIssueCountRef.current = qualityIssueCount;
@@ -2298,6 +2327,16 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     ? snapshot.queue
     : [snapshot?.active_plan, snapshot?.next_plan].filter(Boolean) as FieldQueuePlan[];
   const queue = getFieldQueueWindow(queueSource, snapshot?.active_plan ?? null);
+  const transition = snapshot?.transition;
+  const transitionFromPlan = queueSource.find((plan) => plan.plan_id === transition?.from_plan_id)
+    ?? (transition?.phase === "changeover" ? snapshot?.active_plan : null);
+  const transitionToPlan = queueSource.find((plan) => plan.plan_id === transition?.to_plan_id)
+    ?? (transition?.phase === "changeover" ? snapshot?.next_plan : snapshot?.active_plan);
+  const transitionStartAt = transition?.confirmed_start_at ?? transition?.estimated_start_at;
+  const transitionStartTime = transitionStartAt
+    ? formatShanghaiTime(new Date(transitionStartAt), language) : "-";
+  const stoppedTime = transition?.stopped_at
+    ? formatShanghaiTime(new Date(transition.stopped_at), language) : "-";
   const documentsReady = Boolean(snapshot?.documents.work_instruction?.ready && snapshot?.documents.drawing?.ready);
 
   function chooseCanvasMode(nextMode: CanvasMode) {
@@ -2448,6 +2487,44 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
       setTransitionReview(pendingTransition);
     } else {
       setToastMessage(c.noPendingChange);
+    }
+  }
+
+  function openTransitionStart() {
+    const transition = snapshot?.transition;
+    if (!transition || transition.phase !== "new_running") return;
+    setTransitionStartDraft(toShanghaiDateTimeInput(
+      transition.confirmed_start_at ?? transition.estimated_start_at,
+    ));
+    setTransitionStartError(null);
+    setTransitionStartOpen(true);
+  }
+
+  async function submitTransitionStart() {
+    const transition = snapshot?.transition;
+    const startAt = fromShanghaiDateTimeInput(transitionStartDraft);
+    if (!startAt || !transition || transition.phase !== "new_running"
+      || transition.from_plan_id === null || transition.to_plan_id === null) {
+      setTransitionStartError(c.restartTimeRequired);
+      return;
+    }
+    setTransitionStartError(null);
+    try {
+      await transitionStartMutation.mutateAsync({
+        business_date: snapshot.business_date,
+        machine_number: snapshot.machine.number,
+        from_plan_id: transition.from_plan_id,
+        to_plan_id: transition.to_plan_id,
+        start_at: startAt,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["field-kanban", businessDate, machineNumber] }),
+        queryClient.invalidateQueries({ queryKey: ["production", "injection-downtime-confirmations", businessDate, machineNumber] }),
+      ]);
+      setTransitionStartOpen(false);
+      setToastMessage(c.restartTimeSaved);
+    } catch (error) {
+      setTransitionStartError(getErrorMessage(error, c.restartTimeFailed));
     }
   }
 
@@ -2614,6 +2691,33 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
               {!transitionDataReady && alertText !== c.confirmationDataPending ? <span>{c.confirmationDataPending}</span> : null}
             </div>
           ) : null}
+          {transition?.phase === "changeover" ? (
+            <div className="field-transition-status field-transition-status--changeover" role="status">
+              <Clock3 aria-hidden="true" />
+              <div>
+                <strong>{c.changeoverTitle}</strong>
+                <span>{c.previousProductionEnded} {stoppedTime} · {transitionFromPlan?.model_name || transitionFromPlan?.part_no || "-"}</span>
+                <span>{c.nextModelPlanned}: {transitionToPlan?.model_name || transitionToPlan?.part_no || "-"}
+                  {transition.setup_shots > 0 ? ` · ${c.setupShots} ${number(transition.setup_shots)} ${c.shots}` : ""}
+                </span>
+              </div>
+            </div>
+          ) : transition?.phase === "new_running" ? (
+            <div className={`field-transition-status field-transition-status--running${transition.confirmation_status === "confirmed" ? " is-confirmed" : ""}`} role="status">
+              <Clock3 aria-hidden="true" />
+              <div>
+                <strong>{(transition.confirmation_status === "confirmed" ? c.restartConfirmed : c.restartEstimated)
+                  .replace("{time}", transitionStartTime)}</strong>
+                <span>{transitionToPlan?.model_name || transitionToPlan?.part_no || "-"}</span>
+              </div>
+              {transition.from_plan_id !== null && transition.to_plan_id !== null ? (
+                <button onClick={openTransitionStart} type="button">
+                  <ClipboardCheck aria-hidden="true" />
+                  {transition.confirmation_status === "confirmed" ? c.editRestartTime : c.confirmRestartTime}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <div className="field-document-toolbar">
             <div className="field-document-tabs" role="tablist" aria-label={c.allMaterials}>
               <button
@@ -2702,6 +2806,35 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
           onSubmit={() => void submitTransitionReview()}
           saving={confirmationMutation.isPending}
         />
+      ) : null}
+      {transitionStartOpen ? (
+        <ModalShell label={c.restartTimeTitle} onEscape={() => setTransitionStartOpen(false)}>
+          <header className="field-modal__header">
+            <span className="field-modal__icon"><Clock3 aria-hidden="true" /></span>
+            <div><h2>{c.restartTimeTitle}</h2><p>{c.restartTimeHint}</p></div>
+            <button aria-label={c.close} className="field-modal__close" onClick={() => setTransitionStartOpen(false)} type="button"><X /></button>
+          </header>
+          <div className="field-confirmation-form field-transition-start-form">
+            <label htmlFor="field-transition-start-time">
+              <span>{c.restartTimeLabel}</span>
+              <input
+                id="field-transition-start-time"
+                onChange={(event) => { setTransitionStartDraft(event.target.value); setTransitionStartError(null); }}
+                required
+                step="60"
+                type="datetime-local"
+                value={transitionStartDraft}
+              />
+            </label>
+          </div>
+          {transitionStartError ? <div className="field-modal__error" role="alert">{transitionStartError}</div> : null}
+          <div className="field-modal__actions">
+            <button className="field-touch-button field-touch-button--muted" disabled={transitionStartMutation.isPending} onClick={() => setTransitionStartOpen(false)} type="button">{c.cancel}</button>
+            <button className="field-touch-button field-touch-button--primary" disabled={transitionStartMutation.isPending || !transitionStartDraft} onClick={() => void submitTransitionStart()} type="button">
+              <ClipboardCheck aria-hidden="true" />{transitionStartMutation.isPending ? c.saving : c.confirmRestartTime}
+            </button>
+          </div>
+        </ModalShell>
       ) : null}
       {fieldRecordsOpen ? (
         <FieldRecordsModal

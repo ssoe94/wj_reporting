@@ -20,6 +20,7 @@ export type ProductionStatusPart = {
   model_name: string | null;
   planned_quantity: number;
   actual_quantity: number;
+  allocated_shots?: number;
   progress: number;
   sequence?: number;
   lot_no?: string | null;
@@ -37,6 +38,18 @@ export type ProductionStatusPart = {
   status?: string | null;
 };
 
+export type ProductionTransition = {
+  phase: "running" | "changeover" | "new_running";
+  from_plan_id: number | null;
+  to_plan_id: number | null;
+  current_plan_id: number | null;
+  stopped_at: string | null;
+  estimated_start_at: string | null;
+  confirmed_start_at?: string | null;
+  confirmation_status: "none" | "pending" | "confirmed";
+  setup_shots: number;
+};
+
 export type ProductionStatusMachine = {
   machine_name: string;
   total_planned: number;
@@ -47,6 +60,8 @@ export type ProductionStatusMachine = {
   total_manual_matched?: number;
   total_defect?: number;
   shot_count?: number;
+  unattributed_shots?: number;
+  transition?: ProductionTransition | null;
   recent_60m_shots?: number;
   is_running?: boolean;
   parts: ProductionStatusPart[];

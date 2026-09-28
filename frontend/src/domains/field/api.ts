@@ -81,6 +81,18 @@ export type FieldPendingPrompt = {
   model_name: string;
 };
 
+export type FieldProductionTransition = {
+  phase: "running" | "changeover" | "new_running";
+  from_plan_id: number | null;
+  to_plan_id: number | null;
+  current_plan_id: number | null;
+  stopped_at: string | null;
+  estimated_start_at: string | null;
+  confirmed_start_at: string | null;
+  confirmation_status: "pending" | "confirmed" | "none";
+  setup_shots: number;
+};
+
 export type FieldKanbanResponse = {
   schema_version: string;
   business_date: string;
@@ -121,6 +133,7 @@ export type FieldKanbanResponse = {
     unavailable_reason: string | null;
   };
   pending_prompt: FieldPendingPrompt | null;
+  transition: FieldProductionTransition | null;
 };
 
 export type FieldDefectItem = {
@@ -300,6 +313,7 @@ export function normalizeFieldKanbanResponse(value: unknown, date: string, machi
   const documents = asRecord(root.documents);
   const quality = asRecord(root.quality);
   const prompt = root.pending_prompt ? asRecord(root.pending_prompt) : null;
+  const transition = root.transition ? asRecord(root.transition) : null;
   const queue = Array.isArray(root.queue)
     ? root.queue.map(normalizePlan).filter((item): item is FieldKanbanPlan => Boolean(item))
     : [];
@@ -399,6 +413,22 @@ export function normalizeFieldKanbanResponse(value: unknown, date: string, machi
       part_no: asString(prompt.part_no),
       model_name: asString(prompt.model_name),
     } : null,
+    transition: transition ? {
+      phase: transition.phase === "changeover" || transition.phase === "new_running"
+        ? transition.phase : "running",
+      from_plan_id: transition.from_plan_id === null || transition.from_plan_id === undefined
+        ? null : asNumber(transition.from_plan_id),
+      to_plan_id: transition.to_plan_id === null || transition.to_plan_id === undefined
+        ? null : asNumber(transition.to_plan_id),
+      current_plan_id: transition.current_plan_id === null || transition.current_plan_id === undefined
+        ? null : asNumber(transition.current_plan_id),
+      stopped_at: asString(transition.stopped_at) || null,
+      estimated_start_at: asString(transition.estimated_start_at) || null,
+      confirmed_start_at: asString(transition.confirmed_start_at) || null,
+      confirmation_status: transition.confirmation_status === "pending" || transition.confirmation_status === "confirmed"
+        ? transition.confirmation_status : "none",
+      setup_shots: Math.max(0, asNumber(transition.setup_shots)),
+    } : null,
   };
 }
 
@@ -416,6 +446,21 @@ export async function getFieldKanban(
     skipAuth: true,
   });
   return normalizeFieldKanbanResponse(response.data, date, machineNumber);
+}
+
+export async function confirmFieldTransitionStart(payload: {
+  business_date: string;
+  machine_number: number;
+  from_plan_id: number;
+  to_plan_id: number;
+  start_at: string;
+}) {
+  const response = await http.post<unknown>(
+    "/production/field-kanban/confirmations/",
+    { action: "confirm_transition_start", ...payload },
+    { skipAuth: true },
+  );
+  return response.data;
 }
 
 export async function submitFieldDefects(payload: {

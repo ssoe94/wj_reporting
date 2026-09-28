@@ -1842,7 +1842,7 @@ class ProductionAiAskContractTests(DjangoTestCase):
 
 
 class InjectionAllocationContractTests(DjangoTestCase):
-    def test_status_and_ai_retriever_allocate_shots_by_sequence_and_cavity(self):
+    def test_distinct_part_does_not_advance_from_plan_target_alone(self):
         target_date = datetime(2026, 5, 18).date()
         tz = pytz.timezone('Asia/Shanghai')
         start = tz.localize(datetime(2026, 5, 18, 8, 0))
@@ -1893,23 +1893,148 @@ class InjectionAllocationContractTests(DjangoTestCase):
         self.assertEqual(response.status_code, 200)
         machine = response.json()['injection'][0]
         self.assertEqual(machine['total_planned'], 70)
-        self.assertEqual(machine['total_actual'], 50)
+        self.assertEqual(machine['total_actual'], 40)
         self.assertEqual(machine['parts'][0]['plan_id'], plan_a.id)
         self.assertEqual(machine['parts'][0]['part_no'], 'PART-A')
-        self.assertEqual(machine['parts'][0]['actual_quantity'], 30)
-        self.assertEqual(machine['parts'][0]['progress'], 100.0)
+        self.assertEqual(machine['parts'][0]['actual_quantity'], 40)
+        self.assertEqual(machine['parts'][0]['progress'], 133.3)
         self.assertEqual(machine['parts'][1]['part_no'], 'PART-B')
-        self.assertEqual(machine['parts'][1]['actual_quantity'], 20)
-        self.assertEqual(machine['parts'][1]['progress'], 50.0)
+        self.assertEqual(machine['parts'][1]['actual_quantity'], 0)
+        self.assertEqual(machine['parts'][1]['progress'], 0.0)
 
         summary = get_injection_summary(target_date)
         summary_row = summary['machine_rows'][0]
         self.assertEqual(summary_row['planned_qty'], 70)
-        self.assertEqual(summary_row['actual_qty'], 50)
-        self.assertEqual(summary_row['parts'][0]['estimated_qty'], 30)
-        self.assertEqual(summary_row['parts'][0]['status'], 'completed')
-        self.assertEqual(summary_row['parts'][1]['estimated_qty'], 20)
-        self.assertEqual(summary_row['parts'][1]['status'], 'in_progress')
+        self.assertEqual(summary_row['actual_qty'], 40)
+        self.assertEqual(summary_row['parts'][0]['estimated_qty'], 40)
+        self.assertEqual(summary_row['parts'][0]['status'], 'in_progress')
+        self.assertEqual(summary_row['parts'][1]['estimated_qty'], 0)
+        self.assertEqual(summary_row['parts'][1]['status'], 'pending')
+        self.assertEqual(summary_row['transition']['phase'], 'running')
+        self.assertEqual(summary_row['transition']['from_plan_id'], plan_a.id)
+        self.assertEqual(summary_row['unattributed_shots'], 0)
+
+    def test_mould_change_keeps_pre_stop_overrun_and_trial_shot_out_of_next_plan(self):
+        target_date = datetime(2026, 9, 14).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 9, 14, 8, 0))
+        old_plan = ProductionPlan.objects.create(
+            plan_date=target_date, plan_type='injection', machine_name='1400T-4',
+            part_no='40-INCH', model_name='40 inch', planned_quantity=412, sequence=1,
+        )
+        new_plan = ProductionPlan.objects.create(
+            plan_date=target_date, plan_type='injection', machine_name='1400T-4',
+            part_no='32-INCH-A', model_name='32 inch', planned_quantity=5, sequence=2,
+        )
+        ProductionPlan.objects.create(
+            plan_date=target_date, plan_type='injection', machine_name='1400T-4',
+            part_no='32-INCH-B', model_name='32 inch', planned_quantity=824, sequence=3,
+        )
+
+        def sample(minutes, capacity):
+            InjectionMonitoringRecord.objects.create(
+                machine_name='4호기', device_code='changeover-4',
+                timestamp=start + timedelta(minutes=minutes), capacity=capacity,
+            )
+
+        sample(-2, 0)
+        sample(598, 493)  # 17:58: 81 shots beyond the old plan target.
+        for minute in range(600, 612, 2):
+            sample(minute, 493)
+        sample(612, 494)  # 18:12: one trial shot, not new-model production.
+        for minute in range(614, 626, 2):
+            sample(minute, 494)
+
+        stopped = get_injection_summary(target_date, machine_numbers=[4])['machine_rows'][0]
+        self.assertEqual(stopped['shot_count'], 494)
+        self.assertEqual([part['allocated_shots'] for part in stopped['parts']], [493, 0, 0])
+        self.assertEqual([part['status'] for part in stopped['parts']], ['in_progress', 'pending', 'pending'])
+        self.assertEqual(stopped['unattributed_shots'], 1)
+        self.assertEqual(stopped['transition']['phase'], 'changeover')
+        self.assertEqual(stopped['transition']['from_plan_id'], old_plan.id)
+        self.assertEqual(stopped['transition']['to_plan_id'], new_plan.id)
+        self.assertEqual(stopped['transition']['stopped_at'], '2026-09-14T18:00:00+08:00')
+        self.assertIsNone(stopped['transition']['estimated_start_at'])
+
+        for minute, capacity in [(626, 496), (628, 498), (630, 500)]:
+            sample(minute, capacity)
+        restarted = get_injection_summary(target_date, machine_numbers=[4])['machine_rows'][0]
+        self.assertEqual(restarted['shot_count'], 500)
+        self.assertEqual([part['allocated_shots'] for part in restarted['parts']], [493, 6, 0])
+        self.assertEqual(restarted['unattributed_shots'], 1)
+        self.assertEqual(restarted['transition']['phase'], 'new_running')
+        self.assertEqual(restarted['transition']['estimated_start_at'], '2026-09-14T18:26:00+08:00')
+        self.assertEqual(restarted['transition']['confirmation_status'], 'pending')
+        self.assertEqual(restarted['shot_count'], sum(part['allocated_shots'] for part in restarted['parts']) + restarted['unattributed_shots'])
+
+        InjectionDowntimeConfirmation.objects.create(
+            business_date=target_date, event_key='2026-09-14:4:changeover',
+            machine_key='4', machine_label='4호기', detected_type='mold_change',
+            detected_start=start + timedelta(minutes=600),
+            detected_end=start + timedelta(minutes=612), duration_minutes=12,
+            resolution='confirmed', reason_code='mold_change',
+            evidence={
+                'from_plan_id': old_plan.id, 'to_plan_id': new_plan.id,
+                'transition_stopped_at': (start + timedelta(minutes=600)).isoformat(),
+                'transition_start_at': (start + timedelta(minutes=612)).isoformat(),
+                'transition_start_source': 'field_confirmation',
+            },
+        )
+        corrected = get_injection_summary(target_date, machine_numbers=[4])['machine_rows'][0]
+        self.assertEqual([part['allocated_shots'] for part in corrected['parts']], [493, 7, 0])
+        self.assertEqual(corrected['unattributed_shots'], 0)
+        self.assertEqual(corrected['transition']['confirmation_status'], 'confirmed')
+        self.assertEqual(corrected['transition']['confirmed_start_at'], '2026-09-14T18:12:00+08:00')
+
+    def test_collection_gap_and_catch_up_counter_do_not_start_new_part(self):
+        target_date = datetime(2026, 9, 15).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 9, 15, 8, 0))
+        ProductionPlan.objects.create(
+            plan_date=target_date, plan_type='injection', machine_name='1400T-4',
+            part_no='OLD', model_name='Old', planned_quantity=412, sequence=1,
+        )
+        ProductionPlan.objects.create(
+            plan_date=target_date, plan_type='injection', machine_name='1400T-4',
+            part_no='NEW', model_name='New', planned_quantity=824, sequence=2,
+        )
+        for minute, capacity in [(-2, 0), (0, 0), (2, 500), (30, 550), (32, 553), (34, 556), (36, 559)]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name='4호기', device_code='gap-4',
+                timestamp=start + timedelta(minutes=minute), capacity=capacity,
+            )
+
+        machine = get_injection_summary(target_date, machine_numbers=[4])['machine_rows'][0]
+        self.assertEqual(machine['shot_count'], 559)
+        self.assertEqual([part['allocated_shots'] for part in machine['parts']], [559, 0])
+        self.assertEqual(machine['unattributed_shots'], 0)
+        self.assertEqual(machine['transition']['phase'], 'running')
+
+    def test_catch_up_delta_after_observed_stop_is_setup_until_covered_restart(self):
+        target_date = datetime(2026, 9, 16).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 9, 16, 8, 0))
+        ProductionPlan.objects.create(
+            plan_date=target_date, plan_type='injection', machine_name='1400T-4',
+            part_no='OLD', model_name='Old', planned_quantity=412, sequence=1,
+        )
+        ProductionPlan.objects.create(
+            plan_date=target_date, plan_type='injection', machine_name='1400T-4',
+            part_no='NEW', model_name='New', planned_quantity=824, sequence=2,
+        )
+        for minute, capacity in [(-2, 0), (0, 500), (2, 500), (4, 500), (6, 500),
+                                 (8, 500), (10, 500), (12, 500), (14, 500),
+                                 (60, 510), (62, 512), (64, 514), (66, 516)]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name='4호기', device_code='gap-during-stop-4',
+                timestamp=start + timedelta(minutes=minute), capacity=capacity,
+            )
+
+        machine = get_injection_summary(target_date, machine_numbers=[4])['machine_rows'][0]
+        self.assertEqual(machine['shot_count'], 516)
+        self.assertEqual([part['allocated_shots'] for part in machine['parts']], [500, 6])
+        self.assertEqual(machine['unattributed_shots'], 10)
+        self.assertEqual(machine['transition']['estimated_start_at'], '2026-09-16T09:02:00+08:00')
 
     def test_default_cavity_pattern_keeps_part_as_one_by_one(self):
         target_date = datetime(2026, 5, 19).date()

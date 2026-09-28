@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import timedelta
 
 import cloudinary.utils
+from django.core.cache import cache
+from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
@@ -17,6 +20,8 @@ from injection.permissions import DevelopmentPermission, InjectionPermission
 
 from .models import InjectionDowntimeConfirmation
 from .serializers import InjectionDowntimeConfirmationSerializer
+from .ai_metrics import SHANGHAI_TZ, business_range
+from .ai_retrievers import get_injection_summary
 
 from .field_kanban import (
     FieldKanbanError,
@@ -224,7 +229,13 @@ class FieldDowntimeConfirmationView(APIView):
 
     def post(self, request, *args, **kwargs):
         payload = request.data.copy()
-        if payload.pop("action", "confirm") != "confirm":
+        action = payload.pop("action", "confirm")
+        if action == "confirm_transition_start":
+            try:
+                return self._confirm_transition_start(payload)
+            except FieldKanbanError as exc:
+                return _error_response(exc)
+        if action != "confirm":
             return Response(
                 {"detail": "Unsupported action."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -265,6 +276,130 @@ class FieldDowntimeConfirmationView(APIView):
                 status.HTTP_200_OK if existing else status.HTTP_201_CREATED
             ),
         )
+
+    def _confirm_transition_start(self, payload):
+        """Record a corrected MES-inferred start without gating automatic display."""
+        target_date = _target_date(payload.get("business_date"))
+        machine_number = _machine_number(payload.get("machine_number"))
+        try:
+            from_plan_id = int(payload.get("from_plan_id"))
+            to_plan_id = int(payload.get("to_plan_id"))
+        except (TypeError, ValueError) as exc:
+            raise FieldKanbanError("Both plan IDs are required.", code="invalid_transition_plans") from exc
+        if from_plan_id <= 0 or to_plan_id <= 0 or from_plan_id == to_plan_id:
+            raise FieldKanbanError("Invalid transition plans.", code="invalid_transition_plans")
+
+        start_at = parse_datetime(str(payload.get("start_at") or ""))
+        if start_at is None or timezone.is_naive(start_at):
+            raise FieldKanbanError("A timezone-aware start time is required.", code="invalid_transition_start")
+        start_at = start_at.astimezone(SHANGHAI_TZ)
+
+        machine_row = next(
+            (row for row in get_injection_summary(target_date, machine_numbers=[machine_number]).get("machine_rows", [])
+             if int(row.get("machine_number") or 0) == machine_number),
+            None,
+        )
+        transition = machine_row.get("transition") if isinstance(machine_row, dict) else None
+        if (
+            not isinstance(transition, dict)
+            or transition.get("phase") not in {"changeover", "new_running"}
+            or transition.get("from_plan_id") != from_plan_id
+            or transition.get("to_plan_id") != to_plan_id
+        ):
+            raise FieldKanbanError("The inferred transition has changed. Refresh and review it again.", code="transition_changed", status_code=409)
+
+        stopped_at = parse_datetime(str(transition.get("stopped_at") or ""))
+        latest_mes_time = machine_row.get("latest_capacity_time")
+        business_start, business_end = business_range(target_date)
+        if (
+            stopped_at is None or timezone.is_naive(stopped_at)
+            or latest_mes_time is None
+            or not business_start <= start_at < business_end
+            or not stopped_at < start_at <= latest_mes_time
+        ):
+            raise FieldKanbanError("Start time must be within the observed changeover and production day.", code="invalid_transition_start")
+
+        parts_by_id = {
+            int(part["plan_id"]): part
+            for part in machine_row.get("parts", [])
+            if part.get("plan_id") is not None
+        }
+        from_part = parts_by_id.get(from_plan_id)
+        to_part = parts_by_id.get(to_plan_id)
+        if not from_part or not to_part:
+            raise FieldKanbanError("Transition plans no longer match this machine.", code="transition_changed", status_code=409)
+        from_part_no = str(from_part.get("part_no") or "").strip().upper()
+        to_part_no = str(to_part.get("part_no") or "").strip().upper()
+        is_core_change = (
+            len(from_part_no) >= 10
+            and len(from_part_no) == len(to_part_no)
+            and from_part_no[:-2] == to_part_no[:-2]
+            and from_part_no[-2:] != to_part_no[-2:]
+        )
+        change_type = "core_change" if is_core_change else "mold_change"
+
+        with transaction.atomic():
+            confirmations = list(InjectionDowntimeConfirmation.objects.select_for_update().filter(
+                business_date=target_date,
+                machine_key__in=_field_machine_keys(machine_number),
+                resolution="confirmed",
+                reason_code__in=("mold_change", "core_change"),
+            ).order_by("-confirmed_at", "-id"))
+            confirmation = next((record for record in confirmations if (
+                abs((record.detected_start - stopped_at).total_seconds()) <= timedelta(minutes=10).total_seconds()
+                and str((record.evidence or {}).get("from_part_no") or from_part_no).strip().upper() == from_part_no
+                and str((record.evidence or {}).get("to_part_no") or to_part_no).strip().upper() == to_part_no
+            )), None)
+            synthetic = confirmation is None
+            if confirmation is None:
+                confirmation, _created = InjectionDowntimeConfirmation.objects.select_for_update().get_or_create(
+                    event_key=f"{target_date.isoformat()}:{machine_number}:{from_plan_id}:{to_plan_id}:transition",
+                    defaults={
+                        "business_date": target_date,
+                        "machine_key": str(machine_number),
+                        "machine_label": str(machine_row.get("machine") or machine_row.get("machine_name") or f"{machine_number}호기"),
+                        "detected_type": change_type,
+                        "detected_start": stopped_at,
+                        "detected_end": start_at,
+                        "duration_minutes": max(0, round((start_at - stopped_at).total_seconds() / 60)),
+                        "resolution": "confirmed",
+                        "reason_code": change_type,
+                        "evidence": {},
+                    },
+                )
+                # A pre-existing row with the deterministic event key must not
+                # supply the start or resolution used by the allocator.
+                confirmation.business_date = target_date
+                confirmation.machine_key = str(machine_number)
+                confirmation.machine_label = str(machine_row.get("machine") or machine_row.get("machine_name") or f"{machine_number}호기")
+                confirmation.detected_type = change_type
+                confirmation.detected_start = stopped_at
+                confirmation.detected_end = start_at
+                confirmation.duration_minutes = max(0, round((start_at - stopped_at).total_seconds() / 60))
+                confirmation.resolution = "confirmed"
+                confirmation.reason_code = change_type
+            confirmation.evidence = {
+                **(confirmation.evidence if isinstance(confirmation.evidence, dict) else {}),
+                "from_plan_id": from_plan_id,
+                "to_plan_id": to_plan_id,
+                "from_part_no": from_part_no,
+                "to_part_no": to_part_no,
+                "transition_stopped_at": stopped_at.isoformat(),
+                "transition_start_at": start_at.isoformat(),
+                "transition_start_source": "field_confirmation",
+            }
+            confirmation.confirmed_at = timezone.now()
+            confirmation.confirmed_by = None
+            confirmation.save(update_fields=(
+                ["business_date", "machine_key", "machine_label", "detected_type", "detected_start",
+                 "detected_end", "duration_minutes", "resolution", "reason_code"]
+                if synthetic else []
+            ) + ["evidence", "confirmed_at", "confirmed_by", "updated_at"])
+
+        cache.delete(f"field-kanban:production:v3:{target_date.isoformat()}")
+        response_data = InjectionDowntimeConfirmationSerializer(confirmation).data
+        response_data["confirmed_by_name"] = None
+        return Response(response_data)
 
 
 class FieldMaterialsView(APIView):

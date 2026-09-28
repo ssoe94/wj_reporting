@@ -1773,7 +1773,7 @@ def _quality_source_payload(target_date: date) -> dict[str, Any]:
 
 def _production_summary_payload(target_date: date) -> dict[str, Any]:
     """Share the expensive 17-machine allocation across field terminals."""
-    cache_key = f"field-kanban:production:v2:{target_date.isoformat()}"
+    cache_key = f"field-kanban:production:v3:{target_date.isoformat()}"
     cached = cache.get(cache_key)
     if isinstance(cached, dict):
         return cached
@@ -2218,7 +2218,14 @@ def _build_field_queue_window(
     return queue, next_plan
 
 
-def _select_active_plan(parts: list[dict[str, Any]]) -> tuple[int | None, dict[str, Any] | None]:
+def _select_active_plan(
+    parts: list[dict[str, Any]],
+    preferred_plan_id: int | None = None,
+) -> tuple[int | None, dict[str, Any] | None]:
+    if preferred_plan_id is not None:
+        for index, row in enumerate(parts):
+            if row.get("plan_id") == preferred_plan_id:
+                return index, row
     for index, row in enumerate(parts):
         if row.get("status") == "in_progress":
             return index, row
@@ -2479,7 +2486,11 @@ def build_field_kanban_snapshot(
     )
     shot_row = (shot_context.get("rows") or [{}])[0]
     parts = list(summary_row.get("parts", [])) if isinstance(summary_row, dict) else []
-    active_index, active_source = _select_active_plan(parts)
+    transition = summary_row.get("transition") if isinstance(summary_row, dict) else None
+    active_index, active_source = _select_active_plan(
+        parts,
+        transition.get("current_plan_id") if isinstance(transition, dict) else None,
+    )
     queue, next_plan = _build_field_queue_window(
         target_date,
         machine_number,
@@ -2508,7 +2519,12 @@ def build_field_kanban_snapshot(
         if active_plan else 0
     )
     estimated_change_at = None
-    if active_plan and recent_shots > 0 and active_plan["status"] != "completed":
+    if (
+        active_plan
+        and recent_shots > 0
+        and active_plan["status"] != "completed"
+        and not (isinstance(transition, dict) and transition.get("phase") == "changeover")
+    ):
         remaining_piece_qty = max(0, active_plan["planned_piece_qty"] - active_plan["actual_piece_qty"])
         remaining_shots = math.ceil(remaining_piece_qty / max(1, active_plan["cavity"]))
         seconds_per_shot = 3600 / recent_shots
@@ -2541,14 +2557,20 @@ def build_field_kanban_snapshot(
             "recent_60m_shots": recent_shots,
             "latest_mes_time": _iso(shot_row.get("latest_mes_time")),
             "is_stale": bool(shot_row.get("is_stale", True)),
-            "is_running": recent_shots > 0 and not bool(shot_row.get("is_stale", True)),
+            "is_running": (
+                recent_shots > 0
+                and not bool(shot_row.get("is_stale", True))
+                and not (isinstance(transition, dict) and transition.get("phase") == "changeover")
+            ),
             "estimated_change_at": estimated_change_at,
         },
         "active_plan": active_plan,
         "next_plan": next_plan,
         "queue": queue,
+        "transition": transition,
         "counters": {
             "business_day_shots": shot_count,
+            "unattributed_setup_shots": _safe_int((summary_row or {}).get("unattributed_shots")),
             "shift_shots": shift_shots,
             "shift_code": str(shot_row.get("shift_code") or shift_window["code"]),
             "shift_start": _iso(shot_row.get("shift_start") or shift_window["start"]),

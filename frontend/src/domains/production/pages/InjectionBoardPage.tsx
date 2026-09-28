@@ -30,7 +30,7 @@ const MACHINE_COUNT = 17;
 const VISITOR_CYCLE_TIME_MIN_MULTIPLIER = 1.1;
 const VISITOR_CYCLE_TIME_MAX_MULTIPLIER = 1.12;
 const PREVIOUS_SUMMARY_CACHE_PREFIX = "injection-board:previous-summary:";
-const PREVIOUS_SUMMARY_CACHE_VERSION = 3;
+const PREVIOUS_SUMMARY_CACHE_VERSION = 4;
 const BOARD_MODEL_COLORS = [
   "#109858",
   "#2563eb",
@@ -133,6 +133,8 @@ const boardCopy = {
     unplannedRunning: "계획 외 가동",
     warning: "진도 확인",
     stopped: "계획 설비 정지",
+    changeoverEstimate: "금형 교체 추정",
+    newRunEstimate: "모델 전환 추정·현장 확인",
     overproducing: "초과 생산 중",
     completed: "생산 완료",
     stoppedMachines: "정지 설비",
@@ -222,6 +224,8 @@ const boardCopy = {
     unplannedRunning: "计划外运行",
     warning: "进度待确认",
     stopped: "计划设备停机",
+    changeoverEstimate: "推测正在换模",
+    newRunEstimate: "推测已换型·待现场确认",
     overproducing: "超额生产中",
     completed: "生产完成",
     stoppedMachines: "停机设备",
@@ -481,6 +485,9 @@ function buildMachineTimeline(
   const businessEnd = new Date(businessStart.getTime() + 24 * 60 * 60 * 1000);
   const values = getMachineProductionValues(data, machineNumber);
   const productWindows = buildTimelineProductWindows(row);
+  const stoppedAt = row?.transition?.stopped_at ? Date.parse(row.transition.stopped_at) : Number.NaN;
+  const resumedAtValue = row?.transition?.confirmed_start_at || row?.transition?.estimated_start_at;
+  const resumedAt = resumedAtValue ? Date.parse(resumedAtValue) : Number.NaN;
   const intervals: Array<{
     startMs: number;
     endMs: number;
@@ -501,6 +508,18 @@ function buildMachineTimeline(
     const slotStartMs = slotStart.getTime();
     const slotEndMs = Math.min(businessEnd.getTime(), slotStartMs + slotMinutes * 60_000);
     const slotDurationMs = slotEndMs - slotStartMs;
+    // Trial shots during an observed changeover have no verified part identity.
+    // They must not consume the next product's cumulative shot window.
+    const crossesStop = Number.isFinite(stoppedAt) && slotStartMs < stoppedAt && stoppedAt < slotEndMs;
+    const crossesResume = Number.isFinite(resumedAt) && slotStartMs < resumedAt && resumedAt < slotEndMs;
+    if (crossesStop || crossesResume || (Number.isFinite(stoppedAt) && slotStartMs >= stoppedAt
+      && (!Number.isFinite(resumedAt) || slotEndMs <= resumedAt))) {
+      intervals.push({ startMs: slotStartMs, endMs: slotEndMs });
+      // Mixed-resolution slots cannot identify which shots were setup output.
+      // Keep their interval visible without assigning a product color.
+      if (crossesStop || crossesResume) cumulativeShots += slotShots;
+      return;
+    }
     const slotShotEnd = cumulativeShots + slotShots;
 
     if (!productWindows.length) {
@@ -582,7 +601,8 @@ function getActiveProduct(row: RealtimeProgressRow | undefined, fallback: string
   if (!row?.segments.length) {
     return { part: row?.isRunning ? fallback : noPlan, partNumbers: [], model: "", family: "" };
   }
-  const activeSegment = row.segments.find((segment) => segment.status === "in_progress")
+  const activeSegment = row.segments.find((segment) => segment.planId === row.transition?.current_plan_id)
+    ?? row.segments.find((segment) => segment.status === "in_progress")
     ?? row.segments.find((segment) => segment.status === "pending")
     ?? row.segments.at(-1);
   if (!activeSegment) return { part: fallback, partNumbers: [], model: "", family: "" };
@@ -605,6 +625,7 @@ function getTone(
 ): BoardTone {
   if (isStale) return "stale";
   if (!row) return "idle";
+  if (row.transition?.phase === "changeover") return "stopped";
   if (!row.hasPlan) return row.isRunning ? "unplanned" : "idle";
   if (row.progressRate >= 99.9) return row.isRunning ? "overproducing" : "completed";
   if (!row.isRunning) return "stopped";
@@ -911,7 +932,11 @@ function MachineBoardCard({
           <strong>{machine.machineNumber}{language === "ko" ? "호기" : "号机"}</strong>
           <span>{machine.tonnage === "-" ? "-" : `${machine.tonnage}T`}</span>
         </div>
-        <em>{getStatusLabel(machine.tone, copy)}</em>
+        <em>{row?.transition?.phase === "changeover"
+          ? copy.changeoverEstimate
+          : row?.transition?.phase === "new_running" && row.transition.confirmation_status === "pending"
+            ? copy.newRunEstimate
+            : getStatusLabel(machine.tone, copy)}</em>
       </header>
 
       <div
@@ -1248,14 +1273,15 @@ export function InjectionBoardPage() {
     () => buildBoardTimelines(previousBusinessDate, previousMesQuery.data, previousSummary),
     [previousBusinessDate, previousMesQuery.data, previousSummary],
   );
-  const previousQueriesReady = previousPlanQuery.isSuccess && previousMesQuery.isSuccess;
+  const previousQueriesReady = previousPlanQuery.isSuccess && previousMesQuery.isSuccess && previousStatusQuery.isSuccess;
   const visiblePreviousSnapshot = previousQueriesReady
     ? { summary: previousSummary, timelines: previousTimelines }
     : cachedPreviousSnapshot ?? { summary: previousSummary, timelines: previousTimelines };
   const previousSummaryIsLoading = !cachedPreviousSnapshot && !previousQueriesReady
-    && (previousPlanQuery.isPending || previousPlanQuery.isFetching || previousMesQuery.isPending || previousMesQuery.isFetching);
+    && (previousPlanQuery.isPending || previousPlanQuery.isFetching || previousMesQuery.isPending || previousMesQuery.isFetching
+      || previousStatusQuery.isPending || previousStatusQuery.isFetching);
   const previousSummaryIsError = !cachedPreviousSnapshot && !previousQueriesReady && !previousSummaryIsLoading
-    && (previousPlanQuery.isError || previousMesQuery.isError);
+    && (previousPlanQuery.isError || previousMesQuery.isError || previousStatusQuery.isError);
   const latestMesTime = getLatestMesTime(mesData);
   const isStale = Boolean(latestMesTime && Date.now() - latestMesTime.getTime() > STALE_DATA_THRESHOLD_MS);
   const businessStart = new Date(`${businessDate}T08:00:00+08:00`);

@@ -179,6 +179,10 @@ class InjectionActivityConfirmationSerializer(serializers.ModelSerializer):
 
 class InjectionDowntimeConfirmationSerializer(serializers.ModelSerializer):
     confirmed_by_name = serializers.SerializerMethodField()
+    _transition_evidence_keys = frozenset({
+        'from_plan_id', 'to_plan_id', 'transition_stopped_at',
+        'transition_start_at', 'transition_start_source',
+    })
 
     class Meta:
         model = InjectionDowntimeConfirmation
@@ -206,6 +210,8 @@ class InjectionDowntimeConfirmationSerializer(serializers.ModelSerializer):
         normalized = (value or '').strip()
         if not normalized or any(character not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:_-' for character in normalized):
             raise serializers.ValidationError('Invalid event key.')
+        if normalized.endswith(':transition'):
+            raise serializers.ValidationError('Transition event keys are reserved for the validated field action.')
         return normalized
 
     def validate_evidence(self, value):
@@ -213,9 +219,13 @@ class InjectionDowntimeConfirmationSerializer(serializers.ModelSerializer):
             return {}
         if not isinstance(value, dict):
             raise serializers.ValidationError('Evidence must be an object.')
+        if self._transition_evidence_keys.intersection(value):
+            raise serializers.ValidationError('Transition start evidence must use the validated field action.')
         return value
 
     def validate(self, attrs):
+        if self.instance and isinstance(self.instance.evidence, dict) and self.instance.evidence.get('transition_start_source') == 'field_confirmation':
+            raise serializers.ValidationError('A confirmed transition start must be edited through the validated field action.')
         business_date = attrs.get('business_date')
         event_key = attrs.get('event_key') or ''
         machine_key = (attrs.get('machine_key') or '').strip()

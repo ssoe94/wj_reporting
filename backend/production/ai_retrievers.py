@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from itertools import groupby
 from typing import Any
 
@@ -21,9 +21,9 @@ from .ai_metrics import (
 )
 from .machining_reconciliation import build_machining_provision_payload
 from .mes_progress import format_equipment_label
-from .models import ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
-from .counter_utils import calculate_cumulative_counter_delta
-from .cavity import average_group_shot_yield, build_cavity_plan_groups, get_cavity_meta_map
+from .models import InjectionDowntimeConfirmation, ProductionMesReportRecord, ProductionPartCavity, ProductionPlan
+from .counter_utils import calculate_counter_increment, calculate_cumulative_counter_delta
+from .cavity import build_cavity_plan_groups, get_cavity_meta_map
 
 
 MACHINE_TONNAGE = {
@@ -45,6 +45,228 @@ MACHINE_TONNAGE = {
     16: "1050T",
     17: "1200T",
 }
+
+# A mould transition is inferred from observed zero-output samples and a stable
+# restart, never from a plan target or an elapsed 30-minute estimate alone.
+CHANGEOVER_STOP_MINUTES = 10
+CHANGEOVER_MAX_SAMPLE_GAP_MINUTES = 4
+CHANGEOVER_STABLE_SAMPLES = 3
+
+
+def _same_running_product(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    """LOT rows for the same mould may roll over without a machine stop."""
+    def identity(group: dict[str, Any]) -> tuple[tuple[str, str, int], ...]:
+        return tuple(sorted(
+            (
+                str(member["part_no"] or "").strip().upper(),
+                str(member["plan"].model_name or "").strip().upper(),
+                int(member["cavity"]),
+            )
+            for member in group["members"]
+        ))
+
+    return identity(left) == identity(right)
+
+
+def _group_plan_id(group: dict[str, Any] | None) -> int | None:
+    if not group:
+        return None
+    return int(group["members"][0]["plan"].id)
+
+
+def _confirmed_changeover_boundaries(
+    confirmations: list[InjectionDowntimeConfirmation],
+    groups: list[dict[str, Any]],
+    range_start: datetime,
+    range_end: datetime,
+) -> dict[int, tuple[datetime, datetime]]:
+    """Use a field-corrected production start only for adjacent plan groups."""
+    plan_group_index = {
+        int(member["plan"].id): index
+        for index, group in enumerate(groups)
+        for member in group["members"]
+    }
+    boundaries: dict[int, tuple[datetime, datetime]] = {}
+    for confirmation in confirmations:
+        evidence = confirmation.evidence if isinstance(confirmation.evidence, dict) else {}
+        if evidence.get("transition_start_source") != "field_confirmation":
+            continue
+        try:
+            from_index = plan_group_index[int(evidence.get("from_plan_id"))]
+            to_index = plan_group_index[int(evidence.get("to_plan_id"))]
+            stop_at = datetime.fromisoformat(str(evidence.get("transition_stopped_at")))
+            start_at = datetime.fromisoformat(str(evidence.get("transition_start_at")))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (
+            start_at.tzinfo is None
+            or stop_at.tzinfo is None
+            or to_index != from_index + 1
+            or _same_running_product(groups[from_index], groups[to_index])
+            or not (range_start <= stop_at < start_at < range_end)
+        ):
+            continue
+        boundaries[from_index] = (stop_at, start_at)
+    return boundaries
+
+
+def _allocate_injection_shots_by_runs(
+    groups: list[dict[str, Any]],
+    samples: list[tuple[datetime, float]],
+    baseline: float | None,
+    confirmed_boundaries: dict[int, tuple[datetime, datetime]],
+) -> tuple[list[int], int, dict[str, Any]]:
+    """Allocate observed counter deltas without inventing a part at plan cap.
+
+    A short/sparse restart remains setup output until three consecutive,
+    comparably sized positive samples establish the next run. A change below
+    the plan target remains uncertain without an independent field boundary.
+    """
+    allocations = [0] * len(groups)
+    group_index = 0
+    unattributed_shots = 0
+    transition = {
+        "phase": "running",
+        "from_plan_id": _group_plan_id(groups[0]) if groups else None,
+        "to_plan_id": _group_plan_id(groups[1]) if len(groups) > 1 else None,
+        "current_plan_id": _group_plan_id(groups[0]) if groups else None,
+        "stopped_at": None,
+        "estimated_start_at": None,
+        "confirmed_start_at": None,
+        "confirmation_status": "pending",
+        "setup_shots": 0,
+    }
+    if not groups:
+        return allocations, unattributed_shots, transition
+
+    def allocate_running(shots: int) -> None:
+        nonlocal group_index
+        remaining = shots
+        while remaining > 0:
+            next_index = group_index + 1
+            if next_index >= len(groups) or not _same_running_product(groups[group_index], groups[next_index]):
+                allocations[group_index] += remaining
+                return
+            capacity = max(0, int(groups[group_index]["required_shots"]) - allocations[group_index])
+            if capacity == 0:
+                group_index = next_index
+                continue
+            take = min(remaining, capacity)
+            allocations[group_index] += take
+            remaining -= take
+
+    previous_capacity = baseline
+    previous_sample_at: datetime | None = None
+    last_positive_at: datetime | None = None
+    first_zero_at: datetime | None = None
+    pending_stop_at: datetime | None = None
+    stable_window: list[tuple[datetime, float, int]] = []
+    raw_total = 0.0
+    for sample_at, capacity in samples:
+        raw_delta = max(0.0, calculate_counter_increment(previous_capacity, capacity))
+        previous_capacity = capacity
+        old_rounded_total = round(raw_total)
+        raw_total += raw_delta
+        shots = round(raw_total) - old_rounded_total
+        sample_gap_minutes = (
+            (sample_at - previous_sample_at).total_seconds() / 60
+            if previous_sample_at else None
+        )
+        is_covered = sample_gap_minutes is not None and 0 < sample_gap_minutes <= CHANGEOVER_MAX_SAMPLE_GAP_MINUTES
+        previous_sample_at = sample_at
+
+        manual_boundary = confirmed_boundaries.get(group_index)
+        if manual_boundary and sample_at >= manual_boundary[0]:
+            stop_at, start_at = manual_boundary
+            transition.update({
+                "phase": "changeover" if sample_at < start_at else "new_running",
+                "from_plan_id": _group_plan_id(groups[group_index]),
+                "to_plan_id": _group_plan_id(groups[group_index + 1]),
+                "stopped_at": stop_at.astimezone(SHANGHAI_TZ).isoformat(),
+                "estimated_start_at": None,
+                "confirmed_start_at": start_at.astimezone(SHANGHAI_TZ).isoformat(),
+                "confirmation_status": "confirmed",
+            })
+            if sample_at < start_at:
+                unattributed_shots += shots
+                transition["setup_shots"] += shots
+                continue
+            group_index += 1
+            pending_stop_at = None
+            stable_window.clear()
+            first_zero_at = None
+
+        if pending_stop_at is not None:
+            if raw_delta <= 0:
+                stable_window.clear()
+                continue
+            unattributed_shots += shots
+            transition["setup_shots"] += shots
+            if not is_covered:
+                # A catch-up delta after a collector gap has no trustworthy
+                # production time and cannot be part of the restart window.
+                stable_window.clear()
+                continue
+            stable_window.append((sample_at, raw_delta, shots))
+            stable_window = stable_window[-CHANGEOVER_STABLE_SAMPLES:]
+            if len(stable_window) < CHANGEOVER_STABLE_SAMPLES:
+                continue
+            values = [item[1] for item in stable_window]
+            average = sum(values) / len(values)
+            if max(values) - min(values) > max(1.0, average * 0.35):
+                continue
+            stable_shots = sum(item[2] for item in stable_window)
+            unattributed_shots -= stable_shots
+            transition["setup_shots"] -= stable_shots
+            group_index += 1
+            transition["phase"] = "new_running"
+            transition["estimated_start_at"] = stable_window[0][0].astimezone(SHANGHAI_TZ).isoformat()
+            allocate_running(stable_shots)
+            pending_stop_at = None
+            stable_window.clear()
+            first_zero_at = None
+            last_positive_at = sample_at
+            continue
+
+        if raw_delta > 0:
+            allocate_running(shots)
+            last_positive_at = sample_at
+            first_zero_at = None
+            continue
+
+        if last_positive_at is None or not is_covered:
+            first_zero_at = None
+            continue
+        if first_zero_at is None:
+            first_zero_at = sample_at
+        # The first zero must itself be observed close to the last positive
+        # sample; an unobserved collector gap is not evidence of a stop.
+        if (sample_at - first_zero_at).total_seconds() < CHANGEOVER_STOP_MINUTES * 60:
+            continue
+        next_index = group_index + 1
+        if (
+            next_index >= len(groups)
+            or _same_running_product(groups[group_index], groups[next_index])
+            or allocations[group_index] < int(groups[group_index]["required_shots"])
+        ):
+            continue
+        pending_stop_at = first_zero_at
+        transition = {
+            "phase": "changeover",
+            "from_plan_id": _group_plan_id(groups[group_index]),
+            "to_plan_id": _group_plan_id(groups[next_index]),
+            "stopped_at": first_zero_at.astimezone(SHANGHAI_TZ).isoformat(),
+            "estimated_start_at": None,
+            "confirmed_start_at": None,
+            "confirmation_status": "pending",
+            "setup_shots": 0,
+        }
+
+    if transition["phase"] == "running":
+        transition["from_plan_id"] = _group_plan_id(groups[group_index])
+        transition["to_plan_id"] = _group_plan_id(groups[group_index + 1]) if group_index + 1 < len(groups) else None
+    transition["current_plan_id"] = _group_plan_id(groups[group_index])
+    return allocations, unattributed_shots, transition
 
 
 def machine_label(machine_number: int) -> str:
@@ -372,6 +594,8 @@ def _injection_counter_windows(machine_names, range_start, recent_start, counter
             "shots": calculate_cumulative_counter_delta((value for _, value in rows), baseline=baseline),
             "recent_shots": calculate_cumulative_counter_delta(recent_values, baseline=recent_baseline),
             "latest": rows[-1][0] if rows else None,
+            "samples": rows,
+            "baseline": baseline,
         }
     return result
 
@@ -427,6 +651,15 @@ def get_injection_summary(
          if (number := parse_machine_number(plan.machine_name)) is not None],
         range_start, recent_start, counter_end,
     )
+    changeover_confirmations: dict[int, list[InjectionDowntimeConfirmation]] = {}
+    for confirmation in InjectionDowntimeConfirmation.objects.filter(
+        business_date=target_date,
+        resolution="confirmed",
+        reason_code__in=["mold_change", "core_change"],
+    ).order_by("detected_start", "id"):
+        number = parse_machine_number(confirmation.machine_key)
+        if number is not None:
+            changeover_confirmations.setdefault(number, []).append(confirmation)
     machine_rows = []
     part_rows = []
 
@@ -453,18 +686,32 @@ def get_injection_summary(
         )
         shot_count = machine_counters["shots"]
         recent_shots = machine_counters["recent_shots"]
-        remaining_shots = shot_count
+        plan_groups = build_cavity_plan_groups(machine_plans, cavity_map)
+        confirmed_boundaries = _confirmed_changeover_boundaries(
+            changeover_confirmations.get(machine_number, []),
+            plan_groups,
+            range_start,
+            range_end,
+        )
+        group_allocations, unattributed_shots, transition = _allocate_injection_shots_by_runs(
+            plan_groups,
+            machine_counters["samples"],
+            machine_counters["baseline"],
+            confirmed_boundaries,
+        )
+        # The counter reducer is the canonical total. Prefix rounding in the
+        # allocation helper must reconcile with that same reset-safe total.
+        assert shot_count == sum(group_allocations) + unattributed_shots
         planned_qty = 0
-        capped_actual_qty = 0
+        attributed_actual_qty = 0
         completed_count = 0
         in_progress_count = 0
         pending_count = 0
         parts = []
 
         sequence = 1
-        for group_index, plan_group in enumerate(build_cavity_plan_groups(machine_plans, cavity_map), start=1):
-            allocated_shots = max(0.0, min(float(remaining_shots), float(plan_group["required_shots"] or 0)))
-            remaining_shots = max(0.0, float(remaining_shots) - allocated_shots)
+        for group_index, plan_group in enumerate(plan_groups, start=1):
+            allocated_shots = group_allocations[group_index - 1]
             expected_group_size = max(
                 (
                     max(1, int((member.get("meta") or {}).get("parts_per_shot") or 1))
@@ -483,11 +730,17 @@ def get_injection_summary(
                 part_no = (plan.part_no or "").strip().upper()
                 cavity = max(1, int(member["cavity"] or 1))
                 meta = member.get("meta") or {}
-                estimated_qty = min(part_planned_qty, int(round(allocated_shots * cavity)))
+                estimated_qty = int(round(allocated_shots * cavity))
                 part_progress = safe_rate(estimated_qty, part_planned_qty)
-                status = "completed" if part_progress >= 99.9 else "in_progress" if part_progress > 0 else "pending"
+                is_current_group = plan_group["members"][0]["plan"].id == transition["current_plan_id"]
+                status = (
+                    "in_progress" if is_current_group and allocated_shots > 0
+                    else "completed" if part_progress >= 99.9
+                    else "in_progress" if part_progress > 0
+                    else "pending"
+                )
                 planned_qty += part_planned_qty
-                capped_actual_qty += estimated_qty
+                attributed_actual_qty += estimated_qty
                 completed_count += 1 if status == "completed" else 0
                 in_progress_count += 1 if status == "in_progress" else 0
                 pending_count += 1 if status == "pending" else 0
@@ -521,9 +774,7 @@ def get_injection_summary(
                 parts.append(part_payload)
                 part_rows.append(part_payload)
 
-        avg_cavity = average_group_shot_yield(machine_plans, cavity_map) if planned_qty > 0 else 1
-        extra_qty = int(round(remaining_shots * avg_cavity)) if remaining_shots > 0 else 0
-        actual_qty = capped_actual_qty + extra_qty
+        actual_qty = attributed_actual_qty
         machine_progress = safe_rate(actual_qty, planned_qty)
         expected_qty_by_time = safe_int(planned_qty * time_progress_rate / 100)
         machine_rows.append({
@@ -538,9 +789,11 @@ def get_injection_summary(
             "gap_to_time_rate_pp": round(machine_progress - time_progress_rate, 1),
             "progress_rate": machine_progress,
             "shot_count": shot_count,
+            "unattributed_shots": unattributed_shots,
+            "transition": transition,
             "recent_60m_shots": recent_shots,
             "recent_60m_avg_ct_sec": round(3600 / recent_shots, 1) if recent_shots > 0 else None,
-            "is_running": recent_shots > 0,
+            "is_running": recent_shots > 0 and transition["phase"] != "changeover",
             "latest_capacity_time": machine_latest_capacity_time,
             "capacity_data_available": machine_data_warning is None,
             "data_warning": machine_data_warning,
