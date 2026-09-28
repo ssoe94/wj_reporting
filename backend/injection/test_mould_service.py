@@ -113,6 +113,43 @@ class MouldTransformTests(SimpleTestCase):
         self.assertEqual(machine["mould_count"], 1)
         self.assertEqual(machines[2]["tonnage"], "1300T")
 
+    def test_machine_7_process_identity_and_display_tonnage_are_separate(self):
+        for location in ("#7-1300T", "#7-1800T"):
+            with self.subTest(location=location):
+                mould = normalize_mould_record(custom_record(7, "MOLD-0007", location))
+                machine = next(row for row in mould_service._machine_rows([mould]) if row["number"] == 7)
+                self.assertEqual(machine["device_code"], "1300T-7")
+                self.assertEqual(machine["location_code"], "#7-1300T")
+                self.assertEqual(machine["tonnage"], "1800T")
+                self.assertEqual(machine["source_tonnage"], "1300T")
+                self.assertEqual(machine["display_tonnage"], "1800T")
+                self.assertEqual(machine["mould_count"], 1)
+                self.assertEqual(mould["location_code"], location)
+                self.assertEqual(mould["location"]["code"], location)
+                self.assertEqual(mould["location"]["machine_number"], 7)
+
+    def test_machine_7_aliases_aggregate_distinct_occupants_and_deduplicate_same_mould(self):
+        moulds = [
+            {"instance_id": "same", "location_code": "#7-1300T"},
+            {"instance_id": "same", "location_code": "#7-1800T"},
+            {"instance_id": "other", "location_code": "#7-1800T"},
+        ]
+        machine = next(row for row in mould_service._machine_rows(moulds) if row["number"] == 7)
+        self.assertEqual(machine["mould_count"], 2)
+        self.assertTrue(machine["conflict"])
+        locations = [row for row in mould_service._location_rows(moulds) if row["machine_number"] == 7]
+        self.assertEqual(len(locations), 1)
+        self.assertEqual(locations[0]["code"], "#7-1300T")
+        self.assertEqual(locations[0]["mould_count"], 2)
+        self.assertTrue(locations[0]["conflict"])
+
+    def test_unknown_machine_tonnage_cannot_become_a_machine_by_number_alone(self):
+        mould = normalize_mould_record(custom_record(7, "MOLD-0007", "#7-1900T"))
+        self.assertEqual(mould["location"]["kind"], "unknown")
+        self.assertIsNone(mould["location"]["machine_number"])
+        machine = next(row for row in mould_service._machine_rows([mould]) if row["number"] == 7)
+        self.assertEqual(machine["mould_count"], 0)
+
     def test_location_conflicts_require_distinct_moulds_in_exclusive_slots(self):
         rows = mould_service._location_rows(
             [

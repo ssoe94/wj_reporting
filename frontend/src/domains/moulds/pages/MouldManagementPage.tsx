@@ -50,20 +50,23 @@ import {
   type ProductionStatusMachine,
   type ProductionStatusPart,
 } from "@/domains/production/api";
+import { getInjectionActivityCoverage } from "@/domains/mes/api";
 import { getOverviewBoard } from "@/domains/boards/overview/api";
 import { useStoredLanguage } from "@/shared/i18n/language";
 import { getShanghaiBusinessDateString } from "@/shared/utils/date";
 import {
   activityEvidenceBasis,
   assessOpenPlanGroup,
-  assessPlannedMould,
+  assessMachineMould,
+  applyModelValidationRule,
+  canApplyModelValidation,
+  plannedMouldRelation,
+  type ModelValidation,
   canCarryoverModel,
   chooseMachineEvidence,
   commonPrefixLength,
   machineCardModel,
-  machineIdentityEvidenceStatus,
   mergedActivityBasis,
-  modelCodeRelation,
   normalizedModelCode,
 } from "@/domains/moulds/machine-plan-comparison";
 import injectionMachineGraphic from "@/assets/injection-machine-card.png";
@@ -106,6 +109,12 @@ const COPY = {
     productionModel: "생산 중 모델",
     productionOrPlanModel: "생산/계획 모델",
     plannedProductionModel: "생산계획 모델",
+    recentProductionModel: "최근 생산 모델",
+    modelUnavailable: "생산 모델 확인 필요",
+    drawingModelMatch: "도면번호·생산 모델 일치",
+    modelEvidenceMatch: "금형·생산 모델 일치",
+    savedModelMatch: "저장된 모델 판정 · 일치",
+    savedModelMismatch: "저장된 모델 판정 · 불일치",
     productionModelDate: "생산 기준",
     mouldModel: "금형 모델",
     modelMatch: "일치",
@@ -125,6 +134,8 @@ const COPY = {
     machineIdentityUnknownHint: "생산 자료의 원본 설비명 또는 금형 위치의 톤수를 확인할 수 없어 자동 비교를 보류합니다.",
     modelRecent: "최근 생산 실적",
     modelStale: "최근 생산 오래됨",
+    activityUnknown: "가동 확인 필요",
+    activityUnknownHint: "이 설비의 최근 MES 수집값이 없어 현재 가동 여부를 확인할 수 없습니다.",
     modelAmbiguous: "복수 생산",
     modelLoading: "조회 중",
     noProductionModel: "정지중 · 생산 없음",
@@ -324,6 +335,12 @@ const COPY = {
     productionModel: "在产型号",
     productionOrPlanModel: "生产/计划型号",
     plannedProductionModel: "生产计划型号",
+    recentProductionModel: "最近生产型号",
+    modelUnavailable: "需确认生产型号",
+    drawingModelMatch: "图号与生产型号一致",
+    modelEvidenceMatch: "模具与生产型号一致",
+    savedModelMatch: "已保存的型号判定 · 一致",
+    savedModelMismatch: "已保存的型号判定 · 不一致",
     productionModelDate: "生产基准",
     mouldModel: "模具型号",
     modelMatch: "一致",
@@ -343,6 +360,8 @@ const COPY = {
     machineIdentityUnknownHint: "无法确认生产数据中的原始设备名或模具位置吨位，已暂缓自动对照。",
     modelRecent: "最近生产实绩",
     modelStale: "最近生产过旧",
+    activityUnknown: "需确认运行状态",
+    activityUnknownHint: "该设备缺少最近 MES 采集值，暂时无法确认当前运行状态。",
     modelAmbiguous: "多项生产",
     modelLoading: "查询中",
     noProductionModel: "停机中 · 无生产",
@@ -521,6 +540,7 @@ type MachineProductionLink = {
   date: string;
   sourceMachineName: string;
   secondarySourceMachineName?: string;
+  sourceStatus?: string;
   isRunning: boolean;
   model: string;
   partNo: string;
@@ -550,27 +570,6 @@ type ModelRecommendation = {
   matchLevel: "exact" | "family";
   score: number;
 };
-type ModelValidation =
-  | "match"
-  | "confirmed_match"
-  | "review"
-  | "mismatch"
-  | "confirmed_mismatch"
-  | "unknown"
-  | "no_production"
-  | "mould_missing"
-  | "planned"
-  | "planned_match"
-  | "planned_review"
-  | "planned_mismatch"
-  | "planned_mould_missing"
-  | "machine_identity_conflict"
-  | "machine_identity_unknown"
-  | "recent_output"
-  | "stale"
-  | "ambiguous"
-  | "conflict"
-  | "loading";
 type ZoneDragState = {
   pointerId: number;
   startX: number;
@@ -830,51 +829,13 @@ function buildFallbackMachineProductionLinks(board: MouldBoard | undefined) {
   return links;
 }
 
-function productionAgeDays(date: string): number {
-  const reference = new Date(`${getShanghaiBusinessDateString()}T00:00:00Z`).getTime();
-  const source = new Date(`${date}T00:00:00Z`).getTime();
-  if (!Number.isFinite(reference) || !Number.isFinite(source)) return Number.POSITIVE_INFINITY;
-  return Math.max(0, Math.floor((reference - source) / 86_400_000));
-}
-
 function modelValidation(
   moulds: MouldRecord[],
   production: MachineProductionLink | undefined,
   machineNumber: number,
   tonnage: string,
 ): ModelValidation {
-  if (moulds.length > 1) return "conflict";
-  if (!production) return "no_production";
-  if (production.basis === "planned_only" && production.date === getShanghaiBusinessDateString() && production.model) {
-    const assessment = assessPlannedMould(moulds[0], production, machineNumber, tonnage);
-    return {
-      match: "planned_match" as const,
-      review: "planned_review" as const,
-      mismatch: "planned_mismatch" as const,
-      mould_missing: "planned_mould_missing" as const,
-      machine_identity_conflict: "machine_identity_conflict" as const,
-      machine_identity_unknown: "machine_identity_unknown" as const,
-    }[assessment];
-  }
-  if (production.isRunning || production.date === getShanghaiBusinessDateString()) {
-    const identity = machineIdentityEvidenceStatus(production, machineNumber, tonnage);
-    if (identity === "conflict") return "machine_identity_conflict";
-    if (identity === "unknown" && production.isRunning) return "machine_identity_unknown";
-  }
-  if (production.basis === "ambiguous" && production.date === getShanghaiBusinessDateString()) return "ambiguous";
-  if (!production.isRunning) return "no_production";
-  const mould = moulds[0];
-  if (!mould) return "mould_missing";
-  if (production.basis === "ambiguous") return "ambiguous";
-  if (production.basis === "planned_only") return "planned";
-  if (production.basis === "last_output") return "recent_output";
-  if (productionAgeDays(production.date) > 3) return "stale";
-  if (!mould.model) return "unknown";
-  const relation = modelCodeRelation(mould.model, production.model);
-  if (relation === "exact") return "match";
-  if (relation === "family") return "review";
-  if (relation === "different") return "mismatch";
-  return "unknown";
+  return assessMachineMould(moulds, production, machineNumber, tonnage, getShanghaiBusinessDateString());
 }
 
 function validationLabel(validation: ModelValidation, copy: Copy) {
@@ -896,6 +857,7 @@ function validationLabel(validation: ModelValidation, copy: Copy) {
     machine_identity_unknown: copy.machineIdentityUnknown,
     recent_output: copy.modelRecent,
     stale: copy.modelStale,
+    activity_unknown: copy.activityUnknown,
     ambiguous: copy.modelAmbiguous,
     conflict: copy.machineConflict,
     loading: copy.modelLoading,
@@ -921,6 +883,7 @@ function validationShortLabel(validation: ModelValidation, copy: Copy) {
     machine_identity_unknown: copy.shortMachineIdentityUnknown,
     recent_output: copy.shortRecent,
     stale: copy.shortStale,
+    activity_unknown: copy.activityUnknown,
     ambiguous: copy.shortAmbiguous,
     conflict: copy.shortConflict,
     loading: copy.shortLoading,
@@ -946,6 +909,7 @@ function validationClass(validation: ModelValidation) {
     machine_identity_unknown: styles.validationUnknown,
     recent_output: styles.validationPlanned,
     stale: styles.validationUnknown,
+    activity_unknown: styles.validationUnknown,
     ambiguous: styles.validationUnknown,
     conflict: styles.validationConflict,
     loading: styles.validationIdle,
@@ -953,7 +917,8 @@ function validationClass(validation: ModelValidation) {
 }
 
 function productionBasisLabel(production: MachineProductionLink | undefined, copy: Copy): string {
-  if (!production) return copy.noProductionModel;
+  if (!production?.model) return copy.modelUnavailable;
+  if ((!production.isRunning || (production.sourceStatus && production.sourceStatus !== "ok")) && production.basis !== "planned_only") return copy.productionBasisRecent;
   return {
     active_estimate: copy.productionBasisActive,
     carryover_plan: copy.productionBasisCarryover,
@@ -1026,8 +991,7 @@ function resolveValidationRule(
   automatic: ModelValidation,
   rule: MouldMachineValidationRule | undefined,
 ): ModelValidation {
-  if (!rule || !["review", "mismatch", "unknown"].includes(automatic)) return automatic;
-  return rule.decision === "match" ? "confirmed_match" : "confirmed_mismatch";
+  return applyModelValidationRule(automatic, rule?.decision);
 }
 
 function machineValidationInput(
@@ -1214,7 +1178,10 @@ async function getLatestMachineProductionEvidence(referenceDate: string) {
 }
 
 async function getCurrentMachineActivityLinks(referenceDate: string) {
-  const currentActivity = await getOverviewBoard(referenceDate, "ko");
+  const [currentActivity, coverage] = await Promise.all([
+    getOverviewBoard(referenceDate, "ko"),
+    getInjectionActivityCoverage().catch(() => undefined),
+  ]);
   const activityRows = currentActivity.model.equipment.injectionRows;
   const activityWarnings = currentActivity.model.warnings;
   const activityUnavailable = currentActivity.mode !== "live"
@@ -1241,6 +1208,7 @@ async function getCurrentMachineActivityLinks(referenceDate: string) {
     result.set(machineNumber, {
       date: referenceDate,
       sourceMachineName: activity.label,
+      sourceStatus: coverage?.machine_sources?.[String(machineNumber)]?.status ?? activity.sourceStatus ?? "unknown",
       isRunning: true,
       model: currentModel,
       partNo: currentPartNos[0] ?? "-",
@@ -1256,6 +1224,20 @@ async function getCurrentMachineActivityLinks(referenceDate: string) {
       candidateCount: Math.max(1, currentModels.length),
     });
   });
+  // No overview row can mean no plan, a stop, or missing collection. Check each
+  // machine's observed samples before treating that absence as a stop.
+  for (let machineNumber = 1; machineNumber <= 17; machineNumber += 1) {
+    if (result.has(machineNumber)) continue;
+    const source = coverage?.machine_sources?.[String(machineNumber)];
+    const row = activityRows.find((item) => item.machineNumber === machineNumber);
+    result.set(machineNumber, {
+      date: referenceDate, sourceMachineName: row?.label ?? "",
+      sourceStatus: source?.status ?? "unknown",
+      isRunning: false, model: "", partNo: "-", partNos: [], parts: [],
+      basis: "planned_only", mode: "single", cavityPattern: "", cavityGroup: "",
+      productionGroupId: "", actualQuantity: 0, plannedQuantity: 0, candidateCount: 0,
+    });
+  }
   return result;
 }
 
@@ -1266,6 +1248,10 @@ function mergeMachineProductionLinks(
   const result = new Map(evidence);
   currentActivity.forEach((activity, machineNumber) => {
     const currentEvidence = evidence.get(machineNumber);
+    if (!activity.isRunning) {
+      result.set(machineNumber, { ...(currentEvidence ?? activity), isRunning: false, sourceStatus: activity.sourceStatus });
+      return;
+    }
     const carryoverEvidence = canCarryoverModel(activity, currentEvidence) ? currentEvidence : undefined;
     const sameDayEvidence = currentEvidence?.date === activity.date
       && (!activity.model || !currentEvidence.model
@@ -1967,7 +1953,7 @@ export function MouldManagementPage() {
   const displayLocation = (mould: SelectedDetail) => {
     if (mould.location.machineNumber) {
       const machine = board?.machines.find((item) => item.number === mould.location.machineNumber);
-      return machineDisplayLabel(mould.location.machineNumber, machine?.tonnage ?? "", language);
+      return machineDisplayLabel(mould.location.machineNumber, machine?.displayTonnage || machine?.tonnage || "", language);
     }
     if (mould.summaryCategory === "offsite") return copy.offsite;
     if (mould.summaryCategory === "repair" || mould.summaryCategory === "maintenance") return copy.repair;
@@ -1989,7 +1975,8 @@ export function MouldManagementPage() {
         : "loading";
   const hasCurrentPlanEvidence = (production: MachineProductionLink | undefined) => Boolean(
     productionEvidenceQuery.isSuccess
-    && production?.basis === "planned_only"
+    && production?.model
+    && production.basis === "planned_only"
     && production.date === productionBusinessDate,
   );
   const verificationPlanReady = hasCurrentPlanEvidence(verificationProduction);
@@ -2003,18 +1990,25 @@ export function MouldManagementPage() {
           verificationMoulds,
           verificationProduction,
           verificationMachine?.number ?? 0,
-          verificationMachine?.tonnage ?? "",
+          verificationMachine?.sourceTonnage || verificationMachine?.tonnage || "",
         );
   const verificationRuleLookup = machineValidationRuleLookup(verificationMould, verificationProduction);
   const verificationRule = verificationRuleLookup
     ? machineValidationRules.get(verificationRuleLookup.mapKey)
     : undefined;
   const verificationResult = resolveValidationRule(verificationAutomaticResult, verificationRule);
+  const verificationModelRelation = verificationMould && verificationProduction?.model
+    ? plannedMouldRelation(verificationMould.model, verificationMould.drawingNo, verificationProduction.model)
+    : "unknown";
+  const verificationDrawingMatch = verificationMould && verificationProduction?.model
+    && normalizedModelCode(verificationMould.drawingNo) === normalizedModelCode(verificationProduction.model)
+    && Boolean(normalizedModelCode(verificationProduction.model));
   const verificationCanDecide = Boolean(
     verificationMould
     && verificationProduction
     && verificationProduction.model
-    && ["review", "mismatch", "unknown"].includes(verificationAutomaticResult),
+    && (canApplyModelValidation(verificationAutomaticResult)
+      || (verificationRule && ["match", "planned_match"].includes(verificationAutomaticResult))),
   );
   const verificationCandidates = ["mould_missing", "planned_mould_missing"].includes(verificationAutomaticResult)
     ? modelRecommendations(board, verificationProduction)
@@ -2033,18 +2027,20 @@ export function MouldManagementPage() {
         ? "stale"
         : machineHasConflict
           ? "conflict"
-          : modelValidation(mountedMoulds, productionLink, machine.number, machine.tonnage);
+          : modelValidation(mountedMoulds, productionLink, machine.number, machine.sourceTonnage || machine.tonnage);
     const ruleLookup = machineValidationRuleLookup(mounted, productionLink);
     const rule = ruleLookup ? machineValidationRules.get(ruleLookup.mapKey) : undefined;
     const validation = resolveValidationRule(automaticValidation, rule);
     const cardModel = machineCardModel(productionLink, productionBusinessDate);
     const activeProductionModel = cardModel?.model ?? "-";
-    const productionModelLabel = cardModel?.planned ? copy.plannedProductionModel : copy.productionModel;
+    const productionModelLabel = cardModel?.recent
+      ? `${copy.recentProductionModel} · ${cardModel.date?.slice(5)}`
+      : cardModel?.planned ? copy.plannedProductionModel : copy.productionModel;
     const recommendations = ["mould_missing", "planned_mould_missing"].includes(automaticValidation)
       ? modelRecommendations(board, productionLink)
       : [];
     const machineSearchText = [
-      machineDisplayLabel(machine.number, machine.tonnage, language),
+      machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language),
       ...mountedMoulds.flatMap((item) => [item.mouldCode, item.assetCode, item.name, item.model, item.drawingNo]),
       activeProductionModel,
       productionModelLabel,
@@ -2277,14 +2273,14 @@ export function MouldManagementPage() {
                   <button
                     aria-expanded={verificationMachineNumber === machine.number}
                     aria-haspopup="dialog"
-                    aria-label={`${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${productionModelLabel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
-                    className={`${styles.machineGraphicCard} ${productionStatusState === "ready" && productionLink?.isRunning ? styles.machineRunning : productionStatusState === "ready" ? styles.machineStopped : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
+                    aria-label={`${machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${productionModelLabel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
+                    className={`${styles.machineGraphicCard} ${productionStatusState === "ready" && (!productionLink?.sourceStatus || productionLink.sourceStatus === "ok") ? (productionLink?.isRunning ? styles.machineRunning : styles.machineStopped) : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                     key={machine.number}
                     onClick={() => setVerificationMachineNumber(machine.number)}
                     type="button"
                   >
                     <span className={styles.machineGraphicTopline}>
-                      <strong>{machineDisplayLabel(machine.number, machine.tonnage, language)}</strong>
+                      <strong>{machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}</strong>
                       <i className={`${styles.statusPill} ${validationClass(validation)}`}>{validationShortLabel(validation, copy)}</i>
                     </span>
                     <span className={styles.machineGraphicBody}>
@@ -2318,14 +2314,14 @@ export function MouldManagementPage() {
                     <button
                       aria-expanded={verificationMachineNumber === machine.number}
                       aria-haspopup="dialog"
-                      aria-label={`${machineDisplayLabel(machine.number, machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${productionModelLabel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
-                      className={`${styles.machineRow} ${productionStatusState === "ready" && productionLink?.isRunning ? styles.machineRunning : productionStatusState === "ready" ? styles.machineStopped : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
+                      aria-label={`${machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}, ${copy.currentMould} ${mountedMoulds.length ? mountedMoulds.map((item) => item.mouldCode).join(", ") : "-"}, ${productionModelLabel} ${activeProductionModel}, ${validationLabel(validation, copy)}`}
+                      className={`${styles.machineRow} ${productionStatusState === "ready" && (!productionLink?.sourceStatus || productionLink.sourceStatus === "ok") ? (productionLink?.isRunning ? styles.machineRunning : styles.machineStopped) : ""} ${selected ? styles.selectedMachine : ""} ${visible ? "" : styles.filteredOut}`}
                       key={machine.number}
                       onClick={() => setVerificationMachineNumber(machine.number)}
                       title={copy.verifyHint}
                       type="button"
                     >
-                      <strong>{machineDisplayLabel(machine.number, machine.tonnage, language)}</strong>
+                      <strong>{machineDisplayLabel(machine.number, machine.displayTonnage || machine.tonnage, language)}</strong>
                       <span className={styles.machineMountedCell}>
                         <small>{copy.currentMould}</small>
                         <strong>{mountedMoulds.length > 1 ? `${copy.shortConflict} ${mountedMoulds.length}${copy.listCount}` : mounted?.mouldCode || "-"}</strong>
@@ -2651,7 +2647,7 @@ export function MouldManagementPage() {
             <header>
               <div>
                 <span><BadgeCheck aria-hidden="true" size={22} />{copy.verifyMould}</span>
-                <h2 id="machine-verification-title">{machineDisplayLabel(verificationMachine.number, verificationMachine.tonnage, language)}</h2>
+                <h2 id="machine-verification-title">{machineDisplayLabel(verificationMachine.number, verificationMachine.displayTonnage || verificationMachine.tonnage, language)}</h2>
                 <p>{copy.verifyHint}</p>
               </div>
               <button aria-label={copy.closeVerification} onClick={() => setVerificationMachineNumber(null)} title={copy.closeVerification} type="button"><X aria-hidden="true" size={26} /></button>
@@ -2668,10 +2664,10 @@ export function MouldManagementPage() {
                 )) : <><strong>{copy.unassigned}</strong><span>-</span></>}
               </article>
               <article>
-                <small>{verificationProduction?.basis === "planned_only" && verificationProduction.date === productionBusinessDate
+                <small>{verificationProduction?.model && verificationProduction.basis === "planned_only" && verificationProduction.date === productionBusinessDate
                   ? copy.plannedProductionModel
-                  : copy.expectedModel}</small>
-                <strong>{verificationProduction?.model || copy.noProductionModel}</strong>
+                  : verificationProduction?.model && (!verificationProduction.isRunning || (verificationProduction.sourceStatus && verificationProduction.sourceStatus !== "ok")) ? copy.recentProductionModel : copy.expectedModel}</small>
+                <strong>{verificationProduction?.model || copy.modelUnavailable}</strong>
                 <span>{verificationProduction?.date || "-"}</span>
                 {verificationProduction?.partNos.length ? (
                   <span className={styles.verificationPartNos}>
@@ -2686,14 +2682,18 @@ export function MouldManagementPage() {
             </div>
             <div className={`${styles.verificationResult} ${validationClass(verificationResult)}`}>
               <strong>{validationLabel(verificationResult, copy)}</strong>
+              {verificationModelRelation === "exact" ? (
+                <span>{verificationDrawingMatch ? copy.drawingModelMatch : copy.modelEvidenceMatch}: {verificationProduction?.model}</span>
+              ) : null}
               {verificationResult === "conflict" ? <span>{copy.conflictNeedsMesFix}</span> : null}
               {verificationResult === "machine_identity_conflict" ? (
                 <span>{copy.machineIdentityMismatchHint} {[
                   verificationProduction?.sourceMachineName,
                   verificationProduction?.secondarySourceMachineName,
-                  machineDisplayLabel(verificationMachine.number, verificationMachine.tonnage, language),
+                  machineDisplayLabel(verificationMachine.number, verificationMachine.displayTonnage || verificationMachine.tonnage, language),
                 ].filter(Boolean).join(" / ")}</span>
               ) : null}
+              {verificationResult === "activity_unknown" ? <span>{copy.activityUnknownHint}</span> : null}
               {verificationResult === "machine_identity_unknown" ? <span>{copy.machineIdentityUnknownHint}</span> : null}
               {["mould_missing", "planned_mould_missing"].includes(verificationResult) ? <span>{copy.paperworkRequired}</span> : null}
               {verificationAutomaticResult === "mismatch" && !verificationRule ? <span>{copy.modelMismatchNeedsMesFix}</span> : null}
@@ -2704,7 +2704,7 @@ export function MouldManagementPage() {
                 <BadgeCheck aria-hidden="true" size={18} />
                 <span>
                   <strong>{copy.fieldConfirmed}</strong>
-                  <small>{validationLabel(verificationResult, copy)} · {copy.confirmedAt} {dateTime(verificationRule.confirmedAt, language, copy.noTimestamp)}</small>
+                  <small>{verificationRule.decision === "match" ? copy.savedModelMatch : copy.savedModelMismatch} · {copy.confirmedAt} {dateTime(verificationRule.confirmedAt, language, copy.noTimestamp)}</small>
                 </span>
               </div>
             ) : null}

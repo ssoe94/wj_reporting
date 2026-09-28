@@ -16,7 +16,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from .models import MouldDataSnapshot, MouldUsageConfirmation
-from .mould_service import continuous_production_history
+from .mould_service import continuous_production_history, refresh_board_machine_metadata
 
 
 SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -235,7 +235,7 @@ def usage_shot_count(*, current_output_amount: Any, production_history: Any) -> 
 
 
 def decorate_board_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
-    result = copy.deepcopy(dict(payload))
+    result = refresh_board_machine_metadata(payload)
     moulds = result.get('moulds')
     if not isinstance(moulds, list):
         return result

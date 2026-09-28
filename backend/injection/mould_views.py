@@ -83,6 +83,8 @@ _MACHINE_FIELDS = (
     "location_code",
     "label",
     "tonnage",
+    "source_tonnage",
+    "display_tonnage",
     "mould_count",
     "conflict",
 )
@@ -286,6 +288,8 @@ def _project_board_payload(payload: Any) -> dict[str, Any]:
     machines = _project_rows(source.get("machines"), _MACHINE_FIELDS)
     for machine in machines:
         if machine.get("number") == 7:
+            if machine.get("location_code") in {"#7-1300T", "#7-1800T"}:
+                machine["source_tonnage"] = "1300T"
             machine["tonnage"] = display_tonnage(7, machine.get("tonnage"))
             machine["label"] = f"7호기 {machine['tonnage']}"
     return {

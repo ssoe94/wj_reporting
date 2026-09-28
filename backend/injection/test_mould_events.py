@@ -20,6 +20,14 @@ class MouldLocationClassificationTests(unittest.TestCase):
         self.assertEqual(classify_location("850T-1"), "unknown")
         self.assertEqual(classify_location("#1-850t"), "unknown")
 
+    def test_machine_7_accepts_only_current_key_and_explicit_historical_alias(self):
+        self.assertIn("#7-1300T", MACHINE_LOCATION_CODES)
+        self.assertNotIn("#7-1800T", MACHINE_LOCATION_CODES)
+        self.assertEqual(classify_location("#7-1300T"), "machine")
+        self.assertEqual(classify_location("#7-1800T"), "machine")
+        self.assertEqual(classify_location("#7-1900T"), "unknown")
+        self.assertEqual(classify_location("#8-1800T"), "unknown")
+
     def test_storage_classification_uses_known_cell_grammars(self):
         self.assertEqual(classify_location("A1-1"), "storage")
         self.assertEqual(classify_location("C9-18"), "storage")
@@ -40,6 +48,18 @@ class MouldLocationClassificationTests(unittest.TestCase):
 
 
 class MouldPositionHistoryTests(unittest.TestCase):
+    def test_machine_7_tonnage_alias_does_not_create_a_physical_move(self):
+        result = normalize_position_history([
+            {"logId": 100, "loggedAt": T1, "fieldValueFrom": "C9-18", "fieldValueTo": "#7-1800T"},
+            {"logId": 101, "loggedAt": T2, "fieldValueFrom": "#7-1800T", "fieldValueTo": "#7-1300T"},
+        ], current_location="#7-1300T")
+
+        self.assertEqual([event["type"] for event in result["events"]], ["mount"])
+        self.assertEqual(result["last_changed_at"], T1)
+        self.assertEqual(result["current_location"], "#7-1300T")
+        self.assertEqual(result["events"][0]["to_location"], "#7-1800T")
+        self.assertNotIn("history_current_location_mismatch", result["warnings"])
+
     def test_storage_to_machine_creates_mount_from_logged_at(self):
         result = normalize_position_history(
             [

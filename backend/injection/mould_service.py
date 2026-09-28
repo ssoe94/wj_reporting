@@ -30,6 +30,7 @@ from inventory.mes import (
 
 from .mould_events import (
     MACHINE_LOCATION_CODES,
+    canonical_machine_location,
     classify_location,
     normalize_location,
     normalize_position_history,
@@ -526,7 +527,7 @@ def normalize_mould_record(
     )
     location_code = normalize_location(values["location"])
     location_kind = classify_location(location_code)
-    machine_match = _MACHINE_CODE_RE.match(location_code or "")
+    machine_match = _MACHINE_CODE_RE.match(canonical_machine_location(location_code) or "")
     location = {
         "id": None,
         "code": location_code,
@@ -1299,7 +1300,7 @@ def _unique_location_occupants(
 def _machine_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     by_location: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for mould in moulds:
-        location = str(mould.get("location_code") or "")
+        location = canonical_machine_location(_mould_location_code(mould))
         if location:
             by_location[location].append(mould)
 
@@ -1322,6 +1323,8 @@ def _machine_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 "location_code": location_code,
                 "label": f"{number}호기 {tonnage}",
                 "tonnage": tonnage,
+                "source_tonnage": source_tonnage,
+                "display_tonnage": tonnage,
                 "mould_count": len(occupants),
                 "conflict": len(occupants) > 1,
                 "mould_instance_ids": [row.get("instance_id") for row in occupants],
@@ -1330,10 +1333,18 @@ def _machine_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return machines
 
 
+def _mould_location_code(mould: Mapping[str, Any]) -> str:
+    location = mould.get("location")
+    return str(mould.get("location_code") or (
+        location.get("code") if isinstance(location, Mapping) else ""
+    ) or "").strip()
+
+
 def _location_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for mould in moulds:
-        location = str(mould.get("location_code") or "").strip()
+        raw_location = _mould_location_code(mould)
+        location = canonical_machine_location(raw_location) or raw_location
         if location:
             grouped[location].append(mould)
 
@@ -1341,7 +1352,7 @@ def _location_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     all_codes = set(grouped) | set(MACHINE_LOCATION_CODES)
     for code in sorted(all_codes):
         occupants = _unique_location_occupants(grouped.get(code, []))
-        machine_match = _MACHINE_CODE_RE.match(code)
+        machine_match = _MACHINE_CODE_RE.match(canonical_machine_location(code) or "")
         location_kind = classify_location(code)
         rows.append(
             {
@@ -1360,6 +1371,62 @@ def _location_rows(moulds: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def refresh_board_machine_metadata(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Refresh derived machine fields on a public snapshot without rewriting it.
+
+    Source location codes and freshness remain unchanged. Known historical
+    aliases share one physical slot; public rows never gain internal provenance.
+    """
+
+    result = copy.deepcopy(dict(payload))
+    moulds = result.get("moulds")
+    if not isinstance(moulds, list):
+        return result
+    rows = [row for row in moulds if isinstance(row, Mapping)]
+    reclassified = 0
+    for mould in rows:
+        if not isinstance(mould, dict):
+            continue
+        canonical = canonical_machine_location(_mould_location_code(mould))
+        if canonical is None:
+            continue
+        location = mould.get("location")
+        if isinstance(location, dict):
+            location["kind"] = "machine"
+            location["machine_number"] = int(_MACHINE_CODE_RE.match(canonical).group("number"))
+        if "location_kind" in mould:
+            mould["location_kind"] = "machine"
+        if mould.get("summary_category") == "unknown":
+            mould["summary_category"] = "machine"
+            reclassified += 1
+
+    machine_fields = (
+        "number", "location_code", "label", "tonnage", "source_tonnage", "display_tonnage",
+        "mould_count", "conflict",
+    )
+    result["machines"] = [
+        {key: row[key] for key in machine_fields}
+        for row in _machine_rows(rows)
+    ]
+    location_fields = ("code", "label", "kind", "machine_number", "mould_count", "conflict")
+    existing_locations = result.get("locations")
+    existing_locations = existing_locations if isinstance(existing_locations, list) else []
+    result["locations"] = [
+        row for row in existing_locations
+        if isinstance(row, Mapping) and canonical_machine_location(row.get("code")) is None
+    ] + [
+        {key: row[key] for key in location_fields}
+        for row in _location_rows(rows) if row["kind"] == "machine"
+    ]
+    summary = result.get("summary")
+    if isinstance(summary, dict):
+        summary["conflicts"] = sum(bool(row.get("conflict")) for row in result["locations"])
+        if reclassified:
+            summary["mounted"] = int(summary.get("mounted") or 0) + reclassified
+            summary["unknown"] = max(0, int(summary.get("unknown") or 0) - reclassified)
+    return result
 
 
 _REPAIR_ACTIVE_MARKERS = (

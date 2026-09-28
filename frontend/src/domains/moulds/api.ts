@@ -92,6 +92,8 @@ export type MouldMachineSlot = {
   locationCode: string;
   label: string;
   tonnage: string;
+  sourceTonnage?: string;
+  displayTonnage?: string;
   mouldCount: number;
   conflict: boolean;
 };
@@ -470,6 +472,8 @@ function normalizeMachineSlot(value: unknown): MouldMachineSlot {
     locationCode: asString(pick(source, "location_code", "locationCode")),
     label: asString(pick(source, "label", "display_name", "displayName", "machine_name", "machineName"), number ? `${number}호기` : ""),
     tonnage: asString(pick(source, "tonnage", "capacity_label", "capacityLabel")),
+    sourceTonnage: asString(pick(source, "source_tonnage", "sourceTonnage"), number === 7 ? "1300T" : ""),
+    displayTonnage: asString(pick(source, "display_tonnage", "displayTonnage"), number === 7 ? "1800T" : ""),
     mouldCount: Math.max(0, asNumber(pick(source, "mould_count", "mouldCount", "mold_count", "moldCount"))),
     conflict: asBoolean(pick(source, "conflict", "has_conflict", "hasConflict")),
   };
