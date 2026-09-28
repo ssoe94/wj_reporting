@@ -105,6 +105,129 @@
   font-weight: 650;
 }
 
+.field-materials-date-picker {
+  position: relative;
+  z-index: 5;
+  min-width: 174px;
+}
+
+.field-materials-date-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 61px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  color: #cfe5fb;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 9px;
+  background: rgba(0, 21, 44, .28);
+  text-align: left;
+  cursor: pointer;
+}
+
+.field-materials-date-trigger:hover,
+.field-materials-date-trigger[aria-expanded="true"] {
+  border-color: #9fe5f0;
+  background: rgba(0, 21, 44, .42);
+}
+
+.field-materials-date-trigger > span {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.field-materials-date-trigger strong {
+  color: #fff;
+  font-size: 19px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.field-materials-date-trigger svg {
+  width: 21px;
+  height: 21px;
+  color: #9fe5f0;
+}
+
+.field-materials-date-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 322px;
+  padding: 13px;
+  color: #12233c;
+  border: 1px solid #bdd0e1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 42px rgba(15, 35, 61, .24);
+}
+
+.field-materials-date-calendar {
+  width: 100%;
+  margin: 0;
+  --rdp-day-height: 36px;
+  --rdp-day-width: 36px;
+  --rdp-day_button-border-radius: 8px;
+  --rdp-nav_button-height: 32px;
+  --rdp-nav_button-width: 32px;
+}
+
+.field-materials-date-calendar .rdp-month,
+.field-materials-date-calendar .rdp-month_grid {
+  width: 100%;
+}
+
+.field-materials-date-calendar .rdp-caption_label {
+  color: #12233c;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.field-materials-date-calendar .rdp-weekday {
+  color: #627187;
+  font-size: 12px;
+}
+
+.field-materials-date-calendar .rdp-day_button {
+  color: #29445d;
+  border: 1px solid transparent;
+  font-size: 14px;
+}
+
+.field-materials-date-calendar .field-materials-date-calendar__has-plan .rdp-day_button {
+  color: #173a61;
+  border-color: #d1e3f3;
+  background: #e9f3fa;
+  font-weight: 650;
+}
+
+.field-materials-date-calendar .rdp-selected .rdp-day_button,
+.field-materials-date-calendar .rdp-selected.field-materials-date-calendar__has-plan .rdp-day_button {
+  color: #fff;
+  border-color: #0754a8;
+  background: #0754a8;
+  font-weight: 750;
+}
+
+.field-materials-date-calendar .rdp-day_button:focus-visible {
+  outline: 3px solid #13cde0;
+  outline-offset: 2px;
+}
+
+.field-materials-date-popover > p {
+  margin: 10px 2px 0;
+  padding-top: 10px;
+  color: #627187;
+  border-top: 1px solid #dbe5ee;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .field-materials-hero__actions > .field-materials-readonly {
   display: flex;
   min-width: 0;
@@ -423,7 +546,8 @@
   display: grid;
   width: clamp(320px, 27vw, 405px);
   min-width: clamp(320px, 27vw, 405px);
-  align-content: start;
+  grid-template-rows: 30px 86px 63px 6px minmax(0, 1fr);
+  align-content: stretch;
   gap: 12px;
   padding: 15px;
   border: 2px solid #cbd5df;
@@ -588,13 +712,14 @@
 .field-material-plan-documents {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: stretch;
   gap: 8px;
 }
 
 .field-material-plan-documents > section {
   display: grid;
   min-width: 0;
-  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 8px;
   padding: 10px;
   border: 1px solid #d1dae3;
@@ -634,6 +759,18 @@
   color: #8a3c00;
   border-color: #e2a13b;
   background: #fff4db;
+}
+
+.field-material-plan-document-actions {
+  display: grid;
+  align-self: end;
+  gap: 6px;
+}
+
+.field-material-plan-document-actions .is-reuse {
+  color: #4c367e;
+  border-color: #b8a5dc;
+  background: #f3eeff;
 }
 
 .field-material-plan-documents button:disabled {
@@ -740,6 +877,10 @@
   font-weight: 650;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+.field-material-document-meta b.is-exact {
+  color: #496177;
 }
 
 .field-material-document-meta b svg {
@@ -903,7 +1044,7 @@
 
 .field-material-upload-context {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1px;
   margin: 22px 24px 0;
   overflow: hidden;
@@ -979,96 +1120,83 @@
   font-weight: 750;
 }
 
-.field-material-upload-fields > .field-material-match-rule {
-  position: relative;
+.field-material-match-scope {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 13px;
-  padding: 14px 16px;
-  border: 1px solid #c8b9e9;
-  border-radius: 9px;
-  background: #f8f5ff;
-  cursor: pointer;
-}
-
-.field-material-match-rule > input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
-}
-
-.field-material-match-rule > span {
-  position: relative;
-  display: block;
-  width: 52px;
-  height: 30px;
-  border: 2px solid #9c8abd;
-  border-radius: 999px;
-  background: #e5dfef;
-  transition: background-color .16s ease, border-color .16s ease;
-}
-
-.field-material-match-rule > span i {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 2px 5px rgba(22, 29, 39, .25);
-  transition: transform .16s ease;
-}
-
-.field-material-match-rule > input:checked + span {
-  border-color: #6540ad;
-  background: #7652bb;
-}
-
-.field-material-match-rule > input:checked + span i {
-  transform: translateX(22px);
-}
-
-.field-material-match-rule > input:focus-visible + span {
-  outline: 3px solid var(--wj-accent);
-  outline-offset: 3px;
-}
-
-.field-material-match-rule > div {
-  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
   min-width: 0;
-  gap: 3px;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-.field-material-match-rule strong {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #3f2871;
+.field-material-match-scope legend {
+  margin-bottom: 9px;
+  color: #30445e;
   font-size: 14px;
   font-weight: 650;
 }
 
-.field-material-match-rule strong svg {
-  width: 18px;
-  height: 18px;
+.field-material-match-scope > label {
+  display: flex;
+  min-width: 0;
+  min-height: 94px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid #cbd6e2;
+  border-radius: 9px;
+  background: #f8fafc;
+  cursor: pointer;
 }
 
-.field-material-match-rule small,
-.field-material-match-rule em {
-  color: #5d5570;
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 750;
+.field-material-match-scope > label.is-selected {
+  border-color: #7652bb;
+  background: #f3eeff;
+  box-shadow: inset 0 0 0 1px #7652bb;
+}
+
+.field-material-match-scope > label.is-disabled {
+  color: #66778d;
+  background: #f2f5f8;
+  cursor: not-allowed;
+}
+
+.field-material-match-scope input {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+  accent-color: #6540ad;
+}
+
+.field-material-match-scope label > span {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.field-material-match-scope strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #3f2871;
+  font-size: 14px;
+  font-weight: 650;
   line-height: 1.35;
 }
 
-.field-material-match-rule em {
-  color: #847b93;
+.field-material-match-scope strong svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.field-material-match-scope small {
+  color: #5d5570;
   font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
 }
 
 .field-material-file-field {
@@ -1215,6 +1343,85 @@
   background: #ecfdf3;
 }
 
+.field-material-reuse-dialog {
+  width: min(720px, calc(100vw - 48px));
+}
+
+.field-material-reuse-list {
+  display: grid;
+  gap: 9px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 18px 24px 0;
+}
+
+.field-material-reuse-list > p {
+  margin: 0;
+  padding: 18px;
+  color: #627187;
+  border: 1px solid #d3dce7;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.field-material-reuse-list article {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 13px 15px;
+  border: 1px solid #d3dce7;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.field-material-reuse-list article > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.field-material-reuse-list article strong {
+  overflow: hidden;
+  color: #12233c;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-material-reuse-list article span {
+  color: #627187;
+  font-size: 12px;
+}
+
+.field-material-reuse-list article button {
+  display: inline-flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 13px;
+  color: #fff;
+  border: 1px solid #6540ad;
+  border-radius: 7px;
+  background: #6540ad;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.field-material-reuse-list article button:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.field-material-reuse-list article button svg {
+  width: 16px;
+  height: 16px;
+}
+
 .field-material-upload-dialog > footer {
   display: flex;
   justify-content: flex-end;
@@ -1321,6 +1528,12 @@
     flex-direction: column;
   }
 
+  .field-materials-date-popover {
+    right: auto;
+    left: 0;
+    width: min(322px, calc(100vw - 64px));
+  }
+
   .field-materials-summary {
     grid-template-columns: 1fr;
     gap: 10px;
@@ -1407,9 +1620,21 @@
     display: none;
   }
 
-  .field-material-upload-fields > .field-material-match-rule {
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 12px;
+  .field-material-match-scope {
+    grid-template-columns: 1fr;
+  }
+
+  .field-material-reuse-dialog {
+    width: calc(100vw - 20px);
+  }
+
+  .field-material-reuse-list article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .field-material-reuse-list article button {
+    width: 100%;
   }
 
   .field-material-upload-dialog > footer {

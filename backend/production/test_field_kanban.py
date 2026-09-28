@@ -35,6 +35,7 @@ from .field_kanban import (
     resolve_material_documents,
     save_defect_checkpoint,
     save_field_material,
+    share_existing_field_material,
 )
 from .models import (
     InjectionDowntimeConfirmation,
@@ -749,6 +750,77 @@ class FieldMaterialResolutionTests(TestCase):
         self.assertIsNone(unequal_length["drawing"])
         self.assertIsNone(unrelated["drawing"])
 
+    def test_nine_character_prefix_shares_across_models_and_exact_stays_separate(self):
+        documents = [
+            _stored_document(
+                "shared-from-machine-one",
+                kind="drawing",
+                part_no="123456789-A1",
+                model_name="MODEL-ONE",
+                match_rule="part_prefix_nine",
+            ),
+            _stored_document(
+                "separate-machine-nine",
+                kind="drawing",
+                part_no="123456789-B2",
+                model_name="MODEL-NINE",
+            ),
+        ]
+
+        reused = resolve_material_documents("123456789-C3", "OTHER-MODEL", documents=documents)["drawing"]
+        separate = resolve_material_documents("123456789-B2", "MODEL-NINE", documents=documents)["drawing"]
+        different_prefix = resolve_material_documents("123456780-C3", "OTHER-MODEL", documents=documents)
+        short_part = resolve_material_documents("12345678", "OTHER-MODEL", documents=documents)
+
+        self.assertEqual(reused["id"], "shared-from-machine-one")
+        self.assertEqual(reused["match_basis"], "part_prefix_nine")
+        self.assertEqual(reused["matched_from_part_no"], "123456789-A1")
+        self.assertEqual(separate["id"], "separate-machine-nine")
+        self.assertEqual(separate["match_basis"], "exact")
+        self.assertIsNone(different_prefix["drawing"])
+        self.assertIsNone(short_part["drawing"])
+
+    def test_future_plan_exposes_ready_existing_document_as_explicit_reuse_candidate(self):
+        future_date = date(2026, 8, 25)
+        ProductionPlan.objects.create(
+            plan_date=future_date,
+            plan_type="injection",
+            machine_name="850T-9",
+            part_no="123456789-B2",
+            model_name="MODEL-NINE",
+            planned_quantity=120,
+            sequence=1,
+        )
+        MouldDataSnapshot.objects.create(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+            kind=MouldDataSnapshot.KIND_BOARD,
+            instance_id="field-materials",
+            payload={
+                "schema_version": FIELD_MATERIALS_SCHEMA,
+                "documents": [
+                    _stored_document(
+                        "machine-one-drawing",
+                        kind="drawing",
+                        part_no="123456789-A1",
+                    ),
+                    _stored_document(
+                        "unready-instruction",
+                        kind="work_instruction",
+                        part_no="123456789-A1",
+                        ready=False,
+                    ),
+                ],
+            },
+        )
+
+        payload = build_field_material_readiness(future_date)
+        row = payload["machine_schedules"][0]["plans"][0]
+        self.assertEqual(payload["business_date"], future_date.isoformat())
+        self.assertEqual(row["part_no"], "123456789-B2")
+        self.assertIsNone(row["drawing"])
+        self.assertEqual([item["id"] for item in row["reuse_candidates"]["drawing"]], ["machine-one-drawing"])
+        self.assertEqual(row["reuse_candidates"]["work_instruction"], [])
+
     def test_today_material_readiness_reports_complete_and_missing_models(self):
         target_date = date(2026, 8, 24)
         ready_plan = ProductionPlan.objects.create(
@@ -1428,6 +1500,21 @@ class FieldKanbanPermissionTests(TestCase):
             )
         )
 
+    def test_existing_material_share_requires_editor_permission(self):
+        with patch(
+            "production.field_kanban_views.share_existing_field_material",
+            return_value={"id": "shared-1", "ready": True},
+        ) as share_material:
+            denied = self._client_for(self.development_viewer).post(
+                "/api/production/field-materials/existing-1/share/", {}, format="json",
+            )
+            allowed = self._client_for(self.development_editor).post(
+                "/api/production/field-materials/existing-1/share/", {}, format="json",
+            )
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(allowed.status_code, 201)
+        share_material.assert_called_once_with("existing-1", user=self.development_editor)
+
     def test_preview_repair_requires_edit_permission_and_passes_callback_url(self):
         endpoint = "/api/production/field-materials/legacy-document/repair-preview/"
         denied_response = self._client_for(self.development_viewer).post(
@@ -1684,6 +1771,144 @@ class FieldMaterialUploadTests(TestCase):
                 },
             },
         )
+
+    def test_existing_exact_document_can_be_shared_without_upload_and_retains_source(self):
+        original = _stored_document(
+            "machine-one-drawing",
+            kind="drawing",
+            part_no="123456789-A1",
+            model_name="MODEL-ONE",
+        )
+        self._store_legacy_document(original)
+
+        shared = share_existing_field_material(original["id"], user=self.user)
+        stored = MouldDataSnapshot.objects.get(snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY).payload["documents"]
+        by_id = {row["id"]: row for row in stored}
+
+        self.assertEqual(len(stored), 2)
+        self.assertFalse(by_id[original["id"]]["active"])
+        self.assertTrue(by_id[shared["id"]]["active"])
+        self.assertEqual(by_id[shared["id"]]["match_rule"], "part_prefix_nine")
+        self.assertEqual(by_id[shared["id"]]["source"], original["source"])
+        self.assertEqual(by_id[shared["id"]]["shared_from_document_id"], original["id"])
+        self.assertEqual(by_id[shared["id"]]["shared_by"], self.user.username)
+        self.assertEqual(
+            resolve_material_documents("123456789-B2", "MODEL-NINE")["drawing"]["id"],
+            shared["id"],
+        )
+        self.assertEqual(
+            resolve_material_documents("123456789-A1", "MODEL-ONE")["drawing"]["id"],
+            shared["id"],
+        )
+        with self.assertRaises(FieldKanbanError) as repeated:
+            share_existing_field_material(original["id"], user=self.user)
+        self.assertEqual(repeated.exception.status_code, 409)
+
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_nine_character_shared_upload_replaces_only_its_prefix_scope(self, upload):
+        upload.return_value = {
+            "secure_url": "https://cdn.example.test/document.pdf",
+            "public_id": "field/document",
+            "resource_type": "image",
+            "format": "pdf",
+            "pages": 1,
+            "bytes": 12,
+        }
+
+        def save(part_no: str, model_name: str, match_rule: str) -> dict:
+            return save_field_material(
+                kind="drawing",
+                part_no=part_no,
+                model_name=model_name,
+                revision="A",
+                source_file=SimpleUploadedFile("drawing.pdf", b"%PDF-1.4\n"),
+                preview_pdf=None,
+                user=self.user,
+                match_rule=match_rule,
+            )
+
+        earlier_exact = save("123456789-A1", "MODEL-ONE", "exact")
+        first = save("123456789-A1", "MODEL-ONE", "part_prefix_nine")
+        separate = save("123456789-B2", "MODEL-NINE", "exact")
+        replacement = save("123456789-C3", "DIFFERENT-MODEL", "part_prefix_nine")
+        other_prefix = save("123456780-D4", "MODEL-OTHER", "part_prefix_nine")
+        stored = MouldDataSnapshot.objects.get(snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY).payload["documents"]
+        active = {row["id"]: row["active"] for row in stored}
+
+        self.assertFalse(active[earlier_exact["id"]])
+        self.assertFalse(active[first["id"]])
+        self.assertTrue(active[replacement["id"]])
+        self.assertTrue(active[separate["id"]])
+        self.assertTrue(active[other_prefix["id"]])
+        self.assertEqual(resolve_material_documents("123456789-A1", "MODEL-ONE")["drawing"]["id"], replacement["id"])
+        self.assertEqual(resolve_material_documents("123456789-B2", "MODEL-NINE")["drawing"]["id"], separate["id"])
+        self.assertEqual(upload.call_count, 5)
+
+    @patch("production.field_kanban.cloudinary.api.resource")
+    @patch("production.field_kanban.cloudinary.api.update")
+    @patch("production.field_kanban.cloudinary.uploader.upload")
+    def test_shared_ppt_replaces_exact_only_after_preview_is_ready(self, upload, update, resource):
+        upload.side_effect = [
+            {
+                "secure_url": "https://cdn.example.test/old.pdf",
+                "public_id": "field/old",
+                "resource_type": "image",
+                "format": "pdf",
+                "pages": 1,
+            },
+            {
+                "secure_url": "https://cdn.example.test/new.pptx",
+                "public_id": "field/new.pptx",
+                "resource_type": "raw",
+                "format": "pptx",
+            },
+        ]
+        resource.return_value = {
+            "secure_url": "https://cdn.example.test/new.pptx.pdf",
+            "public_id": "field/new.pptx",
+            "resource_type": "image",
+            "format": "pdf",
+            "pages": 2,
+        }
+        exact = save_field_material(
+            kind="work_instruction",
+            part_no="123456789-A1",
+            model_name="MODEL-ONE",
+            revision="OLD",
+            source_file=SimpleUploadedFile("old.pdf", b"%PDF-1.4\n"),
+            preview_pdf=None,
+            user=self.user,
+            match_rule="exact",
+        )
+        pending = save_field_material(
+            kind="work_instruction",
+            part_no="123456789-A1",
+            model_name="MODEL-ONE",
+            revision="NEW",
+            source_file=SimpleUploadedFile("new.pptx", self._pptx_bytes()),
+            preview_pdf=None,
+            user=self.user,
+            match_rule="part_prefix_nine",
+        )
+        self.assertFalse(pending["ready"])
+        self.assertEqual(
+            resolve_material_documents("123456789-A1", "MODEL-ONE")["work_instruction"]["id"],
+            exact["id"],
+        )
+
+        converted = apply_field_material_conversion_notification(
+            public_id="field/new.pptx", info_status="complete",
+        )
+        self.assertTrue(converted["ready"])
+        self.assertEqual(
+            resolve_material_documents("123456789-A1", "MODEL-ONE")["work_instruction"]["id"],
+            pending["id"],
+        )
+        self.assertEqual(
+            resolve_material_documents("123456789-B2", "MODEL-NINE")["work_instruction"]["id"],
+            pending["id"],
+        )
+        update.assert_called_once()
 
     @patch("production.field_kanban.cloudinary.api.update")
     @patch("production.field_kanban.cloudinary.api.resource")
@@ -2111,10 +2336,22 @@ class FieldMaterialUploadTests(TestCase):
                 user=self.user,
                 match_rule="part_family_last_two",
             )
+        with self.assertRaises(FieldKanbanError) as short_prefix:
+            save_field_material(
+                kind="drawing",
+                part_no="12345678",
+                model_name="MODEL-A",
+                revision="",
+                source_file=SimpleUploadedFile("drawing.pdf", b"%PDF-1.4\n"),
+                preview_pdf=None,
+                user=self.user,
+                match_rule="part_prefix_nine",
+            )
 
         self.assertEqual(invalid_rule.exception.code, "invalid_material_match_rule")
         self.assertEqual(short_part.exception.code, "material_part_family_required")
         self.assertEqual(missing_model.exception.code, "material_part_family_model_required")
+        self.assertEqual(short_prefix.exception.code, "material_part_prefix_required")
         upload.assert_not_called()
 
     @patch("production.field_kanban.cloudinary.uploader.upload")

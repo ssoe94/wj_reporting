@@ -29,6 +29,7 @@ from .field_kanban_views import (
     FieldKanbanView,
     FieldMaterialConversionWebhookView,
     FieldMaterialPreviewRepairView,
+    FieldMaterialShareView,
     FieldMaterialsView,
 )
 
@@ -49,6 +50,11 @@ urlpatterns = [
         'field-materials/<str:document_id>/repair-preview/',
         FieldMaterialPreviewRepairView.as_view(),
         name='production-field-material-repair-preview',
+    ),
+    path(
+        'field-materials/<str:document_id>/share/',
+        FieldMaterialShareView.as_view(),
+        name='production-field-material-share',
     ),
     path(
         'field-materials/conversion-callback/',

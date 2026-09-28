@@ -5,7 +5,7 @@ export type FieldLanguageLabel = {
   ko: string;
 };
 
-export type FieldMaterialMatchRule = "exact" | "part_family_last_two";
+export type FieldMaterialMatchRule = "exact" | "part_prefix_nine" | "part_family_last_two";
 
 export type FieldDocument = {
   id: string;
@@ -153,6 +153,10 @@ export type FieldMaterialModel = {
   planned_quantity: number;
   work_instruction: FieldDocument | null;
   drawing: FieldDocument | null;
+  reuse_candidates: {
+    work_instruction: FieldDocument[];
+    drawing: FieldDocument[];
+  };
   readiness: {
     work_instruction: boolean;
     drawing: boolean;
@@ -218,7 +222,7 @@ function normalizeConversionStatus(value: unknown): FieldDocument["conversion_st
 }
 
 function normalizeMaterialMatchRule(value: unknown): FieldMaterialMatchRule {
-  return value === "part_family_last_two" ? "part_family_last_two" : "exact";
+  return value === "part_prefix_nine" || value === "part_family_last_two" ? value : "exact";
 }
 
 function normalizeLabel(value: unknown, fallbackZh = "", fallbackKo = ""): FieldLanguageLabel {
@@ -461,6 +465,7 @@ function normalizeMaterialModel(value: unknown): FieldMaterialModel {
   const readiness = asRecord(row.readiness);
   const workInstruction = normalizeDocument(row.work_instruction, "work_instruction");
   const drawing = normalizeDocument(row.drawing, "drawing");
+  const reuseCandidates = asRecord(row.reuse_candidates);
   const workReady = typeof readiness.work_instruction === "boolean"
     ? readiness.work_instruction
     : Boolean(workInstruction?.ready);
@@ -476,6 +481,18 @@ function normalizeMaterialModel(value: unknown): FieldMaterialModel {
     planned_quantity: asNumber(row.planned_quantity),
     work_instruction: workInstruction,
     drawing,
+    reuse_candidates: {
+      work_instruction: Array.isArray(reuseCandidates.work_instruction)
+        ? reuseCandidates.work_instruction
+          .map((item) => normalizeDocument(item, "work_instruction"))
+          .filter((item): item is FieldDocument => Boolean(item))
+        : [],
+      drawing: Array.isArray(reuseCandidates.drawing)
+        ? reuseCandidates.drawing
+          .map((item) => normalizeDocument(item, "drawing"))
+          .filter((item): item is FieldDocument => Boolean(item))
+        : [],
+    },
     readiness: {
       work_instruction: workReady,
       drawing: drawingReady,
@@ -587,4 +604,8 @@ export async function repairFieldMaterialPreview(documentId: string) {
   const document = normalizeDocument(root.document || root, "work_instruction");
   if (!document) throw new Error("The repaired field material response is invalid.");
   return document;
+}
+
+export async function shareExistingFieldMaterial(documentId: string) {
+  await http.post(`/production/field-materials/${encodeURIComponent(documentId)}/share/`, {});
 }
