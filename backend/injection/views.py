@@ -58,6 +58,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 
 from .mes_service import mes_service
+from .machine_display import display_tonnage
 from .plan_processing import ProductionPlanProcessor, ProductionPlanProcessingError
 from production.models import ProductionPlan, ProductionPlanChangeLog
 from production.permissions import user_can_edit_plan
@@ -2091,7 +2092,10 @@ class ProductionMatrixView(generics.GenericAPIView):
                 7: '1800T', 8: '850T', 9: '850T', 10: '650T', 11: '550T', 12: '550T',
                 13: '450T', 14: '850T', 15: '650T', 16: '1050T', 17: '1200T'
             }
-            tonnage = recent_report.tonnage if recent_report else default_tonnage_map.get(machine_no, f'{machine_no * 50}T')
+            tonnage = display_tonnage(
+                machine_no,
+                recent_report.tonnage if recent_report else default_tonnage_map.get(machine_no, f'{machine_no * 50}T'),
+            )
 
             machine_info[machine_no] = {
                 'name': f'{machine_no}호기',

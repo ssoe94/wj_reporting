@@ -761,11 +761,13 @@ function getMachineIdentity(row: MachineIdentitySource, language: AppLanguage) {
     const parsed = Number(machineNumberMatch[1]);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
   })();
-  const tonnageLabel = tonnageMatch
-    ? `${tonnageMatch[1]}T`
-    : machineNumber === null
-      ? null
-      : MACHINE_TONNAGE_BY_NUMBER[machineNumber] ?? null;
+  const tonnageLabel = machineNumber === 7
+    ? MACHINE_TONNAGE_BY_NUMBER[7]
+    : tonnageMatch
+      ? `${tonnageMatch[1]}T`
+      : machineNumber === null
+        ? null
+        : MACHINE_TONNAGE_BY_NUMBER[machineNumber] ?? null;
 
   return {
     machineLabel: machineNumber === null

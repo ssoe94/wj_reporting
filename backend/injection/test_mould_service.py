@@ -100,6 +100,19 @@ def resource_record(
 
 
 class MouldTransformTests(SimpleTestCase):
+    def test_machine_seven_keeps_mes_location_and_device_identity_with_1800t_display(self):
+        machines = mould_service._machine_rows(
+            [{"instance_id": 7, "location_code": "#7-1300T"}]
+        )
+
+        machine = next(row for row in machines if row["number"] == 7)
+        self.assertEqual(machine["device_code"], "1300T-7")
+        self.assertEqual(machine["location_code"], "#7-1300T")
+        self.assertEqual(machine["tonnage"], "1800T")
+        self.assertEqual(machine["label"], "7호기 1800T")
+        self.assertEqual(machine["mould_count"], 1)
+        self.assertEqual(machines[2]["tonnage"], "1300T")
+
     def test_location_conflicts_require_distinct_moulds_in_exclusive_slots(self):
         rows = mould_service._location_rows(
             [

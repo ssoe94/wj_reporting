@@ -29,13 +29,17 @@ test("today's pending plan takes precedence over an older, different output mode
   assert.equal(machineCardModel({ ...actual, basis: "last_output", isRunning: false }, "2026-09-28"), null);
 });
 
-test("machine identity keeps the plan and mould location tonnage conflict visible", () => {
+test("machine identity accepts machine 7's MES code and display rating without masking other conflicts", () => {
   assert.equal(machineIdentityConflict("850T-2", 2, "850"), false);
   assert.equal(machineIdentityConflict("2500T-6", 6, "2500"), false);
-  assert.equal(machineIdentityConflict("1800T-7", 7, "1300"), true);
+  assert.equal(machineIdentityConflict("1300T-7", 7, "1800"), false);
+  assert.equal(machineIdentityConflict("1800T-7", 7, "1800"), false);
+  assert.equal(machineIdentityConflict("1400T-7", 7, "1800"), true);
+  assert.equal(machineIdentityConflict("1300T-8", 8, "850"), true);
+  assert.equal(machineIdentityConflict("1300T-7", 7, "1300"), true);
   assert.equal(machineIdentityEvidenceStatus({
     sourceMachineName: "1800T-7", secondarySourceMachineName: "1300T-7",
-  }, 7, "1300"), "conflict");
+  }, 7, "1800"), "match");
 });
 
 test("free-text mould names require review instead of an inferred match", () => {
@@ -56,8 +60,8 @@ test("today's 2, 6 and 7 machine plans have distinct, reviewable outcomes", () =
     model: "汽车外部行李箱", sourceMachineName: "2500T-6",
   }, 6, "2500"), "review");
   assert.equal(assessPlannedMould({ model: "托盘", drawingNo: "JF2" }, {
-    model: "JF2", sourceMachineName: "1800T-7",
-  }, 7, "1300"), "machine_identity_conflict");
+    model: "JF2", sourceMachineName: "1300T-7", secondarySourceMachineName: "1800T-7",
+  }, 7, "1800"), "review");
   assert.equal(assessPlannedMould({ model: "27G440A-BB", drawingNo: "" }, {
     model: "27G440A-BB", sourceMachineName: "",
   }, 2, "850"), "machine_identity_unknown");

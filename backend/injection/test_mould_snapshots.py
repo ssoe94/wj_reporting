@@ -151,7 +151,11 @@ class MouldSnapshotUsageTests(TestCase):
             payload={
                 'summary': {'total': 0},
                 'locations': [],
-                'machines': [],
+                'machines': [{
+                    'number': 7, 'device_code': '1300T-7',
+                    'location_code': '#7-1300T', 'label': '7호기 1300T',
+                    'tonnage': '1300T', 'mould_count': 0,
+                }],
                 'moulds': [],
                 'data_freshness': {'status': 'live'},
             },
@@ -161,6 +165,11 @@ class MouldSnapshotUsageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['data_freshness']['status'], 'snapshot')
+        machine = response.json()['machines'][0]
+        self.assertEqual(machine['tonnage'], '1800T')
+        self.assertEqual(machine['label'], '7호기 1800T')
+        self.assertEqual(machine['location_code'], '#7-1300T')
+        self.assertNotIn('device_code', machine)
         build_board.assert_not_called()
 
     @patch('injection.mould_views.build_mould_location_snapshot')

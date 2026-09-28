@@ -84,11 +84,12 @@ const OCCUPIED_STORAGE_CODES = [...A_OCCUPIED, ...B_OCCUPIED, ...C_OCCUPIED];
 
 const FALLBACK_MACHINES: MouldMachineSlot[] = Array.from({ length: 17 }, (_, index) => {
   const number = index + 1;
-  const tonnage = MACHINE_TONNAGE[number] ?? "";
+  const sourceTonnage = MACHINE_TONNAGE[number] ?? "";
+  const tonnage = number === 7 ? "1800T" : sourceTonnage;
   return {
     number,
-    deviceCode: `${tonnage}-${number}`,
-    locationCode: `#${number}-${tonnage}`,
+    deviceCode: `${sourceTonnage}-${number}`,
+    locationCode: `#${number}-${sourceTonnage}`,
     label: `${number}호기`,
     tonnage,
     mouldCount: 0,

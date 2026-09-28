@@ -62,7 +62,13 @@ export function machineIdentityStatus(sourceMachineName: string, machineNumber: 
   if (!match) return "unknown";
   const boardTonnage = Number(tonnage.replace(/[^\d]/g, ""));
   if (!boardTonnage) return "unknown";
-  return Number(match[2]) !== machineNumber || Number(match[1]) !== boardTonnage ? "conflict" : "match";
+  if (Number(match[2]) !== machineNumber) return "conflict";
+  const sourceTonnage = Number(match[1]);
+  // Machine 7's MES code is 1300T-7 while its displayed physical rating is 1800T.
+  if (machineNumber === 7) {
+    return boardTonnage === 1800 && (sourceTonnage === 1300 || sourceTonnage === 1800) ? "match" : "conflict";
+  }
+  return sourceTonnage === boardTonnage ? "match" : "conflict";
 }
 
 export function machineIdentityConflict(sourceMachineName: string, machineNumber: number, tonnage: string): boolean {

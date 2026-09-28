@@ -27,6 +27,12 @@ interface MachineInfo {
   display_name: string;
 }
 
+function getMachineTonnageLabel(machine: MachineInfo): string {
+  if (machine.machine_number === 7) return '1800T';
+  const tonnage = String(machine.tonnage ?? '').trim().replace(/T+$/i, '');
+  return tonnage ? `${tonnage}T` : '';
+}
+
 interface TimeSlot {
   hour_offset: number;
   time: string;
@@ -822,7 +828,7 @@ export default function InjectionMonitoringPage() {
                     <tr key={machine.machine_number} className="hover:bg-gray-50">
                       <td className="px-4 py-4 whitespace-nowrap border-r border-gray-200 text-center">
                         <div className="text-sm font-medium text-gray-900">
-                          {`${machine.machine_number}${t('호기')} - ${machine.tonnage}T`}
+                          {`${machine.machine_number}${t('호기')} - ${getMachineTonnageLabel(machine)}`}
                         </div>
                         {setup ? (
                           <div className="text-xs text-gray-600 mt-1 space-y-0.5">
@@ -941,7 +947,10 @@ export default function InjectionMonitoringPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {selectedSlotRows.map((row) => {
-                      const machineLabel = (row.machine.display_name.endsWith('T') ? row.machine.display_name : `${row.machine.display_name}T`).replace('??', t('??'));
+                      const machineLabel = (row.machine.machine_number === 7
+                        ? `${row.machine.machine_number}${t('호기')} - ${getMachineTonnageLabel(row.machine)}`
+                        : row.machine.display_name.endsWith('T') ? row.machine.display_name : `${row.machine.display_name}T`
+                      ).replace('??', t('??'));
                       return (
                         <tr key={row.machine.machine_number}>
                           <td className="px-3 py-2 text-gray-800 whitespace-nowrap">{machineLabel}</td>
