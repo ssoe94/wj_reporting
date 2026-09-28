@@ -1013,6 +1013,7 @@
 
 .field-material-upload-dialog h2 {
   margin: 0;
+  color: #fff !important;
   font-size: 29px;
   font-weight: 650;
   letter-spacing: -.025em;
