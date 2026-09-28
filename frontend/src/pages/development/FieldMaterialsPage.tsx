@@ -1,8 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/dist/style.css";
+import { ko, zhCN } from "date-fns/locale";
 import { toast } from "react-toastify";
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle2,
   CircleDot,
   Clock3,
@@ -23,6 +27,7 @@ import {
 import {
   getFieldMaterials,
   repairFieldMaterialPreview,
+  shareExistingFieldMaterial,
   uploadFieldMaterial,
   type FieldDocument,
   type FieldMaterialMachineSchedule,
@@ -33,6 +38,7 @@ import {
 } from "@/domains/field/api";
 import {
   getProductionStatus,
+  getProductionPlanDates,
   type ProductionStatusPart,
   type ProductionStatusResponse,
 } from "@/domains/production/api";
@@ -40,6 +46,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLang } from "@/i18n";
 import { useModalFocusTrap } from "@/shared/hooks/useModalFocusTrap";
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
+import { CalendarChevron } from "@/components/common/CalendarChevron";
 
 import "./FieldMaterialsPage.css";
 
@@ -50,16 +57,20 @@ const pageCopy = {
   ko: {
     eyebrow: "개발 · 현장 지원",
     title: "현장 칸반 자료관리",
-    description: "오늘 사출 계획을 호기와 작업 순서대로 보면서 현재·완료·대기 작업의 작업지도서와 도면을 관리합니다.",
-    businessDate: "상하이 업무일",
+    description: "선택한 날짜의 사출 계획을 호기와 작업 순서대로 보면서 작업지도서와 도면을 관리합니다.",
+    referenceDate: "자료 기준일",
+    openCalendar: "자료 기준일 달력 열기",
+    calendarLabel: "자료 기준일 선택",
+    calendarHint: "음영은 사출 생산계획이 있는 날짜입니다. 다른 날짜도 선택할 수 있습니다.",
+    calendarDatesError: "계획 날짜 표시를 불러오지 못했습니다. 날짜 선택은 가능합니다.",
     refresh: "새로고침",
-    totalModels: "오늘 계획 모델",
+    totalModels: "기준일 계획 모델",
     completeModels: "자료 완비",
     missingModels: "보충 필요",
     plannedMachines: "계획 호기",
-    loading: "오늘 계획 모델과 자료 상태를 불러오는 중입니다.",
+    loading: "선택한 날짜의 계획 모델과 자료 상태를 불러오는 중입니다.",
     error: "현장 자료 현황을 불러오지 못했습니다.",
-    empty: "오늘 사출 계획에 등록된 모델이 없습니다.",
+    empty: "선택한 날짜의 사출 계획에 등록된 모델이 없습니다.",
     machine: "사출기",
     model: "모델",
     partNo: "Part No.",
@@ -73,6 +84,13 @@ const pageCopy = {
     conversionFailed: "미리보기 생성 실패",
     upload: "업로드",
     replace: "교체 업로드",
+    reuse: "기존 자료 사용",
+    reuseTitle: "기존 자료 공유 사용",
+    reuseHint: "품번 앞 9자리가 같은 기존 자료를 선택하면 날짜와 관계없이 함께 사용합니다. 자료가 달라야 하면 별도로 업로드·관리해 주세요.",
+    reuseAction: "공유해서 사용",
+    reuseSuccess: "기존 자료를 공유하도록 적용했습니다.",
+    reuseError: "기존 자료를 적용하지 못했습니다.",
+    noReuseCandidate: "사용할 수 있는 기존 자료가 없습니다.",
     repairPreview: "미리보기 복구",
     repairingPreview: "복구 중…",
     repairReady: "현장용 미리보기를 복구했습니다.",
@@ -117,27 +135,36 @@ const pageCopy = {
     progress: "진행률",
     lot: "LOT",
     planCount: "개 작업",
-    sharedRule: "끝 두 자리 공유",
-    sharedFrom: "공유 출처",
-    shareLastTwo: "품번 끝 두 자리 공유",
-    shareLastTwoHint: "마지막 두 자리만 다른 같은 품번 Family에도 이 자료를 함께 적용합니다.",
-    exactMatchHint: "선택하지 않으면 현재 품번에만 정확히 적용됩니다.",
+    sharedRule: "앞 9자리 공유",
+    legacySharedRule: "끝 두 자리 공유",
+    separateRule: "품번별 별도",
+    sharedFrom: "원본 품번",
+    scope: "자료 적용 범위",
+    sharePrefixNine: "같은 품번 앞 9자리와 공유",
+    sharePrefixNineHint: "기본 선택 · 날짜와 관계없이 앞 9자리가 같으면 다른 호기·모델에도 적용됩니다.",
+    shareUnavailable: "공유하려면 품번이 9자 이상이어야 합니다.",
+    separateUpload: "이 품번은 별도 업로드·관리",
+    separateUploadHint: "날짜와 관계없이 이 품번에만 적용하며 공유 자료보다 우선합니다.",
     readOnly: "읽기 전용",
     permissionDenied: "현장 칸반 자료를 조회할 권한이 없습니다.",
   },
   zh: {
     eyebrow: "开发 · 现场支持",
     title: "现场看板资料管理",
-    description: "按注塑机与作业顺序查看今日计划，并管理当前、已完成和待生产作业的作业指导书与图纸。",
-    businessDate: "上海业务日",
+    description: "按注塑机与作业顺序查看所选日期的注塑计划，并管理作业指导书与图纸。",
+    referenceDate: "资料基准日",
+    openCalendar: "打开资料基准日历",
+    calendarLabel: "选择资料基准日",
+    calendarHint: "浅色日期表示有注塑生产计划；也可选择其他日期。",
+    calendarDatesError: "未能读取计划日期标记，仍可选择日期。",
     refresh: "刷新",
-    totalModels: "今日计划型号",
+    totalModels: "基准日计划型号",
     completeModels: "资料完整",
     missingModels: "待补充",
     plannedMachines: "计划机台",
-    loading: "正在读取今日计划型号和资料状态。",
+    loading: "正在读取所选日期的计划型号和资料状态。",
     error: "无法读取现场资料状态。",
-    empty: "今日注塑计划中没有登记型号。",
+    empty: "所选日期的注塑计划中没有登记型号。",
     machine: "注塑机",
     model: "型号",
     partNo: "品号",
@@ -151,6 +178,13 @@ const pageCopy = {
     conversionFailed: "预览生成失败",
     upload: "上传",
     replace: "替换上传",
+    reuse: "使用现有资料",
+    reuseTitle: "共享使用现有资料",
+    reuseHint: "选择品号前 9 位相同的现有资料后，该范围将不受日期限制地共同使用。如需不同内容，请单独上传和管理。",
+    reuseAction: "共享使用",
+    reuseSuccess: "已共享使用现有资料。",
+    reuseError: "无法使用现有资料。",
+    noReuseCandidate: "没有可用的现有资料。",
     repairPreview: "修复预览",
     repairingPreview: "修复中…",
     repairReady: "现场预览已修复。",
@@ -195,11 +229,16 @@ const pageCopy = {
     progress: "进度",
     lot: "LOT",
     planCount: "个作业",
-    sharedRule: "末两位共享",
-    sharedFrom: "共享来源",
-    shareLastTwo: "品号末两位共享",
-    shareLastTwoHint: "将此资料同时应用到仅末两位不同的同一品号 Family。",
-    exactMatchHint: "未选择时，仅精确应用于当前品号。",
+    sharedRule: "前 9 位共享",
+    legacySharedRule: "末两位共享",
+    separateRule: "按品号单独管理",
+    sharedFrom: "原始品号",
+    scope: "资料适用范围",
+    sharePrefixNine: "与品号前 9 位相同的型号共享",
+    sharePrefixNineHint: "默认选择 · 不受日期限制，品号前 9 位相同的其他机台和型号也可使用。",
+    shareUnavailable: "共享资料要求品号至少 9 位。",
+    separateUpload: "此品号单独上传和管理",
+    separateUploadHint: "不受日期限制，仅适用于此品号，并优先于共享资料。",
     readOnly: "只读",
     permissionDenied: "没有查看现场看板资料的权限。",
   },
@@ -207,6 +246,19 @@ const pageCopy = {
 
 function number(value: number) {
   return new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(value || 0)));
+}
+
+function parseMaterialDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return undefined;
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+    ? date
+    : undefined;
+}
+
+function formatMaterialDate(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
 function buildFallbackMachineSchedules(models: FieldMaterialModel[]): FieldMaterialMachineSchedule[] {
@@ -269,8 +321,18 @@ function productionPartStatus(part: ProductionStatusPart) {
 function mergeProductionStatus(
   schedules: FieldMaterialMachineSchedule[],
   productionStatus: ProductionStatusResponse | undefined,
+  isNonCurrentReferenceDate: boolean,
 ): FieldMaterialMachineSchedule[] {
-  if (!productionStatus) return schedules;
+  if (!productionStatus) {
+    return isNonCurrentReferenceDate
+      ? schedules.map((schedule) => ({
+        ...schedule,
+        plans: schedule.plans.map((plan) => plan.is_current
+          ? { ...plan, status: "waiting", is_current: false } satisfies FieldMaterialSchedulePlan
+          : plan),
+      }))
+      : schedules;
+  }
 
   const statusByPlanId = new Map<number, ProductionStatusPart>();
   const currentPlanByMachine = new Map<number, number | null>();
@@ -305,7 +367,7 @@ function mergeProductionStatus(
         const livePart = plan.plan_id === null ? undefined : statusByPlanId.get(plan.plan_id);
         const liveStatus = livePart ? productionPartStatus(livePart) : "";
         const isCompleted = livePart ? liveStatus === "completed" : plan.is_completed;
-        const isCurrent = hasLiveMachineStatus
+        const isCurrent = isNonCurrentReferenceDate ? false : hasLiveMachineStatus
           ? !isCompleted && plan.plan_id !== null && plan.plan_id === currentPlanId
           : plan.is_current;
         return {
@@ -388,11 +450,18 @@ function DocumentStatus({
         <small>{document?.original_name || "-"}</small>
         <span className="field-material-document-meta">
           <em>{document?.revision || c.noRevision}</em>
-          {document?.match_basis === "part_family_last_two" ? (
+          {document?.match_basis === "part_prefix_nine" || document?.match_rule === "part_prefix_nine" ? (
             <b>
               <Share2 />{c.sharedRule}
               {document.matched_from_part_no ? ` · ${c.sharedFrom} ${document.matched_from_part_no}` : ""}
             </b>
+          ) : document?.match_basis === "part_family_last_two" ? (
+            <b>
+              <Share2 />{c.legacySharedRule}
+              {document.matched_from_part_no ? ` · ${c.sharedFrom} ${document.matched_from_part_no}` : ""}
+            </b>
+          ) : document?.match_basis === "exact" || (document?.match_rule === "exact" && document.part_no) ? (
+            <b className="is-exact"><FileText />{c.separateRule}</b>
           ) : null}
         </span>
       </div>
@@ -406,6 +475,7 @@ function SchedulePlanCard({
   onRepair,
   plan,
   onUpload,
+  onReuse,
   repairingDocumentId,
 }: {
   canEdit: boolean;
@@ -413,6 +483,7 @@ function SchedulePlanCard({
   plan: FieldMaterialSchedulePlan;
   onRepair: (document: FieldDocument) => void;
   onUpload: (kind: MaterialKind, model: FieldMaterialModel) => void;
+  onReuse: (kind: MaterialKind, model: FieldMaterialModel) => void;
   repairingDocumentId: string | null;
 }) {
   const c = pageCopy[language];
@@ -458,41 +529,55 @@ function SchedulePlanCard({
         <section className={plan.readiness.work_instruction ? "is-ready" : "is-missing"}>
           <h3>{c.instruction}</h3>
           <DocumentStatus document={plan.work_instruction} language={language} ready={plan.readiness.work_instruction} />
-          {canEdit && workInstructionNeedsRepair && plan.work_instruction ? (
-            <button
-              className="is-repair"
-              disabled={Boolean(repairingDocumentId)}
-              onClick={() => onRepair(plan.work_instruction as FieldDocument)}
-              type="button"
-            >
-              <RefreshCw className={repairingDocumentId === plan.work_instruction.id ? "is-spinning" : ""} />
-              {repairingDocumentId === plan.work_instruction.id ? c.repairingPreview : c.repairPreview}
-            </button>
+          {canEdit ? (
+            <div className="field-material-plan-document-actions">
+              {workInstructionNeedsRepair && plan.work_instruction ? (
+                <button
+                  className="is-repair"
+                  disabled={Boolean(repairingDocumentId)}
+                  onClick={() => onRepair(plan.work_instruction as FieldDocument)}
+                  type="button"
+                >
+                  <RefreshCw className={repairingDocumentId === plan.work_instruction.id ? "is-spinning" : ""} />
+                  {repairingDocumentId === plan.work_instruction.id ? c.repairingPreview : c.repairPreview}
+                </button>
+              ) : null}
+              {!plan.work_instruction && plan.reuse_candidates.work_instruction.length > 0 ? (
+                <button className="is-reuse" disabled={Boolean(repairingDocumentId)} onClick={() => onReuse("work_instruction", plan)} type="button"><Share2 />{c.reuse}</button>
+              ) : null}
+              <button disabled={Boolean(repairingDocumentId)} onClick={() => onUpload("work_instruction", plan)} type="button"><FileUp />{plan.work_instruction ? c.replace : c.upload}</button>
+            </div>
           ) : null}
-          {canEdit ? <button disabled={Boolean(repairingDocumentId)} onClick={() => onUpload("work_instruction", plan)} type="button"><FileUp />{plan.work_instruction ? c.replace : c.upload}</button> : null}
         </section>
         <section className={plan.readiness.drawing ? "is-ready" : "is-missing"}>
           <h3>{c.drawing}</h3>
           <DocumentStatus document={plan.drawing} language={language} ready={plan.readiness.drawing} />
-          {canEdit && drawingNeedsRepair && plan.drawing ? (
-            <button
-              className="is-repair"
-              disabled={Boolean(repairingDocumentId)}
-              onClick={() => onRepair(plan.drawing as FieldDocument)}
-              type="button"
-            >
-              <RefreshCw className={repairingDocumentId === plan.drawing.id ? "is-spinning" : ""} />
-              {repairingDocumentId === plan.drawing.id ? c.repairingPreview : c.repairPreview}
-            </button>
+          {canEdit ? (
+            <div className="field-material-plan-document-actions">
+              {drawingNeedsRepair && plan.drawing ? (
+                <button
+                  className="is-repair"
+                  disabled={Boolean(repairingDocumentId)}
+                  onClick={() => onRepair(plan.drawing as FieldDocument)}
+                  type="button"
+                >
+                  <RefreshCw className={repairingDocumentId === plan.drawing.id ? "is-spinning" : ""} />
+                  {repairingDocumentId === plan.drawing.id ? c.repairingPreview : c.repairPreview}
+                </button>
+              ) : null}
+              {!plan.drawing && plan.reuse_candidates.drawing.length > 0 ? (
+                <button className="is-reuse" disabled={Boolean(repairingDocumentId)} onClick={() => onReuse("drawing", plan)} type="button"><Share2 />{c.reuse}</button>
+              ) : null}
+              <button disabled={Boolean(repairingDocumentId)} onClick={() => onUpload("drawing", plan)} type="button"><FileUp />{plan.drawing ? c.replace : c.upload}</button>
+            </div>
           ) : null}
-          {canEdit ? <button disabled={Boolean(repairingDocumentId)} onClick={() => onUpload("drawing", plan)} type="button"><FileUp />{plan.drawing ? c.replace : c.upload}</button> : null}
         </section>
       </div>
     </article>
   );
 }
 
-function UploadDialog({
+function ReuseDialog({
   kind,
   model,
   language,
@@ -504,12 +589,93 @@ function UploadDialog({
   onClose: () => void;
 }) {
   const c = pageCopy[language];
+  const candidates = model.reuse_candidates[kind];
+  const queryClient = useQueryClient();
+  const [localError, setLocalError] = useState<string | null>(null);
+  const shareMutation = useMutation({ mutationFn: shareExistingFieldMaterial });
+  const dialogRef = useModalFocusTrap<HTMLDivElement>({
+    onEscape: shareMutation.isPending ? undefined : onClose,
+  });
+
+  async function reuse(document: FieldDocument) {
+    setLocalError(null);
+    try {
+      await shareMutation.mutateAsync(document.id);
+      await queryClient.invalidateQueries({ queryKey: ["field-materials"] });
+      toast.success(c.reuseSuccess);
+      onClose();
+    } catch (error) {
+      setLocalError(getErrorMessage(error, c.reuseError));
+    }
+  }
+
+  return (
+    <div className="field-material-upload-backdrop" role="presentation">
+      <div
+        aria-label={c.reuseTitle}
+        aria-modal="true"
+        className="field-material-upload-dialog field-material-reuse-dialog"
+        ref={dialogRef}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <header>
+          <span><Share2 /></span>
+          <div><h2>{c.reuseTitle} · {kind === "work_instruction" ? c.instruction : c.drawing}</h2><p>{c.reuseHint}</p></div>
+          <button aria-label={c.cancel} disabled={shareMutation.isPending} onClick={onClose} type="button"><X /></button>
+        </header>
+        <div className="field-material-upload-context">
+          <div><span>{c.partNo}</span><strong>{model.part_no || "-"}</strong></div>
+          <div><span>{c.model}</span><strong>{model.model_name || "-"}</strong></div>
+          <div><span>{c.machine}</span><strong>{model.machine_numbers.map((item) => `${item}${c.machinesUnit}`).join(", ") || "-"}</strong></div>
+        </div>
+        <div className="field-material-reuse-list">
+          {candidates.length === 0 ? <p>{c.noReuseCandidate}</p> : candidates.map((document, index) => (
+            <article key={document.id}>
+              <div>
+                <strong title={document.original_name}>{document.original_name || "-"}</strong>
+                <span>{c.partNo} {document.part_no || "-"} · {document.model_name || "-"} · {document.revision || c.noRevision}</span>
+              </div>
+              <button
+                data-modal-initial-focus={index === 0 ? true : undefined}
+                disabled={shareMutation.isPending}
+                onClick={() => void reuse(document)}
+                type="button"
+              >
+                {shareMutation.isPending && shareMutation.variables === document.id ? <Loader2 className="is-spinning" /> : <Share2 />}
+                {c.reuseAction}
+              </button>
+            </article>
+          ))}
+        </div>
+        {localError ? <div className="field-material-upload-message is-error" role="alert">{localError}</div> : null}
+        <footer><button className="is-cancel" disabled={shareMutation.isPending} onClick={onClose} type="button">{c.cancel}</button></footer>
+      </div>
+    </div>
+  );
+}
+
+function UploadDialog({
+  kind,
+  model,
+  referenceDate,
+  language,
+  onClose,
+}: {
+  kind: MaterialKind;
+  model: FieldMaterialModel;
+  referenceDate: string;
+  language: "ko" | "zh";
+  onClose: () => void;
+}) {
+  const c = pageCopy[language];
   const queryClient = useQueryClient();
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const currentDocument = kind === "work_instruction" ? model.work_instruction : model.drawing;
+  const canSharePrefix = model.part_no.replace(/\s+/g, "").length >= 9;
   const [revision, setRevision] = useState(currentDocument?.revision || "");
-  const [matchRule, setMatchRule] = useState<FieldMaterialMatchRule>("exact");
+  const [matchRule, setMatchRule] = useState<FieldMaterialMatchRule>(canSharePrefix ? "part_prefix_nine" : "exact");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -636,6 +802,7 @@ function UploadDialog({
         </header>
 
         <div className="field-material-upload-context">
+          <div><span>{c.referenceDate}</span><strong>{referenceDate}</strong></div>
           <div><span>{c.partNo}</span><strong>{model.part_no || "-"}</strong></div>
           <div><span>{c.model}</span><strong>{model.model_name || "-"}</strong></div>
           <div><span>{c.machine}</span><strong>{model.machine_numbers.map((item) => `${item}${c.machinesUnit}`).join(", ") || "-"}</strong></div>
@@ -646,19 +813,30 @@ function UploadDialog({
             <span>{c.revision}</span>
             <input data-modal-initial-focus maxLength={80} onChange={(event) => setRevision(event.target.value)} placeholder={c.revisionPlaceholder} type="text" value={revision} />
           </label>
-          <label className="field-material-match-rule">
-            <input
-              checked={matchRule === "part_family_last_two"}
-              onChange={(event) => setMatchRule(event.target.checked ? "part_family_last_two" : "exact")}
-              type="checkbox"
-            />
-            <span aria-hidden="true"><i /></span>
-            <div>
-              <strong><Share2 />{c.shareLastTwo}</strong>
-              <small>{c.shareLastTwoHint}</small>
-              <em>{c.exactMatchHint}</em>
-            </div>
-          </label>
+          <fieldset className="field-material-match-scope" disabled={uploadMutation.isPending}>
+            <legend>{c.scope}</legend>
+            <label className={!canSharePrefix ? "is-disabled" : matchRule === "part_prefix_nine" ? "is-selected" : ""}>
+              <input
+                checked={matchRule === "part_prefix_nine"}
+                disabled={!canSharePrefix}
+                name="material-match-rule"
+                onChange={() => setMatchRule("part_prefix_nine")}
+                type="radio"
+                value="part_prefix_nine"
+              />
+              <span><strong><Share2 />{c.sharePrefixNine}</strong><small>{canSharePrefix ? c.sharePrefixNineHint : c.shareUnavailable}</small></span>
+            </label>
+            <label className={matchRule === "exact" ? "is-selected" : ""}>
+              <input
+                checked={matchRule === "exact"}
+                name="material-match-rule"
+                onChange={() => setMatchRule("exact")}
+                type="radio"
+                value="exact"
+              />
+              <span><strong><FileUp />{c.separateUpload}</strong><small>{c.separateUploadHint}</small></span>
+            </label>
+          </fieldset>
           <div className="field-material-file-field">
             <span>{c.uploadFile}</span>
             <input
@@ -727,10 +905,43 @@ export default function FieldMaterialsPage() {
   const language = lang === "zh" ? "zh" : "ko";
   const c = pageCopy[language];
   const businessDate = useShanghaiBusinessDate();
+  const [referenceDate, setReferenceDate] = useState(businessDate);
+  const manualDateSelectionRef = useRef(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const calendarRef = useRef<HTMLDivElement>(null);
   const canViewMaterials = Boolean(user && (user.is_staff || hasPermission("can_view_development")));
   const canEditMaterials = Boolean(user && (user.is_staff || hasPermission("can_edit_development")));
   const [uploadTarget, setUploadTarget] = useState<{ kind: MaterialKind; model: FieldMaterialModel } | null>(null);
+  const [reuseTarget, setReuseTarget] = useState<{ kind: MaterialKind; model: FieldMaterialModel } | null>(null);
   const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!manualDateSelectionRef.current) setReferenceDate(businessDate);
+  }, [businessDate]);
+  useEffect(() => {
+    if (!isCalendarOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!calendarRef.current?.contains(event.target as Node)) setIsCalendarOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsCalendarOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isCalendarOpen]);
+  const planDatesQuery = useQuery({
+    queryKey: ["production", "plan-dates"],
+    queryFn: getProductionPlanDates,
+    enabled: canViewMaterials,
+    staleTime: 60_000,
+  });
+  const injectionPlanDates = useMemo(
+    () => new Set(planDatesQuery.data?.injection ?? []),
+    [planDatesQuery.data?.injection],
+  );
   const repairMutation = useMutation({
     mutationFn: repairFieldMaterialPreview,
     onSuccess: async (document) => {
@@ -742,8 +953,8 @@ export default function FieldMaterialsPage() {
     onError: (error) => toast.error(getErrorMessage(error, c.repairFailed)),
   });
   const materialsQuery = useQuery({
-    queryKey: ["field-materials", businessDate],
-    queryFn: () => getFieldMaterials(businessDate),
+    queryKey: ["field-materials", referenceDate],
+    queryFn: () => getFieldMaterials(referenceDate),
     enabled: canViewMaterials,
     staleTime: 30_000,
     refetchInterval: (query) => {
@@ -756,8 +967,8 @@ export default function FieldMaterialsPage() {
     },
   });
   const productionStatusQuery = useQuery({
-    queryKey: ["production-status", businessDate],
-    queryFn: () => getProductionStatus(businessDate),
+    queryKey: ["production-status", referenceDate],
+    queryFn: () => getProductionStatus(referenceDate),
     enabled: canViewMaterials && materialsQuery.isSuccess,
     staleTime: 30_000,
     refetchInterval: 60_000,
@@ -768,8 +979,8 @@ export default function FieldMaterialsPage() {
     return serverSchedules.length > 0 ? serverSchedules : buildFallbackMachineSchedules(models);
   }, [materialsQuery.data?.machine_schedules, models]);
   const schedules = useMemo(
-    () => mergeProductionStatus(materialSchedules, productionStatusQuery.data),
-    [materialSchedules, productionStatusQuery.data],
+    () => mergeProductionStatus(materialSchedules, productionStatusQuery.data, referenceDate !== businessDate),
+    [businessDate, materialSchedules, productionStatusQuery.data, referenceDate],
   );
   const summaryModels = useMemo(
     () => models.length > 0 ? models : uniqueScheduleModels(schedules),
@@ -796,7 +1007,43 @@ export default function FieldMaterialsPage() {
         </div>
         <div className="field-materials-hero__actions">
           {canViewMaterials && !canEditMaterials ? <span className="field-materials-readonly"><Eye /><strong>{c.readOnly}</strong></span> : null}
-          <span>{c.businessDate}<strong>{businessDate}</strong></span>
+          <div className="field-materials-date-picker" ref={calendarRef}>
+            <button
+              aria-expanded={isCalendarOpen}
+              aria-haspopup="dialog"
+              aria-label={c.openCalendar}
+              className="field-materials-date-trigger"
+              disabled={!canViewMaterials}
+              onClick={() => setIsCalendarOpen((current) => !current)}
+              type="button"
+            >
+              <span>{c.referenceDate}<strong>{referenceDate}</strong></span>
+              <CalendarDays aria-hidden="true" />
+            </button>
+            {isCalendarOpen ? (
+              <div aria-label={c.calendarLabel} className="field-materials-date-popover" role="dialog">
+                <DayPicker
+                  className="field-materials-date-calendar"
+                  components={{ Chevron: CalendarChevron }}
+                  defaultMonth={parseMaterialDate(referenceDate)}
+                  locale={language === "ko" ? ko : zhCN}
+                  mode="single"
+                  modifiers={{ hasPlan: (date) => injectionPlanDates.has(formatMaterialDate(date)) }}
+                  modifiersClassNames={{ hasPlan: "field-materials-date-calendar__has-plan" }}
+                  onSelect={(date) => {
+                    if (!date) return;
+                    manualDateSelectionRef.current = true;
+                    setReferenceDate(formatMaterialDate(date));
+                    setIsCalendarOpen(false);
+                  }}
+                  required
+                  selected={parseMaterialDate(referenceDate)}
+                  showOutsideDays
+                />
+                <p>{planDatesQuery.isError ? c.calendarDatesError : c.calendarHint}</p>
+              </div>
+            ) : null}
+          </div>
           <button
             disabled={!canViewMaterials || materialsQuery.isFetching || productionStatusQuery.isFetching}
             onClick={() => {
@@ -871,6 +1118,9 @@ export default function FieldMaterialsPage() {
                         onUpload={(kind, model) => {
                           if (canEditMaterials) setUploadTarget({ kind, model });
                         }}
+                        onReuse={(kind, model) => {
+                          if (canEditMaterials) setReuseTarget({ kind, model });
+                        }}
                         plan={plan}
                         repairingDocumentId={repairMutation.isPending ? repairMutation.variables : null}
                       />
@@ -888,7 +1138,16 @@ export default function FieldMaterialsPage() {
           kind={uploadTarget.kind}
           language={language}
           model={uploadTarget.model}
+          referenceDate={referenceDate}
           onClose={() => setUploadTarget(null)}
+        />
+      ) : null}
+      {canEditMaterials && reuseTarget ? (
+        <ReuseDialog
+          kind={reuseTarget.kind}
+          language={language}
+          model={reuseTarget.model}
+          onClose={() => setReuseTarget(null)}
         />
       ) : null}
     </div>

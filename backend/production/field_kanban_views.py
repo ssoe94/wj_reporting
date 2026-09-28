@@ -27,6 +27,7 @@ from .field_kanban import (
     repair_field_material_preview,
     save_defect_checkpoint,
     save_field_material,
+    share_existing_field_material,
 )
 
 
@@ -321,6 +322,20 @@ class FieldMaterialPreviewRepairView(APIView):
                 conversion_notification_url=conversion_notification_url,
             )
             return Response({"document": document})
+        except FieldKanbanError as exc:
+            return _error_response(exc)
+
+
+class FieldMaterialShareView(APIView):
+    """Share a ready document across plans with the same Part No. prefix."""
+
+    permission_classes = [IsAuthenticated, DevelopmentPermission, FieldWriteProfileRequired]
+    parser_classes = [JSONParser]
+
+    def post(self, request, document_id, *args, **kwargs):
+        try:
+            document = share_existing_field_material(document_id, user=request.user)
+            return Response({"document": document}, status=status.HTTP_201_CREATED)
         except FieldKanbanError as exc:
             return _error_response(exc)
 

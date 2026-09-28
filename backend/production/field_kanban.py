@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import math
 import re
@@ -45,9 +46,11 @@ DOCUMENT_KINDS = {"work_instruction", "drawing"}
 SOURCE_EXTENSIONS = {"pdf", "ppt", "pptx"}
 MATERIAL_MATCH_EXACT = "exact"
 MATERIAL_MATCH_PART_FAMILY_LAST_TWO = "part_family_last_two"
+MATERIAL_MATCH_PART_PREFIX_NINE = "part_prefix_nine"
 MATERIAL_MATCH_RULES = {
     MATERIAL_MATCH_EXACT,
     MATERIAL_MATCH_PART_FAMILY_LAST_TWO,
+    MATERIAL_MATCH_PART_PREFIX_NINE,
 }
 
 DEFECT_TYPES = [
@@ -97,6 +100,11 @@ def material_part_family_key(value: Any) -> str:
     return normalized[:-2] if len(normalized) > 2 else ""
 
 
+def material_part_prefix_nine(value: Any) -> str:
+    normalized = normalize_part_no(value)
+    return normalized[:9] if len(normalized) >= 9 else ""
+
+
 def material_parts_share_family(left: Any, right: Any) -> bool:
     normalized_left = normalize_part_no(left)
     normalized_right = normalize_part_no(right)
@@ -113,7 +121,7 @@ def _material_match_rule(value: Any, *, strict: bool = False) -> str:
         return normalized
     if strict:
         raise FieldKanbanError(
-            "match_rule must be exact or part_family_last_two.",
+            "match_rule must be exact, part_family_last_two, or part_prefix_nine.",
             code="invalid_material_match_rule",
         )
     return MATERIAL_MATCH_EXACT
@@ -204,21 +212,38 @@ def _document_sort_key(document: dict[str, Any]) -> tuple[str, str]:
 def _document_scope_key(document: dict[str, Any]) -> tuple[str, str, str, str]:
     match_rule = _material_match_rule(document.get("match_rule"))
     normalized_part = normalize_part_no(document.get("part_no"))
-    part_scope = (
-        material_part_family_key(normalized_part)
-        if match_rule == MATERIAL_MATCH_PART_FAMILY_LAST_TWO
-        else normalized_part
-    )
+    if match_rule == MATERIAL_MATCH_PART_FAMILY_LAST_TWO:
+        part_scope = material_part_family_key(normalized_part)
+    elif match_rule == MATERIAL_MATCH_PART_PREFIX_NINE:
+        part_scope = material_part_prefix_nine(normalized_part)
+    else:
+        part_scope = normalized_part
     return (
         str(document.get("kind") or "").strip(),
         match_rule,
         part_scope,
-        normalize_model_name(document.get("model_name")),
+        "" if match_rule == MATERIAL_MATCH_PART_PREFIX_NINE else normalize_model_name(
+            document.get("model_name")
+        ),
     )
 
 
 def _documents_share_scope(left: dict[str, Any], right: dict[str, Any]) -> bool:
     return _document_scope_key(left) == _document_scope_key(right)
+
+
+def _document_is_replaced_by(previous: dict[str, Any], replacement: dict[str, Any]) -> bool:
+    if _documents_share_scope(previous, replacement):
+        return True
+    # A newly shared upload must replace the uploader's earlier exact document;
+    # otherwise the exact match would keep hiding the new shared file. Exact
+    # documents for other Part No. variants remain independent overrides.
+    return bool(
+        _material_match_rule(replacement.get("match_rule")) == MATERIAL_MATCH_PART_PREFIX_NINE
+        and _material_match_rule(previous.get("match_rule")) == MATERIAL_MATCH_EXACT
+        and previous.get("kind") == replacement.get("kind")
+        and normalize_part_no(previous.get("part_no")) == normalize_part_no(replacement.get("part_no"))
+    )
 
 
 def serialize_document(document: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -289,6 +314,7 @@ def serialize_document(document: dict[str, Any] | None) -> dict[str, Any] | None
         "conversion_error": conversion.get("error") if conversion else None,
         "uploaded_at": document.get("uploaded_at"),
         "uploaded_by": document.get("uploaded_by"),
+        "shared_from_document_id": document.get("shared_from_document_id"),
     }
 
 
@@ -310,6 +336,7 @@ def resolve_material_documents(
     ]
 
     normalized_family = material_part_family_key(normalized_part)
+    normalized_prefix = material_part_prefix_nine(normalized_part)
 
     def candidates(kind: str) -> list[tuple[int, str, dict[str, Any]]]:
         ranked: list[tuple[int, str, dict[str, Any]]] = []
@@ -327,17 +354,24 @@ def resolve_material_documents(
                 rank = 0 if normalized_model and row_model == normalized_model else 1
                 match_basis = MATERIAL_MATCH_EXACT
             elif (
+                normalized_prefix
+                and row_match_rule == MATERIAL_MATCH_PART_PREFIX_NINE
+                and material_part_prefix_nine(row_part) == normalized_prefix
+            ):
+                rank = 2
+                match_basis = MATERIAL_MATCH_PART_PREFIX_NINE
+            elif (
                 normalized_family
                 and row_match_rule == MATERIAL_MATCH_PART_FAMILY_LAST_TWO
                 and material_parts_share_family(row_part, normalized_part)
                 and row_model == normalized_model
             ):
-                rank = 2 if normalized_model and row_model == normalized_model else 3
+                rank = 3 if normalized_model and row_model == normalized_model else 4
                 match_basis = MATERIAL_MATCH_PART_FAMILY_LAST_TWO
             elif normalized_model and not row_part and row_model == normalized_model:
                 if kind == "drawing":
                     continue
-                rank = 4
+                rank = 5
                 match_basis = "model"
             else:
                 continue
@@ -591,7 +625,7 @@ def _update_field_material_conversion(
             }
             if target.get("pending_replacement") is True:
                 for previous in documents:
-                    if previous is target or not _documents_share_scope(previous, target):
+                    if previous is target or not _document_is_replaced_by(previous, target):
                         continue
                     previous["active"] = False
                     previous["pending_replacement"] = False
@@ -1274,6 +1308,11 @@ def save_field_material(
             "part_family_last_two requires a model name.",
             code="material_part_family_model_required",
         )
+    if normalized_match_rule == MATERIAL_MATCH_PART_PREFIX_NINE and not material_part_prefix_nine(normalized_part):
+        raise FieldKanbanError(
+            "part_prefix_nine requires a part number with at least nine characters.",
+            code="material_part_prefix_required",
+        )
 
     source_extension, source_filename = _validate_upload(
         source_file,
@@ -1370,7 +1409,7 @@ def save_field_material(
             payload = _validate_material_manifest(snapshot.payload)
             documents = [row for row in payload["documents"] if isinstance(row, dict)]
             for previous in documents:
-                if not _documents_share_scope(previous, document):
+                if not _document_is_replaced_by(previous, document):
                     continue
                 if requires_conversion:
                     # Only the newest staged upload remains eligible to replace
@@ -1413,6 +1452,134 @@ def save_field_material(
             return failed or serialize_document(document) or {}
 
     return serialize_document(document) or {}
+
+
+def share_existing_field_material(document_id: Any, *, user: Any) -> dict[str, Any]:
+    """Publish an existing ready file for its nine-character Part No. family."""
+    normalized_id = str(document_id or "").strip()
+    if not normalized_id:
+        raise FieldKanbanError(
+            "A document ID is required.", code="field_material_not_found", status_code=404,
+        )
+
+    with transaction.atomic():
+        snapshot = MouldDataSnapshot.objects.select_for_update().filter(
+            snapshot_key=FIELD_MATERIALS_SNAPSHOT_KEY,
+        ).first()
+        if snapshot is None:
+            raise FieldKanbanError(
+                "The field material document was not found.",
+                code="field_material_not_found",
+                status_code=404,
+            )
+        payload = _validate_material_manifest(snapshot.payload)
+        documents = [row for row in payload["documents"] if isinstance(row, dict)]
+        original = next((row for row in documents if str(row.get("id") or "") == normalized_id), None)
+        if original is None:
+            raise FieldKanbanError(
+                "The field material document was not found.",
+                code="field_material_not_found",
+                status_code=404,
+            )
+        if (
+            original.get("active", True) is not True
+            or original.get("pending_replacement") is True
+            or _material_match_rule(original.get("match_rule")) != MATERIAL_MATCH_EXACT
+            or any(
+                row is not original
+                and row.get("pending_replacement") is True
+                and _documents_share_scope(row, original)
+                for row in documents
+            )
+        ):
+            raise FieldKanbanError(
+                "Only an active, part-specific document can be shared.",
+                code="field_material_not_shareable",
+                status_code=409,
+            )
+        if not material_part_prefix_nine(original.get("part_no")):
+            raise FieldKanbanError(
+                "Sharing requires a part number with at least nine characters.",
+                code="material_part_prefix_required",
+            )
+        serialized = serialize_document(original)
+        if not serialized or not serialized.get("ready"):
+            raise FieldKanbanError(
+                "The existing document needs a ready preview before sharing.",
+                code="field_material_not_ready",
+                status_code=409,
+            )
+
+        now = timezone.now().astimezone(SHANGHAI_TZ).isoformat()
+        actor = str(getattr(user, "username", "") or getattr(user, "pk", "") or "unknown")
+        shared = {
+            **copy.deepcopy(original),
+            "id": uuid.uuid4().hex,
+            "match_rule": MATERIAL_MATCH_PART_PREFIX_NINE,
+            "active": True,
+            "pending_replacement": False,
+            "uploaded_at": now,
+            "uploaded_by": actor,
+            "shared_from_document_id": normalized_id,
+            "shared_at": now,
+            "shared_by": actor,
+        }
+        for previous in documents:
+            if _document_is_replaced_by(previous, shared):
+                previous["active"] = False
+                previous["pending_replacement"] = False
+        documents.append(shared)
+        snapshot.payload = {
+            "schema_version": FIELD_MATERIALS_SCHEMA,
+            "documents": documents,
+        }
+        snapshot.source_latest_at = timezone.now()
+        snapshot.last_error = ""
+        snapshot.save()
+        return serialize_document(shared) or {}
+
+
+def reusable_material_documents(
+    part_no: Any,
+    *,
+    documents: Iterable[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Offer ready exact documents for explicit reuse across a Part No. family."""
+    normalized_part = normalize_part_no(part_no)
+    prefix = material_part_prefix_nine(normalized_part)
+    source_documents = list(documents)
+    result: dict[str, list[dict[str, Any]]] = {
+        "work_instruction": [],
+        "drawing": [],
+    }
+    if not prefix:
+        return result
+    for row in source_documents:
+        if (
+            row.get("active", True) is not True
+            or row.get("pending_replacement") is True
+            or _material_match_rule(row.get("match_rule")) != MATERIAL_MATCH_EXACT
+            or any(
+                other is not row
+                and other.get("pending_replacement") is True
+                and _documents_share_scope(other, row)
+                for other in source_documents
+            )
+        ):
+            continue
+        source_part = normalize_part_no(row.get("part_no"))
+        if source_part == normalized_part or material_part_prefix_nine(source_part) != prefix:
+            continue
+        kind = str(row.get("kind") or "")
+        if kind not in result:
+            continue
+        serialized = serialize_document(row)
+        if serialized and serialized.get("ready"):
+            result[kind].append(serialized)
+    for kind in result:
+        result[kind].sort(key=lambda row: (str(row.get("uploaded_at") or ""), str(row.get("id") or "")), reverse=True)
+        result[kind] = result[kind][:5]
+    return result
 
 
 def build_field_material_readiness(
@@ -1481,6 +1648,7 @@ def build_field_material_readiness(
             "machine_numbers": sorted(row["machine_numbers"]),
             "work_instruction": resolved["work_instruction"],
             "drawing": resolved["drawing"],
+            "reuse_candidates": reusable_material_documents(row["part_no"], documents=documents),
             "readiness": readiness,
         })
     rows.sort(key=lambda row: (
@@ -1539,6 +1707,7 @@ def build_field_material_readiness(
                 "is_completed": mes_estimated_status == "completed",
                 "work_instruction": resolved["work_instruction"],
                 "drawing": resolved["drawing"],
+                "reuse_candidates": reusable_material_documents(plan.part_no, documents=documents),
                 "readiness": readiness,
             })
         if include_status:
