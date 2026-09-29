@@ -50,7 +50,7 @@ export default function QualityPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 px-4 py-5 md:px-8 md:py-6">
+    <div className={`mx-auto w-full space-y-5 py-5 md:py-6 ${isHistoryView ? 'max-w-[1680px]' : 'max-w-7xl px-4 md:px-8'}`}>
       <header className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <span className="rounded-xl bg-blue-600 p-2 text-white shadow-sm">
