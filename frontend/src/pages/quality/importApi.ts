@@ -159,8 +159,8 @@ export class QualityImportPublishConflictError extends Error {
   }
 }
 
-const PREVIEW_STATUSES = new Set(['new', 'unchanged', 'changed', 'failed']);
-const COMMIT_STATUSES = new Set(['created', 'skipped', 'changed', 'failed']);
+const PREVIEW_STATUSES = new Set(['new', 'update_result', 'unchanged', 'changed', 'failed']);
+const COMMIT_STATUSES = new Set(['created', 'updated', 'skipped', 'changed', 'failed']);
 
 function assertPreviewResponse(value: unknown, contentType: unknown): asserts value is QualityExcelImportPreview {
   if (
@@ -170,6 +170,7 @@ function assertPreviewResponse(value: unknown, contentType: unknown): asserts va
     || typeof value.filename !== 'string'
     || !isCount(value.total_rows)
     || !isCount(value.new_count)
+    || !isCount(value.update_result_count)
     || !isCount(value.unchanged_count)
     || !isCount(value.changed_count)
     || !isCount(value.failed_count)
@@ -190,6 +191,7 @@ function isCommitResponse(value: unknown): value is QualityExcelImportResult {
     && typeof value.filename === 'string'
     && isCount(value.total_rows)
     && isCount(value.created_count)
+    && isCount(value.updated_count)
     && isCount(value.skipped_count)
     && isCount(value.changed_count)
     && isCount(value.failed_count)
@@ -199,6 +201,7 @@ function isCommitResponse(value: unknown): value is QualityExcelImportResult {
     && isCount(value.images_ignored)
     && isCount(value.images_skipped)
     && isIdArray(value.created_report_ids)
+    && isIdArray(value.updated_report_ids)
     && isIdArray(value.skipped_report_ids)
     && isIdArray(value.changed_report_ids)
     && isStringArray(value.warnings)

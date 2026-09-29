@@ -94,17 +94,21 @@ class QualityBrowserDirectImportTests(APITestCase):
         return user
 
     @staticmethod
-    def _prepare_payload(manifest: dict[str, object]) -> dict[str, object]:
-        preview = preview_quality_manifest(manifest, uploaded_on=date(2026, 8, 19))
+    def _prepare_payload(
+        manifest: dict[str, object],
+        *,
+        uploaded_on: date = date(2026, 8, 19),
+    ) -> dict[str, object]:
+        preview = preview_quality_manifest(manifest, uploaded_on=uploaded_on)
         return {
             'manifest': manifest,
             'row_keys': [row['row_key'] for row in preview['rows']],
         }
 
-    def _prepare(self, manifest: dict[str, object]):
+    def _prepare(self, manifest: dict[str, object], *, uploaded_on: date = date(2026, 8, 19)):
         return self.client.post(
             self.jobs_url,
-            self._prepare_payload(manifest),
+            self._prepare_payload(manifest, uploaded_on=uploaded_on),
             format='json',
         )
 
@@ -909,6 +913,42 @@ class QualityBrowserDirectImportTests(APITestCase):
             report.image5,
         )))
 
+    def test_september_same_file_reupload_updates_existing_action_result(self):
+        original_rows = _issue_rows()
+        original_rows[2][2] = '2026-09-18'
+        original = _manifest(rows=original_rows)
+        original['filename'] = '品质 Issue List - 9月.xlsx'
+        original['sheets'][0]['sheet_name'] = '9月'
+        first = self._prepare(original, uploaded_on=date(2026, 9, 29))
+        self._assert_prepare_contract(first, intent_count=0)
+        self._assert_terminal_finalize(self.client.post(
+            self._finalize_url(first.data['id']), {}, format='json',
+        ))
+        report = QualityReport.objects.get()
+        self.assertEqual(report.action_result, '刚生产')
+
+        # Same source bytes were already accepted by the previous parser.
+        old_batch = QualityImportBatch.objects.get(pk=first.data['id'])
+        old_batch.import_scope_key = 'bdi:' + old_batch.import_scope_key.removeprefix('bdi2:')
+        old_batch.save(update_fields=['import_scope_key'])
+        revised_rows = _issue_rows()
+        revised_rows[0] = [None, '万佳品质问题点Issue', None, None, None, None, None, None, None, None, '处理结果']
+        revised_rows[1][10] = None
+        revised_rows[2][2] = '2026-09-18'
+        revised_rows[2][10] = '返工后复检完成'
+        revised = _manifest(rows=revised_rows)
+        revised['filename'] = '品质 Issue List - 9月.xlsx'
+        revised['sheets'][0]['sheet_name'] = '9月'
+        second = self._prepare(revised, uploaded_on=date(2026, 9, 29))
+        self._assert_prepare_contract(second, intent_count=0)
+        self.assertNotEqual(second.data['id'], first.data['id'])
+        finalized = self.client.post(self._finalize_url(second.data['id']), {}, format='json')
+        self._assert_terminal_finalize(finalized)
+        self.assertEqual(finalized.data['result']['updated_count'], 1)
+        report.refresh_from_db()
+        self.assertEqual(report.action_result, '返工后复检完成')
+        self.assertEqual(QualityReport.objects.count(), 1)
+
     def test_all_existing_workbook_accepts_empty_row_selection_and_finalizes(self):
         first_manifest = _manifest(workbook_sha256='c' * 64)
         first = self._prepare(first_manifest)
@@ -1611,8 +1651,8 @@ class QualityBrowserDirectImportTests(APITestCase):
         self.assertFalse(prepared.data['idempotent_replay'])
         self.assertNotEqual(prepared.data['id'], legacy.pk)
         direct = QualityImportBatch.objects.get(pk=prepared.data['id'])
-        self.assertTrue(legacy.import_scope_key.startswith('inc:'))
-        self.assertTrue(direct.import_scope_key.startswith('bdi:'))
+        self.assertTrue(legacy.import_scope_key.startswith('inc2:'))
+        self.assertTrue(direct.import_scope_key.startswith('bdi2:'))
         self.assertNotEqual(direct.import_scope_key, legacy.import_scope_key)
 
         finalized = self.client.post(

@@ -136,7 +136,7 @@ def _browser_direct_scope_key(selected_row_keys: set[str]) -> str:
     """Keep browser delivery checkpoints separate from legacy worker jobs."""
 
     incremental_key = _incremental_job_scope_key(selected_row_keys)
-    return f'bdi:{incremental_key.removeprefix("inc:")}'
+    return f'bdi2:{incremental_key.removeprefix("inc2:")}'
 
 
 def _asset_remote_fresh(asset: QualityImportAsset, *, now=None) -> bool:
@@ -477,7 +477,7 @@ def _prepare_browser_direct_once(
             total_media=len(required_by_key),
             source_total_rows=len(context.parsed.rows),
             added_count=sum(decision.status == 'new' for decision in decisions),
-            changed_count=sum(decision.status == 'changed' for decision in decisions),
+            changed_count=sum(decision.status in {'changed', 'update_result'} for decision in decisions),
             unchanged_count=sum(decision.status == 'unchanged' for decision in decisions),
             warnings=context.parsed.warnings,
             warning_count=(

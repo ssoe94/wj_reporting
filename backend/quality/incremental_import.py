@@ -2,8 +2,8 @@
 
 The browser reads the XLSX locally and sends cell values plus image hashes for
 comparison.  Only images belonging to genuinely new rows are sent on commit.
-Existing reports are never overwritten: changed source rows are returned for
-human post-processing.
+Existing reports are preserved except for the explicitly scoped September
+2026 action-result backfill; other changes require human post-processing.
 """
 
 from __future__ import annotations
@@ -604,6 +604,82 @@ def _stored_source_sequence(
     return str(source.get('source_sequence') or '').strip()
 
 
+def _september_result_update_matches(
+    report: QualityReport,
+    row: dict[str, Any],
+    selected_media: list[dict[str, Any]],
+    *,
+    source_sha256: str,
+) -> bool:
+    """Require an exact imported event before replacing its action result."""
+
+    report_date = row.get('report_date')
+    if (
+        report_date is None
+        or (report_date.year, report_date.month) != (2026, 9)
+        or row.get('sheet_name') != '9月'
+        or '处理结果' not in (row.get('raw_data') or {})
+        or not row.get('action_result')
+        or not row.get('source_sequence')
+        or not report.excel_import_key
+        or report.excel_import_key != row.get('business_key')
+        or _report_signature(report) != _row_report_signature(row)
+        or report.disposition != row.get('disposition', '')
+    ):
+        return False
+    source = report.excel_source or {}
+    return (
+        source.get('sheet_name') == row.get('sheet_name')
+        and str(source.get('source_sequence') or '') == str(row.get('source_sequence') or '')
+        and str(source.get('occurrence_location') or '') == str(row.get('occurrence_location') or '')
+        and str(source.get('item_name') or '') == str(row.get('item_name') or '')
+        and (
+            source.get('media_source_fingerprints') == _media_fingerprints(selected_media)
+            if isinstance(source.get('media_source_fingerprints'), list)
+            else source.get('source_sha256') == source_sha256
+        )
+    )
+
+
+def _update_september_action_result(
+    decision: RowDecision,
+    *,
+    filename: str,
+    source_sha256: str,
+    uploaded_by,
+) -> tuple[str, QualityReport]:
+    """Recheck the locked report and keep prior values with source evidence."""
+
+    report = QualityReport.objects.select_for_update().get(pk=decision.report.pk)
+    if not _september_result_update_matches(
+        report,
+        decision.row,
+        decision.selected_media,
+        source_sha256=source_sha256,
+    ):
+        return 'changed', report
+    result = decision.row['action_result']
+    if report.action_result == result:
+        return 'skipped', report
+    source = dict(report.excel_source or {})
+    history = list(source.get('action_result_imports') or [])
+    history.append({
+        'previous': report.action_result,
+        'value': result,
+        'source_filename': filename,
+        'source_sha256': source_sha256,
+        'source_sheet_name': decision.row['sheet_name'],
+        'source_row_number': decision.row['source_row_number'],
+        'updated_by': getattr(uploaded_by, 'username', '') or '',
+        'updated_at': timezone.now().isoformat(),
+    })
+    source['action_result_imports'] = history
+    report.action_result = result
+    report.excel_source = source
+    report.save(update_fields=['action_result', 'excel_source', 'updated_at'])
+    return 'updated', report
+
+
 def _concurrent_report_differences(
     report: QualityReport,
     row: dict[str, Any],
@@ -841,6 +917,25 @@ def _classify(context: ManifestContext) -> list[RowDecision]:
                     media_changed = True
                     missing_media_fingerprint = True
 
+        if _september_result_update_matches(
+            report,
+            row,
+            selected_media,
+            source_sha256=context.source_sha256,
+        ) and not media_changed and current_sequence_counts[_sequence_key(row)] == 1:
+            if report.action_result != row['action_result']:
+                decisions.append(RowDecision(
+                    row=row,
+                    media=all_media,
+                    selected_media=selected_media,
+                    status='update_result',
+                    report=report,
+                    warnings=[*warnings, 'existing_action_result_will_update'],
+                    message='The existing action result will be replaced from Excel K.',
+                ))
+                continue
+            content_changed = False
+
         if content_changed or media_changed:
             if content_changed:
                 warnings.append('existing_content_differs')
@@ -893,7 +988,10 @@ def _decision_row(decision: RowDecision, *, preview: bool) -> dict[str, Any]:
     if preview:
         result_status = status
     else:
-        result_status = 'skipped' if status == 'unchanged' else status
+        result_status = {
+            'unchanged': 'skipped',
+            'update_result': 'updated',
+        }.get(status, status)
     payload = _result_row(
         decision.row,
         status=result_status,
@@ -933,6 +1031,7 @@ def preview_quality_manifest(payload: Any, *, uploaded_on: date | None = None) -
         'filename': context.filename,
         'total_rows': len(decisions),
         'new_count': sum(decision.status == 'new' for decision in decisions),
+        'update_result_count': sum(decision.status == 'update_result' for decision in decisions),
         'unchanged_count': sum(decision.status == 'unchanged' for decision in decisions),
         'changed_count': sum(decision.status == 'changed' for decision in decisions),
         'failed_count': sum(decision.status == 'failed' for decision in decisions),
@@ -1014,7 +1113,9 @@ def _incremental_job_scope_key(selected_row_keys: set[str]) -> str:
     digest = hashlib.sha256(
         ('\n'.join(sorted(selected_row_keys)) or 'empty-selection').encode('ascii')
     ).hexdigest()
-    return f'inc:{digest[:28]}'
+    # A prior upload of the same workbook may have completed before K1 was
+    # parsed. Use a new scope so that replay does not return that stale result.
+    return f'inc2:{digest[:27]}'
 
 
 def _incremental_job_metadata(decision: RowDecision) -> dict[str, Any]:
@@ -1066,6 +1167,7 @@ def _quality_import_row_values(decision: RowDecision) -> dict[str, Any]:
     delta_status = {
         'new': QualityImportRow.DeltaStatus.ADDED,
         'changed': QualityImportRow.DeltaStatus.CHANGED,
+        'update_result': QualityImportRow.DeltaStatus.CHANGED,
         'unchanged': QualityImportRow.DeltaStatus.UNCHANGED,
         'failed': QualityImportRow.DeltaStatus.ADDED,
     }[decision.status]
@@ -1296,7 +1398,7 @@ def _enqueue_quality_manifest_once(
                 total_media=len(required_keys),
                 source_total_rows=len(context.parsed.rows),
                 added_count=sum(decision.status == 'new' for decision in decisions),
-                changed_count=sum(decision.status == 'changed' for decision in decisions),
+                changed_count=sum(decision.status in {'changed', 'update_result'} for decision in decisions),
                 unchanged_count=sum(decision.status == 'unchanged' for decision in decisions),
                 warnings=context.parsed.warnings,
                 warning_count=(
@@ -1455,7 +1557,12 @@ def _upgrade_incremental_result_shape(value: Any) -> dict[str, Any] | None:
                 sequence=normalized.get('source_sequence') or '',
             )
         rows.append(normalized)
-    return {**value, 'rows': rows}
+    return {
+        **value,
+        'updated_count': value.get('updated_count', 0),
+        'updated_report_ids': value.get('updated_report_ids', []),
+        'rows': rows,
+    }
 
 
 def serialize_quality_import_job(batch: QualityImportBatch) -> dict[str, Any]:
@@ -1547,12 +1654,14 @@ def _job_result_payload(
     created_ids = sorted({item['report_id'] for item in rows if item['status'] == 'created' and item['report_id']})
     skipped_ids = sorted({item['report_id'] for item in rows if item['status'] == 'skipped' and item['report_id']})
     changed_ids = sorted({item['report_id'] for item in rows if item['status'] == 'changed' and item['report_id']})
+    updated_ids = sorted({item['report_id'] for item in rows if item['status'] == 'updated' and item['report_id']})
     return {
         'filename': batch.original_filename,
         'total_rows': len(rows),
         'created_count': sum(item['status'] == 'created' for item in rows),
         'skipped_count': sum(item['status'] == 'skipped' for item in rows),
         'changed_count': sum(item['status'] == 'changed' for item in rows),
+        'updated_count': sum(item['status'] == 'updated' for item in rows),
         'failed_count': sum(item['status'] == 'failed' for item in rows),
         'images_found': images_found,
         'images_saved': sum(item['images_saved'] for item in rows),
@@ -1561,11 +1670,12 @@ def _job_result_payload(
         'images_skipped': sum(
             min(item['images_found'], MAX_IMAGES_PER_REPORT)
             for item in rows
-            if item['status'] in {'skipped', 'changed'}
+            if item['status'] in {'skipped', 'changed', 'updated'}
         ),
         'created_report_ids': created_ids,
         'skipped_report_ids': skipped_ids,
         'changed_report_ids': changed_ids,
+        'updated_report_ids': updated_ids,
         'warnings': sorted(set(batch.warnings or [])),
         'rows': sorted(
             rows,
@@ -1729,14 +1839,81 @@ def finalize_quality_import_job(batch_id: int, owner: str) -> dict[str, Any]:
                 row=row,
                 media=decision.media,
                 selected_media=selected_media,
-                status='created',
+                status='updated' if metadata.get('result_updated') else 'created',
                 report=report,
                 warnings=decision.warnings,
-                message='Registered.',
+                message=(
+                    'Existing action result was replaced from Excel K.'
+                    if metadata.get('result_updated') else 'Registered.'
+                ),
             )
             payload = _decision_row(checkpoint, preview=False)
             payload['images_found'] = images_found
             payload['images_saved'] = len(selected_media)
+            payload['import_row_id'] = row_model.pk
+            result_rows.append(payload)
+            continue
+
+        if metadata.get('result_updated'):
+            report = decision.report
+            update_confirmed = bool(
+                report
+                and report.pk == metadata.get('result_report_id')
+                and report.action_result == row.get('action_result')
+            )
+            checkpoint = RowDecision(
+                row=row,
+                media=decision.media,
+                selected_media=selected_media,
+                status='updated' if update_confirmed else 'changed',
+                report=report,
+                warnings=decision.warnings,
+                message=(
+                    'Existing action result was replaced from Excel K.'
+                    if update_confirmed
+                    else 'Existing report changed after the result update; review it manually.'
+                ),
+            )
+            payload = _decision_row(checkpoint, preview=False)
+            payload['images_found'] = images_found
+            payload['import_row_id'] = row_model.pk
+            result_rows.append(payload)
+            continue
+
+        if decision.status == 'update_result':
+            with transaction.atomic():
+                locked_row = QualityImportRow.objects.select_for_update().get(pk=row_model.pk)
+                update_status, report = _update_september_action_result(
+                    decision,
+                    filename=batch.original_filename,
+                    source_sha256=batch.sha256,
+                    uploaded_by=batch.uploaded_by,
+                )
+                if update_status == 'updated':
+                    raw_data = dict(locked_row.raw_data or {})
+                    job_metadata = dict(raw_data.get('_incremental_job') or {})
+                    job_metadata['result_updated'] = True
+                    job_metadata['result_report_id'] = report.pk
+                    raw_data['_incremental_job'] = job_metadata
+                    locked_row.raw_data = raw_data
+                    locked_row.save(update_fields=['raw_data', 'updated_at'])
+            checkpoint = RowDecision(
+                row=row,
+                media=decision.media,
+                selected_media=selected_media,
+                status=update_status,
+                report=report,
+                warnings=decision.warnings,
+                message=(
+                    'Existing action result was replaced from Excel K.'
+                    if update_status == 'updated'
+                    else 'Existing action result was already current.'
+                    if update_status == 'skipped'
+                    else 'Existing report changed during import; review it manually.'
+                ),
+            )
+            payload = _decision_row(checkpoint, preview=False)
+            payload['images_found'] = images_found
             payload['import_row_id'] = row_model.pk
             result_rows.append(payload)
             continue
@@ -1965,6 +2142,7 @@ def commit_quality_manifest(
     created_report_ids: list[int] = []
     skipped_report_ids: list[int] = []
     changed_report_ids: list[int] = []
+    updated_report_ids: list[int] = []
     images_saved = 0
     images_failed = 0
     images_skipped = 0
@@ -1984,6 +2162,37 @@ def commit_quality_manifest(
                 changed_report_ids.append(decision.report.pk)
             images_skipped += len(decision.selected_media)
             results.append(_decision_row(decision, preview=False))
+        elif decision.status == 'update_result':
+            with transaction.atomic():
+                update_status, report = _update_september_action_result(
+                    decision,
+                    filename=context.filename,
+                    source_sha256=context.source_sha256,
+                    uploaded_by=uploaded_by,
+                )
+            if update_status == 'updated':
+                updated_report_ids.append(report.pk)
+            elif update_status == 'skipped':
+                skipped_report_ids.append(report.pk)
+            else:
+                changed_report_ids.append(report.pk)
+            images_skipped += len(decision.selected_media)
+            checkpoint = RowDecision(
+                row=decision.row,
+                media=decision.media,
+                selected_media=decision.selected_media,
+                status=update_status,
+                report=report,
+                warnings=decision.warnings,
+                message=(
+                    'Existing action result was replaced from Excel K.'
+                    if update_status == 'updated'
+                    else 'Existing action result was already current.'
+                    if update_status == 'skipped'
+                    else 'Existing report changed during import; review it manually.'
+                ),
+            )
+            results.append(_decision_row(checkpoint, preview=False))
         elif decision.status == 'failed':
             images_ignored += len(decision.selected_media)
             results.append(_decision_row(decision, preview=False))
@@ -2118,6 +2327,7 @@ def commit_quality_manifest(
         'created_count': sum(item['status'] == 'created' for item in results),
         'skipped_count': sum(item['status'] == 'skipped' for item in results),
         'changed_count': sum(item['status'] == 'changed' for item in results),
+        'updated_count': sum(item['status'] == 'updated' for item in results),
         'failed_count': sum(item['status'] == 'failed' for item in results),
         'images_found': sum(len(decision.media) for decision in decisions),
         'images_saved': images_saved,
@@ -2127,6 +2337,7 @@ def commit_quality_manifest(
         'created_report_ids': list(dict.fromkeys(created_report_ids)),
         'skipped_report_ids': list(dict.fromkeys(skipped_report_ids)),
         'changed_report_ids': list(dict.fromkeys(changed_report_ids)),
+        'updated_report_ids': list(dict.fromkeys(updated_report_ids)),
         'warnings': context.parsed.warnings,
         'rows': results,
     }

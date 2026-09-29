@@ -1,5 +1,5 @@
-export type QualityExcelImportRowStatus = 'created' | 'skipped' | 'changed' | 'failed';
-export type QualityExcelPreviewRowStatus = 'new' | 'unchanged' | 'changed' | 'failed';
+export type QualityExcelImportRowStatus = 'created' | 'updated' | 'skipped' | 'changed' | 'failed';
+export type QualityExcelPreviewRowStatus = 'new' | 'update_result' | 'unchanged' | 'changed' | 'failed';
 
 export type QualityWorkbookCell = string | number | boolean | null;
 
@@ -113,6 +113,7 @@ export interface QualityExcelImportResult {
   filename: string;
   total_rows: number;
   created_count: number;
+  updated_count: number;
   skipped_count: number;
   changed_count: number;
   failed_count: number;
@@ -122,6 +123,7 @@ export interface QualityExcelImportResult {
   images_ignored: number;
   images_skipped: number;
   created_report_ids: number[];
+  updated_report_ids: number[];
   skipped_report_ids: number[];
   changed_report_ids: number[];
   warnings: string[];
@@ -138,6 +140,7 @@ export interface QualityExcelImportPreview {
   filename: string;
   total_rows: number;
   new_count: number;
+  update_result_count: number;
   unchanged_count: number;
   changed_count: number;
   failed_count: number;
