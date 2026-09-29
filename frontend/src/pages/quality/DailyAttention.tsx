@@ -1658,8 +1658,11 @@ export default function DailyAttentionPage() {
     sortedItems.forEach((item) => {
       const modelNames = Array.from(new Set(item.model_names.map((name) => name.trim()).filter(Boolean)))
         .sort((a, b) => a.localeCompare(b));
-      const key = modelNames.join('|') || '-';
+      const key = Array.from(new Set(modelNames.map(compactFactoryModelLabel)))
+        .sort((a, b) => a.localeCompare(b)).join('|') || `unknown:${item.part_prefix}`;
       const group = models.get(key) ?? { modelNames, items: [], reports: new Map<number, HistoricalReport>() };
+      group.modelNames = Array.from(new Set([...group.modelNames, ...modelNames]))
+        .sort((a, b) => a.localeCompare(b));
       group.items.push(item);
       item.reports.forEach((report) => group.reports.set(report.id, report));
       models.set(key, group);
