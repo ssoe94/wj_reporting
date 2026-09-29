@@ -1254,13 +1254,13 @@
   border-radius: 0.48rem;
   background: var(--board-surface-raised, #ffffff);
   color: var(--board-text, #203f61);
-  font-size: 0.77rem;
+  font-size: 1rem;
 }
 
 .closedWeekRow > strong {
   flex: 0 0 auto;
   color: var(--board-blue, #215d9d);
-  font-size: 0.78rem;
+  font-size: 1rem;
   white-space: nowrap;
 }
 
@@ -1274,7 +1274,7 @@
 
 .closedWeekRow b { font-weight: 850; }
 .closedWeekRow i { padding-inline: 0.42rem; color: var(--board-muted, #6c8298); font-style: normal; }
-.closedWeekNote > small { color: var(--board-muted, #6c8298); font-size: 0.66rem; text-align: right; }
+.closedWeekNote > small { color: var(--board-muted, #6c8298); font-size: 0.76rem; text-align: right; }
 
 .attentionList {
   position: absolute;
