@@ -2276,6 +2276,172 @@ def load_defect_checkpoints(target_date: date, machine_number: int) -> list[dict
     return [row for row in payload["checkpoints"] if isinstance(row, dict)]
 
 
+def _attach_plan_defect_handoff(
+    machine_number: int,
+    plans: Iterable[dict[str, Any] | None],
+) -> None:
+    """Attach reported field defects to an exact dated plan, never infer zero."""
+    by_plan: dict[tuple[date, int], list[dict[str, Any]]] = defaultdict(list)
+    expected_parts: dict[tuple[date, int], str] = {}
+    allocated_by_plan: dict[tuple[date, int], int] = {}
+    ambiguous: set[tuple[date, int]] = set()
+
+    for plan in plans:
+        if plan is None:
+            continue
+        plan.update({
+            "reported_defect_piece_qty": None,
+            "defect_checkpoint_count": 0,
+            "latest_defect_reported_at": None,
+            "defect_source": None,
+        })
+        raw_id = plan.get("plan_id")
+        part_no = normalize_part_no(plan.get("part_no"))
+        try:
+            plan_date = date.fromisoformat(str(plan.get("plan_date") or ""))
+        except ValueError:
+            continue
+        if type(raw_id) is not int or raw_id <= 0 or not part_no:
+            continue
+        key = (plan_date, raw_id)
+        allocated_shots = plan.get("allocated_shots")
+        if key in expected_parts and expected_parts[key] != part_no:
+            ambiguous.add(key)
+        if type(allocated_shots) is not int or allocated_shots < 0:
+            ambiguous.add(key)
+        elif key in allocated_by_plan and allocated_by_plan[key] != allocated_shots:
+            ambiguous.add(key)
+        else:
+            allocated_by_plan[key] = allocated_shots
+        expected_parts[key] = part_no
+        by_plan[key].append(plan)
+
+    if not by_plan:
+        return
+
+    dates = {plan_date for plan_date, _plan_id in by_plan}
+    snapshot_dates = {
+        _defect_snapshot_key(plan_date, machine_number): plan_date
+        for plan_date in dates
+    }
+    checkpoints: dict[tuple[date, int], list[tuple[str, int, datetime]]] = defaultdict(list)
+    intervals_by_date: dict[date, list[tuple[int, int, tuple[date, int]]]] = defaultdict(list)
+    event_owners: dict[tuple[date, str], tuple[date, int]] = {}
+    documents = MouldDataSnapshot.objects.filter(
+        snapshot_key__in=snapshot_dates,
+    ).only("snapshot_key", "payload")
+    for document in documents:
+        plan_date = snapshot_dates[document.snapshot_key]
+        try:
+            payload = _validate_defect_document(document.payload, plan_date, machine_number)
+        except FieldKanbanError:
+            ambiguous.update(key for key in by_plan if key[0] == plan_date)
+            continue
+        for row in payload["checkpoints"]:
+            if not isinstance(row, dict):
+                continue
+            raw_id = row.get("plan_id")
+            if type(raw_id) is not int or raw_id <= 0:
+                continue
+            key = (plan_date, raw_id)
+            if key not in by_plan:
+                continue
+            event_key = row.get("event_key")
+            trigger = row.get("trigger")
+            defect_qty = row.get("defect_piece_qty")
+            completed_at = _parse_iso_datetime(row.get("completed_at"))
+            segment_shots = row.get("segment_shots")
+            ending_shots = row.get("ending_business_day_shots")
+            ending_plan_shots = row.get("ending_plan_shots")
+            cavity = row.get("cavity")
+            gross_qty = row.get("gross_piece_qty")
+            good_qty = row.get("good_piece_qty")
+            items = row.get("items")
+            if (
+                row.get("business_date") != plan_date.isoformat()
+                or type(row.get("machine_number")) is not int
+                or row.get("machine_number") != machine_number
+                or normalize_part_no(row.get("part_no")) != expected_parts[key]
+                or not isinstance(event_key, str)
+                or not event_key
+                or not isinstance(trigger, str)
+                or trigger not in {"part_change", "shift_0800", "shift_2000", "manual"}
+                or type(defect_qty) is not int
+                or defect_qty < 0
+                or completed_at is None
+                or any(type(value) is not int or value < 0 for value in (
+                    segment_shots, ending_shots, ending_plan_shots, cavity, gross_qty, good_qty,
+                ))
+                or cavity == 0
+                or ending_shots < segment_shots
+                # The saved segment is measured for the whole machine. Do not
+                # attribute it to one plan if it exceeds that plan's MES span.
+                or segment_shots > ending_plan_shots
+                or ending_plan_shots > allocated_by_plan.get(key, -1)
+                or gross_qty != segment_shots * cavity
+                or defect_qty > gross_qty
+                or good_qty != gross_qty - defect_qty
+                or not isinstance(items, list)
+                or any(
+                    not isinstance(item, dict)
+                    or not isinstance(item.get("code"), str)
+                    or item.get("code") not in DEFECT_CODES
+                    or type(item.get("quantity")) is not int
+                    or item["quantity"] < 0
+                    for item in items
+                )
+                or sum(item["quantity"] for item in items) != defect_qty
+            ):
+                ambiguous.add(key)
+                continue
+            try:
+                _validate_checkpoint_event(
+                    target_date=plan_date,
+                    machine_number=machine_number,
+                    event_key=event_key,
+                    trigger=trigger,
+                    now=completed_at,
+                )
+            except FieldKanbanError:
+                ambiguous.add(key)
+                continue
+            event_identity = (plan_date, event_key)
+            previous_owner = event_owners.get(event_identity)
+            if previous_owner is not None:
+                # Even identical duplicate events must never be counted twice.
+                ambiguous.update((key, previous_owner))
+                continue
+            event_owners[event_identity] = key
+            checkpoints[key].append((event_key, defect_qty, completed_at))
+            if segment_shots > 0:
+                intervals_by_date[plan_date].append(
+                    (ending_shots - segment_shots, ending_shots, key)
+                )
+
+    for intervals in intervals_by_date.values():
+        group: list[tuple[date, int]] = []
+        group_end = -1
+        for start, end, key in sorted(intervals):
+            if group and start >= group_end:
+                if len(group) > 1:
+                    ambiguous.update(group)
+                group = []
+            group.append(key)
+            group_end = max(group_end, end)
+        if len(group) > 1:
+            ambiguous.update(group)
+
+    for key, rows in checkpoints.items():
+        if key in ambiguous:
+            continue
+        latest = max(row[2] for row in rows)
+        for plan in by_plan[key]:
+            plan["reported_defect_piece_qty"] = sum(row[1] for row in rows)
+            plan["defect_checkpoint_count"] = len(rows)
+            plan["latest_defect_reported_at"] = latest.isoformat()
+            plan["defect_source"] = "field_checkpoint"
+
+
 def _pending_shift_prompt(
     target_date: date,
     machine_number: int,
@@ -2498,6 +2664,10 @@ def build_field_kanban_snapshot(
         active_index,
     )
     active_plan = _plan_payload(active_source, plan_date=target_date)
+    _attach_plan_defect_handoff(
+        machine_number,
+        [*queue, active_plan, next_plan],
+    )
     shot_count = _safe_int(shot_row.get("shot_count"), _safe_int((summary_row or {}).get("shot_count")))
     recent_shots = _safe_int(shot_row.get("recent_60m_shots"), _safe_int((summary_row or {}).get("recent_60m_shots")))
     shift_window = production_shift_window(target_date, local_now)

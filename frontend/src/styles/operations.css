@@ -9592,13 +9592,15 @@ select {
   background: #ecfff5;
 }
 
-.injection-board-card--warning {
+.injection-board-card--warning,
+.injection-board-card--transition_review {
   border-color: #d68c00;
   border-left-color: #a96e00;
   background: #fff7dc;
 }
 
 .injection-board-card--stopped,
+.injection-board-card--production_stopped,
 .injection-board-card--shot_issue {
   border-color: #d43c2c;
   border-left-color: #a72c20;
@@ -9668,8 +9670,10 @@ select {
 }
 
 .injection-board-card--running .injection-board-card__header em { background: #008449; color: #ffffff; }
-.injection-board-card--warning .injection-board-card__header em { background: #c47e00; color: #ffffff; }
+.injection-board-card--warning .injection-board-card__header em,
+.injection-board-card--transition_review .injection-board-card__header em { background: #c47e00; color: #ffffff; }
 .injection-board-card--stopped .injection-board-card__header em,
+.injection-board-card--production_stopped .injection-board-card__header em,
 .injection-board-card--shot_issue .injection-board-card__header em { background: #c43324; color: #ffffff; }
 .injection-board-card--overproducing .injection-board-card__header em { background: #6244b8; color: #ffffff; }
 .injection-board-card--completed .injection-board-card__header em { background: #07798d; color: #ffffff; }
@@ -9797,8 +9801,10 @@ select {
 
 .injection-board-card--running .injection-board-card__track { background: #ccebdc; }
 .injection-board-card--running .injection-board-card__track > span { background: #008f4f; }
-.injection-board-card--warning .injection-board-card__track > span { background: #dca21d; }
+.injection-board-card--warning .injection-board-card__track > span,
+.injection-board-card--transition_review .injection-board-card__track > span { background: #dca21d; }
 .injection-board-card--stopped .injection-board-card__track > span,
+.injection-board-card--production_stopped .injection-board-card__track > span,
 .injection-board-card--shot_issue .injection-board-card__track > span { background: #d6533b; }
 .injection-board-card--overproducing .injection-board-card__track > span { background: #7254c7; }
 .injection-board-card--completed .injection-board-card__track > span { background: #178d9e; }

@@ -54,6 +54,7 @@ import {
 } from "@/domains/production/api";
 import {
   buildInjectionTransitionAnalysis,
+  needsFieldPartNoReview,
   type InjectionTransitionEvent,
 } from "@/domains/production/injection-transition-analysis";
 import { type FieldStation } from "@/lib/fieldTerminal";
@@ -161,7 +162,13 @@ const copy = {
     workQueue: "作业队列",
     currentJob: "当前作业",
     nextJob: "下一作业",
-    queueOutput: "生产 / 计划",
+    queueOutput: "MES推定产量 / 计划",
+    mesEstimatedProduction: "MES推定产量 / 计划",
+    mesEstimatedOutput: "上项MES推定产量",
+    fieldReportedDefects: "现场录入不良",
+    defectUnreported: "不良记录未确认",
+    partNoReviewTitle: "同一型号、不同品号 · 请现场或办公室核对",
+    partNoReviewDetail: "MES合模数已按计划顺序推算分配产量；请核对实际生产的品号。",
     plannedChange: "预计换型时间",
     noNext: "暂无下一作业",
     confirmChange: "确认换型",
@@ -324,7 +331,13 @@ const copy = {
     workQueue: "작업 대기열",
     currentJob: "현재 작업",
     nextJob: "다음 작업",
-    queueOutput: "생산 / 계획",
+    queueOutput: "MES 추정 생산 / 계획",
+    mesEstimatedProduction: "MES 추정 생산 / 계획",
+    mesEstimatedOutput: "이전 MES 추정 생산",
+    fieldReportedDefects: "현장 입력 불량",
+    defectUnreported: "불량 기록 미확인",
+    partNoReviewTitle: "동일 모델·품번 다름 · 현장/사무실 확인 필요",
+    partNoReviewDetail: "MES 형합수를 계획 순서대로 추정 배분했습니다. 실제 생산 품번을 확인해 주세요.",
     plannedChange: "예상 모델체인지",
     noNext: "다음 작업 없음",
     confirmChange: "모델체인지 확인",
@@ -2327,12 +2340,26 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
     ? snapshot.queue
     : [snapshot?.active_plan, snapshot?.next_plan].filter(Boolean) as FieldQueuePlan[];
   const queue = getFieldQueueWindow(queueSource, snapshot?.active_plan ?? null);
+  const activePlan = snapshot?.active_plan ?? undefined;
+  const activeQueueIndex = activePlan
+    ? queueSource.findIndex((plan) => isSameQueuePlan(plan, activePlan))
+    : -1;
+  const previousQueuePlan = activeQueueIndex > 0 ? queueSource[activeQueueIndex - 1] : undefined;
+  const partNoReview = previousQueuePlan && activePlan && needsFieldPartNoReview(previousQueuePlan, activePlan)
+    ? { previous: previousQueuePlan, current: activePlan }
+    : null;
+  const previousReportedDefects = partNoReview?.previous.defect_source === "field_checkpoint"
+    && partNoReview.previous.defect_checkpoint_count > 0
+    && partNoReview.previous.reported_defect_piece_qty !== null
+    ? number(partNoReview.previous.reported_defect_piece_qty)
+    : c.defectUnreported;
   const transition = snapshot?.transition;
   const transitionFromPlan = queueSource.find((plan) => plan.plan_id === transition?.from_plan_id)
     ?? (transition?.phase === "changeover" ? snapshot?.active_plan : null);
   const transitionToPlan = queueSource.find((plan) => plan.plan_id === transition?.to_plan_id)
     ?? (transition?.phase === "changeover" ? snapshot?.next_plan : snapshot?.active_plan);
   const transitionStartAt = transition?.confirmed_start_at ?? transition?.estimated_start_at;
+  const showModelChangeStatus = !partNoReview || transition?.confirmation_status === "confirmed";
   const transitionStartTime = transitionStartAt
     ? formatShanghaiTime(new Date(transitionStartAt), language) : "-";
   const stoppedTime = transition?.stopped_at
@@ -2646,8 +2673,13 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
                     </div>
                   </div>
                   <div className="field-queue-value">
-                    <small>{c.queueOutput}</small>
+                    <small>{position === "previous" ? c.mesEstimatedProduction : c.queueOutput}</small>
                     <strong>{number(plan.actual_piece_qty)} / {number(plan.planned_piece_qty)}</strong>
+                    {position === "previous" ? (
+                      <span>{c.fieldReportedDefects}: {plan.defect_source === "field_checkpoint"
+                        && plan.defect_checkpoint_count > 0 && plan.reported_defect_piece_qty !== null
+                        ? number(plan.reported_defect_piece_qty) : c.defectUnreported}</span>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -2691,7 +2723,17 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
               {!transitionDataReady && alertText !== c.confirmationDataPending ? <span>{c.confirmationDataPending}</span> : null}
             </div>
           ) : null}
-          {transition?.phase === "changeover" ? (
+          {partNoReview ? (
+            <div className="field-transition-status field-transition-status--part-no-review" role="status">
+              <AlertTriangle aria-hidden="true" />
+              <div>
+                <strong>{c.partNoReviewTitle}</strong>
+                <span>{partNoReview.previous.part_no} → {partNoReview.current.part_no} · {c.partNoReviewDetail}</span>
+                <span>{c.mesEstimatedOutput}: {number(partNoReview.previous.actual_piece_qty)} {c.pieces} · {c.fieldReportedDefects}: {previousReportedDefects}</span>
+              </div>
+            </div>
+          ) : null}
+          {showModelChangeStatus && transition?.phase === "changeover" ? (
             <div className="field-transition-status field-transition-status--changeover" role="status">
               <Clock3 aria-hidden="true" />
               <div>
@@ -2702,7 +2744,7 @@ export default function InjectionKanban({ station, onBack }: { station: FieldSta
                 </span>
               </div>
             </div>
-          ) : transition?.phase === "new_running" ? (
+          ) : showModelChangeStatus && transition?.phase === "new_running" ? (
             <div className={`field-transition-status field-transition-status--running${transition.confirmation_status === "confirmed" ? " is-confirmed" : ""}`} role="status">
               <Clock3 aria-hidden="true" />
               <div>

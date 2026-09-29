@@ -46,6 +46,10 @@ export type FieldKanbanPlan = {
   cavity: number;
   progress_rate: number;
   status: string;
+  reported_defect_piece_qty: number | null;
+  defect_checkpoint_count: number;
+  latest_defect_reported_at: string | null;
+  defect_source: "field_checkpoint" | null;
 };
 
 export type FieldQualityIssue = {
@@ -303,6 +307,12 @@ function normalizePlan(value: unknown): FieldKanbanPlan | null {
     cavity: Math.max(0, asNumber(row.cavity)),
     progress_rate: asNumber(row.progress_rate || row.progress),
     status: asString(row.status),
+    reported_defect_piece_qty: typeof row.reported_defect_piece_qty === "number"
+      && Number.isSafeInteger(row.reported_defect_piece_qty) && row.reported_defect_piece_qty >= 0
+      ? row.reported_defect_piece_qty : null,
+    defect_checkpoint_count: Math.max(0, asNumber(row.defect_checkpoint_count)),
+    latest_defect_reported_at: asString(row.latest_defect_reported_at) || null,
+    defect_source: row.defect_source === "field_checkpoint" ? "field_checkpoint" : null,
   };
 }
 

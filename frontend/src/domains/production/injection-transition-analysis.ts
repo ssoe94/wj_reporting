@@ -1,5 +1,5 @@
-import { type InjectionProductionMatrix, type InjectionMachineInfo } from "@/domains/mes/api";
-import { type ProductionPlanRecord, type ProductionPlanSummaryResponse } from "@/domains/production/api";
+import type { InjectionProductionMatrix, InjectionMachineInfo } from "@/domains/mes/api";
+import type { ProductionPlanRecord, ProductionPlanSummaryResponse } from "@/domains/production/api";
 
 export type InjectionTransitionEventType = "mold_change" | "core_change" | "production_stop" | "tuning";
 
@@ -37,6 +37,7 @@ export type InjectionTransitionEvent = {
   endTime: string;
   durationMinutes: number;
   confidence: "high" | "medium" | "low";
+  partNoReview?: boolean;
   fromRecord?: ProductionPlanRecord;
   toRecord?: ProductionPlanRecord;
   targetRecord?: ProductionPlanRecord;
@@ -288,19 +289,48 @@ function buildPlanBoundaries(records: ProductionPlanRecord[]): PlanBoundary[] {
   });
 }
 
-function getCavity(record: ProductionPlanRecord | undefined) {
+function getCavity(record: ComparablePlannedProduct | undefined) {
   return Math.max(1, Number(record?.cavity ?? 1) || 1);
 }
 
-function normalizePartNo(record: ProductionPlanRecord | undefined) {
+function normalizePartNo(record: ComparablePlannedProduct | undefined) {
   return String(record?.part_no ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
-function normalizeModelName(record: ProductionPlanRecord | undefined) {
+function normalizeModelName(record: ComparablePlannedProduct | undefined) {
   return String(record?.model_name ?? "").trim().toUpperCase();
 }
 
-function hasSamePartNoExceptLastTwo(fromRecord: ProductionPlanRecord | undefined, toRecord: ProductionPlanRecord | undefined) {
+type ComparablePlannedProduct = Pick<ProductionPlanRecord, "part_no" | "model_name" | "cavity">;
+
+export function hasSameModelDifferentPartNo(
+  fromRecord: ComparablePlannedProduct | undefined,
+  toRecord: ComparablePlannedProduct | undefined,
+) {
+  const fromPartNo = normalizePartNo(fromRecord);
+  const toPartNo = normalizePartNo(toRecord);
+  const fromModel = normalizeModelName(fromRecord);
+  const toModel = normalizeModelName(toRecord);
+  const fromCavity = Number(fromRecord?.cavity);
+  const toCavity = Number(toRecord?.cavity);
+  return Boolean(
+    fromPartNo && toPartNo && fromPartNo !== toPartNo
+    && fromModel && fromModel === toModel
+    && Number.isFinite(fromCavity) && fromCavity > 0 && fromCavity === toCavity
+  );
+}
+
+export function needsFieldPartNoReview(
+  previous: (ComparablePlannedProduct & { status: string }) | undefined,
+  current: (ComparablePlannedProduct & { actual_piece_qty: number }) | undefined,
+) {
+  return previous?.status === "completed"
+    && Number(current?.actual_piece_qty ?? 0) > 0
+    && hasSameModelDifferentPartNo(previous, current)
+    && !hasSamePartNoExceptLastTwo(previous, current);
+}
+
+function hasSamePartNoExceptLastTwo(fromRecord: ComparablePlannedProduct | undefined, toRecord: ComparablePlannedProduct | undefined) {
   const fromPartNo = normalizePartNo(fromRecord);
   const toPartNo = normalizePartNo(toRecord);
   if (!fromPartNo || !toPartNo) return false;
@@ -324,6 +354,9 @@ function getPlannedTransitionType(
   if (fromPartNo && toPartNo) {
     if (fromPartNo === toPartNo) return "production_stop";
     if (hasSamePartNoExceptLastTwo(fromRecord, toRecord)) return "core_change";
+    // The MES gap records a pause, but a shared model and cavity do not
+    // establish that the mould changed. Ask staff to verify the Part No.
+    if (hasSameModelDifferentPartNo(fromRecord, toRecord)) return "production_stop";
     return "mold_change";
   }
 
@@ -748,6 +781,9 @@ function buildMachineAnalysis(
     const nextContext = runContexts[gapContext.nextRunIndex] ?? gapContext.nextContext;
     const currentBoundary = gapContext.currentContext.boundary;
     const nextBoundary = nextContext?.boundary ?? null;
+    const partNoReview = gapContext.currentContext.planIndex !== nextContext?.planIndex
+      && hasSameModelDifferentPartNo(currentBoundary?.record, nextBoundary?.record)
+      && !hasSamePartNoExceptLastTwo(currentBoundary?.record, nextBoundary?.record);
 
     if (isEquipmentChangeEvent(gapContext.type)) {
       const eventId = `${machineKey}-${gapContext.runIndex}-${gapContext.nextRunIndex}-${gapContext.type}`;
@@ -786,7 +822,10 @@ function buildMachineAnalysis(
         endTime: gapContext.gapEndTime.toISOString(),
         durationMinutes: gapContext.gapMinutes,
         confidence: "medium",
-        targetRecord: currentBoundary?.record,
+        partNoReview,
+        fromRecord: partNoReview ? currentBoundary?.record : undefined,
+        toRecord: partNoReview ? nextBoundary?.record : undefined,
+        targetRecord: partNoReview ? undefined : currentBoundary?.record,
         evidence: {
           stopThresholdMinutes,
           cumulativeQtyAtStop: Math.round(gapContext.currentContext.producedAfterRun),
@@ -851,6 +890,10 @@ function buildMachineAnalysis(
       const type: InjectionTransitionEventType = hasNextPlan && isPlanComplete(lastContext)
         ? getPlannedTransitionType(lastContext.boundary?.record, nextBoundary?.record)
         : "production_stop";
+      const partNoReview = type === "production_stop"
+        && hasNextPlan && isPlanComplete(lastContext)
+        && hasSameModelDifferentPartNo(lastContext.boundary?.record, nextBoundary?.record)
+        && !hasSamePartNoExceptLastTwo(lastContext.boundary?.record, nextBoundary?.record);
       const eventId = `${machineKey}-${lastRun.endIndex}-ongoing-${type}`;
       events.push({
         id: eventId,
@@ -863,9 +906,10 @@ function buildMachineAnalysis(
         endTime: latestTime.toISOString(),
         durationMinutes: ongoingGapMinutes,
         confidence: "low",
-        fromRecord: isEquipmentChangeEvent(type) ? lastContext.boundary?.record : undefined,
-        toRecord: isEquipmentChangeEvent(type) ? nextBoundary?.record : undefined,
-        targetRecord: isEquipmentChangeEvent(type) ? undefined : nextBoundary?.record ?? lastContext.boundary?.record,
+        partNoReview,
+        fromRecord: isEquipmentChangeEvent(type) || partNoReview ? lastContext.boundary?.record : undefined,
+        toRecord: isEquipmentChangeEvent(type) || partNoReview ? nextBoundary?.record : undefined,
+        targetRecord: isEquipmentChangeEvent(type) || partNoReview ? undefined : nextBoundary?.record ?? lastContext.boundary?.record,
         evidence: {
           stopThresholdMinutes,
           cumulativeQtyAtStop: Math.round(lastContext.producedAfterRun),
@@ -893,7 +937,7 @@ function mergePreparationSequences(
 
   while (index < events.length) {
     const event = events[index];
-    if (isEquipmentChangeEvent(event.type)) {
+    if (isEquipmentChangeEvent(event.type) || event.partNoReview) {
       mergedEvents.push(event);
       index += 1;
       continue;
@@ -904,7 +948,7 @@ function mergePreparationSequences(
     while (cursor < events.length) {
       const previous = cluster[cluster.length - 1];
       const next = events[cursor];
-      if (next.machineKey !== event.machineKey || isEquipmentChangeEvent(next.type)) break;
+      if (next.machineKey !== event.machineKey || isEquipmentChangeEvent(next.type) || next.partNoReview) break;
       const gapMinutes = minutesBetween(new Date(previous.endTime), new Date(next.startTime));
       if (gapMinutes > stopThresholdMinutes) break;
       cluster.push(next);

@@ -2,6 +2,7 @@ import { ArrowUpRight, Boxes, Factory, LayoutGrid, LogIn, Monitor, Radio, Zap } 
 import { Link } from "react-router-dom";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { openBoardPopup } from "@/domains/boards/board-popup";
 import { useLang } from "@/i18n";
 import styles from "./BoardHubPage.module.css";
 
@@ -9,7 +10,7 @@ const COPY = {
   ko: {
     eyebrow: "WJ DISPLAY CENTER",
     title: "현황판",
-    description: "운영 현황을 큰 화면에 맞춘 전용 보드로 확인합니다. 카드를 누르면 해당 현황판으로 이동합니다.",
+    description: "운영 현황을 큰 화면에 맞춘 전용 보드로 확인합니다. 카드를 누르면 해당 현황판이 새 창으로 열립니다.",
     count: "운영 현황판 5개",
     publicAccess: "공개 현황판 4개 · 현장 칸반 로그인 필요",
     login: "관리 화면 로그인",
@@ -17,7 +18,7 @@ const COPY = {
     previewBadge: "화면 예시",
     publicLink: "공개 링크",
     protectedLink: "로그인 필요",
-    open: "현황판 열기",
+    open: "새 창에서 열기",
     preview: "화면 미리보기",
     overviewTitle: "WJ 종합 운영 현황판",
     overviewDescription: "생산·설비·품질·출고·에너지 핵심 지표를 3×3 비디오월에서 한눈에 확인합니다.",
@@ -38,7 +39,7 @@ const COPY = {
   zh: {
     eyebrow: "WJ DISPLAY CENTER",
     title: "看板中心",
-    description: "通过适配大屏的专用看板查看运营现状。点击卡片即可进入对应看板。",
+    description: "通过适配大屏的专用看板查看运营现状。点击卡片将在新窗口打开对应看板。",
     count: "5 个运营看板",
     publicAccess: "4 个公开看板 · 现场看板需登录",
     login: "登录管理页面",
@@ -46,7 +47,7 @@ const COPY = {
     previewBadge: "画面示意",
     publicLink: "公开链接",
     protectedLink: "需要登录",
-    open: "打开看板",
+    open: "在新窗口打开",
     preview: "画面预览",
     overviewTitle: "WJ 综合运营看板",
     overviewDescription: "通过 3×3 视频墙集中查看生产、设备、质量、出库和能源核心指标。",
@@ -85,7 +86,7 @@ export function BoardHubPage() {
     {
       key: "overview",
       href: "/boards/overview",
-      image: "/board-thumbnails/overview-board.svg?v=20260928",
+      image: "/board-thumbnails/overview-board.svg?v=20260929-clean",
       title: copy.overviewTitle,
       description: copy.overviewDescription,
       meta: copy.overviewMeta,
@@ -94,7 +95,7 @@ export function BoardHubPage() {
     {
       key: "injection",
       href: "/boards/injection",
-      image: "/board-thumbnails/injection-board.svg?v=20260928",
+      image: "/board-thumbnails/injection-board.svg?v=20260929-clean",
       title: copy.injectionTitle,
       description: copy.injectionDescription,
       meta: copy.injectionMeta,
@@ -103,7 +104,7 @@ export function BoardHubPage() {
     {
       key: "mould",
       href: "/boards/moulds",
-      image: "/board-thumbnails/mould-board.svg?v=20260928",
+      image: "/board-thumbnails/mould-board.svg?v=20260929-clean",
       title: copy.mouldTitle,
       description: copy.mouldDescription,
       meta: copy.mouldMeta,
@@ -112,7 +113,7 @@ export function BoardHubPage() {
     {
       key: "energy",
       href: "/boards/energy",
-      image: "/board-thumbnails/energy-board.svg?v=20260928",
+      image: "/board-thumbnails/energy-board.svg?v=20260929-clean",
       title: copy.energyTitle,
       description: copy.energyDescription,
       meta: copy.energyMeta,
@@ -121,7 +122,7 @@ export function BoardHubPage() {
     {
       key: "field",
       href: "/field",
-      image: "/board-thumbnails/field-kanban.svg?v=20260928-2",
+      image: "/board-thumbnails/field-kanban.svg?v=20260929-clean",
       title: copy.fieldTitle,
       description: copy.fieldDescription,
       meta: copy.fieldMeta,
@@ -167,6 +168,9 @@ export function BoardHubPage() {
               className={styles.boardCard}
               href={board.href}
               key={board.key}
+              onClick={(event) => openBoardPopup(event, board.href)}
+              rel="noopener noreferrer"
+              target="_blank"
             >
               <figure className={styles.thumbnail}>
                 <img alt={`${board.title} ${copy.preview}`} src={board.image} />

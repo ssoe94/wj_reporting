@@ -1,65 +1,78 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
 <title id="title">사출 전력 사용 현황판</title>
-<desc id="desc">6개 지표와 시간대별 전력 사용량 그래프의 현재 화면 구성 정적 화면 구성 예시이며 실시간 데이터가 아닙니다.</desc>
+<desc id="desc">6개 지표와 시간대별 사용량·효율 추이 구성. 화면 구성 예시이며 실시간 데이터가 아닙니다.</desc>
 <rect width="1280" height="720" fill="#edf3f7"/>
-<rect x="14" y="14" width="1252" height="165" rx="17" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<rect x="33" y="36" width="62" height="62" rx="14" fill="#356fa1" stroke="none" stroke-width="1"/>
-<text x="64" y="79" fill="#fff" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="44" font-weight="700" text-anchor="middle">ϟ</text>
-<text x="110" y="49" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="900" text-anchor="start">INJECTION ENERGY BOARD</text>
-<text x="110" y="81" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="27" font-weight="900" text-anchor="start">사출 전력 사용 현황판</text>
-<text x="110" y="105" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">사출기 누적 전력계와 생산 효율</text>
-<rect x="33" y="123" width="116" height="44" rx="7" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
-<text x="41" y="141" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="600" text-anchor="start">생산 기준일</text>
-<text x="41" y="158" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="800" text-anchor="start">오늘</text>
-<rect x="157" y="123" width="116" height="44" rx="7" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
-<text x="165" y="141" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="600" text-anchor="start">MES 최신</text>
-<text x="165" y="158" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="800" text-anchor="start">자동 수신</text>
-<rect x="281" y="123" width="116" height="44" rx="7" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
-<text x="289" y="141" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="600" text-anchor="start">자동 갱신</text>
-<text x="289" y="158" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="800" text-anchor="start">10분</text>
-<rect x="14" y="190" width="408" height="116" rx="13" fill="#376b99" stroke="#cbd8e2" stroke-width="1"/>
-<text x="32" y="221" fill="#e7eff6" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="start">금일 누적 사용량</text>
-<text x="32" y="265" fill="#fff" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">3,616.1 kWh</text>
-<text x="32" y="289" fill="#ddebf4" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">진행 중</text>
-<rect x="436" y="190" width="408" height="116" rx="13" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="454" y="221" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="start">전일 동시간 대비</text>
-<text x="454" y="265" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">+7885.2%</text>
-<text x="454" y="289" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">동일 경과시간 기준</text>
-<rect x="858" y="190" width="408" height="116" rx="13" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="876" y="221" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="start">최근 7일 평균 대비</text>
-<text x="876" y="265" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">+98.1%</text>
-<text x="876" y="289" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">동일 경과시간 기준</text>
-<rect x="14" y="317" width="408" height="116" rx="13" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="32" y="348" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="start">최대 사용 시간대</text>
-<text x="32" y="392" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">16:00</text>
-<text x="32" y="416" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">동일 경과시간 기준</text>
-<rect x="436" y="317" width="408" height="116" rx="13" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="454" y="348" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="start">1,000 Shot당 전력</text>
-<text x="454" y="392" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">556.07</text>
-<text x="454" y="416" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">동일 경과시간 기준</text>
-<rect x="858" y="317" width="408" height="116" rx="13" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="876" y="348" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="start">전력 계측 설비</text>
-<text x="876" y="392" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">17 / 17</text>
-<text x="876" y="416" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">동일 경과시간 기준</text>
-<rect x="14" y="452" width="1252" height="255" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="29" y="480" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="20" font-weight="850" text-anchor="start">시간대별 전체 전력 사용량</text>
-<path d="M29 493 L1251 493" fill="none" stroke="#e1e8ee" stroke-width="1"/>
-<text x="30" y="514" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="600" text-anchor="start">08:00부터 다음 날 08:00까지 · kWh</text>
-<path d="M88 548 L1245 548" fill="none" stroke="#e2e9ee" stroke-width="1"/>
-<path d="M88 594 L1245 594" fill="none" stroke="#e2e9ee" stroke-width="1"/>
-<path d="M88 640 L1245 640" fill="none" stroke="#e2e9ee" stroke-width="1"/>
-<path d="M88 686 L1245 686" fill="none" stroke="#e2e9ee" stroke-width="1"/>
-<rect x="102" y="605" width="32" height="82" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="168" y="589" width="32" height="98" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="234" y="560" width="32" height="127" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="300" y="525" width="32" height="162" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="366" y="513" width="32" height="174" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="432" y="516" width="32" height="171" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="498" y="507" width="32" height="180" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="564" y="502" width="32" height="185" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="630" y="498" width="32" height="189" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="696" y="510" width="32" height="177" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<rect x="762" y="522" width="32" height="165" rx="5" fill="#4c81ad" stroke="none" stroke-width="1"/>
-<text x="101" y="701" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">08:00</text>
-<text x="750" y="701" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">18:00</text>
+<rect x="14" y="14" width="1252" height="111" rx="16" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<rect x="33" y="35" width="62" height="62" rx="14" fill="#356fa1" stroke="none" stroke-width="1"/>
+<text x="64" y="79" fill="#fff" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="43" font-weight="700" text-anchor="middle">ϟ</text>
+<text x="111" y="48" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="900" text-anchor="start">INJECTION ENERGY BOARD</text>
+<text x="111" y="80" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="27" font-weight="900" text-anchor="start">사출 전력 사용 현황판</text>
+<text x="111" y="105" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">사출기 누적 전력계와 생산 효율</text>
+<rect x="1019" y="52" width="99" height="28" rx="14" fill="#e9f2f8" stroke="none" stroke-width="1"/>
+<text x="1068.5" y="71" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">KOR</text>
+<rect x="1130" y="52" width="116" height="28" rx="14" fill="#eaf4ee" stroke="none" stroke-width="1"/>
+<text x="1188.0" y="71" fill="#347958" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">10분 자동 갱신</text>
+<rect x="14" y="139" width="408" height="90" rx="10" fill="#376b99" stroke="#cbd8e2" stroke-width="1"/>
+<text x="32" y="167" fill="#e7eff6" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="start">금일 누적 사용량</text>
+<text x="32" y="207" fill="#fff" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="28" font-weight="850" text-anchor="start">— kWh</text>
+<rect x="436" y="139" width="408" height="90" rx="10" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="454" y="167" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="start">전일 동시간 대비</text>
+<text x="454" y="207" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="28" font-weight="850" text-anchor="start">—%</text>
+<rect x="858" y="139" width="408" height="90" rx="10" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="876" y="167" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="start">최근 7일 평균 대비</text>
+<text x="876" y="207" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="28" font-weight="850" text-anchor="start">—%</text>
+<rect x="14" y="238" width="408" height="90" rx="10" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="32" y="266" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="start">최대 사용 시간대</text>
+<text x="32" y="306" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="28" font-weight="850" text-anchor="start">—</text>
+<rect x="436" y="238" width="408" height="90" rx="10" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="454" y="266" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="start">1,000 Shot당 전력</text>
+<text x="454" y="306" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="28" font-weight="850" text-anchor="start">—</text>
+<rect x="858" y="238" width="408" height="90" rx="10" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="876" y="266" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="start">전력 계측 설비</text>
+<text x="876" y="306" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="28" font-weight="850" text-anchor="start">— / 17</text>
+<rect x="14" y="348" width="762" height="359" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="29" y="377" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">시간대별 전체 전력 사용량</text>
+<path d="M29 390 L761 390" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<text x="29" y="402" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">08:00부터 다음 날 08:00까지 · kWh</text>
+<path d="M71 445 L754 445" fill="none" stroke="#e2e9ee" stroke-width="1"/>
+<path d="M71 505 L754 505" fill="none" stroke="#e2e9ee" stroke-width="1"/>
+<path d="M71 565 L754 565" fill="none" stroke="#e2e9ee" stroke-width="1"/>
+<path d="M71 625 L754 625" fill="none" stroke="#e2e9ee" stroke-width="1"/>
+<path d="M71 685 L754 685" fill="none" stroke="#e2e9ee" stroke-width="1"/>
+<rect x="85" y="625" width="26" height="58" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="139" y="594" width="26" height="89" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="193" y="565" width="26" height="118" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="247" y="533" width="26" height="150" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="301" y="509" width="26" height="174" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="355" y="515" width="26" height="168" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="409" y="500" width="26" height="183" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="463" y="524" width="26" height="159" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="517" y="542" width="26" height="141" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="571" y="557" width="26" height="126" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="625" y="579" width="26" height="104" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<rect x="679" y="599" width="26" height="84" rx="4" fill="#4c81ad" stroke="none" stroke-width="1"/>
+<path d="M97 600 L151 579 L205 568 L259 551 L313 530 L367 526 L421 514 L475 525 L529 546 L583 559 L637 575 L691 593" fill="none" stroke="#d18a24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<text x="84" y="699" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="600" text-anchor="start">08:00</text>
+<text x="678" y="699" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="600" text-anchor="start">익일 08:00</text>
+<rect x="789" y="348" width="477" height="170" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="804" y="377" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">1,000 Shot당 전력 추이</text>
+<path d="M804 390 L1251 390" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<path d="M812 422 L1242 422" fill="none" stroke="#e2e9ee" stroke-width="1"/>
+<path d="M812 460 L1242 460" fill="none" stroke="#e2e9ee" stroke-width="1"/>
+<path d="M812 498 L1242 498" fill="none" stroke="#e2e9ee" stroke-width="1"/>
+<path d="M816 482 L855 458 L894 468 L933 435 L972 451 L1011 426 L1050 439 L1089 411 L1128 425 L1167 406 L1206 415" fill="none" stroke="#176f9f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M816 469 L855 475 L894 456 L933 469 L972 443 L1011 455 L1050 433 L1089 443 L1128 422 L1167 432 L1206 418" fill="none" stroke="#d18a24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<rect x="789" y="530" width="477" height="177" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="804" y="559" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">주간조·야간조 비교</text>
+<path d="M804 572 L1251 572" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<text x="808" y="585" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="800" text-anchor="start">주간조</text>
+<rect x="881" y="573" width="344" height="9" rx="4.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="881" y="573" width="230.48000000000002" height="9" rx="4.5" fill="#176f9f" stroke="none" stroke-width="1"/>
+<rect x="881" y="591" width="344" height="7" rx="3.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="881" y="591" width="182.32000000000002" height="7" rx="3.5" fill="#d18a24" stroke="none" stroke-width="1"/>
+<text x="808" y="643" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="800" text-anchor="start">야간조</text>
+<rect x="881" y="631" width="344" height="9" rx="4.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="881" y="631" width="158.24" height="9" rx="4.5" fill="#176f9f" stroke="none" stroke-width="1"/>
+<rect x="881" y="649" width="344" height="7" rx="3.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="881" y="649" width="196.07999999999998" height="7" rx="3.5" fill="#d18a24" stroke="none" stroke-width="1"/>
 </svg>
