@@ -80,3 +80,58 @@ test("an identical product may roll over to its next LOT without a changeover", 
   assert.deepEqual(row.segments.map((part) => part.allocatedShots), [412, 38, 0]);
   assert.deepEqual(row.segments.map((part) => part.status), ["completed", "in_progress", "pending"]);
 });
+
+test("a matching model and cavity continue by plan sequence across a Part No. change", () => {
+  const nextPart: ProductionPlanRecord = {
+    ...oldPlan, id: 3, sequence: 2, part_no: "OTHER-PART", planned_quantity: 100,
+  };
+  const result = buildRealtimeProgressSummary(planSummary([oldPlan, nextPart]), matrix(450), undefined, businessDate);
+  const row = result.rows.find((item) => item.key === "4");
+  assert.ok(row);
+  assert.deepEqual(row.segments.map((part) => part.allocatedShots), [412, 38]);
+});
+
+test("business-day rollover retains the last observed shot without carrying yesterday's output", () => {
+  const nextDate = "2026-09-15";
+  const nextPlan = { ...oldPlan, id: 4 };
+  const rolloverMatrix: InjectionProductionMatrix = {
+    ...matrix(0),
+    timestamp: "2026-09-15T08:20:00+08:00",
+    time_slots: [
+      { hour_offset: 0, time: "2026-09-15T07:58:00+08:00", label: "07:58", interval_minutes: 2 },
+      { hour_offset: 1, time: "2026-09-15T08:20:00+08:00", label: "08:20", interval_minutes: 2 },
+    ],
+    actual_production_matrix: { "4": [3, 0] },
+  };
+  const row = buildRealtimeProgressSummary(planSummary([nextPlan]), rolloverMatrix, undefined, nextDate)
+    .rows.find((item) => item.key === "4");
+  assert.ok(row);
+  assert.equal(row.shotCount, 0);
+  assert.equal(row.estimatedQty, 0);
+  assert.equal(row.lastShotAt, "2026-09-14T23:58:00.000Z");
+  assert.equal(row.isRunning, false);
+});
+
+test("morning shot gaps require observed capacity throughout the gap", () => {
+  const timeSlots = Array.from({ length: 12 }, (_, index) => ({
+    hour_offset: index,
+    time: new Date(Date.parse("2026-09-14T08:00:00+08:00") + index * 2 * 60_000).toISOString(),
+    label: String(index),
+    interval_minutes: 2,
+  }));
+  const gapMatrix: InjectionProductionMatrix = {
+    ...matrix(0),
+    timestamp: timeSlots.at(-1)!.time,
+    time_slots: timeSlots,
+    actual_production_matrix: { "4": [1, ...Array(9).fill(0), 1, 0] },
+    capacity_observed_matrix: { "4": Array(12).fill(true) },
+  };
+  const observed = buildRealtimeProgressSummary(planSummary([oldPlan]), gapMatrix, undefined, businessDate)
+    .rows.find((item) => item.key === "4");
+  assert.equal(observed?.morningShotGapCount, 1);
+
+  gapMatrix.capacity_observed_matrix!["4"][5] = false;
+  const incomplete = buildRealtimeProgressSummary(planSummary([oldPlan]), gapMatrix, undefined, businessDate)
+    .rows.find((item) => item.key === "4");
+  assert.equal(incomplete?.morningShotGapCount, 0);
+});

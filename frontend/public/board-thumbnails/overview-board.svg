@@ -1,123 +1,138 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
 <title id="title">WJ 종합 운영 현황판</title>
-<desc id="desc">현재 3×3 비디오월 배치 정적 화면 구성 예시이며 실시간 데이터가 아닙니다.</desc>
+<desc id="desc">현재 3×3 비디오월 구성. 화면 구성 예시이며 실시간 데이터가 아닙니다.</desc>
 <rect width="1280" height="720" fill="#edf3f7"/>
-<rect x="5" y="5" width="420" height="232" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="20" y="33" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="20" font-weight="850" text-anchor="start">사출 생산</text>
-<path d="M20 46 L410 46" fill="none" stroke="#e1e8ee" stroke-width="1"/>
-<rect x="430" y="5" width="420" height="232" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<rect x="855" y="5" width="420" height="232" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="870" y="33" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="20" font-weight="850" text-anchor="start">조립 생산</text>
-<path d="M870 46 L1260 46" fill="none" stroke="#e1e8ee" stroke-width="1"/>
-<rect x="5" y="244" width="420" height="232" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="20" y="272" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="20" font-weight="850" text-anchor="start">사출 설비 생산 현황</text>
-<path d="M20 285 L410 285" fill="none" stroke="#e1e8ee" stroke-width="1"/>
-<rect x="430" y="244" width="420" height="232" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="445" y="272" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="20" font-weight="850" text-anchor="start">종합 운영 현황</text>
-<path d="M445 285 L835 285" fill="none" stroke="#e1e8ee" stroke-width="1"/>
-<rect x="855" y="244" width="420" height="232" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="870" y="272" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="20" font-weight="850" text-anchor="start">생산 모델 · 품질 이력</text>
-<path d="M870 285 L1260 285" fill="none" stroke="#e1e8ee" stroke-width="1"/>
-<rect x="5" y="483" width="420" height="232" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="20" y="511" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="20" font-weight="850" text-anchor="start">출고 실행 · JIT / CSKD</text>
-<path d="M20 524 L410 524" fill="none" stroke="#e1e8ee" stroke-width="1"/>
-<rect x="430" y="483" width="420" height="232" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="445" y="511" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="20" font-weight="850" text-anchor="start">에너지</text>
-<path d="M445 524 L835 524" fill="none" stroke="#e1e8ee" stroke-width="1"/>
-<rect x="855" y="483" width="420" height="232" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
-<text x="870" y="511" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="20" font-weight="850" text-anchor="start">금형 / 유지보수</text>
-<path d="M870 524 L1260 524" fill="none" stroke="#e1e8ee" stroke-width="1"/>
-<text x="29" y="87" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">계획</text>
-<text x="29" y="127" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="34" font-weight="850" text-anchor="start">22,690</text>
-<text x="29" y="162" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="600" text-anchor="start">실적 10,159</text>
-<rect x="243" y="62" width="164" height="119" rx="9" fill="#f4f7fa" stroke="#cbd8e2" stroke-width="1"/>
-<text x="258" y="88" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">완료율</text>
-<text x="258" y="127" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">44.8%</text>
-<rect x="258" y="144" width="129" height="8" rx="4.0" fill="#e1e9ef" stroke="none" stroke-width="1"/>
-<rect x="258" y="144" width="58.050000000000004" height="8" rx="4.0" fill="#356fa1" stroke="none" stroke-width="1"/>
-<path d="M21 193 L408 193" fill="none" stroke="#cbd8e2" stroke-width="1"/>
-<text x="28" y="218" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">현재 시간 목표  ·  종료 전망  ·  잔여 수량</text>
-<text x="879" y="87" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">계획</text>
-<text x="879" y="127" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="34" font-weight="850" text-anchor="start">2,144</text>
-<text x="879" y="162" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="600" text-anchor="start">실적 955</text>
-<rect x="1093" y="62" width="164" height="119" rx="9" fill="#f4f7fa" stroke="#cbd8e2" stroke-width="1"/>
-<text x="1108" y="88" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">완료율</text>
-<text x="1108" y="127" fill="#378763" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">44.5%</text>
-<rect x="1108" y="144" width="129" height="8" rx="4.0" fill="#e1e9ef" stroke="none" stroke-width="1"/>
-<rect x="1108" y="144" width="58.050000000000004" height="8" rx="4.0" fill="#378763" stroke="none" stroke-width="1"/>
-<path d="M871 193 L1258 193" fill="none" stroke="#cbd8e2" stroke-width="1"/>
-<text x="878" y="218" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">현재 시간 목표  ·  종료 전망  ·  잔여 수량</text>
-<text x="641" y="43" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="28" font-weight="900" text-anchor="middle">WJ 통합 운영 센터</text>
-<text x="514" y="103" fill="#1d3654" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="43" font-weight="850" text-anchor="start">19:09</text>
-<text x="702" y="103" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="39" font-weight="850" text-anchor="start">20.6°C</text>
-<text x="514" y="132" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">북경 현재 시각</text>
-<text x="702" y="132" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">난징 날씨</text>
-<rect x="449" y="169" width="120" height="43" rx="5" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
-<text x="509" y="195" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="750" text-anchor="middle">사출 진도</text>
-<rect x="575" y="169" width="120" height="43" rx="5" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
-<text x="635" y="195" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="750" text-anchor="middle">조립 진도</text>
-<rect x="701" y="169" width="120" height="43" rx="5" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
-<text x="761" y="195" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="750" text-anchor="middle">가동 감지</text>
-<rect x="21" y="299" width="388" height="46" rx="7" fill="#f5faf8" stroke="#d6e3df" stroke-width="1"/>
-<text x="36" y="328" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="800" text-anchor="start">2호기</text>
-<text x="150" y="327" fill="#357a57" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">생산 중</text>
-<rect x="266" y="321" width="119" height="7" rx="3.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
-<rect x="266" y="321" width="63.07" height="7" rx="3.5" fill="#347e66" stroke="none" stroke-width="1"/>
-<rect x="21" y="351" width="388" height="46" rx="7" fill="#f5faf8" stroke="#d6e3df" stroke-width="1"/>
-<text x="36" y="380" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="800" text-anchor="start">3호기</text>
-<text x="150" y="379" fill="#357a57" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">생산 중</text>
-<rect x="266" y="373" width="119" height="7" rx="3.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
-<rect x="266" y="373" width="51.17" height="7" rx="3.5" fill="#347e66" stroke="none" stroke-width="1"/>
-<rect x="21" y="403" width="388" height="46" rx="7" fill="#f5faf8" stroke="#d6e3df" stroke-width="1"/>
-<text x="36" y="432" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="800" text-anchor="start">4호기</text>
-<text x="150" y="431" fill="#357a57" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">생산 중</text>
-<rect x="266" y="425" width="119" height="7" rx="3.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
-<rect x="266" y="425" width="45.22" height="7" rx="3.5" fill="#347e66" stroke="none" stroke-width="1"/>
-<rect x="447" y="299" width="391" height="46" rx="7" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
-<rect x="457" y="308" width="29" height="28" rx="14" fill="#dce9f5" stroke="none" stroke-width="1"/>
-<text x="471.5" y="327" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">1</text>
-<text x="499" y="328" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="700" text-anchor="start">생산 진도 확인</text>
-<rect x="447" y="351" width="391" height="46" rx="7" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
-<rect x="457" y="360" width="29" height="28" rx="14" fill="#dce9f5" stroke="none" stroke-width="1"/>
-<text x="471.5" y="379" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">2</text>
-<text x="499" y="380" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="700" text-anchor="start">설비 가동 확인</text>
-<rect x="447" y="403" width="391" height="46" rx="7" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
-<rect x="457" y="412" width="29" height="28" rx="14" fill="#dce9f5" stroke="none" stroke-width="1"/>
-<text x="471.5" y="431" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="800" text-anchor="middle">3</text>
-<text x="499" y="432" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="700" text-anchor="start">품질 이력 확인</text>
-<rect x="871" y="299" width="388" height="34" rx="6" fill="#eef4fa" stroke="none" stroke-width="1"/>
-<text x="887" y="322" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="start">AI 품질 브리핑 · 과거 이력</text>
-<text x="887" y="366" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="18" font-weight="800" text-anchor="start">생산 모델별 품질 보고 요약</text>
-<text x="887" y="406" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="600" text-anchor="start">관련 보고</text>
-<path d="M984 404 L1240 404" fill="none" stroke="#c8d7e5" stroke-width="7"/>
-<text x="887" y="443" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="600" text-anchor="start">과거 유형</text>
-<path d="M984 441 L1240 441" fill="none" stroke="#c8d7e5" stroke-width="7"/>
-<text x="887" y="480" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="600" text-anchor="start">확인 포인트</text>
-<path d="M984 478 L1240 478" fill="none" stroke="#c8d7e5" stroke-width="7"/>
-<text x="22" y="568" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="800" text-anchor="start">JIT</text>
-<rect x="83" y="558" width="321" height="8" rx="4.0" fill="#e1e9ef" stroke="none" stroke-width="1"/>
-<rect x="83" y="558" width="250.38" height="8" rx="4.0" fill="#3b7c9f" stroke="none" stroke-width="1"/>
-<text x="83" y="589" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">출고 목표 대비 실적</text>
-<text x="22" y="645" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="800" text-anchor="start">CSKD</text>
-<rect x="83" y="635" width="321" height="8" rx="4.0" fill="#e1e9ef" stroke="none" stroke-width="1"/>
-<rect x="83" y="635" width="295.32" height="8" rx="4.0" fill="#398760" stroke="none" stroke-width="1"/>
-<text x="83" y="666" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">출고 목표 대비 실적</text>
-<text x="447" y="547" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">금일 누적</text>
-<text x="447" y="593" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">3,672.5 kWh</text>
-<rect x="610" y="642" width="15" height="49" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
-<rect x="636" y="603" width="15" height="88" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
-<rect x="662" y="623" width="15" height="68" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
-<rect x="688" y="588" width="15" height="103" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
-<rect x="714" y="573" width="15" height="118" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
-<rect x="740" y="599" width="15" height="92" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
-<rect x="766" y="559" width="15" height="132" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
-<rect x="792" y="576" width="15" height="115" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
-<text x="872" y="549" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="14" font-weight="600" text-anchor="start">총 금형</text>
-<text x="872" y="589" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="35" font-weight="850" text-anchor="start">545</text>
-<text x="873" y="610" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="600" text-anchor="start">생산 중</text>
-<text x="1010" y="610" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="18" font-weight="850" text-anchor="start">9</text>
-<text x="873" y="638" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="600" text-anchor="start">수리 중</text>
-<text x="1010" y="638" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="18" font-weight="850" text-anchor="start">2</text>
-<text x="873" y="666" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="600" text-anchor="start">예방점검</text>
-<text x="1010" y="666" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="18" font-weight="850" text-anchor="start">93</text>
+<rect x="6" y="6" width="418" height="230" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="21" y="35" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">사출 생산</text>
+<path d="M21 48 L409 48" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<rect x="431" y="6" width="418" height="230" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<rect x="856" y="6" width="418" height="230" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="871" y="35" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">조립 생산</text>
+<path d="M871 48 L1259 48" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<rect x="6" y="245" width="418" height="230" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="21" y="274" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">사출 설비 생산 현황</text>
+<path d="M21 287 L409 287" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<rect x="431" y="245" width="418" height="230" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="446" y="274" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">종합 운영 현황</text>
+<path d="M446 287 L834 287" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<rect x="856" y="245" width="418" height="230" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="871" y="274" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">생산 모델 · 품질 이력</text>
+<path d="M871 287 L1259 287" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<rect x="6" y="484" width="418" height="230" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="21" y="513" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">출고 실행 · JIT / CSKD</text>
+<path d="M21 526 L409 526" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<rect x="431" y="484" width="418" height="230" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="446" y="513" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">에너지</text>
+<path d="M446 526 L834 526" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<rect x="856" y="484" width="418" height="230" rx="11" fill="#fff" stroke="#cbd8e2" stroke-width="1"/>
+<text x="871" y="513" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="21" font-weight="850" text-anchor="start">금형 / 유지보수</text>
+<path d="M871 526 L1259 526" fill="none" stroke="#e1e8ee" stroke-width="1"/>
+<text x="24" y="82" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">계획</text>
+<rect x="24" y="96" width="134" height="18" rx="9.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<text x="24" y="147" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">실적</text>
+<rect x="24" y="161" width="100" height="18" rx="9.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="238" y="60" width="165" height="122" rx="8" fill="#f5f8fb" stroke="#cbd8e2" stroke-width="1"/>
+<text x="253" y="83" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">완료율</text>
+<text x="253" y="123" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="28" font-weight="850" text-anchor="start">—%</text>
+<rect x="253" y="139" width="133" height="8" rx="4.0" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="253" y="139" width="55.86" height="8" rx="4.0" fill="#356fa1" stroke="none" stroke-width="1"/>
+<text x="253" y="169" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="600" text-anchor="start">시간 진행률</text>
+<path d="M23 193 L407 193" fill="none" stroke="#cbd8e2" stroke-width="1"/>
+<text x="26" y="215" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="600" text-anchor="start">시간 대비  ·  종료 전망  ·  잔여 수량</text>
+<text x="874" y="82" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">계획</text>
+<rect x="874" y="96" width="134" height="18" rx="9.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<text x="874" y="147" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">실적</text>
+<rect x="874" y="161" width="100" height="18" rx="9.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="1088" y="60" width="165" height="122" rx="8" fill="#f5f8fb" stroke="#cbd8e2" stroke-width="1"/>
+<text x="1103" y="83" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">완료율</text>
+<text x="1103" y="123" fill="#378763" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="28" font-weight="850" text-anchor="start">—%</text>
+<rect x="1103" y="139" width="133" height="8" rx="4.0" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="1103" y="139" width="55.86" height="8" rx="4.0" fill="#378763" stroke="none" stroke-width="1"/>
+<text x="1103" y="169" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="600" text-anchor="start">시간 진행률</text>
+<path d="M873 193 L1257 193" fill="none" stroke="#cbd8e2" stroke-width="1"/>
+<text x="876" y="215" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="600" text-anchor="start">시간 대비  ·  종료 전망  ·  잔여 수량</text>
+<text x="457" y="46" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="22" font-weight="900" text-anchor="start">WJ</text>
+<text x="644" y="46" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="25" font-weight="900" text-anchor="middle">WJ 통합 운영 센터</text>
+<text x="488" y="91" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">북경 현재 시각</text>
+<text x="682" y="91" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">난징 날씨</text>
+<text x="488" y="135" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="37" font-weight="850" text-anchor="start">--:--</text>
+<text x="682" y="135" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="35" font-weight="850" text-anchor="start">--°C</text>
+<rect x="448" y="166" width="72" height="42" rx="5" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
+<text x="484" y="190" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="750" text-anchor="middle">사출 진도</text>
+<rect x="525" y="166" width="72" height="42" rx="5" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
+<text x="561" y="190" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="750" text-anchor="middle">조립 진도</text>
+<rect x="602" y="166" width="72" height="42" rx="5" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
+<text x="638" y="190" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="750" text-anchor="middle">가동 감지</text>
+<rect x="679" y="166" width="72" height="42" rx="5" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
+<text x="715" y="190" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="750" text-anchor="middle">습도</text>
+<rect x="756" y="166" width="72" height="42" rx="5" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
+<text x="792" y="190" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="750" text-anchor="middle">바람</text>
+<rect x="451" y="218" width="371" height="6" rx="3.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="21" y="299" width="386" height="43" rx="7" fill="#f8fbfd" stroke="#d6e3e8" stroke-width="1"/>
+<text x="34" y="327" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="800" text-anchor="start">01호기</text>
+<rect x="125" y="315" width="116" height="10" rx="5.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="272" y="318" width="115" height="7" rx="3.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="272" y="318" width="52.900000000000006" height="7" rx="3.5" fill="#4b9272" stroke="none" stroke-width="1"/>
+<rect x="21" y="348" width="386" height="43" rx="7" fill="#f8fbfd" stroke="#d6e3e8" stroke-width="1"/>
+<text x="34" y="376" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="800" text-anchor="start">02호기</text>
+<rect x="125" y="364" width="116" height="10" rx="5.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="272" y="367" width="115" height="7" rx="3.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="272" y="367" width="73.60000000000001" height="7" rx="3.5" fill="#4b9272" stroke="none" stroke-width="1"/>
+<rect x="21" y="397" width="386" height="43" rx="7" fill="#f8fbfd" stroke="#d6e3e8" stroke-width="1"/>
+<text x="34" y="425" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="800" text-anchor="start">03호기</text>
+<rect x="125" y="413" width="116" height="10" rx="5.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="272" y="416" width="115" height="7" rx="3.5" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="272" y="416" width="39.1" height="7" rx="3.5" fill="#4b9272" stroke="none" stroke-width="1"/>
+<text x="21" y="445" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="600" text-anchor="start">설비별 실적 / 계획 · 60분 Shot</text>
+<rect x="447" y="300" width="387" height="101" rx="8" fill="#f7fafc" stroke="#cbd8e2" stroke-width="1"/>
+<text x="463" y="328" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="start">현재 우선 확인 항목</text>
+<rect x="463" y="346" width="274" height="9" rx="4.5" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="463" y="369" width="219" height="9" rx="4.5" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="449" y="418" width="90" height="40" rx="5" fill="#f2f7fa" stroke="#cbd8e2" stroke-width="1"/>
+<text x="494" y="442" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">사출 진도</text>
+<rect x="545" y="418" width="90" height="40" rx="5" fill="#f2f7fa" stroke="#cbd8e2" stroke-width="1"/>
+<text x="590" y="442" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">조립 진도</text>
+<rect x="641" y="418" width="90" height="40" rx="5" fill="#f2f7fa" stroke="#cbd8e2" stroke-width="1"/>
+<text x="686" y="442" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">진도 지연</text>
+<rect x="737" y="418" width="90" height="40" rx="5" fill="#f2f7fa" stroke="#cbd8e2" stroke-width="1"/>
+<text x="782" y="442" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">무계획 가동</text>
+<rect x="871" y="300" width="386" height="32" rx="6" fill="#edf4fa" stroke="none" stroke-width="1"/>
+<text x="884" y="321" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="750" text-anchor="start">당일 모델과 연결된 과거 품질 이력</text>
+<text x="885" y="364" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="18" font-weight="800" text-anchor="start">모델 · 품번</text>
+<rect x="886" y="380" width="332" height="10" rx="5.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="886" y="404" width="277" height="9" rx="4.5" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="886" y="428" width="221" height="9" rx="4.5" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<text x="22" y="552" fill="#356fa1" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="850" text-anchor="start">JIT</text>
+<rect x="102" y="542" width="295" height="8" rx="4.0" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="102" y="542" width="179.95" height="8" rx="4.0" fill="#356fa1" stroke="none" stroke-width="1"/>
+<text x="102" y="574" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="600" text-anchor="start">실적 / 목표 · 출고단 계획시간 기준</text>
+<text x="22" y="630" fill="#398760" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="17" font-weight="850" text-anchor="start">CSKD</text>
+<rect x="102" y="620" width="295" height="8" rx="4.0" fill="#e1e9ef" stroke="none" stroke-width="1"/>
+<rect x="102" y="620" width="112.1" height="8" rx="4.0" fill="#398760" stroke="none" stroke-width="1"/>
+<text x="102" y="652" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="12" font-weight="600" text-anchor="start">실적 / 목표 · 출고단 계획시간 기준</text>
+<text x="449" y="552" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">금일 누적</text>
+<text x="449" y="598" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="29" font-weight="850" text-anchor="start">— kWh</text>
+<rect x="606" y="644" width="16" height="46" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
+<rect x="632" y="616" width="16" height="74" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
+<rect x="658" y="632" width="16" height="58" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
+<rect x="684" y="599" width="16" height="91" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
+<rect x="710" y="611" width="16" height="79" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
+<rect x="736" y="583" width="16" height="107" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
+<rect x="762" y="605" width="16" height="85" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
+<rect x="788" y="596" width="16" height="94" rx="3" fill="#7ca5c8" stroke="none" stroke-width="1"/>
+<text x="872" y="554" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">총 금형</text>
+<text x="872" y="594" fill="#17324b" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="31" font-weight="850" text-anchor="start">—</text>
+<text x="874" y="622" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">생산 중</text>
+<rect x="974" y="613" width="71" height="12" rx="6.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<text x="874" y="649" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">수리 중</text>
+<rect x="974" y="640" width="71" height="12" rx="6.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<text x="874" y="676" fill="#667d90" font-family="Inter, Noto Sans KR, Noto Sans SC, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="start">예방점검</text>
+<rect x="974" y="667" width="71" height="12" rx="6.0" fill="#d9e4eb" stroke="none" stroke-width="1"/>
+<rect x="1071" y="662" width="13" height="26" rx="2" fill="#7699bd" stroke="none" stroke-width="1"/>
+<rect x="1095" y="651" width="13" height="37" rx="2" fill="#7699bd" stroke="none" stroke-width="1"/>
+<rect x="1119" y="660" width="13" height="28" rx="2" fill="#7699bd" stroke="none" stroke-width="1"/>
+<rect x="1143" y="640" width="13" height="48" rx="2" fill="#7699bd" stroke="none" stroke-width="1"/>
+<rect x="1167" y="655" width="13" height="33" rx="2" fill="#7699bd" stroke="none" stroke-width="1"/>
+<rect x="1191" y="666" width="13" height="22" rx="2" fill="#7699bd" stroke="none" stroke-width="1"/>
+<rect x="1215" y="644" width="13" height="44" rx="2" fill="#7699bd" stroke="none" stroke-width="1"/>
 </svg>

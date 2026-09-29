@@ -3813,6 +3813,7 @@
 .field-transition-status > div { flex: 1 1 auto; min-width: 0; }
 .field-transition-status strong,
 .field-transition-status span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field-transition-status--part-no-review span { overflow: visible; text-overflow: clip; white-space: normal; }
 .field-transition-status strong { font-size: 18px; font-weight: 900; }
 .field-transition-status span { margin-top: 2px; font-size: 14px; font-weight: 650; }
 .field-transition-status button {

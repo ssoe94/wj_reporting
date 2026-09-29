@@ -51,6 +51,7 @@ export type RealtimeProgressRow = {
   hasPlan: boolean;
   lastShotAt: string | null;
   idleMinutes: number | null;
+  morningShotGapCount?: number;
   expectedCycleTimeSec: number | null;
   completedCount: number;
   inProgressCount: number;
@@ -81,6 +82,7 @@ type MachineShotStats = {
   label: string;
   lastShotAt: string | null;
   idleMinutes: number | null;
+  morningShotGapCount: number;
   expectedCycleTimeSec: number | null;
   isRunning: boolean;
 };
@@ -158,17 +160,22 @@ function buildMachineShotStats(
   recentStart: Date | null,
 ): MachineShotStats {
   const productionRow = getMachineMatrixValues(data, machine.machine_number);
-  const activeSamples: Array<{ time: Date; output: number; intervalMinutes: number }> = [];
+  const activeSamples: Array<{ index: number; time: Date; output: number; intervalMinutes: number }> = [];
+  let latestPositiveSample: { time: Date; output: number; intervalMinutes: number } | undefined;
   let shotCount = 0;
   let recentShots = 0;
 
   (data.time_slots ?? []).forEach((slot, index) => {
     const slotTime = new Date(slot.time);
     const output = numberAt(productionRow, index);
+    if (output > 0 && latestTime && slotTime <= latestTime) {
+      latestPositiveSample = { time: slotTime, output, intervalMinutes: getSlotIntervalMinutes(data, index) };
+    }
     if (productionStart && productionEnd && slotTime >= productionStart && slotTime <= productionEnd) {
       shotCount += output;
       if (output > 0) {
         activeSamples.push({
+          index,
           time: slotTime,
           output,
           intervalMinutes: getSlotIntervalMinutes(data, index),
@@ -184,8 +191,22 @@ function buildMachineShotStats(
   // slot values for C/T analysis, but expose completed physical shots as units.
   const normalizedShotCount = normalizeShotTotal(shotCount);
   const normalizedRecentShots = normalizeShotTotal(recentShots);
+  const observedSlots = data.capacity_observed_matrix?.[String(machine.machine_number)];
+  const morningEndMs = productionStart ? productionStart.getTime() + 4 * 60 * 60_000 : 0;
+  const morningShotGapCount = observedSlots && morningEndMs
+    ? activeSamples.slice(1).reduce((count, sample, index) => {
+      const previous = activeSamples[index];
+      if (sample.time.getTime() > morningEndMs
+        || sample.time.getTime() - previous.time.getTime() < 15 * 60_000
+        || sample.index >= observedSlots.length
+        || !observedSlots.slice(previous.index, sample.index + 1).every(Boolean)) return count;
+      return count + 1;
+    }, 0)
+    : 0;
 
-  const lastSample = activeSamples.at(-1);
+  // The live matrix spans the business-day boundary. Keep the latest observed
+  // shot for current machine state, but allocate shots only inside this day.
+  const lastSample = activeSamples.at(-1) ?? latestPositiveSample;
   if (!lastSample || !latestTime) {
     return {
       shotCount: normalizedShotCount,
@@ -193,6 +214,7 @@ function buildMachineShotStats(
       label: machine.display_name || `${machine.machine_number}`,
       lastShotAt: null,
       idleMinutes: null,
+      morningShotGapCount,
       expectedCycleTimeSec: null,
       isRunning: false,
     };
@@ -225,6 +247,7 @@ function buildMachineShotStats(
     label: machine.display_name || `${machine.machine_number}`,
     lastShotAt: lastSample.time.toISOString(),
     idleMinutes,
+    morningShotGapCount,
     expectedCycleTimeSec,
     isRunning: idleMinutes <= pauseThresholdMinutes,
   };
@@ -248,6 +271,7 @@ function buildUnplannedProgressRow(key: string, shots: MachineShotStats): Realti
     hasPlan: false,
     lastShotAt: shots.lastShotAt,
     idleMinutes: shots.idleMinutes,
+    morningShotGapCount: shots.morningShotGapCount,
     expectedCycleTimeSec: shots.expectedCycleTimeSec,
     completedCount: 0,
     inProgressCount: 0,
@@ -435,14 +459,23 @@ function buildPlanAllocationGroups(records: ProductionPlanRecord[]) {
 
 function isSameRunningProductGroup(left: PlanAllocationGroup, right: PlanAllocationGroup) {
   if (left.members.length !== right.members.length) return false;
-  const identity = (group: PlanAllocationGroup) => group.members.map((member) => {
+  const exactIdentity = (group: PlanAllocationGroup) => group.members.map((member) => {
     const partNo = normalizeComparableCode(member.record.part_no);
     const modelName = normalizeComparableCode(member.record.model_name);
     return partNo || modelName ? `${partNo}:${modelName}:${member.cavity}` : "";
   }).sort();
-  const leftIdentity = identity(left);
-  const rightIdentity = identity(right);
-  return leftIdentity.every((value, index) => value !== "" && value === rightIdentity[index]);
+  const leftExact = exactIdentity(left);
+  const rightExact = exactIdentity(right);
+  if (leftExact.every((value, index) => value !== "" && value === rightExact[index])) return true;
+  // A different Part No. with the same model and cavity follows the plan
+  // sequence provisionally; the field must still confirm physical identity.
+  const modelIdentity = (group: PlanAllocationGroup) => group.members.map((member) => {
+    const modelName = normalizeComparableCode(member.record.model_name);
+    return modelName ? `${modelName}:${member.cavity}` : "";
+  }).sort();
+  const leftModel = modelIdentity(left);
+  const rightModel = modelIdentity(right);
+  return leftModel.every((value, index) => value !== "" && value === rightModel[index]);
 }
 
 function allocateFallbackGroupShots(groups: PlanAllocationGroup[], totalShots: number) {
@@ -703,6 +736,7 @@ export function buildRealtimeProgressSummary(
       hasPlan: true,
       lastShotAt: shots?.lastShotAt ?? null,
       idleMinutes: shots?.idleMinutes ?? null,
+      morningShotGapCount: shots?.morningShotGapCount ?? 0,
       expectedCycleTimeSec: shots?.expectedCycleTimeSec ?? null,
       completedCount,
       inProgressCount,
@@ -923,6 +957,7 @@ function buildStatusBackedProgressSummary(
       hasPlan,
       lastShotAt: shots?.lastShotAt ?? null,
       idleMinutes: shots?.idleMinutes ?? null,
+      morningShotGapCount: shots?.morningShotGapCount ?? 0,
       expectedCycleTimeSec: shots?.expectedCycleTimeSec ?? null,
       completedCount,
       inProgressCount,

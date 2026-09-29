@@ -1842,6 +1842,57 @@ class ProductionAiAskContractTests(DjangoTestCase):
 
 
 class InjectionAllocationContractTests(DjangoTestCase):
+    def test_matching_model_different_part_rolls_shots_by_plan_sequence(self):
+        target_date = datetime(2026, 9, 20).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 9, 20, 8, 0))
+        first = ProductionPlan.objects.create(
+            plan_date=target_date, plan_type='injection', machine_name='550T-11',
+            part_no='AAN30049855', model_name='75NAN080', planned_quantity=1920, sequence=1,
+        )
+        second = ProductionPlan.objects.create(
+            plan_date=target_date, plan_type='injection', machine_name='550T-11',
+            part_no='MAM66002511', model_name='75NAN080', planned_quantity=1920, sequence=2,
+        )
+        for part_no in ('AAN30049855', 'MAM66002511'):
+            ProductionPartCavity.objects.create(part_no=part_no, cavity=4, cavity_pattern='1x4')
+        for minutes, capacity in [(-2, 0), (0, 0), (2, 400), (4, 616),
+                                  (6, 616), (8, 616), (10, 616), (12, 616), (14, 616),
+                                  (16, 616), (18, 617), (20, 618), (22, 848)]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name='11호기', device_code='same-model-11',
+                timestamp=start + timedelta(minutes=minutes), capacity=capacity,
+            )
+
+        row = get_injection_summary(target_date, machine_numbers=[11])['machine_rows'][0]
+        self.assertEqual(row['shot_count'], 848)
+        self.assertEqual([part['allocated_shots'] for part in row['parts']], [480, 368])
+        self.assertEqual([part['estimated_qty'] for part in row['parts']], [1920, 1472])
+        self.assertEqual(row['unattributed_shots'], 0)
+        self.assertEqual(row['transition']['phase'], 'running')
+        self.assertEqual(row['transition']['current_plan_id'], second.id)
+        self.assertEqual(row['parts'][0]['plan_id'], first.id)
+
+    def test_matching_model_different_cavity_keeps_part_allocation_separate(self):
+        target_date = datetime(2026, 9, 21).date()
+        tz = pytz.timezone('Asia/Shanghai')
+        start = tz.localize(datetime(2026, 9, 21, 8, 0))
+        for sequence, part_no, cavity in [(1, 'MODEL-A', 4), (2, 'MODEL-B', 2)]:
+            ProductionPlan.objects.create(
+                plan_date=target_date, plan_type='injection', machine_name='550T-11',
+                part_no=part_no, model_name='75NAN080', planned_quantity=40, sequence=sequence,
+            )
+            ProductionPartCavity.objects.create(part_no=part_no, cavity=cavity)
+        for minutes, capacity in [(-2, 0), (0, 0), (2, 12)]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name='11호기', device_code='different-cavity-11',
+                timestamp=start + timedelta(minutes=minutes), capacity=capacity,
+            )
+
+        row = get_injection_summary(target_date, machine_numbers=[11])['machine_rows'][0]
+        self.assertEqual([part['allocated_shots'] for part in row['parts']], [12, 0])
+        self.assertEqual(row['transition']['current_plan_id'], row['parts'][0]['plan_id'])
+
     def test_distinct_part_does_not_advance_from_plan_target_alone(self):
         target_date = datetime(2026, 5, 18).date()
         tz = pytz.timezone('Asia/Shanghai')
@@ -1960,7 +2011,7 @@ class InjectionAllocationContractTests(DjangoTestCase):
             sample(minute, capacity)
         restarted = get_injection_summary(target_date, machine_numbers=[4])['machine_rows'][0]
         self.assertEqual(restarted['shot_count'], 500)
-        self.assertEqual([part['allocated_shots'] for part in restarted['parts']], [493, 6, 0])
+        self.assertEqual([part['allocated_shots'] for part in restarted['parts']], [493, 5, 1])
         self.assertEqual(restarted['unattributed_shots'], 1)
         self.assertEqual(restarted['transition']['phase'], 'new_running')
         self.assertEqual(restarted['transition']['estimated_start_at'], '2026-09-14T18:26:00+08:00')
@@ -1981,7 +2032,7 @@ class InjectionAllocationContractTests(DjangoTestCase):
             },
         )
         corrected = get_injection_summary(target_date, machine_numbers=[4])['machine_rows'][0]
-        self.assertEqual([part['allocated_shots'] for part in corrected['parts']], [493, 7, 0])
+        self.assertEqual([part['allocated_shots'] for part in corrected['parts']], [493, 5, 2])
         self.assertEqual(corrected['unattributed_shots'], 0)
         self.assertEqual(corrected['transition']['confirmation_status'], 'confirmed')
         self.assertEqual(corrected['transition']['confirmed_start_at'], '2026-09-14T18:12:00+08:00')

@@ -22,6 +22,7 @@ from .field_kanban import (
     FIELD_MATERIALS_SCHEMA,
     FIELD_MATERIALS_SNAPSHOT_KEY,
     FieldKanbanError,
+    _attach_plan_defect_handoff,
     _defect_checkpoint_context,
     _defect_snapshot_key,
     _legacy_pdf_preview_public_id,
@@ -82,6 +83,231 @@ def _stored_document(
 class FieldKanbanSnapshotTests(TestCase):
     def setUp(self):
         cache.clear()
+
+    @staticmethod
+    def _save_defect_handoff_document(target_date, machine_number, checkpoints):
+        MouldDataSnapshot.objects.create(
+            snapshot_key=_defect_snapshot_key(target_date, machine_number),
+            kind=MouldDataSnapshot.KIND_BOARD,
+            instance_id=f"field-defects-{machine_number:02d}",
+            payload={
+                "schema_version": FIELD_DEFECTS_SCHEMA,
+                "business_date": target_date.isoformat(),
+                "machine_number": machine_number,
+                "checkpoints": checkpoints,
+            },
+        )
+
+    @staticmethod
+    def _handoff_checkpoint(target_date, machine_number, plan, suffix, defects, hour, *, plan_shots=None):
+        return {
+            "event_key": f"manual:{target_date.isoformat()}:{machine_number}:{suffix}",
+            "trigger": "manual",
+            "business_date": target_date.isoformat(),
+            "machine_number": machine_number,
+            "plan_id": plan.id,
+            "part_no": plan.part_no,
+            "segment_shots": 10,
+            "ending_business_day_shots": 10 * (suffix - 99),
+            "ending_plan_shots": plan_shots if plan_shots is not None else 10 * (suffix - 99),
+            "cavity": 1,
+            "gross_piece_qty": 10,
+            "defect_piece_qty": defects,
+            "good_piece_qty": 10 - defects,
+            "items": [{"code": "scratch", "quantity": defects}] if defects else [],
+            "completed_at": f"{target_date.isoformat()}T{hour:02d}:00:00+08:00",
+        }
+
+    @staticmethod
+    def _add_handoff_mes_shots(target_date, machine_number, shots):
+        start = SHANGHAI_TZ.localize(datetime.combine(target_date, datetime.min.time())) + timedelta(hours=8)
+        for offset_minutes, capacity in [(-1, 100), (10, 100 + shots)]:
+            InjectionMonitoringRecord.objects.create(
+                machine_name=f"{machine_number}호기",
+                device_code=f"field-kanban-machine-{machine_number}",
+                timestamp=start + timedelta(minutes=offset_minutes),
+                capacity=capacity,
+            )
+
+    def test_handoff_scopes_reported_defects_to_same_model_plan_id_and_preserves_unknown(self):
+        target_date = date(2026, 8, 24)
+        plans = [ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no=f"PART-{suffix}",
+            model_name="SAME-MODEL",
+            planned_quantity={"A": 10, "B": 30, "C": 100}[suffix],
+            sequence=index,
+        ) for index, suffix in enumerate(("A", "B", "C"), start=1)]
+        self._add_handoff_mes_shots(target_date, 1, 30)
+        self._save_defect_handoff_document(target_date, 1, [
+            self._handoff_checkpoint(target_date, 1, plans[0], 100, 0, 9),
+            self._handoff_checkpoint(target_date, 1, plans[1], 101, 2, 10, plan_shots=10),
+            self._handoff_checkpoint(target_date, 1, plans[1], 102, 1, 11, plan_shots=20),
+        ])
+
+        snapshot = build_field_kanban_snapshot(
+            target_date,
+            1,
+            include_quality=False,
+            now=SHANGHAI_TZ.localize(datetime(2026, 8, 24, 12, 0)),
+            use_cache=False,
+        )
+        by_id = {row["plan_id"]: row for row in snapshot["queue"]}
+
+        self.assertEqual(by_id[plans[0].id]["reported_defect_piece_qty"], 0)
+        self.assertEqual(by_id[plans[0].id]["defect_checkpoint_count"], 1)
+        self.assertEqual(by_id[plans[0].id]["defect_source"], "field_checkpoint")
+        self.assertEqual(by_id[plans[1].id]["reported_defect_piece_qty"], 3)
+        self.assertEqual(by_id[plans[1].id]["defect_checkpoint_count"], 2)
+        self.assertEqual(by_id[plans[1].id]["latest_defect_reported_at"], "2026-08-24T11:00:00+08:00")
+        self.assertIsNone(by_id[plans[2].id]["reported_defect_piece_qty"])
+        self.assertEqual(by_id[plans[2].id]["defect_checkpoint_count"], 0)
+        self.assertIsNone(by_id[plans[2].id]["defect_source"])
+        self.assertEqual(snapshot["active_plan"]["reported_defect_piece_qty"], 3)
+
+    def test_handoff_keeps_previous_business_date_and_rejects_stale_part_identity(self):
+        previous_date = date(2026, 8, 23)
+        target_date = date(2026, 8, 24)
+        previous_plan = ProductionPlan.objects.create(
+            plan_date=previous_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-OLD",
+            model_name="SAME-MODEL",
+            planned_quantity=100,
+            sequence=1,
+        )
+        current_plan = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-NEW",
+            model_name="SAME-MODEL",
+            planned_quantity=100,
+            sequence=1,
+        )
+        self._add_handoff_mes_shots(previous_date, 1, 10)
+        self._save_defect_handoff_document(previous_date, 1, [
+            self._handoff_checkpoint(previous_date, 1, previous_plan, 100, 2, 9),
+        ])
+        wrong_part = self._handoff_checkpoint(target_date, 1, current_plan, 101, 4, 10)
+        wrong_part["part_no"] = "PART-OLD"
+        malformed = self._handoff_checkpoint(target_date, 1, current_plan, 103, 1, 12)
+        malformed["trigger"] = {"unexpected": "value"}
+        self._save_defect_handoff_document(target_date, 1, [
+            wrong_part,
+            self._handoff_checkpoint(target_date, 1, previous_plan, 102, 8, 11),
+            malformed,
+        ])
+
+        snapshot = build_field_kanban_snapshot(
+            target_date,
+            1,
+            include_quality=False,
+            now=SHANGHAI_TZ.localize(datetime(2026, 8, 24, 12, 0)),
+            use_cache=False,
+        )
+        by_id = {row["plan_id"]: row for row in snapshot["queue"]}
+
+        self.assertEqual(by_id[previous_plan.id]["reported_defect_piece_qty"], 2)
+        self.assertEqual(by_id[previous_plan.id]["latest_defect_reported_at"], "2026-08-23T09:00:00+08:00")
+        self.assertIsNone(by_id[current_plan.id]["reported_defect_piece_qty"])
+        self.assertIsNone(by_id[current_plan.id]["defect_source"])
+
+    def test_handoff_excludes_overlapping_checkpoint_segments(self):
+        target_date = date(2026, 8, 24)
+        plan = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-A",
+            model_name="MODEL-A",
+            planned_quantity=100,
+            sequence=1,
+        )
+        self._add_handoff_mes_shots(target_date, 1, 20)
+        first = self._handoff_checkpoint(target_date, 1, plan, 100, 1, 9)
+        overlapping = self._handoff_checkpoint(target_date, 1, plan, 101, 2, 10)
+        overlapping["ending_business_day_shots"] = 15
+        self._save_defect_handoff_document(target_date, 1, [first, overlapping])
+
+        snapshot = build_field_kanban_snapshot(
+            target_date,
+            1,
+            include_quality=False,
+            now=SHANGHAI_TZ.localize(datetime(2026, 8, 24, 12, 0)),
+            use_cache=False,
+        )
+
+        self.assertIsNone(snapshot["active_plan"]["reported_defect_piece_qty"])
+        self.assertEqual(snapshot["active_plan"]["defect_checkpoint_count"], 0)
+
+    def test_handoff_does_not_attribute_machine_wide_segment_across_plans(self):
+        target_date = date(2026, 8, 24)
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-A",
+            planned_quantity=10,
+            sequence=1,
+        )
+        next_plan = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-B",
+            planned_quantity=30,
+            sequence=2,
+        )
+        checkpoint = self._handoff_checkpoint(
+            target_date, 1, next_plan, 102, 2, 10, plan_shots=20,
+        )
+        checkpoint.update(segment_shots=30, gross_piece_qty=30, good_piece_qty=28)
+        self._save_defect_handoff_document(target_date, 1, [checkpoint])
+
+        plan_payload = {
+            "plan_date": target_date.isoformat(),
+            "plan_id": next_plan.id,
+            "part_no": next_plan.part_no,
+            "allocated_shots": 20,
+        }
+        _attach_plan_defect_handoff(1, [plan_payload])
+        self.assertIsNone(plan_payload["reported_defect_piece_qty"])
+
+    def test_handoff_rejects_checkpoint_plan_allocation_revised_after_submission(self):
+        target_date = date(2026, 8, 24)
+        first_plan = ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-A",
+            planned_quantity=10,
+            sequence=1,
+        )
+        ProductionPlan.objects.create(
+            plan_date=target_date,
+            plan_type="injection",
+            machine_name="850T-1",
+            part_no="PART-B",
+            planned_quantity=30,
+            sequence=2,
+        )
+        checkpoint = self._handoff_checkpoint(
+            target_date, 1, first_plan, 100, 2, 9, plan_shots=20,
+        )
+        self._save_defect_handoff_document(target_date, 1, [checkpoint])
+
+        plan_payload = {
+            "plan_date": target_date.isoformat(),
+            "plan_id": first_plan.id,
+            "part_no": first_plan.part_no,
+            "allocated_shots": 10,
+        }
+        _attach_plan_defect_handoff(1, [plan_payload])
+        self.assertIsNone(plan_payload["reported_defect_piece_qty"])
 
     def test_confirmed_early_change_keeps_new_plan_active_despite_old_shortfall(self):
         parts = [

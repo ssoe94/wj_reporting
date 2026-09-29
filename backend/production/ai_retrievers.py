@@ -53,8 +53,8 @@ CHANGEOVER_MAX_SAMPLE_GAP_MINUTES = 4
 CHANGEOVER_STABLE_SAMPLES = 3
 
 
-def _same_running_product(left: dict[str, Any], right: dict[str, Any]) -> bool:
-    """LOT rows for the same mould may roll over without a machine stop."""
+def _same_part_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    """Exact Part No./model/cavity identity, including a LOT rollover."""
     def identity(group: dict[str, Any]) -> tuple[tuple[str, str, int], ...]:
         return tuple(sorted(
             (
@@ -66,6 +66,26 @@ def _same_running_product(left: dict[str, Any], right: dict[str, Any]) -> bool:
         ))
 
     return identity(left) == identity(right)
+
+
+def _same_running_product(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    """Carry shots by plan sequence for a matching model and cavity pattern.
+
+    A different Part No. still needs a field/office identity check; MES shots
+    alone cannot verify which physical Part No. was produced.
+    """
+    if _same_part_identity(left, right):
+        return True
+
+    def model_identity(group: dict[str, Any]) -> tuple[tuple[str, int], ...] | None:
+        members = [
+            (str(member["plan"].model_name or "").strip().upper(), int(member["cavity"]))
+            for member in group["members"]
+        ]
+        return tuple(sorted(members)) if members and all(model for model, _ in members) else None
+
+    left_identity = model_identity(left)
+    return left_identity is not None and left_identity == model_identity(right)
 
 
 def _group_plan_id(group: dict[str, Any] | None) -> int | None:
@@ -102,7 +122,7 @@ def _confirmed_changeover_boundaries(
             start_at.tzinfo is None
             or stop_at.tzinfo is None
             or to_index != from_index + 1
-            or _same_running_product(groups[from_index], groups[to_index])
+            or _same_part_identity(groups[from_index], groups[to_index])
             or not (range_start <= stop_at < start_at < range_end)
         ):
             continue

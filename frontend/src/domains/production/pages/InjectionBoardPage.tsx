@@ -3,7 +3,8 @@ import { BOARD_PART_STALE_MS, prefetchBoardParts } from "../board-part-prefetch"
 import { BoardPartSummaryModal } from "../components/BoardPartSummaryModal";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { isBoardMachineStale, summarizeBoardAvailability } from "@/domains/production/board-availability";
-import { getBoardCycleTime, getBoardTone, type BoardTone } from "@/domains/production/board-machine-status";
+import { getBoardCycleTime, getBoardTone, isMesDataReadyForBusinessDate, type BoardTone } from "@/domains/production/board-machine-status";
+import { needsFieldPartNoReview } from "@/domains/production/injection-transition-analysis";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -131,9 +132,10 @@ const boardCopy = {
     plannedMachines: "가동 계획",
     unplannedRunning: "계획 외 가동",
     warning: "진도 확인",
-    stopped: "금형 교체 추정",
+    stopped: "금형 교체 중",
+    productionStopped: "현재 정지 추정",
     shotIssue: "형합 실적 이상",
-    changeoverEstimate: "금형 교체 추정",
+    changeoverEstimate: "전환 후보·현장 확인",
     newRunEstimate: "모델 전환 추정·현장 확인",
     overproducing: "초과 생산 중",
     completed: "생산 완료",
@@ -163,6 +165,10 @@ const boardCopy = {
     noPart: "Part 확인 대기",
     noPlan: "계획없음",
     lastShot: "최근 형합",
+    latestShort: "최근",
+    morningShotGaps: "오전 MES 계수 정체",
+    priorMorningShotGaps: "전일 오전 MES 계수 정체",
+    partNoReview: "품번 현장/사무실 확인",
     noShot: "형합 없음",
     timeline: "24시간 생산 기록",
     timelineHint: "그래프 위치에 마우스를 올리면 해당 시각을 확인할 수 있습니다.",
@@ -170,6 +176,7 @@ const boardCopy = {
     timelineNoRecord: "생산 기록 없음",
     remainingShots: "잔여 형합",
     loading: "사출 현황을 불러오는 중입니다.",
+    newDayLoading: "새 기준일의 MES 형합 자료를 기다리는 중입니다.",
     error: "현황 데이터를 불러오지 못했습니다. 1분 후 다시 시도합니다.",
     staleBanner: "일부 설비의 수집 데이터가 없거나 5분 이상 지연됐습니다. 해당 설비의 가동·정지 판단은 보류합니다.",
   },
@@ -225,9 +232,10 @@ const boardCopy = {
     plannedMachines: "运行计划",
     unplannedRunning: "计划外运行",
     warning: "进度待确认",
-    stopped: "推测正在换模",
+    stopped: "正在换模",
+    productionStopped: "推测当前停产",
     shotIssue: "合模次数异常",
-    changeoverEstimate: "推测正在换模",
+    changeoverEstimate: "换型候选·待现场确认",
     newRunEstimate: "推测已换型·待现场确认",
     overproducing: "超额生产中",
     completed: "生产完成",
@@ -257,6 +265,10 @@ const boardCopy = {
     noPart: "等待确认Part",
     noPlan: "无计划",
     lastShot: "最近合模",
+    latestShort: "最近",
+    morningShotGaps: "上午MES计数停滞",
+    priorMorningShotGaps: "前日上午MES计数停滞",
+    partNoReview: "现场/办公室核对品号",
     noShot: "无合模",
     timeline: "24小时生产记录",
     timelineHint: "将鼠标移到图表位置即可查看对应时间。",
@@ -264,6 +276,7 @@ const boardCopy = {
     timelineNoRecord: "无生产记录",
     remainingShots: "剩余模次",
     loading: "正在读取注塑运行状态。",
+    newDayLoading: "正在等待新基准日的MES合模数据。",
     error: "无法读取看板数据，将在1分钟后重试。",
     staleBanner: "部分设备的采集数据缺失或延迟超过5分钟，暂不判定其运行或停机状态。",
   },
@@ -353,6 +366,18 @@ function formatTime(value: Date | string | null | undefined) {
     hour12: false,
     timeZone: "Asia/Shanghai",
   }).format(date);
+}
+
+function formatLastShotTime(value: string | null | undefined, businessDate: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  const dateParts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Shanghai",
+  }).formatToParts(date);
+  const part = (type: string) => dateParts.find((item) => item.type === type)?.value ?? "";
+  const shotDate = `${part("year")}-${part("month")}-${part("day")}`;
+  return shotDate < businessDate ? `${part("month")}/${part("day")} ${formatTime(date)}` : formatTime(date);
 }
 
 function getMachineNumber(value: string | null | undefined) {
@@ -628,6 +653,8 @@ function getStatusLabel(tone: BoardTone, copy: typeof boardCopy.ko) {
     running: copy.plannedRunning,
     warning: copy.warning,
     shot_issue: copy.shotIssue,
+    production_stopped: copy.productionStopped,
+    transition_review: copy.changeoverEstimate,
     stopped: copy.stopped,
     overproducing: copy.overproducing,
     completed: copy.completed,
@@ -904,18 +931,31 @@ function MachineBoardCard({
   businessDate,
   isVisitorMode,
   machine,
+  priorMorningShotGapCount,
   language,
 }: {
   onPartSummary: (partNo: string) => void;
   businessDate: string;
   isVisitorMode: boolean;
   machine: BoardMachine;
+  priorMorningShotGapCount: number;
   language: AppLanguage;
 }) {
   const copy = boardCopy[language];
   const row = machine.row;
   const historyLabel = language === "ko" ? "C/T 이력" : "C/T 历史";
   const machineHistoryUrl = `/mes/monitoring?date=${businessDate}&machine=${machine.machineNumber}#cycle-time-history`;
+  const morningShotGapCount = row?.morningShotGapCount ?? 0;
+  const visibleMorningShotGapCount = morningShotGapCount || priorMorningShotGapCount;
+  const showMorningHistory = machine.tone === "production_stopped" && visibleMorningShotGapCount > 0;
+  const partNoReview = row?.segments.some((current, index, segments) => {
+    if (index === 0) return false;
+    const previous = segments[index - 1];
+    return needsFieldPartNoReview(
+      { part_no: previous.partNo, model_name: previous.modelName, cavity: previous.cavity, status: previous.status },
+      { part_no: current.partNo, model_name: current.modelName, cavity: current.cavity, actual_piece_qty: current.estimatedQty },
+    );
+  }) ?? false;
 
   return (
     <article className={`injection-board-card injection-board-card--${machine.tone}`} data-machine={machine.machineNumber}>
@@ -924,9 +964,7 @@ function MachineBoardCard({
           <strong>{machine.machineNumber}{language === "ko" ? "호기" : "号机"}</strong>
           <span>{machine.tonnage === "-" ? "-" : `${machine.tonnage}T`}</span>
         </div>
-        <em>{row?.transition?.phase === "changeover"
-          ? copy.changeoverEstimate
-          : machine.tone !== "shot_issue" && row?.transition?.phase === "new_running" && row.transition.confirmation_status === "pending"
+        <em>{machine.tone !== "shot_issue" && machine.tone !== "production_stopped" && row?.transition?.phase === "new_running" && row.transition.confirmation_status === "pending"
             ? copy.newRunEstimate
             : getStatusLabel(machine.tone, copy)}</em>
       </header>
@@ -947,9 +985,9 @@ function MachineBoardCard({
 
       <div className="injection-board-card__metrics">
         <div>
-          <span>{machine.tone === "shot_issue" ? copy.recentShots : isVisitorMode ? copy.visitorCt : copy.currentCt}</span>
-          <strong className={isVisitorMode && machine.tone !== "shot_issue" ? "injection-board-card__ct-range" : undefined}>
-            {machine.tone === "shot_issue"
+          <span>{machine.tone === "shot_issue" || machine.tone === "production_stopped" ? copy.recentShots : isVisitorMode ? copy.visitorCt : copy.currentCt}</span>
+          <strong className={isVisitorMode && machine.tone !== "shot_issue" && machine.tone !== "production_stopped" ? "injection-board-card__ct-range" : undefined}>
+            {machine.tone === "shot_issue" || machine.tone === "production_stopped"
               ? `${formatNumber(row?.recentShots ?? 0)}${copy.shots}`
               : machine.currentCycleTimeSec === null
                 ? "-"
@@ -957,7 +995,7 @@ function MachineBoardCard({
                   ? `${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MIN_MULTIPLIER).toFixed(1)}–${(machine.currentCycleTimeSec * VISITOR_CYCLE_TIME_MAX_MULTIPLIER).toFixed(1)}s`
                   : `${machine.currentCycleTimeSec.toFixed(1)}s`}
           </strong>
-          {!isVisitorMode ? <small>{machine.tone === "shot_issue" ? copy.checkEquipment : copy.recentCt} · <Link className="injection-board-card__history-link" to={machineHistoryUrl} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>{historyLabel}</Link></small> : null}
+          {!isVisitorMode ? <small>{machine.tone === "shot_issue" || machine.tone === "production_stopped" ? copy.checkEquipment : copy.recentCt} · <Link className="injection-board-card__history-link" to={machineHistoryUrl} aria-label={`${machine.machineNumber}${language === "ko" ? "호기" : "号机"} · ${historyLabel}`}>{historyLabel}</Link></small> : null}
         </div>
         <div>
           <span>{copy.progress}</span>
@@ -974,8 +1012,10 @@ function MachineBoardCard({
         segments={machine.timelineSegments}
       />
       <footer>
-        <span>{copy.lastShot}</span>
-        <strong>{row?.lastShotAt ? formatTime(row.lastShotAt) : copy.noShot}</strong>
+        <span>{showMorningHistory
+          ? morningShotGapCount > 0 ? copy.morningShotGaps : copy.priorMorningShotGaps
+          : partNoReview ? copy.partNoReview : copy.lastShot}</span>
+        <strong>{showMorningHistory ? `${copy.latestShort} ` : ""}{row?.lastShotAt ? formatLastShotTime(row.lastShotAt, businessDate) : copy.noShot}</strong>
       </footer>
     </article>
   );
@@ -1198,6 +1238,7 @@ export function InjectionBoardPage() {
       || planQuery.isPlaceholderData
       || statusQuery.isPlaceholderData
       || mesQuery.isPlaceholderData
+      || !isMesDataReadyForBusinessDate(getLatestMesTime(mesQuery.data), requestedBusinessDate)
     ) return undefined;
     return {
       businessDate: requestedBusinessDate,
@@ -1299,11 +1340,11 @@ export function InjectionBoardPage() {
   const { plannedRunningCount, unplannedRunningCount, totalRunningCount, idleMachineCount, staleMachineCount } = summarizeBoardAvailability(machines);
   const staleMachineLabels = machines.filter((machine) => machine.tone === "stale")
     .map((machine) => `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`).join(", ");
-  const statusCheckCount = machines.filter((machine) => machine.tone === "stopped" || machine.tone === "shot_issue").length;
-  const warningCount = machines.filter((machine) => machine.tone === "warning").length;
+  const statusCheckCount = machines.filter((machine) => machine.tone === "stopped" || machine.tone === "production_stopped" || machine.tone === "shot_issue").length;
+  const warningCount = machines.filter((machine) => machine.tone === "warning" || machine.tone === "transition_review").length;
   const plannedMachineCount = machines.filter((machine) => machine.row?.hasPlan).length;
   const statusCheckMachineLabels = machines
-    .filter((machine) => machine.tone === "stopped" || machine.tone === "shot_issue")
+    .filter((machine) => machine.tone === "stopped" || machine.tone === "production_stopped" || machine.tone === "shot_issue")
     .map((machine) => `${machine.machineNumber}${language === "ko" ? "호기" : "号机"}`)
     .join(", ");
   const unplannedMachineLabels = machines
@@ -1314,7 +1355,9 @@ export function InjectionBoardPage() {
   const isLoading = planQuery.isPending || statusQuery.isPending || mesQuery.isPending;
   const isRefreshing = planQuery.isFetching || statusQuery.isFetching || mesQuery.isFetching;
   const isError = planQuery.isError || statusQuery.isError || mesQuery.isError;
-  const showBlockingLoading = isLoading && !visibleBoardSnapshot;
+  const isWaitingForNewDay = Boolean(mesQuery.data
+    && !isMesDataReadyForBusinessDate(getLatestMesTime(mesQuery.data), requestedBusinessDate));
+  const showBlockingLoading = !visibleBoardSnapshot && (isLoading || isWaitingForNewDay);
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -1516,6 +1559,7 @@ export function InjectionBoardPage() {
             key={machine.machineNumber}
             language={language}
             machine={machine}
+            priorMorningShotGapCount={visiblePreviousSnapshot.summary.rows.find((row) => Number(getMachineNumber(row.label) || row.key) === machine.machineNumber)?.morningShotGapCount ?? 0}
           />
         ))}
       </section>
@@ -1528,7 +1572,7 @@ export function InjectionBoardPage() {
         onClose={() => setSummaryPartNo(null)}
         machines={machines.filter((machine) => machine.activePartNumbers.includes(summaryPartNo)).map((machine) => ({ machineNumber: machine.machineNumber, model: machine.activeModel, cycleTime: machine.currentCycleTimeSec, stale: machine.tone === "stale" }))}
       /> : null}
-      {showBlockingLoading ? <div className="injection-board__loading">{copy.loading}</div> : null}
+      {showBlockingLoading ? <div className="injection-board__loading">{isWaitingForNewDay ? copy.newDayLoading : copy.loading}</div> : null}
       {isPreviousSummaryOpen ? (
         <PreviousDaySummary
           businessDate={previousBusinessDate}

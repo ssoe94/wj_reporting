@@ -87,6 +87,8 @@ const workflowCopy = {
     fieldConfirmation: "현장 확인",
     action: "처리",
     automaticEstimate: "자동 추정",
+    partNoReviewEstimate: "형합 계수 정체 · 품번 확인 필요",
+    partNoReviewHint: "동일 모델·Cavity의 품번이 다릅니다. 실제 생산 품번과 정지 원인을 현장/사무실에서 확인해 주세요.",
     ongoing: "감지 진행 중",
     confidenceHigh: "근거 높음",
     confidenceMedium: "근거 보통",
@@ -109,6 +111,8 @@ const workflowCopy = {
     loadingConfirmations: "현장 확정 기록을 불러오는 중입니다.",
     confirmationsUnavailable: "현장 확정 기록을 불러오지 못했습니다. 자동 후보를 미확정으로 집계하지 않습니다.",
     otherNoteRequired: "기타 원인은 확인 메모가 필요합니다.",
+    reasonRequired: "확정 원인을 선택해 주세요.",
+    chooseReason: "원인 선택",
     confirmedBy: "확정",
     showAll: "전체 보기",
     collapse: "접기",
@@ -139,6 +143,8 @@ const workflowCopy = {
     fieldConfirmation: "现场确认",
     action: "处理",
     automaticEstimate: "自动推定",
+    partNoReviewEstimate: "合模计数停滞 · 待核对品号",
+    partNoReviewHint: "同一型号及模穴数的品号不同。请现场或办公室核对实际生产品号及停机原因。",
     ongoing: "识别进行中",
     confidenceHigh: "依据较强",
     confidenceMedium: "依据一般",
@@ -161,6 +167,8 @@ const workflowCopy = {
     loadingConfirmations: "正在加载现场确认记录。",
     confirmationsUnavailable: "无法加载现场确认记录。自动候选不会计入待确认。",
     otherNoteRequired: "选择其他原因时必须填写确认备注。",
+    reasonRequired: "请选择确认原因。",
+    chooseReason: "选择原因",
     confirmedBy: "确认",
     showAll: "查看全部",
     collapse: "收起",
@@ -285,10 +293,11 @@ function getFlagLabel(flag: InjectionTransitionFlag, copy: InjectionTransitionPa
   return `${copy.advanceProductionFlag}${planDate}${outputQty}`;
 }
 
-function getDefaultReason(type: InjectionTransitionEventType): InjectionDowntimeReasonCode {
-  if (type === "mold_change") return "mold_change";
-  if (type === "core_change") return "core_change";
-  if (type === "tuning") return "tuning";
+function getDefaultReason(row: TransitionDisplayRow): InjectionDowntimeReasonCode | "" {
+  if (row.type === "production_stop") return "";
+  if (row.type === "mold_change") return "mold_change";
+  if (row.type === "core_change") return "core_change";
+  if (row.type === "tuning") return "tuning";
   return "mechanical_failure";
 }
 
@@ -329,7 +338,7 @@ export function InjectionTransitionPanel({
   const [showAll, setShowAll] = useState(false);
   const [selectedRow, setSelectedRow] = useState<TransitionDisplayRow | null>(null);
   const [resolution, setResolution] = useState<InjectionDowntimeResolution>("confirmed");
-  const [reasonCode, setReasonCode] = useState<InjectionDowntimeReasonCode>("mechanical_failure");
+  const [reasonCode, setReasonCode] = useState<InjectionDowntimeReasonCode | "">("");
   const [note, setNote] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -419,13 +428,17 @@ export function InjectionTransitionPanel({
     const existing = row.confirmation;
     setSelectedRow(row);
     setResolution(existing?.resolution ?? "confirmed");
-    setReasonCode(existing?.reason_code && existing.reason_code !== "not_stop" ? existing.reason_code : getDefaultReason(row.type));
+    setReasonCode(existing?.reason_code && existing.reason_code !== "not_stop" ? existing.reason_code : getDefaultReason(row));
     setNote(existing?.note ?? "");
     setSaveError(null);
   }
 
   async function submitReview() {
     if (!selectedRow || !onSaveConfirmation) return;
+    if (resolution === "confirmed" && !reasonCode) {
+      setSaveError(workflow.reasonRequired);
+      return;
+    }
     if (resolution === "confirmed" && reasonCode === "other" && !note.trim()) {
       setSaveError(workflow.otherNoteRequired);
       return;
@@ -443,7 +456,7 @@ export function InjectionTransitionPanel({
         detected_end: selectedRow.endTime,
         duration_minutes: Math.max(0, Math.round(selectedRow.durationMinutes)),
         resolution,
-        reason_code: resolution === "dismissed" ? "not_stop" : reasonCode,
+        reason_code: resolution === "dismissed" ? "not_stop" : reasonCode as InjectionDowntimeReasonCode,
         note: note.trim(),
         evidence: buildConfirmationEvidence(selectedRow),
       });
@@ -592,9 +605,10 @@ export function InjectionTransitionPanel({
                     <span>{formatTimeRange(row, language)} · {formatDuration(row.durationMinutes, language)}</span>
                   </div>
                   <div className="injection-transition-row__decision">
-                    <strong>{workflow.automaticEstimate} · {getEventLabel(row.type, copy)}</strong>
+                    <strong>{workflow.automaticEstimate} · {row.event?.partNoReview ? workflow.partNoReviewEstimate : getEventLabel(row.type, copy)}</strong>
                     <span>{row.event?.status === "ongoing" ? workflow.ongoing : confidenceLabel}</span>
                     {row.event ? <small>{getEventEvidence(row.event, copy, language)}</small> : null}
+                    {row.event?.partNoReview ? <small>{workflow.partNoReviewHint}</small> : null}
                   </div>
                   <div className="injection-transition-row__context">
                     {row.event ? getEventTarget(row.event, copy) : row.confirmation ? getStoredTarget(row.confirmation, copy) : "-"}
@@ -677,13 +691,15 @@ export function InjectionTransitionPanel({
             <div className="injection-transition-review-context">
               <div>
                 <span>{workflow.automaticDecision}</span>
-                <strong>{getEventLabel(selectedRow.type, copy)}</strong>
+                <strong>{selectedRow.event?.partNoReview ? workflow.partNoReviewEstimate : getEventLabel(selectedRow.type, copy)}</strong>
               </div>
               <div>
                 <span>{workflow.workContext}</span>
                 <strong>{selectedRow.event ? getEventTarget(selectedRow.event, copy) : selectedRow.confirmation ? getStoredTarget(selectedRow.confirmation, copy) : "-"}</strong>
               </div>
             </div>
+
+            {selectedRow.event?.partNoReview ? <p>{workflow.partNoReviewHint}</p> : null}
 
             <div className="field-group">
               <span>{workflow.resolution}</span>
@@ -709,6 +725,7 @@ export function InjectionTransitionPanel({
               <label className="field-group">
                 <span>{workflow.reason}</span>
                 <select value={reasonCode} onChange={(event) => setReasonCode(event.target.value as InjectionDowntimeReasonCode)}>
+                  <option disabled value="">{workflow.chooseReason}</option>
                   {selectableReasonCodes.map((reason) => (
                     <option key={reason} value={reason}>{reasonLabels[reason][language]}</option>
                   ))}
