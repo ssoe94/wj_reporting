@@ -436,6 +436,22 @@ class QualityExcelIncrementalJobTests(APITestCase):
         self.assertEqual(result['images_saved'], 0)
         self.assertEqual(QualityReport.objects.count(), 1)
 
+    def test_job_saves_monthly_k_column_as_action_result(self):
+        rows = _issue_rows()
+        rows[0] = [None, '万佳品质问题点Issue', None, None, None, None, None, None, None, None, '处理结果', '备注']
+        rows[1][10] = None
+        rows[2][10] = '返工后复检完成'
+        rows[2].append('内部备注')
+        manifest = _manifest(rows=rows, workbook_sha256='c' * 64)
+
+        response = self._post_job(manifest)
+        self.assertEqual(response.status_code, 202, response.data)
+        process_quality_import_batch(response.data['id'])
+
+        batch = QualityImportBatch.objects.get(pk=response.data['id'])
+        self.assertEqual(batch.delta_summary['incremental_result']['created_count'], 1)
+        self.assertEqual(QualityReport.objects.get().action_result, '返工后复检完成')
+
     def test_retry_after_report_checkpoint_does_not_create_a_duplicate(self):
         response = self._post_job(_manifest(workbook_sha256='e' * 64))
         process_quality_import_batch(response.data['id'])

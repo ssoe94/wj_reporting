@@ -175,6 +175,25 @@ class QualityExcelIncrementalImportAPITests(APITestCase):
         self.assertEqual(replay.data['images_skipped'], 1)
         self.assertEqual(QualityReport.objects.count(), 1)
 
+    def test_monthly_k1_result_is_saved_in_report_action_result(self):
+        rows = issue_rows()
+        rows[0] = [None, '万佳品质问题点Issue', None, None, None, None, None, None, None, None, '处理结果', '备注']
+        rows[1][10] = None
+        rows[2][10] = '已返工并复检'
+        rows[2].append('内部备注')
+        manifest = make_manifest(rows=rows)
+
+        preview = self.preview(manifest)
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['rows'][0]['action_result'], '已返工并复检')
+
+        committed = self.commit(manifest)
+        self.assertEqual(committed.status_code, 200, committed.data)
+        self.assertEqual(committed.data['created_count'], 1)
+        report = QualityReport.objects.get()
+        self.assertEqual(report.action_result, '已返工并复检')
+        self.assertEqual(report.disposition, '')
+
     def test_changed_content_is_reported_without_overwriting_existing_report(self):
         original = make_manifest()
         self.assertEqual(self.commit(original).status_code, 200)

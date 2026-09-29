@@ -598,6 +598,15 @@ def _parse_issue_sheet(ws, uploaded_on: date, *, consume_row=None) -> list[dict[
     if ws.max_row > MAX_ROWS_PER_SHEET:
         raise WorkbookValidationError('too_many_rows', f'{ws.title} exceeds the row limit.')
     row_limit = ws.max_row
+    # The monthly issue template puts 处理结果 in K1, above an empty K2.
+    # Keep the regular second-row headers for the remaining columns.
+    title_values = next(ws.iter_rows(
+        min_row=1,
+        max_row=1,
+        min_col=1,
+        max_col=min(ws.max_column, 32),
+        values_only=not getattr(ws, 'supports_cell_metadata', True),
+    ))
     values_iter = ws.iter_rows(
         min_row=2,
         max_row=row_limit,
@@ -612,6 +621,10 @@ def _parse_issue_sheet(ws, uploaded_on: date, *, consume_row=None) -> list[dict[
     required = {'序号', '发生日期', '发生场所', '不良现象'}
     if not required.issubset(set(headers.values())):
         raise WorkbookValidationError('invalid_issue_sheet', f'{ws.title} is missing required headers.')
+    if len(title_values) > 10 and _text(_cell_source_value(title_values[10])) == '处理结果':
+        if headers.get(10) in (None, '处理结果'):
+            headers[10] = '处理结果'
+    result_header = '处理结果' if headers.get(10) == '处理结果' else '备注'
     parsed: list[dict[str, Any]] = []
     for row_number, values in enumerate(_iter_rows_tolerating_wps_filter(values_iter), start=3):
         raw = _row_dict(tuple(values), headers, date_headers=frozenset({'发生日期'}))
@@ -648,7 +661,7 @@ def _parse_issue_sheet(ws, uploaded_on: date, *, consume_row=None) -> list[dict[
             'judgement': 'NG',
             'phenomenon': phenomenon,
             'disposition': '',
-            'action_result': _text(raw.get('备注')),
+            'action_result': _text(raw.get(result_header)),
             'raw_data': raw,
             'warnings': sorted(set(warnings)),
         }
