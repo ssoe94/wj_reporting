@@ -12,6 +12,7 @@ import {
 } from "@/domains/production/api";
 import { describeAiModel, getAiTierLabel, withAiModelName } from "@/domains/ai/model-labels";
 import { describeDeepAnalysisSchedule } from "@/domains/ai/deep-analysis";
+import { formatDeepAnalysisText, formatDeepAnalysisTimestamp } from "@/domains/ai/deep-analysis-display";
 import type { AppLanguage } from "@/shared/i18n/language";
 
 const DEEP_ANALYSIS_REFRESH_INTERVAL_MS = 60_000;
@@ -26,7 +27,6 @@ const COPY = {
     model: "모델",
     summary: "요약",
     findings: "주요 발견",
-    evidence: "근거",
     actions: "권장 조치",
     caveats: "해석 유의사항",
     none: "아직 생성된 심층 분석이 없습니다.",
@@ -56,7 +56,6 @@ const COPY = {
     model: "模型",
     summary: "摘要",
     findings: "主要发现",
-    evidence: "依据",
     actions: "建议措施",
     caveats: "解读注意",
     none: "尚未生成深度分析。",
@@ -80,20 +79,6 @@ const COPY = {
     } as Record<string, string>,
   },
 } satisfies Record<AppLanguage, unknown>;
-
-function formatDeepAnalysisTimestamp(value: string | null | undefined, language: AppLanguage) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat(language === "ko" ? "ko-KR" : "zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
 
 function readString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -232,7 +217,7 @@ export function DeepAnalysisPanel({ kind, language, canRequest, date }: DeepAnal
   const findings = readFindings(result.findings);
   const actions = readStringList(result.actions);
   const caveats = readStringList(result.caveats);
-  const period = completedJob ? readPeriod(completedJob) : "";
+  const period = completedJob ? formatDeepAnalysisText(readPeriod(completedJob), language) : "";
   const requestDisabled = requestMutation.isPending || isGenerating || ownRequestActive;
   const stateLabel = isGenerating ? copy.generating : isQueued ? copy.queued : isFallback ? copy.fallbackTitle : null;
   const stateClass = isGenerating || isQueued ? "" : " production-ai-worker-status__pill--llm-unavailable";
@@ -312,7 +297,7 @@ export function DeepAnalysisPanel({ kind, language, canRequest, date }: DeepAnal
                   <div className="production-ai-job__result">
                     <strong>{copy.summary}</strong>
                     {summary.split("\n\n").map((paragraph, index) => (
-                      <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
+                      <p key={`${paragraph.slice(0, 24)}-${index}`}>{formatDeepAnalysisText(paragraph, language)}</p>
                     ))}
                   </div>
                 ) : null}
@@ -323,13 +308,8 @@ export function DeepAnalysisPanel({ kind, language, canRequest, date }: DeepAnal
                     <div className="production-ai-job__issues">
                       {findings.map((finding, index) => (
                         <article className="production-ai-job__issue" key={`${finding.title}-${index}`}>
-                          <strong>{finding.title || `${index + 1}`}</strong>
-                          {finding.statement ? <p>{finding.statement}</p> : null}
-                          {finding.evidence_refs.length ? (
-                            <div aria-label={copy.evidence} className="deep-analysis-panel__refs">
-                              {finding.evidence_refs.map((ref) => <code key={ref} title={ref}>{ref}</code>)}
-                            </div>
-                          ) : null}
+                          <strong>{formatDeepAnalysisText(finding.title || `${index + 1}`, language)}</strong>
+                          {finding.statement ? <p>{formatDeepAnalysisText(finding.statement, language)}</p> : null}
                         </article>
                       ))}
                     </div>
@@ -340,18 +320,18 @@ export function DeepAnalysisPanel({ kind, language, canRequest, date }: DeepAnal
                   <div className="production-ai-job__result">
                     <strong>{copy.actions}</strong>
                     <ol className="deep-analysis-panel__list">
-                      {actions.map((action, index) => <li key={`${action.slice(0, 24)}-${index}`}>{action}</li>)}
+                      {actions.map((action, index) => <li key={`${action.slice(0, 24)}-${index}`}>{formatDeepAnalysisText(action, language)}</li>)}
                     </ol>
                   </div>
                 ) : null}
 
                 {caveats.length ? (
-                  <div className="notice notice--neutral">
-                    <strong>{copy.caveats}</strong>
+                  <details className="notice notice--neutral deep-analysis-panel__caveats">
+                    <summary>{copy.caveats} ({caveats.length})</summary>
                     <ul className="deep-analysis-panel__list">
-                      {caveats.map((caveat, index) => <li key={`${caveat.slice(0, 24)}-${index}`}>{caveat}</li>)}
+                      {caveats.map((caveat, index) => <li key={`${caveat.slice(0, 24)}-${index}`}>{formatDeepAnalysisText(caveat, language)}</li>)}
                     </ul>
-                  </div>
+                  </details>
                 ) : null}
               </>
             )}
