@@ -18,6 +18,7 @@ import { useLang } from '../../i18n';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Label } from '../../components/ui/label';
 import { Input } from '../../components/ui/input';
+import { Textarea } from '../../components/ui/textarea';
 import { Button } from '../../components/ui/button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
@@ -1415,7 +1416,8 @@ export default function QualityReportHistory({
                         {t('quality.action_result')}
                       </Label>
                       {canEditQuality ? (
-                        <Input
+                        <Textarea
+                          rows={3}
                           id={`mobile-action-result-${r.id}`}
                           value={currentValue}
                           onChange={(event) => {
@@ -1423,7 +1425,7 @@ export default function QualityReportHistory({
                             if (!isEditing) setEditingId(r.id);
                           }}
                           placeholder={t('quality.action_result_placeholder')}
-                          className="mt-2 h-11 w-full min-w-0 text-base"
+                          className="mt-2 w-full min-w-0 resize-y text-base leading-6"
                         />
                       ) : (
                         <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-800">
@@ -1475,7 +1477,7 @@ export default function QualityReportHistory({
 
         {/* 데스크톱 테이블 */}
         <div className="hidden overflow-x-auto rounded-lg border border-indigo-200 shadow-sm xl:block" aria-busy={isFetching}>
-          <table className="w-full min-w-[1230px] table-fixed text-sm">
+          <table className="w-full min-w-[1380px] table-fixed text-sm">
             <thead className="bg-gradient-to-r from-indigo-50 to-blue-50 whitespace-nowrap">
               <tr className="border-b border-indigo-200">
                 {canEditQuality && (
@@ -1491,17 +1493,17 @@ export default function QualityReportHistory({
                     />
                   </th>
                 )}
-                <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('date')}</th>
-                <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.section')}</th>
-                <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('model')}</th>
-                <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('part_no')}</th>
-                <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.lot_size')}</th>
-                <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.defect_rate')}</th>
-                <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.judgement')}</th>
-                <th className="px-2 py-3 text-center font-semibold text-gray-700 w-[140px]">{t('quality.defect_phenomenon')}</th>
-                <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.image_upload')}</th>
-                <th className="px-2 py-3 text-center font-semibold text-gray-700 w-[144px]">{t('quality.action_result')}</th>
-                <th className="px-3 py-3 text-center font-semibold text-gray-700">{t('quality.actions')}</th>
+                <th className="w-[112px] px-3 py-3 text-center font-semibold text-gray-700">{t('date')}</th>
+                <th className="w-[104px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.section')}</th>
+                <th className="w-[110px] px-3 py-3 text-center font-semibold text-gray-700">{t('model')}</th>
+                <th className="w-[142px] px-3 py-3 text-center font-semibold text-gray-700">{t('part_no')}</th>
+                <th className="w-[86px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.lot_size')}</th>
+                <th className="w-[76px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.defect_rate')}</th>
+                <th className="w-[86px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.judgement')}</th>
+                <th className="px-2 py-3 text-center font-semibold text-gray-700">{t('quality.defect_phenomenon')}</th>
+                <th className="w-[88px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.image_upload')}</th>
+                <th className="px-2 py-3 text-center font-semibold text-gray-700">{t('quality.action_result')}</th>
+                <th className="w-[88px] px-3 py-3 text-center font-semibold text-gray-700">{t('quality.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-indigo-100 bg-white">
@@ -1538,7 +1540,7 @@ export default function QualityReportHistory({
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.defect_rate}</td>
                       <td className="px-3 py-3 text-center text-gray-700 whitespace-nowrap">{r.judgement}</td>
                       <td className="px-2 py-3 text-center text-gray-700">
-                        <div className="mx-auto max-w-[140px] truncate text-center" title={r.phenomenon || '-'}>
+                        <div className="whitespace-pre-wrap break-words text-left leading-6" title={r.phenomenon || '-'}>
                           {r.phenomenon || '-'}
                         </div>
                       </td>
@@ -1577,17 +1579,19 @@ export default function QualityReportHistory({
                           );
                         })()}
                       </td>
-                      <td className="px-2 py-3 w-[144px] align-top">
+                      <td className="px-2 py-3 align-top">
                         <div className="flex flex-col gap-1">
                           {canEditQuality ? (
-                            <Input
+                            <Textarea
+                              rows={3}
+                              aria-label={`${t('quality.action_result')} · ${(r.report_dt || '').slice(0, 10)} · ${r.model}`}
                               value={currentValue}
                               onChange={(e) => {
                                 setActionResults(prev => ({ ...prev, [r.id]: e.target.value }));
                                 if (!isEditing) setEditingId(r.id);
                               }}
                               placeholder={t('quality.action_result_placeholder')}
-                              className="text-sm w-full min-w-0"
+                              className="w-full min-w-0 resize-y text-sm leading-6"
                             />
                           ) : (
                             <p className="whitespace-pre-wrap break-words text-sm leading-5 text-gray-700">
