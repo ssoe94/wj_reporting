@@ -194,6 +194,58 @@ class QualityExcelIncrementalImportAPITests(APITestCase):
         self.assertEqual(report.action_result, '已返工并复检')
         self.assertEqual(report.disposition, '')
 
+    def test_september_reupload_replaces_only_existing_action_result(self):
+        original_rows = issue_rows(report_date='2026-09-03')
+        original = make_manifest(rows=original_rows)
+        original['filename'] = '品质 Issue List - 9月.xlsx'
+        original['sheets'][0]['sheet_name'] = '9月'
+        self.assertEqual(self.commit(original).data['created_count'], 1)
+        report = QualityReport.objects.get()
+        previous_phenomenon = report.phenomenon
+
+        revised_rows = issue_rows(report_date='2026-09-03')
+        revised_rows[0] = [None, '万佳品质问题点Issue', None, None, None, None, None, None, None, None, '处理结果']
+        revised_rows[1][10] = None
+        revised_rows[2][10] = '返工后复检完成'
+        revised = make_manifest(rows=revised_rows, workbook_hash='b' * 64)
+        revised['filename'] = '品质 Issue List - 9月.xlsx'
+        revised['sheets'][0]['sheet_name'] = '9月'
+
+        preview = self.preview(revised)
+        self.assertEqual(preview.data['update_result_count'], 1)
+        self.assertEqual(preview.data['rows'][0]['status'], 'update_result')
+        committed = self.commit(revised)
+        self.assertEqual(committed.status_code, 200, committed.data)
+        self.assertEqual(committed.data['updated_count'], 1)
+        self.assertEqual(committed.data['updated_report_ids'], [report.pk])
+        report.refresh_from_db()
+        self.assertEqual(report.action_result, '返工后复检完成')
+        self.assertEqual(report.phenomenon, previous_phenomenon)
+        self.assertEqual(report.excel_source['action_result_imports'][0]['previous'], '刚生产')
+        self.assertEqual(self.preview(revised).data['unchanged_count'], 1)
+
+    def test_september_result_update_requires_unchanged_report_fields(self):
+        rows = issue_rows(report_date='2026-09-03')
+        original = make_manifest(rows=rows)
+        original['filename'] = '品质 Issue List - 9月.xlsx'
+        original['sheets'][0]['sheet_name'] = '9月'
+        self.assertEqual(self.commit(original).data['created_count'], 1)
+        report = QualityReport.objects.get()
+        report.phenomenon = '수동 수정된 불량 현상'
+        report.save(update_fields=['phenomenon'])
+
+        rows[0] = [None, '万佳品质问题点Issue', None, None, None, None, None, None, None, None, '处理结果']
+        rows[1][10] = None
+        rows[2][10] = '返工后复检完成'
+        revised = make_manifest(rows=rows, workbook_hash='b' * 64)
+        revised['filename'] = '品质 Issue List - 9月.xlsx'
+        revised['sheets'][0]['sheet_name'] = '9月'
+
+        self.assertEqual(self.preview(revised).data['changed_count'], 1)
+        self.assertEqual(self.commit(revised).data['updated_count'], 0)
+        report.refresh_from_db()
+        self.assertEqual(report.action_result, '刚生产')
+
     def test_changed_content_is_reported_without_overwriting_existing_report(self):
         original = make_manifest()
         self.assertEqual(self.commit(original).status_code, 200)

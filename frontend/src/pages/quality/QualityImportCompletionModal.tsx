@@ -21,10 +21,11 @@ const copy = {
     fileDataPeriod: '파일 데이터 기간',
     fileDataPeriodHelp: '파일에 포함된 전체 보고일 범위',
     appliedPeriod: '이번 반영 기간',
-    appliedPeriodHelp: '신규 등록·변경된 행의 보고일 범위',
+    appliedPeriodHelp: '신규 등록·처리결과 갱신 행의 보고일 범위',
     total: '총 건수',
     succeeded: '처리 성공',
     created: '신규 등록',
+    updated: '처리결과 갱신',
     changed: '변경 감지',
     skipped: '기존 건너뜀',
     failed: '실패',
@@ -45,10 +46,11 @@ const copy = {
     fileDataPeriod: '文件数据期间',
     fileDataPeriodHelp: '文件内全部报告日期范围',
     appliedPeriod: '本次更新期间',
-    appliedPeriodHelp: '新增登记及变更行的报告日期范围',
+    appliedPeriodHelp: '新增登记及处理结果更新行的报告日期范围',
     total: '总行数',
     succeeded: '处理成功',
     created: '新增登记',
+    updated: '更新处理结果',
     changed: '检测到变更',
     skipped: '跳过已有',
     failed: '失败',
@@ -129,15 +131,16 @@ export default function QualityImportCompletionModal({
       : onShowDetails;
   const fileDataPeriod = validDateRange(result.rows.map((row) => row.report_date));
   const appliedPeriod = validDateRange(result.rows
-    .filter((row) => row.status === 'created' || row.status === 'changed')
+    .filter((row) => row.status === 'created' || row.status === 'updated')
     .map((row) => row.report_date));
   const sheetName = selectedSheetName
     || result.rows.find((row) => row.sheet_name)?.sheet_name
     || c.unknown;
   const metrics = [
     { label: c.total, value: result.total_rows, tone: 'text-blue-700', bg: 'bg-blue-50' },
-    { label: c.succeeded, value: result.created_count + result.changed_count + result.skipped_count, tone: 'text-cyan-700', bg: 'bg-cyan-50' },
+    { label: c.succeeded, value: result.created_count + result.updated_count + result.changed_count + result.skipped_count, tone: 'text-cyan-700', bg: 'bg-cyan-50' },
     { label: c.created, value: result.created_count, tone: 'text-emerald-700', bg: 'bg-emerald-50' },
+    { label: c.updated, value: result.updated_count, tone: 'text-blue-700', bg: 'bg-blue-50' },
     { label: c.changed, value: result.changed_count, tone: 'text-violet-700', bg: 'bg-violet-50' },
     { label: c.skipped, value: result.skipped_count, tone: 'text-amber-700', bg: 'bg-amber-50' },
     { label: c.failed, value: result.failed_count, tone: 'text-rose-700', bg: 'bg-rose-50' },
@@ -224,7 +227,7 @@ export default function QualityImportCompletionModal({
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+                  <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
                     {metrics.map((metric) => (
                       <div key={metric.label} className={`rounded-xl px-3 py-3 ${metric.bg}`}>
                         <p className="text-xs font-semibold text-slate-600">{metric.label}</p>

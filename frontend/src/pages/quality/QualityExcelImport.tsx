@@ -55,7 +55,7 @@ import type {
 const copy = {
   ko: {
     title: 'Excel에서 가져오기',
-    description: '월별 품질 Excel을 선택하면 기존 보고와 비교하고 신규 사진만 이 PC에서 전송합니다.',
+    description: '월별 품질 Excel을 선택하면 기존 보고와 비교하고 신규 사진만 이 PC에서 전송합니다. 2026년 9월 기존 보고는 K열 처리결과를 갱신합니다.',
     drop: '.xlsx 파일을 놓거나 클릭해 선택하세요',
     fileHelp: '최대 80MB · 같은 내용은 건너뛰고 사진은 행당 최대 5장 저장합니다.',
     scanning: 'Excel을 기기에서 분석 중',
@@ -67,7 +67,7 @@ const copy = {
     overallProgress: '전체 진행 {completed}/{total}개 묶음 · {percent}%',
     currentChunkUpload: '현재 묶음 사진 {uploaded} / {total} · {percent}%',
     overallProgressLabel: 'Excel 전체 처리 진행률',
-    deltaSummary: '신규 {newRows}건 · 수정 필요 {failedRows}건 · 전송 사진 {images}장',
+    deltaSummary: '신규 {newRows}건 · 처리결과 갱신 {updatedRows}건 · 수정 필요 {failedRows}건 · 전송 사진 {images}장',
     success: 'Excel 처리가 완료되었습니다.',
     partialSuccess: '일부 행은 입력값 수정 또는 재확인이 필요합니다. 아래 실패 행을 확인하세요.',
     allFailed: '등록된 행이 없습니다. 아래 실패 원인을 확인하고 수정 가능한 행은 바로 등록하세요.',
@@ -85,6 +85,7 @@ const copy = {
     resultTitle: '처리 결과',
     total: '전체 행',
     created: '신규 등록',
+    updated: '처리결과 갱신',
     skipped: '기존 건너뜀',
     changed: '변경 감지',
     failed: '실패',
@@ -118,7 +119,7 @@ const copy = {
   },
   zh: {
     title: '从 Excel 导入',
-    description: '选择月度品质 Excel 后，将与已有报告比较，仅由此电脑传输新增图片。',
+    description: '选择月度品质 Excel 后，将与已有报告比较，仅由此电脑传输新增图片。2026年9月已有报告的处理结果将按 K 列更新。',
     drop: '拖入或点击选择 .xlsx 文件',
     fileHelp: '最大 80MB · 跳过相同内容，每行最多保存 5 张图片。',
     scanning: '正在本机分析 Excel',
@@ -130,7 +131,7 @@ const copy = {
     overallProgress: '总体进度 {completed}/{total} 个批次 · {percent}%',
     currentChunkUpload: '当前批次图片 {uploaded} / {total} · {percent}%',
     overallProgressLabel: 'Excel 整体处理进度',
-    deltaSummary: '新增 {newRows} 行 · 需修改 {failedRows} 行 · 传输图片 {images} 张',
+    deltaSummary: '新增 {newRows} 行 · 更新处理结果 {updatedRows} 行 · 需修改 {failedRows} 行 · 传输图片 {images} 张',
     success: 'Excel 处理完成。',
     partialSuccess: '部分行需要修改输入值或重新确认，请查看下方失败行。',
     allFailed: '没有登记任何行，请确认下方失败原因，可修改的行可直接登记。',
@@ -148,6 +149,7 @@ const copy = {
     resultTitle: '处理结果',
     total: '总行数',
     created: '新增登记',
+    updated: '更新处理结果',
     skipped: '跳过已有',
     changed: '检测到变更',
     failed: '失败',
@@ -244,6 +246,7 @@ function uniqueReportIds(ids: Array<number | null | undefined>): number[] {
 
 function statusStyle(status: QualityExcelImportRowResult['status']): string {
   if (status === 'created') return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+  if (status === 'updated') return 'bg-blue-50 text-blue-700 ring-blue-200';
   if (status === 'changed') return 'bg-violet-50 text-violet-700 ring-violet-200';
   if (status === 'skipped') return 'bg-amber-50 text-amber-700 ring-amber-200';
   return 'bg-rose-50 text-rose-700 ring-rose-200';
@@ -251,6 +254,7 @@ function statusStyle(status: QualityExcelImportRowResult['status']): string {
 
 function statusLabel(status: QualityExcelImportRowResult['status'], c: Copy): string {
   if (status === 'created') return c.created;
+  if (status === 'updated') return c.updated;
   if (status === 'changed') return c.changed;
   if (status === 'skipped') return c.skipped;
   return c.failed;
@@ -541,7 +545,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
       setPendingWorkflow(null);
       void queryClient.invalidateQueries({ queryKey: ['quality-reports'] });
       if (response.failed_count === 0) toast.success(c.success);
-      else if (response.created_count + response.skipped_count + response.changed_count === 0) {
+      else if (response.created_count + response.updated_count + response.skipped_count + response.changed_count === 0) {
         toast.error(c.allFailed);
       } else {
         toast.warning(c.partialSuccess);
@@ -637,6 +641,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
         ...current,
         rows,
         created_count: rows.filter((row) => row.status === 'created').length,
+        updated_count: rows.filter((row) => row.status === 'updated').length,
         skipped_count: rows.filter((row) => row.status === 'skipped').length,
         changed_count: rows.filter((row) => row.status === 'changed').length,
         failed_count: rows.filter((row) => row.status === 'failed').length,
@@ -663,10 +668,12 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
   };
 
   const resultCreatedIds = result ? uniqueReportIds(result.created_report_ids) : [];
+  const resultUpdatedIds = result ? uniqueReportIds(result.updated_report_ids) : [];
   const resultSkippedIds = result ? uniqueReportIds(result.skipped_report_ids) : [];
   const resultChangedIds = result ? uniqueReportIds(result.changed_report_ids) : [];
   const allResultIds = uniqueReportIds([
     ...resultCreatedIds,
+    ...resultUpdatedIds,
     ...resultSkippedIds,
     ...resultChangedIds,
   ]);
@@ -683,7 +690,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
   const resultAllFailed = Boolean(
     result
       && result.failed_count > 0
-      && result.created_count + result.skipped_count + result.changed_count === 0,
+      && result.created_count + result.updated_count + result.skipped_count + result.changed_count === 0,
   );
   const phaseLabel = phase === 'scanning'
     ? c.scanning
@@ -861,6 +868,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                 <p className="mt-2 text-xs text-slate-600">
                   {interpolate(c.deltaSummary, {
                     newRows: preview.new_count,
+                    updatedRows: preview.update_result_count ?? 0,
                     failedRows: preview.rows.filter((row) => (
                       row.status === 'failed' && row.editable
                     )).length,
@@ -973,9 +981,10 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
               </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5 2xl:grid-cols-10">
+            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5 2xl:grid-cols-11">
               <ResultMetric icon={Rows3} label={c.total} value={result.total_rows} tone="text-blue-600" />
               <ResultMetric icon={CheckCircle2} label={c.created} value={result.created_count} tone="text-emerald-600" />
+              <ResultMetric icon={CheckCircle2} label={c.updated} value={result.updated_count} tone="text-blue-600" />
               <ResultMetric icon={GitCompareArrows} label={c.changed} value={result.changed_count} tone="text-violet-600" />
               <ResultMetric icon={SkipForward} label={c.skipped} value={result.skipped_count} tone="text-amber-600" />
               <ResultMetric icon={XCircle} label={c.failed} value={result.failed_count} tone="text-rose-600" />
@@ -1026,7 +1035,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                   {tableResultRows.length === 0 ? (
                     <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">{c.noRows}</td></tr>
                   ) : tableResultRows.map((row) => (
-                    <tr key={row.row_key} className={row.status === 'failed' ? 'bg-rose-50/30' : row.status === 'changed' ? 'bg-violet-50/30' : 'hover:bg-blue-50/30'}>
+                    <tr key={row.row_key} className={row.status === 'failed' ? 'bg-rose-50/30' : row.status === 'changed' ? 'bg-violet-50/30' : row.status === 'updated' ? 'bg-blue-50/30' : 'hover:bg-blue-50/30'}>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">
                         <strong className="block text-slate-900">{row.sheet_name}</strong>
                         <span className="text-xs text-slate-500">#{row.source_row_number}{row.source_sequence ? ` · No.${row.source_sequence}` : ''}</span>
@@ -1061,7 +1070,7 @@ export default function QualityExcelImport({ onPostProcess, embedded = false }: 
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button type="button" disabled={!row.report_id} onClick={() => row.report_id && openReports([row.report_id], row.status === 'created' ? 'created' : row.status === 'changed' ? 'changed' : 'skipped')} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
+                        <button type="button" disabled={!row.report_id} onClick={() => row.report_id && openReports([row.report_id], row.status === 'created' ? 'created' : row.status === 'changed' ? 'changed' : row.status === 'updated' ? 'all' : 'skipped')} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
                           <Eye className="h-3.5 w-3.5" />{c.viewReport}
                         </button>
                       </td>

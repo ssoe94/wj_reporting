@@ -452,6 +452,45 @@ class QualityExcelIncrementalJobTests(APITestCase):
         self.assertEqual(batch.delta_summary['incremental_result']['created_count'], 1)
         self.assertEqual(QualityReport.objects.get().action_result, '返工后复检完成')
 
+    def test_september_job_updates_existing_action_result_and_preserves_checkpoint(self):
+        original_rows = _issue_rows()
+        original_rows[2][2] = '2026-09-18'
+        original = _manifest(rows=original_rows)
+        original['filename'] = '品质 Issue List - 9月.xlsx'
+        original['sheets'][0]['sheet_name'] = '9月'
+        first = self._post_job(original)
+        process_quality_import_batch(first.data['id'])
+        # Simulate a completed upload made before the K1 parser change: the
+        # source bytes are identical, but its old job scope must not replay.
+        old_batch = QualityImportBatch.objects.get(pk=first.data['id'])
+        old_batch.import_scope_key = 'inc:' + old_batch.import_scope_key.removeprefix('inc2:')
+        old_batch.save(update_fields=['import_scope_key'])
+        report = QualityReport.objects.get()
+        self.assertEqual(report.action_result, '刚生产')
+
+        revised_rows = _issue_rows()
+        revised_rows[0] = [None, '万佳品质问题点Issue', None, None, None, None, None, None, None, None, '处理结果']
+        revised_rows[1][10] = None
+        revised_rows[2][2] = '2026-09-18'
+        revised_rows[2][10] = '返工后复检完成'
+        revised = _manifest(rows=revised_rows)
+        revised['filename'] = '品质 Issue List - 9月.xlsx'
+        revised['sheets'][0]['sheet_name'] = '9月'
+        self.assertEqual(self._preview(revised).data['update_result_count'], 1)
+        second = self._post_job(revised)
+        self.assertEqual(second.status_code, 202, second.data)
+        process_quality_import_batch(second.data['id'])
+
+        batch = QualityImportBatch.objects.get(pk=second.data['id'])
+        result = batch.delta_summary['incremental_result']
+        self.assertEqual(result['updated_count'], 1)
+        self.assertEqual(result['updated_report_ids'], [report.pk])
+        report.refresh_from_db()
+        self.assertEqual(report.action_result, '返工后复检完成')
+        self.assertEqual(QualityReport.objects.count(), 1)
+        self.assertEqual(batch.rows.get().raw_data['_incremental_job']['result_report_id'], report.pk)
+        self.assertEqual(process_quality_import_batch(batch.pk), None)
+
     def test_retry_after_report_checkpoint_does_not_create_a_duplicate(self):
         response = self._post_job(_manifest(workbook_sha256='e' * 64))
         process_quality_import_batch(response.data['id'])

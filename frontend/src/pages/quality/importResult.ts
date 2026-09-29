@@ -42,7 +42,8 @@ export function createQualityImportChunks(
   let currentBytes = 0;
 
   const targetRows = preview.rows.filter((item) => (
-    item.status === 'new' || (item.status === 'failed' && item.editable)
+    item.status === 'new' || item.status === 'update_result'
+      || (item.status === 'failed' && item.editable)
   ));
   for (const row of targetRows) {
     const rowMediaKeys = [...new Set(row.media_keys)];
@@ -87,7 +88,7 @@ export function combineQualityImportResults(
   options: CombineQualityImportResultsOptions = {},
 ): QualityExcelImportResult {
   const previewRows: QualityExcelImportRowResult[] = preview.rows.flatMap((row) => {
-    if (row.status === 'new') return [];
+    if (row.status === 'new' || row.status === 'update_result') return [];
     const status: QualityExcelImportRowStatus = row.status === 'unchanged' ? 'skipped' : row.status;
     return [{ ...row, status }];
   });
@@ -95,7 +96,10 @@ export function combineQualityImportResults(
   const committedRowKeys = new Set(committedRows.map((row) => row.row_key));
   const unprocessedNewRows: QualityExcelImportRowResult[] = options.includeUnprocessedNewAsFailed
     ? preview.rows
-      .filter((row) => row.status === 'new' && !committedRowKeys.has(row.row_key))
+      .filter((row) => (
+        (row.status === 'new' || row.status === 'update_result')
+        && !committedRowKeys.has(row.row_key)
+      ))
       .map((row) => ({
         ...row,
         status: 'failed' as const,
@@ -112,6 +116,7 @@ export function combineQualityImportResults(
   const rows = [...rowsByKey.values()].sort(sortQualityImportRows);
 
   const createdReportIds = uniqueIds(commits.flatMap((commit) => commit.created_report_ids));
+  const updatedReportIds = uniqueIds(commits.flatMap((commit) => commit.updated_report_ids));
   const skippedReportIds = uniqueIds([
     ...rows
       .filter((row) => row.status === 'skipped' && row.report_id)
@@ -134,6 +139,7 @@ export function combineQualityImportResults(
     filename: preview.filename,
     total_rows: preview.total_rows,
     created_count: rows.filter((row) => row.status === 'created').length,
+    updated_count: rows.filter((row) => row.status === 'updated').length,
     skipped_count: rows.filter((row) => row.status === 'skipped').length,
     changed_count: rows.filter((row) => row.status === 'changed').length,
     failed_count: rows.filter((row) => row.status === 'failed').length,
@@ -144,6 +150,7 @@ export function combineQualityImportResults(
     images_skipped: baseImagesSkipped
       + commits.reduce((total, commit) => total + commit.images_skipped, 0),
     created_report_ids: createdReportIds,
+    updated_report_ids: updatedReportIds,
     skipped_report_ids: skippedReportIds,
     changed_report_ids: changedReportIds,
     warnings: [...new Set([
