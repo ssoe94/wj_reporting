@@ -76,6 +76,7 @@ from .machining_reconciliation import (
     create_manual_report,
 )
 from .overview_board import build_overview_board_snapshot, current_shanghai_business_date
+from .overview_closed_week import build_closed_week_summary
 from .field_kanban_views import field_terminal_machine_number
 import math
 
@@ -1290,6 +1291,27 @@ class ProductionOverviewBoardView(APIView):
         response = Response(build_overview_board_snapshot(target_date, language=language, **options))
         response['Cache-Control'] = 'no-store'
         response['Pragma'] = 'no-cache'
+        return response
+
+
+class ProductionOverviewClosedWeekView(APIView):
+    """Dated, read-only summary of yesterday and this week's closed days."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        date_str = request.query_params.get('date')
+        try:
+            target_date = parse_date(date_str) if date_str else current_shanghai_business_date()
+        except (TypeError, ValueError):
+            target_date = None
+        if not target_date:
+            return Response(
+                {"detail": "Invalid date format. Use YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        response = Response(build_closed_week_summary(target_date))
+        response['Cache-Control'] = 'no-store'
         return response
 
 

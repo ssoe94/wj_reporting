@@ -141,6 +141,32 @@ export type AttentionItem = {
   action: string | null;
 };
 
+export type ClosedWeekMetric = {
+  status: "ok" | "no_plan" | "unavailable" | "partial" | "pending";
+  plannedQuantity: number | null;
+  actualQuantity: number | null;
+  completionRate: number | null;
+  coveredDays?: number;
+  plannedDays?: number;
+};
+
+export type ClosedWeekSummary = {
+  businessDate: string;
+  previousDay: {
+    businessDate: string;
+    injection: ClosedWeekMetric;
+    assembly: ClosedWeekMetric;
+  };
+  week: {
+    startDate: string;
+    endDate: string | null;
+    closedDayCount: number;
+    unavailableDays: number;
+    injection: ClosedWeekMetric;
+    assembly: ClosedWeekMetric;
+  };
+};
+
 export type QualityAttentionItem = {
   id: string;
   machineLabel: string;

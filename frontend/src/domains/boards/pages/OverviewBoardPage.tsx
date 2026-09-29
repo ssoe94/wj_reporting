@@ -45,9 +45,11 @@ import {
 import assemblyConveyorIcon from "@/assets/overview-assembly-crystal.webp";
 import injectionProcessIcon from "@/assets/overview-injection-crystal.webp";
 import artworkStyles from "../overview/OverviewArtwork.module.css";
-import { getOverviewBoard } from "@/domains/boards/overview/api";
+import { getClosedWeekSummary, getOverviewBoard } from "@/domains/boards/overview/api";
 import type {
   AttentionItem,
+  ClosedWeekMetric,
+  ClosedWeekSummary,
   InjectionEquipmentRow,
   OutboundPerformanceMetric,
   OutboundPerformancePeriod,
@@ -62,6 +64,7 @@ import type {
 import { useStoredLanguage, type AppLanguage } from "@/shared/i18n/language";
 import { useShanghaiBusinessDate } from "@/shared/hooks/useShanghaiBusinessDate";
 import { useRetainedValue } from "@/shared/hooks/useRetainedValue";
+import { addIsoDateDays } from "@/shared/utils/date";
 import { HorizontalReadingText, QualityAiBriefingContent, QualityHistoryBriefingContent } from "../overview/QualityBriefingContent";
 import { OutboundPerformanceContent, type OutboundLanePresentation, type OutboundPeriodPresentation } from "../overview/OutboundPerformanceContent";
 import { useBoardRem } from "../overview/useBoardRem";
@@ -177,6 +180,15 @@ const COPY = {
     checks: "확인",
     qualityHistoryCount: "품질 이력",
     noAttentionData: "현재 우선 확인 항목이 없습니다.",
+    previousDaySummary: "전일",
+    weekSummary: "이번 주",
+    closedDays: "마감 {count}일",
+    injectionEstimated: "사출 추정",
+    assemblySummary: "조립",
+    summaryPending: "마감 실적 집계 중",
+    summaryUnavailable: "실적 자료 확인 중",
+    summaryNoPlan: "계획 없음",
+    summaryBasis: "계획 대비 · 사출 MES 형합×Cavity 추정",
     injectionPace: "사출 진도",
     assemblyPace: "조립 진도",
     quality: "생산 모델 · 품질 이력",
@@ -374,6 +386,15 @@ const COPY = {
     checks: "待确认",
     qualityHistoryCount: "品质记录",
     noAttentionData: "当前没有优先确认项目。",
+    previousDaySummary: "昨日",
+    weekSummary: "本周",
+    closedDays: "已结算 {count}天",
+    injectionEstimated: "注塑估算",
+    assemblySummary: "组装",
+    summaryPending: "待结算实绩",
+    summaryUnavailable: "实绩数据待核对",
+    summaryNoPlan: "无计划",
+    summaryBasis: "相对计划 · 注塑按 MES 合模数×Cavity 估算",
     injectionPace: "注塑进度",
     assemblyPace: "组装进度",
     quality: "生产型号 · 品质记录",
@@ -961,7 +982,39 @@ function AttentionIcon({ category }: { category: AttentionItem["category"] }) {
   return <Workflow aria-hidden="true" />;
 }
 
-function OperationsPanel({ model, language }: { model: OverviewBoardModel; language: AppLanguage }) {
+function formatClosedMetric(metric: ClosedWeekMetric, language: AppLanguage) {
+  if (metric.status === "ok") return formatPercent(metric.completionRate);
+  if (metric.status === "no_plan") return COPY[language].summaryNoPlan;
+  if (metric.status === "pending") return COPY[language].summaryPending;
+  return COPY[language].summaryUnavailable;
+}
+
+function ClosedWeekNote({ summary, businessDate, language, failed }: {
+  summary: ClosedWeekSummary | undefined;
+  businessDate: string;
+  language: AppLanguage;
+  failed: boolean;
+}) {
+  const copy = COPY[language];
+  const previousDate = summary?.previousDay.businessDate ?? addIsoDateDays(businessDate, -1);
+  const weekDate = summary?.week.endDate;
+  const emptyMetric = failed ? copy.summaryUnavailable : copy.summaryPending;
+  return (
+    <div className={styles.closedWeekNote}>
+      <div className={styles.closedWeekRow}>
+        <strong>{copy.previousDaySummary} · {previousDate.replaceAll("-", ".")}</strong>
+        <span>{copy.injectionEstimated} <b>{summary ? formatClosedMetric(summary.previousDay.injection, language) : emptyMetric}</b><i>·</i>{copy.assemblySummary} <b>{summary ? formatClosedMetric(summary.previousDay.assembly, language) : emptyMetric}</b></span>
+      </div>
+      <div className={styles.closedWeekRow}>
+        <strong>{copy.weekSummary} · {weekDate ? formatShortDate(weekDate) : formatShortDate(businessDate)} {summary ? copy.closedDays.replace("{count}", String(summary.week.closedDayCount)) : ""}</strong>
+        <span>{copy.injectionEstimated} <b>{summary ? formatClosedMetric(summary.week.injection, language) : emptyMetric}</b><i>·</i>{copy.assemblySummary} <b>{summary ? formatClosedMetric(summary.week.assembly, language) : emptyMetric}</b></span>
+      </div>
+      <small>{copy.summaryBasis}</small>
+    </div>
+  );
+}
+
+function OperationsPanel({ model, language, closedWeek, closedWeekFailed }: { model: OverviewBoardModel; language: AppLanguage; closedWeek: ClosedWeekSummary | undefined; closedWeekFailed: boolean }) {
   const copy = COPY[language];
   const reducedMotion = usePrefersReducedMotion();
   const [startIndex, setStartIndex] = useState(0);
@@ -1003,7 +1056,7 @@ function OperationsPanel({ model, language }: { model: OverviewBoardModel; langu
         <div className={styles.cardTitle}><Gauge aria-hidden="true" /><h2 id="operations-title">{copy.operations}</h2></div>
       </div>
       <div className={styles.attentionViewport}>
-        <AnimatePresence custom={rollDirection} initial={false} mode="sync">
+        {visibleItems.length === 0 ? <ClosedWeekNote businessDate={model.businessDate} language={language} summary={closedWeek} failed={closedWeekFailed} /> : <AnimatePresence custom={rollDirection} initial={false} mode="sync">
           <motion.div
             animate="center"
             className={styles.attentionList}
@@ -1021,9 +1074,9 @@ function OperationsPanel({ model, language }: { model: OverviewBoardModel; langu
                 <p><strong>{item.summary}</strong>{item.action ? <span> · {item.action}</span> : null}</p>
                 <small>{copy.attention}</small>
               </article>
-            )) : <p className={styles.panelEmpty}>{copy.noAttentionData}</p>}
+            )) : null}
           </motion.div>
-        </AnimatePresence>
+        </AnimatePresence>}
       </div>
       <div className={styles.operationsPulse}>
         <article className={injectionPace.status === "behind" ? styles.pulseAttention : ""}><Factory aria-hidden="true" /><span>{copy.injectionPace}</span><strong>{formatSignedPercentPoints(injectionPace.gap)}</strong></article>
@@ -1786,6 +1839,13 @@ export function OverviewBoardPage() {
     staleTime: 45_000,
     placeholderData: (previousData) => previousData,
   });
+  const closedWeekQuery = useQuery({
+    queryKey: ["overview-closed-week", businessDate],
+    queryFn: () => getClosedWeekSummary(businessDate),
+    enabled: query.data?.mode === "live" && query.data.model.businessDate === businessDate && query.data.model.attention.length === 0,
+    refetchInterval: 5 * 60_000,
+    staleTime: 4 * 60_000,
+  });
   const visibleData = useRetainedValue(query.data);
   const copy = COPY[language];
 
@@ -1832,7 +1892,7 @@ export function OverviewBoardPage() {
       />
       <ProductionCard kind="assembly" language={language} process={model.processes.assembly} />
       <EquipmentPanel language={language} model={model} />
-      <OperationsPanel language={language} model={model} />
+      <OperationsPanel language={language} model={model} closedWeek={model.businessDate === businessDate ? closedWeekQuery.data : undefined} closedWeekFailed={closedWeekQuery.isError} />
       <QualityPanel language={language} model={model} />
       <InventoryPanel language={language} model={model} />
       <EnergyPanel language={language} model={model} />

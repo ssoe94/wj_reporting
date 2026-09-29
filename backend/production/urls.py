@@ -3,6 +3,7 @@ from .views import (
     ProductionConsoleView,
     ProductionDashboardView,
     ProductionOverviewBoardView,
+    ProductionOverviewClosedWeekView,
     ProductionAiBriefingView,
     ProductionAiAskView,
     ProductionExecutionUpsertView,
@@ -66,6 +67,7 @@ urlpatterns = [
     path('ai/ask/', ProductionAiAskView.as_view(), name='production-ai-ask'),
     path('dashboard/', ProductionDashboardView.as_view(), name='production-dashboard'),
     path('overview-board/', ProductionOverviewBoardView.as_view(), name='production-overview-board'),
+    path('overview-board/closed-week/', ProductionOverviewClosedWeekView.as_view(), name='production-overview-closed-week'),
     path('executions/upsert/', ProductionExecutionUpsertView.as_view(), name='production-execution-upsert'),
     path(
         'injection-downtime-confirmations/',

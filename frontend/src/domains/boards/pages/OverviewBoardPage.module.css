@@ -1236,6 +1236,46 @@
   overflow: hidden;
 }
 
+.closedWeekNote {
+  display: grid;
+  height: 100%;
+  grid-template-rows: repeat(2, minmax(0, 1fr)) auto;
+  gap: 0.38rem;
+}
+
+.closedWeekRow {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.38rem 0.55rem;
+  border: 1px solid var(--board-border, #d3dfeb);
+  border-radius: 0.48rem;
+  background: var(--board-surface-raised, #ffffff);
+  color: var(--board-text, #203f61);
+  font-size: 0.77rem;
+}
+
+.closedWeekRow > strong {
+  flex: 0 0 auto;
+  color: var(--board-blue, #215d9d);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.closedWeekRow > span {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.closedWeekRow b { font-weight: 850; }
+.closedWeekRow i { padding-inline: 0.42rem; color: var(--board-muted, #6c8298); font-style: normal; }
+.closedWeekNote > small { color: var(--board-muted, #6c8298); font-size: 0.66rem; text-align: right; }
+
 .attentionList {
   position: absolute;
   inset: 0;
