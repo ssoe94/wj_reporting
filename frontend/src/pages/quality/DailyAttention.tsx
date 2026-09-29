@@ -7,7 +7,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
   CircleAlert,
   Clock3,
   Database,
@@ -358,6 +357,14 @@ type PhenomenonGroup = {
   primaryOrder: number;
 };
 
+type RawHistoryModelGroup = {
+  modelNames: string[];
+  items: DailyAttentionItem[];
+  phenomenonGroups: PhenomenonGroup[];
+  reportCount: number;
+  photoCount: number;
+};
+
 type PrintableImage = {
   id: string;
   imageUrl: string;
@@ -599,11 +606,14 @@ function historicalSignalProblemKey(metric: DimensionedMetric): string {
     : metric.canonical_key ?? metric.metric_key;
 }
 
+function displayMachineNumber(machineName: string): number | null {
+  const match = machineName.match(/(?:-|\b)(\d+)\s*(?:호기|号机)?\s*$/);
+  return match ? Number(match[1]) : null;
+}
+
 function compactMachineLabel(machineName: string, machineNumber: number | null, lang: string): string {
-  const parsedNumber = machineNumber ?? Number(
-    machineName.match(/(?:-|\b)(\d+)\s*(?:호기|号机)?\s*$/)?.[1] ?? Number.NaN,
-  );
-  if (Number.isFinite(parsedNumber)) {
+  const parsedNumber = machineNumber ?? displayMachineNumber(machineName);
+  if (parsedNumber != null && Number.isFinite(parsedNumber)) {
     return lang === 'zh' ? `${parsedNumber}号机` : `${parsedNumber}호기`;
   }
   return machineName || '-';
@@ -1475,15 +1485,10 @@ export default function DailyAttentionPage() {
   const { user } = useAuth();
   const canRequestDeepAnalysis = Boolean(user?.is_staff);
   const [targetDate, setTargetDate] = useState(dayjs().format('YYYY-MM-DD'));
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, Record<string, boolean>>>({});
   const [printSelection, setPrintSelection] = useState<PrintSelectionState | null>(null);
   const [evidenceSelection, setEvidenceSelection] = useState<DailyAttentionEvidenceSelection | null>(null);
 
   const noPhenomenonLabel = lang === 'zh' ? '未填写现象' : '현상 미입력';
-  const expandAllLabel = lang === 'zh' ? '全部展开' : '모두 펼치기';
-  const collapseAllLabel = lang === 'zh' ? '全部折叠' : '모두 접기';
-  const rowsLabel = lang === 'zh' ? '行' : '행';
-  const printLabel = lang === 'zh' ? 'A4 PDF / 打印' : 'A4 PDF / 인쇄';
   const printPickerTitle = lang === 'zh' ? '选择要打印的照片' : '인쇄할 사진 선택';
   const printPickerDescription = lang === 'zh' ? '勾选后只打印所选照片。' : '체크한 사진만 인쇄 문서에 포함됩니다.';
   const selectAllPhotosLabel = lang === 'zh' ? '全部选择' : '전체 선택';
@@ -1533,7 +1538,7 @@ export default function DailyAttentionPage() {
         shiftChecks: '交接班确认',
         caveats: '解读注意',
         rawTitle: '照片与原始质量记录',
-        rawDescription: '以下保留现有机台、料号、照片及原始记录，可用于追溯分析依据。',
+        rawDescription: '按计划机种及问题类型汇总料号前 9 位匹配的历史记录；展开后可查看全部照片及按机台打印。',
         noCurrentDefect: '本报告基于历史质量记录与当前生产计划的匹配结果，不表示当前正在发生不良。',
         noReport: 'AI 报告尚不可用。下方继续显示现有计划与原始历史记录。',
         noNarrative: 'AI 摘要暂不可用，当前显示可审计的数据分析结果。',
@@ -1589,7 +1594,7 @@ export default function DailyAttentionPage() {
         shiftChecks: '교대 확인사항',
         caveats: '해석 유의사항',
         rawTitle: '사진 및 원본 품질 이력',
-        rawDescription: '아래에는 기존 설비·품번별 사진과 원본 기록을 보존해 분석 근거를 추적할 수 있습니다.',
+        rawDescription: '계획 모델의 품번 앞 9자리와 일치한 이력을 문제유형별로 묶었습니다. 펼치면 모든 사진과 호기별 인쇄 기능을 볼 수 있습니다.',
         noCurrentDefect: '이 보고서는 과거 품질 이력과 현재 생산계획의 매칭 결과이며, 현재 불량 발생을 의미하지 않습니다.',
         noReport: 'AI 분석 보고서를 아직 사용할 수 없습니다. 아래 기존 계획 및 원본 이력은 계속 제공합니다.',
         noNarrative: 'AI 요약을 사용할 수 없어 감사 가능한 데이터 분석 결과를 표시합니다.',
@@ -1644,13 +1649,31 @@ export default function DailyAttentionPage() {
     });
   }, [data]);
 
-  const groupedPhenomenaMap = useMemo(() => {
-    const map: Record<string, PhenomenonGroup[]> = {};
+  const rawHistoryModels = useMemo<RawHistoryModelGroup[]>(() => {
+    const models = new Map<string, {
+      modelNames: string[];
+      items: DailyAttentionItem[];
+      reports: Map<number, HistoricalReport>;
+    }>();
     sortedItems.forEach((item) => {
-      const itemKey = `${item.machine_name}-${item.sequence}-${item.part_prefix}`;
-      map[itemKey] = groupReportsByPhenomenon(item.reports, noPhenomenonLabel, lang);
+      const modelNames = Array.from(new Set(item.model_names.map((name) => name.trim()).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b));
+      const key = modelNames.join('|') || '-';
+      const group = models.get(key) ?? { modelNames, items: [], reports: new Map<number, HistoricalReport>() };
+      group.items.push(item);
+      item.reports.forEach((report) => group.reports.set(report.id, report));
+      models.set(key, group);
     });
-    return map;
+    return Array.from(models.values()).map((model) => {
+      const reports = Array.from(model.reports.values());
+      return {
+        modelNames: model.modelNames,
+        items: model.items,
+        phenomenonGroups: groupReportsByPhenomenon(reports, noPhenomenonLabel, lang),
+        reportCount: reports.length,
+        photoCount: reports.reduce((count, report) => count + report.images.length, 0),
+      };
+    }).sort((a, b) => (a.modelNames.join('|') || '-').localeCompare(b.modelNames.join('|') || '-', undefined, { numeric: true }));
   }, [sortedItems, noPhenomenonLabel, lang]);
 
   const report = data?.report ?? null;
@@ -1793,8 +1816,11 @@ export default function DailyAttentionPage() {
         });
       return { ...entry, signals: selectedSignals };
     }).filter((entry) => entry.signals.length > 0).sort((a, b) => {
-      const machineDiff = a.target.machine_name.localeCompare(b.target.machine_name, undefined, { numeric: true });
+      const machineDiff = (displayMachineNumber(a.target.machine_name) ?? Number.MAX_SAFE_INTEGER)
+        - (displayMachineNumber(b.target.machine_name) ?? Number.MAX_SAFE_INTEGER);
       if (machineDiff !== 0) return machineDiff;
+      const nameDiff = a.target.machine_name.localeCompare(b.target.machine_name, undefined, { numeric: true });
+      if (nameDiff !== 0) return nameDiff;
       return (a.target.sequence ?? 999) - (b.target.sequence ?? 999);
     });
   }, [actionableAnalysisMetrics, lang]);
@@ -1847,25 +1873,6 @@ export default function DailyAttentionPage() {
       metricEvidenceCount: metric.evidence_count,
       cases,
     });
-  };
-
-  const isPhenomenonOpen = (itemKey: string, phenomenon: string) =>
-    collapsedGroups[itemKey]?.[phenomenon] !== false;
-
-  const togglePhenomenon = (itemKey: string, phenomenon: string) => {
-    setCollapsedGroups((prev) => {
-      const nextItem = { ...(prev[itemKey] ?? {}) };
-      nextItem[phenomenon] = !isPhenomenonOpen(itemKey, phenomenon);
-      return { ...prev, [itemKey]: nextItem };
-    });
-  };
-
-  const setAllPhenomena = (itemKey: string, groups: PhenomenonGroup[], expanded: boolean) => {
-    const nextState = groups.reduce<Record<string, boolean>>((acc, group) => {
-      acc[group.phenomenon] = expanded;
-      return acc;
-    }, {});
-    setCollapsedGroups((prev) => ({ ...prev, [itemKey]: nextState }));
   };
 
   const openPrintWindow = (item: DailyAttentionItem, groups: PhenomenonGroup[], selectedImages: PrintableImage[]) => {
@@ -2421,16 +2428,16 @@ export default function DailyAttentionPage() {
                             const compactMachine = compactMachineLabel(target.machine_name, null, lang);
                             return (
                               <tr key={[target.machine_name, target.sequence, target.model_name, target.part_no, target.lot_no].join('|')} className="align-top hover:bg-slate-50/70">
-                              <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900" title={target.machine_name}>
+                              <td className="whitespace-nowrap px-5 py-2.5 font-semibold text-slate-900" title={target.machine_name}>
                                 {compactMachine}
                                 {target.sequence != null && <span className="ml-2 text-xs font-normal text-slate-400">#{target.sequence}</span>}
                               </td>
-                              <td className="max-w-[320px] px-5 py-4">
+                              <td className="max-w-[320px] px-5 py-2.5">
                                 <div className="truncate whitespace-nowrap font-medium text-slate-900" title={fullIdentity}>{compactIdentity}</div>
                               </td>
-                              <td className="px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{formatMetricNumber(target.planned_quantity)}</td>
-                              <td className="px-5 py-4">
-                                <div className="flex flex-wrap gap-2">
+                              <td className="px-5 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatMetricNumber(target.planned_quantity)}</td>
+                              <td className="px-5 py-2.5">
+                                <div className="flex flex-wrap gap-1.5">
                                   {signals.map(({ metric, label }) => (
                                     <span key={`${metric.dimension}-${metric.metric_key}`} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700">
                                       <span className={`h-1.5 w-1.5 rounded-full ${metric.dimension === 'problem' ? 'bg-blue-500' : 'bg-violet-500'}`} />
@@ -2515,167 +2522,114 @@ export default function DailyAttentionPage() {
             </div>
           </div>
 
-          {sortedItems.length === 0 ? (
+          {rawHistoryModels.length === 0 ? (
             <div className="rounded-lg border border-gray-200 bg-white px-6 py-12 text-center text-gray-500">{t('no_data')}</div>
           ) : (
-            <div className="space-y-4">
-              {sortedItems.map((item) => {
-            const itemKey = `${item.machine_name}-${item.sequence}-${item.part_prefix}`;
-            const phenomenonGroups = groupedPhenomenaMap[itemKey] ?? [];
-
-            return (
-              <section key={itemKey} className="rounded-xl border border-gray-200 bg-white shadow-sm">
-                <div className="flex flex-col gap-3 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="text-lg font-semibold text-slate-900">
-                      {item.machine_name} / {item.part_nos.join(', ')}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      {(item.model_names.length > 0 ? item.model_names.join(', ') : '-')} | {t('quality.daily_attention_planned_qty')}: {item.planned_quantity.toLocaleString()}
-                      {item.lot_nos.length > 0 ? ` | LOT ${item.lot_nos.join(', ')}` : ''}
-                      {item.plan_row_count > 1 ? ` | ${item.plan_row_count} ${rowsLabel}` : ''}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-                      {t('quality.daily_attention_focus_prefix')}: {item.part_prefix || '-'}
-                    </span>
-                    <span className="rounded-full bg-amber-100 px-3 py-1 font-medium text-amber-800">
-                      {t('quality.daily_attention_matching_reports')}: {item.matching_report_count}
-                    </span>
-                    <span className="rounded-full bg-blue-100 px-3 py-1 font-medium text-blue-800">
-                      {t('quality.daily_attention_latest_issue')}: {item.latest_report_dt ? dayjs(item.latest_report_dt).format('YYYY-MM-DD') : '-'}
-                    </span>
-                    <Button type="button" variant="secondary" onClick={() => handlePrintItem(item, phenomenonGroups)} className="gap-2">
-                      <Printer className="h-4 w-4" />
-                      {printLabel}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 px-4 py-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                      <FolderOpen className="h-4 w-4" />
-                      {t('quality.daily_attention_top_phenomena')}
-                    </div>
-                    {phenomenonGroups.length === 0 ? (
-                      <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-4 text-sm text-emerald-700">
-                        {t('quality.daily_attention_no_history')}
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {phenomenonGroups.map((group) => (
-                          <div key={`${itemKey}-${group.phenomenon}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2">
-                            <div className="font-medium text-amber-900">{group.phenomenon}</div>
-                            <div className="mt-1 text-sm text-amber-700">
-                              {group.totalCount} | {formatSectionCounts(group.sectionCounts)}
-                            </div>
-                          </div>
+            <div className="space-y-2">
+              {rawHistoryModels.map((model) => {
+                const modelKey = model.modelNames.join('|') || '-';
+                const machineNames = Array.from(new Set(model.items.map((item) => item.machine_name)))
+                  .sort((a, b) => (displayMachineNumber(a) ?? 999) - (displayMachineNumber(b) ?? 999));
+                const partNos = Array.from(new Set(model.items.flatMap((item) => item.part_nos)));
+                const typeSummary = model.phenomenonGroups.slice(0, 3).map((group) => group.phenomenon).join(' · ');
+                return (
+                  <details key={modelKey} className="group overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <summary className="cursor-pointer list-none px-4 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 [&::-webkit-details-marker]:hidden">
+                      <span className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="min-w-0">
+                          <span className="block font-semibold text-slate-900">{compactModelLabel(model.modelNames, lang)}</span>
+                          <span className="mt-0.5 block text-xs text-slate-600">
+                            {typeSummary || t('quality.daily_attention_no_history')}
+                            {model.phenomenonGroups.length > 3 ? ` +${model.phenomenonGroups.length - 3}` : ''}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-slate-500">
+                            {machineNames.map((name) => compactMachineLabel(name, null, lang)).join(' · ')} · {partNos.join(', ') || '-'}
+                          </span>
+                        </span>
+                        <span className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                          <span className="rounded-full bg-slate-100 px-2 py-1">{lang === 'zh' ? '类型' : '유형'} {model.phenomenonGroups.length}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-1">{lang === 'zh' ? '记录' : '이력'} {model.reportCount}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-1">{lang === 'zh' ? '照片' : '사진'} {model.photoCount}</span>
+                          <ChevronDown className="ml-1 h-4 w-4 text-slate-500 group-open:rotate-180" aria-hidden="true" />
+                        </span>
+                      </span>
+                    </summary>
+                    <div className="space-y-3 border-t border-slate-200 px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span>{lang === 'zh' ? '按计划机台打印' : '계획 호기별 인쇄'}</span>
+                        {model.items.map((item) => (
+                          <Button
+                            key={item.source_key || `${item.machine_name}|${item.part_prefix}|${item.sequence}`}
+                            type="button"
+                            variant="secondary"
+                            onClick={() => handlePrintItem(item, groupReportsByPhenomenon(item.reports, noPhenomenonLabel, lang))}
+                            className="h-8 gap-1 px-2 text-xs"
+                          >
+                            <Printer className="h-3.5 w-3.5" />
+                            {compactMachineLabel(item.machine_name, item.machine_number, lang)} · {item.part_nos.join(', ') || '-'}
+                          </Button>
                         ))}
                       </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                        <CalendarDays className="h-4 w-4" />
-                        {t('quality.daily_attention_historical_reports')} ({item.reports.length})
-                      </div>
-                      {phenomenonGroups.length > 0 && (
-                        <div className="flex items-center gap-2">
-                          <Button type="button" variant="secondary" onClick={() => setAllPhenomena(itemKey, phenomenonGroups, true)}>
-                            {expandAllLabel}
-                          </Button>
-                          <Button type="button" variant="secondary" onClick={() => setAllPhenomena(itemKey, phenomenonGroups, false)}>
-                            {collapseAllLabel}
-                          </Button>
+                      {model.phenomenonGroups.length === 0 ? (
+                        <div className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">{t('quality.daily_attention_no_history')}</div>
+                      ) : (
+                        <div className="space-y-2">
+                          {model.phenomenonGroups.map((group) => {
+                            const preview = group.reports.find((report) => report.images.length > 0)?.images[0];
+                            const photoCount = group.reports.reduce((count, report) => count + report.images.length, 0);
+                            return (
+                              <details key={group.phenomenon} className="overflow-hidden rounded-lg border border-slate-200">
+                                <summary className="cursor-pointer bg-slate-50 px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+                                  <span className="inline-flex flex-wrap items-center gap-2 align-middle">
+                                    {preview && <img src={preview} alt="" loading="lazy" className="h-9 w-9 rounded object-cover" />}
+                                    <span className="font-semibold text-slate-900">{group.phenomenon}</span>
+                                    <span className="text-xs text-slate-500">
+                                      {lang === 'zh' ? '记录' : '이력'} {group.totalCount} · {lang === 'zh' ? '照片' : '사진'} {photoCount} · {formatSectionCounts(group.sectionCounts)}
+                                    </span>
+                                  </span>
+                                </summary>
+                                <div className="divide-y divide-slate-100 border-t border-slate-200">
+                                  {group.reports.map((report) => (
+                                    <details key={report.id} className="px-3 py-2">
+                                      <summary className="cursor-pointer text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+                                        <span className="inline-flex flex-wrap items-center gap-2 align-middle">
+                                          {report.images.length > 0 ? (
+                                            <img src={report.images[0]} alt="" loading="lazy" className="h-10 w-10 rounded object-cover" />
+                                          ) : (
+                                            <span className="inline-flex h-10 w-10 items-center justify-center rounded bg-slate-100 text-[10px] text-slate-400">
+                                              {t('quality.daily_attention_no_image')}
+                                            </span>
+                                          )}
+                                          <span className="font-medium text-slate-800">{formatReportDate(report.report_dt)}</span>
+                                          <span className="text-slate-600">{report.model || '-'} · {report.part_no || '-'}</span>
+                                          <span className="text-xs text-slate-500">{normalizeSection(report.section)} · {lang === 'zh' ? '照片' : '사진'} {report.images.length}</span>
+                                        </span>
+                                      </summary>
+                                      <div className="mt-2 space-y-2 pl-4 text-sm text-slate-600">
+                                        {report.recorded_phenomenon && report.recorded_phenomenon !== report.phenomenon && (
+                                          <p>{lang === 'zh' ? '记录原文' : '기록 원문'}: {report.recorded_phenomenon}</p>
+                                        )}
+                                        {report.disposition && <p>{report.disposition}</p>}
+                                        {report.action_result && <p>{report.action_result}</p>}
+                                        {report.images.length > 0 && (
+                                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                            {report.images.map((image, index) => (
+                                              <img key={`${report.id}-${index}`} src={image} alt={`${report.phenomenon || noPhenomenonLabel} ${index + 1}`} loading="lazy" className="max-h-64 w-full rounded-lg border border-slate-200 bg-slate-50 object-contain" />
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </details>
+                                  ))}
+                                </div>
+                              </details>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
-
-                    {phenomenonGroups.length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
-                        {t('quality.daily_attention_no_history')}
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {phenomenonGroups.map((group) => {
-                          const isOpen = isPhenomenonOpen(itemKey, group.phenomenon);
-                          return (
-                            <section key={`${itemKey}-${group.phenomenon}`} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-                              <button
-                                type="button"
-                                onClick={() => togglePhenomenon(itemKey, group.phenomenon)}
-                                className="flex w-full items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-left"
-                              >
-                                <div>
-                                  <div className="font-semibold text-slate-900">{group.phenomenon}</div>
-                                  <div className="mt-1 text-sm text-slate-600">
-                                    {group.totalCount} | {formatSectionCounts(group.sectionCounts)}
-                                  </div>
-                                  {group.recordedPhenomena.length > 0 && (
-                                    <div
-                                      className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500"
-                                      title={group.recordedPhenomena.join(' · ')}
-                                    >
-                                      {lang === 'zh' ? '记录原文' : '기록 원문'}: {group.recordedPhenomena.join(' · ')}
-                                    </div>
-                                  )}
-                                </div>
-                                {isOpen ? <ChevronDown className="h-5 w-5 text-slate-500" /> : <ChevronRight className="h-5 w-5 text-slate-500" />}
-                              </button>
-
-                              {isOpen && (
-                                <div className="grid gap-3 border-t border-gray-200 p-4 md:grid-cols-2 xl:grid-cols-3">
-                                  {group.reports.map((report) => (
-                                    <article key={report.id} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-                                      <div className="aspect-[4/3] bg-gray-100">
-                                        {report.images.length > 0 ? (
-                                          <img src={report.images[0]} alt={report.phenomenon || report.part_no} className="h-full w-full object-cover" />
-                                        ) : (
-                                          <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                                            {t('quality.daily_attention_no_image')}
-                                          </div>
-                                        )}
-                                      </div>
-                                      <div className="space-y-2 px-3 py-3 text-sm">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <div
-                                            className="font-semibold text-slate-900"
-                                            title={report.recorded_phenomenon || report.phenomenon || noPhenomenonLabel}
-                                          >
-                                            {report.phenomenon || noPhenomenonLabel}
-                                          </div>
-                                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                                            {normalizeSection(report.section)}
-                                          </span>
-                                        </div>
-                                        {report.recorded_phenomenon && report.recorded_phenomenon !== report.phenomenon && (
-                                          <div className="break-words text-xs leading-5 text-slate-500">
-                                            {lang === 'zh' ? '记录原文' : '기록 원문'}: {report.recorded_phenomenon}
-                                          </div>
-                                        )}
-                                        <div className="text-slate-600">{dayjs(report.report_dt).format('YYYY-MM-DD')} | {report.section}</div>
-                                        <div className="break-words text-slate-600">
-                                          {lang === 'zh' ? '机种' : '모델'} {report.model || '-'} · {lang === 'zh' ? '料号' : '품번'} {report.part_no || '-'}
-                                        </div>
-                                        <div className="line-clamp-3 text-slate-700">{report.disposition || report.action_result || '-'}</div>
-                                      </div>
-                                    </article>
-                                  ))}
-                                </div>
-                              )}
-                            </section>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </section>
-            );
+                  </details>
+                );
               })}
             </div>
           )}
