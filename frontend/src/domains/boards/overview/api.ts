@@ -4,6 +4,8 @@ import { createOverviewDemoModel } from "./fallback";
 import type {
   AssemblyEquipmentRow,
   AttentionItem,
+  ClosedWeekMetric,
+  ClosedWeekSummary,
   EnergyStatus,
   InjectionEquipmentRow,
   InjectionOeeStatus,
@@ -23,8 +25,10 @@ import type {
   QualityAttentionItem,
   WeatherStatus,
 } from "./types";
+import { addIsoDateDays } from "@/shared/utils/date";
 
 const OVERVIEW_BOARD_ENDPOINT = "/production/overview-board/";
+const CLOSED_WEEK_ENDPOINT = "/production/overview-board/closed-week/";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -928,6 +932,71 @@ export async function getProductionOverview(
     throw new Error("Production overview source schema or business date is invalid.");
   }
   return normalizeOverviewResponse(response.data, businessDate, language);
+}
+
+function normalizeClosedWeekMetric(value: unknown): ClosedWeekMetric {
+  const source = asRecord(value);
+  const status = firstString(source, ["status"]);
+  if (status !== "ok" && status !== "no_plan" && status !== "unavailable"
+    && status !== "partial" && status !== "pending") {
+    throw new Error("Closed-week metric status is invalid.");
+  }
+  const plannedQuantity = firstNumber(source, ["planned_quantity"]);
+  const actualQuantity = firstNumber(source, ["actual_quantity"]);
+  const completionRate = firstNumber(source, ["completion_rate"]);
+  if (status === "ok" && (plannedQuantity === null || plannedQuantity <= 0
+    || actualQuantity === null || actualQuantity < 0 || completionRate === null)) {
+    throw new Error("Closed-week metric quantity is invalid.");
+  }
+  return {
+    status,
+    plannedQuantity,
+    actualQuantity,
+    completionRate,
+    coveredDays: firstNumber(source, ["covered_days"]) ?? undefined,
+    plannedDays: firstNumber(source, ["planned_days"]) ?? undefined,
+  };
+}
+
+export async function getClosedWeekSummary(businessDate: string): Promise<ClosedWeekSummary> {
+  const response = await http.get<unknown>(CLOSED_WEEK_ENDPOINT, {
+    params: { date: businessDate },
+    skipAuth: true,
+  });
+  const source = asRecord(response.data);
+  const previousDay = asRecord(source.previous_day);
+  const week = asRecord(source.week);
+  const previousDate = addIsoDateDays(businessDate, -1);
+  if (source.schema_version !== "overview-closed-week.v1"
+    || source.business_date !== businessDate
+    || previousDay.business_date !== previousDate
+    || typeof week.start_date !== "string"
+    || (week.end_date !== null && typeof week.end_date !== "string")) {
+    throw new Error("Closed-week summary date or schema is invalid.");
+  }
+  const closedDayCount = firstNumber(week, ["closed_day_count"]);
+  const unavailableDays = firstNumber(week, ["unavailable_days"]);
+  if (closedDayCount === null || unavailableDays === null
+    || !Number.isInteger(closedDayCount) || !Number.isInteger(unavailableDays)
+    || closedDayCount < 0 || unavailableDays < 0 || unavailableDays > closedDayCount) {
+    throw new Error("Closed-week summary coverage is invalid.");
+  }
+  return {
+    businessDate,
+    previousDay: {
+      businessDate: previousDate,
+      injection: normalizeClosedWeekMetric(previousDay.injection),
+      assembly: normalizeClosedWeekMetric(previousDay.assembly),
+    },
+    week: {
+      startDate: week.start_date,
+      endDate: week.end_date,
+      closedDayCount,
+      unavailableDays,
+      injection: normalizeClosedWeekMetric(week.injection),
+      assembly: normalizeClosedWeekMetric(week.assembly),
+    },
+  };
 }
 
 export async function getOverviewBoard(
