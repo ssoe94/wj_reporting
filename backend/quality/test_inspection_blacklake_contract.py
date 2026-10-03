@@ -34,6 +34,19 @@ class DocumentedBlacklakeContractTests(TestCase):
         client.first_inspection_plan('10000000000000002')
         self.assertEqual(json.loads(transport.call_args.args[1]), {'workOrderId': 10000000000000002, 'checkType': 3})
 
+    def test_detail_eligibility_subject_is_explicit_and_exact(self):
+        transport = Mock()
+        client = ScopedInspectionReadClient(transport)
+        client.detail('10000000000000001', eligibility_user_id='10000000000000003')
+        route, body = transport.call_args.args
+        self.assertTrue(route.endswith('/quality/open/v1/task/_detail'))
+        self.assertEqual(json.loads(body), {'id': 10000000000000001, 'receiveUserId': 10000000000000003})
+        transport.reset_mock()
+        for value in (True, 1.0, '01', '1e16', 0, -1):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                client.detail('10000000000000001', eligibility_user_id=value)
+        transport.assert_not_called()
+
     def test_first_production_and_periodic_lookup_have_explicit_types_and_same_scope_bounds(self):
         transport = Mock()
         client = ScopedInspectionReadClient(transport)

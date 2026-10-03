@@ -73,9 +73,17 @@ class ScopedInspectionReadClient:
     def list_periodic_inspections(self, work_order_id, *, page=1, size=25):
         return self.list_inspections(work_order_id, check_type=PERIODIC_INSPECTION, page=page, size=size)
 
-    def detail(self, task_id):
-        # receiveUserId deliberately omitted: a read must not claim another actor.
-        return self._post_json(ROUTE_BASE + TASK_DETAIL, encode_payload({'id': mes_id(task_id)}))
+    def detail(self, task_id, *, eligibility_user_id=None):
+        """Read eligibility for an explicitly reviewed user, without impersonation.
+
+        Omission keeps the documented current-user default. receiveUserId is a
+        query subject, not authenticated identity or permission to claim/write.
+        The transport must independently bind any explicit subject to its scope.
+        """
+        payload = {'id': mes_id(task_id)}
+        if eligibility_user_id is not None:
+            payload['receiveUserId'] = mes_id(eligibility_user_id)
+        return self._post_json(ROUTE_BASE + TASK_DETAIL, encode_payload(payload))
 
     def first_inspection_plan(self, work_order_id):
         return self.inspection_plan(work_order_id, check_type=FIRST_INSPECTION)

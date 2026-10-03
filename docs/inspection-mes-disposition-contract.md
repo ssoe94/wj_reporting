@@ -92,10 +92,29 @@ unverified; `can_save` and `can_finish` are always false, even for a matching
 synthetic contract. No transport, token loading, persistence or runtime route is
 introduced. Its synthetic tests are not evidence of live tenant acceptance.
 
-For a future authorized single read, use the existing scoped detail client with
-only the exact reviewed task ID. Its payload omits `receiveUserId`; the official
-detail contract describes that field's default as the current logged-in actor,
-so omission alone is not evidence of actor identity or execution permission.
-Do not retry, traverse lists, claim a task or infer a tenant mapping as part of
-this preflight. Keep actual responses and target observations outside this public
-repository and obtain explicit approval before any MES write or live activation.
+For an authorized eligibility comparison, bind the transport to one reviewed QC
+and `eligibility_user_id`. The detail client accepts that same optional user ID,
+encoded as the documented `receiveUserId`. The transport permits only that task's
+detail route and either omission or the bound user; it rejects other users,
+routes, extra fields and write authorization. The official contract describes
+omission as the current logged-in actor, but it does not prove that actor's
+identity. An explicit subject and `getAble=1` do not authenticate as that user or
+grant claim, save, finish or inventory rights. The production adapter stays disabled.
+
+Transport failures distinguish missing token, known expired token, authentication
+rejection (401), and access denial (403). A 401 alone is not proof of expiry.
+An injected `InspectionAccessToken` can carry observed expiry without exposing
+its credential in representations. There is no failure-triggered refresh/retry;
+the normal initial runtime provider retains its existing token-resolution behavior.
+
+`scripts/read-inspection-eligibility.py` is an import-only, separately approved
+server-shell probe, with no runtime route or CLI. After validating the origin
+and exact target, it invokes the existing app-token helper once and reads the
+same task at most twice: omission, then the explicit subject. It never invokes
+the user-token exchange helper. Missing/expired/uncertain authentication,
+denial, malformed response, unverified target or required confirmation stops
+the comparison without retry. Output is limited to query scope, status codes,
+bounded candidate/department IDs and permission metadata; credentials, raw
+messages, names and measurements are omitted. Its synthetic tests are not live
+acceptance evidence. Keep actual target IDs and observations outside this public
+repository; MES writes and live activation require separate explicit approval.

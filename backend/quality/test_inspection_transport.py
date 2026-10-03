@@ -11,11 +11,16 @@ from .inspection_blacklake_contract import (
     DocumentedStage, ITEM_RECORD, ROUTE_BASE, TASK_DETAIL, TASK_FINISH, TASK_LIST,
     ScopedInspectionReadClient, encode_payload, result_and_finish_plan,
 )
-from .inspection_transport import BlacklakeInspectionTransport, MesAccessDenied, ReviewedWriteAuthorization, existing_runtime_token, stages_digest
+from .inspection_transport import (
+    BlacklakeInspectionTransport, InspectionAccessToken, MesAccessDenied,
+    MesAuthenticationExpired, MesAuthenticationMissing, MesAuthenticationRejected,
+    ReviewedWriteAuthorization, existing_runtime_token, stages_digest,
+)
 
 
 WORK_ORDER = 10000000000000001
 QC_TASK = 10000000000000002
+ELIGIBILITY_USER = 10000000000000004
 
 
 def response(body=None, status=200, *, raw=None):
@@ -144,8 +149,84 @@ class ScopedInspectionTransportTests(TestCase):
 
     def test_missing_authentication_sends_nothing(self):
         self.token.return_value = ''
-        with self.assertRaises(MesAccessDenied):
+        with self.assertRaises(MesAuthenticationMissing):
             self.client.detail(QC_TASK)
+        self.sender.assert_not_called()
+
+    def test_missing_expired_401_and_403_are_distinct_without_refresh_or_retry(self):
+        cases = [('', None, MesAuthenticationMissing, 0),
+                 (InspectionAccessToken('SYNTHETIC-FIXTURE-TOKEN', 99), None, MesAuthenticationExpired, 0),
+                 ('SYNTHETIC-FIXTURE-TOKEN', response({}, 401), MesAuthenticationRejected, 1),
+                 ('SYNTHETIC-FIXTURE-TOKEN', response({'code': 401}), MesAuthenticationRejected, 1),
+                 ('SYNTHETIC-FIXTURE-TOKEN', response({}, 403), MesAccessDenied, 1),
+                 ('SYNTHETIC-FIXTURE-TOKEN', response({'code': 403}), MesAccessDenied, 1)]
+        for credential, reply, error, sends in cases:
+            self.token.reset_mock()
+            self.sender.reset_mock()
+            self.token.return_value = credential
+            self.sender.return_value = reply
+            with self.subTest(error=error.code), patch('quality.inspection_transport.time.time', return_value=100):
+                with self.assertRaises(error) as raised:
+                    self.client.detail(QC_TASK)
+                self.assertIs(type(raised.exception), error)
+                self.assertNotIn('SYNTHETIC-FIXTURE-TOKEN', str(raised.exception))
+            self.assertEqual(self.token.call_count, 1)
+            self.assertEqual(self.sender.call_count, sends)
+
+    def test_optional_expiry_preserves_protocol_and_never_exposes_token_in_repr(self):
+        credential = InspectionAccessToken('SYNTHETIC-FIXTURE-TOKEN', 101)
+        self.assertNotIn('SYNTHETIC-FIXTURE-TOKEN', repr(credential))
+        self.token.return_value = credential
+        with patch('quality.inspection_transport.time.time', return_value=100):
+            self.client.detail(QC_TASK)
+        self.assertEqual(self.sender.call_args.kwargs['params']['access_token'], 'SYNTHETIC-FIXTURE-TOKEN')
+        for expiry in (True, '100', float('nan'), float('inf')):
+            with self.subTest(expiry=expiry), self.assertRaises(ValueError):
+                InspectionAccessToken('SYNTHETIC-FIXTURE-TOKEN', expiry)
+
+    def test_eligibility_comparison_binds_one_subject_and_does_not_grant_write_authority(self):
+        self.transport = BlacklakeInspectionTransport(WORK_ORDER, qc_task_id=QC_TASK,
+            eligibility_user_id=ELIGIBILITY_USER, token_provider=self.token, sender=self.sender)
+        client = ScopedInspectionReadClient(self.transport.post_json)
+        self.sender.return_value = response({'code': 200, 'data': {'id': QC_TASK, 'getAble': 1}})
+        self.assertEqual(client.detail(QC_TASK)['data']['getAble'], 1)
+        self.assertEqual(client.detail(QC_TASK, eligibility_user_id=ELIGIBILITY_USER)['data']['getAble'], 1)
+        self.assertEqual([call.kwargs['data'] for call in self.sender.call_args_list], [
+            encode_payload({'id': QC_TASK}).encode(),
+            encode_payload({'id': QC_TASK, 'receiveUserId': ELIGIBILITY_USER}).encode()])
+        stages = self.stages()
+        self.authorize(stages)
+        with self.assertRaises(MesContractUnavailable):
+            self.transport.send_reviewed_record(stages)
+        with self.assertRaises(MesContractUnavailable):
+            self.transport.send_reviewed_stages(stages)
+        self.assertEqual(self.sender.call_count, 2)
+        self.assertEqual(self.token.call_count, 2)
+        self.assertFalse(get_inspection_adapter().enabled)
+
+    def test_eligibility_scope_rejects_unreviewed_subjects_routes_and_coercions_before_auth(self):
+        transport = BlacklakeInspectionTransport(WORK_ORDER, qc_task_id=QC_TASK,
+            eligibility_user_id=ELIGIBILITY_USER, token_provider=self.token, sender=self.sender)
+        for payload in ({'id': QC_TASK, 'receiveUserId': ELIGIBILITY_USER + 1},
+                        {'id': QC_TASK + 1, 'receiveUserId': ELIGIBILITY_USER},
+                        {'id': QC_TASK, 'receiveUserId': str(ELIGIBILITY_USER)},
+                        {'id': QC_TASK, 'receiveUserId': True},
+                        {'id': QC_TASK, 'receiveUserId': Decimal(ELIGIBILITY_USER)},
+                        {'id': QC_TASK, 'receiveUserId': None},
+                        {'id': QC_TASK, 'receiveUserId': ELIGIBILITY_USER, 'skipWeakControlRule': True}):
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                transport.post_json(ROUTE_BASE + TASK_DETAIL, encode_payload(payload))
+        for route in (TASK_LIST, TASK_FINISH, ITEM_RECORD, '/quality/open/v1/task/_get_task'):
+            with self.subTest(route=route), self.assertRaises(ValueError):
+                transport.post_json(ROUTE_BASE + route, encode_payload({'id': QC_TASK}))
+        with self.assertRaises(ValueError):
+            self.client.detail(QC_TASK, eligibility_user_id=ELIGIBILITY_USER)
+        with self.assertRaises(ValueError):
+            BlacklakeInspectionTransport(WORK_ORDER, eligibility_user_id=ELIGIBILITY_USER)
+        with self.assertRaises(ValueError):
+            BlacklakeInspectionTransport(WORK_ORDER, qc_task_id=QC_TASK, eligibility_user_id=ELIGIBILITY_USER,
+                write_authorization=ReviewedWriteAuthorization(str(QC_TASK), 'fixture', 'fixture'))
+        self.token.assert_not_called()
         self.sender.assert_not_called()
 
     def test_timeout_202_redirect_5xx_and_malformed_responses_remain_unknown(self):

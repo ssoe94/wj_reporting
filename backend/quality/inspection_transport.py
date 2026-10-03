@@ -2,12 +2,15 @@
 
 Existing Render authentication is resolved only when an approved runtime caller
 actually performs a request. Constructors/imports never inspect credentials.
-Fixtures inject both the HTTP sender and token provider. No request retries,
-token refresh, production control, inventory receipt or guessed endpoints.
+Fixtures inject both the HTTP sender and token provider. Initial token resolution
+uses the existing runtime helper, which may obtain a token. No request retry or
+failure-triggered refresh, production control, inventory receipt or guessed endpoint.
 """
 import hashlib
 import json
-from dataclasses import dataclass
+import math
+import time
+from dataclasses import dataclass, field
 from decimal import Decimal
 from urllib.parse import urlsplit
 
@@ -20,6 +23,31 @@ from .inspection_blacklake_contract import (
 
 class MesAccessDenied(MesRejected):
     code = 'mes_access_denied'
+
+
+class MesAuthenticationMissing(MesAccessDenied):
+    code = 'mes_authentication_missing'
+
+
+class MesAuthenticationExpired(MesAccessDenied):
+    code = 'mes_authentication_expired'
+
+
+class MesAuthenticationRejected(MesAccessDenied):
+    # 401 does not, by itself, establish that a token expired.
+    code = 'mes_authentication_rejected'
+
+
+@dataclass(frozen=True)
+class InspectionAccessToken:
+    """Optional known expiry; never include credential bytes in repr/output."""
+    value: str = field(repr=False)
+    expires_at: float | None = None
+
+    def __post_init__(self):
+        if self.expires_at is not None and (
+                type(self.expires_at) not in {int, float} or not math.isfinite(self.expires_at)):
+            raise ValueError('Use a finite observed token expiry.')
 
 
 def existing_runtime_token(origin):
@@ -70,9 +98,12 @@ class InspectionWriteAcknowledgement:
 
 class BlacklakeInspectionTransport:
     def __init__(self, work_order_id, *, qc_task_id=None, origin='https://v3-ali.blacklake.cn',
-                 token_provider=None, sender=None, write_authorization=None):
+                 token_provider=None, sender=None, write_authorization=None, eligibility_user_id=None):
         self.work_order_id = mes_id(work_order_id)
         self.qc_task_id = mes_id(qc_task_id) if qc_task_id is not None else None
+        self._eligibility_user_id = mes_id(eligibility_user_id) if eligibility_user_id is not None else None
+        if self._eligibility_user_id is not None and (self.qc_task_id is None or write_authorization is not None):
+            raise ValueError('Eligibility comparison requires one QC and a read-only transport.')
         parsed = urlsplit(origin)
         if (parsed.scheme != 'https' or parsed.netloc not in {'v3-ali.blacklake.cn', 'v3-hw.blacklake.cn'}
                 or parsed.path not in {'', '/'} or parsed.query or parsed.fragment):
@@ -84,6 +115,8 @@ class BlacklakeInspectionTransport:
         self._write_attempted = False
 
     def _read_body(self, route, text):
+        if self._eligibility_user_id is not None and route != ROUTE_BASE + TASK_DETAIL:
+            raise ValueError('Eligibility comparison only reads the bound QC detail.')
         if not isinstance(text, str) or len(text.encode()) > 131072:
             raise ValueError('Request body is out of bounds.')
         body = _decode(text)
@@ -99,7 +132,11 @@ class BlacklakeInspectionTransport:
                     or type(body['size']) is not int or not 1 <= body['size'] <= 25):
                 raise ValueError('Read only one work order in two bounded pages.')
         elif route == ROUTE_BASE + TASK_DETAIL:
-            if set(body) != {'id'} or type(body['id']) is not int or body['id'] != self.qc_task_id:
+            keys = {'id', 'receiveUserId'} if 'receiveUserId' in body else {'id'}
+            if (set(body) != keys or type(body.get('id')) is not int or body['id'] != self.qc_task_id
+                    or ('receiveUserId' in body and (self._eligibility_user_id is None
+                        or type(body['receiveUserId']) is not int
+                        or body['receiveUserId'] != self._eligibility_user_id))):
                 raise ValueError('Detail must match the explicitly selected QC task.')
         elif route == ROUTE_BASE + PLAN_BY_WORK_ORDER:
             if (set(body) != {'workOrderId', 'checkType'} or type(body['workOrderId']) is not int
@@ -112,8 +149,12 @@ class BlacklakeInspectionTransport:
     def _post(self, route, text, *, stage):
         try:
             token = self._token_provider()
+            if isinstance(token, InspectionAccessToken):
+                if token.expires_at is not None and token.expires_at <= time.time():
+                    raise MesAuthenticationExpired()
+                token = token.value
             if not isinstance(token, str) or not token.strip():
-                raise MesAccessDenied()
+                raise MesAuthenticationMissing()
             if self._sender is None:
                 import requests
                 sender = requests.post
@@ -123,7 +164,9 @@ class BlacklakeInspectionTransport:
                               data=text.encode('utf-8'), headers={'Content-Type': 'application/json'},
                               timeout=(5, 20), allow_redirects=False)
             status = response.status_code
-            if status in {401, 403}:
+            if status == 401:
+                raise MesAuthenticationRejected()
+            if status == 403:
                 raise MesAccessDenied()
             if status == 202 or status >= 500 or 300 <= status < 400:
                 raise MesOutcomeUnknown()
@@ -135,7 +178,9 @@ class BlacklakeInspectionTransport:
             body = _decode(content.decode('utf-8'))
             if not isinstance(body, dict) or type(body.get('code')) is not int:
                 raise MesOutcomeUnknown()
-            if body['code'] in {401, 403}:
+            if body['code'] == 401:
+                raise MesAuthenticationRejected()
+            if body['code'] == 403:
                 raise MesAccessDenied()
             if body['code'] != 200:
                 raise MesRejected()
@@ -216,7 +261,7 @@ class BlacklakeInspectionTransport:
         This process-local fence does not provide crash-safe idempotency.
         """
         authorization = self._write_authorization
-        if authorization is None:
+        if authorization is None or self._eligibility_user_id is not None:
             raise MesContractUnavailable()
         if (not isinstance(authorization, ReviewedWriteAuthorization)
                 or not isinstance(authorization.verification_reference, str)

@@ -112,7 +112,7 @@ else:
     raise SystemExit(DiscoverRunner(verbosity=2).run_tests(sys.argv[1:] or [
         'quality.test_inspection_requests', 'quality.test_inspection_mes_stages', 'quality.test_inspection_blacklake_contract',
         'quality.test_inspection_read_snapshot', 'quality.test_inspection_blacklake_snapshot',
-        'quality.test_inspection_preflight',
+        'quality.test_inspection_preflight', 'quality.test_inspection_eligibility_probe',
         'quality.test_inspection_board_status', 'production.test_inspection_status_projection',
         'production.test_inspection_status_view',
         'quality.test_inspection_kanban', 'quality.test_inspection_beta_access',
