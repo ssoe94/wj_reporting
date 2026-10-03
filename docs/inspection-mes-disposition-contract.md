@@ -53,3 +53,49 @@ Independently reviewed failures can create one explicit reinspection child after
 external operations settle. Parent failure, nonconformance and audit history stay
 intact; creating or completing the child does not close disposition. Permissions,
 reason, version checks and duplicate-child protection remain mandatory.
+
+## Read-only preflight and documented completion effects
+
+The public [task detail contract](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1681109889047070&url=%2Fquality%2Fopen%2Fv1%2Ftask%2F_detail)
+was inspected on 2026-10-03 (document update: 2026-04-27). Its `data.qcConfig`
+contains these enum objects with integer `code` and text `message`:
+
+| Field | Documented codes | Preflight implication |
+| --- | --- | --- |
+| `materialBatchRecordType` | 1: do not record; 2: record only; 3: record and update quality status | Completion may change inventory quality status. A displayed empty inventory relation does not prove that it cannot. |
+| `sampleProcessMethod` | 1: return sample; 2: scrap sample | Sample disposition must be reviewed independently. |
+| `recordSample` | 1: required; 2: not required | No sample-record requirement does not establish a safe sample-disposition default. |
+| `recordSummaryCount` | 1: required; 2: not required | Quantity requirements remain distinct from disposition and inventory effects. |
+
+The [finish contract](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1734575507154323&url=%2Fquality%2Fopen%2Fv1%2Ftask%2F_finish)
+accepts `id` and verdict `status` (1: pass, 2: concession, 3: pending, 4: fail).
+Its acknowledgement does not prove the resulting lifecycle, approval outcome,
+inventory effects or actor authority. Those require independently scoped evidence.
+
+The [task edit contract](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1681109889047074&url=%2Fquality%2Fopen%2Fv1%2Ftask%2F_update)
+documents `remark` and custom fields, alongside conclusion, claim, task-status and
+quantity fields. Detail also documents a top-level task `remark`. This is a
+candidate permanent test-label path only: tenant permissions, retention, exact
+readback and partial-update semantics remain unverified. The current write plan
+does not support editing a source label. Do not use a broad task update to relabel
+an ordinary production or completed QC as a test target.
+
+`inspection_preflight.assess_detail_preflight` is a pure observer for one
+sanitized or synthetic detail fixture, preserving the existing decoder's
+provenance limit. It does not accept a raw live response as fixture evidence.
+It requires explicit reviewed paths, enum allowlists,
+target relations and observation freshness. Missing or conflicting configuration,
+identity, lifecycle or source label blocks the detail contract. It returns status
+codes, never raw IDs, measurements, label contents or response fields. Actor and
+approval authority, tenant identity and production/inventory effects remain
+unverified; `can_save` and `can_finish` are always false, even for a matching
+synthetic contract. No transport, token loading, persistence or runtime route is
+introduced. Its synthetic tests are not evidence of live tenant acceptance.
+
+For a future authorized single read, use the existing scoped detail client with
+only the exact reviewed task ID. Its payload omits `receiveUserId`; the official
+detail contract describes that field's default as the current logged-in actor,
+so omission alone is not evidence of actor identity or execution permission.
+Do not retry, traverse lists, claim a task or infer a tenant mapping as part of
+this preflight. Keep actual responses and target observations outside this public
+repository and obtain explicit approval before any MES write or live activation.
