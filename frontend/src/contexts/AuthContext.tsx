@@ -5,6 +5,7 @@ import api from '../lib/api';
 import type { ReactNode } from 'react';
 import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 import { canManageDevelopmentTasks, isDevelopmentTaskRoute } from '../domains/auth/development-task-access';
+import { canUseInspectionBeta, isInspectionBetaRoute } from '../domains/auth/inspection-beta-access';
 import { AuthRefreshError, refreshAccessToken } from '../domains/auth/auth-refresh';
 import {
   clearTokens,
@@ -307,6 +308,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // 라우트 접근 권한 확인
   const canAccessRoute = (route: string): boolean => {
     if (!user) return false;
+    if (isInspectionBetaRoute(route)) return canUseInspectionBeta(user);
     if (isDevelopmentTaskRoute(route)) return canManageDevelopmentTasks(user);
     if (user.is_staff || hasPermission('is_admin')) return true;
 

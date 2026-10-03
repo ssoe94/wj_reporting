@@ -1,5 +1,5 @@
 ﻿import { lazy, Suspense, useState, useEffect, useRef } from "react";
-import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LangProvider } from "./i18n";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -36,6 +36,7 @@ import PageTransition from './components/common/PageTransition';
 import { NavigationTree } from './components/layout/NavigationTree';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
 import { canManageDevelopmentTasks, DEVELOPMENT_TASK_PATH } from './domains/auth/development-task-access';
+import { canUseInspectionBeta, INSPECTION_BETA_PATH } from './domains/auth/inspection-beta-access';
 
 const DevelopmentTasksPage = lazy(() => import('./pages/development/DevelopmentTasksPage'));
 
@@ -50,6 +51,7 @@ const UserApproval = lazy(() => import('./pages/admin/UserApproval'));
 const QualityPage = lazy(() => import('./pages/quality'));
 const QualityAnalysisPage = lazy(() => import('./domains/quality/QualityAnalysisPage'));
 const DailyAttentionPage = lazy(() => import('./pages/quality/DailyAttention'));
+const InspectionRequestsPage = lazy(() => import('./pages/quality/inspection-requests/InspectionRequestsPage'));
 const AssemblyDashboardPage = lazy(() => import('./pages/assembly/Dashboard'));
 const InjectionDashboardPage = lazy(() => import('./pages/injection/Dashboard'));
 const InjectionMonitoringPage = lazy(() => import('./pages/injection/MonitoringPage'));
@@ -136,10 +138,17 @@ function useNavItems() {
     children: [{ to: DEVELOPMENT_TASK_PATH, label: lang === 'ko' ? '개발 과제' : '开发任务', icon: ClipboardList }],
   }] : [];
 
+  const betaNavigation = canUseInspectionBeta(user) ? [{
+    label: lang === 'ko' ? '베타' : '测试版',
+    icon: ClipboardCheck,
+    children: [{ to: INSPECTION_BETA_PATH, label: t('nav_quality_inspection_requests'), icon: ClipboardList }],
+  }] : [];
+
   // Staff users see the full navigation tree.
   if (user?.is_staff) {
     return [
       ...taskNavigation,
+      ...betaNavigation,
       {
         label: t('nav_overview'),
         icon: FileChartPie,
@@ -216,7 +225,7 @@ function useNavItems() {
   }
 
   // Regular users get the same sections, trimmed by permission-aware links.
-  const navItems = [...taskNavigation];
+  const navItems = [...taskNavigation, ...betaNavigation];
 
   navItems.push({
     label: t('nav_overview'),
@@ -830,6 +839,7 @@ function AppContent() {
             <Route path="/assembly" element={<PrivateRoute><PageTransition><AssemblyPage /></PageTransition></PrivateRoute>} />
 
             {/* Quality single page */}
+            <Route path="/quality/inspection-requests" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><InspectionRequestsPage /></Suspense></PrivateRoute>} />
             <Route path="/quality/analysis" element={<PrivateRoute><PageTransition><QualityAnalysisPage /></PageTransition></PrivateRoute>} />
             <Route path="/quality" element={<PrivateRoute><PageTransition><QualityPage /></PageTransition></PrivateRoute>} />
             <Route path="/quality/daily-attention" element={<PrivateRoute><PageTransition><DailyAttentionPage /></PageTransition></PrivateRoute>} />
@@ -870,14 +880,14 @@ function AppContent() {
   );
 }
 
+const appRouter = createBrowserRouter([{ path: "*", element: <AppContent /> }], { basename: "/" });
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <LangProvider>
         <AuthProvider>
-          <BrowserRouter basename="/">
-            <AppContent />
-          </BrowserRouter>
+          <RouterProvider router={appRouter} />
         </AuthProvider>
       </LangProvider>
     </QueryClientProvider>
