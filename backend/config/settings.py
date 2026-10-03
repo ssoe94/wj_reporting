@@ -97,6 +97,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'quality.inspection_oauth_security.OAuthQueryRedactionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -360,6 +361,7 @@ SIMPLE_JWT = {
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {'oauth_query': {'()': 'quality.inspection_oauth_security.OAuthQueryLogFilter'}},
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
@@ -374,6 +376,7 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+            'filters': ['oauth_query'],
         },
     },
     'root': {
@@ -395,6 +398,15 @@ LOGGING = {
 }
 
 # MES API 설정
+# Disabled until callback deployment, exact app grants/redirect and access-log
+# behavior are separately reviewed. No real identities/credentials in source.
+MES_USER_OAUTH_ENABLED = config('MES_USER_OAUTH_ENABLED', default=False, cast=bool)
+MES_USER_OAUTH_CALLBACK_ORIGIN = 'https://wj-reporting-backend.onrender.com'
+MES_USER_OAUTH_PROVIDER_ORIGIN = 'https://v3-ali.blacklake.cn'
+MES_USER_OAUTH_LAUNCH_URL = config('MES_USER_OAUTH_LAUNCH_URL', default='')
+MES_USER_OAUTH_REVIEW_REFERENCE = config('MES_USER_OAUTH_REVIEW_REFERENCE', default='')
+MES_USER_OAUTH_USER_MAP = config('MES_USER_OAUTH_USER_MAP', default='{}')
+MES_USER_OAUTH_APP_ACCESS_TOKEN = config('MES_USER_OAUTH_APP_ACCESS_TOKEN', default='')
 MES_API_BASE = os.getenv('MES_API_BASE', 'https://v3-ali.blacklake.cn/api/openapi/domain/web/v1/route')
 MES_API_TOKEN = os.getenv('MES_API_TOKEN', '')
 

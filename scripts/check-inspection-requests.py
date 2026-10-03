@@ -47,6 +47,7 @@ django.setup()
 from django.urls import path, include
 urls = types.ModuleType('isolated_inspection_urls')
 urls.urlpatterns = [path('api/quality/', include('quality.urls')),
+                    path('integrations/blacklake/', include('quality.inspection_oauth_urls')),
                     path('api/production/', include('production.urls'))]
 sys.modules[urls.__name__] = urls
 from django.core.management import call_command
@@ -110,6 +111,9 @@ else:
     call_command('check')
     from django.test.runner import DiscoverRunner
     raise SystemExit(DiscoverRunner(verbosity=2).run_tests(sys.argv[1:] or [
+        'quality.test_inspection_oauth',
+        'quality.test_inspection_user_context',
+        'quality.test_inspection_flow_scenarios',
         'quality.test_inspection_requests', 'quality.test_inspection_mes_stages', 'quality.test_inspection_blacklake_contract',
         'quality.test_inspection_read_snapshot', 'quality.test_inspection_blacklake_snapshot',
         'quality.test_inspection_preflight', 'quality.test_inspection_eligibility_probe',

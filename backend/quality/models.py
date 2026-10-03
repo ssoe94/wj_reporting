@@ -3,6 +3,7 @@ from django.db import models
 
 from .storage import quality_import_media_storage
 from .inspection_models import InspectionAudit, InspectionOperation, InspectionRequest, InspectionMesBinding, InspectionNonconformance  # noqa: F401
+from .inspection_oauth_models import InspectionOAuthAttempt  # noqa: F401
 
 
 class QualityReport(models.Model):

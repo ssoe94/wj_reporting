@@ -101,6 +101,50 @@ omission as the current logged-in actor, but it does not prove that actor's
 identity. An explicit subject and `getAble=1` do not authenticate as that user or
 grant claim, save, finish or inventory rights. The production adapter stays disabled.
 
+### Token identity and stage actors: official contract review, 2026-10-03
+
+The public [integration guide, section 5.2.3](https://v3-hw-openapi.blacklake.cn/document/api?docxHash=PNNwdvq1LoMFFrxAEN5cLDFWngd)
+distinguishes an application credential from a user credential: use
+`userAccessToken` in place of `appAccessToken` to execute/access data as that user.
+The [OAuth guide](https://v3-hw-openapi.blacklake.cn/document/api?docxHash=BTMdd3eOio9zEzxWYFNctJzHnzd)
+describes an authorization-code exchange followed by user-information lookup.
+This documentation is not evidence that the deployed application has that flow
+configured or that a particular user has authorized it.
+
+| Stage | Documented request and actor limit |
+| --- | --- |
+| Detail | `id` and optional integer `receiveUserId`; omission defaults to the current logged-in person. `getAble` describes current-user claim eligibility (0/1). The field description does not establish how an app token resolves that current user, whether an explicit ID controls every eligibility check, or any delegation rule. |
+| [Claim](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1681109889047071&url=%2Fquality%2Fopen%2Fv1%2Ftask%2F_get_task) | `id` and optional integer `receiveUserId`, with the same current-user default. The published schema does not establish who may claim on behalf of another person. Claim is a mutation and is not implemented by the read transport. |
+| [Record](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1681109889047075&url=%2Fquality%2Fopen%2Fv1%2Ftask%2F_update_task_check_item) | Required `taskId`, optional `checkItems`; no actor/receiver parameter appears in the inspected request schema. Authentication, current executor and save permission need independent evidence. |
+| Finish | `id` and verdict `status`; no actor/receiver parameter appears in the request schema. The verdict field is distinct from detail's lifecycle status. Completion authority cannot be copied from claim eligibility. |
+
+The [user-information contract](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1708930376017421&url=%2Fopenapi%2Fopen%2Fv1%2Faccess_token%2F_get_user_info)
+requires a `userAccessToken` body field and documents `data.userId`.
+The [user-token contract](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1708927945926899&url=%2Fopenapi%2Fopen%2Fv1%2Faccess_token%2F_get_user_token)
+requires an authorization `code`. Do not substitute an application token or a
+browser display name for verified user identity. Do not extract browser tokens.
+Any future user-context comparison must verify `data.userId` and then use that
+same user token for both detail reads. Missing/mismatched identity or a missing
+user token must stop the comparison, without an app-token fallback.
+The existing general `inventory.mes.fetch_user_token` helper can fall back to
+the app token when the code or user token is missing; its return value alone
+therefore cannot certify a user-context comparison.
+
+Before enabling the disconnected stage adapter, add a reviewed actor contract
+and synthetic acceptance cases: missing/mismatched/stale actor evidence must
+block before a provider write; claim eligibility, department membership and
+local superuser status must not grant save/finish rights; executor or permission
+changes after save must block finish; uncertain claims must be reconciled by
+exact task/executor readback without resending. Current stage fixtures do not
+prove these provider actor relationships. These are outstanding activation
+requirements, not implemented or live-verified guarantees.
+
+An eligibility report's subject fields are request metadata, not a server echo
+of authenticated identity. The current probe retains selected fields rather
+than a complete response snapshot and folds missing/null optional fields
+together. Its shared `observed_at` is created before issuance, not separately
+for each response. Compare browser and API observations with those limits.
+
 Transport failures distinguish missing token, known expired token, authentication
 rejection (401), and access denial (403). A 401 alone is not proof of expiry.
 An injected `InspectionAccessToken` can carry observed expiry without exposing

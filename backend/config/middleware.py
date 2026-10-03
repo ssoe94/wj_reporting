@@ -66,6 +66,9 @@ class DisableCSRFMiddleware:
         # is altered by the hosting layer.
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
         path = request.path_info or request.path
-        if path.startswith('/api') or auth_header.startswith('Bearer '):
+        if path.startswith('/integrations/blacklake/'):
+            # OAuth uses backend sessions and must never inherit the JWT bypass.
+            request._dont_enforce_csrf_checks = False
+        elif path.startswith('/api') or auth_header.startswith('Bearer '):
             request._dont_enforce_csrf_checks = True
         return self.get_response(request)
