@@ -79,7 +79,10 @@ class InspectionKanbanContractTests(APITestCase):
         for user in (hidden, inactive, missing, None):
             with self.subTest(user=getattr(user, 'username', None)):
                 self.client.force_authenticate(user)
-                self.assertEqual(self.client.get(self.kanban_url).status_code, 403)
+                response = self.client.get(self.kanban_url)
+                self.assertIn(response.status_code, (401, 403) if user is None else (403,))
+                if response.status_code == 401:
+                    self.assertTrue(response.has_header('WWW-Authenticate'))
         self.assertEqual(len(self.kanban()['machines']), 17)
 
     def test_get_never_seeds_mutates_or_calls_mes(self):

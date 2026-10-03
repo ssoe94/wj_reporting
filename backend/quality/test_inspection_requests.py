@@ -175,7 +175,10 @@ class InspectionRequestContractTests(APITestCase):
                 self.assertEqual(self.client.get(self.base_url).status_code, 403)
                 self.assertEqual(self.client.get(self.base_url + 'capabilities/').status_code, 403)
         self.client.force_authenticate(None)
-        self.assertEqual(self.client.get(self.base_url).status_code, 403)
+        response = self.client.get(self.base_url)
+        self.assertIn(response.status_code, (401, 403))
+        if response.status_code == 401:
+            self.assertTrue(response.has_header('WWW-Authenticate'))
 
     def test_admin_read_does_not_seed_or_mutate_and_quality_viewer_cannot_write(self):
         data = self.create()

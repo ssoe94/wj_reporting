@@ -24,7 +24,8 @@ class InspectionBetaAccessTests(APITestCase):
         ]
         routes = [("get", ''), ("get", 'capabilities/'), ("get", 'kanban/'), ("get", '1/'),
                   ("post", ''), ("patch", '1/')] + [("post", f'1/{action}/') for action in
-                  ('submit', 'approve', 'reject', 'reinspect', 'sync', 'refresh')]
+                  ('submit', 'approve', 'reject', 'reinspect', 'sync', 'refresh',
+                   'review-failure', 'mes-save', 'mes-finish', 'mes-reconcile')]
         with patch('quality.inspection_adapter.get_inspection_adapter') as adapter:
             for user in users:
                 self.client.force_authenticate(user)
@@ -32,7 +33,14 @@ class InspectionBetaAccessTests(APITestCase):
                     with self.subTest(user=getattr(user, 'username', None), method=method, suffix=suffix):
                         response = getattr(self.client, method)(self.base + suffix, {}, format='json',
                             HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
-                        self.assertEqual(response.status_code, 403)
+                        # JWT challenges anonymous clients with 401; the
+                        # isolated session-only harness denies them with 403.
+                        if user is None:
+                            self.assertIn(response.status_code, (401, 403))
+                            if response.status_code == 401:
+                                self.assertTrue(response.has_header('WWW-Authenticate'))
+                        else:
+                            self.assertEqual(response.status_code, 403)
             adapter.assert_not_called()
         for model in (InspectionRequest, InspectionAudit, InspectionOperation):
             self.assertEqual(model.objects.count(), 0)
