@@ -36,6 +36,7 @@ api_urlpatterns = [
 ]
 
 urlpatterns = [
+    path('integrations/blacklake/', include('quality.inspection_oauth_urls')),
     path('admin/', admin.site.urls),
     path('staff/signup-approvals/', SignupApprovalPortalView.as_view(), name='signup-approval-portal'),
 

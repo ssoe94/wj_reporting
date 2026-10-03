@@ -348,6 +348,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     nav_eco2_dev: 'ECO 관리 (개발 중)',
     nav_quality: '품질',
     nav_quality_daily_attention: '일일 품질 주의 사항',
+    nav_quality_inspection_requests: '검사요청관리',
     nav_quality_report: '불량 보고',
     nav_quality_stats: '불량 통계',
     brand_quality: '품질 관리',
@@ -1258,6 +1259,7 @@ const translations: Record<'ko' | 'zh', Record<string, string>> = {
     // 品质版块
     nav_quality: '品质',
     nav_quality_daily_attention: '每日品质注意事项',
+    nav_quality_inspection_requests: '检验申请管理',
     nav_quality_report: '不良报告',
     nav_quality_stats: '不良统计',
     brand_quality: '品质管理',

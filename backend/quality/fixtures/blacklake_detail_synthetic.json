@@ -1,0 +1,1432 @@
+{
+  "metadata": {
+    "observed_at_utc": "2001-02-01T03:04:05.006000+00:00",
+    "source": "SYNTHETIC fabricated contract fixture",
+    "evidence_kind": "synthetic_contract_fixture",
+    "fabricated": true,
+    "id_verified": false,
+    "work_order_verified": false,
+    "scope": "SYNTHETIC local test only; no external system or real observation",
+    "notice": "All identifiers, business text, measurements and dates are fabricated; this fixture proves no live contract or verification."
+  },
+  "response": {
+    "code": 200,
+    "needCheck": null,
+    "data": {
+      "id": "91000000000000001",
+      "code": "SYNTHETIC_QC_001",
+      "status": {
+        "code": 2,
+        "message": "SYNTHETIC_ENDED"
+      },
+      "getStatus": {
+        "code": 1,
+        "message": "SYNTHETIC_ENUM_2256"
+      },
+      "beginTime": 978480000000,
+      "endTime": 978652800000,
+      "material": {
+        "id": "91000000000000002",
+        "name": "SYNTHETIC_NAME",
+        "code": "SYNTHETIC_CODE",
+        "attributes": null,
+        "enableFlag": {
+          "code": 1,
+          "message": "SYNTHETIC_ENUM_3179"
+        },
+        "auxUnitList": null
+      },
+      "process": {
+        "id": "91000000000000003",
+        "name": "SYNTHETIC_NAME",
+        "code": "SYNTHETIC_CODE"
+      },
+      "equipment": {
+        "id": "91000000000000004",
+        "name": "SYNTHETIC_NAME",
+        "code": "SYNTHETIC_CODE"
+      },
+      "qcConfig": {
+        "snapshotId": "91000000000000005",
+        "code": "SYNTHETIC_CODE",
+        "name": "SYNTHETIC 巡检 PLAN",
+        "checkType": {
+          "code": 3,
+          "message": "SYNTHETIC_FIRST"
+        },
+        "checkEntityType": {
+          "code": 3,
+          "message": "SYNTHETIC_ENUM_3714"
+        },
+        "reportPageType": {
+          "code": 1,
+          "message": "SYNTHETIC_ENUM_3616"
+        },
+        "checkEntityUnitCount": 2,
+        "inspectionResultOptions": [
+          {
+            "code": 1,
+            "message": "SYNTHETIC_ENUM_4715"
+          },
+          {
+            "code": 4,
+            "message": "SYNTHETIC_ENUM_4716"
+          }
+        ],
+        "materialBatchRecordType": {
+          "code": 1,
+          "message": "SYNTHETIC_ENUM_4503"
+        },
+        "recordSample": {
+          "code": 2,
+          "message": "SYNTHETIC_ENUM_3398"
+        },
+        "sampleProcessMethod": {
+          "code": 1,
+          "message": "SYNTHETIC_ENUM_4135"
+        },
+        "reportFormatType": {
+          "code": 2,
+          "message": "SYNTHETIC_ENUM_3852"
+        },
+        "recordSummaryCount": {
+          "code": 2,
+          "message": "SYNTHETIC_ENUM_4059"
+        },
+        "recordSampleResultCount": {
+          "code": 2,
+          "message": "SYNTHETIC_ENUM_4558"
+        },
+        "qcRange": null,
+        "inventoryQcStatus": null,
+        "state": {
+          "code": 0,
+          "message": "SYNTHETIC_ENUM_2694"
+        },
+        "createdAt": 978307200000,
+        "updatedAt": 978739200000,
+        "qcConfigCheckItemList": [
+          {
+            "groupName": "SYNTHETIC_GROUP",
+            "checkItemAppDetailVOS": [
+              {
+                "id": "91000000000000006",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 1,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000009",
+                "checkItemName": "SYNTHETIC_ITEM_01",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_01",
+                "executeItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8145"
+                },
+                "logic": {
+                  "code": 1,
+                  "message": "SYNTHETIC_RANGE"
+                },
+                "scale": 2,
+                "base": null,
+                "max": "11.9000000000",
+                "min": "11.1000000000",
+                "checkCount": "8.0000000000",
+                "radios": [],
+                "qualityItems": [],
+                "checkValueType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_SINGLE_VALUE"
+                },
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8022"
+                },
+                "unit": {
+                  "id": "91000000000000010",
+                  "name": "SYNTHETIC_UNIT"
+                },
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7941"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8507"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_EMPTY",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000011",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 2,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000012",
+                "checkItemName": "SYNTHETIC_ITEM_02",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_02",
+                "executeItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8146"
+                },
+                "logic": {
+                  "code": 1,
+                  "message": "SYNTHETIC_RANGE"
+                },
+                "scale": 2,
+                "base": null,
+                "max": "21.9000000000",
+                "min": "21.1000000000",
+                "checkCount": "8.0000000000",
+                "radios": [],
+                "qualityItems": [],
+                "checkValueType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_SINGLE_VALUE"
+                },
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8023"
+                },
+                "unit": {
+                  "id": "91000000000000010",
+                  "name": "SYNTHETIC_UNIT"
+                },
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7942"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8508"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_EMPTY",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000013",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 3,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000014",
+                "checkItemName": "SYNTHETIC_ITEM_03",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_03",
+                "executeItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8147"
+                },
+                "logic": {
+                  "code": 1,
+                  "message": "SYNTHETIC_RANGE"
+                },
+                "scale": 2,
+                "base": null,
+                "max": "31.9000000000",
+                "min": "31.1000000000",
+                "checkCount": "8.0000000000",
+                "radios": [],
+                "qualityItems": [],
+                "checkValueType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_SINGLE_VALUE"
+                },
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8024"
+                },
+                "unit": {
+                  "id": "91000000000000010",
+                  "name": "SYNTHETIC_UNIT"
+                },
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7943"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8509"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_EMPTY",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000015",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 4,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000016",
+                "checkItemName": "SYNTHETIC_ITEM_04",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_04",
+                "executeItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8148"
+                },
+                "logic": {
+                  "code": 1,
+                  "message": "SYNTHETIC_RANGE"
+                },
+                "scale": 2,
+                "base": null,
+                "max": "41.9000000000",
+                "min": "41.1000000000",
+                "checkCount": "8.0000000000",
+                "radios": [],
+                "qualityItems": [],
+                "checkValueType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_SINGLE_VALUE"
+                },
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8025"
+                },
+                "unit": {
+                  "id": "91000000000000010",
+                  "name": "SYNTHETIC_UNIT"
+                },
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7944"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8510"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_EMPTY",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000017",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 5,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000018",
+                "checkItemName": "SYNTHETIC_ITEM_05",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_05",
+                "executeItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8149"
+                },
+                "logic": {
+                  "code": 1,
+                  "message": "SYNTHETIC_RANGE"
+                },
+                "scale": 2,
+                "base": null,
+                "max": "59.7500000000",
+                "min": "51.2500000000",
+                "checkCount": "8.0000000000",
+                "radios": [],
+                "qualityItems": [],
+                "checkValueType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_INTERVAL"
+                },
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8026"
+                },
+                "unit": {
+                  "id": "91000000000000010",
+                  "name": "SYNTHETIC_UNIT"
+                },
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7945"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8511"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_EMPTY",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000019",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 6,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000020",
+                "checkItemName": "SYNTHETIC_ITEM_06",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_06",
+                "executeItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8150"
+                },
+                "logic": {
+                  "code": 5,
+                  "message": "SYNTHETIC <="
+                },
+                "scale": 1,
+                "base": "7.0000000000",
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [],
+                "qualityItems": [],
+                "checkValueType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_SINGLE_VALUE"
+                },
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8027"
+                },
+                "unit": {
+                  "id": "91000000000000010",
+                  "name": "SYNTHETIC_UNIT"
+                },
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7946"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8512"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_EMPTY",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000021",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 7,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000022",
+                "checkItemName": "SYNTHETIC_ITEM_07",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_07",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8151"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8028"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7947"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8513"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000023",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 8,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000024",
+                "checkItemName": "SYNTHETIC_ITEM_08",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_08",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8152"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8029"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7948"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8514"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000025",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 9,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000026",
+                "checkItemName": "SYNTHETIC_ITEM_09",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_09",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8153"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8030"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7949"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8515"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000027",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 10,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000028",
+                "checkItemName": "SYNTHETIC_ITEM_10",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_10",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8154"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8031"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7950"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8516"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000029",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 11,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000030",
+                "checkItemName": "SYNTHETIC_ITEM_11",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_11",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8194"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8071"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7990"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8556"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000031",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 12,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000032",
+                "checkItemName": "SYNTHETIC_ITEM_12",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_12",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8195"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8072"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7991"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8557"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000033",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 13,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000034",
+                "checkItemName": "SYNTHETIC_ITEM_13",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_13",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8196"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8073"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7992"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8558"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000035",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 14,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000036",
+                "checkItemName": "SYNTHETIC_ITEM_14",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_14",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8197"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8074"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7993"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8559"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000037",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 15,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000038",
+                "checkItemName": "SYNTHETIC_ITEM_15",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_15",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8198"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8075"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7994"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8560"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              },
+              {
+                "id": "91000000000000039",
+                "qcConfigVersionId": "91000000000000007",
+                "groupName": null,
+                "serialNo": 16,
+                "checkItemCategoryId": "91000000000000008",
+                "checkItemCategoryName": "SYNTHETIC_CHECKITEMCATEGORYNAME",
+                "checkItemId": "91000000000000040",
+                "checkItemName": "SYNTHETIC_ITEM_16",
+                "checkItemCode": "SYNTHETIC_ITEM_CODE_16",
+                "executeItemType": {
+                  "code": 4,
+                  "message": "SYNTHETIC_ENUM_8199"
+                },
+                "logic": null,
+                "scale": null,
+                "base": null,
+                "max": null,
+                "min": null,
+                "checkCount": "8.0000000000",
+                "radios": [
+                  "SYNTHETIC_OK",
+                  "SYNTHETIC_NOT_OK"
+                ],
+                "qualityItems": [],
+                "checkValueType": null,
+                "checkCountType": {
+                  "code": 2,
+                  "message": "SYNTHETIC_ENUM_8076"
+                },
+                "unit": null,
+                "executeUpload": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_7995"
+                },
+                "defectRankList": [],
+                "defectReasonList": [],
+                "equipments": [],
+                "aqlDetail": null,
+                "taskCheckCount": "8.0000000000",
+                "recordCheckItemType": {
+                  "code": 1,
+                  "message": "SYNTHETIC_ENUM_8561"
+                },
+                "extraResults": [],
+                "defaultValue": "SYNTHETIC_OK",
+                "dateTimeFormat": null,
+                "autoFillOperationTime": 0,
+                "defaultMin": null,
+                "defaultMax": null,
+                "totalReportCount": 3,
+                "requireReportCount": null,
+                "filledReportCount": 2
+              }
+            ]
+          }
+        ],
+        "linkMaterialList": null,
+        "linkProcessList": null,
+        "linkResourceList": null
+      },
+      "checkItems": [
+        {
+          "groupName": "SYNTHETIC_GROUP",
+          "qcTaskCheckItems": [
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000041",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000006",
+              "seq": 1,
+              "option": null,
+              "result": "11.45",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000042",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000011",
+              "seq": 1,
+              "option": null,
+              "result": "21.54",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000043",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000013",
+              "seq": 1,
+              "option": null,
+              "result": "31.44",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000044",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000015",
+              "seq": 1,
+              "option": null,
+              "result": "41.55",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000045",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000017",
+              "seq": 1,
+              "option": null,
+              "result": null,
+              "min": "55.0000000000",
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000046",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000019",
+              "seq": 1,
+              "option": null,
+              "result": "3",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000047",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000021",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000048",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000023",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000049",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000025",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000050",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000027",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000051",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000029",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000052",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000031",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000053",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000033",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000054",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000035",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000055",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000037",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            },
+            {
+              "customFields": null,
+              "sonObjects": null,
+              "id": "91000000000000056",
+              "qcTaskMaterialId": null,
+              "qcConfigCheckItemId": "91000000000000039",
+              "seq": 1,
+              "option": [
+                "SYNTHETIC_OK"
+              ],
+              "result": "SYNTHETIC_OK",
+              "min": null,
+              "max": null,
+              "taskCheckCount": "8.0000000000",
+              "average": null,
+              "standardDeviation": null,
+              "qcDefectVOS": [],
+              "singleJudgment": 1,
+              "createdAt": 978566400000,
+              "updatedAt": 978566400000,
+              "ifQuality": true
+            }
+          ]
+        }
+      ],
+      "qcSample": null,
+      "qcTotal": null,
+      "checkCount": null,
+      "inspectionResult": {
+        "code": 1,
+        "message": "SYNTHETIC_PASS"
+      },
+      "checkType": {
+        "code": 3,
+        "message": "SYNTHETIC_FIRST"
+      },
+      "createdAt": 978393600000,
+      "updatedAt": 978652800000,
+      "unit": {
+        "id": "91000000000000057",
+        "code": "SYNTHETIC_CODE",
+        "name": "SYNTHETIC_NAME",
+        "enablePrecision": {
+          "code": 1,
+          "message": "SYNTHETIC_ENUM_3342"
+        },
+        "roundingRole": {
+          "code": 0,
+          "message": "SYNTHETIC_ENUM_3059"
+        },
+        "precisionFigure": 1,
+        "enableFlag": {
+          "code": 1,
+          "message": "SYNTHETIC_ENUM_2780"
+        }
+      },
+      "qcUnit": {
+        "id": "91000000000000057",
+        "code": "SYNTHETIC_CODE",
+        "name": "SYNTHETIC_NAME",
+        "enablePrecision": {
+          "code": 1,
+          "message": "SYNTHETIC_ENUM_3522"
+        },
+        "roundingRole": {
+          "code": 0,
+          "message": "SYNTHETIC_ENUM_3239"
+        },
+        "precisionFigure": 1,
+        "enableFlag": {
+          "code": 1,
+          "message": "SYNTHETIC_ENUM_2960"
+        }
+      },
+      "planCheckCount": "8.0000000000",
+      "produceTask": {
+        "id": "91000000000000058",
+        "name": "SYNTHETIC_NAME",
+        "code": "SYNTHETIC_CODE"
+      },
+      "workOrder": {
+        "id": "91000000000000059",
+        "name": "SYNTHETIC_NAME",
+        "code": "SYNTHETIC_CODE"
+      },
+      "getAble": 0,
+      "originalTaskCode": null,
+      "originalTaskId": null,
+      "taskIsRepeat": 0
+    }
+  }
+}

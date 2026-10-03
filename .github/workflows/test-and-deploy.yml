@@ -68,6 +68,17 @@ jobs:
         working-directory: backend
         run: python manage.py test --no-input
 
+      - name: Validate isolated PostgreSQL inspection contracts
+        run: |
+          python scripts/test_inspection_postgres_local.py
+          if ! command -v pg_config >/dev/null 2>&1; then
+            echo "::error::Installed PostgreSQL tools are required for inspection validation."
+            exit 1
+          fi
+          postgres_bin="$(pg_config --bindir)"
+          python scripts/check-inspection-postgres-local.py \
+            --postgres-bin="$postgres_bin" --fixture-name=pg-ci
+
       - name: Run local AI worker tests
         run: >-
           python -m unittest
