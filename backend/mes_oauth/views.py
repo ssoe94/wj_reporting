@@ -1,7 +1,8 @@
 """Session-bound, one-use user identity check; disabled until separately approved.
 
-Blacklake documents a fixed SSO URL with ?code=..., not a state echo/authorize
-endpoint. Start therefore binds a random browser cookie to an existing backend
+Blacklake sends ?code=... to a fixed static relay, which passes it in a fragment
+to this backend so its HTTP request URL contains no code. Start binds a random
+browser cookie to an existing backend
 Django login and a server-selected expected MES identity. Callback GET performs
 no exchange. Same-origin, CSRF-protected POST consumes the attempt before I/O.
 This flow verifies identity only; it never logs a user in, stores a user token,
@@ -27,15 +28,17 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters, sensitive_variables
 from django.views.decorators.http import require_http_methods
 
-from .client import BlacklakeUserOAuthClient, ORIGINS
+from .client import BlacklakeUserOAuthClient, ORIGINS, app_credential_configured
 from .models import OAuthAttempt
 from .identity import verify_user_context
 from .access import can_verify_identity
+from .security import REFERRER_POLICY
 from quality.archive_access import is_archive_identity_marker
 
 
 START = '/integrations/blacklake/start/'
 CALLBACK = '/integrations/blacklake/callback/'
+RELAY_URL = 'https://wj-reporting.onrender.com/integrations/blacklake/relay.html'
 COOKIE = '__Host-wj-mes-oauth'
 ATTEMPT_SECONDS = 300  # local attempt TTL; not the user token lifetime
 
@@ -91,6 +94,8 @@ def _policy(request):
     provider_origin = getattr(settings, 'MES_USER_OAUTH_PROVIDER_ORIGIN', '')
     if provider_origin not in ORIGINS:
         raise OAuthBlocked('provider_origin_unverified')
+    if not app_credential_configured(getattr(settings, 'MES_USER_OAUTH_APP_ACCESS_TOKEN', '')):
+        raise OAuthBlocked('app_credential_missing')
     review = getattr(settings, 'MES_USER_OAUTH_REVIEW_REFERENCE', '')
     launch = getattr(settings, 'MES_USER_OAUTH_LAUNCH_URL', '')
     if type(launch) is not str or len(launch) > 1024:
@@ -111,14 +116,15 @@ def _policy(request):
             raise ValueError()
     except (KeyError, TypeError, ValueError):
         raise OAuthBlocked('expected_identity_unconfigured') from None
-    fingerprint = _digest(json.dumps([origin, provider_origin, launch, review, value]))
+    fingerprint = _digest(json.dumps([origin, provider_origin, launch, review, value,
+                                      RELAY_URL, 'fragment-relay-v1']))
     return origin, launch, expected, fingerprint
 
 
 def _headers(response):
     response['Cache-Control'] = 'no-store, max-age=0'
     response['Pragma'] = 'no-cache'
-    response['Referrer-Policy'] = 'no-referrer'
+    response['Referrer-Policy'] = REFERRER_POLICY
     response['X-Content-Type-Options'] = 'nosniff'
     response['X-Frame-Options'] = 'DENY'
     return response
@@ -130,18 +136,21 @@ def _page(content, *, status=200, callback=False):
     # the query from history. No external assets, analytics or browser storage.
     script = "history.replaceState(null, '', location.pathname);"
     if callback:
-        script = """const p=new URL(location.href).searchParams;
+        script = """const u=new URL(location.href);
+const p=new URLSearchParams(u.hash.slice(1));
 const c=p.getAll('code'); history.replaceState(null,'',location.pathname);
 document.addEventListener('DOMContentLoaded',()=>{
  const f=document.querySelector('form'); if(!f)return;
- if(c.length!==1||!c[0]||c[0].length>4096){f.remove();return;}
+ if(u.search||Array.from(p.keys()).some(k=>k!=='code')||
+    c.length!==1||!/^[!-~]{1,4096}$/.test(c[0])){f.remove();return;}
  f.elements.code.value=c[0];
+ f.querySelector('button[type="submit"]').disabled=false;
 });"""
     response = HttpResponse(format_html(
         '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
-        '<meta name="referrer" content="no-referrer"><title>MES 사용자 확인</title>'
+        '<meta name="referrer" content="{}"><title>MES 사용자 확인</title>'
         '<script nonce="{}">{}</script></head><body>{}</body></html>',
-        nonce, mark_safe(script), content), status=status)
+        REFERRER_POLICY, nonce, mark_safe(script), content), status=status)
     response['Content-Security-Policy'] = (
         "default-src 'none'; script-src 'nonce-" + nonce +
         "'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
@@ -217,11 +226,13 @@ def callback(request):
         attempt = _attempt(request, fingerprint)
     except (OAuthBlocked, ValueError):
         return _blocked('oauth_callback_unavailable')
+    if getattr(request, 'mes_oauth_query_present', False):
+        return _blocked('oauth_callback_query_rejected', 400)
     if request.method == 'GET':
         return _page(format_html(
             '<p>이미 로그인한 WJ 사용자에게 지정된 MES 신원만 확인합니다.</p>'
             '<form method="post" action="{}"><input type="hidden" name="csrfmiddlewaretoken" value="{}">'
-            '<input type="hidden" name="code"><button type="submit">사용자 신원 확인</button></form>',
+            '<input type="hidden" name="code"><button type="submit" disabled>사용자 신원 확인</button></form>',
             origin + CALLBACK, get_token(request)), callback=True)
     if (set(request.POST) - {'csrfmiddlewaretoken', 'code'} or len(request.POST.getlist('code')) != 1):
         return _blocked('oauth_code_invalid', 400)

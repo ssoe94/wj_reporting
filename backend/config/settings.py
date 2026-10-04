@@ -156,10 +156,13 @@ CSRF_TRUSTED_ORIGINS = [
 
 
 
+# Explicit cookie controls let OAuth activation require HTTPS cookies without
+# changing ENVIRONMENT and its unrelated HSTS settings. Existing defaults stay.
+SESSION_COOKIE_SECURE = ENVIRONMENT == 'production' or config('SESSION_COOKIE_SECURE', default=False, cast=bool)
+CSRF_COOKIE_SECURE = ENVIRONMENT == 'production' or config('CSRF_COOKIE_SECURE', default=False, cast=bool)
+
 # 프로덕션 환경에서 쿠키 보안 설정
 if ENVIRONMENT == 'production':
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = 'Lax'
     CSRF_COOKIE_SAMESITE = 'Lax'
 

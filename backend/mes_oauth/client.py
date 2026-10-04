@@ -18,6 +18,11 @@ USERINFO = '/openapi/open/v1/access_token/_get_user_info'
 ORIGINS = {'https://v3-ali.blacklake.cn', 'https://v3-hw.blacklake.cn'}
 
 
+@sensitive_variables()
+def app_credential_configured(value):
+    return type(value) is str and bool(value.strip())
+
+
 def _pairs(items):
     value = {}
     for key, item in items:
@@ -32,7 +37,7 @@ class BlacklakeUserOAuthClient:
     def __init__(self, *, origin, app_access_token, session_factory=None):
         if origin not in ORIGINS:
             raise UserContextUnverified('oauth_origin_invalid')
-        if type(app_access_token) is not str or not app_access_token.strip():
+        if not app_credential_configured(app_access_token):
             raise UserContextUnverified('app_credential_missing')
         self._origin = origin
         self._app_access_token = app_access_token

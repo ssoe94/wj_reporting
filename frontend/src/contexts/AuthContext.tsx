@@ -156,11 +156,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     let cancelled = false;
     let retryTimer: number | null = null;
 
-    const retainSessionAndRetry = (error: unknown, expectedSessionId: string | null) => {
+    const retainSessionAndRetry = (_error: unknown, expectedSessionId: string | null) => {
       if (cancelled) return;
       const currentSession = getAuthSessionSnapshot();
       if (currentSession.id !== expectedSessionId) return;
-      console.error('Authentication temporarily unavailable:', error);
+      console.error('Authentication temporarily unavailable');
       setToken(currentSession.access);
       setUser(null);
       setAuthRecoveryError('서버 연결이 불안정합니다. 로그인 정보는 유지되며 자동으로 다시 연결합니다.');
@@ -255,7 +255,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     try {
       const response = await api.post('/token/', { username, password }, { skipAuth: true });
-      console.log('Login response:', response);
       
       // 응답이 있는지 확인
       if (!response || !response.data) {
@@ -265,7 +264,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       const { access, refresh } = response.data;
       if (!access || !refresh) {
-        console.error('Missing tokens in response:', response.data);
+        console.error('Missing tokens in login response');
         return false;
       }
 
@@ -275,11 +274,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setAuthRecoveryError(null);
       setIsLoading(true);
       return true;
-    } catch (error) {
-      console.error('Login error:', error);
-      if (error instanceof Error) {
-        console.error('Error message:', error.message);
-      }
+    } catch {
+      console.error('Login failed');
       return false;
     }
   };

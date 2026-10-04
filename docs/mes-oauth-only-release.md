@@ -1,5 +1,10 @@
 # MES OAuth-only release plan
 
+The 2026-10-04 local hardening candidate changes the direct callback contract.
+See [relay hardening](mes-oauth-relay-hardening.md) for the superseding return URL,
+frontend/header release scope, logging boundary and runtime setting proposal.
+The deployment snapshot and direct-callback proposal below are historical.
+
 Prepared 2026-10-03. This document defines a bounded release candidate and its
 approval gates. It is not evidence of deployment, a live database migration,
 application permission changes, user consent, token exchange or MES acceptance.

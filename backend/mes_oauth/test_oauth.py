@@ -2,22 +2,26 @@
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+import io
 import json
 import logging
 import secrets
+import sys
 from threading import Barrier
 from unittest import skipUnless
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.conf import settings
 from django.db import connection, connections
-from django.test import Client, TestCase, TransactionTestCase, override_settings
+from django.http import HttpResponse
+from django.test import Client, RequestFactory, SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from .client import BlacklakeUserOAuthClient, EXCHANGE, USERINFO
 from .models import OAuthAttempt
-from .security import OAuthQueryLogFilter
+from .security import OAuthQueryLogFilter, OAuthQueryRedactionMiddleware
 from .views import START, CALLBACK, COOKIE
 from .identity import UserContextResponse, UserContextUnverified
 
@@ -25,6 +29,7 @@ from .identity import UserContextResponse, UserContextUnverified
 MES_USER = 10_000_000_000_000_003
 CODE = 'SYNTHETIC-AUTHORIZATION-CODE'
 TOKEN = 'SYNTHETIC-USER-TOKEN'
+APP_TOKEN = 'SYNTHETIC-APP-TOKEN'
 ORIGIN = 'https://testserver'
 OAUTH_MIDDLEWARE = [
     'mes_oauth.security.OAuthQueryRedactionMiddleware',
@@ -44,6 +49,7 @@ def envelope(data):
     MES_USER_OAUTH_PROVIDER_ORIGIN='https://v3-ali.blacklake.cn',
     MES_USER_OAUTH_LAUNCH_URL='https://v3-ali.blacklake.cn/SYNTHETIC-REVIEWED-PAGE',
     MES_USER_OAUTH_REVIEW_REFERENCE='SYNTHETIC-NO-NETWORK-REVIEW',
+    MES_USER_OAUTH_APP_ACCESS_TOKEN=APP_TOKEN,
     CSRF_TRUSTED_ORIGINS=[ORIGIN], SESSION_COOKIE_SECURE=True, CSRF_COOKIE_SECURE=True)
 class OAuthCallbackTests(TestCase):
     def setUp(self):
@@ -80,7 +86,8 @@ class OAuthCallbackTests(TestCase):
         return OAuthAttempt.objects.latest('created_at')
 
     def finish(self, code=CODE):
-        response = self.client.get(CALLBACK + '?code=' + code, secure=True)
+        # A browser fragment is not part of the backend HTTP request URL.
+        response = self.client.get(CALLBACK, secure=True)
         self.assertEqual(response.status_code, 200, response.content)
         return self.post(CALLBACK, {'code': code})
 
@@ -107,26 +114,93 @@ class OAuthCallbackTests(TestCase):
         self.assertEqual(self.post(CALLBACK, {'code': CODE}).status_code, 403)
         self.provider.exchange.assert_called_once()
 
-    def test_get_callback_strips_server_query_and_only_prepares_csrf_form(self):
-        self.begin()
-        response = self.client.get(CALLBACK + '?code=' + CODE, secure=True)
+    def test_get_callback_without_query_only_prepares_fragment_csrf_form(self):
+        row = self.begin()
+        original = OAuthAttempt.objects.values().get(pk=row.pk)
+        response = self.client.get(CALLBACK, secure=True)
         self.assertEqual(response.status_code, 200)
         self.factory.assert_not_called()
+        self.assertIs(response.wsgi_request.mes_oauth_query_present, False)
         self.assertEqual(response.wsgi_request.META['QUERY_STRING'], '')
         self.assertEqual(response.wsgi_request.GET, {})
         self.assertNotIn(CODE.encode(), response.content)
         self.assertIn(b'history.replaceState', response.content)
+        self.assertIn(b'new URLSearchParams(u.hash.slice(1))', response.content)
         self.assertIn(b"getAll('code')", response.content)
+        self.assertIn(b'<button type="submit" disabled>', response.content)
         self.assertIn(b'csrfmiddlewaretoken', response.content)
-        self.assertEqual(response['Referrer-Policy'], 'no-referrer')
+        self.assertEqual(response['Referrer-Policy'], 'strict-origin')
+        self.assertIn(b'<meta name="referrer" content="strict-origin">', response.content)
         self.assertIn('no-store', response['Cache-Control'])
         self.assertIn("frame-ancestors 'none'", response['Content-Security-Policy'])
+        self.assertEqual(OAuthAttempt.objects.values().get(pk=row.pk), original)
+
+    def test_direct_callback_query_is_rejected_without_provider_or_attempt_consumption(self):
+        row = self.begin()
+        original = OAuthAttempt.objects.values().get(pk=row.pk)
+        for query in ('code=' + CODE, 'code=' + CODE + '&code=' + CODE,
+                      '%63ode=' + CODE, 'code=', 'unexpected=' + CODE, '0'):
+            with self.subTest(query_kind=query.split('=', 1)[0]):
+                response = self.client.get(CALLBACK + '?' + query, secure=True)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(b'oauth_callback_query_rejected', response.content)
+                self.assertNotIn(b'<form', response.content)
+                self.assertNotIn(CODE.encode(), response.content)
+                self.assertIs(response.wsgi_request.mes_oauth_query_present, True)
+                self.assertEqual(response.wsgi_request.META['QUERY_STRING'], '')
+                self.assertEqual(response.wsgi_request.GET, {})
+                self.assertIn('no-store', response['Cache-Control'])
+                self.assertEqual(OAuthAttempt.objects.values().get(pk=row.pk), original)
+                self.assertEqual(OAuthAttempt.objects.count(), 1)
+                self.factory.assert_not_called()
+                self.provider.exchange.assert_not_called()
+                self.provider.userinfo.assert_not_called()
+        # A rejected query must not burn the pending fragment-based flow.
+        self.assertEqual(self.client.get(CALLBACK, secure=True).status_code, 200)
+        self.assertEqual(OAuthAttempt.objects.values().get(pk=row.pk), original)
+        self.factory.assert_not_called()
 
     def test_disabled_flow_has_no_database_or_provider_side_effect(self):
         with override_settings(MES_USER_OAUTH_ENABLED=False):
             self.assertEqual(self.client.get(START, secure=True).status_code, 403)
             self.assertEqual(self.client.get(CALLBACK + '?code=' + CODE, secure=True).status_code, 403)
         self.assertEqual(OAuthAttempt.objects.count(), 0)
+        self.factory.assert_not_called()
+
+    def test_callback_post_with_query_rejects_valid_body_without_consuming_attempt(self):
+        row = self.begin()
+        original = OAuthAttempt.objects.values().get(pk=row.pk)
+        nonce = self.client.cookies[COOKIE].value
+        queries = (
+            ('code_query', 'code=' + CODE),
+            ('unrelated_query', 'unexpected=SYNTHETIC'),
+            ('code_and_extra_query', 'code=' + CODE + '&unexpected=SYNTHETIC'),
+        )
+        for kind, query in queries:
+            with self.subTest(query_kind=kind):
+                # This helper sends the real fixture CSRF cookie/token, exact
+                # reviewed Origin and a valid code in the POST body.
+                response = self.post(CALLBACK + '?' + query, {'code': CODE})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(b'oauth_callback_query_rejected', response.content)
+                request = response.wsgi_request
+                self.assertEqual(request.META['HTTP_ORIGIN'], ORIGIN)
+                self.assertEqual(request.POST['code'], CODE)
+                self.assertTrue(request.POST['csrfmiddlewaretoken'])
+                self.assertIs(request.mes_oauth_query_present, True)
+                self.assertEqual(request.META['QUERY_STRING'], '')
+                self.assertEqual(request.GET, {})
+                self.assertNotIn(CODE.encode(), response.content)
+                self.assertNotIn(TOKEN.encode(), response.content)
+                self.assertIn('no-store', response['Cache-Control'])
+                self.assertEqual(OAuthAttempt.objects.values().get(pk=row.pk), original)
+                self.assertEqual(OAuthAttempt.objects.count(), 1)
+                self.assertEqual(self.client.cookies[COOKIE].value, nonce)
+                self.factory.assert_not_called()
+                self.provider.exchange.assert_not_called()
+                self.provider.userinfo.assert_not_called()
+        self.assertEqual(self.client.get(CALLBACK, secure=True).status_code, 200)
+        self.assertEqual(OAuthAttempt.objects.values().get(pk=row.pk), original)
         self.factory.assert_not_called()
 
     def test_backend_session_and_superuser_required_not_bearer_or_frontend_login(self):
@@ -183,6 +257,42 @@ class OAuthCallbackTests(TestCase):
         self.assertEqual(response.wsgi_request.sensitive_post_parameters, '__ALL__')
         self.assertNotIn(CODE.encode(), response.content)
         self.assertIn('no-store', response['Cache-Control'])
+
+    def test_referer_query_and_fragment_are_removed_before_get_post_and_csrf_failure(self):
+        row = self.begin()
+        referer_origin = 'https://v3-ali.blacklake.cn/SYNTHETIC-SSO'
+        for suffix in ('?code=' + CODE + '#' + TOKEN, '#' + CODE):
+            for method in ('get', 'invalid_post', 'csrf_failure'):
+                with self.subTest(suffix_kind='query' if '?' in suffix else 'fragment', method=method):
+                    path = CALLBACK + '?code=' + CODE
+                    headers = {'HTTP_REFERER': referer_origin + suffix,
+                               'RAW_URI': path + '#' + TOKEN,
+                               'REQUEST_URI': path + '#' + TOKEN}
+                    if method == 'get':
+                        response = self.client.get(path, secure=True, **headers)
+                        self.assertEqual(response.status_code, 400)
+                        self.assertIn(b'oauth_callback_query_rejected', response.content)
+                    elif method == 'invalid_post':
+                        response = self.post(path, {'code': ''}, **headers)
+                        self.assertEqual(response.status_code, 400)
+                    else:
+                        response = self.client.post(path, {'code': CODE}, secure=True,
+                            HTTP_ORIGIN=ORIGIN, **headers)
+                        self.assertEqual(response.status_code, 403)
+                        self.assertEqual(response.wsgi_request.sensitive_post_parameters, '__ALL__')
+                    request = response.wsgi_request
+                    self.assertIs(request.mes_oauth_query_present, True)
+                    self.assertEqual(request.META['HTTP_REFERER'], referer_origin)
+                    self.assertEqual(request.META['RAW_URI'], CALLBACK)
+                    self.assertEqual(request.META['REQUEST_URI'], CALLBACK)
+                    self.assertEqual(request.META['QUERY_STRING'], '')
+                    self.assertEqual(request.GET, {})
+                    self.assertNotIn(CODE.encode(), response.content)
+                    self.assertNotIn(TOKEN.encode(), response.content)
+                    self.assertIn('no-store', response['Cache-Control'])
+        row.refresh_from_db()
+        self.assertEqual((row.status, row.code_digest, row.consumed_at), ('pending', None, None))
+        self.factory.assert_not_called()
 
     def test_password_profile_and_archive_service_restrictions_apply_to_sessions(self):
         from quality.archive_access import ARCHIVE_SERVICE_GROUP, ARCHIVE_SERVICE_USERNAME
@@ -357,6 +467,44 @@ class OAuthCallbackTests(TestCase):
                 self.assertEqual(self.client.get(START, secure=True).status_code, 403)
         self.assertEqual(OAuthAttempt.objects.count(), 0)
 
+    def test_missing_blank_or_nonstring_app_credential_cannot_create_attempt(self):
+        # Seed a valid CSRF token before removing the credential so POST reaches
+        # the configuration gate rather than failing only at CSRF middleware.
+        self.assertEqual(self.client.get(START, secure=True).status_code, 200)
+        for value in (Ellipsis, None, '', ' \t\n', False, 123, {}, []):
+            with self.subTest(value_type=type(value).__name__), override_settings(
+                    MES_USER_OAUTH_APP_ACCESS_TOKEN=value):
+                if value is Ellipsis:
+                    del settings.MES_USER_OAUTH_APP_ACCESS_TOKEN
+                response = self.client.get(START, secure=True)
+                self.assertEqual(response.status_code, 403)
+                self.assertIn(b'oauth_start_unavailable', response.content)
+                response = self.post(START)
+                self.assertEqual(response.status_code, 403)
+                self.assertIn(b'oauth_start_unavailable', response.content)
+                self.assertEqual(OAuthAttempt.objects.count(), 0)
+                self.factory.assert_not_called()
+
+    def test_missing_blank_or_nonstring_app_credential_cannot_consume_pending_code(self):
+        row = self.begin()
+        original = (row.status, row.code_digest, row.consumed_at, row.verified_at, row.error_code)
+        for value in (Ellipsis, None, '', ' \t\n', False, 123, {}, []):
+            with self.subTest(value_type=type(value).__name__), override_settings(
+                    MES_USER_OAUTH_APP_ACCESS_TOKEN=value):
+                if value is Ellipsis:
+                    del settings.MES_USER_OAUTH_APP_ACCESS_TOKEN
+                response = self.client.get(CALLBACK + '?code=' + CODE, secure=True)
+                self.assertEqual(response.status_code, 403)
+                self.assertIn(b'oauth_callback_unavailable', response.content)
+                response = self.post(CALLBACK, {'code': CODE})
+                self.assertEqual(response.status_code, 403)
+                self.assertIn(b'oauth_callback_unavailable', response.content)
+                row.refresh_from_db()
+                self.assertEqual((row.status, row.code_digest, row.consumed_at,
+                                  row.verified_at, row.error_code), original)
+                self.assertEqual(OAuthAttempt.objects.count(), 1)
+                self.factory.assert_not_called()
+
     def test_logs_remove_callback_query_without_affecting_other_messages(self):
         record = logging.LogRecord('synthetic', 30, '', 1,
             'GET %s HTTP/1.1', ('https://testserver' + CALLBACK + '?code=' + CODE,), None)
@@ -366,6 +514,96 @@ class OAuthCallbackTests(TestCase):
         plain = logging.LogRecord('synthetic', 20, '', 1, 'healthy %s', ('ok',), None)
         OAuthQueryLogFilter().filter(plain)
         self.assertEqual(plain.getMessage(), 'healthy ok')
+
+
+class OAuthQueryRedactionMiddlewareTests(SimpleTestCase):
+    def test_downstream_only_receives_query_presence_bool_after_cached_query_redaction(self):
+        factory = RequestFactory()
+        for query, expected in (('', False), ('code=' + CODE, True), ('code=', True), ('0', True)):
+            with self.subTest(query_kind=query.split('=', 1)[0]):
+                path = CALLBACK + ('?' + query if query else '')
+                request = factory.get(path, secure=True, RAW_URI=path + '#' + TOKEN,
+                    REQUEST_URI=path + '#' + TOKEN, HTTP_REFERER=ORIGIN + path + '#' + TOKEN)
+                # Cache GET before the middleware: clearing META alone must not
+                # leave the previously parsed authorization code available.
+                cached_query = request.GET
+                if query == 'code=' + CODE:
+                    self.assertEqual(cached_query['code'], CODE)
+                original_keys = set(request.__dict__)
+
+                def downstream(current):
+                    self.assertIs(current, request)
+                    self.assertIs(current.mes_oauth_query_present, expected)
+                    self.assertEqual(current.META['QUERY_STRING'], '')
+                    self.assertEqual(current.GET, {})
+                    self.assertEqual(current.META['RAW_URI'], CALLBACK)
+                    self.assertEqual(current.META['REQUEST_URI'], CALLBACK)
+                    self.assertEqual(current.META['HTTP_REFERER'], ORIGIN + CALLBACK)
+                    self.assertNotIn(CODE, repr(current.META))
+                    self.assertNotIn(TOKEN, repr(current.META))
+                    added_attributes = {key: value for key, value in current.__dict__.items()
+                                        if key not in original_keys}
+                    self.assertNotIn(CODE, repr(added_attributes))
+                    self.assertNotIn(TOKEN, repr(added_attributes))
+                    return HttpResponse('SYNTHETIC downstream response')
+
+                handler = Mock(side_effect=downstream)
+                response = OAuthQueryRedactionMiddleware(handler)(request)
+                handler.assert_called_once_with(request)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('no-store', response['Cache-Control'])
+
+
+class OAuthLogRedactionTests(SimpleTestCase):
+    def formatted_output(self, record):
+        output = io.StringIO()
+        handler = logging.StreamHandler(output)
+        handler.setFormatter(logging.Formatter('%(levelname)s %(message)s'))
+        handler.addFilter(OAuthQueryLogFilter())
+        try:
+            handler.handle(record)
+            return output.getvalue()
+        finally:
+            handler.close()
+
+    def test_handler_redacts_callback_queries_in_chained_exceptions(self):
+        try:
+            try:
+                raise ValueError('SYNTHETIC INNER ' + ORIGIN + CALLBACK + '?code=' + CODE + '-INNER')
+            except ValueError as cause:
+                raise RuntimeError('SYNTHETIC OUTER ' + ORIGIN + CALLBACK + '?code=' + CODE + '-OUTER') from cause
+        except RuntimeError:
+            record = logging.LogRecord('synthetic.oauth', logging.ERROR, __file__, 1,
+                'callback failed: %s', (ORIGIN + CALLBACK + '?code=' + CODE + '-MESSAGE',), sys.exc_info())
+        output = self.formatted_output(record)
+        self.assertNotIn(CODE, output)
+        self.assertIn('ValueError: SYNTHETIC INNER', output)
+        self.assertIn('RuntimeError: SYNTHETIC OUTER', output)
+        self.assertIn('Traceback (most recent call last)', output)
+        self.assertIn('direct cause', output)
+        self.assertGreaterEqual(output.count('?[redacted]'), 3)
+
+    def test_handler_redacts_cached_exception_and_stack_text(self):
+        record = logging.LogRecord('synthetic.oauth', logging.ERROR, __file__, 1,
+            'SYNTHETIC cached failure', (), None)
+        record.exc_text = ('Traceback (most recent call last):\nSYNTHETIC cached frame\n'
+                           'RuntimeError: ' + ORIGIN + CALLBACK + '?code=' + CODE + '-CACHED')
+        record.stack_info = ('Stack (most recent call last):\nSYNTHETIC stack frame\n'
+                             + ORIGIN + CALLBACK + '?code=' + CODE + '-STACK')
+        output = self.formatted_output(record)
+        self.assertNotIn(CODE, output)
+        self.assertIn('SYNTHETIC cached frame', output)
+        self.assertIn('SYNTHETIC stack frame', output)
+        self.assertEqual(output.count('?[redacted]'), 2)
+
+    def test_handler_preserves_unrelated_exception_traceback(self):
+        try:
+            raise LookupError('SYNTHETIC unrelated failure remains diagnosable')
+        except LookupError:
+            record = logging.LogRecord('synthetic.oauth', logging.ERROR, __file__, 1,
+                'ordinary failure %s', ('SYNTHETIC context',), sys.exc_info())
+        expected = logging.Formatter('%(levelname)s %(message)s').format(record) + '\n'
+        self.assertEqual(self.formatted_output(record), expected)
 
 
 class OAuthClientTests(TestCase):
@@ -433,6 +671,7 @@ class OAuthClientTests(TestCase):
     MES_USER_OAUTH_PROVIDER_ORIGIN='https://v3-ali.blacklake.cn',
     MES_USER_OAUTH_LAUNCH_URL='https://v3-ali.blacklake.cn/SYNTHETIC-REVIEWED-PAGE',
     MES_USER_OAUTH_REVIEW_REFERENCE='SYNTHETIC-NO-NETWORK-REVIEW',
+    MES_USER_OAUTH_APP_ACCESS_TOKEN=APP_TOKEN,
     CSRF_TRUSTED_ORIGINS=[ORIGIN], SESSION_COOKIE_SECURE=True, CSRF_COOKIE_SECURE=True)
 class OAuthConcurrencyTests(TransactionTestCase):
     setUp = OAuthCallbackTests.setUp
