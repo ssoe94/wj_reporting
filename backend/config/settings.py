@@ -94,9 +94,11 @@ INSTALLED_APPS = [
     'production',
     'ai_core',
     'analytics',
+    'mes_oauth',
 ]
 
 MIDDLEWARE = [
+    'mes_oauth.security.OAuthQueryRedactionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -154,10 +156,13 @@ CSRF_TRUSTED_ORIGINS = [
 
 
 
+# Explicit cookie controls let OAuth activation require HTTPS cookies without
+# changing ENVIRONMENT and its unrelated HSTS settings. Existing defaults stay.
+SESSION_COOKIE_SECURE = ENVIRONMENT == 'production' or config('SESSION_COOKIE_SECURE', default=False, cast=bool)
+CSRF_COOKIE_SECURE = ENVIRONMENT == 'production' or config('CSRF_COOKIE_SECURE', default=False, cast=bool)
+
 # 프로덕션 환경에서 쿠키 보안 설정
 if ENVIRONMENT == 'production':
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = 'Lax'
     CSRF_COOKIE_SAMESITE = 'Lax'
 
@@ -360,6 +365,7 @@ SIMPLE_JWT = {
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {'oauth_query': {'()': 'mes_oauth.security.OAuthQueryLogFilter'}},
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
@@ -374,6 +380,7 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+            'filters': ['oauth_query'],
         },
     },
     'root': {
@@ -409,3 +416,12 @@ CELERY_ENABLE_UTC = False
 
 # Celery Beat 스케줄러 설정 (django-celery-beat 사용 시)
 # CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Identity verification only. Activation/deployment/app grants are separately approved.
+MES_USER_OAUTH_ENABLED = config('MES_USER_OAUTH_ENABLED', default=False, cast=bool)
+MES_USER_OAUTH_CALLBACK_ORIGIN = 'https://wj-reporting-backend.onrender.com'
+MES_USER_OAUTH_PROVIDER_ORIGIN = 'https://v3-ali.blacklake.cn'
+MES_USER_OAUTH_LAUNCH_URL = config('MES_USER_OAUTH_LAUNCH_URL', default='')
+MES_USER_OAUTH_REVIEW_REFERENCE = config('MES_USER_OAUTH_REVIEW_REFERENCE', default='')
+MES_USER_OAUTH_USER_MAP = config('MES_USER_OAUTH_USER_MAP', default='{}')
+MES_USER_OAUTH_APP_ACCESS_TOKEN = config('MES_USER_OAUTH_APP_ACCESS_TOKEN', default='')

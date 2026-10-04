@@ -66,7 +66,36 @@ jobs:
 
       - name: Run backend tests
         working-directory: backend
-        run: python manage.py test --no-input
+        env:
+          INTERNAL_DATABASE_URL: ""
+          DATABASE_URL: "sqlite:///:memory:"
+          SECRET_KEY: synthetic-ci-validation-only-not-a-deployment-secret
+          DEBUG: "False"
+          ENVIRONMENT: test
+          MES_USER_OAUTH_ENABLED: "False"
+        run: |
+          test ! -e .env && test ! -e ../.env
+          python manage.py test --no-input
+
+      - name: Validate isolated OAuth and existing authentication contracts
+        run: |
+          python scripts/test_mes_oauth_postgres_local.py
+          python scripts/check-mes-oauth.py
+          python scripts/check-mes-oauth.py \
+            quality.test_archive_service \
+            injection.test_admin_user_create.MissingUserProfileAuthenticationTests \
+            injection.test_admin_user_create.FirstLoginPasswordChangeTests \
+            injection.test_admin_user_create.AdminUserStatusTests
+
+      - name: Validate PostgreSQL OAuth replay and migration contracts
+        run: |
+          if ! command -v pg_config >/dev/null 2>&1; then
+            echo "::error::Installed PostgreSQL tools are required for OAuth validation."
+            exit 1
+          fi
+          postgres_bin="$(pg_config --bindir)"
+          python scripts/check-mes-oauth-postgres-local.py \
+            --postgres-bin="$postgres_bin" --fixture-name=pg-ci
 
       - name: Run local AI worker tests
         run: >-

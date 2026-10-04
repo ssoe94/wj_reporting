@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-hWto0O25K8088F1/NgfShzTNij2ng9f+YIp8/W1moC4='; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>MES 사용자 확인</title>
+<script>
+(() => {
+  'use strict';
+  const current = new URL(location.href);
+  const parameters = current.searchParams;
+  const codes = parameters.getAll('code');
+  // Remove the one-use code from this history entry before any navigation.
+  history.replaceState(null, '', location.pathname);
+  if (window.top !== window.self || current.protocol !== 'https:' ||
+      current.origin !== 'https://wj-reporting.onrender.com' ||
+      current.pathname !== '/integrations/blacklake/relay.html' || current.hash ||
+      Array.from(parameters.keys()).some(key => key !== 'code') ||
+      codes.length !== 1 || !/^[!-~]{1,4096}$/.test(codes[0])) return;
+  // The destination is fixed. Fragments are not part of an HTTP request URL.
+  // No token exchange, network fetch, opener message, storage or logging here.
+  try {
+    location.replace('https://wj-reporting-backend.onrender.com/integrations/blacklake/callback/#code=' +
+                     encodeURIComponent(codes[0]));
+  } catch (_) {
+    // Never include the attempted URL or code in an error message.
+  }
+})();
+</script>
+</head>
+<body>
+<p>인증 연결을 확인하고 있습니다. 계속 진행되지 않으면 WJ의 인증 준비 화면에서 다시 시작하세요.</p>
+<noscript>사용자 인증에는 JavaScript가 필요합니다.</noscript>
+</body>
+</html>
