@@ -20,8 +20,12 @@ It is a physical, standalone static asset, independent of the SPA. It accepts a
 single printable ASCII code (1–4096 characters), removes the query from the
 current history entry, and navigates only to the fixed backend callback with
 `#code=...`. HTTPS, the exact relay origin/path and a top-level window are required.
+The observed official-button parameters `random` and `lang` may each occur once;
+their values are ignored and never forwarded or trusted as OAuth state.
 Unexpected parameters, duplicate codes, fragments and framed execution fail
-closed. There are no external assets, fetches, storage writes or token exchanges.
+closed, as do repeated `random` or `lang` keys. Fixed, value-free failure reasons
+replace silent stops; see [the compatibility diagnosis](mes-oauth-relay-diagnostics.md).
+There are no external assets, fetches, storage writes or token exchanges.
 
 The backend callback receives no code in its HTTP GET URL. Its hash-authorized
 script clears the fragment, puts the code into a hidden field, and enables the
