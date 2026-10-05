@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-5sIGRe2bbIAxmKv8Fh8tCCQ4uaVhVeSLcVWCI5Bu7Eo='; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>MES 사용자 확인</title>
+</head>
+<body>
+<p id="relay-status" role="status" aria-live="polite" data-relay-status="relay_script_unavailable">인증 확인을 시작하지 못했습니다. 오류: relay_script_unavailable. 창을 닫고 WJ 담당자에게 오류 코드를 알려주세요.</p>
+<noscript>사용자 인증에는 JavaScript가 필요합니다. WJ 담당자에게 브라우저 설정 확인을 요청하세요.</noscript>
+<script>
+(() => {
+  'use strict';
+  const status = document.getElementById('relay-status');
+  const failures = {
+    relay_url_invalid: '인증 주소를 확인할 수 없습니다.',
+    relay_history_unavailable: '브라우저에서 인증 주소를 정리하지 못했습니다.',
+    relay_framed: '인증은 독립된 새 탭에서 진행해야 합니다.',
+    relay_scheme_invalid: '보안 연결이 필요한 인증 주소입니다.',
+    relay_location_invalid: '등록된 인증 주소와 일치하지 않습니다.',
+    relay_fragment_unexpected: '인증 주소에 지원하지 않는 fragment가 있습니다.',
+    relay_parameter_unexpected: '인증 주소에 지원하지 않는 매개변수가 있습니다.',
+    relay_parameter_duplicate: '인증 주소의 부가 매개변수가 중복됐습니다.',
+    relay_code_missing: '인증 코드가 전달되지 않았습니다.',
+    relay_code_duplicate: '인증 코드가 중복 전달됐습니다.',
+    relay_code_empty: '빈 인증 코드가 전달됐습니다.',
+    relay_code_invalid: '인증 코드 형식을 확인할 수 없습니다.',
+    relay_navigation_failed: '사용자 확인 화면으로 이동하지 못했습니다.',
+    relay_navigation_incomplete: '사용자 확인 화면으로 이동이 완료되지 않았습니다.',
+  };
+  const fail = reason => {
+    status.dataset.relayStatus = reason;
+    status.textContent = failures[reason] + ' 오류: ' + reason +
+      '. 창을 닫고 WJ 담당자에게 오류 코드를 알려주세요.';
+  };
+  let current;
+  try {
+    current = new URL(location.href);
+  } catch (_) {
+    fail('relay_url_invalid');
+    return;
+  }
+  // Remove the one-use code from this history entry before any navigation.
+  try {
+    history.replaceState(null, '', location.pathname);
+  } catch (_) {
+    fail('relay_history_unavailable');
+    return;
+  }
+  if (window.top !== window.self) { fail('relay_framed'); return; }
+  if (current.protocol !== 'https:') { fail('relay_scheme_invalid'); return; }
+  if (current.origin !== 'https://wj-reporting.onrender.com' ||
+      current.pathname !== '/integrations/blacklake/relay.html') {
+    fail('relay_location_invalid'); return;
+  }
+  if (current.hash) { fail('relay_fragment_unexpected'); return; }
+  const parameters = current.searchParams;
+  const keys = Array.from(parameters.keys());
+  // The observed official button adds random/lang. Ignore their values entirely:
+  // neither is trusted as OAuth state, rendered, persisted or sent to the backend.
+  const allowedKeys = new Set(['code', 'random', 'lang']);
+  if (keys.some(key => !allowedKeys.has(key))) {
+    fail('relay_parameter_unexpected'); return;
+  }
+  if (['random', 'lang'].some(key => keys.filter(name => name === key).length > 1)) {
+    fail('relay_parameter_duplicate'); return;
+  }
+  const codes = parameters.getAll('code');
+  if (codes.length === 0) { fail('relay_code_missing'); return; }
+  if (codes.length !== 1) { fail('relay_code_duplicate'); return; }
+  if (codes[0] === '') { fail('relay_code_empty'); return; }
+  if (!/^[!-~]{1,4096}$/.test(codes[0])) { fail('relay_code_invalid'); return; }
+  // The destination is fixed. Fragments are not part of an HTTP request URL.
+  // No token exchange, network fetch, opener message, storage or logging here.
+  status.dataset.relayStatus = 'relay_redirecting';
+  status.textContent = '사용자 확인 화면으로 이동하고 있습니다.';
+  try {
+    location.replace('https://wj-reporting-backend.onrender.com/integrations/blacklake/callback/#code=' +
+                     encodeURIComponent(codes[0]));
+  } catch (_) {
+    fail('relay_navigation_failed');
+    return;
+  }
+  // A blocked navigation must not leave the page waiting forever or retry a code.
+  setTimeout(() => fail('relay_navigation_incomplete'), 4000);
+})();
+</script>
+</body>
+</html>

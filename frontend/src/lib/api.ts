@@ -136,8 +136,6 @@ api.interceptors.response.use(
       url: originalRequest?.url,
       method: originalRequest?.method,
       status: error.response?.status,
-      message: error.message,
-      data: error.response?.data,
     });
     
     return Promise.reject(error);
