@@ -146,6 +146,34 @@ class InspectionUserContextTests(TestCase):
         self.assert_blocked(exchange(), loader)
         loader.assert_called_once_with(TOKEN)
 
+    def test_response_contract_errors_are_distinct_from_provider_rejection_and_identity_mismatch(self):
+        for supplied, expected in (
+            (response({'userAccessToken': TOKEN}, code='200'), 'exchange_api_response_invalid'),
+            (response({'userAccessToken': TOKEN}, code=403), 'exchange_api_rejected'),
+            (response({'userAccessToken': TOKEN}, status=401), 'exchange_http_rejected'),
+        ):
+            loader = Mock()
+            with self.assertRaisesRegex(UserContextUnverified, '^' + expected + '$'):
+                verify_user_context(USER, supplied, info_loader=loader)
+            loader.assert_not_called()
+        for supplied, expected in (
+            (response({'userId': USER}, code='200'), 'userinfo_api_response_invalid'),
+            (response({'userId': USER}, code=403), 'userinfo_api_rejected'),
+            (response({'userId': str(USER)}), 'userinfo_user_id_invalid'),
+            (response({'userId': USER + 1}), 'user_identity_mismatch'),
+        ):
+            loader = Mock(return_value=supplied)
+            with self.assertRaisesRegex(UserContextUnverified, '^' + expected + '$'):
+                verify_user_context(USER, exchange(), info_loader=loader)
+            loader.assert_called_once_with(TOKEN)
+
+    def test_nested_data_or_app_token_cannot_substitute_for_documented_user_token(self):
+        for data in ({'data': {'userAccessToken': TOKEN}}, {'appAccessToken': TOKEN}):
+            loader = Mock()
+            with self.assertRaisesRegex(UserContextUnverified, '^user_token_missing$'):
+                verify_user_context(USER, response(data), info_loader=loader)
+            loader.assert_not_called()
+
     def test_noncallable_loader_is_rejected_without_detail_capability(self):
         self.assert_blocked(exchange(), None)
 

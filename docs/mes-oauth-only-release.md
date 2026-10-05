@@ -108,12 +108,17 @@ substitute a similarly named app or publish tenant configuration in this reposit
 
 `https://wj-reporting-backend.onrender.com/integrations/blacklake/callback/`
 
-The required API capabilities are [获取用户访问凭证](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1708927945926899&url=%2Fopenapi%2Fopen%2Fv1%2Faccess_token%2F_get_user_token)
-and [获取用户信息](https://v3-hw-openapi.blacklake.cn/document/api?detailId=1708930376017421&url=%2Fopenapi%2Fopen%2Fv1%2Faccess_token%2F_get_user_info).
-`1708927945926899` and `1708930376017421` are **documentation IDs, not permission
-IDs**. Do not send them to a permission-management API as grant identifiers.
+The ALI API capabilities are [获取用户访问凭证](https://v3-ali-openapi.blacklake.cn/static/api-docs-md/1708935281595630.md)
+and [获取用户信息](https://v3-ali-openapi.blacklake.cn/static/api-docs-md/1708935281595627.md).
+Their ALI documentation IDs are `1708935281595630` and `1708935281595627`.
+Earlier references used HW documentation IDs `1708927945926899` and
+`1708930376017421` for the corresponding endpoint paths. These are **documentation
+IDs, not permission IDs**. They do not establish a particular application's
+runtime grant. Do not send them to a permission-management API as grant identifiers.
+See [the ALI contract audit](mes-oauth-ali-contract-audit.md) for request/response
+matching and the still-unverified header-prefix requirement.
 
-The [OAuth guide](https://v3-hw-openapi.blacklake.cn/document/api?docxHash=EP8bde9TnoyR9LxnEYwckBu4nAd)
+The previously reviewed [OAuth guide](https://v3-hw-openapi.blacklake.cn/document/api?docxHash=EP8bde9TnoyR9LxnEYwckBu4nAd)
 describes a fixed callback with `code` and a five-minute authorization-code
 lifetime. Five minutes is not the app-grant duration or the user-token lifetime.
 The exchange's `expire` interpretation and a safe freshness duration still need

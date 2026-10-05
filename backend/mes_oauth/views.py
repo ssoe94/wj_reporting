@@ -11,6 +11,7 @@ or grants inspection/production/inventory authority.
 from datetime import timedelta
 import hashlib
 import json
+import logging
 import re
 import secrets
 from urllib.parse import urlsplit
@@ -30,7 +31,7 @@ from django.views.decorators.http import require_http_methods
 
 from .client import BlacklakeUserOAuthClient, ORIGINS, app_credential_configured
 from .models import OAuthAttempt
-from .identity import verify_user_context
+from .identity import FAILURE_CODES, safe_failure_code, verify_user_context
 from .access import can_verify_identity
 from .security import REFERRER_POLICY
 from quality.archive_access import is_archive_identity_marker
@@ -41,6 +42,38 @@ CALLBACK = '/integrations/blacklake/callback/'
 RELAY_URL = 'https://wj-reporting.onrender.com/integrations/blacklake/relay.html'
 COOKIE = '__Host-wj-mes-oauth'
 ATTEMPT_SECONDS = 300  # local attempt TTL; not the user token lifetime
+
+
+def _record_failure_diagnostic(reason, provider):
+    # Only fixed enums and bounded integers reach this WARNING event. No
+    # request, actor, attempt digest, exception, URL or response body is logged.
+    try:
+        if type(reason) is not str or reason not in FAILURE_CODES:
+            reason = 'identity_verification_failed'
+        if type(provider) is BlacklakeUserOAuthClient:
+            snapshot = BlacklakeUserOAuthClient.diagnostic_snapshot(provider)
+        else:
+            count = 0 if provider is None else None
+            snapshot = {'exchange_http_attempts': count, 'userinfo_http_attempts': count}
+        diagnostic = {'reason': reason}
+        for key in ('exchange_http_attempts', 'userinfo_http_attempts',
+                    'exchange_http_status', 'userinfo_http_status',
+                    'exchange_api_code', 'userinfo_api_code'):
+            value = snapshot.get(key) if type(snapshot) is dict else None
+            if key.endswith('_attempts'):
+                low, high = 0, 1
+            elif key.endswith('_status'):
+                low, high = 100, 599
+            else:
+                low, high = -2_147_483_648, 2_147_483_647
+            diagnostic[key] = value if type(value) is int and low <= value <= high else None
+        logging.getLogger('mes_oauth.diagnostics').warning(
+            'mes_oauth_identity_failure %s',
+            json.dumps(diagnostic, sort_keys=True, separators=(',', ':')))
+    except Exception:
+        # Diagnostic collection/handlers must not replace the fixed failure
+        # response or expose a provider exception via a chained traceback.
+        return
 
 
 class OAuthBlocked(Exception):
@@ -253,14 +286,17 @@ def callback(request):
         return _blocked('authorization_code_reused', 409)
     if claimed != 1:
         return _blocked('oauth_attempt_already_used', 409)
+    provider = None
     try:
         provider = get_provider()
         context = verify_user_context(expected, provider.exchange(code), info_loader=provider.userinfo)
         # Do not persist/return the credential, create a WJ login or enable MES.
         del context
-    except Exception:
+    except Exception as error:
+        reason = safe_failure_code(error)
         OAuthAttempt.objects.filter(pk=attempt.pk, status='processing').update(
-            status='rejected', error_code='identity_verification_failed')
+            status='rejected', error_code=reason)
+        _record_failure_diagnostic(reason, provider)
         response = _blocked('identity_verification_failed', 502)
     else:
         OAuthAttempt.objects.filter(pk=attempt.pk, status='processing').update(

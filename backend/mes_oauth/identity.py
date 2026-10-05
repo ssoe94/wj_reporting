@@ -10,8 +10,8 @@ that token, with redirects and retries disabled. It must not log credentials or
 raw responses. Tests use only synthetic loaders. This module can check the
 reported HTTP/API result; it cannot prove a caller's network/provenance claims.
 
-The documented ``expire`` field has not yet been verified as relative or epoch
-seconds. It is deliberately not interpreted. Identity evidence is not evidence
+The documented ``expire`` unit is seconds, but relative duration versus epoch
+has not been verified. It is deliberately not interpreted. Identity evidence is not evidence
 of token freshness, claim/save/finish authority, or readiness for live requests.
 """
 from dataclasses import dataclass, field
@@ -19,6 +19,29 @@ from dataclasses import dataclass, field
 
 class UserContextUnverified(Exception):
     """Only fixed, non-sensitive reason codes escape the validation boundary."""
+
+
+# Persist only these literals, never exception text or provider-supplied codes.
+FAILURE_CODES = frozenset({
+    'oauth_origin_invalid', 'oauth_endpoint_invalid', 'app_credential_missing', 'oauth_provider_unavailable',
+    'expected_user_invalid', 'info_loader_invalid', 'user_token_missing',
+    'userinfo_load_failed', 'userinfo_user_id_invalid', 'user_identity_mismatch',
+} | {
+    stage + suffix
+    for stage in ('exchange', 'userinfo')
+    for suffix in ('_response_invalid', '_redirect_unverified', '_http_rejected',
+                   '_api_rejected', '_api_response_invalid', '_data_invalid',
+                   '_header_invalid', '_request_failed', '_response_decode_failed',
+                   '_response_too_large', '_attempt_already_used')
+})
+
+
+def safe_failure_code(error):
+    """Bounded diagnostic for internal storage; public failures stay generic."""
+    if (type(error) is UserContextUnverified and len(error.args) == 1
+            and type(error.args[0]) is str and error.args[0] in FAILURE_CODES):
+        return error.args[0]
+    return 'identity_verification_failed'
 
 
 @dataclass(frozen=True)
@@ -51,7 +74,9 @@ def _successful_data(response, stage):
     if type(response.status_code) is not int or response.status_code != 200:
         raise UserContextUnverified(stage + '_http_rejected')
     body = response.body
-    if type(body) is not dict or type(body.get('code')) is not int or body['code'] != 200:
+    if type(body) is not dict or type(body.get('code')) is not int:
+        raise UserContextUnverified(stage + '_api_response_invalid')
+    if body['code'] != 200:
         raise UserContextUnverified(stage + '_api_rejected')
     if type(body.get('data')) is not dict:
         raise UserContextUnverified(stage + '_data_invalid')
@@ -78,10 +103,15 @@ There is intentionally no detail callback or general runtime token provider.
         raise UserContextUnverified('user_token_missing')
     try:
         response = info_loader(token)
-    except Exception:
+    except Exception as error:
         # Do not propagate provider messages, request URLs or exception chains.
+        reason = safe_failure_code(error)
+        if reason.startswith('userinfo_'):
+            raise UserContextUnverified(reason) from None
         raise UserContextUnverified('userinfo_load_failed') from None
     user_info = _successful_data(response, 'userinfo')
-    if type(user_info.get('userId')) is not int or user_info['userId'] != expected_user_id:
+    if type(user_info.get('userId')) is not int:
+        raise UserContextUnverified('userinfo_user_id_invalid')
+    if user_info['userId'] != expected_user_id:
         raise UserContextUnverified('user_identity_mismatch')
     return VerifiedUserContext(user_id=expected_user_id, token=token)
