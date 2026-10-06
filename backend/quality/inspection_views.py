@@ -99,6 +99,35 @@ class InspectionRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     def capabilities(self, request):
         return Response(capabilities(request.user))
 
+    @action(detail=False, methods=['get'], url_path='mes-detail-preview')
+    def mes_detail_preview(self, request):
+        """Read only the owner-approved QC; no local binding or write gate."""
+        from mes_oauth import vault
+        from mes_oauth.inspection_credentials import (
+            APP_CREDENTIAL, CALLBACK, IDENTITY, POLICY, READ_AUTH, TEMPORARY, UNAVAILABLE)
+        from .inspection_qc_read import read_approved_qc
+        if request.method != 'GET':
+            response = Response({'detail': 'mes_qc_read_unavailable',
+                                 'code': 'read_method_not_allowed'}, status=405)
+        elif request.query_params or request.body:
+            response = Response({'detail': 'mes_qc_read_unavailable',
+                                 'code': 'invalid_read_request'}, status=400)
+        else:
+            try:
+                result = read_approved_qc(InspectionSession.from_request(request))
+                response = Response(result)
+            except vault.VaultBlocked as error:
+                code = str(error)
+                scope_denied = 'inspection_qc_read_scope_denied'
+                allowed = {APP_CREDENTIAL, CALLBACK, IDENTITY, POLICY, READ_AUTH,
+                           TEMPORARY, UNAVAILABLE, scope_denied}
+                response = Response({'detail': 'mes_qc_read_unavailable',
+                                     'code': code if code in allowed else UNAVAILABLE},
+                                    status=403 if code in {POLICY, UNAVAILABLE, scope_denied} else 502)
+        response['Cache-Control'] = 'no-store, max-age=0'
+        response['Referrer-Policy'] = 'no-referrer'
+        return response
+
     @action(detail=False, methods=['get'], url_path='kanban')
     def kanban(self, request):
         if not can_use_admin_inspection_flow(request.user):

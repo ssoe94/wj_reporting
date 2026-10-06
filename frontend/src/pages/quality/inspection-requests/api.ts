@@ -6,9 +6,16 @@ import type { InspectionAction, MutationAttempt } from './workflow';
 import type { InspectionCapabilities, InspectionList, InspectionRequest } from './model';
 import { validateInspectionKanban } from './kanban';
 import type { InspectionKanban } from './kanban';
+import { parseMesDetailPreview } from './mesDetailPreviewModel';
 export * from './model';
 
 const base = '/quality/inspection-requests/';
+export async function getMesDetailPreview(sessionId: string | null, signal?: AbortSignal) {
+  assertAuthSessionCurrent(sessionId);
+  const response = await http.get(`${base}mes-detail-preview/`, { authSessionId: sessionId, signal });
+  assertAuthSessionCurrent(sessionId);
+  return parseMesDetailPreview(response.data);
+}
 export async function getInspectionCapabilities(sessionId: string | null): Promise<InspectionCapabilities> {
   assertAuthSessionCurrent(sessionId);
   const response = await http.get<InspectionCapabilities>(`${base}capabilities/`, { authSessionId: sessionId });

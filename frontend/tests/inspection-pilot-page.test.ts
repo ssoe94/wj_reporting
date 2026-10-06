@@ -37,7 +37,7 @@ function content(node: any): string {
   if (node === null || node === undefined || typeof node === 'boolean') return '';
   return typeof node === 'object' ? content(node.props?.children) : String(node);
 }
-function harness(initialReply = deferred()) {
+function harness(initialReply = deferred(), actorId = 12) {
   const hooks: Hook[] = [];
   const calls: Call[] = [];
   const invalidations: string[][] = [];
@@ -85,7 +85,7 @@ function harness(initialReply = deferred()) {
     'react/jsx-runtime': { jsx: (type: unknown, props: any) => ({ type, props }), jsxs: (type: unknown, props: any) => ({ type, props }), Fragment: 'Fragment' },
     'react-dom': { createPortal: (node: any) => node },
     'lucide-react': { AlertTriangle: 'Icon', ClipboardCheck: 'Icon', Plus: 'Icon', RefreshCw: 'Icon', Search: 'Icon' },
-    '../../../contexts/AuthContext': { useAuth: () => ({ user: { id: 12, username: 'SYNTHETIC-INSPECTOR' }, authSessionId: SESSION, logout: async () => false, isLoggingOut: false, logoutError: false }) },
+    '../../../contexts/AuthContext': { useAuth: () => ({ user: { id: actorId, username: 'SYNTHETIC-INSPECTOR' }, authSessionId: SESSION, logout: async () => false, isLoggingOut: false, logoutError: false }) },
     '@/domains/auth/auth-storage': { subscribeToAuthStorage: () => () => {} },
     '@/domains/auth/auth-transition': { assertAuthSessionCurrent: (id: string) => { assert.ok(sessionCurrent && id === SESSION, 'Synthetic session changed'); }, isAuthSessionCurrent: (id: string) => sessionCurrent && id === SESSION, registerAuthTransitionGuard: () => () => {} },
     '../../../i18n': { useLang: () => ({ lang: 'ko' }) },
@@ -99,6 +99,7 @@ function harness(initialReply = deferred()) {
     './InspectionKanban': { default: 'InspectionKanban' },
     './InspectionRequestDetail': { default: 'InspectionRequestDetail' },
     './NewInspectionRequest': { default: 'NewInspectionRequest' },
+    './MesDetailPreview': { default: 'MesDetailPreview' },
     './InspectionRequestsPage.css': {},
   };
   const exports: Record<string, any> = {};
@@ -262,4 +263,23 @@ test('full scope preserves kanban, collapsed auxiliary list and kanban polling',
     fixture.nodes().find((node) => node.props.className === 'inspection-list-row')!.props.onClick(); await fixture.settle();
     assert.ok(fixture.button(inspectionCopy.ko.returnToKanban));
   } finally { fixture.cleanup(); }
+});
+
+test('MES metadata preview is visible only for actor18 with accepted inspection access', async () => {
+  for (const actorId of [12, 18]) {
+    for (const capabilities of [pilot, { ...full, can_view: false }]) {
+      const fixture = harness(deferred(), actorId);
+      try {
+        await fixture.settle();
+        assert.equal(fixture.nodes().some((node) => node.type === 'MesDetailPreview'), false);
+        fixture.reply.resolve(capabilities); await fixture.settle();
+        const preview = fixture.nodes().find((node) => node.type === 'MesDetailPreview');
+        if (actorId === 18 && capabilities.can_view) {
+          assert.ok(preview);
+          assert.deepEqual(preview.props, { actorId: 18, sessionId: SESSION, lang: 'ko', disabled: false });
+        } else assert.equal(preview, undefined);
+        assert.ok(fixture.calls.every((call) => ['capabilities', 'list'].includes(call.kind)), 'mounting preview adds no business request');
+      } finally { fixture.cleanup(); }
+    }
+  }
 });

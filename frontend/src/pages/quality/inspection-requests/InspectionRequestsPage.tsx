@@ -21,6 +21,7 @@ import { useInspectionRouteLeaveGuard } from './useInspectionRouteLeaveGuard';
 import InspectionKanban from './InspectionKanban';
 import InspectionRequestDetail from './InspectionRequestDetail';
 import NewInspectionRequest from './NewInspectionRequest';
+import MesDetailPreview from './MesDetailPreview';
 import './InspectionRequestsPage.css';
 
 export default function InspectionRequestsPage() {
@@ -262,6 +263,7 @@ export default function InspectionRequestsPage() {
     {!capabilities && !capabilityError && <div className="inspection-message" role="status">{text.checkingAccess}</div>}
     {capabilities && !canView && <div className="inspection-message" role="alert">{text.denied}</div>}
     {canView && <>
+      {inspector?.id === 18 && <MesDetailPreview actorId={inspector.id} sessionId={sessionId} lang={lang} disabled={editorLocked || isLoggingOut} />}
       {canViewKanban && <div ref={kanbanRef} tabIndex={-1}><InspectionKanban snapshot={kanban?.business_date === businessDate ? kanban : null} date={businessDate} lang={lang} now={now} loading={kanbanLoading} error={kanbanError} selectedId={creating ? null : selectedId} onSelect={select}
         onDate={(value) => { if (!ownsSession()) return; setFollowCurrentDate(false); setBusinessDate(value); }} onCurrent={() => { if (!ownsSession()) return; const current = new Date(); setNow(current); setFollowCurrentDate(true); setBusinessDate(inspectionBusinessDate(current)); }} onRefresh={() => void loadKanban()} /></div>}
       {assignedOnly && <section className="inspection-workspace inspection-assigned-workspace" aria-labelledby="inspection-assigned-title" ref={listRef} tabIndex={-1}><header className="inspection-assigned-heading"><h2 id="inspection-assigned-title">{text.assignedRequests}{list && ` (${list.count})`}</h2><p>{text.assignedHint}</p></header>{requestList}</section>}

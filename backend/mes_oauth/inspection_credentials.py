@@ -10,6 +10,7 @@ VaultBlocked inside that transaction and commit its fixed blocked/unknown result
 rolling back that caller transaction necessarily rolls back the wipe as well.
 """
 from datetime import datetime, timedelta
+from dataclasses import dataclass
 from decimal import Decimal
 import math
 import re
@@ -37,13 +38,30 @@ APP_CREDENTIAL = 'inspection_app_credential_unavailable'
 TEMPORARY = 'inspection_identity_temporarily_unavailable'
 
 
+@dataclass(frozen=True)
+class ReviewedInspectionReadScope:
+    actor_id: int
+    mes_user_id: int
+    qc_id: str
+    qc_code: str
+    reference: str
+
+
+# The owner approved this one account/QC for detail reads. This is a server
+# scope, never a client-supplied subject, write authority or general MES access.
+APPROVED_QC_READ_SCOPE = ReviewedInspectionReadScope(
+    18, 1733276056994641, '1791013139392836', 'QC-26100300323',
+    'OWNER-QC-26100300323-READ-20261006')
+
+
 class _Blocked(Exception):
     pass
 
 
-def _policy(policy_check, tenant, initial=None):
+def _policy(policy_check, tenant, initial=None, *, approved_read=False):
     try:
-        accepted = (getattr(settings, 'MES_INSPECTION_ENABLED', False) is True
+        accepted = ((getattr(settings, 'MES_INSPECTION_ENABLED', False) is True
+                     or approved_read is True)
                     and policy_check() is True)
     except Exception:
         accepted = False
@@ -106,7 +124,8 @@ def _safe_result(result, token):
 
 @sensitive_variables()
 def call_with_user_credential(session, *, mes_user_id, tenant, contract_reference,
-                              policy_check, operation, callback, provider=None):
+                              policy_check, operation, callback, provider=None,
+                              approved_read_scope=None):
     """Verify the stored user token, then invoke one reviewed adapter callback.
 
 Returns only a checked dictionary or InspectionWriteAcknowledgement. A callback
@@ -121,13 +140,23 @@ Read admission requires view authority; save/finish require submit authority.
             or type(operation) is not str or operation not in {'read', 'save', 'finish'}
             or not callable(policy_check) or not callable(callback)):
         raise vault.VaultBlocked(POLICY) from None
+    approved_read = False
+    if approved_read_scope is not None:
+        if (type(approved_read_scope) is not ReviewedInspectionReadScope
+                or approved_read_scope is not APPROVED_QC_READ_SCOPE
+                or operation != 'read'
+                or session.actor_id != APPROVED_QC_READ_SCOPE.actor_id
+                or mes_user_id != APPROVED_QC_READ_SCOPE.mes_user_id
+                or contract_reference != APPROVED_QC_READ_SCOPE.reference):
+            raise vault.VaultBlocked(POLICY) from None
+        approved_read = True
     permission = 'view' if operation == 'read' else 'submit'
     failure, result, callback_entered = None, None, False
     try:
         with session.lock(permission, actor_id=session.actor_id,
                           require_mapping=True, mes_actor=mes_user_id) as user:
             try:
-                configuration = _policy(policy_check, tenant)
+                configuration = _policy(policy_check, tenant, approved_read=approved_read)
                 row = MESCredential.objects.select_for_update().filter(pk=session.actor_id).first()
                 _reusable(user, row, session, mes_user_id, tenant, configuration)
                 try:
@@ -154,9 +183,11 @@ Read admission requires view authority; save/finish require submit authority.
                     # Keep the original outer user/login/credential locks held.
                     with session.lock(permission, actor_id=session.actor_id,
                                       require_mapping=True, mes_actor=mes_user_id) as user:
-                        configuration = _policy(policy_check, tenant, configuration)
+                        configuration = _policy(policy_check, tenant, configuration,
+                                                approved_read=approved_read)
                         _reusable(user, row, session, mes_user_id, tenant, configuration)
-                        configuration = _policy(policy_check, tenant, configuration)
+                        configuration = _policy(policy_check, tenant, configuration,
+                                                approved_read=approved_read)
                         deadline = _reusable(user, row, session, mes_user_id, tenant, configuration)
                         lease = InspectionUserAccessToken(token, deadline.timestamp(), user_id=mes_user_id)
                         try:
