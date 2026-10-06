@@ -164,6 +164,47 @@ class StandaloneReadbackTests(unittest.TestCase):
         return decode_live_detail(self.raw, binding=self.binding, detail_contract=self.contract,
                                   observed_at=read_helpers.NOW)
 
+    def native_general(self):
+        config = self.raw['data']['qcConfig']
+        for field in ('qcRange', 'recordSample', 'recordSummaryCount', 'materialBatchRecordType'):
+            config[field] = None
+            self.contract['source_checks'].append({'path': ['qcConfig', field], 'equals': None})
+        config.update(checkEntityType={'code': 3}, checkEntityUnitCount=1, reportPageType={'code': 2})
+
+    def test_native_general_explicit_reviewed_nulls_allow_one_fixed_record(self):
+        self.native_general()
+        self.record()
+        observed = self.decode()
+        self.assertEqual(observed['state'], 'open')
+        self.assertEqual(len(observed['records']), 1)
+
+    def test_native_general_missing_changed_or_unreviewed_null_is_unknown(self):
+        for field in ('qcRange', 'recordSample', 'recordSummaryCount', 'materialBatchRecordType'):
+            for change in ('missing', 'changed', 'unreviewed'):
+                with self.subTest(field=field, change=change):
+                    self.setUp()
+                    self.native_general()
+                    config = self.raw['data']['qcConfig']
+                    if change == 'missing':
+                        del config[field]
+                    elif change == 'changed':
+                        config[field] = {'code': 1}
+                    else:
+                        self.contract['source_checks'] = [check for check in self.contract['source_checks']
+                                                         if check['path'] != ['qcConfig', field]]
+                    self.unknown()
+
+    def test_native_general_fixed_count_format_and_sampler_are_required(self):
+        for field, value in (('checkEntityType', {'code': 2}), ('checkEntityType', True),
+                             ('checkEntityUnitCount', 2), ('checkEntityUnitCount', True),
+                             ('checkEntityUnitCount', None), ('reportPageType', {'code': 1}),
+                             ('sampleProcessMethod', None)):
+            with self.subTest(field=field, value=value):
+                self.setUp()
+                self.native_general()
+                self.raw['data']['qcConfig'][field] = value
+                self.unknown()
+
     def test_explicit_null_relations_empty_materials_and_exact_trial_codes_are_valid(self):
         observed = self.decode()
         self.assertEqual(observed['identity'], {'tenant': 'SYNTHETIC-TENANT',
@@ -295,6 +336,19 @@ class StandaloneCoordinatorTests(APITestCase):
         value['standalone_test_reference'] = 'SYNTHETIC-STANDALONE-REVIEW'
         value['detail_contract'].update(check_type=6, label_path=['code'])
         return value
+
+    def test_native_general_coordinator_saves_finishes_and_projects_only_verified_trial(self):
+        config = self.source['data']['qcConfig']
+        # Replace the production-style fixture check, rather than retaining a
+        # contradictory descendant check beneath the reviewed null field.
+        self.contract['detail_contract']['source_checks'] = []
+        for field in ('qcRange', 'recordSample', 'recordSummaryCount', 'materialBatchRecordType'):
+            config[field] = None
+            self.contract['detail_contract']['source_checks'].append(
+                {'path': ['qcConfig', field], 'equals': None})
+        config.update(checkEntityType={'code': 3}, checkEntityUnitCount=1, reportPageType={'code': 2})
+        with override_settings(MES_INSPECTION_CONTRACT=json.dumps(self.contract)):
+            self.test_reviewed_real_coordinator_saves_verifies_finishes_verifies_trial_without_production_projection()
 
     def test_reviewed_real_coordinator_saves_verifies_finishes_verifies_trial_without_production_projection(self):
         saved = self.action(self.data, 'mes-save')

@@ -202,13 +202,27 @@ def decode_live_detail(response, *, binding, detail_contract, observed_at):
         config = _object(data.get('qcConfig'))
         from .inspection_integration_trial import standalone
         isolated = standalone(binding)
+        # A native general inspection has no sample/inventory selection. Its
+        # explicit nulls differ from the production enums; missing metadata is
+        # still unknown, and every null must be pinned in the reviewed contract.
+        general_nulls = ('qcRange', 'recordSample', 'recordSummaryCount',
+                         'materialBatchRecordType')
+        native_general = isolated and all(
+            key in config and config[key] is None for key in general_nulls)
+        if native_general and (
+                any((('qcConfig', key), None) not in checks for key in general_nulls)
+                or _enum(config.get('checkEntityType')) != 3
+                or type(config.get('checkEntityUnitCount')) is not int
+                or config['checkEntityUnitCount'] != 1
+                or _enum(config.get('reportPageType')) != 2):
+            raise _Invalid()
         if isolated:
             if (any(data.get(key, _MISSING) is not None for key in
                     ('workOrder', 'produceTask', 'equipment', 'inboundOrder', 'outboundOrder', 'approvalDetail'))
                     or any(type(data.get(key)) is not list or data[key] != []
                            for key in ('checkMaterials', 'sampleMaterials'))
                     or config.get('code') != binding.contract['config_code']
-                    or _enum(config.get('qcRange')) != 1):
+                    or (not native_general and _enum(config.get('qcRange')) != 1)):
                 raise _Invalid()
             raw_identity = {'tenant': identity['tenant'], 'qc_id': _id(data.get('id')),
                             'work_order_id': None, 'production_task_id': None, 'equipment_id': None,
@@ -231,9 +245,11 @@ def decode_live_detail(response, *, binding, detail_contract, observed_at):
             raise _Invalid()
         # This release supports only the reviewed no-quantity/no-attachment case.
         # Source checks must pin any additional provider-specific requirements.
-        if (_enum(config.get('recordSample')) != 2 or _enum(config.get('recordSummaryCount')) != 2
-                or _enum(config.get('materialBatchRecordType')) not in ({1} if isolated else {1, 2})
-                or _enum(config.get('sampleProcessMethod')) != 1):
+        if (_enum(config.get('sampleProcessMethod')) != 1
+                or (not native_general and (
+                    _enum(config.get('recordSample')) != 2
+                    or _enum(config.get('recordSummaryCount')) != 2
+                    or _enum(config.get('materialBatchRecordType')) not in ({1} if isolated else {1, 2})))):
             raise _Invalid()
         state = by_state.get(_enum(data.get('status')))
         if state is None or 'inspectionResult' not in data:
