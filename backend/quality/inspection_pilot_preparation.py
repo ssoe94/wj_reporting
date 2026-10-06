@@ -23,7 +23,8 @@ def prepare_pilot(manifest, *, apply=False, allow_single_actor_test=False):
 
 The reviewed manifest contains the exact current WJ version/results and MES
 mapping. This validates local intent, not live MES state/authority. Runtime still
-performs the existing fresh scoped read before each write.
+performs the existing fresh scoped read before each write. Preparation preserves
+the runtime flag and is safe while the reviewed adapter is already enabled.
 """
     try:
         return _prepare(manifest, apply=apply, allow_single_actor_test=allow_single_actor_test)
@@ -35,7 +36,7 @@ performs the existing fresh scoped read before each write.
 def _prepare(manifest, *, apply=False, allow_single_actor_test=False):
     if type(apply) is not bool or type(allow_single_actor_test) is not bool:
         raise ValueError()
-    if getattr(settings, 'MES_INSPECTION_ENABLED', False) is not False:
+    if type(getattr(settings, 'MES_INSPECTION_ENABLED', False)) is not bool:
         raise ValueError()
     if (type(manifest) is not dict or set(manifest) != {'actor_id', 'request_id',
             'expected_version', 'binding', 'provider_contract'}
@@ -66,6 +67,7 @@ def _prepare(manifest, *, apply=False, allow_single_actor_test=False):
         if (row.version != manifest['expected_version'] or row.assigned_to_id != actor.pk
                 or row.sync_status != 'not_synced'
                 or row.operations.filter(status__in=['pending', 'unknown']).exists()
+                or row.operations.filter(scope__regex=r':(sync|mes-save|mes-finish)$').exists()
                 or InspectionMesBinding.objects.filter(request=row).exists()):
             raise ValueError()
         validate_result(row, submit=True)

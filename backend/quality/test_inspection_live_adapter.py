@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import uuid
 from unittest.mock import Mock, patch
 
+from django.conf import settings
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -350,7 +351,8 @@ class LiveInspectionAdapterTests(APITestCase):
             'current_plan_id': 70, 'plan_version': scope.plan_version, 'generation': 1,
             'reference': 'SYNTHETIC-PLAN', 'valid_from': (now - timedelta(seconds=1)).isoformat(),
             'valid_until': manifest['provider_contract']['expires_at'], 'stale_after_seconds': 120}
-        with override_settings(MES_INSPECTION_ENABLED=False):
+        with override_settings(MES_INSPECTION_ENABLED=True,
+                               MES_INSPECTION_CONTRACT=json.dumps(manifest['provider_contract'])):
             dry = prepare_pilot(manifest, allow_single_actor_test=True)
             self.assertTrue(dry['dry_run'])
             self.assertFalse(InspectionMesBinding.objects.exists())
@@ -358,7 +360,8 @@ class LiveInspectionAdapterTests(APITestCase):
             self.assertEqual(row.status, 'submitted')
             result = prepare_pilot(manifest, apply=True, allow_single_actor_test=True)
             self.assertTrue(result['prepared'])
-            self.assertFalse(get_stage_adapter().enabled)
+            self.assertIs(settings.MES_INSPECTION_ENABLED, True)
+            self.assertTrue(get_stage_adapter(user=self.editor).enabled)
         self.assertEqual(self.calls, [])
         self.identity.userinfo.assert_not_called()
         row.refresh_from_db()
@@ -435,16 +438,53 @@ class LiveInspectionAdapterTests(APITestCase):
         cases = [(manifest, False), ({**manifest, 'expected_version': 999}, True),
                  ({**manifest, 'actor_id': self.reviewer.pk}, True),
                  ({**manifest, 'binding': {**manifest['binding'], 'qc_id': '91000000000000099'}}, True)]
-        with override_settings(MES_INSPECTION_ENABLED=False):
-            for candidate, explicit in cases:
+        for candidate, explicit in cases:
+            with self.assertRaises(PilotPreparationBlocked):
+                prepare_pilot(candidate, apply=True, allow_single_actor_test=explicit)
+            self.assertFalse(InspectionMesBinding.objects.exists())
+            row = InspectionRequest.objects.get(pk=manifest['request_id'])
+            self.assertEqual(row.status, 'submitted')
+            self.assertIsNone(row.reviewed_by_id)
+        self.assertIs(settings.MES_INSPECTION_ENABLED, True)
+        self.assertEqual(self.calls, [])
+
+    def test_enabled_preparation_rejects_existing_write_history_atomically(self):
+        from quality.inspection_pilot_preparation import PilotPreparationBlocked, prepare_pilot
+        from quality.inspection_models import InspectionAudit, InspectionOperation
+        manifest = self._pilot_manifest(single=True)
+        row = InspectionRequest.objects.get(pk=manifest['request_id'])
+        for action, state in (('mes-save', 'succeeded'), ('mes-finish', 'blocked'),
+                              ('sync', 'succeeded'), ('mes-reconcile', 'pending'),
+                              ('mes-reconcile', 'unknown')):
+            with self.subTest(action=action, state=state):
+                operation = InspectionOperation.objects.create(request=row,
+                    scope=f'{self.editor.pk}:{row.pk}:{action}', key=uuid.uuid4(),
+                    payload_digest=digest({'version': row.version}), status=state)
                 with self.assertRaises(PilotPreparationBlocked):
-                    prepare_pilot(candidate, apply=True, allow_single_actor_test=explicit)
-                self.assertFalse(InspectionMesBinding.objects.exists())
-                row = InspectionRequest.objects.get(pk=manifest['request_id'])
+                    prepare_pilot(manifest, apply=True, allow_single_actor_test=True)
+                row.refresh_from_db()
                 self.assertEqual(row.status, 'submitted')
+                self.assertEqual(row.version, manifest['expected_version'])
                 self.assertIsNone(row.reviewed_by_id)
-        with self.assertRaises(PilotPreparationBlocked):
-            prepare_pilot(manifest, apply=True, allow_single_actor_test=True)
+                self.assertFalse(InspectionMesBinding.objects.exists())
+                self.assertFalse(InspectionAudit.objects.filter(
+                    request=row, action='prepare_single_actor_test').exists())
+                operation.delete()
+        self.assertIs(settings.MES_INSPECTION_ENABLED, True)
+        self.assertEqual(self.calls, [])
+        self.identity.userinfo.assert_not_called()
+
+    def test_preparation_rejects_non_boolean_runtime_flag_without_side_effects(self):
+        from quality.inspection_pilot_preparation import PilotPreparationBlocked, prepare_pilot
+        manifest = self._pilot_manifest(single=True)
+        for invalid in (None, 1, 'true'):
+            with self.subTest(flag=invalid), override_settings(MES_INSPECTION_ENABLED=invalid):
+                with self.assertRaises(PilotPreparationBlocked):
+                    prepare_pilot(manifest, apply=True, allow_single_actor_test=True)
+        row = InspectionRequest.objects.get(pk=manifest['request_id'])
+        self.assertEqual(row.status, 'submitted')
+        self.assertIsNone(row.reviewed_by_id)
+        self.assertFalse(InspectionMesBinding.objects.exists())
         self.assertEqual(self.calls, [])
 
     def test_preparation_command_uses_manifest_without_changing_runtime_flags(self):
@@ -452,8 +492,7 @@ class LiveInspectionAdapterTests(APITestCase):
         from io import StringIO
         import tempfile
         manifest = self._pilot_manifest()
-        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json') as fixture, \
-                override_settings(MES_INSPECTION_ENABLED=False):
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json') as fixture:
             json.dump(manifest, fixture)
             fixture.flush()
             output = StringIO()
@@ -464,15 +503,15 @@ class LiveInspectionAdapterTests(APITestCase):
             self.assertEqual(InspectionMesBinding.objects.count(), 1)
             with self.assertRaises(CommandError):
                 call_command('prepare_inspection_pilot', manifest=fixture.name, apply=True, stdout=StringIO())
-            self.assertFalse(get_stage_adapter().enabled)
+            self.assertIs(settings.MES_INSPECTION_ENABLED, True)
+            self.assertTrue(get_stage_adapter(user=self.editor).enabled)
         self.assertEqual(self.calls, [])
 
     def test_single_actor_exception_expires_and_never_changes_browser_approval_rule(self):
         from quality.inspection_pilot_preparation import prepare_pilot
         from quality.inspection_mes_stages import binding_contract
         manifest = self._pilot_manifest(single=True)
-        with override_settings(MES_INSPECTION_ENABLED=False):
-            prepare_pilot(manifest, apply=True, allow_single_actor_test=True)
+        prepare_pilot(manifest, apply=True, allow_single_actor_test=True)
         row = InspectionRequest.objects.get(pk=manifest['request_id'])
         binding = InspectionMesBinding.objects.get(request=row)
         for change in ({'expires_at': (timezone.now() - timedelta(seconds=1)).isoformat()},
