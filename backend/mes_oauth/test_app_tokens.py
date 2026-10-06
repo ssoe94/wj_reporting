@@ -91,7 +91,7 @@ class AppTokenTests(SimpleTestCase):
             self.assertNotIn(private, ''.join(logs.output))
 
     def test_ambiguous_or_missing_expiry_has_no_default_fallback(self):
-        for value in (None, True, '7200', 0, 60, -1, 86401, 1791244800):
+        for value in (None, True, '7200', 0, 60, -1, 2**63):
             with self.subTest(expire=value):
                 supplier = self.supplier({'code': 200, 'data': {
                     'appAccessToken': TOKEN, 'expire': value, 'expiresIn': 7200}})
@@ -101,6 +101,38 @@ class AppTokenTests(SimpleTestCase):
                 with self.assertRaisesMessage(AppCredentialUnavailable, 'budget_exhausted'):
                     supplier.get()
                 self.session.post.assert_called_once()
+
+    def test_documented_long_ttl_keeps_local_lifetime_and_one_issuance_budget(self):
+        for duration in (86401, 2**63 - 1):
+            with self.subTest(duration=duration):
+                supplier = self.supplier({'code': 200, 'data': {
+                    'appAccessToken': TOKEN, 'expire': duration}})
+                with self.assertLogs('mes_oauth.diagnostics', level='WARNING') as logs:
+                    self.assertEqual(supplier.get(), TOKEN)
+                event = json.loads(logs.records[0].getMessage().split(' ', 1)[1])
+                self.assertEqual(event['provider_expire_seconds'], duration)
+                self.clock.return_value = 4539.9
+                self.assertEqual(supplier.get(), TOKEN)
+                self.clock.return_value = 4540
+                with self.assertRaisesMessage(AppCredentialUnavailable, 'budget_exhausted'):
+                    supplier.get()
+                self.session.post.assert_called_once()
+                for private in (KEY, SECRET, TOKEN):
+                    self.assertNotIn(private, ''.join(logs.output))
+
+    def test_rejected_token_preserves_only_bounded_observed_expiry_metadata(self):
+        supplier = self.supplier({'code': 200, 'data': {
+            'appAccessToken': SECRET + '\r\n', 'expire': 86401}})
+        with self.assertLogs('mes_oauth.diagnostics', level='WARNING') as logs:
+            with self.assertRaises(AppCredentialUnavailable):
+                supplier.get()
+        event = json.loads(logs.records[0].getMessage().split(' ', 1)[1])
+        self.assertEqual(event['reason'], 'app_credential_unavailable')
+        self.assertEqual(event['provider_expire_seconds'], 86401)
+        self.assertNotIn(SECRET, ''.join(logs.output))
+        with self.assertRaisesMessage(AppCredentialUnavailable, 'budget_exhausted'):
+            supplier.get()
+        self.session.post.assert_called_once()
 
     def test_failure_budget_survives_elapsed_time_and_never_logs_exception_or_payload(self):
         supplier = self.supplier()

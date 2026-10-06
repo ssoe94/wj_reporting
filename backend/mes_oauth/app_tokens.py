@@ -24,7 +24,10 @@ ALI = 'https://v3-ali.blacklake.cn'
 ISSUE_PATH = '/api/openapi/domain/api/v1/access_token/_get_access_token'
 SAFETY_SECONDS = 60
 MAX_CACHE_SECONDS = 3600
-MAX_PROVIDER_DURATION_SECONDS = 86400
+# The documented TTL is represented as Long in the first-party SDK. Its range
+# is a schema bound, not a token-lifetime policy: local reuse remains capped by
+# MAX_CACHE_SECONDS and this callback can never issue a second credential.
+MAX_PROVIDER_DURATION_SECONDS = 2**63 - 1
 
 
 class AppCredentialUnavailable(Exception):
@@ -187,6 +190,9 @@ class AppTokenSupplier:
                 if type(data) is not dict:
                     raise AppCredentialUnavailable('app_credential_response_invalid')
                 token, duration = data.get('appAccessToken'), data.get('expire')
+                # Record only the bounded numeric TTL metadata, even when a
+                # different response field fails validation. Never retain body.
+                self._provider_seconds = duration if type(duration) is int else None
                 if (type(token) is not str or not 1 <= len(token) <= 8192
                         or any(ord(char) < 33 or ord(char) > 126 for char in token)
                         or type(duration) is not int
