@@ -359,3 +359,54 @@ class DefaultSenderSecurityTests(SimpleTestCase):
         self.assertEqual(logs.records[-1].qc_read_stage, 'request')
         self.assertNotIn(private, str(logs.records[-1].__dict__))
         self.assertNotIn(TOKEN, str(logs.records[-1].__dict__))
+
+
+    @override_settings(MES_USER_OAUTH_APP_TOKEN_HEADER='X-AUTH',
+                       MES_USER_OAUTH_APP_ACCESS_TOKEN='SYNTHETIC-APP-MUST-NOT-BE-SENT')
+    def test_configured_header_carries_only_same_user_lease_without_app_resolution(self):
+        session, response = self.session()
+        with patch('requests.Session', return_value=session), \
+                patch('mes_oauth.app_tokens.get_app_access_token', side_effect=AssertionError('No app token resolution.')) as app:
+            self.assertEqual(self.invoke()['data']['id'], service.QC_ID)
+        session.post.assert_called_once()
+        args, kwargs = session.post.call_args
+        self.assertEqual(kwargs['headers'], {'X-AUTH': TOKEN,
+            'Content-Type': 'application/json', 'Accept': 'application/json'})
+        self.assertNotIn('params', kwargs)
+        self.assertNotIn(TOKEN, args[0])
+        self.assertNotIn(TOKEN.encode(), kwargs['data'])
+        self.assertNotIn('SYNTHETIC-APP-MUST-NOT-BE-SENT', str(session.post.call_args))
+        self.assertFalse(session.trust_env)
+        self.assertTrue(kwargs['stream'])
+        self.assertFalse(kwargs['allow_redirects'])
+        response.iter_content.assert_called_once_with(8192)
+        app.assert_not_called()
+
+    def test_invalid_header_configuration_rejects_before_network(self):
+        for header in ('Authorization', 'access_token,X-AUTH', '', None, True, ['X-AUTH']):
+            with self.subTest(kind=type(header).__name__), \
+                    override_settings(MES_USER_OAUTH_APP_TOKEN_HEADER=header), \
+                    patch('requests.Session') as constructor, self.assertRaises(MesOutcomeUnknown):
+                self.invoke()
+            constructor.assert_not_called()
+
+    def test_only_exact_url_permission_subcode_gets_fixed_diagnostic(self):
+        private = 'PRIVATE-PROVIDER-BODY-' + TOKEN
+        for subcode, expected in (
+                ('OPENAPI-DOMAIN/URL_NO_PERMISSION', 'provider_url_permission'),
+                ('OPENAPI-DOMAIN/URL_NO_PERMISSION ' + private, 'rejected'),
+                (private, 'rejected'), (None, 'rejected'), (3401, 'rejected')):
+            body = {'code': 3401, 'subCode': subcode, 'message': private, 'data': {'secret': private}}
+            session, response = self.session(chunks=[json.dumps(body).encode()])
+            with patch('requests.Session', return_value=session), \
+                    self.assertLogs(service.logger, level='INFO') as logs, self.assertRaises(service.MesRejected):
+                self.invoke()
+            session.post.assert_called_once()
+            record = logs.records[-1]
+            self.assertEqual(record.qc_read_stage, 'response_envelope')
+            self.assertEqual(record.qc_read_reason, expected)
+            self.assertEqual(record.qc_read_api_code, 3401)
+            self.assertNotIn(private, str(record.__dict__))
+            self.assertNotIn(TOKEN, str(record.__dict__))
+            self.assertNotIn('OPENAPI-DOMAIN/', str(record.__dict__))
+            self.assertIsNone(record.exc_info)

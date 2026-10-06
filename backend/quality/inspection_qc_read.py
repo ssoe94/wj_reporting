@@ -4,6 +4,7 @@ No binding, credential issuance, write adapter or measurement persistence exists
 here. IDs and approval are server constants; callers cannot select another QC.
 """
 import logging
+from dataclasses import dataclass, field
 
 from django.conf import settings
 from django.utils import timezone
@@ -66,6 +67,37 @@ def _optional_unit(value):
             'name': _text(value.get('name'))}
 
 
+@dataclass(frozen=True)
+class _ReadResponse:
+    status_code: int
+    content: bytes = field(repr=False)
+
+
+@sensitive_variables()
+def _send_user_detail(lease, body):
+    # Bounded read-only header experiment, not proof of provider acceptance.
+    # Reuse only the configured header NAME; the value remains the same typed
+    # USER lease. No app credential is resolved and no alternate header is tried.
+    header = getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token')
+    if (type(header) is not str or header not in {'access_token', 'X-AUTH'}
+            or type(lease) is not InspectionUserAccessToken or lease.user_id != MES_USER_ID):
+        raise MesContractUnavailable()
+    import requests
+    with requests.Session() as session:
+        session.trust_env = False
+        with session.post(ORIGIN + DETAIL_ROUTE, data=body.encode('utf-8'),
+                headers={header: lease.value, 'Content-Type': 'application/json', 'Accept': 'application/json'},
+                timeout=(5, 20), allow_redirects=False, stream=True) as response:
+            if response.history:
+                raise MesOutcomeUnknown()
+            content = bytearray()
+            for chunk in response.iter_content(8192):
+                content.extend(chunk)
+                if len(content) > 524288:
+                    raise MesOutcomeUnknown()
+            return _ReadResponse(response.status_code, bytes(content))
+
+
 class QCDetailReadTransport:
     """Only the exact approved detail request can cross this transport."""
     def __init__(self, lease, *, sender=None):
@@ -83,18 +115,15 @@ class QCDetailReadTransport:
             raise MesContractUnavailable()
         if self._lease.expires_at <= timezone.now().timestamp():
             raise MesAuthenticationExpired()
-        sender = self._sender
-        if sender is None:
-            # This helper moves the credential to a header, ignores proxy/netrc
-            # configuration and bounds streamed bytes. It evaluates no write
-            # policy and cannot supply or issue a credential.
-            from .inspection_live_adapter import _user_sender
-            sender = _user_sender
         stage, http_status, api_code = 'request', None, None
+        rejection_reason = 'rejected'
         try:
-            response = sender(ORIGIN + DETAIL_ROUTE,
-                params={'access_token': self._lease.value}, data=body.encode('utf-8'),
-                headers={'Content-Type': 'application/json'}, timeout=(5, 20), allow_redirects=False)
+            if self._sender is None:
+                response = _send_user_detail(self._lease, body)
+            else:
+                response = self._sender(ORIGIN + DETAIL_ROUTE,
+                    params={'access_token': self._lease.value}, data=body.encode('utf-8'),
+                    headers={'Content-Type': 'application/json'}, timeout=(5, 20), allow_redirects=False)
             stage, http_status = 'response_http', response.status_code
             if response.status_code == 401:
                 raise MesAuthenticationRejected()
@@ -112,6 +141,9 @@ class QCDetailReadTransport:
             if type(result) is not dict or type(result.get('code')) is not int:
                 raise MesOutcomeUnknown()
             api_code = result['code']
+            if (api_code != 200 and type(result.get('subCode')) is str
+                    and result['subCode'] == 'OPENAPI-DOMAIN/URL_NO_PERMISSION'):
+                rejection_reason = 'provider_url_permission'
             if result['code'] == 401:
                 raise MesAuthenticationRejected()
             if result['code'] == 403:
@@ -125,7 +157,7 @@ class QCDetailReadTransport:
             _diagnostic('response_envelope', 'accepted', http_status=http_status, api_code=api_code)
             return result
         except (MesRejected, MesOutcomeUnknown):
-            _diagnostic(stage, 'rejected', http_status=http_status, api_code=api_code)
+            _diagnostic(stage, rejection_reason, http_status=http_status, api_code=api_code)
             raise
         except Exception:
             _diagnostic(stage, 'invalid_or_unavailable', http_status=http_status, api_code=api_code)
