@@ -1,0 +1,199 @@
+.injection-board-card footer.injection-board-card__footer-with-quality {
+  display: block;
+}
+
+.injection-board-card__footer-production {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.injection-quality {
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.injection-quality__summary {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  width: 100%;
+  min-width: 0;
+  padding: 0 0.25em;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+
+.injection-board-card__footer-with-quality .injection-quality span {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.injection-quality__summary-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.injection-quality__failure,
+.injection-quality__freshness {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.injection-quality__failure,
+.injection-board-card__footer-with-quality .injection-quality .injection-quality__failure,
+.injection-quality__state--failed,
+.injection-quality__freshness--error {
+  color: var(--color-danger, #b91c1c);
+  font-weight: 800;
+}
+
+.injection-quality__freshness {
+  font-size: 0.9em;
+}
+
+.injection-quality__summary:focus-visible,
+.injection-quality-dialog button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.injection-quality-dialog {
+  box-sizing: border-box;
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: min(46rem, calc(100dvh - 2rem));
+  margin: auto;
+  padding: 1.2rem;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  border: 1px solid currentColor;
+  border-radius: 0.75rem;
+  background: var(--surface-strong, Canvas);
+  color: var(--text, CanvasText);
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.injection-quality-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.injection-quality-dialog__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.injection-quality-dialog__header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.injection-quality-dialog button {
+  flex-shrink: 0;
+  min-height: 2.5rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid currentColor;
+  border-radius: 0.35rem;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.injection-quality__times {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+  gap: 0.3rem 0.8rem;
+}
+
+.injection-quality__times dt {
+  font-weight: 600;
+}
+
+.injection-quality__times dd {
+  margin: 0;
+}
+
+.injection-quality__section {
+  border-top: 1px solid currentColor;
+  padding-top: 0.6rem;
+  margin-top: 1rem;
+}
+
+.injection-quality__section h3 {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.injection-quality__checks,
+.injection-quality__warnings {
+  padding-left: 1.5rem;
+  margin: 0.35rem 0;
+}
+
+.injection-quality__checks > li {
+  padding: 0.25rem 0;
+}
+
+.injection-quality__checks > li > span + span {
+  margin-left: 0.65rem;
+}
+
+.injection-quality__state {
+  font-weight: 700;
+}
+
+@media (max-width: 420px) {
+  .injection-quality-dialog {
+    width: calc(100vw - 1rem);
+    padding: 0.8rem;
+  }
+
+  .injection-quality__times {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+
+  .injection-quality__times dd {
+    margin-bottom: 0.6rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .injection-quality__summary {
+    min-height: 32px;
+  }
+}
+
+@media (min-width: 2560px) {
+  .injection-quality__summary {
+    font-size: 1rem;
+  }
+}
+
+/* The dashboard shares the status contract, with normal working text/touch targets. */
+.inspection-overview .injection-quality__summary {
+  font-size: 14px;
+  min-height: 44px;
+  padding: 8px;
+  flex-wrap: wrap;
+}
+.inspection-overview details > summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.inspection-overview dd { margin: 4px 0 0; font-weight: 650; }

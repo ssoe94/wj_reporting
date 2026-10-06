@@ -1,3 +1,4 @@
+import type { InjectionInspectionScope } from './injection-quality-binding';
 import { http } from "@/shared/api/http";
 import { deepAnalysisRequestScope, latestDeepAnalysisPath, type DeepAnalysisKind, type DeepAnalysisSchedule } from "@/domains/ai/deep-analysis";
 export { DEEP_ANALYSIS_MODEL_ID } from "@/domains/ai/model-labels";
@@ -51,6 +52,9 @@ export type ProductionTransition = {
 };
 
 export type ProductionStatusMachine = {
+  machine_number?: number;
+  inspection_scope?: InjectionInspectionScope | null;
+  inspection_status?: unknown;
   machine_name: string;
   total_planned: number;
   total_actual: number;

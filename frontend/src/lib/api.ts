@@ -38,7 +38,7 @@ api.interceptors.request.use(
 
     const session = getAuthSessionSnapshot();
     if (request._authSessionId === undefined) {
-      request._authSessionId = session.id;
+      request._authSessionId = config.authSessionId === undefined ? session.id : config.authSessionId;
     }
     if (request._authSessionId !== session.id) {
       return Promise.reject(new AuthRefreshError('The authenticated session changed', false));
@@ -83,6 +83,7 @@ api.interceptors.response.use(
     if (
       originalRequest &&
       !originalRequest.skipAuth &&
+      !originalRequest.skipAuthRefresh &&
       error.response?.status === 401 &&
       !originalRequest._retry
     ) {
@@ -136,8 +137,6 @@ api.interceptors.response.use(
       url: originalRequest?.url,
       method: originalRequest?.method,
       status: error.response?.status,
-      message: error.message,
-      data: error.response?.data,
     });
     
     return Promise.reject(error);

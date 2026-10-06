@@ -5,14 +5,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { openBoardPopup } from "@/domains/boards/board-popup";
 import { useLang } from "@/i18n";
 import styles from "./BoardHubPage.module.css";
+import inspectionMachine from '@/assets/inspection-machine-miniature.png';
 
 const COPY = {
   ko: {
     eyebrow: "WJ DISPLAY CENTER",
     title: "현황판",
     description: "운영 현황을 큰 화면에 맞춘 전용 보드로 확인합니다. 카드를 누르면 해당 현황판이 새 창으로 열립니다.",
-    count: "운영 현황판 5개",
-    publicAccess: "공개 현황판 4개 · 현장 칸반 로그인 필요",
+    count: "운영 현황판 6개",
+    publicAccess: "공개 현황판 5개 · 현장 칸반 로그인 필요",
     login: "관리 화면 로그인",
     dashboard: "관리 화면으로",
     previewBadge: "화면 예시",
@@ -26,6 +27,9 @@ const COPY = {
     injectionTitle: "사출 실시간 현황판",
     injectionDescription: "17대 사출기의 계획, 생산 진도와 최근 C/T를 한 화면에서 확인합니다.",
     injectionMeta: "17대 사출기 · 1분 자동 갱신",
+    inspectionTitle: "사출 검사 현황판",
+    inspectionDescription: "17대 사출기의 초품·순검 관측과 현재 계획을 확인하고 검사요청·이력으로 연결합니다.",
+    inspectionMeta: "초품·순검 · 개별 검사 관측",
     mouldTitle: "금형 실시간 현황판",
     mouldDescription: "금형의 장착 설비와 Blacklake 기준 A/B/C/S 보관 위치를 터치로 확인합니다.",
     mouldMeta: "장착 설비 · A/B/C/S 보관 위치",
@@ -40,8 +44,8 @@ const COPY = {
     eyebrow: "WJ DISPLAY CENTER",
     title: "看板中心",
     description: "通过适配大屏的专用看板查看运营现状。点击卡片将在新窗口打开对应看板。",
-    count: "5 个运营看板",
-    publicAccess: "4 个公开看板 · 现场看板需登录",
+    count: "6 个运营看板",
+    publicAccess: "5 个公开看板 · 现场看板需登录",
     login: "登录管理页面",
     dashboard: "返回管理页面",
     previewBadge: "画面示意",
@@ -55,6 +59,9 @@ const COPY = {
     injectionTitle: "注塑实时看板",
     injectionDescription: "在一个屏幕中查看 17 台注塑机的计划、生产进度和最近 C/T。",
     injectionMeta: "17 台注塑机 · 每分钟刷新",
+    inspectionTitle: "注塑检验看板",
+    inspectionDescription: "查看17台注塑机的首检、巡检观测与当前计划，并进入检验请求及记录。",
+    inspectionMeta: "首检·巡检 · 单项检验观测",
     mouldTitle: "模具实时看板",
     mouldDescription: "通过触控查看模具安装设备及基于 Blacklake 的 A/B/C/S 存放位置。",
     mouldMeta: "安装设备 · A/B/C/S 存放位置",
@@ -68,7 +75,7 @@ const COPY = {
 } as const;
 
 type BoardCard = {
-  key: "overview" | "injection" | "mould" | "energy" | "field";
+  key: "overview" | "injection" | "inspection" | "mould" | "energy" | "field";
   href: string;
   image: string;
   title: string;
@@ -99,6 +106,15 @@ export function BoardHubPage() {
       title: copy.injectionTitle,
       description: copy.injectionDescription,
       meta: copy.injectionMeta,
+      icon: Factory,
+    },
+    {
+      key: "inspection",
+      href: "/boards/inspection",
+      image: inspectionMachine,
+      title: copy.inspectionTitle,
+      description: copy.inspectionDescription,
+      meta: copy.inspectionMeta,
       icon: Factory,
     },
     {

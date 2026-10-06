@@ -148,7 +148,7 @@ function MaterialLegend({ language }: { language: Language }) {
 
 export default function FieldLauncherPage() {
   const navigate = useNavigate();
-  const { hasPermission, user, logout } = useAuth();
+  const { hasPermission, user, logout, isLoggingOut } = useAuth();
   const [language, setLanguage] = useState<Language>(initialLanguage);
   const c = COPY[language];
   const currentFieldUser = useMemo(() => parseFieldTerminalUser(user?.username), [user?.username]);
@@ -238,7 +238,7 @@ export default function FieldLauncherPage() {
               <button aria-pressed={language === 'zh'} className={language === 'zh' ? 'is-active' : ''} onClick={() => setLanguage('zh')} type="button">中文</button>
               <button aria-pressed={language === 'ko'} className={language === 'ko' ? 'is-active' : ''} onClick={() => setLanguage('ko')} type="button">KOR</button>
             </div>
-            <button className="field-launcher-logout" onClick={logout} type="button"><LogOut />{c.logout}</button>
+            <button className="field-launcher-logout" disabled={isLoggingOut} onClick={async () => { await logout(); }} type="button"><LogOut />{c.logout}</button>
           </div>
         </header>
 

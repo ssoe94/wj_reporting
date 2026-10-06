@@ -1337,10 +1337,16 @@ class ProductionStatusView(APIView):
             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
         context = get_daily_production_context(target_date)
+        from .inspection_status_projection import build_inspection_board_fields
+        inspection_generated_at = timezone.now()
 
         injection_results = [
             {
                 'machine_name': row.get('machine_name') or row.get('machine') or '',
+                'machine_number': row.get('machine_number'),
+                **build_inspection_board_fields(target_date, row,
+                    plan_updated_at=context['injection'].get('last_plan_updated_at'),
+                    now=inspection_generated_at),
                 'total_planned': int(row.get('planned_qty') or 0),
                 'total_actual': int(row.get('actual_qty') or 0),
                 'progress': float(row.get('progress_rate') or 0),

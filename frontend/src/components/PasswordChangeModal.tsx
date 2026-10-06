@@ -7,8 +7,9 @@ interface PasswordChangeModalProps {
   isOpen: boolean;
   onClose: () => void;
   isRequired?: boolean; // 필수 변경인지 (임시 비밀번호 사용자)
-  onLogout?: () => void;
-  onSuccess?: () => void;
+  onLogout?: () => Promise<boolean>;
+  onSuccess?: () => void | Promise<boolean | void>;
+  isLoggingOut?: boolean;
 }
 
 export default function PasswordChangeModal({ 
@@ -16,7 +17,8 @@ export default function PasswordChangeModal({
   onClose, 
   isRequired = false,
   onLogout,
-  onSuccess 
+  onSuccess,
+  isLoggingOut = false,
 }: PasswordChangeModalProps) {
   const { t } = useLang();
   const [currentPassword, setCurrentPassword] = useState('');
@@ -51,7 +53,7 @@ export default function PasswordChangeModal({
       setNewPassword('');
       setConfirmPassword('');
       onClose();
-      if (onSuccess) onSuccess();
+      if (onSuccess) await onSuccess();
     } catch (error: any) {
       const data = error?.response?.data;
       let msg = t('save_fail');
@@ -143,7 +145,7 @@ export default function PasswordChangeModal({
           <div className="flex gap-2 pt-4">
             <Button
               type="submit"
-              disabled={loading}
+              disabled={loading || isLoggingOut}
               className="flex-1"
             >
               {loading ? t('changing') : t('password_change')}
@@ -162,7 +164,8 @@ export default function PasswordChangeModal({
               <Button
                 type="button"
                 variant="secondary"
-                onClick={onLogout}
+                disabled={loading || isLoggingOut}
+                onClick={async () => { await onLogout(); }}
                 className="flex-1"
               >
                 {t('logout')}

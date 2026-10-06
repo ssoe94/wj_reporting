@@ -1,5 +1,5 @@
 ﻿import { lazy, Suspense, useState, useEffect, useRef } from "react";
-import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LangProvider } from "./i18n";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -32,10 +32,13 @@ import {
 } from "lucide-react";
 import PrivateRoute from './components/PrivateRoute';
 import PasswordChangeModal from './components/PasswordChangeModal';
+import MesConnectionDialog from './components/MesConnectionDialog';
+import LogoutFeedback from './components/LogoutFeedback';
 import PageTransition from './components/common/PageTransition';
 import { NavigationTree } from './components/layout/NavigationTree';
 import { parseFieldTerminalUser } from './lib/fieldTerminal';
 import { canManageDevelopmentTasks, DEVELOPMENT_TASK_PATH } from './domains/auth/development-task-access';
+import { INSPECTION_BETA_PATH } from './domains/auth/inspection-beta-access';
 
 const DevelopmentTasksPage = lazy(() => import('./pages/development/DevelopmentTasksPage'));
 
@@ -50,6 +53,7 @@ const UserApproval = lazy(() => import('./pages/admin/UserApproval'));
 const QualityPage = lazy(() => import('./pages/quality'));
 const QualityAnalysisPage = lazy(() => import('./domains/quality/QualityAnalysisPage'));
 const DailyAttentionPage = lazy(() => import('./pages/quality/DailyAttention'));
+const InspectionRequestsPage = lazy(() => import('./pages/quality/inspection-requests/InspectionRequestsPage'));
 const AssemblyDashboardPage = lazy(() => import('./pages/assembly/Dashboard'));
 const InjectionDashboardPage = lazy(() => import('./pages/injection/Dashboard'));
 const InjectionMonitoringPage = lazy(() => import('./pages/injection/MonitoringPage'));
@@ -64,6 +68,7 @@ const ProductionPlansPage = lazy(() => import('./domains/production/pages/Produc
 const InjectionBoardPage = lazy(() => import('./domains/production/pages/InjectionBoardPage').then((module) => ({
   default: module.InjectionBoardPage,
 })));
+const InspectionBoardPage = lazy(() => import('./domains/production/pages/InspectionBoardPage').then((module) => ({ default: module.InspectionBoardPage })));
 const MesMonitoringPage = lazy(() => import('./domains/mes/pages/MesMonitoringPage').then((module) => ({
   default: module.MesMonitoringPage,
 })));
@@ -95,6 +100,7 @@ function isPublicRoutePath(pathname: string) {
     || normalizedPath === '/login'
     || normalizedPath === '/boards'
     || normalizedPath === '/boards/injection'
+    || normalizedPath === '/boards/inspection'
     || normalizedPath === '/boards/moulds'
     || normalizedPath === '/boards/energy'
     || normalizedPath === '/boards/overview'
@@ -127,7 +133,7 @@ function InjectionLegacyRedirect() {
 
 function useNavItems() {
   const { lang, t } = useLang();
-  const { user, hasPermission } = useAuth();
+  const { user, hasPermission, canAccessInspection } = useAuth();
   const canViewFieldMaterials = Boolean(user && (user.is_staff || hasPermission('can_view_development')));
   const canEditFieldMaterials = Boolean(user && (user.is_staff || hasPermission('can_edit_development')));
   const taskNavigation = canManageDevelopmentTasks(user) ? [{
@@ -136,10 +142,17 @@ function useNavItems() {
     children: [{ to: DEVELOPMENT_TASK_PATH, label: lang === 'ko' ? '개발 과제' : '开发任务', icon: ClipboardList }],
   }] : [];
 
+  const betaNavigation = canAccessInspection ? [{
+    label: lang === 'ko' ? '베타' : '测试版',
+    icon: ClipboardCheck,
+    children: [{ to: INSPECTION_BETA_PATH, label: t('nav_quality_inspection_requests'), icon: ClipboardList }],
+  }] : [];
+
   // Staff users see the full navigation tree.
   if (user?.is_staff) {
     return [
       ...taskNavigation,
+      ...betaNavigation,
       {
         label: t('nav_overview'),
         icon: FileChartPie,
@@ -216,7 +229,7 @@ function useNavItems() {
   }
 
   // Regular users get the same sections, trimmed by permission-aware links.
-  const navItems = [...taskNavigation];
+  const navItems = [...taskNavigation, ...betaNavigation];
 
   navItems.push({
     label: t('nav_overview'),
@@ -309,11 +322,12 @@ function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [mesConnectionOpen, setMesConnectionOpen] = useState(false);
   const [isLiteMode, setIsLiteMode] = useState(() =>
     typeof window !== 'undefined' && localStorage.getItem('lite') === '1'
   );
   const { lang, setLang, t } = useLang();
-  const { user, logout, isAuthenticated, isLoading } = useAuth();
+  const { user, logout, isLoggingOut, isAuthenticated, isLoading } = useAuth();
   const routerLocation = useLocation();
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileNavigationRef = useRef<HTMLElement>(null);
@@ -470,7 +484,8 @@ function AppContent() {
   const isOverviewBoardRoute = pathname === '/boards/overview'
     || pathname === '/boards/overview/';
   const isFieldRoute = pathname === '/field' || pathname.startsWith('/field/');
-  const isStandaloneBoardRoute = isInjectionBoardRoute || isMouldRoute || isEnergyBoardRoute || isOverviewBoardRoute || isFieldRoute;
+  const isInspectionBoardRoute = pathname === '/boards/inspection' || pathname === '/boards/inspection/';
+  const isStandaloneBoardRoute = isInjectionBoardRoute || isInspectionBoardRoute || isMouldRoute || isEnergyBoardRoute || isOverviewBoardRoute || isFieldRoute;
   let breadcrumbLabel = t('brand');
   if (pathname === DEVELOPMENT_TASK_PATH) breadcrumbLabel = lang === 'ko' ? '개발 과제' : '开发任务';
   else if (pathname.startsWith('/assembly/dashboard')) breadcrumbLabel = t('nav_machining_dashboard');
@@ -517,6 +532,7 @@ function AppContent() {
           onClose={() => undefined}
           onLogout={logout}
           onSuccess={logout}
+          isLoggingOut={isLoggingOut}
         />
       </div>
     );
@@ -555,7 +571,7 @@ function AppContent() {
                 </button>
               </div>
               {user && (
-                <Button className="main-mobile-header__logout" variant="ghost" size="sm" onClick={logout}>
+                <Button className="main-mobile-header__logout" variant="ghost" size="sm" disabled={isLoggingOut} onClick={async () => { await logout(); }}>
                   {t('logout')}
                 </Button>
               )}
@@ -602,6 +618,10 @@ function AppContent() {
               </button>
               {userDropdownOpen && (
                 <div ref={userMenuRef} id="main-user-menu" className="main-user-menu__popover" role="menu">
+                  <button role="menuitem" disabled={isLoggingOut} onClick={() => {
+                    setMesConnectionOpen(true);
+                    setUserDropdownOpen(false);
+                  }}>{lang === 'ko' ? 'MES 연결' : 'MES 连接'}</button>
                   <button
                     onClick={() => {
                       setPasswordModalOpen(true);
@@ -612,9 +632,9 @@ function AppContent() {
                     {t('password_change')}
                   </button>
                   <button
-                    onClick={() => {
-                      logout();
-                      setUserDropdownOpen(false);
+                    disabled={isLoggingOut}
+                    onClick={async () => {
+                      if (await logout()) setUserDropdownOpen(false);
                     }}
                     role="menuitem"
                   >
@@ -762,12 +782,18 @@ function AppContent() {
                   </label>
                 </div>
                 {user ? (
+                  <Button variant="ghost" size="sm" disabled={isLoggingOut} onClick={() => {
+                    setSidebarOpen(false);
+                    setMesConnectionOpen(true);
+                  }}>{lang === 'ko' ? 'MES 연결' : 'MES 连接'}</Button>
+                ) : null}
+                {user ? (
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      setSidebarOpen(false);
-                      logout();
+                    disabled={isLoggingOut}
+                    onClick={async () => {
+                      if (await logout()) setSidebarOpen(false);
                     }}
                   >
                     {t('logout')}
@@ -788,6 +814,7 @@ function AppContent() {
             <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
             <Route path="/boards" element={<Suspense fallback={<RouteLoading />}><BoardHubPage /></Suspense>} />
             <Route path="/boards/injection" element={<Suspense fallback={<RouteLoading />}><InjectionBoardPage /></Suspense>} />
+            <Route path="/boards/inspection" element={<Suspense fallback={<RouteLoading />}><InspectionBoardPage /></Suspense>} />
             <Route path="/boards/moulds" element={<Suspense fallback={<RouteLoading />}><MouldManagementPage /></Suspense>} />
             <Route path="/boards/energy" element={<Suspense fallback={<RouteLoading />}><EnergyBoardPage /></Suspense>} />
             <Route path="/boards/overview" element={<Suspense fallback={<RouteLoading />}><OverviewBoardPage /></Suspense>} />
@@ -830,6 +857,7 @@ function AppContent() {
             <Route path="/assembly" element={<PrivateRoute><PageTransition><AssemblyPage /></PageTransition></PrivateRoute>} />
 
             {/* Quality single page */}
+            <Route path="/quality/inspection-requests" element={<PrivateRoute><Suspense fallback={<RouteLoading />}><InspectionRequestsPage /></Suspense></PrivateRoute>} />
             <Route path="/quality/analysis" element={<PrivateRoute><PageTransition><QualityAnalysisPage /></PageTransition></PrivateRoute>} />
             <Route path="/quality" element={<PrivateRoute><PageTransition><QualityPage /></PageTransition></PrivateRoute>} />
             <Route path="/quality/daily-attention" element={<PrivateRoute><PageTransition><DailyAttentionPage /></PageTransition></PrivateRoute>} />
@@ -859,25 +887,26 @@ function AppContent() {
       <PasswordChangeModal
         isOpen={passwordModalOpen}
         onClose={() => setPasswordModalOpen(false)}
-        onSuccess={() => {
-          // Refresh user info after a successful password change.
-          window.location.reload();
-        }}
+        onSuccess={logout}
+        isLoggingOut={isLoggingOut}
       />
+
+      {mesConnectionOpen && user && <MesConnectionDialog onClose={() => setMesConnectionOpen(false)} />}
 
       <ToastContainer position="bottom-right" />
     </div>
   );
 }
 
+const appRouter = createBrowserRouter([{ path: "*", element: <AppContent /> }], { basename: "/" });
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <LangProvider>
         <AuthProvider>
-          <BrowserRouter basename="/">
-            <AppContent />
-          </BrowserRouter>
+          <RouterProvider router={appRouter} />
+          <LogoutFeedback />
         </AuthProvider>
       </LangProvider>
     </QueryClientProvider>

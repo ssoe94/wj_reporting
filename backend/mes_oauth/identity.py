@@ -1,0 +1,156 @@
+"""Disconnected user identity check for a future, separately reviewed OAuth flow.
+
+No HTTP, token issuance, cache, configuration, callback, refresh or detail dispatch
+is implemented here. A caller must independently establish consent, callback/state
+protection and the provenance of the supplied exchange response.
+
+``info_loader(token)`` is called once after a valid exchange. It must return a
+UserContextResponse from the documented user-information endpoint, using exactly
+that token, with redirects and retries disabled. It must not log credentials or
+raw responses. Tests use only synthetic loaders. This module can check the
+reported HTTP/API result; it cannot prove a caller's network/provenance claims.
+
+The documented ``expire`` unit is seconds, but relative duration versus epoch
+has not been verified. It is deliberately not interpreted. Identity evidence is not evidence
+of token freshness, claim/save/finish authority, or readiness for live requests.
+"""
+from dataclasses import dataclass, field
+
+
+class UserContextUnverified(Exception):
+    """Only fixed, non-sensitive reason codes escape the validation boundary."""
+
+
+class StoredIdentityRejected(Exception):
+    """Explicit authentication rejection or a verified different identity."""
+
+
+API_PERMISSION_SUBCODE = 'OPENAPI-DOMAIN/URL_NO_PERMISSION'
+
+
+def _known_api_permission_failure(body):
+    return (type(body) is dict and type(body.get('code')) is int and body['code'] != 200
+            and type(body.get('subCode')) is str and body['subCode'] == API_PERMISSION_SUBCODE)
+
+
+def verify_stored_identity_response(response, expected_user_id):
+    """Do not revoke an existing connection for a transient/malformed reply.
+
+401 establishes rejection, not expiry. 403, API3401, transport/parse failures and
+missing identity do not prove the stored user credential expired or was revoked.
+No provider error text is propagated or used as an authentication decision.
+"""
+    if type(response) is UserContextResponse and response.redirected is False:
+        body = response.body
+        if response.status_code == 200 and _known_api_permission_failure(body):
+            raise UserContextUnverified('userinfo_api_permission_denied')
+        if (type(response.status_code) is int and (response.status_code == 401
+                or (response.status_code == 200 and type(body) is dict
+                    and type(body.get('code')) is int and body['code'] == 401))):
+            raise StoredIdentityRejected('userinfo_authentication_rejected')
+    data = _successful_data(response, 'userinfo')
+    if type(data.get('userId')) is not int:
+        raise UserContextUnverified('userinfo_user_id_invalid')
+    if data['userId'] != expected_user_id:
+        raise StoredIdentityRejected('user_identity_mismatch')
+
+
+# Persist only these literals, never exception text or provider-supplied codes.
+FAILURE_CODES = frozenset({
+    'oauth_origin_invalid', 'oauth_endpoint_invalid', 'oauth_header_contract_invalid',
+    'app_credential_missing', 'oauth_provider_unavailable',
+    'expected_user_invalid', 'info_loader_invalid', 'user_token_missing',
+    'userinfo_load_failed', 'userinfo_user_id_invalid', 'user_identity_mismatch',
+    'control_target_invalid', 'control_target_mismatch',
+} | {
+    stage + suffix
+    for stage in ('exchange', 'userinfo', 'control')
+    for suffix in ('_response_invalid', '_redirect_unverified', '_http_rejected',
+                   '_api_rejected', '_api_permission_denied', '_api_response_invalid', '_data_invalid',
+                   '_header_invalid', '_request_failed', '_response_decode_failed',
+                   '_response_too_large', '_attempt_already_used')
+})
+
+
+def safe_failure_code(error):
+    """Bounded diagnostic for internal storage; public failures stay generic."""
+    if (type(error) is UserContextUnverified and len(error.args) == 1
+            and type(error.args[0]) is str and error.args[0] in FAILURE_CODES):
+        return error.args[0]
+    return 'identity_verification_failed'
+
+
+@dataclass(frozen=True)
+class UserContextResponse:
+    status_code: int
+    body: object = field(repr=False)
+    redirected: bool
+
+
+@dataclass(frozen=True)
+class VerifiedUserContext:
+    """Observed identity only; never a write authorization or live-ready token."""
+    user_id: int
+    token: str = field(repr=False)
+    expire: object = field(default=None, repr=False)
+
+    @property
+    def expiry_verified(self):
+        return False
+
+    @property
+    def live_ready(self):
+        return False
+
+
+def _successful_data(response, stage):
+    if type(response) is not UserContextResponse:
+        raise UserContextUnverified(stage + '_response_invalid')
+    if type(response.redirected) is not bool or response.redirected:
+        raise UserContextUnverified(stage + '_redirect_unverified')
+    if type(response.status_code) is not int or response.status_code != 200:
+        raise UserContextUnverified(stage + '_http_rejected')
+    body = response.body
+    if type(body) is not dict or type(body.get('code')) is not int:
+        raise UserContextUnverified(stage + '_api_response_invalid')
+    if body['code'] != 200:
+        if _known_api_permission_failure(body):
+            raise UserContextUnverified(stage + '_api_permission_denied')
+        raise UserContextUnverified(stage + '_api_rejected')
+    if type(body.get('data')) is not dict:
+        raise UserContextUnverified(stage + '_data_invalid')
+    return body['data']
+
+
+def verify_user_context(expected_user_id, exchange_response, *, info_loader):
+    """Return identity evidence only after one same-token user-information check.
+
+IDs must be exact positive signed-64-bit Python integers, never booleans, floats
+or coerced strings. ``appAccessToken`` is ignored and cannot be a fallback.
+The supplied response must contain a nonempty ``data.userAccessToken``. Token
+kind is evidenced by that reviewed exchange field, not guessed from token bytes.
+There is intentionally no detail callback or general runtime token provider.
+"""
+    if (type(expected_user_id) is not int
+            or not 1 <= expected_user_id <= 9_223_372_036_854_775_807):
+        raise UserContextUnverified('expected_user_invalid')
+    if not callable(info_loader):
+        raise UserContextUnverified('info_loader_invalid')
+    data = _successful_data(exchange_response, 'exchange')
+    token = data.get('userAccessToken')
+    if type(token) is not str or not token.strip():
+        raise UserContextUnverified('user_token_missing')
+    try:
+        response = info_loader(token)
+    except Exception as error:
+        # Do not propagate provider messages, request URLs or exception chains.
+        reason = safe_failure_code(error)
+        if reason.startswith('userinfo_'):
+            raise UserContextUnverified(reason) from None
+        raise UserContextUnverified('userinfo_load_failed') from None
+    user_info = _successful_data(response, 'userinfo')
+    if type(user_info.get('userId')) is not int:
+        raise UserContextUnverified('userinfo_user_id_invalid')
+    if user_info['userId'] != expected_user_id:
+        raise UserContextUnverified('user_identity_mismatch')
+    return VerifiedUserContext(user_id=expected_user_id, token=token, expire=data.get('expire'))

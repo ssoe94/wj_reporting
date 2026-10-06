@@ -8,6 +8,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.utils import get_md5_hash_password
 
+from mes_oauth.pilot_scope import pilot_route_allowed, pilot_route_scope_required
 from quality.archive_access import (
     is_archive_identity_marker,
     is_valid_archive_service,
@@ -63,6 +64,13 @@ class ScopedJWTAuthentication(JWTAuthentication):
         resolver_match = getattr(request, 'resolver_match', None)
         route_name = getattr(resolver_match, 'url_name', None)
 
+        user._inspection_pilot_scope = pilot_route_scope_required(user, token)
+        if (user._inspection_pilot_scope and not pilot_route_allowed(request.method, route_name)):
+            raise PermissionDenied({
+                'detail': 'This inspector login is limited to its assigned inspection workflow.',
+                'code': 'inspection_pilot_scope_required',
+            })
+
         if is_archive_identity_marker(user, token):
             if not is_valid_archive_service(user, token):
                 raise PermissionDenied('The quality archive service identity is not active.')
@@ -88,6 +96,9 @@ class ScopedJWTAuthentication(JWTAuthentication):
                 '비밀번호가 변경되어 기존 로그인 세션이 종료되었습니다.',
                 code='password_changed',
             )
+
+        from mes_oauth.session_guard import check_known_login
+        check_known_login(user, token)
 
         if (
             password_reset_required
