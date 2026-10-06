@@ -15,6 +15,7 @@ PILOT_ALLOWED_ROUTES = frozenset({
     ('POST', 'token_obtain_pair_no_slash'),
     ('POST', 'token_refresh'),
     ('POST', 'token_refresh_no_slash'),
+    ('POST', 'auth_activity'),
     ('GET', 'user-me'),
     ('HEAD', 'user-me'),
     ('POST', 'change-password'),

@@ -5,7 +5,7 @@ from django.apps import apps
 from django.contrib import admin
 from django.urls import path, include, re_path
 from django.views.generic import TemplateView
-from .token_views import ScopedTokenObtainPairView, ScopedTokenRefreshView
+from .token_views import ScopedTokenObtainPairView, ScopedTokenRefreshView, SessionActivityView
 
 from . import views
 from . import urls_admin
@@ -41,6 +41,8 @@ urlpatterns = [
     path('integrations/blacklake/', include('mes_oauth.urls')),
     path('admin/', admin.site.urls),
     path('staff/signup-approvals/', SignupApprovalPortalView.as_view(), name='signup-approval-portal'),
+
+    path('api/auth/activity/', SessionActivityView.as_view(), name='auth_activity'),
 
     # JWT endpoints (AllowAny by default)
     path('api/token/', ScopedTokenObtainPairView.as_view(), name='token_obtain_pair'),

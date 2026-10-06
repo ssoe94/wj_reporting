@@ -27,6 +27,46 @@ class LoginRejected(AuthenticationFailed):
     default_code = 'inspection_login_required'
 
 
+class SessionIdleExpired(LoginRejected):
+    default_detail = 'The WJ session idle deadline has expired.'
+    default_code = 'session_idle_expired'
+
+
+def session_version(token):
+    version = token.get('mes_session_v')
+    if 'mes_session_v' in token and (type(version) is not int or version != 2):
+        raise LoginRejected()
+    return version
+
+
+def effective_login_expiry(row, *, require_v2=False):
+    """Read the effective deadline without renewing it or changing the anchor."""
+    activity, idle = row.last_activity_at, row.idle_expires_at
+    # Persisted provenance also protects tickets/callbacks that hold only the
+    # login digest. Missing v2 clocks cannot fall back to the old signed anchor.
+    if row.session_version is None:
+        if require_v2 or activity is not None or idle is not None:
+            raise LoginRejected()
+        return row.expires_at
+    if type(row.session_version) is not int or row.session_version != 2:
+        raise LoginRejected()
+
+    now = timezone.now()
+    if (activity is None or idle is None or activity > now
+            or not activity < idle <= activity + timedelta(hours=24)):
+        raise LoginRejected()
+    return idle
+
+
+def require_live_login(row, *, require_v2=False):
+    if row is None or row.revoked_at is not None:
+        raise LoginRejected()
+    deadline = effective_login_expiry(row, require_v2=require_v2)
+    if deadline <= timezone.now():
+        raise SessionIdleExpired()
+    return deadline
+
+
 @sensitive_variables()
 def login_identity(token):
     sid, expiry = token.get('mes_sid'), token.get('mes_login_exp')
@@ -37,7 +77,8 @@ def login_identity(token):
         expires_at = datetime.fromtimestamp(expiry, dt_timezone.utc)
     except (ValueError, OverflowError, OSError):
         raise LoginRejected() from None
-    if not timezone.now() < expires_at <= timezone.now() + timedelta(days=31):
+    version = session_version(token)
+    if expires_at > timezone.now() + timedelta(days=31) or (version != 2 and expires_at <= timezone.now()):
         raise LoginRejected()
     return vault.digest('client-login', sid), expires_at
 
@@ -66,13 +107,21 @@ def check_known_login(user, token):
     Refresh callers hold the user lock, which is also used by logout.
     """
     if token.get('mes_sid') is None and token.get('mes_login_exp') is None:
+        if session_version(token) is not None:
+            raise LoginRejected()
         return
     digest, expiry = login_identity(token)
     row = MESLoginSession.objects.filter(pk=digest).first()
-    if row and (row.actor_id != user.pk or row.revoked_at is not None
-                or row.expires_at != expiry or row.expires_at <= timezone.now()
-                or row.authorization_digest != vault.authorization_digest(user)):
+    version = session_version(token)
+    if row is None:
+        if version == 2:
+            raise LoginRejected()
+        return
+    if (row.actor_id != user.pk or row.expires_at != expiry
+            or row.authorization_digest != vault.authorization_digest(user)):
         raise LoginRejected()
+    require_live_login(row, require_v2=version == 2)
+    return row
 
 
 def _mapping(actor_id):
@@ -91,6 +140,8 @@ class InspectionSession:
     revision: int | None = None
     authorization: str | None = field(default=None, repr=False)
     mes_user_id: int | None = field(default=None, repr=False)
+    version: int | None = None
+    effective_expires_at: datetime | None = None
 
     @classmethod
     @sensitive_variables()
@@ -105,7 +156,7 @@ class InspectionSession:
                   (api_settings.REVOKE_TOKEN_CLAIM, 'iat', 'password_reset_required')}
         if pilot_route_scope_required(user, token):
             claims[PILOT_SCOPE_CLAIM] = True
-        return cls(user.pk, digest, expiry, claims)
+        return cls(user.pk, digest, expiry, claims, version=session_version(token))
 
     @classmethod
     def from_request(cls, request):
@@ -119,16 +170,19 @@ class InspectionSession:
             raise LoginRejected()
         with transaction.atomic():
             user = get_user_model().objects.select_for_update().filter(pk=self.actor_id).first()
-            if user is None or self.expires_at <= timezone.now():
+            if user is None:
                 raise LoginRejected()
             _normal_actor(user, self.claims)
             # A newly fetched user avoids cached permission decisions.
             require(user, permission)
             authorization = vault.authorization_digest(user)
-            row, _ = MESLoginSession.objects.get_or_create(pk=self.login_digest, defaults={
-                'actor_id': user.pk, 'authorization_digest': authorization,
-                'expires_at': self.expires_at})
-            row = MESLoginSession.objects.select_for_update().get(pk=row.pk)
+            row = MESLoginSession.objects.select_for_update().filter(pk=self.login_digest).first()
+            if row is None and self.version != 2:
+                if self.expires_at <= timezone.now():
+                    raise LoginRejected()
+                row = MESLoginSession.objects.create(digest=self.login_digest,
+                    actor_id=user.pk, authorization_digest=authorization, expires_at=self.expires_at)
+            self.effective_expires_at = require_live_login(row, require_v2=self.version == 2)
             mapping = _mapping(user.pk)
             if (row.actor_id != user.pk or row.revoked_at is not None
                     or row.expires_at != self.expires_at or row.authorization_digest != authorization

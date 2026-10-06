@@ -1043,3 +1043,30 @@
     scrollbar-gutter:stable;
   }
 }
+
+.inspection-board-schedule {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:6px;
+  width:100%;
+  font-size:12px;
+  color:var(--ib-muted);
+}
+.inspection-board-schedule strong { font-weight:650; }
+.inspection-board-schedule.is-overdue strong { color:#ff6868; }
+.inspection-board-inspection-clock .is-overdue { color:#cf2c2c; }
+.inspection-board-inspecting { color:var(--ib-yellow); font-size:12px; font-weight:700; }
+.inspection-board-machine-observed { color:var(--ib-muted); font-size:11px; line-height:1.4; }
+.inspection-board-inspection-clock {
+  display:grid;
+  grid-template-columns:1.4fr 1fr;
+  gap:10px;
+  padding:12px 0;
+  border-bottom:1px solid #dde7f3;
+}
+.inspection-board-inspection-clock>div { display:flex; flex-direction:column; gap:5px; }
+.inspection-board-inspection-clock>div>span,
+.inspection-board-inspection-clock>small { color:#566b86; font-size:12px; }
+.inspection-board-inspection-clock strong { font-size:14px; }
+.inspection-board-inspection-clock>small { grid-column:1/-1; }

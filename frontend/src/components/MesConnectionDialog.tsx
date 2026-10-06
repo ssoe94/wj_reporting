@@ -5,6 +5,7 @@ import { useLang } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api';
 import { getAuthSessionSnapshot, subscribeToAuthStorage } from '../domains/auth/auth-storage';
+import { assertAuthSessionCurrent } from '../domains/auth/auth-transition';
 import {
   MES_SESSION_SUBMIT_URL, isDisconnectConfirmed, isMesLaunchUsable, mesConnectionDiagnostic,
   parseMesConnectionStatus, parseMesLaunch,
@@ -41,8 +42,10 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
     if (mounted.current) setLaunch(null);
   }, []);
 
-  const isCurrent = useCallback(() => mounted.current && Boolean(sessionId)
-    && getAuthSessionSnapshot().id === sessionId, [sessionId]);
+  const isCurrent = useCallback(() => {
+    if (!mounted.current) return false;
+    try { assertAuthSessionCurrent(sessionId); return true; } catch { return false; }
+  }, [sessionId]);
 
   const loadStatus = useCallback(async () => {
     if (!isCurrent() || inFlight.current) return;

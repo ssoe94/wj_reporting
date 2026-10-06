@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buildInspectionBoardMachines, type InspectionBoardModelInput,
+  buildInspectionBoardMachines, inspectionBoardActivity, type InspectionBoardModelInput,
 } from '../src/domains/production/inspection-board-model.ts';
 import { buildRealtimeProgressSummary } from '../src/domains/production/realtime-progress.ts';
 import type { PublicInjectionQuality } from '../src/domains/production/injection-quality-status.ts';
@@ -274,4 +274,45 @@ test('future source timestamps do not animate a live production machine', () => 
   const machine = first(input);
   assert.equal(machine.productionTone, 'stale');
   assert.equal(machine.currentCycleTimeSec, null);
+});
+
+
+test('inspection board never invents due time or activity without linked evidence', () => {
+  const empty = first({ ...fixture(), planData: undefined, statusData: undefined, mesData: undefined });
+  assert.deepEqual(inspectionBoardActivity(empty.qualityView), {
+    schedule: 'unconnected', nextDueAt: null, inspecting: false, observedAt: null,
+  });
+  const unverified = inspectionBoardActivity(first().qualityView);
+  assert.equal(unverified.schedule, 'unknown');
+  assert.equal(unverified.nextDueAt, null);
+  assert.equal(unverified.inspecting, false);
+  assert.equal(unverified.observedAt, quality().observed_at);
+});
+
+test('inspection board uses verified due deadline and removes live delay on stale data', () => {
+  const input = fixture();
+  const payload = quality();
+  payload.complete = true;
+  payload.periodic = { status: 'waiting', last_known_status: 'waiting',
+    checks: [{ kind: 'periodic', status: 'waiting', checked_at: null, warnings: [] }],
+    last_checked_at: null, last_result: 'unknown', next_due_at: '2026-10-04T03:39:00Z', schedule_status: 'scheduled' };
+  input.statusData!.injection[0].inspection_status = payload;
+  assert.equal(inspectionBoardActivity(first(input).qualityView).schedule, 'scheduled');
+  const due = inspectionBoardActivity(first({ ...input, nowMs: Date.parse(payload.periodic.next_due_at!) }).qualityView);
+  assert.equal(due.schedule, 'overdue');
+  assert.equal(due.nextDueAt, payload.periodic.next_due_at);
+  const stale = inspectionBoardActivity(first({ ...input, nowMs: Date.parse(payload.fresh_until!) }).qualityView);
+  assert.equal(stale.schedule, 'unknown');
+  assert.equal(stale.nextDueAt, null);
+  assert.equal(stale.observedAt, payload.observed_at);
+});
+
+test('inspection animation requires fresh in-progress evidence and stops on failed transport', () => {
+  const input = fixture();
+  const payload = quality();
+  payload.periodic.checks = [{ kind: 'periodic', status: 'in_progress', checked_at: null, warnings: [] }];
+  input.statusData!.injection[0].inspection_status = payload;
+  assert.equal(inspectionBoardActivity(first(input).qualityView).inspecting, true);
+  assert.equal(inspectionBoardActivity(first({ ...input, transportError: true }).qualityView).inspecting, false);
+  assert.equal(inspectionBoardActivity(first({ ...input, nowMs: Date.parse(payload.fresh_until!) }).qualityView).inspecting, false);
 });

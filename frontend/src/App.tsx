@@ -142,17 +142,10 @@ function useNavItems() {
     children: [{ to: DEVELOPMENT_TASK_PATH, label: lang === 'ko' ? '개발 과제' : '开发任务', icon: ClipboardList }],
   }] : [];
 
-  const betaNavigation = canAccessInspection ? [{
-    label: lang === 'ko' ? '베타' : '测试版',
-    icon: ClipboardCheck,
-    children: [{ to: INSPECTION_BETA_PATH, label: t('nav_quality_inspection_requests'), icon: ClipboardList }],
-  }] : [];
-
   // Staff users see the full navigation tree.
   if (user?.is_staff) {
     return [
       ...taskNavigation,
-      ...betaNavigation,
       {
         label: t('nav_overview'),
         icon: FileChartPie,
@@ -191,6 +184,7 @@ function useNavItems() {
         label: t('nav_quality'),
         icon: ShieldCheck,
         children: [
+          ...(canAccessInspection ? [{ to: INSPECTION_BETA_PATH, label: t('nav_quality_inspection_requests'), icon: ClipboardList }] : []),
           { to: "/quality/daily-attention", label: t('nav_quality_daily_attention'), icon: ClipboardCheck },
           { to: "/quality#report", label: t('nav_quality_report'), icon: AlertTriangle },
           { to: "/quality/analysis", label: t('nav_quality_stats'), icon: BarChart3 },
@@ -229,7 +223,7 @@ function useNavItems() {
   }
 
   // Regular users get the same sections, trimmed by permission-aware links.
-  const navItems = [...taskNavigation, ...betaNavigation];
+  const navItems = [...taskNavigation];
 
   navItems.push({
     label: t('nav_overview'),
@@ -272,6 +266,7 @@ function useNavItems() {
     label: t('nav_quality'),
     icon: ShieldCheck,
     children: [
+      ...(canAccessInspection ? [{ to: INSPECTION_BETA_PATH, label: t('nav_quality_inspection_requests'), icon: ClipboardList }] : []),
       { to: "/quality/daily-attention", label: t('nav_quality_daily_attention'), icon: ClipboardCheck },
       { to: "/quality#report", label: t('nav_quality_report'), icon: AlertTriangle },
       { to: "/quality/analysis", label: t('nav_quality_stats'), icon: BarChart3 },

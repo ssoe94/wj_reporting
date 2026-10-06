@@ -6,7 +6,7 @@ import { getInjectionProductionMatrix } from '@/domains/mes/api';
 import { useShanghaiBusinessDate } from '@/shared/hooks/useShanghaiBusinessDate';
 import { useStoredLanguage } from '@/shared/i18n/language';
 import { getProductionPlanSummary, getProductionStatus } from '../api';
-import { buildInspectionBoardMachines, type InspectionBoardMachine } from '../inspection-board-model';
+import { buildInspectionBoardMachines, inspectionBoardActivity, type InspectionBoardMachine } from '../inspection-board-model';
 import type { InjectionQualityState, QualityCheckStatus } from '../injection-quality-status';
 import { InjectionQualityStatus } from '../components/InjectionQualityStatus';
 import machineImage from '@/assets/inspection-machine-miniature.png';
@@ -16,7 +16,8 @@ import './InspectionBoardPage.css';
 const COPY = {
   ko: {
     title: '사출 검사 현황판', machine: '호기', range: '사출', date: '기준일', refreshed: '화면 갱신',
-    first: '초품', periodic: '순검', production: '당일 생산 추정량', productionShort: '생산(추정)', productionHint: '배분 형합수 × Cavity', plan: '당일 계획',
+    first: '초품', periodic: '순검', due: '다음 순검', observed: '검사 관측', inspecting: '검사 중', currentInspection: '현재 검사',
+    schedule: { scheduled: '예정', overdue: '지연', unknown: '미확인', unconnected: '미연결' }, production: '당일 생산 추정량', productionShort: '생산(추정)', productionHint: '배분 형합수 × Cavity', plan: '당일 계획',
     currentPlan: '현재 계획', noPart: 'Part 확인 대기', noPlan: '현재 계획 미확인', inspectionQty: '검사수량',
     quantityUnknown: '미확인', quantityHint: '생산수량과 별도', record: '검사요청·기록', history: '누적 이력',
     historyHint: '로그인 후 검사요청에 기록된 내역을 확인합니다.',
@@ -34,7 +35,8 @@ const COPY = {
   },
   zh: {
     title: '注塑检验看板', machine: '号机', range: '注塑', date: '基准日', refreshed: '页面更新',
-    first: '首检', periodic: '巡检', production: '当日生产估算量', productionShort: '产量(估)', productionHint: '分配合模数 × 模穴数', plan: '当日计划',
+    first: '首检', periodic: '巡检', due: '下次巡检', observed: '检验观测', inspecting: '检验中', currentInspection: '当前检验',
+    schedule: { scheduled: '已计划', overdue: '已逾期', unknown: '待确认', unconnected: '未关联' }, production: '当日生产估算量', productionShort: '产量(估)', productionHint: '分配合模数 × 模穴数', plan: '当日计划',
     currentPlan: '当前计划', noPart: '等待确认Part', noPlan: '当前计划待确认', inspectionQty: '检验数量',
     quantityUnknown: '待确认', quantityHint: '与生产数量分开', record: '检验请求·记录', history: '累计记录',
     historyHint: '登录后可查看检验请求中已记录的内容。',
@@ -92,12 +94,16 @@ export function InspectionBoardPage() {
   const data = view.data;
   const fresh = view.freshness === 'fresh' && view.availability === 'ok' && !transportError;
   const observations = data ? [...data.first.checks, ...data.periodic.checks, ...data.other_checks] : [];
-  const checking = fresh && observations.some(item => item.status === 'in_progress');
+  const selectedActivity = inspectionBoardActivity(view);
+  const checking = selectedActivity.inspecting;
   const qualityFreshness = (machine: InspectionBoardMachine) => machine.qualityView.availability === 'error' ? copy.connectionError
     : machine.qualityView.freshness === 'fresh' ? copy.synced : machine.qualityView.freshness === 'stale' ? copy.stale
       : machine.qualityView.freshness === 'fixture' ? copy.sample : copy.unknown;
   const number = (value: number | null) => value !== null && Number.isFinite(value) ? value.toLocaleString(language === 'ko' ? 'ko-KR' : 'zh-CN', { maximumFractionDigits: 0 }) : '—';
   const time = (value: string | number | null | undefined) => value && Number.isFinite(new Date(value).getTime()) ? new Intl.DateTimeFormat(language === 'ko' ? 'ko-KR' : 'zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value)) : '—';
+  const observedTime = (value: string | null) => value && Number.isFinite(Date.parse(value))
+    ? new Intl.DateTimeFormat(language === 'ko' ? 'ko-KR' : 'zh-CN', { timeZone: 'Asia/Shanghai',
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value)) : copy.unknown;
   const dataTimes = [planQuery.dataUpdatedAt, statusQuery.dataUpdatedAt, mesQuery.dataUpdatedAt];
   const refreshedAt = dataTimes.every(value => value > 0) ? Math.min(...dataTimes) : null;
   const refresh = () => { void planQuery.refetch(); void statusQuery.refetch(); void mesQuery.refetch(); };
@@ -128,9 +134,11 @@ export function InspectionBoardPage() {
       <section className="inspection-board-floor" aria-label={copy.choose}>
         {[machines.slice(0, 6), machines.slice(6, 12), machines.slice(12, 17)].map((group, index) => <section className="inspection-board-row" key={index}>
           <h2>{copy.range} <span>{group[0].machineNumber}–{group[group.length - 1].machineNumber}{copy.machine}</span></h2>
-          <div className="inspection-board-grid">{group.map(machine => <button type="button" key={machine.machineNumber}
+          <div className="inspection-board-grid">{group.map(machine => {
+            const activity = inspectionBoardActivity(machine.qualityView);
+            return <button type="button" key={machine.machineNumber}
             data-machine-card={machine.machineNumber} className={`inspection-board-machine${selectedNumber === machine.machineNumber ? ' is-selected' : ''}`}
-            aria-pressed={selectedNumber === machine.machineNumber} aria-label={`${machine.machineNumber}${copy.machine} · ${copy.first} ${copy.status[machine.qualityView.firstStatus]} · ${copy.periodic} ${copy.status[machine.qualityView.periodicStatus]}`}
+            aria-pressed={selectedNumber === machine.machineNumber} aria-label={`${machine.machineNumber}${copy.machine} · ${copy.first} ${copy.status[machine.qualityView.firstStatus]} · ${copy.periodic} ${copy.status[machine.qualityView.periodicStatus]} · ${copy.due} ${copy.schedule[activity.schedule]}${activity.nextDueAt ? ` ${time(activity.nextDueAt)}` : ''}`}
             onClick={() => selectMachine(machine.machineNumber)}>
             <span className="inspection-board-machine-name">{machine.machineNumber}{copy.machine}<small>{machine.tonnage && machine.tonnage !== '-' ? `${machine.tonnage}T` : '—'}</small></span>
             <img className={`inspection-board-machine-image${machine.productionTone === 'stale' ? ' is-stale' : ''}`} src={machineImage} alt="" />
@@ -138,8 +146,13 @@ export function InspectionBoardPage() {
             <span className="inspection-board-production">{copy.productionShort} {number(machine.productionQuantity)}</span>
             <span className="inspection-board-mini-state" data-inspection-kind="first"><span>{copy.first}</span><StateMark state={machine.qualityView.firstStatus} text={copy.status[machine.qualityView.firstStatus]} /></span>
             <span className="inspection-board-mini-state" data-inspection-kind="periodic"><span>{copy.periodic}</span><StateMark state={machine.qualityView.periodicStatus} text={copy.status[machine.qualityView.periodicStatus]} /></span>
+            <span className={`inspection-board-schedule is-${activity.schedule}`} data-testid={`inspection-schedule-${machine.machineNumber}`}>
+              <span>{copy.due}</span><strong>{copy.schedule[activity.schedule]}{activity.nextDueAt ? ` ${time(activity.nextDueAt)}` : ''}</strong>
+            </span>
+            {activity.inspecting && <span className="inspection-board-inspecting">{copy.inspecting}</span>}
             <small className="inspection-board-machine-freshness">{machine.productionTone === 'stale' ? `${copy.productionShort} · ${copy.stale}` : qualityFreshness(machine)}</small>
-          </button>)}</div>
+            <small className="inspection-board-machine-observed">{copy.observed} <time dateTime={activity.observedAt ?? undefined}>{observedTime(activity.observedAt)}</time></small>
+          </button>})}</div>
         </section>)}
         <footer className="inspection-board-legend">{(['waiting', 'in_progress', 'passed', 'failed', 'unknown'] as const).map(state => <StateMark key={state} state={state} text={copy.status[state]} />)}<span>{copy.choose}</span></footer>
       </section>
@@ -151,6 +164,11 @@ export function InspectionBoardPage() {
           <img className="inspection-board-scene-inspector" src={inspectorImage} alt="" />
           <span className={`inspection-board-production-tone is-${selected.productionTone}`}>{copy.tone[selected.productionTone]}</span>
         </div>
+        <div className="inspection-board-inspection-clock" data-testid="inspection-current-schedule">
+          <div><span>{copy.due}</span><strong className={`is-${selectedActivity.schedule}`}>{copy.schedule[selectedActivity.schedule]}{selectedActivity.nextDueAt ? ` · ${observedTime(selectedActivity.nextDueAt)}` : ''}</strong></div>
+          <div><span>{copy.currentInspection}</span><strong>{checking ? copy.inspecting : copy.status[view.periodicStatus]}</strong></div>
+          <small>{copy.observed} <time dateTime={selectedActivity.observedAt ?? undefined}>{observedTime(selectedActivity.observedAt)}</time></small>
+        </div>
         <div className="inspection-board-quantities"><div><span>{copy.production}</span><strong>{number(selected.productionQuantity)} <small>/ {number(selected.plannedQuantity)}</small></strong><small>{copy.plan} · {copy.productionHint}</small></div><div><span>{copy.inspectionQty}</span><strong className="inspection-board-unconfirmed" data-testid="inspection-quantity">{copy.quantityUnknown}</strong><small>{copy.quantityHint}</small></div></div>
         <div className="inspection-board-actions"><Link to="/quality/inspection-requests" className="inspection-board-record"><ClipboardList size={23} />{copy.record}<ArrowUpRight size={19} /></Link><div><span>{copy.inspection}</span><strong>{copy.status[view.periodicStatus]}</strong></div><div><span>{copy.saved}</span><strong className="inspection-board-unconfirmed" data-testid="inspection-save-status">{copy.saveUnknown}</strong></div></div>
         <section className="inspection-board-observations"><div className="inspection-board-section-heading"><h3>{copy.observations}</h3><Link to="/quality/inspection-requests" data-testid="inspection-history"><History size={16} />{copy.history}<ArrowUpRight size={14} /></Link></div>
@@ -158,7 +176,7 @@ export function InspectionBoardPage() {
           {observations.length ? <ol className="inspection-board-observation-list">{observations.map((item, index) => <li key={`${item.kind}-${index}`}><StateMark state={item.status} text={copy.status[item.status]} /><time dateTime={item.checked_at ?? undefined}>{time(item.checked_at)}</time><small>{item.kind === 'first' ? copy.first : item.kind === 'periodic' ? copy.periodic : copy.inspection}</small></li>)}</ol> : <p className="inspection-board-empty">{copy.empty}</p>}
           <p className="inspection-board-history-hint">{copy.historyHint}</p>
         </section>
-        <div className="inspection-board-disposition"><AlertTriangle size={20} /><div><strong>{copy.disposition} · {view.counts.failed > 0 ? `${view.historical ? `${copy.historical} ` : ''}${copy.failedObservation} ${view.counts.failed}${copy.count}` : copy.dispositionUnknown}</strong><small>{copy.dispositionHint}</small></div></div>
+        <div className="inspection-board-disposition"><AlertTriangle size={20} /><div><strong>{copy.disposition} · {copy.dispositionUnknown}</strong><small>{view.counts.failed > 0 ? `${view.historical ? `${copy.historical} ` : ''}${copy.failedObservation} ${view.counts.failed}${copy.count} · ` : ''}{copy.dispositionHint}</small></div></div>
         <div className={`inspection-board-sync${fresh ? ' is-fresh' : ''}`}><AlertTriangle size={19} /><div><strong>{qualityFreshness(selected)} · {copy.lastSync} {time(data?.last_success_at)}</strong>{!fresh && <small>{copy.unavailable}</small>}</div><button type="button" aria-label={copy.refresh} disabled={refreshing} onClick={refresh}><RefreshCw size={17} /></button></div>
         <InjectionQualityStatus state={selected.qualityState} expectedScope={selected.qualityScope} language={language} nowMs={nowMs} transportError={transportError} />
         <p className="inspection-board-motion-note">{copy.motionNote}</p>

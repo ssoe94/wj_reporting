@@ -216,7 +216,12 @@ def _lock_user(actor_id):
 def _login(user, login_digest, *, lock=False, revision=None):
     query = MESLoginSession.objects.select_for_update() if lock else MESLoginSession.objects
     row = query.filter(pk=login_digest, actor_id=user.pk).first()
-    if (row is None or row.revoked_at is not None or row.expires_at <= timezone.now()
+    from .session_guard import require_live_login, LoginRejected
+    try:
+        require_live_login(row)
+    except LoginRejected:
+        raise VaultBlocked('login_unavailable') from None
+    if (row is None or row.revoked_at is not None
             or row.authorization_digest != authorization_digest(user) or not eligible(user)
             or (revision is not None and row.revision != revision)):
         raise VaultBlocked('login_unavailable')

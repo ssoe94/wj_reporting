@@ -31,8 +31,8 @@ function syntheticSourceItems(): MesReadItem[] {
 
 function labels(info: TestInfo) {
   return info.project.name === 'zh-mobile' ? {
-    language: 'zh' as const, title: '检验申请管理', beta: '测试版', board: '17 台设备检验看板',
-    local: 'Beta · 保存至 WJ · MES 未连接', preview: '合成预览 · 测试数据 · MES 未连接',
+    language: 'zh' as const, title: '检验管理', quality: '品质', board: '按设备查看检验申请',
+    local: 'WJ 检验申请', preview: '合成预览 · 测试数据 · MES 未连接',
     plans: 'WJ 生产计划', manual: 'WJ 手工输入', previewPlans: '合成生产计划', previewRequests: '合成检验申请',
     back: '返回看板', create: '登记手工检验申请', cancel: '取消', notes: '检验备注',
     save: '保存草稿', submit: '提交检验结果', saved: '已保存 WJ Reporting 草稿与审计记录。',
@@ -42,8 +42,8 @@ function labels(info: TestInfo) {
     routeDirty: '是否切换到其他页面？', routeLocked: '请先确认请求结果',
     routeStay: '留在当前页面', routeLeave: '切换页面', restore: '恢复输入',
   } : {
-    language: 'ko' as const, title: '검사요청관리', beta: '베타', board: '17대 설비 검사 칸반',
-    local: '베타 · WJ 저장 · MES 미연결', preview: '합성 미리보기 · 시험 데이터 · MES 미연결',
+    language: 'ko' as const, title: '검사관리', quality: '품질', board: '설비별 검사요청',
+    local: 'WJ 검사요청', preview: '합성 미리보기 · 시험 데이터 · MES 미연결',
     plans: 'WJ 생산계획', manual: 'WJ 수동입력', previewPlans: '합성 생산계획', previewRequests: '합성 검사요청',
     back: '칸반으로', create: '수동 검사요청 등록', cancel: '취소', notes: '검사 메모',
     save: '초안 저장', submit: '검사 결과 제출', saved: 'WJ Reporting 초안과 감사기록을 저장했습니다.',
@@ -259,7 +259,7 @@ async function clickAppLink(page: Page, info: TestInfo, destination: string) {
 }
 async function expectNoCompletion(page: Page) {
   await expect(page.locator('.inspection-kanban-request [data-stage="completed"]')).toHaveCount(0);
-  await expect(page.locator('.inspection-kanban-counts [data-stage="completed"] strong')).toHaveText('0');
+  await expect(page.locator('.inspection-management-stages [data-stage="completed"] strong')).toHaveText('0');
 }
 async function expectNavigationLocked(page: Page, info: TestInfo) {
   const text = labels(info);
@@ -289,7 +289,7 @@ async function expectNavigationLocked(page: Page, info: TestInfo) {
   } finally { page.off('dialog', listener); }
 }
 
-test('administrator beta menu, source labels, 17 machines, input focus and dirty cancellation', async ({ page, baseURL }, info) => {
+test('administrator quality inspection menu, source labels, 17 machines, input focus and dirty cancellation', async ({ page, baseURL }, info) => {
   const text = labels(info);
   const fixture = await installFixtures(page, baseURL!, info);
   await page.goto(path);
@@ -303,9 +303,9 @@ test('administrator beta menu, source labels, 17 machines, input focus and dirty
 
   if (info.project.name === 'zh-mobile') await page.getByRole('button', { name: text.openMenu, exact: true }).click();
   const navigation = page.locator(info.project.name === 'zh-mobile' ? '#main-mobile-navigation' : '.main-sidebar--desktop');
-  const beta = navigation.locator('.main-navigation__group').filter({ has: page.locator('.main-navigation__group-label', { hasText: text.beta }) });
-  await expect(beta.locator(`a[href="${path}"]`)).toHaveText(text.title);
-  await beta.locator(`a[href="${path}"]`).click();
+  const quality = navigation.locator('.main-navigation__group').filter({ has: page.locator('.main-navigation__group-label', { hasText: text.quality }) });
+  await expect(quality.locator(`a[href="${path}"]`)).toHaveText(text.title);
+  await quality.locator(`a[href="${path}"]`).click();
   await expect(page).toHaveURL(new RegExp(`${path}$`));
   await expect(page.locator('.inspection-machine-card')).toHaveCount(17);
   await expectNoCompletion(page);
@@ -341,7 +341,7 @@ test('administrator beta menu, source labels, 17 machines, input focus and dirty
 
 for (const identity of [{ name: 'staff/group administrator', superuser: false, active: true },
   { name: 'inactive superuser', superuser: true, active: false }]) {
-  test(`${identity.name} cannot see beta menu or open its direct route`, async ({ page, baseURL }, info) => {
+  test(`${identity.name} cannot see inspection menu or open its direct route`, async ({ page, baseURL }, info) => {
     const fixture = await installFixtures(page, baseURL!, info, identity);
     await page.goto(path);
     await expect(page).toHaveURL(/\/analysis$/);

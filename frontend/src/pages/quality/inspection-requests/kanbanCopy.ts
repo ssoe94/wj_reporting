@@ -1,6 +1,11 @@
 export const inspectionKanbanCopy = {
   ko: {
-    title: '17대 설비 검사 칸반', date: '생산일', current: '현재 생산일', refresh: '칸반 새로고침',
+    title: '설비별 검사요청',
+    filterTitle: '검사요청 필터', search: '설비·품번·계획·작업 검색', allMachines: '전체 설비', unmappedMachine: '설비 미매핑',
+    allStages: '전체', filterWaiting: '미처리', filterProgress: '검사 중', filterCompleted: '완료 확인', filterBlocked: '확인·조치 필요',
+    delayed: '지연', delayUnavailable: '지연 기준 미연결', delayHint: '검사 기한이 연결되지 않아 지연 여부를 판정할 수 없습니다.',
+    filterScope: '상태 필터는 조회된 WJ 검사요청에 적용됩니다. MES 과거 관측은 전체 상태에서 확인하세요.',
+    filterResult: '조건에 맞는 WJ 요청', clearFilters: '필터 초기화', noMatches: '조건에 맞는 요청이나 계획이 없습니다.', previousDayOpen: '이전 생산일 미완료 요청', date: '생산일', current: '현재 생산일', refresh: '칸반 새로고침',
     day: '상하이 08:00 ~ 다음 날 08:00', waiting: '검사 대기', in_progress: '진행 중', completed: 'MES 완료 확인', blocked: '확인·조치 필요',
     first: '초도', process: '공정', final: '최종', reinspection: '재검', machine: '호기', empty: '표시할 검사요청 없음',
     plan: 'WJ 생산계획', planMissing: '계획 없음', planUnknown: '계획 매핑·범위 미확인', running: 'WJ 진행 기록', scheduled: '계획', paused: 'WJ 중단 기록',
@@ -18,7 +23,12 @@ export const inspectionKanbanCopy = {
     displayedRequests: '이 조회의 표시 요청', displayCount: '표시', scopeHint: '표시 요청만 집계합니다. 전체 MES QC 건수와 미처리 건수는 미확인이며, 이 집계는 미처리 요청만을 뜻하지 않습니다.',
   },
   zh: {
-    title: '17 台设备检验看板', date: '生产日', current: '当前生产日', refresh: '刷新看板',
+    title: '按设备查看检验申请',
+    filterTitle: '检验申请筛选', search: '搜索设备、料号、计划、作业', allMachines: '全部设备', unmappedMachine: '设备未映射',
+    allStages: '全部', filterWaiting: '未处理', filterProgress: '检验中', filterCompleted: '完成已确认', filterBlocked: '需确认·处理',
+    delayed: '延迟', delayUnavailable: '未关联延迟判定依据', delayHint: '尚未关联检验期限，无法判断是否延迟。',
+    filterScope: '状态筛选仅用于已查询的 WJ 检验申请。MES 历史观测可在全部状态中查看。',
+    filterResult: '符合条件的 WJ 申请', clearFilters: '重置筛选', noMatches: '没有符合条件的申请或计划。', previousDayOpen: '此前生产日未完成申请', date: '生产日', current: '当前生产日', refresh: '刷新看板',
     day: '上海 08:00 至次日 08:00', waiting: '待检验', in_progress: '进行中', completed: 'MES 完成已确认', blocked: '需确认·处理',
     first: '首检', process: '过程检验', final: '最终检验', reinspection: '复检', machine: '号机', empty: '暂无显示的检验申请',
     plan: 'WJ 生产计划', planMissing: '无计划', planUnknown: '计划映射·范围未确认', running: 'WJ 进行记录', scheduled: '计划', paused: 'WJ 暂停记录',

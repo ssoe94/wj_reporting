@@ -179,18 +179,23 @@ class _Response:
 
 @sensitive_variables()
 def _user_sender(url, *, params, data, headers, timeout, allow_redirects):
-    """Use the documented access_token header, never a credential-bearing URL.
+    """Send the existing USER lease under the reviewed configured header name.
 
     An isolated requests session ignores environment proxy/netrc credentials and
     bounds streamed provider data before passing it to the scoped transport.
     """
     import requests
-    if type(params) is not dict or set(params) != {'access_token'}:
+    # Header-name compatibility does not supply APP authority or prove that a
+    # save/finish endpoint accepts this USER. Never try a second header.
+    header = getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token')
+    if (type(header) is not str or header not in {'access_token', 'X-AUTH'}
+            or type(params) is not dict or set(params) != {'access_token'}
+            or any(key.lower() in {'access_token', 'x-auth', 'authorization'} for key in headers)):
         raise MesContractUnavailable()
     with requests.Session() as session:
         session.trust_env = False
         with session.post(url, data=data,
-                headers={**headers, 'access_token': params['access_token'], 'Accept': 'application/json'},
+                headers={**headers, header: params['access_token'], 'Accept': 'application/json'},
                 timeout=timeout, allow_redirects=False, stream=True) as response:
             if response.history:
                 raise MesOutcomeUnknown()

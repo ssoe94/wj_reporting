@@ -25,6 +25,7 @@ const sourcePaths = [
   'src/App.tsx', 'src/components/MesConnectionDialog.tsx', 'src/components/LogoutFeedback.tsx',
   'src/components/PasswordChangeModal.tsx', 'src/contexts/AuthContext.tsx',
   'src/domains/auth/auth-storage.ts', 'src/domains/auth/mes-connection.ts',
+  'src/domains/auth/auth-activity.ts', 'src/domains/auth/auth-refresh.ts',
   'src/domains/auth/auth-transition.ts',
   'src/domains/auth/auth-commit.ts', 'src/domains/auth/inspection-beta-access.ts',
   'src/domains/auth/server-logout.ts', 'src/lib/api.ts', 'src/shared/api/http.ts',
@@ -40,10 +41,14 @@ const artifact = {
   runner_sha256: sha(fs.readFileSync(__filename)),
 };
 const payload = value => Buffer.from(JSON.stringify(value)).toString('base64url');
-const pair = actor => ({
-  access: `${payload({ alg: 'synthetic', typ: 'JWT' })}.${payload({ user_id: actor === 'a' ? 101 : 202, exp: Math.floor(Date.now() / 1000) + 7200 })}.SYNTHETIC-${actor}-ACCESS`,
-  refresh: `SYNTHETIC-${actor}-REFRESH`,
-});
+const pair = actor => {
+  const now = Math.floor(Date.now() / 1000);
+  const claims = { user_id: actor === 'a' ? 101 : 202, mes_sid: actor.repeat(43), mes_login_exp: now + 86400 };
+  return {
+    access: `${payload({ alg: 'synthetic', typ: 'JWT' })}.${payload({ ...claims, token_type: 'access', exp: now + 7200 })}.SYNTHETIC-${actor}-ACCESS`,
+    refresh: `${payload({ alg: 'synthetic', typ: 'JWT' })}.${payload({ ...claims, token_type: 'refresh', exp: now + 86400 })}.SYNTHETIC-${actor}-REFRESH`,
+  };
+};
 const pairs = { a: pair('a'), b: pair('b') };
 const privateValues = new Set(Object.values(pairs).flatMap(value => [value.access, value.refresh]));
 const sensitive = text => [...privateValues].some(value => String(text || '').includes(value));
@@ -72,7 +77,7 @@ const metadata = connected => ({
   let step = 'launch';
   let checks = 0;
   const cases = [];
-  const counts = { intercepted: 0, fulfilled: 0, aborted: 0, provider: 0, refresh: 0,
+  const counts = { intercepted: 0, fulfilled: 0, aborted: 0, provider: 0, refresh: 0, activity: 0,
     launch: 0, logout_a: 0, logout_b: 0, native_post: 0, canceled_response: 0,
     identity_read: 0, status_read: 0, console_errors: 0, page_errors: 0 };
   const errorCategories = new Set();
@@ -205,6 +210,14 @@ const metadata = connected => ({
         }
         if (url.pathname === '/api/token/refresh/') { counts.refresh += 1; return json(route, { code: 'token_not_valid' }, 401); }
         if (!actor) return json(route, { code: 'fixture_missing_auth' }, 401);
+        if (url.pathname === '/api/auth/activity/' && request.method() === 'POST') {
+          counts.activity += 1;
+          const body = request.postDataJSON();
+          routeVerify(Object.keys(body).length === 1 && body.refresh === pairs[actor].refresh, 'activity_has_only_current_actor_refresh');
+          // This fixture retains its legacy pair. Rotation/v2 is covered by
+          // the actual auth-refresh module harness; no automatic retry follows.
+          return json(route, { code: 'session_activity_rejected' }, 401);
+        }
         if (url.pathname === '/api/injection/user/me/') { counts.identity_read += 1; return json(route, {
           id: actor === 'a' ? 101 : 202, username: `fixture-${actor}`, email: '', groups: [],
           is_staff: true, is_superuser: true, password_reset_required: false,

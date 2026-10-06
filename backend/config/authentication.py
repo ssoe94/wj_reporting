@@ -71,11 +71,14 @@ class ScopedJWTAuthentication(JWTAuthentication):
                 'code': 'inspection_pilot_scope_required',
             })
 
+        from mes_oauth.session_guard import check_known_login
+
         if is_archive_identity_marker(user, token):
             if not is_valid_archive_service(user, token):
                 raise PermissionDenied('The quality archive service identity is not active.')
             if (request.method.upper(), route_name) not in _ARCHIVE_ALLOWED_ROUTES:
                 raise PermissionDenied('The quality archive credential cannot access this endpoint.')
+            check_known_login(user, token)
             return result
 
         try:
@@ -97,7 +100,6 @@ class ScopedJWTAuthentication(JWTAuthentication):
                 code='password_changed',
             )
 
-        from mes_oauth.session_guard import check_known_login
         check_known_login(user, token)
 
         if (

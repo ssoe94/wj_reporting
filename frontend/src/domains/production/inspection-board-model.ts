@@ -138,3 +138,22 @@ export function buildInspectionBoardMachines(input: InspectionBoardModelInput): 
       qualityScope: selection.scope, qualityState, qualityView };
   });
 }
+
+
+/** Display only the schedule and work observations in the current verified scope. */
+export function inspectionBoardActivity(view: InjectionQualityView): {
+  schedule: 'scheduled' | 'overdue' | 'unknown' | 'unconnected';
+  nextDueAt: string | null; inspecting: boolean; observedAt: string | null;
+} {
+  const fresh = view.freshness === 'fresh' && view.availability === 'ok' && !view.historical;
+  const connected = view.data?.binding_status === 'verified';
+  const schedule = fresh && connected && ['scheduled', 'overdue'].includes(view.scheduleStatus)
+    ? view.scheduleStatus as 'scheduled' | 'overdue' : connected ? 'unknown' : 'unconnected';
+  return {
+    schedule,
+    nextDueAt: schedule === 'scheduled' || schedule === 'overdue' ? view.data?.periodic.next_due_at ?? null : null,
+    inspecting: fresh && Boolean(view.data && [...view.data.first.checks, ...view.data.periodic.checks,
+      ...view.data.other_checks].some(check => check.status === 'in_progress')),
+    observedAt: view.data?.observed_at ?? null,
+  };
+}

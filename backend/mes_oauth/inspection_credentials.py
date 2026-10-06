@@ -82,7 +82,7 @@ def _reusable(user, row, session, mes_user_id, tenant, configuration):
             or vault.decision(user, row, session.login_digest, configuration).action != 'reuse_candidate'):
         raise _Blocked(UNAVAILABLE)
     deadline = min(row.expires_at, row.idle_expires_at, row.provider_expires_at,
-                   row.consent_expires_at, session.expires_at)
+                   row.consent_expires_at, session.effective_expires_at or session.expires_at)
     if timezone.now() + timedelta(seconds=configuration.reuse.safety_seconds) >= deadline:
         raise _Blocked(UNAVAILABLE)
     return deadline

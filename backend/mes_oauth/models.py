@@ -28,7 +28,10 @@ class MESLoginSession(models.Model):
     digest = models.CharField(max_length=64, primary_key=True, editable=False)
     actor_id = models.PositiveBigIntegerField(db_index=True, editable=False)
     authorization_digest = models.CharField(max_length=64, editable=False)
-    expires_at = models.DateTimeField()
+    expires_at = models.DateTimeField()  # Immutable signed login identity anchor.
+    session_version = models.PositiveSmallIntegerField(null=True)
+    last_activity_at = models.DateTimeField(null=True)
+    idle_expires_at = models.DateTimeField(null=True)
     revoked_at = models.DateTimeField(null=True)
     revision = models.PositiveBigIntegerField(default=1)
 

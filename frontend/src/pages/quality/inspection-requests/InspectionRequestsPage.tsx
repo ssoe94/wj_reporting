@@ -276,7 +276,7 @@ export default function InspectionRequestsPage() {
             : detailError ? <div className="inspection-detail"><div className="inspection-message is-error" role="alert">{detailError}</div><button type="button" className="inspection-button" onClick={() => { if (ownsSession()) setDetailRetry((value) => value + 1); }}>{text.retry}</button></div>
               : detail && inspector && capabilities ? <InspectionRequestDetail key={`${inspector.id}-${detail.id}-${editor.epoch}`} initial={detail} userId={inspector.id} sessionId={sessionId} lang={lang} globalCapabilities={capabilities} onChanged={onChanged} onDirty={onDirty} onLocked={onLocked} /> : <div className="inspection-empty">{text.select}</div>}
       </div>}
-      {!assignedOnly && <details className="inspection-workspace inspection-auxiliary"><summary>{text.allRequests}{list && ` (${list.count})`}</summary>
+      {!assignedOnly && <details className="inspection-workspace inspection-auxiliary" open><summary>{text.allRequests}{list && ` (${list.count})`}</summary>
         {requestList}
       </details>}
       <details className="inspection-guide"><summary>{text.guideTitle}</summary><p>{text.guideStop}</p><p>{text.guideResume}</p><p>{text.guidePending}</p></details>

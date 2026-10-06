@@ -248,14 +248,14 @@ test('pilot creation is exposed only by explicit can_manage and still does not f
   } finally { fixture.cleanup(); }
 });
 
-test('full scope preserves kanban, collapsed auxiliary list and kanban polling', async () => {
+test('full scope preserves kanban, visible searchable list and kanban polling', async () => {
   const fixture = harness();
   try {
     fixture.reply.resolve(full); await fixture.settle();
     assert.deepEqual(fixture.calls.map((call) => call.kind), ['capabilities', 'kanban', 'list']);
     assert.ok(fixture.nodes().some((node) => node.type === 'InspectionKanban'));
     const auxiliary = fixture.nodes().find((node) => node.type === 'details' && node.props.className?.includes('inspection-auxiliary'))!;
-    assert.equal(auxiliary.props.open, undefined);
+    assert.equal(auxiliary.props.open, true);
     assert.equal(fixture.nodes().some((node) => node.props.className?.includes('inspection-assigned-workspace')), false);
     assert.equal(fixture.timers.size, 2);
     for (const tick of [...fixture.timers.values()]) tick(); await fixture.settle();

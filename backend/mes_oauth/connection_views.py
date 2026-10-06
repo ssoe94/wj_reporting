@@ -162,19 +162,13 @@ def exact_origin(request):
 
 
 def login_claims(token, diagnostic=False):
-    sid, expires = token.get('mes_sid'), token.get('mes_login_exp')
-    if diagnostic is True and sid is None and expires is None:
+    from .session_guard import login_identity, LoginRejected
+    if diagnostic is True and token.get('mes_sid') is None and token.get('mes_login_exp') is None:
         raise vault.VaultBlocked('legacy_login_required')
-    if (type(sid) is not str or not re.fullmatch(r'[A-Za-z0-9_-]{43}', sid)
-            or type(expires) is not int):
-        raise vault.VaultBlocked('new_login_required')
     try:
-        expiry = datetime.fromtimestamp(expires, dt_timezone.utc)
-    except (ValueError, OverflowError, OSError):
+        return login_identity(token)
+    except LoginRejected:
         raise vault.VaultBlocked('new_login_required') from None
-    if not timezone.now() < expiry <= timezone.now() + timedelta(days=31):
-        raise vault.VaultBlocked('new_login_required')
-    return vault.digest('client-login', sid), expiry
 
 
 class ConnectionAPI(APIView):
@@ -260,8 +254,11 @@ class ConnectionLaunch(ConnectionAPI):
                 if not vault.eligible(user):
                     raise vault.VaultBlocked('account_unavailable')
                 authorization = vault.authorization_digest(user)
-                session, created = MESLoginSession.objects.get_or_create(pk=login_digest,
-                    defaults=dict(actor_id=user.pk, expires_at=expires, authorization_digest=authorization))
+                from .session_guard import check_known_login, session_version
+                check_known_login(user, request.auth)
+                if session_version(request.auth) != 2:
+                    MESLoginSession.objects.get_or_create(pk=login_digest,
+                        defaults=dict(actor_id=user.pk, expires_at=expires, authorization_digest=authorization))
                 session = vault._login(user, login_digest, lock=True)
                 MESLoginTicket.objects.filter(actor_id=user.pk, login_digest=login_digest,
                     consumed_at__isnull=True).update(consumed_at=timezone.now())
@@ -367,7 +364,8 @@ class ConnectionLogout(ConnectionAPI):
                 raise ValueError()
             if refresh_proof is not None:
                 if (refresh_proof.get('user_id') != actor_id
-                        or refresh_proof.get('mes_sid') != token.get('mes_sid')):
+                        or refresh_proof.get('mes_sid') != token.get('mes_sid')
+                        or refresh_proof.get('mes_login_exp') != token.get('mes_login_exp')):
                     raise ValueError()
             sid = token.get('mes_sid')
             if type(sid) is str and re.fullmatch(r'[A-Za-z0-9_-]{43}', sid):

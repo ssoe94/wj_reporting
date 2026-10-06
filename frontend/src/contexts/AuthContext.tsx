@@ -7,9 +7,10 @@ import { parseFieldTerminalUser } from '../lib/fieldTerminal';
 import { canManageDevelopmentTasks, isDevelopmentTaskRoute } from '../domains/auth/development-task-access';
 import { canUseInspectionBeta, isInspectionBetaRoute, parseInspectionAccess } from '../domains/auth/inspection-beta-access';
 import type { InspectionAccess } from '../domains/auth/inspection-beta-access';
-import { AuthRefreshError, refreshAccessToken } from '../domains/auth/auth-refresh';
+import { abortAuthActivity, AuthRefreshError, isDefinitiveSessionRejection, recordAuthActivity, refreshAccessToken } from '../domains/auth/auth-refresh';
+import { observeAuthActivity } from '../domains/auth/auth-activity';
 import { finishServerLogout } from '../domains/auth/server-logout';
-import { beginAuthSessionEnd, createLoginAttemptGate } from '../domains/auth/auth-transition';
+import { assertAuthSessionCurrent, beginAuthSessionEnd, createLoginAttemptGate } from '../domains/auth/auth-transition';
 import { commitAuthSession } from '../domains/auth/auth-commit';
 import {
   getAuthSessionSnapshot,
@@ -127,9 +128,7 @@ function isDefinitiveIdentityError(error: unknown) {
   ) {
     return true;
   }
-  if (error.response?.status !== 401) return false;
-  return new Set(['token_not_valid', 'user_not_found', 'user_inactive', 'password_changed'])
-    .has(String(error.response.data?.code || ''));
+  return isDefinitiveSessionRejection(error.response?.status, error.response?.data?.code);
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
@@ -153,6 +152,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => { gate.invalidate(); };
   }, []);
 
+  useEffect(() => {
+    const sessionId = identity?.sessionId;
+    if (!sessionId || isLoggingOut) return;
+    return observeAuthActivity({
+      current: () => { try { assertAuthSessionCurrent(sessionId); return true; } catch { return false; } },
+      foreground: () => document.visibilityState === 'visible' && document.hasFocus(),
+      send: (activity) => recordAuthActivity(sessionId, activity),
+    });
+  }, [identity?.sessionId, isLoggingOut]);
+
   useEffect(() => subscribeToAuthStorage(() => {
     const session = getAuthSessionSnapshot();
     if (session.id && session.id === sessionIdRef.current) {
@@ -164,6 +173,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Cached server data belongs to the authenticated principal that fetched
     // it. Remove it synchronously before a different account can render.
     loginGate.current.invalidate();
+    abortAuthActivity(sessionIdRef.current);
     void queryClient.cancelQueries();
     queryClient.clear();
     setToken(session.access);
@@ -315,6 +325,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     loginGate.current.invalidate();
     const releaseSession = beginAuthSessionEnd(snapshot.id);
     if (!releaseSession) return Promise.resolve(false);
+    abortAuthActivity(snapshot.id);
     setIsLoggingOut(true);
     setLogoutError(false);
     const operation = finishServerLogout(snapshot.id, {

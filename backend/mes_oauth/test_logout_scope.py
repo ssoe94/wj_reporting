@@ -124,7 +124,7 @@ class BrowserLogoutScopeTests(ConnectionFixture, TestCase):
         self.assertEqual(self.action('logout', {'refresh': self.tokens['refresh']}).status_code, 200)
         fresh = self.obtain(self.user)
         digest = self.login_digest(fresh)
-        self.assertFalse(MESLoginSession.objects.filter(pk=digest).exists())
+        self.assertTrue(MESLoginSession.objects.filter(pk=digest).exists())
         with CaptureQueriesContext(connection) as queries, patch(
                 'mes_oauth.vault._open', side_effect=AssertionError('Metadata cannot decrypt.')):
             response = self.status(tokens=fresh)
@@ -136,7 +136,7 @@ class BrowserLogoutScopeTests(ConnectionFixture, TestCase):
         self.assertEqual(response.json()['expires_at'], min(row.expires_at, row.idle_expires_at).isoformat())
         self.assertFalse(any(query['sql'].lstrip().upper().startswith(
             ('INSERT', 'UPDATE', 'DELETE', 'REPLACE')) for query in queries))
-        self.assertFalse(MESLoginSession.objects.filter(pk=digest).exists())
+        self.assertTrue(MESLoginSession.objects.filter(pk=digest).exists())
         self.assertEqual(list(MESCredential.objects.order_by('actor_id').values()), self.credentials)
         self.assert_no_provider()
 
@@ -148,7 +148,7 @@ class BrowserLogoutScopeTests(ConnectionFixture, TestCase):
         self.assertEqual(response.json()['status'], 'disconnected')
         self.assertFalse(response.json()['can_disconnect'])
         self.assertIsNone(response.json()['expires_at'])
-        self.assertFalse(MESLoginSession.objects.filter(pk=self.login_digest(fresh)).exists())
+        self.assertTrue(MESLoginSession.objects.filter(pk=self.login_digest(fresh)).exists())
         self.assert_no_provider()
 
     def test_revoked_or_authorization_changed_marker_cannot_read_or_disconnect(self):
@@ -170,7 +170,7 @@ class BrowserLogoutScopeTests(ConnectionFixture, TestCase):
         row = MESCredential.objects.get(pk=self.user.pk)
         self.assertEqual(bytes(row.ciphertext), b'')
         self.assertIsNotNone(row.revoked_at)
-        self.assertFalse(MESLoginSession.objects.filter(pk=self.login_digest(fresh)).exists())
+        self.assertTrue(MESLoginSession.objects.filter(pk=self.login_digest(fresh)).exists())
         self.assertEqual(MESCredential.objects.filter(pk=self.other.pk).values().get(), self.credentials[1])
         self.assertFalse(MESLoginSession.objects.filter(revoked_at__isnull=False).exists())
         self.assert_no_provider()

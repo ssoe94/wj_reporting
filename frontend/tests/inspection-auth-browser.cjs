@@ -29,6 +29,7 @@ const sourcePaths = [
   'src/App.tsx', 'src/contexts/AuthContext.tsx', 'src/pages/LoginPage.tsx',
   'src/components/LogoutFeedback.tsx', 'src/domains/auth/auth-storage.ts',
   'src/components/MesConnectionDialog.tsx', 'src/domains/auth/mes-connection.ts',
+  'src/domains/auth/auth-activity.ts', 'src/domains/auth/auth-refresh.ts',
   'src/domains/auth/auth-transition.ts', 'src/domains/auth/auth-commit.ts', 'src/domains/auth/login-return.ts', 'src/domains/auth/server-logout.ts',
   'src/lib/api.ts', 'src/shared/api/http.ts',
   'src/domains/auth/inspection-beta-access.ts',
@@ -49,10 +50,14 @@ const artifact = {
   served_asset_sha256: {},
 };
 const payload = value => Buffer.from(JSON.stringify(value)).toString('base64url');
-const pair = actor => ({
-  access: `${payload({ alg: 'synthetic', typ: 'JWT' })}.${payload({ user_id: actor === 'a' ? 101 : 202, exp: Math.floor(Date.now() / 1000) + 7200 })}.SYNTHETIC-${actor}-ACCESS`,
-  refresh: `SYNTHETIC-${actor}-REFRESH`,
-});
+const pair = actor => {
+  const now = Math.floor(Date.now() / 1000);
+  const claims = { user_id: actor === 'a' ? 101 : 202, mes_sid: actor.repeat(43), mes_login_exp: now + 86400 };
+  return {
+    access: `${payload({ alg: 'synthetic', typ: 'JWT' })}.${payload({ ...claims, token_type: 'access', exp: now + 7200 })}.SYNTHETIC-${actor}-ACCESS`,
+    refresh: `${payload({ alg: 'synthetic', typ: 'JWT' })}.${payload({ ...claims, token_type: 'refresh', exp: now + 86400 })}.SYNTHETIC-${actor}-REFRESH`,
+  };
+};
 const pairs = { a: pair('a'), b: pair('b') };
 const privateValues = [...Object.values(pairs).flatMap(item => [item.access, item.refresh]), PASSWORD, NOTE_A, NOTE_B, LATE_NOTE];
 const sensitive = value => privateValues.some(item => String(value || '').includes(item));
@@ -105,7 +110,7 @@ function kanban(record, date) {
   const startedAt = new Date().toISOString();
   const counts = { intercepted: 0, fulfilled: 0, aborted: 0, canceled_response: 0,
     login_a: 0, login_b: 0, login_reply_a: 0, login_reply_b: 0, logout_a: 0, logout_b: 0, identity_a: 0, identity_b: 0,
-    mutation_a: 0, mutation_b: 0, detail_read_a: 0, detail_read_b: 0, list_read: 0, kanban_read: 0, refresh: 0, provider: 0, mes_write: 0,
+    mutation_a: 0, mutation_b: 0, detail_read_a: 0, detail_read_b: 0, list_read: 0, kanban_read: 0, refresh: 0, activity: 0, provider: 0, mes_write: 0,
     confirm_accepted: 0, confirm_dismissed: 0, console_errors: 0, page_errors: 0 };
   const blocked = { font_stylesheet: 0, unexpected_api: 0, unexpected_frontend_path: 0, unexpected_origin: 0, websocket: 0 };
   const consoleKinds = { blocked_resource: 0, mocked_http_error: 0, fixed_api_error: 0, expected_coordination_failure: 0, other: 0 };
@@ -214,6 +219,14 @@ function kanban(record, date) {
         }
         if (url.pathname === '/api/token/refresh/') { counts.refresh += 1; return json(route, { code: 'token_not_valid' }, 401); }
         if (!actor) { routeFailure ||= 'authenticated_api_has_actor'; return json(route, { code: 'synthetic_missing_auth' }, 401); }
+        if (url.pathname === '/api/auth/activity/' && request.method() === 'POST') {
+          counts.activity += 1;
+          const body = request.postDataJSON();
+          routeVerify(Object.keys(body).length === 1 && body.refresh === pairs[actor].refresh, 'activity_has_only_current_actor_refresh');
+          // This fixture retains its legacy pair. Rotation/v2 is covered by
+          // the actual auth-refresh module harness; no automatic retry follows.
+          return json(route, { code: 'session_activity_rejected' }, 401);
+        }
         if (url.pathname === '/api/injection/user/me/' && request.method() === 'GET') {
           counts[`identity_${actor}`] += 1;
           const hold = pendingIdentity?.actor === actor ? pendingIdentity : null;
@@ -311,7 +324,7 @@ function kanban(record, date) {
     page = await context.newPage();
     const userVisible = (target, actor) => target.locator('.main-user-menu__trigger').filter({ hasText: `fixture-${actor}` }).waitFor();
     const inspectorVisible = async (target, actor) => {
-      await target.getByRole('heading', { name: '검사요청관리', exact: true }).waitFor();
+      await target.getByRole('heading', { name: '검사관리', exact: true }).waitFor();
       await target.locator('.inspection-inspector strong').filter({ hasText: `fixture-${actor}` }).waitFor();
     };
     const openRequest = async target => {

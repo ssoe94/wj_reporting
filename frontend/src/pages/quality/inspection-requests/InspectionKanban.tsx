@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import MesReadObservationCard from './MesReadObservationCard';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { inspectionCopy, inspectionRequestStatusLabels, inspectionTime } from './copy';
 import { inspectionKanbanCopy } from './kanbanCopy';
 import { inspectionDisplayPlans, inspectionElapsedMinutes, inspectionPlanAlignment, inspectionRequestKind, inspectionRequestStage, inspectionStageCounts } from './kanban';
 import type { InspectionKanban as Kanban, InspectionPlan, KanbanInspectionRequest } from './kanban';
+import { filterInspectionManagement, inspectionPredatesBusinessDay } from './managementFilters';
+import type { ManagementFilter } from './managementFilters';
 
 
 
@@ -24,6 +27,16 @@ export default function InspectionKanban({ snapshot, date, lang, now, loading, e
   const common = inspectionCopy[lang];
   const requests = snapshot ? [...snapshot.machines.flatMap((machine) => machine.requests), ...snapshot.unmapped_requests] : [];
   const counts = inspectionStageCounts(requests);
+  const [filter, setFilter] = useState<ManagementFilter>({ stage: 'all', machine: 'all', search: '' });
+  const visible = snapshot ? filterInspectionManagement(snapshot, filter) : null;
+  const filtered = filter.stage !== 'all' || filter.machine !== 'all' || filter.search.trim() !== '';
+  const stageOptions = [
+    { value: 'all', label: text.allStages, count: requests.length },
+    { value: 'waiting', label: text.filterWaiting, count: counts.waiting },
+    { value: 'in_progress', label: text.filterProgress, count: counts.in_progress },
+    { value: 'completed', label: text.filterCompleted, count: counts.completed },
+    { value: 'blocked', label: text.filterBlocked, count: counts.blocked },
+  ] as const;
   const plan = (item: InspectionPlan) => <li key={item.id}><strong>{item.part_no || text.noPart}</strong><span>{item.execution_status === 'running' ? text.running : item.execution_status === 'paused' ? text.paused : text.scheduled} · {text.seq} {item.sequence}</span>{item.lot_no && <span>{text.lot}: {item.lot_no}</span>}</li>;
   const request = (item: KanbanInspectionRequest) => {
     const stage = inspectionRequestStage(item);
@@ -36,6 +49,7 @@ export default function InspectionKanban({ snapshot, date, lang, now, loading, e
       {item.nonconformance && <span className="inspection-status" data-status="failed">{lang === 'ko' ? '불량조치 미해결' : '不合格处置未解决'}</span>}
       <span>{text.localReview}: {inspectionRequestStatusLabels[lang][item.status] || item.status}</span>
       {stage !== 'completed' && <span className="inspection-wait">{text.elapsed} {inspectionElapsedLabel(item.created_at, now, lang)}</span>}
+      {stage !== 'completed' && snapshot && inspectionPredatesBusinessDay(item.created_at, snapshot.day_start) && <small>{text.previousDayOpen}</small>}
       <span className="inspection-plan-alignment" data-alignment={alignment}>{alignment === 'part_listed' ? text.listed : alignment === 'part_not_listed' ? text.discrepancy : text.alignmentUnknown}</span>
       <small>{item.source_kind === 'local_manual' ? common.local : item.source_kind}</small>
     </button></li>;
@@ -49,14 +63,21 @@ export default function InspectionKanban({ snapshot, date, lang, now, loading, e
     </div><p className="inspection-muted">{date} · {text.day} · {text.retained}</p>
     {error && <div className="inspection-message is-error" role="alert">{error}{snapshot && <p>{text.stale}</p>}<button type="button" className="inspection-button" disabled={loading} onClick={onRefresh}>{common.retry}</button></div>}
     {loading && !snapshot && <p className="inspection-empty" role="status">{common.loading}</p>}
-    {snapshot && <>
+    {snapshot && visible && <>
       <p className="inspection-muted">{text.displayedRequests}: {requests.length} {common.requestUnit} · {text.scopeHint}</p>
-      <div className="inspection-kanban-counts" aria-label={common.requests}>{(['waiting', 'in_progress', 'completed', 'blocked'] as const).map((stage) => <span key={stage} className="inspection-status" data-stage={stage}>{text[stage]} <strong>{counts[stage]}</strong></span>)}</div>
+      <div className="inspection-management-filters" role="group" aria-label={text.filterTitle}>
+        <div className="inspection-management-search"><label>{common.equipment}<select value={filter.machine} onChange={(event) => setFilter((value) => ({ ...value, machine: event.target.value }))}><option value="all">{text.allMachines}</option>{snapshot.machines.map((machine) => <option key={machine.machine_number} value={String(machine.machine_number)}>{machine.machine_number}{text.machine}</option>)}<option value="unmapped">{text.unmappedMachine}</option></select></label>
+          <label>{text.search}<input type="search" maxLength={128} value={filter.search} onChange={(event) => setFilter((value) => ({ ...value, search: event.target.value }))} /></label>
+          <button type="button" className="inspection-button" disabled={!filtered} onClick={() => setFilter({ stage: 'all', machine: 'all', search: '' })}>{text.clearFilters}</button></div>
+        <div className="inspection-management-stages" role="group" aria-label={common.filter}>{stageOptions.map((stage) => <button key={stage.value} type="button" className="inspection-button" data-stage={stage.value} aria-pressed={filter.stage === stage.value} onClick={() => setFilter((value) => ({ ...value, stage: stage.value }))}>{stage.label} <strong>{stage.count}</strong></button>)}<button type="button" className="inspection-button" disabled aria-describedby="inspection-delay-unavailable">{text.delayed} · {text.delayUnavailable}</button></div>
+        <p id="inspection-delay-unavailable" className="inspection-muted">{text.delayHint}</p><p className="inspection-muted">{text.filterScope}</p>
+        <p className="inspection-management-result" role="status">{text.filterResult}: <strong>{visible.requestCount}</strong> {common.requestUnit}</p>
+      </div>
       <p className="inspection-muted">{text.mapping}</p>
       <p className="inspection-muted">{text.executionHint}</p>
       {(snapshot.requests_truncated || snapshot.plans_truncated || snapshot.executions_truncated) && <div className="inspection-notice" role="status"><AlertTriangle size={18} aria-hidden="true" /><span>{text.truncation}</span></div>}
       {!snapshot.plan_snapshot.complete && <div className="inspection-notice" role="status">{text.partial}</div>}
-      <div className="inspection-machine-grid">{[...snapshot.machines].sort((a, b) => a.machine_number - b.machine_number).map((machine) => {
+      <div className="inspection-machine-grid">{[...visible.machines].sort((a, b) => a.machine_number - b.machine_number).map((machine) => {
         const plans = inspectionDisplayPlans(machine.plans);
         return <article className="inspection-machine-card" key={machine.machine_number} aria-labelledby={`inspection-machine-${machine.machine_number}`}>
           <header><h3 id={`inspection-machine-${machine.machine_number}`}>{machine.machine_number}{text.machine}</h3><span>{machine.mes_observations?.length ? `WJ ${machine.requests.length} · MES ${machine.mes_observations.length}` : `${text.displayCount} ${machine.requests.length} ${common.requestUnit}`}</span></header>
@@ -67,9 +88,10 @@ export default function InspectionKanban({ snapshot, date, lang, now, loading, e
           {machine.requests.length ? <ul className="inspection-machine-requests">{machine.requests.map(request)}</ul> : <p className="inspection-kanban-empty">{machine.mes_observations?.length ? (lang === 'ko' ? 'WJ 수동 요청 없음' : '无 WJ 手工申请') : text.empty}</p>}
         </article>;
       })}</div>
-      {!!snapshot.mes_unmapped_observations?.length && <section className="inspection-unmapped"><h3>{lang === 'ko' ? 'MES 관측 · 설비/작업 연결 미확인' : 'MES 观测 · 设备/作业关联未确认'}</h3><ul>{snapshot.mes_unmapped_observations.map((item) => <MesReadObservationCard key={item.observation_key} item={item} lang={lang} />)}</ul></section>}
-      {snapshot.unmapped_requests.length > 0 && <section className="inspection-unmapped"><h3>{text.unmapped} ({snapshot.unmapped_requests.length})</h3><p className="inspection-muted">{text.unmappedHint}</p><ul>{snapshot.unmapped_requests.map((item) => <li className="inspection-unmapped-request" key={item.id}><span>{item.equipment_ref || common.unassigned}</span><ul>{request(item)}</ul></li>)}</ul></section>}
-      {snapshot.unmapped_plans.length > 0 && <details className="inspection-fold"><summary>{text.unmappedPlans} ({snapshot.unmapped_plans.length})</summary><ul className="inspection-unmapped-plans">{snapshot.unmapped_plans.map((item) => <li key={item.id}><strong>{item.machine_name}</strong> · {item.part_no || text.noPart} · {text.seq} {item.sequence}</li>)}</ul></details>}
+      {!!visible.mesUnmappedObservations.length && <section className="inspection-unmapped"><h3>{lang === 'ko' ? 'MES 관측 · 설비/작업 연결 미확인' : 'MES 观测 · 设备/作业关联未确认'}</h3><ul>{visible.mesUnmappedObservations.map((item) => <MesReadObservationCard key={item.observation_key} item={item} lang={lang} />)}</ul></section>}
+      {visible.unmappedRequests.length > 0 && <section className="inspection-unmapped"><h3>{text.unmapped} ({visible.unmappedRequests.length})</h3><p className="inspection-muted">{text.unmappedHint}</p><ul>{visible.unmappedRequests.map((item) => <li className="inspection-unmapped-request" key={item.id}><span>{item.equipment_ref || common.unassigned}</span><ul>{request(item)}</ul></li>)}</ul></section>}
+      {visible.unmappedPlans.length > 0 && <details className="inspection-fold"><summary>{text.unmappedPlans} ({visible.unmappedPlans.length})</summary><ul className="inspection-unmapped-plans">{visible.unmappedPlans.map((item) => <li key={item.id}><strong>{item.machine_name}</strong> · {item.part_no || text.noPart} · {text.seq} {item.sequence}</li>)}</ul></details>}
+      {filtered && !visible.machines.length && !visible.unmappedRequests.length && !visible.unmappedPlans.length && !visible.mesUnmappedObservations.length && <p className="inspection-empty" role="status">{text.noMatches}</p>}
       <details className="inspection-fold"><summary>{text.dryRun} · {text.dryRunHint}</summary><p className="inspection-muted">{text.reviewPause}: {candidates.review_pause} · {text.reviewResume}: {candidates.review_resume} · {text.reviewAlignment}: {candidates.review_alignment}</p><p className="inspection-muted">{text.dryRunBasis}</p></details>
       <p className="inspection-kanban-freshness">{text.refreshed}: {inspectionTime(snapshot.generated_at, lang)} · {text.planUpdated}: {inspectionTime(snapshot.plan_snapshot.latest_changed_at, lang)}</p>
     </>}

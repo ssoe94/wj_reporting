@@ -166,7 +166,7 @@ class ConnectionBridgeTests(ConnectionFixture, TestCase):
                          (MESLoginSession, MESLoginTicket, MESCredential, OAuthAttempt)])
         self.assert_no_provider()
 
-    def test_each_feature_flag_off_prevents_ticket_and_session_creation(self):
+    def test_each_feature_flag_off_prevents_ticket_and_extra_session_creation(self):
         for setting in ('MES_USER_OAUTH_ENABLED', 'MES_USER_SESSION_BRIDGE_ENABLED'):
             with self.subTest(setting=setting), override_settings(**{setting: False}):
                 response = self.status()
@@ -175,7 +175,7 @@ class ConnectionBridgeTests(ConnectionFixture, TestCase):
                 self.assertFalse(response.json()['can_connect'])
                 self.assertEqual(self.action('launch').status_code, 403)
                 self.assertEqual(self.bridge('A' * 43).status_code, 403)
-        self.assertEqual(MESLoginSession.objects.count(), 0)
+        self.assertEqual(MESLoginSession.objects.count(), 1)
         self.assertEqual(MESLoginTicket.objects.count(), 0)
         self.assert_no_provider()
 
@@ -211,7 +211,7 @@ class ConnectionBridgeTests(ConnectionFixture, TestCase):
         for field in ('is_staff', 'is_superuser'):
             get_user_model().objects.filter(pk=self.user.pk).update(**{field: False})
             with self.subTest(field=field):
-                self.assertEqual(self.action('launch').status_code, 403)
+                self.assertEqual(self.action('launch').status_code, 401)
             get_user_model().objects.filter(pk=self.user.pk).update(**{field: True})
         for mapping in ({}, {str(self.user.pk): MES_USER},
                         {str(self.user.pk): str(MES_USER), str(self.other.pk): str(MES_USER)}):
@@ -294,7 +294,7 @@ class ConnectionBridgeTests(ConnectionFixture, TestCase):
         MESLoginTicket.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
         self.assertEqual(self.bridge(ticket).status_code, 403)
         ticket = self.launch()
-        MESLoginSession.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+        MESLoginSession.objects.update(idle_expires_at=timezone.now() - timedelta(seconds=1))
         self.assertEqual(self.bridge(ticket).status_code, 403)
         self.assertEqual(self.action('launch').status_code, 401)
 
@@ -479,7 +479,7 @@ class ConnectionBridgeTests(ConnectionFixture, TestCase):
         self.assert_no_provider()
 
     def test_logout_before_first_mes_launch_prevents_remaining_access_replay(self):
-        self.assertEqual(MESLoginSession.objects.count(), 0)
+        self.assertEqual(MESLoginSession.objects.count(), 1)
         response = self.action('logout', {'refresh': self.tokens['refresh']})
         self.assertEqual(response.status_code, 200)
         # The access JWT remains cryptographically valid after refresh logout.
@@ -494,7 +494,7 @@ class ConnectionBridgeTests(ConnectionFixture, TestCase):
         later = self.obtain(self.user)
         for tokens in (other, later):
             self.assertEqual(self.action('logout', {'refresh': tokens['refresh']}).status_code, 401)
-            self.assertIsNone(MESLoginSession.objects.get().revoked_at)
+            self.assertIsNone(MESLoginSession.objects.get(pk=self.login_digest()).revoked_at)
 
     def test_logout_can_revoke_after_password_change_without_restoring_access(self):
         self.launch()
@@ -530,7 +530,7 @@ class ConnectionBridgeTests(ConnectionFixture, TestCase):
 
     def test_refresh_only_logout_before_first_launch_leaves_revocation_tombstone(self):
         before_tokens = OutstandingToken.objects.count()
-        self.assertEqual(MESLoginSession.objects.count(), 0)
+        self.assertEqual(MESLoginSession.objects.count(), 1)
         response = self.refresh_logout(self.tokens['refresh'])
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'disconnected': True})
@@ -712,6 +712,8 @@ class ConnectionStatusGateTests(ConnectionFixture, TestCase):
             with self.subTest(reason=reason):
                 get_user_model().objects.filter(pk=self.user.pk).update(
                     is_staff=staff, is_superuser=superuser)
+                self.tokens = self.obtain(self.user)
+                self.metadata_counts[0] += 1
                 self.assert_blocked(self.status(), reason)
                 self.assertEqual(self.action('launch').status_code, 403)
 
@@ -726,6 +728,7 @@ class ConnectionStatusGateTests(ConnectionFixture, TestCase):
         with override_settings(INSPECTION_PILOT_ENABLED=True, INSPECTION_PILOT_USER_IDS=[user.pk],
                 MES_USER_OAUTH_USER_MAP={str(user.pk): str(MES_USER + 2)}):
             tokens = self.obtain(user)
+            self.metadata_counts[0] += 1
             response = self.status(tokens=tokens)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()['status'], 'disconnected')
@@ -751,6 +754,8 @@ class ConnectionStatusGateTests(ConnectionFixture, TestCase):
                 user = get_user_model().objects.get(pk=self.user.pk)
                 self.assertFalse(vault.eligible(user))
                 self.assertEqual(ineligible_account_reason(user), 'password_change_required')
+                self.tokens = self.obtain(self.user)
+                self.metadata_counts[0] += 1
                 self.assertEqual(self.status().status_code, 403)
 
     def test_inactive_and_archive_diagnostics_keep_authentication_rejection(self):
@@ -901,6 +906,7 @@ class ConnectionLoginHintTests(ConnectionFixture, TestCase):
             self.assertFalse(response.json()['can_connect'])
             self.assertEqual(self.action('launch').status_code, 403)
         get_user_model().objects.filter(pk=self.user.pk).update(is_staff=False, is_superuser=False)
+        self.tokens = self.obtain(self.user)
         response = self.status()
         self.assertIsNone(response.json()['login_hint'])
         self.assertFalse(response.json()['can_connect'])

@@ -2,7 +2,7 @@ import type { InspectionDataMode, InspectionRequest } from './model';
 
 export const inspectionCopy = {
   ko: {
-    title: '검사요청관리', description: '설비별 초도·공정·재검 요청을 확인하고 검사 결과를 저장·제출합니다.',
+    title: '검사관리', description: '설비별 초도·공정·재검 요청을 확인하고 검사 결과를 저장·제출합니다.',
     currentInspector: '현재 검사자', switchInspector: '검사자 전환', inspectorSwitching: '로그아웃 확인 중…',
     inspectorPending: '진행 중인 요청의 응답을 기다린 뒤 검사자를 전환하세요.',
     inspectorDraftConfirm: '임시 초안은 현재 검사자에게만 표시되며 서버 저장은 아닙니다. 브라우저의 임시 보관이 지원되면 다시 로그인한 뒤 직접 복구할 수 있습니다. 로그아웃하고 검사자를 전환할까요?',
@@ -53,7 +53,7 @@ export const inspectionCopy = {
     denied: '검사요청을 조회할 권한이 없습니다.', templateRequired: '이름이 있는 검사 항목을 1개 이상 입력하세요.', startedInvalid: '유효한 작업 시작 시간을 입력하세요.', required: '필수', requiredWhenFilled: '값 입력 시 필수',
   },
   zh: {
-    title: '检验申请管理', description: '按设备确认首检、过程检验及复检申请，保存并提交检验结果。',
+    title: '检验管理', description: '按设备确认首检、过程检验及复检申请，保存并提交检验结果。',
     currentInspector: '当前检验员', switchInspector: '切换检验员', inspectorSwitching: '正在确认退出…',
     inspectorPending: '请等待正在处理的请求返回后再切换检验员。',
     inspectorDraftConfirm: '临时草稿仅对当前检验员显示，并未保存至服务器。浏览器支持临时存储时，重新登录后可手动恢复。是否退出并切换检验员？',
