@@ -49,7 +49,7 @@ STATUS_REASONS = frozenset({
     'user_profile_required', 'password_change_required', 'admin_staff_required',
     'account_role_required', 'callback_origin_unverified', 'provider_origin_unverified',
     'app_credential_missing', 'oauth_configuration_unreviewed',
-    'connection_configuration_unreviewed', 'new_login_required', 'login_unavailable',
+    'connection_configuration_unreviewed', 'new_login_required', 'legacy_login_required', 'login_unavailable',
     'identity_mapping_unverified', 'storage_disabled', 'vault_key_unavailable',
     'storage_policy_unreviewed', 'actor_unavailable', 'policy_invalid',
     'continuity_disabled', 'policy_unreviewed', 'operation_unapproved',
@@ -161,8 +161,10 @@ def exact_origin(request):
                                                     'https://wj-reporting.onrender.com')
 
 
-def login_claims(token):
+def login_claims(token, diagnostic=False):
     sid, expires = token.get('mes_sid'), token.get('mes_login_exp')
+    if diagnostic is True and sid is None and expires is None:
+        raise vault.VaultBlocked('legacy_login_required')
     if (type(sid) is not str or not re.fullmatch(r'[A-Za-z0-9_-]{43}', sid)
             or type(expires) is not int):
         raise vault.VaultBlocked('new_login_required')
@@ -213,7 +215,7 @@ class ConnectionStatus(ConnectionAPI):
             if not vault.eligible(request.user):
                 raise vault.VaultBlocked(ineligible_account_reason(request.user))
             require_reviewed_configuration()
-            login_digest, _ = login_claims(request.auth)
+            login_digest, _ = login_claims(request.auth, diagnostic=True)
             stored_login = MESLoginSession.objects.filter(pk=login_digest).first()
             if stored_login is not None:
                 vault._login(request.user, login_digest)

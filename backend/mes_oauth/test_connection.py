@@ -800,15 +800,26 @@ class ConnectionStatusGateTests(ConnectionFixture, TestCase):
         now = timezone.now()
         valid = {'mes_sid': 'S' * 43, 'mes_login_exp': int((now + timedelta(hours=1)).timestamp())}
         self.assertEqual(login_claims(valid)[0], vault.digest('client-login', 'S' * 43))
-        for mutation in ({'mes_sid': None}, {'mes_sid': 'short'}, {'mes_login_exp': True},
+        for mutation in ({'mes_sid': None}, {'mes_sid': 'short'}, {'mes_login_exp': None},
+                         {'mes_login_exp': True},
                          {'mes_login_exp': int((now - timedelta(seconds=1)).timestamp())},
                          {'mes_login_exp': int((now + timedelta(days=40)).timestamp())},
                          {'mes_login_exp': 10**100}):
             with self.subTest(fields=tuple(mutation)):
                 with self.assertRaisesRegex(vault.VaultBlocked, '^new_login_required$'):
                     login_claims({**valid, **mutation})
+                with self.assertRaisesRegex(vault.VaultBlocked, '^new_login_required$'):
+                    login_claims({**valid, **mutation}, diagnostic=True)
+
+    def test_legacy_jwt_status_identifies_both_missing_claims_without_connection(self):
         legacy = AccessToken.for_user(self.user)
-        self.assert_blocked(self.status(tokens={'access': str(legacy)}), 'new_login_required')
+        self.assertIsNone(legacy.get('mes_sid'))
+        self.assertIsNone(legacy.get('mes_login_exp'))
+        with self.assertRaisesRegex(vault.VaultBlocked, '^new_login_required$'):
+            login_claims(legacy)
+        tokens = {'access': str(legacy)}
+        self.assert_blocked(self.status(tokens=tokens), 'legacy_login_required')
+        self.assertEqual(self.action('launch', tokens=tokens).status_code, 403)
 
 
 @override_settings(**CONNECTION_SETTINGS)

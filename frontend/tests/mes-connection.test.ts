@@ -175,6 +175,23 @@ test('WJ login failures and already changed WJ sessions have different recovery 
   }
 })
 
+test('legacy login explains missing MES session information without granting connection or exposing claims', () => {
+  const input = { ...statusPayload, status: 'blocked', reason: 'legacy_login_required', can_connect: false }
+  const parsed = parseMesConnectionStatus({ ...input, mes_sid: PRIVATE_INPUT, mes_login_exp: PRIVATE_INPUT })
+  assert.deepEqual(parsed, input, 'The reason must not alter permission, status or expiry metadata')
+  for (const lang of ['ko', 'zh'] as const) {
+    const diagnostic = mesConnectionDiagnostic(parsed.reason, lang)!
+    assert.equal(diagnostic.code, 'MES-CONN-LEGACY-LOGIN-REQUIRED')
+    assert.match(diagnostic.message, lang === 'ko' ? /MES 연결용 세션 정보가 없습니다/ : /缺少连接 MES 所需的会话信息/)
+    assert.match(diagnostic.message, lang === 'ko' ? /본인 WJ 계정으로 새로 로그인/ : /本人的 WJ 账号重新登录/)
+    assert.notEqual(diagnostic.message, mesConnectionDiagnostic('new_login_required', lang)!.message)
+    assert.equal(JSON.stringify({ parsed, diagnostic }).includes(PRIVATE_INPUT), false)
+  }
+  const untrusted = parseMesConnectionStatus({ ...input, reason: `legacy_login_required:${PRIVATE_INPUT}` })
+  assert.equal(untrusted.reason, 'unknown', 'Only the exact server enum may explain a legacy login')
+  assert.equal(mesConnectionDiagnostic(untrusted.reason, 'ko')!.code, 'MES-CONN-UNKNOWN')
+})
+
 test('security, actor, mapping and policy failures have reviewed bilingual guidance for every fixed reason', () => {
   const groups = [
     { reasons: ['http_scheme_untrusted', 'secure_origin_required'], ko: /접속.*보안/, zh: /访问安全/ },

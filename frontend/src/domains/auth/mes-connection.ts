@@ -13,6 +13,7 @@ const reasonCategories = {
   connection_missing: 'normal', metadata_valid: 'normal',
   connection_disabled: 'disabled', continuity_disabled: 'disabled', storage_disabled: 'disabled',
   new_login_required: 'wjLogin', local_login_required: 'wjLogin', login_unavailable: 'wjLogin',
+  legacy_login_required: 'legacyLogin',
   http_scheme_untrusted: 'securePath', secure_origin_required: 'securePath',
   debug_enabled: 'security', insecure_session_cookie: 'security', insecure_csrf_cookie: 'security',
   session_cookie_httponly_required: 'security', session_cookie_samesite_invalid: 'security',
@@ -52,6 +53,7 @@ function parseMesConnectionReason(value: unknown): MesConnectionReason {
 const reasonMessages = {
   disabled: ['MES 연결 기능이 현재 꺼져 있습니다. 관리자에게 연결 설정을 확인해 주세요.', 'MES 连接功能当前未启用。请联系管理员检查连接设置。'],
   wjLogin: ['현재 WJ 로그인으로 MES 연결을 시작할 수 없습니다. WJ에 다시 로그인한 뒤 상태를 확인해 주세요.', '当前 WJ 登录无法用于建立 MES 连接。请重新登录 WJ 后检查状态。'],
+  legacyLogin: ['현재 WJ 로그인에 MES 연결용 세션 정보가 없습니다. 본인 WJ 계정으로 새로 로그인한 뒤 연결 상태를 확인해 주세요.', '当前 WJ 登录缺少连接 MES 所需的会话信息。请使用本人的 WJ 账号重新登录后检查连接状态。'],
   securePath: ['안전한 접속 경로를 서버에서 확인하지 못했습니다. 관리자에게 접속 보안 설정을 확인해 주세요.', '服务器无法确认安全的访问路径。请联系管理员检查访问安全设置。'],
   security: ['MES 연결에 필요한 서버 보안 설정이 충족되지 않았습니다. 관리자에게 설정 확인을 요청해 주세요.', '服务器未满足 MES 连接所需的安全设置。请联系管理员检查设置。'],
   configuration: ['MES 로그인 서버 설정을 확인할 수 없습니다. 관리자에게 연결 설정 확인을 요청해 주세요.', '无法确认 MES 登录服务设置。请联系管理员检查连接设置。'],
