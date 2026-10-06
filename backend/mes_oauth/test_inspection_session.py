@@ -142,7 +142,8 @@ class InspectorSessionTests(InspectorFixture, APITestCase):
         self.assertEqual(op.status, 'blocked')
         self.assertEqual(InspectionAudit.objects.latest('id').actor_id, self.editor.pk)
 
-    @override_settings(MES_USER_FRONTEND_ORIGIN='https://testserver')
+    @override_settings(MES_USER_FRONTEND_ORIGIN='https://testserver',
+                       SESSION_COOKIE_SECURE=True, CSRF_COOKIE_SECURE=True)
     def test_real_logout_rejects_rotated_family_access_and_refresh(self):
         refresh = ScopedTokenObtainPairSerializer.get_token(self.editor)
         first_access = str(refresh.access_token)
