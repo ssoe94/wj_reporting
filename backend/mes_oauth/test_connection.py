@@ -8,17 +8,21 @@ from unittest import skipUnless
 from unittest.mock import Mock, patch
 from urllib.parse import urlsplit
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import AnonymousUser, Group, Permission
 from django.db import connection, connections, transaction
-from django.test import Client, TestCase, TransactionTestCase, override_settings
+from django.test import Client, RequestFactory, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
 from . import vault
-from .connection_views import BRIDGE_ONLY, SESSION_KEY
+from .connection_views import (
+    BRIDGE_ONLY, SESSION_KEY, ineligible_account_reason, login_claims,
+    secure_request, secure_request_reason,
+)
 from .identity import UserContextResponse
 from .models import MESCredential, MESLoginSession, MESLoginTicket, OAuthAttempt
 from .views import CALLBACK, COOKIE, START
@@ -612,6 +616,199 @@ class ConnectionBridgeTests(ConnectionFixture, TestCase):
         self.assertEqual(self.action('recheck').status_code, 409)
         self.provider.exchange.assert_not_called()
         self.provider.userinfo.assert_not_called()
+
+
+@override_settings(**CONNECTION_SETTINGS)
+class ConnectionStatusGateTests(ConnectionFixture, TestCase):
+    """Fixed diagnostics never change admission or read stored credentials."""
+
+    def setUp(self):
+        super().setUp()
+        self.metadata_models = (MESLoginSession, MESLoginTicket, MESCredential, OAuthAttempt)
+        self.metadata_counts = [model.objects.count() for model in self.metadata_models]
+        decrypt_patch = patch('mes_oauth.vault._open',
+                              side_effect=AssertionError('Status must not decrypt credentials.'))
+        self.decrypt = decrypt_patch.start()
+        self.addCleanup(decrypt_patch.stop)
+        self.addCleanup(self.decrypt.assert_not_called)
+        self.addCleanup(self.assert_metadata_unchanged)
+        self.addCleanup(self.assert_no_provider)
+
+    def assert_metadata_unchanged(self):
+        self.assertEqual(self.metadata_counts,
+                         [model.objects.count() for model in self.metadata_models])
+
+    def assert_blocked(self, response, reason):
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual((data['status'], data['reason']), ('blocked', reason))
+        self.assertFalse(data['can_connect'])
+        self.assertFalse(data['can_disconnect'])
+        self.assertFalse(data['live_ready'])
+        self.assertIsNone(data['expires_at'])
+        self.assertIn('no-store', response['Cache-Control'])
+
+    @override_settings(SECURE_PROXY_SSL_HEADER=None)
+    def test_security_diagnostics_preserve_all_existing_gate_conditions(self):
+        cases = (
+            ({}, False, 'http_scheme_untrusted'),
+            ({'DEBUG': True}, True, 'debug_enabled'),
+            ({'SESSION_COOKIE_SECURE': False}, True, 'insecure_session_cookie'),
+            ({'CSRF_COOKIE_SECURE': False}, True, 'insecure_csrf_cookie'),
+            ({'SESSION_COOKIE_HTTPONLY': False}, True, 'session_cookie_httponly_required'),
+            ({'SESSION_COOKIE_SAMESITE': 'None'}, True, 'session_cookie_samesite_invalid'),
+            ({'SESSION_COOKIE_DOMAIN': '.synthetic.example'}, True, 'session_cookie_domain_invalid'),
+            ({'CSRF_COOKIE_DOMAIN': '.synthetic.example'}, True, 'csrf_cookie_domain_invalid'),
+            ({'SESSION_ENGINE': 'django.contrib.sessions.backends.signed_cookies'},
+             True, 'session_backend_invalid'),
+            ({}, True, None),
+        )
+        for overrides, https, reason in cases:
+            with self.subTest(reason=reason), override_settings(**overrides):
+                request = RequestFactory().get('/', secure=https)
+                original = (request.is_secure() and not settings.DEBUG
+                            and settings.SESSION_COOKIE_SECURE and settings.CSRF_COOKIE_SECURE
+                            and settings.SESSION_COOKIE_HTTPONLY
+                            and settings.SESSION_COOKIE_SAMESITE == 'Lax'
+                            and settings.SESSION_COOKIE_DOMAIN is None
+                            and settings.CSRF_COOKIE_DOMAIN is None
+                            and settings.SESSION_ENGINE == 'django.contrib.sessions.backends.db')
+                self.assertEqual(secure_request(request), bool(original))
+                self.assertEqual(secure_request_reason(request), reason)
+                response = self.status(secure=https)
+                if reason is None:
+                    self.assertEqual(response.json()['status'], 'disconnected')
+                    self.assertTrue(response.json()['can_connect'])
+                else:
+                    self.assert_blocked(response, reason)
+                    self.assertEqual(self.action('launch', secure=https).status_code, 403)
+        with override_settings(DEBUG=True, SESSION_COOKIE_SECURE=False):
+            self.assert_blocked(self.status(secure=False), 'http_scheme_untrusted')
+            self.assert_blocked(self.status(), 'debug_enabled')
+
+    def test_forwarded_https_requires_explicit_trust_or_wsgi_https(self):
+        headers = {'HTTP_AUTHORIZATION': 'Bearer ' + self.tokens['access'],
+                   'HTTP_X_FORWARDED_PROTO': 'https'}
+        path = reverse('mes-connection-status')
+        with override_settings(SECURE_PROXY_SSL_HEADER=None):
+            self.assert_blocked(self.api.get(path, secure=False, **headers), 'http_scheme_untrusted')
+            # Gunicorn may already supply wsgi.url_scheme=https; Django accepts that.
+            response = self.api.get(path, secure=True, **headers)
+            self.assertEqual(response.json()['status'], 'disconnected')
+            self.assertTrue(response.json()['can_connect'])
+        with override_settings(SECURE_PROXY_SSL_HEADER=('HTTP_X_FORWARDED_PROTO', 'https')):
+            response = self.api.get(path, secure=False, **headers)
+            self.assertEqual(response.json()['status'], 'disconnected')
+            self.assertTrue(response.json()['can_connect'])
+            for scheme in ('http', 'http, https'):
+                headers['HTTP_X_FORWARDED_PROTO'] = scheme
+                self.assert_blocked(self.api.get(path, secure=True, **headers), 'http_scheme_untrusted')
+
+    def test_staff_and_role_failures_remain_blocked_with_distinct_reasons(self):
+        for staff, superuser, reason in (
+            (False, True, 'admin_staff_required'),
+            (True, False, 'account_role_required'),
+        ):
+            with self.subTest(reason=reason):
+                get_user_model().objects.filter(pk=self.user.pk).update(
+                    is_staff=staff, is_superuser=superuser)
+                self.assert_blocked(self.status(), reason)
+                self.assertEqual(self.action('launch').status_code, 403)
+
+    def test_approved_nonstaff_inspector_remains_connectable(self):
+        user = get_user_model().objects.create_user(
+            username='SYNTHETIC-CONNECTION-PILOT', password=PASSWORD)
+        profile = user.profile
+        profile.can_view_quality, profile.is_admin = True, False
+        profile.save(update_fields=['can_view_quality', 'is_admin'])
+        user.user_permissions.add(Permission.objects.get(
+            content_type__app_label='quality', codename='view_inspectionrequest'))
+        with override_settings(INSPECTION_PILOT_ENABLED=True, INSPECTION_PILOT_USER_IDS=[user.pk],
+                MES_USER_OAUTH_USER_MAP={str(user.pk): str(MES_USER + 2)}):
+            tokens = self.obtain(user)
+            response = self.status(tokens=tokens)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['status'], 'disconnected')
+            self.assertTrue(response.json()['can_connect'])
+            self.assertTrue(vault.eligible(get_user_model().objects.get(pk=user.pk)))
+            with override_settings(INSPECTION_PILOT_ENABLED=False):
+                self.assert_blocked(self.status(tokens=tokens), 'account_role_required')
+
+    def test_missing_profile_diagnostic_keeps_jwt_rejection(self):
+        self.user.profile.delete()
+        user = get_user_model().objects.get(pk=self.user.pk)
+        self.assertFalse(vault.eligible(user))
+        self.assertEqual(ineligible_account_reason(user), 'user_profile_required')
+        self.assertEqual(self.status().status_code, 403)
+
+    def test_password_change_diagnostic_keeps_jwt_rejection(self):
+        for field in ('password_reset_required', 'is_using_temp_password'):
+            with self.subTest(field=field):
+                profile = get_user_model().objects.get(pk=self.user.pk).profile
+                profile.password_reset_required = field == 'password_reset_required'
+                profile.is_using_temp_password = field == 'is_using_temp_password'
+                profile.save(update_fields=['password_reset_required', 'is_using_temp_password'])
+                user = get_user_model().objects.get(pk=self.user.pk)
+                self.assertFalse(vault.eligible(user))
+                self.assertEqual(ineligible_account_reason(user), 'password_change_required')
+                self.assertEqual(self.status().status_code, 403)
+
+    def test_inactive_and_archive_diagnostics_keep_authentication_rejection(self):
+        self.assertEqual(ineligible_account_reason(AnonymousUser()), 'account_unavailable')
+        get_user_model().objects.filter(pk=self.user.pk).update(is_active=False)
+        user = get_user_model().objects.get(pk=self.user.pk)
+        self.assertEqual(ineligible_account_reason(user), 'account_inactive')
+        self.assertEqual(self.status().status_code, 401)
+        get_user_model().objects.filter(pk=self.user.pk).update(is_active=True)
+        self.user.groups.add(Group.objects.create(name='quality_media_archive_service'))
+        user = get_user_model().objects.get(pk=self.user.pk)
+        self.assertFalse(vault.eligible(user))
+        self.assertEqual(ineligible_account_reason(user), 'restricted_identity')
+        self.assertEqual(self.status().status_code, 403)
+
+    def test_reviewed_configuration_failures_use_only_fixed_reasons(self):
+        cases = (
+            ({'MES_USER_OAUTH_CALLBACK_ORIGIN': 'http://synthetic-callback.example'},
+             'callback_origin_unverified'),
+            ({'MES_USER_OAUTH_PROVIDER_ORIGIN': 'https://synthetic-provider.example'},
+             'provider_origin_unverified'),
+            ({'MES_USER_OAUTH_APP_ACCESS_TOKEN': ''}, 'app_credential_missing'),
+            ({'MES_USER_OAUTH_REVIEW_REFERENCE': ''}, 'oauth_configuration_unreviewed'),
+            ({'MES_USER_OAUTH_CALLBACK_ORIGIN': 'https://synthetic.example:invalid'},
+             'connection_configuration_unreviewed'),
+        )
+        for overrides, reason in cases:
+            with self.subTest(reason=reason), override_settings(**overrides):
+                self.assert_blocked(self.status(), reason)
+                self.assertEqual(self.action('launch').status_code, 403)
+
+    def test_unknown_exception_reasons_never_reach_status_response(self):
+        from .views import OAuthBlocked
+        private = 'SYNTHETIC-PRIVATE-CONFIGURATION-CONTENT'
+        for error in (OAuthBlocked(private), ValueError(private)):
+            with self.subTest(error_type=type(error).__name__), \
+                    patch('mes_oauth.views.reviewed_configuration', side_effect=error):
+                response = self.status()
+                self.assert_blocked(response, 'connection_configuration_unreviewed')
+                self.assertNotIn(private.encode(), response.content)
+        with patch('mes_oauth.vault.expected_user', side_effect=vault.VaultBlocked(private)):
+            response = self.status()
+            self.assert_blocked(response, 'connection_unavailable')
+            self.assertNotIn(private.encode(), response.content)
+
+    def test_login_claims_keep_existing_validation_and_fixed_reason(self):
+        now = timezone.now()
+        valid = {'mes_sid': 'S' * 43, 'mes_login_exp': int((now + timedelta(hours=1)).timestamp())}
+        self.assertEqual(login_claims(valid)[0], vault.digest('client-login', 'S' * 43))
+        for mutation in ({'mes_sid': None}, {'mes_sid': 'short'}, {'mes_login_exp': True},
+                         {'mes_login_exp': int((now - timedelta(seconds=1)).timestamp())},
+                         {'mes_login_exp': int((now + timedelta(days=40)).timestamp())},
+                         {'mes_login_exp': 10**100}):
+            with self.subTest(fields=tuple(mutation)):
+                with self.assertRaisesRegex(vault.VaultBlocked, '^new_login_required$'):
+                    login_claims({**valid, **mutation})
+        legacy = AccessToken.for_user(self.user)
+        self.assert_blocked(self.status(tokens={'access': str(legacy)}), 'new_login_required')
 
 
 @override_settings(**CONNECTION_SETTINGS)

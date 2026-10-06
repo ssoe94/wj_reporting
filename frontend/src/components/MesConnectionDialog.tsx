@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api';
 import { getAuthSessionSnapshot, subscribeToAuthStorage } from '../domains/auth/auth-storage';
 import {
-  MES_SESSION_SUBMIT_URL, isDisconnectConfirmed, isMesLaunchUsable,
+  MES_SESSION_SUBMIT_URL, isDisconnectConfirmed, isMesLaunchUsable, mesConnectionDiagnostic,
   parseMesConnectionStatus, parseMesLaunch,
   type MesConnectionStatus, type MesLaunch,
 } from '../domains/auth/mes-connection';
@@ -201,6 +201,7 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
     blocked: '当前账号无法连接 MES。',
   };
   const disabled = busy || isLoggingOut;
+  const diagnostic = status ? mesConnectionDiagnostic(status.reason, ko ? 'ko' : 'zh') : null;
 
   return (
     <Dialog open onClose={() => { clearTicket(); onClose(); }} className="relative z-[100]">
@@ -211,6 +212,12 @@ export default function MesConnectionDialog({ onClose }: { onClose: () => void }
           <p className="mt-4 text-base text-slate-700" aria-live="polite">
             {status ? labels[status.status] : busy ? (ko ? '연결 상태 확인 중…' : '正在检查连接状态…') : (ko ? '연결 상태를 확인해 주세요.' : '请检查连接状态。')}
           </p>
+          {diagnostic && (
+            <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700" role="status">
+              <p>{diagnostic.message}</p>
+              <p className="mt-2 break-all text-xs text-slate-600">{ko ? '진단코드' : '诊断代码'}: <code>{diagnostic.code}</code></p>
+            </div>
+          )}
           {status?.status === 'connected' && (
             <p className="mt-2 text-sm text-slate-600">{ko ? 'MES 작업 권한은 작업을 수행할 때 별도로 확인합니다.' : '执行 MES 操作时会另行检查操作权限。'}</p>
           )}

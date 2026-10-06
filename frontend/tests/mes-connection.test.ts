@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   MES_SESSION_SUBMIT_URL,
   isMesLaunchUsable,
+  mesConnectionDiagnostic,
   parseMesConnectionStatus,
   parseMesLoginHint,
   parseMesLaunch,
@@ -133,6 +134,108 @@ test('status parser returns only reviewed metadata and drops extra credential fi
   })
   assert.deepEqual(parsed, statusPayload)
   assert.equal(JSON.stringify(parsed).includes(PRIVATE_INPUT), false)
+})
+
+test('unknown reason and inherited property names are discarded without changing server capability flags', () => {
+  for (const reason of [PRIVATE_INPUT, TICKET, '', 'NEW_LOGIN_REQUIRED', '__proto__', 'constructor', 'toString']) {
+    const parsed = parseMesConnectionStatus({ ...statusPayload, status: 'blocked', reason,
+      can_connect: false, can_disconnect: true })
+    assert.equal(parsed.reason, 'unknown')
+    assert.equal(parsed.can_connect, false)
+    assert.equal(parsed.can_disconnect, true)
+    assert.equal(parsed.status, 'blocked')
+    assert.equal(JSON.stringify(parsed).includes(PRIVATE_INPUT), false)
+    assert.equal(JSON.stringify(parsed).includes(TICKET), false)
+  }
+})
+
+test('untrusted reasons receive only a fixed bilingual fallback and never enter diagnostic codes', () => {
+  for (const lang of ['ko', 'zh'] as const) {
+    const fallback = mesConnectionDiagnostic('unknown', lang)
+    assert.equal(fallback?.code, 'MES-CONN-UNKNOWN')
+    assert.match(fallback!.message, lang === 'ko' ? /진단코드.*관리자/ : /诊断代码.*管理员/)
+    for (const value of [PRIVATE_INPUT, TICKET, undefined, null, 42, {}, [], '__proto__', 'constructor']) {
+      assert.deepEqual(mesConnectionDiagnostic(value, lang), fallback)
+    }
+  }
+})
+
+test('WJ login failures and already changed WJ sessions have different recovery instructions', () => {
+  for (const reason of ['new_login_required', 'local_login_required', 'login_unavailable']) {
+    assert.match(mesConnectionDiagnostic(reason, 'ko')!.message, /WJ에 다시 로그인/)
+    assert.match(mesConnectionDiagnostic(reason, 'zh')!.message, /重新登录 WJ/)
+  }
+  assert.equal(mesConnectionDiagnostic('new_login_required', 'ko')!.code, 'MES-CONN-NEW-LOGIN-REQUIRED')
+  assert.equal(mesConnectionDiagnostic('login_unavailable', 'ko')!.code, 'MES-CONN-LOGIN-UNAVAILABLE')
+  for (const reason of ['session_changed', 'authorization_changed', 'review_changed', 'connection_revoked']) {
+    assert.match(mesConnectionDiagnostic(reason, 'ko')!.message, /MES 계정.*다시 연결/)
+    assert.match(mesConnectionDiagnostic(reason, 'zh')!.message, /重新连接 MES/)
+    assert.doesNotMatch(mesConnectionDiagnostic(reason, 'ko')!.message, /WJ에 다시 로그인/)
+    assert.doesNotMatch(mesConnectionDiagnostic(reason, 'zh')!.message, /重新登录 WJ/)
+  }
+})
+
+test('security, actor, mapping and policy failures have reviewed bilingual guidance for every fixed reason', () => {
+  const groups = [
+    { reasons: ['http_scheme_untrusted', 'secure_origin_required'], ko: /접속.*보안/, zh: /访问安全/ },
+    { reasons: ['debug_enabled', 'insecure_session_cookie', 'insecure_csrf_cookie',
+      'session_cookie_httponly_required', 'session_cookie_samesite_invalid', 'session_cookie_domain_invalid',
+      'csrf_cookie_domain_invalid', 'session_backend_invalid'], ko: /서버 보안 설정/, zh: /安全设置/ },
+    { reasons: ['connection_configuration_unreviewed', 'callback_origin_unverified', 'provider_origin_unverified',
+      'app_credential_missing', 'oauth_configuration_unreviewed'], ko: /서버 설정/, zh: /服务设置/ },
+    { reasons: ['account_unavailable', 'admin_staff_required', 'account_role_required', 'account_inactive',
+      'restricted_identity', 'user_profile_required', 'actor_unavailable', 'actor_invalid', 'actor_ineligible'],
+      ko: /WJ.*계정/, zh: /WJ.*账号/ },
+    { reasons: ['identity_mapping_unverified', 'identity_mismatch'], ko: /계정 연결 설정/, zh: /账号关联设置/ },
+    { reasons: ['storage_policy_unreviewed', 'policy_invalid', 'policy_unreviewed', 'expiry_contract_unverified',
+      'expiry_value_invalid'], ko: /정책/, zh: /策略/ },
+    { reasons: ['clock_invalid', 'connection_clock_invalid', 'exchange_clock_invalid'], ko: /시간/, zh: /时间/ },
+    { reasons: ['vault_key_unavailable', 'connection_invalid', 'credential_invalid', 'credential_unreadable',
+      'operation_unapproved', 'identity_unverified'], ko: /관리자/, zh: /管理员/ },
+    { reasons: ['connection_disabled', 'continuity_disabled', 'storage_disabled'], ko: /꺼져/, zh: /未启用/ },
+  ]
+  const codes = new Set<string>()
+  for (const { reasons, ko, zh } of groups) {
+    for (const reason of reasons) {
+      const parsed = parseMesConnectionStatus({ ...statusPayload, status: 'blocked', reason, can_connect: false })
+      assert.equal(parsed.reason, reason)
+      const korean = mesConnectionDiagnostic(parsed.reason, 'ko')!
+      const chinese = mesConnectionDiagnostic(parsed.reason, 'zh')!
+      assert.match(korean.message, ko, reason)
+      assert.match(chinese.message, zh, reason)
+      assert.match(korean.code, /^MES-CONN-[A-Z-]+$/)
+      assert.notEqual(korean.code, 'MES-CONN-UNKNOWN', reason)
+      assert.equal(korean.code, chinese.code)
+      assert.equal(codes.has(korean.code), false, 'Each cause needs its own stable diagnostic code')
+      codes.add(korean.code)
+      assert.equal(parsed.can_connect, false, 'Diagnostics must not grant launch permission')
+    }
+  }
+  assert.equal(mesConnectionDiagnostic('http_scheme_untrusted', 'ko')!.code, 'MES-CONN-HTTP-SCHEME-UNTRUSTED')
+  assert.equal(mesConnectionDiagnostic('identity_mapping_unverified', 'ko')!.code, 'MES-CONN-IDENTITY-MAPPING-UNVERIFIED')
+  assert.equal(mesConnectionDiagnostic('storage_policy_unreviewed', 'ko')!.code, 'MES-CONN-STORAGE-POLICY-UNREVIEWED')
+  assert.match(mesConnectionDiagnostic('account_role_required', 'ko')!.message, /관리자 또는 검사 담당자/)
+})
+
+test('expiry guidance includes the safety window without asserting that lifetime is extended', () => {
+  for (const reason of ['provider_token_expired', 'consent_expired', 'connection_expired', 'credential_expired', 'connection_idle']) {
+    const parsed = parseMesConnectionStatus({ ...statusPayload, status: 'reconnect_required', reason })
+    assert.equal(parsed.reason, reason)
+    assert.match(mesConnectionDiagnostic(reason, 'ko')!.message, /곧.*MES 계정.*다시 연결/)
+    assert.match(mesConnectionDiagnostic(reason, 'zh')!.message, /即将.*重新连接 MES/)
+    assert.equal(parsed.can_connect, true)
+    assert.equal(parsed.expires_at, null)
+  }
+})
+
+test('password-change guidance concerns WJ, and ordinary metadata shows no failure diagnostic', () => {
+  assert.match(mesConnectionDiagnostic('password_change_required', 'ko')!.message, /WJ에서 비밀번호를 변경/)
+  assert.match(mesConnectionDiagnostic('password_change_required', 'zh')!.message, /在 WJ 修改密码/)
+  assert.match(mesConnectionDiagnostic('provider_temporarily_unavailable', 'ko')!.message, /잠시 후 상태/)
+  for (const reason of ['connection_missing', 'metadata_valid']) {
+    assert.equal(mesConnectionDiagnostic(reason, 'ko'), null)
+    assert.equal(mesConnectionDiagnostic(reason, 'zh'), null)
+  }
 })
 
 test('launch destination is the exact reviewed HTTPS session endpoint', () => {

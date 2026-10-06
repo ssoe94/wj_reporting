@@ -53,7 +53,7 @@ const deferred = () => {
   return { promise, resolve };
 };
 const metadata = connected => ({
-  enabled: true, status: connected ? 'connected' : 'disconnected', reason: 'synthetic_fixture',
+  enabled: true, status: connected ? 'connected' : 'disconnected', reason: connected ? 'metadata_valid' : 'connection_missing',
   expires_at: null, can_connect: !connected, can_disconnect: connected,
   mode: 'identity_only', live_ready: false,
   login_hint: { factory_number: '12345678', account_name: 'fixture-mes-a', prefill_supported: false },
@@ -372,6 +372,48 @@ const metadata = connected => ({
     verify(counts.status_read > beforeReturnRead, 'return_rechecks_server_connection');
     verify(page.url() === originalLocation && await page.evaluate(() => sessionStorage.getItem('synthetic-original-inspection-draft')) === 'SYNTHETIC-DRAFT-NOT-MES-DATA', 'original_tab_context_and_draft_untouched');
     connected = false;
+    await closeDialog();
+    finishCase(stage);
+
+    stage = 'safe_reason_diagnostics_preserve_session_and_permission';
+    const privateReason = 'SYNTHETIC-PRIVATE-STATUS-REASON';
+    privateValues.add(privateReason);
+    const launchesBeforeDiagnostics = counts.launch;
+    const postsBeforeDiagnostics = counts.native_post;
+    const authBeforeDiagnostics = await page.evaluate(key => localStorage.getItem(key), CONTROL);
+    const diagnosticCases = [
+      ['new_login_required', 'MES-CONN-NEW-LOGIN-REQUIRED', /WJ에 다시 로그인/],
+      ['login_unavailable', 'MES-CONN-LOGIN-UNAVAILABLE', /WJ에 다시 로그인/],
+      ['http_scheme_untrusted', 'MES-CONN-HTTP-SCHEME-UNTRUSTED', /접속 보안 설정/],
+      ['admin_staff_required', 'MES-CONN-ADMIN-STAFF-REQUIRED', /권한 설정/],
+      ['identity_mapping_unverified', 'MES-CONN-IDENTITY-MAPPING-UNVERIFIED', /계정 연결 설정/],
+      ['storage_policy_unreviewed', 'MES-CONN-STORAGE-POLICY-UNREVIEWED', /유지·만료 정책/],
+      ['password_change_required', 'MES-CONN-PASSWORD-CHANGE-REQUIRED', /WJ에서 비밀번호를 변경/],
+      [privateReason, 'MES-CONN-UNKNOWN', /진단코드를 관리자에게/],
+    ];
+    statusOverride = { status: 'blocked', reason: diagnosticCases[0][0], can_connect: false, can_disconnect: false };
+    await openDialog();
+    for (const [reason, code, message] of diagnosticCases) {
+      statusOverride = { ...statusOverride, reason };
+      await page.getByRole('button', { name: '상태 확인', exact: true }).click();
+      await page.getByText(code, { exact: true }).waitFor();
+      const dialogText = await page.getByRole('dialog', { name: 'MES 연결', exact: true }).innerText();
+      verify(message.test(dialogText), 'reason_has_reviewed_recovery_guidance');
+      verify(!dialogText.includes(privateReason), 'untrusted_reason_not_rendered');
+      verify(await page.getByRole('button', { name: '연결 준비', exact: true }).isDisabled(), 'diagnostic_does_not_enable_blocked_launch');
+      verify(await page.getByRole('button', { name: '연결 해제', exact: true }).isDisabled(), 'diagnostic_does_not_enable_disconnect');
+      verify(await page.locator('input[name="ticket"], [role="dialog"] input[type="password"]').count() === 0, 'reason_creates_no_ticket_or_password_form');
+    }
+    statusOverride = { status: 'reconnect_required', reason: 'session_changed', can_connect: true, can_disconnect: true };
+    await page.getByRole('button', { name: '상태 확인', exact: true }).click();
+    await page.getByText('MES-CONN-SESSION-CHANGED', { exact: true }).waitFor();
+    verify(await page.getByRole('button', { name: '연결 준비', exact: true }).isEnabled(), 'reconnect_remains_explicitly_available');
+    verify(await page.getByRole('button', { name: '연결 해제', exact: true }).isEnabled(), 'server_disconnect_permission_preserved');
+    verify(!/WJ에 다시 로그인/.test(await page.getByRole('dialog').innerText()), 'new_wj_session_does_not_require_repeated_wj_login');
+    verify(counts.launch === launchesBeforeDiagnostics && counts.native_post === postsBeforeDiagnostics, 'diagnostic_never_automatically_launches');
+    verify(await page.evaluate(key => localStorage.getItem(key), CONTROL) === authBeforeDiagnostics, 'diagnostic_does_not_change_wj_session');
+    verify(page.url() === originalLocation && await page.evaluate(() => sessionStorage.getItem('synthetic-original-inspection-draft')) === 'SYNTHETIC-DRAFT-NOT-MES-DATA', 'diagnostic_preserves_original_context_and_draft');
+    statusOverride = null;
     await closeDialog();
     finishCase(stage);
 

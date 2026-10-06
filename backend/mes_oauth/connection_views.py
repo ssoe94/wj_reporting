@@ -12,6 +12,7 @@ import jwt
 
 from django.conf import settings
 from django.contrib.auth import login, logout, get_user_model
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.http import HttpResponse, HttpResponseRedirect
 from django.utils import timezone
@@ -27,6 +28,7 @@ from rest_framework_simplejwt.tokens import RefreshToken, UntypedToken
 from rest_framework_simplejwt.state import token_backend
 
 from config.authentication import ScopedJWTAuthentication
+from quality.archive_access import is_archive_identity_marker
 from . import vault
 from .app_tokens import AppCredentialUnavailable
 from .models import MESCredential, MESLoginSession, MESLoginTicket
@@ -38,12 +40,77 @@ BRIDGE_ONLY = 'mes_bridge_only'
 BRIDGE_PATH = '/integrations/blacklake/session/'
 
 
+STATUS_REASONS = frozenset({
+    'http_scheme_untrusted', 'debug_enabled', 'insecure_session_cookie',
+    'insecure_csrf_cookie', 'session_cookie_httponly_required',
+    'session_cookie_samesite_invalid', 'session_cookie_domain_invalid',
+    'csrf_cookie_domain_invalid', 'session_backend_invalid',
+    'account_unavailable', 'account_inactive', 'restricted_identity', 'connection_unavailable',
+    'user_profile_required', 'password_change_required', 'admin_staff_required',
+    'account_role_required', 'callback_origin_unverified', 'provider_origin_unverified',
+    'app_credential_missing', 'oauth_configuration_unreviewed',
+    'connection_configuration_unreviewed', 'new_login_required', 'login_unavailable',
+    'identity_mapping_unverified', 'storage_disabled', 'vault_key_unavailable',
+    'storage_policy_unreviewed', 'actor_unavailable', 'policy_invalid',
+    'continuity_disabled', 'policy_unreviewed', 'operation_unapproved',
+    'clock_invalid', 'actor_invalid', 'local_login_required', 'actor_ineligible',
+    'connection_missing', 'connection_invalid', 'connection_revoked', 'identity_mismatch',
+    'session_changed', 'authorization_changed', 'review_changed', 'connection_clock_invalid',
+    'provider_token_expired', 'consent_expired', 'connection_expired', 'connection_idle',
+    'metadata_valid',
+})
+
+
+def status_reason(reason):
+    return reason if type(reason) is str and reason in STATUS_REASONS else 'connection_unavailable'
+
+
+def secure_request_reason(request):
+    """The existing HTTPS/session gate, with fixed diagnostics and the same order."""
+    if not request.is_secure():
+        return 'http_scheme_untrusted'
+    if settings.DEBUG:
+        return 'debug_enabled'
+    if not settings.SESSION_COOKIE_SECURE:
+        return 'insecure_session_cookie'
+    if not settings.CSRF_COOKIE_SECURE:
+        return 'insecure_csrf_cookie'
+    if not settings.SESSION_COOKIE_HTTPONLY:
+        return 'session_cookie_httponly_required'
+    if settings.SESSION_COOKIE_SAMESITE != 'Lax':
+        return 'session_cookie_samesite_invalid'
+    if settings.SESSION_COOKIE_DOMAIN is not None:
+        return 'session_cookie_domain_invalid'
+    if settings.CSRF_COOKIE_DOMAIN is not None:
+        return 'csrf_cookie_domain_invalid'
+    if settings.SESSION_ENGINE != 'django.contrib.sessions.backends.db':
+        return 'session_backend_invalid'
+    return None
+
+
 def secure_request(request):
-    return (request.is_secure() and not settings.DEBUG and settings.SESSION_COOKIE_SECURE
-            and settings.CSRF_COOKIE_SECURE and settings.SESSION_COOKIE_HTTPONLY
-            and settings.SESSION_COOKIE_SAMESITE == 'Lax'
-            and settings.SESSION_COOKIE_DOMAIN is None and settings.CSRF_COOKIE_DOMAIN is None
-            and settings.SESSION_ENGINE == 'django.contrib.sessions.backends.db')
+    return secure_request_reason(request) is None
+
+
+def ineligible_account_reason(user):
+    """Describe a failed eligible() check; this helper never grants admission."""
+    if not user or not user.is_authenticated:
+        return 'account_unavailable'
+    if not user.is_active:
+        return 'account_inactive'
+    if is_archive_identity_marker(user):
+        return 'restricted_identity'
+    try:
+        profile = user.profile
+    except ObjectDoesNotExist:
+        return 'user_profile_required'
+    except Exception:
+        return 'account_unavailable'
+    if profile.password_reset_required or profile.is_using_temp_password:
+        return 'password_change_required'
+    if user.is_superuser and not user.is_staff:
+        return 'admin_staff_required'
+    return 'account_role_required'
 
 
 def bridge_ready():
@@ -79,7 +146,13 @@ def require_reviewed_configuration():
     from .views import reviewed_configuration, OAuthBlocked
     try:
         reviewed_configuration()
-    except (OAuthBlocked, ValueError):
+    except OAuthBlocked as error:
+        reason = str(error)
+        if reason in {'callback_origin_unverified', 'provider_origin_unverified',
+                      'app_credential_missing', 'oauth_configuration_unreviewed'}:
+            raise vault.VaultBlocked(reason) from None
+        raise vault.VaultBlocked('connection_configuration_unreviewed') from None
+    except ValueError:
         raise vault.VaultBlocked('connection_configuration_unreviewed') from None
 
 
@@ -134,8 +207,11 @@ class ConnectionStatus(ConnectionAPI):
         if not bridge_ready():
             return Response(data)
         try:
-            if not secure_request(request) or not vault.eligible(request.user):
-                raise vault.VaultBlocked('account_unavailable')
+            reason = secure_request_reason(request)
+            if reason is not None:
+                raise vault.VaultBlocked(reason)
+            if not vault.eligible(request.user):
+                raise vault.VaultBlocked(ineligible_account_reason(request.user))
             require_reviewed_configuration()
             login_digest, _ = login_claims(request.auth)
             stored_login = MESLoginSession.objects.filter(pk=login_digest).first()
@@ -150,12 +226,12 @@ class ConnectionStatus(ConnectionAPI):
                 if row is not None:
                     result = vault.decision(request.user, row, login_digest, configuration)
                     data.update(status='connected' if result.action == 'reuse_candidate' else 'reconnect_required',
-                                reason=result.reason,
+                                reason=status_reason(result.reason),
                                 expires_at=min(row.expires_at, row.idle_expires_at).isoformat()
                                            if result.action == 'reuse_candidate' else None)
             return Response(data)
         except vault.VaultBlocked as error:
-            data.update(status='blocked', reason=str(error), can_connect=False)
+            data.update(status='blocked', reason=status_reason(str(error)), can_connect=False)
             return Response(data)
 
 
