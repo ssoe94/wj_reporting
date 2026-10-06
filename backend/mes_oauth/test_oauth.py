@@ -537,6 +537,45 @@ class OAuthCallbackTests(TestCase):
                     self.assertNotIn(secret.encode(), response.content)
                     self.assertNotIn(secret, output.getvalue())
 
+    def test_storage_failure_preserves_private_reason_and_seven_diagnostic_fields(self):
+        from .continuity import ContinuityBlocked
+        from .models import MESCredential
+        from .vault import VaultBlocked
+
+        for number, error in enumerate((VaultBlocked('vault_key_unavailable'),
+                                        ContinuityBlocked('provider_token_expired'))):
+            with self.subTest(case=number):
+                self.provider.reset_mock()
+                row = self.begin()
+                error.__cause__ = RuntimeError(TOKEN + APP_TOKEN + CODE)
+                with patch('mes_oauth.vault.enabled', return_value=True), \
+                        patch('mes_oauth.vault.store_context', side_effect=error) as store, \
+                        self.assertLogs('mes_oauth.diagnostics', level='WARNING') as captured:
+                    response = self.finish(CODE + '-storage-' + str(number))
+                row.refresh_from_db()
+                self.assertEqual(row.status, 'rejected')
+                self.assertEqual(row.error_code, error.args[0])
+                self.assertIsNone(row.verified_at)
+                self.assertFalse(MESCredential.objects.exists())
+                store.assert_called_once()
+                self.provider.exchange.assert_called_once()
+                self.provider.userinfo.assert_called_once()
+                self.assertEqual(response.status_code, 502)
+                self.assertIn(b'identity_verification_failed', response.content)
+                self.assertNotIn(error.args[0].encode(), response.content)
+                self.assertEqual(response.cookies[COOKIE]['max-age'], 0)
+                self.assertEqual(len(captured.records), 1)
+                diagnostic = json.loads(captured.records[0].getMessage().split(' ', 1)[1])
+                self.assertEqual(diagnostic, {
+                    'reason': error.args[0], 'exchange_http_attempts': None,
+                    'userinfo_http_attempts': None, 'exchange_http_status': None,
+                    'userinfo_http_status': None, 'exchange_api_code': None,
+                    'userinfo_api_code': None,
+                })
+                for secret in (TOKEN, APP_TOKEN, CODE):
+                    self.assertNotIn(secret, str(captured.output))
+                    self.assertNotIn(secret.encode(), response.content)
+
     def test_real_client_diagnostics_record_http_boundaries_without_secret_or_retry(self):
         exchange_body = json.dumps({'code': 200, 'data': {'userAccessToken': TOKEN}}).encode()
         cases = [

@@ -34,7 +34,8 @@ from .client import BlacklakeUserOAuthClient, ORIGINS
 from .app_tokens import app_credentials_configured, app_credential_binding
 from .callback_app_tokens import get_app_access_token
 from .models import OAuthAttempt
-from .identity import FAILURE_CODES, safe_failure_code, verify_user_context
+from .identity import verify_user_context
+from .diagnostics import CALLBACK_FAILURE_CODES, safe_callback_failure_code
 from .access import can_verify_identity
 from .security import REFERRER_POLICY
 from quality.archive_access import is_archive_identity_marker
@@ -51,7 +52,7 @@ def _record_failure_diagnostic(reason, provider):
     # Only fixed enums and bounded integers reach this WARNING event. No
     # request, actor, attempt digest, exception, URL or response body is logged.
     try:
-        if type(reason) is not str or reason not in FAILURE_CODES:
+        if type(reason) is not str or reason not in CALLBACK_FAILURE_CODES:
             reason = 'identity_verification_failed'
         if type(provider) is BlacklakeUserOAuthClient:
             snapshot = BlacklakeUserOAuthClient.diagnostic_snapshot(provider)
@@ -344,7 +345,7 @@ def callback(request):
                 status='verified', verified_at=timezone.now())
         del context
     except Exception as error:
-        reason = safe_failure_code(error)
+        reason = safe_callback_failure_code(error)
         OAuthAttempt.objects.filter(pk=attempt.pk, status='processing').update(
             status='rejected', error_code=reason)
         _record_failure_diagnostic(reason, provider)
