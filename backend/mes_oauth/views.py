@@ -35,7 +35,7 @@ from .app_tokens import app_credentials_configured, app_credential_binding
 from .callback_app_tokens import get_app_access_token
 from .models import OAuthAttempt
 from .identity import verify_user_context
-from .diagnostics import (CALLBACK_FAILURE_CODES, expiry_metadata,
+from .diagnostics import (CALLBACK_FAILURE_CODES, expiry_metadata, failure_expiry_metadata,
                           safe_callback_failure_code, safe_expiry_metadata)
 from .access import can_verify_identity
 from .security import REFERRER_POLICY
@@ -357,7 +357,7 @@ def callback(request):
         reason = safe_callback_failure_code(error)
         OAuthAttempt.objects.filter(pk=attempt.pk, status='processing').update(
             status='rejected', error_code=reason)
-        _record_failure_diagnostic(reason, provider, expiry=storage_expiry)
+        _record_failure_diagnostic(reason, provider, expiry=failure_expiry_metadata(error, storage_expiry))
         response = _blocked('identity_verification_failed', 502)
     else:
         payload = {'identity_verified': True, 'expiry_verified': False, 'live_ready': False}

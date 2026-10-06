@@ -9,7 +9,7 @@ from threading import Event
 from time import monotonic, sleep
 import traceback
 from unittest import skipUnless
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from django.contrib.auth import get_user_model
 from django.db import connection, connections, transaction
@@ -155,12 +155,12 @@ class InspectionCredentialTests(CredentialFixture, TestCase):
         self.assert_blocked(POLICY)
         self.callback.assert_not_called()
 
-    def test_tenant_mapping_and_different_login_cannot_borrow_a_credential(self):
+    def test_tenant_mapping_and_other_actor_cannot_borrow_a_credential(self):
         before = bytes(self.row().ciphertext)
         self.assert_blocked(POLICY, tenant='SYNTHETIC-OTHER-TENANT')
         self.assert_blocked(UNAVAILABLE, mes_user_id=MES_USER + 1)
         session = self.session()
-        session.login_digest = vault.digest('client-login', 'D' * 43)
+        session.actor_id = self.other.pk
         self.assert_blocked(UNAVAILABLE, session=session)
         self.assertTrue(bytes(self.row().ciphertext) == before)
         self.assert_no_provider()
@@ -376,22 +376,21 @@ class InspectionCredentialPostgresTests(CredentialFixture, TransactionTestCase):
             self.assertEqual(active.result(timeout=5), {'synthetic': True})
             revoke.result(timeout=5)
         self.assertEqual(self.callback.call_count, 1)
-        self.assert_wiped()
+        self.assertEqual(vault._open(self.row()), TOKEN)
         self.assert_blocked(UNAVAILABLE)
         self.assertEqual(self.provider.userinfo.call_count, 1)
 
     def test_logout_lock_wins_and_waiting_broker_never_dispatches(self):
         entered, release = Event(), Event()
         broker_started, broker_pid = Event(), []
-        original = vault._clear
-        def paused_clear(row, reason):
-            entered.set()
-            if not release.wait(5):
-                raise RuntimeError('Synthetic fixture timed out.')
-            return original(row, reason)
-        with patch('mes_oauth.vault._clear', side_effect=paused_clear), ThreadPoolExecutor(max_workers=2) as pool:
-            revoke = pool.submit(self.worker, lambda: vault.revoke_actor(self.user.pk,
-                login_digest=self.login_digest, reason='logout'))
+        def paused_logout():
+            with transaction.atomic():
+                vault.revoke_actor(self.user.pk, login_digest=self.login_digest, reason='logout')
+                entered.set()
+                if not release.wait(5):
+                    raise RuntimeError('Synthetic fixture timed out.')
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            revoke = pool.submit(self.worker, paused_logout)
             try:
                 self.assertTrue(entered.wait(5))
                 blocked = pool.submit(self.worker, lambda: self.assert_blocked(UNAVAILABLE), broker_started, broker_pid)
@@ -403,5 +402,51 @@ class InspectionCredentialPostgresTests(CredentialFixture, TransactionTestCase):
             revoke.result(timeout=5)
             blocked.result(timeout=5)
         self.assert_no_provider()
+        self.callback.assert_not_called()
+        self.assertEqual(vault._open(self.row()), TOKEN)
+
+
+class ActorCredentialOperationTests(CredentialFixture, TestCase):
+    def next_session(self, actor=None):
+        actor = actor or self.user
+        token = AccessToken.for_user(actor)
+        token['mes_sid'] = 'N' * 43
+        token['mes_login_exp'] = int(self.login.expires_at.timestamp())
+        return InspectionSession.from_token(actor, token)
+
+    def test_fresh_signed_login_rechecks_provider_for_each_operation_after_prior_logout(self):
+        vault.revoke_actor(self.user.pk, login_digest=self.login_digest, reason='logout')
+        for operation in ('read', 'save', 'finish'):
+            self.assertEqual(self.invoke(session=self.next_session(), operation=operation),
+                             {'synthetic': True})
+        self.assertEqual(self.provider.userinfo.call_args_list, [call(TOKEN)] * 3)
+        self.assertEqual(self.callback.call_count, 3)
+        self.assertEqual(self.row().login_digest, self.login_digest)
+        self.assert_blocked(UNAVAILABLE)
+        self.assertEqual(self.callback.call_count, 3)
+
+    def test_other_actor_signed_login_cannot_use_prior_actor_connection(self):
+        self.assert_blocked(UNAVAILABLE, session=self.next_session(self.other))
+        self.assert_blocked(UNAVAILABLE, session=self.next_session(self.other), mes_user_id=MES_USER + 1)
+        self.assert_no_provider()
+        self.callback.assert_not_called()
+        self.assertEqual(vault._open(self.row()), TOKEN)
+
+    def test_new_login_still_rejects_changed_password_and_role(self):
+        original_password = self.user.password
+        for changes in ({'password': 'SYNTHETIC-CHANGED-HASH'}, {'is_staff': False}):
+            MESLoginSession.objects.filter(pk=vault.digest('client-login', 'N' * 43)).delete()
+            get_user_model().objects.filter(pk=self.user.pk).update(**changes)
+            self.user.refresh_from_db()
+            self.assert_blocked(UNAVAILABLE, session=self.next_session())
+            get_user_model().objects.filter(pk=self.user.pk).update(password=original_password, is_staff=True)
+            self.user.refresh_from_db()
+        self.assert_no_provider()
+        self.callback.assert_not_called()
+
+    def test_new_login_provider_identity_mismatch_wipes_connection_before_callback(self):
+        self.provider.userinfo.return_value = userinfo(user_id=MES_USER + 1)
+        self.assert_blocked(IDENTITY, session=self.next_session())
+        self.provider.userinfo.assert_called_once_with(TOKEN)
         self.callback.assert_not_called()
         self.assert_wiped()

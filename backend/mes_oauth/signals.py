@@ -43,8 +43,14 @@ def user_deleting(sender, instance, **kwargs):
 
 @receiver(user_logged_out, dispatch_uid='mes-django-logout')
 def django_logout(sender, request, user, **kwargs):
-    if user is not None and user.pk:
-        revoke_actor(user.pk, reason='logout')
+    if user is not None and user.pk and request is not None:
+        # Django emits this before flushing the server-side session. Only a
+        # bridge session identifies a WJ login; ordinary Django logout must
+        # not invalidate this actor's other browsers or stored MES connection.
+        from .connection_views import SESSION_KEY
+        login_digest = request.session.get(SESSION_KEY)
+        if login_digest:
+            revoke_actor(user.pk, login_digest=login_digest, reason='logout')
 
 
 @receiver(m2m_changed, sender=User.groups.through, dispatch_uid='mes-user-group-change')

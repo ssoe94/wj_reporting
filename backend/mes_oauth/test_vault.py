@@ -12,7 +12,7 @@ from unittest.mock import Mock, call, patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
-from django.db import connection, connections
+from django.db import connection, connections, transaction
 from django.test import TestCase, TransactionTestCase, override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
 
@@ -370,11 +370,11 @@ class VaultLifecycleTests(VaultFixture, TestCase):
                 UserProfile.objects.filter(user=self.user).update(**{field: False})
         self.assert_no_provider()
 
-    def test_other_actor_or_other_local_login_cannot_use_the_stored_token(self):
+    def test_other_actor_or_unknown_local_login_cannot_use_the_stored_token(self):
         self.store()
         other_login = vault.digest('client-login', 'N' * 43)
         self.make_login(self.user, other_login)
-        for actor_id, login in ((self.other.pk, self.login_digest), (self.user.pk, other_login),
+        for actor_id, login in ((self.other.pk, self.login_digest), (self.other.pk, other_login),
                                 (self.user.pk, '0' * 64), (2**62, self.login_digest)):
             with self.subTest(actor=actor_id, login_match=login == self.login_digest), self.assertRaises(vault.VaultBlocked):
                 vault.recheck_identity(actor_id, login, self.provider)
@@ -518,7 +518,7 @@ class VaultLifecycleTests(VaultFixture, TestCase):
         self.store()
         with override_settings(MES_USER_OAUTH_ENABLED=False, MES_USER_TOKEN_KEYS=''):
             vault.revoke_actor(self.user.pk, login_digest=self.login_digest, reason='logout')
-        self.assert_wiped()
+        self.assertEqual(vault._open(self.row()), TOKEN)
         self.login.refresh_from_db()
         self.assertIsNotNone(self.login.revoked_at)
         with self.assertRaises(vault.VaultBlocked):
@@ -594,7 +594,7 @@ class VaultConcurrencyTests(VaultFixture, TransactionTestCase):
             return userinfo()
         def revoke():
             revoking.set()
-            vault.revoke_actor(self.user.pk, reason='logout')
+            vault.revoke_actor(self.user.pk, login_digest=self.login_digest, reason='logout')
         self.provider.userinfo.side_effect = read
         with ThreadPoolExecutor(max_workers=2) as pool:
             checking = pool.submit(self.worker, lambda: vault.recheck_identity(
@@ -609,7 +609,7 @@ class VaultConcurrencyTests(VaultFixture, TransactionTestCase):
                 release.set()
             self.assertEqual(checking.result(timeout=10), {'identity_verified': True, 'live_ready': False})
             self.assertIsNone(revocation.result(timeout=10))
-        self.assert_wiped()
+        self.assertEqual(vault._open(self.row()), TOKEN)
         with self.assertRaises(vault.VaultBlocked):
             vault.recheck_identity(self.user.pk, self.login_digest, self.provider)
         self.assertEqual(self.provider.mock_calls, [call.userinfo(TOKEN)])
@@ -617,17 +617,17 @@ class VaultConcurrencyTests(VaultFixture, TransactionTestCase):
     def test_revoke_lock_wins_before_userinfo_so_waiting_recheck_never_dispatches(self):
         self.store()
         entered, release, checking_started = Event(), Event(), Event()
-        original_clear = vault._clear
-        def paused_clear(row, reason):
-            entered.set()
-            if not release.wait(5):
-                raise AssertionError('Synthetic revocation release timed out.')
-            return original_clear(row, reason)
+        def paused_logout():
+            with transaction.atomic():
+                vault.revoke_actor(self.user.pk, login_digest=self.login_digest, reason='logout')
+                entered.set()
+                if not release.wait(5):
+                    raise AssertionError('Synthetic revocation release timed out.')
         def check():
             checking_started.set()
             return vault.recheck_identity(self.user.pk, self.login_digest, self.provider)
-        with patch('mes_oauth.vault._clear', side_effect=paused_clear), ThreadPoolExecutor(max_workers=2) as pool:
-            revocation = pool.submit(self.worker, lambda: vault.revoke_actor(self.user.pk, reason='logout'))
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            revocation = pool.submit(self.worker, paused_logout)
             try:
                 self.assertTrue(entered.wait(5))
                 checking = pool.submit(self.worker, check)
@@ -639,5 +639,116 @@ class VaultConcurrencyTests(VaultFixture, TransactionTestCase):
                 release.set()
             self.assertIsNone(revocation.result(timeout=10))
             self.assertEqual(checking.result(timeout=10), 'login_unavailable')
+        self.assertEqual(vault._open(self.row()), TOKEN)
+        self.assert_no_provider()
+
+
+class ActorCredentialContinuityTests(VaultFixture, TestCase):
+    def test_same_actor_new_login_reuses_original_encrypted_provenance_after_logout(self):
+        self.store()
+        original = self.row()
+        next_digest = vault.digest('client-login', 'N' * 43)
+        next_login = self.make_login(self.user, next_digest)
+        vault.revoke_actor(self.user.pk, login_digest=self.login_digest, reason='logout')
+        self.assertEqual(bytes(self.row().ciphertext), bytes(original.ciphertext))
+        with self.assertRaisesRegex(vault.VaultBlocked, '^login_unavailable$'):
+            vault.recheck_identity(self.user.pk, self.login_digest, self.provider)
+        self.assert_no_provider()
+        self.assertEqual(vault.recheck_identity(self.user.pk, next_digest, self.provider),
+                         {'identity_verified': True, 'live_ready': False})
+        row = self.row()
+        self.assertEqual(row.login_digest, self.login_digest)
+        self.assertEqual(row.verified_at, original.verified_at)
+        self.assertEqual(row.expires_at, original.expires_at)
+        self.assertEqual(vault._open(row), TOKEN)
+        next_login.refresh_from_db()
+        self.assertIsNone(next_login.revoked_at)
+        self.provider.userinfo.assert_called_once_with(TOKEN)
+
+    def test_unscoped_logout_preserves_all_logins_and_credential(self):
+        self.store()
+        self.make_login(self.user, vault.digest('client-login', 'N' * 43))
+        original = bytes(self.row().ciphertext)
+        vault.revoke_actor(self.user.pk, reason='logout')
+        self.assertEqual(bytes(self.row().ciphertext), original)
+        self.assertFalse(MESLoginSession.objects.filter(revoked_at__isnull=False).exists())
+        self.assertEqual(MESLoginSession.objects.filter(actor_id=self.user.pk).count(), 2)
+        self.assert_no_provider()
+
+    def test_explicit_disconnect_from_new_login_clears_actor_credential(self):
+        self.store()
+        next_digest = vault.digest('client-login', 'N' * 43)
+        self.make_login(self.user, next_digest)
+        vault.revoke_actor(self.user.pk, login_digest=next_digest, revoke_login=False)
         self.assert_wiped()
+        with self.assertRaisesRegex(vault.VaultBlocked, '^reuse_unavailable$'):
+            vault.recheck_identity(self.user.pk, self.login_digest, self.provider)
+        self.assert_no_provider()
+
+    @override_settings(MES_USER_TOKEN_MAX_AGE_SECONDS=86400,
+                       MES_USER_TOKEN_IDLE_SECONDS=86400,
+                       MES_USER_TOKEN_CONSENT_SECONDS=86400)
+    def test_new_login_cannot_extend_24_hour_deadline_or_safety_margin(self):
+        self.store(context=VerifiedUserContext(MES_USER, TOKEN, 172800))
+        deadline = self.row().expires_at
+        self.assertEqual(deadline, self.instant + timedelta(hours=24))
+        next_digest = vault.digest('client-login', 'N' * 43)
+        self.clock.return_value = deadline - timedelta(seconds=31)
+        MESLoginSession.objects.create(digest=next_digest, actor_id=self.user.pk,
+            authorization_digest=vault.authorization_digest(self.user),
+            expires_at=deadline + timedelta(hours=1))
+        vault.recheck_identity(self.user.pk, next_digest, self.provider)
+        self.assertEqual(self.row().expires_at, deadline)
+        self.clock.return_value = deadline - timedelta(seconds=30)
+        with self.assertRaisesRegex(vault.VaultBlocked, '^reuse_unavailable$'):
+            vault.recheck_identity(self.user.pk, next_digest, self.provider)
+        self.provider.userinfo.assert_called_once_with(TOKEN)
+
+
+    def test_disconnect_invalidates_other_login_callbacks_without_ending_wj_sessions(self):
+        self.store()
+        next_login = self.make_login(self.user, vault.digest('client-login', 'N' * 43))
+        unrelated = self.make_login(self.other, vault.digest('client-login', 'O' * 43))
+        other_token = TOKEN + '-OTHER-ACTOR'
+        vault.store_context(self.other.pk, unrelated.pk,
+            VerifiedUserContext(MES_USER + 1, other_token, 1200),
+            request_started_at=self.instant - timedelta(seconds=2),
+            received_at=self.instant - timedelta(seconds=1), login_revision=1)
+        other_before = MESCredential.objects.get(pk=self.other.pk)
+        tickets = []
+        for index, login in enumerate((self.login, next_login, unrelated)):
+            tickets.append(MESLoginTicket.objects.create(digest=str(index) * 64,
+                actor_id=login.actor_id, login_digest=login.pk,
+                authorization_digest=login.authorization_digest, login_revision=1,
+                expires_at=self.instant + timedelta(seconds=60)))
+
+        vault.revoke_actor(self.user.pk, login_digest=next_login.pk,
+                           reason='disconnected', revoke_login=False)
+        self.assert_wiped()
+        for login, ticket in zip((self.login, next_login), tickets[:2]):
+            login.refresh_from_db()
+            ticket.refresh_from_db()
+            self.assertEqual(login.revision, 2)
+            self.assertIsNone(login.revoked_at)
+            self.assertIsNotNone(ticket.consumed_at)
+            self.assertEqual(vault._login(self.user, login.pk).pk, login.pk)
+            with self.assertRaisesRegex(vault.VaultBlocked, '^login_unavailable$'):
+                vault.store_context(self.user.pk, login.pk,
+                    VerifiedUserContext(MES_USER, TOKEN, 1200),
+                    request_started_at=self.instant - timedelta(seconds=2),
+                    received_at=self.instant - timedelta(seconds=1), login_revision=1)
+            self.assert_wiped()
+
+        unrelated.refresh_from_db()
+        tickets[2].refresh_from_db()
+        other_after = MESCredential.objects.get(pk=self.other.pk)
+        self.assertEqual(unrelated.revision, 1)
+        self.assertIsNone(unrelated.revoked_at)
+        self.assertIsNone(tickets[2].consumed_at)
+        self.assertEqual(bytes(other_after.ciphertext), bytes(other_before.ciphertext))
+        self.assertEqual(vault._open(other_after), other_token)
+        # A fresh launch captures the new revision and can reconnect normally.
+        self.store(revision=self.login.revision)
+        self.assertEqual(vault._open(self.row()), TOKEN)
+        self.assertIsNone(self.row().revoked_at)
         self.assert_no_provider()

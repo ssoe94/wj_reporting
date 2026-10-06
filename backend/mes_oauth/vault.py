@@ -24,8 +24,9 @@ from quality.archive_access import is_archive_identity_marker
 from .access import can_verify_identity
 from .client import ORIGINS
 from .app_tokens import app_credentials_configured, app_credential_binding
-from .continuity import (ActorState, ConnectionState, ExpiryContract, ExpiryEvidence,
+from .continuity import (ActorState, ConnectionState, ContinuityBlocked, ExpiryContract, ExpiryEvidence,
                          ReusePolicy, decide_reuse, resolve_provider_expiry)
+from .diagnostics import expiry_metadata
 from .identity import VerifiedUserContext, StoredIdentityRejected, verify_stored_identity_response
 from .models import MESCredential, MESCredentialEvent, MESLoginSession, MESLoginTicket
 
@@ -139,7 +140,10 @@ def policy():
             review, contract.mode, contract.review_reference, app, tenant,
             maximum, idle, consent, safety, settings.MES_USER_OAUTH_PROVIDER_ORIGIN,
             app_credential_binding()], separators=(',', ':')))
-        reuse = ReusePolicy(True, reference, contract, frozenset({'identity_read'}), maximum, idle, safety)
+        # Keep the fingerprint and encrypted issuance provenance stable. Current
+        # login authority is independently checked before every credential use.
+        reuse = ReusePolicy(True, reference, contract, frozenset({'identity_read'}),
+                            maximum, idle, safety, credential_scope='actor')
         # Validate the policy without supplying an actor or making any request.
         checked = decide_reuse(actor=None, connection=None, policy=reuse,
                                operation='identity_read', now=timezone.now())
@@ -238,8 +242,17 @@ def store_context(actor_id, login_digest, context, *, request_started_at, receiv
     configuration = policy()
     if type(context) is not VerifiedUserContext:
         raise VaultBlocked('identity_unverified')
-    evidence = resolve_provider_expiry(context.expire, request_started_at=request_started_at,
-                                      received_at=received_at, contract=configuration.reuse.expiry_contract)
+    try:
+        evidence = resolve_provider_expiry(context.expire, request_started_at=request_started_at,
+                                          received_at=received_at, contract=configuration.reuse.expiry_contract)
+    except ContinuityBlocked as error:
+        if (type(error) is ContinuityBlocked and type(configuration) is VaultPolicy
+                and type(configuration.reuse) is ReusePolicy
+                and type(configuration.reuse.expiry_contract) is ExpiryContract):
+            error.expiry_diagnostic = expiry_metadata(context.expire,
+                request_started_at=request_started_at, received_at=received_at,
+                applied_mode=configuration.reuse.expiry_contract.mode)
+        raise
     with transaction.atomic():
         user = _lock_user(actor_id)
         if type(login_revision) is not int or login_revision < 1:
@@ -270,6 +283,14 @@ def store_context(actor_id, login_digest, context, *, request_started_at, receiv
 
 def revoke_actor(actor_id, *, login_digest=None, login_expires_at=None,
                  reason='disconnected', revoke_login=True):
+    # WJ logout ends only its proven login; the actor's encrypted MES connection
+    # survives for another independently authenticated login. An unscoped logout
+    # cannot identify which browser/PC to end and must not revoke other logins.
+    if reason == 'logout' and login_digest is None:
+        return
+    # Disconnect invalidates every pending actor callback: any login could
+    # otherwise restore the shared credential using an already issued ticket.
+    disconnect_actor = reason == 'disconnected' and revoke_login is False
     # Revocation works even with OAuth/storage OFF or unavailable encryption keys.
     with transaction.atomic():
         user = get_user_model().objects.select_for_update().filter(pk=actor_id).first()
@@ -291,14 +312,14 @@ def revoke_actor(actor_id, *, login_digest=None, login_expires_at=None,
         else:
             from django.db.models import F
             logins = MESLoginSession.objects.filter(actor_id=actor_id, revoked_at__isnull=True)
-            if login_digest is not None:
+            if login_digest is not None and not disconnect_actor:
                 logins = logins.filter(pk=login_digest)
             logins.update(revision=F('revision') + 1)
         row = MESCredential.objects.select_for_update().filter(pk=actor_id).first()
-        if row and (login_digest is None or row.login_digest == login_digest):
+        if row and reason != 'logout':
             _clear(row, reason)
         tickets = MESLoginTicket.objects.filter(actor_id=actor_id, consumed_at__isnull=True)
-        if login_digest is not None:
+        if login_digest is not None and not disconnect_actor:
             tickets = tickets.filter(login_digest=login_digest)
         tickets.update(consumed_at=timezone.now())
 

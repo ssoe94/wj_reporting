@@ -57,7 +57,8 @@ def _policy(policy_check, tenant, initial=None):
 
 def _reusable(user, row, session, mes_user_id, tenant, configuration):
     if (row is None or row.actor_id != session.actor_id
-            or row.login_digest != session.login_digest
+            or (configuration.reuse.credential_scope == 'login'
+                and row.login_digest != session.login_digest)
             or row.mes_user_id != str(mes_user_id) or row.tenant_reference != tenant
             or vault.expected_user(user.pk) != mes_user_id
             or vault.decision(user, row, session.login_digest, configuration).action != 'reuse_candidate'):

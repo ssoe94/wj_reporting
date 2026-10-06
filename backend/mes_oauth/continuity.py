@@ -69,6 +69,9 @@ class ReusePolicy:
     max_connection_seconds: int = 0
     idle_seconds: int = 0
     safety_seconds: int = 30
+    # Actor scope retains issuance-session provenance but requires callers to
+    # authenticate and authorize the current login independently on every use.
+    credential_scope: str = 'login'
 
 
 @dataclass(frozen=True)
@@ -175,7 +178,9 @@ def decide_reuse(*, actor, connection, policy=ReusePolicy(), operation, now):
         return blocked('policy_invalid')
     if not policy.enabled:
         return blocked('continuity_disabled')
-    if (not _reference(policy.review_reference) or not _contract_valid(policy.expiry_contract)
+    if (type(policy.credential_scope) is not str
+            or policy.credential_scope not in {'login', 'actor'}
+            or not _reference(policy.review_reference) or not _contract_valid(policy.expiry_contract)
             or type(policy.allowed_operations) is not frozenset
             or not policy.allowed_operations
             or not policy.allowed_operations <= frozenset({'identity_read'})
@@ -221,7 +226,7 @@ def decide_reuse(*, actor, connection, policy=ReusePolicy(), operation, now):
     identity = ('local_user_id', 'mes_user_id', 'tenant_id', 'app_id')
     if any(getattr(actor, key) != getattr(connection, key) for key in identity):
         return blocked('identity_mismatch')
-    if actor.session_digest != connection.session_digest:
+    if policy.credential_scope == 'login' and actor.session_digest != connection.session_digest:
         return reconnect('session_changed')
     if actor.authorization_digest != connection.authorization_digest:
         return reconnect('authorization_changed')

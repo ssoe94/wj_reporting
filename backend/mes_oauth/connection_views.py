@@ -27,7 +27,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken, UntypedToken
 from rest_framework_simplejwt.state import token_backend
 
-from config.authentication import ScopedJWTAuthentication
+from config.authentication import ScopedJWTAuthentication, token_matches_current_password
 from quality.archive_access import is_archive_identity_marker
 from . import vault
 from .app_tokens import AppCredentialUnavailable
@@ -217,12 +217,14 @@ class ConnectionStatus(ConnectionAPI):
             require_reviewed_configuration()
             login_digest, _ = login_claims(request.auth, diagnostic=True)
             stored_login = MESLoginSession.objects.filter(pk=login_digest).first()
+            # A fresh signed WJ login can inspect actor-bound metadata without
+            # registering a session on GET. Existing markers must remain valid.
             if stored_login is not None:
                 vault._login(request.user, login_digest)
             vault.expected_user(request.user.pk)
             row = MESCredential.objects.filter(pk=request.user.pk).first()
             data.update(status='disconnected', reason='connection_missing', can_connect=True,
-                        can_disconnect=bool(row and row.revoked_at is None and row.login_digest == login_digest))
+                        can_disconnect=bool(row and row.revoked_at is None))
             if vault.enabled():
                 configuration = vault.policy()
                 if row is not None:
@@ -281,8 +283,19 @@ class ConnectionDisconnect(ConnectionAPI):
             if request.data:
                 raise vault.VaultBlocked('invalid_request')
             login_digest, _ = login_claims(request.auth)
-            vault.revoke_actor(request.user.pk, login_digest=login_digest,
-                               reason='disconnected', revoke_login=False)
+            # Serialize admission with logout and identity changes. A genuine
+            # fresh login may deliberately disconnect its actor's connection
+            # before ever launching MES; no login marker is needed for this.
+            with transaction.atomic():
+                user = vault._lock_user(request.user.pk)
+                user._inspection_pilot_scope = pilot_route_scope_required(user, request.auth or {})
+                if (not vault.eligible(user) or not token_matches_current_password(
+                        user, request.auth, user.profile)):
+                    raise vault.VaultBlocked('account_unavailable')
+                from .session_guard import check_known_login
+                check_known_login(user, request.auth)
+                vault.revoke_actor(user.pk, login_digest=login_digest,
+                                   reason='disconnected', revoke_login=False)
             return Response({'disconnected': True})
         except vault.VaultBlocked:
             return Response({'detail': 'disconnect_unavailable'}, status=403)
@@ -364,6 +377,8 @@ class ConnectionLogout(ConnectionAPI):
                 expiry = datetime.fromtimestamp(expires, dt_timezone.utc)
                 if expiry > timezone.now() + timedelta(days=31):
                     raise ValueError()
+                # End only this signed WJ login family. The inspector's stored
+                # MES connection survives logout and remains actor-bound.
                 vault.revoke_actor(actor_id, login_digest=vault.digest('client-login', sid),
                                    login_expires_at=expiry, reason='logout')
             # Legacy tokens cannot establish a MES connection; preserve their

@@ -436,3 +436,19 @@ class ContinuityDecisionTests(TestCase):
         self.assertEqual(self.connection.last_used_at, BASE + timedelta(seconds=60))
         self.assertEqual(self.connection.provider_expiry.expires_at, BASE + timedelta(hours=1))
         self.assertEqual(self.connection.consent_expires_at, BASE + timedelta(minutes=30))
+
+    def test_actor_scope_permits_only_session_change(self):
+        policy = replace(self.policy, credential_scope='actor')
+        actor = replace(self.actor, session_digest='c' * 64)
+        self.assert_decision('reuse_candidate', 'metadata_valid', actor=actor, policy=policy)
+        for change, reason in (({'local_user_id': 999}, 'identity_mismatch'),
+                               ({'mes_user_id': 999}, 'identity_mismatch'),
+                               ({'authorization_digest': 'd' * 64}, 'authorization_changed'),
+                               ({'authenticated': False}, 'local_login_required'),
+                               ({'eligible': False}, 'actor_ineligible')):
+            result = self.decision(actor=replace(actor, **change), policy=policy)
+            self.assertEqual(result.reason, reason)
+            self.assertNotEqual(result.action, 'reuse_candidate')
+        for scope in ('shared', '', None, True):
+            self.assert_decision('blocked', 'policy_unreviewed',
+                                 policy=replace(policy, credential_scope=scope))
