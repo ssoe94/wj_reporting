@@ -35,7 +35,8 @@ from .app_tokens import app_credentials_configured, app_credential_binding
 from .callback_app_tokens import get_app_access_token
 from .models import OAuthAttempt
 from .identity import verify_user_context
-from .diagnostics import CALLBACK_FAILURE_CODES, safe_callback_failure_code
+from .diagnostics import (CALLBACK_FAILURE_CODES, expiry_metadata,
+                          safe_callback_failure_code, safe_expiry_metadata)
 from .access import can_verify_identity
 from .security import REFERRER_POLICY
 from quality.archive_access import is_archive_identity_marker
@@ -48,7 +49,7 @@ COOKIE = '__Host-wj-mes-oauth'
 ATTEMPT_SECONDS = 300  # local attempt TTL; not the user token lifetime
 
 
-def _record_failure_diagnostic(reason, provider):
+def _record_failure_diagnostic(reason, provider, *, expiry=None):
     # Only fixed enums and bounded integers reach this WARNING event. No
     # request, actor, attempt digest, exception, URL or response body is logged.
     try:
@@ -71,6 +72,9 @@ def _record_failure_diagnostic(reason, provider):
             else:
                 low, high = -2_147_483_648, 2_147_483_647
             diagnostic[key] = value if type(value) is int and low <= value <= high else None
+        safe_expiry = safe_expiry_metadata(expiry)
+        if safe_expiry is not None:
+            diagnostic['expiry'] = safe_expiry
         logging.getLogger('mes_oauth.diagnostics').warning(
             'mes_oauth_identity_failure %s',
             json.dumps(diagnostic, sort_keys=True, separators=(',', ':')))
@@ -318,6 +322,7 @@ def callback(request):
     if claimed != 1:
         return _blocked('oauth_attempt_already_used', 409)
     provider = None
+    storage_expiry = None
     try:
         stored_until = None
         from . import vault
@@ -338,9 +343,13 @@ def callback(request):
             if current_expected != expected or current_fingerprint != fingerprint:
                 raise OAuthBlocked('connection_changed')
             if vault.enabled():
+                received_at = timezone.now()
+                storage_expiry = expiry_metadata(context.expire,
+                    request_started_at=exchange_started_at, received_at=received_at)
                 stored_until = vault.store_context(request.user.pk, request.session.get('mes_login_digest'), context,
-                    request_started_at=exchange_started_at, received_at=timezone.now(),
+                    request_started_at=exchange_started_at, received_at=received_at,
                     login_revision=request.session.get('mes_login_revision'))
+                storage_expiry = None
             OAuthAttempt.objects.filter(pk=attempt.pk, status='processing').update(
                 status='verified', verified_at=timezone.now())
         del context
@@ -348,7 +357,7 @@ def callback(request):
         reason = safe_callback_failure_code(error)
         OAuthAttempt.objects.filter(pk=attempt.pk, status='processing').update(
             status='rejected', error_code=reason)
-        _record_failure_diagnostic(reason, provider)
+        _record_failure_diagnostic(reason, provider, expiry=storage_expiry)
         response = _blocked('identity_verification_failed', 502)
     else:
         payload = {'identity_verified': True, 'expiry_verified': False, 'live_ready': False}

@@ -546,6 +546,7 @@ class OAuthCallbackTests(TestCase):
                                         ContinuityBlocked('provider_token_expired'))):
             with self.subTest(case=number):
                 self.provider.reset_mock()
+                self.provider.exchange.return_value = envelope({'userAccessToken': TOKEN, 'expire': 3600})
                 row = self.begin()
                 error.__cause__ = RuntimeError(TOKEN + APP_TOKEN + CODE)
                 with patch('mes_oauth.vault.enabled', return_value=True), \
@@ -566,6 +567,12 @@ class OAuthCallbackTests(TestCase):
                 self.assertEqual(response.cookies[COOKIE]['max-age'], 0)
                 self.assertEqual(len(captured.records), 1)
                 diagnostic = json.loads(captured.records[0].getMessage().split(' ', 1)[1])
+                expiry = diagnostic.pop('expiry')
+                self.assertEqual(expiry['stage'], 'credential_storage')
+                self.assertEqual(expiry['expire_type'], 'integer')
+                self.assertEqual(expiry['expire_seconds'], 3600)
+                self.assertFalse(expiry['relative_expired'])
+                self.assertTrue(expiry['unix_expired'])
                 self.assertEqual(diagnostic, {
                     'reason': error.args[0], 'exchange_http_attempts': None,
                     'userinfo_http_attempts': None, 'exchange_http_status': None,
