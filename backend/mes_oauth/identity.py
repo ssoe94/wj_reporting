@@ -21,16 +21,26 @@ class UserContextUnverified(Exception):
     """Only fixed, non-sensitive reason codes escape the validation boundary."""
 
 
+API_PERMISSION_SUBCODE = 'OPENAPI-DOMAIN/URL_NO_PERMISSION'
+
+
+def _known_api_permission_failure(body):
+    return (type(body) is dict and type(body.get('code')) is int and body['code'] != 200
+            and type(body.get('subCode')) is str and body['subCode'] == API_PERMISSION_SUBCODE)
+
+
 # Persist only these literals, never exception text or provider-supplied codes.
 FAILURE_CODES = frozenset({
-    'oauth_origin_invalid', 'oauth_endpoint_invalid', 'app_credential_missing', 'oauth_provider_unavailable',
+    'oauth_origin_invalid', 'oauth_endpoint_invalid', 'oauth_header_contract_invalid',
+    'app_credential_missing', 'oauth_provider_unavailable',
     'expected_user_invalid', 'info_loader_invalid', 'user_token_missing',
     'userinfo_load_failed', 'userinfo_user_id_invalid', 'user_identity_mismatch',
+    'control_target_invalid', 'control_target_mismatch',
 } | {
     stage + suffix
-    for stage in ('exchange', 'userinfo')
+    for stage in ('exchange', 'userinfo', 'control')
     for suffix in ('_response_invalid', '_redirect_unverified', '_http_rejected',
-                   '_api_rejected', '_api_response_invalid', '_data_invalid',
+                   '_api_rejected', '_api_permission_denied', '_api_response_invalid', '_data_invalid',
                    '_header_invalid', '_request_failed', '_response_decode_failed',
                    '_response_too_large', '_attempt_already_used')
 })
@@ -77,6 +87,8 @@ def _successful_data(response, stage):
     if type(body) is not dict or type(body.get('code')) is not int:
         raise UserContextUnverified(stage + '_api_response_invalid')
     if body['code'] != 200:
+        if _known_api_permission_failure(body):
+            raise UserContextUnverified(stage + '_api_permission_denied')
         raise UserContextUnverified(stage + '_api_rejected')
     if type(body.get('data')) is not dict:
         raise UserContextUnverified(stage + '_data_invalid')

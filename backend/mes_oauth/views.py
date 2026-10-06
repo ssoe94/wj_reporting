@@ -29,7 +29,8 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters, sensitive_variables
 from django.views.decorators.http import require_http_methods
 
-from .client import BlacklakeUserOAuthClient, ORIGINS, app_credential_configured
+from .client import BlacklakeUserOAuthClient, ORIGINS
+from .app_tokens import app_credential_binding, app_credentials_configured, get_app_access_token
 from .models import OAuthAttempt
 from .identity import FAILURE_CODES, safe_failure_code, verify_user_context
 from .access import can_verify_identity
@@ -127,7 +128,7 @@ def _policy(request):
     provider_origin = getattr(settings, 'MES_USER_OAUTH_PROVIDER_ORIGIN', '')
     if provider_origin not in ORIGINS:
         raise OAuthBlocked('provider_origin_unverified')
-    if not app_credential_configured(getattr(settings, 'MES_USER_OAUTH_APP_ACCESS_TOKEN', '')):
+    if not app_credentials_configured():
         raise OAuthBlocked('app_credential_missing')
     review = getattr(settings, 'MES_USER_OAUTH_REVIEW_REFERENCE', '')
     launch = getattr(settings, 'MES_USER_OAUTH_LAUNCH_URL', '')
@@ -150,7 +151,7 @@ def _policy(request):
     except (KeyError, TypeError, ValueError):
         raise OAuthBlocked('expected_identity_unconfigured') from None
     fingerprint = _digest(json.dumps([origin, provider_origin, launch, review, value,
-                                      RELAY_URL, 'fragment-relay-v1']))
+                                      RELAY_URL, 'fragment-relay-v1', app_credential_binding()]))
     return origin, launch, expected, fingerprint
 
 
@@ -243,10 +244,12 @@ def start(request):
 
 
 def get_provider():
-    # Only reached after one-use reservation; no existing helper/fallback.
+    # Only reached after the DB's one-use reservation. The supplier is scoped
+    # to this callback, with one issuance budget and no cross-request cache.
     return BlacklakeUserOAuthClient(
         origin=settings.MES_USER_OAUTH_PROVIDER_ORIGIN,
-        app_access_token=getattr(settings, 'MES_USER_OAUTH_APP_ACCESS_TOKEN', ''))
+        app_access_token=get_app_access_token(),
+        app_token_header=getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token'))
 
 
 @sensitive_variables()
@@ -289,6 +292,9 @@ def callback(request):
     provider = None
     try:
         provider = get_provider()
+        control_qc = getattr(settings, 'MES_USER_OAUTH_CONTROL_QC_ID', '')
+        if control_qc:
+            provider.check_app_read_access(int(control_qc))
         context = verify_user_context(expected, provider.exchange(code), info_loader=provider.userinfo)
         # Do not persist/return the credential, create a WJ login or enable MES.
         del context
