@@ -4,6 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 import { inspectionCopy } from '../src/pages/quality/inspection-requests/copy.ts';
 import * as navigation from '../src/pages/quality/inspection-requests/navigation.ts';
+import * as mesWorkflowResult from '../src/pages/quality/inspection-requests/mesWorkflowResult.ts';
 
 // Execute the actual Page with deterministic hook/API adapters. No browser,
 // auth storage, HTTP client, credentials or real timers are used.
@@ -39,6 +40,8 @@ function content(node: any): string {
 function harness(initialReply = deferred()) {
   const hooks: Hook[] = [];
   const calls: Call[] = [];
+  const invalidations: string[][] = [];
+  const queryClient = { invalidateQueries: async ({ queryKey }: { queryKey: readonly string[] }) => { invalidations.push([...queryKey]); } };
   const timers = new Map<number, () => void>();
   const effects: (() => void)[] = [];
   let cursor = 0;
@@ -46,6 +49,7 @@ function harness(initialReply = deferred()) {
   let tree: Element;
   let reply = initialReply;
   let intervalId = 0;
+  let sessionCurrent = true;
   const same = (a?: unknown[], b?: unknown[]) => Boolean(a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i])));
   const react = {
     useState(initial: any) {
@@ -77,18 +81,20 @@ function harness(initialReply = deferred()) {
   };
   const dependencies: Record<string, unknown> = {
     react,
+    '@tanstack/react-query': { useQueryClient: () => queryClient },
     'react/jsx-runtime': { jsx: (type: unknown, props: any) => ({ type, props }), jsxs: (type: unknown, props: any) => ({ type, props }), Fragment: 'Fragment' },
     'react-dom': { createPortal: (node: any) => node },
     'lucide-react': { AlertTriangle: 'Icon', ClipboardCheck: 'Icon', Plus: 'Icon', RefreshCw: 'Icon', Search: 'Icon' },
     '../../../contexts/AuthContext': { useAuth: () => ({ user: { id: 12, username: 'SYNTHETIC-INSPECTOR' }, authSessionId: SESSION, logout: async () => false, isLoggingOut: false, logoutError: false }) },
     '@/domains/auth/auth-storage': { subscribeToAuthStorage: () => () => {} },
-    '@/domains/auth/auth-transition': { assertAuthSessionCurrent: () => {}, isAuthSessionCurrent: (id: string) => id === SESSION, registerAuthTransitionGuard: () => () => {} },
+    '@/domains/auth/auth-transition': { assertAuthSessionCurrent: (id: string) => { assert.ok(sessionCurrent && id === SESSION, 'Synthetic session changed'); }, isAuthSessionCurrent: (id: string) => sessionCurrent && id === SESSION, registerAuthTransitionGuard: () => () => {} },
     '../../../i18n': { useLang: () => ({ lang: 'ko' }) },
     './api': api,
     './copy': { inspectionCopy, inspectionDataSourceCopy: () => ({ notice: 'SYNTHETIC', hint: 'SYNTHETIC', requests: 'SYNTHETIC', plans: 'SYNTHETIC' }), inspectionRequestStatusLabels: { ko: { draft: '초안' } }, inspectionTime: () => 'SYNTHETIC' },
     './kanban': { inspectionBusinessDate: () => DATE },
     './workflow': { inspectionError: (_error: unknown, fallback: string) => ({ message: fallback }) },
     './navigation': navigation,
+    './mesWorkflowResult': mesWorkflowResult,
     './useInspectionRouteLeaveGuard': { useInspectionRouteLeaveGuard: () => ({ blocked: false, canLeave: true, stay: () => {}, leave: () => {} }) },
     './InspectionKanban': { default: 'InspectionKanban' },
     './InspectionRequestDetail': { default: 'InspectionRequestDetail' },
@@ -108,7 +114,8 @@ function harness(initialReply = deferred()) {
     assert.equal(dirty, false, 'Page should settle without a rendering loop');
   }
   return {
-    calls, timers, reply: initialReply, settle,
+    calls, invalidations, timers, reply: initialReply, settle,
+    expireSession: () => { sessionCurrent = false; },
     nodes: () => elements(tree), text: () => content(tree),
     button: (label: string) => elements(tree).find((node) => node.type === 'button' && content(node) === label),
     replaceReply: () => { reply = deferred(); return reply; },
@@ -121,6 +128,7 @@ test('pending capabilities send no list/detail/kanban request and create no poll
   try {
     await fixture.settle();
     assert.deepEqual(fixture.calls, [{ kind: 'capabilities', args: [SESSION] }]);
+    assert.deepEqual(fixture.invalidations, []);
     assert.equal(fixture.timers.size, 0);
     assert.match(fixture.text(), /접근 권한을 확인/);
     assert.equal(fixture.nodes().some((node) => ['InspectionKanban', 'InspectionRequestDetail', 'NewInspectionRequest'].includes(String(node.type))), false);
@@ -134,6 +142,7 @@ test('denied or incomplete scope capabilities fail closed without business API r
     try {
       fixture.reply.resolve(capabilities); await fixture.settle();
       assert.deepEqual(fixture.calls.map((call) => call.kind), ['capabilities']);
+      assert.deepEqual(fixture.invalidations, []);
       assert.equal(fixture.timers.size, 0);
       assert.match(fixture.text(), /조회할 권한이 없습니다/);
       assert.equal(fixture.button(inspectionCopy.ko.create), undefined);
@@ -185,9 +194,43 @@ test('pilot detail and its post-save refresh remain session-bound and never fetc
     assert.ok(fixture.button(inspectionCopy.ko.returnToList));
     assert.equal(fixture.button(inspectionCopy.ko.returnToKanban), undefined);
     detail.props.onChanged({ ...request, version: 2 }); await fixture.settle();
+    assert.deepEqual(fixture.invalidations, [], 'a WJ-only save is not verified MES readback');
     assert.equal(fixture.calls.filter((call) => call.kind === 'list').length, 2);
     assert.equal(fixture.calls.some((call) => call.kind === 'kanban'), false);
     assert.equal(fixture.timers.size, 0);
+  } finally { fixture.cleanup(); }
+});
+
+test('pilot projection invalidation requires verified MES readback and the owning session', async () => {
+  const fixture = harness();
+  try {
+    fixture.reply.resolve(pilot); await fixture.settle();
+    fixture.nodes().find((node) => node.props.className === 'inspection-list-row')!.props.onClick(); await fixture.settle();
+    const detail = fixture.nodes().find((node) => node.type === 'InspectionRequestDetail')!;
+    const observedAt = '2026-10-06T10:00:00Z';
+    const observed = { ...request, version: 2, sync_status: 'succeeded', mes_completion_status: 'not_completed',
+      mes_checked_at: observedAt, last_error_code: '', mes_workflow: { phase: 'saved', last_verified_at: observedAt } };
+    for (const unverified of [
+      { ...observed, sync_status: 'unknown' },
+      { ...observed, last_error_code: 'mes_outcome_unknown' },
+      { ...observed, mes_workflow: { ...observed.mes_workflow, phase: 'ready' } },
+      { ...observed, mes_workflow: { ...observed.mes_workflow, last_verified_at: null } },
+    ]) {
+      detail.props.onChanged(unverified); await fixture.settle();
+      assert.deepEqual(fixture.invalidations, [], 'unconfirmed MES state cannot refresh successful projections');
+    }
+    detail.props.onChanged(observed); await fixture.settle();
+    assert.deepEqual(fixture.invalidations, [['production-status'], ['inspection-overview']]);
+    detail.props.onChanged({ ...observed, version: 3, mes_completion_status: 'completed',
+      mes_workflow: { ...observed.mes_workflow, phase: 'completed' } }); await fixture.settle();
+    assert.deepEqual(fixture.invalidations, [['production-status'], ['inspection-overview'], ['production-status'], ['inspection-overview']]);
+    assert.equal(fixture.calls.some((call) => call.kind === 'kanban'), false);
+    assert.ok(fixture.calls.every((call) => ['capabilities', 'list', 'detail'].includes(call.kind) && call.args.at(-1) === SESSION));
+    assert.equal(fixture.timers.size, 0);
+    const callCount = fixture.calls.length;
+    fixture.expireSession(); detail.props.onChanged(observed); await fixture.settle();
+    assert.equal(fixture.calls.length, callCount, 'a stale inspector cannot refetch scoped business data');
+    assert.equal(fixture.invalidations.length, 4, 'a stale inspector cannot invalidate the new session projections');
   } finally { fixture.cleanup(); }
 });
 

@@ -34,6 +34,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -73,6 +75,7 @@ jobs:
           DEBUG: "False"
           ENVIRONMENT: test
           MES_USER_OAUTH_ENABLED: "False"
+          ACCOUNT_ACTIVATION_ENABLED: "True"
         run: |
           test ! -e .env && test ! -e ../.env
           python manage.py test --no-input

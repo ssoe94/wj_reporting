@@ -4,9 +4,14 @@ from datetime import timedelta
 import importlib
 import re
 from threading import Barrier, Event
-from unittest import skipUnless
+from unittest import SkipTest, skipUnless
 from unittest.mock import patch
 from urllib.parse import urlencode
+
+from django.apps import apps
+
+if not apps.is_installed('account_activation'):
+    raise SkipTest('Account activation is not installed in this configuration.')
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
