@@ -28,6 +28,7 @@ def detail():
             'qcConfigCheckItemList': [{'groupName': 'SYNTHETIC-GROUP',
                 'checkItemAppDetailVOS': [{'id': 1000 + index, 'checkItemId': 2000 + index,
                     'qcConfigVersionId': 900, 'checkItemName': 'SYNTHETIC-SPEC',
+                    'unit': {'id': 800, 'name': 'SYNTHETIC-UNIT'},
                     'min': '1.20', 'max': '1.30', 'base': '1.25', 'result': 'PRIVATE-RESULT'}
                     for index in range(16)]}]}}}
 
@@ -114,6 +115,63 @@ class DetailProjectionTests(SimpleTestCase):
             self.assertIsNone(result['executor_id'])
             self.assertIs(result['executor_present'], present)
             self.assertIs(result['executor_matches_lee'], match)
+
+
+    def test_optional_zero_ids_are_missing_but_required_identity_stays_strict(self):
+        body = detail()
+        config = body['data']['qcConfig']
+        config['snapshotId'] = 0
+        item = config['qcConfigCheckItemList'][0]['checkItemAppDetailVOS'][0]
+        item.update(checkItemId=0, qcConfigVersionId=0, unit={'id': 0, 'name': 'SYNTHETIC'})
+        body['data']['approvalDetail']['approvalId'] = 0
+        result = service.project_detail(body)
+        self.assertIsNone(result['snapshot_id'])
+        self.assertIsNone(result['approval']['id'])
+        self.assertEqual(result['approval']['missing_fields'], ['id'])
+        for field in ('check_item_id', 'version_id'):
+            self.assertIsNone(result['items'][0][field])
+            self.assertIn(field, result['items'][0]['missing_fields'])
+        self.assertIsNone(result['items'][0]['unit']['id'])
+        self.assertIn('unit.id', result['items'][0]['missing_fields'])
+        self.assertIn('snapshot_id', result['missing_fields'])
+        self.assertIn('approval.id', result['missing_fields'])
+        for source in (body['data'], item):
+            previous = source['id']
+            source['id'] = 0
+            with self.assertRaises(ValueError):
+                service.project_detail(body)
+            source['id'] = previous
+        for invalid in (True, False, -1, '0'):
+            item['checkItemId'] = invalid
+            with self.assertRaises(ValueError):
+                service.project_detail(body)
+
+    def test_projection_logs_fixed_reason_without_source_or_exception_text(self):
+        private = 'PRIVATE-PROVIDER-MEASUREMENT-' + TOKEN
+        body = detail()
+        body['data']['qcConfig']['qcConfigCheckItemList'][0]['checkItemAppDetailVOS'][0]['min'] = private
+        with self.assertLogs(service.logger, level='INFO') as logs:
+            with self.assertRaises(ValueError):
+                service.project_detail(body)
+            with patch.object(service, '_project_detail', side_effect=RuntimeError(private)):
+                with self.assertRaises(RuntimeError):
+                    service.project_detail(body)
+        for record in logs.records:
+            self.assertEqual(record.qc_read_stage, 'projection')
+            self.assertEqual(record.qc_read_reason, 'projection_source_invalid')
+            self.assertIsNone(record.exc_info)
+            self.assertNotIn(private, str(record.__dict__))
+            self.assertNotIn(TOKEN, str(record.__dict__))
+
+
+    def test_zero_executor_reference_is_explicitly_missing_without_matching_lee(self):
+        body = detail()
+        body['data']['executor'] = {'id': 0}
+        result = service.project_detail(body)
+        self.assertTrue(result['executor_present'])
+        self.assertIsNone(result['executor_matches_lee'])
+        self.assertIsNone(result['executor_id'])
+        self.assertIn('executor_id', result['missing_fields'])
 
 
 class ApprovedQCReadTests(VaultFixture, TestCase):
@@ -270,3 +328,34 @@ class DefaultSenderSecurityTests(SimpleTestCase):
                 with self.assertRaises(exception):
                     self.invoke()
             session.post.assert_called_once()
+
+
+    def test_transport_diagnostics_bound_status_and_code_without_payload_or_error(self):
+        private = 'PRIVATE-RAW-' + TOKEN
+        for status, body, expected_status, expected_code, stage in (
+                (599, {'code': 200}, 'unknown', None, 'response_http'),
+                (200, {'code': 1000000001, 'message': private}, 200, None, 'response_envelope'),
+                (200, {'code': 403, 'message': private}, 200, 403, 'response_envelope'),
+                (200, {'code': True, 'message': private}, 200, None, 'response_envelope')):
+            sender = Mock(return_value=response(body, status=status))
+            transport = service.QCDetailReadTransport(InspectionUserAccessToken(
+                TOKEN, 9999999999, user_id=service.MES_USER_ID), sender=sender)
+            with self.subTest(status=status, code=body['code']), self.assertLogs(service.logger, level='INFO') as logs:
+                with self.assertRaises((MesOutcomeUnknown, MesAccessDenied, service.MesRejected)):
+                    transport.post_json(service.DETAIL_ROUTE, json.dumps({'id': service.QC_ID}))
+            record = logs.records[-1]
+            self.assertEqual(record.qc_read_stage, stage)
+            self.assertEqual(record.qc_read_http_status, expected_status)
+            self.assertEqual(record.qc_read_api_code, expected_code)
+            self.assertNotIn(private, str(record.__dict__))
+            self.assertNotIn(TOKEN, str(record.__dict__))
+            self.assertIsNone(record.exc_info)
+            sender.assert_called_once()
+        sender = Mock(side_effect=RuntimeError(private))
+        transport = service.QCDetailReadTransport(InspectionUserAccessToken(
+            TOKEN, 9999999999, user_id=service.MES_USER_ID), sender=sender)
+        with self.assertLogs(service.logger, level='INFO') as logs, self.assertRaises(MesOutcomeUnknown):
+            transport.post_json(service.DETAIL_ROUTE, json.dumps({'id': service.QC_ID}))
+        self.assertEqual(logs.records[-1].qc_read_stage, 'request')
+        self.assertNotIn(private, str(logs.records[-1].__dict__))
+        self.assertNotIn(TOKEN, str(logs.records[-1].__dict__))

@@ -1,3 +1,5 @@
+import logging
+
 from django.db.models import Q, Count, Max
 from django.utils.dateparse import parse_date
 from rest_framework import mixins, viewsets
@@ -13,6 +15,8 @@ from .inspection_models import InspectionRequest
 from .inspection_access import can_use_admin_inspection_flow
 from .inspection_validation import CreateInspectionSerializer, DraftInspectionSerializer, ActionSerializer
 from .inspection_workflow import can_access_beta, capabilities, serialize, operation_key, create_request, local_action, external_action
+
+logger = logging.getLogger(__name__)
 
 
 class InspectionReadPermission(BasePermission):
@@ -121,8 +125,10 @@ class InspectionRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
                 scope_denied = 'inspection_qc_read_scope_denied'
                 allowed = {APP_CREDENTIAL, CALLBACK, IDENTITY, POLICY, READ_AUTH,
                            TEMPORARY, UNAVAILABLE, scope_denied}
+                safe_code = code if code in allowed else UNAVAILABLE
+                logger.warning('MES_QC_READ_BLOCKED code=%s', safe_code)
                 response = Response({'detail': 'mes_qc_read_unavailable',
-                                     'code': code if code in allowed else UNAVAILABLE},
+                                     'code': safe_code},
                                     status=403 if code in {POLICY, UNAVAILABLE, scope_denied} else 502)
         response['Cache-Control'] = 'no-store, max-age=0'
         response['Referrer-Policy'] = 'no-referrer'

@@ -144,7 +144,10 @@ class ApprovedQCReadAPITests(VaultFixture, TestCase):
 
     def test_unknown_failure_uses_fixed_code_and_never_echoes_provider_text(self):
         self.read.side_effect = vault.VaultBlocked('https://provider.invalid/?token=' + TOKEN)
-        result = self.get()
+        with self.assertLogs('quality.inspection_views', level='WARNING') as logs:
+            result = self.get()
+        self.assertEqual(logs.output, [
+            'WARNING:quality.inspection_views:MES_QC_READ_BLOCKED code=inspection_credential_unavailable'])
         self.assertEqual(result.status_code, 502)
         self.assertEqual(result.json(), {'detail': 'mes_qc_read_unavailable',
             'code': 'inspection_credential_unavailable'})
