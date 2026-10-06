@@ -1,3 +1,5 @@
+import { IntegrationTrialBadge } from './TrialPresentation';
+import { isIntegrationTrial, integrationTrialCopy } from './integrationTrial';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { FormEvent } from 'react';
@@ -238,7 +240,8 @@ export default function InspectionRequestsPage() {
           {loading && !list && <p className="inspection-empty" role="status">{text.loading}</p>}
           {list && list.results.length === 0 && <p className="inspection-empty">{text.empty}</p>}
           {list && <ul>{list.results.map((item) => <li key={item.id}><button type="button" className="inspection-list-row" disabled={editorLocked && selectedId !== item.id} aria-current={!creating && selectedId === item.id ? 'true' : undefined} onClick={() => select(item.id)}>
-            <div><strong>#{item.id} · {item.work_order_ref}</strong><span className="inspection-status" data-status={item.status}>{inspectionRequestStatusLabels[lang][item.status] || item.status}</span></div>
+            <div><strong>#{item.id} · {item.work_order_ref}</strong><span className="inspection-status" data-status={item.status}>{isIntegrationTrial(item) ? `${integrationTrialCopy[lang].title} · ${inspectionRequestStatusLabels[lang][item.status] || item.status}` : inspectionRequestStatusLabels[lang][item.status] || item.status}</span></div>
+            {isIntegrationTrial(item) && <><IntegrationTrialBadge lang={lang} /><small>{integrationTrialCopy[lang].excluded}</small></>}
             <p>{item.part_no} · {item.equipment_ref}</p><small>{text.task}: {item.task_ref} · {item.target_quantity} {item.uom}</small>
             <small>{text.owner}: {item.assigned_to_name || text.unassigned}</small><small>{inspectionTime(item.created_at, lang)}</small>
             <small>{text.source}: {dataSource.requests}</small>
@@ -271,7 +274,7 @@ export default function InspectionRequestsPage() {
       {(creating || selectedId !== null) && <div className="inspection-detail-workspace" ref={detailRef} tabIndex={-1}>
         <div className="inspection-detail-navigation"><button className="inspection-button" type="button" disabled={editorLocked} onClick={closeDetail}>{canViewKanban ? text.returnToKanban : text.returnToList}</button>{editorLocked && <p className="inspection-muted" role="status">{text.navigationLocked}</p>}</div>
         {notice && <div className="inspection-message is-success" role="status">{notice}</div>}
-        {creating && inspector && capabilities?.can_manage ? <NewInspectionRequest key={`new-${inspector.id}-${editor.epoch}`} userId={inspector.id} sessionId={sessionId} lang={lang} dataMode={capabilities.data_mode} onDirty={onDirty} onLocked={onLocked} onCreated={(item) => { if (!ownsSession() || !isCurrentInspectionEditor(editor, currentEditor.current) || editor.kind !== 'create') return; openEditor('request', item.id); setDetail(item); setNotice(text.createSuccess); void loadList(); void loadKanban(); }} onCancel={closeDetail} />
+        {creating && inspector && capabilities?.can_manage ? <NewInspectionRequest key={`new-${inspector.id}-${editor.epoch}`} userId={inspector.id} sessionId={sessionId} lang={lang} dataMode={capabilities.data_mode} canPrepareIntegrationTrial={capabilities.can_prepare_integration_trial === true} onDirty={onDirty} onLocked={onLocked} onCreated={(item) => { if (!ownsSession() || !isCurrentInspectionEditor(editor, currentEditor.current) || editor.kind !== 'create') return; openEditor('request', item.id); setDetail(item); setNotice(text.createSuccess); void loadList(); void loadKanban(); }} onCancel={closeDetail} />
           : detailLoading ? <div className="inspection-empty" role="status">{text.loading}</div>
             : detailError ? <div className="inspection-detail"><div className="inspection-message is-error" role="alert">{detailError}</div><button type="button" className="inspection-button" onClick={() => { if (ownsSession()) setDetailRetry((value) => value + 1); }}>{text.retry}</button></div>
               : detail && inspector && capabilities ? <InspectionRequestDetail key={`${inspector.id}-${detail.id}-${editor.epoch}`} initial={detail} userId={inspector.id} sessionId={sessionId} lang={lang} globalCapabilities={capabilities} onChanged={onChanged} onDirty={onDirty} onLocked={onLocked} /> : <div className="inspection-empty">{text.select}</div>}

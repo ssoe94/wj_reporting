@@ -247,6 +247,26 @@ class LiveInspectionAdapterTests(APITestCase):
         return {'actor_id': self.editor.pk, 'request_id': row.pk, 'expected_version': row.version,
                 'binding': binding, 'provider_contract': provider}
 
+    def assert_trial_projection(self, request_id, *, phase, verdict):
+        from quality.inspection_kanban import business_date
+        response = self.client.get(self.base_url + 'kanban/',
+                                   {'date': business_date().isoformat()})
+        self.assertEqual(response.status_code, 200, response.data)
+        production_rows = [row for machine in response.data['machines']
+                           for row in machine['requests']] + response.data['unmapped_requests']
+        self.assertNotIn(request_id, {row['id'] for row in production_rows})
+        self.assertEqual(response.data['counts']['requests_displayed'], len(production_rows))
+        trial = next(row for row in response.data['integration_trials']
+                     if row['request_id'] == str(request_id))
+        self.assertIs(trial['test_only'], True)
+        self.assertIs(trial['production_counted'], False)
+        self.assertEqual(trial['test_label'], self.binding.test_label)
+        self.assertEqual(trial['phase'], phase)
+        self.assertEqual(trial['trial_verdict'], verdict)
+        self.assertIsNotNone(trial['observed_at'])
+        self.assert_private(response)
+        return trial
+
     def test_server_preparation_dry_run_then_single_actor_save_finish_projection(self):
         self._single_actor_save_finish_projection()
 
@@ -259,7 +279,7 @@ class LiveInspectionAdapterTests(APITestCase):
     def _single_actor_save_finish_projection(self, *, synthetic_items=0):
         from quality.inspection_pilot_preparation import prepare_pilot
         from quality.inspection_board_repository import read_persisted_board_source
-        from quality.inspection_board_status import BoardScope, project_machine_quality
+        from quality.inspection_board_status import BoardScope
         from quality.inspection_models import InspectionAudit
         from production.inspection_status_projection import build_inspection_board_fields
         from production.test_inspection_status_projection import row as canonical_row
@@ -386,11 +406,8 @@ class LiveInspectionAdapterTests(APITestCase):
             self.assertEqual(reloaded_finish.data['measurements'], entered['measurements'])
             self.assertEqual(reloaded_finish.data['mes_workflow']['phase'], 'completed')
             self.assertFalse(reloaded_finish.data['mes_workflow']['can_finish'])
-            source = read_persisted_board_source(scope)
-            self.assertIsNotNone(source)
-            projection = project_machine_quality(scope, bindings=source.bindings,
-                observations=source.observations, read=source.read, now=timezone.now())
-            self.assertEqual(projection['first']['checks'][0]['status'], 'passed')
+            self.assertIsNone(read_persisted_board_source(scope))
+            self.assert_trial_projection(row.pk, phase='completed', verdict='pass')
             context = {'injection': {'machine_rows': [production_row], 'last_plan_updated_at': now},
                        'machining': {'rows': []}}
             with patch('production.views.get_daily_production_context', return_value=context), \
@@ -399,7 +416,8 @@ class LiveInspectionAdapterTests(APITestCase):
                     '/api/production/status/', {'date': scope.business_date.isoformat()}))
             self.assertEqual(public.status_code, 200, public.data)
             board_row = public.data['injection'][0]
-            self.assertEqual(board_row['inspection_status']['first']['checks'][0]['status'], 'passed')
+            self.assertEqual(board_row['inspection_status']['first']['checks'], [])
+            self.assertEqual(board_row['inspection_status']['first']['status'], 'unknown')
             self.assertFalse(board_row['inspection_status']['complete'])
             self.assertEqual(board_row['total_planned'], 100)
             self.assertEqual(board_row['total_actual'], 40)
@@ -465,9 +483,9 @@ class LiveInspectionAdapterTests(APITestCase):
         self.assertEqual(self.calls, [])
         self.assertNotIn(TOKEN.encode(), bytes(MESCredential.objects.get(pk=self.editor.pk).ciphertext))
 
-    def test_verified_stages_publish_only_the_reviewed_plan_and_one_qc_check(self):
+    def test_verified_test_stages_stay_in_trial_projection_and_never_publish_production_checks(self):
         from quality.inspection_board_repository import read_persisted_board_source
-        from quality.inspection_board_status import BoardScope, project_machine_quality
+        from quality.inspection_board_status import BoardScope
         now = timezone.now()
         scope = BoardScope(now.date(), 1, 70, 'a' * 64)
         contract = deepcopy(self.contract)
@@ -479,21 +497,14 @@ class LiveInspectionAdapterTests(APITestCase):
         with override_settings(MES_INSPECTION_CONTRACT=json.dumps(contract)):
             saved = self.action(self.data, 'mes-save')
             self.assertEqual(saved.status_code, 200, saved.data)
-            source = read_persisted_board_source(scope)
-            self.assertIsNotNone(source)
-            self.assertEqual(source.observations[0].stage, 'in_progress')
-            self.assertFalse(source.read.complete)
+            self.assertIsNone(read_persisted_board_source(scope))
+            self.assert_trial_projection(self.data['id'], phase='saved', verdict=None)
             finished = self.action(saved.data, 'mes-finish')
             self.assertEqual(finished.status_code, 200, finished.data)
-            source = read_persisted_board_source(scope)
-            self.assertIsNotNone(source)
-            result = project_machine_quality(scope, bindings=source.bindings,
-                observations=source.observations, read=source.read, now=timezone.now())
-            self.assertEqual(result['first']['checks'][0]['status'], 'passed')
-            self.assertFalse(result['complete'])
-            self.assertEqual(result['first']['status'], 'unknown')
-            self.assertNotIn(self.binding.qc_id, str(result))
-            self.assertNotIn(TOKEN, str(result))
+            self.assertIsNone(read_persisted_board_source(scope))
+            self.assert_trial_projection(self.data['id'], phase='completed', verdict='pass')
+            self.assertEqual([path for path, _ in self.calls],
+                [TASK_DETAIL, ITEM_RECORD, TASK_DETAIL, TASK_DETAIL, TASK_FINISH, TASK_DETAIL])
             changed = BoardScope(scope.business_date, 1, 70, 'b' * 64)
             self.assertIsNone(read_persisted_board_source(changed))
 

@@ -4,6 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 import * as copy from '../src/pages/quality/inspection-requests/copy.ts';
 import * as kanban from '../src/pages/quality/inspection-requests/kanban.ts';
+import * as trials from '../src/pages/quality/inspection-requests/integrationTrial.ts';
 import * as filters from '../src/pages/quality/inspection-requests/managementFilters.ts';
 import { inspectionKanbanCopy } from '../src/pages/quality/inspection-requests/kanbanCopy.ts';
 
@@ -21,6 +22,7 @@ function harness(lang: 'ko' | 'zh') {
   const dependencies: Record<string, unknown> = {
     react: { useState: (initial: unknown) => [state ??= initial, (next: any) => { state = typeof next === 'function' ? next(state) : next; }] },
     'react/jsx-runtime': { jsx: (type: unknown, props: any) => ({ type, props }), jsxs: (type: unknown, props: any) => ({ type, props }), Fragment: 'Fragment' },
+    './integrationTrial': trials, './TrialPresentation': { IntegrationTrialBadge: 'IntegrationTrialBadge', IntegrationTrialSection: 'IntegrationTrialSection' },
     './MesReadObservationCard': { default: 'MesReadObservationCard' },
     'lucide-react': { AlertTriangle: 'Icon', RefreshCw: 'Icon' },
     './copy': copy, './kanban': kanban, './kanbanCopy': { inspectionKanbanCopy }, './managementFilters': filters,

@@ -159,6 +159,17 @@ class InspectionRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
                                      session=InspectionSession.from_request(request))
         return Response(data, status=status)
 
+    @action(detail=False, methods=['post'], url_path='integration-trial')
+    def integration_trial(self, request):
+        from .inspection_validation import CreateIntegrationTrialSerializer
+        from .inspection_integration_trial import create_local_trial
+        key = operation_key(request.headers.get('Idempotency-Key'))
+        serializer = CreateIntegrationTrialSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data, status = create_local_trial(request.user, key, serializer.validated_data,
+                                         session=InspectionSession.from_request(request))
+        return Response(data, status=status)
+
     def partial_update(self, request, pk=None):
         return self._mutation(request, pk, 'draft', DraftInspectionSerializer)
 

@@ -1,3 +1,5 @@
+import { IntegrationTrialBadge, IntegrationTrialSection } from './TrialPresentation';
+import { isIntegrationTrial } from './integrationTrial';
 import { useState } from 'react';
 import MesReadObservationCard from './MesReadObservationCard';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
@@ -25,7 +27,7 @@ export default function InspectionKanban({ snapshot, date, lang, now, loading, e
 }) {
   const text = inspectionKanbanCopy[lang];
   const common = inspectionCopy[lang];
-  const requests = snapshot ? [...snapshot.machines.flatMap((machine) => machine.requests), ...snapshot.unmapped_requests] : [];
+  const requests = snapshot ? [...snapshot.machines.flatMap((machine) => machine.requests), ...snapshot.unmapped_requests].filter((item) => !isIntegrationTrial(item)) : [];
   const counts = inspectionStageCounts(requests);
   const [filter, setFilter] = useState<ManagementFilter>({ stage: 'all', machine: 'all', search: '' });
   const visible = snapshot ? filterInspectionManagement(snapshot, filter) : null;
@@ -44,6 +46,7 @@ export default function InspectionKanban({ snapshot, date, lang, now, loading, e
     const alignment = inspectionPlanAlignment(item);
     return <li key={item.id}><button type="button" className="inspection-kanban-request" aria-current={selectedId === item.id ? 'true' : undefined} onClick={() => onSelect(item.id)}>
       <div className="inspection-kanban-request-heading"><strong>{text[kind]} <small>#{item.id}</small></strong><span className="inspection-status" data-stage={stage}>{text[stage]}</span></div>
+      {isIntegrationTrial(item) && <IntegrationTrialBadge lang={lang} />}
       <p>{item.part_no || text.noPart}</p><span>{common.workOrder}: {item.work_order_ref}</span><span>{common.task}: {item.task_ref}</span>
       <span>{item.parent ? `${common.parent}: #${item.parent} · ` : ''}{text.owner}: {item.assigned_to_name || common.unassigned}</span>
       {item.nonconformance && <span className="inspection-status" data-status="failed">{lang === 'ko' ? '불량조치 미해결' : '不合格处置未解决'}</span>}
@@ -93,6 +96,7 @@ export default function InspectionKanban({ snapshot, date, lang, now, loading, e
       {visible.unmappedPlans.length > 0 && <details className="inspection-fold"><summary>{text.unmappedPlans} ({visible.unmappedPlans.length})</summary><ul className="inspection-unmapped-plans">{visible.unmappedPlans.map((item) => <li key={item.id}><strong>{item.machine_name}</strong> · {item.part_no || text.noPart} · {text.seq} {item.sequence}</li>)}</ul></details>}
       {filtered && !visible.machines.length && !visible.unmappedRequests.length && !visible.unmappedPlans.length && !visible.mesUnmappedObservations.length && <p className="inspection-empty" role="status">{text.noMatches}</p>}
       <details className="inspection-fold"><summary>{text.dryRun} · {text.dryRunHint}</summary><p className="inspection-muted">{text.reviewPause}: {candidates.review_pause} · {text.reviewResume}: {candidates.review_resume} · {text.reviewAlignment}: {candidates.review_alignment}</p><p className="inspection-muted">{text.dryRunBasis}</p></details>
+      <IntegrationTrialSection rows={snapshot.integration_trials} available={Array.isArray(snapshot.integration_trials) && !error} lang={lang} onSelect={onSelect} />
       <p className="inspection-kanban-freshness">{text.refreshed}: {inspectionTime(snapshot.generated_at, lang)} · {text.planUpdated}: {inspectionTime(snapshot.plan_snapshot.latest_changed_at, lang)}</p>
     </>}
   </section>;

@@ -9,9 +9,10 @@ export type InspectionDraft = {
   inspected_quantity: string; accepted_quantity: string; rejected_quantity: string;
   judgement: InspectionJudgement; notes: string;
 };
+export type InspectionType = 'first' | 'process' | 'final' | 'general';
 export type InspectionCreate = {
   work_order_ref: string; task_ref: string; part_no: string; equipment_ref: string;
-  inspection_type: 'first' | 'process' | 'final'; target_quantity: string; uom: string;
+  inspection_type: InspectionType; target_quantity: string; uom: string;
   warehouse_ref: string; lot_ref: string; work_started_at: string; inspection_items: InspectionItem[];
   require_evidence: boolean; quantity_mode: 'recorded' | 'not_recorded';
   judgement_policy: 'strict_items' | 'independent';
@@ -22,7 +23,7 @@ export type InspectionRecordCapabilities = {
 };
 export type InspectionMesWorkflow = {
   phase: 'unbound' | 'ready' | 'save_pending' | 'save_unknown' | 'saved' | 'finish_pending' | 'finish_unknown' | 'completed' | 'blocked';
-  enabled: boolean; test_label: string | null; last_verified_at: string | null;
+  enabled: boolean; test_only?: boolean; qc_code?: string | null; test_label: string | null; last_verified_at: string | null;
   can_save: boolean; can_finish: boolean; can_reconcile: boolean;
 };
 export type InspectionRequest = InspectionCreate & InspectionDraft & {
@@ -38,6 +39,7 @@ export type InspectionRequest = InspectionCreate & InspectionDraft & {
   capabilities: InspectionRecordCapabilities;
 };
 export type InspectionCapabilities = {
+  can_prepare_integration_trial?: boolean;
   data_mode: InspectionDataMode;
   can_view: boolean; can_manage: boolean; can_submit: boolean; can_review: boolean;
   access_scope: 'all' | 'assigned_only'; can_view_kanban: boolean;
@@ -55,9 +57,18 @@ export type InspectionList = {
 export function inspectionCreatePayload(form: InspectionCreate): Record<string, unknown> {
   return { work_order_ref: form.work_order_ref.trim(), task_ref: form.task_ref.trim(), part_no: form.part_no.trim(), equipment_ref: form.equipment_ref.trim(), inspection_type: form.inspection_type,
     target_quantity: form.target_quantity.trim(), uom: form.uom.trim(), warehouse_ref: form.warehouse_ref.trim(), lot_ref: form.lot_ref.trim(), work_started_at: new Date(form.work_started_at).toISOString(), require_evidence: form.require_evidence, quantity_mode: form.quantity_mode, judgement_policy: form.judgement_policy,
-    inspection_items: form.inspection_items.map(({ id, label, kind, options, unit, required, evidence_required, minimum, maximum }) => ({ id, label: label.trim(), kind, unit: unit.trim(), required, evidence_required,
-      ...(kind === 'choice' ? { options: (options || []).map((option) => option.trim()) } : {}),
-      ...(kind === 'number' && minimum ? { minimum: minimum.trim() } : {}), ...(kind === 'number' && maximum ? { maximum: maximum.trim() } : {}) })) };
+    inspection_items: inspectionItemPayload(form.inspection_items) };
+}
+export type InspectionPreparationDraft = InspectionCreate & { preparation_mode?: 'production' | 'integration_trial'; trial_code?: string };
+function inspectionItemPayload(items: InspectionItem[]) {
+  return items.map(({ id, label, kind, options, unit, required, evidence_required, minimum, maximum }) => ({ id, label: label.trim(), kind, unit: unit.trim(), required, evidence_required,
+    ...(kind === 'choice' ? { options: (options || []).map((option) => option.trim()) } : {}),
+    ...(kind === 'number' && minimum ? { minimum: minimum.trim() } : {}), ...(kind === 'number' && maximum ? { maximum: maximum.trim() } : {}) }));
+}
+export function integrationTrialCreatePayload(form: Pick<InspectionPreparationDraft, 'trial_code' | 'inspection_items'>): Record<string, unknown> {
+  const code = (form.trial_code || '').trim();
+  if (!/^WJ-IT-[A-Z0-9][A-Z0-9-]{0,47}$/.test(code)) throw new Error('integration_trial_code_invalid');
+  return { code, inspection_items: inspectionItemPayload(form.inspection_items) };
 }
 
 export function editableInspectionDraft(request: InspectionRequest): InspectionDraft {

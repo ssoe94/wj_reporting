@@ -38,6 +38,7 @@ def capabilities(user):
     for action in ('manage', 'submit', 'review'):
         result['can_' + action] = (can_edit and (action != 'review' or admin)
                                    and user.has_perm('quality.' + action + '_inspectionrequest'))
+    result['can_prepare_integration_trial'] = bool(result['can_manage'] and user.is_superuser)
     result['mes'] = inspection_adapter.get_inspection_adapter().capabilities()
     return result
 
@@ -48,6 +49,8 @@ def require(user, permission):
 
 
 def reinspection_allowed(request):
+    if request.source_kind == 'integration_test':
+        return False
     eligible = request.status in {'failed', 'rejected'} or (
         request.status == 'approved' and request.judgement == 'fail'
         and request.reviewed_by_id and request.reviewed_by_id != request.submitted_by_id)
@@ -77,9 +80,9 @@ def request_capabilities(request, user):
         'can_review_failure': caps['can_review'] and request.status == 'failed' and request.submitted_by_id != user.pk,
         'can_review': caps['can_review'] and request.status == 'submitted' and request.submitted_by_id != user.pk,
         'can_reinspect': caps['can_manage'] and accessible and reinspection_allowed(request),
-        'can_refresh': caps['can_view'] and accessible and enabled,
+        'can_refresh': caps['can_view'] and accessible and enabled and request.source_kind != 'integration_test',
         'can_sync': (caps['can_submit'] and can_use_admin_inspection_flow(user)
-                     and accessible and enabled and final and not uncertain),
+                     and accessible and enabled and final and not uncertain and request.source_kind != 'integration_test'),
     }
 
 
@@ -349,6 +352,8 @@ def external_action(user, request_id, action, key, payload, *, session):
         lock_scope(f'inspection:{request_id}')
         request = InspectionRequest.objects.select_for_update().get(pk=request_id)
         require_owned_request(user, request)
+        if request.source_kind == 'integration_test':
+            raise InspectionConflict('separate_mes_stages_required', 'Use separate MES save, finish and reconciliation actions.')
         previous = existing_operation(scope, key, canonical)
         if previous:
             return replay(previous, user)

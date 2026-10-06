@@ -150,8 +150,12 @@ class InspectionWriteAcknowledgement:
 
 class BlacklakeInspectionTransport:
     def __init__(self, work_order_id, *, qc_task_id=None, origin='https://v3-ali.blacklake.cn',
-                 token_provider=None, sender=None, write_authorization=None, eligibility_user_id=None):
-        self.work_order_id = mes_id(work_order_id)
+                 token_provider=None, sender=None, write_authorization=None, eligibility_user_id=None,
+                 standalone_test=False):
+        if type(standalone_test) is not bool or (standalone_test and (work_order_id is not None or qc_task_id is None)):
+            raise ValueError('Standalone transport requires one QC and no production work order.')
+        self._standalone_test = standalone_test
+        self.work_order_id = None if standalone_test else mes_id(work_order_id)
         self.qc_task_id = mes_id(qc_task_id) if qc_task_id is not None else None
         self._eligibility_user_id = mes_id(eligibility_user_id) if eligibility_user_id is not None else None
         if self._eligibility_user_id is not None and (self.qc_task_id is None or write_authorization is not None):
@@ -169,6 +173,8 @@ class BlacklakeInspectionTransport:
         self._finish_attempted = False
 
     def _read_body(self, route, text):
+        if self._standalone_test and route != ROUTE_BASE + TASK_DETAIL:
+            raise ValueError('Standalone trials only read their exact QC detail.')
         if self._eligibility_user_id is not None and route != ROUTE_BASE + TASK_DETAIL:
             raise ValueError('Eligibility comparison only reads the bound QC detail.')
         if not isinstance(text, str) or len(text.encode()) > 131072:

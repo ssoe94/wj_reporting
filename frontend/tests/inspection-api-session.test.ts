@@ -21,6 +21,7 @@ type InspectionApi = {
   getInspectionRequests: (search: string, status: string, page: number, sessionId: SessionId) => Promise<unknown>;
   getInspectionKanban: (date: string, sessionId: SessionId) => Promise<unknown>;
   getInspectionRequest: (id: number, sessionId: SessionId) => Promise<unknown>;
+  createIntegrationTrial: (attempt: MutationAttempt, sessionId: SessionId) => Promise<unknown>;
   mutateInspectionRequest: (id: number, attempt: MutationAttempt, sessionId: SessionId) => Promise<unknown>;
 };
 
@@ -33,7 +34,7 @@ const apiSource = stripTypeScriptTypes(readFileSync(new URL('../src/pages/qualit
 const instantiateApi = new Function('http', 'assertAuthSessionCurrent', 'validateInspectionKanban', 'parseInspectionAccess', 'parseMesDetailPreview', `${apiSource}\nreturn {
   getMesDetailPreview,
   getInspectionCapabilities, getInspectionRequests, getInspectionKanban,
-  getInspectionRequest, mutateInspectionRequest,
+  getInspectionRequest, mutateInspectionRequest, createIntegrationTrial,
 };`);
 
 function deferred() {
@@ -98,6 +99,10 @@ const mutations: Operation[] = actions.map((action) => {
     result: { id: action === 'create' || action === 'reinspect' ? 77 : 42, version: 4 },
   };
 });
+const trialAttempt: MutationAttempt = { action: 'create', key: 'SYNTHETIC-TRIAL-KEY', payload: { code: 'WJ-IT-SYNTHETIC-01', inspection_items: [] } };
+mutations.push({ name: 'integration trial preparation', invoke: (api, sessionId) => api.createIntegrationTrial(trialAttempt, sessionId),
+  expected: { method: 'post', url: `${BASE}integration-trial/`, payload: trialAttempt.payload,
+    config: { authSessionId: SESSION_A, headers: { 'Idempotency-Key': trialAttempt.key } } }, result: { id: 77, source_kind: 'integration_test' } });
 const operations = [...reads, ...mutations];
 
 for (const operation of operations) {
@@ -209,4 +214,14 @@ test('late pending mutation responses are rejected by session before returning t
     await assert.rejects(pending, (error) => error === fixture.staleSession);
     assert.deepEqual(fixture.calls, [operation.expected]);
   }
+});
+
+test('trial preparation rejects broader payloads and wrong response classification', async () => {
+  for (const payload of [{ ...trialAttempt.payload, work_order_ref: 'WO' }, { ...trialAttempt.payload, code: 'production' }]) {
+    const fixture = scenario(async () => ({ status: 201, data: { id: 77, source_kind: 'integration_test' } }));
+    await assert.rejects(fixture.api.createIntegrationTrial({ ...trialAttempt, payload }, SESSION_A), /Invalid integration trial/);
+    assert.equal(fixture.calls.length, 0);
+  }
+  const fixture = scenario(async () => ({ status: 201, data: { id: 77, source_kind: 'manual' } }));
+  await assert.rejects(fixture.api.createIntegrationTrial(trialAttempt, SESSION_A), /Integration trial identity mismatch/);
 });

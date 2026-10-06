@@ -69,11 +69,24 @@ def binding_contract(binding, request, *, preparation_policy=None):
     contract = binding.contract
     expected_keys = {'production_task_id', 'equipment_id', 'snapshot_id', 'actor_id',
         'target_reference', 'mapping_reference', 'label_reference', 'side_effect_reference', 'items'}
+    from .inspection_integration_trial import SOURCE_KIND, standalone, validate_target
+    isolated = standalone(binding)
+    if isolated != (request.source_kind == SOURCE_KIND):
+        raise MesContractUnavailable()
+    if isolated:
+        expected_keys = expected_keys - {'production_task_id', 'equipment_id'} | {'context', 'qc_code', 'config_code'}
     if not isinstance(contract, dict) or set(contract) != expected_keys:
         raise MesContractUnavailable()
-    for key in ('production_task_id', 'equipment_id', 'snapshot_id', 'actor_id'):
+    for key in (('snapshot_id', 'actor_id') if isolated else ('production_task_id', 'equipment_id', 'snapshot_id', 'actor_id')):
         mes_id(contract[key])
-    mes_id(binding.qc_id); mes_id(binding.work_order_id)
+    mes_id(binding.qc_id)
+    if isolated:
+        try:
+            validate_target(binding, request)
+        except (ValueError, KeyError):
+            raise MesContractUnavailable() from None
+    else:
+        mes_id(binding.work_order_id)
     if (not binding.tenant.strip() or binding.reviewed_result_digest != digest(result_payload(request))
             or request.status != 'approved' or not _review_valid(binding, request, preparation_policy)
             or not binding.test_only
@@ -114,8 +127,8 @@ def binding_contract(binding, request, *, preparation_policy=None):
 
 def read_evidence(adapter, binding, request, started_at, *, require_values):
     observed = adapter.read(binding)
-    identity = {'tenant': binding.tenant, 'qc_id': binding.qc_id, 'work_order_id': binding.work_order_id,
-        **{key: str(binding.contract[key]) for key in ('production_task_id', 'equipment_id', 'snapshot_id')}}
+    from .inspection_integration_trial import identity as target_identity
+    identity = target_identity(binding)
     if not isinstance(observed, dict) or observed.get('identity') != identity:
         raise MesOutcomeUnknown()
     at = observed.get('observed_at')
@@ -156,6 +169,11 @@ def read_evidence(adapter, binding, request, started_at, *, require_values):
     else:
         observed_digest = ''
     result = {'state': observed['state'], 'observed_at': at, 'evidence_digest': observed_digest}
+    if require_values and binding.test_only:
+        result['trial_observation'] = {'schema': 'integration-trial-observation.v1',
+            'identity': {'qc_id': binding.qc_id}, 'state': observed['state'],
+            'judgement': inspection_result, 'observed_at': at.isoformat(),
+            'evidence_digest': observed_digest}
     if require_values and hasattr(adapter, 'board_observation'):
         result['board_observation'] = adapter.board_observation(binding, observed, observed_digest)
     return result
@@ -181,7 +199,12 @@ def stage_summary(request, user):
     caps = capabilities(user)
     allowed = bool(not pending and can_access_request(user, request) and request.status == 'approved')
     phase = binding.phase if binding else 'unbound'
-    return {'phase': phase, 'enabled': enabled, 'test_label': binding.test_label if binding else None,
+    trial = request.mes_snapshot.get('integration_trial') if type(request.mes_snapshot) is dict else None
+    trial = trial if type(trial) is dict else {}
+    return {'phase': phase, 'enabled': enabled,
+        'test_only': bool((binding and binding.test_only) or request.source_kind == 'integration_test'),
+        'qc_code': binding.contract.get('qc_code') if binding else trial.get('qc_code'),
+        'test_label': binding.test_label if binding else trial.get('test_label'),
         'last_verified_at': binding.last_verified_at.isoformat() if binding and binding.last_verified_at else None,
         'can_save': bool(allowed and caps['can_submit'] and enabled and valid and not unknown_write and phase == 'ready'),
         'can_finish': bool(allowed and caps['can_submit'] and enabled and valid and not unknown_write and phase == 'saved'),
@@ -320,6 +343,8 @@ def _stage_dispatch(user, request_id, action, request, binding, op, reserved_ver
             request.mes_checked_at = evidence['observed_at']
             if evidence.get('board_observation') is not None:
                 request.mes_snapshot = {**request.mes_snapshot, 'verified_stage': evidence['board_observation']}
+            if evidence.get('trial_observation') is not None:
+                request.mes_snapshot = {**request.mes_snapshot, 'verified_trial': evidence['trial_observation']}
             if action == 'mes-reconcile':
                 # Terminal finish or matching saved values settle only the
                 # appropriate durable stages. No write is dispatched here.

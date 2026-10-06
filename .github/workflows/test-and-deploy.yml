@@ -95,7 +95,9 @@ jobs:
             quality.test_inspection_beta_access \
             quality.test_inspection_live_adapter \
             quality.test_inspection_live_readback \
-            quality.test_inspection_board_repository
+            quality.test_inspection_board_repository \
+            quality.test_inspection_integration_trial \
+            quality.test_inspection_integration_trial_board
 
       - name: Validate PostgreSQL OAuth replay and migration contracts
         run: |
@@ -107,7 +109,8 @@ jobs:
           python scripts/check-mes-oauth-postgres-local.py \
             --postgres-bin="$postgres_bin" --fixture-name=pg-ci \
             mes_oauth account_activation quality.test_inspection_live_adapter \
-            quality.test_inspection_live_readback quality.test_inspection_board_repository
+            quality.test_inspection_live_readback quality.test_inspection_board_repository \
+            quality.test_inspection_integration_trial quality.test_inspection_integration_trial_board
 
       - name: Validate isolated PostgreSQL inspection contracts
         run: |

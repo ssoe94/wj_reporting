@@ -96,7 +96,9 @@ class InspectionProviderPolicy:
 
     def matches(self, binding):
         try:
+            from .inspection_integration_trial import standalone
             return (self.current() and binding.test_only is True
+                and standalone(binding) == ('standalone_test_reference' in self.data)
                 and str(binding.request_id) == self.data['request_id']
                 and binding.tenant == self.data['tenant']
                 and binding.qc_id == self.data['qc_id']
@@ -120,13 +122,17 @@ def parse_policy(raw):
             raise ValueError()
         value = json.loads(raw, object_pairs_hook=_pairs,
                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
-        if type(value) is not dict or set(value) - {'board_binding', 'single_actor_test_reference'} != {
+        if type(value) is not dict or set(value) - {'board_binding', 'single_actor_test_reference', 'standalone_test_reference'} != {
             'reference', 'authority_reference', 'expires_at', 'actor_id', 'mes_user_id',
             'tenant', 'origin', 'request_id', 'qc_id', 'work_order_id', 'binding_digest',
             'initial_records_digest', 'detail_contract'}:
             raise ValueError()
         if ('single_actor_test_reference' in value
                 and not _reference(value['single_actor_test_reference'])):
+            raise ValueError()
+        isolated = 'standalone_test_reference' in value
+        if isolated and (not _reference(value['standalone_test_reference'])
+                         or 'board_binding' in value or value.get('work_order_id') != ''):
             raise ValueError()
         if (not all(_reference(value[key]) for key in ('reference', 'authority_reference', 'tenant'))
                 or type(value['actor_id']) is not int or value['actor_id'] < 1
@@ -135,7 +141,7 @@ def parse_policy(raw):
                 or value['tenant'] != getattr(settings, 'MES_USER_TOKEN_TENANT_REFERENCE', '')
                 or not _hex(value['binding_digest']) or not _hex(value['initial_records_digest'])):
             raise ValueError()
-        for key in ('mes_user_id', 'qc_id', 'work_order_id', 'request_id'):
+        for key in (('mes_user_id', 'qc_id', 'request_id') if isolated else ('mes_user_id', 'qc_id', 'work_order_id', 'request_id')):
             if type(value[key]) is not str:
                 raise ValueError()
             mes_id(value[key])
@@ -148,8 +154,8 @@ def parse_policy(raw):
                 'verdict_codes', 'executor_path', 'label_path', 'check_type', 'source_checks'}
                 or not _reference(detail['reference'])
                 or detail['executor_path'] != ['executor', 'id']
-                or detail['label_path'] != ['remark']
-                or type(detail['check_type']) is not int or detail['check_type'] not in {3, 4, 5}
+                or detail['label_path'] != (['code'] if isolated else ['remark'])
+                or type(detail['check_type']) is not int or detail['check_type'] not in ({6} if isolated else {3, 4, 5})
                 or type(detail['source_checks']) is not list or not 1 <= len(detail['source_checks']) <= 32):
             raise ValueError()
         states = detail['lifecycle_codes']
@@ -249,9 +255,13 @@ class LiveInspectionStageAdapter:
             raise MesContractUnavailable()
         authorization = None if stages is None else ReviewedWriteAuthorization(
             binding.qc_id, stages_digest(stages), self.policy.data['authority_reference'])
-        return BlacklakeInspectionTransport(binding.work_order_id, qc_task_id=binding.qc_id,
+        from .inspection_integration_trial import standalone
+        isolated = standalone(binding)
+        if isolated != ('standalone_test_reference' in self.policy.data):
+            raise MesContractUnavailable()
+        return BlacklakeInspectionTransport(None if isolated else binding.work_order_id, qc_task_id=binding.qc_id,
             origin=self.policy.data['origin'], token_provider=lambda: token, sender=self.sender,
-            write_authorization=authorization)
+            write_authorization=authorization, standalone_test=isolated)
 
     def read(self, binding):
         from .inspection_live_readback import decode_live_detail

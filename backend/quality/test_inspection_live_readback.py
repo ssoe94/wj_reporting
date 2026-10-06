@@ -16,6 +16,7 @@ NOW = datetime(2026, 10, 4, 10, 0, tzinfo=timezone.utc)
 class LiveReadbackTests(unittest.TestCase):
     def setUp(self):
         self.binding = SimpleNamespace(tenant='SYNTHETIC-TENANT', qc_id='91000000000000001',
+            request=SimpleNamespace(source_kind='local_manual'),
             work_order_id='91000000000000002', test_label='SYNTHETIC-PERMANENT-TEST-LABEL',
             contract={'production_task_id': '91000000000000003', 'equipment_id': '91000000000000004',
                 'snapshot_id': '91000000000000005', 'actor_id': '91000000000000006',

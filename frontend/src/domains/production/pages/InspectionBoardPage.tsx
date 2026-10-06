@@ -1,3 +1,6 @@
+import { useAuth } from '@/contexts/AuthContext';
+import { getInspectionCapabilities, getInspectionKanban } from '@/pages/quality/inspection-requests/api';
+import { IntegrationTrialSection } from '@/pages/quality/inspection-requests/TrialPresentation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -61,7 +64,16 @@ function StateMark({ state, text }: { state: QualityCheckStatus; text: string })
   </span>;
 }
 
+function InspectionBoardTrials({ sessionId, date, lang }: { sessionId: string; date: string; lang: 'ko' | 'zh' }) {
+  const access = useQuery({ queryKey: ['inspection-trial-access', sessionId], queryFn: () => getInspectionCapabilities(sessionId), retry: false, gcTime: 0, refetchInterval: 60_000 });
+  const allowed = !access.isError && access.data?.can_view === true && access.data.access_scope === 'all' && access.data.can_view_kanban === true;
+  const trials = useQuery({ queryKey: ['inspection-board-trials', sessionId, date], queryFn: () => getInspectionKanban(date, sessionId), enabled: allowed, retry: false, gcTime: 0, refetchInterval: allowed ? 60_000 : false });
+  if (!allowed) return null;
+  return <IntegrationTrialSection rows={trials.data?.integration_trials} available={!trials.isError && Array.isArray(trials.data?.integration_trials)} lang={lang} />;
+}
+
 export function InspectionBoardPage() {
+  const { authSessionId, canAccessInspection, isAuthenticated, isLoggingOut } = useAuth();
   const [language, setLanguage] = useStoredLanguage();
   const copy = COPY[language];
   const businessDate = useShanghaiBusinessDate();
@@ -182,6 +194,7 @@ export function InspectionBoardPage() {
         <p className="inspection-board-motion-note">{copy.motionNote}</p>
       </aside>
     </div>
+    {isAuthenticated && canAccessInspection && authSessionId && !isLoggingOut && <InspectionBoardTrials key={authSessionId} sessionId={authSessionId} date={businessDate} lang={language} />}
     <footer className="inspection-board-footer"><Link to="/boards/injection"><ArrowLeft size={15} />{copy.injectionBoard}</Link><span>{copy.date} {businessDate} · Asia/Shanghai</span></footer>
   </main>;
 }

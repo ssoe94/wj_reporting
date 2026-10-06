@@ -65,6 +65,8 @@ def _decode(record, scope, now):
     stage = record['stage']
     if (type(stage) is not dict or set(stage) != STAGE_KEYS or stage['schema'] != SCHEMA
             or record['sync_status'] != 'succeeded'
+            or record['source_kind'] == 'integration_test'
+            or record['mes_binding__test_only'] is not False
             or record['mes_binding__request_id'] != record['pk']):
         raise ValueError('Unverified stage record.')
     identity, plan = stage['identity'], stage['plan_binding']
@@ -133,11 +135,13 @@ def read_persisted_board_source(scope, *, now=None):
         return None
     try:
         records = list(InspectionRequest.objects.filter(
+            mes_binding__test_only=False,
             mes_snapshot__verified_stage__plan_binding__business_date=scope.business_date.isoformat(),
             mes_snapshot__verified_stage__plan_binding__machine_number=scope.machine_number,
             mes_snapshot__verified_stage__plan_binding__current_plan_id=scope.current_plan_id,
             mes_snapshot__verified_stage__plan_binding__plan_version=scope.plan_version,
-        ).order_by('pk').values('pk', 'sync_status', 'mes_binding__request_id',
+        ).exclude(source_kind='integration_test').order_by('pk').values('pk', 'source_kind',
+            'sync_status', 'mes_binding__test_only', 'mes_binding__request_id',
             'mes_binding__tenant', 'mes_binding__qc_id', 'mes_binding__work_order_id',
             'mes_binding__contract', 'mes_binding__phase', 'mes_binding__evidence_digest',
             'mes_binding__last_verified_at', stage=F('mes_snapshot__verified_stage'))[:LIMIT + 1])

@@ -178,3 +178,14 @@ test('previous-production-day badge uses finite strict boundary comparison, neve
     assert.equal(inspectionPredatesBusinessDay(dayStart, value), false);
   }
 });
+
+test('trial requests stay outside production cards and counts for default and searched projections', () => {
+  const source = snapshot();
+  source.machines[0].requests.push(request(501, { source_kind: 'integration_test' }));
+  source.unmapped_requests.push(request(502, { mes_workflow: { test_only: true } as KanbanInspectionRequest['mes_workflow'] }));
+  const before = structuredClone(source);
+  assert.equal(filterInspectionManagement(source, all).requestCount, 9);
+  assert.equal(filterInspectionManagement(source, { ...all, search: '501' }).requestCount, 0);
+  assert.equal(filterInspectionManagement(source, { ...all, machine: 'unmapped' }).requestCount, 2);
+  assert.deepEqual(source, before);
+});

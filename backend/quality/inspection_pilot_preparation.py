@@ -82,7 +82,12 @@ def _prepare(manifest, *, apply=False, allow_single_actor_test=False):
         binding = InspectionMesBinding(request=row, test_only=True, **candidate)
         # The first provider read has not happened; this nullable observation
         # timestamp intentionally remains empty (the model is not a form).
-        binding.full_clean(exclude=['last_verified_at'])
+        from .inspection_integration_trial import standalone, validate_target
+        excluded = ['last_verified_at']
+        if standalone(binding):
+            validate_target(binding, row)
+            excluded.append('work_order_id')
+        binding.full_clean(exclude=excluded)
         if (binding_digest(binding) != policy.data['binding_digest']
                 or binding.qc_id != policy.data['qc_id'] or binding.tenant != policy.data['tenant']
                 or binding.work_order_id != policy.data['work_order_id']

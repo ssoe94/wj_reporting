@@ -130,7 +130,10 @@ def _review(binding, contract, observed_at):
     if _overlap(executor_path, label_path):
         raise _Invalid()
     check_type = contract['check_type']
-    if type(check_type) is not int or check_type not in {3, 4, 5}:
+    from .inspection_integration_trial import standalone, identity as target_identity
+    isolated = standalone(binding)
+    if (type(check_type) is not int or check_type not in ({6} if isolated else {3, 4, 5})
+            or (isolated and label_path != ('code',))):
         raise _Invalid()
     checks = []
     for check in _list(contract['source_checks'], 32, minimum=1):
@@ -142,9 +145,8 @@ def _review(binding, contract, observed_at):
             raise _Invalid()
         checks.append((path, value))
     binding_contract = _object(binding.contract)
-    identity = {'tenant': _text(binding.tenant, 128), 'qc_id': _id(binding.qc_id),
-        'work_order_id': _id(binding.work_order_id),
-        **{key: _id(binding_contract[key]) for key in ('production_task_id', 'equipment_id', 'snapshot_id')}}
+    identity = target_identity(binding)
+    _text(identity['tenant'], 128)
     actor, label = _id(binding_contract['actor_id']), _text(binding.test_label, 500)
     config_keys, record_keys, locals_seen, writes_seen = set(), set(), set(), set()
     for item in _list(binding_contract['items'], _MAX_ITEMS, minimum=1):
@@ -198,13 +200,28 @@ def decode_live_detail(response, *, binding, detail_contract, observed_at):
             raise _Invalid()
         data = _object(response.get('data'))
         config = _object(data.get('qcConfig'))
-        raw_identity = {'tenant': identity['tenant'], 'qc_id': _id(data.get('id')),
-            'work_order_id': _id(_at(data, ('workOrder', 'id'))),
-            'production_task_id': _id(_at(data, ('produceTask', 'id'))),
-            'equipment_id': _id(_at(data, ('equipment', 'id'))),
-            'snapshot_id': _id(config.get('snapshotId'))}
+        from .inspection_integration_trial import standalone
+        isolated = standalone(binding)
+        if isolated:
+            if (any(data.get(key, _MISSING) is not None for key in
+                    ('workOrder', 'produceTask', 'equipment', 'inboundOrder', 'outboundOrder', 'approvalDetail'))
+                    or any(type(data.get(key)) is not list or data[key] != []
+                           for key in ('checkMaterials', 'sampleMaterials'))
+                    or config.get('code') != binding.contract['config_code']
+                    or _enum(config.get('qcRange')) != 1):
+                raise _Invalid()
+            raw_identity = {'tenant': identity['tenant'], 'qc_id': _id(data.get('id')),
+                            'work_order_id': None, 'production_task_id': None, 'equipment_id': None,
+                            'snapshot_id': _id(config.get('snapshotId'))}
+        else:
+            raw_identity = {'tenant': identity['tenant'], 'qc_id': _id(data.get('id')),
+                'work_order_id': _id(_at(data, ('workOrder', 'id'))),
+                'production_task_id': _id(_at(data, ('produceTask', 'id'))),
+                'equipment_id': _id(_at(data, ('equipment', 'id'))),
+                'snapshot_id': _id(config.get('snapshotId'))}
+        expected_label = binding.contract['qc_code'] if isolated else label
         if (raw_identity != identity or _id(_at(data, executor_path)) != actor
-                or type(_at(data, label_path)) is not str or _at(data, label_path) != label):
+                or type(_at(data, label_path)) is not str or _at(data, label_path) != expected_label):
             raise _Invalid()
         for path, expected in checks:
             actual = _at(data, path)
@@ -215,7 +232,7 @@ def decode_live_detail(response, *, binding, detail_contract, observed_at):
         # This release supports only the reviewed no-quantity/no-attachment case.
         # Source checks must pin any additional provider-specific requirements.
         if (_enum(config.get('recordSample')) != 2 or _enum(config.get('recordSummaryCount')) != 2
-                or _enum(config.get('materialBatchRecordType')) not in {1, 2}
+                or _enum(config.get('materialBatchRecordType')) not in ({1} if isolated else {1, 2})
                 or _enum(config.get('sampleProcessMethod')) != 1):
             raise _Invalid()
         state = by_state.get(_enum(data.get('status')))

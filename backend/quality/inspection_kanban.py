@@ -14,6 +14,51 @@ from .inspection_read_snapshot import get_read_batch, project_observations
 
 SHANGHAI = ZoneInfo('Asia/Shanghai')
 ROW_LIMIT = 500
+TRIAL_SCHEMA = 'integration-trial-observation.v1'
+TRIAL_PHASES = {'ready', 'save_pending', 'save_unknown', 'saved', 'finish_pending',
+                'finish_unknown', 'completed', 'blocked'}
+
+
+def _trial_projection(request, *, now):
+    """Display server-owned trial metadata; never substitute local judgement."""
+    binding = getattr(request, 'mes_binding', None)
+    contract = binding.contract if binding and type(binding.contract) is dict else {}
+    code = contract.get('qc_code')
+    code = code if type(code) is str and code.strip() and len(code) <= 128 else None
+    phase = binding.phase if binding and binding.phase in TRIAL_PHASES else 'unbound'
+    verdict, observed = None, None
+    snapshot = request.mes_snapshot
+    proof = snapshot.get('verified_trial') if type(snapshot) is dict else None
+    if (binding and binding.test_only is True and request.sync_status == 'succeeded'
+            and type(proof) is dict and set(proof) == {
+                'schema', 'identity', 'state', 'judgement', 'observed_at', 'evidence_digest'}
+            and proof['schema'] == TRIAL_SCHEMA
+            and proof['identity'] == {'qc_id': binding.qc_id}
+            and type(proof['evidence_digest']) is str
+            and re.fullmatch(r'[a-f0-9]{64}', proof['evidence_digest'])
+            and proof['evidence_digest'] == binding.evidence_digest):
+        state = proof['state']
+        expected_phase = {'open': 'saved', 'completed': 'completed', 'approval_pending': 'completed'}
+        expected_completion = {'open': 'not_completed', 'completed': 'completed',
+                               'approval_pending': 'approval_pending'}
+        try:
+            stamp = datetime.fromisoformat(proof['observed_at'])
+            judgement = proof['judgement']
+            valid_judgement = (type(judgement) is str and judgement in {'pass', 'fail'})
+            if (stamp.utcoffset() is not None and stamp <= now
+                    and stamp == binding.last_verified_at
+                    and expected_phase.get(state) == phase
+                    and expected_completion.get(state) == request.mes_completion_status
+                    and (valid_judgement or (state != 'completed' and judgement is None))):
+                observed = stamp.isoformat()
+                if state == 'completed':
+                    verdict = judgement
+        except (TypeError, ValueError):
+            pass
+    return {'request_id': str(request.pk), 'qc_code': code,
+        'test_label': binding.test_label if binding else '', 'phase': phase,
+        'trial_verdict': verdict, 'observed_at': observed,
+        'test_only': True, 'production_counted': False}
 
 
 def machine_label_number(value):
@@ -51,10 +96,15 @@ def projection(user, target_date=None, *, now=None):
     # A completion observed today may belong to a request created days ago.
     # Unknown completion evidence stays in the backlog. Never expose future
     # requests as work already available or let new arrivals bury overdue ones.
-    requests = list(InspectionRequest.objects.filter(created_at__lt=as_of).filter(
+    scoped_requests = InspectionRequest.objects.filter(created_at__lt=as_of).filter(
         ~Q(mes_completion_status='completed') | Q(mes_checked_at__isnull=True)
         | Q(mes_checked_at__gte=start, mes_checked_at__lt=as_of)
-    ).select_related('reinspection').annotate(
+    )
+    trial_scope = Q(source_kind='integration_test') | Q(mes_binding__test_only=True)
+    trials = list(scoped_requests.filter(trial_scope).select_related('mes_binding')
+                  .order_by('created_at', 'id')[:ROW_LIMIT + 1])
+    trials_truncated = len(trials) > ROW_LIMIT
+    requests = list(scoped_requests.exclude(trial_scope).select_related('reinspection').annotate(
         completion_order=Case(When(mes_completion_status='completed', mes_checked_at__isnull=False,
                                    then=1), default=0, output_field=IntegerField())
     ).order_by('completion_order', 'created_at', 'id')[:ROW_LIMIT + 1])
@@ -145,6 +195,8 @@ def projection(user, target_date=None, *, now=None):
             'current_state_verified': False},
         'mes_unmapped_observations': mes['unmapped'] if mes else [],
         'machines': list(machines.values()), 'unmapped_requests': unmapped_requests,
+        'integration_trials': [_trial_projection(row, now=now) for row in trials[:ROW_LIMIT]],
+        'integration_trials_truncated': trials_truncated,
         'unmapped_plans': unmapped_plans, 'requests_truncated': requests_truncated,
         'plans_truncated': plans_truncated, 'executions_truncated': executions_truncated,
         'counts': {'requests_displayed': len(requests), 'plans_displayed': len(plans),

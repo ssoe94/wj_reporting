@@ -57,3 +57,17 @@ export async function mutateInspectionRequest(id: number, attempt: MutationAttem
   if (!Number.isSafeInteger(result?.id) || result.id <= 0 || (!['create', 'reinspect'].includes(attempt.action) && result.id !== id)) throw new Error('Inspection mutation identity mismatch');
   return result;
 }
+
+/** Local WJ preparation only; no MES operation is dispatched here. */
+export async function createIntegrationTrial(attempt: MutationAttempt, sessionId: string | null): Promise<InspectionRequest> {
+  assertAuthSessionCurrent(sessionId);
+  if (attempt.action !== 'create' || Object.keys(attempt.payload).sort().join(',') !== 'code,inspection_items'
+    || typeof attempt.payload.code !== 'string' || !/^WJ-IT-[A-Z0-9][A-Z0-9-]{0,47}$/.test(attempt.payload.code)
+    || !Array.isArray(attempt.payload.inspection_items)) throw new Error('Invalid integration trial preparation');
+  const response = await http.post<InspectionRequest>(`${base}integration-trial/`, attempt.payload,
+    { authSessionId: sessionId, headers: { 'Idempotency-Key': attempt.key } });
+  assertAuthSessionCurrent(sessionId);
+  if (response.status === 202) throw { response: { status: response.status, data: response.data } };
+  if (!Number.isSafeInteger(response.data?.id) || response.data.id <= 0 || response.data.source_kind !== 'integration_test') throw new Error('Integration trial identity mismatch');
+  return response.data;
+}

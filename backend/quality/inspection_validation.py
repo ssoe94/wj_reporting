@@ -163,6 +163,21 @@ class DraftInspectionSerializer(StrictSerializer):
         return measurements
 
 
+class CreateIntegrationTrialSerializer(StrictSerializer):
+    code = serializers.CharField(max_length=54)
+    inspection_items = serializers.JSONField()
+
+    def validate_code(self, value):
+        from .inspection_integration_trial import trial_code
+        try:
+            return trial_code(value)
+        except ValueError:
+            raise serializers.ValidationError('Use a WJ-IT- integration trial code.') from None
+
+    def validate_inspection_items(self, value):
+        return validate_items(value)
+
+
 class ActionSerializer(StrictSerializer):
     version = serializers.IntegerField(min_value=1)
     reason = serializers.CharField(max_length=500, allow_blank=True, default='')

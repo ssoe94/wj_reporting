@@ -1,3 +1,4 @@
+import { isIntegrationTrial } from './integrationTrial.ts';
 import { inspectionRequestStage } from './kanban.ts';
 import type { InspectionKanban, InspectionMachine, InspectionPlan, InspectionStage, KanbanInspectionRequest } from './kanban';
 import type { MesReadObservation } from './mesReadObservation';
@@ -29,7 +30,7 @@ export function filterInspectionManagement(snapshot: InspectionKanban, filter: M
   const matchesRequest = (request: KanbanInspectionRequest) => matches(request.id, request.work_order_ref, request.task_ref, request.part_no, request.equipment_ref, request.lot_ref);
   const matchesPlan = (plan: InspectionPlan) => matches(plan.id, plan.machine_name, plan.part_no, plan.lot_no);
   const matchesObservation = (observation: MesReadObservation) => matches(observation.qc_code, observation.qc_id, observation.work_order_id, observation.production_task_id, observation.plan_name);
-  const matchesStage = (request: KanbanInspectionRequest) => !hasStage || inspectionRequestStage(request) === filter.stage;
+  const matchesStage = (request: KanbanInspectionRequest) => !isIntegrationTrial(request) && (!hasStage || inspectionRequestStage(request) === filter.stage);
 
   const machines = filter.machine === 'unmapped' ? [] : snapshot.machines.flatMap((machine) => {
     if (filter.machine !== 'all' && String(machine.machine_number) !== filter.machine) return [];
@@ -38,7 +39,7 @@ export function filterInspectionManagement(snapshot: InspectionKanban, filter: M
     const requests = machine.requests.filter((request) => matchesStage(request) && (contextMatch || matchesRequest(request)));
     const observations = hasStage ? [] : (machine.mes_observations || []).filter((observation) => contextMatch || matchesObservation(observation));
     if (hasStage ? !requests.length : hasSearch && !requests.length && !observations.length && !(contextMatch && machine.plans.length)) return [];
-    if (!hasStage && contextMatch) return [machine];
+    if (!hasStage && contextMatch && requests.length === machine.requests.length) return [machine];
     return [{ ...machine, requests, request_count: requests.length,
       ...(machine.mes_observations === undefined ? {} : { mes_observations: observations }) }];
   });

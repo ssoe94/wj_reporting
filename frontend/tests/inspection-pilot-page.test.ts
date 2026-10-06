@@ -1,3 +1,4 @@
+import * as trial from '../src/pages/quality/inspection-requests/integrationTrial.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -98,6 +99,7 @@ function harness(initialReply = deferred(), actorId = 12) {
     './useInspectionRouteLeaveGuard': { useInspectionRouteLeaveGuard: () => ({ blocked: false, canLeave: true, stay: () => {}, leave: () => {} }) },
     './InspectionKanban': { default: 'InspectionKanban' },
     './InspectionRequestDetail': { default: 'InspectionRequestDetail' },
+    './TrialPresentation': { IntegrationTrialBadge: 'IntegrationTrialBadge' }, './integrationTrial': trial,
     './NewInspectionRequest': { default: 'NewInspectionRequest' },
     './MesDetailPreview': { default: 'MesDetailPreview' },
     './InspectionRequestsPage.css': {},

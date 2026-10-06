@@ -1,3 +1,4 @@
+import { isIntegrationTrial, type TrialIdentity, type IntegrationTrial } from './integrationTrial.ts';
 import type { InspectionRequest } from './model';
 import type { MesReadObservation } from './mesReadObservation';
 
@@ -21,6 +22,7 @@ export type InspectionMachine = {
     blocking_reasons: string[]; plan_version: string; requires_new_first_inspection_on_resume: string };
 };
 export type InspectionKanban = {
+  integration_trials?: IntegrationTrial[];
   schema_version: 'inspection-kanban.v1'; business_date: string; day_start: string; day_end: string; generated_at: string;
   plan_snapshot: { source: 'ProductionPlan'; version: string; latest_changed_at: string | null;
     shift_stored: false; work_task_binding_available: false; complete: boolean; freshness_verified?: false };
@@ -45,7 +47,7 @@ export function inspectionElapsedMinutes(createdAt: string, now: Date = new Date
   return Math.max(0, Math.floor((now.getTime() - created) / 60_000));
 }
 
-type StageRequest = Pick<InspectionRequest, 'status' | 'sync_status' | 'mes_completion_status' | 'mes_checked_at' | 'judgement' | 'measurements' | 'evidence' | 'notes'> & { mes_state?: Pick<InspectionRequest['mes_state'], 'qc_status'>; inspected_quantity?: string; last_error_code?: string };
+type StageRequest = TrialIdentity & Pick<InspectionRequest, 'status' | 'sync_status' | 'mes_completion_status' | 'mes_checked_at' | 'judgement' | 'measurements' | 'evidence' | 'notes'> & { mes_state?: Pick<InspectionRequest['mes_state'], 'qc_status'>; inspected_quantity?: string; last_error_code?: string };
 export function inspectionRequestStage(request: StageRequest): InspectionStage {
   // WJ approval alone does not establish an externally observed MES completion.
   if (['mes_outcome_unknown', 'stale_remote_observation'].includes(request.last_error_code || '')
@@ -63,13 +65,13 @@ export function inspectionRequestStage(request: StageRequest): InspectionStage {
   return 'waiting';
 }
 
-export function inspectionRequestKind(request: Pick<InspectionRequest, 'parent' | 'inspection_type'>): 'first' | 'process' | 'final' | 'reinspection' {
+export function inspectionRequestKind(request: Pick<InspectionRequest, 'parent' | 'inspection_type'>): 'first' | 'process' | 'final' | 'general' | 'reinspection' {
   return request.parent ? 'reinspection' : request.inspection_type;
 }
 
 export function inspectionStageCounts(requests: StageRequest[]): Record<InspectionStage, number> {
   const counts = { waiting: 0, in_progress: 0, completed: 0, blocked: 0 };
-  for (const request of requests) counts[inspectionRequestStage(request)] += 1;
+  for (const request of requests) if (!isIntegrationTrial(request)) counts[inspectionRequestStage(request)] += 1;
   return counts;
 }
 

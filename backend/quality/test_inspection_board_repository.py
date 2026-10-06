@@ -20,7 +20,7 @@ SCOPE = BoardScope(date(2026, 10, 4), 2, 70, 'a' * 64)
 
 
 class InspectionBoardRepositoryTests(TestCase):
-    def fixture(self, suffix=1, *, kind='first', state='completed', judgement='pass'):
+    def fixture(self, suffix=1, *, kind='first', state='completed', judgement='pass', test_only=False):
         identity = dict(tenant='SYNTHETIC-BOARD-TENANT', qc_id=str(910000000 + suffix),
             work_order_id='920000001', production_task_id='930000001',
             equipment_id='940000001', snapshot_id=str(950000000 + suffix))
@@ -39,6 +39,7 @@ class InspectionBoardRepositoryTests(TestCase):
             warehouse_ref='SYNTHETIC-WAREHOUSE', lot_ref='SYNTHETIC-LOT', work_started_at=NOW,
             assigned_to_name='SYNTHETIC', sync_status='succeeded', mes_snapshot={'verified_stage': stage})
         binding = InspectionMesBinding.objects.create(request=request,
+            test_only=test_only,
             tenant=identity['tenant'], qc_id=identity['qc_id'], work_order_id=identity['work_order_id'],
             contract={key: identity[key] for key in ('production_task_id', 'equipment_id', 'snapshot_id')},
             reviewed_result_digest='d' * 64, test_label='SYNTHETIC',
@@ -80,6 +81,25 @@ class InspectionBoardRepositoryTests(TestCase):
         self.fixture()
         with patch('quality.inspection_board_repository.timezone.now', return_value=NOW):
             self.assertIsNotNone(read_board_quality_source(SCOPE))
+
+    def test_test_bindings_and_trial_requests_never_publish_production_evidence(self):
+        _, trial_binding, _ = self.fixture(test_only=True)
+        self.assertIsNone(self.source())
+        InspectionMesBinding.objects.filter(pk=trial_binding.pk).update(test_only=False)
+        InspectionRequest.objects.filter(pk=trial_binding.request_id).update(source_kind='integration_test')
+        self.assertIsNone(self.source())
+
+    def test_trial_evidence_cannot_poison_or_increase_a_verified_production_batch(self):
+        self.fixture()
+        trial, _, _ = self.fixture(2, test_only=True)
+        InspectionRequest.objects.filter(pk=trial.pk).update(
+            mes_snapshot={'verified_stage': {'plan_binding': {
+                'business_date': SCOPE.business_date.isoformat(),
+                'machine_number': SCOPE.machine_number, 'current_plan_id': SCOPE.current_plan_id,
+                'plan_version': SCOPE.plan_version}}})
+        source = self.source()
+        self.assertEqual(len(source.observations), 1)
+        self.assertEqual(source.observations[0].qc_id, '910000001')
 
     def test_empty_absent_and_changed_plan_scopes_have_no_fallback(self):
         self.assertIsNone(self.source())
@@ -189,4 +209,3 @@ class InspectionBoardRepositoryTests(TestCase):
             self.assertIsNone(self.source())
         self.assertEqual(len(queries), 1)
         self.assertIn('LIMIT 51', queries[0]['sql'])
-

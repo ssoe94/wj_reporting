@@ -332,10 +332,17 @@ class InspectionFlowScenarioTests(APITestCase):
             clock.return_value = checked_at + timedelta(seconds=1)
             kanban, machine = self._kanban_machine(plan)
             self.assertEqual(machine['plans'][0]['execution_status'], 'running')
-            self.assertEqual({row['id'] for row in machine['requests']}, {first['id'], periodic['id']})
-            for row in machine['requests']:
-                self.assertEqual(row['plan_alignment']['status'], 'part_listed')
-                self.assertFalse(row['plan_alignment']['task_binding_verified'])
+            self.assertEqual(machine['requests'], [])
+            self.assertEqual(machine['request_count'], 0)
+            self.assertEqual(kanban['counts']['requests_displayed'], 0)
+            self.assertEqual({row['request_id'] for row in kanban['integration_trials']},
+                             {str(first['id']), str(periodic['id'])})
+            for trial in kanban['integration_trials']:
+                self.assertIs(trial['test_only'], True)
+                self.assertIs(trial['production_counted'], False)
+                self.assertEqual(trial['phase'], 'completed')
+                self.assertEqual(trial['trial_verdict'], 'pass')
+                self.assertIsNotNone(trial['observed_at'])
             self.assertFalse(kanban['mes_read_snapshot']['current_state_verified'])
             self.assertFalse(machine['dry_run']['enabled'])
 
@@ -419,9 +426,25 @@ class InspectionFlowScenarioTests(APITestCase):
             self.assertEqual({row.pk: result_payload(row) for row in InspectionRequest.objects.all()}, before_completion)
             self.assertEqual(InspectionRequest.objects.count(), 2)
             self.assertEqual(InspectionNonconformance.objects.count(), 0)
-            for row in completed_machine['requests']:
-                self.assertEqual(row['injection_receipt_readiness'], 'not_verified')
+            self.assertEqual(completed_machine['requests'], [])
+            for record in InspectionRequest.objects.filter(pk__in=[first['id'], periodic['id']]):
+                self.assertEqual(record.injection_receipt_readiness, 'not_verified')
             self.assertFalse(completed_machine['dry_run']['enabled'])
+
+            # A normal unbound production request remains on the same machine;
+            # trial exclusion must not remove all requests for its plan.
+            normal = self.create(task_ref='SYNTHETIC-ORDINARY-PRODUCTION',
+                equipment_ref=plan.machine_name, part_no=plan.part_no, lot_ref=plan.lot_no)
+            clock.return_value += timedelta(seconds=1)
+            separated, production_machine = self._kanban_machine(plan)
+            self.assertEqual([row['id'] for row in production_machine['requests']], [normal['id']])
+            self.assertEqual(production_machine['request_count'], 1)
+            self.assertEqual(separated['counts']['requests_displayed'], 1)
+            production = production_machine['requests'][0]
+            self.assertEqual(production['plan_alignment']['status'], 'part_listed')
+            self.assertFalse(production['plan_alignment']['task_binding_verified'])
+            self.assertEqual({row['request_id'] for row in separated['integration_trials']},
+                             {str(first['id']), str(periodic['id'])})
 
     def test_local_completion_currently_has_no_gate_for_open_case_or_draft_reinspection(self):
         """Characterize the missing gate; acceptance here is not safe MES completion."""

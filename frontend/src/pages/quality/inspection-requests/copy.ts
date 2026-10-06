@@ -116,7 +116,7 @@ export const inspectionStatusLabels: Record<'ko' | 'zh', Record<string, string>>
   ko: { draft: '초안', submitted: '검수 대기', approved: '검수 완료', rejected: '반려', failed: '실패', not_synced: '미동기화', blocked: '보류', pending: '처리 중', succeeded: 'MES 동기화 확인', unknown: '결과 미확정', stale: '재조회 필요' },
   zh: { draft: '草稿', submitted: '待审核', approved: '审核完成', rejected: '已退回', failed: '失败', not_synced: '未同步', blocked: '暂缓', pending: '处理中', succeeded: 'MES 同步已确认', unknown: '结果未确认', stale: '需重新查询' },
 };
-export const inspectionTypeLabels = { ko: { first: '초도 검사 · 首检', process: '공정 검사', final: '최종 검사' }, zh: { first: '首检', process: '过程检验', final: '最终检验' } };
+export const inspectionTypeLabels = { ko: { general: '연동시험', first: '초도 검사 · 首检', process: '공정 검사', final: '최종 검사' }, zh: { general: '接口测试', first: '首检', process: '过程检验', final: '最终检验' } };
 export const inspectionRequestStatusLabels: Record<'ko' | 'zh', Record<string, string>> = {
   ko: { draft: '초안', submitted: '검수 대기', approved: '검수 완료', rejected: '반려', failed: '불합격 판정' },
   zh: { draft: '草稿', submitted: '待审核', approved: '审核完成', rejected: '已退回', failed: '不合格判定' },
@@ -166,3 +166,12 @@ export function inspectionTime(value: string | null | undefined, lang: 'ko' | 'z
   if (!value || Number.isNaN(new Date(value).getTime())) return '—';
   return new Intl.DateTimeFormat(lang === 'ko' ? 'ko-KR' : 'zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
 }
+
+export const integrationTrialCreateCopy = {
+  ko: { mode: '요청 종류', production: '생산 검사요청', trial: '연동시험 준비', code: '시험 코드',
+    hint: 'WJ에 로컬 준비 요청을 저장합니다. 아직 MES 검사를 생성하거나 완료하지 않습니다.',
+    invalid: 'WJ-IT-로 시작하는 대문자·숫자·대시 코드(최대 54자)를 입력하세요.', submit: '시험 준비 저장', denied: '연동시험 준비 권한이 없습니다.' },
+  zh: { mode: '请求类型', production: '生产检验请求', trial: '接口测试准备', code: '测试代码',
+    hint: '仅在 WJ 保存本地准备请求，尚未创建或完成 MES 检验。',
+    invalid: '请输入以 WJ-IT- 开头的大写字母、数字及连字符代码（最多 54 字）。', submit: '保存测试准备', denied: '无接口测试准备权限。' },
+} as const;

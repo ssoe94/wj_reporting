@@ -2,22 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { assertAuthSessionCurrent } from '@/domains/auth/auth-transition';
 import type { FormEvent } from 'react';
 import { Plus } from 'lucide-react';
-import { inspectionCopy, inspectionDataSourceCopy, inspectionTypeLabels } from './copy';
-import { inspectionCreatePayload, mutateInspectionRequest } from './api';
-import type { InspectionCreate, InspectionDataMode, InspectionItem, InspectionRequest } from './api';
+import { inspectionCopy, inspectionDataSourceCopy, inspectionTypeLabels, integrationTrialCreateCopy } from './copy';
+import { inspectionCreatePayload, mutateInspectionRequest, integrationTrialCreatePayload, createIntegrationTrial } from './api';
+import type { InspectionCreate, InspectionPreparationDraft, InspectionDataMode, InspectionItem, InspectionRequest } from './api';
 import { createInspectionKey, inspectionError, inspectionMutationAttempt, inspectionRecoveryKey, parseInspectionRecovery } from './workflow';
 import type { InspectionRecovery, MutationAttempt } from './workflow';
 
 function newItem(): InspectionItem { return { id: createInspectionKey(), label: '', kind: 'text', unit: '', required: true, evidence_required: false }; }
-function emptyRequest(): InspectionCreate {
+function emptyRequest(): InspectionPreparationDraft {
   return { work_order_ref: '', task_ref: '', part_no: '', equipment_ref: '', inspection_type: 'first', target_quantity: '', uom: '', warehouse_ref: '', lot_ref: '', work_started_at: '', inspection_items: [newItem()], require_evidence: false, quantity_mode: 'recorded', judgement_policy: 'strict_items' };
 }
 
-export default function NewInspectionRequest({ userId, sessionId, lang, dataMode, onCreated, onCancel, onDirty, onLocked }: { userId: number; sessionId: string | null; lang: 'ko' | 'zh'; dataMode: InspectionDataMode; onCreated: (item: InspectionRequest) => void; onCancel: () => void; onDirty: (dirty: boolean) => void; onLocked: (locked: boolean, pending: boolean) => void }) {
+export default function NewInspectionRequest({ userId, sessionId, lang, dataMode, canPrepareIntegrationTrial = false, onCreated, onCancel, onDirty, onLocked }: { userId: number; sessionId: string | null; lang: 'ko' | 'zh'; dataMode: InspectionDataMode; canPrepareIntegrationTrial?: boolean; onCreated: (item: InspectionRequest) => void; onCancel: () => void; onDirty: (dirty: boolean) => void; onLocked: (locked: boolean, pending: boolean) => void }) {
   const text = inspectionCopy[lang];
   const dataSource = inspectionDataSourceCopy(lang, dataMode);
-  const [form, setForm] = useState<InspectionCreate>(emptyRequest);
+  const [form, setForm] = useState<InspectionPreparationDraft>(emptyRequest);
   const original = useRef(form);
+  const trial = form.preparation_mode === 'integration_trial';
+  const trialText = integrationTrialCreateCopy[lang];
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState<MutationAttempt | null>(null);
@@ -28,8 +30,8 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
     if (!mounted.current) return false;
     try { assertAuthSessionCurrent(sessionId); return true; } catch { return false; }
   }, [sessionId]);
-  const [recovery, setRecovery] = useState<InspectionRecovery<InspectionCreate> | null>(() => {
-    try { return parseInspectionRecovery<InspectionCreate>(sessionStorage.getItem(inspectionRecoveryKey(userId, 0)), userId, 0); } catch { return null; }
+  const [recovery, setRecovery] = useState<InspectionRecovery<InspectionPreparationDraft> | null>(() => {
+    try { return parseInspectionRecovery<InspectionPreparationDraft>(sessionStorage.getItem(inspectionRecoveryKey(userId, 0)), userId, 0); } catch { return null; }
   });
   const dirty = JSON.stringify(form) !== JSON.stringify(original.current);
   const blocked = busy || Boolean(attempt) || Boolean(recovery?.attempt);
@@ -37,17 +39,19 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
   useEffect(() => { if (ownsSession()) onDirty(dirty); }, [dirty, onDirty, ownsSession]);
   useEffect(() => { if (ownsSession()) onLocked(blocked, busy); }, [blocked, busy, onLocked, ownsSession]);
 
-  const persist = (draft: InspectionCreate, pending: MutationAttempt | null) => {
+  const persist = (draft: InspectionPreparationDraft, pending: MutationAttempt | null) => {
     if (!ownsSession()) return;
     try { sessionStorage.setItem(inspectionRecoveryKey(userId, 0), JSON.stringify({ schema: 1, user_id: userId, request_id: 0, version: 0, saved_at: Date.now(), draft, attempt: pending })); } catch { /* Storage can be disabled; server remains authoritative. */ }
   };
-  const update = (patch: Partial<InspectionCreate>) => { if (!ownsSession()) return; const changed = { ...form, ...patch }; setForm(changed); onDirty(JSON.stringify(changed) !== JSON.stringify(original.current)); persist(changed, attempt); };
+  const update = (patch: Partial<InspectionPreparationDraft>) => { if (!ownsSession()) return; const changed = { ...form, ...patch }; setForm(changed); onDirty(JSON.stringify(changed) !== JSON.stringify(original.current)); persist(changed, attempt); };
   const updateItem = (index: number, patch: Partial<InspectionItem>) => update({ inspection_items: form.inspection_items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) });
   const run = async (pending: MutationAttempt) => {
     if (lock.current || !ownsSession()) return;
+    if (Object.prototype.hasOwnProperty.call(pending.payload, 'code') && !canPrepareIntegrationTrial) { setError(trialText.denied); return; }
     lock.current = true; onLocked(true, true); setBusy(true); setError(''); setAttempt(pending); persist(form, pending);
     try {
-      const created = await mutateInspectionRequest(0, pending, sessionId);
+      const created = Object.prototype.hasOwnProperty.call(pending.payload, 'code')
+        ? await createIntegrationTrial(pending, sessionId) : await mutateInspectionRequest(0, pending, sessionId);
       if (!ownsSession()) return;
       try { sessionStorage.removeItem(inspectionRecoveryKey(userId, 0)); } catch { /* Optional recovery. */ }
       setAttempt(null); onCreated(created);
@@ -62,6 +66,12 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
     event.preventDefault();
     if (!ownsSession() || attempt || recovery?.attempt) return;
     if (!form.inspection_items.length || form.inspection_items.some((item) => !item.label.trim())) { setError(text.templateRequired); return; }
+    if (trial) {
+      if (!canPrepareIntegrationTrial) { setError(trialText.denied); return; }
+      try { void run(inspectionMutationAttempt(null, 'create', integrationTrialCreatePayload(form), () => createInspectionKey())); }
+      catch { setError(trialText.invalid); }
+      return;
+    }
     const started = new Date(form.work_started_at);
     if (Number.isNaN(started.getTime())) { setError(text.startedInvalid); return; }
     const payload = inspectionCreatePayload(form);
@@ -81,6 +91,8 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
     {error && <div role="alert" className="inspection-message is-error">{error}</div>}
     {attempt && !busy && <div className="inspection-message"><p>{text.network}</p><button className="inspection-button" type="button" onClick={() => void run(attempt)}>{text.retryOperation}</button></div>}
     <form onSubmit={submit}>
+      {canPrepareIntegrationTrial && <fieldset disabled={blocked} className="inspection-item"><legend>{trialText.mode}</legend><label>{trialText.mode}<select value={trial ? 'integration_trial' : 'production'} onChange={(event) => update({ preparation_mode: event.target.value as InspectionPreparationDraft['preparation_mode'] })}><option value="production">{trialText.production}</option><option value="integration_trial">{trialText.trial}</option></select></label></fieldset>}
+      {trial ? <fieldset disabled={blocked} className="inspection-item"><legend>{trialText.trial}</legend><p>{lang === 'ko' ? '연동시험 · 실측 아님 · 생산 합격 집계 제외' : '接口测试 · 非实测 · 不计入生产合格统计'}</p><p>{trialText.hint}</p>{!canPrepareIntegrationTrial && <p role="alert">{trialText.denied}</p>}<label>{trialText.code} *<input required maxLength={54} pattern="WJ-IT-[A-Z0-9](?:[A-Z0-9]|-){0,47}" value={form.trial_code || ''} placeholder="WJ-IT-20261006-LEE-01" onChange={(event) => update({ trial_code: event.target.value })} /></label></fieldset> : <>
       <fieldset disabled={blocked} className="inspection-item"><legend>{text.workOrder} / {text.task}</legend><div className="inspection-form-grid">
         {field('work_order_ref', text.workOrder)}{field('task_ref', text.task)}{field('part_no', text.part)}{field('equipment_ref', text.equipment)}
         <label>{text.inspectionType}<select value={form.inspection_type} onChange={(event) => update({ inspection_type: event.target.value as InspectionCreate['inspection_type'] })}>{(['first', 'process', 'final'] as const).map((kind) => <option value={kind} key={kind}>{inspectionTypeLabels[lang][kind]}</option>)}</select></label>
@@ -90,6 +102,7 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
         <label>{text.quantityPolicy}<select value={form.quantity_mode} onChange={(event) => update({ quantity_mode: event.target.value as InspectionCreate['quantity_mode'] })}><option value="recorded">{text.quantityRecorded}</option><option value="not_recorded">{text.quantityNotRecorded}</option></select></label>
         <label>{text.judgementPolicy}<select value={form.judgement_policy} onChange={(event) => update({ judgement_policy: event.target.value as InspectionCreate['judgement_policy'] })}><option value="strict_items">{text.strictItems}</option><option value="independent">{text.independentJudgement}</option></select><small>{form.judgement_policy === 'independent' ? text.independentHint : text.strictHint}</small></label>
       </div><label className="inspection-check"><input type="checkbox" checked={form.require_evidence} onChange={(event) => update({ require_evidence: event.target.checked })} />{text.commonEvidenceRequired}</label></fieldset>
+      </>}
       <section className="inspection-section"><h3>{text.items}</h3>
         {form.inspection_items.map((item, index) => <fieldset className="inspection-item" disabled={blocked} key={item.id}><legend>{text.itemName} {index + 1}</legend><div className="inspection-form-grid">
           <label>{text.itemName} *<input required maxLength={128} value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} /></label>
@@ -102,7 +115,7 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
         </fieldset>)}
         <button type="button" className="inspection-button" disabled={blocked || form.inspection_items.length >= 50} onClick={() => update({ inspection_items: [...form.inspection_items, newItem()] })}><Plus size={16} aria-hidden="true" />{text.addItem}</button>
       </section>
-      <div className="inspection-actions inspection-section"><button type="submit" className="inspection-button is-primary" disabled={blocked}>{busy ? text.busy : text.create}</button><button type="button" className="inspection-button" disabled={blocked} onClick={onCancel}>{text.cancel}</button></div>
+      <div className="inspection-actions inspection-section"><button type="submit" className="inspection-button is-primary" disabled={blocked || (trial && !canPrepareIntegrationTrial)}>{busy ? text.busy : trial ? trialText.submit : text.create}</button><button type="button" className="inspection-button" disabled={blocked} onClick={onCancel}>{text.cancel}</button></div>
     </form>
   </section>;
 }

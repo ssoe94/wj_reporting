@@ -1,3 +1,5 @@
+import { IntegrationTrialBadge } from './TrialPresentation';
+import { isIntegrationTrial, integrationTrialCopy } from './integrationTrial';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { assertAuthSessionCurrent } from '@/domains/auth/auth-transition';
 import { ExternalLink, Plus, RefreshCw } from 'lucide-react';
@@ -29,6 +31,8 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
   const dataSource = inspectionDataSourceCopy(lang, globalCapabilities.data_mode);
   const kanbanText = inspectionKanbanCopy[lang];
   const [request, setRequest] = useState(initial);
+  const trial = isIntegrationTrial(request);
+  const verdictCopy = trial ? integrationTrialCopy[lang] : { verdict: text.judgement, pass: text.pass, fail: text.fail };
   const [draft, setDraft] = useState(() => editableInspectionDraft(initial));
   const [version, setVersion] = useState(initial.version);
   const [reason, setReason] = useState('');
@@ -158,6 +162,7 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
   return <section className="inspection-detail" aria-labelledby="inspection-detail-title" aria-busy={busy}>
     {mesConnectionOpen && <MesConnectionDialog onClose={() => setMesConnectionOpen(false)} />}
     <p className="inspection-beta-context"><strong>{dataSource.notice}</strong><span>{text.source}: {dataSource.requests}</span></p>
+    {trial && <div className="inspection-trial-context"><IntegrationTrialBadge lang={lang} /><p>{integrationTrialCopy[lang].excluded}{request.mes_workflow?.qc_code ? ` · ${request.mes_workflow.phase === 'unbound' ? (lang === 'ko' ? '준비 코드 · MES 생성 전: ' : '准备代码 · MES 尚未创建：') : ''}${request.mes_workflow.qc_code}` : ''}</p>{request.mes_workflow?.test_label && <small>{request.mes_workflow.test_label}</small>}</div>}
     <div className="inspection-detail-heading"><div><small>{text.requestId} #{request.id} · {text.version} {request.version}</small><h2 id="inspection-detail-title">{request.work_order_ref}</h2><p>{request.part_no} · {request.equipment_ref}</p></div><span className="inspection-status" data-status={request.status}>{inspectionRequestStatusLabels[lang][request.status]}</span></div>
     {message && <div className="inspection-message is-success" role="status">{message}</div>}
     {error && <div className="inspection-message is-error" role="alert">{error}</div>}
@@ -195,7 +200,7 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
         return <fieldset className="inspection-item" key={item.id} disabled={!editable}><legend>{index + 1}. {item.label}</legend>
           <p>{item.required !== false ? text.required : text.optional} · {item.kind === 'number' ? text.number : item.kind === 'choice' ? text.choice : text.text}{item.unit ? ` · ${item.unit}` : ''}{item.minimum ? ` · ${text.minimum}: ${item.minimum}` : ''}{item.maximum ? ` · ${text.maximum}: ${item.maximum}` : ''}{item.evidence_required ? ` · ${text.evidenceRequired}` : ''}</p>
           <div className="inspection-form-grid"><label>{text.measurement}{item.required !== false ? ' *' : ''}{item.kind === 'choice' ? <select value={measurement?.value || ''} onChange={(event) => updateMeasurement(index, { value: event.target.value })}><option value="">{text.choose}</option>{item.options?.map((option) => <option value={option} key={option}>{option}</option>)}</select> : <input maxLength={1000} inputMode={item.kind === 'number' ? 'decimal' : 'text'} value={measurement?.value || ''} onChange={(event) => updateMeasurement(index, { value: event.target.value })} />}</label>
-            <label>{text.judgement} · {item.required !== false ? text.required : text.requiredWhenFilled}<select value={measurement?.judgement || ''} onChange={(event) => updateMeasurement(index, { judgement: event.target.value as InspectionMeasurement['judgement'] })}><option value="">{text.choose}</option><option value="pass">{text.pass}</option><option value="fail">{text.fail}</option></select></label>
+            <label>{verdictCopy.verdict} · {item.required !== false ? text.required : text.requiredWhenFilled}<select value={measurement?.judgement || ''} onChange={(event) => updateMeasurement(index, { judgement: event.target.value as InspectionMeasurement['judgement'] })}><option value="">{text.choose}</option><option value="pass">{verdictCopy.pass}</option><option value="fail">{verdictCopy.fail}</option></select></label>
             <details className="inspection-form-full inspection-optional-field" open={item.evidence_required || Boolean(measurement?.evidence_url)}><summary>{text.itemEvidence} · {item.evidence_required ? text.required : text.optional}</summary><label>{text.itemEvidence}{item.evidence_required ? ' *' : ''}<input type="url" maxLength={500} value={measurement?.evidence_url || ''} autoCapitalize="none" spellCheck={false} onChange={(event) => updateMeasurement(index, { evidence_url: event.target.value })} /><small>{text.evidenceHint}</small></label></details>
           </div>{safeLink && <a href={safeLink} target="_blank" rel="noopener noreferrer">{text.openEvidence} <ExternalLink size={14} aria-hidden="true" /></a>}
         </fieldset>;
@@ -212,9 +217,9 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
         </div>;
       })}<button type="button" className="inspection-button" disabled={!editable || draft.evidence.length >= 10} onClick={() => update({ evidence: [...draft.evidence, { label: '', url: '' }] })}><Plus size={16} aria-hidden="true" />{text.addEvidence}</button>
     </details>
-    <section className="inspection-section"><h3>{request.quantity_mode === 'not_recorded' ? text.judgement : text.results}</h3><div className="inspection-form-grid">
+    <section className="inspection-section"><h3>{request.quantity_mode === 'not_recorded' ? verdictCopy.verdict : trial ? verdictCopy.verdict : text.results}</h3><div className="inspection-form-grid">
       {request.quantity_mode === 'recorded' && (['inspected_quantity', 'accepted_quantity', 'rejected_quantity'] as const).map((name) => <label key={name}>{name === 'inspected_quantity' ? text.inspected : name === 'accepted_quantity' ? text.accepted : text.rejected} ({request.uom}) *<input inputMode="decimal" maxLength={30} disabled={!editable} value={draft[name]} onChange={(event) => update({ [name]: event.target.value })} /></label>)}
-      <label>{text.judgement} *<select disabled={!editable} value={draft.judgement} onChange={(event) => update({ judgement: event.target.value as InspectionDraft['judgement'] })}><option value="">{text.choose}</option><option value="pass">{text.pass}</option><option value="fail">{text.fail}</option></select></label>
+      <label>{verdictCopy.verdict} *<select disabled={!editable} value={draft.judgement} onChange={(event) => update({ judgement: event.target.value as InspectionDraft['judgement'] })}><option value="">{text.choose}</option><option value="pass">{verdictCopy.pass}</option><option value="fail">{verdictCopy.fail}</option></select></label>
       <label className="inspection-form-full">{text.notes}<textarea maxLength={2000} disabled={!editable} value={draft.notes} onChange={(event) => update({ notes: event.target.value })} /></label>
     </div><p className="inspection-muted">{request.judgement_policy === 'independent' ? text.independentHint : text.strictHint}</p><p className="inspection-muted">{request.quantity_mode === 'not_recorded' ? text.quantityNotRecorded : text.quantityHint}</p>
       {dirty && <p className="inspection-muted" role="status">{text.dirty} {text.saveFirst}</p>}
