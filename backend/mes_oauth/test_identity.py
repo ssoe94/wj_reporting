@@ -186,3 +186,23 @@ class InspectionUserContextTests(TestCase):
                 self.assertIs(context.live_ready, False)
                 self.assertFalse(hasattr(context, 'expires_at'))
                 loader.assert_called_once_with(TOKEN)
+
+    def test_only_exact_documented_permission_subcode_changes_fixed_reason(self):
+        from .identity import _successful_data, safe_failure_code
+        for subcode, reason in (
+                ('OPENAPI-DOMAIN/URL_NO_PERMISSION', 'userinfo_api_permission_denied'),
+                ('URL_NO_PERMISSION', 'userinfo_api_rejected'),
+                (TOKEN, 'userinfo_api_rejected'), (None, 'userinfo_api_rejected'),
+                (['OPENAPI-DOMAIN/URL_NO_PERMISSION'], 'userinfo_api_rejected')):
+            response = UserContextResponse(200, {'code':3401,'subCode':subcode,
+                                                'message':TOKEN,'data':{}}, False)
+            with self.assertRaises(UserContextUnverified) as raised:
+                _successful_data(response, 'userinfo')
+            self.assertEqual(safe_failure_code(raised.exception), reason)
+            self.assertNotIn(TOKEN,str(raised.exception))
+        # Exact symbol interpretation remains independent of numeric API code.
+        response = UserContextResponse(200, {'code':401,
+            'subCode':'OPENAPI-DOMAIN/URL_NO_PERMISSION','data':{}}, False)
+        with self.assertRaises(UserContextUnverified) as raised:
+            _successful_data(response, 'userinfo')
+        self.assertEqual(safe_failure_code(raised.exception), 'userinfo_api_permission_denied')

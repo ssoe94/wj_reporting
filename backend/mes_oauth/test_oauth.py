@@ -22,10 +22,11 @@ from django.http import HttpResponse
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
-from .client import BlacklakeUserOAuthClient, EXCHANGE, USERINFO
+from .client import APP_READ_CONTROL, BlacklakeUserOAuthClient, EXCHANGE, USERINFO
 from .models import OAuthAttempt
 from .security import OAuthQueryLogFilter, OAuthQueryRedactionMiddleware
 from .views import START, CALLBACK, COOKIE, _record_failure_diagnostic
+from .views import get_provider as real_get_provider
 from .identity import UserContextResponse, UserContextUnverified
 
 
@@ -527,6 +528,8 @@ class OAuthCallbackTests(TestCase):
             ('exchange_http', 'exchange_http_rejected', 1, 0, 401, None, None, None),
             ('exchange_decode', 'exchange_response_decode_failed', 1, 0, 200, None, None, None),
             ('exchange_api', 'exchange_api_rejected', 1, 0, 200, None, 40101, None),
+            ('exchange_api_3401', 'exchange_api_rejected', 1, 0, 200, None, 3401, None),
+            ('exchange_api_permission', 'exchange_api_permission_denied', 1, 0, 200, None, 3401, None),
             ('userinfo_session', 'userinfo_request_failed', 1, 0, 200, None, 200, None),
             ('userinfo_decode', 'userinfo_response_decode_failed', 1, 1, 200, 200, 200, None),
             ('userinfo_http', 'userinfo_http_rejected', 1, 1, 200, 403, 200, None),
@@ -537,7 +540,12 @@ class OAuthCallbackTests(TestCase):
         for number, (case, reason, exchange_count, info_count, exchange_status, info_status,
                      exchange_api, info_api) in enumerate(cases):
             with self.subTest(case=case):
-                first_body = b'{"code":40101,"data":{}}' if case == 'exchange_api' else exchange_body
+                first_body = (json.dumps({'code': exchange_api, 'data': {}}).encode()
+                              if case in {'exchange_api', 'exchange_api_3401'} else exchange_body)
+                if case == 'exchange_api_permission':
+                    first_body = json.dumps({'code': 3401,
+                        'subCode': 'OPENAPI-DOMAIN/URL_NO_PERMISSION',
+                        'message': TOKEN, 'data': {}}).encode()
                 first = synthetic_session(b'{' if case == 'exchange_decode' else first_body,
                                           status=401 if case == 'exchange_http' else 200)
                 if case == 'header':
@@ -577,6 +585,84 @@ class OAuthCallbackTests(TestCase):
                 self.assertEqual(second.post.call_count, info_count)
                 for private in (CODE, TOKEN, APP_TOKEN, 'SYNTHETIC-PRIVATE-PERSON', str(MES_USER)):
                     self.assertNotIn(private, ''.join(captured.output))
+
+    def test_auth_supply_configuration_change_invalidates_pending_attempt_before_issuance(self):
+        changes = [
+            {'MES_USER_OAUTH_APP_TOKEN_HEADER': 'X-AUTH'},
+            {'MES_USER_OAUTH_CONTROL_QC_ID': '9000000000000042'},
+            {'MES_USER_OAUTH_APP_TOKEN_SOURCE': 'server', 'MES_USER_OAUTH_APP_ID': '9000000000000001',
+             'MES_USER_OAUTH_APP_KEY': 'SYNTHETIC-KEY', 'MES_USER_OAUTH_APP_SECRET': 'SYNTHETIC-SECRET'},
+        ]
+        for change in changes:
+            with self.subTest(fields=list(change)):
+                row = self.begin()
+                with override_settings(**change):
+                    response = self.post(CALLBACK, {'code': CODE})
+                self.assertEqual(response.status_code, 403)
+                row.refresh_from_db()
+                self.assertIsNone(row.consumed_at)
+        self.factory.assert_not_called()
+
+    @override_settings(MES_USER_OAUTH_APP_TOKEN_SOURCE='server',
+        MES_USER_OAUTH_APP_CREDENTIAL_SOURCE='existing_mes', MES_USER_OAUTH_APP_ID='9000000000000001',
+        MES_APP_KEY='SYNTHETIC-SERVER-KEY', MES_APP_SECRET='SYNTHETIC-SERVER-SECRET',
+        MES_USER_OAUTH_APP_TOKEN_HEADER='X-AUTH', MES_USER_OAUTH_CONTROL_QC_ID='9000000000000042')
+    def test_web_callback_observes_one_issue_and_stops_at_first_failed_stage(self):
+        from .app_tokens import ISSUE_PATH
+        self.factory.side_effect = real_get_provider
+        qc_id = 9000000000000042
+        for failed in (None, 'issue', 'control', 'exchange', 'userinfo'):
+            with self.subTest(failed=failed):
+                bodies = [
+                    {'code': 200, 'data': {'appAccessToken': APP_TOKEN, 'expire': 7200}},
+                    {'code': 200, 'data': {'id': qc_id}},
+                    {'code': 200, 'data': {'userAccessToken': TOKEN, 'expire': 7200}},
+                    {'code': 200, 'data': {'userId': MES_USER}},
+                ]
+                labels = ['issue', 'control', 'exchange', 'userinfo']
+                expected_calls = 4 if failed is None else labels.index(failed) + 1
+                if failed:
+                    bodies[labels.index(failed)] = {'code': 3401, 'message': TOKEN, 'data': {}}
+                sessions = [synthetic_session(json.dumps(body).encode()) for body in bodies]
+                with patch('requests.Session', side_effect=sessions) as session_factory:
+                    row = self.begin()
+                    session_factory.assert_not_called()
+                    code = CODE + '-server-' + str(failed)
+                    with self.assertLogs('mes_oauth.diagnostics', level='WARNING') as logs:
+                        response = self.finish(code)
+                        self.assertEqual(self.post(CALLBACK, {'code': code}).status_code, 403)
+                    self.assertEqual(session_factory.call_count, expected_calls)
+                self.assertEqual(response.status_code, 200 if failed is None else 502)
+                row.refresh_from_db()
+                self.assertEqual(row.status, 'verified' if failed is None else 'rejected')
+                self.assertIsNotNone(row.consumed_at)
+                paths = [ISSUE_PATH, '/api/openapi/domain/web/v1/route' + APP_READ_CONTROL,
+                         '/api/openapi/domain/web/v1/route' + EXCHANGE,
+                         '/api/openapi/domain/web/v1/route' + USERINFO]
+                for number, session in enumerate(sessions):
+                    self.assertEqual(session.post.call_count, int(number < expected_calls))
+                    if number < expected_calls:
+                        args, kwargs = session.post.call_args
+                        self.assertEqual(args[0], 'https://v3-ali.blacklake.cn' + paths[number])
+                        if number:
+                            self.assertEqual(kwargs['headers'], {'X-AUTH': APP_TOKEN, 'Accept': 'application/json'})
+                        self.assertFalse(kwargs['allow_redirects'])
+                self.assertEqual(sessions[0].post.call_args.kwargs['json'],
+                    {'appKey': 'SYNTHETIC-SERVER-KEY', 'appSecret': 'SYNTHETIC-SERVER-SECRET'})
+                if failed is None:
+                    self.assertEqual(sessions[3].post.call_args.kwargs['json'], {'userAccessToken': TOKEN})
+                    self.assertEqual(response.json(), {'identity_verified': True,
+                        'expiry_verified': False, 'live_ready': False})
+                events = dict(record.getMessage().split(' ', 1) for record in logs.records)
+                supply = json.loads(events['mes_oauth_app_supply'])
+                self.assertEqual(supply['http_attempts'], 1)
+                self.assertEqual(supply['api_code'], 3401 if failed == 'issue' else 200)
+                self.assertEqual(supply['reason'], 'app_credential_unavailable' if failed == 'issue'
+                                 else 'app_credential_issued')
+                for private in (CODE, TOKEN, APP_TOKEN, 'SYNTHETIC-SERVER-KEY', 'SYNTHETIC-SERVER-SECRET', str(qc_id)):
+                    self.assertNotIn(private, ''.join(logs.output))
+                    self.assertNotIn(private, repr(OAuthAttempt.objects.values().get(pk=row.pk)))
+                    self.assertNotIn(private.encode(), response.content)
 
     def test_official_ali_response_fields_keep_identity_separate_from_expiry(self):
         # Official ALI docs 1708935281595630 / 1708935281595627: one data object,
@@ -727,6 +813,67 @@ class OAuthCallbackTests(TestCase):
         plain = logging.LogRecord('synthetic', 20, '', 1, 'healthy %s', ('ok',), None)
         OAuthQueryLogFilter().filter(plain)
         self.assertEqual(plain.getMessage(), 'healthy ok')
+
+    @override_settings(MES_USER_OAUTH_CONTROL_QC_ID='9000000000000042', MES_USER_OAUTH_APP_TOKEN_HEADER='X-AUTH')
+    def test_optional_app_control_precedes_exchange_and_stops_on_first_failure(self):
+        qc_id = 9000000000000042
+        cases = (
+            ('success', {'code': 200, 'data': {'id': qc_id}}, 'control_verified'),
+            ('permission', {'code': 3401, 'subCode': 'OPENAPI-DOMAIN/URL_NO_PERMISSION',
+                            'message': TOKEN, 'data': {}}, 'control_api_permission_denied'),
+            ('mismatch', {'code': 200, 'data': {'id': qc_id + 1}}, 'control_target_mismatch'),
+        )
+        for label, control_body, reason in cases:
+            with self.subTest(case=label):
+                sessions = [synthetic_session(json.dumps(body).encode()) for body in (
+                    control_body, {'code': 200, 'data': {'userAccessToken': TOKEN}},
+                    {'code': 200, 'data': {'userId': MES_USER}})]
+                order = []
+                for session in sessions:
+                    response = session.post.return_value
+                    def post(url, _response=response, **kwargs):
+                        order.append(url)
+                        return _response
+                    session.post.side_effect = post
+                provider = BlacklakeUserOAuthClient(origin='https://v3-ali.blacklake.cn',
+                    app_access_token=APP_TOKEN, app_token_header='X-AUTH',
+                    session_factory=Mock(side_effect=sessions))
+                self.factory.return_value = provider
+                row = self.begin()
+                code = CODE + '-control-' + label
+                with self.assertLogs('mes_oauth.diagnostics', level='WARNING') as captured:
+                    response = self.finish(code)
+                    self.assertEqual(self.post(CALLBACK, {'code': code}).status_code, 403)
+                success = label == 'success'
+                self.assertEqual(response.status_code, 200 if success else 502)
+                row.refresh_from_db()
+                self.assertIsNotNone(row.consumed_at)
+                self.assertEqual(row.status, 'verified' if success else 'rejected')
+                self.assertEqual(row.error_code, '' if success else reason)
+                expected_paths = [APP_READ_CONTROL] + ([EXCHANGE, USERINFO] if success else [])
+                self.assertEqual([url.split('/route', 1)[1] for url in order], expected_paths)
+                self.assertEqual(sessions[0].post.call_args.kwargs['json'], {'id': qc_id})
+                self.assertEqual(sessions[1].post.call_count, int(success))
+                self.assertEqual(sessions[2].post.call_count, int(success))
+                for session in sessions[:len(expected_paths)]:
+                    self.assertEqual(session.post.call_args.kwargs['headers'],
+                        {'X-AUTH': APP_TOKEN, 'Accept': 'application/json'})
+                events = dict(record.getMessage().split(' ', 1) for record in captured.records)
+                self.assertEqual(json.loads(events['mes_oauth_app_control']), {
+                    'reason': reason, 'control_http_attempts': 1,
+                    'control_http_status': 200, 'control_api_code': control_body['code']})
+                self.assertEqual(len(events), 1 if success else 2)
+                if not success:
+                    self.assertEqual(json.loads(events['mes_oauth_identity_failure']), {
+                        'reason': reason, 'exchange_http_attempts': 0, 'userinfo_http_attempts': 0,
+                        'exchange_http_status': None, 'userinfo_http_status': None,
+                        'exchange_api_code': None, 'userinfo_api_code': None})
+                for private in (CODE, TOKEN, APP_TOKEN, str(qc_id), 'OPENAPI-DOMAIN/URL_NO_PERMISSION'):
+                    self.assertNotIn(private, ''.join(captured.output))
+                with self.assertLogs('mes_oauth.diagnostics', level='WARNING'), \
+                        self.assertRaisesMessage(UserContextUnverified, 'control_attempt_already_used'):
+                    provider.check_app_read_access(qc_id)
+                sessions[0].post.assert_called_once()
 
 
 class OAuthQueryRedactionMiddlewareTests(SimpleTestCase):
@@ -962,6 +1109,28 @@ class OAuthClientTests(TestCase):
             with self.assertRaises(UserContextUnverified):
                 BlacklakeUserOAuthClient(origin=origin, app_access_token=token, session_factory=factory)
         factory.assert_not_called()
+
+    def test_header_contract_changes_only_header_and_never_falls_back(self):
+        captures = []
+        for header in ('access_token', 'X-AUTH'):
+            session = synthetic_session(b'{"code":3401,"data":{}}')
+            client = BlacklakeUserOAuthClient(origin='https://v3-ali.blacklake.cn',
+                app_access_token=APP_TOKEN, app_token_header=header, session_factory=lambda:session)
+            client.exchange(CODE)
+            with self.assertRaises(UserContextUnverified):
+                client.exchange(CODE)
+            session.post.assert_called_once()
+            call = session.post.call_args
+            self.assertEqual(call.kwargs['headers'], {header:APP_TOKEN,'Accept':'application/json'})
+            captures.append((call.args, {k:v for k,v in call.kwargs.items() if k!='headers'}))
+            self.assertEqual(client.diagnostic_snapshot()['exchange_api_code'],3401)
+        self.assertEqual(captures[0],captures[1])
+        for invalid in ('Authorization','Bearer','x-auth','',None,['X-AUTH']):
+            factory = Mock()
+            with self.assertRaises(UserContextUnverified):
+                BlacklakeUserOAuthClient(origin='https://v3-ali.blacklake.cn',
+                    app_access_token=APP_TOKEN,app_token_header=invalid,session_factory=factory)
+            factory.assert_not_called()
 
 
 @skipUnless(connection.vendor == 'postgresql', 'OAuth concurrent consumption requires PostgreSQL.')
