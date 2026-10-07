@@ -54,6 +54,12 @@ function content(node: any, visible = false): string {
   if (visible && node.type === 'details' && !node.props.open) return content(summary(node), visible);
   return content(node.props?.children, visible);
 }
+function metaValue(view: ReturnType<typeof harness>, label: string): string {
+  const row = view.nodes(true).find((node) => node.type === 'div'
+    && nodes(node.props.children).some((child) => child.type === 'dt' && content(child).trim() === label));
+  assert.ok(row, `Visible metadata required: ${label}`);
+  return content(nodes(row.props.children).find((node) => node.type === 'dd')).trim();
+}
 function harness(initial = fixture(), lang: 'ko' | 'zh' = 'ko', fail = false, mesEnabled = true) {
   const hooks: any[] = [];
   const writes: unknown[] = [];
@@ -144,6 +150,56 @@ test('a scoped processing limit does not imply logout or obscure an already comp
     assert.ok(!completed.text(true).includes(readiness));
     assert.ok(completed.text(true).includes(copy.mesCompletionLabels[lang].completed));
     assert.ok(!ready.text(true).includes(lang === 'ko' ? 'MES 미연결' : 'MES 未连接'));
+  }
+});
+
+test('the standalone MES verdict uses only the verified server projection in both languages', () => {
+  for (const lang of ['ko', 'zh'] as const) {
+    for (const verdict of ['pass', 'fail'] as const) {
+      const initial = fixture('completed');
+      initial.judgement = verdict === 'pass' ? 'fail' : 'pass';
+      initial.mes_state.qc_status = verdict === 'pass' ? 4 : 1;
+      initial.mes_trial_observation = { verdict, observed_at: initial.mes_checked_at };
+      const view = harness(initial, lang);
+      assert.equal(metaValue(view, copy.inspectionCopy[lang].mesTrialVerdict), trial.integrationTrialCopy[lang][verdict]);
+      assert.ok(!view.text(true).includes(copy.inspectionCopy[lang].mesQcStatus), 'Trial must not masquerade as a production QC verdict');
+      assert.equal(view.writes.length, 0, 'Rendering a verified verdict sends no operation');
+    }
+  }
+});
+
+test('missing, unverified and unresolved standalone projections never borrow local or production verdicts', () => {
+  for (const lang of ['ko', 'zh'] as const) {
+    const initial = fixture('completed');
+    for (const observation of [undefined, null, { verdict: null, observed_at: null },
+      { verdict: null, observed_at: initial.mes_checked_at }, { verdict: 'pass', observed_at: null },
+      { verdict: 'pass', observed_at: 'invalid-time' }, { verdict: 'unexpected', observed_at: initial.mes_checked_at }] as const) {
+      const candidate = { ...initial, mes_trial_observation: observation } as model.InspectionRequest;
+      const view = harness(candidate, lang);
+      assert.equal(metaValue(view, copy.inspectionCopy[lang].mesTrialVerdict), trial.integrationTrialCopy[lang].unknown);
+    }
+    initial.mes_completion_status = 'approval_pending';
+    initial.mes_trial_observation = { verdict: null, observed_at: initial.mes_checked_at };
+    const pending = harness(initial, lang);
+    assert.equal(metaValue(pending, copy.inspectionCopy[lang].mesTrialVerdict), trial.integrationTrialCopy[lang].unknown);
+    assert.equal(metaValue(pending, copy.inspectionCopy[lang].mesCompletion), copy.mesCompletionLabels[lang].approval_pending);
+    initial.sync_status = 'unknown'; initial.last_error_code = 'mes_outcome_unknown';
+    initial.mes_trial_observation = { verdict: 'pass', observed_at: initial.mes_checked_at };
+    const unknown = harness(initial, lang);
+    assert.equal(metaValue(unknown, copy.inspectionCopy[lang].mesTrialVerdict), trial.integrationTrialCopy[lang].unknown);
+    assert.ok(unknown.text(true).includes(copy.inspectionCopy[lang].reconciliationRequired));
+  }
+});
+
+test('production inspection keeps its MES QC status even if a trial projection is present', () => {
+  for (const lang of ['ko', 'zh'] as const) {
+    const initial = fixture('completed');
+    initial.source_kind = 'local_manual'; initial.inspection_type = 'first'; initial.mes_workflow!.test_only = false;
+    initial.mes_state.qc_status = 4;
+    initial.mes_trial_observation = { verdict: 'pass', observed_at: initial.mes_checked_at };
+    const view = harness(initial, lang);
+    assert.equal(metaValue(view, copy.inspectionCopy[lang].mesQcStatus), copy.mesQcLabels[lang][4]);
+    assert.ok(!view.text(true).includes(copy.inspectionCopy[lang].mesTrialVerdict));
   }
 });
 

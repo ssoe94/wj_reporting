@@ -1,4 +1,5 @@
 import type { InspectionDataMode, InspectionRequest } from './model';
+import { integrationTrialCopy } from './integrationTrial.ts';
 
 export const inspectionCopy = {
   ko: {
@@ -37,7 +38,7 @@ export const inspectionCopy = {
     review: '검수', independent: '검수자는 검사 결과 제출자와 달라야 합니다.', reason: '처리 사유', reasonHint: '검수·반려·재검의 근거를 입력하세요.', approve: '검수 승인', reject: '반려', reinspect: '재검 요청 생성',
     approved: '검수 완료 · MES 완료 상태를 확인하세요.', rejectedMessage: '검사 결과를 반려했습니다.', reinspected: '재검 요청 생성 완료. 원검사 이력은 보존됩니다.',
     reasonRequired: '처리 사유를 입력해 주세요.', reviewReason: '최근 검수 사유',
-    mes: 'MES 검사 완료 상태', syncStatus: '검사 결과 동기화', mesCompletion: 'MES 검사 완료', mesTaskStatus: 'MES 작업 상태 코드', mesQcStatus: 'MES 품질 판정', receiptReadiness: '사출 입고 선행조건', externalResult: 'MES 결과 ID', errorCode: '최근 오류 코드',
+    mes: 'MES 검사 완료 상태', syncStatus: '검사 결과 동기화', mesCompletion: 'MES 검사 완료', mesTaskStatus: 'MES 작업 상태 코드', mesQcStatus: 'MES 품질 판정', mesTrialVerdict: 'MES 시험 판정', receiptReadiness: '사출 입고 선행조건', externalResult: 'MES 결과 ID', errorCode: '최근 오류 코드',
     refreshMes: 'MES 상태 재조회', mesSave: 'MES 검사값 저장', mesFinish: 'QC 검사 완료', mesStored: 'MES 저장 확인 완료.', mesFinished: 'MES 검사 완료 확인.', mesFinishConfirm: '이 QC 검사요청을 완료할까요? 생산 작업지시 종료나 입고 처리는 요청하지 않습니다.', mesStageHint: '검사값 저장과 QC 검사 완료는 별도 요청입니다. 저장값·시험표기를 재조회로 확인한 뒤 완료할 수 있습니다.', mesTestLabel: '원천 시험표기', sync: 'MES 결과 동기화',
     receiptHint: '입고는 별도 사출 업무이며 실제 입고 조건은 미확인입니다. 공정검사(巡检)가 대기 중이라는 이유만으로 입고 차단을 판단하지 않습니다. WJ 저장·검수, MES 항목 저장·검사 종료·판정·승인은 각각 확인하세요.',
     previousObservation: '이전 관측', currentReconciliation: '현재 대조 필요', observedAt: '관측 시각', previousObservationHint: '아래는 이전 관측값입니다. 현재 완료·합격·입고 가능이 확인된 상태가 아닙니다.',
@@ -88,7 +89,7 @@ export const inspectionCopy = {
     review: '审核', independent: '审核人与检验结果提交人必须不同。', reason: '处理原因', reasonHint: '填写审核、退回或复检的依据。', approve: '审核通过', reject: '退回', reinspect: '创建复检申请',
     approved: '审核完成 · 请确认 MES 完成状态。', rejectedMessage: '检验结果已退回。', reinspected: '复检申请已创建，原检验记录保留。',
     reasonRequired: '请填写处理原因。', reviewReason: '最近审核原因',
-    mes: 'MES 检验完成状态', syncStatus: '检验结果同步', mesCompletion: 'MES 检验完成', mesTaskStatus: 'MES 作业状态代码', mesQcStatus: 'MES 品质判定', receiptReadiness: '注塑入库前置条件', externalResult: 'MES 结果 ID', errorCode: '最近错误代码',
+    mes: 'MES 检验完成状态', syncStatus: '检验结果同步', mesCompletion: 'MES 检验完成', mesTaskStatus: 'MES 作业状态代码', mesQcStatus: 'MES 品质判定', mesTrialVerdict: 'MES 测试判定', receiptReadiness: '注塑入库前置条件', externalResult: 'MES 结果 ID', errorCode: '最近错误代码',
     refreshMes: '重新查询 MES 状态', mesSave: '保存 MES 检验值', mesFinish: '完成 QC 检验', mesStored: 'MES 保存已确认。', mesFinished: 'MES 检验完成已确认。', mesFinishConfirm: '完成此 QC 检验申请？此操作不请求关闭生产工单或入库。', mesStageHint: '保存检验值与完成 QC 检验是独立请求。重新查询并核对保存值和测试标记后才能完成。', mesTestLabel: '源系统测试标记', sync: '同步 MES 检验结果',
     receiptHint: '入库属于独立的注塑业务，实际入库条件尚未确认。不得仅因巡检待处理而判断入库被阻止。WJ 保存、审核与 MES 项目保存、检验结束、判定、审批需分别确认。',
     previousObservation: '此前观测', currentReconciliation: '当前需核对', observedAt: '观测时间', previousObservationHint: '以下保留的是此前观测值，当前是否完成、合格或可入库尚未确认。',
@@ -160,6 +161,14 @@ export function inspectionMesObservationCopy(lang: 'ko' | 'zh', request: Pick<In
     checkedAt,
     hint: unresolved ? `${text.previousObservationHint} ${text.observedAt}: ${checkedAt}` : '',
   };
+}
+
+/** Only the server's verified standalone projection can establish a trial verdict. */
+export function inspectionMesTrialObservationCopy(lang: 'ko' | 'zh', observation: InspectionRequest['mes_trial_observation'], unresolved: boolean): string {
+  const text = integrationTrialCopy[lang];
+  if (unresolved || !observation || typeof observation !== 'object' || Array.isArray(observation)
+    || typeof observation.observed_at !== 'string' || !Number.isFinite(Date.parse(observation.observed_at))) return text.unknown;
+  return observation.verdict === 'pass' ? text.pass : observation.verdict === 'fail' ? text.fail : text.unknown;
 }
 
 export function inspectionTime(value: string | null | undefined, lang: 'ko' | 'zh'): string {

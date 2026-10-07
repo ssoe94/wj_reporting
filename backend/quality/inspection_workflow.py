@@ -120,6 +120,16 @@ def serialize(request, user, *, detail=True):
         if case else None)
     data['mes_state'] = {key: request.mes_snapshot.get(key) for key in ('task_status', 'qc_status', 'state_version', 'receipt_allowed')}
     if detail:
+        data['mes_trial_observation'] = None
+        binding = getattr(request, 'mes_binding', None)
+        if request.source_kind == 'integration_test' or (binding and binding.test_only is True):
+            # Reuse the board's identity, digest, time and lifecycle validation.
+            # A trial verdict never becomes a production quality-status code.
+            from .inspection_kanban import _trial_projection
+            trial = _trial_projection(request, now=timezone.now())
+            data['mes_trial_observation'] = {
+                'verdict': trial['trial_verdict'], 'observed_at': trial['observed_at'],
+            }
         data['audit'] = [{key: getattr(row, key) for key in ('id', 'actor_name', 'action', 'version', 'status', 'reason', 'result_digest')}
                          | {'created_at': row.created_at.isoformat()} for row in request.audit.all()]
         data['operations'] = [{'id': row.id, 'scope': row.scope, 'key': str(row.key), 'status': row.status,

@@ -6,7 +6,7 @@ import { ExternalLink, Plus, RefreshCw } from 'lucide-react';
 import MesConnectionDialog from '@/components/MesConnectionDialog';
 import { editableInspectionDraft, getInspectionRequest, inspectionDraftPayload, mutateInspectionRequest } from './api';
 import type { InspectionCapabilities, InspectionDraft, InspectionMeasurement, InspectionRequest } from './api';
-import { inspectionActionLabels, inspectionCopy, inspectionDataSourceCopy, inspectionMesObservationCopy, inspectionOperationLabels, inspectionRequestStatusLabels, inspectionTime, inspectionTypeLabels } from './copy';
+import { inspectionActionLabels, inspectionCopy, inspectionDataSourceCopy, inspectionMesObservationCopy, inspectionMesTrialObservationCopy, inspectionOperationLabels, inspectionRequestStatusLabels, inspectionTime, inspectionTypeLabels } from './copy';
 import { createInspectionKey, inspectionError, inspectionMutationAttempt, inspectionRecoveryKey, inspectionRequiresMesConnection, parseInspectionRecovery, safeInspectionEvidenceUrl } from './workflow';
 import type { InspectionAction, InspectionRecovery, MutationAttempt } from './workflow';
 import { inspectionRequestKind } from './kanban';
@@ -242,7 +242,7 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
       {mesObservation.hint && <p className="inspection-message" role="status">{mesObservation.hint}</p>}
       <dl className="inspection-meta">
       {meta(text.syncStatus, mesObservation.sync)}{meta(text.mesCompletion, mesObservation.completion)}
-      {meta(text.mesQcStatus, mesObservation.qc)}{meta(text.mesChecked, mesObservation.checkedAt)}
+      {trial ? meta(text.mesTrialVerdict, inspectionMesTrialObservationCopy(lang, request.mes_trial_observation, remoteUnresolved || unresolved)) : meta(text.mesQcStatus, mesObservation.qc)}{meta(text.mesChecked, mesObservation.checkedAt)}
     </dl>
       {!globalCapabilities.mes.enabled && request.mes_workflow?.phase !== 'completed' && <p className="inspection-muted" role="status">{lang === 'ko' ? '이 검사요청의 MES 처리 준비가 필요합니다.' : '此检验申请需准备 MES 处理。'}</p>}
       <div className="inspection-actions inspection-mes-actions">

@@ -26,6 +26,10 @@ export type InspectionMesWorkflow = {
   enabled: boolean; test_only?: boolean; qc_code?: string | null; test_label: string | null; last_verified_at: string | null;
   can_save: boolean; can_finish: boolean; can_reconcile: boolean;
 };
+export type InspectionMesTrialObservation = {
+  verdict: 'pass' | 'fail' | null;
+  observed_at: string | null;
+};
 export type InspectionRequest = InspectionCreate & InspectionDraft & {
   id: number; source_kind: string; parent: number | null; assigned_to: number | null; assigned_to_name: string;
   status: InspectionStatus; version: number; submitted_by: number | null; submitted_at: string | null;
@@ -35,6 +39,7 @@ export type InspectionRequest = InspectionCreate & InspectionDraft & {
   audit: { id: number; actor_name: string; action: string; version: number; status: string; reason: string; result_digest: string; created_at: string }[];
   operations: { id: number; scope: string; key: string; status: string; response_status: number | null; created_at: string; completed_at: string | null }[];
   mes_workflow?: InspectionMesWorkflow;
+  mes_trial_observation?: InspectionMesTrialObservation | null;
   nonconformance?: { state: string; quantity: string | null; uom: string; owner_name: string; mes_status: string; can_execute: false } | null;
   capabilities: InspectionRecordCapabilities;
 };
