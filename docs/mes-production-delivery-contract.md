@@ -33,9 +33,11 @@ Shanghai 08:00 business day. Inbound observations must join to the observed
 report IDs. Queries and response sizes are bounded; missing or truncated evidence
 stays partial. IDs and quantities preserve exact representation.
 
-The reader reuses the current account's USER lease. Its explicit identity client
-accepts only an already available static/cached APP token: no USER/APP issuance,
-refresh, fallback, response-driven retry or additional stored authority. Missing
+The reader reuses the current account's USER lease. Its identity client
+prefers the existing static/cached APP supply. After a service restart, the
+existing broker may replenish the configured APP supply after verifying the
+stored USER lease; it does not exchange or refresh USER credentials or add
+authority. No failed-request retry or alternate credential source exists. Missing
 connection/supply and provider permission errors are distinct fixed failures.
 Raw responses, credentials and QC measurements are never returned to this UI.
 

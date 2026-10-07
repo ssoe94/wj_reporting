@@ -2,7 +2,7 @@
 
 The caller chooses an existing MES code. The server discovers and checks its
 IDs, uses the existing same-user lease and an existing APP identity supply, and
-projects state without measurement values. No credential issuance, retry, page
+projects state without measurement values. No USER credential issuance, retry, page
 crawl, inventory balance inference or state-changing route exists here.
 """
 from dataclasses import replace
@@ -83,7 +83,9 @@ class MesProductionStatusReadTransport:
             response = self.sender(self.origin + ROUTE_BASE + STATUS_ROUTES[action],
                 params={'access_token': self.credential.value}, data=encode_exact_json(payload),
                 headers={'Content-Type': 'application/json'}, timeout=(3, 7), allow_redirects=False)
-            if response.history:
+            # The established sender already rejects redirects and returns its
+            # compact status/content response without a history attribute.
+            if getattr(response, 'history', ()):
                 raise StatusReadUnavailable()
             if response.status_code == 401:
                 raise MesAuthenticationRejected()
@@ -98,7 +100,10 @@ class MesProductionStatusReadTransport:
                 raise StatusReadUnavailable()
             if body['code'] in (3500060, 403) or body.get('subCode') == 'URL_NO_PERMISSION':
                 raise StatusReadUnavailable('permission_required')
-            if body['code'] != 200 or body.get('needCheck', 0) != 0:
+            check = body.get('needCheck')
+            # Successful READ responses carry null here in the live provider.
+            # This tolerance belongs only to these four non-mutating routes.
+            if body['code'] != 200 or (check is not None and (type(check) is not int or check != 0)):
                 raise StatusReadUnavailable()
             return body
         except (StatusReadUnavailable, MesAuthenticationRejected):
@@ -195,11 +200,19 @@ def read_mes_production_status(session, business_date, work_order_code, *, provi
                 and vault.policy() == configuration and vault.expected_user(session.actor_id) == mes_user_id
                 and getattr(settings, 'MES_INSPECTION_ENABLED', False) is True
                 and getattr(settings, 'MES_USER_OAUTH_ENABLED', False) is True)
-        # Explicit provider excludes the broker's APP issuance fallback.
+        # Prefer an already available APP supply. After a service restart the
+        # standard broker may replenish the already configured APP supply,
+        # only after validating the current stored USER lease. This never
+        # exchanges a user code, refreshes USER credentials or changes authority.
         if provider is None:
-            provider = BlacklakeUserOAuthClient(origin=origin,
-                app_access_token=get_existing_app_access_token(),
-                app_token_header=getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token'))
+            try:
+                existing_app = get_existing_app_access_token()
+            except AppCredentialUnavailable:
+                pass
+            else:
+                provider = BlacklakeUserOAuthClient(origin=origin,
+                    app_access_token=existing_app,
+                    app_token_header=getattr(settings, 'MES_USER_OAUTH_APP_TOKEN_HEADER', 'access_token'))
         start = datetime.combine(business_date, time(8), ZoneInfo('Asia/Shanghai'))
         binding = DeliveryReadBinding(configuration.tenant, work_order_code,
             window_start_ms=int(start.timestamp())*1000,

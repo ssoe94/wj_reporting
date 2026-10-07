@@ -330,9 +330,11 @@ class ReadDecoderTests(unittest.TestCase):
 
     def test_response_envelope_and_boolean_enum_do_not_coerce(self):
         row = task_detail()
-        for changes in ({'code': True}, {'needCheck': None}, {'needCheck': 1}):
+        for changes in ({'code': True}, {'needCheck': False}, {'needCheck': 1}):
             response = ack(row); response.update(changes)
             with self.assertRaises(MesExecutionContractError): decode_task_detail(response, binding())
+        response = ack(row); response['needCheck'] = None
+        self.assertEqual(decode_task_detail(response, binding()).fields['task_id'], BASE + 2)
         row['taskStatus']['code'] = True
         with self.assertRaises(MesExecutionContractError): decode_task_detail(ack(row), binding())
 

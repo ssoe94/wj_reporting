@@ -227,8 +227,9 @@ def build_inbound_records_read(binding, receipt_ids, *, page=1, size=25):
 
 def _data(response, expected=dict):
     value = _object(response)
+    check = value.get('needCheck')
     if (type(value.get('code')) is not int or value['code'] != 200
-            or type(value.get('needCheck')) is not int or value['needCheck'] != 0
+            or (check is not None and (type(check) is not int or check != 0))
             or type(value.get('data')) is not expected): _error()
     return value['data']
 

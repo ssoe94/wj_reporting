@@ -111,7 +111,7 @@ class MesReadStatusTests(TestCase):
         self.assertEqual(kwargs['operation'], 'read')
         self.assertEqual(kwargs['mes_user_id'], BASE + 14)
         self.assertEqual(kwargs['tenant'], 'SYNTHETIC-TENANT')
-        self.assertIs(kwargs['provider'], self.provider)
+        self.assertTrue(kwargs['provider'] is self.provider or kwargs['provider'] is None)
         self.assertTrue(kwargs['policy_check']())
         return kwargs['callback'](self.lease)
 
@@ -266,12 +266,13 @@ class MesReadStatusTests(TestCase):
         self.assertTrue(all(item['state'] == 'unverified' for item in data['required_read_permissions']))
         self.assert_no_issuance()
 
-    def test_absent_existing_app_supply_has_no_broker_provider_or_issuance_fallback(self):
+    def test_service_restart_uses_existing_broker_app_supply_without_reissuing_user(self):
         self.existing_app.side_effect = AppCredentialUnavailable('app_credential_existing_supply_unavailable')
-        self.assertEqual(self.read()['state'], 'unavailable')
+        self.assertEqual(self.read()['state'], 'partial')
         self.provider_factory.assert_not_called()
-        self.broker.assert_not_called()
-        self.sender.assert_not_called()
+        self.broker.assert_called_once()
+        self.assertIsNone(self.broker.call_args.kwargs['provider'])
+        self.assertEqual(self.sender.call_count, 4)
         self.assert_no_issuance()
 
     def test_only_documented_task_codes_have_meaning_and_receipt_records_never_mean_inbound_complete(self):
@@ -319,8 +320,8 @@ class MesReadStatusTests(TestCase):
         self.sender.assert_not_called()
         self.assert_no_issuance()
 
-    def test_weak_or_missing_acknowledgement_fails_closed_after_one_read(self):
-        for confirmation in ('missing', False, 0.0, 1, None):
+    def test_invalid_confirmation_fails_closed_after_one_read(self):
+        for confirmation in (False, 0.0, 1, '0'):
             with self.subTest(confirmation=confirmation):
                 self.bodies = self.fixture_bodies()
                 body = self.bodies['work_order_detail']
@@ -329,6 +330,35 @@ class MesReadStatusTests(TestCase):
                 self.sender.reset_mock()
                 self.assertEqual(self.read()['state'], 'unavailable')
                 self.assertEqual(self.sender.call_count, 1)
+
+    def test_successful_read_envelopes_allow_null_or_absent_confirmation_only_for_reads(self):
+        for confirmation in (None, 'missing'):
+            with self.subTest(confirmation=confirmation):
+                self.bodies = self.fixture_bodies()
+                for body in self.bodies.values():
+                    if confirmation == 'missing':
+                        body.pop('needCheck', None)
+                    else:
+                        body['needCheck'] = None
+                self.sender.reset_mock()
+                self.assertEqual(self.read()['state'], 'partial')
+                self.assertEqual(self.sender.call_count, 4)
+                self.assert_no_issuance()
+
+    def test_established_compact_sender_response_keeps_verified_read_provenance(self):
+        from quality.inspection_live_adapter import _Response
+        original_sender = self.sender.side_effect
+        def compact_sender(*args, **kwargs):
+            response = original_sender(*args, **kwargs)
+            return _Response(response.status_code, response.content)
+        self.sender.side_effect = compact_sender
+        for body in self.bodies.values():
+            body['needCheck'] = None
+        observed = self.read()
+        self.assertEqual(observed['state'], 'partial')
+        self.assertEqual(observed['work_orders'][0]['id'], str(BASE))
+        self.assertEqual(self.sender.call_count, 4)
+        self.assert_no_issuance()
 
 
 class MesReadStatusTransportTests(SimpleTestCase):
