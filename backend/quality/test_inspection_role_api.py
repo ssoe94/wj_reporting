@@ -141,3 +141,64 @@ class InspectionRoleApiTests(APITestCase):
         self.assertEqual(self.client.get(self.base + 'role-settings/').status_code, 403)
         self.assertEqual(self.post('role-settings/', {'code': 'SYNTHETIC', 'label': 'SYNTHETIC'}).status_code, 403)
         self.assertEqual(InspectionShiftSetting.objects.count(), 0)
+
+    def shift_payload(self, **changes):
+        payload = {'code': 'SYNTHETIC-NIGHT-PERIOD', 'label': 'SYNTHETIC night assignment',
+            'timezone': 'Asia/Shanghai', 'start_time': '20:00', 'end_time': '08:00',
+            'appearance_assignee': self.owner.pk, 'dimension_assignee': self.other.pk,
+            'effective_from_local': '2026-10-07T20:00',
+            'effective_until_local': '2026-10-08T08:00', 'active': True}
+        payload.update(changes)
+        return payload
+
+    def test_settings_api_preserves_local_time_and_utc_and_rejects_stale_save(self):
+        created = self.post('role-settings/', self.shift_payload())
+        self.assertEqual(created.status_code, 201, created.data)
+        setting = created.data['setting']
+        self.assertEqual(setting['effective_from_local'], '2026-10-07T20:00')
+        self.assertEqual(setting['effective_until_local'], '2026-10-08T08:00')
+        self.assertEqual(setting['effective_from'], '2026-10-07T12:00:00+00:00')
+        self.assertEqual(setting['effective_until'], '2026-10-08T00:00:00+00:00')
+        self.assertEqual(created.data['actor_id'], self.owner.pk)
+        path = self.base + f'role-settings/{setting["id"]}/'
+        change = {'version': setting['version'], 'label': 'SYNTHETIC corrected label',
+                  'reason': 'SYNTHETIC reviewed change'}
+        saved = self.client.patch(path, change, format='json',
+                                 HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
+        self.assertEqual(saved.status_code, 200, saved.data)
+        before = list(InspectionShiftSetting.objects.values())
+        stale = self.client.patch(path, dict(change, effective_until_local='2026-10-09T08:00'),
+                                 format='json', HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
+        self.assertEqual(stale.status_code, 409, stale.data)
+        self.assertEqual(list(InspectionShiftSetting.objects.values()), before)
+
+    def test_night_assignment_api_requires_entire_declared_shift_inside_effective_period(self):
+        request = self.create()
+        created = self.post('role-settings/', self.shift_payload())
+        self.assertEqual(created.status_code, 201, created.data)
+        setting = created.data['setting']
+        payload = {'config_version': request['role_workflow']['config_version'],
+            'shift_setting_id': setting['id'], 'shift_version': setting['version'],
+            'shift_date': '2026-10-08',
+            'item_areas': {'dimension': 'dimension', 'look': 'appearance'},
+            'reason': 'SYNTHETIC declared night shift'}
+        outside = self.post(f'{request["id"]}/role-configure/', payload)
+        self.assertEqual(outside.status_code, 400, outside.data)
+        stored = InspectionRoleWorkflow.objects.get(request_id=request['id'])
+        self.assertEqual((stored.status, stored.shift_snapshot), ('unconfigured', {}))
+        configured = self.post(f'{request["id"]}/role-configure/',
+                               dict(payload, shift_date='2026-10-07'))
+        self.assertEqual(configured.status_code, 200, configured.data)
+        snapshot = configured.data['role_workflow']['shift_snapshot']
+        self.assertEqual(snapshot['window_start'], '2026-10-07T20:00:00+08:00')
+        self.assertEqual(snapshot['window_end'], '2026-10-08T08:00:00+08:00')
+        self.assertEqual(snapshot['effective_until_local'], '2026-10-08T08:00')
+
+    def test_settings_api_rejects_offset_and_server_controlled_timestamp_without_rows(self):
+        for changes in ({'effective_from_local': '2026-10-07T20:00+08:00'},
+                        {'effective_from': '2026-10-07T12:00:00Z'},
+                        {'effective_from_local': None}):
+            with self.subTest(changes=changes):
+                response = self.post('role-settings/', self.shift_payload(**changes))
+                self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(InspectionShiftSetting.objects.count(), 0)

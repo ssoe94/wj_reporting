@@ -9,6 +9,8 @@ class InspectionShiftSetting(models.Model):
     timezone = models.CharField(max_length=64, default='Asia/Shanghai')
     starts_at = models.TimeField(null=True, blank=True)
     ends_at = models.TimeField(null=True, blank=True)
+    effective_from = models.DateTimeField(null=True, blank=True)
+    effective_until = models.DateTimeField(null=True, blank=True)
     appearance_assignee = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name='appearance_inspection_shifts')
     dimension_assignee = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,

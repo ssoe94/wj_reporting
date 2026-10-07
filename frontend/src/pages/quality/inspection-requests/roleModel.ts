@@ -6,10 +6,13 @@ export type InspectionRoleSetting = {
   id: number; version: number; code: string; label: string; timezone: string; start_time: string | null; end_time: string | null;
   appearance_assignee: number | null; dimension_assignee: number | null;
   appearance_assignee_name?: string; dimension_assignee_name?: string; active: boolean;
-  shift_date?: string;
+  shift_date?: string; window_start?: string; window_end?: string;
+  effective_from?: string | null; effective_until?: string | null;
+  effective_from_local?: string | null; effective_until_local?: string | null;
 };
+export type InspectionRoleCandidate = { id: number; name: string; username?: string; mes_user_id?: string | null };
 export type InspectionRoleSettings = {
-  settings: InspectionRoleSetting[]; candidates: { id: number; name: string }[]; can_configure: boolean;
+  settings: InspectionRoleSetting[]; candidates: InspectionRoleCandidate[]; can_configure: boolean;
 };
 export type InspectionRoleArea = {
   area: InspectionArea; assigned_to: number | null; assigned_to_name: string; version: number;
@@ -77,7 +80,9 @@ export function parseInspectionRoleSettings(value: unknown): InspectionRoleSetti
   if (!value || typeof value !== 'object') throw new Error('Invalid inspection role settings');
   const data = value as InspectionRoleSettings;
   if (!Array.isArray(data.settings) || !Array.isArray(data.candidates) || typeof data.can_configure !== 'boolean'
-    || data.candidates.some((row) => !Number.isSafeInteger(row.id) || row.id <= 0 || typeof row.name !== 'string')
+    || data.candidates.some((row) => !Number.isSafeInteger(row.id) || row.id <= 0 || typeof row.name !== 'string'
+      || (row.username !== undefined && typeof row.username !== 'string')
+      || (row.mes_user_id !== undefined && row.mes_user_id !== null && typeof row.mes_user_id !== 'string'))
     || data.settings.some((row) => !Number.isSafeInteger(row.id) || row.id <= 0 || !Number.isSafeInteger(row.version) || row.version < 1 || typeof row.label !== 'string')) throw new Error('Invalid inspection role settings');
   return data;
 }

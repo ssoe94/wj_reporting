@@ -30,6 +30,7 @@ export async function saveInspectionRoleSetting(id: number | null, payload: Reco
   const data = response.data;
   const setting = data?.setting;
   const nullableActor = (value: number | null) => value === null || (Number.isSafeInteger(value) && value > 0);
+  const periodFields = ['effective_from', 'effective_until', 'effective_from_local', 'effective_until_local'] as const;
   if (data?.actor_id !== expectedActorId || data.can_configure !== true || !setting
     || !Number.isSafeInteger(setting.id) || setting.id <= 0 || (id !== null && setting.id !== id)
     || !Number.isSafeInteger(setting.version) || setting.version < 1
@@ -37,10 +38,11 @@ export async function saveInspectionRoleSetting(id: number | null, payload: Reco
     || typeof setting.timezone !== 'string' || typeof setting.active !== 'boolean'
     || !(setting.start_time === null || typeof setting.start_time === 'string')
     || !(setting.end_time === null || typeof setting.end_time === 'string')
-    || !nullableActor(setting.appearance_assignee) || !nullableActor(setting.dimension_assignee)) throw new Error('Inspection role setting mutation identity mismatch');
+    || !nullableActor(setting.appearance_assignee) || !nullableActor(setting.dimension_assignee)
+    || periodFields.some((field) => setting[field] !== null && typeof setting[field] !== 'string')) throw new Error('Inspection role setting mutation identity mismatch');
   const settings = parseInspectionRoleSettings(data);
   const listed = settings.settings.find((row) => row.id === setting.id);
-  if (!listed || ['id', 'version', 'code', 'label', 'timezone', 'start_time', 'end_time', 'appearance_assignee', 'dimension_assignee', 'active'].some((field) => listed[field as keyof InspectionRoleSetting] !== setting[field as keyof InspectionRoleSetting])) throw new Error('Inspection role setting mutation identity mismatch');
+  if (!listed || ['id', 'version', 'code', 'label', 'timezone', 'start_time', 'end_time', 'appearance_assignee', 'dimension_assignee', 'active', ...periodFields].some((field) => listed[field as keyof InspectionRoleSetting] !== setting[field as keyof InspectionRoleSetting])) throw new Error('Inspection role setting mutation identity mismatch');
   return setting;
 }
 export async function mutateInspectionRole(id: number, attempt: InspectionRoleAttempt, sessionId: string | null): Promise<InspectionRequest> {

@@ -3,7 +3,7 @@ from copy import deepcopy
 from datetime import timedelta
 from threading import Barrier, Thread
 from queue import Queue
-from unittest import skipUnless
+from unittest import mock, skipUnless
 import uuid
 
 from django.contrib.auth import get_user_model
@@ -47,7 +47,8 @@ class RoleFixtures:
     def shift_payload(self, **changes):
         value = {'code': 'SYNTHETIC-DAY', 'label': 'SYNTHETIC shift', 'timezone': 'Asia/Shanghai',
             'start_time': '08:00', 'end_time': '20:00', 'appearance_assignee': self.appearance.pk,
-            'dimension_assignee': self.dimension.pk, 'active': True}
+            'dimension_assignee': self.dimension.pk, 'active': True,
+            'effective_from_local': '2026-10-01T' + (changes.get('start_time') or '08:00')[:5]}
         value.update(changes)
         return value
 
@@ -104,6 +105,7 @@ class InspectionRoleTests(RoleFixtures, TestCase):
         self.assertFalse(data['setting']['active'])
         self.assertIsNone(data['setting']['start_time'])
         self.assertIsNone(data['setting']['appearance_assignee'])
+        self.assertIsNone(data['setting']['effective_from'])
         self.assertEqual(before_permissions, list(self.dimension.user_permissions.values_list('id', flat=True)))
 
     def test_activation_requires_times_and_distinct_actors(self):
@@ -117,6 +119,44 @@ class InspectionRoleTests(RoleFixtures, TestCase):
         names = {entry['username'] for entry in settings_list(self.admin)['candidates']}
         self.assertNotIn('SYNTHETIC-inactive', names)
         self.assertNotIn('SYNTHETIC-ungranted', names)
+
+    def test_candidate_name_account_and_mes_mapping_are_identification_only(self):
+        get_user_model().objects.filter(pk=self.appearance.pk).update(first_name='SYNTHETIC', last_name='Inspector')
+        with self.settings(MES_USER_OAUTH_USER_MAP={str(self.appearance.pk): '91000000000000011'}), mock.patch(
+                'mes_oauth.vault._keys', side_effect=AssertionError('Credential access forbidden')):
+            candidate = next(entry for entry in settings_list(self.admin)['candidates'] if entry['id'] == self.appearance.pk)
+        self.assertEqual(candidate['name'], 'SYNTHETIC Inspector')
+        self.assertEqual(candidate['username'], self.appearance.username)
+        self.assertEqual(candidate['mes_user_id'], '91000000000000011')
+        self.assertFalse(role_summary(self.request, self.appearance)['mes']['wj_actor_is_mes_executor'])
+        unmapped = next(entry for entry in settings_list(self.admin)['candidates'] if entry['id'] == self.appearance.pk)
+        self.assertIsNone(unmapped['mes_user_id'])
+
+    def test_named_actor_assignment_and_completion_snapshots_survive_name_and_setting_changes(self):
+        get_user_model().objects.filter(pk=self.appearance.pk).update(first_name='SYNTHETIC', last_name='Inspector')
+        self.configure()
+        self.workflow.refresh_from_db()
+        original = deepcopy(self.workflow.actor_snapshot)
+        self.assertEqual(original['appearance'], {'id': self.appearance.pk,
+            'name': 'SYNTHETIC Inspector', 'username': self.appearance.username})
+        area = InspectionAreaResult.objects.get(workflow=self.workflow, area='appearance')
+        self.assertEqual(area.assigned_to_name, 'SYNTHETIC Inspector')
+        self.complete('appearance')
+        area.refresh_from_db()
+        self.assertEqual(area.completed_by_id, self.appearance.pk)
+        self.assertEqual(area.completed_by_name, 'SYNTHETIC Inspector')
+        get_user_model().objects.filter(pk=self.appearance.pk).update(first_name='Changed', last_name='Name')
+        settings_update(self.admin, self.shift_id, uuid.uuid4(), {'version': 1,
+            'label': 'SYNTHETIC future label', 'reason': 'SYNTHETIC snapshot preservation'},
+            session=inspection_session(self.admin))
+        self.workflow.refresh_from_db()
+        area.refresh_from_db()
+        self.assertEqual(self.workflow.actor_snapshot, original)
+        self.assertEqual(area.assigned_to_name, 'SYNTHETIC Inspector')
+        self.assertEqual(area.completed_by_name, 'SYNTHETIC Inspector')
+        audit = InspectionAudit.objects.get(request=self.request, action='role_appearance_complete')
+        self.assertEqual(audit.actor_id, self.appearance.pk)
+        self.assertEqual(audit.actor_name, self.appearance.username)
 
     def test_settings_require_admin_and_current_login(self):
         ordinary = get_user_model().objects.create_user(username='SYNTHETIC-no-role')
@@ -293,6 +333,118 @@ class InspectionRoleTests(RoleFixtures, TestCase):
         self.assertEqual(self.workflow.shift_snapshot['shift_date'], '2026-10-07')
         self.assertEqual(self.workflow.shift_snapshot['window_start'], '2026-10-07T08:00:00+08:00')
         self.assertEqual(self.workflow.shift_snapshot['basis'], 'explicit_declaration')
+        self.assertEqual(self.workflow.shift_snapshot['effective_from'], '2026-10-01T00:00:00+00:00')
+
+    def test_effective_period_parses_strict_local_minutes_to_utc(self):
+        response, _ = settings_update(self.admin, self.shift_id, uuid.uuid4(), {
+            'version': 1, 'effective_from_local': '2026-10-07T08:00',
+            'effective_until_local': '2026-10-07T20:00', 'reason': 'SYNTHETIC one shift'}, session=inspection_session(self.admin))
+        self.assertEqual(response['setting']['effective_from'], '2026-10-07T00:00:00+00:00')
+        self.assertEqual(response['setting']['effective_until'], '2026-10-07T12:00:00+00:00')
+        self.assertEqual(response['setting']['effective_from_local'], '2026-10-07T08:00')
+        self.assertEqual(response['setting']['effective_until_local'], '2026-10-07T20:00')
+        for value in ('2026-10-07', '2026-10-07T08:00Z', '2026-10-07T08:00:00', True, '9999-12-31T08:00'):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                settings_create(self.admin, uuid.uuid4(), {'code': 'SYNTHETIC-invalid-effective', 'label': 'Invalid',
+                    'effective_from_local': value}, session=inspection_session(self.admin))
+
+    def test_activation_effective_start_and_end_use_shift_boundaries(self):
+        cases = [{'effective_from_local': None}, {'effective_from_local': '2026-10-01T08:01'},
+                 {'effective_until_local': '2026-09-30T20:00'}, {'effective_until_local': '2026-10-01T08:00'},
+                 {'effective_until_local': '2026-10-02T09:00'}]
+        for changes in cases:
+            with self.subTest(changes=changes), self.assertRaises(ValidationError):
+                settings_create(self.admin, uuid.uuid4(), self.shift_payload(code='SYNTHETIC-invalid-effective', **changes),
+                                session=inspection_session(self.admin))
+
+    def test_future_handover_accepts_half_open_boundary_and_rejects_overlap(self):
+        settings_update(self.admin, self.shift_id, uuid.uuid4(), {'version': 1,
+            'effective_until_local': '2026-10-08T08:00', 'reason': 'SYNTHETIC handover'}, session=inspection_session(self.admin))
+        response, _ = settings_create(self.admin, uuid.uuid4(), self.shift_payload(code='SYNTHETIC-DAY-NEXT',
+            effective_from_local='2026-10-08T08:00'), session=inspection_session(self.admin))
+        self.assertTrue(response['setting']['active'])
+        with self.assertRaises(InspectionConflict):
+            settings_create(self.admin, uuid.uuid4(), self.shift_payload(code='SYNTHETIC-DAY-DUP',
+                effective_from_local='2026-10-07T08:00', effective_until_local='2026-10-07T20:00'),
+                session=inspection_session(self.admin))
+
+    def test_day_night_boundaries_and_next_day_window(self):
+        response, _ = settings_create(self.admin, uuid.uuid4(), self.shift_payload(code='SYNTHETIC-NIGHT',
+            start_time='20:00', end_time='08:00', effective_from_local='2026-10-07T20:00',
+            effective_until_local='2026-10-08T08:00'), session=inspection_session(self.admin))
+        self.configure(shift_setting_id=response['setting']['id'])
+        self.workflow.refresh_from_db()
+        self.assertEqual(self.workflow.shift_snapshot['window_start'], '2026-10-07T20:00:00+08:00')
+        self.assertEqual(self.workflow.shift_snapshot['window_end'], '2026-10-08T08:00:00+08:00')
+        with self.assertRaises(ValidationError):
+            self.configure(shift_setting_id=response['setting']['id'], shift_date='2026-10-08')
+
+    def test_effective_overlap_without_actual_clock_overlap_is_allowed_and_failure_rolls_back(self):
+        settings_update(self.admin, self.shift_id, uuid.uuid4(), {'version': 1,
+            'effective_until_local': '2026-10-02T08:00', 'reason': 'SYNTHETIC final DAY'}, session=inspection_session(self.admin))
+        response, _ = settings_create(self.admin, uuid.uuid4(), self.shift_payload(code='SYNTHETIC-CUSTOM-NIGHT',
+            start_time='22:00', end_time='10:00', effective_from_local='2026-10-01T22:00',
+            effective_until_local='2026-10-02T10:00'), session=inspection_session(self.admin))
+        self.assertTrue(response['setting']['active'])
+        before = (InspectionOperation.objects.count(), InspectionAudit.objects.count(),
+                  list(InspectionShiftSetting.objects.order_by('id').values()))
+        # Extending DAY now introduces an actual 08:00-10:00 overlap on Oct 2.
+        with self.assertRaises(InspectionConflict):
+            settings_update(self.admin, self.shift_id, uuid.uuid4(), {'version': 2,
+                'effective_until_local': '2026-10-02T20:00', 'label': 'Must rollback',
+                'reason': 'SYNTHETIC rejected extension'}, session=inspection_session(self.admin))
+        self.assertEqual(before, (InspectionOperation.objects.count(), InspectionAudit.objects.count(),
+                                 list(InspectionShiftSetting.objects.order_by('id').values())))
+
+    def test_custom_midnight_window_and_touching_night_handover(self):
+        first, _ = settings_create(self.admin, uuid.uuid4(), self.shift_payload(code='SYNTHETIC-CUSTOM-23',
+            start_time='23:00', end_time='01:00', effective_from_local='2026-10-07T23:00',
+            effective_until_local='2026-10-08T23:00'), session=inspection_session(self.admin))
+        self.configure(shift_setting_id=first['setting']['id'])
+        self.workflow.refresh_from_db()
+        self.assertEqual(self.workflow.shift_snapshot['window_end'], '2026-10-08T01:00:00+08:00')
+        next_period, _ = settings_create(self.admin, uuid.uuid4(), self.shift_payload(code='SYNTHETIC-CUSTOM-23-NEXT',
+            start_time='23:00', end_time='01:00', effective_from_local='2026-10-08T23:00'),
+            session=inspection_session(self.admin))
+        self.assertTrue(next_period['setting']['active'])
+        self.configure(shift_setting_id=next_period['setting']['id'], shift_date='2026-10-08')
+        self.workflow.refresh_from_db()
+        self.assertEqual(self.workflow.shift_snapshot['window_end'], '2026-10-09T01:00:00+08:00')
+
+    def test_inactive_draft_can_preserve_until_only_and_unaligned_period(self):
+        response, _ = settings_create(self.admin, uuid.uuid4(), {'code': 'SYNTHETIC-DRAFT-PERIOD', 'label': 'Draft',
+            'effective_until_local': '2026-10-07T09:15'}, session=inspection_session(self.admin))
+        self.assertFalse(response['setting']['active'])
+        self.assertIsNone(response['setting']['effective_from'])
+        self.assertEqual(response['setting']['effective_until_local'], '2026-10-07T09:15')
+
+    def test_whole_declared_shift_must_fit_validity_period(self):
+        settings_update(self.admin, self.shift_id, uuid.uuid4(), {'version': 1,
+            'effective_from_local': '2026-10-07T08:00', 'effective_until_local': '2026-10-07T20:00',
+            'reason': 'SYNTHETIC one DAY'}, session=inspection_session(self.admin))
+        self.configure(shift_version=2)
+        for outside in ('2026-10-06', '2026-10-08'):
+            with self.subTest(outside=outside), self.assertRaises(ValidationError):
+                self.configure(shift_version=2, shift_date=outside)
+
+    def test_configured_completed_snapshot_is_not_recomputed_from_future_setting(self):
+        self.complete('appearance')
+        self.complete('dimension')
+        self.workflow.refresh_from_db()
+        original = deepcopy(self.workflow.shift_snapshot)
+        settings_update(self.admin, self.shift_id, uuid.uuid4(), {'version': 1,
+            'effective_from_local': '2026-11-01T08:00', 'label': 'Future DAY',
+            'reason': 'SYNTHETIC future setting'}, session=inspection_session(self.admin))
+        self.workflow.refresh_from_db()
+        self.assertEqual(self.workflow.shift_snapshot, original)
+        self.assertEqual(self.request_now().judgement, 'pass')
+
+    def test_unknown_existing_effective_period_blocks_new_activation_without_backfill(self):
+        InspectionShiftSetting.objects.filter(pk=self.shift_id).update(effective_from=None)
+        with self.assertRaises(InspectionConflict):
+            settings_create(self.admin, uuid.uuid4(), self.shift_payload(code='SYNTHETIC-NEXT', start_time='20:00', end_time='08:00'),
+                            session=inspection_session(self.admin))
+        self.assertIsNone(InspectionShiftSetting.objects.get(pk=self.shift_id).effective_from)
 
     def test_legacy_cannot_opt_in_through_configuration(self):
         legacy = deepcopy(self.request)
@@ -371,3 +523,33 @@ class InspectionRolePostgresTests(RoleFixtures, TransactionTestCase):
         results = self.concurrent([callback, callback])
         self.assertEqual(sorted(kind for kind, _ in results), ['error', 'result'], results)
         self.assertTrue(any(isinstance(value, InspectionConflict) for kind, value in results if kind == 'error'))
+
+    def activation_callbacks(self, periods):
+        settings_update(self.admin, self.shift_id, uuid.uuid4(), {'version': 1, 'active': False,
+            'reason': 'SYNTHETIC isolated activation test'}, session=inspection_session(self.admin))
+        callbacks = []
+        for index, (start, end) in enumerate(periods):
+            actor = self.admin if index == 0 else self.outsider
+            session = inspection_session(actor)
+            response, _ = settings_create(actor, uuid.uuid4(), self.shift_payload(code=f'SYNTHETIC-ACTIVATE-{index}',
+                active=False, effective_from_local=start, effective_until_local=end), session=session)
+            setting_id, actor_id = response['setting']['id'], actor.pk
+            def call(setting_id=setting_id, actor_id=actor_id, session=session):
+                user = get_user_model().objects.get(pk=actor_id)
+                return settings_update(user, setting_id, uuid.uuid4(), {'version': 1, 'active': True,
+                    'reason': 'SYNTHETIC concurrent activation'}, session=session)
+            callbacks.append(call)
+        return callbacks
+
+    def test_concurrent_overlapping_activation_has_one_conflict(self):
+        results = self.concurrent(self.activation_callbacks([
+            ('2026-10-08T08:00', None), ('2026-10-08T08:00', None)]))
+        self.assertEqual(sorted(kind for kind, _ in results), ['error', 'result'], results)
+        self.assertTrue(any(isinstance(value, InspectionConflict) for kind, value in results if kind == 'error'))
+        self.assertEqual(InspectionShiftSetting.objects.filter(active=True).count(), 1)
+
+    def test_concurrent_adjacent_effective_periods_both_activate(self):
+        results = self.concurrent(self.activation_callbacks([
+            ('2026-10-08T08:00', '2026-10-09T08:00'), ('2026-10-09T08:00', None)]))
+        self.assertEqual([kind for kind, _ in results], ['result', 'result'], results)
+        self.assertEqual(InspectionShiftSetting.objects.filter(active=True).count(), 2)

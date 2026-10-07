@@ -1,6 +1,6 @@
 """Atomic WJ area results, with no MES transport or credential operations."""
 from contextlib import contextmanager
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 import re
 from zoneinfo import ZoneInfo
 
@@ -74,12 +74,37 @@ def _response(request, user):
 
 
 def _setting_data(setting):
+    zone = ZoneInfo(setting.timezone)
+    def effective(field, *, local=False):
+        value = getattr(setting, field)
+        if value is None:
+            return None
+        if local:
+            return value.astimezone(zone).replace(tzinfo=None).isoformat(timespec='minutes')
+        return value.astimezone(dt_timezone.utc).isoformat()
     return {'id': setting.pk, 'code': setting.code, 'label': setting.label,
         'timezone': setting.timezone, 'start_time': setting.starts_at.isoformat() if setting.starts_at else None,
         'end_time': setting.ends_at.isoformat() if setting.ends_at else None,
         'appearance_assignee': setting.appearance_assignee_id,
         'dimension_assignee': setting.dimension_assignee_id, 'active': setting.active,
-        'version': setting.version}
+        'version': setting.version, 'effective_from': effective('effective_from'),
+        'effective_until': effective('effective_until'),
+        'effective_from_local': effective('effective_from', local=True),
+        'effective_until_local': effective('effective_until', local=True)}
+
+
+def _mapped_mes_user(actor_id):
+    # This only validates the already configured actor->MES id mapping. It does
+    # not read credentials, invoke the provider, or assert executor authority.
+    from mes_oauth.vault import expected_user, VaultBlocked
+    try:
+        return str(expected_user(actor_id))
+    except VaultBlocked:
+        return None
+
+
+def _human_name(user):
+    return user.get_full_name() or user.get_username()
 
 
 def settings_list(user):
@@ -97,7 +122,8 @@ def settings_list(user):
         for actor in get_user_model().objects.filter(is_active=True).order_by('username', 'id'):
             if _eligible(actor):
                 candidates.append({'id': actor.pk, 'username': actor.get_username(),
-                                   'name': actor.get_full_name() or actor.get_username()})
+                    'name': actor.get_full_name() or actor.get_username(),
+                    'mes_user_id': _mapped_mes_user(actor.pk)})
     return {'settings': [_setting_data(row) for row in rows], 'candidates': candidates,
             'can_configure': bool(admin)}
 
@@ -121,6 +147,74 @@ def _intervals(start, end):
     return [(a, b)] if a < b else [(a, 86400), (0, b)]
 
 
+def _effective_local(value, field, zone_name):
+    if value is None or value == '':
+        return None
+    try:
+        if (not isinstance(value, str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}', value)):
+            raise ValueError()
+        naive = datetime.fromisoformat(value)
+        if naive.year == 9999:
+            raise ValueError()
+        zone = ZoneInfo(zone_name)
+        local = naive.replace(tzinfo=zone)
+        utc = local.astimezone(dt_timezone.utc)
+        if utc.astimezone(zone).replace(tzinfo=None) != naive:
+            raise ValueError()
+        # Reject ambiguous historical local clock times rather than selecting
+        # one occurrence without an explicit user decision.
+        second = naive.replace(tzinfo=zone, fold=1)
+        if (local.utcoffset() != second.utcoffset()
+                and second.astimezone(dt_timezone.utc).astimezone(zone).replace(tzinfo=None) == naive):
+            raise ValueError()
+        return utc
+    except (ValueError, OverflowError):
+        raise ValidationError({field: 'Use an unambiguous local datetime YYYY-MM-DDTHH:mm in Asia/Shanghai.'}) from None
+
+
+def _effective_validate(setting, *, active):
+    start, end = setting.effective_from, setting.effective_until
+    if start is not None and timezone.is_naive(start) or end is not None and timezone.is_naive(end):
+        raise ValidationError('Effective datetimes must include their server-interpreted timezone.')
+    if start is not None and end is not None and end <= start:
+        raise ValidationError({'effective_until_local': 'The end must be later than the start.'})
+    if not active:
+        return
+    if start is None:
+        raise ValidationError({'effective_from_local': 'Explicitly select the first effective shift start.'})
+    zone = ZoneInfo(setting.timezone)
+    if start.astimezone(zone).time() != setting.starts_at:
+        raise ValidationError({'effective_from_local': 'The effective start must match the shift start clock time.'})
+    if end is not None and end.astimezone(zone).time() not in {setting.starts_at, setting.ends_at}:
+        raise ValidationError({'effective_until_local': 'The effective end must match a shift start or end boundary.'})
+
+
+def _active_window_overlap(left, right):
+    """Intersect half-open validity ranges with recurring local clock windows."""
+    lower = max(left.effective_from, right.effective_from)
+    endings = [value for value in (left.effective_until, right.effective_until) if value is not None]
+    upper = min(endings) if endings else None
+    if upper is not None and upper <= lower:
+        return False
+    clock_segments = [(max(a, c), min(b, d))
+        for a, b in _intervals(left.starts_at, left.ends_at)
+        for c, d in _intervals(right.starts_at, right.ends_at) if max(a, c) < min(b, d)]
+    if not clock_segments:
+        return False
+    zone = ZoneInfo(left.timezone)
+    local_day = lower.astimezone(zone).date()
+    midnight = datetime.combine(local_day, time(), tzinfo=zone)
+    for start, end in clock_segments:
+        window_start = midnight + timedelta(seconds=start)
+        window_end = midnight + timedelta(seconds=end)
+        if window_end <= lower:
+            window_start += timedelta(days=1)
+            window_end += timedelta(days=1)
+        if max(window_start, lower) < (min(window_end, upper) if upper is not None else window_end):
+            return True
+    return False
+
+
 def _setting_validate(setting):
     if (not isinstance(setting.code, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', setting.code)
             or not isinstance(setting.label, str) or not setting.label.strip() or len(setting.label) > 128):
@@ -138,23 +232,26 @@ def _setting_validate(setting):
             actor = get_user_model().objects.filter(pk=actor_id, is_active=True).first()
             if not actor or not _eligible(actor):
                 raise ValidationError({field: 'The account must already have inspection access and input/submit permissions.'})
+    _effective_validate(setting, active=False)
     if not setting.active:
         return
     if (not setting.starts_at or not setting.ends_at or setting.starts_at == setting.ends_at
             or not setting.appearance_assignee_id or not setting.dimension_assignee_id
             or setting.appearance_assignee_id == setting.dimension_assignee_id):
         raise ValidationError('Activation requires explicit times and two distinct eligible inspectors.')
-    intervals = _intervals(setting.starts_at, setting.ends_at)
+    _effective_validate(setting, active=True)
     for other in InspectionShiftSetting.objects.filter(active=True).exclude(pk=setting.pk):
-        if not other.starts_at or not other.ends_at or other.timezone != setting.timezone:
+        if (not other.starts_at or not other.ends_at or other.timezone != setting.timezone
+                or other.effective_from is None):
             _conflict('shift_schedule_ambiguous', 'Resolve the existing active shift schedule before activating this shift.')
-        if any(max(a, c) < min(b, d) for a, b in intervals for c, d in _intervals(other.starts_at, other.ends_at)):
-            _conflict('shift_overlap', 'Active inspection shift times must not overlap.')
+        if _active_window_overlap(setting, other):
+            _conflict('shift_overlap', 'Active inspection shifts must not overlap within their effective periods.')
 
 
 def _setting_payload(setting, payload, *, create):
     editable = {'code', 'label', 'timezone', 'start_time', 'end_time',
-                'appearance_assignee', 'dimension_assignee', 'active'}
+                'appearance_assignee', 'dimension_assignee', 'active',
+                'effective_from_local', 'effective_until_local'}
     allowed = editable | ({'reason'} if create else {'version', 'reason'})
     if not isinstance(payload, dict) or set(payload) - allowed:
         raise ValidationError('Unknown or server-controlled shift fields.')
@@ -165,12 +262,19 @@ def _setting_payload(setting, payload, *, create):
         if field not in payload:
             continue
         value = payload[field]
+        if field in {'effective_from_local', 'effective_until_local'}:
+            continue
         if field in {'start_time', 'end_time'}:
             setattr(setting, 'starts_at' if field == 'start_time' else 'ends_at', _time(value, field))
         elif field.endswith('_assignee'):
             setattr(setting, field + '_id', value)
         else:
             setattr(setting, field, value)
+    if setting.timezone != 'Asia/Shanghai':
+        raise ValidationError({'timezone': 'Inspection shifts use the factory timezone Asia/Shanghai.'})
+    for field in ('effective_from_local', 'effective_until_local'):
+        if field in payload:
+            setattr(setting, field.removesuffix('_local'), _effective_local(payload[field], field, setting.timezone))
     _setting_validate(setting)
 
 
@@ -304,6 +408,9 @@ def configure_role_workflow(user, request_id, key, payload, *, session):
         window_end = datetime.combine(shift_date, shift.ends_at, tzinfo=local_zone)
         if window_end <= window_start:
             window_end += timedelta(days=1)
+        if (window_start < shift.effective_from
+                or shift.effective_until is not None and window_end > shift.effective_until):
+            raise ValidationError({'shift_date': 'The whole declared shift must fall inside the setting effective period.'})
         mapping = payload.get('item_areas')
         item_ids = {item['id'] for item in request.inspection_items}
         if (not isinstance(mapping, dict) or set(mapping) != item_ids
@@ -315,14 +422,15 @@ def configure_role_workflow(user, request_id, key, payload, *, session):
         workflow.shift_snapshot.update(shift_date=shift_date.isoformat(),
             window_start=window_start.isoformat(), window_end=window_end.isoformat(),
             basis='explicit_declaration')
-        workflow.actor_snapshot = {area: {'id': actor.pk, 'name': actor.get_username()} for area, actor in actors.items()}
+        workflow.actor_snapshot = {area: {'id': actor.pk, 'name': _human_name(actor),
+            'username': actor.get_username()} for area, actor in actors.items()}
         workflow.item_areas = mapping
         workflow.config_version += 1
         workflow.status = 'in_progress'
         workflow.save()
         for area in workflow.areas.select_for_update().all():
             actor = actors[area.area]
-            area.assigned_to, area.assigned_to_name = actor, actor.get_username()
+            area.assigned_to, area.assigned_to_name = actor, _human_name(actor)[:150]
             area.version += 1
             area.save()
         request.version += 1
@@ -457,7 +565,7 @@ def _area_action(user, request_id, area_name, key, payload, action, *, session):
             if action == 'complete':
                 _complete_validate(request, workflow, area)
                 area.status = 'complete'
-                area.completed_by, area.completed_by_name, area.completed_at = user, user.get_username(), timezone.now()
+                area.completed_by, area.completed_by_name, area.completed_at = user, _human_name(user)[:150], timezone.now()
         area.version += 1
         area.save()
         _aggregate(request, workflow)

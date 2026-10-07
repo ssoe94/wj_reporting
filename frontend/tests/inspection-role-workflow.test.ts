@@ -8,7 +8,7 @@ import * as copy from '../src/pages/quality/inspection-requests/copy.ts';
 import * as workflow from '../src/pages/quality/inspection-requests/workflow.ts';
 import { inspectionCreatePayload } from '../src/pages/quality/inspection-requests/model.ts';
 import type { InspectionRequest } from '../src/pages/quality/inspection-requests/model.ts';
-import type { InspectionRoleWorkflow } from '../src/pages/quality/inspection-requests/roleModel.ts';
+import type { InspectionRoleSettings } from '../src/pages/quality/inspection-requests/roleModel.ts';
 
 function fixture(): InspectionRequest {
   return {
@@ -68,11 +68,14 @@ test('mapping requires explicit coverage of both areas and empty settings remain
   assert.deepEqual(roleModel.parseInspectionRoleSettings({ settings: [], candidates: [], can_configure: true }).settings, []);
 });
 
+const shiftHelperSource = ts.transpileModule(readFileSync(new URL('../src/pages/quality/inspection-requests/roleShiftSettingsModel.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+const shiftHelpers: Record<string, any> = {};
+new Function('require', 'exports', shiftHelperSource)((name: string) => { assert.equal(name, './workflow'); return workflow; }, shiftHelpers);
 const compiled = ts.transpileModule(readFileSync(new URL('../src/pages/quality/inspection-requests/RoleInspectionRequestDetail.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 type Element = { type: unknown; props: Record<string, any> };
 const nodes = (node: any): Element[] => Array.isArray(node) ? node.flatMap(nodes) : node && typeof node === 'object' && node.props ? [node, ...nodes(node.props.children)] : [];
 const content = (node: any): string => Array.isArray(node) ? node.map(content).join('') : node == null || typeof node === 'boolean' ? '' : typeof node === 'object' ? content(node.props?.children) : String(node);
-function harness(initial = fixture(), error?: unknown, options: { canManageRoleSettings?: boolean; stale?: boolean; settingsError?: unknown } = {}) {
+function harness(initial = fixture(), error?: unknown, options: { canManageRoleSettings?: boolean; stale?: boolean; settingsError?: unknown; settings?: InspectionRoleSettings } = {}) {
   const hooks: any[] = []; let cursor = 0; let tree: Element; let currentSession = options.stale ? 'SYNTHETIC-SESSION-B' : 'SYNTHETIC-SESSION-A'; let keyCount = 0;
   const calls: any[] = []; const changed: InspectionRequest[] = []; const settingsReads: unknown[][] = [];
   const effects: (() => void)[] = [];
@@ -81,9 +84,9 @@ function harness(initial = fixture(), error?: unknown, options: { canManageRoleS
     react: { useState: (initial: any) => { const index = cursor++; if (!(index in hooks)) hooks[index] = typeof initial === 'function' ? initial() : initial; return [hooks[index], (next: any) => { hooks[index] = typeof next === 'function' ? next(hooks[index]) : next; }]; }, useRef: (initial: any) => { const index = cursor++; return hooks[index] ??= { current: initial }; }, useMemo: (fn: any) => { cursor++; return fn(); }, useCallback: (fn: any, deps: unknown[]) => { const index = cursor++; const hook = hooks[index] ??= {}; if (!same(hook.deps, deps)) { hook.fn = fn; hook.deps = deps; } return hook.fn; }, useEffect: (fn: () => void | (() => void), deps?: unknown[]) => { const index = cursor++; const hook = hooks[index] ??= {}; if (!same(hook.deps, deps)) { hook.deps = deps; effects.push(() => { hook.cleanup?.(); hook.cleanup = fn() || undefined; }); } } },
     'react/jsx-runtime': { jsx: (type: unknown, props: any) => ({ type, props }), jsxs: (type: unknown, props: any) => ({ type, props }) },
     '@/domains/auth/auth-transition': { assertAuthSessionCurrent: (session: string) => { if (session !== currentSession) throw new Error('Stale synthetic session'); } },
-    './roleModel': roleModel, './roleCopy': { inspectionRoleCopy }, './copy': copy,
+    './roleShiftSettingsModel': shiftHelpers, './roleModel': roleModel, './roleCopy': { inspectionRoleCopy }, './copy': copy,
     './workflow': { ...workflow, createInspectionKey: () => `00000000-0000-4000-8000-${String(++keyCount).padStart(12, '0')}` },
-    './api': { getInspectionRoleSettings: async (...args: unknown[]) => { settingsReads.push(args); if (options.settingsError) throw options.settingsError; return { settings: [], candidates: [], can_configure: true }; }, getInspectionRequest: async () => initial,
+    './api': { getInspectionRoleSettings: async (...args: unknown[]) => { settingsReads.push(args); if (options.settingsError) throw options.settingsError; return options.settings || { settings: [], candidates: [], can_configure: true }; }, getInspectionRequest: async () => initial,
       mutateInspectionRole: async (...args: any[]) => { calls.push(args); if (error) throw error; return initial; },
       mutateInspectionRequest: async (...args: any[]) => { calls.push(args); if (error) throw error; return initial; } },
   };
@@ -176,4 +179,24 @@ test('role settings is fetched once only for current account with explicit globa
   assert.deepEqual(stale.settingsReads, []);
   const configured = harness(fixture()); await configured.settle();
   assert.deepEqual(configured.settingsReads, []);
+});
+
+test('delivered configure requires the entire explicit overnight shift within its effective period', async () => {
+  const request = fixture(); request.role_workflow = { ...request.role_workflow!, configured: false, status: 'unconfigured', can_configure: true, areas: [], item_areas: {}, my_item_ids: [] };
+  const settings: InspectionRoleSettings = { settings: [{ id: 501, version: 7, code: 'SYNTHETIC-NIGHT', label: 'SYNTHETIC-NIGHT', timezone: 'Asia/Shanghai', start_time: '20:00:00', end_time: '08:00:00', appearance_assignee: 101, dimension_assignee: 102, active: true, effective_from: '2026-10-07T12:00:00+00:00', effective_until: '2026-10-08T00:00:00+00:00', effective_from_local: '2026-10-07T20:00', effective_until_local: '2026-10-08T08:00' }], candidates: [], can_configure: true };
+  const view = harness(request, undefined, { settings }); await view.settle();
+  view.input('inspection-role-shift-setting').props.onChange({ target: { value: '501' } }); view.render();
+  const mapping = () => view.nodes().filter(node => node.type === 'select' && !node.props.id);
+  mapping()[0].props.onChange({ target: { value: 'appearance' } }); view.render();
+  mapping()[1].props.onChange({ target: { value: 'dimension' } }); view.render();
+  view.nodes().find(node => node.type === 'textarea' && node.props.maxLength === 500)!.props.onChange({ target: { value: 'SYNTHETIC explicit configured period' } }); view.render();
+  view.input('inspection-role-shift-date').props.onChange({ target: { value: '2026-10-08' } }); view.render();
+  assert.equal(view.button(inspectionRoleCopy.ko.configure).props.disabled, true);
+  assert.match(view.text(), /교대 전체가 이 설정의 적용 기간/);
+  view.button(inspectionRoleCopy.ko.configure).props.onClick(); await view.settle(); assert.equal(view.calls.length, 0);
+  view.input('inspection-role-shift-date').props.onChange({ target: { value: '2026-10-07' } }); view.render();
+  assert.equal(view.button(inspectionRoleCopy.ko.configure).props.disabled, false);
+  view.button(inspectionRoleCopy.ko.configure).props.onClick(); await view.settle();
+  assert.equal(view.calls.length, 1); assert.equal(view.calls[0][1].action, 'role-configure');
+  assert.equal(view.calls[0][1].payload.shift_date, '2026-10-07'); assert.equal(view.calls[0][1].payload.shift_setting_id, 501); assert.equal(view.calls[0][1].payload.shift_version, 7);
 });

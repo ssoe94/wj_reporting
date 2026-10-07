@@ -78,8 +78,8 @@ type Operation = {
 };
 
 function settingMutationResponse(id: number, version = 1, actorId = 101) {
-  const setting = { id, version, code: 'SYNTHETIC-UNSET', label: 'SYNTHETIC-DRAFT', timezone: 'Asia/Shanghai', start_time: null, end_time: null, appearance_assignee: null, dimension_assignee: null, active: false };
-  return { settings: [{ ...setting }], candidates: [{ id: 101, username: 'SYNTHETIC-ADMIN', name: 'SYNTHETIC-ADMIN' }], can_configure: true, setting, actor_id: actorId };
+  const setting = { id, version, code: 'SYNTHETIC-UNSET', label: 'SYNTHETIC-DRAFT', timezone: 'Asia/Shanghai', start_time: null, end_time: null, appearance_assignee: null, dimension_assignee: null, active: false, effective_from: null, effective_until: null, effective_from_local: null, effective_until_local: null };
+  return { settings: [{ ...setting }], candidates: [{ id: 101, username: 'SYNTHETIC-ADMIN', name: 'SYNTHETIC-ADMIN', mes_user_id: null }], can_configure: true, setting, actor_id: actorId };
 }
 const reads: Operation[] = [
   { name: 'role settings', invoke: (api, sessionId) => api.getInspectionRoleSettings(sessionId), expected: { method: 'get', url: `${BASE}role-settings/`, config: { authSessionId: SESSION_A } }, result: { settings: [], candidates: [], can_configure: true } },
@@ -161,6 +161,22 @@ test('setting mutations reject flat, wrong-target and inconsistent nested envelo
     const fixture = scenario(async () => ({ status: 200, data }));
     await assert.rejects(fixture.api.saveInspectionRoleSetting(9, { version: 1 }, 'SYNTHETIC-KEY', SESSION_A, 101), /mutation identity mismatch/);
     assert.equal(fixture.calls.length, 1);
+  }
+});
+test('setting mutations validate and retain the exact effective period in the backend envelope', async () => {
+  const correct = settingMutationResponse(9, 2);
+  const period = { effective_from: '2026-10-07T12:00:00+00:00', effective_until: '2026-10-08T00:00:00+00:00', effective_from_local: '2026-10-07T20:00', effective_until_local: '2026-10-08T08:00' };
+  const data = { ...correct, setting: { ...correct.setting, ...period }, settings: [{ ...correct.setting, ...period }] };
+  const fixture = scenario(async () => ({ status: 200, data }));
+  const result = await fixture.api.saveInspectionRoleSetting(9, { version: 1, ...period }, 'SYNTHETIC-PERIOD-KEY', SESSION_A, 101);
+  assert.equal(result, data.setting);
+  for (const field of Object.keys(period)) {
+    for (const value of [undefined, 101, false]) {
+      const malformed = scenario(async () => ({ status: 200, data: { ...data, setting: { ...data.setting, [field]: value } } }));
+      await assert.rejects(malformed.api.saveInspectionRoleSetting(9, { version: 1 }, 'SYNTHETIC-KEY', SESSION_A, 101), /mutation identity mismatch/);
+    }
+    const mismatched = scenario(async () => ({ status: 200, data: { ...data, settings: [{ ...data.setting, [field]: null }] } }));
+    await assert.rejects(mismatched.api.saveInspectionRoleSetting(9, { version: 1 }, 'SYNTHETIC-KEY', SESSION_A, 101), /mutation identity mismatch/);
   }
 });
 
