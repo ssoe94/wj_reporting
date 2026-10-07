@@ -171,6 +171,7 @@ class BlacklakeInspectionTransport:
         self._write_authorization = write_authorization
         self._write_attempted = False
         self._finish_attempted = False
+        self.readback_allowed_after_error = False
 
     def _read_body(self, route, text):
         if self._standalone_test and route != ROUTE_BASE + TASK_DETAIL:
@@ -207,6 +208,8 @@ class BlacklakeInspectionTransport:
             raise ValueError('Unsupported inspection read route.')
 
     def _post(self, route, text, *, stage, finish_authorization=None):
+        sender_invoked, confirmation_required = False, False
+        self.readback_allowed_after_error = False
         try:
             if stage == 'finish':
                 if (not self._explicit_token_provider
@@ -233,8 +236,10 @@ class BlacklakeInspectionTransport:
                 sender = requests.post
             else:
                 sender = self._sender
+            encoded = text.encode('utf-8')
+            sender_invoked = True
             response = sender(self.origin + route, params={'access_token': token},
-                              data=text.encode('utf-8'), headers={'Content-Type': 'application/json'},
+                              data=encoded, headers={'Content-Type': 'application/json'},
                               timeout=(5, 20), allow_redirects=False)
             status = response.status_code
             if status == 401:
@@ -264,6 +269,7 @@ class BlacklakeInspectionTransport:
             read_without_confirmation = stage == 'read' and body.get('needCheck') is None
             if ('needCheck' in body and not read_without_confirmation
                     and (type(body['needCheck']) is not int or body['needCheck'] != 0)):
+                confirmation_required = body['needCheck'] is not None
                 raise MesOutcomeUnknown()
             if stage == 'read' and not isinstance(body.get('data'), (dict, list)):
                 raise MesOutcomeUnknown()
@@ -277,9 +283,15 @@ class BlacklakeInspectionTransport:
                 return {'code': 200}
             # No raw message/request URL/exception is returned or logged.
             return {'code': 200, 'data': body['data']}
-        except (MesAccessDenied, MesRejected, MesOutcomeUnknown, MesContractUnavailable):
+        except (MesAccessDenied, MesRejected, MesContractUnavailable):
+            raise
+        except MesOutcomeUnknown:
+            self.readback_allowed_after_error = bool(sender_invoked
+                and stage in {'record', 'finish'} and not confirmation_required)
             raise
         except Exception:
+            self.readback_allowed_after_error = bool(sender_invoked
+                and stage in {'record', 'finish'} and not confirmation_required)
             raise MesOutcomeUnknown() from None
 
     def post_json(self, route, exact_json_text):
@@ -333,6 +345,7 @@ class BlacklakeInspectionTransport:
         fresh scoped values and the source test label before enabling finish.
         This process-local fence does not provide crash-safe idempotency.
         """
+        self.readback_allowed_after_error = False
         authorization = self._write_authorization
         if authorization is None or self._eligibility_user_id is not None:
             raise MesContractUnavailable()
@@ -372,6 +385,7 @@ class BlacklakeInspectionTransport:
         acknowledgement: the adapter must obtain a fresh exact-target detail
         readback and verify the final lifecycle/verdict before reporting success.
         """
+        self.readback_allowed_after_error = False
         if (self._eligibility_user_id is not None or not self._explicit_token_provider
                 or type(authorization) is not ReviewedFinishAuthorization):
             raise MesContractUnavailable()

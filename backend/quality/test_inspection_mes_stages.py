@@ -8,6 +8,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.test import APITestCase
 from . import test_inspection_requests as helpers
+from .inspection_adapter import MesOutcomeUnknown
 from .inspection_mes_stages import TEST_LABEL
 from .inspection_models import InspectionMesBinding, InspectionOperation, InspectionRequest
 from .inspection_validation import digest
@@ -24,6 +25,7 @@ class StageFixture:
         self.calls = []
         self.overrides = {}
         self.timeout = ''
+        self.automatic_readback_allowed = False
     def read(self, binding):
         value = {'identity': {'tenant': binding.tenant, 'qc_id': binding.qc_id, 'work_order_id': binding.work_order_id,
             **{key: str(binding.contract[key]) for key in ('production_task_id', 'equipment_id', 'snapshot_id')}},
@@ -126,6 +128,91 @@ class InspectionMesStageTests(APITestCase):
         self.assertEqual(replayed.data, resolved.data)
         self.assertEqual(len(self.stage.calls), 1)
         self.assertFalse(InspectionOperation.objects.filter(request_id=self.data['id'], status='unknown').exists())
+
+    def uncertain_writer(self, action, after_write=None):
+        method = 'save' if action == 'mes-save' else 'finish_inspection'
+        writer = getattr(self.stage, method)
+
+        def dispatched(*args):
+            writer(*args)
+            if after_write:
+                after_write()
+            self.stage.automatic_readback_allowed = True
+            raise MesOutcomeUnknown()
+
+        return patch.object(self.stage, method, side_effect=dispatched)
+
+    def assert_uncertain_stage_stays_blocked(self, response, action, expected_writes):
+        self.assertEqual(response.status_code, 503, response.data)
+        current = response.data['request']
+        phase = 'save_unknown' if action == 'mes-save' else 'finish_unknown'
+        self.assertEqual(current['mes_workflow']['phase'], phase)
+        self.assertFalse(current['mes_workflow']['can_save'])
+        self.assertFalse(current['mes_workflow']['can_finish'])
+        self.assertEqual(InspectionOperation.objects.get(pk=response.data['operation_id']).status, 'unknown')
+        self.assertEqual(self.action(current, action).status_code, 409)
+        self.assertEqual([call[0] for call in self.stage.calls], expected_writes)
+
+    def test_uncertain_save_automatically_verifies_without_resending(self):
+        key = uuid.uuid4()
+        with self.uncertain_writer('mes-save'):
+            saved = self.action(self.data, 'mes-save', key=key)
+        self.assertEqual(saved.status_code, 200, saved.data)
+        self.assertEqual(saved.data['mes_workflow']['phase'], 'saved')
+        self.assertEqual(self.action(self.data, 'mes-save', key=key).data, saved.data)
+        self.assertEqual(self.action(saved.data, 'mes-save').status_code, 409)
+        self.assertEqual([call[0] for call in self.stage.calls], ['save'])
+        self.assertFalse(InspectionOperation.objects.filter(request_id=self.data['id'], status='unknown').exists())
+
+    def test_uncertain_finish_automatically_verifies_without_resending(self):
+        saved = self.action(self.data, 'mes-save')
+        key = uuid.uuid4()
+        with self.uncertain_writer('mes-finish'):
+            finished = self.action(saved.data, 'mes-finish', key=key)
+        self.assertEqual(finished.status_code, 200, finished.data)
+        self.assertEqual(finished.data['mes_completion_status'], 'completed')
+        self.assertEqual(self.action(saved.data, 'mes-finish', key=key).data, finished.data)
+        self.assertEqual(self.action(finished.data, 'mes-finish').status_code, 409)
+        self.assertEqual([call[0] for call in self.stage.calls], ['save', 'finish'])
+
+    def test_uncertain_save_partial_readback_stays_unknown_without_retry(self):
+        with self.uncertain_writer('mes-save', lambda: setattr(self.stage, 'records', [])):
+            result = self.action(self.data, 'mes-save')
+        self.assert_uncertain_stage_stays_blocked(result, 'mes-save', ['save'])
+
+    def test_uncertain_save_mismatched_value_stays_unknown_without_retry(self):
+        def mismatch():
+            self.stage.records[0]['value'] = '9.9'
+        with self.uncertain_writer('mes-save', mismatch):
+            result = self.action(self.data, 'mes-save')
+        self.assert_uncertain_stage_stays_blocked(result, 'mes-save', ['save'])
+
+    def test_uncertain_save_read_failure_stays_unknown_without_retry(self):
+        read = self.stage.read
+        def failed_read(binding):
+            if self.stage.calls:
+                raise MesOutcomeUnknown()
+            return read(binding)
+        with patch.object(self.stage, 'read', side_effect=failed_read), self.uncertain_writer('mes-save'):
+            result = self.action(self.data, 'mes-save')
+        self.assert_uncertain_stage_stays_blocked(result, 'mes-save', ['save'])
+
+    def test_uncertain_save_closed_readback_stays_unknown_without_retry(self):
+        def completed():
+            self.stage.state = 'completed'
+            self.stage.inspection_result = 'pass'
+        with self.uncertain_writer('mes-save', completed):
+            result = self.action(self.data, 'mes-save')
+        self.assert_uncertain_stage_stays_blocked(result, 'mes-save', ['save'])
+
+    def test_uncertain_finish_open_readback_stays_unknown_without_retry(self):
+        saved = self.action(self.data, 'mes-save')
+        def still_open():
+            self.stage.state = 'open'
+            self.stage.inspection_result = None
+        with self.uncertain_writer('mes-finish', still_open):
+            result = self.action(saved.data, 'mes-finish')
+        self.assert_uncertain_stage_stays_blocked(result, 'mes-finish', ['save', 'finish'])
 
     def test_missing_or_wrong_permanent_label_prevents_finish(self):
         saved = self.action(self.data, 'mes-save')

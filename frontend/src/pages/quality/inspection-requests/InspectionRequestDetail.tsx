@@ -161,9 +161,9 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
 
   return <section className="inspection-detail" aria-labelledby="inspection-detail-title" aria-busy={busy}>
     {mesConnectionOpen && <MesConnectionDialog onClose={() => setMesConnectionOpen(false)} />}
-    <p className="inspection-beta-context"><strong>{dataSource.notice}</strong><span>{text.source}: {dataSource.requests}</span></p>
+    {globalCapabilities.data_mode !== 'wj_local_beta' && <p className="inspection-beta-context"><strong>{dataSource.notice}</strong></p>}
     {trial && <div className="inspection-trial-context"><IntegrationTrialBadge lang={lang} /><p>{integrationTrialCopy[lang].excluded}{request.mes_workflow?.qc_code ? ` · ${request.mes_workflow.phase === 'unbound' ? (lang === 'ko' ? '준비 코드 · MES 생성 전: ' : '准备代码 · MES 尚未创建：') : ''}${request.mes_workflow.qc_code}` : ''}</p>{request.mes_workflow?.test_label && <small>{request.mes_workflow.test_label}</small>}</div>}
-    <div className="inspection-detail-heading"><div><small>{text.requestId} #{request.id} · {text.version} {request.version}</small><h2 id="inspection-detail-title">{request.work_order_ref}</h2><p>{request.part_no} · {request.equipment_ref}</p></div><span className="inspection-status" data-status={request.status}>{inspectionRequestStatusLabels[lang][request.status]}</span></div>
+    <div className="inspection-detail-heading"><div><small>{text.requestId} #{request.id}</small><h2 id="inspection-detail-title">{request.work_order_ref}</h2><p>{request.part_no} · {request.equipment_ref}</p></div><span className="inspection-status" data-status={request.status}>{inspectionRequestStatusLabels[lang][request.status]}</span></div>
     {message && <div className="inspection-message is-success" role="status">{message}</div>}
     {error && <div className="inspection-message is-error" role="alert">{error}</div>}
     {remoteUnresolved && <div className="inspection-message" role="status">{text.reconciliationRequired}</div>}
@@ -175,20 +175,20 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
     {conflict && <div className="inspection-message is-error" role="alert"><p>{text.conflict}</p><button type="button" className="inspection-button" disabled={busy || unresolved} onClick={() => void reload()}>{text.reload}</button></div>}
     {request.nonconformance && <section className="inspection-message" role="status">
       <strong>{lang === 'ko' ? '불량조치 미해결' : '不合格处置未解决'}</strong>
-      <p>{lang === 'ko' ? 'QC 검사 완료와 불량조치 종료는 별도입니다. 특채·폐기·재작업의 MES 승인 및 재고 연동을 확인해야 합니다.' : 'QC 检验完成不代表不合格处置结束。需确认让步接收、报废及返工的 MES 审批和库存关联。'}</p>
       <p>{request.nonconformance.owner_name} · {request.nonconformance.quantity ?? (lang === 'ko' ? '수량 미확인' : '数量未确认')} {request.nonconformance.uom}</p>
+      <details className="inspection-help"><summary><span aria-hidden="true">ⓘ</span> {lang === 'ko' ? '불량조치 확인' : '不合格处置说明'}</summary><p>{lang === 'ko' ? 'QC 검사 완료와 불량조치 종료는 별도입니다. 특채·폐기·재작업의 MES 승인 및 재고 연동을 확인해야 합니다.' : 'QC 检验完成不代表不合格处置结束。需确认让步接收、报废及返工的 MES 审批和库存关联。'}</p></details>
     </section>}
     <dl className="inspection-meta inspection-snapshot">
       {meta(text.inspectionType, kanbanText[inspectionRequestKind(request)])}{meta(text.task, request.task_ref, 'inspection-snapshot-secondary')}{meta(text.quantity, `${request.target_quantity} ${request.uom}`)}
       {meta(text.owner, request.assigned_to_name || text.unassigned, 'inspection-snapshot-owner')}{meta(text.lot, request.lot_ref, 'inspection-snapshot-secondary')}{meta(text.createdAt, inspectionTime(request.created_at, lang), 'inspection-snapshot-secondary')}
     </dl>
-    <details className="inspection-fold"><summary>{lang === 'ko' ? '작업 정보·검사 기준 상세' : '作业信息·检验规则详情'}</summary><dl className="inspection-meta">
+    <details className="inspection-fold inspection-help"><summary><span aria-hidden="true">ⓘ</span> {lang === 'ko' ? '작업 정보·검사 기준' : '作业信息·检验规则'}</summary><dl className="inspection-meta">
       {meta(text.workOrder, request.work_order_ref)}{meta(text.task, request.task_ref)}{meta(text.part, request.part_no)}{meta(text.equipment, request.equipment_ref)}
       {meta(text.inspectionType, inspectionTypeLabels[lang][request.inspection_type])}{meta(text.quantity, `${request.target_quantity} ${request.uom}`)}
       {meta(text.quantityPolicy, request.quantity_mode === 'not_recorded' ? text.quantityNotRecorded : text.quantityRecorded)}{meta(text.evidence, request.require_evidence ? text.required : text.optional)}
       {meta(text.judgementPolicy, request.judgement_policy === 'independent' ? text.independentJudgement : text.strictItems)}
       {meta(text.uom, request.uom)}{meta(text.warehouse, request.warehouse_ref)}{meta(text.lot, request.lot_ref)}
-      {meta(text.owner, request.assigned_to_name || text.unassigned)}{meta(text.source, globalCapabilities.data_mode === 'synthetic_preview' || request.source_kind === 'local_manual' ? dataSource.requests : request.source_kind)}{request.parent && meta(text.parent, `#${request.parent}`)}
+      {meta(text.owner, request.assigned_to_name || text.unassigned)}{meta(text.source, globalCapabilities.data_mode === 'synthetic_preview' || request.source_kind === 'local_manual' ? dataSource.requests : request.source_kind)}{meta(text.version, request.version)}{request.parent && meta(text.parent, `#${request.parent}`)}
       {meta(text.workStarted, inspectionTime(request.work_started_at, lang))}{meta(text.createdAt, inspectionTime(request.created_at, lang))}{meta(text.updatedAt, inspectionTime(request.updated_at, lang))}
       {meta(text.submittedAt, inspectionTime(request.submitted_at, lang))}{meta(text.reviewedAt, inspectionTime(request.reviewed_at, lang))}
     </dl><p className="inspection-muted">{text.timezone} · {text.immutable}</p></details>
@@ -221,14 +221,14 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
       {request.quantity_mode === 'recorded' && (['inspected_quantity', 'accepted_quantity', 'rejected_quantity'] as const).map((name) => <label key={name}>{name === 'inspected_quantity' ? text.inspected : name === 'accepted_quantity' ? text.accepted : text.rejected} ({request.uom}) *<input inputMode="decimal" maxLength={30} disabled={!editable} value={draft[name]} onChange={(event) => update({ [name]: event.target.value })} /></label>)}
       <label>{verdictCopy.verdict} *<select disabled={!editable} value={draft.judgement} onChange={(event) => update({ judgement: event.target.value as InspectionDraft['judgement'] })}><option value="">{text.choose}</option><option value="pass">{verdictCopy.pass}</option><option value="fail">{verdictCopy.fail}</option></select></label>
       <label className="inspection-form-full">{text.notes}<textarea maxLength={2000} disabled={!editable} value={draft.notes} onChange={(event) => update({ notes: event.target.value })} /></label>
-    </div><p className="inspection-muted">{request.judgement_policy === 'independent' ? text.independentHint : text.strictHint}</p><p className="inspection-muted">{request.quantity_mode === 'not_recorded' ? text.quantityNotRecorded : text.quantityHint}</p>
+    </div><details className="inspection-help"><summary><span aria-hidden="true">ⓘ</span> {text.judgementPolicy}</summary><p>{request.judgement_policy === 'independent' ? text.independentHint : text.strictHint}</p><p>{request.quantity_mode === 'not_recorded' ? text.quantityNotRecordedHint : text.quantityHint}</p></details>
       {dirty && <p className="inspection-muted" role="status">{text.dirty} {text.saveFirst}</p>}
       <div className="inspection-actions"><button type="button" className="inspection-button" disabled={!editable || !dirty || unsafeEvidence} onClick={() => act('save')}>{busy ? text.busy : text.save}</button>
         <button type="button" className="inspection-button is-primary" disabled={disabled || dirty || !request.capabilities.can_submit} onClick={() => act('submit')}>{text.submit}</button>
         <button type="button" className="inspection-button" disabled={busy || unresolved} onClick={() => void reload()}><RefreshCw size={16} aria-hidden="true" />{text.reload}</button>
       </div>{unsafeEvidence && <p className="inspection-muted" role="alert">{text.unsafeEvidence}</p>}
     </section>
-    <details className="inspection-section inspection-fold" open={request.capabilities.can_review || request.capabilities.can_reinspect}><summary>{text.review}</summary><p className="inspection-muted">{text.independent}</p>
+    <details className="inspection-section inspection-fold" open={request.capabilities.can_review || request.capabilities.can_reinspect}><summary>{text.review}</summary><details className="inspection-help"><summary><span aria-hidden="true">ⓘ</span> {lang === 'ko' ? '검수 기준' : '审核规则'}</summary><p>{text.independent}</p></details>
       {request.review_reason && <p className="inspection-message">{text.reviewReason}: {request.review_reason}</p>}
       <label>{text.reason}<textarea disabled={disabled || (!request.capabilities.can_review && !request.capabilities.can_reinspect)} maxLength={500} value={reason} placeholder={text.reasonHint} onChange={(event) => updateReason(event.target.value)} /></label>
       <div className="inspection-actions" style={{ marginTop: 12 }}>
@@ -238,22 +238,25 @@ export default function InspectionRequestDetail({ initial, userId, sessionId, la
         <button type="button" className="inspection-button" disabled={disabled || dirty || !request.capabilities.can_reinspect || !reason.trim()} onClick={() => act('reinspect')}>{text.reinspect}</button>
       </div>
     </details>
-    <details className="inspection-section inspection-fold"><summary>{text.mes}</summary>
+    <section className="inspection-section" aria-labelledby="inspection-mes-title"><h3 id="inspection-mes-title">{text.mes}</h3>
       {mesObservation.hint && <p className="inspection-message" role="status">{mesObservation.hint}</p>}
       <dl className="inspection-meta">
       {meta(text.syncStatus, mesObservation.sync)}{meta(text.mesCompletion, mesObservation.completion)}
-      {meta(text.receiptReadiness, mesObservation.readiness)}
-      {meta(text.mesTaskStatus, mesObservation.task)}{meta(text.mesQcStatus, mesObservation.qc)}
-      {meta(text.externalResult, request.external_result_id)}{meta(text.mesChecked, mesObservation.checkedAt)}{meta(text.errorCode, request.last_error_code)}
-    </dl>{mesObservation.priorReadiness && <p className="inspection-muted">{text.receiptReadiness} · {mesObservation.priorReadiness}</p>}<p className="inspection-muted">{text.receiptHint}</p>
-      {!globalCapabilities.mes.enabled && <div className="inspection-notice"><div><strong>{dataSource.notice}</strong><p>{dataSource.hint}</p></div></div>}
-      <p className="inspection-muted">{text.mesStageHint}</p>
-      {request.mes_workflow?.test_label && <p>{text.mesTestLabel}: {request.mes_workflow.test_label}</p>}
-      <div className="inspection-actions"><button type="button" className="inspection-button" disabled={refreshDisabled} onClick={() => act(stagedMes ? 'mes-reconcile' : 'refresh')}>{text.refreshMes}</button>
-        <button type="button" className="inspection-button" disabled={disabled || dirty || !request.mes_workflow?.can_save} onClick={() => act('mes-save')}>{text.mesSave}</button>
-        <button type="button" className="inspection-button" disabled={disabled || dirty || !request.mes_workflow?.can_finish} onClick={() => act('mes-finish')}>{text.mesFinish}</button></div>
-
-    </details>
+      {meta(text.mesQcStatus, mesObservation.qc)}{meta(text.mesChecked, mesObservation.checkedAt)}
+    </dl>
+      {!globalCapabilities.mes.enabled && request.mes_workflow?.phase !== 'completed' && <p className="inspection-muted" role="status">{lang === 'ko' ? '이 검사요청의 MES 처리 준비가 필요합니다.' : '此检验申请需准备 MES 处理。'}</p>}
+      <div className="inspection-actions inspection-mes-actions">
+        <button type="button" className={`inspection-button${!disabled && !dirty && request.mes_workflow?.can_save ? ' is-primary' : ''}`} disabled={disabled || dirty || !request.mes_workflow?.can_save} onClick={() => act('mes-save')}>{text.mesSave}</button>
+        <button type="button" className={`inspection-button${!disabled && !dirty && request.mes_workflow?.can_finish ? ' is-primary' : ''}`} disabled={disabled || dirty || !request.mes_workflow?.can_finish} onClick={() => act('mes-finish')}>{text.mesFinish}</button>
+        <button type="button" className={`inspection-button${remoteUnresolved && !refreshDisabled ? ' is-primary' : ''}`} disabled={refreshDisabled} onClick={() => act(stagedMes ? 'mes-reconcile' : 'refresh')}>{text.refreshMes}</button>
+      </div>
+      <details className="inspection-help"><summary><span aria-hidden="true">ⓘ</span> {lang === 'ko' ? 'MES 처리·입고 안내' : 'MES 处理·入库说明'}</summary><p>{text.mesStageHint}</p>
+        <dl className="inspection-meta">{meta(text.receiptReadiness, mesObservation.readiness)}{meta(text.mesTaskStatus, mesObservation.task)}{meta(text.externalResult, request.external_result_id)}{meta(text.errorCode, request.last_error_code)}</dl>
+        {mesObservation.priorReadiness && <p>{text.receiptReadiness} · {mesObservation.priorReadiness}</p>}<p>{text.receiptHint}</p>
+        {!globalCapabilities.mes.enabled && <p>{dataSource.hint}</p>}
+        {request.mes_workflow?.test_label && <p>{text.mesTestLabel}: {request.mes_workflow.test_label}</p>}
+      </details>
+    </section>
     <details className="inspection-section inspection-fold"><summary>{text.history} ({request.audit.length})</summary>{request.audit.length ? <ol className="inspection-history">{request.audit.map((item) => <li key={item.id}><strong>{inspectionActionLabels[lang][item.action] || item.action}</strong> · {item.actor_name} · {text.version} {item.version}<p>{item.reason}</p><small>{inspectionTime(item.created_at, lang)}</small></li>)}</ol> : <p className="inspection-muted">{text.noHistory}</p>}</details>
     <details className="inspection-section inspection-fold"><summary>{text.operations} ({request.operations.length})</summary>{request.operations.length ? <ol className="inspection-history">{request.operations.map((item) => { const action = item.scope.split(':').slice(-1)[0]; return <li key={item.id}><strong>{inspectionActionLabels[lang][action] || action}</strong> · <span className="inspection-status" data-status={item.status}>{inspectionOperationLabels[lang][item.status] || item.status}</span><p>{item.response_status ? `HTTP ${item.response_status} · ` : ''}{inspectionTime(item.created_at, lang)}</p></li>; })}</ol> : <p className="inspection-muted">{text.noOperations}</p>}</details>
   </section>;

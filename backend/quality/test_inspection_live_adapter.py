@@ -863,6 +863,10 @@ class LiveInspectionAdapterTests(APITestCase):
 
     def test_timeout_after_remote_save_is_unknown_and_reconciles_without_resend(self):
         self.write_error = TimeoutError(TOKEN)
+        # Automatic readback also fails. Preserve the manual recovery path
+        # without retrying either the writer or this failed read.
+        self.on_detail = lambda index: (SimpleNamespace(status_code=500, content=b'{}')
+                                       if index == 2 else None)
         key = uuid.uuid4()
         failed = self.action(self.data, 'mes-save', key=key)
         self.assertEqual(failed.status_code, 503)
@@ -871,6 +875,7 @@ class LiveInspectionAdapterTests(APITestCase):
         self.assertEqual(self.action(current, 'mes-save').status_code, 409)
         self.assertEqual(self.action(self.data, 'mes-save', key=key).status_code, 503)
         self.write_error = None
+        self.on_detail = None
         reconciled = self.action(current, 'mes-reconcile')
         self.assertEqual(reconciled.status_code, 200, reconciled.data)
         self.assertEqual(reconciled.data['mes_workflow']['phase'], 'saved')

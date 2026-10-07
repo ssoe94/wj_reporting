@@ -296,6 +296,14 @@ def _stage_dispatch(user, request_id, action, request, binding, op, reserved_ver
                 # not have this proof and must retain an unknown write outcome.
                 attempted = False
                 raise
+            except MesOutcomeUnknown:
+                # A dispatched write may have succeeded despite an uncertain
+                # acknowledgement. Read the exact bound QC once; never repeat
+                # the writer or infer success from the response envelope. The
+                # same identity, values, verdict and lifecycle checks below
+                # must prove the requested stage before it can be published.
+                if getattr(adapter, 'automatic_readback_allowed', False) is not True:
+                    raise
             evidence = read_evidence(adapter, binding, request, timezone.now(), require_values=True)
             if action == 'mes-save' and evidence['state'] != 'open':
                 raise MesOutcomeUnknown()

@@ -220,6 +220,7 @@ class LiveInspectionStageAdapter:
         self.identity_provider = identity_provider
         self.enabled = bool(user and user.pk == policy.data['actor_id'] and policy.current())
         self._latest = None
+        self.automatic_readback_allowed = False
 
     def binding_ready(self, binding, request):
         return self.enabled and self.policy.matches(binding) and str(request.pk) == self.policy.data['request_id']
@@ -304,6 +305,7 @@ class LiveInspectionStageAdapter:
         return result_and_finish_plan(binding.qc_id, records, verdict=request.judgement), records
 
     def save(self, binding, records, test_label, operation_id):
+        self.automatic_readback_allowed = False
         self._require(binding)
         stages, expected = self._plan(binding)
         if records != expected or test_label != binding.test_label or type(operation_id) is not int:
@@ -313,10 +315,18 @@ class LiveInspectionStageAdapter:
             if records_digest(before['records']) != self.policy.data['initial_records_digest']:
                 raise MesContractUnavailable()
             self._latest = None
-            return self._transport(binding, token, stages).send_reviewed_record(stages)
+            transport = self._transport(binding, token, stages)
+            try:
+                return transport.send_reviewed_record(stages)
+            except MesOutcomeUnknown:
+                # Preserve only a fixed eligibility bit through the credential
+                # broker, which deliberately redacts callback exceptions.
+                self.automatic_readback_allowed = transport.readback_allowed_after_error is True
+                raise
         return self._call(binding, 'save', perform)
 
     def finish_inspection(self, binding, verdict, operation_id):
+        self.automatic_readback_allowed = False
         self._require(binding)
         stages, records = self._plan(binding)
         if verdict != binding.request.judgement or type(operation_id) is not int:
@@ -333,5 +343,10 @@ class LiveInspectionStageAdapter:
                 self.policy.data['authority_reference'], 'saved', int(self.policy.data['mes_user_id']),
                 token.user_id, evidence_digest, before['observed_at'].timestamp())
             self._latest = None
-            return self._transport(binding, token, stages).send_reviewed_finish(stages, authorization=authorization)
+            transport = self._transport(binding, token, stages)
+            try:
+                return transport.send_reviewed_finish(stages, authorization=authorization)
+            except MesOutcomeUnknown:
+                self.automatic_readback_allowed = transport.readback_allowed_after_error is True
+                raise
         return self._call(binding, 'finish', perform)

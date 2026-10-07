@@ -244,7 +244,6 @@ export default function InspectionRequestsPage() {
             {isIntegrationTrial(item) && <><IntegrationTrialBadge lang={lang} /><small>{integrationTrialCopy[lang].excluded}</small></>}
             <p>{item.part_no} · {item.equipment_ref}</p><small>{text.task}: {item.task_ref} · {item.target_quantity} {item.uom}</small>
             <small>{text.owner}: {item.assigned_to_name || text.unassigned}</small><small>{inspectionTime(item.created_at, lang)}</small>
-            <small>{text.source}: {dataSource.requests}</small>
           </button></li>)}</ul>}
           {list && <div className="inspection-pagination"><button type="button" className="inspection-button" disabled={loading || !list.previous} onClick={() => { if (ownsSession()) setPage((value) => Math.max(1, value - 1)); }}>{text.previous}</button><span>{page}</span><button type="button" className="inspection-button" disabled={loading || !list.next} onClick={() => { if (ownsSession()) setPage((value) => value + 1); }}>{text.next}</button></div>}
         </div>
@@ -261,7 +260,12 @@ export default function InspectionRequestsPage() {
     {transitionMessage && <div className="inspection-message" role="status">{transitionMessage}</div>}
     {logoutError && <div className="inspection-message is-error" role="alert">{text.inspectorSwitchFailed}</div>}
     {staleSession ? <div className="inspection-message is-error" role="alert">{text.inspectorSessionChanged}</div> : <fieldset className="inspection-session-scope" disabled={isLoggingOut} aria-label={text.title}>
-    <div className="inspection-notice inspection-connection-notice" data-mode={capabilities?.data_mode || 'unconfirmed'}><AlertTriangle size={20} aria-hidden="true" /><div><strong>{dataSource.notice}</strong><p>{dataSource.hint}</p><dl className="inspection-data-sources" aria-label={text.dataSource}>{canViewKanban && <div><dt>{text.plans}</dt><dd>{dataSource.plans}</dd></div>}<div><dt>{text.requests}</dt><dd>{dataSource.requests}</dd></div></dl></div></div>
+    <div className={capabilities?.data_mode === 'wj_local_beta' ? 'inspection-connection-help' : 'inspection-notice inspection-connection-notice'} data-mode={capabilities?.data_mode || 'unconfirmed'}>
+      {capabilities?.data_mode !== 'wj_local_beta' && <AlertTriangle size={20} aria-hidden="true" />}
+      <div>{capabilities?.data_mode !== 'wj_local_beta' && <strong>{dataSource.notice}</strong>}
+        <details className="inspection-help"><summary><span aria-hidden="true">ⓘ</span> {text.dataSource}</summary><p>{dataSource.hint}</p><dl className="inspection-data-sources">{canViewKanban && <div><dt>{text.plans}</dt><dd>{dataSource.plans}</dd></div>}<div><dt>{text.requests}</dt><dd>{dataSource.requests}</dd></div></dl></details>
+      </div>
+    </div>
     {capabilityError && <div className="inspection-message is-error" role="alert">{capabilityError}<div className="inspection-actions"><button type="button" className="inspection-button" onClick={() => void loadCapabilities()}>{text.retry}</button></div></div>}
     {!capabilities && !capabilityError && <div className="inspection-message" role="status">{text.checkingAccess}</div>}
     {capabilities && !canView && <div className="inspection-message" role="alert">{text.denied}</div>}
@@ -270,7 +274,7 @@ export default function InspectionRequestsPage() {
       {canViewKanban && <div ref={kanbanRef} tabIndex={-1}><InspectionKanban snapshot={kanban?.business_date === businessDate ? kanban : null} date={businessDate} lang={lang} now={now} loading={kanbanLoading} error={kanbanError} selectedId={creating ? null : selectedId} onSelect={select}
         onDate={(value) => { if (!ownsSession()) return; setFollowCurrentDate(false); setBusinessDate(value); }} onCurrent={() => { if (!ownsSession()) return; const current = new Date(); setNow(current); setFollowCurrentDate(true); setBusinessDate(inspectionBusinessDate(current)); }} onRefresh={() => void loadKanban()} /></div>}
       {assignedOnly && <section className="inspection-workspace inspection-assigned-workspace" aria-labelledby="inspection-assigned-title" ref={listRef} tabIndex={-1}><header className="inspection-assigned-heading"><h2 id="inspection-assigned-title">{text.assignedRequests}{list && ` (${list.count})`}</h2><p>{text.assignedHint}</p></header>{requestList}</section>}
-      <div className="inspection-page-actions">{capabilities?.can_manage && <button type="button" className="inspection-button" disabled={editorLocked} onClick={showCreate}><Plus size={17} aria-hidden="true" />{text.create}</button>}<span className="inspection-muted">{lang === 'ko' ? '검사요청 카드를 선택하면 검사 항목을 입력할 수 있습니다.' : '选择检验申请卡片后填写检验项目。'}</span></div>
+      <div className="inspection-page-actions">{capabilities?.can_manage && <button type="button" className="inspection-button" disabled={editorLocked} onClick={showCreate}><Plus size={17} aria-hidden="true" />{text.create}</button>}</div>
       {(creating || selectedId !== null) && <div className="inspection-detail-workspace" ref={detailRef} tabIndex={-1}>
         <div className="inspection-detail-navigation"><button className="inspection-button" type="button" disabled={editorLocked} onClick={closeDetail}>{canViewKanban ? text.returnToKanban : text.returnToList}</button>{editorLocked && <p className="inspection-muted" role="status">{text.navigationLocked}</p>}</div>
         {notice && <div className="inspection-message is-success" role="status">{notice}</div>}
@@ -282,7 +286,7 @@ export default function InspectionRequestsPage() {
       {!assignedOnly && <details className="inspection-workspace inspection-auxiliary" open><summary>{text.allRequests}{list && ` (${list.count})`}</summary>
         {requestList}
       </details>}
-      <details className="inspection-guide"><summary>{text.guideTitle}</summary><p>{text.guideStop}</p><p>{text.guideResume}</p><p>{text.guidePending}</p></details>
+      <details className="inspection-guide inspection-help"><summary><span aria-hidden="true">ⓘ</span> {text.guideTitle}</summary><p>{text.guideStop}</p><p>{text.guideResume}</p><p>{text.guidePending}</p></details>
     </>}
     </fieldset>}
   </main>;

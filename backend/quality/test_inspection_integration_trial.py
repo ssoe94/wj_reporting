@@ -377,6 +377,142 @@ class StandaloneCoordinatorTests(APITestCase):
         self.assertEqual(self.identity.userinfo.call_count, 6)
         self.assert_private(finished)
 
+    def test_null_confirmation_write_acknowledgements_verify_trial_without_resending(self):
+        # Keep the real transport strict: needCheck=null remains an uncertain
+        # write acknowledgement. Only the fresh exact detail proves each effect.
+        sender = self.send
+        def null_confirmation(url, **kwargs):
+            response = sender(url, **kwargs)
+            if url.endswith(ITEM_RECORD) or url.endswith(TASK_FINISH):
+                body = json.loads(response.content)
+                body['needCheck'] = None
+                response = SimpleNamespace(status_code=200, content=json.dumps(body).encode())
+            return response
+        save_key, finish_key = uuid.uuid4(), uuid.uuid4()
+        with patch('quality.inspection_live_adapter._user_sender', side_effect=null_confirmation):
+            saved = self.action(self.data, 'mes-save', key=save_key)
+            self.assertEqual(saved.status_code, 200, saved.data)
+            self.assertEqual(saved.data['mes_workflow']['phase'], 'saved')
+            finished = self.action(saved.data, 'mes-finish', key=finish_key)
+        self.assertEqual(finished.status_code, 200, finished.data)
+        self.assertEqual(finished.data['mes_completion_status'], 'completed')
+        self.assertEqual([route for route, _ in self.calls],
+                         [TASK_DETAIL, ITEM_RECORD, TASK_DETAIL, TASK_DETAIL, TASK_FINISH, TASK_DETAIL])
+        self.assertEqual(self.action(self.data, 'mes-save', key=save_key).data, saved.data)
+        self.assertEqual(self.action(saved.data, 'mes-finish', key=finish_key).data, finished.data)
+        self.assertEqual(self.action(finished.data, 'mes-finish').status_code, 409)
+        self.assertEqual([route for route, _ in self.writes()], [ITEM_RECORD, TASK_FINISH])
+        self.assertFalse(InspectionOperation.objects.filter(request_id=self.binding.request_id,
+                                                           status='unknown').exists())
+        row = InspectionRequest.objects.get(pk=self.binding.request_id)
+        self.assertEqual(row.mes_snapshot['verified_trial']['state'], 'completed')
+        trial = projection(self.editor)['integration_trials'][0]
+        self.assertEqual(trial['trial_verdict'], 'pass')
+        self.assertIs(trial['production_counted'], False)
+        self.assert_private(finished)
+
+    def test_uncertain_finish_fresh_approval_readback_remains_pending(self):
+        saved = self.action(self.data, 'mes-save')
+        self.write_error = TimeoutError('SYNTHETIC uncertain finish')
+        def approval_pending(index):
+            if index == 4:
+                self.source['data']['status'] = {'code': 4}
+        self.on_detail = approval_pending
+        finished = self.action(saved.data, 'mes-finish')
+        self.assertEqual(finished.status_code, 200, finished.data)
+        self.assertEqual(finished.data['mes_completion_status'], 'approval_pending')
+        self.assertEqual([route for route, _ in self.writes()], [ITEM_RECORD, TASK_FINISH])
+        self.assertEqual(self.action(finished.data, 'mes-finish').status_code, 409)
+        self.assertEqual(len(self.writes()), 2)
+        trial = projection(self.editor)['integration_trials'][0]
+        self.assertEqual(trial['phase'], 'completed')
+        self.assertIsNone(trial['trial_verdict'])
+        self.assert_private(finished)
+
+    def confirmation_sender(self, confirmation):
+        sender = self.send
+        def needs_confirmation(url, **kwargs):
+            response = sender(url, **kwargs)
+            if url.endswith(ITEM_RECORD) or url.endswith(TASK_FINISH):
+                body = json.loads(response.content)
+                body['needCheck'] = confirmation
+                return SimpleNamespace(status_code=200, content=json.dumps(body).encode())
+            return response
+        return patch('quality.inspection_live_adapter._user_sender', side_effect=needs_confirmation)
+
+    def assert_confirmation_stays_unknown(self, confirmation):
+        with self.confirmation_sender(confirmation):
+            saved = self.action(self.data, 'mes-save')
+        self.assertEqual(saved.status_code, 503, saved.data)
+        current = saved.data['request']
+        self.assertEqual(current['mes_workflow']['phase'], 'save_unknown')
+        self.assertFalse(current['mes_workflow']['can_save'])
+        self.assertFalse(current['mes_workflow']['can_finish'])
+        self.assertTrue(current['mes_workflow']['can_reconcile'])
+        self.assertEqual(InspectionOperation.objects.get(pk=saved.data['operation_id']).status, 'unknown')
+        # The synthetic provider did save the values, but confirmation remains
+        # a separate control. No automatic detail read may bypass that control.
+        self.assertEqual(self.source['data']['checkItems'][0]['qcTaskCheckItems'][0]['result'], '10.0')
+        self.assertEqual([route for route, _ in self.calls], [TASK_DETAIL, ITEM_RECORD])
+        self.assertEqual(self.action(current, 'mes-save').status_code, 409)
+        self.assertEqual(self.action(current, 'mes-finish').status_code, 409)
+        self.assertEqual([route for route, _ in self.writes()], [ITEM_RECORD])
+        self.assert_private(saved)
+
+    def test_human_confirmation_response_never_automatically_reconciles_saved_values(self):
+        self.assert_confirmation_stays_unknown(1)
+
+    def test_boolean_confirmation_response_never_automatically_reconciles_saved_values(self):
+        self.assert_confirmation_stays_unknown(True)
+
+    def test_string_confirmation_response_never_automatically_reconciles_saved_values(self):
+        self.assert_confirmation_stays_unknown('1')
+
+    def test_human_confirmation_finish_response_stays_unknown_without_extra_read(self):
+        saved = self.action(self.data, 'mes-save')
+        with self.confirmation_sender(1):
+            finished = self.action(saved.data, 'mes-finish')
+        self.assertEqual(finished.status_code, 503, finished.data)
+        current = finished.data['request']
+        self.assertEqual(current['mes_workflow']['phase'], 'finish_unknown')
+        self.assertFalse(current['mes_workflow']['can_finish'])
+        self.assertTrue(current['mes_workflow']['can_reconcile'])
+        self.assertEqual(self.source['data']['status']['code'], 2)
+        self.assertEqual([route for route, _ in self.calls],
+                         [TASK_DETAIL, ITEM_RECORD, TASK_DETAIL, TASK_DETAIL, TASK_FINISH])
+        self.assertEqual(self.action(current, 'mes-finish').status_code, 409)
+        self.assertEqual([route for route, _ in self.writes()], [ITEM_RECORD, TASK_FINISH])
+        self.assert_private(finished)
+
+    def test_pre_sender_existing_records_gate_never_triggers_automatic_readback(self):
+        self.set_records('10.0')
+        failed = self.action(self.data, 'mes-save')
+        self.assertEqual(failed.status_code, 503, failed.data)
+        current = failed.data['request']
+        self.assertEqual(current['mes_workflow']['phase'], 'save_unknown')
+        self.assertEqual([route for route, _ in self.calls], [TASK_DETAIL])
+        self.assertEqual(self.identity.userinfo.call_count, 2)
+        self.assertEqual(self.action(current, 'mes-save').status_code, 409)
+        self.assertEqual(self.writes(), [])
+        self.assert_private(failed)
+
+    def test_accepted_save_with_failed_readback_never_retries_the_read_or_writer(self):
+        def failed_readback(index):
+            if index == 2:
+                raise TimeoutError('SYNTHETIC read failure after accepted write')
+        self.on_detail = failed_readback
+        failed = self.action(self.data, 'mes-save')
+        self.assertEqual(failed.status_code, 503, failed.data)
+        current = failed.data['request']
+        self.assertEqual(current['mes_workflow']['phase'], 'save_unknown')
+        self.assertFalse(current['mes_workflow']['can_finish'])
+        self.assertTrue(current['mes_workflow']['can_reconcile'])
+        self.assertEqual(self.read_index, 2)
+        self.assertEqual([route for route, _ in self.calls], [TASK_DETAIL, ITEM_RECORD, TASK_DETAIL])
+        self.assertEqual(self.action(current, 'mes-save').status_code, 409)
+        self.assertEqual([route for route, _ in self.writes()], [ITEM_RECORD])
+        self.assert_private(failed)
+
     def test_standalone_policy_requires_explicit_reference_type6_code_label_and_blank_workorder(self):
         self.assertTrue(load_policy().matches(self.binding))
         self.assertTrue(get_stage_adapter(user=self.editor, session=self.session).enabled)

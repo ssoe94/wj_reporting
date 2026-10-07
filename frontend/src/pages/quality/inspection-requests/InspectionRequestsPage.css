@@ -3,7 +3,7 @@
 .inspection-requests-page button, .inspection-requests-page input, .inspection-requests-page textarea, .inspection-requests-page select { font: inherit; }
 .inspection-requests-page button { cursor: pointer; }
 .inspection-requests-page button:disabled { cursor: not-allowed; opacity: .55; }
-.inspection-requests-page :is(button, input, textarea, select, a):focus-visible { outline: 3px solid var(--accent, #008ec3); outline-offset: 3px; }
+.inspection-requests-page :is(button, input, textarea, select, a, summary):focus-visible { outline: 3px solid var(--accent, #008ec3); outline-offset: 3px; }
 .inspection-hero { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 22px 26px; color: #fff; border-radius: 12px; background: #1d3655; }
 .inspection-hero h1 { margin: 3px 0 8px; color: #fff !important; font-size: 28px; font-weight: 800; }
 .inspection-hero p { margin: 0; color: #d3e0eb; line-height: 1.6; }
@@ -20,6 +20,15 @@
 .inspection-data-sources dd { margin: 0; overflow-wrap: anywhere; }
 .inspection-beta-context { display: flex; flex-wrap: wrap; gap: 4px 15px; margin: 0 0 14px; color: var(--muted, #627789); font-size: 13px; line-height: 1.6; }
 .inspection-beta-context strong { color: var(--text, #142b3d); }
+.inspection-connection-help { margin: 10px 0; }
+.inspection-help { margin: 10px 0; font-size: 14px; line-height: 1.65; color: var(--muted, #627789); }
+.inspection-requests-page .inspection-help > summary { display: flex; align-items: center; gap: 7px; width: fit-content; min-height: 44px; padding: 6px 3px; list-style: none; cursor: pointer; color: var(--accent-strong, #006fa5); font-weight: 600; }
+.inspection-help > summary::-webkit-details-marker { display: none; }
+.inspection-help > summary > span { font-size: 20px; line-height: 1; }
+.inspection-help > summary:active { background: var(--accent-soft, #eff4f8); }
+.inspection-help[open] > summary { text-decoration: underline; text-underline-offset: 3px; }
+.inspection-help > p { margin: 6px 0; overflow-wrap: anywhere; }
+.inspection-mes-actions { margin-top: 16px; }
 .inspection-route-dialog-backdrop { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(20, 43, 61, .45); font-family: var(--wj-font-family); }
 .inspection-route-dialog { width: min(100%, 490px); max-height: 90dvh; overflow: auto; padding: 24px; border: 1px solid var(--surface-border, #dfe5eb); border-radius: 10px; color: var(--text, #142b3d); background: var(--surface-strong, #fff); box-shadow: 0 12px 40px rgba(20, 43, 61, .18); }
 .inspection-route-dialog button:focus-visible { outline: 3px solid var(--wj-accent, #245f86); outline-offset: 3px; }
