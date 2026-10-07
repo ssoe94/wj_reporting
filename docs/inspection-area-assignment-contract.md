@@ -85,7 +85,7 @@ preserved by an isolated upgrade regression. Apply this migration before serving
 the new backend: role projection is also present on legacy request reads.
 
 Deploy the matching backend and frontend commit after the full CI succeeds,
-including PostgreSQL tests for concurrent area saves and complete/reopen races.
+including PostgreSQL tests for independent area saves and same-area stale conflicts.
 The local SQLite suite cannot prove PostgreSQL locking behavior. Preserve the
 existing four enabled integration flags and authenticated account state.
 
