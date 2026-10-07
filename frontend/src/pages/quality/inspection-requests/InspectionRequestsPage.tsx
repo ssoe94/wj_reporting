@@ -23,6 +23,8 @@ import { useInspectionRouteLeaveGuard } from './useInspectionRouteLeaveGuard';
 import InspectionKanban from './InspectionKanban';
 import InspectionRequestDetail from './InspectionRequestDetail';
 import NewInspectionRequest from './NewInspectionRequest';
+import RoleSettings from './RoleSettings';
+import { inspectionRoleCopy } from './roleCopy';
 import MesDetailPreview from './MesDetailPreview';
 import './InspectionRequestsPage.css';
 
@@ -64,6 +66,7 @@ export default function InspectionRequestsPage() {
   const currentEditor = useRef(editor);
   const selectedId = editor.kind === 'request' ? editor.requestId : null;
   const creating = editor.kind === 'create';
+  const [showRoleSettings, setShowRoleSettings] = useState(false);
   const [editorLocked, setEditorLocked] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
   const locked = useRef(false);
@@ -175,6 +178,7 @@ export default function InspectionRequestsPage() {
   const openEditor = useCallback((kind: InspectionEditorSelection['kind'], requestId: number | null = null) => {
     if (!ownsSession()) return;
     const next = nextInspectionEditor(currentEditor.current, kind, requestId);
+    setShowRoleSettings(false);
     currentEditor.current = next; setEditor(next);
     dirty.current = false; locked.current = false; requestPending.current = false; setEditorDirty(false); setEditorLocked(false); setDetail(null); setDetailLoading(kind === 'request'); setNotice('');
   }, [ownsSession]);
@@ -209,6 +213,11 @@ export default function InspectionRequestsPage() {
     if (creating) { detailRef.current?.focus({ preventScroll: true }); detailRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' }); return; }
     if (!canNavigate()) return;
     openEditor('create');
+  };
+  const openRoleSettings = () => {
+    if (!ownsSession() || !canView || capabilities?.can_manage_role_settings !== true || !canNavigate()) return;
+    openEditor('none'); setShowRoleSettings(true);
+    window.setTimeout(() => detailRef.current?.focus({ preventScroll: true }), 0);
   };
   const closeDetail = () => { if (!canNavigate()) return; openEditor('none'); const target = canViewKanban ? kanbanRef.current : listRef.current; target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: 'start', behavior: 'instant' }); };
   const filter = (event: FormEvent) => { event.preventDefault(); if (!ownsSession()) return; setSearch(query.trim()); setPage(1); };
@@ -274,14 +283,14 @@ export default function InspectionRequestsPage() {
       {canViewKanban && <div ref={kanbanRef} tabIndex={-1}><InspectionKanban snapshot={kanban?.business_date === businessDate ? kanban : null} date={businessDate} lang={lang} now={now} loading={kanbanLoading} error={kanbanError} selectedId={creating ? null : selectedId} onSelect={select}
         onDate={(value) => { if (!ownsSession()) return; setFollowCurrentDate(false); setBusinessDate(value); }} onCurrent={() => { if (!ownsSession()) return; const current = new Date(); setNow(current); setFollowCurrentDate(true); setBusinessDate(inspectionBusinessDate(current)); }} onRefresh={() => void loadKanban()} /></div>}
       {assignedOnly && <section className="inspection-workspace inspection-assigned-workspace" aria-labelledby="inspection-assigned-title" ref={listRef} tabIndex={-1}><header className="inspection-assigned-heading"><h2 id="inspection-assigned-title">{text.assignedRequests}{list && ` (${list.count})`}</h2><p>{text.assignedHint}</p></header>{requestList}</section>}
-      <div className="inspection-page-actions">{capabilities?.can_manage && <button type="button" className="inspection-button" disabled={editorLocked} onClick={showCreate}><Plus size={17} aria-hidden="true" />{text.create}</button>}</div>
-      {(creating || selectedId !== null) && <div className="inspection-detail-workspace" ref={detailRef} tabIndex={-1}>
+      <div className="inspection-page-actions">{capabilities?.can_manage && <button type="button" className="inspection-button" disabled={editorLocked} onClick={showCreate}><Plus size={17} aria-hidden="true" />{text.create}</button>}{capabilities?.can_manage_role_settings && <button type="button" className="inspection-button" disabled={editorLocked} onClick={openRoleSettings}>{inspectionRoleCopy[lang].settings}</button>}</div>
+      {(showRoleSettings || creating || selectedId !== null) && <div className="inspection-detail-workspace" ref={detailRef} tabIndex={-1}>
         <div className="inspection-detail-navigation"><button className="inspection-button" type="button" disabled={editorLocked} onClick={closeDetail}>{canViewKanban ? text.returnToKanban : text.returnToList}</button>{editorLocked && <p className="inspection-muted" role="status">{text.navigationLocked}</p>}</div>
         {notice && <div className="inspection-message is-success" role="status">{notice}</div>}
-        {creating && inspector && capabilities?.can_manage ? <NewInspectionRequest key={`new-${inspector.id}-${editor.epoch}`} userId={inspector.id} sessionId={sessionId} lang={lang} dataMode={capabilities.data_mode} canPrepareIntegrationTrial={capabilities.can_prepare_integration_trial === true} onDirty={onDirty} onLocked={onLocked} onCreated={(item) => { if (!ownsSession() || !isCurrentInspectionEditor(editor, currentEditor.current) || editor.kind !== 'create') return; openEditor('request', item.id); setDetail(item); setNotice(text.createSuccess); void loadList(); void loadKanban(); }} onCancel={closeDetail} />
+        {showRoleSettings && inspector ? <RoleSettings userId={inspector.id} sessionId={sessionId} lang={lang} onDirty={onDirty} onLocked={onLocked} onClose={closeDetail} /> : creating && inspector && capabilities?.can_manage ? <NewInspectionRequest key={`new-${inspector.id}-${editor.epoch}`} userId={inspector.id} sessionId={sessionId} lang={lang} dataMode={capabilities.data_mode} canPrepareIntegrationTrial={capabilities.can_prepare_integration_trial === true} onDirty={onDirty} onLocked={onLocked} onCreated={(item) => { if (!ownsSession() || !isCurrentInspectionEditor(editor, currentEditor.current) || editor.kind !== 'create') return; openEditor('request', item.id); setDetail(item); setNotice(text.createSuccess); void loadList(); void loadKanban(); }} onCancel={closeDetail} />
           : detailLoading ? <div className="inspection-empty" role="status">{text.loading}</div>
             : detailError ? <div className="inspection-detail"><div className="inspection-message is-error" role="alert">{detailError}</div><button type="button" className="inspection-button" onClick={() => { if (ownsSession()) setDetailRetry((value) => value + 1); }}>{text.retry}</button></div>
-              : detail && inspector && capabilities ? <InspectionRequestDetail key={`${inspector.id}-${detail.id}-${editor.epoch}`} initial={detail} userId={inspector.id} sessionId={sessionId} lang={lang} globalCapabilities={capabilities} onChanged={onChanged} onDirty={onDirty} onLocked={onLocked} /> : <div className="inspection-empty">{text.select}</div>}
+              : detail && inspector && capabilities ? <InspectionRequestDetail key={`${inspector.id}-${detail.id}-${editor.epoch}`} initial={detail} userId={inspector.id} sessionId={sessionId} lang={lang} globalCapabilities={capabilities} onChanged={onChanged} onDirty={onDirty} onLocked={onLocked} onOpenSettings={capabilities.can_manage_role_settings ? openRoleSettings : undefined} /> : <div className="inspection-empty">{text.select}</div>}
       </div>}
       {!assignedOnly && <details className="inspection-workspace inspection-auxiliary" open><summary>{text.allRequests}{list && ` (${list.count})`}</summary>
         {requestList}

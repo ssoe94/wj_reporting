@@ -7,9 +7,52 @@ import type { InspectionCapabilities, InspectionList, InspectionRequest } from '
 import { validateInspectionKanban } from './kanban';
 import type { InspectionKanban } from './kanban';
 import { parseMesDetailPreview } from './mesDetailPreviewModel';
+import { parseInspectionRoleSettings } from './roleModel';
+import type { InspectionRoleAttempt, InspectionRoleSetting, InspectionRoleSettings } from './roleModel';
 export * from './model';
 
 const base = '/quality/inspection-requests/';
+export async function getInspectionRoleSettings(sessionId: string | null): Promise<InspectionRoleSettings> {
+  assertAuthSessionCurrent(sessionId);
+  const response = await http.get(`${base}role-settings/`, { authSessionId: sessionId });
+  assertAuthSessionCurrent(sessionId);
+  return parseInspectionRoleSettings(response.data);
+}
+export async function saveInspectionRoleSetting(id: number | null, payload: Record<string, unknown>, key: string, sessionId: string | null, expectedActorId: number): Promise<InspectionRoleSetting> {
+  assertAuthSessionCurrent(sessionId);
+  if (!Number.isSafeInteger(expectedActorId) || expectedActorId <= 0) throw new Error('Inspection role setting actor identity required');
+  const config = { authSessionId: sessionId, headers: { 'Idempotency-Key': key } };
+  type SettingMutationResponse = InspectionRoleSettings & { setting: InspectionRoleSetting; actor_id: number };
+  const response = id === null ? await http.post<SettingMutationResponse>(`${base}role-settings/`, payload, config)
+    : await http.patch<SettingMutationResponse>(`${base}role-settings/${id}/`, payload, config);
+  assertAuthSessionCurrent(sessionId);
+  if (response.status === 202) throw { response: { status: response.status, data: response.data } };
+  const data = response.data;
+  const setting = data?.setting;
+  const nullableActor = (value: number | null) => value === null || (Number.isSafeInteger(value) && value > 0);
+  if (data?.actor_id !== expectedActorId || data.can_configure !== true || !setting
+    || !Number.isSafeInteger(setting.id) || setting.id <= 0 || (id !== null && setting.id !== id)
+    || !Number.isSafeInteger(setting.version) || setting.version < 1
+    || typeof setting.code !== 'string' || !setting.code || typeof setting.label !== 'string'
+    || typeof setting.timezone !== 'string' || typeof setting.active !== 'boolean'
+    || !(setting.start_time === null || typeof setting.start_time === 'string')
+    || !(setting.end_time === null || typeof setting.end_time === 'string')
+    || !nullableActor(setting.appearance_assignee) || !nullableActor(setting.dimension_assignee)) throw new Error('Inspection role setting mutation identity mismatch');
+  const settings = parseInspectionRoleSettings(data);
+  const listed = settings.settings.find((row) => row.id === setting.id);
+  if (!listed || ['id', 'version', 'code', 'label', 'timezone', 'start_time', 'end_time', 'appearance_assignee', 'dimension_assignee', 'active'].some((field) => listed[field as keyof InspectionRoleSetting] !== setting[field as keyof InspectionRoleSetting])) throw new Error('Inspection role setting mutation identity mismatch');
+  return setting;
+}
+export async function mutateInspectionRole(id: number, attempt: InspectionRoleAttempt, sessionId: string | null): Promise<InspectionRequest> {
+  assertAuthSessionCurrent(sessionId);
+  if (!['role-configure', 'area-save', 'area-complete', 'area-reopen', 'role-results'].includes(attempt.action)) throw new Error('Invalid inspection role action');
+  const response = await http.post<InspectionRequest>(`${base}${id}/${attempt.action}/`, attempt.payload,
+    { authSessionId: sessionId, headers: { 'Idempotency-Key': attempt.key } });
+  assertAuthSessionCurrent(sessionId);
+  if (response.status === 202) throw { response: { status: response.status, data: response.data } };
+  if (response.data?.id !== id || response.data.role_workflow?.mode !== 'roles') throw new Error('Inspection role mutation identity mismatch');
+  return response.data;
+}
 export async function getMesDetailPreview(sessionId: string | null, signal?: AbortSignal) {
   assertAuthSessionCurrent(sessionId);
   const response = await http.get(`${base}mes-detail-preview/`, { authSessionId: sessionId, signal });

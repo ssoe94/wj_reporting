@@ -41,6 +41,10 @@ PILOT_ALLOWED_ROUTES = frozenset({
     ('POST', 'inspection-request-mes-save'),
     ('POST', 'inspection-request-mes-finish'),
     ('POST', 'inspection-request-mes-reconcile'),
+    ('POST', 'inspection-request-area-save'),
+    ('POST', 'inspection-request-area-complete'),
+    ('POST', 'inspection-request-area-reopen'),
+    ('POST', 'inspection-request-role-results'),
 })
 
 

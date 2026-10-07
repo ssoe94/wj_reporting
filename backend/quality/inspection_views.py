@@ -39,7 +39,8 @@ class InspectionRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     def get_queryset(self):
         queryset = super().get_queryset()
         if not can_use_admin_inspection_flow(self.request.user):
-            queryset = queryset.filter(assigned_to_id=self.request.user.pk)
+            queryset = queryset.filter(Q(assigned_to_id=self.request.user.pk)
+                | Q(role_workflow__areas__assigned_to_id=self.request.user.pk)).distinct()
         params = self.request.query_params
         for field in ('status', 'sync_status', 'mes_completion_status', 'assigned_to', 'part_no', 'equipment_ref', 'inspection_type'):
             if params.get(field):
@@ -102,6 +103,71 @@ class InspectionRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
     @action(detail=False, methods=['get'], url_path='capabilities')
     def capabilities(self, request):
         return Response(capabilities(request.user))
+
+    @action(detail=False, methods=['get', 'post'], url_path='role-settings')
+    def role_settings(self, request):
+        from .inspection_roles import settings_list, settings_create
+        if request.method == 'GET':
+            response = Response(settings_list(request.user))
+            response['Cache-Control'] = 'no-store, max-age=0'
+            return response
+        key = operation_key(request.headers.get('Idempotency-Key'))
+        data, status = settings_create(request.user, key, request.data,
+                                      session=InspectionSession.from_request(request))
+        return Response(data, status=status)
+
+    @action(detail=False, methods=['patch'], url_path=r'role-settings/(?P<setting_id>[0-9]+)')
+    def role_setting(self, request, setting_id=None):
+        from .inspection_roles import settings_update
+        if len(setting_id) > 18:
+            raise ValidationError('Invalid shift setting.')
+        key = operation_key(request.headers.get('Idempotency-Key'))
+        data, status = settings_update(request.user, int(setting_id), key, request.data,
+                                      session=InspectionSession.from_request(request))
+        return Response(data, status=status)
+
+    @action(detail=True, methods=['post'], url_path='role-configure')
+    def role_configure(self, request, pk=None):
+        from .inspection_roles import configure_role_workflow
+        self.get_object()
+        key = operation_key(request.headers.get('Idempotency-Key'))
+        data, status = configure_role_workflow(request.user, int(pk), key, request.data,
+                                              session=InspectionSession.from_request(request))
+        return Response(data, status=status)
+
+    def _area_action(self, request, pk, action_name):
+        from . import inspection_roles
+        self.get_object()
+        if not isinstance(request.data, dict):
+            raise ValidationError('Use an area action object.')
+        payload = dict(request.data)
+        area = payload.pop('area', None)
+        handler = getattr(inspection_roles, 'area_' + action_name)
+        key = operation_key(request.headers.get('Idempotency-Key'))
+        data, status = handler(request.user, int(pk), area, key, payload,
+                               session=InspectionSession.from_request(request))
+        return Response(data, status=status)
+
+    @action(detail=True, methods=['post'], url_path='area-save')
+    def area_save(self, request, pk=None):
+        return self._area_action(request, pk, 'save')
+
+    @action(detail=True, methods=['post'], url_path='area-complete')
+    def area_complete(self, request, pk=None):
+        return self._area_action(request, pk, 'complete')
+
+    @action(detail=True, methods=['post'], url_path='area-reopen')
+    def area_reopen(self, request, pk=None):
+        return self._area_action(request, pk, 'reopen')
+
+    @action(detail=True, methods=['post'], url_path='role-results')
+    def role_results(self, request, pk=None):
+        from .inspection_role_actions import role_results
+        self.get_object()
+        key = operation_key(request.headers.get('Idempotency-Key'))
+        data, status = role_results(request.user, int(pk), key, request.data,
+                                   session=InspectionSession.from_request(request))
+        return Response(data, status=status)
 
     @action(detail=False, methods=['get'], url_path='mes-detail-preview')
     def mes_detail_preview(self, request):

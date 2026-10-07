@@ -13,6 +13,7 @@ import { inspectionRequestKind } from './kanban';
 import { inspectionKanbanCopy } from './kanbanCopy';
 import { inspectionHasUnsavedWork, inspectionNextReconciliationRequired, inspectionRemoteReconciliationRequired } from './navigation';
 import { inspectionMesMutationResult } from './mesWorkflowResult';
+import RoleInspectionRequestDetail from './RoleInspectionRequestDetail';
 
 type InspectionEditorDraft = InspectionDraft & { review_reason_draft?: string };
 
@@ -23,10 +24,15 @@ function readRecovery(userId: number, requestId: number): InspectionRecovery<Ins
   } catch { return null; }
 }
 
-export default function InspectionRequestDetail({ initial, userId, sessionId, lang, globalCapabilities, onChanged, onDirty, onLocked }: {
+type DetailProps = {
   initial: InspectionRequest; userId: number; sessionId: string | null; lang: 'ko' | 'zh'; globalCapabilities: InspectionCapabilities;
   onChanged: (request: InspectionRequest) => void; onDirty: (dirty: boolean) => void; onLocked: (locked: boolean, pending: boolean) => void;
-}) {
+  onOpenSettings?: () => void;
+};
+export default function InspectionRequestDetail(props: DetailProps) {
+  return props.initial.role_workflow ? <RoleInspectionRequestDetail {...props} /> : <LegacyInspectionRequestDetail {...props} />;
+}
+function LegacyInspectionRequestDetail({ initial, userId, sessionId, lang, globalCapabilities, onChanged, onDirty, onLocked }: DetailProps) {
   const text = inspectionCopy[lang];
   const dataSource = inspectionDataSourceCopy(lang, globalCapabilities.data_mode);
   const kanbanText = inspectionKanbanCopy[lang];

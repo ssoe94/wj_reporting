@@ -109,9 +109,15 @@ class CreateInspectionSerializer(StrictSerializer):
     require_evidence = serializers.BooleanField(default=False)
     quantity_mode = serializers.ChoiceField(choices=['recorded', 'not_recorded'], default='recorded')
     judgement_policy = serializers.ChoiceField(choices=['strict_items', 'independent'], default='strict_items')
+    role_workflow = serializers.BooleanField(default=False)
 
     def validate_inspection_items(self, value):
         return validate_items(value)
+
+    def validate(self, attrs):
+        if attrs.get('role_workflow') and len(attrs.get('inspection_items', [])) < 2:
+            raise serializers.ValidationError({'inspection_items': 'A role inspection needs at least one item in each of the two areas.'})
+        return attrs
 
     def validate_work_started_at(self, value):
         if value > timezone.now():

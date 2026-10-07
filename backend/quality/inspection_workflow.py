@@ -39,6 +39,7 @@ def capabilities(user):
         result['can_' + action] = (can_edit and (action != 'review' or admin)
                                    and user.has_perm('quality.' + action + '_inspectionrequest'))
     result['can_prepare_integration_trial'] = bool(result['can_manage'] and user.is_superuser)
+    result['can_manage_role_settings'] = bool(result['can_manage'] and admin)
     result['mes'] = inspection_adapter.get_inspection_adapter().capabilities()
     return result
 
@@ -74,7 +75,7 @@ def request_capabilities(request, user):
     uncertain = request.sync_status in {'pending', 'unknown'}
     enabled = caps['mes']['enabled']
     accessible = can_access_request(user, request)
-    return {
+    result = {
         'can_edit': caps['can_manage'] and owner and request.status == 'draft',
         'can_submit': caps['can_submit'] and owner and request.status == 'draft',
         'can_review_failure': caps['can_review'] and request.status == 'failed' and request.submitted_by_id != user.pk,
@@ -84,6 +85,17 @@ def request_capabilities(request, user):
         'can_sync': (caps['can_submit'] and can_use_admin_inspection_flow(user)
                      and accessible and enabled and final and not uncertain and request.source_kind != 'integration_test'),
     }
+    from .inspection_roles import role_summary
+    roles = role_summary(request, user)
+    if roles is not None:
+        # Each area has its own writer and revision; a whole-request draft must
+        # never replace the other inspector's measurements or derived verdict.
+        result.update(can_edit=False, can_refresh=False, can_sync=False,
+                      can_submit=bool(caps['can_submit'] and owner and request.status == 'draft'
+                                      and roles.get('can_submit', False)))
+        if any(area.get('completed_by') == user.pk for area in roles['areas']):
+            result.update(can_review=False, can_review_failure=False)
+    return result
 
 
 def result_payload(request):
@@ -111,6 +123,8 @@ def serialize(request, user, *, detail=True):
     data.update(parent=request.parent_id, assigned_to=request.assigned_to_id,
                 submitted_by=request.submitted_by_id, reviewed_by=request.reviewed_by_id,
                 capabilities=request_capabilities(request, user))
+    from .inspection_roles import role_summary
+    data['role_workflow'] = role_summary(request, user)
     # Only the normalized contract projection, never raw MES responses or transport errors.
     from .inspection_mes_stages import stage_summary
     data['mes_workflow'] = stage_summary(request, user)
@@ -218,8 +232,16 @@ def check_version(request, payload):
 
 def create_request(user, key, attrs, *, session):
     require(user, 'manage')
+    attrs = dict(attrs)
+    role_workflow = attrs.pop('role_workflow', False)
+    if type(role_workflow) is not bool:
+        raise ValidationError({'role_workflow': 'Use an explicit boolean.'})
+    if role_workflow and (not isinstance(attrs.get('inspection_items'), list) or len(attrs['inspection_items']) < 2):
+        raise ValidationError({'inspection_items': 'A role inspection needs items for both areas.'})
     scope = f'{user.pk}:create'
     payload = {k: (v.isoformat() if hasattr(v, 'isoformat') else str(v) if isinstance(v, Decimal) else v) for k, v in attrs.items()}
+    if role_workflow:
+        payload['role_workflow'] = True
     with session.lock('manage', actor_id=user.pk) as user:
         lock_scope('inspection:create')
         previous = existing_operation(scope, key, payload)
@@ -230,6 +252,9 @@ def create_request(user, key, attrs, *, session):
         if InspectionRequest.objects.filter(identity=identity).exists():
             raise InspectionConflict('duplicate_request', 'This target already has a request. Open it or create an explicit reinspection.')
         request = InspectionRequest.objects.create(identity=identity, assigned_to=user, assigned_to_name=user.get_username(), **attrs)
+        if role_workflow:
+            from .inspection_roles import initialize_role_workflow
+            initialize_role_workflow(request)
         operation = InspectionOperation.objects.create(scope=scope, key=key, request=request, payload_digest=digest(payload))
         audit(request, user, 'create')
         return finish_operation(operation, serialize(request, user), 201)
@@ -249,6 +274,10 @@ def local_action(user, request_id, action, key, payload, *, session):
         if previous:
             return replay(previous, user)
         check_version(request, payload)
+        from .inspection_role_models import InspectionRoleWorkflow
+        role_mode = InspectionRoleWorkflow.objects.filter(request=request).exists()
+        if role_mode and action == 'draft':
+            raise InspectionConflict('area_actions_required', 'Save only your assigned area or the separate quantity summary.')
         if action in {'draft', 'submit'}:
             if request.status != 'draft' or request.assigned_to_id != user.pk:
                 raise PermissionDenied('Only the assigned editor may change or submit a draft.')
@@ -258,6 +287,11 @@ def local_action(user, request_id, action, key, payload, *, session):
                     setattr(request, field, value)
             validate_result(request)
         elif action == 'submit':
+            if role_mode:
+                from .inspection_roles import role_summary
+                roles = role_summary(request, user)
+                if not roles.get('can_submit', False):
+                    raise InspectionConflict('inspection_areas_incomplete', 'Both assigned areas must be completed before submission.')
             validate_result(request, submit=True)
             request.status = 'submitted' if request.judgement == 'pass' else 'failed'
             request.submitted_by, request.submitted_at = user, timezone.now()
@@ -268,6 +302,8 @@ def local_action(user, request_id, action, key, payload, *, session):
                 raise InspectionConflict('invalid_state', 'Use the separate independent review for a failed result.')
             if request.submitted_by_id == user.pk:
                 raise PermissionDenied('An independent reviewer is required, including for superusers.')
+            if role_mode and request.role_workflow.areas.filter(completed_by_id=user.pk).exists():
+                raise PermissionDenied('An independent reviewer cannot review their own area results.')
             if action in {'reject', 'review-failure'} and not payload.get('reason', '').strip():
                 raise ValidationError({'reason': 'A rejection reason is required.'})
             request.status = 'approved' if action in {'approve', 'review-failure'} else 'rejected'
@@ -282,6 +318,9 @@ def local_action(user, request_id, action, key, payload, *, session):
                       'uom', 'warehouse_ref', 'lot_ref', 'work_started_at', 'inspection_items', 'require_evidence', 'quantity_mode', 'judgement_policy']
             child = InspectionRequest.objects.create(identity=digest({'parent': request.pk}), parent=request,
                 assigned_to=user, assigned_to_name=user.get_username(), **{f: getattr(request, f) for f in fields})
+            if role_mode:
+                from .inspection_roles import initialize_role_workflow
+                initialize_role_workflow(child)
             audit(child, user, 'create_reinspection', payload['reason'])
         if action == 'submit' and request.judgement == 'fail':
             InspectionNonconformance.objects.get_or_create(request=request, defaults={
@@ -350,6 +389,8 @@ def external_action(user, request_id, action, key, payload, *, session):
         raise ValidationError('Quality cannot execute inventory receipt.')
     permission = {'refresh': 'view', 'sync': 'submit'}[action]
     require(user, permission)
+    from .inspection_role_actions import require_verified_role_mes_contract
+    require_verified_role_mes_contract(user, request_id)
     from .inspection_models import InspectionMesBinding
     if InspectionMesBinding.objects.filter(request_id=request_id).exists():
         raise InspectionConflict('separate_mes_stages_required', 'Use separate MES save, finish and reconciliation actions.')

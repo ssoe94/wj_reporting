@@ -237,3 +237,16 @@
 @media (max-width: 760px) { .inspection-detail-workspace { scroll-margin-top: 150px; } }
 @media (max-width: 760px) { .inspection-snapshot { gap: 10px; padding: 12px; } .inspection-snapshot .inspection-snapshot-secondary { display: none; } .inspection-snapshot .inspection-snapshot-owner { grid-column: 1 / -1; } }
 @media (prefers-contrast: more) { .inspection-machine-card, .inspection-kanban-request { border-color: #506578; } }
+
+.inspection-role-area-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.inspection-role-area { min-width: 0; padding: 12px; border: 1px solid var(--surface-border, #dfe5eb); border-radius: 7px; background: var(--surface-strong, #fff); }
+.inspection-role-area header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.inspection-role-area p { margin: 8px 0; }
+.inspection-role-area label { display: grid; gap: 5px; margin-top: 8px; font-size: 14px; }
+.inspection-role-area :is(input, select) { width: 100%; min-height: 44px; }
+.inspection-role-final { margin: 12px 0 8px; font-size: 15px; }
+.inspection-role-item-area { display: block; margin-top: 4px; color: var(--muted, #627789); font-size: 13px; font-weight: 450; }
+.inspection-role-settings > .inspection-actions { margin: 12px 0; }
+.inspection-role-detail fieldset { min-width: 0; border: 0; margin: 0; padding: 0; }
+.inspection-role-detail fieldset > label { display: grid; gap: 6px; margin: 10px 0; }
+@media (max-width: 760px) { .inspection-role-area-grid { grid-template-columns: 1fr; } }

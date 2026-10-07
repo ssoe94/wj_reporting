@@ -93,6 +93,10 @@ jobs:
             quality.test_inspection_migration \
             quality.test_inspection_flow_scenarios \
             quality.test_inspection_beta_access \
+            quality.test_inspection_roles \
+            quality.test_inspection_role_api \
+            quality.test_inspection_role_migration \
+            quality.test_inspection_role_security \
             quality.test_inspection_live_adapter \
             quality.test_inspection_live_readback \
             quality.test_inspection_board_repository \

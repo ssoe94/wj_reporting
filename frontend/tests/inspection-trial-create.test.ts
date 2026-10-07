@@ -4,6 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 import * as model from '../src/pages/quality/inspection-requests/model.ts';
 import * as copy from '../src/pages/quality/inspection-requests/copy.ts';
+import { inspectionRoleCopy } from '../src/pages/quality/inspection-requests/roleCopy.ts';
 import * as workflow from '../src/pages/quality/inspection-requests/workflow.ts';
 const compiled = ts.transpileModule(readFileSync(new URL('../src/pages/quality/inspection-requests/NewInspectionRequest.tsx', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -19,7 +20,7 @@ function harness(allowed: boolean | undefined) {
     react: { useState: (initial: any) => { const index = cursor++; if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial; return [states[index], (next: any) => { states[index] = typeof next === 'function' ? next(states[index]) : next; }]; }, useRef: (value: any) => { const index = cursor++; return states[index] ??= { current: value }; }, useCallback: (fn: unknown) => fn, useEffect: () => {} },
     'react/jsx-runtime': { jsx: (type: unknown, props: any) => ({ type, props }), jsxs: (type: unknown, props: any) => ({ type, props }) },
     '@/domains/auth/auth-transition': { assertAuthSessionCurrent: (session: string) => assert.equal(session, 'fixture-session') },
-    'lucide-react': { Plus: 'Icon' }, './copy': copy, './workflow': { ...workflow, createInspectionKey: () => `fixture-${++key}` },
+    'lucide-react': { Plus: 'Icon' }, './copy': copy, './roleCopy': { inspectionRoleCopy }, './workflow': { ...workflow, createInspectionKey: () => `fixture-${++key}` },
     './api': { ...model,
       createIntegrationTrial: async (attempt: workflow.MutationAttempt, sessionId: string) => { calls.push({ endpoint: 'trial', attempt, sessionId }); if (failOnce) { failOnce = false; throw new Error('network'); } return { id: 42, source_kind: 'integration_test' }; },
       mutateInspectionRequest: async (_id: number, attempt: workflow.MutationAttempt, sessionId: string) => { calls.push({ endpoint: 'production', attempt, sessionId }); return { id: 43 }; },
@@ -36,6 +37,20 @@ test('missing or false trial capability keeps ordinary production form and hides
     assert.equal(elements(tree).some(node => node.type === 'select' && node.props.value === 'production'), false);
     assert.ok(elements(tree).some(node => node.type === 'input' && node.props.type === 'datetime-local'));
   }
+});
+test('area-split opt-in requires a second item without dispatching a one-area request', () => {
+  const fixture = harness(false);
+  let tree = fixture.render();
+  const label = elements(tree).find(node => node.type === 'label' && content(node).includes(inspectionRoleCopy.ko.optIn))!;
+  elements(label).find(node => node.type === 'input' && node.props.type === 'checkbox')!.props.onChange({ target: { checked: true } });
+  tree = fixture.render();
+  assert.equal(elements(tree).find(node => node.type === 'button' && node.props.type === 'submit')!.props.disabled, true);
+  const item = elements(tree).find(node => node.type === 'fieldset' && content(node).includes(`${copy.inspectionCopy.ko.itemName} 1`))!;
+  elements(item).find(node => node.type === 'input' && node.props.maxLength === 128)!.props.onChange({ target: { value: 'SYNTHETIC-ONE-ITEM' } });
+  tree = fixture.render();
+  elements(tree).find(node => node.type === 'form')!.props.onSubmit({ preventDefault() {} });
+  assert.equal(fixture.calls.length, 0);
+  assert.match(content(fixture.render()), /각각 하나 이상/);
 });
 function prepare(fixture: ReturnType<typeof harness>) {
   let tree = fixture.render();

@@ -7,6 +7,7 @@ import { inspectionCreatePayload, mutateInspectionRequest, integrationTrialCreat
 import type { InspectionCreate, InspectionPreparationDraft, InspectionDataMode, InspectionItem, InspectionRequest } from './api';
 import { createInspectionKey, inspectionError, inspectionMutationAttempt, inspectionRecoveryKey, parseInspectionRecovery } from './workflow';
 import type { InspectionRecovery, MutationAttempt } from './workflow';
+import { inspectionRoleCopy } from './roleCopy';
 
 function newItem(): InspectionItem { return { id: createInspectionKey(), label: '', kind: 'text', unit: '', required: true, evidence_required: false }; }
 function emptyRequest(): InspectionPreparationDraft {
@@ -72,6 +73,7 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
       catch { setError(trialText.invalid); }
       return;
     }
+    if (form.role_workflow === true && form.inspection_items.length < 2) { setError(lang === 'ko' ? '외관과 치수에 배정할 항목을 각각 하나 이상 추가하세요.' : '请为外观与尺寸各添加至少一个项目。'); return; }
     const started = new Date(form.work_started_at);
     if (Number.isNaN(started.getTime())) { setError(text.startedInvalid); return; }
     const payload = inspectionCreatePayload(form);
@@ -101,7 +103,7 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
         <label>{text.workStarted} *<input required type="datetime-local" value={form.work_started_at} onChange={(event) => update({ work_started_at: event.target.value })} /><small>{lang === 'ko' ? '입력 시간은 이 기기의 현지 시간입니다.' : '输入时间为此设备的本地时间。'}</small></label>
         <label>{text.quantityPolicy}<select value={form.quantity_mode} onChange={(event) => update({ quantity_mode: event.target.value as InspectionCreate['quantity_mode'] })}><option value="recorded">{text.quantityRecorded}</option><option value="not_recorded">{text.quantityNotRecorded}</option></select></label>
         <label>{text.judgementPolicy}<select value={form.judgement_policy} onChange={(event) => update({ judgement_policy: event.target.value as InspectionCreate['judgement_policy'] })}><option value="strict_items">{text.strictItems}</option><option value="independent">{text.independentJudgement}</option></select><small>{form.judgement_policy === 'independent' ? text.independentHint : text.strictHint}</small></label>
-      </div><label className="inspection-check"><input type="checkbox" checked={form.require_evidence} onChange={(event) => update({ require_evidence: event.target.checked })} />{text.commonEvidenceRequired}</label></fieldset>
+      </div><label className="inspection-check"><input type="checkbox" checked={form.require_evidence} onChange={(event) => update({ require_evidence: event.target.checked })} />{text.commonEvidenceRequired}</label><label className="inspection-check"><input type="checkbox" checked={form.role_workflow === true} onChange={(event) => update({ role_workflow: event.target.checked })} />{inspectionRoleCopy[lang].optIn}</label><p className="inspection-muted">{inspectionRoleCopy[lang].optInHint}{form.role_workflow === true && form.inspection_items.length < 2 ? ` ${lang === 'ko' ? '외관·치수용 항목을 각각 추가하세요.' : '请分别添加外观和尺寸项目。'}` : ''}</p></fieldset>
       </>}
       <section className="inspection-section"><h3>{text.items}</h3>
         {form.inspection_items.map((item, index) => <fieldset className="inspection-item" disabled={blocked} key={item.id}><legend>{text.itemName} {index + 1}</legend><div className="inspection-form-grid">
@@ -115,7 +117,7 @@ export default function NewInspectionRequest({ userId, sessionId, lang, dataMode
         </fieldset>)}
         <button type="button" className="inspection-button" disabled={blocked || form.inspection_items.length >= 50} onClick={() => update({ inspection_items: [...form.inspection_items, newItem()] })}><Plus size={16} aria-hidden="true" />{text.addItem}</button>
       </section>
-      <div className="inspection-actions inspection-section"><button type="submit" className="inspection-button is-primary" disabled={blocked || (trial && !canPrepareIntegrationTrial)}>{busy ? text.busy : trial ? trialText.submit : text.create}</button><button type="button" className="inspection-button" disabled={blocked} onClick={onCancel}>{text.cancel}</button></div>
+      <div className="inspection-actions inspection-section"><button type="submit" className="inspection-button is-primary" disabled={blocked || (trial && !canPrepareIntegrationTrial) || (!trial && form.role_workflow === true && form.inspection_items.length < 2)}>{busy ? text.busy : trial ? trialText.submit : text.create}</button><button type="button" className="inspection-button" disabled={blocked} onClick={onCancel}>{text.cancel}</button></div>
     </form>
   </section>;
 }

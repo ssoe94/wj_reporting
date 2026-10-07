@@ -16,6 +16,7 @@ export type InspectionCreate = {
   warehouse_ref: string; lot_ref: string; work_started_at: string; inspection_items: InspectionItem[];
   require_evidence: boolean; quantity_mode: 'recorded' | 'not_recorded';
   judgement_policy: 'strict_items' | 'independent';
+  role_workflow?: boolean;
 };
 export type InspectionRecordCapabilities = {
   can_edit: boolean; can_submit: boolean; can_review: boolean; can_reinspect: boolean;
@@ -30,7 +31,7 @@ export type InspectionMesTrialObservation = {
   verdict: 'pass' | 'fail' | null;
   observed_at: string | null;
 };
-export type InspectionRequest = InspectionCreate & InspectionDraft & {
+export type InspectionRequest = Omit<InspectionCreate, 'role_workflow'> & InspectionDraft & {
   id: number; source_kind: string; parent: number | null; assigned_to: number | null; assigned_to_name: string;
   status: InspectionStatus; version: number; submitted_by: number | null; submitted_at: string | null;
   reviewed_by: number | null; reviewed_at: string | null; review_reason: string;
@@ -42,9 +43,11 @@ export type InspectionRequest = InspectionCreate & InspectionDraft & {
   mes_trial_observation?: InspectionMesTrialObservation | null;
   nonconformance?: { state: string; quantity: string | null; uom: string; owner_name: string; mes_status: string; can_execute: false } | null;
   capabilities: InspectionRecordCapabilities;
+  role_workflow?: import('./roleModel').InspectionRoleWorkflow | null;
 };
 export type InspectionCapabilities = {
   can_prepare_integration_trial?: boolean;
+  can_manage_role_settings?: boolean;
   data_mode: InspectionDataMode;
   can_view: boolean; can_manage: boolean; can_submit: boolean; can_review: boolean;
   access_scope: 'all' | 'assigned_only'; can_view_kanban: boolean;
@@ -62,7 +65,7 @@ export type InspectionList = {
 export function inspectionCreatePayload(form: InspectionCreate): Record<string, unknown> {
   return { work_order_ref: form.work_order_ref.trim(), task_ref: form.task_ref.trim(), part_no: form.part_no.trim(), equipment_ref: form.equipment_ref.trim(), inspection_type: form.inspection_type,
     target_quantity: form.target_quantity.trim(), uom: form.uom.trim(), warehouse_ref: form.warehouse_ref.trim(), lot_ref: form.lot_ref.trim(), work_started_at: new Date(form.work_started_at).toISOString(), require_evidence: form.require_evidence, quantity_mode: form.quantity_mode, judgement_policy: form.judgement_policy,
-    inspection_items: inspectionItemPayload(form.inspection_items) };
+    inspection_items: inspectionItemPayload(form.inspection_items), ...(form.role_workflow === true ? { role_workflow: true } : {}) };
 }
 export type InspectionPreparationDraft = InspectionCreate & { preparation_mode?: 'production' | 'integration_trial'; trial_code?: string };
 function inspectionItemPayload(items: InspectionItem[]) {

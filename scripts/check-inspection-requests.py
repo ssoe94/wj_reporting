@@ -115,6 +115,8 @@ else:
     raise SystemExit(DiscoverRunner(verbosity=2).run_tests(sys.argv[1:] or [
         'quality.test_inspection_flow_scenarios',
         'quality.test_inspection_requests', 'quality.test_inspection_mes_stages', 'quality.test_inspection_blacklake_contract',
+        'quality.test_inspection_roles', 'quality.test_inspection_role_api',
+        'quality.test_inspection_role_migration', 'quality.test_inspection_role_security',
         'quality.test_inspection_read_snapshot', 'quality.test_inspection_blacklake_snapshot',
         'quality.test_inspection_live_readback', 'quality.test_inspection_board_repository',
         'quality.test_inspection_preflight', 'quality.test_inspection_eligibility_probe',

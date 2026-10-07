@@ -5,6 +5,8 @@ import test from 'node:test';
 import type { InspectionAction, MutationAttempt } from '../src/pages/quality/inspection-requests/workflow.ts';
 import { parseInspectionAccess } from '../src/domains/auth/inspection-beta-access.ts';
 import { parseMesDetailPreview } from '../src/pages/quality/inspection-requests/mesDetailPreviewModel.ts';
+import { parseInspectionRoleSettings } from '../src/pages/quality/inspection-requests/roleModel.ts';
+import type { InspectionRoleAttempt } from '../src/pages/quality/inspection-requests/roleModel.ts';
 import { previewFixture } from './fixtures/mes-detail-preview.ts';
 
 const SESSION_A = 'SYNTHETIC-INSPECTION-SESSION-A';
@@ -16,6 +18,9 @@ type Response = { status: number; data: unknown };
 type Config = { authSessionId?: SessionId; params?: Record<string, unknown>; headers?: Record<string, string>; signal?: AbortSignal };
 type Call = { method: string; url: string; payload?: unknown; config?: Config };
 type InspectionApi = {
+  getInspectionRoleSettings: (sessionId: SessionId) => Promise<unknown>;
+  saveInspectionRoleSetting: (id: number | null, payload: Record<string, unknown>, key: string, sessionId: SessionId, expectedActorId: number) => Promise<unknown>;
+  mutateInspectionRole: (id: number, attempt: InspectionRoleAttempt, sessionId: SessionId) => Promise<unknown>;
   getMesDetailPreview: (sessionId: SessionId, signal?: AbortSignal) => Promise<unknown>;
   getInspectionCapabilities: (sessionId: SessionId) => Promise<unknown>;
   getInspectionRequests: (search: string, status: string, page: number, sessionId: SessionId) => Promise<unknown>;
@@ -31,8 +36,8 @@ const apiSource = stripTypeScriptTypes(readFileSync(new URL('../src/pages/qualit
   .replace(/^import\s[\s\S]*?;\s*/gm, '')
   .replace(/^export\s+\*\s+from\s+[^;]+;\s*/gm, '')
   .replace(/^export\s+/gm, '');
-const instantiateApi = new Function('http', 'assertAuthSessionCurrent', 'validateInspectionKanban', 'parseInspectionAccess', 'parseMesDetailPreview', `${apiSource}\nreturn {
-  getMesDetailPreview,
+const instantiateApi = new Function('http', 'assertAuthSessionCurrent', 'validateInspectionKanban', 'parseInspectionAccess', 'parseMesDetailPreview', 'parseInspectionRoleSettings', `${apiSource}\nreturn {
+  getMesDetailPreview, getInspectionRoleSettings, saveInspectionRoleSetting, mutateInspectionRole,
   getInspectionCapabilities, getInspectionRequests, getInspectionKanban,
   getInspectionRequest, mutateInspectionRequest, createIntegrationTrial,
 };`);
@@ -61,7 +66,7 @@ function scenario(reply: () => Promise<Response>, currentSessionId: SessionId = 
   }, (data: unknown, date: string) => {
     validations.push({ data, date });
     return data;
-  }, parseInspectionAccess, parseMesDetailPreview) as InspectionApi;
+  }, parseInspectionAccess, parseMesDetailPreview, parseInspectionRoleSettings) as InspectionApi;
   return { api, state, calls, assertions, validations, staleSession };
 }
 
@@ -69,10 +74,15 @@ type Operation = {
   name: string;
   invoke: (api: InspectionApi, sessionId: SessionId) => Promise<unknown>;
   expected: Call;
-  result: unknown;
+  result: unknown; returned?: unknown;
 };
 
+function settingMutationResponse(id: number, version = 1, actorId = 101) {
+  const setting = { id, version, code: 'SYNTHETIC-UNSET', label: 'SYNTHETIC-DRAFT', timezone: 'Asia/Shanghai', start_time: null, end_time: null, appearance_assignee: null, dimension_assignee: null, active: false };
+  return { settings: [{ ...setting }], candidates: [{ id: 101, username: 'SYNTHETIC-ADMIN', name: 'SYNTHETIC-ADMIN' }], can_configure: true, setting, actor_id: actorId };
+}
 const reads: Operation[] = [
+  { name: 'role settings', invoke: (api, sessionId) => api.getInspectionRoleSettings(sessionId), expected: { method: 'get', url: `${BASE}role-settings/`, config: { authSessionId: SESSION_A } }, result: { settings: [], candidates: [], can_configure: true } },
   { name: 'MES metadata preview', invoke: (api, sessionId) => api.getMesDetailPreview(sessionId),
     expected: { method: 'get', url: `${BASE}mes-detail-preview/`, config: { authSessionId: SESSION_A, signal: undefined } }, result: previewFixture() },
   { name: 'capabilities', invoke: (api, sessionId) => api.getInspectionCapabilities(sessionId),
@@ -103,7 +113,56 @@ const trialAttempt: MutationAttempt = { action: 'create', key: 'SYNTHETIC-TRIAL-
 mutations.push({ name: 'integration trial preparation', invoke: (api, sessionId) => api.createIntegrationTrial(trialAttempt, sessionId),
   expected: { method: 'post', url: `${BASE}integration-trial/`, payload: trialAttempt.payload,
     config: { authSessionId: SESSION_A, headers: { 'Idempotency-Key': trialAttempt.key } } }, result: { id: 77, source_kind: 'integration_test' } });
+for (const action of ['role-configure', 'area-save', 'area-complete', 'area-reopen', 'role-results'] as const) {
+  const attempt: InspectionRoleAttempt = { action, key: `SYNTHETIC-${action}`, payload: { config_version: 1, area_version: 2 } };
+  mutations.push({ name: action, invoke: (api, sessionId) => api.mutateInspectionRole(42, attempt, sessionId), expected: { method: 'post', url: `${BASE}42/${action}/`, payload: attempt.payload, config: { authSessionId: SESSION_A, headers: { 'Idempotency-Key': attempt.key } } }, result: { id: 42, role_workflow: { mode: 'roles' } } });
+}
+for (const id of [null, 9]) {
+  const payload = { label: 'SYNTHETIC-DRAFT', active: false };
+  const response = settingMutationResponse(id || 10, id === null ? 1 : 2);
+  mutations.push({ name: `role setting ${id === null ? 'create' : 'update'}`, invoke: (api, sessionId) => api.saveInspectionRoleSetting(id, payload, 'SYNTHETIC-SETTING-KEY', sessionId, 101), expected: { method: id === null ? 'post' : 'patch', url: `${BASE}role-settings/${id === null ? '' : `${id}/`}`, payload, config: { authSessionId: SESSION_A, headers: { 'Idempotency-Key': 'SYNTHETIC-SETTING-KEY' } } }, result: response, returned: response.setting });
+}
 const operations = [...reads, ...mutations];
+
+test('exact backend nested setting create/update responses return only the validated setting', async () => {
+  for (const [id, status, version] of [[null, 201, 1], [9, 200, 2]] as const) {
+    const response = settingMutationResponse(id || 10, version);
+    const fixture = scenario(async () => ({ status, data: response }));
+    const payload = id === null ? { code: 'SYNTHETIC-UNSET', label: 'SYNTHETIC-DRAFT' }
+      : { version: 1, label: 'SYNTHETIC-DRAFT', reason: 'SYNTHETIC future setting only' };
+    const result = await fixture.api.saveInspectionRoleSetting(id, payload, 'SYNTHETIC-NESTED-KEY', SESSION_A, 101);
+    assert.equal(result, response.setting);
+    assert.equal('actor_id' in (result as object), false);
+    assert.equal('settings' in (result as object), false);
+    assert.deepEqual(fixture.calls, [{ method: id === null ? 'post' : 'patch', url: `${BASE}role-settings/${id === null ? '' : `${id}/`}`,
+      payload, config: { authSessionId: SESSION_A, headers: { 'Idempotency-Key': 'SYNTHETIC-NESTED-KEY' } } }]);
+    assert.deepEqual(fixture.assertions, [SESSION_A, SESSION_A]);
+  }
+});
+test('setting mutations require an explicit current actor before dispatch and reject a different response actor', async () => {
+  for (const actor of [undefined, null, 0, -1, 101.5, '101']) {
+    const fixture = scenario(async () => ({ status: 201, data: settingMutationResponse(10) }));
+    await assert.rejects(fixture.api.saveInspectionRoleSetting(null, {}, 'SYNTHETIC-KEY', SESSION_A, actor as number), /actor identity required/);
+    assert.equal(fixture.calls.length, 0);
+  }
+  for (const actor of [undefined, null, 0, 202, '101']) {
+    const data = { ...settingMutationResponse(10), actor_id: actor };
+    const fixture = scenario(async () => ({ status: 201, data }));
+    await assert.rejects(fixture.api.saveInspectionRoleSetting(null, {}, 'SYNTHETIC-KEY', SESSION_A, 101), /mutation identity mismatch/);
+    assert.equal(fixture.calls.length, 1);
+    assert.deepEqual(fixture.assertions, [SESSION_A, SESSION_A]);
+  }
+});
+test('setting mutations reject flat, wrong-target and inconsistent nested envelopes', async () => {
+  const correct = settingMutationResponse(9, 2);
+  for (const data of [correct.setting, { ...correct, can_configure: false }, { ...correct, setting: { ...correct.setting, id: 10 } },
+    { ...correct, setting: { ...correct.setting, version: 0 } }, { ...correct, settings: [] },
+    { ...correct, settings: [{ ...correct.setting, label: 'SYNTHETIC other saved version' }] }]) {
+    const fixture = scenario(async () => ({ status: 200, data }));
+    await assert.rejects(fixture.api.saveInspectionRoleSetting(9, { version: 1 }, 'SYNTHETIC-KEY', SESSION_A, 101), /mutation identity mismatch/);
+    assert.equal(fixture.calls.length, 1);
+  }
+});
 
 for (const operation of operations) {
   test(`${operation.name} binds the original session and preserves its request contract`, async () => {
@@ -115,7 +174,7 @@ for (const operation of operations) {
     assert.equal(fixture.validations.length, 0);
     response.resolve({ status: 200, data: operation.result });
     if (operation.name === 'MES metadata preview') assert.deepEqual(await pending, operation.result);
-    else assert.equal(await pending, operation.result);
+    else assert.equal(await pending, operation.returned ?? operation.result);
     assert.deepEqual(fixture.assertions, [SESSION_A, SESSION_A], 'a successful response requires the original session again');
     assert.deepEqual(fixture.validations, operation.name === 'kanban' ? [{ data: operation.result, date: DATE }] : []);
     assert.deepEqual(fixture.calls, [operation.expected], 'no retry or unbound follow-up request');

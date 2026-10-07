@@ -48,10 +48,11 @@ class InspectionMigrationCompatibilityTests(TransactionTestCase):
                 [('auth', 'User'), ('quality', 'QualityReport'), ('production', 'ProductionPlan')]}
         upgraded = self.upgrade()
         self.assertEqual(set(connection.introspection.table_names()) - before_tables,
-                         {'quality_inspectionrequest', 'quality_inspectionaudit', 'quality_inspectionoperation', 'quality_inspectionmesbinding', 'quality_inspectionnonconformance'})
+                         {'quality_inspectionrequest', 'quality_inspectionaudit', 'quality_inspectionoperation', 'quality_inspectionmesbinding', 'quality_inspectionnonconformance',
+                          'quality_inspectionshiftsetting', 'quality_inspectionroleworkflow', 'quality_inspectionarearesult'})
         for (app, model), existing in rows.items():
             self.assertEqual(list(upgraded.get_model(app, model).objects.values()), existing)
-        for name in ('0010_inspection_requests', '0011_inspection_requests', '0012_inspection_requests'):
+        for name in ('0010_inspection_requests', '0011_inspection_requests', '0012_inspection_requests', '0013_inspection_roles'):
             self.assertTrue(all(isinstance(operation, migrations.CreateModel) for operation in
                                 import_module('quality.migrations.' + name).Migration.operations))
 

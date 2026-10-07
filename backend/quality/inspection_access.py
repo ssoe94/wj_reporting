@@ -34,7 +34,12 @@ def can_access_inspections(user):
 
 
 def can_access_request(user, request):
-    return can_access_inspections(user) and (can_use_admin_inspection_flow(user) or request.assigned_to_id == user.pk)
+    if not can_access_inspections(user):
+        return False
+    if can_use_admin_inspection_flow(user) or request.assigned_to_id == user.pk:
+        return True
+    from .inspection_role_models import InspectionAreaResult
+    return InspectionAreaResult.objects.filter(workflow__request_id=request.pk, assigned_to_id=user.pk).exists()
 
 
 def require_owned_request(user, request):

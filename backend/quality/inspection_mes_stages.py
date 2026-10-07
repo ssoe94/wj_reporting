@@ -180,6 +180,12 @@ def read_evidence(adapter, binding, request, started_at, *, require_values):
 
 
 def stage_summary(request, user):
+    from .inspection_role_models import InspectionRoleWorkflow
+    if InspectionRoleWorkflow.objects.filter(request=request).exists():
+        return {'phase': 'blocked', 'enabled': False, 'test_only': False,
+                'qc_code': None, 'test_label': None, 'last_verified_at': None,
+                'can_save': False, 'can_finish': False, 'can_reconcile': False,
+                'blocked_reason': 'mes_partial_multi_executor_contract_unverified'}
     from mes_oauth import vault
     binding = InspectionMesBinding.objects.filter(request=request).first()
     adapter = get_stage_adapter(user=user)
@@ -216,6 +222,8 @@ def stage_action(user, request_id, action, key, payload, *, session):
         raise ValidationError('Unsupported MES stage.')
     permission = 'view' if action == 'mes-reconcile' else 'submit'
     require(user, permission)
+    from .inspection_role_actions import require_verified_role_mes_contract
+    require_verified_role_mes_contract(user, request_id)
     adapter = get_stage_adapter(user=user, session=session)
     scope = f'{user.pk}:{request_id}:{action}'
     with session.lock(permission, actor_id=user.pk) as user:
