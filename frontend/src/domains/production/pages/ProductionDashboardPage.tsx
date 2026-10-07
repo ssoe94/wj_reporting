@@ -5322,60 +5322,19 @@ export function ProductionDashboardPage() {
 
       <MesProductionReadStatusPanel businessDate={businessDate} language={language} />
 
-      {isInitialLoading ? <ProductionDashboardSkeleton copy={copy} /> : null}
-
-      {!isCoreDashboardDataReady && !isInitialLoading ? (
-        <section className="panel">
-          <div className="notice notice--warning" role="alert">
-            <strong>{copy.dataUnavailable}</strong>
-            <p>{copy.dataUnavailableHint}</p>
-            <p>{copy.dataMissingSources}: {coreDashboardState.missingSources.map(({ label }) => label).join(" · ")}</p>
-          </div>
-          <label className="stat-card production-date-card">
-            <span className="stat-card__title">{copy.productionDate}</span>
-            <input
-              type="date"
-              value={businessDate}
-              max={currentDate}
-              onChange={(event) => setBusinessDate(event.target.value || currentDate)}
-            />
-            <span className="stat-card__hint">{copy.productionDateHint}</span>
-          </label>
-          <button className="button button--primary" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
-            {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
-          </button>
-        </section>
-      ) : null}
-
-      {isCoreDashboardDataReady ? (
-        <>
-          {hasCoreRefreshError ? (
-            <div className="notice notice--warning" role="alert">
-              <strong>{copy.dataRefreshFailed}</strong>
-              <p>{copy.dataRefreshFailedHint}</p>
-              <ul>
-                {coreDashboardState.failedSources.map(({ label, query }) => (
-                  <li key={label}>
-                    {label} · {copy.dataLastLoaded}: {formatAiTimestamp(query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toISOString() : null, language)}
-                  </li>
-                ))}
-              </ul>
-              <button className="button button--ghost" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
-                {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
-              </button>
-            </div>
-          ) : null}
-          <div className="stats-grid">
-            <label className="stat-card production-date-card">
-              <span className="stat-card__title">{copy.productionDate}</span>
-              <input
-                type="date"
-                value={businessDate}
-                max={currentDate}
-                onChange={(event) => setBusinessDate(event.target.value || currentDate)}
-              />
-              <span className="stat-card__hint">{copy.productionDateHint}</span>
-            </label>
+      <div className="stats-grid">
+        <label className="stat-card production-date-card">
+          <span className="stat-card__title">{copy.productionDate}</span>
+          <input
+            type="date"
+            value={businessDate}
+            max={currentDate}
+            onChange={(event) => setBusinessDate(event.target.value || currentDate)}
+          />
+          <span className="stat-card__hint">{copy.productionDateHint}</span>
+        </label>
+        {isCoreDashboardDataReady ? (
+          <>
             <StatCard
               hint={`${copy.planned} ${briefContext.plannedInjectionMachineCount}${copy.machineUnit} ${copy.completedRate} ${injectionCompletionRate.toFixed(1)}%`}
               hintTone={hasCoreRefreshError ? "neutral" : injectionRateTone}
@@ -5406,7 +5365,43 @@ export function ProductionDashboardPage() {
               title={copy.activeMachines}
               value={`${briefContext.activeMachineCount}/${briefContext.totalMachines}`}
             />
+          </>
+        ) : null}
+      </div>
+
+      {isInitialLoading ? <ProductionDashboardSkeleton copy={copy} /> : null}
+
+      {!isCoreDashboardDataReady && !isInitialLoading ? (
+        <section className="panel">
+          <div className="notice notice--warning" role="alert">
+            <strong>{copy.dataUnavailable}</strong>
+            <p>{copy.dataUnavailableHint}</p>
+            <p>{copy.dataMissingSources}: {coreDashboardState.missingSources.map(({ label }) => label).join(" · ")}</p>
           </div>
+          <button className="button button--primary" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
+            {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
+          </button>
+        </section>
+      ) : null}
+
+      {isCoreDashboardDataReady ? (
+        <>
+          {hasCoreRefreshError ? (
+            <div className="notice notice--warning" role="alert">
+              <strong>{copy.dataRefreshFailed}</strong>
+              <p>{copy.dataRefreshFailedHint}</p>
+              <ul>
+                {coreDashboardState.failedSources.map(({ label, query }) => (
+                  <li key={label}>
+                    {label} · {copy.dataLastLoaded}: {formatAiTimestamp(query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toISOString() : null, language)}
+                  </li>
+                ))}
+              </ul>
+              <button className="button button--ghost" disabled={isCoreDataFetching} onClick={retryCoreDashboardData} type="button">
+                {isCoreDataFetching ? copy.dataRetrying : copy.dataRetry}
+              </button>
+            </div>
+          ) : null}
 
           {activeKpiDetail === "injection" ? renderCumulativeKpiDetail({
             detailKey: "injection",
