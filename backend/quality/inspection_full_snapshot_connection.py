@@ -40,6 +40,8 @@ class ReviewedFullSnapshotConnection:
     concurrency_reference: str = ''
     residual_remote_race: bool = True
     operational_conditions_reference: str = ''
+    source_mode: str = 'independent_approval'
+    preserves_existing_records: bool = False
 
     def matches(self, request, binding):
         return bool(isinstance(self.expires_at, datetime) and self.expires_at.utcoffset() is not None
@@ -70,6 +72,14 @@ class BlacklakeFullSnapshotAdapter:
             or (self.concurrency_mode == 'exclusive_writer' and callable(external_fence))
             or (self.concurrency_mode == 'reviewed_single_writer_trial'
                 and policy.residual_remote_race is True and policy.operational_conditions_reference)))
+
+    def validate_save_baseline(self, binding, intent):
+        # The documented payload cannot set record IDs/authors/timestamps.
+        # A nonempty collection therefore needs separately observed preservation
+        # semantics; no local lock or successful acknowledgement proves them.
+        _check(not intent['baseline']['records']
+               or self.policy.preserves_existing_records is True,
+               'mes_existing_result_preservation_unverified')
 
     def _call(self, binding, operation, callback):
         from mes_oauth import vault
@@ -133,6 +143,8 @@ class BlacklakeFullSnapshotAdapter:
         from .inspection_blacklake_contract import result_and_finish_plan
         self._authority_matches(authority)
         _check(self.enabled and self.policy.write_authorized is True, 'full_write_unapproved')
+        if stage == 'save':
+            self.validate_save_baseline(binding, intent)
         def perform(token):
             request, current = self._locked_target(binding)
             op = InspectionOperation.objects.select_for_update().get(pk=operation_id, request=request)

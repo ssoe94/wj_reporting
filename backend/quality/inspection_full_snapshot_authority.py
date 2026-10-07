@@ -212,6 +212,15 @@ class CurrentExecutorGuard:
         require_owned_request(current, request)
         source = self._reviewed_source(request)
         reviewer_id = getattr(policy, 'reviewer_actor_id', None)
+        source_mode = getattr(policy, 'source_mode', 'independent_approval')
+        _require(source_mode in {'independent_approval', 'completed_areas'}, 'executor_policy_invalid')
+        if source_mode == 'completed_areas':
+            # The two declared inspectors, their authenticated recorders and
+            # every completion/item history have already been checked above.
+            # This explicit policy uses no invented third reviewer or account.
+            _require(source['request_status'] == 'draft' and reviewer_id == 0,
+                     'completed_area_source_required')
+            return True
         if source['request_status'] == 'approved':
             _require(request.reviewed_by_id == reviewer_id
                      and source['approval']['reviewer']['id'] == reviewer_id

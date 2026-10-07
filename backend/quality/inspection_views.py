@@ -9,7 +9,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from mes_oauth.session_guard import InspectionSession
+from mes_oauth.session_guard import InspectionSession, LoginRejected
 
 from .inspection_models import InspectionRequest
 from .inspection_access import can_use_admin_inspection_flow
@@ -228,7 +228,15 @@ class InspectionRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
                 target = None
             if target is None or target.year == 9999:
                 raise ValidationError({'date': 'Use a supported ISO business date.'})
-        return Response(projection(request.user, target))
+        try:
+            session = InspectionSession.from_request(request)
+        except LoginRejected:
+            # Preserve the existing local board for authenticated legacy WJ
+            # logins. The read supplier must not resolve a different MES user.
+            session = None
+        response = Response(projection(request.user, target, session=session))
+        response['Cache-Control'] = 'no-store, max-age=0'
+        return response
 
     def create(self, request):
         key = operation_key(request.headers.get('Idempotency-Key'))

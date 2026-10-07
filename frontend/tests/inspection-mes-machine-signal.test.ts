@@ -37,6 +37,20 @@ test('actual request elapsed has no invented deadline and survives refresh times
   assert.equal(longWait.badges[0].state, 'requested');
   assert.equal(longWait.badges[0].elapsed_minutes, 10_000);
 });
+test('source observation time survives stale or failed refresh without adopting page refresh time', () => {
+  const f = fixture();
+  assert.equal(f.view().observed_at, at(0));
+  f.snapshot.generated_at = at(5);
+  assert.equal(f.view(now + 5 * 60_000, true).evidence_state, 'stale');
+  assert.equal(f.view(now + 5 * 60_000, true).observed_at, at(0));
+  assert.equal(f.view(now + 10 * 60_000).observed_at, at(0));
+  for (const patch of [{ observed_at: 'invalid' }, { observed_at: '2026-10-07T08:00:00' }, { observed_at: at(1) },
+    { machine_number: 8 }, { business_date: '2026-10-06' }]) {
+    assert.equal(fixture(evidence(patch)).view().observed_at, null);
+  }
+  delete f.machine.mes_inspection_signal;
+  assert.equal(f.view().observed_at, null, 'WJ refresh time cannot substitute for missing MES evidence');
+});
 test('planned time requires inspection; only a supplied official deadline makes it overdue', () => {
   assert.equal(fixture(evidence({ inspections: [record({ planned_at: at(-1) })] })).view().badges[0].state, 'needed');
   assert.equal(fixture(evidence({ inspections: [record({ official_deadline_at: at(1) })] })).view().badges[0].state, 'requested');

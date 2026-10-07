@@ -119,6 +119,7 @@ else:
         'quality.test_inspection_role_migration', 'quality.test_inspection_role_security', 'quality.test_inspection_weekly_roster',
         'quality.test_inspection_full_snapshot', 'quality.test_inspection_full_snapshot_connection',
         'quality.test_inspection_full_snapshot_readback', 'quality.test_inspection_full_snapshot_product',
+        'quality.test_inspection_full_snapshot_preservation', 'quality.test_inspection_full_snapshot_policy',
         'quality.test_inspection_partial_trial_contract',
         'quality.test_inspection_read_snapshot', 'quality.test_inspection_blacklake_snapshot',
         'quality.test_inspection_live_readback', 'quality.test_inspection_board_repository',

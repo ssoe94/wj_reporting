@@ -177,7 +177,7 @@ test('new mapping suggests deformation dimension while preserving existing confi
   assert.equal(draft.calls.length, 0);
 });
 
-test('parallel cards show both areas and Enter stays inside its own area', () => {
+test('one worksheet groups both inspectors and Enter stays inside its own area', () => {
   const request = sharedFixture();
   request.inspection_items.push({ ...request.inspection_items[1], id: 'dimension-next' });
   request.role_workflow!.item_areas['dimension-next'] = 'dimension'; request.role_workflow!.my_item_ids.push('dimension-next');
@@ -191,7 +191,12 @@ test('parallel cards show both areas and Enter stays inside its own area', () =>
   view.input('inspection-item-42-1-value').props.onKeyDown(key());
   assert.deepEqual(view.focused, ['inspection-item-42-2-value']); assert.equal(prevented, 1);
   view.input('inspection-item-42-1-value').props.onChange({ target: { value: '10.2' } }); view.render();
-  assert.equal(view.nodes().filter((node) => node.props.className === 'inspection-area-card').length, 2);
+  assert.equal(view.nodes().filter((node) => node.props.className === 'inspection-items-table inspection-role-worksheet').length, 1);
+  assert.deepEqual(view.nodes().filter((node) => node.type === 'tbody' && node.props['data-card-area']).map((node) => node.props['data-card-area']), ['dimension', 'appearance']);
+  for (const area of request.role_workflow!.areas) {
+    const group = view.nodes().find((node) => node.type === 'tbody' && node.props['data-card-area'] === area.area);
+    assert.ok(content(group).includes(area.assigned_to_name));
+  }
   assert.equal(view.input('inspection-item-42-1-value').props.value, '10.2');
   view.input('inspection-role-only-unfilled').props.onChange({ target: { checked: true } }); view.render();
   assert.deepEqual(view.nodes().filter((node) => node.props['data-inspection-item']).map((node) => node.props['data-inspection-item']), ['dimension-next']);

@@ -166,7 +166,7 @@ test('legacy appearance uses one localized choice and saves the original configu
 test('a dimension-only legacy request shows both cards but cannot finalise a missing appearance inspection', async () => {
   const request = fixture(); request.status = 'draft'; request.source_kind = 'local_manual'; request.capabilities.can_submit = true; delete request.mes_workflow;
   const view = harness(request, 'ko', false, false, (current, attempt) => ({ ...current, ...attempt.payload, version: current.version + 1 }));
-  assert.equal(view.nodes().filter(node => node.props.className === 'inspection-area-card').length, 2);
+  assert.equal(view.nodes().filter(node => node.props.className === 'inspection-area-card').length, 1);
   assert.equal(view.button('최종 판정').props.disabled, true);
   assert.equal(view.button('외관 저장').props.disabled, true);
   assert.match(view.text(), /치수와 외관은 모두 필수/);

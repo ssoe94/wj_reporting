@@ -232,14 +232,16 @@ test('production inspection keeps its MES QC status even if a trial projection i
   }
 });
 
-test('area tables keep criteria, labelled values, automatic verdicts and scoped saves aligned', async () => {
+test('one worksheet keeps area groups, criteria, labelled values, automatic verdicts and scoped saves aligned', async () => {
   const initial = fixture();
   initial.inspection_items[0].unit = 'mm'; initial.inspection_items[0].minimum = '0.50'; initial.inspection_items[0].maximum = '3.00';
   initial.inspection_items.push({ id: 'synthetic-choice', label: 'SYNTHETIC-VISUAL', kind: 'choice', options: ['OK', 'NG'], unit: '', required: false, evidence_required: false });
   initial.measurements.push({ item_id: 'synthetic-choice', value: 'OK', judgement: 'pass', evidence_url: '' });
   const view = harness(initial);
   const table = view.nodes(true).filter((node) => node.type === 'table');
-  assert.equal(table.length, 2, 'Dimension and appearance each retain a semantic working table');
+  assert.equal(table.length, 1, 'Dimension and appearance share one semantic working table');
+  assert.deepEqual(nodes(table).filter((node) => node.type === 'tbody').map((node) => node.props['data-card-area']), ['dimension', 'appearance']);
+  assert.equal(nodes(table).filter((node) => node.type === 'th' && node.props.scope === 'rowgroup').length, 2);
   for (const areaTable of table) {
     assert.equal(content(nodes(areaTable).find((node) => node.type === 'caption')).trim(), copy.inspectionCopy.ko.items);
     assert.equal(nodes(areaTable).filter((node) => node.type === 'th' && node.props.scope === 'col').length, 5);

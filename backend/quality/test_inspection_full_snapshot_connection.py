@@ -67,6 +67,7 @@ class FullSnapshotConnectionTests(TestCase):
             detail_review=self.detail_review, write_authorized=True,
             concurrency_mode='reviewed_single_writer_trial', concurrency_reference='SYNTHETIC-single-writer',
             operational_conditions_reference='SYNTHETIC-conditions', residual_remote_race=True,
+            preserves_existing_records=True,
         )
         self.session = InspectionSession(
             actor_id=self.actor.pk, login_digest='f' * 64,
@@ -147,6 +148,12 @@ class FullSnapshotConnectionTests(TestCase):
                      'seq': row['seq'], 'result': row['result'], 'operator': {'id': 101},
                      'createdAt': now_ms, 'updatedAt': now_ms}
                     for index, row in enumerate(body['checkItems'])]
+            # This synthetic provider explicitly preserves pre-existing rows;
+            # it is not evidence about a live provider's replacement semantics.
+            existing = {(row['qcConfigCheckItemId'], row['seq']): row
+                        for group in self.envelope['data']['checkItems']
+                        for row in group['qcTaskCheckItems']}
+            rows = [deepcopy(existing.get((row['qcConfigCheckItemId'], row['seq']), row)) for row in rows]
             self.envelope['data']['checkItems'] = [{'groupName': 'SYNTHETIC group', 'qcTaskCheckItems': rows}]
             response = {'code': 200, 'needCheck': 0, 'data': True}
         elif endpoint == '_finish':

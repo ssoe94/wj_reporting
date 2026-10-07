@@ -45,3 +45,17 @@ test('Chinese equipment details contain localized controls and preserve unknown 
   assert.doesNotMatch(content(detail), /[가-힣]/);
   assert.equal(view.nodes().some(n => ['MES 저장', 'MES 完成'].includes(content(n))), false);
 });
+test('station cards label synthetic observation time and retain it on stale data without filling WJ-only cards', () => {
+  for (const lang of ['ko', 'zh'] as const) {
+    const view = harness(lang, 7);
+    const cards = view.nodes().filter(n => n.props.className === 'inspection-station-tile');
+    assert.equal(cards.length, 17);
+    const stale = cards.find(n => n.props['data-machine'] === 8);
+    assert.equal(stale.props['data-mes-state'], 'stale');
+    const stamp = nodes(stale).find(n => n.type === 'time');
+    assert.ok(stamp.props.dateTime);
+    assert.match(stamp.props.title, /\d{2}:\d{2}/);
+    assert.match(content(stale), lang === 'ko' ? /예시 관측/ : /示例观测/);
+    assert.equal(nodes(cards.find(n => n.props['data-machine'] === 10)).some(n => n.type === 'time'), false);
+  }
+});

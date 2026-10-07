@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from django.db.models import Q, Case, When, IntegerField
 from django.utils import timezone
+from mes_oauth.session_guard import InspectionSession
 from production.models import ProductionPlan, ProductionPlanChangeLog, ProductionExecution
 from .inspection_models import InspectionRequest
 from .inspection_workflow import serialize
@@ -88,7 +89,7 @@ def business_date(now=None):
     return ((now or timezone.now()).astimezone(SHANGHAI) - timedelta(hours=8)).date()
 
 
-def projection(user, target_date=None, *, now=None):
+def projection(user, target_date=None, *, now=None, session=None, read_batch_reader=None):
     now = now or timezone.now()
     target_date = target_date or business_date(now)
     start = datetime.combine(target_date, time(8), tzinfo=SHANGHAI)
@@ -150,7 +151,11 @@ def projection(user, target_date=None, *, now=None):
         (machines[number]['requests'] if number else unmapped_requests).append(item)
     # Separate read-only evidence: never import it into editable WJ requests or
     # use it to release uncertain write/reconciliation locks.
-    batch = get_read_batch()
+    # A local/legacy WJ reader can view the board without supplying a MES
+    # session. Never forward a session belonging to another WJ actor.
+    read_session = session if type(session) is InspectionSession and session.actor_id == user.pk else None
+    batch = get_read_batch(session=read_session, actor_id=user.pk,
+                          business_date=target_date, reader=read_batch_reader)
     mes = project_observations(**batch) if batch is not None else None
     for number, machine in machines.items():
         machine['mes_observations'] = mes['machines'][number] if mes else []

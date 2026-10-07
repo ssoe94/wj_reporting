@@ -1,5 +1,36 @@
 # Completed WJ areas → one MES whole snapshot
 
+## Studio continuation — 2026-10-08
+
+An existing binding may now carry a server-reviewed `full_snapshot_connection`
+manifest, loaded by `inspection_full_snapshot_policy.py`. The pure
+`reviewed_manifest` helper performs no persistence or authorization. A manifest
+pins binding scope, source digest/version, executor, expiry, exact typed detail
+pins and a deployment-owned concurrency connector name. Reads do not create or
+renew it. Actual CAS/fence callables must still be supplied; WJ locks do not
+prevent edits made directly in MES. No manifest or connector is provisioned by
+this change, and the concrete detail decoder remains standalone-test-only.
+
+The explicit `completed_areas` source mode requires both distinct inspectors'
+completed areas and all recorder/item history, without inventing a third
+reviewer. The existing independent-approval mode remains the default. The
+display inspector, authenticated WJ recorder and lawful MES executor stay
+distinct; no account, mapping or permission is created by either mode.
+
+Whole-save readback now preserves every existing record's ID, author, value and
+raw creation/update timestamps exactly. Changing an existing value is rejected
+before reservation. The concrete adapter also rejects a nonempty baseline
+unless its reviewed policy explicitly establishes preservation semantics.
+Metadata changes after dispatch remain unknown and cannot trigger a resend.
+This does not add unsupported metadata fields to the provider's write payload.
+All new acceptance evidence is synthetic; no completed live QC is replayed.
+
+The kanban now passes the current authenticated session, actor and selected
+business date to a server-owned reader hook. Its existing observation contract
+remains fixture-only; actual equipment → current task → QC mapping and a live
+decoder are still required. The UI displays source observation time and uses a
+single compact dimension/appearance table with separate area actions.
+
 Local implementation and connection follow-up at `2026-10-07T09:28:19Z`;
 not integrated or deployed.
 Owner checkout: `/Users/ssoe94/dev/mes-qc/wj_reporting-lee-diagnostics-20261006`,

@@ -39,6 +39,9 @@ class FullSnapshotReconcileSerializer(StrictSerializer):
 def load_connection(request_id):
     registry = getattr(settings, 'INSPECTION_FULL_SNAPSHOT_CONNECTIONS', {})
     value = registry.get(request_id) if type(registry) is dict else None
+    if value is None:
+        from .inspection_full_snapshot_policy import load_binding_connection
+        value = load_binding_connection(request_id)
     if (type(value) is not FullSnapshotProductConnection
             or type(value.policy) is not ReviewedFullSnapshotConnection
             or value.policy.request_id != request_id):
@@ -47,12 +50,20 @@ def load_connection(request_id):
 
 
 def _approved(request, binding, policy):
-    if (request.status != 'approved' or request.judgement not in {'pass', 'fail'}
-            or request.reviewed_by_id != policy.reviewer_actor_id
-            or not policy.matches(request, binding)):
-        raise FullSnapshotError('independent_approval_required')
+    if not policy.matches(request, binding):
+        raise FullSnapshotError('source_changed')
+    if policy.source_mode == 'completed_areas':
+        if request.status != 'draft' or policy.reviewer_actor_id != 0:
+            raise FullSnapshotError('completed_area_source_required')
+    elif policy.source_mode == 'independent_approval':
+        if (request.status != 'approved' or request.judgement not in {'pass', 'fail'}
+                or request.reviewed_by_id != policy.reviewer_actor_id):
+            raise FullSnapshotError('independent_approval_required')
+    else:
+        raise FullSnapshotError('executor_policy_invalid')
     source, _ = validate_source(DjangoCompletedSource.capture(request))
-    if binding.reviewed_result_digest != source['approval']['result_digest']:
+    if (policy.source_mode == 'independent_approval'
+            and binding.reviewed_result_digest != source['approval']['result_digest']):
         raise FullSnapshotError('independent_approval_changed')
     normalized = deepcopy(source)
     normalized['request_version'] = policy.source_request_version
@@ -64,10 +75,14 @@ def _approved(request, binding, policy):
 class ProductExecutorGuard(CurrentExecutorGuard):
     def __init__(self, connection, session):
         self.connection = connection
+        self.policy_snapshot = deepcopy(connection.policy)
         super().__init__(connection.policy, session)
 
     def _check_policy(self, current, request, binding, stage):
-        if load_connection(request.pk) is not self.connection:
+        fresh = load_connection(request.pk)
+        if (fresh.policy != self.policy_snapshot or self.policy != self.policy_snapshot
+                or fresh.atomic_writer is not self.connection.atomic_writer
+                or fresh.external_fence is not self.connection.external_fence):
             raise FullSnapshotError('whole_connection_review_changed')
         _approved(request, binding, self.policy)
         return super()._check_policy(current, request, binding, stage)

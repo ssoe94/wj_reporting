@@ -34,6 +34,7 @@ export type MesInspectionBadge = {
 export type StationMesInspectionView = {
   source_kind: MesInspectionSignalEvidence['source_kind'] | null;
   evidence_state: 'current' | 'unavailable' | 'stale' | 'work_changed' | 'stopped' | 'unverified';
+  observed_at: string | null;
   current_work: MesCurrentWork | null; badges: MesInspectionBadge[];
 };
 
@@ -52,14 +53,21 @@ const badge = (kind: MesInspectionKind | null, state: MesInspectionBadgeState = 
 export function stationMesInspectionView(machine: InspectionMachine | undefined, snapshot: InspectionKanban | null,
   nowMs: number, options: { transportError?: boolean } = {}): StationMesInspectionView {
   const evidence = machine?.mes_inspection_signal;
+  const observedAt = stamp(evidence?.observed_at);
+  // Keep the last source time visible after expiry or a failed refresh. A page
+  // refresh timestamp is never evidence that MES was observed again.
+  const observationTime = evidence?.schema_version === 'mes-inspection-signal.v1'
+    && ['mes_readback', 'synthetic_contract_fixture'].includes(evidence.source_kind)
+    && evidence.machine_number === machine?.machine_number && evidence.business_date === snapshot?.business_date
+    && observedAt !== null && Number.isFinite(nowMs) && observedAt <= nowMs ? evidence.observed_at : null;
   const unknown = (reason: StationMesInspectionView['evidence_state'], work: MesCurrentWork | null = null): StationMesInspectionView => ({
     source_kind: evidence?.source_kind === 'synthetic_contract_fixture' || evidence?.source_kind === 'mes_readback' ? evidence.source_kind : null,
-    evidence_state: reason, current_work: work, badges: [badge(null)],
+    evidence_state: reason, observed_at: observationTime, current_work: work, badges: [badge(null)],
   });
   if (!machine || !snapshot || !evidence || !Number.isFinite(nowMs)) return unknown('unavailable');
   if (evidence.schema_version !== 'mes-inspection-signal.v1'
     || !['mes_readback', 'synthetic_contract_fixture'].includes(evidence.source_kind)) return unknown('unverified');
-  const observedAt = stamp(evidence.observed_at), freshUntil = stamp(evidence.fresh_until);
+  const freshUntil = stamp(evidence.fresh_until);
   if (options.transportError || evidence.stale === true || (freshUntil !== null && nowMs >= freshUntil)) return unknown('stale');
   if (evidence.current_state_verified !== true || evidence.stale !== false || evidence.complete !== true
     || observedAt === null || observedAt > nowMs || freshUntil === null || freshUntil <= observedAt) return unknown('unverified');
@@ -109,7 +117,7 @@ export function stationMesInspectionView(machine: InspectionMachine | undefined,
     return [{ kind, state, elapsed_minutes: requested === null ? null : Math.max(0, Math.floor((nowMs - requested) / 60_000)),
       planned_at: item.planned_at, official_deadline_at: item.official_deadline_at }];
   });
-  return { source_kind: evidence.source_kind, evidence_state: 'current', current_work: work, badges: badges.length ? badges : [badge(null)] };
+  return { source_kind: evidence.source_kind, evidence_state: 'current', observed_at: observationTime, current_work: work, badges: badges.length ? badges : [badge(null)] };
 }
 
 export function stationMesBadgeLabel(value: MesInspectionBadge, lang: 'ko' | 'zh'): string {

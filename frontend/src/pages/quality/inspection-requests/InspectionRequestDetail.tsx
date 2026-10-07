@@ -255,11 +255,12 @@ function LegacyInspectionRequestDetail({ initial, userId, sessionId, lang, globa
     </dl><p className="inspection-muted">{text.timezone} · {text.immutable}</p></details>
     <section className="inspection-section inspection-items-section"><h3 className="sr-only" id="inspection-items-title">{text.items}</h3>
       {!request.capabilities.can_edit && <p className="inspection-muted">{text.readOnly}</p>}
-      <div className="inspection-area-cards" data-card-count={inspectionWorksheetAreas.length}>{inspectionWorksheetAreas.map((cardArea) => <section key={cardArea} className="inspection-area-card" data-card-area={cardArea} aria-labelledby={`inspection-card-${request.id}-${cardArea}`}>
-        <header className="inspection-area-card-heading"><h3 id={`inspection-card-${request.id}-${cardArea}`}>{lang === 'ko' ? cardArea === 'dimension' ? '치수' : '외관' : cardArea === 'dimension' ? '尺寸' : '外观'}</h3><span>{request.assigned_to_name}</span><span className="inspection-area-card-progress">{lang === 'ko' ? '입력' : '录入'} {entryProgress[cardArea].entered}/{entryProgress[cardArea].total} · {lang === 'ko' ? '저장' : '保存'} {entryProgress[cardArea].saved}/{entryProgress[cardArea].total}</span></header>
-      <div className="inspection-table-scroll inspection-legacy-sheet-scroll" role="region" aria-label={`${lang === 'ko' ? cardArea === 'dimension' ? '치수' : '외관' : cardArea === 'dimension' ? '尺寸' : '外观'} · ${text.items}`} tabIndex={0}>
+      <div className="inspection-area-card" data-unified-worksheet="true">
+      <div className="inspection-table-scroll inspection-legacy-sheet-scroll" role="region" aria-label={text.items} tabIndex={0}>
         <table className="inspection-items-table inspection-legacy-worksheet"><caption className="sr-only">{text.items}</caption>
-          <colgroup><col style={{ width: '5%' }} /><col style={{ width: '33%' }} /><col style={{ width: '24%' }} /><col style={{ width: '26%' }} /><col style={{ width: '12%' }} /></colgroup><thead><tr><th scope="col">#</th><th scope="col">{text.itemName} · {text.criteriaUnit}</th><th scope="col">{text.measurement}</th><th scope="col">{verdictCopy.verdict}</th><th scope="col">{lang === 'ko' ? '저장 상태' : '保存状态'}</th></tr></thead><tbody>
+          <colgroup><col style={{ width: '5%' }} /><col style={{ width: '33%' }} /><col style={{ width: '24%' }} /><col style={{ width: '26%' }} /><col style={{ width: '12%' }} /></colgroup><thead><tr><th scope="col">#</th><th scope="col">{text.itemName} · {text.criteriaUnit}</th><th scope="col">{text.measurement}</th><th scope="col">{verdictCopy.verdict}</th><th scope="col">{lang === 'ko' ? '저장 상태' : '保存状态'}</th></tr></thead>
+      {inspectionWorksheetAreas.map((cardArea) => <tbody key={cardArea} data-card-area={cardArea} aria-labelledby={`inspection-card-${request.id}-${cardArea}`}>
+      <tr className="inspection-area-group"><th scope="rowgroup" colSpan={5}><div className="inspection-area-card-heading"><h3 id={`inspection-card-${request.id}-${cardArea}`}>{lang === 'ko' ? cardArea === 'dimension' ? '치수' : '외관' : cardArea === 'dimension' ? '尺寸' : '外观'}</h3><span>{request.assigned_to_name}</span><span className="inspection-area-card-progress">{lang === 'ko' ? '입력' : '录入'} {entryProgress[cardArea].entered}/{entryProgress[cardArea].total} · {lang === 'ko' ? '저장' : '保存'} {entryProgress[cardArea].saved}/{entryProgress[cardArea].total}</span></div></th></tr>
       {request.inspection_items.map((item, index) => {
         if (itemAreas[item.id] !== cardArea) return null;
         const measurement = draft.measurements[index];
@@ -282,10 +283,10 @@ function LegacyInspectionRequestDetail({ initial, userId, sessionId, lang, globa
         </tr>;
       })}
       {!request.inspection_items.some((item) => itemAreas[item.id] === cardArea) && <tr><td colSpan={5}>{lang === 'ko' ? '검사 항목 미등록 · 치수와 외관은 모두 필수입니다. 검사 기준을 등록해야 최종 판정할 수 있습니다.' : '未配置检验项目 · 尺寸与外观均为必检。请配置标准后再进行最终判定。'}</td></tr>}
-          </tbody></table>
+          </tbody>)}</table>
       </div>
-      <div className="inspection-card-savebar"><button type="button" className="inspection-button is-primary" disabled={!editable || unsafeEvidence || !entryProgress[cardArea].total} onClick={() => saveSelectedArea(cardArea)}>{`${lang === 'ko' ? cardArea === 'dimension' ? '치수' : '외관' : cardArea === 'dimension' ? '尺寸' : '外观'} ${lang === 'ko' ? '저장' : '保存'}`}</button></div>
-      </section>)}</div>
+      <div className="inspection-card-savebar">{inspectionWorksheetAreas.map((cardArea) => <button key={cardArea} type="button" className="inspection-button is-primary" disabled={!editable || unsafeEvidence || !entryProgress[cardArea].total} onClick={() => saveSelectedArea(cardArea)}>{`${lang === 'ko' ? cardArea === 'dimension' ? '치수' : '외관' : cardArea === 'dimension' ? '尺寸' : '外观'} ${lang === 'ko' ? '저장' : '保存'}`}</button>)}</div>
+      </div>
     </section>
     <section className="inspection-section inspection-result-section inspection-legacy-savebar" aria-label={text.results}><div className="inspection-form-grid">
       {request.quantity_mode === 'recorded' && (['inspected_quantity', 'accepted_quantity', 'rejected_quantity'] as const).map((name) => <label key={name}>{name === 'inspected_quantity' ? text.inspected : name === 'accepted_quantity' ? text.accepted : text.rejected} ({request.uom}) *<input inputMode="decimal" maxLength={30} disabled={!editable} value={draft[name]} onChange={(event) => update({ [name]: event.target.value })} /></label>)}

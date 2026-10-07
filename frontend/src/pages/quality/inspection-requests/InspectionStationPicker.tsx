@@ -5,6 +5,7 @@ import { inspectionStationNumbers, stationDefaultRequest, stationProductionSumma
 import { inspectionRequestStage } from './kanban';
 import type { InspectionKanban } from './kanban';
 import { stationMesBadgeLabel, stationMesInspectionView } from './mesInspectionSignal';
+import { inspectionTime } from './copy';
 
 export default function InspectionStationPicker({ snapshot, date, lang, loading, error, selectedMachine, selectedId, locked, onMachine, onSelect, onDate, onRefresh }: {
   snapshot: InspectionKanban | null; date: string; lang: 'ko' | 'zh'; loading: boolean; error: string; selectedMachine: number | null; selectedId: number | null; locked: boolean;
@@ -34,7 +35,10 @@ export default function InspectionStationPicker({ snapshot, date, lang, loading,
       const badgeLabel = (item: typeof mes.badges[number]) => item.kind === null ? evidenceLabels[mes.evidence_state] : stationMesBadgeLabel(item, lang);
       const elapsed = mes.badges.filter(item => item.elapsed_minutes !== null).sort((a, b) => b.elapsed_minutes! - a.elapsed_minutes!)[0];
       const elapsedText = elapsed ? (ko ? `요청 후 ${elapsed.elapsed_minutes}분` : `申请后 ${elapsed.elapsed_minutes}分`) : '';
-      const label = `${number}${ko ? '호기' : '号机'} · ${production.part} · ${production.product} · ${production.production} · ${mes.badges.map(badgeLabel).join(' · ')}${elapsedText ? ` · ${elapsedText}` : ''}${rows.length ? ` · WJ ${rows.length}${ko ? '건' : '项'}` : ''}`;
+      const observedLabel = mes.source_kind === 'synthetic_contract_fixture' ? (ko ? '예시 관측' : '示例观测') : (ko ? 'MES 관측' : 'MES 观测');
+      const observedTime = mes.observed_at ? inspectionTime(mes.observed_at, lang) : null;
+      const observedClock = mes.observed_at ? new Intl.DateTimeFormat(ko ? 'ko-KR' : 'zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(mes.observed_at)) : null;
+      const label = `${number}${ko ? '호기' : '号机'} · ${production.part} · ${production.product} · ${production.production} · ${mes.badges.map(badgeLabel).join(' · ')}${elapsedText ? ` · ${elapsedText}` : ''}${observedTime ? ` · ${observedLabel} ${observedTime}` : ''}${rows.length ? ` · WJ ${rows.length}${ko ? '건' : '项'}` : ''}`;
       return <button key={number} type="button" className="inspection-station-tile" data-machine={number} data-stage={stage} data-mes-state={mes.evidence_state} data-source-kind={mes.source_kind || 'wj_plan_only'} aria-label={label} title={label} aria-pressed={selectedMachine === number} disabled={!station || locked} onClick={() => onMachine(number, stationDefaultRequest(station, selectedId))}>
         <strong>{number}{ko ? '호기' : '号机'}</strong>
         <span className="inspection-station-part">{production.part}</span>
@@ -42,6 +46,7 @@ export default function InspectionStationPicker({ snapshot, date, lang, loading,
         <span className="inspection-station-production" data-source={production.source}>{production.production}</span>
         <span className="inspection-station-signals">{mes.badges.map(item => <span className="inspection-station-signal" data-tone={item.state === 'in_progress' ? 'requested' : item.state} data-inspection-kind={item.kind || 'unknown'} key={item.kind || 'unknown'}>{badgeLabel(item)}</span>)}{rows.length > 0 && <span className="inspection-station-signal" data-tone="local">WJ {rows.length}{ko ? '건' : '项'}</span>}</span>
         {elapsedText && <span className="inspection-station-signal-time">{elapsedText}</span>}
+        {observedTime && <span className="inspection-station-observed">{observedLabel} <time dateTime={mes.observed_at!} title={observedTime}>{observedClock}</time></span>}
       </button>;
     })}</div>
     {snapshot?.machines.some(row => row.mes_inspection_signal?.source_kind === 'synthetic_contract_fixture') && <p className="inspection-muted inspection-station-source" role="status">{ko ? '합성 MES 예시 · 실제 MES 수신 아님' : '合成 MES 示例 · 非实际 MES 接收'}</p>}

@@ -2,11 +2,12 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APITestCase
+from mes_oauth.session_guard import InspectionSession
 
 from .inspection_adapter import DisabledInspectionAdapter, get_inspection_adapter
 from .inspection_models import InspectionRequest, InspectionOperation
@@ -146,8 +147,84 @@ class InspectionReadSnapshotTests(SimpleTestCase):
         self.assertIsNone(get_read_batch())
         self.assertIsInstance(get_inspection_adapter(), DisabledInspectionAdapter)
 
+    def test_reader_requires_typed_session_and_is_scoped_to_each_request(self):
+        reader = Mock(return_value=batch([normalized()]))
+        for session in (None, {'actor_id': 18}, object()):
+            self.assertIsNone(get_read_batch(session=session, actor_id=18, business_date=NOW.date(), reader=reader))
+        reader.assert_not_called()
+        first = InspectionSession(18, 'synthetic-login-one', NOW, {})
+        second = InspectionSession(19, 'synthetic-login-two', NOW, {})
+        self.assertIsNone(get_read_batch(session=first, actor_id=18, business_date=NOW.date()))
+        self.assertEqual(get_read_batch(session=first, actor_id=18, business_date=NOW.date(), reader=reader), batch([normalized()]))
+        reader.assert_called_once_with(session=first, actor_id=18, business_date=NOW.date())
+        get_read_batch(session=second, actor_id=19, business_date=NOW.date(), reader=reader)
+        self.assertIs(reader.call_args.kwargs['session'], second)
+
+    def test_runtime_callable_receives_actor_and_date_but_cannot_expand_shape_or_provenance(self):
+        session = InspectionSession(18, 'synthetic-login', NOW, {})
+        reader = Mock(return_value=batch([normalized()]))
+        with override_settings(INSPECTION_KANBAN_READ_BATCH_READER=reader):
+            result = get_read_batch(session=session, actor_id=18, business_date=NOW.date())
+        self.assertEqual(result, batch([normalized()]))
+        reader.assert_called_once_with(session=session, actor_id=18, business_date=NOW.date())
+        unsupported = [[], {'code': 200, 'data': []}, dict(batch([]), access_token='not-public')]
+        for field, value in [('access_token', 'not-public'), ('current_state_verified', True),
+                             ('evidence_kind', 'live_read'), ('observed_at', '2099-01-01T00:00:00+00:00')]:
+            candidate = batch([normalized()])
+            candidate['observations'][0][field] = value
+            unsupported.append(candidate)
+        for value in unsupported:
+            with self.subTest(value=value):
+                self.assertIsNone(get_read_batch(session=session, actor_id=18, business_date=NOW.date(),
+                                                reader=Mock(return_value=value)))
+        broken = Mock(side_effect=RuntimeError('provider?access_token=not-public'))
+        with self.assertLogs('quality.inspection_read_snapshot', level='WARNING') as logs:
+            self.assertIsNone(get_read_batch(session=session, actor_id=18, business_date=NOW.date(), reader=broken))
+        self.assertNotIn('not-public', str(logs.output))
+
+    def test_missing_or_mismatched_actor_date_never_calls_runtime_reader(self):
+        session = InspectionSession(18, 'synthetic-login', NOW, {})
+        reader = Mock()
+        with override_settings(INSPECTION_KANBAN_READ_BATCH_READER=reader):
+            for actor, day in ((19, NOW.date()), (True, NOW.date()), (18, NOW), (18, None)):
+                self.assertIsNone(get_read_batch(session=session, actor_id=actor, business_date=day))
+        reader.assert_not_called()
+
 
 class InspectionReadProjectionTests(APITestCase):
+    def test_signed_request_session_reaches_supplier_without_exporting_identity_claims(self):
+        from .test_inspection_requests import authenticate_inspection_client
+        user = get_user_model().objects.create_user(username='signed-read-admin', is_superuser=True)
+        authenticate_inspection_client(self.client, user)
+        with patch('quality.inspection_kanban.get_read_batch', return_value=None) as provider:
+            response = self.client.get('/api/quality/inspection-requests/kanban/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'no-store, max-age=0')
+        session = provider.call_args.kwargs['session']
+        self.assertIs(type(session), InspectionSession)
+        self.assertEqual(session.actor_id, user.pk)
+        self.assertNotIn(session.login_digest, str(response.data))
+        self.assertNotIn('mes_sid', str(response.data))
+
+    def test_legacy_local_board_does_not_supply_a_mes_session(self):
+        user = get_user_model().objects.create_user(username='legacy-read-admin', is_superuser=True)
+        self.client.force_authenticate(user)
+        with patch('quality.inspection_kanban.get_read_batch', return_value=None) as provider:
+            response = self.client.get('/api/quality/inspection-requests/kanban/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['machines']), 17)
+        self.assertIsNone(provider.call_args.kwargs['session'])
+        self.assertEqual(provider.call_args.kwargs['actor_id'], user.pk)
+
+    def test_projection_never_forwards_another_actors_session(self):
+        from .inspection_kanban import projection
+        user = get_user_model().objects.create_user(username='actor-read-admin', is_superuser=True)
+        other_session = InspectionSession(user.pk + 1, 'synthetic-other-login', NOW, {})
+        reader = Mock(return_value=batch([normalized()]))
+        result = projection(user, now=NOW, session=other_session, read_batch_reader=reader)
+        reader.assert_not_called()
+        self.assertEqual(result['mes_read_snapshot']['availability'], 'unavailable')
+
     def test_authorized_kanban_adds_readonly_evidence_without_local_import_or_mutation(self):
         user = get_user_model().objects.create_user(username='synthetic-read-admin', is_superuser=True)
         self.client.force_authenticate(user)

@@ -347,6 +347,11 @@ def build_full_snapshot(source, binding, baseline):
     _check(reads == {_record_key(x) for x in baseline['config_keys']}, 'unmapped_mes_rows')
     payload.sort(key=lambda x: (x['groupName'], x['checkItemId'], x['seq']))
     expected_records.sort(key=_record_key)
+    expected_values = {_record_key(row): row['value'] for row in expected_records}
+    # This path appends missing results while preserving existing provider
+    # history. Correcting a recorded value needs its own reviewed contract.
+    _check(all(expected_values[_record_key(row)] == row['value']
+               for row in baseline['records']), 'mes_existing_result_change_unreviewed')
     return {'owner': OWNER, 'source': source, 'source_digest': fingerprint(source),
             'binding_digest': binding_fingerprint(binding), 'target': target,
             'baseline': baseline, 'remote_fingerprint': remote_fingerprint(baseline),
@@ -362,8 +367,13 @@ def verify_readback(intent, observation, *, stage, previous=None):
     actual = [{k: row[k] for k in ('config_row_id', 'group', 'seq', 'value')}
               for row in observed['records']]
     _check(actual == intent['expected_records'], 'whole_readback_mismatch')
-    _check(all(row['operator_id'] == intent['target']['executor_id']
-               for row in observed['records']), 'mes_executor_mismatch')
+    existing = {_record_key(row): row for row in intent['baseline']['records']}
+    for row in observed['records']:
+        prior = existing.get(_record_key(row))
+        if prior is not None:
+            _check(row == prior, 'mes_result_provenance_changed')
+        else:
+            _check(row['operator_id'] == intent['target']['executor_id'], 'mes_executor_mismatch')
     if stage == 'save':
         _check(observed['state'] == 'open', 'unexpected_mes_completion')
     else:
@@ -454,6 +464,9 @@ is installed here. source.capture is server-owned and runs under request locks.
             if stage == 'save':
                 _check(fingerprint(source) == source_digest, 'source_changed')
                 intent = build_full_snapshot(source, binding, self.adapter.read(binding, authority))
+                validate_baseline = getattr(self.adapter, 'validate_save_baseline', None)
+                if callable(validate_baseline):
+                    validate_baseline(binding, intent)
                 previous = None
             else:
                 saved = request.operations.filter(status='succeeded', scope__endswith=':mes-full-save').first()
