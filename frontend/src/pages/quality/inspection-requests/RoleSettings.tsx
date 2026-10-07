@@ -118,7 +118,7 @@ const weeklyCopy = {
   ko: {
     title: '주간 검사 담당자', week: '적용 주', previous: '이전 주', next: '다음 주', current: '이번 주',
     name: '담당자 이름', choose: '미배정', add: '새 이름 입력', newName: '새 담당자 이름',
-    range: '적용 기간', monday: '월', sunday: '일', save: '이번 주 담당자 저장', saved: '주간 담당자를 저장했습니다.',
+    range: '적용 기간', chinaTime: '중국 시각', monday: '월', sunday: '일', save: '이번 주 담당자 저장', saved: '주간 담당자를 저장했습니다.',
     loading: '주간 담당자를 불러오는 중…', advanced: '고급 설정', detail: '교대 시각·기존 계정 설정',
     fixedTimes: '주간 08:00–20:00 · 야간 20:00–다음날 08:00 · 중국 현지 시각',
     sundayNight: '일요일 야간은 다음 월요일 08:00까지 적용합니다.',
@@ -136,7 +136,7 @@ const weeklyCopy = {
   zh: {
     title: '每周检验人员', week: '适用周', previous: '上一周', next: '下一周', current: '本周',
     name: '负责人姓名', choose: '未分配', add: '输入新姓名', newName: '新人员姓名',
-    range: '适用期间', monday: '周一', sunday: '周日', save: '保存本周人员', saved: '已保存本周人员。',
+    range: '适用期间', chinaTime: '中国时间', monday: '周一', sunday: '周日', save: '保存本周人员', saved: '已保存本周人员。',
     loading: '正在加载本周人员…', advanced: '高级设置', detail: '班次时间与现有账号设置',
     fixedTimes: '白班 08:00–20:00 · 夜班 20:00–次日 08:00 · 中国当地时间',
     sundayNight: '周日夜班适用至下周一 08:00。',
@@ -264,6 +264,7 @@ export default function RoleSettings(props: RoleSettingsProps) {
         if (next) changeWeek(next);
       }} onBlur={() => { if (ownsSession()) setWeekInput(weeklyRosterWeekInput(weekStart)); }} /></label>
       <div className="inspection-weekly-navigation"><button type="button" className="inspection-button" disabled={navigationBlocked} onClick={() => changeWeek(weeklyRosterAddDays(weekStart, -7))} aria-label={text.previous}>‹ <span>{text.previous}</span></button><button type="button" className="inspection-button" disabled={navigationBlocked || weekStart === currentWeeklyRosterWeek()} onClick={() => changeWeek(currentWeeklyRosterWeek())}>{text.current}</button><button type="button" className="inspection-button" disabled={navigationBlocked} onClick={() => changeWeek(weeklyRosterAddDays(weekStart, 7))} aria-label={text.next}><span>{text.next}</span> ›</button></div>
+      <div className="inspection-weekly-range"><span>{text.range} · {text.chinaTime}</span><output aria-label={text.range}>{range}</output></div>
     </div>
     {loading && <p className="inspection-muted" role="status">{text.loading}</p>}
     {data?.can_configure === false && <p className="inspection-message" role="status">{text.denied}</p>}
@@ -285,13 +286,12 @@ export default function RoleSettings(props: RoleSettingsProps) {
           const matches = weeklyRosterNameMatches(person.display_name, data?.roster || []);
           const draftHomonym = Boolean(normalizeWeeklyRosterName(person.display_name)) && Object.entries(draft).some(([otherKey, other]) => otherKey !== key && other.selection === 'new' && normalizeWeeklyRosterName(other.display_name) === normalizeWeeklyRosterName(person.display_name));
           return <fieldset className="inspection-weekly-card" key={key} disabled={blocked} data-weekly-slot={key}>
-            <legend><span>{role[slot.shift === 'DAY' ? 'day' : 'night']}</span><strong>{role[slot.area]}</strong></legend>
+            <legend><span>{role[slot.shift === 'DAY' ? 'day' : 'night']}</span><strong>{role[slot.area]}</strong><small>{slot.shift === 'DAY' ? '08:00–20:00' : '20:00–08:00'}</small></legend>
             <div className="inspection-weekly-card-content">
               <label htmlFor={`inspection-weekly-${key}`}>{text.name}<select id={`inspection-weekly-${key}`} value={person.selection} onChange={(event) => update(key, { selection: event.target.value, display_name: '', distinguishing_note: '' })}>
                 <option value="">{text.choose}</option>{data?.roster.filter((row) => row.active || String(row.id) === person.selection).map((row) => <option key={row.id} value={row.id}>{weeklyRosterPersonLabel(row)}</option>)}<option value="new">＋ {text.add}</option>
               </select></label>
               {person.selection === 'new' && <><label htmlFor={`inspection-weekly-${key}-name`}>{text.newName}<input id={`inspection-weekly-${key}-name`} autoComplete="off" required maxLength={128} value={person.display_name} onChange={(event) => update(key, { display_name: event.target.value, distinguishing_note: '' })} /></label>{(matches.length > 0 || draftHomonym) && <details className="inspection-weekly-homonym"><summary>{text.homonym}</summary><p>{matches.length ? text.reuse : text.draftHomonym}</p><label htmlFor={`inspection-weekly-${key}-note`}>{text.note}<input id={`inspection-weekly-${key}-note`} maxLength={64} placeholder={text.notePlaceholder} value={person.distinguishing_note} onChange={(event) => update(key, { distinguishing_note: event.target.value })} /></label></details>}</>}
-              <div className="inspection-weekly-range"><span>{text.range}</span><output aria-label={`${role[slot.shift === 'DAY' ? 'day' : 'night']} ${role[slot.area]} ${text.range}`}>{range}</output></div>
             </div>
           </fieldset>;
         })}

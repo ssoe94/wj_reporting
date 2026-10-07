@@ -253,10 +253,13 @@ test('weekly settings mount four ordered display-name cards with advanced accoun
       assert.equal(fields.length, 1); assert.equal(fields[0].node.props.value, '');
       assert.ok(content(node).includes('SYNTHETIC-DISPLAY-A'));
       assert.ok(!content(node).includes('synthetic-appearance'));
-      const range = entries(node).find(({ node: child }) => child.type === 'output')!.node;
-      assert.ok(content(range).includes(week.replaceAll('-', '.')));
-      assert.ok(content(range).includes(weeklyModel.weeklyRosterAddDays(week, 6).replaceAll('-', '.')));
+      assert.equal(entries(node).some(({ node: child }) => child.type === 'output'), false);
+      assert.ok(content(node).includes(String(node.props['data-weekly-slot']).startsWith('DAY') ? '08:00–20:00' : '20:00–08:00'));
     }
+    const ranges = view.all().filter(({ node }) => node.type === 'output');
+    assert.equal(ranges.length, 1, 'All four cards share the selected Monday–Sunday period');
+    assert.ok(content(ranges[0].node).includes(week.replaceAll('-', '.')));
+    assert.ok(content(ranges[0].node).includes(weeklyModel.weeklyRosterAddDays(week, 6).replaceAll('-', '.')));
     const advanced = view.all().find(({ node }) => node.props.className === 'inspection-weekly-advanced')!.node;
     assert.equal(advanced.props.open, undefined);
     assert.equal(view.all().some(({ node }) => String(node.props.id).startsWith('inspection-shift-')), false);
