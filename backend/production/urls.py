@@ -33,8 +33,10 @@ from .field_kanban_views import (
     FieldMaterialShareView,
     FieldMaterialsView,
 )
+from .mes_delivery_views import MesDeliveryReadinessView
 
 urlpatterns = [
+    path('mes-delivery-readiness/', MesDeliveryReadinessView.as_view(), name='production-mes-delivery-readiness'),
     path('field-kanban/', FieldKanbanView.as_view(), name='production-field-kanban'),
     path(
         'field-kanban/defects/',
