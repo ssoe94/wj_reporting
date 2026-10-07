@@ -72,24 +72,26 @@ const compiled = ts.transpileModule(readFileSync(new URL('../src/pages/quality/i
 type Element = { type: unknown; props: Record<string, any> };
 const nodes = (node: any): Element[] => Array.isArray(node) ? node.flatMap(nodes) : node && typeof node === 'object' && node.props ? [node, ...nodes(node.props.children)] : [];
 const content = (node: any): string => Array.isArray(node) ? node.map(content).join('') : node == null || typeof node === 'boolean' ? '' : typeof node === 'object' ? content(node.props?.children) : String(node);
-function harness(initial = fixture(), error?: unknown) {
-  const hooks: any[] = []; let cursor = 0; let tree: Element; let currentSession = 'SYNTHETIC-SESSION-A'; let keyCount = 0;
-  const calls: any[] = []; const changed: InspectionRequest[] = [];
+function harness(initial = fixture(), error?: unknown, options: { canManageRoleSettings?: boolean; stale?: boolean; settingsError?: unknown } = {}) {
+  const hooks: any[] = []; let cursor = 0; let tree: Element; let currentSession = options.stale ? 'SYNTHETIC-SESSION-B' : 'SYNTHETIC-SESSION-A'; let keyCount = 0;
+  const calls: any[] = []; const changed: InspectionRequest[] = []; const settingsReads: unknown[][] = [];
+  const effects: (() => void)[] = [];
+  const same = (a?: unknown[], b?: unknown[]) => Boolean(a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i])));
   const dependencies: Record<string, unknown> = {
-    react: { useState: (initial: any) => { const index = cursor++; if (!(index in hooks)) hooks[index] = typeof initial === 'function' ? initial() : initial; return [hooks[index], (next: any) => { hooks[index] = typeof next === 'function' ? next(hooks[index]) : next; }]; }, useRef: (initial: any) => { const index = cursor++; return hooks[index] ??= { current: initial }; }, useMemo: (fn: any) => { cursor++; return fn(); }, useCallback: (fn: any) => { cursor++; return fn; }, useEffect: () => { cursor++; } },
+    react: { useState: (initial: any) => { const index = cursor++; if (!(index in hooks)) hooks[index] = typeof initial === 'function' ? initial() : initial; return [hooks[index], (next: any) => { hooks[index] = typeof next === 'function' ? next(hooks[index]) : next; }]; }, useRef: (initial: any) => { const index = cursor++; return hooks[index] ??= { current: initial }; }, useMemo: (fn: any) => { cursor++; return fn(); }, useCallback: (fn: any, deps: unknown[]) => { const index = cursor++; const hook = hooks[index] ??= {}; if (!same(hook.deps, deps)) { hook.fn = fn; hook.deps = deps; } return hook.fn; }, useEffect: (fn: () => void | (() => void), deps?: unknown[]) => { const index = cursor++; const hook = hooks[index] ??= {}; if (!same(hook.deps, deps)) { hook.deps = deps; effects.push(() => { hook.cleanup?.(); hook.cleanup = fn() || undefined; }); } } },
     'react/jsx-runtime': { jsx: (type: unknown, props: any) => ({ type, props }), jsxs: (type: unknown, props: any) => ({ type, props }) },
     '@/domains/auth/auth-transition': { assertAuthSessionCurrent: (session: string) => { if (session !== currentSession) throw new Error('Stale synthetic session'); } },
     './roleModel': roleModel, './roleCopy': { inspectionRoleCopy }, './copy': copy,
     './workflow': { ...workflow, createInspectionKey: () => `00000000-0000-4000-8000-${String(++keyCount).padStart(12, '0')}` },
-    './api': { getInspectionRoleSettings: async () => ({ settings: [], candidates: [], can_configure: true }), getInspectionRequest: async () => initial,
+    './api': { getInspectionRoleSettings: async (...args: unknown[]) => { settingsReads.push(args); if (options.settingsError) throw options.settingsError; return { settings: [], candidates: [], can_configure: true }; }, getInspectionRequest: async () => initial,
       mutateInspectionRole: async (...args: any[]) => { calls.push(args); if (error) throw error; return initial; },
       mutateInspectionRequest: async (...args: any[]) => { calls.push(args); if (error) throw error; return initial; } },
   };
   const exports: Record<string, any> = {};
   new Function('require', 'exports', 'sessionStorage', 'window', compiled)((name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; }, exports, { getItem: () => null, setItem: () => {}, removeItem: () => {} }, { confirm: () => true });
-  const render = () => { cursor = 0; tree = exports.default({ initial, userId: 101, sessionId: 'SYNTHETIC-SESSION-A', lang: 'ko', globalCapabilities: { can_manage_role_settings: true }, onChanged: (row: InspectionRequest) => changed.push(row), onDirty: () => {}, onLocked: () => {} }); return tree; };
+  const render = () => { cursor = 0; tree = exports.default({ initial, userId: 101, sessionId: 'SYNTHETIC-SESSION-A', lang: 'ko', globalCapabilities: { can_manage_role_settings: options.canManageRoleSettings !== false }, onChanged: (row: InspectionRequest) => changed.push(row), onDirty: () => {}, onLocked: () => {} }); for (const effect of effects.splice(0)) effect(); return tree; };
   render();
-  return { render, calls, changed, nodes: () => nodes(tree), text: () => content(tree), input: (id: string) => nodes(tree).find((node) => node.props.id === id)!, button: (label: string) => nodes(tree).find((node) => node.type === 'button' && content(node) === label)!, stale: () => { currentSession = 'SYNTHETIC-SESSION-B'; }, settle: async () => { for (let i = 0; i < 8; i++) { await Promise.resolve(); render(); } } };
+  return { render, calls, changed, settingsReads, nodes: () => nodes(tree), text: () => content(tree), input: (id: string) => nodes(tree).find((node) => node.props.id === id)!, button: (label: string) => nodes(tree).find((node) => node.type === 'button' && content(node) === label)!, stale: () => { currentSession = 'SYNTHETIC-SESSION-B'; }, settle: async () => { for (let i = 0; i < 8; i++) { await Promise.resolve(); render(); } } };
 }
 test('delivered role table edits only own area and dispatches scoped partial save', async () => {
   const view = harness();
@@ -151,4 +153,27 @@ test('new role configure date has no inferred shift default, final PASS selector
   assert.equal(view.nodes().find((node) => node.type === 'input' && node.props.type === 'date')?.props.value, '');
   assert.equal(view.nodes().some((node) => node.type === 'select' && node.props.value === request.judgement && content(node).includes(copy.inspectionCopy.ko.pass)), false);
   assert.equal(view.button(inspectionRoleCopy.ko.configure).props.disabled, true);
+});
+
+test('unconfigured restricted reader retains setup hint without requesting forbidden role settings', async () => {
+  for (const [canConfigure, canManageRoleSettings] of [[false, false], [false, true], [true, false]]) {
+    const request = fixture(); request.role_workflow = { ...request.role_workflow!, configured: false, status: 'unconfigured', can_configure: canConfigure, areas: [], item_areas: {}, my_item_ids: [] };
+    const view = harness(request, undefined, { canManageRoleSettings, settingsError: { response: { status: 403, data: { detail: 'SYNTHETIC pilot route denied' } } } });
+    await view.settle();
+    assert.equal(view.settingsReads.length, 0);
+    assert.match(view.text(), /교대·담당이 아직 설정되지 않았습니다/);
+    assert.match(view.text(), /설정은 현재 설정 권한이 있는 계정에서 가능합니다/);
+    assert.equal(view.nodes().some(node => node.props.role === 'alert'), false);
+    assert.equal(view.nodes().some(node => node.type === 'input' && node.props.type === 'date'), false);
+  }
+});
+test('role settings is fetched once only for current account with explicit global and request configuration authority', async () => {
+  const request = fixture(); request.role_workflow = { ...request.role_workflow!, configured: false, status: 'unconfigured', can_configure: true, areas: [], item_areas: {}, my_item_ids: [] };
+  const allowed = harness(request); await allowed.settle();
+  assert.deepEqual(allowed.settingsReads, [['SYNTHETIC-SESSION-A']]);
+  assert.equal(allowed.nodes().some(node => node.type === 'input' && node.props.type === 'date'), true);
+  const stale = harness(request, undefined, { stale: true }); await stale.settle();
+  assert.deepEqual(stale.settingsReads, []);
+  const configured = harness(fixture()); await configured.settle();
+  assert.deepEqual(configured.settingsReads, []);
 });

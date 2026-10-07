@@ -6,6 +6,7 @@ import ts from 'typescript';
 import { inspectionCopy } from '../src/pages/quality/inspection-requests/copy.ts';
 import * as navigation from '../src/pages/quality/inspection-requests/navigation.ts';
 import * as mesWorkflowResult from '../src/pages/quality/inspection-requests/mesWorkflowResult.ts';
+import { inspectionRoleCopy } from '../src/pages/quality/inspection-requests/roleCopy.ts';
 
 // Execute the actual Page with deterministic hook/API adapters. No browser,
 // auth storage, HTTP client, credentials or real timers are used.
@@ -101,6 +102,8 @@ function harness(initialReply = deferred(), actorId = 12) {
     './InspectionRequestDetail': { default: 'InspectionRequestDetail' },
     './TrialPresentation': { IntegrationTrialBadge: 'IntegrationTrialBadge' }, './integrationTrial': trial,
     './NewInspectionRequest': { default: 'NewInspectionRequest' },
+    './RoleSettings': { default: 'RoleSettings' },
+    './roleCopy': { inspectionRoleCopy },
     './MesDetailPreview': { default: 'MesDetailPreview' },
     './InspectionRequestsPage.css': {},
   };
@@ -110,6 +113,7 @@ function harness(initialReply = deferred(), actorId = 12) {
   Object.defineProperty(globalThis, 'window', { configurable: true, value: {
     setInterval: (callback: () => void) => { const id = ++intervalId; timers.set(id, callback); return id; },
     clearInterval: (id: number) => timers.delete(id), confirm: () => true,
+    setTimeout: (callback: () => void) => { callback(); return 0; },
   } });
   function render() { dirty = false; cursor = 0; tree = exports.default(); for (const effect of effects.splice(0)) effect(); }
   async function settle() {
@@ -284,4 +288,41 @@ test('MES metadata preview is visible only for actor18 with accepted inspection 
       } finally { fixture.cleanup(); }
     }
   }
+});
+
+test('role settings requires explicit accepted privilege and preserves current actor/session props', async () => {
+  for (const capabilities of [pilot, full, { ...full, can_manage_role_settings: false },
+    { ...full, can_manage_role_settings: true, can_view: false }]) {
+    const fixture = harness();
+    try {
+      fixture.reply.resolve(capabilities); await fixture.settle();
+      assert.equal(fixture.button(inspectionRoleCopy.ko.settings), undefined);
+      assert.equal(fixture.nodes().some((node) => node.type === 'RoleSettings'), false);
+    } finally { fixture.cleanup(); }
+  }
+  const fixture = harness();
+  try {
+    fixture.reply.resolve({ ...full, can_manage_role_settings: true }); await fixture.settle();
+    const before = fixture.calls.length;
+    fixture.button(inspectionRoleCopy.ko.settings)!.props.onClick(); await fixture.settle();
+    const panel = fixture.nodes().find((node) => node.type === 'RoleSettings')!;
+    assert.ok(panel);
+    assert.equal(panel.props.userId, 12);
+    assert.equal(panel.props.sessionId, SESSION);
+    assert.equal(panel.props.lang, 'ko');
+    assert.equal(fixture.calls.length, before, 'opening the settings adapter does not create a request or seed data');
+    assert.equal(fixture.nodes().some((node) => node.type === 'NewInspectionRequest'), false);
+  } finally { fixture.cleanup(); }
+});
+
+test('stale session cannot open role settings even with previously accepted privilege', async () => {
+  const fixture = harness();
+  try {
+    fixture.reply.resolve({ ...full, can_manage_role_settings: true }); await fixture.settle();
+    const entry = fixture.button(inspectionRoleCopy.ko.settings)!;
+    const before = fixture.calls.length;
+    fixture.expireSession(); entry.props.onClick(); await fixture.settle();
+    assert.equal(fixture.nodes().some((node) => node.type === 'RoleSettings'), false);
+    assert.equal(fixture.calls.length, before);
+  } finally { fixture.cleanup(); }
 });

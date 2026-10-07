@@ -57,7 +57,7 @@ export default function RoleInspectionRequestDetail({ initial, userId, sessionId
   const blocked = busy || Boolean(attempt) || conflict || needsReload || Boolean(recovery);
   const finalJudgement = inspectionRoleFinalJudgement(workflow);
   const canSummaryEdit = globalCapabilities.can_manage === true && request.assigned_to === userId && request.status === 'draft' && !['pending', 'unknown', 'succeeded'].includes(request.sync_status) && request.mes_completion_status !== 'completed' && !blocked;
-  const canConfigure = !workflow.configured && workflow.can_configure === true;
+  const canConfigure = !workflow.configured && workflow.can_configure === true && globalCapabilities.can_manage_role_settings === true;
   const activeSettings = settings?.settings.filter((setting) => setting.active) || [];
   const persist = (pending: Attempt | null = attempt) => {
     if (!ownsSession()) return;
@@ -67,11 +67,11 @@ export default function RoleInspectionRequestDetail({ initial, userId, sessionId
   useEffect(() => { if (ownsSession()) onDirty(dirty || Boolean(recovery)); }, [dirty, recovery, onDirty, ownsSession]);
   useEffect(() => { if (ownsSession()) onLocked(busy || Boolean(attempt) || Boolean(recovery?.attempt) || needsReload, busy); }, [busy, attempt, recovery, needsReload, onLocked, ownsSession]);
   useEffect(() => {
-    if (!ownsSession() || workflow.configured) return;
+    if (!ownsSession() || !canConfigure) return;
     let active = true;
     void getInspectionRoleSettings(sessionId).then((result) => { if (active && ownsSession()) setSettings(result); }).catch((cause) => { if (active && ownsSession()) setError(inspectionError(cause, common.loadError).message); });
     return () => { active = false; };
-  }, [workflow.configured, common.loadError, ownsSession, sessionId]);
+  }, [canConfigure, common.loadError, ownsSession, sessionId]);
   useEffect(() => {
     if (!ownsSession() || recovery) return;
     if (dirty || attempt) persist(attempt);
