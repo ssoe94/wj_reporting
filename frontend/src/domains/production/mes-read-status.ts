@@ -41,14 +41,16 @@ export interface MesReadStatus {
 const READ_STATES = new Set<unknown>(['verified', 'partial', 'not_queried', 'permission_required', 'connection_required', 'unavailable']);
 const STAGE_STATES = new Set<unknown>(['unknown', 'waiting', 'in_progress', 'completed', 'blocked', 'cancelled']);
 const TARGETS = new Set<unknown>(['MES', 'WJ_QC', 'NONE']);
-const CONTROL = /[\u0000-\u001f\u007f]/;
+function containsControlCharacter(value: string) {
+  return Array.from(value).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+}
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function text(value: unknown, maxLength = 120): value is string {
-  return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength && !CONTROL.test(value);
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength && !containsControlCharacter(value);
 }
 
 function calendarDate(value: string) {
